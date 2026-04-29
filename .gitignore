@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Tauri
+src-tauri/target/
+src-tauri/binaries/*
+!src-tauri/binaries/README.md
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project Specific
+debug.txt
+ai_config_backup.json

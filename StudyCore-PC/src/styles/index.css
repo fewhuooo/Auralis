@@ -1,0 +1,269 @@
+/* ===== Google Fonts ===== */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap');
+
+/* ==========================================================================
+   CSS Variables Dictionary - StudyCore Design System
+   ========================================================================== */
+
+:root {
+  /* ===== 1. Base Palette (Light Mode Default) ===== */
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-transparent: transparent;
+  
+  /* Warm Aesthetic Grays */
+  --color-gray-50: #faf9f8;
+  --color-gray-100: #f5f4f1;
+  --color-gray-200: #e8e6e1;
+  --color-gray-300: #d6d3ce;
+  --color-gray-400: #b0aca5;
+  --color-gray-500: #8a867e;
+  --color-gray-600: #66635d;
+  --color-gray-700: #4a4843;
+  --color-gray-800: #33312e;
+  --color-gray-900: #1f1e1c;
+
+  /* Aesthetic Warm Taupe (Replacing Indigo) */
+  --color-indigo-50: #fcfbf9;
+  --color-indigo-100: #f4f1eb;
+  --color-indigo-500: #b5ac9f;
+  --color-indigo-600: #999185;
+  --color-indigo-900: #544f47;
+
+  /* Aesthetic Sage Green (Replacing Purple) */
+  --color-purple-500: #a3ab9d;
+  --color-purple-400: #b6bfb0;
+
+  /* ===== 2. Semantic Colors (Light Mode) ===== */
+  /* Backgrounds */
+  --color-bg-primary: var(--color-white);
+  --color-bg-secondary: var(--color-gray-50);
+  --color-bg-tertiary: var(--color-gray-100);
+  --color-bg-elevated: var(--color-white);
+  
+  /* Text */
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-muted: var(--color-gray-400);
+  --text-accent: var(--color-indigo-600);
+  --text-inverse: var(--color-white);
+
+  /* Borders */
+  --border-subtle: var(--color-gray-100);
+  --border-default: var(--color-gray-200);
+  --border-strong: var(--color-gray-300);
+  --border-accent: rgba(99, 102, 241, 0.4);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+  --glass-blur: blur(20px);
+
+  /* Status / Feedback */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+
+  /* Accent Gradients - Softened */
+  --accent-start: var(--color-indigo-500);
+  --accent-mid: var(--color-purple-500);
+  --accent-end: var(--color-purple-400);
+  --accent-gradient: linear-gradient(135deg, var(--accent-start), var(--accent-mid), var(--accent-end));
+  --accent-glow: 0 0 20px rgba(181, 172, 159, 0.2);
+
+  /* ===== 3. Typography ===== */
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-base: 1rem;     /* 16px */
+  --font-size-lg: 1.125rem;   /* 18px */
+  --font-size-xl: 1.25rem;    /* 20px */
+  --font-size-2xl: 1.5rem;    /* 24px */
+  --font-size-3xl: 1.875rem;  /* 30px */
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* ===== 4. Spacing System ===== */
+  --spacing-1: 0.25rem;  /* 4px */
+  --spacing-2: 0.5rem;   /* 8px */
+  --spacing-3: 0.75rem;  /* 12px */
+  --spacing-4: 1rem;     /* 16px */
+  --spacing-5: 1.25rem;  /* 20px */
+  --spacing-6: 1.5rem;   /* 24px */
+  --spacing-8: 2rem;     /* 32px */
+  --spacing-10: 2.5rem;  /* 40px */
+  --spacing-12: 3rem;    /* 48px */
+
+  /* ===== 5. Borders & Radius ===== */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ===== 6. Shadows ===== */
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.12), 0 2px 4px -2px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.15), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  /* ===== 7. Transitions & Animations ===== */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ===== 8. Z-Index Scale ===== */
+  --z-index-base: 0;
+  --z-index-dropdown: 1000;
+  --z-index-sticky: 1020;
+  --z-index-fixed: 1030;
+  --z-index-modal-backdrop: 1040;
+  --z-index-modal: 1050;
+  --z-index-popover: 1060;
+  --z-index-tooltip: 1070;
+
+  /* ===== 9. Layout Constants ===== */
+  --sidebar-width: 260px;
+  --header-height: 64px;
+}
+
+/* ==========================================================================
+   Dark Mode Overrides
+   ========================================================================== */
+
+html.dark {
+  /* Backgrounds: Higher contrast between layers */
+  --color-bg-primary: #171614;       /* App Base / Main Background */
+  --color-bg-secondary: #21201d;     /* Sidebar / Header / Sections */
+  --color-bg-tertiary: #2a2926;      /* Cards / Inputs / Hover states */
+  --color-bg-elevated: #33312e;      /* Modals / Tooltips */
+
+  /* Text */
+  --text-primary: #f5f4f1;
+  --text-secondary: #b0aca5;
+  --text-muted: #8a867e;
+  --text-accent: var(--accent-mid);
+
+  /* Borders: Slightly more visible to define boundaries */
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-accent: rgba(181, 172, 159, 0.3);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(23, 22, 20, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+
+  /* Shadows (darker for dark mode) */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+  
+  /* Accent Glow */
+  --accent-glow: 0 0 24px rgba(181, 172, 159, 0.25);
+}
+
+/* ==========================================================================
+   Global Reset & Base HTML Elements
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family-base);
+  background-color: var(--color-bg-primary);
+  color: var(--text-primary);
+  line-height: var(--line-height-normal);
+  overflow: hidden;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* ===== Typography Global Styles ===== */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+  color: var(--text-primary);
+}
+
+a {
+  color: var(--text-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--color-indigo-500);
+}
+
+code, pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+}
+
+/* ===== Scrollbar Customization ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-transparent);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* ===== Selection ===== */
+::selection {
+  background: var(--border-accent);
+  color: var(--text-primary);
+}
+
+/* ===== Element Plus Overrides ===== */
+.el-menu {
+  border-right: none !important;
+  background-color: transparent !important;
+}
+
+.el-aside {
+  overflow: visible !important;
+}
+
+.el-main {
+  --el-main-padding: 0 !important;
+}
+
+/* Base utility classes for gradients */
+.text-gradient {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

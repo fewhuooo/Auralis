@@ -1,0 +1,195 @@
+/* ===== Fonts: loaded via system fallback for cross-platform compatibility ===== */
+
+/* ==========================================================================
+   CSS Variables Dictionary - StudyCore Design System (Mobile)
+   ========================================================================== */
+
+:root {
+  /* ===== 1. Base Palette (Light Mode Default) ===== */
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-transparent: transparent;
+  
+  /* Warm Aesthetic Grays */
+  --color-gray-50: #faf9f8;
+  --color-gray-100: #f5f4f1;
+  --color-gray-200: #e8e6e1;
+  --color-gray-300: #d6d3ce;
+  --color-gray-400: #b0aca5;
+  --color-gray-500: #8a867e;
+  --color-gray-600: #66635d;
+  --color-gray-700: #4a4843;
+  --color-gray-800: #33312e;
+  --color-gray-900: #1f1e1c;
+
+  /* Aesthetic Warm Taupe (Replacing Indigo) */
+  --color-indigo-50: #fcfbf9;
+  --color-indigo-100: #f4f1eb;
+  --color-indigo-500: #b5ac9f;
+  --color-indigo-600: #999185;
+  --color-indigo-900: #544f47;
+
+  /* Aesthetic Sage Green (Replacing Purple) */
+  --color-purple-500: #a3ab9d;
+  --color-purple-400: #b6bfb0;
+
+  /* ===== 2. Semantic Colors (Light Mode) ===== */
+  /* Backgrounds */
+  --color-bg-primary: var(--color-white);
+  --color-bg-secondary: var(--color-gray-50);
+  --color-bg-tertiary: var(--color-gray-100);
+  --color-bg-elevated: var(--color-white);
+  
+  /* Text */
+  --text-primary: var(--color-gray-900);
+  --text-secondary: var(--color-gray-600);
+  --text-muted: var(--color-gray-400);
+  --text-accent: var(--color-indigo-600);
+  --text-inverse: var(--color-white);
+
+  /* Borders */
+  --border-subtle: var(--color-gray-100);
+  --border-default: var(--color-gray-200);
+  --border-strong: var(--color-gray-300);
+  --border-accent: rgba(99, 102, 241, 0.4);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.05);
+  --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+  --glass-blur: blur(20px);
+
+  /* Status / Feedback */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+
+  /* Accent Gradients - Softened */
+  --accent-start: var(--color-indigo-500);
+  --accent-mid: var(--color-purple-500);
+  --accent-end: var(--color-purple-400);
+  --accent-gradient: linear-gradient(135deg, var(--accent-start), var(--accent-mid), var(--accent-end));
+  --accent-glow: 0 0 20px rgba(181, 172, 159, 0.2);
+
+  /* ===== 3. Typography ===== */
+  --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  
+  --font-size-xs: 24rpx;    /* ~12px */
+  --font-size-sm: 28rpx;    /* ~14px */
+  --font-size-base: 32rpx;  /* ~16px */
+  --font-size-lg: 36rpx;    /* ~18px */
+  --font-size-xl: 40rpx;    /* ~20px */
+  --font-size-2xl: 48rpx;   /* ~24px */
+  --font-size-3xl: 60rpx;   /* ~30px */
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* ===== 4. Borders & Radius ===== */
+  --radius-sm: 8rpx;
+  --radius-md: 16rpx;
+  --radius-lg: 24rpx;
+  --radius-xl: 32rpx;
+  --radius-full: 9999rpx;
+
+  /* ===== 5. Shadows ===== */
+  --shadow-sm: 0 2rpx 6rpx 0 rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.15);
+}
+
+/* ==========================================================================
+   Dark Mode Overrides (Media Query for Uni-app)
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-primary: #171614;
+    --color-bg-secondary: #21201d;
+    --color-bg-tertiary: #2a2926;
+    --color-bg-elevated: #33312e;
+
+    --text-primary: #f5f4f1;
+    --text-secondary: #b0aca5;
+    --text-muted: #8a867e;
+    --text-accent: var(--accent-mid);
+
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.15);
+    --border-accent: rgba(181, 172, 159, 0.3);
+
+    --glass-bg: rgba(23, 22, 20, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.4);
+
+    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.6);
+    
+    --accent-glow: 0 0 48rpx rgba(181, 172, 159, 0.25);
+  }
+}
+
+html.dark, page.dark {
+    --color-bg-primary: #171614;
+    --color-bg-secondary: #21201d;
+    --color-bg-tertiary: #2a2926;
+    --color-bg-elevated: #33312e;
+
+    --text-primary: #f5f4f1;
+    --text-secondary: #b0aca5;
+    --text-muted: #8a867e;
+    --text-accent: var(--accent-mid);
+
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-default: rgba(255, 255, 255, 0.1);
+    --border-strong: rgba(255, 255, 255, 0.15);
+    --border-accent: rgba(181, 172, 159, 0.3);
+
+    --glass-bg: rgba(23, 22, 20, 0.7);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.4);
+
+    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.6);
+    
+    --accent-glow: 0 0 48rpx rgba(181, 172, 159, 0.25);
+}
+
+/* Base utility classes for gradients */
+.text-gradient {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+body, page {
+  background-color: var(--color-bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* ==========================================================================
+   Global Overrides for H5 (Uni-app Native Components)
+   ========================================================================== */
+
+/* 加粗四大模块的 TabBar 字体 */
+.uni-tabbar__label {
+  font-weight: 700 !important;
+  font-size: 24rpx !important;
+}
+
+/* 加粗顶部导航栏标题字体 */
+.uni-page-head__title {
+  font-weight: 800 !important;
+  font-size: 34rpx !important;
+  letter-spacing: 1rpx;
+}
