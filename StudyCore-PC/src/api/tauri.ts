@@ -38,12 +38,52 @@ export const invokeRustCmd = async <T>(command: string, args?: Record<string, un
  * @param callback 接收到更新推送时的回调函数
  * @returns 取消监听的函数
  */
-export const subscribeToCloudSync = async (callback: (payload: unknown) => void): Promise<UnlistenFn> => {
-  // 监听 Rust 通过 window.emit("app-sync-event", payload) 广播的事件
-  const unlisten = await listen('app-sync-event', (event: Event<unknown>) => {
-    console.log('[Tauri Event] Received cloud sync push:', event.payload);
-    callback(event.payload);
-  });
-  
-  return unlisten;
+export const subscribeToCloudSync = (callback: (payload: unknown) => void): () => void => {
+  let ws: WebSocket | null = null;
+  let reconnectTimeout: number | null = null;
+  let retryCount = 0;
+  const maxRetryCount = 5;
+  let isClosed = false;
+
+  const connect = () => {
+    if (isClosed) return;
+    
+    ws = new WebSocket('ws://127.0.0.1:8080/ws/sync');
+    
+    ws.onopen = () => {
+      console.log('[WebSocket] Connected to cloud sync');
+      retryCount = 0;
+    };
+    
+    ws.onmessage = (event) => {
+      console.log('[WebSocket] Received cloud sync push:', event.data);
+      try {
+        callback(JSON.parse(event.data));
+      } catch (e) {
+        callback(event.data);
+      }
+    };
+    
+    ws.onclose = () => {
+      console.log('[WebSocket] Connection closed');
+      if (!isClosed && retryCount < maxRetryCount) {
+        const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+        console.log(`[WebSocket] Reconnecting in ${delay}ms...`);
+        reconnectTimeout = window.setTimeout(connect, delay);
+        retryCount++;
+      }
+    };
+    
+    ws.onerror = (err) => {
+      console.error('[WebSocket] Error:', err);
+    };
+  };
+
+  connect();
+
+  return () => {
+    isClosed = true;
+    if (reconnectTimeout) clearTimeout(reconnectTimeout);
+    if (ws) ws.close();
+  };
 };

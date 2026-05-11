@@ -9,8 +9,8 @@
           <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
           <defs>
             <linearGradient id="brand-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#6366f1" />
-              <stop offset="1" stop-color="#a78bfa" />
+              <stop stop-color="var(--color-oatmeal-dark)" />
+              <stop offset="1" stop-color="var(--color-gray-soft)" />
             </linearGradient>
           </defs>
         </svg>
@@ -178,7 +178,7 @@ const route = useRoute()
 }
 
 .nav-item.is-active {
-  background: rgba(99, 102, 241, 0.12);
+  background: var(--border-subtle);
   color: var(--text-primary);
 }
 
@@ -280,7 +280,7 @@ const route = useRoute()
   margin-bottom: 10px;
 }
 .profile-entry:hover { background: rgba(255,255,255,0.04); }
-.profile-entry.is-active { background: rgba(99,102,241,0.1); }
+.profile-entry.is-active { background: var(--border-subtle); }
 .footer-avatar {
   width: 30px; height: 30px; border-radius: var(--radius-md);
   background: var(--accent-gradient);

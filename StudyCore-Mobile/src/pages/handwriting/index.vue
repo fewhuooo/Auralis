@@ -66,7 +66,7 @@
           <view class="orb-ring r1"></view>
           <view class="orb-ring r2"></view>
         </view>
-        <text class="converting-title">OpenClaw Vision</text>
+        <text class="converting-title">AI Vision</text>
         <text class="converting-text">正在解析笔迹与拓扑结构...</text>
       </view>
     </view>

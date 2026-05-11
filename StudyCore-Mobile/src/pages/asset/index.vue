@@ -77,7 +77,7 @@ const processHandwriting = async () => {
   const rawOcrText = "分布式系统... 不可能同时满足三个... 一致性、可用性、容错... 这是CAP定理... 记得本周复习Raft算法流程图...";
   
   uploadProgress.value = 50;
-  uploadStatus.value = 'AI 结构化排版中 (OpenClaw)...';
+  uploadStatus.value = 'AI 结构化排版中...';
 
   try {
     const mdResult = await convertHandwritingToMarkdown(rawOcrText);

@@ -74,7 +74,7 @@ const menuItems = [
 ]
 const settingsItems = [
   { icon: '☾', label: '深色模式', action: 'dark' },
-  { icon: '✦', label: 'AI 引擎设置 (OpenClaw)', action: 'ai_settings' },
+  { icon: '✦', label: 'AI 引擎设置', action: 'ai_settings' },
   { icon: '⚲', label: '通知设置', action: 'notify' },
   { icon: '⛁', label: '数据备份', action: 'backup' },
   { icon: '⍰', label: '帮助与反馈', action: 'help' },

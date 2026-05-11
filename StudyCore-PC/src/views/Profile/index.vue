@@ -157,8 +157,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { getAiConfig, setAiConfig } from '@/api/aiClient'
+import { ref, reactive, onMounted, watch } from 'vue'
 
 // === Stats ===
 const coreStats = ref([
@@ -227,12 +226,9 @@ const settingGroups = reactive([
     ] as SettingItem[]
   },
   {
-    title: 'AI 引擎 (OpenClaw / OpenAI 兼容)',
+    title: 'AI 引擎（后端管理）',
     icon: '✦',
     items: [
-      { id: 'ai_base_url', label: 'API Base URL', desc: '已由系统托管连入本地 OpenClaw 守护进程', type: 'select', value: '127.0.0.1:3000 (系统托管)', options: ['127.0.0.1:3000 (系统托管)'] },
-      { id: 'ai_api_key', label: 'API Key', desc: '输入您的鉴权密钥', type: 'input', value: '', placeholder: 'sk-...' },
-      { id: 'model', label: '推理模型', desc: '选择用于 AI 问答的底层模型', type: 'select', value: 'gpt-4o-mini', options: ['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku'] },
       { id: 'rag', label: 'RAG 语义搜索', desc: '开启后搜索将使用向量匹配，更精准但更耗时', type: 'toggle', value: true },
       { id: 'auto_tag', label: 'AI 自动打标签', desc: '新知识块入库时自动推断学科标签', type: 'toggle', value: true },
     ] as SettingItem[]
@@ -266,18 +262,11 @@ const handleAction = (item: SettingItem) => {
 }
 
 const handleInputBlur = (item: SettingItem) => {
-  if (item.id === 'ai_api_key') setAiConfig({ apiKey: item.value });
+  // handled in backend
 }
 
 onMounted(async () => {
-  const aiCfg = await getAiConfig();
-  const group = settingGroups.find(g => g.title.includes('AI 引擎'));
-  if (group) {
-    const keyItem = group.items.find(i => i.id === 'ai_api_key');
-    if (keyItem) keyItem.value = aiCfg.apiKey;
-    const modelItem = group.items.find(i => i.id === 'model');
-    if (modelItem) modelItem.value = aiCfg.model;
-  }
+  // Removed old AI config load
 })
 
 const handleClearCache = () => {

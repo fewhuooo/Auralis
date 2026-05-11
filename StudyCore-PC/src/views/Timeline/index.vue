@@ -27,6 +27,22 @@
       </div>
     </div>
 
+    <!-- AI Suggestion Bubble -->
+    <div v-if="aiSuggestions && aiSuggestions.length > 0" class="ai-suggestion-bubble">
+      <div class="ai-bubble-header">
+        <div class="ai-title">
+          <span class="ai-icon">✨</span>
+          <span>AI 智能排期建议</span>
+        </div>
+        <button v-if="hasOverload" class="btn-auto-delay" @click="taskStore.applyAutoDelay()">
+          自动延后减负
+        </button>
+      </div>
+      <ul class="suggestion-list">
+        <li v-for="(sug, index) in aiSuggestions" :key="index">{{ sug }}</li>
+      </ul>
+    </div>
+
     <!-- Timeline -->
     <div class="timeline-body">
       <div class="timeline-column">
@@ -103,9 +119,14 @@
 import { computed, ref } from 'vue'
 import { useTaskStore } from '@/store/useTaskStore'
 import { storeToRefs } from 'pinia'
+import { onMounted } from 'vue'
 
 const taskStore = useTaskStore()
-const { pendingTasks, timeSlots, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
+const { pendingTasks, timeSlots, completedCount, pendingCount, totalFocusHours, aiSuggestions, hasOverload } = storeToRefs(taskStore)
+
+onMounted(() => {
+  taskStore.fetchTasks()
+})
 
 const stats = computed(() => [
   { icon: '📋', value: pendingCount.value.toString(), label: '待完成任务' },
@@ -273,6 +294,71 @@ const handleDropOnPending = () => {
   font-weight: 500;
 }
 
+/* AI Suggestion Bubble */
+.ai-suggestion-bubble {
+  background: var(--border-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-bubble-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ai-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--accent-mid);
+}
+
+.ai-icon {
+  font-size: 16px;
+}
+
+.suggestion-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.suggestion-list li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+}
+
+.btn-auto-delay {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-accent);
+  color: var(--text-accent);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-auto-delay:hover {
+  background: var(--accent-mid);
+  color: white;
+}
+
 /* Timeline body */
 .timeline-body {
   display: grid;
@@ -346,7 +432,7 @@ const handleDropOnPending = () => {
 .task-tag {
   font-size: 10px;
   color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-bg-tertiary);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
 }
@@ -369,7 +455,7 @@ const handleDropOnPending = () => {
 }
 
 .time-slot.drag-over .slot-empty {
-  background: rgba(99, 102, 241, 0.1);
+  background: var(--border-subtle);
   border-color: var(--border-accent);
   color: var(--text-accent);
 }
@@ -401,7 +487,7 @@ const handleDropOnPending = () => {
   border-radius: 50%;
   background: var(--accent-mid);
   flex-shrink: 0;
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 8px var(--accent-glow);
   z-index: 1;
 }
 
@@ -424,7 +510,7 @@ const handleDropOnPending = () => {
 }
 
 .pending-tasks.drag-over {
-  background: rgba(239, 68, 68, 0.05);
+  background: var(--color-bg-tertiary);
   box-shadow: inset 0 0 0 1px var(--border-accent);
 }
 

@@ -25,9 +25,10 @@
           <div class="inquiry-actions">
             <span class="inquiry-hint">Ctrl + Enter 发送</span>
             <button class="inquiry-submit" :disabled="!query.trim()" @click="handleSubmit">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <svg v-if="!isLoading" width="18" height="18" viewBox="0 0 18 18" fill="none">
                 <path d="M3 9H15M15 9L10 4M15 9L10 14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
+              <span v-else class="loading-spinner"></span>
             </button>
           </div>
         </div>
@@ -76,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useBlockStore } from '@/store/useBlockStore'
 import { storeToRefs } from 'pinia'
 
@@ -84,10 +85,63 @@ const query = ref('')
 const blockStore = useBlockStore()
 const { recentBlocks } = storeToRefs(blockStore)
 
-const handleSubmit = () => {
-  if (!query.value.trim()) return
-  // TODO: integrate RAG pipeline
-  console.log('Submitting query:', query.value)
+onMounted(() => {
+  blockStore.fetchBlocks()
+})
+
+import { fragmentPDFToAtomBlocks } from '@/api/aiClient'
+
+const isLoading = ref(false)
+
+const handleSubmit = async () => {
+  if (!query.value.trim() || isLoading.value) return
+  const text = query.value
+  query.value = ''
+  isLoading.value = true
+
+  // Create a placeholder block for the stream
+  const tempBlockId = 'b_' + Date.now()
+  const tempBlock = {
+    id: tempBlockId,
+    subject: 'AI 回答',
+    title: text,
+    preview: '',
+    time: '正在生成...',
+    source: 'RAG 推理引擎',
+    color: 'rgba(16, 185, 129, 0.2)'
+  }
+  blockStore.addBlock(tempBlock)
+
+  try {
+    const eventSource = new EventSource(`http://localhost:8080/api/ai/chat?message=${encodeURIComponent(text)}`)
+    
+    eventSource.onmessage = (event) => {
+      const chunk = event.data
+      tempBlock.preview += chunk
+      
+      // Force reactivity
+      const blockIndex = blockStore.blocks.findIndex(b => b.id === tempBlockId)
+      if (blockIndex !== -1) {
+        blockStore.blocks[blockIndex].preview = tempBlock.preview
+      }
+    }
+    
+    eventSource.onerror = (error) => {
+      console.log('SSE closed or errored')
+      eventSource.close()
+      isLoading.value = false
+      tempBlock.time = '刚刚'
+    }
+
+    eventSource.addEventListener('complete', () => {
+      eventSource.close()
+      isLoading.value = false
+      tempBlock.time = '刚刚'
+    })
+  } catch (error) {
+    console.error('AI Request failed:', error)
+    isLoading.value = false
+  }
 }
 
 const quickActions = [
@@ -358,5 +412,19 @@ const quickActions = [
   justify-content: space-between;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

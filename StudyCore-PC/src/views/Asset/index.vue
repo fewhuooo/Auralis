@@ -141,7 +141,14 @@
               <div class="pdf-mock-img"></div>
               <div class="pdf-mock-line" v-for="n in 5" :key="'b' + n" :style="{ width: (40 + n * 7) % 100 + '%' }"></div>
             </div>
-            <p class="pdf-hint">PDF 预览区域 · 深色模式已动态调优对比度</p>
+            <p class="pdf-hint">文件原文预览区域 · 深色模式已动态调优对比度</p>
+          </div>
+        </div>
+
+        <!-- TAB: Markdown 结构化 -->
+        <div v-else-if="activeTab === 'markdown'" class="tab-content">
+          <div class="markdown-preview">
+            <pre class="markdown-content">{{ selected.markdown }}</pre>
           </div>
         </div>
       </template>
@@ -151,7 +158,12 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { fragmentPDFToAtomBlocks } from '@/api/aiClient'
+import { fragmentPDFToAtomBlocks, convertHandwritingToMarkdown } from '@/api/aiClient'
+import { useBlockStore } from '@/store/useBlockStore'
+import { useTaskStore } from '@/store/useTaskStore'
+
+const blockStore = useBlockStore()
+const taskStore = useTaskStore()
 
 const isDark = computed(() => document.documentElement.classList.contains('dark'))
 
@@ -162,16 +174,23 @@ const uploadProgress = ref(0)
 const uploadStatusText = ref('')
 const searchQ = ref('')
 const activeTab = ref('blocks')
-const tabs = [
+const baseTabs = [
   { id: 'blocks', label: '知识块' },
   { id: 'tasks', label: '生成任务' },
   { id: 'preview', label: '原文预览' },
 ]
 
+const tabs = computed(() => {
+  if (selected.value?.markdown) {
+    return [{ id: 'markdown', label: '结构化 Markdown' }, ...baseTabs]
+  }
+  return baseTabs
+})
+
 interface AssetItem {
   id: number; name: string; icon: string; status: string; statusText: string
   time: string; blocks: number; tasks: number; pages: number; size: string
-  blockList: any[]; taskList: any[]
+  blockList: any[]; taskList: any[]; markdown?: string
 }
 
 const groups = ref([
@@ -231,7 +250,7 @@ const selectItem = (item: AssetItem) => {
 
 const triggerUpload = () => {
   const input = document.createElement('input')
-  input.type = 'file'; input.accept = '.pdf,.ppt,.pptx,.doc,.docx'
+  input.type = 'file'; input.accept = '.pdf,.ppt,.pptx,.doc,.docx,.jpg,.png,.jpeg'
   input.onchange = (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0]
     if (f) simulateUpload(f.name)
@@ -249,57 +268,88 @@ const simulateUpload = async (filename: string) => {
   isUploading.value = true; uploadProgress.value = 10;
   uploadStatusText.value = '上传中...';
   
-  // 模拟前置提取的文本（因为真实的前端提取PDF需要较大的库，这里采用根据文件名生成摘要的方式传给AI）
-  const mockExtractedText = `这是一份名为《${filename}》的资料。内容涉及计算机科学或相关学科。重点在于系统的核心原理、基础概念，以及需要完成的实践作业。其中包含了一些核心的定理和模型。`;
+  const isImage = /\.(jpg|jpeg|png)$/i.test(filename)
+  const mockExtractedText = isImage ? `这是一张杂乱的手写笔记扫描件，标题：${filename}，包含一些凌乱的知识点。` : `这是一份名为《${filename}》的资料。内容涉及计算机科学或相关学科。重点在于系统的核心原理、基础概念，以及需要完成的实践作业。其中包含了一些核心的定理和模型。`;
   
   uploadProgress.value = 40;
-  uploadStatusText.value = 'AI 语义切片中 (OpenClaw)...';
+  uploadStatusText.value = isImage ? 'AI 笔记结构化中...' : 'AI 语义切片中...';
 
   try {
-    const aiResult = await fragmentPDFToAtomBlocks(mockExtractedText);
+    let aiResult: any = {}
+    let markdownRes = ''
+    if (isImage) {
+      markdownRes = await convertHandwritingToMarkdown(mockExtractedText)
+    } else {
+      aiResult = await fragmentPDFToAtomBlocks(mockExtractedText)
+    }
     
     uploadProgress.value = 90;
-    uploadStatusText.value = '生成知识块...';
+    uploadStatusText.value = '生成资产视图...';
 
     setTimeout(() => {
       isUploading.value = false;
       const newItem: AssetItem = {
-        id: Date.now(), name: filename, icon: '📄',
-        status: 'success', statusText: '编排完成', time: '刚刚',
+        id: Date.now(), name: filename, icon: isImage ? '🖼️' : '📄',
+        status: 'success', statusText: '处理完成', time: '刚刚',
         blocks: aiResult.blocks?.length || 0,
         tasks: aiResult.tasks?.length || 0,
-        pages: Math.floor(Math.random() * 80) + 10, size: '—',
-        blockList: (aiResult.blocks || []).map((b: any, i: number) => ({
-          id: i + 1, heading: b.heading, preview: b.preview, tags: b.tags || []
-        })),
-        taskList: (aiResult.tasks || []).map((t: any, i: number) => ({
-          id: i + 1, title: t.title, due: t.due, load: t.load, done: false
-        }))
+        pages: isImage ? 1 : Math.floor(Math.random() * 80) + 10, size: '—',
+        blockList: (aiResult.blocks || []).map((b: any, i: number) => {
+          const block = {
+             id: 'block_' + Date.now() + '_' + i,
+             subject: b.tags?.[0] || '资产解析',
+             title: b.heading,
+             preview: b.preview,
+             time: '刚刚',
+             source: filename,
+             color: 'var(--text-accent)'
+          }
+          blockStore.addBlock(block) // Add to global Pinia store
+          return { id: i + 1, heading: b.heading, preview: b.preview, tags: b.tags || [] }
+        }),
+        taskList: (aiResult.tasks || []).map((t: any, i: number) => {
+          const task = {
+             id: 'task_' + Date.now() + '_' + i,
+             name: t.title,
+             subject: '自动生成',
+             duration: 30,
+             color: 'var(--color-danger)',
+             load: t.load || 'medium',
+             loadText: t.load === 'high' ? '高' : (t.load === 'low' ? '低' : '中'),
+             status: 'pending' as const
+          }
+          taskStore.pendingTasks.push(task) // Add to global task store
+          return { id: i + 1, title: t.title, due: t.due, load: t.load, done: false }
+        }),
+        markdown: isImage ? markdownRes : undefined
       };
       groups.value[0].items.unshift(newItem);
       selected.value = newItem;
+      if (isImage) activeTab.value = 'markdown';
       uploadProgress.value = 100;
     }, 500);
 
   } catch (err: any) {
-    console.error("AI 处理失败，退回 Mock", err);
+    console.error("AI 处理失败", err);
     uploadStatusText.value = 'AI 请求失败，采用备用 Mock...';
-    // Fallback to original mock if AI fails or no key
+    // Fallback
     setTimeout(() => {
       isUploading.value = false;
       const newItem: AssetItem = {
-        id: Date.now(), name: filename, icon: '📄',
-        status: 'success', statusText: '编排完成 (Mock)', time: '刚刚',
-        blocks: 5, tasks: 2, pages: 15, size: '—',
+        id: Date.now(), name: filename, icon: isImage ? '🖼️' : '📄',
+        status: 'success', statusText: '处理完成 (Mock)', time: '刚刚',
+        blocks: 1, tasks: 1, pages: 1, size: '—',
         blockList: [
-          { id: 1, heading: '本地 Mock 块', preview: '因为未配置 API Key 或网络请求失败，这是本地回退生成的模拟知识块。', tags: ['Mock'] }
+          { id: 1, heading: '本地 Mock', preview: '由于未配置 API 密钥或网络失败，这是本地生成的假数据。', tags: ['Mock'] }
         ],
         taskList: [
-          { id: 1, title: '请在设置中配置正确的 OpenClaw API Key', due: '今天', load: 'high', done: false }
-        ]
+          { id: 1, title: '配置正确的 AI API Key', due: '今天', load: 'high', done: false }
+        ],
+        markdown: isImage ? '# Mock Markdown\n未能调用 AI 引擎。' : undefined
       };
       groups.value[0].items.unshift(newItem);
       selected.value = newItem;
+      if (isImage) activeTab.value = 'markdown';
       uploadProgress.value = 100;
     }, 1000);
   }
@@ -366,8 +416,8 @@ const simulateUpload = async (filename: string) => {
 /* Upload Banner */
 .upload-banner {
   padding: 8px 12px;
-  background: rgba(99,102,241,0.06);
-  border-bottom: 1px solid rgba(99,102,241,0.15);
+  background: var(--border-subtle);
+  border-bottom: 1px solid var(--border-default);
 }
 .upload-status-txt { font-size: 11px; color: var(--text-accent); font-weight: 600; display: block; margin-bottom: 4px; }
 .mini-bar-bg { height: 3px; background: var(--border-default); border-radius: var(--radius-full); overflow: hidden; }
@@ -394,14 +444,14 @@ const simulateUpload = async (filename: string) => {
   transition: all var(--transition-fast); border-radius: 0;
 }
 .tree-item:hover { background: rgba(255,255,255,0.03); }
-.tree-item.is-active { background: rgba(99,102,241,0.1); border-right: 2px solid #6366f1; }
+.tree-item.is-active { background: var(--border-subtle); border-right: 2px solid var(--text-accent); }
 .item-icon { font-size: 14px; flex-shrink: 0; }
 .item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .item-name { font-size: 12px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-meta { font-size: 10px; color: var(--text-muted); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .status-dot.success { background: #22c55e; }
-.status-dot.processing { background: #6366f1; animation: blink 1.5s infinite; }
+.status-dot.processing { background: var(--text-accent); animation: blink 1.5s infinite; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* Drop Zone */
@@ -413,7 +463,7 @@ const simulateUpload = async (filename: string) => {
   display: flex; align-items: center; justify-content: center; gap: 8px;
   cursor: pointer; transition: all var(--transition-normal);
 }
-.drop-zone:hover, .drop-zone.is-over { border-color: var(--border-accent); background: rgba(99,102,241,0.04); }
+.drop-zone:hover, .drop-zone.is-over { border-color: var(--border-accent); background: var(--border-subtle); }
 .drop-icon { font-size: 16px; color: var(--text-accent); }
 .drop-text { font-size: 12px; color: var(--text-muted); }
 
@@ -446,7 +496,7 @@ const simulateUpload = async (filename: string) => {
   padding: 3px 10px; border-radius: var(--radius-full); flex-shrink: 0;
 }
 .status-badge.success { background: rgba(34,197,94,0.12); color: #22c55e; }
-.status-badge.processing { background: rgba(99,102,241,0.12); color: #6366f1; }
+.status-badge.processing { background: var(--border-subtle); color: var(--text-accent); }
 
 /* Tabs */
 .tab-bar { display: flex; gap: 4px; }
@@ -456,7 +506,7 @@ const simulateUpload = async (filename: string) => {
   transition: all var(--transition-fast); font-family: inherit;
 }
 .tab-btn:hover { color: var(--text-primary); }
-.tab-btn.is-active { color: var(--text-primary); border-bottom-color: #6366f1; }
+.tab-btn.is-active { color: var(--text-primary); border-bottom-color: var(--text-accent); }
 
 .tab-content { padding: 24px 28px; }
 
@@ -484,7 +534,7 @@ const simulateUpload = async (filename: string) => {
 .block-preview { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
 .block-tags { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
 .block-tag {
-  font-size: 10px; color: var(--text-accent); background: rgba(99,102,241,0.08);
+  font-size: 10px; color: var(--text-accent); background: var(--border-subtle);
   padding: 2px 7px; border-radius: var(--radius-sm); white-space: nowrap;
 }
 
@@ -513,12 +563,12 @@ const simulateUpload = async (filename: string) => {
 
 /* PDF Preview (12.5: dark-mode canvas wrapper) */
 .pdf-canvas-wrapper {
-  background: #f5f4f1; border-radius: var(--radius-xl); padding: 24px;
+  background: var(--color-oatmeal-light); border-radius: var(--radius-xl); padding: 24px;
   border: 1px solid var(--border-default); min-height: 400px;
   transition: filter var(--transition-normal), background var(--transition-normal);
 }
 html.dark .pdf-canvas-wrapper {
-  background: #2a2926;
+  background: var(--color-bg-primary);
   /* 12.5: invert + hue-rotate for dark-mode PDF contrast enhancement */
   filter: none;
 }
@@ -534,10 +584,27 @@ html.dark .pdf-page-mock {
   color: #e8e6e1;
   filter: contrast(0.95) brightness(1.05);
 }
-.pdf-mock-header { height: 20px; background: linear-gradient(90deg,#6366f1,#a78bfa); border-radius: 4px; margin-bottom: 20px; opacity: 0.7; }
+.pdf-mock-header { height: 20px; background: var(--accent-gradient); border-radius: 4px; margin-bottom: 20px; opacity: 0.7; }
 .pdf-mock-line { height: 10px; background: #e8e6e1; border-radius: 4px; margin-bottom: 10px; }
 html.dark .pdf-mock-line { background: #4a4843; }
 .pdf-mock-img { height: 100px; background: linear-gradient(135deg,#f0f0f0,#e0e0e0); border-radius: 6px; margin: 16px 0; }
 html.dark .pdf-mock-img { background: linear-gradient(135deg,#3a3835,#2a2926); }
 .pdf-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 14px; }
+.markdown-preview {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  overflow-y: auto;
+  max-height: 500px;
+}
+
+.markdown-content {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
 </style>

@@ -6,9 +6,12 @@
     "paths": {
       "@/*": ["./src/*"]
     },
+    "target": "esnext",
+    "module": "esnext",
+    "verbatimModuleSyntax": true,
+    "strict": true,
     "lib": ["esnext", "dom"],
-    "types": ["@dcloudio/types"],
-    "verbatimModuleSyntax": true
+    "types": ["@dcloudio/types"]
   },
   "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"]
 }

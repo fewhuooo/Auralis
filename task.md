@@ -1,120 +1,366 @@
-# StudyCore 全平台生产力系统 - 完整开发任务清单 (PC & Mobile & Tablet)
+# StudyCore (学核) 跨平台智能生产力中枢 - 完整开发任务清单
 
-## 阶段一：基础脚手架与桌面端赋能 (PC) - [已完成]
-- [x] 1.1 运行 Vite 初始化工程：`npx create-vite@latest StudyCore-PC --template vue-ts`
-- [x] 1.2 安装项目基础 npm 依赖：`npm install`
-- [x] 1.3 引入桌面端内核：安装 Tauri CLI 开发依赖 `npm install -D @tauri-apps/cli@latest`
-- [x] 1.4 初始化 Tauri 配置：执行 `npx tauri init` 并配置基本的 `tauri.conf.json` 参数
+> **最后更新**：2026-05-11（代码精审版）
+> **当前阶段**：阶段十四（Java 后端完善）—— Mock 数据替换、RAG 注入、Redis 同步待完成 🔄
+> **架构模式**：AI 能力全部收归 Spring Boot 后端（LangChain4j 直连云端 LLM）
 
-## 阶段二：工程化核心依赖安装与配置 (PC) - [已完成]
-- [x] 2.1 安装前端路由：`npm install vue-router@4`
-- [x] 2.2 安装状态管理库：`npm install pinia`
-- [x] 2.3 安装 UI 组件库：`npm install element-plus`
-- [x] 2.4 安装自动导入插件（提升开发效率）：`npm install -D unplugin-vue-components unplugin-auto-import`
-- [x] 2.5 编写 `vite.config.ts`：配置组件自动导入、路径别名 (`@/`) 以及 Tauri 的兼容性构建选项
+### 📊 整体进度概览
 
-## 阶段三：目录结构与全局设置 (PC) - [已完成]
-- [x] 3.1 梳理项目目录结构：在 `src` 下建立 `views`(页面)、`components`(组件)、`store`(状态)、`router`(路由)、`assets`(静态资源)、`styles`(样式)
-- [x] 3.2 实例化路由配置：创建 `src/router/index.ts`，定义基础路由结构（如 `/` 为主页，`/timeline` 为时间流排期页）
-- [x] 3.3 实例化状态管理：在 `src/main.ts` 中注册 Pinia 和 Router
-- [x] 3.4 设立全局样式字典：创建 `src/styles/index.css`，定义品牌色、字体规范、以及暗色模式 (Dark Mode) 基础 CSS 变量
+| 阶段 | 范围 | 状态 | 说明 |
+|------|------|------|------|
+| 1~8 | PC 端前端骨架 | ✅ 完成 | Tauri + Vue 3 全部页面与交互 |
+| 9~12 | 移动/平板端 | ✅ 完成 | Uni-app 三端 UI + 手写/PDF 页面 |
+| 13 | AI 架构迁移 | ✅ 完成 | 移除 Sidecar，前端对接后端 `/api/ai/*` |
+| 14 | Java 后端完善 | 🔶 部分完成 | CRUD/鉴权就绪，AI 管道与同步为骨架 |
+| 15 | 数据基座与同步 | 📋 未开始 | Milvus 部署、离线策略、E2EE |
+| 16 | AI 进阶与生态 | 📋 未开始 | Agent 工具、知识图谱、系统集成 |
+| 17 | 质量保障与发布 | 📋 未开始 | 测试、安全加固、安装包构建 |
 
-## 阶段四：核心骨架与导航开发 (PC) - [已完成]
-- [x] 4.1 开发侧边栏组件：`src/components/layout/AppSidebar.vue`，包含知识库、PDF阅读、任务排期等导航入口
-- [x] 4.2 开发顶部栏组件：`src/components/layout/AppHeader.vue`，包含全局搜素唤醒入口与用户状态
-- [x] 4.3 组装主应用程序：重构 `src/App.vue`，融合侧边栏、顶部栏与 Vue Router 的内容渲染出口 `<router-view>`
-
-## 阶段五：PC端核心业务页面搭建 (PC) - [已完成]
-- [x] 5.1 搭建【知识聚合与问答主页】：创建 `src/views/Home/index.vue`
-- [x] 5.2 细化主页 UI：开发类似主流 AI 产品的聊天式输入框与“知识块”的卡片展示列表
-- [x] 5.3 搭建【重型资产编排与排期页】：创建 `src/views/Timeline/index.vue`
-- [x] 5.4 细化排期页 UI：开发可视化时间轴，并预留拖拽“任务块”的交互区
-
-## 阶段六：全局数据流与状态管理 (PC) - [已完成]
-- [x] 6.1 定义“知识块 (Block)”模型与 Store：建立 `src/store/useBlockStore.ts`，管理知识库的检索结果与本地缓存
-- [x] 6.2 定义“任务块 (Task)”模型与 Store：建立 `src/store/useTaskStore.ts`，管理时间流中的任务排期数据
-- [x] 6.3 实现状态持久化配置：确保 PC 端刷新后，已编排的任务数据不丢失
-
-## 阶段七：交互深度优化 (PC) - [已完成]
-- [x] 7.1 实现“排期页”拖拽逻辑：使用 `vuedraggable` 或原生 API 实现任务块从待办区到时间轴的拖拽
-- [x] 7.2 开发“全局知识唤醒”弹窗 (Command Palette)：点击搜索框或按下 `Ctrl+K` 时弹出居中的 AI 搜索对话框
-- [x] 7.3 实现“资产编排”上传模拟逻辑：模拟文件粉碎过程中的进度条动画与结果反馈
-
-## 阶段八：Mock 数据与后端对接预研 (PC) - [已完成]
-- [x] 8.1 编写 Mock 数据脚本：为三个核心页面生成丰富的测试数据
-- [x] 8.2 预研 Tauri HTTP/Rust 接口调用：配置前端通过 Tauri Invoke 与后端逻辑通信的基础逻辑
-- [x] 8.3 建立 WebSocket/Event 事件管道：用于接收移动端或其他端的实时同步通知
+> **标记说明**：`[x]` = 功能完整可用　`[~]` = 骨架/接口已建，业务逻辑待填充　`[ ]` = 未开始
 
 ---
 
-## 阶段九：环境初始化与跨端适配 (Mobile) - [已完成]
-- [x] 9.1 创建 Uni-app 工程：使用 Vite + Vue3 + TS 模板初始化 `StudyCore-Mobile`
-- [x] 9.2 设计系统迁移：将 PC 端的 `index.css` 变量适配至移动端全局样式，支持跟随系统的 Dark Mode
-- [x] 9.3 配置基础路由与 TabBar：定义首页(知识)、排期、资产(文件上传)、我的四大页面
+## 一、项目总览
 
-## 阶段十：移动端核心视图开发 (Mobile) - [已完成]
-- [x] 10.1 搭建【知识 Hub 首页】：实现沉浸式搜索框、语音录入悬浮按钮与知识卡片流
-- [x] 10.2 搭建【移动端时间轴】：针对窄屏优化的竖向时间流，支持滑动手势完成任务
-- [x] 10.3 搭建【移动端资产页】：实现手机拍照扫描、系统文件选择与上传进度反馈
-- [x] 10.4 移动端布局调优：确保在不同尺寸手机（iOS/Android）及平板上的响应式表现
+**项目名称**：StudyCore (学核)
+**项目定位**：由云端大模型（Claude / GPT / DeepSeek / Ollama）驱动、以"知识块"和"任务块"为底层数据结构的校园生产力系统。
+**核心理念**：前端感知用户，Spring Boot 后端统一管理数据与 AI 编排（通过 LangChain4j 直连云端 LLM），三端通过实时总线 (WebSocket/Redis) 紧密协作。
 
-## 阶段十一：逻辑复用与状态同步 (Mobile) - [已完成]
-- [x] 11.1 跨端 Store 迁移：复用 `useBlockStore` 和 `useTaskStore` 逻辑，适配 `uni-storage` 持久化
-- [x] 11.2 集成移动端专属 API：如调用相机、震动反馈、通知提醒等
-- [x] 11.3 联调预研：测试移动端通过网络与 PC 端（Tauri 服务）进行数据握手与同步
+**工程目录**：
+```
+StudyCore/
+├── StudyCore-PC/        # Tauri 2 + Vue 3 桌面端（纯 Web 容器，不再管理 Sidecar）
+├── StudyCore-Mobile/    # Uni-app Vue 3 移动/平板端
+└── StudyCore-Server/    # Spring Boot 3 后端（AI 编排 + 数据管理）
+```
 
 ---
 
-## 阶段十二：平板端开发与多模态交互 (Tablet & Multimodal) - [已完成]
-- [x] 12.1 **响应式架构隔离**：利用 CSS Media Queries 实现手机（时间流优先）与平板（仪表盘优先）的完全解耦
-- [x] 12.2 **PDF 智能伴读 UI**：仿 NotebookLM 风格的沉浸式阅读器，支持侧边/悬浮 AI 伴读窗口
-- [x] 12.3 **手写笔迹 AI 增强**：集成 GoodNotes 风格工具栏，实现 AI 套索圈选提取核心知识点
-- [x] 12.4 **大屏 Studio 模式适配**：
-  - [x] `asset/index.vue`：左侧资产树 + 右侧 Studio 预览/编辑双栏布局
-  - [x] `profile/index.vue`：左侧个人数据透视 + 右侧分项设置面板
-  - [x] `timeline/index.vue`：时间轴超宽屏全尺寸适配调优
-- [x] 12.5 **深色模式全页面适配**：针对 Canvas 绘图、PDF 渲染层的暗色对比度动态调优，PC 端增加一键切换能力
+## 二、技术栈全图
+
+### 2.1 前端交互层 (Frontend)
+| 技术 | 版本 | 用途 |
+| :--- | :--- | :--- |
+| Vue 3 | 3.5+ / Composition API | 核心 UI 框架 |
+| TypeScript | ~5.x (当前稳定) | 全端强类型支持 |
+| Vite | ~6.x (当前稳定) | 构建工具与开发服务器 |
+| Pinia | ~2.x (当前稳定) | 状态管理 |
+| pinia-plugin-persistedstate | ~4.x | 状态本地持久化 |
+| Element Plus | 2.13+ | PC 端 UI 组件库 |
+| Vue Router | 4.x | 前端路由 |
+| Uni-app (Vue 3) | — | 移动/平板端跨端框架 |
+| Vant / uView | — | 移动端 UI 组件库 |
+
+### 2.2 客户端容器层 (App Shell / Bridge)
+| 技术 | 用途 |
+| :--- | :--- |
+| **Tauri 2.0 (Rust)** | PC 端桌面容器：窗口管理、原生系统 API 调用（纯 Web 容器模式） |
+| **tauri-plugin-log** | Rust 侧结构化日志 |
+| **Uni-app** | 移动/平板端容器：编译至 iOS/Android 原生应用 |
+
+### 2.3 Java 数据与业务后端 (Backend)
+| 技术 | 用途 |
+| :--- | :--- |
+| **Spring Boot 3.x** | 核心后端框架，处理业务逻辑与 API 路由 |
+| **Java 17 LTS** | 后端编程语言，支持虚拟线程 |
+| **MyBatis Plus** | ORM 持久化层，高效处理"块"数据 CRUD |
+| **LangChain4j 1.x** | Java 原生 LLM 编排框架：AiServices 声明式接口、RAG 流水线、Agent 工作流 |
+| **langchain4j-milvus** | LangChain4j 官方 Milvus 向量存储模块，开箱即用的 EmbeddingStore 实现 |
+| **Spring WebFlux / Netty** | 高性能 WebSocket 通信，处理多端实时同步 |
+| **JWT** | 统一认证鉴权体系 |
+
+### 2.4 AI 引擎层 (AI Engine — 后端 LangChain4j 实现)
+| 技术 | 用途 |
+| :--- | :--- |
+| **LangChain4j AiServices** | 声明式 AI 接口（问答、提取、排期），Spring Boot 自动装配 |
+| **OpenAI 兼容适配层** | 通过 `langchain4j-open-ai` 接入任意 OpenAI 格式 API（OpenAI / Claude / DeepSeek / Ollama） |
+| **RAG 流水线** | `EmbeddingStoreContentRetriever` + Milvus 向量检索 |
+| **Agent 工具调用** | `@Tool` 注解实现知识搜索、任务创建、负荷查询等自主推理 |
+| **多模态能力** | 通过支持 Vision 的云端模型实现 OCR / 图表解析 |
+
+### 2.5 存储与基础设施 (Infrastructure)
+| 技术 | 用途 |
+| :--- | :--- |
+| **PostgreSQL** | 关系型数据库：用户信息、任务/知识块元数据 |
+| **Milvus** (Java SDK) | 向量数据库：知识块 Embedding，支持语义检索 (RAG) |
+| **Redis** | 高速缓存与消息同步：番茄钟状态、多端 Pub/Sub |
+| **SQLite** | Tauri 本地轻量存储与离线缓存 |
 
 ---
 
-## 阶段十三：AI 逻辑层与生产力闭环 (AI Engine & Productivity) - [规划中]
-- [x] 13.1 **多模态入库引擎**：
-  - [x] 实现手写笔迹 -> 结构化 Markdown 转换逻辑
-  - [x] 实现 PDF 文档碎分化算法：根据语义自动切分为原子知识块 (Atom Blocks)
-  - [x] 语音备忘录实时转文字并自动提取待办任务 (Action Items)
-- [ ] 13.2 **智能调度算法 (Smart Scheduler)**：
-  - [ ] AI 根据历史专注时长自动预测新任务的 Load（负荷）
-  - [ ] 实现“任务自动延后”建议：当今日负荷过载时，AI 自动推荐最优延期方案
-- [ ] 13.3 **全局语义搜索 (RAG Support)**：
-  - [ ] 集成向量库（如 SQLite-VSS 或本地 Vector DB）
-  - [ ] 支持语义匹配：“搜索上个月我拍照上传的关于神经网络的笔记”
-- [ ] 13.4 **OpenClaw 本地智能体深度捆绑 (Tauri Sidecar)**：
-  - [ ] 配置 Tauri 的 `externalBin` 机制，将 OpenClaw 预编译二进制文件作为 Sidecar 捆绑
-  - [ ] 编写 Rust 进程守护代码，随 StudyCore-PC 启动/销毁自动管理 OpenClaw 进程
-  - [ ] 动态端口探测：Rust 侧捕获 OpenClaw 分配的可用端口，并传递给前端 Vue
-  - [ ] 将前端 `aiClient.ts` 重构为无需用户手动配置，自动连接内部的 OpenClaw 实例
+## 三、整体应用流程
 
-## 阶段十四：数据基座与同步可靠性 (Data & Sync Reliability) - [规划中]
-- [ ] 14.1 **跨端数据一致性 (CRDTs)**：
-  - [ ] 引入冲突解决算法，确保 PC、手机、平板同时修改同一任务时不会数据丢失
-  - [ ] 实现 WebSocket 断线重连与增量同步机制
-- [ ] 14.2 **本地持久化优化**：
-  - [ ] 使用 SQLite 或 IndexedDB 代替简单的 LocalStorage 以支持万级知识块检索
-  - [ ] 资产文件（PDF、图片）的离线缓存与预加载策略
-- [ ] 14.3 **端到端加密 (E2EE)**：实现全平台同步数据的本地密钥加密，保护用户隐私
+### 3.1 启动流程
+1. 启动 Spring Boot 后端（`:8080`）—— AI 编排 + 数据服务一体化
+2. 执行 `npm run tauri dev`
+3. Vite 启动前端开发服务器（`localhost:5173`）
+4. Cargo 编译 Rust 代码并打开 Tauri 窗口
+5. Vue 界面加载，前端通过 axios 与后端 `:8080` 建立通信（所有 AI 请求走 `/api/ai/*`）
 
-## 阶段十五：高级生态与用户体验 (Ecosystem & Advanced UX) - [规划中]
-- [ ] 15.1 **系统级交互增强**：
-  - [ ] iOS/Android 灵动岛 (Dynamic Island) 或小组件适配，实时显示专注进度
-  - [ ] 支持 Apple Watch / WearOS 任务快速勾选与语音录入同步
-- [ ] 15.2 **知识可视化 (Knowledge Graph)**：
-  - [ ] 在平板端实现交互式 3D 知识星图，可视化知识块之间的逻辑关联
-  - [ ] 自动生成“学习周报”信息图表，支持一键分享至社交媒体
-- [ ] 15.3 **生物识别加锁**：针对特定的隐私知识模块，启用 FaceID / 指纹识别访问控制
+### 3.2 典型业务流程：知识捕获闭环
+1. **触发**：用户在手机端输入问题 / 上传 PDF / 录音
+2. **前端请求**：前端调用后端 `/api/ai/chat` 或 `/api/ai/ingest` 接口
+3. **后端 AI 编排**：Spring Boot LangChain4j 调用云端大模型推理，格式化为"知识块"结构
+4. **入库**：后端写 PostgreSQL 元数据 + Milvus 写向量
+5. **同步**：Redis 触发信号，WebSocket 推送至 PC/平板端
+6. **转化**：用户可将知识块拖入 Timeline 生成"任务块"
 
-## 阶段十六：质量保障与发布准备 (QA & Launch) - [规划中]
-- [ ] 16.1 **三端压力测试**：模拟千级任务、万级知识块在大尺寸设备上的渲染性能
-- [ ] 16.2 **跨平台安装包构建**：
-  - [ ] StudyCore-Mobile (iOS IPA / Android APK)
-  - [ ] StudyCore-PC (Windows MSI / macOS DMG / Linux AppImage)
-- [ ] 16.3 **离线可用性验证**：确保在无网络环境下，核心笔记与调度功能完全不受影响
+### 3.3 多端协作分工
+| 终端 | 角色 | 核心场景 |
+| :--- | :--- | :--- |
+| **手机** | 智能哨兵 | 碎片化知识捕获、语音提问、状态监控 |
+| **平板** | 伴读教练 | PDF 深度阅读、手写公式转 LaTeX、多模态解析 |
+| **电脑** | 逻辑工厂 | 重型资产编排、任务拆解排期、脑力负荷预警 |
+
+---
+
+## 四、开发阶段任务清单
+
+### 阶段 1~8：PC 端前端开发 ✅（已完成，共 26 项）
+
+<details>
+<summary>点击展开详细任务列表</summary>
+
+- [x] 1.1~1.4 Vite + Tauri 工程初始化
+- [x] 2.1~2.5 前端核心依赖（Router / Pinia / Element Plus / 自动导入）
+- [x] 3.1~3.4 目录结构、路由、全局样式系统
+- [x] 4.1~4.3 AppSidebar + AppHeader + App.vue 主布局
+- [x] 5.1~5.6 Home / Timeline / Asset / Profile 四大业务页面
+- [x] 6.1~6.3 知识块 Store + 任务块 Store + 持久化
+- [x] 7.1~7.3 拖拽排期 + Command Palette + 资产上传 UI
+- [x] 8.1~8.3 Mock 数据 + Tauri Invoke 封装 + WebSocket 管道
+
+</details>
+
+### 阶段 9~12：移动端与平板端开发 ✅（已完成，共 16 项）
+
+<details>
+<summary>点击展开详细任务列表</summary>
+
+- [x] 9.1~9.3 Uni-app 工程初始化 + TabBar 配置
+- [x] 10.1~10.5 移动端四大页面 + 多尺寸响应式适配
+- [x] 11.1~11.3 跨端 Store 迁移 + 持久化层 + 远程同步预留
+- [x] 12.1~12.5 平板端 PDF 伴读 + 手写增强 + Studio 模式
+
+</details>
+
+---
+
+### 阶段十三：AI 架构迁移（收归后端） ✅
+
+> 原阶段十三为 Sidecar 集成，V2.0 已废弃并完成迁移。
+
+#### 13.1 Sidecar 相关代码清理 ✅
+- [x] 删除 `src-tauri/binaries/openclaw-x86_64-pc-windows-msvc.exe`（~132MB）
+- [x] 从 `tauri.conf.json` 移除 `externalBin: ["binaries/openclaw"]` 配置
+- [x] 从 `Cargo.toml` 移除 `tauri-plugin-shell` 依赖
+- [x] 重写 `src-tauri/src/lib.rs`：移除 Sidecar 启动逻辑和 `get_openclaw_endpoint` Command
+- [x] 删除 `capabilities/default.json` 中的 `shell:allow-sidecar` 权限
+- [x] 删除项目根目录的 `openclaw/` 文件夹
+
+#### 13.2 前端 AI 客户端迁移 ✅
+- [x] 重写 `api/aiClient.ts`：移除 `invoke('get_openclaw_endpoint')`，改为调用后端 `/api/ai/*` 接口
+- [x] `chatCompletion()` → 改为调用后端 `POST /api/ai/chat`
+- [x] `fragmentPDFToAtomBlocks()` → 改为调用后端 `POST /api/ai/ingest`
+- [x] `transcribeAndExtractTasks()` → 改为调用后端 `POST /api/ai/extract-tasks`
+- [x] `convertHandwritingToMarkdown()` → 改为调用后端 `POST /api/ai/convert-handwriting`
+- [x] 移除前端的 API Key / 模型选择配置（密钥统一由后端管理）
+- [x] 重写 `checkHealth()`：改为检查后端 `/actuator/health`
+- [x] 更新 `App.vue` 降级提示：“OpenClaw 断开”→“后端服务不可用”
+
+#### 13.3 前端 UI 文案清理 ✅
+- [x] Timeline 页：“OpenClaw 智能排期建议”→“AI 智能排期建议”
+- [x] Settings 页：移除 OpenClaw Sidecar 代理地址配置项
+- [x] Profile 页：“AI 引擎 (OpenClaw / OpenAI 兼容)”→“AI 引擎（后端管理）”
+- [x] Asset 页：移除 Mock 任务中“配置正确的 OpenClaw API Key”
+
+#### 13.4 后端 AI 接口增强 ✅
+- [x] 新增 `POST /api/ai/extract-tasks`：语音/文本 → 任务提取（对应原 `transcribeAndExtractTasks`）
+- [x] 新增 `POST /api/ai/convert-handwriting`：手写 OCR → Markdown（对应原 `convertHandwritingToMarkdown`）
+- [x] 新增 `POST /api/ai/schedule-suggest`：智能排期建议（对应原前端 Smart Scheduler）
+- [x] 完善 `POST /api/ai/chat` 流式 SSE 响应（当前为基础实现，需接入实际模型）
+- [x] 完善 `POST /api/ai/ingest` 文档摄入管道（当前为 Dummy 实现）
+
+#### 13.5 后端模型配置更新 ✅
+- [x] `application.yml` LangChain4j 端点从 `localhost:3000` 改为云端 API（如 `https://api.openai.com/v1`）
+- [x] `application-dev.yml` 同步更新，配置真实 API Key
+- [x] 支持通过环境变量注入 API Key（`${AI_API_KEY}`）
+
+#### 13.6 Tauri 客户端精简 ✅（已完成的配置保留）
+- [x] `tauri.conf.json`：`identifier` 已改为 `com.studycore.app`
+- [x] 窗口初始尺寸已调整为 1280×800
+
+---
+
+### 阶段十四：Java 后端完善 (Spring Boot) 🔶
+
+> **前置条件**：阶段十三已完成。当前状态：基础 CRUD 和鉴权就绪，AI 管道与同步总线为骨架实现。
+
+#### 14.1 Spring Boot 项目初始化
+- [x] 创建 `StudyCore-Server/` 工程（Spring Boot 3.x + Java 17）
+- [x] 配置 Maven 依赖：Web / MyBatis Plus / PostgreSQL Driver / Lombok / LangChain4j Spring Boot Starter
+- [x] 统一返回值封装 `Result<T>` + 全局异常处理器
+- [x] 配置 `application.yml`：dev / prod 多环境
+
+#### 14.2 "块"系统 CRUD 接口
+- [x] `KnowledgeBlock` 实体 + Mapper + Service + RESTful Controller
+  - `POST /api/blocks` 创建知识块
+  - `GET /api/blocks?subject=&page=&size=` 分页查询
+  - `PUT /api/blocks/{id}` 更新
+  - `DELETE /api/blocks/{id}` 删除
+- [x] `TaskBlock` 实体 + CRUD 接口（同上结构）
+- [x] 块关联关系表：`block_relations`（父子关系、标签归属、学科分类）
+- [x] 前端 `api/` 目录新增 HTTP 请求层（axios 封装 `useBlockApi.ts` / `useTaskApi.ts`）
+- [~] **替换 Mock 数据**：各页面从真实接口加载数据，移除 Store 中的硬编码假数据
+  - [x] **Home 页**（`views/Home/index.vue`）：`recentBlocks` 目前来自 `useBlockStore` Mock，改为 `onMounted` 调用 `useBlockApi.getBlocks()` 并写回 store
+  - [x] **Timeline 页**（`views/Timeline/index.vue`）：`pendingTasks` / `timeSlots` 来自 `useTaskStore` Mock，改为调用 `GET /api/tasks` 并合并本地排期状态
+  - [ ] **Asset 页**（`views/Asset/index.vue`）：移除硬编码 Mock 资产列表，接入真实上传/查询接口
+  - [ ] **Mobile 端同步**：`pages/index`、`pages/timeline`、`pages/asset` 同步替换为真实接口调用
+
+#### 14.3 用户与鉴权体系
+- [x] `User` 实体 + 注册 / 登录接口
+- [x] JWT 统一认证模块（`JwtUtil` + `AuthFilter`）
+- [~] 多端登录状态管理（Token 刷新策略）
+  - [ ] 后端实现 Refresh Token 端点 `POST /api/auth/refresh`（`AuthController` 中待新增）
+  - [ ] 前端拦截器自动刷新逾期 Token：在 `request.ts` 响应拦截器 401 分支中，先尝试 `/api/auth/refresh`，失败再执行 `logout()`
+  - [x] **移除 Mock Token**：`useAuthStore.ts` 第 6 行 `token.value` 初始值 `'mock-token-for-dev'` 改为 `null`，恢复正式登录校验
+- [x] 前端登录页：`views/Login/index.vue`（PC）+ `pages/login/index.vue`（Mobile）
+
+#### 14.4 LangChain4j AI 编排层集成
+- [x] 引入 Maven 依赖：`langchain4j-spring-boot-starter` + `langchain4j-open-ai` + `langchain4j-milvus` + `langchain4j-document-parser-apache-tika`
+- [x] `application.yml` 配置 LangChain4j OpenAI 兼容端点（指向云端大模型 API，如 `https://api.openai.com/v1`）
+- [x] **Chat Model 封装**：配置 `OpenAiChatModel` Bean，支持多模型切换（Claude / GPT / Ollama）
+- [x] **Embedding 服务**：配置 `OpenAiEmbeddingModel` → 调用云端 API 生成知识块向量
+- [~] **Milvus 向量存储**：当前 fallback 为 `InMemoryEmbeddingStore`，待接入真实 Milvus
+- [x] **AiService 声明式接口**：
+  - `StudyCoreAssistant`：带 `@SystemMessage` 的智能问答接口
+  - `KnowledgeExtractor`：文本 → 结构化 JSON + 任务提取 + 手写转换
+  - `TaskScheduler`：任务排期建议与过载检测
+- [~] **RAG 流水线**：`LangChain4jConfig` 中 `ContentRetriever` Bean 已建（`EmbeddingStoreContentRetriever`），但 **`StudyCoreAssistant` 接口未注入**，实为零-RAG 直接推理；待补充：
+  - [ ] 在 `@AiService` 注解或 `LangChain4jConfig` 中将 `contentRetriever` 注入 `StudyCoreAssistant`，启用真正 RAG 问答
+  - [ ] 添加 `QueryTransformer`（HyDE / Step-Back 查询扩展）
+  - [ ] 添加 `ContentAggregator`（多路结果融合与去重）
+- [~] **文档摄入管道**（`/api/ai/ingest`）：当前直接把原始文本传给 `knowledgeExtractor.extractKnowledgeBlocks()`，无分块/向量写入；待补充完整链路：
+  - [ ] 接入 `DocumentParser`（Apache Tika）：解析 PDF / DOCX / PPTX 等格式
+  - [ ] 接入 `DocumentSplitter`（递归按段落+句子切片，chunk ≤ 512 tokens）
+  - [ ] 批量调用 `EmbeddingModel.embedAll()` 并写入 `EmbeddingStore`
+  - [ ] 返回入库知识块 ID 列表供前端展示
+- [~] **InMemory 向量库**：`LangChain4jConfig.embeddingStore()` 目前返回 `InMemoryEmbeddingStore`，重启即清空；正式 Milvus 接入见阶段 15.1
+- [x] 统一 `/api/ai/chat`（阻塞 + SSE 流式双模式）+ `/api/ai/ingest` + `/api/ai/extract-tasks` + `/api/ai/convert-handwriting` + `/api/ai/schedule-suggest` RESTful 接口
+
+#### 14.5 实时同步总线
+- [x] Spring WebSocket 端点：`/ws/sync`（`SyncWebSocketHandler` 已实现会话管理 + `broadcast()` 方法）
+- [~] Redis Pub/Sub：`RedisConfig` 已配置 `RedisTemplate`，但事件发布与订阅链路尚未打通：
+  - [ ] 在 `KnowledgeBlockServiceImpl` / `TaskBlockServiceImpl` 的 create/update/delete 中，调用 `redisTemplate.convertAndSend("studycore:sync", event)` 发布变更事件
+  - [ ] 新建 `RedisSyncSubscriber` 实现 `MessageListener`，将消息反序列化后调用 `SyncWebSocketHandler.broadcast()` 推送至客户端
+  - [ ] 在 `RedisConfig` 中注册 `MessageListenerAdapter` + `RedisMessageListenerContainer`
+- [x] 前端 `subscribeToCloudSync()` 改造：从 Tauri Event 扩展支持 WebSocket 连接
+- [x] 断线重连策略（指数退避）
+
+---
+
+### 阶段十五：数据基座与同步可靠性 (Data & Sync) 📋
+
+> **前置条件**：阶段十四全部完成。
+
+#### 15.1 向量数据库部署与调优
+- [ ] Milvus Docker Compose 部署脚本（Milvus Standalone + etcd + MinIO）
+- [ ] 知识块 Collection Schema 设计（id / vector / title / content / subject / tags / createdAt）
+- [ ] 索引策略配置（IVF_FLAT / HNSW 选型，基于数据量级评估）
+- [ ] LangChain4j `MilvusEmbeddingStore` 端到端验证：写入 → 语义检索 → 返回结果
+
+#### 15.2 本地持久化升级
+- [ ] PC 端：接入 `tauri-plugin-sql` 操作本地 SQLite（替代纯 Pinia 内存存储）
+- [ ] Mobile 端：集成 Uni-app 原生 SQLite 插件（替代 localStorage）
+- [ ] 离线优先策略：本地写入 → 上线后自动同步到服务端
+
+#### 15.3 跨端数据一致性
+- [ ] 冲突检测：基于 `updatedAt` 时间戳的乐观锁
+- [ ] CRDT 结构调研（知识块的并发编辑场景）
+- [ ] WebSocket 断线重连 + 增量同步（基于 Cursor / ChangeLog 机制）
+
+#### 15.4 端到端加密 (E2EE)
+- [ ] 本地密钥生成与安全存储（Tauri `keyring` 插件）
+- [ ] AES-256 加密同步数据载荷
+- [ ] 密钥备份与恢复流程
+
+---
+
+### 阶段十六：AI 能力进阶与用户体验 (AI+ & Ecosystem) 📋
+
+> **前置条件**：阶段十五完成。
+
+#### 16.1 LangChain4j Agent 工作流
+- [ ] **多步推理 Agent**：基于 LangChain4j `AiServices` + Tool 注解实现自主任务拆解
+  - `@Tool searchKnowledge(query)`：检索向量库中的相关知识块
+  - `@Tool createTask(title, deadline)`：自动创建任务块
+  - `@Tool getScheduleLoad(dateRange)`：获取指定日期的认知负荷
+- [ ] **对话记忆管理**：`MessageWindowChatMemory` 集成 Redis 持久化，支持多端会话续接
+- [ ] **Guardrails 输入输出护栏**：敏感内容过滤 + 输出格式校验（JSON Schema 约束）
+- [ ] MCP (Model Context Protocol) 探索：连接外部学术数据源（arXiv / Google Scholar）
+
+#### 16.2 知识可视化 (Knowledge Graph)
+- [ ] 交互式 3D 知识星图（Three.js 或 D3 力导向图）
+- [ ] 知识块关联关系自动连线（基于 Embedding 相似度自动推荐关联）
+- [ ] 自动生成"学习周报"数据图表（ECharts）
+
+#### 16.3 系统级交互增强
+- [ ] iOS 灵动岛 / Android 小组件：今日任务快览
+- [ ] Apple Watch / WearOS：任务快速勾选
+- [ ] PC 端系统托盘：番茄钟计时 + 任务状态
+
+#### 16.4 生物识别加锁
+- [ ] Face ID / 指纹识别访问控制（Uni-app 原生插件）
+- [ ] PIN 码二级验证 fallback
+
+---
+
+### 阶段十七：质量保障与发布准备 (QA & Launch) 📋
+
+> **前置条件**：阶段十六完成，或可提前进行性能测试。
+
+#### 17.1 AI 质量评估
+- [ ] RAG 检索质量评估：Precision@K / Recall@K / MRR 指标测试
+- [ ] LangChain4j `EvaluationModel` 集成：自动评估 AI 回答的准确性与相关性
+- [ ] 端到端 AI 功能回归测试用例（PDF 切片 / 语音提取 / 手写识别）
+
+#### 17.2 三端压力测试
+- [ ] 千级任务块 / 万级知识块渲染性能测试
+- [ ] Timeline 大量数据滚动帧率验证（目标 60fps）
+- [ ] WebSocket 高并发连接压测
+- [ ] Milvus 万级向量检索延迟基准测试（目标 < 100ms P99）
+
+#### 17.3 安全加固
+- [ ] CSP 配置（当前 `tauri.conf.json` 中 `csp: null`，需正式配置）
+- [ ] API 接口 Rate Limiting
+- [ ] SQL 注入 / XSS 防护审查
+- [ ] AI 提示注入 (Prompt Injection) 防护测试
+
+#### 17.4 跨平台安装包构建
+- [ ] StudyCore-Mobile：iOS IPA（TestFlight）/ Android APK（签名包）
+- [ ] StudyCore-PC：Windows MSI / macOS DMG / Linux AppImage
+- [ ] 自动更新机制（Tauri Updater Plugin）
+
+#### 17.5 离线可用性验证
+- [ ] 断网场景下三端核心功能可用性测试
+- [ ] SQLite 离线数据完整性检验
+- [ ] AI 功能降级策略验证（后端不可达时的 UI 反馈）
+
+---
+
+## 五、当前阻塞点与待决策项
+
+> 标记 🔴 = 影响核心功能，必须优先解决；🟡 = 影响体验或安全；🟢 = 非紧急
+
+| 优先级 | # | 问题（精确定位） | 影响 | 建议行动 |
+|--------|---|------------------|------|----------|
+| ✅ | 1 | **Mock Token 未移除**：`useAuthStore.ts:6` `token` 初始值为 `'mock-token-for-dev'`，所有请求均绕过登录校验 | 安全漏洞，无法测试真实鉴权 | 已修复，改为 `null` |
+| 🔴 | 2 | **前端页面仍读 Store Mock 数据**：Home / Timeline 已修复，Asset 待修复 | 页面无法展示真实后端数据 | 完成 14.2：`onMounted` 中调用 `useBlockApi` / `useTaskApi` |
+| 🔴 | 3 | **RAG 未真正启用**：`StudyCoreAssistant` 接口没有注入 `ContentRetriever`，问答是纯 LLM 无知识库检索 | AI 问答不含个人知识库上下文 | 在 `@AiService` 配置中绑定 `contentRetriever` Bean |
+| 🔴 | 4 | **Ingest 管道无分块写入**：`/api/ai/ingest` 直接把原文传给 LLM，未经 Tika 解析 → Splitter → Embedding → EmbeddingStore | 文档上传无法入向量库，RAG 无数据 | 补齐 DocumentParser → DocumentSplitter → EmbeddingStore.addAll() |
+| 🔴 | 5 | **Redis Pub/Sub 断链**：`RedisConfig` 有 `RedisTemplate`，但 Service 层无事件发布，`SyncWebSocketHandler` 无订阅逻辑 | 多端实时同步完全不工作 | 新建 `RedisSyncSubscriber`，在 Service CRUD 中 `convertAndSend()` |
+| 🟡 | 6 | **`request.ts` timeout=5000ms**（`src/api/request.ts:6`） | LLM 推理通常 10~60s，AI 接口必超时 | 拆分实例：普通接口 10s，AI 接口 60s |
+| 🟡 | 7 | **无 Refresh Token 机制**：401 响应直接触发 `logout()` 跳转（`request.ts:29`） | Token 过期即强制登出，体验差 | 后端增加 `POST /api/auth/refresh`，前端拦截器先尝试刷新 |
+| 🟡 | 8 | **`InMemoryEmbeddingStore` 重启清空**：`LangChain4jConfig.embeddingStore()` 返回内存向量库 | 每次重启向量库清零，RAG 失效 | 阶段 15.1 完成 Milvus 替换前可接受，需文档说明 |
+| 🟡 | 9 | **`application-prod.yml` AI 配置格式过时** | 生产环境无法连接 LLM | 同步为 `langchain4j.open-ai.*` 键名格式 |
+| 🟢 | 10 | **CSP 配置为 `null`**（`tauri.conf.json`） | XSS 安全隐患 | 发布前（阶段 17.3）配置正式 CSP 白名单 |

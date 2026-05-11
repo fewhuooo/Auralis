@@ -12,67 +12,61 @@
   --color-black: #000000;
   --color-transparent: transparent;
   
-  /* Warm Aesthetic Grays */
-  --color-gray-50: #faf9f8;
-  --color-gray-100: #f5f4f1;
-  --color-gray-200: #e8e6e1;
-  --color-gray-300: #d6d3ce;
-  --color-gray-400: #b0aca5;
-  --color-gray-500: #8a867e;
-  --color-gray-600: #66635d;
-  --color-gray-700: #4a4843;
-  --color-gray-800: #33312e;
-  --color-gray-900: #1f1e1c;
+  /* Ins-style Clean Grays */
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f4f4f5;
+  --color-gray-200: #e4e4e7;
+  --color-gray-300: #d4d4d8;
+  --color-gray-400: #a1a1aa;
+  --color-gray-500: #71717a;
+  --color-gray-600: #52525b;
+  --color-gray-700: #3f3f46;
+  --color-gray-800: #27272a;
+  --color-gray-900: #18181b;
 
-  /* Aesthetic Warm Taupe (Replacing Indigo) */
-  --color-indigo-50: #fcfbf9;
-  --color-indigo-100: #f4f1eb;
-  --color-indigo-500: #b5ac9f;
-  --color-indigo-600: #999185;
-  --color-indigo-900: #544f47;
-
-  /* Aesthetic Sage Green (Replacing Purple) */
-  --color-purple-500: #a3ab9d;
-  --color-purple-400: #b6bfb0;
+  /* Oatmeal & Minimalist Gray Palette */
+  --color-oatmeal-light: #f5f0eb;
+  --color-oatmeal-mid: #e6dfd8;
+  --color-oatmeal-dark: #d9d0c7;
+  --color-gray-soft: #f4f4f4;
+  --color-gray-muted: #c9c9c9;
 
   /* ===== 2. Semantic Colors (Light Mode) ===== */
   /* Backgrounds */
   --color-bg-primary: var(--color-white);
-  --color-bg-secondary: var(--color-gray-50);
-  --color-bg-tertiary: var(--color-gray-100);
+  --color-bg-secondary: var(--color-oatmeal-light);
+  --color-bg-tertiary: var(--color-gray-soft);
   --color-bg-elevated: var(--color-white);
   
   /* Text */
-  --text-primary: var(--color-gray-900);
-  --text-secondary: var(--color-gray-600);
-  --text-muted: var(--color-gray-400);
-  --text-accent: var(--color-indigo-600);
+  --text-primary: #3b3a36;
+  --text-secondary: #737373;
+  --text-muted: #a6a6a6;
+  --text-accent: #8c8279;
   --text-inverse: var(--color-white);
 
   /* Borders */
-  --border-subtle: var(--color-gray-100);
-  --border-default: var(--color-gray-200);
-  --border-strong: var(--color-gray-300);
-  --border-accent: rgba(99, 102, 241, 0.4);
+  --border-subtle: #f0ebe6;
+  --border-default: #e6dfd8;
+  --border-strong: #d9d0c7;
+  --border-accent: rgba(140, 130, 121, 0.3);
 
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(0, 0, 0, 0.05);
-  --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(230, 223, 216, 0.6);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.02);
   --glass-blur: blur(20px);
 
   /* Status / Feedback */
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
-  --color-info: #3b82f6;
+  --color-success: #b5c4b1;
+  --color-warning: #d9c5b2;
+  --color-danger: #d4a3a3;
+  --color-info: #b3c0cf;
 
-  /* Accent Gradients - Softened */
-  --accent-start: var(--color-indigo-500);
-  --accent-mid: var(--color-purple-500);
-  --accent-end: var(--color-purple-400);
-  --accent-gradient: linear-gradient(135deg, var(--accent-start), var(--accent-mid), var(--accent-end));
-  --accent-glow: 0 0 20px rgba(181, 172, 159, 0.2);
+  /* Accent Colors - Solid Nordic */
+  --accent-start: #d9d0c7;
+  --accent-gradient: var(--accent-start); /* Solid color instead of gradient */
+  --accent-glow: 0 0 20px rgba(217, 208, 199, 0.4);
 
   /* ===== 3. Typography ===== */
   --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -140,35 +134,35 @@
 
 html.dark {
   /* Backgrounds: Higher contrast between layers */
-  --color-bg-primary: #171614;       /* App Base / Main Background */
-  --color-bg-secondary: #21201d;     /* Sidebar / Header / Sections */
-  --color-bg-tertiary: #2a2926;      /* Cards / Inputs / Hover states */
-  --color-bg-elevated: #33312e;      /* Modals / Tooltips */
+  --color-bg-primary: #1f1e1c;       /* Warm Charcoal Base */
+  --color-bg-secondary: #292825;     /* Sidebar / Header */
+  --color-bg-tertiary: #33312e;      /* Cards / Inputs */
+  --color-bg-elevated: #3d3b38;      /* Modals */
 
   /* Text */
-  --text-primary: #f5f4f1;
+  --text-primary: #e6dfd8;           /* Light Oatmeal Text */
   --text-secondary: #b0aca5;
   --text-muted: #8a867e;
-  --text-accent: var(--accent-mid);
+  --text-accent: #d9d0c7;
 
   /* Borders: Slightly more visible to define boundaries */
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.15);
-  --border-accent: rgba(181, 172, 159, 0.3);
+  --border-subtle: rgba(230, 223, 216, 0.05);
+  --border-default: rgba(230, 223, 216, 0.1);
+  --border-strong: rgba(230, 223, 216, 0.15);
+  --border-accent: rgba(217, 208, 199, 0.3);
 
   /* Glassmorphism */
-  --glass-bg: rgba(23, 22, 20, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.08);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --glass-bg: rgba(31, 30, 28, 0.8);
+  --glass-border: rgba(230, 223, 216, 0.05);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
 
   /* Shadows (darker for dark mode) */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
   
   /* Accent Glow */
-  --accent-glow: 0 0 24px rgba(181, 172, 159, 0.25);
+  --accent-glow: 0 0 24px rgba(217, 208, 199, 0.15);
 }
 
 /* ==========================================================================

@@ -1,5 +1,6 @@
 <template>
   <div class="app-shell">
+
     <AppSidebar />
     <div class="app-body">
       <AppHeader />
@@ -22,9 +23,13 @@
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
+
+
+
 </script>
 
 <style scoped>
@@ -35,7 +40,10 @@ import SearchPalette from '@/components/SearchPalette.vue'
   overflow: hidden;
   position: relative;
   background: var(--color-bg-primary);
+  flex-direction: row;
 }
+
+
 
 .app-body {
   flex: 1;
@@ -64,7 +72,7 @@ import SearchPalette from '@/components/SearchPalette.vue'
 .bg-glow--1 {
   width: 600px;
   height: 600px;
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(230, 223, 216, 0.2);
   top: -200px;
   right: -100px;
 }
@@ -72,7 +80,7 @@ import SearchPalette from '@/components/SearchPalette.vue'
 .bg-glow--2 {
   width: 400px;
   height: 400px;
-  background: rgba(139, 92, 246, 0.06);
+  background: rgba(217, 208, 199, 0.2);
   bottom: -100px;
   left: 20%;
 }
