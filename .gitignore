@@ -25,6 +25,9 @@ Thumbs.db
 # Project Specific
 debug.txt
 ai_config_backup.json
+.env
+.env.local
+*.env
 
 # Java/Maven build target directories
 **/target/
@@ -32,4 +35,5 @@ StudyCore-Server/target/
 
 # Local database / run data
 data/
+
 
