@@ -46,11 +46,49 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { convertHandwritingToMarkdown } from '@/api/aiClient'
+import { useBlockStore } from '@/store/useBlockStore'
+import { useBlockApi } from '@/api/useBlockApi'
+
+const blockStore = useBlockStore()
+
 const isUploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStatus = ref('')
+
+onMounted(() => {
+  blockStore.fetchBlocks()
+})
+
+/**
+ * 从后端 blocks 数据生成 "编排历史" 视图
+ * 如果有后端数据就展示，否则 fallback 空列表
+ */
+const history = ref<any[]>([])
+
+onMounted(async () => {
+  try {
+    const res: any = await useBlockApi.getBlocks(undefined, 1, 20)
+    const blocks = res.records || []
+    // 将知识块映射为资产历史条目
+    if (blocks.length > 0) {
+      history.value = blocks.map((b: any) => ({
+        id: b.id,
+        icon: b.source?.includes('手写') ? '✎' : '🕮',
+        name: b.title || '未命名资产',
+        time: b.time || '未知',
+        status: 'done',
+        statusText: '已完成',
+        tasks: 0,
+        blocks: 1,
+        pages: 1,
+      }))
+    }
+  } catch (e) {
+    console.error('[Mobile] Failed to load asset history:', e)
+  }
+})
 
 const chooseFile = () => {
   uni.chooseMessageFile?.({
@@ -84,15 +122,24 @@ const processHandwriting = async () => {
     uploadProgress.value = 90;
     uploadStatus.value = '生成知识块...';
     
-    setTimeout(() => {
+    setTimeout(async () => {
       isUploading.value = false;
+      const newBlock = {
+        id: 'hw_' + Date.now(),
+        subject: '手写笔记',
+        title: '手写扫描_结构化.md',
+        preview: mdResult.substring(0, 100),
+        time: '刚刚',
+        source: '手写扫描',
+        color: 'rgba(181, 172, 159, 0.2)',
+      };
+      await blockStore.addBlock(newBlock);
       const newItem = {
         id: Date.now(), icon: '✎', name: '手写扫描_结构化.md', time: '刚刚',
         status: 'done', statusText: '已完成', tasks: 0, blocks: 1, pages: 1
       };
       history.value.unshift(newItem);
       uni.showToast({ title: '已转换并存入知识库', icon: 'none' });
-      // 实际应用中可将 mdResult 存入 blockStore
     }, 800);
 
   } catch (err: any) {
@@ -124,12 +171,6 @@ const simulateUpload = () => {
     }
   }, 120)
 }
-
-const history = ref([
-  { id: 1, icon: '🕮', name: '操作系统导论.pdf', time: '2小时前', status: 'done', statusText: '已完成', tasks: 6, blocks: 14, pages: 48 },
-  { id: 2, icon: '▤', name: '数据结构课件 Week8.pptx', time: '昨天', status: 'done', statusText: '已完成', tasks: 3, blocks: 8, pages: 32 },
-  { id: 3, icon: '✎', name: 'Spring Boot 实验指南.docx', time: '3天前', status: 'processing', statusText: '处理中', tasks: 0, blocks: 2, pages: 15 },
-])
 </script>
 
 <style scoped>

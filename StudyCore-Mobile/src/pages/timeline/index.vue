@@ -143,7 +143,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useBlockStore } from '@/store/useBlockStore'
@@ -154,6 +154,11 @@ const blockStore = useBlockStore()
 
 const { pendingTasks, timeSlots, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
 const { recentBlocks } = storeToRefs(blockStore)
+
+onMounted(() => {
+  taskStore.fetchTasks()
+  blockStore.fetchBlocks()
+})
 
 const query = ref('')
 const isSearchFocused = ref(false)

@@ -11,9 +11,9 @@ langchain4j:
       api-key: ${AI_API_KEY:demo}
       model-name: gpt-4o-mini
     embedding-model:
-      base-url: https://api.openai.com/v1
+      base-url: https://api.siliconflow.cn/v1
       api-key: ${AI_API_KEY:demo}
-      model-name: text-embedding-3-small
+      model-name: BAAI/bge-m3
   milvus:
     host: localhost
     port: 19530

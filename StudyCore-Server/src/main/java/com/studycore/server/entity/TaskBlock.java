@@ -13,7 +13,7 @@ public class TaskBlock {
     private String id;
     private String name;
     private String subject;
-    @TableField("`desc`")
+    @TableField("\"desc\"")
     private String desc;
     private String color;
     private Integer duration;

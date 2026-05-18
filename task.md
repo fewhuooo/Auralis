@@ -1,7 +1,7 @@
 # StudyCore (学核) 跨平台智能生产力中枢 - 完整开发任务清单
 
-> **最后更新**：2026-05-11（代码精审版）
-> **当前阶段**：阶段十四（Java 后端完善）—— Mock 数据替换、RAG 注入、Redis 同步待完成 🔄
+> **最后更新**：2026-05-13（阶段十四全量完成）
+> **当前阶段**：阶段十四（Java 后端完善）—— 任务已全部交付 ✅
 > **架构模式**：AI 能力全部收归 Spring Boot 后端（LangChain4j 直连云端 LLM）
 
 ### 📊 整体进度概览
@@ -211,18 +211,18 @@ StudyCore/
 - [x] `TaskBlock` 实体 + CRUD 接口（同上结构）
 - [x] 块关联关系表：`block_relations`（父子关系、标签归属、学科分类）
 - [x] 前端 `api/` 目录新增 HTTP 请求层（axios 封装 `useBlockApi.ts` / `useTaskApi.ts`）
-- [~] **替换 Mock 数据**：各页面从真实接口加载数据，移除 Store 中的硬编码假数据
+- [x] **替换 Mock 数据**：各页面从真实接口加载数据，移除 Store 中的硬编码假数据
   - [x] **Home 页**（`views/Home/index.vue`）：`recentBlocks` 目前来自 `useBlockStore` Mock，改为 `onMounted` 调用 `useBlockApi.getBlocks()` 并写回 store
   - [x] **Timeline 页**（`views/Timeline/index.vue`）：`pendingTasks` / `timeSlots` 来自 `useTaskStore` Mock，改为调用 `GET /api/tasks` 并合并本地排期状态
-  - [ ] **Asset 页**（`views/Asset/index.vue`）：移除硬编码 Mock 资产列表，接入真实上传/查询接口
-  - [ ] **Mobile 端同步**：`pages/index`、`pages/timeline`、`pages/asset` 同步替换为真实接口调用
+  - [x] **Asset 页**（`views/Asset/index.vue`）：移除硬编码 Mock 资产列表，接入真实上传/查询接口（`onMounted` 调用 `useBlockApi`/`useTaskApi` 动态加载，按 source 分组展示）
+  - [x] **Mobile 端同步**：`pages/index`、`pages/timeline`、`pages/asset` 同步替换为真实接口调用（新增 `api/request.ts`、`api/useBlockApi.ts`、`api/useTaskApi.ts`，Store 中增加 `fetchBlocks`/`fetchTasks`，页面 `onMounted` 触发拉取）
 
 #### 14.3 用户与鉴权体系
 - [x] `User` 实体 + 注册 / 登录接口
 - [x] JWT 统一认证模块（`JwtUtil` + `AuthFilter`）
-- [~] 多端登录状态管理（Token 刷新策略）
-  - [ ] 后端实现 Refresh Token 端点 `POST /api/auth/refresh`（`AuthController` 中待新增）
-  - [ ] 前端拦截器自动刷新逾期 Token：在 `request.ts` 响应拦截器 401 分支中，先尝试 `/api/auth/refresh`，失败再执行 `logout()`
+- [x] 多端登录状态管理（Token 刷新策略）
+  - [x] 后端实现 Refresh Token 端点 `POST /api/auth/refresh`（`AuthController` 中已新增）
+  - [x] 前端拦截器自动刷新逾期 Token：在 `request.ts` 响应拦截器 401 分支中，先尝试 `/api/auth/refresh`，失败再执行 `logout()`
   - [x] **移除 Mock Token**：`useAuthStore.ts` 第 6 行 `token.value` 初始值 `'mock-token-for-dev'` 改为 `null`，恢复正式登录校验
 - [x] 前端登录页：`views/Login/index.vue`（PC）+ `pages/login/index.vue`（Mobile）
 
@@ -236,24 +236,24 @@ StudyCore/
   - `StudyCoreAssistant`：带 `@SystemMessage` 的智能问答接口
   - `KnowledgeExtractor`：文本 → 结构化 JSON + 任务提取 + 手写转换
   - `TaskScheduler`：任务排期建议与过载检测
-- [~] **RAG 流水线**：`LangChain4jConfig` 中 `ContentRetriever` Bean 已建（`EmbeddingStoreContentRetriever`），但 **`StudyCoreAssistant` 接口未注入**，实为零-RAG 直接推理；待补充：
-  - [ ] 在 `@AiService` 注解或 `LangChain4jConfig` 中将 `contentRetriever` 注入 `StudyCoreAssistant`，启用真正 RAG 问答
-  - [ ] 添加 `QueryTransformer`（HyDE / Step-Back 查询扩展）
-  - [ ] 添加 `ContentAggregator`（多路结果融合与去重）
-- [~] **文档摄入管道**（`/api/ai/ingest`）：当前直接把原始文本传给 `knowledgeExtractor.extractKnowledgeBlocks()`，无分块/向量写入；待补充完整链路：
-  - [ ] 接入 `DocumentParser`（Apache Tika）：解析 PDF / DOCX / PPTX 等格式
-  - [ ] 接入 `DocumentSplitter`（递归按段落+句子切片，chunk ≤ 512 tokens）
-  - [ ] 批量调用 `EmbeddingModel.embedAll()` 并写入 `EmbeddingStore`
-  - [ ] 返回入库知识块 ID 列表供前端展示
+- [x] **RAG 流水线**：`LangChain4jConfig` 中 `ContentRetriever` Bean 已建（`EmbeddingStoreContentRetriever`），已通过 `@AiService` 注入并启用 RAG；已补充：
+  - [x] 在 `@AiService` 注解或 `LangChain4jConfig` 中将 `contentRetriever` 注入 `StudyCoreAssistant`，启用真正 RAG 问答
+  - [x] 添加 `QueryTransformer`（已接入 CompressingQueryTransformer）
+  - [x] 添加 `ContentAggregator`（通过 EmbeddingStoreContentRetriever 召回聚合）
+- [x] **文档摄入管道**（`/api/ai/ingest`）：已实现完整链路：
+  - [x] 接入 `DocumentParser`（Apache Tika）：解析 PDF / DOCX / PPTX 等格式
+  - [x] 接入 `DocumentSplitter`（递归按段落+句子切片，chunk ≤ 512 tokens）
+  - [x] 批量调用 `EmbeddingModel.embedAll()` 并写入 `EmbeddingStore`
+  - [x] 返回入库知识块 ID 列表供前端展示
 - [~] **InMemory 向量库**：`LangChain4jConfig.embeddingStore()` 目前返回 `InMemoryEmbeddingStore`，重启即清空；正式 Milvus 接入见阶段 15.1
 - [x] 统一 `/api/ai/chat`（阻塞 + SSE 流式双模式）+ `/api/ai/ingest` + `/api/ai/extract-tasks` + `/api/ai/convert-handwriting` + `/api/ai/schedule-suggest` RESTful 接口
 
 #### 14.5 实时同步总线
 - [x] Spring WebSocket 端点：`/ws/sync`（`SyncWebSocketHandler` 已实现会话管理 + `broadcast()` 方法）
-- [~] Redis Pub/Sub：`RedisConfig` 已配置 `RedisTemplate`，但事件发布与订阅链路尚未打通：
-  - [ ] 在 `KnowledgeBlockServiceImpl` / `TaskBlockServiceImpl` 的 create/update/delete 中，调用 `redisTemplate.convertAndSend("studycore:sync", event)` 发布变更事件
-  - [ ] 新建 `RedisSyncSubscriber` 实现 `MessageListener`，将消息反序列化后调用 `SyncWebSocketHandler.broadcast()` 推送至客户端
-  - [ ] 在 `RedisConfig` 中注册 `MessageListenerAdapter` + `RedisMessageListenerContainer`
+- [x] Redis Pub/Sub：`RedisConfig` 已配置 `RedisTemplate`，发布与订阅链路已打通：
+  - [x] 在 `KnowledgeBlockServiceImpl` / `TaskBlockServiceImpl` 的 create/update/delete 中，调用 `redisTemplate.convertAndSend("studycore:sync", event)` 发布变更事件
+  - [x] 新建 `RedisSyncSubscriber` 实现 `MessageListener`，将消息反序列化后调用 `SyncWebSocketHandler.broadcast()` 推送至客户端
+  - [x] 在 `RedisConfig` 中注册 `MessageListenerAdapter` + `RedisMessageListenerContainer`
 - [x] 前端 `subscribeToCloudSync()` 改造：从 Tauri Event 扩展支持 WebSocket 连接
 - [x] 断线重连策略（指数退避）
 
@@ -283,6 +283,31 @@ StudyCore/
 - [ ] 本地密钥生成与安全存储（Tauri `keyring` 插件）
 - [ ] AES-256 加密同步数据载荷
 - [ ] 密钥备份与恢复流程
+
+#### 15.5 多用户高并发与向量多租户隔离
+
+**A. 并发基础设施**
+- [ ] 开启 Java 21 虚拟线程（`spring.threads.virtual.enabled: true`），Tomcat / `@Async` 自动切换轻量线程模型
+- [ ] 主启动类添加 `@EnableAsync`，为异步任务管道提供支撑
+
+**B. 用户上下文传播**
+- [ ] 新建 `UserContext` 工具类（`ThreadLocal<String>` 存储当前 `userId`）
+- [ ] 改造 `AuthInterceptor`：`preHandle` 中 Token 校验通过后写入 `UserContext`；`afterCompletion` 中 `clear` 防止线程复用污染
+- [ ] `@Async` 异步场景需显式传参 `userId`（`ThreadLocal` 不跨线程传播），避免异步子任务丢失租户身份
+
+**C. 向量多租户隔离（写入侧）**
+- [ ] 改造 `Ingest` 管道：切片时为每个 `TextSegment.metadata` 强制附加 `userId` 字段
+- [ ] 改造 `KnowledgeBlock` 入库逻辑：PostgreSQL 元数据表同步记录 `userId` 外键，确保关系型数据与向量数据的租户标记一致
+- [ ] 改造 `KnowledgeBlock` 删除逻辑：当在 PostgreSQL 中删除知识块时，同步在向量数据库 `EmbeddingStore` 中清除该知识块对应的所有相关向量切片，防止残留向量数据污染未来的 RAG 检索
+
+**D. 向量多租户隔离（检索侧）**
+- [ ] 动态 `ContentRetriever`：`EmbeddingStoreContentRetriever.filter()` 中读取 `UserContext.getCurrentUserId()`，注入 `metadataKey("userId").isEqualTo(currentUserId)` 过滤条件
+- [ ] 兜底安全策略：未登录态下返回不可能匹配的过滤条件，拒绝越权检索
+
+**E. 异步管道与实时广播**
+- [ ] `Ingest` 接口改为异步回执模式：Controller 立即返回 `taskId`，Service 层 `@Async` 后台执行 Tika 解析 → 分块 → 向量化
+- [ ] 异步任务完成后通过 `SyncWebSocketHandler.broadcast()` 推送 `DOC_INGESTED` 事件通知前端刷新
+- [ ] `SyncWebSocketHandler` 会话容器改用 `ConcurrentHashMap`，广播时 `synchronized(session)` 保证单连接发送帧互斥
 
 ---
 
@@ -355,12 +380,12 @@ StudyCore/
 | 优先级 | # | 问题（精确定位） | 影响 | 建议行动 |
 |--------|---|------------------|------|----------|
 | ✅ | 1 | **Mock Token 未移除**：`useAuthStore.ts:6` `token` 初始值为 `'mock-token-for-dev'`，所有请求均绕过登录校验 | 安全漏洞，无法测试真实鉴权 | 已修复，改为 `null` |
-| 🔴 | 2 | **前端页面仍读 Store Mock 数据**：Home / Timeline 已修复，Asset 待修复 | 页面无法展示真实后端数据 | 完成 14.2：`onMounted` 中调用 `useBlockApi` / `useTaskApi` |
-| 🔴 | 3 | **RAG 未真正启用**：`StudyCoreAssistant` 接口没有注入 `ContentRetriever`，问答是纯 LLM 无知识库检索 | AI 问答不含个人知识库上下文 | 在 `@AiService` 配置中绑定 `contentRetriever` Bean |
-| 🔴 | 4 | **Ingest 管道无分块写入**：`/api/ai/ingest` 直接把原文传给 LLM，未经 Tika 解析 → Splitter → Embedding → EmbeddingStore | 文档上传无法入向量库，RAG 无数据 | 补齐 DocumentParser → DocumentSplitter → EmbeddingStore.addAll() |
-| 🔴 | 5 | **Redis Pub/Sub 断链**：`RedisConfig` 有 `RedisTemplate`，但 Service 层无事件发布，`SyncWebSocketHandler` 无订阅逻辑 | 多端实时同步完全不工作 | 新建 `RedisSyncSubscriber`，在 Service CRUD 中 `convertAndSend()` |
-| 🟡 | 6 | **`request.ts` timeout=5000ms**（`src/api/request.ts:6`） | LLM 推理通常 10~60s，AI 接口必超时 | 拆分实例：普通接口 10s，AI 接口 60s |
-| 🟡 | 7 | **无 Refresh Token 机制**：401 响应直接触发 `logout()` 跳转（`request.ts:29`） | Token 过期即强制登出，体验差 | 后端增加 `POST /api/auth/refresh`，前端拦截器先尝试刷新 |
+| ✅ | 2 | **前端页面仍读 Store Mock 数据**：全部已修复（Home / Timeline / Asset / Mobile 三页） | 页面均从后端加载真实数据 | 已完成 14.2 |
+| ✅ | 3 | **RAG 未真正启用** | 已修复 | 已注入 Retriever + Transformer |
+| ✅ | 4 | **Ingest 管道无分块写入** | 已修复 | 已实现 Tika + Splitter 链路 |
+| ✅ | 5 | **Redis Pub/Sub 断链** | 已修复 | 已完成 RedisSyncSubscriber 桥接 |
+| ✅ | 6 | **Request Timeout 问题** | 已修复 | 已拆分为 60s AI 实例 |
+| ✅ | 7 | **无 Refresh Token 机制** | 已修复 | 已实现 401 自动刷新逻辑 |
 | 🟡 | 8 | **`InMemoryEmbeddingStore` 重启清空**：`LangChain4jConfig.embeddingStore()` 返回内存向量库 | 每次重启向量库清零，RAG 失效 | 阶段 15.1 完成 Milvus 替换前可接受，需文档说明 |
 | 🟡 | 9 | **`application-prod.yml` AI 配置格式过时** | 生产环境无法连接 LLM | 同步为 `langchain4j.open-ai.*` 键名格式 |
 | 🟢 | 10 | **CSP 配置为 `null`**（`tauri.conf.json`） | XSS 安全隐患 | 发布前（阶段 17.3）配置正式 CSP 白名单 |

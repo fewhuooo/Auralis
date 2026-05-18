@@ -23,13 +23,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
+import { subscribeToCloudSync } from '@/api/tauri'
+import { useAuthStore } from '@/store/useAuthStore'
 
+let unlisten: (() => void) | null = null
 
+onMounted(() => {
+  const authStore = useAuthStore()
+  
+  // 仅在已登录状态下建立 WebSocket 连接
+  if (authStore.token) {
+    unlisten = subscribeToCloudSync()
+  }
 
+  // 监听 token 变化，登录后建立连接，登出后断开连接
+  watch(() => authStore.token, (newToken) => {
+    if (newToken && !unlisten) {
+      unlisten = subscribeToCloudSync()
+    } else if (!newToken && unlisten) {
+      unlisten()
+      unlisten = null
+    }
+  })
+})
+
+onUnmounted(() => {
+  if (unlisten) unlisten()
+})
 </script>
 
 <style scoped>

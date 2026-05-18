@@ -157,10 +157,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { fragmentPDFToAtomBlocks, convertHandwritingToMarkdown } from '@/api/aiClient'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useTaskStore } from '@/store/useTaskStore'
+import { useBlockApi } from '@/api/useBlockApi'
+import { useTaskApi } from '@/api/useTaskApi'
 
 const blockStore = useBlockStore()
 const taskStore = useTaskStore()
@@ -193,44 +195,114 @@ interface AssetItem {
   blockList: any[]; taskList: any[]; markdown?: string
 }
 
-const groups = ref([
-  {
-    id: 'pdf', name: 'PDF 文档', icon: '📄', open: true,
-    items: [
-      {
-        id: 1, name: '《深入理解计算机系统》第1-3章.pdf', icon: '📄',
-        status: 'success', statusText: '编排完成', time: '2小时前', blocks: 42, tasks: 15, pages: 120, size: '8.2 MB',
-        blockList: [
-          { id: 1, heading: '信息的表示与处理', preview: '计算机系统中所有信息都通过位序列表示，理解不同编码方式是系统级编程的基础...', tags: ['计算机基础', '编码'] },
-          { id: 2, heading: '程序的机器级表示', preview: 'x86-64 汇编语言的数据格式、寻址模式与指令集概览，结合 GCC 编译器输出进行分析...', tags: ['汇编', '编译器'] },
-          { id: 3, heading: '处理器体系结构', preview: 'Y86-64 指令集架构设计，流水线实现与冒险处理机制的详细拆解...', tags: ['CPU', '流水线'] },
-        ],
-        taskList: [
-          { id: 1, title: '完成第一章课后习题 1.1-1.6', due: '明天', load: 'medium', done: false },
-          { id: 2, title: '用 GDB 调试一段汇编程序', due: '本周五', load: 'high', done: false },
-          { id: 3, title: '绘制 Y86-64 流水线状态机图', due: '下周一', load: 'high', done: true },
-        ]
-      }
-    ]
-  },
-  {
-    id: 'ppt', name: 'PPT 课件', icon: '📊', open: true,
-    items: [
-      {
-        id: 2, name: '第七周_分布式系统架构考纲.pptx', icon: '📊',
-        status: 'success', statusText: '编排完成', time: '昨天', blocks: 24, tasks: 8, pages: 45, size: '3.1 MB',
-        blockList: [
-          { id: 1, heading: 'CAP 定理与 BASE 理论', preview: '分布式系统不可能同时满足一致性、可用性、分区容错性，需根据业务场景进行权衡...', tags: ['分布式', 'CAP'] },
-          { id: 2, heading: 'Raft 共识算法', preview: 'Raft 通过 Leader 选举、日志复制、安全性约束来保证分布式集群一致性...', tags: ['Raft', '共识'] },
-        ],
-        taskList: [
-          { id: 1, title: '阅读 Raft 原论文 §3-§5', due: '本周六', load: 'high', done: false },
-          { id: 2, title: '搭建三节点 etcd 集群', due: '下周二', load: 'medium', done: false },
-        ]
-      }
-    ]
-  },
+interface AssetGroup {
+  id: string; name: string; icon: string; open: boolean
+  items: AssetItem[]
+}
+
+const groups = ref<AssetGroup[]>([
+  { id: 'pdf', name: 'PDF 文档', icon: '📄', open: true, items: [] },
+  { id: 'ppt', name: 'PPT 课件', icon: '📊', open: true, items: [] },
+  { id: 'image', name: '图片 / 手写', icon: '🖼️', open: true, items: [] },
+  { id: 'other', name: '其他', icon: '📁', open: true, items: [] },
 ])
+
+/**
+ * 从后端加载知识块，按来源/标题分组为资产条目
+ */
+const loadAssetsFromBackend = async () => {
+  try {
+    const blockRes: any = await useBlockApi.getBlocks(undefined, 1, 50)
+    const blocks = blockRes.records || []
+    
+    const taskRes: any = await useTaskApi.getTasks(undefined, undefined, 1, 50)
+    const tasks = taskRes.records || []
+
+    // 按 source 分组 blocks
+    const sourceMap = new Map<string, any[]>()
+    for (const block of blocks) {
+      const source = block.source || '未知来源'
+      if (!sourceMap.has(source)) {
+        sourceMap.set(source, [])
+      }
+      sourceMap.get(source)!.push(block)
+    }
+
+    // 清空现有 items
+    groups.value.forEach(g => { g.items = [] })
+
+    // 将每个 source 聚合为一个 AssetItem
+    sourceMap.forEach((sourceBlocks, sourceName) => {
+      const item: AssetItem = {
+        id: Date.now() + Math.random(),
+        name: sourceName,
+        icon: getIconForSource(sourceName),
+        status: 'success',
+        statusText: '编排完成',
+        time: sourceBlocks[0]?.time || '未知',
+        blocks: sourceBlocks.length,
+        tasks: 0,
+        pages: sourceBlocks.length,
+        size: '—',
+        blockList: sourceBlocks.map((b: any, i: number) => ({
+          id: i + 1,
+          heading: b.title,
+          preview: b.preview,
+          tags: b.subject ? [b.subject] : [],
+        })),
+        taskList: [],
+      }
+
+      // 尝试匹配相关任务
+      const relatedTasks = tasks.filter((t: any) =>
+        sourceBlocks.some((b: any) => b.subject && t.subject === b.subject)
+      )
+      item.tasks = relatedTasks.length
+      item.taskList = relatedTasks.map((t: any, i: number) => ({
+        id: i + 1,
+        title: t.name,
+        due: t.startTime || '待定',
+        load: t.load || 'medium',
+        done: t.status === 'completed',
+      }))
+
+      // 分类到对应 group
+      const groupId = getGroupForSource(sourceName)
+      const group = groups.value.find(g => g.id === groupId)
+      if (group) {
+        group.items.push(item)
+      }
+    })
+
+    // 清理空分组（保留至少一个有数据的）
+    // 如果所有后端数据为空，groups 会保持为空 items，显示空状态
+  } catch (e) {
+    console.error('[Asset] Failed to load from backend:', e)
+  }
+}
+
+/** 根据资产来源推断图标 */
+function getIconForSource(source: string): string {
+  const lower = source.toLowerCase()
+  if (lower.includes('pdf')) return '📄'
+  if (lower.includes('ppt') || lower.includes('课件')) return '📊'
+  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return '🖼️'
+  if (lower.includes('voice') || lower.includes('语音')) return '🎤'
+  return '📄'
+}
+
+/** 根据来源名分配到 group */
+function getGroupForSource(source: string): string {
+  const lower = source.toLowerCase()
+  if (lower.includes('pdf')) return 'pdf'
+  if (lower.includes('ppt') || lower.includes('课件')) return 'ppt'
+  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image') || lower.includes('.jpg') || lower.includes('.png')) return 'image'
+  return 'other'
+}
+
+onMounted(() => {
+  loadAssetsFromBackend()
+})
 
 const filteredGroups = computed(() =>
   groups.value.map(g => ({
@@ -241,7 +313,7 @@ const filteredGroups = computed(() =>
   })).filter(g => g.items.length > 0)
 )
 
-const selected = ref<AssetItem | null>(groups.value[0].items[0])
+const selected = ref<AssetItem | null>(null)
 
 const selectItem = (item: AssetItem) => {
   selected.value = item
@@ -304,7 +376,7 @@ const simulateUpload = async (filename: string) => {
              source: filename,
              color: 'var(--text-accent)'
           }
-          blockStore.addBlock(block) // Add to global Pinia store
+          blockStore.addBlock(block) // Add to global Pinia store (syncs to backend)
           return { id: i + 1, heading: b.heading, preview: b.preview, tags: b.tags || [] }
         }),
         taskList: (aiResult.tasks || []).map((t: any, i: number) => {
@@ -318,12 +390,17 @@ const simulateUpload = async (filename: string) => {
              loadText: t.load === 'high' ? '高' : (t.load === 'low' ? '低' : '中'),
              status: 'pending' as const
           }
-          taskStore.pendingTasks.push(task) // Add to global task store
+          taskStore.addTask(task) // Add to global task store (syncs to backend)
           return { id: i + 1, title: t.title, due: t.due, load: t.load, done: false }
         }),
         markdown: isImage ? markdownRes : undefined
       };
-      groups.value[0].items.unshift(newItem);
+      // Add to the appropriate group
+      const groupId = isImage ? 'image' : 'pdf'
+      const group = groups.value.find(g => g.id === groupId)
+      if (group) {
+        group.items.unshift(newItem);
+      }
       selected.value = newItem;
       if (isImage) activeTab.value = 'markdown';
       uploadProgress.value = 100;

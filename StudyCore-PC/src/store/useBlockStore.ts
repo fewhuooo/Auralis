@@ -25,12 +25,17 @@ export const useBlockStore = defineStore('block', () => {
   }
 
   const addBlock = async (block: KnowledgeBlock) => {
+    recentBlocks.value.unshift(block)
     try {
       const res = await useBlockApi.createBlock(block)
-      recentBlocks.value.unshift(res)
+      const index = recentBlocks.value.findIndex(b => b.id === block.id)
+      if (index !== -1) {
+        // Preserve any streamed text that might have arrived
+        res.preview = recentBlocks.value[index].preview
+        recentBlocks.value[index] = res
+      }
     } catch (e) {
       console.error('Failed to create block', e)
-      recentBlocks.value.unshift(block)
     }
   }
 
@@ -44,11 +49,25 @@ export const useBlockStore = defineStore('block', () => {
     }
   }
 
+  const updateBlock = async (block: KnowledgeBlock) => {
+    if (!block.id) return;
+    try {
+      const res = await useBlockApi.updateBlock(block.id, block)
+      const index = recentBlocks.value.findIndex(b => b.id === block.id)
+      if (index !== -1) {
+        recentBlocks.value[index] = res
+      }
+    } catch (e) {
+      console.error('Failed to update block', e)
+    }
+  }
+
   return {
     recentBlocks,
     fetchBlocks,
     addBlock,
-    removeBlock
+    removeBlock,
+    updateBlock
   }
 }, {
   persist: true

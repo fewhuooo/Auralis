@@ -1,5 +1,6 @@
 package com.studycore.server.controller;
 
+import com.studycore.server.service.DocumentIngestionService;
 import com.studycore.server.service.ai.StudyCoreAssistant;
 import com.studycore.server.service.ai.KnowledgeExtractor;
 import com.studycore.server.service.ai.TaskScheduler;
@@ -7,8 +8,12 @@ import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/ai")
@@ -18,6 +23,7 @@ public class AiController {
     private final StudyCoreAssistant assistant;
     private final KnowledgeExtractor knowledgeExtractor;
     private final TaskScheduler taskScheduler;
+    private final DocumentIngestionService ingestionService;
 
     @Data
     public static class ChatRequest {
@@ -34,6 +40,8 @@ public class AiController {
     @Data
     public static class ContentRequest {
         private String content;
+        private String source;
+        private String subject;
     }
 
     @PostMapping("/chat")
@@ -66,10 +74,50 @@ public class AiController {
         return emitter;
     }
 
+    /**
+     * 14.4 Enhanced ingest — text content ingestion with full pipeline:
+     * DocumentSplitter → EmbeddingModel → EmbeddingStore + PostgreSQL
+     */
     @PostMapping("/ingest")
-    public ResponseEntity<String> ingestDocument(@RequestBody ContentRequest req) {
-        String result = knowledgeExtractor.extractKnowledgeBlocks(req.getContent());
-        return ResponseEntity.ok(result);
+    public ResponseEntity<Map<String, Object>> ingestDocument(@RequestBody ContentRequest req) {
+        // Also run the LLM extractor for structured output
+        String llmResult = knowledgeExtractor.extractKnowledgeBlocks(req.getContent());
+
+        // Run the full ingestion pipeline (split → embed → store)
+        String source = req.getSource() != null ? req.getSource() : "文档导入";
+        String subject = req.getSubject() != null ? req.getSubject() : "自动分类";
+        List<String> blockIds = ingestionService.ingestText(req.getContent(), source, subject);
+
+        return ResponseEntity.ok(Map.of(
+                "llmExtraction", llmResult,
+                "ingestedBlockIds", blockIds,
+                "totalChunks", blockIds.size()
+        ));
+    }
+
+    /**
+     * 14.4 File upload ingestion — multipart file (PDF / DOCX / PPTX)
+     */
+    @PostMapping("/ingest/file")
+    public ResponseEntity<Map<String, Object>> ingestFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "subject", defaultValue = "文档导入") String subject) {
+        try {
+            List<String> blockIds = ingestionService.ingestFile(
+                    file.getBytes(),
+                    file.getOriginalFilename(),
+                    subject
+            );
+            return ResponseEntity.ok(Map.of(
+                    "fileName", file.getOriginalFilename(),
+                    "ingestedBlockIds", blockIds,
+                    "totalChunks", blockIds.size()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", e.getMessage()
+            ));
+        }
     }
 
     @PostMapping("/extract-tasks")

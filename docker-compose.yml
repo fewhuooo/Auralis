@@ -1,0 +1,37 @@
+services:
+  # PostgreSQL 数据库：存储元数据
+  db:
+    image: postgres:15-alpine
+    container_name: studycore-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: studycore
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+
+  # Redis：处理实时同步总线
+  redis:
+    image: redis:7-alpine
+    container_name: studycore-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+
+  # pgAdmin：可选的可视化管理工具 (访问 http://localhost:5050)
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: studycore-pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@studycore.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db

@@ -1,22 +1,15 @@
 import { invoke } from '@tauri-apps/api/core';
-import { listen, type Event, type UnlistenFn } from '@tauri-apps/api/event';
-
-/**
- * ==========================================
- * 8.2 预研 Tauri HTTP / Rust 接口调用
- * 配置前端通过 Tauri Invoke 与后端逻辑通信的基础逻辑
- * ==========================================
- */
+import { useBlockStore } from '@/store/useBlockStore';
+import { useTaskStore } from '@/store/useTaskStore';
+import { ElNotification } from 'element-plus';
+import 'element-plus/theme-chalk/el-notification.css';
 
 /**
  * 通用 Rust 命令调用封装
- * @param command 注册在 Tauri 后端的 Rust 函数名 (例如: "fetch_knowledge_blocks")
- * @param args 传递给后端的参数对象
  */
 export const invokeRustCmd = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   try {
     console.log(`[Tauri] Invoking Rust command: ${command}`, args || '');
-    // 实际运行时会调用 Rust 层的 #[tauri::command] 函数
     const response = await invoke<T>(command, args);
     return response;
   } catch (error) {
@@ -25,49 +18,96 @@ export const invokeRustCmd = async <T>(command: string, args?: Record<string, un
   }
 };
 
-
 /**
- * ==========================================
- * 8.3 建立 WebSocket / Event 事件管道
- * 接收来自 Rust 守护进程推送的跨端(移动端/服务端)同步通知
- * ==========================================
+ * 建立 WebSocket 长连接（实时接收后端推送）
  */
-
-/**
- * 监听全局状态同步事件
- * @param callback 接收到更新推送时的回调函数
- * @returns 取消监听的函数
- */
-export const subscribeToCloudSync = (callback: (payload: unknown) => void): () => void => {
+export const subscribeToCloudSync = (): () => void => {
   let ws: WebSocket | null = null;
   let reconnectTimeout: number | null = null;
   let retryCount = 0;
-  const maxRetryCount = 5;
+  const maxRetryCount = 10;
   let isClosed = false;
 
   const connect = () => {
-    if (isClosed) return;
+    // 防御性判断：如果已经处于连接中或已连接状态，直接跳过
+    if (isClosed || (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN))) {
+      return;
+    }
     
+    console.log('[WebSocket] Attempting to connect...');
     ws = new WebSocket('ws://127.0.0.1:8080/ws/sync');
     
     ws.onopen = () => {
       console.log('[WebSocket] Connected to cloud sync');
       retryCount = 0;
+      // 首次连接成功，拉取最新数据
+      const blockStore = useBlockStore();
+      const taskStore = useTaskStore();
+      blockStore.fetchBlocks();
+      taskStore.fetchTasks();
     };
     
     ws.onmessage = (event) => {
-      console.log('[WebSocket] Received cloud sync push:', event.data);
       try {
-        callback(JSON.parse(event.data));
+        let rawData = event.data;
+        let syncEvent: any;
+
+        // 处理 GenericJackson2JsonRedisSerializer 格式: ["class", {data}]
+        if (rawData.startsWith('[')) {
+          const parsed = JSON.parse(rawData);
+          if (Array.isArray(parsed) && parsed.length >= 2) {
+            syncEvent = parsed[1];
+          } else {
+            return;
+          }
+        } else {
+          syncEvent = JSON.parse(rawData);
+        }
+
+        console.log('[WebSocket] Received sync event:', syncEvent.type, 'for', syncEvent.entity);
+        
+        // 反应式刷新：根据实体类型触发 Store 重新拉取
+        if (syncEvent.entity === 'blocks') {
+          const blockStore = useBlockStore();
+          blockStore.fetchBlocks();
+          
+          if (syncEvent.type === 'block_created') {
+            try {
+              const blockData = JSON.parse(syncEvent.data);
+              // Avoid showing notification for the AI chat stream we just created locally
+              if (blockData.source !== 'RAG 推理引擎') {
+                ElNotification({
+                  title: '✨ 知识入库成功',
+                  message: `${blockData.subject || '新内容'}: ${blockData.title || '已自动整理并归档'}`,
+                  type: 'success',
+                  position: 'top-right',
+                  duration: 4000
+                });
+              }
+            } catch (e) {
+              ElNotification({
+                title: '✨ 知识入库成功',
+                message: '有新的知识块已处理完毕并加入知识库',
+                type: 'success',
+                position: 'top-right',
+                duration: 4000
+              });
+            }
+          }
+        } else if (syncEvent.entity === 'tasks') {
+          const taskStore = useTaskStore();
+          taskStore.fetchTasks();
+        }
       } catch (e) {
-        callback(event.data);
+        console.warn('[WebSocket] Failed to parse sync message:', e);
       }
     };
     
     ws.onclose = () => {
       console.log('[WebSocket] Connection closed');
+      ws = null;
       if (!isClosed && retryCount < maxRetryCount) {
-        const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+        const delay = Math.min(Math.pow(2, retryCount) * 1000, 30000); // Exponential backoff max 30s
         console.log(`[WebSocket] Reconnecting in ${delay}ms...`);
         reconnectTimeout = window.setTimeout(connect, delay);
         retryCount++;
@@ -84,6 +124,9 @@ export const subscribeToCloudSync = (callback: (payload: unknown) => void): () =
   return () => {
     isClosed = true;
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    if (ws) ws.close();
+    if (ws) {
+      ws.onclose = null; // 移除监听器防止触发重连逻辑
+      ws.close();
+    }
   };
 };
