@@ -10,18 +10,22 @@ spring:
   redis:
     host: 127.0.0.1
     port: 6379
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
 
 langchain4j:
   open-ai:
     chat-model:
       base-url: https://api.deepseek.com
-      api-key: ${AI_API_KEY:your-deepseek-api-key-here}
+      api-key: ${DEEPSEEK_API_KEY:your-deepseek-api-key-here}
       model-name: deepseek-v4-flash
       log-requests: true
       log-responses: true
     embedding-model:
       base-url: https://api.siliconflow.cn/v1
-      api-key: ${AI_API_KEY:your-siliconflow-api-key-here}
+      api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key-here}
       model-name: BAAI/bge-m3
 
 mybatis-plus:
