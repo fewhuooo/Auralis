@@ -1,7 +1,10 @@
 <template>
   <aside class="sidebar">
     <!-- Brand -->
-    <div class="sidebar-brand">
+    <div class="sidebar-brand"
+      @mouseenter="handleMouseEnter($event, 'nav', { title: 'StudyCore (学核)', desc: '跨平台智能生产力中枢' })"
+      @mouseleave="handleMouseLeave"
+    >
       <div class="brand-icon">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
           <rect width="28" height="28" rx="8" fill="url(#brand-grad)" />
@@ -15,90 +18,221 @@
           </defs>
         </svg>
       </div>
-      <div class="brand-text">
-        <span class="brand-name">StudyCore</span>
-        <span class="brand-tag">学核 · PC</span>
-      </div>
     </div>
 
-    <!-- Primary Navigation: PC 端三大核心功能模块 -->
+    <!-- Primary Navigation -->
     <nav class="sidebar-nav">
-      <div class="nav-section-label">核心功能</div>
-
-      <!-- 1. 功能全聚合基座：知识检索/补全入库 -->
-      <router-link to="/" class="nav-item" :class="{ 'is-active': route.path === '/' }">
+      <!-- Dashboard -->
+      <router-link to="/" class="nav-item" :class="{ 'is-active': route.path === '/' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '首页看盘', desc: '日程 · 知识块速览' })"
+        @mouseleave="handleMouseLeave"
+      >
         <span class="nav-icon">✦</span>
-        <div class="nav-text">
-          <span class="nav-label">知识检索与入库</span>
-          <span class="nav-desc">RAG 问答 · 自动补全</span>
-        </div>
       </router-link>
 
-      <!-- 2. 重型资产智能编排（文件粉碎机） -->
-      <router-link to="/asset" class="nav-item" :class="{ 'is-active': route.path === '/asset' }">
-        <span class="nav-icon">⚙</span>
-        <div class="nav-text">
-          <span class="nav-label">资产编排</span>
-          <span class="nav-desc">PPT/PDF 粉碎 · 知识块生成</span>
-        </div>
+      <!-- Subject Hall -->
+      <router-link to="/subjects" class="nav-item" :class="{ 'is-active': route.path === '/subjects' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '学科大厅', desc: '管理与浏览所有学科' })"
+        @mouseleave="handleMouseLeave"
+      >
+        <span class="nav-icon">🏛</span>
       </router-link>
 
-      <!-- 3. 辅助式排期副驾 -->
-      <router-link to="/timeline" class="nav-item" :class="{ 'is-active': route.path === '/timeline' }">
+      <!-- Timeline -->
+      <router-link to="/timeline" class="nav-item" :class="{ 'is-active': route.path === '/timeline' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '排期副驾', desc: '任务排期 · 拖拽看板' })"
+        @mouseleave="handleMouseLeave"
+      >
         <span class="nav-icon">◫</span>
-        <div class="nav-text">
-          <span class="nav-label">排期副驾</span>
-          <span class="nav-desc">任务拖拽 · 脑力负荷预警</span>
-        </div>
       </router-link>
 
-      <!-- 平板端功能入口预留 -->
-      <div class="nav-section-label" style="margin-top: 24px;">跨端能力</div>
-
-      <!-- PDF 伴读（平板端功能在 PC 端的复用） -->
-      <router-link to="/pdf-reader" class="nav-item is-disabled" @click.prevent>
-        <span class="nav-icon">📖</span>
-        <div class="nav-text">
-          <span class="nav-label">PDF 智能伴读</span>
-          <span class="nav-desc">多模态视觉解析</span>
-        </div>
-        <span class="nav-tag">平板端</span>
+      <!-- Asset -->
+      <router-link to="/asset" class="nav-item" :class="{ 'is-active': route.path === '/asset' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '资产编排', desc: '材料管理 · 本地文件登记' })"
+        @mouseleave="handleMouseLeave"
+      >
+        <span class="nav-icon">⚙</span>
       </router-link>
 
-      <!-- 知识块可视化管理 -->
-      <router-link to="/blocks" class="nav-item is-disabled" @click.prevent>
-        <span class="nav-icon">⬡</span>
-        <div class="nav-text">
-          <span class="nav-label">知识块管理</span>
-          <span class="nav-desc">查看 · 编辑 · 关联</span>
+      <!-- Dynamic subjects -->
+      <div class="subjects-list">
+        <div
+          v-for="subj in subjectStore.subjects"
+          :key="subj.id"
+          class="subject-item"
+          :class="{ 'is-active': route.path === `/subject/${subj.id}` }"
+          @click="router.push(`/subject/${subj.id}`)"
+          @mouseenter="handleMouseEnter($event, 'subject', subj)"
+          @mouseleave="handleMouseLeave"
+        >
+          <div class="subject-icon-bg" :style="{ backgroundColor: subj.color }">
+            {{ subj.icon || '📚' }}
+          </div>
         </div>
-        <span class="nav-tag">Soon</span>
-      </router-link>
+      </div>
     </nav>
 
-    <!-- Footer: 三端同步状态 + 个人中心 -->
+    <!-- Footer: 三端同步状态 -->
     <div class="sidebar-footer">
-      <router-link to="/profile" class="profile-entry" :class="{ 'is-active': route.path === '/profile' }">
-        <div class="footer-avatar">G</div>
-        <div class="footer-meta">
-          <span class="footer-name">StudyCore 同学</span>
-          <span class="footer-status">个人中心 · 设置</span>
-        </div>
-        <span class="footer-arrow">›</span>
-      </router-link>
-      <div class="sync-status">
-        <span class="sync-dot"></span>
-        <span class="sync-text">三端同步就绪</span>
+      <div class="sync-status"
+        @mouseenter="handleMouseEnter($event, 'sync', { title: syncStatusText })"
+        @mouseleave="handleMouseLeave"
+      >
+        <span class="sync-dot" :class="syncDotClass"></span>
       </div>
     </div>
+
+    <!-- Shared Floating Tooltip -->
+    <div 
+      v-if="hoverState.type === 'nav' || hoverState.type === 'sync' || hoverState.type === 'profile'" 
+      class="sidebar-tooltip-floating"
+      :style="{ top: hoverState.top + 'px' }"
+    >
+      <div class="tooltip-title">{{ hoverState.data.title }}</div>
+      <div class="tooltip-desc" v-if="hoverState.data.desc">{{ hoverState.data.desc }}</div>
+    </div>
+
+    <!-- Shared Floating Subject Hover Card -->
+    <div 
+      v-if="hoverState.type === 'subject'" 
+      class="subject-hover-card-floating"
+      :style="{ top: hoverState.top + 'px' }"
+      @mouseenter="keepHoverCard"
+      @mouseleave="handleMouseLeave"
+      @click.stop
+    >
+      <span class="hover-subject-name">{{ hoverState.data.name }}</span>
+      <span class="hover-subject-desc">{{ hoverState.data.description || '暂无描述' }}</span>
+      <span class="hover-subject-meta" v-if="hoverState.data.id !== 'hall'">
+        {{ hoverState.data.blockCount || 0 }} 知识块 · {{ hoverState.data.fileCount || 0 }} 材料
+      </span>
+      <div class="hover-subject-actions" v-if="hoverState.data.id !== 'hall'">
+        <button class="hover-action-btn" title="编辑" @click="openCreateModal(hoverState.data)">✎ 编辑</button>
+        <button class="hover-action-btn delete" title="删除" @click="confirmDelete(hoverState.data)">✕ 删除</button>
+      </div>
+    </div>
+
+    <!-- Subject Create/Edit Modal -->
+    <SubjectCreateModal 
+      v-if="showCreateModal" 
+      :subjectData="selectedSubjectForEdit || undefined"
+      @close="closeCreateModal"
+      @save="handleSaveSubject"
+    />
   </aside>
 </template>
 
 <script setup lang="ts">
-import { useRoute } from 'vue-router'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/store/useAuthStore'
+import { useSyncStore } from '@/store/useSyncStore'
+import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import SubjectCreateModal from '@/components/subject/SubjectCreateModal.vue'
 
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+const syncStore = useSyncStore()
+const subjectStore = useSubjectStore()
+
+const showCreateModal = ref(false)
+const selectedSubjectForEdit = ref<Subject | null>(null)
+
+// Hover States
+const hoverState = ref<{
+  type: 'nav' | 'subject' | 'profile' | 'sync' | null
+  top: number
+  data: any
+}>({
+  type: null,
+  top: 0,
+  data: null
+})
+
+let closeTimeout: any = null
+
+const handleMouseEnter = (event: MouseEvent, type: 'nav' | 'subject' | 'profile' | 'sync', data: any) => {
+  if (closeTimeout) {
+    clearTimeout(closeTimeout)
+    closeTimeout = null
+  }
+  const target = event.currentTarget as HTMLElement
+  const sidebarEl = target.closest('.sidebar')
+  if (sidebarEl) {
+    const sidebarRect = sidebarEl.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    hoverState.value = {
+      type,
+      top: targetRect.top - sidebarRect.top + (targetRect.height / 2),
+      data
+    }
+  }
+}
+
+const handleMouseLeave = () => {
+  if (closeTimeout) clearTimeout(closeTimeout)
+  closeTimeout = setTimeout(() => {
+    hoverState.value.type = null
+  }, 100)
+}
+
+const keepHoverCard = () => {
+  if (closeTimeout) {
+    clearTimeout(closeTimeout)
+    closeTimeout = null
+  }
+}
+
+const syncStatusText = computed(() => {
+  return syncStore.isSyncing ? '同步中...' : '三端同步就绪'
+})
+const syncDotClass = computed(() => {
+  return syncStore.isSyncing ? 'syncing' : 'ready'
+})
+
+onMounted(async () => {
+  await subjectStore.loadSubjects()
+})
+
+const openCreateModal = (subject: Subject | null) => {
+  selectedSubjectForEdit.value = subject
+  showCreateModal.value = true
+  // Close the hover card when opening the modal
+  hoverState.value.type = null
+}
+
+const closeCreateModal = () => {
+  showCreateModal.value = false
+  selectedSubjectForEdit.value = null
+}
+
+const handleSaveSubject = async (formData: any) => {
+  try {
+    if (formData.id) {
+      await subjectStore.updateSubject(formData)
+    } else {
+      await subjectStore.addSubject(formData.name, formData.description, formData.icon, formData.color)
+    }
+    closeCreateModal()
+  } catch (e) {
+    console.error('Failed to save subject:', e)
+  }
+}
+
+const confirmDelete = async (subject: Subject) => {
+  if (confirm(`确定要删除学科“${subject.name}”吗？这将断开本地文件的关联。`)) {
+    try {
+      await subjectStore.deleteSubject(subject.id)
+      hoverState.value.type = null
+    } catch (e) {
+      console.error('Failed to delete subject:', e)
+    }
+  }
+}
+
 </script>
+
 
 <style scoped>
 .sidebar {
@@ -112,68 +246,49 @@ const route = useRoute()
   flex-direction: column;
   position: relative;
   z-index: 10;
+  align-items: center;
 }
 
 /* Brand */
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 20px 20px 16px;
+  justify-content: center;
+  padding: 20px 0 16px;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 8px;
-}
-
-.brand-text {
-  display: flex;
-  flex-direction: column;
-}
-
-.brand-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.3px;
-}
-
-.brand-tag {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 500;
+  width: 100%;
+  position: relative;
 }
 
 /* Navigation */
 .sidebar-nav {
   flex: 1;
-  padding: 0 12px;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   overflow-y: auto;
-}
-
-.nav-section-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  padding: 8px 12px 6px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-decoration: none;
   transition: all var(--transition-normal);
   position: relative;
-  margin-bottom: 2px;
+  margin-bottom: 8px;
   cursor: pointer;
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
 }
 
@@ -189,106 +304,277 @@ const route = useRoute()
   top: 50%;
   transform: translateY(-50%);
   width: 3px;
-  height: 24px;
+  height: 20px;
   background: var(--accent-gradient);
   border-radius: var(--radius-full);
 }
 
 .nav-item.is-disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
 .nav-icon {
-  font-size: 16px;
-  width: 20px;
-  text-align: center;
-  flex-shrink: 0;
-}
-
-.nav-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  flex: 1;
-}
-
-.nav-label {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.nav-desc {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.3;
-  margin-top: 1px;
-}
-
-.nav-tag {
-  font-size: 10px;
-  color: var(--text-muted);
-  border: 1px solid var(--border-subtle);
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  flex-shrink: 0;
-}
-
-/* Footer */
-.sidebar-footer {
-  padding: 16px 20px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.sync-status {
+  font-size: 18px;
   display: flex;
   align-items: center;
+  justify-content: center;
+}
+
+/* Tooltip floating card styling */
+.sidebar-tooltip-floating {
+  position: absolute;
+  left: calc(var(--sidebar-width) + 8px);
+  transform: translateY(-50%);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  pointer-events: none;
+  animation: fade-in-tooltip var(--transition-fast) ease-out;
+}
+
+@keyframes fade-in-tooltip {
+  from { opacity: 0; transform: translateY(-50%) translateX(-4px); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+.tooltip-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tooltip-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Subjects List */
+.subjects-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 8px;
+  width: 100%;
+  margin-top: 8px;
 }
 
-.sync-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
-  animation: pulse-dot 2s ease-in-out infinite;
+.subject-item {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: all var(--transition-normal);
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+.subject-item:hover {
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.sync-text {
+.subject-item.is-active {
+  background: var(--border-subtle);
+}
+
+.subject-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  background: var(--accent-gradient);
+  border-radius: var(--radius-full);
+}
+
+.subject-icon-bg {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* Floating Hover Subject Card */
+.subject-hover-card-floating {
+  position: absolute;
+  left: calc(var(--sidebar-width) + 8px);
+  transform: translateY(-50%);
+  width: 220px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow: var(--shadow-lg);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  pointer-events: auto;
+  animation: fade-in-tooltip var(--transition-fast) ease-out;
+}
+
+.hover-subject-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hover-subject-desc {
   font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.hover-subject-meta {
+  font-size: 10px;
   color: var(--text-muted);
   font-weight: 500;
 }
 
-/* Profile Entry */
+.hover-subject-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.hover-action-btn {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 4px 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all var(--transition-fast);
+}
+
+.hover-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.hover-action-btn.delete:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+
+/* Footer Section */
+.sidebar-footer {
+  padding: 16px 0;
+  border-top: 1px solid var(--border-subtle);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
 .profile-entry {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: var(--radius-lg);
+  justify-content: center;
   text-decoration: none;
   cursor: pointer;
-  transition: background var(--transition-fast);
-  margin-bottom: 10px;
+  position: relative;
+  transition: all var(--transition-fast);
 }
-.profile-entry:hover { background: rgba(255,255,255,0.04); }
-.profile-entry.is-active { background: var(--border-subtle); }
+
+.profile-entry:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.profile-entry.is-active {
+  background: var(--border-subtle);
+}
+
 .footer-avatar {
-  width: 30px; height: 30px; border-radius: var(--radius-md);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
   background: var(--accent-gradient);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; color: white; flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: white;
+  flex-shrink: 0;
 }
-.footer-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.footer-name { font-size: 12px; font-weight: 600; color: var(--text-primary); }
-.footer-status { font-size: 10px; color: var(--text-muted); }
-.footer-arrow { font-size: 16px; color: var(--text-muted); }
+
+.hover-profile-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hover-profile-status {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Sync Status dot */
+.sync-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  cursor: help;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.sync-dot.ready {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.sync-dot.syncing {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+.hover-sync-text {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
 </style>

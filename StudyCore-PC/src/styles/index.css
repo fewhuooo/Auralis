@@ -39,17 +39,17 @@
   --color-bg-elevated: var(--color-white);
   
   /* Text */
-  --text-primary: #3b3a36;
-  --text-secondary: #737373;
-  --text-muted: #a6a6a6;
-  --text-accent: #8c8279;
+  --text-primary: #201f1c;
+  --text-secondary: #52524f;
+  --text-muted: #807e78;
+  --text-accent: #6d635b;
   --text-inverse: var(--color-white);
 
   /* Borders */
-  --border-subtle: #f0ebe6;
-  --border-default: #e6dfd8;
-  --border-strong: #d9d0c7;
-  --border-accent: rgba(140, 130, 121, 0.3);
+  --border-subtle: #e9e1d8;
+  --border-default: #dcd1c4;
+  --border-strong: #c8b9aa;
+  --border-accent: rgba(109, 99, 91, 0.4);
 
   /* Glassmorphism */
   --glass-bg: rgba(255, 255, 255, 0.7);
@@ -124,7 +124,7 @@
   --z-index-tooltip: 1070;
 
   /* ===== 9. Layout Constants ===== */
-  --sidebar-width: 260px;
+  --sidebar-width: 68px;
   --header-height: 64px;
 }
 
@@ -178,7 +178,7 @@ html.dark {
 }
 
 html {
-  font-size: 14px;
+  font-size: 15px;
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -207,7 +207,8 @@ a {
 }
 
 a:hover {
-  color: var(--color-indigo-500);
+  color: var(--text-primary);
+  text-decoration: underline;
 }
 
 code, pre {
@@ -261,3 +262,51 @@ code, pre {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ==========================================================================
+   Custom Premium StudyCore Notifications (Nordic / Warm Oatmeal Style)
+   ========================================================================== */
+.el-notification.studycore-notification {
+  background: var(--glass-bg) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  -webkit-backdrop-filter: var(--glass-blur) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg), var(--accent-glow) !important;
+  font-family: var(--font-family-base) !important;
+  padding: 16px 20px !important;
+  transition: all var(--transition-normal) !important;
+  width: 340px !important;
+}
+
+.el-notification.studycore-notification .el-notification__group {
+  margin-left: 0 !important;
+}
+
+.el-notification.studycore-notification .el-notification__title {
+  color: var(--text-primary) !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  margin-bottom: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.el-notification.studycore-notification .el-notification__content {
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+.el-notification.studycore-notification .el-notification__closeBtn {
+  color: var(--text-muted) !important;
+  top: 16px !important;
+  right: 16px !important;
+}
+
+.el-notification.studycore-notification .el-notification__closeBtn:hover {
+  color: var(--text-primary) !important;
+}
+
