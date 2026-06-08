@@ -1,10 +1,7 @@
 <template>
-  <AppPageLayout custom-bg>
+  <AppPageLayout>
     <view class="pomodoro-page">
-    <!-- Ambient Glow -->
-    <view class="bg-glow bg-glow--1"></view>
-    <view class="bg-glow bg-glow--2"></view>
-
+    
     <!-- Custom Header -->
     <view class="custom-header">
       <view class="header-content">
@@ -18,60 +15,66 @@
 
     <!-- Main Content -->
     <view class="main-content">
-      <!-- Time Header Card -->
-      <view class="time-card glass-panel">
+      <!-- Time Row -->
+      <view class="time-row">
         <text class="real-date">{{ currentDateFormatted }}</text>
         <text class="real-time">{{ currentTimeFormatted }}</text>
       </view>
 
-      <!-- Glass Card for Timer -->
-      <view class="timer-card glass-panel">
-        <!-- Timer Ring -->
-        <view class="ring-container">
-          <PomodoroRing
-            :total-seconds="totalSeconds"
-            :remaining-seconds="remainingSeconds"
-            :is-running="isRunning"
-            :color="ringColor"
-            :task-name="currentTask?.name"
-            :subject-name="currentTask?.subject"
-            @center-click="showTaskSelect = true"
-          />
-          <view class="phase-badge" :style="{ backgroundColor: ringColor + '15', color: ringColor, borderColor: ringColor + '30' }">
-            {{ isBreakPhase ? '休息时间' : '专注中' }}
-          </view>
-        </view>
-
-        <!-- Progress Dots -->
-        <view class="progress-dots">
-          <view 
-            v-for="i in 4" 
-            :key="i"
-            class="dot"
-            :class="{ active: currentPomodoro >= i }"
-          ></view>
-        </view>
-
-        <!-- Controls -->
-        <view class="controls">
-          <view class="ctrl-btn secondary" @click="resetTimer">重置</view>
-          <view class="main-btn" :class="{ 'is-active': isRunning }" @click="toggleTimer">
-            <text class="btn-icon">{{ isRunning ? '⏸' : '▶' }}</text>
-          </view>
-          <view class="ctrl-btn secondary" @click="skipPhase">跳过</view>
-        </view>
+      <!-- Task Selector -->
+      <view class="task-selector" @click="showTaskSelect = true">
+        <text class="t-name" v-if="currentTask">{{ currentTask.name }}</text>
+        <text class="t-name placeholder" v-else>点击选择任务</text>
       </view>
 
-      <!-- Bottom Stats Card -->
-      <view class="stats-card glass-panel">
-        <view class="stat-item">
-          <text class="stat-val">{{ completedToday }}</text>
-          <text class="stat-label">今日番茄 (🍅)</text>
+      <!-- Timer Ring -->
+      <view class="timer-container">
+        <PomodoroRing
+          :total-seconds="totalSeconds"
+          :remaining-seconds="remainingSeconds"
+          :is-running="isRunning"
+          :color="ringColor"
+          @center-click="showTaskSelect = true"
+        />
+      </view>
+
+      <!-- Phase Status -->
+      <view class="phase-status">
+        <text :style="{ color: ringColor }">{{ isBreakPhase ? '休息时间' : '专注中' }}</text>
+      </view>
+
+      <!-- Progress Dots -->
+      <view class="progress-dots">
+        <view 
+          v-for="i in 4" 
+          :key="i"
+          class="dot"
+          :style="currentPomodoro >= i ? { backgroundColor: ringColor } : { backgroundColor: ringColor + '30' }"
+        ></view>
+      </view>
+
+      <!-- Controls -->
+      <view class="controls">
+        <view class="ctrl-btn secondary" @click="resetTimer">重置</view>
+        <view class="main-btn" @click="toggleTimer">
+          <view class="pause-icon" v-if="isRunning"></view>
+          <view class="play-icon" v-else></view>
         </view>
-        <view class="stat-divider"></view>
-        <view class="stat-item">
+        <view class="ctrl-btn secondary" @click="skipPhase">跳过</view>
+      </view>
+
+      <!-- Bottom Stats Card (Now just flex row) -->
+      <view class="bottom-stats">
+        <view class="stat-col">
+          <text class="stat-val">{{ completedToday }}</text>
+          <view class="stat-label-row">
+            <text class="stat-label">今日番茄</text>
+            <text class="stat-emoji">🍅</text>
+          </view>
+        </view>
+        <view class="stat-col">
           <text class="stat-val">{{ completedToday * FOCUS_MINS }}<text class="stat-unit">m</text></text>
-          <text class="stat-label">专注时长</text>
+          <text class="stat-label" style="margin-top: 12rpx;">专注时长</text>
         </view>
       </view>
     </view>
@@ -222,7 +225,7 @@ clockTimer = setInterval(() => {
   top: 0; left: 0; right: 0; bottom: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-primary);
+  background: #ffffff;
   align-items: center;
   position: relative;
   overflow: hidden;
@@ -249,40 +252,15 @@ clockTimer = setInterval(() => {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  color: var(--text-primary);
-  transition: background 0.2s;
+  color: #333;
 }
-.menu-btn:active {
-  background: var(--color-bg-elevated);
+.header-title { 
+  font-size: 36rpx; 
+  font-weight: 600; 
+  color: #111; 
+  letter-spacing: 4rpx; 
 }
-.header-title { font-size: 32rpx; font-weight: 600; color: var(--text-primary); }
-.header-right { width: 60rpx; }
-
-.time-card {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  padding: 30rpx 40rpx;
-  margin-top: calc(var(--phone-header-height) - 60rpx);
-  margin-bottom: 30rpx;
-  border-radius: 40rpx;
-  width: 100%;
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-.real-time {
-  font-size: 60rpx;
-  font-weight: 500;
-  font-family: 'Inter', sans-serif;
-  color: var(--text-primary);
-  line-height: 1;
-}
-.real-date {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: var(--text-muted);
-}
+.header-right { width: 80rpx; }
 
 .main-content {
   position: relative;
@@ -291,148 +269,154 @@ clockTimer = setInterval(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 20rpx 40rpx 140rpx; /* Reserve space for tabbar */
+  padding: 40rpx 60rpx 140rpx;
   box-sizing: border-box;
-  overflow: hidden; /* Prevent scrolling */
 }
 
-.glass-panel {
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 2rpx solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
-  border-radius: 48rpx;
+.time-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-}
-
-.timer-card {
-  flex: 1; /* Takes up all remaining space */
   width: 100%;
-  padding: 40rpx 30rpx;
-  margin-bottom: 30rpx;
-  flex-direction: column;
-  justify-content: space-evenly;
-  box-sizing: border-box;
+}
+.real-date {
+  font-size: 28rpx;
+  color: #888;
+  font-weight: 500;
+}
+.real-time {
+  font-size: 90rpx;
+  font-weight: 600;
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #111;
+  line-height: 1;
+  letter-spacing: -2rpx;
 }
 
-.ring-container {
+.task-selector {
+  margin-top: 80rpx;
+  text-align: center;
   display: flex;
-  flex-direction: column;
-  align-items: center;
   justify-content: center;
-  position: relative;
-  width: 100%;
+  align-items: center;
 }
-.phase-badge {
-  margin-top: 40rpx;
-  padding: 14rpx 40rpx;
-  border-radius: 40rpx;
+.t-name {
   font-size: 26rpx;
   font-weight: 600;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 2rpx solid transparent;
-  box-shadow: var(--shadow-sm);
-  z-index: 2;
+  color: #6a5e5e;
+}
+.t-name.placeholder {
+  color: #9c8e8e;
+}
+
+.timer-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.phase-status {
+  text-align: center;
+  margin-top: 60rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  letter-spacing: 2rpx;
 }
 
 .progress-dots {
   display: flex;
+  justify-content: center;
   gap: 20rpx;
+  margin-top: 24rpx;
 }
 .dot {
   width: 16rpx;
   height: 16rpx;
   border-radius: 50%;
-  background: var(--border-default);
-}
-.dot.active {
-  background: var(--color-pomodoro);
 }
 
 .controls {
   display: flex;
+  justify-content: center;
   align-items: center;
-  gap: 60rpx;
+  gap: 80rpx;
+  margin-top: 80rpx;
 }
 .ctrl-btn {
-  font-size: 30rpx;
-  font-weight: 500;
-  color: var(--text-muted);
-  padding: 20rpx 40rpx;
-  transition: color 0.2s;
+  font-size: 32rpx;
+  color: #8a7a7a;
+  font-weight: 600;
+  padding: 20rpx;
 }
 .ctrl-btn:active {
-  color: var(--text-primary);
+  opacity: 0.7;
 }
 .main-btn {
-  width: 140rpx;
-  height: 140rpx;
+  width: 160rpx;
+  height: 160rpx;
   border-radius: 50%;
-  background: var(--text-primary);
+  background: #2c2c2c;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 16rpx 40rpx rgba(0,0,0,0.12);
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.3s;
-  border: 2rpx solid var(--border-subtle);
+  box-shadow: 0 10rpx 30rpx rgba(0,0,0,0.1);
+  transition: transform 0.2s;
 }
 .main-btn:active {
-  transform: scale(0.92);
+  transform: scale(0.95);
 }
-.main-btn.is-active {
-  background: var(--color-bg-secondary);
-  border: 4rpx solid var(--border-default);
-  box-shadow: inset 0 8rpx 16rpx rgba(0,0,0,0.05);
+.play-icon {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 24rpx 0 24rpx 36rpx;
+  border-color: transparent transparent transparent #fff;
+  margin-left: 12rpx;
 }
-.main-btn.is-active .btn-icon {
-  color: var(--text-primary);
-}
-.btn-icon {
-  color: var(--color-bg-primary);
-  font-size: 54rpx;
-  margin-left: 8rpx;
-}
-.is-active .btn-icon {
-  margin-left: 0;
+.pause-icon {
+  width: 24rpx;
+  height: 36rpx;
+  border-left: 8rpx solid #fff;
+  border-right: 8rpx solid #fff;
+  box-sizing: border-box;
 }
 
-.stats-card {
-  flex-direction: row;
-  padding: 30rpx 40rpx;
-  justify-content: space-evenly;
-  width: 100%;
-  box-sizing: border-box;
-  flex-shrink: 0;
+.bottom-stats {
+  display: flex;
+  justify-content: space-between;
+  margin-top: auto;
+  padding: 0 40rpx;
 }
-.stat-item {
+.stat-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8rpx;
 }
 .stat-val {
-  font-size: 44rpx;
-  font-weight: 800;
-  color: var(--text-primary);
-  font-family: 'Inter', sans-serif;
+  font-size: 64rpx;
+  font-weight: 600;
+  color: #111;
+  font-family: 'Inter', system-ui, sans-serif;
   line-height: 1;
 }
 .stat-unit {
-  font-size: 24rpx;
-  color: var(--text-muted);
-  margin-left: 6rpx;
+  font-size: 28rpx;
+  color: #111;
+  margin-left: 4rpx;
+  font-weight: 500;
+}
+.stat-label-row {
+  display: flex;
+  align-items: center;
+  margin-top: 12rpx;
+  gap: 8rpx;
 }
 .stat-label {
-  font-size: 24rpx;
+  font-size: 22rpx;
+  color: #8a7a7a;
   font-weight: 600;
-  color: var(--text-muted);
 }
-.stat-divider {
-  width: 2rpx;
-  height: 60rpx;
-  background: var(--border-subtle);
+.stat-emoji {
+  font-size: 22rpx;
 }
 </style>

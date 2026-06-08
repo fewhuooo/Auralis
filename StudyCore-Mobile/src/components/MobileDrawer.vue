@@ -2,14 +2,14 @@
   <view>
     <!-- Drawer Panel (Background Layer) -->
     <view class="drawer" :class="{ 'is-open': visible }">
-      <!-- Header: Project Name & User Capsule -->
+      <!-- Header: Project Name & User Profile -->
       <view class="drawer-header">
         <text class="project-name">StudyCore</text>
-        <view class="user-capsule" @click="navigate('/pages/profile/index')">
-          <view class="capsule-avatar">
-            <LineIcon name="avatar" size="28rpx" color="var(--color-bg-primary)" />
+        <view class="user-profile" @click="navigate('/pages/profile/index')">
+          <view class="avatar-circle">
+            <LineIcon name="avatar" size="32rpx" color="#8E8E93" />
           </view>
-          <text class="capsule-name">{{ username }}</text>
+          <text class="user-name">{{ username }}</text>
         </view>
       </view>
 
@@ -17,23 +17,23 @@
       <scroll-view scroll-y class="drawer-content">
         <view class="nav-group">
           <text class="group-title">核心功能</text>
-          <view class="nav-item" @click="navigate('/pages/home/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/home/index' }" @click="navigate('/pages/home/index')">
             <LineIcon name="home" size="36rpx" class="nav-icon" />
-            <text class="nav-label">返回首页</text>
+            <text class="nav-label">首页</text>
           </view>
-          <view class="nav-item" @click="navigate('/pages/ai-search/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/ai-search/index' }" @click="navigate('/pages/ai-search/index')">
             <LineIcon name="ai" size="36rpx" class="nav-icon" />
             <text class="nav-label">AI 助手</text>
           </view>
-          <view class="nav-item" @click="navigate('/pages/timeline/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/timeline/index' }" @click="navigate('/pages/timeline/index')">
             <LineIcon name="book" size="36rpx" class="nav-icon" />
             <text class="nav-label">知识复习</text>
           </view>
-          <view class="nav-item" @click="navigate('/pages/pomodoro/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/pomodoro/index' }" @click="navigate('/pages/pomodoro/index')">
             <LineIcon name="clock" size="36rpx" class="nav-icon" />
             <text class="nav-label">专注计时</text>
           </view>
-          <view class="nav-item" @click="navigate('/pages/stats/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/stats/index' }" @click="navigate('/pages/stats/index')">
             <LineIcon name="chart" size="36rpx" class="nav-icon" />
             <text class="nav-label">数据统计</text>
           </view>
@@ -41,7 +41,7 @@
 
         <view class="nav-group">
           <text class="group-title">系统</text>
-          <view class="nav-item" @click="navigate('/pages/settings/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/settings/index' }" @click="navigate('/pages/settings/index')">
             <LineIcon name="settings" size="36rpx" class="nav-icon" />
             <text class="nav-label">系统设置</text>
           </view>
@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useAuthStore } from '@/store/useAuthStore'
 import LineIcon from '@/components/LineIcon.vue'
 
@@ -64,6 +64,17 @@ const emit = defineEmits(['update:visible'])
 
 const authStore = useAuthStore()
 const username = computed(() => authStore.username || '同学')
+
+const currentPath = ref('')
+
+watch(() => props.visible, (val) => {
+  if (val) {
+    const pages = getCurrentPages()
+    if (pages.length > 0) {
+      currentPath.value = '/' + pages[pages.length - 1].route
+    }
+  }
+})
 
 const navigate = (url: string) => {
   // Do NOT emit update:visible to false immediately. 
@@ -108,65 +119,83 @@ const navigate = (url: string) => {
   color: var(--text-primary);
   letter-spacing: -1rpx;
 }
-.user-capsule {
+.user-profile {
   display: flex;
   align-items: center;
   gap: 12rpx;
-  background: var(--text-primary);
-  padding: 8rpx 24rpx 8rpx 8rpx;
-  border-radius: 40rpx;
   cursor: pointer;
   transition: transform 0.2s;
 }
-.user-capsule:active {
+.user-profile:active {
   transform: scale(0.95);
 }
-.capsule-avatar {
-  width: 48rpx; height: 48rpx;
+.avatar-circle {
+  width: 60rpx;
+  height: 60rpx;
   border-radius: 50%;
-  background: var(--color-bg-primary);
-  display: flex; align-items: center; justify-content: center;
+  background: #F2F2F7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.capsule-name {
-  font-size: 24rpx;
-  font-weight: 700;
-  color: var(--color-bg-primary);
+.user-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #8E8E93;
 }
 
 .drawer-content {
   flex: 1;
-  padding: 40rpx 0;
+  padding: 20rpx 0 60rpx;
 }
 
 .nav-group {
-  margin-bottom: 40rpx;
+  margin-bottom: 60rpx;
+  padding: 0 24rpx;
 }
 .group-title {
-  padding: 0 40rpx;
-  font-size: 22rpx;
-  font-weight: 700;
-  color: var(--text-muted);
-  margin-bottom: 12rpx;
+  padding: 0 24rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #8E8E93;
+  margin-bottom: 16rpx;
   display: block;
 }
 
 .nav-item {
+  height: 96rpx;
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  padding: 24rpx 40rpx;
+  gap: 24rpx;
+  padding: 0 24rpx;
+  border-radius: 24rpx;
   cursor: pointer;
+  background: transparent;
   transition: background 0.2s;
+  margin-bottom: 4rpx;
 }
 .nav-item:active {
-  background: var(--color-bg-secondary);
+  background: rgba(0, 0, 0, 0.03);
+}
+.nav-item.active {
+  background: #F2F2F7;
 }
 .nav-icon {
-  font-size: 36rpx;
+  color: #4A4A4A;
+  transition: color 0.2s;
 }
 .nav-label {
-  font-size: 26rpx;
-  font-weight: 600;
+  font-size: 30rpx;
+  font-weight: 500;
+  color: #4A4A4A;
+  transition: color 0.2s, font-weight 0.2s;
+}
+
+.nav-item.active .nav-icon {
   color: var(--text-primary);
+}
+.nav-item.active .nav-label {
+  color: var(--text-primary);
+  font-weight: 700;
 }
 </style>

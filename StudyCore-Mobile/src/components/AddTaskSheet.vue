@@ -28,7 +28,7 @@
         
         <view class="form-group">
           <text class="form-label">专注时长 ({{ form.duration }}分钟)</text>
-          <slider :value="form.duration" min="15" max="120" step="15" @change="onDurationChange" activeColor="var(--text-primary)" />
+          <slider :value="form.duration" min="30" max="120" step="30" @change="onDurationChange" activeColor="var(--text-primary)" />
         </view>
 
         <view class="form-group">
@@ -63,7 +63,7 @@ const form = ref({
   subjectId: '',
   subjectName: '',
   subjectColor: '',
-  duration: 25,
+  duration: 30,
   load: 'medium' as 'low' | 'medium' | 'high'
 })
 

@@ -145,6 +145,10 @@
                 <view class="tbtn tbtn-ok" @click="completeTask(slot)"><text class="tbtn-t">✓ 完成</text></view>
                 <view class="tbtn tbtn-defer" @click="deferTask(slot)"><text class="tbtn-t">延后</text></view>
               </view>
+            </view>
+            <view v-else class="slot-empty"><text class="empty-t">空闲</text></view>
+          </view>
+        </view>
 
         <!-- Recent Knowledge -->
         <view class="section">
@@ -169,66 +173,6 @@
               <view class="block-footer">
                 <text class="block-source">{{ block.source }}</text>
               </view>
-            </view>
-          </view>
-        </view>
-      </view>
-
-      <!-- TABLET VIEW -->
-      <view class="tablet-view main-layout">
-        <!-- Left Column -->
-        <view class="left-col">
-          <view class="stats-row">
-            <view class="stat-card" v-for="stat in stats" :key="stat.label">
-              <text class="stat-icon">{{ stat.icon }}</text>
-              <view class="stat-info">
-                <text class="stat-value">{{ stat.value }}</text>
-                <text class="stat-label">{{ stat.label }}</text>
-              </view>
-            </view>
-          </view>
-
-          <view class="date-bar">
-            <view v-for="day in weekDays" :key="day.date" class="date-item" :class="{ active: day.isToday }">
-              <text class="date-weekday">{{ day.weekday }}</text>
-              <text class="date-num">{{ day.date }}</text>
-            </view>
-          </view>
-
-          <view class="section">
-            <view class="sec-head"><text class="sec-title">待同步任务</text><text class="sec-count">{{ pendingTasks.length }} 项</text></view>
-            <view class="pend-list">
-              <view v-for="t in pendingTasks" :key="t.id" class="pend-card" :style="{ borderLeftColor: t.color || 'var(--text-accent)' }">
-                <view class="pend-main">
-                  <text class="pend-name">{{ t.name }}</text>
-                  <text class="pend-sub">{{ t.subject }}</text>
-                </view>
-                <view class="pend-meta">
-                  <text class="pend-dur">{{ t.duration }}h</text>
-                  <view class="load-b" :class="'load-'+t.load"><text class="load-t">{{ t.loadText }}</text></view>
-                </view>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <!-- Right Column -->
-        <view class="right-col">
-          <view class="timeline">
-            <view v-for="slot in timeSlots" :key="slot.time" class="time-slot">
-              <text class="slot-time">{{ slot.time }}</text>
-              <view v-if="slot.task" class="slot-task" :style="{ borderLeftColor: slot.task.color || 'var(--text-accent)' }">
-                <view class="task-header">
-                  <text class="task-name">{{ slot.task.name }}</text>
-                  <text class="task-dur">{{ slot.task.duration }}h</text>
-                </view>
-                <text class="task-sub">{{ slot.task.subject }}</text>
-                <view class="task-actions">
-                  <view class="tbtn tbtn-ok" @click="completeTask(slot)"><text class="tbtn-t">✓ 完成</text></view>
-                  <view class="tbtn tbtn-defer" @click="deferTask(slot)"><text class="tbtn-t">延后</text></view>
-                </view>
-              </view>
-              <view v-else class="slot-empty"><text class="empty-t">空闲</text></view>
             </view>
           </view>
         </view>

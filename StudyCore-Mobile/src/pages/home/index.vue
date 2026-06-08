@@ -17,24 +17,19 @@
         </view>
         <view class="greeting-box">
           <text class="nav-greeting">欢迎回来, {{ username }}</text>
-          <text class="nav-month">{{ currentMonthYear }} ✦ 开启专注的一天</text>
+          <text class="nav-month">今日已专注 0h · 剩余 {{ pendingTasksCount }} 个任务</text>
         </view>
       </view>
       <view class="nav-right">
         <view class="icon-btn" @click="showAddSheet = true">
           <LineIcon name="plus" size="44rpx" />
         </view>
-        <view class="icon-btn" @click="toggleTheme">
-          <LineIcon name="theme" size="44rpx" />
-        </view>
-        <view class="icon-btn" @click="goSettings">
-          <LineIcon name="settings" size="44rpx" />
-        </view>
       </view>
     </view>
 
     <!-- Weekly Strip -->
     <view class="week-strip">
+      <view class="strip-mask-left"></view>
       <view 
         class="w-day" 
         v-for="(day, index) in weekDays" 
@@ -46,7 +41,9 @@
         <view class="w-num-box">
           <text class="w-num">{{ day.day }}</text>
         </view>
+        <view class="w-indicator"></view>
       </view>
+      <view class="strip-mask-right"></view>
     </view>
 
     <!-- Swiper -->
@@ -60,25 +57,11 @@
       <swiper-item v-for="(day, index) in weekDays" :key="day.dateStr" class="swiper-item">
         <view class="day-card" :class="{ 'is-active': swiperCurrent === index }">
           
-          <view class="card-stats">
-            <view class="stat-box">
-              <text class="s-val">0<text class="s-unit">h</text></text>
-              <text class="s-label">专注时长</text>
-            </view>
-            <view class="stat-divider"></view>
-            <view class="stat-box">
-              <text class="s-val">{{ dayTasks[day.dateStr]?.length || 0 }}</text>
-              <text class="s-label">任务数量</text>
-            </view>
-          </view>
-          
-          <view class="card-divider"></view>
-          
           <scroll-view scroll-y class="card-body">
             <view v-if="!dayTasks[day.dateStr]?.length" class="empty-state">
               <text class="empty-icon">🌱</text>
               <text class="empty-text">今日待办已清空，尽情享受闲暇时光</text>
-              <text class="empty-subtext">点击右下角按钮添加新排期</text>
+              <text class="empty-subtext">点击右上角 + 或直接在此处唤醒 AI 开始排期</text>
             </view>
             <view 
               v-else 
@@ -96,6 +79,9 @@
               </view>
             </view>
           </scroll-view>
+          
+          <!-- Linear Gradient Mask -->
+          <view class="scroll-mask"></view>
         </view>
       </swiper-item>
     </swiper>
@@ -190,6 +176,12 @@ const currentMonthYear = computed(() => {
   const day = weekDays.value[swiperCurrent.value]
   if (!day) return ''
   return `${day.month}月 ${day.year}`
+})
+
+const pendingTasksCount = computed(() => {
+  const day = weekDays.value[swiperCurrent.value]
+  if (!day) return 0
+  return dayTasks.value[day.dateStr]?.length || 0
 })
 
 onMounted(async () => {
@@ -319,10 +311,10 @@ const submitAiQuery = () => {
   letter-spacing: -1rpx;
 }
 .nav-month {
-  font-size: 24rpx;
-  font-weight: 600;
+  font-size: 22rpx; /* Smaller font size for magazine-like typography */
+  font-weight: 500;
   color: var(--text-muted);
-  margin-top: 4rpx;
+  margin-top: 12rpx; /* Increased top margin for Gap 1 */
 }
 .nav-right {
   display: flex;
@@ -352,54 +344,79 @@ const submitAiQuery = () => {
 .week-strip {
   display: flex;
   justify-content: space-between;
-  padding: 10rpx 40rpx 0; /* Reduced top/bottom padding */
+  padding: 0 40rpx; /* Further reduced padding */
+  margin-top: 60rpx; /* Gap 2: Force distance from subtitle */
+  position: relative;
+}
+.strip-mask-left, .strip-mask-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 60rpx;
+  z-index: 5;
+  pointer-events: none;
+}
+.strip-mask-left {
+  left: 0;
+  background: linear-gradient(to right, var(--color-bg-primary), transparent);
+}
+.strip-mask-right {
+  right: 0;
+  background: linear-gradient(to left, var(--color-bg-primary), transparent);
 }
 .w-day {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8rpx;
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  gap: 4rpx;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+  opacity: 0.45; /* 40~50% opacity for inactive */
 }
 .w-week {
-  font-size: 26rpx;
-  font-weight: 600;
+  font-size: 24rpx; /* Smaller font size */
+  font-weight: 500; /* Thinner font weight */
   color: var(--text-muted);
 }
 .w-num-box {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 50%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 2rpx solid transparent;
-  transition: all 0.3s;
 }
 .w-num {
-  font-size: 32rpx;
-  font-weight: 700;
+  font-size: 28rpx; /* Smaller font size */
+  font-weight: 500; /* Thinner font weight */
   color: var(--text-primary);
+  transition: font-weight 0.2s, font-size 0.2s;
+}
+.w-indicator {
+  width: 8rpx; /* Tiny dot */
+  height: 8rpx;
+  border-radius: 50%;
+  background: #6366f1; /* High saturation accent color */
+  margin-top: 6rpx;
+  opacity: 0;
+  transform: scale(0);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .w-day.active {
   transform: scale(1.1);
-}
-.w-day.active .w-week {
-  color: var(--text-primary);
-}
-.w-day.active .w-num-box {
-  background: var(--text-primary);
-  box-shadow: 0 8rpx 16rpx rgba(0,0,0,0.15);
+  opacity: 1;
 }
 .w-day.active .w-num {
-  color: var(--color-bg-primary);
+  font-weight: 800;
+  font-size: 32rpx; /* Slightly larger on active */
+}
+.w-day.active .w-indicator {
+  opacity: 1;
+  transform: scale(1);
 }
 
 /* Swiper */
 .day-swiper {
   flex: 1;
   width: 100%;
-  margin-top: 10rpx;
+  margin-top: 80rpx; /* Gap 3: Absolute buffer space below week calendar */
   margin-bottom: 10rpx; /* Tighter margins */
 }
 .swiper-item {
@@ -413,76 +430,22 @@ const submitAiQuery = () => {
 /* Day Card */
 .day-card {
   width: 100%;
-  height: 96%; /* Increased from 92% to use more vertical space */
+  height: 96%;
   box-sizing: border-box;
-  background: var(--color-bg-secondary);
-  border-radius: 40rpx;
   display: flex;
   flex-direction: column;
   transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-  transform: scale(0.94); /* Adjusted base scale */
+  transform: scale(0.94);
   opacity: 0.65;
-  border: 2rpx solid transparent;
-  box-shadow: 0 16rpx 40rpx rgba(0,0,0,0.03);
-  overflow: hidden;
+  position: relative;
+  overflow: hidden; /* Important for scroll mask */
 }
 .day-card.is-active {
   transform: scale(1);
   opacity: 1;
-  background: var(--color-bg-elevated);
-  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.03);
-  border-color: var(--border-subtle);
-}
-html.dark .day-card.is-active {
-  background: var(--color-bg-elevated);
-  border-color: var(--border-subtle);
-  box-shadow: 0 8rpx 24rpx rgba(0,0,0,0.1);
 }
 
-/* Card Stats */
-.card-stats {
-  display: flex;
-  align-items: center;
-  justify-content: space-evenly;
-  padding: 40rpx 20rpx 30rpx;
-  flex-shrink: 0;
-}
-.stat-box {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4rpx;
-}
-.s-val {
-  font-size: 48rpx;
-  font-weight: 800;
-  color: var(--text-primary);
-  font-family: 'Inter', sans-serif;
-  line-height: 1;
-}
-.s-unit {
-  font-size: 24rpx;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-left: 6rpx;
-}
-.s-label {
-  font-size: 22rpx;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-.stat-divider {
-  width: 2rpx;
-  height: 50rpx;
-  background: var(--border-subtle);
-}
 
-.card-divider {
-  height: 2rpx;
-  background: var(--border-subtle);
-  margin: 0 40rpx;
-  flex-shrink: 0;
-}
 
 /* Card Body (Scrollable) */
 .card-body {
@@ -491,6 +454,21 @@ html.dark .day-card.is-active {
   height: 0; /* Crucial for flex child scroll-view */
   padding: 0;
   box-sizing: border-box;
+}
+::-webkit-scrollbar {
+  display: none;
+  width: 0 !important;
+  height: 0 !important;
+}
+.scroll-mask {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60rpx;
+  background: linear-gradient(to bottom, transparent, var(--color-bg-primary));
+  pointer-events: none;
+  z-index: 10;
 }
 .empty-state {
   display: flex;
@@ -505,9 +483,9 @@ html.dark .day-card.is-active {
   margin-bottom: 16rpx;
 }
 .empty-text {
-  font-size: 26rpx;
-  color: var(--text-muted);
-  font-weight: 500;
+  font-size: 28rpx;
+  color: var(--text-primary);
+  font-weight: 700;
 }
 .empty-subtext {
   font-size: 22rpx;
@@ -581,7 +559,7 @@ html.dark .day-card.is-active {
 /* AI Capsule */
 .ai-capsule-wrapper {
   position: absolute;
-  bottom: calc(env(safe-area-inset-bottom) + 40rpx); /* 下方防误触留白 */
+  bottom: calc(env(safe-area-inset-bottom) + 52rpx); /* 上移 12rpx 防误触 */
   left: 40rpx;
   right: 40rpx;
   display: flex;
@@ -602,7 +580,7 @@ html.dark .day-card.is-active {
   display: flex;
   align-items: center;
   padding: 0 24rpx 0 44rpx;
-  box-shadow: 0 8rpx 30rpx rgba(0,0,0,0.05);
+  box-shadow: 0 16rpx 48rpx rgba(0,0,0,0.06); /* 增强柔和阴影，确立Z层级 */
   border: 2rpx solid var(--border-subtle);
   cursor: text;
   transition: transform 0.2s, box-shadow 0.4s;
@@ -625,10 +603,10 @@ html.dark .day-card.is-active {
 }
 
 .ai-capsule-cam {
-  width: 100rpx;
-  height: 100rpx;
+  width: 80rpx;
+  height: 80rpx;
   border-radius: 50%;
-  background: var(--color-bg-secondary);
+  background: transparent; /* 去除灰色圆形背景 */
   display: flex;
   align-items: center;
   justify-content: center;
