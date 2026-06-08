@@ -5,7 +5,13 @@
  */
 import { useAuthStore } from '@/store/useAuthStore'
 
+// #ifdef H5
 const BASE_URL = 'http://127.0.0.1:8080'
+// #endif
+// #ifndef H5
+// 注意：真机调试需手动替换电脑局域网 IP (如 192.168.x.x)，模拟器可用 10.0.2.2
+const BASE_URL = 'http://10.0.2.2:8080'
+// #endif
 
 interface RequestOptions {
   url: string

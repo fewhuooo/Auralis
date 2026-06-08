@@ -243,7 +243,7 @@ const convertToBlock = () => {
 .r1 { width: 80rpx; height: 80rpx; animation-duration: 2s; }
 .r2 { width: 120rpx; height: 120rpx; border-left-color: var(--color-gray-400); animation-duration: 3s; animation-direction: reverse; opacity: 0.6; }
 
-.converting-title { font-size: 32rpx; font-weight: 700; color: var(--text-primary); margin-bottom: 8rpx; background: var(--accent-gradient); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.converting-title { font-size: 32rpx; font-weight: 700; color: var(--text-primary); margin-bottom: 8rpx; }
 .converting-text { font-size: 26rpx; color: var(--text-muted); }
 
 @keyframes spin { 100% { transform: rotate(360deg); } }

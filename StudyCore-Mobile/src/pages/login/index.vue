@@ -23,6 +23,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useDeviceStore } from '@/store/useDeviceStore'
 
 const authStore = useAuthStore()
 const isLogin = ref(true)
@@ -43,7 +44,12 @@ const handleAction = async () => {
     if (isLogin.value) {
       await authStore.login(form.value)
       uni.showToast({ title: '登录成功' })
-      uni.switchTab({ url: '/pages/index/index' })
+      const deviceStore = useDeviceStore()
+      if (deviceStore.isTablet) {
+        uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
+      } else {
+        uni.reLaunch({ url: '/pages/home/index' })
+      }
     } else {
       await authStore.register(form.value)
       uni.showToast({ title: '注册成功，请登录' })
@@ -74,9 +80,7 @@ const handleAction = async () => {
   .title {
     font-size: 32px;
     font-weight: bold;
-    background: linear-gradient(135deg, #6366f1, #a855f7);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-primary);
     display: block;
     margin-bottom: 10px;
   }
@@ -102,8 +106,8 @@ const handleAction = async () => {
 }
 
 .submit-btn {
-  background: linear-gradient(135deg, #6366f1, #a855f7);
-  color: white;
+  background: var(--text-primary);
+  color: var(--color-bg-primary);
   border-radius: 8px;
   height: 48px;
   line-height: 48px;
@@ -116,7 +120,7 @@ const handleAction = async () => {
   text-align: center;
   margin-top: 20px;
   font-size: 14px;
-  color: #6366f1;
+  color: var(--text-accent);
 }
 
 /* Dark mode basic support */

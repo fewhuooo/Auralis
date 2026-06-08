@@ -1,7 +1,6 @@
 package com.studycore.server.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studycore.server.common.SyncEvent;
 import com.studycore.server.config.RedisConfig;
 import com.studycore.server.entity.TaskBlock;
@@ -20,10 +19,13 @@ import java.io.Serializable;
 public class TaskBlockServiceImpl extends ServiceImpl<TaskBlockMapper, TaskBlock> implements TaskBlockService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final ObjectMapper objectMapper;
 
     @Override
     public boolean save(TaskBlock entity) {
+        entity.setSyncVersion(System.currentTimeMillis());
+        if (entity.getIsDeleted() == null) {
+            entity.setIsDeleted(false);
+        }
         boolean success = super.save(entity);
         if (success) {
             publishEvent("task_created", entity);
@@ -33,6 +35,7 @@ public class TaskBlockServiceImpl extends ServiceImpl<TaskBlockMapper, TaskBlock
 
     @Override
     public boolean updateById(TaskBlock entity) {
+        entity.setSyncVersion(System.currentTimeMillis());
         boolean success = super.updateById(entity);
         if (success) {
             publishEvent("task_updated", entity);
@@ -42,7 +45,13 @@ public class TaskBlockServiceImpl extends ServiceImpl<TaskBlockMapper, TaskBlock
 
     @Override
     public boolean removeById(Serializable id) {
-        boolean success = super.removeById(id);
+        TaskBlock entity = super.getById(id);
+        if (entity == null) {
+            return false;
+        }
+        entity.setIsDeleted(true);
+        entity.setSyncVersion(System.currentTimeMillis());
+        boolean success = super.updateById(entity);
         if (success) {
             publishDeleteEvent(id.toString());
         }
@@ -50,14 +59,9 @@ public class TaskBlockServiceImpl extends ServiceImpl<TaskBlockMapper, TaskBlock
     }
 
     private void publishEvent(String type, TaskBlock entity) {
-        try {
-            String data = objectMapper.writeValueAsString(entity);
-            SyncEvent event = SyncEvent.of(type, "tasks", entity.getId(), data);
-            redisTemplate.convertAndSend(RedisConfig.SYNC_CHANNEL, event);
-            log.debug("[Sync] Published event: {} for task {}", type, entity.getId());
-        } catch (Exception e) {
-            log.error("[Sync] Failed to publish event", e);
-        }
+        SyncEvent event = SyncEvent.of(type, "tasks", entity.getId(), null);
+        redisTemplate.convertAndSend(RedisConfig.SYNC_CHANNEL, event);
+        log.debug("[Sync] Published lightweight event: {} for task {}", type, entity.getId());
     }
 
     private void publishDeleteEvent(String id) {
@@ -66,3 +70,4 @@ public class TaskBlockServiceImpl extends ServiceImpl<TaskBlockMapper, TaskBlock
         log.debug("[Sync] Published event: task_deleted for id {}", id);
     }
 }
+

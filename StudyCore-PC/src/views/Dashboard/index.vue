@@ -99,16 +99,20 @@
               'is-empty': !slot.task,
               'drag-over': dragOverSlot === slot.time
             }"
+            v-show="!isSlotCovered(slot.time)"
             @dragover.prevent="handleDragOver(slot.time)"
             @dragleave.prevent="handleDragLeave"
             @drop.prevent="handleDrop(slot.time)"
           >
             <span class="tl-time">{{ slot.time }}</span>
-            <span class="tl-dash"></span>
+            <span class="tl-dash" v-if="!slot.task"></span>
             <div
               v-if="slot.task"
               class="tl-task"
-              :style="{ borderLeftColor: slot.task.color }"
+              :style="{ 
+                borderLeftColor: slot.task.color,
+                height: getTaskHeight(slot.task.duration)
+              }"
               draggable="true"
               @dragstart.stop="handleDragStart($event, 'scheduled', slot.time)"
             >
@@ -241,8 +245,16 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">预计专注时长 (分钟)</label>
-          <input type="number" v-model="taskForm.duration" class="form-input" />
+          <label class="form-label">预计专注时长</label>
+          <select v-model.number="taskForm.duration" class="form-input">
+            <option :value="30">0.5 小时 (30分钟)</option>
+            <option :value="60">1.0 小时 (60分钟)</option>
+            <option :value="90">1.5 小时 (90分钟)</option>
+            <option :value="120">2.0 小时 (120分钟)</option>
+            <option :value="150">2.5 小时 (150分钟)</option>
+            <option :value="180">3.0 小时 (180分钟)</option>
+            <option :value="240">4.0 小时 (240分钟)</option>
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label">脑力负荷</label>
@@ -331,8 +343,8 @@ const greeting = computed(() => {
 
 // ===== Resize Logic =====
 const containerRef = ref<HTMLElement | null>(null)
-const navWidthPercent = ref(14)      // left nav width as % of container
-const mainLeftPercent = ref(56)      // content stream width as % of container
+const navWidthPercent = ref(25)      // left nav width as % of container
+const mainLeftPercent = ref(50)      // content stream width as % of container
 // right panel width = 100 - navWidthPercent - mainLeftPercent
 
 let activeResize: 'nav' | 'main' | null = null
@@ -346,11 +358,11 @@ const onMouseMove = (e: MouseEvent) => {
   const deltaPercent = ((e.clientX - resizeStartX) / containerWidth) * 100
 
   if (activeResize === 'nav') {
-    navWidthPercent.value = Math.max(8, Math.min(25, resizeStartNav + deltaPercent))
+    navWidthPercent.value = Math.max(15, Math.min(45, resizeStartNav + deltaPercent))
   } else if (activeResize === 'main') {
     const newMain = resizeStartMain + deltaPercent
     const rightWidth = 100 - navWidthPercent.value - newMain
-    if (newMain >= 30 && rightWidth >= 18) {
+    if (newMain >= 25 && rightWidth >= 20) {
       mainLeftPercent.value = newMain
     }
   }
@@ -426,7 +438,7 @@ const showTaskModal = ref(false)
 const taskForm = ref({
   name: '',
   subjectId: '',
-  duration: 45,
+  duration: 60,
   load: 'medium' as 'low' | 'medium' | 'high',
   loadText: '2.0 🧠'
 })
@@ -435,7 +447,7 @@ const openCreateTaskDialog = () => {
   taskForm.value = {
     name: '',
     subjectId: subjectStore.subjects[0]?.id || '',
-    duration: 45,
+    duration: 60,
     load: 'medium' as 'low' | 'medium' | 'high',
     loadText: '2.0 🧠'
   }
@@ -481,6 +493,29 @@ const filteredPendingTasks = computed(() => {
 })
 
 const filteredTimeSlots = computed(() => timeSlots.value)
+
+const HOUR_HEIGHT = 60
+const getTaskHeight = (duration?: number) => {
+  const d = duration || 60
+  return `${(d / 60) * HOUR_HEIGHT}px`
+}
+
+const isSlotCovered = (slotTime: string) => {
+  const targetSlot = timeSlots.value.find(s => s.time === slotTime)
+  if (targetSlot?.task) return false
+
+  const currentHour = parseInt(slotTime.split(':')[0], 10)
+  for (const slot of timeSlots.value) {
+    if (slot.task && slot.time !== slotTime) {
+      const taskHour = parseInt(slot.time.split(':')[0], 10)
+      const durationHours = slot.task.duration / 60
+      if (currentHour > taskHour && currentHour < taskHour + durationHours) {
+        return true
+      }
+    }
+  }
+  return false
+}
 
 // ===== Block Detail =====
 const blockDialogVisible = ref(false)
@@ -1088,16 +1123,17 @@ html.dark .dashboard-right {
 
 .tl-slot {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 52px;
   position: relative;
   transition: background var(--transition-fast);
-  padding: 0 4px;
+  padding: 6px 4px;
+  box-sizing: border-box;
 }
 
 .tl-slot.has-task {
-  min-height: 60px;
+  padding: 2px 4px;
 }
 
 .tl-time {
@@ -1109,6 +1145,7 @@ html.dark .dashboard-right {
   flex-shrink: 0;
   letter-spacing: -0.2px;
   opacity: 0.7;
+  margin-top: 8px;
 }
 
 .tl-slot.is-current .tl-time {
@@ -1142,6 +1179,7 @@ html.dark .dashboard-right {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-2);
+  box-sizing: border-box;
 }
 
 .tl-task:hover {

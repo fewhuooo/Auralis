@@ -111,3 +111,67 @@ export async function convertHandwritingToMarkdown(rawOcrText: string) {
     throw error;
   }
 }
+
+/**
+ * 移动端流式 AI 对话 (适配 uni.request chunked)
+ */
+export function chatWithAI(text: string, history: any[], onMessage: (content: string) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // #ifdef H5
+    const BASE_URL = 'http://127.0.0.1:8080';
+    // #endif
+    // #ifndef H5
+    const BASE_URL = 'http://10.0.2.2:8080';
+    // #endif
+
+    const { useAuthStore } = require('@/store/useAuthStore');
+    const authStore = useAuthStore();
+    
+    const requestTask = uni.request({
+      url: `${BASE_URL}/api/ai/chat`,
+      method: 'POST',
+      enableChunked: true,
+      header: {
+        'Content-Type': 'application/json',
+        'Authorization': authStore.token ? `Bearer ${authStore.token}` : ''
+      },
+      data: {
+        systemPrompt: "你是学核 AI 助手。",
+        message: text,
+        history: history
+      },
+      success: (res: any) => {
+        if (res.statusCode >= 400) {
+          reject(new Error(`请求失败: ${res.statusCode}`));
+        } else {
+          resolve();
+        }
+      },
+      fail: (err) => {
+        reject(new Error(err.errMsg || 'Network Error'));
+      }
+    });
+
+    // @ts-ignore
+    if (requestTask.onChunkReceived) {
+      const decoder = new TextDecoder();
+      // @ts-ignore
+      requestTask.onChunkReceived((response: any) => {
+        const chunk = decoder.decode(new Uint8Array(response.data));
+        const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
+        
+        for (const line of lines) {
+          const dataStr = line.replace('data: ', '').trim();
+          if (dataStr === '[DONE]') continue;
+          try {
+            const data = JSON.parse(dataStr);
+            const content = data.choices ? data.choices[0]?.delta?.content : (data.content || '');
+            if (content) {
+              onMessage(content);
+            }
+          } catch (e) {}
+        }
+      });
+    }
+  });
+}

@@ -1,163 +1,185 @@
 /* ===== Fonts: loaded via system fallback for cross-platform compatibility ===== */
 
 /* ==========================================================================
-   CSS Variables Dictionary - StudyCore Design System (Mobile)
+   CSS Variables Dictionary - StudyCore Design System (Mobile/Pad)
+   Aligned with PC Oatmeal Minimalist Style
    ========================================================================== */
 
-:root {
+page, :root {
   /* ===== 1. Base Palette (Light Mode Default) ===== */
   --color-white: #ffffff;
   --color-black: #000000;
   --color-transparent: transparent;
   
-  /* Warm Aesthetic Grays */
-  --color-gray-50: #faf9f8;
-  --color-gray-100: #f5f4f1;
-  --color-gray-200: #e8e6e1;
-  --color-gray-300: #d6d3ce;
-  --color-gray-400: #b0aca5;
-  --color-gray-500: #8a867e;
-  --color-gray-600: #66635d;
-  --color-gray-700: #4a4843;
-  --color-gray-800: #33312e;
-  --color-gray-900: #1f1e1c;
+  /* Ins-style Clean Grays */
+  --color-gray-50: #fafafa;
+  --color-gray-100: #f4f4f5;
+  --color-gray-200: #e4e4e7;
+  --color-gray-300: #d4d4d8;
+  --color-gray-400: #a1a1aa;
+  --color-gray-500: #71717a;
+  --color-gray-600: #52525b;
+  --color-gray-700: #3f3f46;
+  --color-gray-800: #27272a;
+  --color-gray-900: #18181b;
 
-  /* Aesthetic Warm Taupe (Replacing Indigo) */
-  --color-indigo-50: #fcfbf9;
-  --color-indigo-100: #f4f1eb;
-  --color-indigo-500: #b5ac9f;
-  --color-indigo-600: #999185;
-  --color-indigo-900: #544f47;
-
-  /* Aesthetic Sage Green (Replacing Purple) */
-  --color-purple-500: #a3ab9d;
-  --color-purple-400: #b6bfb0;
+  /* Oatmeal & Minimalist Gray Palette */
+  --color-oatmeal-light: #faf8f5; /* Whiter, cleaner warm gray (was #f5f0eb) */
+  --color-oatmeal-mid: #eeebe6;   /* Was #e6dfd8 */
+  --color-oatmeal-dark: #e0dcd5;  /* Was #d9d0c7 */
+  --color-gray-soft: #f4f4f4;
+  --color-gray-muted: #c9c9c9;
 
   /* ===== 2. Semantic Colors (Light Mode) ===== */
   /* Backgrounds */
   --color-bg-primary: var(--color-white);
-  --color-bg-secondary: var(--color-gray-50);
-  --color-bg-tertiary: var(--color-gray-100);
+  --color-bg-secondary: var(--color-oatmeal-light);
+  --color-bg-tertiary: var(--color-gray-soft);
   --color-bg-elevated: var(--color-white);
   
   /* Text */
-  --text-primary: var(--color-gray-900);
-  --text-secondary: var(--color-gray-600);
-  --text-muted: var(--color-gray-400);
-  --text-accent: var(--color-indigo-600);
+  --text-primary: #201f1c;
+  --text-secondary: #52524f;
+  --text-muted: #807e78;
+  --text-accent: #6d635b;
   --text-inverse: var(--color-white);
 
   /* Borders */
-  --border-subtle: var(--color-gray-100);
-  --border-default: var(--color-gray-200);
-  --border-strong: var(--color-gray-300);
-  --border-accent: rgba(99, 102, 241, 0.4);
+  --border-subtle: #e9e1d8;
+  --border-default: #dcd1c4;
+  --border-strong: #c8b9aa;
+  --border-accent: rgba(109, 99, 91, 0.4);
 
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-border: rgba(0, 0, 0, 0.05);
-  --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
-  --glass-blur: blur(20px);
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: rgba(230, 223, 216, 0.6);
+  --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.02);
+  --glass-blur: blur(40rpx);
 
   /* Status / Feedback */
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
-  --color-info: #3b82f6;
+  --color-success: #b5c4b1;
+  --color-warning: #d9c5b2;
+  --color-danger: #d4a3a3;
+  --color-info: #b3c0cf;
 
-  /* Accent Gradients - Softened */
-  --accent-start: var(--color-indigo-500);
-  --accent-mid: var(--color-purple-500);
-  --accent-end: var(--color-purple-400);
-  --accent-gradient: linear-gradient(135deg, var(--accent-start), var(--accent-mid), var(--accent-end));
-  --accent-glow: 0 0 20px rgba(181, 172, 159, 0.2);
+  /* Accent Colors - Solid Nordic */
+  --accent-start: #d9d0c7;
+  --accent-gradient: var(--accent-start); /* Solid color instead of gradient */
+  --accent-glow: 0 0 40rpx rgba(217, 208, 199, 0.4);
 
-  /* ===== 3. Typography ===== */
+  /* ===== 3. Typography (Converted to rpx: 1px -> 2rpx) ===== */
   --font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   
-  --font-size-xs: 24rpx;    /* ~12px */
-  --font-size-sm: 28rpx;    /* ~14px */
-  --font-size-base: 32rpx;  /* ~16px */
-  --font-size-lg: 36rpx;    /* ~18px */
-  --font-size-xl: 40rpx;    /* ~20px */
-  --font-size-2xl: 48rpx;   /* ~24px */
-  --font-size-3xl: 60rpx;   /* ~30px */
+  --font-size-xs: 24rpx;    /* 12px */
+  --font-size-sm: 28rpx;    /* 14px */
+  --font-size-base: 32rpx;  /* 16px */
+  --font-size-lg: 36rpx;    /* 18px */
+  --font-size-xl: 40rpx;    /* 20px */
+  --font-size-2xl: 48rpx;   /* 24px */
+  --font-size-3xl: 60rpx;   /* 30px */
 
   --line-height-tight: 1.25;
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
 
-  /* ===== 4. Borders & Radius ===== */
+  /* ===== 4. Spacing System (Converted to rpx) ===== */
+  --spacing-1: 8rpx;   /* 4px */
+  --spacing-2: 16rpx;  /* 8px */
+  --spacing-3: 24rpx;  /* 12px */
+  --spacing-4: 32rpx;  /* 16px */
+  --spacing-5: 40rpx;  /* 20px */
+  --spacing-6: 48rpx;  /* 24px */
+  --spacing-8: 64rpx;  /* 32px */
+  --spacing-10: 80rpx; /* 40px */
+  --spacing-12: 96rpx; /* 48px */
+
+  /* ===== 5. Borders & Radius ===== */
   --radius-sm: 8rpx;
   --radius-md: 16rpx;
   --radius-lg: 24rpx;
   --radius-xl: 32rpx;
   --radius-full: 9999rpx;
 
-  /* ===== 5. Shadows ===== */
-  --shadow-sm: 0 2rpx 6rpx 0 rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.12);
-  --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.15);
+  /* ===== 6. Shadows ===== */
+  --shadow-sm: 0 2rpx 6rpx 0 rgba(0, 0, 0, 0.08), 0 2rpx 4rpx -2rpx rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.12), 0 4rpx 8rpx -4rpx rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.15), 0 8rpx 12rpx -8rpx rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 40rpx 50rpx -10rpx rgba(0, 0, 0, 0.15), 0 16rpx 20rpx -12rpx rgba(0, 0, 0, 0.1);
+
+  /* ===== 7. Responsive & New Features ===== */
+  --phone-header-height: 110rpx;
+  --tablet-sidebar-width: 120rpx;
+  --tablet-panel-gap: 40rpx;
+  
+  --color-pomodoro: #f43f5e;
+  --color-pomodoro-glow: rgba(244, 63, 94, 0.3);
+  --color-pomodoro-break: #10b981;
+  --color-pomodoro-break-glow: rgba(16, 185, 129, 0.3);
+
+  --hw-canvas-bg: #fdfbf7;
+  --hw-tool-bg: rgba(255, 255, 255, 0.85);
+  --hw-lasso-bg: rgba(181, 172, 159, 0.1);
+  --hw-lasso-border: #8a867e;
 }
 
 /* ==========================================================================
-   Dark Mode Overrides (Media Query for Uni-app)
+   Dark Mode Overrides
    ========================================================================== */
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --color-bg-primary: #171614;
-    --color-bg-secondary: #21201d;
-    --color-bg-tertiary: #2a2926;
-    --color-bg-elevated: #33312e;
+  page, :root {
+    --color-bg-primary: #1f1e1c;       /* Warm Charcoal Base */
+    --color-bg-secondary: #292825;     /* Sidebar / Header */
+    --color-bg-tertiary: #33312e;      /* Cards / Inputs */
+    --color-bg-elevated: #3d3b38;      /* Modals */
 
-    --text-primary: #f5f4f1;
+    --text-primary: #e6dfd8;           /* Light Oatmeal Text */
     --text-secondary: #b0aca5;
     --text-muted: #8a867e;
-    --text-accent: var(--accent-mid);
+    --text-accent: #d9d0c7;
 
-    --border-subtle: rgba(255, 255, 255, 0.05);
-    --border-default: rgba(255, 255, 255, 0.1);
-    --border-strong: rgba(255, 255, 255, 0.15);
-    --border-accent: rgba(181, 172, 159, 0.3);
+    --border-subtle: rgba(230, 223, 216, 0.05);
+    --border-default: rgba(230, 223, 216, 0.1);
+    --border-strong: rgba(230, 223, 216, 0.15);
+    --border-accent: rgba(217, 208, 199, 0.3);
 
-    --glass-bg: rgba(23, 22, 20, 0.7);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.4);
+    --glass-bg: rgba(31, 30, 28, 0.8);
+    --glass-border: rgba(230, 223, 216, 0.05);
+    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.2);
 
-    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.6);
+    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.4), 0 4rpx 8rpx -2rpx rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.5), 0 8rpx 12rpx -4rpx rgba(0, 0, 0, 0.3);
     
-    --accent-glow: 0 0 48rpx rgba(181, 172, 159, 0.25);
+    --accent-glow: 0 0 48rpx rgba(217, 208, 199, 0.15);
   }
 }
 
 html.dark, page.dark {
-    --color-bg-primary: #171614;
-    --color-bg-secondary: #21201d;
-    --color-bg-tertiary: #2a2926;
-    --color-bg-elevated: #33312e;
+    --color-bg-primary: #1f1e1c;
+    --color-bg-secondary: #292825;
+    --color-bg-tertiary: #33312e;
+    --color-bg-elevated: #3d3b38;
 
-    --text-primary: #f5f4f1;
+    --text-primary: #e6dfd8;
     --text-secondary: #b0aca5;
     --text-muted: #8a867e;
-    --text-accent: var(--accent-mid);
+    --text-accent: #d9d0c7;
 
-    --border-subtle: rgba(255, 255, 255, 0.05);
-    --border-default: rgba(255, 255, 255, 0.1);
-    --border-strong: rgba(255, 255, 255, 0.15);
-    --border-accent: rgba(181, 172, 159, 0.3);
+    --border-subtle: rgba(230, 223, 216, 0.05);
+    --border-default: rgba(230, 223, 216, 0.1);
+    --border-strong: rgba(230, 223, 216, 0.15);
+    --border-accent: rgba(217, 208, 199, 0.3);
 
-    --glass-bg: rgba(23, 22, 20, 0.7);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.4);
+    --glass-bg: rgba(31, 30, 28, 0.8);
+    --glass-border: rgba(230, 223, 216, 0.05);
+    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.2);
 
-    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.5);
-    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.6);
+    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.4), 0 4rpx 8rpx -2rpx rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.5), 0 8rpx 12rpx -4rpx rgba(0, 0, 0, 0.3);
     
-    --accent-glow: 0 0 48rpx rgba(181, 172, 159, 0.25);
+    --accent-glow: 0 0 48rpx rgba(217, 208, 199, 0.15);
 }
 
 /* Base utility classes for gradients */
@@ -192,4 +214,32 @@ body, page {
   font-weight: 800 !important;
   font-size: 34rpx !important;
   letter-spacing: 1rpx;
+}
+
+/* ==========================================================================
+   Ambient Glow Effects (Background)
+   ========================================================================== */
+.bg-glow {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(240rpx);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+.bg-glow--1 {
+  width: 1200rpx;
+  height: 1200rpx;
+  background: rgba(230, 223, 216, 0.2);
+  top: -400rpx;
+  right: -200rpx;
+}
+
+.bg-glow--2 {
+  width: 800rpx;
+  height: 800rpx;
+  background: rgba(217, 208, 199, 0.2);
+  bottom: -200rpx;
+  left: 20%;
 }

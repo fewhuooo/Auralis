@@ -23,7 +23,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (user == null || !user.getPassword().equals(password)) {
             throw new RuntimeException("Invalid username or password");
         }
-        return jwtUtil.generateToken(username);
+        return jwtUtil.generateToken(username, user.getId());
     }
 
     @Override

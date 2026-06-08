@@ -21,16 +21,37 @@ public class AuthInterceptor implements HandlerInterceptor {
             return true; // allow CORS preflight
         }
         
+        String token = null;
         String authHeader = request.getHeader("Authorization");
         if (StringUtils.hasText(authHeader) && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            if (jwtUtil.validateToken(token)) {
-                return true;
+            token = authHeader.substring(7);
+        } else {
+            // Also support token as query parameter (e.g. for SSE EventSource)
+            token = request.getParameter("token");
+        }
+
+        if (StringUtils.hasText(token) && jwtUtil.validateToken(token)) {
+            String userId = jwtUtil.extractUserId(token);
+            UserContext.setCurrentUserId(userId);
+            
+            String customApiKey = request.getHeader("X-User-Api-Key");
+            String customBaseUrl = request.getHeader("X-User-Base-Url");
+            if (StringUtils.hasText(customApiKey)) {
+                UserContext.setUserApiKey(customApiKey);
             }
+            if (StringUtils.hasText(customBaseUrl)) {
+                UserContext.setUserBaseUrl(customBaseUrl);
+            }
+            return true;
         }
         
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.getWriter().write("{\"code\":401,\"message\":\"Unauthorized\"}");
         return false;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        UserContext.clear();
     }
 }

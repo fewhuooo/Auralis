@@ -50,3 +50,28 @@ export async function convertHandwritingToMarkdown(rawOcrText: string) {
     throw error;
   }
 }
+
+export async function scheduleSuggest(text: string) {
+  try {
+    const res: any = await request.post('/api/ai/schedule-suggest', { text });
+    return res;
+  } catch (error) {
+    console.error("AI 日程建议失败:", error);
+    throw error;
+  }
+}
+
+export async function ingestFile(file: File, subject: string = '文档导入') {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('subject', subject);
+    const res: any = await request.post('/api/ai/ingest/file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return res;
+  } catch (error) {
+    console.error("文件入库失败:", error);
+    throw error;
+  }
+}

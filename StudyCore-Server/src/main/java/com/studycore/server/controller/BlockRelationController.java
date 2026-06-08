@@ -8,6 +8,12 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * 块关联关系 CRUD 接口。
+ * 
+ * ⚠️ 注意：此接口目前前端未对接，关联关系暂由本地数据库维护。
+ * 保留此 Controller 用于后续知识图谱功能的正式启用。
+ */
 @RestController
 @RequestMapping("/api/relations")
 public class BlockRelationController {

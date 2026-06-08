@@ -1,6 +1,42 @@
 {
 	"pages": [
 		{
+			"path": "pages/home/index",
+			"style": {
+				"navigationBarTitleText": "日程",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/pomodoro/index",
+			"style": {
+				"navigationBarTitleText": "专注",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/ai-search/index",
+			"style": {
+				"navigationBarTitleText": "AI",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/stats/index",
+			"style": {
+				"navigationBarTitleText": "统计",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/settings/index",
+			"style": {
+				"navigationBarTitleText": "设置",
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/login/index",
 			"style": {
 				"navigationBarTitleText": "登录 / 注册",
@@ -8,70 +44,88 @@
 			}
 		},
 		{
-			"path": "pages/index/index",
-			"style": {
-				"navigationBarTitleText": "知识唤醒"
-			}
-		},
-		{
 			"path": "pages/timeline/index",
 			"style": {
-				"navigationBarTitleText": "状态同步"
+				"navigationBarTitleText": "状态同步",
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/asset/index",
 			"style": {
-				"navigationBarTitleText": "资产编排"
+				"navigationBarTitleText": "资产编排",
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/profile/index",
 			"style": {
-				"navigationBarTitleText": "个人空间"
-			}
-		},
-		{
-			"path": "pages/pdf/index",
-			"style": {
-				"navigationBarTitleText": "智能伴读"
+				"navigationBarTitleText": "个人空间",
+				"navigationStyle": "custom"
 			}
 		},
 		{
 			"path": "pages/handwriting/index",
 			"style": {
-				"navigationBarTitleText": "手写笔记"
+				"navigationBarTitleText": "手写笔记",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/dashboard/index",
+			"style": {
+				"navigationBarTitleText": "仪表盘",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/subject-hall/index",
+			"style": {
+				"navigationBarTitleText": "学科大厅",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/workspace/index",
+			"style": {
+				"navigationBarTitleText": "工作区",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/timeline/index",
+			"style": {
+				"navigationBarTitleText": "排期",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/asset/index",
+			"style": {
+				"navigationBarTitleText": "资产",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/handwriting/index",
+			"style": {
+				"navigationBarTitleText": "手写笔记",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/profile/index",
+			"style": {
+				"navigationBarTitleText": "个人中心",
+				"navigationStyle": "custom"
 			}
 		}
 	],
 	"globalStyle": {
 		"navigationBarTextStyle": "black",
 		"navigationBarTitleText": "StudyCore",
-		"navigationBarBackgroundColor": "#F8F8F8",
-		"backgroundColor": "#F8F8F8"
-	},
-	"tabBar": {
-		"color": "#9ca3af",
-		"selectedColor": "#6366f1",
-		"borderStyle": "black",
-		"backgroundColor": "#ffffff",
-		"list": [
-			{
-				"pagePath": "pages/index/index",
-				"text": "主页"
-			},
-			{
-				"pagePath": "pages/timeline/index",
-				"text": "知识"
-			},
-			{
-				"pagePath": "pages/asset/index",
-				"text": "编排"
-			},
-			{
-				"pagePath": "pages/profile/index",
-				"text": "空间"
-			}
-		]
+		"navigationBarBackgroundColor": "#ffffff",
+		"backgroundColor": "#f4f4f4",
+		"navigationStyle": "custom"
 	}
 }

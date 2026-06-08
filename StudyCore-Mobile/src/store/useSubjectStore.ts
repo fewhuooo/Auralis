@@ -1,0 +1,203 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { localDb } from '@/services/localDb'
+import { uuidv7 } from '@/utils/uuid'
+import mobileRequest from '@/api/request'
+
+export interface Subject {
+  id: string
+  name: string
+  description: string
+  icon: string
+  color: string
+  created_at?: number
+  blockCount?: number
+  fileCount?: number
+}
+
+export interface SourceFile {
+  id: string
+  subject_id: string
+  name: string
+  file_path: string
+  file_type: string
+  file_size: number
+  catalog_json?: string
+  block_count?: number
+  created_at?: number
+}
+
+export interface CatalogItem {
+  title: string
+  sections: string[]
+}
+
+export const useSubjectStore = defineStore('subject', () => {
+  const subjects = ref<Subject[]>([])
+  const activeSubjectId = ref<string | null>(null)
+  const activeSourceFiles = ref<SourceFile[]>([])
+
+  const activeSubject = computed(() => {
+    return subjects.value.find(s => s.id === activeSubjectId.value) || null
+  })
+
+  const loadSubjects = async () => {
+    try {
+      const raw = await localDb.getSubjects()
+      const list: Subject[] = []
+      for (const item of raw) {
+        const blocks = await localDb.getBlocks(undefined, item.id)
+        const files = await localDb.getSourceFiles(item.id)
+        list.push({
+          ...item,
+          blockCount: blocks.length,
+          fileCount: files.length
+        })
+      }
+      subjects.value = list
+    } catch (e) {
+      console.error('[SubjectStore Mobile] Failed to load subjects:', e)
+    }
+  }
+
+  const setActiveSubject = (id: string | null) => {
+    activeSubjectId.value = id
+    if (id) {
+      loadSourceFiles(id)
+    } else {
+      activeSourceFiles.value = []
+    }
+  }
+
+  const addSubject = async (name: string, description: string, icon: string, color: string) => {
+    const newSubject: Subject = {
+      id: uuidv7(),
+      name,
+      description,
+      icon,
+      color,
+      created_at: Date.now()
+    }
+    await localDb.saveSubject(newSubject)
+    await loadSubjects()
+    return newSubject.id
+  }
+
+  const updateSubject = async (subject: Subject) => {
+    await localDb.saveSubject(subject)
+    await loadSubjects()
+  }
+
+  const deleteSubject = async (id: string) => {
+    await localDb.deleteSubject(id)
+    if (activeSubjectId.value === id) {
+      activeSubjectId.value = null
+      activeSourceFiles.value = []
+    }
+    await loadSubjects()
+  }
+
+  // Source Files Operations
+  const loadSourceFiles = async (subjectId: string) => {
+    try {
+      const files = await localDb.getSourceFiles(subjectId)
+      activeSourceFiles.value = files
+    } catch (e) {
+      console.error('[SubjectStore Mobile] Failed to load files:', e)
+    }
+  }
+
+  const addSourceFile = async (subjectId: string, name: string, filePath: string, fileType: string, fileSize: number, catalogJson?: string) => {
+    const newFile: SourceFile = {
+      id: uuidv7(),
+      subject_id: subjectId,
+      name,
+      file_path: filePath,
+      file_type: fileType,
+      file_size: fileSize,
+      catalog_json: catalogJson || '[]',
+      block_count: 0,
+      created_at: Date.now()
+    }
+    await localDb.saveSourceFile(newFile)
+    await loadSourceFiles(subjectId)
+    await loadSubjects() // refresh fileCount
+    return newFile.id
+  }
+
+  const deleteSourceFile = async (id: string) => {
+    await localDb.deleteSourceFile(id)
+    if (activeSubjectId.value) {
+      await loadSourceFiles(activeSubjectId.value)
+    }
+    await loadSubjects()
+  }
+
+  const saveSourceFileCatalog = async (file: SourceFile) => {
+    await localDb.saveSourceFile(file)
+    if (activeSubjectId.value) {
+      await loadSourceFiles(activeSubjectId.value)
+    }
+  }
+
+  const analyzeCatalogViaAi = async (sourceFileId: string, catalogText: string) => {
+    const file = activeSourceFiles.value.find(f => f.id === sourceFileId)
+    if (!file) return
+
+    try {
+      const prompt = `请帮我解析下面这本教材/材料的目录大纲文本。提取其中的章(Chapter)和节(Section)层级结构，请严格返回为以下 JSON 格式（不要有任何 markdown 标记、说明或 \`\`\`json 标记，只需返回纯 JSON 数组文本）：
+[
+  {
+    "title": "第一章 XXXXXX",
+    "sections": [
+      "1.1 YYYYYY",
+      "1.2 ZZZZZZ"
+    ]
+  }
+]
+
+以下是目录大纲文本：
+${catalogText}`
+
+      // Using the mobile custom request client
+      const res: any = await mobileRequest.post('/api/ai/chat', {
+        message: prompt,
+        requireJson: true
+      })
+
+      const rawText = res.data || ''
+      let cleaned = rawText.trim()
+      if (cleaned.startsWith('```json')) {
+        cleaned = cleaned.substring(7);
+      }
+      if (cleaned.endsWith('```')) {
+        cleaned = cleaned.substring(0, cleaned.length - 3);
+      }
+      cleaned = cleaned.trim()
+
+      const parsed: CatalogItem[] = JSON.parse(cleaned)
+      file.catalog_json = JSON.stringify(parsed)
+      await saveSourceFileCatalog(file)
+    } catch (e) {
+      console.error('[SubjectStore Mobile] Failed to analyze catalog via AI:', e)
+      throw e
+    }
+  }
+
+  return {
+    subjects,
+    activeSubjectId,
+    activeSubject,
+    activeSourceFiles,
+    loadSubjects,
+    setActiveSubject,
+    addSubject,
+    updateSubject,
+    deleteSubject,
+    loadSourceFiles,
+    addSourceFile,
+    deleteSourceFile,
+    saveSourceFileCatalog,
+    analyzeCatalogViaAi
+  }
+})

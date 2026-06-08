@@ -3,8 +3,9 @@ package com.studycore.server.service.ai;
 import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.UserMessage;
 import dev.langchain4j.service.spring.AiService;
+import dev.langchain4j.service.spring.AiServiceWiringMode;
 
-@AiService
+@AiService(wiringMode = AiServiceWiringMode.EXPLICIT, chatModel = "dynamicChatModel")
 public interface KnowledgeExtractor {
 
     @SystemMessage("You are an expert at extracting structured knowledge from raw text, PDFs, or OCR output. Extract the core concepts into a structured JSON representation.")

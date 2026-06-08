@@ -65,9 +65,9 @@
           </el-form>
 
           <div class="footer-links">
-            <a href="javascript:void(0)">忘记密码？</a>
+            <a href="javascript:void(0)" @click="ElMessage.info('密码重置功能即将上线')">忘记密码？</a>
             <span class="divider">/</span>
-            <a href="javascript:void(0)">隐私与条款</a>
+            <a href="javascript:void(0)" @click="ElMessage.info('隐私协议即将发布')">隐私与条款</a>
           </div>
         </div>
       </div>

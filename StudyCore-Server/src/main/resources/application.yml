@@ -3,6 +3,18 @@ spring:
     active: dev
   application:
     name: studycore-server
+  threads:
+    virtual:
+      enabled: true
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 55MB
+
+# StudyCore custom configuration
+studycore:
+  ingest:
+    max-file-size-mb: 50
 
 langchain4j:
   open-ai:

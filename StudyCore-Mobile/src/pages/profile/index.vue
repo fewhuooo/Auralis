@@ -53,7 +53,6 @@
 import { ref, computed } from 'vue'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useTaskStore } from '@/store/useTaskStore'
-import { fullSync, checkPCConnection } from '@/api/sync'
 import { vibrate } from '@/api/device'
 import { getAiConfig, setAiConfig } from '@/api/aiClient'
 
@@ -85,10 +84,17 @@ const handleMenu = async (item: any) => {
   if (item.action === 'sync') {
     isSyncing.value = true
     uni.showLoading({ title: '正在同步...' })
-    const result = await fullSync()
-    uni.hideLoading()
-    isSyncing.value = false
-    uni.showToast({ title: result.message, icon: result.success ? 'success' : 'none' })
+    try {
+      const { useSyncStore } = await import('@/store/useSyncStore')
+      await useSyncStore().triggerSync()
+      uni.hideLoading()
+      uni.showToast({ title: '同步成功', icon: 'success' })
+    } catch (e) {
+      uni.hideLoading()
+      uni.showToast({ title: '同步失败', icon: 'none' })
+    } finally {
+      isSyncing.value = false
+    }
   } else if (item.action === 'dark') {
     if (typeof document !== 'undefined') {
       const html = document.documentElement
@@ -98,10 +104,14 @@ const handleMenu = async (item: any) => {
       try {
         if (isDark) {
           uni.setNavigationBarColor({ frontColor: '#ffffff', backgroundColor: '#171614', animation: { duration: 200, timingFunc: 'easeIn' } })
-          uni.setTabBarStyle({ backgroundColor: '#171614', borderStyle: 'black', color: '#8a867e', selectedColor: '#b5ac9f' })
+          if (typeof document !== 'undefined') {
+            document.documentElement.classList.add('dark')
+          }
         } else {
           uni.setNavigationBarColor({ frontColor: '#000000', backgroundColor: '#faf9f8', animation: { duration: 200, timingFunc: 'easeIn' } })
-          uni.setTabBarStyle({ backgroundColor: '#ffffff', borderStyle: 'white', color: '#8a867e', selectedColor: '#6366f1' })
+          if (typeof document !== 'undefined') {
+            document.documentElement.classList.remove('dark')
+          }
         }
       } catch (e) {
         console.log('Native shell style update failed or unsupported in this env')
@@ -132,18 +142,18 @@ const handleMenu = async (item: any) => {
 </script>
 
 <style scoped>
-.page { min-height: 100vh; background: var(--color-bg-primary); padding-bottom: 180rpx; }
-.profile-header { display: flex; flex-direction: column; align-items: center; padding: 60rpx 0 40rpx; background: linear-gradient(180deg, rgba(181,172,159,0.15), transparent); }
+.page { min-height: 100vh; background: var(--color-bg-primary); padding-bottom: calc(env(safe-area-inset-bottom) + 80rpx); }
+.profile-header { display: flex; flex-direction: column; align-items: center; padding: calc(var(--status-bar-height, 44px) + 40rpx) 40rpx 40rpx; background: linear-gradient(180deg, rgba(181,172,159,0.15), transparent); }
 .avatar-ring { width: 160rpx; height: 160rpx; border-radius: 50%; padding: 6rpx; background: var(--border-accent); margin-bottom: 20rpx; }
 .avatar { width: 100%; height: 100%; border-radius: 50%; background: var(--color-bg-secondary); display: flex; align-items: center; justify-content: center; }
 .avatar-text { font-size: 48rpx; font-weight: 800; color: var(--text-accent); }
 .user-name { font-size: 38rpx; font-weight: 700; color: var(--text-primary); margin-bottom: 8rpx; }
 .user-desc { font-size: 26rpx; color: var(--text-muted); }
-.stat-grid { display: flex; justify-content: space-around; padding: 32rpx 48rpx; margin: 0 24rpx 24rpx; background: var(--color-bg-secondary); border: 2rpx solid var(--border-subtle); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); }
+.stat-grid { display: flex; justify-content: space-around; padding: 32rpx 0; margin: 0 40rpx 40rpx; background: var(--color-bg-secondary); border: 2rpx solid var(--border-subtle); border-radius: var(--radius-xl); box-shadow: var(--shadow-sm); }
 .stat-box { display: flex; flex-direction: column; align-items: center; }
 .sb-value { font-size: 44rpx; font-weight: 800; color: var(--text-primary); }
 .sb-label { font-size: 22rpx; color: var(--text-muted); margin-top: 6rpx; }
-.menu-section { margin: 0 24rpx 24rpx; background: var(--color-bg-secondary); border: 2rpx solid var(--border-subtle); border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-sm); }
+.menu-section { margin: 0 40rpx 40rpx; background: var(--color-bg-secondary); border: 2rpx solid var(--border-subtle); border-radius: var(--radius-xl); overflow: hidden; box-shadow: var(--shadow-sm); }
 .menu-item { display: flex; align-items: center; padding: 32rpx 28rpx; border-bottom: 2rpx solid var(--border-subtle); }
 .menu-item:last-child { border-bottom: none; }
 .menu-item:active { background: var(--color-bg-tertiary); }

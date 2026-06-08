@@ -2,14 +2,18 @@ server:
   port: 8080
 
 spring:
+  threads:
+    virtual:
+      enabled: true
   datasource:
     url: jdbc:postgresql://127.0.0.1:5432/studycore
     username: postgres
     password: password
     driver-class-name: org.postgresql.Driver
-  redis:
-    host: 127.0.0.1
-    port: 6379
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
   config:
     import:
       - optional:file:.env[.properties]
@@ -27,9 +31,21 @@ langchain4j:
       base-url: https://api.siliconflow.cn/v1
       api-key: ${SILICONFLOW_API_KEY:your-siliconflow-api-key-here}
       model-name: BAAI/bge-m3
+  milvus:
+    host: 127.0.0.1
+    port: 19530
+    collection-name: knowledge_blocks
+    dimension: 1024 # BGE-m3 has 1024 dimension
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# MinIO (reuse the Milvus stack's MinIO instance)
+minio:
+  endpoint: http://127.0.0.1:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket: studycore-assets

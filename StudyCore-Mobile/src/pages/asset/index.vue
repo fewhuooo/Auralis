@@ -49,7 +49,6 @@
 import { ref, onMounted, computed } from 'vue'
 import { convertHandwritingToMarkdown } from '@/api/aiClient'
 import { useBlockStore } from '@/store/useBlockStore'
-import { useBlockApi } from '@/api/useBlockApi'
 
 const blockStore = useBlockStore()
 
@@ -69,8 +68,8 @@ const history = ref<any[]>([])
 
 onMounted(async () => {
   try {
-    const res: any = await useBlockApi.getBlocks(undefined, 1, 20)
-    const blocks = res.records || []
+    await blockStore.loadLocalBlocks()
+    const blocks = blockStore.recentBlocks || []
     // 将知识块映射为资产历史条目
     if (blocks.length > 0) {
       history.value = blocks.map((b: any) => ({

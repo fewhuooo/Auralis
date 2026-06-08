@@ -54,6 +54,9 @@
         <span class="nav-icon">⚙</span>
       </router-link>
 
+      <!-- Divider -->
+      <div class="sidebar-divider"></div>
+
       <!-- Dynamic subjects -->
       <div class="subjects-list">
         <div
@@ -106,19 +109,7 @@
       <span class="hover-subject-meta" v-if="hoverState.data.id !== 'hall'">
         {{ hoverState.data.blockCount || 0 }} 知识块 · {{ hoverState.data.fileCount || 0 }} 材料
       </span>
-      <div class="hover-subject-actions" v-if="hoverState.data.id !== 'hall'">
-        <button class="hover-action-btn" title="编辑" @click="openCreateModal(hoverState.data)">✎ 编辑</button>
-        <button class="hover-action-btn delete" title="删除" @click="confirmDelete(hoverState.data)">✕ 删除</button>
-      </div>
     </div>
-
-    <!-- Subject Create/Edit Modal -->
-    <SubjectCreateModal 
-      v-if="showCreateModal" 
-      :subjectData="selectedSubjectForEdit || undefined"
-      @close="closeCreateModal"
-      @save="handleSaveSubject"
-    />
   </aside>
 </template>
 
@@ -128,16 +119,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
-import SubjectCreateModal from '@/components/subject/SubjectCreateModal.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const subjectStore = useSubjectStore()
-
-const showCreateModal = ref(false)
-const selectedSubjectForEdit = ref<Subject | null>(null)
 
 // Hover States
 const hoverState = ref<{
@@ -195,41 +182,7 @@ onMounted(async () => {
   await subjectStore.loadSubjects()
 })
 
-const openCreateModal = (subject: Subject | null) => {
-  selectedSubjectForEdit.value = subject
-  showCreateModal.value = true
-  // Close the hover card when opening the modal
-  hoverState.value.type = null
-}
 
-const closeCreateModal = () => {
-  showCreateModal.value = false
-  selectedSubjectForEdit.value = null
-}
-
-const handleSaveSubject = async (formData: any) => {
-  try {
-    if (formData.id) {
-      await subjectStore.updateSubject(formData)
-    } else {
-      await subjectStore.addSubject(formData.name, formData.description, formData.icon, formData.color)
-    }
-    closeCreateModal()
-  } catch (e) {
-    console.error('Failed to save subject:', e)
-  }
-}
-
-const confirmDelete = async (subject: Subject) => {
-  if (confirm(`确定要删除学科“${subject.name}”吗？这将断开本地文件的关联。`)) {
-    try {
-      await subjectStore.deleteSubject(subject.id)
-      hoverState.value.type = null
-    } catch (e) {
-      console.error('Failed to delete subject:', e)
-    }
-  }
-}
 
 </script>
 
@@ -319,6 +272,14 @@ const confirmDelete = async (subject: Subject) => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.sidebar-divider {
+  width: 24px;
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 8px 0;
+  flex-shrink: 0;
 }
 
 /* Tooltip floating card styling */

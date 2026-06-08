@@ -14,39 +14,52 @@
               class="palette-input"
               placeholder="唤醒个人知识库... (Personal Context)"
               @keydown.esc="close"
+              @keydown="handleKeyNav"
             />
             <button class="close-btn" @click="close">ESC</button>
           </div>
           
           <div class="palette-body" v-if="query">
-            <!-- Simulated Results -->
-            <div class="result-group">
-              <div class="group-title">知识块</div>
-              <div class="result-item">
-                <span class="icon">⬡</span>
-                <div class="text">
-                  <span class="title">进程与线程的区别</span>
-                  <span class="desc">操作系统 · 包含 "{{ query }}" 相关的概念</span>
-                </div>
-              </div>
-              <div class="result-item">
-                <span class="icon">⬡</span>
-                <div class="text">
-                  <span class="title">JVM 垃圾回收机制</span>
-                  <span class="desc">Java基础 · 曾在这个笔记中提到过</span>
-                </div>
-              </div>
+            <div v-if="isSearching" class="search-loading">
+              <span class="loading-spinner"></span> 正在为您检索个人知识库...
             </div>
-            <div class="result-group">
-              <div class="group-title">快捷操作</div>
-              <div class="result-item">
-                <span class="icon">✨</span>
-                <div class="text">
-                  <span class="title">让 AI 解答 "{{ query }}"</span>
-                  <span class="desc">在知识库中未找到，调用大模型分析并入库</span>
+            <template v-else>
+              <div class="result-group" v-if="searchResults.length > 0">
+                <div class="group-title">知识块</div>
+                <div
+                  v-for="(block, idx) in searchResults"
+                  :key="block.id"
+                  class="result-item"
+                  :class="{ 'is-selected': selectedIndex === idx }"
+                  @click="selectResult(block)"
+                >
+                  <span class="icon">⬡</span>
+                  <div class="text">
+                    <span class="title">{{ block.title }}</span>
+                    <span class="desc">{{ block.subject }} · {{ block.preview?.slice(0, 50) }}...</span>
+                  </div>
                 </div>
               </div>
-            </div>
+              
+              <div class="result-group">
+                <div class="group-title">快捷操作</div>
+                <div
+                  class="result-item"
+                  :class="{ 'is-selected': selectedIndex === searchResults.length }"
+                  @click="triggerAiChat"
+                >
+                  <span class="icon">✨</span>
+                  <div class="text">
+                    <span class="title">让 AI 解答 "{{ query }}"</span>
+                    <span class="desc">未匹配到合适知识块？唤醒 RAG 智能大模型</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div v-if="searchResults.length === 0" class="no-result">
+                未匹配到合适的本地知识块
+              </div>
+            </template>
           </div>
           
           <div class="palette-footer" v-else>
@@ -61,15 +74,57 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { useBlockStore } from '@/store/useBlockStore'
+
+const router = useRouter()
+const blockStore = useBlockStore()
 
 const isVisible = ref(false)
 const query = ref('')
 const searchInput = ref<HTMLInputElement | null>(null)
 
+const searchResults = ref<any[]>([])
+const isSearching = ref(false)
+const selectedIndex = ref(-1)
+
+let searchTimeout: any = null
+const doSearch = (q: string) => {
+  if (searchTimeout) clearTimeout(searchTimeout)
+  if (!q.trim()) {
+    searchResults.value = []
+    return
+  }
+  isSearching.value = true
+  searchTimeout = setTimeout(async () => {
+    try {
+      await blockStore.loadLocalBlocks()
+      const all = blockStore.recentBlocks || []
+      searchResults.value = all.filter((b: any) =>
+        (b.title && b.title.toLowerCase().includes(q.toLowerCase())) ||
+        (b.subject && b.subject.toLowerCase().includes(q.toLowerCase())) ||
+        (b.preview && b.preview.toLowerCase().includes(q.toLowerCase()))
+      ).slice(0, 6)
+    } catch (e) {
+      console.error(e)
+      searchResults.value = []
+    } finally {
+      isSearching.value = false
+    }
+  }, 300)
+}
+
+watch(query, (newVal) => {
+  selectedIndex.value = -1
+  doSearch(newVal)
+})
+
 const open = () => {
   isVisible.value = true
   query.value = ''
+  searchResults.value = []
+  selectedIndex.value = -1
   nextTick(() => {
     searchInput.value?.focus()
   })
@@ -77,6 +132,47 @@ const open = () => {
 
 const close = () => {
   isVisible.value = false
+}
+
+const selectResult = (block: any) => {
+  close()
+  router.push('/')
+  nextTick(() => {
+    window.dispatchEvent(new CustomEvent('open-block-detail', { detail: block }))
+  })
+}
+
+const triggerAiChat = () => {
+  close()
+  router.push('/')
+  nextTick(() => {
+    window.dispatchEvent(new CustomEvent('search-trigger-ai-chat', { detail: query.value }))
+  })
+}
+
+const handleKeyNav = (e: KeyboardEvent) => {
+  const maxIdx = searchResults.value.length // including "Ask AI" at the end
+  if (maxIdx === 0 && query.value) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      triggerAiChat()
+    }
+    return
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    selectedIndex.value = (selectedIndex.value + 1) % (maxIdx + 1)
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    selectedIndex.value = (selectedIndex.value - 1 + maxIdx + 1) % (maxIdx + 1)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (selectedIndex.value === maxIdx || selectedIndex.value === -1) {
+      triggerAiChat()
+    } else if (selectedIndex.value >= 0 && selectedIndex.value < searchResults.value.length) {
+      selectResult(searchResults.value[selectedIndex.value])
+    }
+  }
 }
 
 const handleKeydown = (e: KeyboardEvent) => {
@@ -195,8 +291,37 @@ onUnmounted(() => {
   transition: background var(--transition-fast);
 }
 
-.result-item:hover {
+.result-item:hover,
+.result-item.is-selected {
   background: rgba(255, 255, 255, 0.05);
+}
+
+.search-loading, .no-result {
+  padding: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.search-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-radius: 50%;
+  border-top-color: var(--text-accent);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .result-item .icon {

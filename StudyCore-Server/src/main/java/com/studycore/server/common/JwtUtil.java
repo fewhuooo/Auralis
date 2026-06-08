@@ -16,21 +16,23 @@ public class JwtUtil {
     private static final long ACCESS_TOKEN_EXPIRATION = 86400000L;  // 1 day
     private static final long REFRESH_TOKEN_EXPIRATION = 604800000L; // 7 days
 
-    public String generateToken(String username) {
+    public String generateToken(String username, String userId) {
         return Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + ACCESS_TOKEN_EXPIRATION))
+                .claim("userId", userId)
                 .claim("type", "access")
                 .signWith(KEY, SignatureAlgorithm.HS256)
                 .compact();
     }
 
-    public String generateRefreshToken(String username) {
+    public String generateRefreshToken(String username, String userId) {
         return Jwts.builder()
                 .setSubject(username)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + REFRESH_TOKEN_EXPIRATION))
+                .claim("userId", userId)
                 .claim("type", "refresh")
                 .signWith(KEY, SignatureAlgorithm.HS256)
                 .compact();
@@ -38,6 +40,10 @@ public class JwtUtil {
 
     public String extractUsername(String token) {
         return getClaims(token).getSubject();
+    }
+
+    public String extractUserId(String token) {
+        return getClaims(token).get("userId", String.class);
     }
 
     public boolean validateToken(String token) {

@@ -1,11 +1,7 @@
-/**
- * useBlockStore — 移动端知识块状态管理
- * 复用 PC 端同名 Store 的数据模型和核心逻辑
- * 持久化由 uni-storage persist 插件自动处理
- */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { useBlockApi } from '@/api/useBlockApi'
+import { localDb } from '@/services/localDb'
+import { uuidv7 } from '@/utils/uuid'
 
 export interface KnowledgeBlock {
   id: string
@@ -15,59 +11,146 @@ export interface KnowledgeBlock {
   time: string
   source: string
   color: string
+  sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete'
+  subjectId?: string
+  sourceFileId?: string
+  tags?: string[]
+  difficulty?: 'easy' | 'medium' | 'hard'
+  mastery?: number
+  reviewAt?: string
+  relatedBlockIds?: string[]
 }
 
 export const useBlockStore = defineStore('block', () => {
   const recentBlocks = ref<KnowledgeBlock[]>([])
+  const isSyncing = ref(false)
 
-  /**
-   * 从后端拉取知识块列表
-   */
-  const fetchBlocks = async (subject?: string) => {
+  const checkOnline = async (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      uni.getNetworkType({
+        success: (res) => {
+          resolve(res.networkType !== 'none')
+        },
+        fail: () => {
+          resolve(true)
+        }
+      })
+    })
+  }
+
+  const loadLocalBlocks = async (subject?: string, subjectId?: string) => {
     try {
-      const res: any = await useBlockApi.getBlocks(subject)
-      recentBlocks.value = res.records || []
+      recentBlocks.value = await localDb.getBlocks(subject, subjectId)
     } catch (e) {
-      console.error('[Mobile] Failed to fetch blocks:', e)
-      // 离线时保留 persist 缓存中的数据，不清空
+      console.error('[Mobile Store] Failed to load local blocks:', e)
     }
   }
 
-  const addBlock = async (block: KnowledgeBlock) => {
+  const fetchBlocks = async (subject?: string, subjectId?: string) => {
+    // 1. Read from local SQLite
+    await loadLocalBlocks(subject, subjectId)
+
+    // 2. Try bidirectional sync
     try {
-      const res: any = await useBlockApi.createBlock(block)
-      recentBlocks.value.unshift(res)
+      const { useSyncStore } = await import('./useSyncStore')
+      await useSyncStore().triggerSync()
+      await loadLocalBlocks(subject, subjectId)
     } catch (e) {
-      console.error('[Mobile] Failed to create block, saving locally:', e)
-      recentBlocks.value.unshift(block)
+      console.warn('[Mobile Store] Server unreachable, using local database cache:', e)
     }
+  }
+
+  const recordMutation = async (entityType: 'block' | 'task', entityId: string, action: 'create' | 'update' | 'delete', payload: any) => {
+    const { getClientId } = await import('./useSyncStore')
+    const clientId = getClientId()
+    await localDb.addLocalMutation(clientId, entityType, entityId, action, payload)
+  }
+
+  const syncPendingChanges = async () => {
+    const online = await checkOnline()
+    if (!online || isSyncing.value) return
+    isSyncing.value = true
+    try {
+      const { useSyncStore } = await import('./useSyncStore')
+      await useSyncStore().triggerSync()
+    } catch (err) {
+      console.error(`[Mobile Store] Background sync failed:`, err)
+    } finally {
+      isSyncing.value = false
+    }
+  }
+
+  const addBlock = async (block: Omit<KnowledgeBlock, 'id'> & { id?: string }) => {
+    const newBlock: KnowledgeBlock = {
+      id: block.id || uuidv7(),
+      subject: block.subject,
+      title: block.title,
+      preview: block.preview,
+      time: block.time || new Date().toISOString(),
+      source: block.source,
+      color: block.color,
+      sync_status: 'pending_create',
+      subjectId: block.subjectId,
+      sourceFileId: block.sourceFileId,
+      tags: block.tags || [],
+      difficulty: block.difficulty,
+      mastery: block.mastery || 0,
+      reviewAt: block.reviewAt,
+      relatedBlockIds: block.relatedBlockIds || []
+    }
+
+    recentBlocks.value.unshift(newBlock)
+    await localDb.saveBlock(newBlock, 'pending_create')
+    await recordMutation('block', newBlock.id || '', 'create', newBlock)
+    
+    syncPendingChanges()
   }
 
   const removeBlock = async (id: string) => {
-    try {
-      await useBlockApi.deleteBlock(id)
-      recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
-    } catch (e) {
-      console.error('[Mobile] Failed to delete block:', e)
-      recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
-    }
+    recentBlocks.value = recentBlocks.value.filter(b => b.id !== id)
+    await localDb.deleteBlock(id)
+    await recordMutation('block', id, 'delete', { id })
+    
+    syncPendingChanges()
   }
 
-  /**
-   * 从远程同步数据覆盖本地（PC端 -> 移动端）
-   */
-  const syncFromRemote = (blocks: KnowledgeBlock[]) => {
-    recentBlocks.value = blocks
+  const updateBlock = async (block: KnowledgeBlock) => {
+    if (!block.id) return
+    const updatedBlock: KnowledgeBlock = {
+      ...block,
+      sync_status: block.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
+    }
+
+    const index = recentBlocks.value.findIndex(b => b.id === block.id)
+    if (index !== -1) {
+      recentBlocks.value[index] = updatedBlock
+    }
+    await localDb.saveBlock(updatedBlock, updatedBlock.sync_status)
+    await recordMutation('block', block.id, 'update', updatedBlock)
+
+    syncPendingChanges()
   }
+
+  const syncFromRemote = (blocks: KnowledgeBlock[]) => {
+    localDb.mergeBlocksFromServer(blocks).then(() => loadLocalBlocks())
+  }
+
+  // Set up reactive sync listener on network status change
+  uni.onNetworkStatusChange((res) => {
+    if (res.isConnected) {
+      console.log('[Mobile Store] Network re-established. Auto-syncing blocks...')
+      syncPendingChanges()
+    }
+  })
 
   return {
     recentBlocks,
+    loadLocalBlocks,
     fetchBlocks,
     addBlock,
     removeBlock,
+    updateBlock,
     syncFromRemote,
+    syncPendingChanges
   }
-}, {
-  // @ts-ignore
-  persist: true
 })

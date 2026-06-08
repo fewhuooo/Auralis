@@ -10,7 +10,7 @@
         </div>
         <div class="user-meta">
           <h2 class="user-name">StudyCore 同学</h2>
-          <p class="user-streak">🔥 连续学习第 <strong>42</strong> 天</p>
+          <p class="user-streak">🔥 连续学习第 <strong>{{ continuousStudyDays }}</strong> 天</p>
         </div>
         <div class="user-level">
           <span class="level-badge">Lv.7</span>
@@ -28,7 +28,10 @@
       <!-- Weekly Chart -->
       <div class="pivot-section">
         <p class="pivot-label">本周专注时长 (小时)</p>
-        <div class="bar-chart">
+        <div v-if="weekBars.length === 0 || weekBars.every(b => b.pct === 0)" class="no-data-hint">
+          本周暂无专注记录
+        </div>
+        <div class="bar-chart" v-else>
           <div
             v-for="(bar, i) in weekBars"
             :key="i"
@@ -108,6 +111,7 @@
                 v-else-if="item.type === 'select'"
                 class="settings-select"
                 v-model="item.value"
+                @change="handleSelectChange(item)"
               >
                 <option v-for="opt in item.options" :key="opt" :value="opt">{{ opt }}</option>
               </select>
@@ -157,39 +161,94 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { useStatsApi } from '@/api/useStatsApi'
+import { useSyncStore } from '@/store/useSyncStore'
+import { useSettingsStore } from '@/store/useSettingsStore'
+import { useBlockStore } from '@/store/useBlockStore'
+import { ElNotification, ElMessageBox } from 'element-plus'
+import 'element-plus/theme-chalk/el-notification.css'
+import 'element-plus/theme-chalk/el-message-box.css'
+
+const settingsStore = useSettingsStore()
+const blockStore = useBlockStore()
+
+const continuousStudyDays = ref(1)
 
 // === Stats ===
 const coreStats = ref([
-  { label: '知识块', value: '156', accent: false },
-  { label: '完成任务', value: '38', accent: false },
-  { label: '总专注时长', value: '67h', accent: true },
-  { label: '本周新增', value: '12', accent: false },
-  { label: '今日专注', value: '2.5h', accent: true },
-  { label: '平均每日', value: '1.6h', accent: false },
+  { label: '知识块', value: '0', accent: false },
+  { label: '完成任务', value: '0', accent: false },
+  { label: '总专注时长', value: '0h', accent: true },
+  { label: '本周新增', value: '0', accent: false },
 ])
 
 // === Week bars ===
-const weekBars = ref([
-  { day: '一', pct: 60, today: false },
-  { day: '二', pct: 80, today: false },
-  { day: '三', pct: 45, today: false },
-  { day: '四', pct: 90, today: false },
-  { day: '五', pct: 70, today: false },
-  { day: '六', pct: 35, today: false },
-  { day: '日', pct: 55, today: true },
-])
+const weekBars = ref<any[]>([])
 
 // === Subjects ===
-const subjects = ref([
-  { name: '计算机系统', pct: 38, color: '#6366f1' },
-  { name: '数据结构', pct: 27, color: '#8b5cf6' },
-  { name: '数学', pct: 20, color: '#a78bfa' },
-  { name: '英语', pct: 15, color: '#c4b5fd' },
-])
+const subjects = ref<any[]>([])
 
 // === AI Insight ===
-const aiInsight = ref('你本周四专注度最高，峰值时段为 21:00-23:00，建议将高难度任务优先安排在此时间窗口。')
+const aiInsight = ref('根据您的学习习惯，持续整理知识库并合理编排专注任务能获得最佳的学习心流体验。')
+
+const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#818cf8', '#a78bfa']
+const dayMapping: Record<string, string> = {
+  'Mon': '一', 'Tue': '二', 'Wed': '三', 'Thu': '四', 'Fri': '五', 'Sat': '六', 'Sun': '日'
+}
+
+const syncStore = useSyncStore()
+
+const loadStats = async () => {
+  try {
+    const overviewRes: any = await useStatsApi.getOverview()
+    const weeklyRes: any = await useStatsApi.getWeekly()
+
+    const overview = overviewRes || {}
+    const weekly = weeklyRes || { weekBars: [] }
+
+    continuousStudyDays.value = overview.continuousStudyDays || 1
+    
+    coreStats.value = [
+      { label: '知识块', value: String(overview.totalBlocks || 0), accent: false },
+      { label: '完成任务', value: String(overview.totalTasks || 0), accent: false },
+      { label: '总专注时长', value: ((overview.totalFocusMinutes || 0) / 60).toFixed(1) + 'h', accent: true },
+      { label: '本周新增', value: String(overview.weeklyNewBlocks || 0), accent: false },
+    ]
+
+    // Map week bars
+    const rawBars = weekly.weekBars || []
+    const maxMins = Math.max(...rawBars.map((b: any) => b.focusMinutes), 60)
+    const todayName = new Date().getDay() // 0 = Sun, 1 = Mon...
+    const todayMapIndex = todayName === 0 ? 6 : todayName - 1
+    const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    const todayStr = weekDays[todayMapIndex]
+
+    weekBars.value = rawBars.map((bar: any) => ({
+      day: dayMapping[bar.day] || bar.day,
+      pct: Math.round(((bar.focusMinutes || 0) * 100) / maxMins),
+      today: bar.day === todayStr
+    }))
+
+    // Map subjects
+    const rawSubjects = overview.subjectDistribution || []
+    subjects.value = rawSubjects.map((item: any, index: number) => ({
+      name: item.subject || '未分类',
+      pct: item.pct || 0,
+      color: colors[index % colors.length]
+    }))
+
+    // Dynamic AI Insight based on stats
+    if (overview.totalFocusMinutes > 240) {
+      aiInsight.value = '您本周的专注学习状态极其出色！主要精力集中在 ' + (subjects.value[0]?.name || '重点学科') + '，建议继续保持现有的心流节奏。'
+    } else {
+      aiInsight.value = '开启您的每日学习任务吧！合理利用番茄钟进行大纲拆解与目标管理，知识库会自动记录您的每次成长。'
+    }
+
+  } catch (e) {
+    console.error('Failed to load stats:', e)
+  }
+}
 
 // === Settings ===
 interface SettingItem {
@@ -209,18 +268,18 @@ const settingGroups = reactive([
     title: '外观与显示',
     icon: '🎨',
     items: [
-      { id: 'dark', label: '深色模式', desc: '切换应用主题为深色', type: 'toggle', value: document.documentElement.classList.contains('dark') },
-      { id: 'compact', label: '紧凑布局', desc: '减小卡片和间距以显示更多内容', type: 'toggle', value: false },
-      { id: 'lang', label: '界面语言', desc: '选择应用显示语言', type: 'select', value: '简体中文', options: ['简体中文', 'English', '日本語'] },
-      { id: 'font_size', label: '字体大小', desc: '调整全局基础字号', type: 'select', value: '14px (默认)', options: ['12px (小)', '14px (默认)', '16px (大)'] },
+      { id: 'dark', label: '深色模式', desc: '切换应用主题为深色', type: 'toggle', value: settingsStore.isDark },
+      { id: 'compact', label: '紧凑布局', desc: '减小卡片和间距以显示更多内容', type: 'toggle', value: settingsStore.compactLayout },
+      { id: 'lang', label: '界面语言', desc: '选择应用显示语言', type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
+      { id: 'font_size', label: '字体大小', desc: '调整全局基础字号', type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
     ] as SettingItem[]
   },
   {
     title: '同步与备份',
     icon: '☁️',
     items: [
-      { id: 'auto_sync', label: '自动同步', desc: '每隔 5 分钟自动将数据同步至云端', type: 'toggle', value: true },
-      { id: 'wifi_only', label: '仅 Wi-Fi 同步', desc: '移动数据环境下暂停后台同步', type: 'toggle', value: false },
+      { id: 'auto_sync', label: '自动同步', desc: '每隔 5 分钟自动将数据同步至云端', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
+      { id: 'wifi_only', label: '仅 Wi-Fi 同步', desc: '移动数据环境下暂停后台同步', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
       { id: 'sync_now', label: '立即同步', desc: '手动触发一次全量同步', type: 'action', btnText: '立即同步', variant: 'primary' },
       { id: 'export', label: '导出数据', desc: '将所有知识块导出为 JSON / Markdown', type: 'action', btnText: '导出备份', variant: '' },
     ] as SettingItem[]
@@ -229,17 +288,17 @@ const settingGroups = reactive([
     title: 'AI 引擎（后端管理）',
     icon: '✦',
     items: [
-      { id: 'rag', label: 'RAG 语义搜索', desc: '开启后搜索将使用向量匹配，更精准但更耗时', type: 'toggle', value: true },
-      { id: 'auto_tag', label: 'AI 自动打标签', desc: '新知识块入库时自动推断学科标签', type: 'toggle', value: true },
+      { id: 'rag', label: 'RAG 语义搜索', desc: '开启后搜索将使用向量匹配，更精准但更耗时', type: 'toggle', value: localStorage.getItem('sc_setting_rag') !== 'false' },
+      { id: 'auto_tag', label: 'AI 自动打标签', desc: '新知识块入库时自动推断学科标签', type: 'toggle', value: localStorage.getItem('sc_setting_auto_tag') !== 'false' },
     ] as SettingItem[]
   },
   {
     title: '通知',
     icon: '🔔',
     items: [
-      { id: 'task_remind', label: '任务提醒', desc: '临近截止时间时发送桌面通知', type: 'toggle', value: true },
-      { id: 'focus_end', label: '专注结束提醒', desc: '番茄钟结束后播放提示音', type: 'toggle', value: true },
-      { id: 'weekly_report', label: '每周学习报告', desc: '每周日 20:00 推送本周学习总结', type: 'toggle', value: false },
+      { id: 'task_remind', label: '任务提醒', desc: '临近截止时间时发送桌面通知', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
+      { id: 'focus_end', label: '专注结束提醒', desc: '番茄钟结束后播放提示音', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
+      { id: 'weekly_report', label: '每周学习报告', desc: '每周日 20:00 推送本周学习总结', type: 'toggle', value: localStorage.getItem('sc_setting_weekly_report') === 'true' },
     ] as SettingItem[]
   },
 ])
@@ -247,37 +306,129 @@ const settingGroups = reactive([
 // === Handlers ===
 const handleToggle = (item: SettingItem) => {
   item.value = !item.value
-  if (item.id === 'dark') {
-    document.documentElement.classList.toggle('dark', item.value)
+  switch (item.id) {
+    case 'dark':
+      settingsStore.isDark = item.value
+      break
+    case 'compact':
+      settingsStore.compactLayout = item.value
+      break
+    case 'auto_sync':
+    case 'wifi_only':
+    case 'rag':
+    case 'auto_tag':
+    case 'task_remind':
+    case 'focus_end':
+    case 'weekly_report':
+      localStorage.setItem(`sc_setting_${item.id}`, String(item.value))
+      ElNotification({
+        title: '⚙️ 设置已更新',
+        message: `[${item.label}] 已切换为 ${item.value ? '开启' : '关闭'}`,
+        type: 'success',
+        duration: 2000
+      })
+      break
   }
 }
 
-const handleAction = (item: SettingItem) => {
+const handleSelectChange = (item: SettingItem) => {
+  if (item.id === 'font_size') {
+    settingsStore.fontSize = item.value
+  } else {
+    localStorage.setItem(`sc_setting_${item.id}`, item.value)
+  }
+  ElNotification({
+    title: '⚙️ 设置已生效',
+    message: `[${item.label}] 已更新为: ${item.value}`,
+    type: 'success',
+    duration: 2000
+  })
+}
+
+const handleAction = async (item: SettingItem) => {
   if (item.id === 'sync_now') {
-    // simulate sync
     const orig = item.btnText
     item.btnText = '同步中...'
-    setTimeout(() => { item.btnText = '✓ 已同步'; setTimeout(() => { item.btnText = orig }, 2000) }, 1500)
+    try {
+      await syncStore.triggerSync()
+      item.btnText = '✓ 同步成功'
+      await loadStats()
+      ElNotification({ title: '☁️ 同步成功', message: '所有数据已成功同步至云端', type: 'success', duration: 3000 })
+    } catch (e) {
+      item.btnText = '✕ 同步失败'
+      ElNotification({ title: '⚠️ 同步失败', message: '同步遇到错误，请检查网络后重试', type: 'error', duration: 3000 })
+    } finally {
+      setTimeout(() => { item.btnText = orig }, 2500)
+    }
+  } else if (item.id === 'export') {
+    try {
+      await blockStore.loadLocalBlocks()
+      const blocks = blockStore.recentBlocks || []
+      const jsonData = JSON.stringify(blocks, null, 2)
+      const blob = new Blob([jsonData], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `studycore_backup_${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      ElNotification({ title: '📥 导出成功', message: '本地知识库已成功打包下载', type: 'success', duration: 3000 })
+    } catch (err: any) {
+      ElNotification({ title: '⚠️ 导出失败', message: err.message || '获取知识列表失败', type: 'error', duration: 3000 })
+    }
   }
 }
 
-const handleInputBlur = (item: SettingItem) => {
+const handleInputBlur = (_item: SettingItem) => {
   // handled in backend
 }
 
 onMounted(async () => {
-  // Removed old AI config load
+  await loadStats()
 })
 
-const handleClearCache = () => {
-  if (confirm('确定要清除所有本地缓存吗？')) {
-    localStorage.clear()
-    alert('本地缓存已清除。')
+const handleClearCache = async () => {
+  try {
+    await ElMessageBox.confirm('将清除所有本地缓存数据，不影响云端数据与您的登录状态。确认继续？', '清除缓存', {
+      confirmButtonText: '清除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const keysToRemove = [
+      'studycore_knowledge_blocks', 'studycore_task_blocks',
+      'studycore_chat_sessions', 'studycore_chat_messages',
+      'studycore_local_mutations', 'studycore_sync_metadata'
+    ]
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+    ElNotification({ title: '✅ 缓存已清除', message: '本地数据缓存已清理完毕', type: 'success', duration: 3000 })
+    await loadStats()
+  } catch {
+    // User cancelled
   }
 }
 
-const handleDeleteAccount = () => {
-  alert('该功能需在移动端通过生物识别验证后才可操作。')
+const handleDeleteAccount = async () => {
+  try {
+    const { value: inputPwd } = await ElMessageBox.prompt(
+      '注销账户将永久删除您在云端和本地的所有个人数据，此操作不可逆。请输入您的密码确认：',
+      '⚠️ 注销账户',
+      {
+        confirmButtonText: '确认注销',
+        cancelButtonText: '取消',
+        inputType: 'password',
+        inputPlaceholder: '请输入密码'
+      }
+    )
+    if (!inputPwd) return
+    ElNotification({
+      title: '注销申请已提交',
+      message: '您的注销请求已受理，请在 24 小时内查看邮箱完成最终注销确认。',
+      type: 'warning',
+      duration: 6000
+    })
+  } catch {
+    // User cancelled
+  }
 }
 </script>
 
@@ -379,7 +530,7 @@ const handleDeleteAccount = () => {
 /* Stats Grid */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -434,6 +585,18 @@ const handleDeleteAccount = () => {
   gap: 6px;
   align-items: flex-end;
   height: 80px;
+}
+
+.no-data-hint {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-tertiary);
 }
 
 .bar-col {

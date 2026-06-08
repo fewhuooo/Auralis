@@ -4,6 +4,8 @@
  */
 import { useBlockStore } from '@/store/useBlockStore'
 import { useTaskStore } from '@/store/useTaskStore'
+import { useAuthStore } from '@/store/useAuthStore'
+import { useSyncStore } from '@/store/useSyncStore'
 
 const WS_URL = 'ws://localhost:8080/ws/sync'
 
@@ -17,6 +19,7 @@ interface SyncEvent {
 
 let socketTask: UniApp.SocketTask | null = null
 let reconnectTimer: number | null = null
+let pingTimer: number | null = null
 
 /**
  * 建立 WebSocket 长连接
@@ -24,9 +27,13 @@ let reconnectTimer: number | null = null
 export const connectRealtimeSync = () => {
   if (socketTask) return
 
-  console.log('[Sync] Connecting to WebSocket:', WS_URL)
+  const authStore = useAuthStore()
+  const token = authStore.token || ''
+  const finalUrl = `${WS_URL}?token=${encodeURIComponent(token)}`
+
+  console.log('[Sync] Connecting to WebSocket:', finalUrl)
   socketTask = uni.connectSocket({
-    url: WS_URL,
+    url: finalUrl,
     fail: (err) => {
       console.error('[Sync] WebSocket connection failed:', err)
       scheduleReconnect()
@@ -40,17 +47,32 @@ export const connectRealtimeSync = () => {
       reconnectTimer = null
     }
     
-    // Initial fetch to make sure we are up to date
-    const blockStore = useBlockStore()
-    const taskStore = useTaskStore()
-    blockStore.fetchBlocks()
-    taskStore.fetchTasks()
+    // Start heartbeat keep-alive
+    pingTimer = setInterval(() => {
+      if (socketTask) {
+        uni.sendSocketMessage({
+          data: JSON.stringify({ type: 'PING', token: authStore.token || '' }),
+          fail: (err) => {
+            console.error('[Sync] Failed to send heartbeat Ping:', err)
+          }
+        })
+      }
+    }, 30000) as unknown as number
+    
+    // Initial bidirectional sync to catch up on connection
+    const syncStore = useSyncStore()
+    syncStore.triggerSync()
   })
 
   socketTask.onMessage((res) => {
     try {
       let rawData = res.data as string
       let event: SyncEvent
+
+      // Skip PONG packets
+      if (rawData.includes('"type":"PONG"')) {
+        return
+      }
 
       // Handle GenericJackson2JsonRedisSerializer format: ["class", {data}]
       if (rawData.startsWith('[')) {
@@ -66,30 +88,34 @@ export const connectRealtimeSync = () => {
 
       console.log('[Sync] Received event:', event.type, 'for', event.entity)
 
-      // Reaction: Simple re-fetch is most reliable for now
-      if (event.entity === 'blocks') {
-        const blockStore = useBlockStore()
-        blockStore.fetchBlocks()
-      } else if (event.entity === 'tasks') {
-        const taskStore = useTaskStore()
-        taskStore.fetchTasks()
-      }
+      // Trigger bidirectional sync自愈
+      const syncStore = useSyncStore()
+      syncStore.triggerSync()
     } catch (e) {
       console.warn('[Sync] Failed to parse sync event:', e)
     }
   })
 
-  socketTask.onClose(() => {
-    console.log('[Sync] WebSocket closed')
+  socketTask.onClose((res) => {
+    console.log('[Sync] WebSocket closed', res)
+    clearPingTimer()
     socketTask = null
     scheduleReconnect()
   })
 
   socketTask.onError((err) => {
     console.error('[Sync] WebSocket error:', err)
+    clearPingTimer()
     socketTask = null
     scheduleReconnect()
   })
+}
+
+function clearPingTimer() {
+  if (pingTimer) {
+    clearInterval(pingTimer)
+    pingTimer = null
+  }
 }
 
 function scheduleReconnect() {
@@ -105,6 +131,7 @@ function scheduleReconnect() {
  * 断开连接
  */
 export const disconnectRealtimeSync = () => {
+  clearPingTimer()
   if (socketTask) {
     socketTask.close({})
     socketTask = null

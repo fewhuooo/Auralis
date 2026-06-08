@@ -24,7 +24,8 @@ public class AuthController {
     public Result<Map<String, String>> login(@RequestBody Map<String, String> request) {
         String username = request.get("username");
         String accessToken = userService.login(username, request.get("password"));
-        String refreshToken = jwtUtil.generateRefreshToken(username);
+        String userId = jwtUtil.extractUserId(accessToken);
+        String refreshToken = jwtUtil.generateRefreshToken(username, userId);
 
         Map<String, String> tokens = new HashMap<>();
         tokens.put("accessToken", accessToken);
@@ -50,8 +51,9 @@ public class AuthController {
         }
 
         String username = jwtUtil.extractUsername(refreshToken);
-        String newAccessToken = jwtUtil.generateToken(username);
-        String newRefreshToken = jwtUtil.generateRefreshToken(username);
+        String userId = jwtUtil.extractUserId(refreshToken);
+        String newAccessToken = jwtUtil.generateToken(username, userId);
+        String newRefreshToken = jwtUtil.generateRefreshToken(username, userId);
 
         Map<String, String> tokens = new HashMap<>();
         tokens.put("accessToken", newAccessToken);

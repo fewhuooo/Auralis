@@ -5,6 +5,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 import com.studycore.server.websocket.SyncWebSocketHandler;
+import com.studycore.server.websocket.WebSocketAuthInterceptor;
 import lombok.RequiredArgsConstructor;
 
 @Configuration
@@ -13,10 +14,13 @@ import lombok.RequiredArgsConstructor;
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final SyncWebSocketHandler syncWebSocketHandler;
+    private final WebSocketAuthInterceptor webSocketAuthInterceptor;
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(syncWebSocketHandler, "/ws/sync")
+                .addInterceptors(webSocketAuthInterceptor)
                 .setAllowedOrigins("*");
     }
 }
+

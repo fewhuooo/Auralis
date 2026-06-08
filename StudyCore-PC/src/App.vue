@@ -23,27 +23,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
 import { subscribeToCloudSync } from '@/api/tauri'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useSyncStore } from '@/store/useSyncStore'
 
 let unlisten: (() => void) | null = null
 
+const initSync = async () => {
+  const syncStore = useSyncStore()
+  await syncStore.initE2EE()
+  unlisten = subscribeToCloudSync()
+}
+
 onMounted(() => {
   const authStore = useAuthStore()
-  
-  // 仅在已登录状态下建立 WebSocket 连接
+
   if (authStore.token) {
-    unlisten = subscribeToCloudSync()
+    initSync()
   }
 
-  // 监听 token 变化，登录后建立连接，登出后断开连接
   watch(() => authStore.token, (newToken) => {
     if (newToken && !unlisten) {
-      unlisten = subscribeToCloudSync()
+      initSync()
     } else if (!newToken && unlisten) {
       unlisten()
       unlisten = null

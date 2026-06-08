@@ -3,13 +3,11 @@ import { useAuthStore } from '@/store/useAuthStore'
 
 // Normal API requests — 10s timeout
 const request = axios.create({
-  baseURL: 'http://localhost:8080',
   timeout: 10000
 })
 
 // AI-specific requests — 60s timeout for LLM inference
 export const aiRequest = axios.create({
-  baseURL: 'http://localhost:8080',
   timeout: 60000
 })
 
@@ -33,6 +31,15 @@ const attachToken = (config: any) => {
   const authStore = useAuthStore()
   if (authStore.token) {
     config.headers.Authorization = `Bearer ${authStore.token}`
+  }
+  // Attach user custom API key and Base URL if configured
+  const customApiKey = localStorage.getItem('studycore_custom_api_key')
+  const customBaseUrl = localStorage.getItem('studycore_custom_base_url')
+  if (customApiKey) {
+    config.headers['X-User-Api-Key'] = customApiKey
+  }
+  if (customBaseUrl) {
+    config.headers['X-User-Base-Url'] = customBaseUrl
   }
   return config
 }
@@ -76,7 +83,7 @@ const createResponseInterceptor = (instance: any) => {
           }
 
           // Attempt to refresh the token
-          const res = await axios.post('http://localhost:8080/api/auth/refresh', {
+          const res = await axios.post('/api/auth/refresh', {
             refreshToken: authStore.refreshToken
           })
 

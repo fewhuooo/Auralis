@@ -1,5 +1,17 @@
 <template>
-  <view class="page">
+  <AppPageLayout>
+    <view class="page">
+    <!-- Custom Header for Mobile -->
+    <view class="custom-header mobile-view-only">
+      <view class="header-content">
+        <view class="icon-btn menu-btn" @click.stop="openDrawer">
+          <LineIcon name="menu" size="44rpx" />
+        </view>
+        <text class="header-title">知识流</text>
+        <view class="header-right"></view>
+      </view>
+    </view>
+
     <!-- MOBILE VIEW -->
     <view class="mobile-view">
       <!-- Search Box -->
@@ -133,22 +145,111 @@
                 <view class="tbtn tbtn-ok" @click="completeTask(slot)"><text class="tbtn-t">✓ 完成</text></view>
                 <view class="tbtn tbtn-defer" @click="deferTask(slot)"><text class="tbtn-t">延后</text></view>
               </view>
+
+        <!-- Recent Knowledge -->
+        <view class="section">
+          <view class="sec-head">
+            <text class="sec-title">近期知识块</text>
+            <text class="sec-action">查看全部 →</text>
+          </view>
+          <view class="block-list">
+            <view
+              v-for="block in recentBlocks"
+              :key="block.id"
+              class="block-card"
+            >
+              <view class="block-top">
+                <view class="block-tag" :style="{ background: 'var(--color-bg-tertiary)' }">
+                  <text class="block-tag-text">{{ block.subject }}</text>
+                </view>
+                <text class="block-time">{{ block.time }}</text>
+              </view>
+              <text class="block-title">{{ block.title }}</text>
+              <text class="block-preview">{{ block.preview }}</text>
+              <view class="block-footer">
+                <text class="block-source">{{ block.source }}</text>
+              </view>
             </view>
-            <view v-else class="slot-empty"><text class="empty-t">空闲</text></view>
+          </view>
+        </view>
+      </view>
+
+      <!-- TABLET VIEW -->
+      <view class="tablet-view main-layout">
+        <!-- Left Column -->
+        <view class="left-col">
+          <view class="stats-row">
+            <view class="stat-card" v-for="stat in stats" :key="stat.label">
+              <text class="stat-icon">{{ stat.icon }}</text>
+              <view class="stat-info">
+                <text class="stat-value">{{ stat.value }}</text>
+                <text class="stat-label">{{ stat.label }}</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="date-bar">
+            <view v-for="day in weekDays" :key="day.date" class="date-item" :class="{ active: day.isToday }">
+              <text class="date-weekday">{{ day.weekday }}</text>
+              <text class="date-num">{{ day.date }}</text>
+            </view>
+          </view>
+
+          <view class="section">
+            <view class="sec-head"><text class="sec-title">待同步任务</text><text class="sec-count">{{ pendingTasks.length }} 项</text></view>
+            <view class="pend-list">
+              <view v-for="t in pendingTasks" :key="t.id" class="pend-card" :style="{ borderLeftColor: t.color || 'var(--text-accent)' }">
+                <view class="pend-main">
+                  <text class="pend-name">{{ t.name }}</text>
+                  <text class="pend-sub">{{ t.subject }}</text>
+                </view>
+                <view class="pend-meta">
+                  <text class="pend-dur">{{ t.duration }}h</text>
+                  <view class="load-b" :class="'load-'+t.load"><text class="load-t">{{ t.loadText }}</text></view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- Right Column -->
+        <view class="right-col">
+          <view class="timeline">
+            <view v-for="slot in timeSlots" :key="slot.time" class="time-slot">
+              <text class="slot-time">{{ slot.time }}</text>
+              <view v-if="slot.task" class="slot-task" :style="{ borderLeftColor: slot.task.color || 'var(--text-accent)' }">
+                <view class="task-header">
+                  <text class="task-name">{{ slot.task.name }}</text>
+                  <text class="task-dur">{{ slot.task.duration }}h</text>
+                </view>
+                <text class="task-sub">{{ slot.task.subject }}</text>
+                <view class="task-actions">
+                  <view class="tbtn tbtn-ok" @click="completeTask(slot)"><text class="tbtn-t">✓ 完成</text></view>
+                  <view class="tbtn tbtn-defer" @click="deferTask(slot)"><text class="tbtn-t">延后</text></view>
+                </view>
+              </view>
+              <view v-else class="slot-empty"><text class="empty-t">空闲</text></view>
+            </view>
           </view>
         </view>
       </view>
     </view>
-  </view>
+    </view>
+  </AppPageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useBlockStore } from '@/store/useBlockStore'
 import { vibrate } from '@/api/device'
+import LineIcon from '@/components/LineIcon.vue'
+import AppPageLayout from '@/components/AppPageLayout.vue'
+import { useLayoutStore } from '@/store/useLayoutStore'
 
+const layoutStore = useLayoutStore()
+const openDrawer = () => layoutStore.openDrawer()
 const taskStore = useTaskStore()
 const blockStore = useBlockStore()
 
@@ -200,15 +301,54 @@ const deferTask = (slot: any) => {
 </script>
 
 <style scoped>
-.page { min-height: 100vh; background: var(--color-bg-primary); padding-bottom: 180rpx; }
+.page {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 /* Visibility Control */
 .tablet-view { display: none; }
 .mobile-view { display: flex; flex-direction: column; }
+.mobile-view-only { display: block; }
 @media screen and (min-width: 768px) {
   .tablet-view { display: flex; }
   .mobile-view { display: none; }
+  .mobile-view-only { display: none; }
 }
+
+/* Custom Header */
+.custom-header {
+  padding-top: var(--status-bar-height, 44px);
+  background: var(--color-bg-primary);
+  z-index: 100;
+  position: sticky;
+  top: 0;
+  border-bottom: 2rpx solid var(--border-subtle);
+}
+.header-content {
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30rpx;
+}
+.menu-btn {
+  width: 80rpx;
+  height: 80rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--text-primary);
+  transition: background 0.2s;
+}
+.menu-btn:active {
+  background: var(--color-bg-elevated);
+}
+.header-title { font-size: 32rpx; font-weight: 600; color: var(--text-primary); }
+.header-right { width: 60rpx; }
 
 /* Search */
 .search-section { padding: 40rpx 24rpx 20rpx; }

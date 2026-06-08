@@ -264,8 +264,16 @@
           </select>
         </div>
         <div class="timeline-form-group">
-          <label class="timeline-form-label">预计时长 (分钟)</label>
-          <input type="number" v-model.number="newTaskForm.duration" class="timeline-form-input" placeholder="例如 45" />
+          <label class="timeline-form-label">预计时长</label>
+          <select v-model.number="newTaskForm.duration" class="timeline-form-select">
+            <option :value="30">0.5 小时 (30分钟)</option>
+            <option :value="60">1.0 小时 (60分钟)</option>
+            <option :value="90">1.5 小时 (90分钟)</option>
+            <option :value="120">2.0 小时 (120分钟)</option>
+            <option :value="150">2.5 小时 (150分钟)</option>
+            <option :value="180">3.0 小时 (180分钟)</option>
+            <option :value="240">4.0 小时 (240分钟)</option>
+          </select>
         </div>
         <div class="timeline-form-group">
           <label class="timeline-form-label">脑力负荷</label>
@@ -318,7 +326,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { ElNotification } from 'element-plus'
+import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import { marked } from 'marked'
@@ -373,6 +381,9 @@ const getTaskHeight = (duration?: number) => {
 }
 
 const isSlotCovered = (slotTime: string) => {
+  const targetSlot = timeSlots.value.find(s => s.time === slotTime)
+  if (targetSlot?.task) return false
+
   const currentHour = parseInt(slotTime.split(':')[0], 10)
   for (const slot of timeSlots.value) {
     if (slot.task && slot.time !== slotTime) {
@@ -559,7 +570,7 @@ const taskDialogVisible = ref(false)
 const newTaskForm = ref({
   name: '',
   subjectId: '',
-  duration: 45,
+  duration: 60,
   load: 'medium' as 'low' | 'medium' | 'high',
   desc: '',
   relatedBlockId: ''
@@ -582,7 +593,7 @@ const triggerCreate = () => {
   newTaskForm.value = {
     name: '',
     subjectId: '',
-    duration: 45,
+    duration: 60,
     load: 'medium',
     desc: '',
     relatedBlockId: ''
@@ -631,32 +642,50 @@ const handleCreateTask = async () => {
 
 const handleDeleteScheduledTask = async (slot: any) => {
   if (!slot.task?.id) return
-  if (confirm(`确定要彻底删除任务「${slot.task.name}」吗？`)) {
-    try {
-      await taskStore.deleteTask(slot.task.id)
-      ElNotification({
-        title: '🗑️ 任务已删除',
-        message: `任务「${slot.task.name}」已清除`,
-        type: 'success',
-        position: 'top-right'
-      })
-    } catch (e) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要彻底删除任务「${slot.task.name}」吗？`,
+      '删除提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    await taskStore.deleteTask(slot.task.id)
+    ElNotification({
+      title: '🗑️ 任务已删除',
+      message: `任务「${slot.task.name}」已清除`,
+      type: 'success',
+      position: 'top-right'
+    })
+  } catch (e) {
+    if (e !== 'cancel') {
       console.error(e)
     }
   }
 }
 
 const handleDeleteTaskById = async (id: string) => {
-  if (confirm('确定要删除这个任务吗？')) {
-    try {
-      await taskStore.deleteTask(id)
-      ElNotification({
-        title: '🗑️ 任务已删除',
-        message: '任务已彻底从列表移除。',
-        type: 'success',
-        position: 'top-right'
-      })
-    } catch (e) {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除这个任务吗？',
+      '删除提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    await taskStore.deleteTask(id)
+    ElNotification({
+      title: '🗑️ 任务已删除',
+      message: '任务已彻底从列表移除。',
+      type: 'success',
+      position: 'top-right'
+    })
+  } catch (e) {
+    if (e !== 'cancel') {
       console.error(e)
     }
   }
@@ -1042,7 +1071,8 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   display: flex;
   align-items: stretch;
   gap: 12px;
-  height: 80px;
+  min-height: 80px;
+  height: auto;
   position: relative;
 }
 
@@ -1062,10 +1092,8 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 }
 
 .slot-task {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
+  position: relative;
+  width: 100%;
   padding: 12px 16px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -1490,8 +1518,10 @@ html.dark .kanban-column {
   transform: translate(-50%, -50%);
   width: 90%;
   max-width: 440px;
-  background: rgba(28, 28, 30, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--glass-bg, rgba(28, 28, 30, 0.85));
+  backdrop-filter: var(--glass-blur, blur(20px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(20px));
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
   border-radius: 20px;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
   z-index: 201;

@@ -3,7 +3,8 @@ package com.studycore.server.controller;
 import com.studycore.server.service.DocumentIngestionService;
 import com.studycore.server.service.ai.StudyCoreAssistant;
 import com.studycore.server.service.ai.KnowledgeExtractor;
-import com.studycore.server.service.ai.TaskScheduler;
+import com.studycore.server.service.ai.AiTaskScheduler;
+import com.studycore.server.common.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.Data;
 import org.springframework.http.ResponseEntity;
@@ -22,14 +23,19 @@ public class AiController {
 
     private final StudyCoreAssistant assistant;
     private final KnowledgeExtractor knowledgeExtractor;
-    private final TaskScheduler taskScheduler;
+    private final AiTaskScheduler taskScheduler;
     private final DocumentIngestionService ingestionService;
+
+    @org.springframework.beans.factory.annotation.Value("${studycore.ingest.max-file-size-mb:50}")
+    private int maxFileSizeMb;
 
     @Data
     public static class ChatRequest {
         private String systemPrompt;
         private String message;
         private boolean requireJson;
+        private String subjectId;
+        private String sourceFileName;
     }
 
     @Data
@@ -45,15 +51,27 @@ public class AiController {
     }
 
     @PostMapping("/chat")
-    public ResponseEntity<String> chat(@RequestBody ChatRequest req) {
-        String response = assistant.chat(LocalDate.now().toString(), req.getMessage());
-        return ResponseEntity.ok(response);
+    public Result<String> chat(@RequestBody ChatRequest req) {
+        String msg = req.getMessage();
+        if (req.getSourceFileName() != null && !req.getSourceFileName().trim().isEmpty()) {
+            msg = "[当前材料: " + req.getSourceFileName() + "]\n" + msg;
+        }
+        String response = assistant.chat(LocalDate.now().toString(), msg);
+        return Result.success(response);
     }
 
     @GetMapping(value = "/chat", produces = "text/event-stream")
-    public SseEmitter chatStream(@RequestParam String message) {
-        SseEmitter emitter = new SseEmitter();
-        assistant.chatStream(LocalDate.now().toString(), message)
+    public SseEmitter chatStream(
+            @RequestParam String message,
+            @RequestParam(required = false) String subjectId,
+            @RequestParam(required = false) String sourceFileName) {
+        // Use 0L for infinite timeout to prevent 30s AsyncRequestTimeoutException during LLM generation
+        SseEmitter emitter = new SseEmitter(0L);
+        String finalMessage = message;
+        if (sourceFileName != null && !sourceFileName.trim().isEmpty()) {
+            finalMessage = "[当前材料: " + sourceFileName + "]\n" + finalMessage;
+        }
+        assistant.chatStream(LocalDate.now().toString(), finalMessage)
                 .onNext(token -> {
                     try {
                         emitter.send(token);
@@ -79,7 +97,7 @@ public class AiController {
      * DocumentSplitter → EmbeddingModel → EmbeddingStore + PostgreSQL
      */
     @PostMapping("/ingest")
-    public ResponseEntity<Map<String, Object>> ingestDocument(@RequestBody ContentRequest req) {
+    public Result<Map<String, Object>> ingestDocument(@RequestBody ContentRequest req) {
         // Also run the LLM extractor for structured output
         String llmResult = knowledgeExtractor.extractKnowledgeBlocks(req.getContent());
 
@@ -88,7 +106,7 @@ public class AiController {
         String subject = req.getSubject() != null ? req.getSubject() : "自动分类";
         List<String> blockIds = ingestionService.ingestText(req.getContent(), source, subject);
 
-        return ResponseEntity.ok(Map.of(
+        return Result.success(Map.of(
                 "llmExtraction", llmResult,
                 "ingestedBlockIds", blockIds,
                 "totalChunks", blockIds.size()
@@ -99,42 +117,48 @@ public class AiController {
      * 14.4 File upload ingestion — multipart file (PDF / DOCX / PPTX)
      */
     @PostMapping("/ingest/file")
-    public ResponseEntity<Map<String, Object>> ingestFile(
+    public Result<Map<String, Object>> ingestFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "subject", defaultValue = "文档导入") String subject) {
         try {
+            // 15.7 Business-level file size validation
+            long maxBytes = (long) maxFileSizeMb * 1024 * 1024;
+            if (file.getSize() > maxBytes) {
+                throw new IllegalArgumentException(
+                        String.format("文件大小 %.1f MB 超过上限 %d MB，请压缩后重试",
+                                file.getSize() / (1024.0 * 1024.0), maxFileSizeMb));
+            }
+
             List<String> blockIds = ingestionService.ingestFile(
                     file.getBytes(),
                     file.getOriginalFilename(),
                     subject
             );
-            return ResponseEntity.ok(Map.of(
+            return Result.success(Map.of(
                     "fileName", file.getOriginalFilename(),
                     "ingestedBlockIds", blockIds,
                     "totalChunks", blockIds.size()
             ));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of(
-                    "error", e.getMessage()
-            ));
+            return Result.error(500, e.getMessage());
         }
     }
 
     @PostMapping("/extract-tasks")
-    public ResponseEntity<String> extractTasks(@RequestBody TextRequest req) {
+    public Result<String> extractTasks(@RequestBody TextRequest req) {
         String result = knowledgeExtractor.extractTasks(req.getText());
-        return ResponseEntity.ok(result);
+        return Result.success(result);
     }
 
     @PostMapping("/convert-handwriting")
-    public ResponseEntity<String> convertHandwriting(@RequestBody TextRequest req) {
+    public Result<String> convertHandwriting(@RequestBody TextRequest req) {
         String result = knowledgeExtractor.convertHandwriting(req.getText());
-        return ResponseEntity.ok(result);
+        return Result.success(result);
     }
 
     @PostMapping("/schedule-suggest")
-    public ResponseEntity<String> scheduleSuggest(@RequestBody TextRequest req) {
+    public Result<String> scheduleSuggest(@RequestBody TextRequest req) {
         String result = taskScheduler.analyzeAndSchedule(req.getText());
-        return ResponseEntity.ok(result);
+        return Result.success(result);
     }
 }

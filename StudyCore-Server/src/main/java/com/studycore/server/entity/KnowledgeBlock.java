@@ -16,4 +16,8 @@ public class KnowledgeBlock {
     private String time;
     private String source;
     private String color;
+    private String userId;
+    private Long syncVersion;
+    private Boolean isDeleted;
+    private String encryptedPayload;
 }

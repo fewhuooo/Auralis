@@ -21,4 +21,8 @@ public class TaskBlock {
     private String loadText;
     private String status;
     private String startTime;
+    private String userId;
+    private Long syncVersion;
+    private Boolean isDeleted;
+    private String encryptedPayload;
 }

@@ -1,135 +1,108 @@
 package com.studycore.server.service;
 
-import com.studycore.server.entity.KnowledgeBlock;
+import com.studycore.server.common.UserContext;
 import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.document.DocumentParser;
 import dev.langchain4j.data.document.DocumentSplitter;
 import dev.langchain4j.data.document.Metadata;
-import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * 14.4 Document Ingestion Pipeline
+ * 15.5 Document Ingestion Pipeline (Asynchronous & Rate-Limited via Redis Stream)
  *
- * Full chain: DocumentParser (Tika) → DocumentSplitter → EmbeddingModel → EmbeddingStore
- * Also persists metadata to PostgreSQL via KnowledgeBlockService.
+ * Full chain:
+ * 1. Synchronously parse file (Tika) & split into text segments in Web thread (bounded pool).
+ * 2. Push text segments with multi-tenant headers to Redis Stream.
+ * 3. Asynchronous Virtual Thread consumer processes segments with Token Bucket rate limiter.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class DocumentIngestionService {
 
+    public static final String INGEST_STREAM_KEY = "studycore:ingest_stream";
+
     private final DocumentParser documentParser;
     private final DocumentSplitter documentSplitter;
-    private final EmbeddingModel embeddingModel;
-    private final EmbeddingStore<TextSegment> embeddingStore;
-    private final KnowledgeBlockService knowledgeBlockService;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     /**
-     * Ingest raw file bytes (PDF / DOCX / PPTX).
-     *
-     * @param fileBytes   raw file content
-     * @param fileName    original filename (used for source metadata)
-     * @param subject     subject/category tag
-     * @return list of persisted KnowledgeBlock IDs
+     * Parse raw file and enqueue segments to Redis Stream for rate-limited embedding.
      */
     public List<String> ingestFile(byte[] fileBytes, String fileName, String subject) {
-        log.info("[Ingest] Parsing file: {} ({} bytes)", fileName, fileBytes.length);
+        log.info("[Ingest] Parsing file synchronously: {} ({} bytes)", fileName, fileBytes.length);
 
-        // Step 1: Parse document using Apache Tika
+        // Step 1: Parse using Apache Tika
         InputStream inputStream = new ByteArrayInputStream(fileBytes);
         Document document = documentParser.parse(inputStream);
         document.metadata().put("source", fileName);
 
-        // Step 2: Split into segments (max 512 tokens per chunk)
+        // Step 2: Split into segments (max 512 tokens)
         List<TextSegment> segments = documentSplitter.split(document);
-        log.info("[Ingest] Split into {} segments", segments.size());
+        log.info("[Ingest] Split into {} segments, enqueueing to Redis Stream", segments.size());
 
-        // Step 3: Generate embeddings for all segments
-        List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
-
-        // Step 4: Store segments + embeddings in the vector store
-        embeddingStore.addAll(embeddings, segments);
-        log.info("[Ingest] Stored {} embeddings in vector store", embeddings.size());
-
-        // Step 5: Persist metadata to PostgreSQL
-        List<String> blockIds = new ArrayList<>();
-        String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-        for (int i = 0; i < segments.size(); i++) {
-            TextSegment seg = segments.get(i);
-            KnowledgeBlock block = new KnowledgeBlock();
-            block.setSubject(subject != null ? subject : "文档导入");
-            block.setTitle(truncate(seg.text(), 50));
-            block.setPreview(truncate(seg.text(), 200));
-            block.setTime(now);
-            block.setSource(fileName);
-            block.setColor("rgba(99, 102, 241, 0.2)");
-            knowledgeBlockService.save(block);
-            blockIds.add(block.getId());
-        }
-
-        log.info("[Ingest] Persisted {} knowledge blocks to DB", blockIds.size());
-        return blockIds;
+        // Step 3: Enqueue segments to Redis Stream
+        return enqueueSegments(segments, fileName, subject);
     }
 
     /**
-     * Ingest plain text content (for the existing /api/ai/ingest endpoint).
-     *
-     * @param textContent  raw text to ingest
-     * @param source       source label (e.g. "用户输入", "AI 生成")
-     * @param subject      subject/category
-     * @return list of persisted KnowledgeBlock IDs
+     * Enqueue plain text content to Redis Stream.
      */
     public List<String> ingestText(String textContent, String source, String subject) {
-        log.info("[Ingest] Ingesting text ({} chars) from source: {}", textContent.length(), source);
+        log.info("[Ingest] Parsing text content ({} chars), enqueueing to Redis Stream", textContent.length());
 
-        // Create a Document from raw text
         Document document = Document.from(textContent, Metadata.from("source", source));
-
-        // Split
         List<TextSegment> segments = documentSplitter.split(document);
-        log.info("[Ingest] Split into {} segments", segments.size());
 
-        // Embed
-        List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
+        return enqueueSegments(segments, source, subject);
+    }
 
-        // Store in vector DB
-        embeddingStore.addAll(embeddings, segments);
+    private List<String> enqueueSegments(List<TextSegment> segments, String source, String subject) {
+        String userId = UserContext.getCurrentUserId();
+        String userApiKey = UserContext.getUserApiKey();
+        String userBaseUrl = UserContext.getUserBaseUrl();
 
-        // Persist to PostgreSQL
-        List<String> blockIds = new ArrayList<>();
-        String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-        for (TextSegment seg : segments) {
-            KnowledgeBlock block = new KnowledgeBlock();
-            block.setSubject(subject != null ? subject : "文本导入");
-            block.setTitle(truncate(seg.text(), 50));
-            block.setPreview(truncate(seg.text(), 200));
-            block.setTime(now);
-            block.setSource(source);
-            block.setColor("rgba(16, 185, 129, 0.2)");
-            knowledgeBlockService.save(block);
-            blockIds.add(block.getId());
+        List<String> enqueuedJobIds = new ArrayList<>();
+
+        for (int i = 0; i < segments.size(); i++) {
+            TextSegment seg = segments.get(i);
+            
+            Map<String, String> payload = new HashMap<>();
+            payload.put("userId", userId != null ? userId : "system_default");
+            payload.put("userApiKey", userApiKey != null ? userApiKey : "");
+            payload.put("userBaseUrl", userBaseUrl != null ? userBaseUrl : "");
+            payload.put("text", seg.text());
+            payload.put("source", source);
+            payload.put("subject", subject != null ? subject : "文档导入");
+            payload.put("index", String.valueOf(i));
+            payload.put("total", String.valueOf(segments.size()));
+
+            try {
+                // Post to Redis Stream
+                org.springframework.data.redis.connection.stream.RecordId recordId = 
+                        redisTemplate.opsForStream().add(INGEST_STREAM_KEY, payload);
+                
+                if (recordId != null) {
+                    enqueuedJobIds.add(recordId.getValue());
+                }
+            } catch (Exception e) {
+                log.error("[Ingest] Failed to enqueue segment to Redis Stream", e);
+            }
         }
 
-        log.info("[Ingest] Persisted {} knowledge blocks", blockIds.size());
-        return blockIds;
-    }
-
-    private String truncate(String text, int maxLen) {
-        if (text == null) return "";
-        String clean = text.replaceAll("\\s+", " ").trim();
-        return clean.length() > maxLen ? clean.substring(0, maxLen) + "..." : clean;
+        log.info("[Ingest] Enqueued {} segments to Redis Stream for background ingestion", enqueuedJobIds.size());
+        return enqueuedJobIds;
     }
 }
+
