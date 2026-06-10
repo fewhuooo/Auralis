@@ -51,6 +51,13 @@
 			}
 		},
 		{
+			"path": "pages/review/index",
+			"style": {
+				"navigationBarTitleText": "知识复习",
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/asset/index",
 			"style": {
 				"navigationBarTitleText": "资产编排",

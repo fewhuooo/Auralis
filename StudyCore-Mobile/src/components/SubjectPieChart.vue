@@ -1,23 +1,31 @@
 <template>
   <view class="pie-chart">
-    <svg class="chart-svg" viewBox="0 0 200 200">
-      <circle cx="100" cy="100" r="80" fill="none" stroke="var(--color-bg-secondary)" stroke-width="20" />
-      
-      <circle 
-        v-for="(seg, index) in renderSegments" 
-        :key="index"
-        cx="100" cy="100" r="80"
-        fill="none"
-        :stroke="seg.color"
-        stroke-width="20"
-        :stroke-dasharray="`${seg.dash} ${circumference}`"
-        :stroke-dashoffset="seg.offset"
-        class="pie-segment"
-      />
-      
-      <text x="100" y="95" text-anchor="middle" class="center-value">{{ total }}</text>
-      <text x="100" y="115" text-anchor="middle" class="center-label">总知识块</text>
-    </svg>
+    <view class="chart-container">
+      <svg class="chart-svg" viewBox="0 0 200 200">
+        <!-- Background track -->
+        <circle cx="100" cy="100" r="80" fill="none" stroke="var(--color-bg-tertiary)" stroke-width="18" />
+        
+        <!-- Animated Segments group (rotated -90deg so it starts at the top) -->
+        <g transform="rotate(-90 100 100)">
+          <circle 
+            v-for="(seg, index) in renderSegments" 
+            :key="index"
+            cx="100" cy="100" r="80"
+            fill="none"
+            :stroke="seg.color"
+            stroke-width="18"
+            :stroke-dasharray="`${seg.dash} ${circumference}`"
+            :stroke-dashoffset="seg.offset"
+            stroke-linecap="round"
+            class="pie-segment"
+          />
+        </g>
+        
+        <!-- Text labels (non-rotated) -->
+        <text x="100" y="105" text-anchor="middle" class="center-value">{{ total }}</text>
+        <text x="100" y="130" text-anchor="middle" class="center-label">总知识块</text>
+      </svg>
+    </view>
     
     <view class="legend">
       <view class="legend-item" v-for="(seg, index) in segments" :key="index">
@@ -33,7 +41,7 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  segments: { subject: string, percentage: number, color: string }[]
+  segments: { subject: string; percentage: number; color: string }[]
   total: number
 }>()
 
@@ -55,25 +63,28 @@ const renderSegments = computed(() => {
   display: flex;
   align-items: center;
   gap: 40rpx;
+  width: 100%;
 }
-.chart-svg {
+.chart-container {
   width: 240rpx;
   height: 240rpx;
-  transform: rotate(-90deg);
+}
+.chart-svg {
+  width: 100%;
+  height: 100%;
 }
 .pie-segment {
-  transition: stroke-dasharray 1s ease-out;
+  transition: stroke-dasharray 1s cubic-bezier(0.3, 1.15, 0.6, 1), stroke-dashoffset 1s cubic-bezier(0.3, 1.15, 0.6, 1);
 }
 .center-value {
   font-size: 32px;
   font-weight: 800;
   fill: var(--text-primary);
-  transform: rotate(90deg) translate(95px, -100px); /* Adjust rotation compensation */
 }
 .center-label {
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   fill: var(--text-muted);
-  transform: rotate(90deg) translate(115px, -100px);
 }
 
 .legend {

@@ -25,7 +25,7 @@
             <LineIcon name="ai" size="36rpx" class="nav-icon" />
             <text class="nav-label">AI 助手</text>
           </view>
-          <view class="nav-item" :class="{ active: currentPath === '/pages/timeline/index' }" @click="navigate('/pages/timeline/index')">
+          <view class="nav-item" :class="{ active: currentPath === '/pages/review/index' }" @click="navigate('/pages/review/index')">
             <LineIcon name="book" size="36rpx" class="nav-icon" />
             <text class="nav-label">知识复习</text>
           </view>
@@ -80,8 +80,8 @@ const navigate = (url: string) => {
   // Do NOT emit update:visible to false immediately. 
   // We want the old page to remain shifted while the new page slides in!
   
-  // Use uni.reLaunch for flat navigation to prevent page stack overflow
-  uni.reLaunch({ url })
+  // Use uni.redirectTo for flat navigation to prevent page stack overflow without re-launching the app
+  uni.redirectTo({ url })
 }
 </script>
 
