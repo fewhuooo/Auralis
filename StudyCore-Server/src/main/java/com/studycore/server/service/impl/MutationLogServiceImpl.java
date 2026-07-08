@@ -47,7 +47,12 @@ public class MutationLogServiceImpl extends ServiceImpl<MutationLogMapper, Mutat
                 block.setIsDeleted(false);
                 knowledgeBlockService.saveOrUpdate(block);
             } else if ("delete".equalsIgnoreCase(action)) {
-                knowledgeBlockService.removeById(mutation.getEntityId());
+                KnowledgeBlock block = knowledgeBlockService.getById(mutation.getEntityId());
+                if (block != null && mutation.getUserId().equals(block.getUserId())) {
+                    block.setSyncVersion(mutation.getCreatedAt());
+                    block.setIsDeleted(true);
+                    knowledgeBlockService.updateById(block);
+                }
             }
         } else if ("task".equalsIgnoreCase(entityType)) {
             if ("create".equalsIgnoreCase(action) || "update".equalsIgnoreCase(action)) {
@@ -58,7 +63,12 @@ public class MutationLogServiceImpl extends ServiceImpl<MutationLogMapper, Mutat
                 task.setIsDeleted(false);
                 taskBlockService.saveOrUpdate(task);
             } else if ("delete".equalsIgnoreCase(action)) {
-                taskBlockService.removeById(mutation.getEntityId());
+                TaskBlock task = taskBlockService.getById(mutation.getEntityId());
+                if (task != null && mutation.getUserId().equals(task.getUserId())) {
+                    task.setSyncVersion(mutation.getCreatedAt());
+                    task.setIsDeleted(true);
+                    taskBlockService.updateById(task);
+                }
             }
         }
     }

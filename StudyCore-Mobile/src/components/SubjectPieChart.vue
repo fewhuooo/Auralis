@@ -62,23 +62,29 @@ const renderSegments = computed(() => {
 .pie-chart {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 40rpx;
   width: 100%;
+  height: 100%;
 }
 .chart-container {
-  width: 240rpx;
-  height: 240rpx;
+  flex: none;
+  width: 200rpx;
+  height: 200rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .chart-svg {
   width: 100%;
   height: 100%;
 }
 .pie-segment {
-  transition: stroke-dasharray 1s cubic-bezier(0.3, 1.15, 0.6, 1), stroke-dashoffset 1s cubic-bezier(0.3, 1.15, 0.6, 1);
+  transition: stroke-dasharray 0.5s ease-out, stroke-dashoffset 0.5s ease-out;
 }
 .center-value {
   font-size: 32px;
-  font-weight: 800;
+  font-weight: 900;
   fill: var(--text-primary);
 }
 .center-label {
@@ -88,28 +94,36 @@ const renderSegments = computed(() => {
 }
 
 .legend {
-  flex: 1;
+  flex: none;
+  width: 380rpx;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 18rpx;
+  justify-content: center;
 }
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 12rpx;
+  gap: 14rpx;
 }
 .dot {
-  width: 16rpx; height: 16rpx;
+  width: 18rpx; height: 18rpx;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 .l-name {
   font-size: 26rpx;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--text-primary);
   flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .l-val {
   font-size: 26rpx;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 900;
+  color: var(--text-accent, #7D9372);
+  flex-shrink: 0;
 }
 </style>

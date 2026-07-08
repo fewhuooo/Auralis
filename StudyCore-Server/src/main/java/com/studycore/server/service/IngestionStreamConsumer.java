@@ -60,7 +60,6 @@ public class IngestionStreamConsumer implements InitializingBean {
     private final RedisTemplate<String, Object> redisTemplate;
     private final EmbeddingModel embeddingModel;
     private final EmbeddingStore<TextSegment> embeddingStore;
-    private final KnowledgeBlockService knowledgeBlockService;
     private final MutationLogService mutationLogService;
     private final AssetService assetService;
     private final SyncWebSocketHandler webSocketHandler;
@@ -163,8 +162,6 @@ public class IngestionStreamConsumer implements InitializingBean {
      */
     private void processMinioFileRecord(Map<Object, Object> map) throws Exception {
         String userId = getStringValue(map, "userId");
-        String userApiKey = getStringValue(map, "userApiKey");
-        String userBaseUrl = getStringValue(map, "userBaseUrl");
         String objectName = getStringValue(map, "objectName");
         String fileName = getStringValue(map, "fileName");
         String subject = getStringValue(map, "subject");
@@ -172,8 +169,6 @@ public class IngestionStreamConsumer implements InitializingBean {
 
         try {
             UserContext.setCurrentUserId(userId);
-            UserContext.setUserApiKey(userApiKey);
-            UserContext.setUserBaseUrl(userBaseUrl);
 
             log.info("[RedisStream] Processing MinIO file: {} for user: {}", objectName, userId);
 
@@ -262,8 +257,6 @@ public class IngestionStreamConsumer implements InitializingBean {
      */
     private void processTextRecord(Map<Object, Object> map) throws Exception {
         String userId = getStringValue(map, "userId");
-        String userApiKey = getStringValue(map, "userApiKey");
-        String userBaseUrl = getStringValue(map, "userBaseUrl");
         String text = getStringValue(map, "text");
         String source = getStringValue(map, "source");
         String subject = getStringValue(map, "subject");
@@ -274,8 +267,6 @@ public class IngestionStreamConsumer implements InitializingBean {
 
         try {
             UserContext.setCurrentUserId(userId);
-            UserContext.setUserApiKey(userApiKey);
-            UserContext.setUserBaseUrl(userBaseUrl);
 
             log.info("[RedisStream] Processing text segment for user: {}, source: {}", userId, source);
 

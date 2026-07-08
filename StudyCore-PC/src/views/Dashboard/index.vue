@@ -328,6 +328,11 @@ const getScheduledTasksForDay = (day: string) => {
   })
 }
 
+const getTaskTimeStr = (startTime?: string) => {
+  if (!startTime) return ''
+  return startTime.split(' ').pop() || startTime
+}
+
 const username = computed(() => authStore.username || '同学')
 const completedCount = computed(() => taskStore.completedCount)
 const totalFocusHours = computed(() => taskStore.totalFocusHours)

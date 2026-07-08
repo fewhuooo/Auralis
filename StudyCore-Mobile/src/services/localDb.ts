@@ -6,17 +6,226 @@ const DB_PATH = '_doc/studycore.db';
 
 declare const plus: any;
 
+const isH5 = typeof plus === 'undefined' || !plus.sqlite;
+
+// H5 模式下使用 localStorage 模拟 SQLite 数据表结构
+const h5Db = {
+  getTable(name: string): any[] {
+    const key = `h5_db_${name}`;
+    const data = uni.getStorageSync(key);
+    return data ? JSON.parse(data) : [];
+  },
+  saveTable(name: string, data: any[]): void {
+    const key = `h5_db_${name}`;
+    uni.setStorageSync(key, JSON.stringify(data));
+  }
+};
+
+function parseSqlValues(str: string): any[] {
+  const result: any[] = [];
+  let current = '';
+  let inString = false;
+  let stringChar = '';
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (inString) {
+      if (char === stringChar) {
+        if (i + 1 < str.length && str[i + 1] === stringChar) {
+          current += stringChar;
+          i++;
+        } else {
+          inString = false;
+        }
+      } else {
+        current += char;
+      }
+    } else {
+      if (char === "'" || char === '"') {
+        inString = true;
+        stringChar = char;
+      } else if (char === ',') {
+        result.push(cleanValue(current));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+  }
+  result.push(cleanValue(current));
+  return result;
+}
+
+function cleanValue(val: string): any {
+  const trimmed = val.trim();
+  if (trimmed.toUpperCase() === 'NULL') return null;
+  if (!isNaN(Number(trimmed)) && trimmed !== '') return Number(trimmed);
+  return trimmed;
+}
+
+interface WhereCondition {
+  col: string;
+  op: '=' | '!=' | 'IS' | 'IS NOT' | 'LIKE';
+  val: any;
+}
+
+function parseWhereClause(clause: string | undefined): WhereCondition[] {
+  if (!clause) return [];
+  const parts = clause.split(/\s+AND\s+/i);
+  const conditions: WhereCondition[] = [];
+  
+  parts.forEach(part => {
+    part = part.trim();
+    if (part.toUpperCase().endsWith('IS NOT NULL')) {
+      const col = part.substring(0, part.toUpperCase().indexOf('IS NOT NULL')).trim();
+      conditions.push({ col: col.toLowerCase(), op: 'IS NOT', val: null });
+    } else if (part.toUpperCase().endsWith('IS NULL')) {
+      const col = part.substring(0, part.toUpperCase().indexOf('IS NULL')).trim();
+      conditions.push({ col: col.toLowerCase(), op: 'IS', val: null });
+    } else if (part.includes('!=')) {
+      const [col, valStr] = part.split('!=');
+      conditions.push({ col: col.trim().toLowerCase(), op: '!=', val: cleanSqlString(valStr.trim()) });
+    } else if (part.includes('=')) {
+      const [col, valStr] = part.split('=');
+      conditions.push({ col: col.trim().toLowerCase(), op: '=', val: cleanSqlString(valStr.trim()) });
+    }
+  });
+  return conditions;
+}
+
+function cleanSqlString(valStr: string): any {
+  if (valStr.startsWith("'") && valStr.endsWith("'")) {
+    return valStr.slice(1, -1).replace(/''/g, "'");
+  }
+  return cleanValue(valStr);
+}
+
+function matchRow(row: any, conditions: WhereCondition[]): boolean {
+  for (const cond of conditions) {
+    const rowVal = row[cond.col];
+    if (cond.op === '=') {
+      if (String(rowVal) !== String(cond.val)) return false;
+    } else if (cond.op === '!=') {
+      if (String(rowVal) === String(cond.val)) return false;
+    } else if (cond.op === 'IS') {
+      if (rowVal != null) return false;
+    } else if (cond.op === 'IS NOT') {
+      if (rowVal == null) return false;
+    }
+  }
+  return true;
+}
+
+function executeH5Query(sql: string) {
+  const trimmed = sql.trim();
+  if (trimmed.toUpperCase().startsWith('CREATE TABLE')) {
+    return;
+  }
+  if (trimmed.toUpperCase().startsWith('INSERT INTO')) {
+    const insertMatch = trimmed.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([\s\S]+)\)/i);
+    if (!insertMatch) throw new Error('Unparseable INSERT SQL: ' + sql);
+    const tableName = insertMatch[1].toLowerCase();
+    const cols = insertMatch[2].split(',').map(s => s.trim().toLowerCase());
+    const vals = parseSqlValues(insertMatch[3]);
+    
+    const row: any = {};
+    cols.forEach((col, idx) => {
+      row[col] = vals[idx];
+    });
+    
+    const table = h5Db.getTable(tableName);
+    table.push(row);
+    h5Db.saveTable(tableName, table);
+    return;
+  }
+  if (trimmed.toUpperCase().startsWith('UPDATE')) {
+    const updateMatch = trimmed.match(/UPDATE\s+(\w+)\s+SET\s+([\s\S]+?)(?:\s+WHERE\s+([\s\S]+))?$/i);
+    if (!updateMatch) throw new Error('Unparseable UPDATE SQL: ' + sql);
+    const tableName = updateMatch[1].toLowerCase();
+    const setClause = updateMatch[2];
+    const whereClause = updateMatch[3];
+    
+    const sets: { [key: string]: any } = {};
+    const setPairs = setClause.split(/,(?=(?:[^']*'[^']*')*[^']*$)/);
+    setPairs.forEach(pair => {
+      const parts = pair.split('=');
+      if (parts.length >= 2) {
+        const col = parts[0].trim().toLowerCase();
+        const valStr = parts.slice(1).join('=').trim();
+        sets[col] = cleanSqlString(valStr);
+      }
+    });
+    
+    const where = parseWhereClause(whereClause);
+    let table = h5Db.getTable(tableName);
+    table = table.map(row => {
+      if (matchRow(row, where)) {
+        return { ...row, ...sets };
+      }
+      return row;
+    });
+    h5Db.saveTable(tableName, table);
+    return;
+  }
+  if (trimmed.toUpperCase().startsWith('DELETE FROM')) {
+    const deleteMatch = trimmed.match(/DELETE\s+FROM\s+(\w+)(?:\s+WHERE\s+([\s\S]+))?$/i);
+    if (!deleteMatch) throw new Error('Unparseable DELETE SQL: ' + sql);
+    const tableName = deleteMatch[1].toLowerCase();
+    const whereClause = deleteMatch[2];
+    
+    const where = parseWhereClause(whereClause);
+    let table = h5Db.getTable(tableName);
+    table = table.filter(row => !matchRow(row, where));
+    h5Db.saveTable(tableName, table);
+    return;
+  }
+}
+
+function selectH5Query(sql: string): any[] {
+  const trimmed = sql.trim();
+  if (trimmed.toUpperCase().startsWith('SELECT')) {
+    const selectMatch = trimmed.match(/SELECT\s+([\s\S]+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+([\s\S]+?))?(?:\s+ORDER\s+BY\s+([\s\S]+))?$/i);
+    if (!selectMatch) throw new Error('Unparseable SELECT SQL: ' + sql);
+    const tableName = selectMatch[2].toLowerCase();
+    const whereClause = selectMatch[3];
+    const orderByClause = selectMatch[4];
+    
+    let table = h5Db.getTable(tableName);
+    
+    if (whereClause) {
+      const where = parseWhereClause(whereClause);
+      table = table.filter(row => matchRow(row, where));
+    }
+    
+    if (orderByClause) {
+      const parts = orderByClause.trim().split(/\s+/);
+      const col = parts[0].toLowerCase();
+      const isDesc = parts[1] && parts[1].toUpperCase() === 'DESC';
+      table.sort((a, b) => {
+        const valA = a[col];
+        const valB = b[col];
+        if (valA === valB) return 0;
+        if (valA == null) return 1;
+        if (valB == null) return -1;
+        return isDesc ? (valA > valB ? -1 : 1) : (valA > valB ? 1 : -1);
+      });
+    }
+    
+    return table;
+  }
+  return [];
+}
+
 // Helper to wrap plus.sqlite in Promises
 const sqlite = {
   isOpen(): boolean {
-    if (typeof plus === 'undefined' || !plus.sqlite) return false;
+    if (isH5) return true;
     return plus.sqlite.isOpenDatabase({ name: DB_NAME, path: DB_PATH });
   },
 
   open(): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (typeof plus === 'undefined' || !plus.sqlite) {
-        return reject(new Error('HTML5+ SQLite environment is not available. Please run in App environment.'));
+      if (isH5) {
+        return resolve();
       }
       if (this.isOpen()) {
         return resolve();
@@ -34,6 +243,14 @@ const sqlite = {
     return new Promise(async (resolve, reject) => {
       try {
         await this.open();
+        if (isH5) {
+          try {
+            executeH5Query(sql);
+            return resolve();
+          } catch (e) {
+            return reject(e);
+          }
+        }
         plus.sqlite.executeSql({
           name: DB_NAME,
           sql: sql,
@@ -50,6 +267,14 @@ const sqlite = {
     return new Promise(async (resolve, reject) => {
       try {
         await this.open();
+        if (isH5) {
+          try {
+            const data = selectH5Query(sql);
+            return resolve(data);
+          } catch (e) {
+            return reject(e);
+          }
+        }
         plus.sqlite.selectSql({
           name: DB_NAME,
           sql: sql,
@@ -64,6 +289,25 @@ const sqlite = {
 };
 
 export const localDb = {
+  async executeSql(sql: string, params?: any[]): Promise<any> {
+    let formattedSql = sql;
+    if (params && params.length > 0) {
+      let idx = 0;
+      formattedSql = sql.replace(/\?/g, () => {
+        const val = params[idx++];
+        if (val === null || val === undefined) return 'NULL';
+        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+        const esc = String(val).replace(/'/g, "''");
+        return `'${esc}'`;
+      });
+    }
+    if (formattedSql.trim().toUpperCase().startsWith('SELECT')) {
+      return sqlite.select(formattedSql);
+    } else {
+      return sqlite.execute(formattedSql);
+    }
+  },
+
   async init() {
     try {
       await sqlite.open();

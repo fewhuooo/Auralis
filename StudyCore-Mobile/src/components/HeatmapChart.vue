@@ -1,7 +1,12 @@
 <template>
   <view class="heatmap-chart">
-    <view class="heatmap-header">
-      <text class="heatmap-title">📊 学习热力图 (最近 35 天)</text>
+    <!-- 头部：当月展示与总数统计 (Current Month Summary & Legend) -->
+    <view class="month-header">
+      <view class="month-title">
+        <text class="m-name">专注持续热力</text>
+        <text class="total-badge">近16周共 {{ currentMonthObj.totalCount }} 次打卡</text>
+      </view>
+
       <view class="legend">
         <text class="leg-text">少</text>
         <view class="leg-box level-0"></view>
@@ -12,39 +17,29 @@
         <text class="leg-text">多</text>
       </view>
     </view>
-    
-    <view class="chart-wrapper">
-      <svg class="heatmap-svg" viewBox="0 0 320 100" preserveAspectRatio="xMidYMid meet">
-        <!-- Weekday Labels -->
-        <text x="12" y="22" class="y-label">一</text>
-        <text x="12" y="46" class="y-label">三</text>
-        <text x="12" y="70" class="y-label">五</text>
-        <text x="12" y="94" class="y-label">日</text>
-        
-        <!-- Heatmap Grid -->
-        <g v-for="(week, wIndex) in gridData" :key="wIndex" :transform="`translate(${wIndex * 14 + 30}, 0)`">
-          <!-- Month label (only show at start of columns if month changed, or just week number/label) -->
-          <text v-if="week.label" x="0" y="10" class="x-label">{{ week.label }}</text>
-          
-          <rect 
-            v-for="(day, dIndex) in week.days" 
-            :key="dIndex"
-            x="0" 
-            :y="dIndex * 12 + 16" 
-            width="10" 
-            height="10" 
-            rx="2" 
-            :class="`day-cell level-${day.level}`"
-            @click="selectDay(day)"
-          >
-            <title>{{ day.date }}: {{ day.count }} 个动作</title>
-          </rect>
-        </g>
-      </svg>
+
+    <!-- 活跃度色块网格：自上而下按周横向排列 (GitHub Style 16 Weeks x 7 Days) -->
+    <view class="calendar-grid">
+      <view class="days-container">
+        <!-- 纯色日期块 -->
+        <view 
+          v-for="day in currentMonthObj.days" 
+          :key="day.date"
+          class="day-cell"
+          :class="[`level-${day.level}`, { 'is-selected': selectedDay?.date === day.date, 'is-today': day.isToday }]"
+          @click="selectDay(day)"
+        ></view>
+      </view>
     </view>
     
-    <view class="heatmap-tooltip" v-if="selectedDay">
-      <text class="tooltip-text">{{ selectedDay.date }} : 记录了 {{ selectedDay.count }} 次学习行为</text>
+    <!-- 选中色块或默认提示 (常驻容器避免初次加载时高度未决或跳动) -->
+    <view class="heatmap-tooltip">
+      <text class="tooltip-text" v-if="selectedDay">
+        {{ selectedDay.date }} : 记录了 {{ selectedDay.count }} 次学习行为
+      </text>
+      <text class="tooltip-text default-tip" v-else>
+        💡 点击上方热力方块，可查看对应日期的学习专注记录
+      </text>
     </view>
   </view>
 </template>
@@ -56,10 +51,14 @@ interface DayData {
   date: string
   count: number
   level: number
+  isToday: boolean
 }
 
-interface WeekData {
-  label: string
+interface MonthData {
+  year: number
+  month: number
+  totalCount: number
+  startOffset: number
   days: DayData[]
 }
 
@@ -73,153 +72,188 @@ const selectDay = (day: DayData) => {
   selectedDay.value = day
 }
 
-const gridData = computed(() => {
-  // We want to construct a 5-week (35 days) grid.
-  // We partition the dataset of 35 items into 5 weeks of 7 days.
-  const weeks: WeekData[] = []
-  const dataCopy = [...props.dataset].slice(-35) // Get latest 35 days
-  
-  // Fill up if less than 35 days
-  while (dataCopy.length < 35) {
-    const prevDate = new Date()
-    prevDate.setDate(prevDate.getDate() - dataCopy.length - 1)
-    const dateStr = prevDate.toISOString().split('T')[0]
-    dataCopy.unshift({ date: dateStr, count: 0 })
+// 活跃度层级算法 (0-4 级)
+const getLevel = (count: number) => {
+  if (count <= 0) return 0
+  if (count <= 2) return 1
+  if (count <= 5) return 2
+  if (count <= 9) return 3
+  return 4
+}
+
+// 计算近期 16 周 (112天) 数据 - GitHub 风格横向热力图
+const currentMonthObj = computed<MonthData>(() => {
+  const dataMap: Record<string, number> = {}
+  if (props.dataset && props.dataset.length > 0) {
+    props.dataset.forEach(item => {
+      dataMap[item.date] = item.count
+    })
   }
 
-  // Helper to determine color level
-  const getLevel = (count: number) => {
-    if (count <= 0) return 0
-    if (count <= 2) return 1
-    if (count <= 5) return 2
-    if (count <= 9) return 3
-    return 4
+  const today = new Date()
+  const todayStr = today.toISOString().split('T')[0]
+  const year = today.getFullYear()
+  const month = today.getMonth() + 1
+
+  // 生成从今日倒推 112 天（16周）的数据矩阵
+  const totalDays = 112
+  let totalCount = 0
+  const days: DayData[] = []
+
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setDate(today.getDate() - i)
+    const dateStr = d.toISOString().split('T')[0]
+    const count = dataMap[dateStr] || 0
+    totalCount += count
+    days.push({
+      date: dateStr,
+      count,
+      level: getLevel(count),
+      isToday: dateStr === todayStr
+    })
   }
 
-  for (let i = 0; i < 5; i++) {
-    const days: DayData[] = []
-    const weekStartItem = dataCopy[i * 7]
-    let label = ''
-    
-    if (weekStartItem) {
-      // Get month name or just w1, w2...
-      const date = new Date(weekStartItem.date)
-      if (i === 0 || date.getDate() <= 7) {
-        label = `${date.getMonth() + 1}月`
-      }
-    }
-
-    for (let j = 0; j < 7; j++) {
-      const item = dataCopy[i * 7 + j] || { date: '', count: 0 }
-      days.push({
-        date: item.date,
-        count: item.count,
-        level: getLevel(item.count)
-      })
-    }
-    
-    weeks.push({ label, days })
+  return {
+    year,
+    month,
+    totalCount,
+    startOffset: 0,
+    days
   }
-  
-  return weeks
 })
 </script>
 
 <style scoped>
 .heatmap-chart {
   width: 100%;
-  padding: 10rpx 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
-.heatmap-header {
+/* 当月展示与总数看板 */
+.month-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20rpx;
+  margin-bottom: 12rpx;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  flex-shrink: 0;
 }
 
-.heatmap-title {
-  font-size: 26rpx;
-  font-weight: 600;
-  color: var(--text-secondary);
+.month-title {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+.m-name {
+  font-size: 28rpx;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.total-badge {
+  font-size: 22rpx;
+  font-weight: 700;
+  color: var(--text-accent, #7D9372);
+  background: rgba(125, 147, 114, 0.14);
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
 }
 
 .legend {
   display: flex;
   align-items: center;
-  gap: 6rpx;
+  gap: 8rpx;
 }
-
 .leg-text {
   font-size: 20rpx;
   color: var(--text-muted);
+  font-weight: 600;
 }
-
 .leg-box {
-  width: 16rpx;
-  height: 16rpx;
-  border-radius: 2rpx;
+  width: 18rpx;
+  height: 18rpx;
+  border-radius: 4rpx;
 }
 
-.chart-wrapper {
+/* GitHub 风格横向 紧凑矩阵 - 自适应铺满大部分空间 */
+.calendar-grid {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
 }
 
-.heatmap-svg {
+.days-container {
+  display: grid;
   width: 100%;
-  height: auto;
+  height: 100%;
+  grid-template-rows: repeat(7, 1fr);
+  grid-template-columns: repeat(16, 1fr);
+  grid-auto-flow: column;
+  gap: 10rpx;
 }
 
-.y-label {
-  font-size: 8px;
-  fill: var(--text-muted);
-  dominant-baseline: middle;
-  text-anchor: middle;
-}
-
-.x-label {
-  font-size: 8px;
-  fill: var(--text-muted);
-  text-anchor: start;
-}
-
-/* Cell Colors for Levels */
 .day-cell {
-  transition: transform 0.2s, stroke 0.2s;
+  width: 100%;
+  height: 100%;
+  border-radius: 8rpx;
   cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  box-sizing: border-box;
+  border: 2rpx solid rgba(255, 255, 255, 0.5);
 }
-
 .day-cell:active {
-  transform: scale(0.9);
+  transform: scale(0.92);
 }
 
+/* 选中与今日高亮边框 */
+.day-cell.is-today {
+  border: 3rpx solid var(--text-primary);
+}
+.day-cell.is-selected {
+  box-shadow: 0 0 0 4rpx var(--text-accent, #7D9372);
+  transform: scale(1.08);
+  z-index: 2;
+}
+
+/* 颜色分级 (品牌禅意配色映射：没学习也保持清晰的暖石灰底色) */
 .level-0 {
-  fill: var(--color-bg-tertiary);
+  background: var(--color-zen-stone-light, #e2e2de);
+  border: 2rpx solid rgba(0, 0, 0, 0.08);
 }
 .level-1 {
-  fill: rgba(109, 99, 91, 0.2);
+  background: rgba(125, 147, 114, 0.28);
 }
 .level-2 {
-  fill: rgba(109, 99, 91, 0.45);
+  background: rgba(125, 147, 114, 0.55);
 }
 .level-3 {
-  fill: rgba(109, 99, 91, 0.75);
+  background: rgba(125, 147, 114, 0.8);
 }
 .level-4 {
-  fill: var(--text-accent);
+  background: var(--text-accent, #7D9372);
 }
 
+/* 提示悬浮卡 */
 .heatmap-tooltip {
-  margin-top: 16rpx;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  margin-top: 10rpx;
+  background: var(--color-bg-elevated, #ffffff);
+  border: 1px solid var(--color-zen-hairline, rgba(0, 0, 0, 0.08));
+  border-radius: 16rpx;
   padding: 10rpx 20rpx;
   text-align: center;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.05);
 }
-
 .tooltip-text {
   font-size: 22rpx;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
 }
 </style>

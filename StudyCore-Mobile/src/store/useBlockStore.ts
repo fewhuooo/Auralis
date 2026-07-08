@@ -80,7 +80,7 @@ export const useBlockStore = defineStore('block', () => {
     }
   }
 
-  const addBlock = async (block: Omit<KnowledgeBlock, 'id'> & { id?: string }) => {
+  const addBlock = async (block: Omit<KnowledgeBlock, 'id' | 'time'> & { id?: string; time?: string }) => {
     const newBlock: KnowledgeBlock = {
       id: block.id || uuidv7(),
       subject: block.subject,

@@ -10,16 +10,31 @@
           <text class="save-status">{{ saveStatus }}</text>
         </view>
         <view class="center tool-group">
-          <view class="tool-btn" :class="{ active: currentTool === 'pen' }" @click="currentTool = 'pen'">✏️</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'pencil' }" @click="currentTool = 'pencil'">🖍️</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'highlighter' }" @click="currentTool = 'highlighter'">🖍️(亮)</view>
-          <view class="tool-btn" :class="{ active: currentTool === 'eraser' }" @click="currentTool = 'eraser'">🧽</view>
+          <view class="tool-btn" :class="{ active: currentTool === 'pen' }" @click="currentTool = 'pen'">╱</view>
+          <view class="tool-btn" :class="{ active: currentTool === 'pencil' }" @click="currentTool = 'pencil'">∕</view>
+          <view class="tool-btn" :class="{ active: currentTool === 'highlighter' }" @click="currentTool = 'highlighter'">═</view>
+          <view class="tool-btn" :class="{ active: currentTool === 'eraser' }" @click="currentTool = 'eraser'">◌</view>
           <view class="divider"></view>
           <!-- Colors -->
           <view class="colors">
             <view class="c-dot" style="background:#000" :class="{ active: currentColor==='#000' }" @click="currentColor='#000'"></view>
             <view class="c-dot" style="background:#ef4444" :class="{ active: currentColor==='#ef4444' }" @click="currentColor='#ef4444'"></view>
             <view class="c-dot" style="background:#3b82f6" :class="{ active: currentColor==='#3b82f6' }" @click="currentColor='#3b82f6'"></view>
+            <view class="c-dot" style="background:#22c55e" :class="{ active: currentColor==='#22c55e' }" @click="currentColor='#22c55e'"></view>
+            <view class="c-dot" style="background:#a855f7" :class="{ active: currentColor==='#a855f7' }" @click="currentColor='#a855f7'"></view>
+          </view>
+          <view class="divider"></view>
+          <!-- Thickness -->
+          <view class="thickness-group">
+            <view
+              v-for="size in thicknessOptions"
+              :key="size"
+              class="thickness-btn"
+              :class="{ active: currentSize === size }"
+              @click="currentSize = size"
+            >
+              <view class="thickness-dot" :style="{ width: size * 2 + 'rpx', height: size * 2 + 'rpx' }"></view>
+            </view>
           </view>
           <view class="divider"></view>
           <view class="tool-btn" @click="undo">↩</view>
@@ -53,18 +68,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import { HandwritingEngine, type Stroke, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
 import { uuidv7 } from '@/utils/uuid'
-import jsPDF from 'jspdf'
 
-const notebook = ref(NotebookStorage.createNewNotebook())
+const notebook = ref(NotebookStorage.createNewNotebook('随手记草稿本'))
 const saveStatus = ref('已保存')
+const notebookId = ref<string | null>(null)
 
 const currentTool = ref<'pen' | 'pencil' | 'highlighter' | 'eraser'>('pen')
 const currentColor = ref('#000')
 const currentSize = ref(4)
+const thicknessOptions = [2, 4, 6, 8, 12]
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let engine: HandwritingEngine | null = null
@@ -75,15 +92,32 @@ let saveTimeout: any = null
 const canvasWidth = ref(1200)
 const canvasHeight = ref(1600) // Virtual A4 like size
 
+onLoad((options) => {
+  if (options?.id) {
+    notebookId.value = options.id
+  }
+})
+
 onMounted(async () => {
   await NotebookStorage.initSchema()
-  
+
+  // Load existing notebook if ID provided
+  if (notebookId.value) {
+    const existing = await NotebookStorage.loadNotebook(notebookId.value)
+    if (existing) {
+      notebook.value = existing
+    }
+  }
+
   if (canvasRef.value) {
     const ctx = canvasRef.value.getContext('2d')
     if (ctx) {
       engine = new HandwritingEngine(ctx)
-      // For demo, just start empty
-      // In real app, load from route param id
+      // Render existing strokes
+      if (notebook.value.strokes.length > 0) {
+        notebook.value.strokes.forEach(stroke => engine!.addStroke(stroke))
+        engine.render()
+      }
     }
   }
 })
@@ -210,6 +244,7 @@ const exportPDF = async () => {
   if (!canvasRef.value) return
   try {
     uni.showLoading({ title: '生成中...' })
+    const { default: jsPDF } = await import('jspdf')
     const pdf = new jsPDF('p', 'pt', 'a4')
     // Get image data from canvas
     const imgData = canvasRef.value.toDataURL('image/png')
@@ -238,65 +273,75 @@ const goBack = () => {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: var(--color-bg-primary);
+  background: var(--color-zen-ivory, #F9F9F7);
 }
 
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20rpx 40rpx;
-  background: var(--color-bg-secondary);
-  border-bottom: 2rpx solid var(--border-subtle);
+  padding: 24rpx 48rpx;
+  background: var(--color-zen-white, #FFFFFF);
+  border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.02);
   z-index: 10;
 }
 .left, .right {
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  width: 300rpx;
+  gap: 24rpx;
+  width: 320rpx;
 }
 .right { justify-content: flex-end; }
 .back-btn {
   font-size: 32rpx;
-  color: var(--text-accent);
+  color: var(--color-zen-graphite, #1C1C1A);
+  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-weight: 600;
   cursor: pointer;
 }
 .title-input {
   font-size: 32rpx;
-  font-weight: 700;
+  font-weight: 800;
   border: none;
   background: transparent;
-  color: var(--text-primary);
-  width: 200rpx;
+  color: var(--color-zen-graphite, #1C1C1A);
+  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  width: 220rpx;
 }
 .save-status {
   font-size: 24rpx;
-  color: var(--text-muted);
+  color: var(--color-zen-stone, #A8A8A5);
+  font-weight: 600;
 }
 
 .tool-group {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  background: var(--color-bg-primary);
-  padding: 10rpx 20rpx;
-  border-radius: 40rpx;
-  border: 2rpx solid var(--border-subtle);
+  background: var(--color-zen-ivory, #F9F9F7);
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.02);
 }
 .tool-btn {
-  width: 60rpx; height: 60rpx;
+  width: 64rpx; height: 64rpx;
   display: flex; align-items: center; justify-content: center;
-  border-radius: 30rpx;
+  border-radius: 999rpx;
   font-size: 32rpx;
+  color: var(--color-zen-graphite, #1C1C1A);
+  font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s;
 }
 .tool-btn.active {
-  background: var(--border-subtle);
+  background: var(--color-zen-white, #FFFFFF);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
 }
 .divider {
-  width: 2rpx; height: 40rpx;
-  background: var(--border-default);
+  width: 1px; height: 40rpx;
+  background: var(--color-zen-hairline, #E6E6E4);
   margin: 0 10rpx;
 }
 .colors {
@@ -308,20 +353,52 @@ const goBack = () => {
   border-radius: 50%;
   border: 4rpx solid transparent;
   cursor: pointer;
+  transition: transform 0.2s;
 }
 .c-dot.active {
-  border-color: var(--text-primary);
-  transform: scale(1.1);
+  border-color: var(--color-zen-graphite, #1C1C1A);
+  transform: scale(1.15);
+}
+
+.thickness-group {
+  display: flex;
+  gap: 8rpx;
+  align-items: center;
+}
+.thickness-btn {
+  width: 52rpx;
+  height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2rpx solid transparent;
+  transition: all 0.2s;
+}
+.thickness-btn.active {
+  border-color: var(--color-zen-graphite, #1C1C1A);
+  background: var(--color-zen-white, #FFFFFF);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.08);
+}
+.thickness-dot {
+  border-radius: 50%;
+  background: var(--color-zen-graphite, #1C1C1A);
 }
 
 .menu-btn {
   font-size: 28rpx;
-  color: var(--text-secondary);
-  padding: 10rpx 20rpx;
-  background: var(--color-bg-primary);
-  border-radius: 20rpx;
-  border: 2rpx solid var(--border-subtle);
+  color: var(--color-zen-graphite, #1C1C1A);
+  font-weight: 600;
+  padding: 14rpx 28rpx;
+  background: var(--color-zen-ivory, #F9F9F7);
+  border-radius: 999rpx;
+  border: 1px solid var(--color-zen-hairline, #E6E6E4);
   cursor: pointer;
+  transition: all 0.2s;
+}
+.menu-btn:active {
+  transform: scale(0.96);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .canvas-container {
@@ -329,19 +406,19 @@ const goBack = () => {
   overflow: auto;
   display: flex;
   justify-content: center;
-  background: #ebebeb; /* Desk color */
-  padding: 40rpx;
+  background: #EBEBE9;
+  padding: 60rpx;
 }
 
 .hw-canvas {
-  background: var(--hw-canvas-bg);
-  box-shadow: var(--shadow-lg);
+  background: #FFFFFF;
+  box-shadow: 0 20rpx 60rpx rgba(0, 0, 0, 0.08);
+  border-radius: 12rpx;
   cursor: crosshair;
-  /* Disable browser touch actions for pointer events to work cleanly */
   touch-action: none; 
 }
 .bg-grid {
-  background-image: radial-gradient(var(--border-default) 2rpx, transparent 0);
+  background-image: radial-gradient(#D8D8D5 2rpx, transparent 0);
   background-size: 40rpx 40rpx;
 }
 </style>

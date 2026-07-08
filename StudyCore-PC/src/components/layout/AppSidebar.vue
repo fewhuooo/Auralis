@@ -116,13 +116,11 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
-import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import { useSubjectStore } from '@/store/useSubjectStore'
 
 const route = useRoute()
 const router = useRouter()
-const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const subjectStore = useSubjectStore()
 

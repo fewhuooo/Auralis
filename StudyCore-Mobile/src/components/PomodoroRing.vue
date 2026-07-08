@@ -66,8 +66,10 @@ const formattedTime = computed(() => {
 <style scoped>
 .pomodoro-ring {
   position: relative;
-  width: 560rpx;
-  height: 560rpx;
+  width: clamp(400rpx, 64vw, 560rpx);
+  height: clamp(400rpx, 64vw, 560rpx);
+  max-width: 44vh;
+  max-height: 44vh;
   display: flex;
   align-items: center;
   justify-content: center;

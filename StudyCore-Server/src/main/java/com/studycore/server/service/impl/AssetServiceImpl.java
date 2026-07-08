@@ -33,12 +33,19 @@ public class AssetServiceImpl extends ServiceImpl<AssetMapper, Asset> implements
     public Asset bindAndDispatch(String objectName, String fileName, Long fileSize, 
                                   String contentType, String subject) {
         String userId = UserContext.getCurrentUserId();
-        String userApiKey = UserContext.getUserApiKey();
-        String userBaseUrl = UserContext.getUserBaseUrl();
+        if (userId == null || userId.isBlank()) {
+            throw new IllegalStateException("User is not authenticated");
+        }
+        if (objectName == null || !objectName.startsWith(userId + "/")) {
+            throw new IllegalArgumentException("Object does not belong to current user");
+        }
+        if (fileSize != null && fileSize < 0) {
+            throw new IllegalArgumentException("Invalid file size");
+        }
 
         // Step 1: Persist asset metadata to PostgreSQL
         Asset asset = new Asset();
-        asset.setUserId(userId != null ? userId : "system_default");
+        asset.setUserId(userId);
         asset.setFileName(fileName);
         asset.setObjectName(objectName);
         asset.setFileSize(fileSize);
@@ -54,8 +61,6 @@ public class AssetServiceImpl extends ServiceImpl<AssetMapper, Asset> implements
         Map<String, String> payload = new HashMap<>();
         payload.put("assetId", asset.getId());
         payload.put("userId", asset.getUserId());
-        payload.put("userApiKey", userApiKey != null ? userApiKey : "");
-        payload.put("userBaseUrl", userBaseUrl != null ? userBaseUrl : "");
         payload.put("objectName", objectName);
         payload.put("fileName", fileName);
         payload.put("subject", asset.getSubject());

@@ -38,7 +38,7 @@ export class NotebookStorage {
   }
 
   // Create empty notebook
-  static createNewNotebook(title: string = '未命名笔记'): NotebookData {
+  static createNewNotebook(title: string = '随手记草稿本'): NotebookData {
     return {
       id: uuidv7(),
       title,

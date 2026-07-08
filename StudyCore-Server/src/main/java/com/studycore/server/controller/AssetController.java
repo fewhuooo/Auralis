@@ -1,6 +1,7 @@
 package com.studycore.server.controller;
 
 import com.studycore.server.common.Result;
+import com.studycore.server.common.UserContext;
 import com.studycore.server.entity.Asset;
 import com.studycore.server.service.impl.AssetServiceImpl;
 import lombok.Data;
@@ -59,7 +60,8 @@ public class AssetController {
     @GetMapping("/{id}")
     public Result<Asset> getAsset(@PathVariable String id) {
         Asset asset = assetService.getById(id);
-        if (asset == null) {
+        String userId = UserContext.getCurrentUserId();
+        if (asset == null || userId == null || !userId.equals(asset.getUserId())) {
             throw new IllegalArgumentException("资产不存在: " + id);
         }
         return Result.success(asset);

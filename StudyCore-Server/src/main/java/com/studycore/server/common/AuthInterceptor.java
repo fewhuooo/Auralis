@@ -30,18 +30,10 @@ public class AuthInterceptor implements HandlerInterceptor {
             token = request.getParameter("token");
         }
 
-        if (StringUtils.hasText(token) && jwtUtil.validateToken(token)) {
+        if (StringUtils.hasText(token) && jwtUtil.validateToken(token) && !jwtUtil.isRefreshToken(token)) {
             String userId = jwtUtil.extractUserId(token);
             UserContext.setCurrentUserId(userId);
             
-            String customApiKey = request.getHeader("X-User-Api-Key");
-            String customBaseUrl = request.getHeader("X-User-Base-Url");
-            if (StringUtils.hasText(customApiKey)) {
-                UserContext.setUserApiKey(customApiKey);
-            }
-            if (StringUtils.hasText(customBaseUrl)) {
-                UserContext.setUserBaseUrl(customBaseUrl);
-            }
             return true;
         }
         

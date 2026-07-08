@@ -1,51 +1,45 @@
 <template>
   <view class="weekly-chart">
-    <svg class="chart-svg" viewBox="0 0 360 160" preserveAspectRatio="none">
+    <svg class="chart-svg" viewBox="0 0 360 150">
       <defs>
-        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="var(--text-accent)" stop-opacity="1" />
-          <stop offset="100%" stop-color="var(--text-accent)" stop-opacity="0.3" />
+        <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#7D9372" />
+          <stop offset="100%" stop-color="#9bb390" />
         </linearGradient>
       </defs>
-      
-      <!-- Grid Lines -->
-      <line x1="15" y1="20" x2="345" y2="20" stroke="var(--border-subtle)" stroke-width="1" stroke-dasharray="2 2" />
-      <line x1="15" y1="70" x2="345" y2="70" stroke="var(--border-subtle)" stroke-width="1" stroke-dasharray="2 2" />
-      <line x1="15" y1="120" x2="345" y2="120" stroke="var(--border-default)" stroke-width="1" />
-      
-      <!-- Average Line -->
+
+      <!-- Average Guideline -->
       <line 
-        x1="15" 
-        :y1="120 - avgHeight" 
-        x2="345" 
-        :y2="120 - avgHeight" 
+        v-if="avgMinutes > 0" 
+        x1="15" :y1="120 - avgHeight" 
+        x2="345" :y2="120 - avgHeight" 
         stroke="var(--color-warning)" 
         stroke-width="1.5" 
-        stroke-dasharray="4 4" 
+        stroke-dasharray="4 4"
       />
-      <text x="345" :y="120 - avgHeight - 4" text-anchor="end" class="chart-label warning">均: {{ avgMinutes }}m</text>
+      <text v-if="avgMinutes > 0" x="345" :y="120 - avgHeight - 4" text-anchor="end" class="chart-label warning">均: {{ avgMinutes }}m</text>
 
       <!-- Bars -->
-      <g v-for="(item, index) in chartData" :key="index" :transform="`translate(${index * 46 + 22}, 0)`">
+      <g v-for="(item, index) in chartData" :key="index" :transform="`translate(${index * 48 + 10}, 0)`">
         <!-- Background track -->
-        <rect x="0" y="20" width="16" height="100" rx="8" fill="var(--color-bg-tertiary)" />
+        <rect x="0" y="20" width="28" height="100" rx="14" fill="var(--color-bg-tertiary)" />
         
         <!-- Actual bar -->
         <rect 
           x="0" 
           :y="120 - item.height" 
-          width="16" 
+          width="28" 
           :height="item.height" 
-          rx="8" 
+          rx="14" 
           :fill="item.isToday ? 'url(#barGrad)' : 'var(--text-accent)'" 
-          :fill-opacity="item.isToday ? 1 : 0.6"
+          :fill-opacity="item.isToday ? 1 : 0.65"
           class="chart-bar"
         />
         
         <!-- Value Label for Peak -->
         <text 
           v-if="item.minutes === peakMinutes && item.minutes > 0" 
-          x="8" 
+          x="14" 
           :y="114 - item.height" 
           text-anchor="middle" 
           class="chart-label peak"
@@ -54,7 +48,7 @@
         </text>
 
         <!-- Day label -->
-        <text x="8" y="145" text-anchor="middle" class="day-label" :class="{ 'is-today': item.isToday }">
+        <text x="14" y="142" text-anchor="middle" class="day-label" :class="{ 'is-today': item.isToday }">
           {{ item.day }}
         </text>
       </g>
@@ -97,25 +91,32 @@ const chartData = computed(() => {
 <style scoped>
 .weekly-chart {
   width: 100%;
-  height: 320rpx;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .chart-svg {
   width: 100%;
   height: 100%;
 }
 .chart-bar {
-  transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  transition: y 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), height 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), fill 0.3s ease;
 }
 .day-label {
-  font-size: 10px;
-  fill: var(--text-muted);
+  font-size: 14px;
+  font-weight: 700;
+  fill: var(--text-secondary);
 }
 .day-label.is-today {
-  fill: var(--text-primary);
-  font-weight: bold;
+  fill: var(--text-accent, #7D9372);
+  font-weight: 900;
+  font-size: 16px;
 }
 .chart-label {
-  font-size: 9px;
+  font-size: 12px;
   fill: var(--text-muted);
 }
 .chart-label.warning {

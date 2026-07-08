@@ -93,15 +93,14 @@ const badgeColor = computed(() => {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   backface-visibility: hidden;
-  border-radius: 32rpx;
+  border-radius: var(--radius-lg);
   padding: 48rpx;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
-  /* Thin borders and high quality smooth shadows for premium feel */
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow: 0 10rpx 40rpx rgba(0, 0, 0, 0.04), 0 2rpx 10rpx rgba(0, 0, 0, 0.02);
+  background: var(--color-zen-white);
+  border: 1px solid var(--color-zen-hairline);
+  box-shadow: none;
 }
 
 .card-front {
@@ -128,12 +127,12 @@ const badgeColor = computed(() => {
 
 .state-indicator {
   font-size: 24rpx;
-  color: var(--text-muted);
+  color: var(--color-zen-stone);
   font-weight: 500;
 }
 
 .state-indicator.success {
-  color: #10b981;
+  color: var(--color-zen-sage);
   font-weight: 600;
 }
 
@@ -152,7 +151,7 @@ const badgeColor = computed(() => {
 }
 
 .card-text {
-  color: var(--text-primary);
+  color: var(--color-zen-graphite);
   line-height: 1.6;
   word-break: break-all;
 }
@@ -174,12 +173,12 @@ const badgeColor = computed(() => {
   justify-content: center;
   align-items: center;
   padding-top: 24rpx;
-  border-top: 1px solid rgba(0, 0, 0, 0.03);
+  border-top: 1px solid var(--color-zen-hairline);
 }
 
 .hint-text {
   font-size: 24rpx;
-  color: var(--text-muted);
+  color: var(--color-zen-stone);
   letter-spacing: 1rpx;
 }
 
@@ -189,7 +188,7 @@ const badgeColor = computed(() => {
 
 .gesture-hint {
   font-size: 22rpx;
-  color: var(--text-muted);
+  color: var(--color-zen-stone);
   font-weight: 500;
   display: flex;
   align-items: center;
@@ -198,11 +197,11 @@ const badgeColor = computed(() => {
 
 .gesture-hint .icon {
   font-weight: bold;
-  color: var(--text-secondary);
+  color: var(--color-zen-graphite);
 }
 
 .gesture-divider {
   font-size: 20rpx;
-  color: rgba(0, 0, 0, 0.1);
+  color: var(--color-zen-hairline);
 }
 </style>

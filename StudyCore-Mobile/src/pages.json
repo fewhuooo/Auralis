@@ -1,7 +1,14 @@
 {
 	"pages": [
 		{
-			"path": "pages/home/index",
+			"path": "pages/launch/index",
+			"style": {
+				"navigationBarTitleText": "StudyCore",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/home/index",
 			"style": {
 				"navigationBarTitleText": "日程",
 				"navigationStyle": "custom",
@@ -9,75 +16,77 @@
 			}
 		},
 		{
-			"path": "pages/pomodoro/index",
+			"path": "pages/mobile/pomodoro/index",
 			"style": {
 				"navigationBarTitleText": "专注",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/ai-search/index",
+			"path": "pages/mobile/ai-search/index",
 			"style": {
 				"navigationBarTitleText": "AI",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/stats/index",
+			"path": "pages/mobile/stats/index",
 			"style": {
 				"navigationBarTitleText": "统计",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/settings/index",
+			"path": "pages/mobile/settings/index",
 			"style": {
 				"navigationBarTitleText": "设置",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/login/index",
+			"path": "pages/mobile/login/index",
 			"style": {
 				"navigationBarTitleText": "登录 / 注册",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/timeline/index",
+			"path": "pages/mobile/timeline/index",
 			"style": {
 				"navigationBarTitleText": "状态同步",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/review/index",
+			"path": "pages/mobile/review/index",
 			"style": {
 				"navigationBarTitleText": "知识复习",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/asset/index",
+			"path": "pages/mobile/asset/index",
 			"style": {
 				"navigationBarTitleText": "资产编排",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/profile/index",
+			"path": "pages/mobile/profile/index",
 			"style": {
 				"navigationBarTitleText": "个人空间",
 				"navigationStyle": "custom"
 			}
 		},
 		{
-			"path": "pages/handwriting/index",
+			"path": "pages/mobile/handwriting/index",
 			"style": {
 				"navigationBarTitleText": "手写笔记",
 				"navigationStyle": "custom"
 			}
-		},
+		}
+		// #ifndef MP-WEIXIN
+		,
 		{
 			"path": "pages/tablet/dashboard/index",
 			"style": {
@@ -100,23 +109,23 @@
 			}
 		},
 		{
-			"path": "pages/tablet/timeline/index",
-			"style": {
-				"navigationBarTitleText": "排期",
-				"navigationStyle": "custom"
-			}
-		},
-		{
-			"path": "pages/tablet/asset/index",
-			"style": {
-				"navigationBarTitleText": "资产",
-				"navigationStyle": "custom"
-			}
-		},
-		{
 			"path": "pages/tablet/handwriting/index",
 			"style": {
-				"navigationBarTitleText": "手写笔记",
+				"navigationBarTitleText": "随手记",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/pomodoro/index",
+			"style": {
+				"navigationBarTitleText": "专注",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/review/index",
+			"style": {
+				"navigationBarTitleText": "复习",
 				"navigationStyle": "custom"
 			}
 		},
@@ -126,7 +135,22 @@
 				"navigationBarTitleText": "个人中心",
 				"navigationStyle": "custom"
 			}
+		},
+		{
+			"path": "pages/tablet/ai-search/index",
+			"style": {
+				"navigationBarTitleText": "AI助手",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/login/index",
+			"style": {
+				"navigationBarTitleText": "登录 / 注册",
+				"navigationStyle": "custom"
+			}
 		}
+		// #endif
 	],
 	"globalStyle": {
 		"navigationBarTextStyle": "black",

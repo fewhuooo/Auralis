@@ -36,6 +36,14 @@ function buildQueryString(params: Record<string, any>): string {
   return parts.length > 0 ? '?' + parts.join('&') : ''
 }
 
+function getLoginRouteForCurrentPage(): string {
+  const pages = getCurrentPages()
+  const currentRoute = pages.length > 0 ? pages[pages.length - 1].route || '' : ''
+  return currentRoute.startsWith('pages/tablet/')
+    ? '/pages/tablet/login/index'
+    : '/pages/mobile/login/index'
+}
+
 /**
  * 通用请求函数，返回 Result.data（与 PC 端 axios 拦截器一致）
  * 14.3: 遇到 401 时自动尝试 refresh token，失败再 logout
@@ -75,7 +83,7 @@ function request<T = any>(options: RequestOptions): Promise<T> {
             }
           } else {
             authStore.logout()
-            uni.reLaunch({ url: '/pages/login/index' })
+            uni.reLaunch({ url: getLoginRouteForCurrentPage() })
             reject(new Error('Unauthorized — token refresh failed'))
           }
           return

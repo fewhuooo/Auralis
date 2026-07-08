@@ -70,8 +70,6 @@ public class DocumentIngestionService {
 
     private List<String> enqueueSegments(List<TextSegment> segments, String source, String subject) {
         String userId = UserContext.getCurrentUserId();
-        String userApiKey = UserContext.getUserApiKey();
-        String userBaseUrl = UserContext.getUserBaseUrl();
 
         List<String> enqueuedJobIds = new ArrayList<>();
 
@@ -80,8 +78,6 @@ public class DocumentIngestionService {
             
             Map<String, String> payload = new HashMap<>();
             payload.put("userId", userId != null ? userId : "system_default");
-            payload.put("userApiKey", userApiKey != null ? userApiKey : "");
-            payload.put("userBaseUrl", userBaseUrl != null ? userBaseUrl : "");
             payload.put("text", seg.text());
             payload.put("source", source);
             payload.put("subject", subject != null ? subject : "文档导入");
@@ -105,4 +101,3 @@ public class DocumentIngestionService {
         return enqueuedJobIds;
     }
 }
-

@@ -32,12 +32,21 @@ export const useTaskStore = defineStore('task', () => {
   const isSyncing = ref(false)
 
   const timeSlots = ref<TimeSlot[]>([
+    { time: '08:00', task: null },
     { time: '09:00', task: null },
+    { time: '10:00', task: null },
     { time: '11:00', task: null },
+    { time: '12:00', task: null },
     { time: '13:00', task: null },
+    { time: '14:00', task: null },
     { time: '15:00', task: null },
+    { time: '16:00', task: null },
     { time: '17:00', task: null },
+    { time: '18:00', task: null },
     { time: '19:00', task: null },
+    { time: '20:00', task: null },
+    { time: '21:00', task: null },
+    { time: '22:00', task: null },
   ])
 
   const checkOnline = async (): Promise<boolean> => {
@@ -254,12 +263,39 @@ export const useTaskStore = defineStore('task', () => {
     }
   })
 
+  // Pomodoro local tracking
+  const todayPomodoros = ref(0)
+  const loadPomodoroCount = () => {
+    const dateStr = new Date().toISOString().split('T')[0]
+    const storedStr = uni.getStorageSync('pomodoro_counts')
+    if (storedStr) {
+      try {
+        const counts = JSON.parse(storedStr)
+        todayPomodoros.value = counts[dateStr] || 0
+      } catch(e) {}
+    }
+  }
+  loadPomodoroCount()
+
+  const incrementPomodoro = () => {
+    todayPomodoros.value++
+    const dateStr = new Date().toISOString().split('T')[0]
+    const storedStr = uni.getStorageSync('pomodoro_counts')
+    let counts: Record<string, number> = {}
+    if (storedStr) {
+      try { counts = JSON.parse(storedStr) } catch(e) {}
+    }
+    counts[dateStr] = todayPomodoros.value
+    uni.setStorageSync('pomodoro_counts', JSON.stringify(counts))
+  }
+
   return {
     pendingTasks,
     timeSlots,
     completedCount,
     pendingCount,
     totalFocusHours,
+    todayPomodoros,
     loadLocalTasks,
     fetchTasks,
     addTask,
@@ -268,6 +304,7 @@ export const useTaskStore = defineStore('task', () => {
     completeTask,
     deferTask,
     syncFromRemote,
-    syncPendingChanges
+    syncPendingChanges,
+    incrementPomodoro
   }
 })

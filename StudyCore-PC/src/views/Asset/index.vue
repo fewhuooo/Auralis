@@ -291,7 +291,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { convertHandwritingToMarkdown, ingestFile } from '@/api/aiClient'
+import { ingestFile } from '@/api/aiClient'
 import { uploadAsset, validateFileSize, getAssetStatus } from '@/api/useAssetApi'
 import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
@@ -324,7 +324,7 @@ const tabs = computed(() => {
 })
 
 interface AssetItem {
-  id: number; name: string; icon: string; status: string; statusText: string
+  id: string; name: string; icon: string; status: string; statusText: string
   time: string; blocks: number; tasks: number; pages: number; size: string
   filePath?: string;
   blockList: any[]; taskList: any[]; markdown?: string
@@ -366,7 +366,7 @@ const loadAssetsFromBackend = async () => {
     const allItems: AssetItem[] = allFilesRaw.map(file => {
       const fileBlocks = blockStore.recentBlocks.filter(b => b.sourceFileId === file.id || b.source === file.name)
       return {
-        id: file.id as any,
+        id: String(file.id),
         name: file.name,
         icon: getIconForSource(file.name),
         status: 'success',
@@ -389,7 +389,7 @@ const loadAssetsFromBackend = async () => {
     
     // Add Placeholder and All Blocks Aggregation
     const mockItem: AssetItem = {
-      id: -1,
+      id: '-1',
       name: '💡 示例编排资产 (点击预览)',
       icon: '📚',
       status: 'success',
@@ -412,7 +412,7 @@ const loadAssetsFromBackend = async () => {
     }
 
     const allBlocksItem: AssetItem = {
-      id: -2,
+      id: '-2',
       name: '📦 全部分类知识块汇总',
       icon: '🧠',
       status: 'success',
@@ -451,7 +451,7 @@ const loadAssetsFromBackend = async () => {
       const items: AssetItem[] = files.map(file => {
         const fileBlocks = blockStore.recentBlocks.filter(b => b.sourceFileId === file.id || b.source === file.name)
         return {
-          id: file.id as any,
+          id: String(file.id),
           name: file.name,
           icon: getIconForSource(file.name),
           status: 'success',
@@ -497,15 +497,6 @@ function getIconForSource(source: string): string {
   if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return '🖼️'
   if (lower.includes('voice') || lower.includes('语音')) return '🎤'
   return '📄'
-}
-
-/** 根据来源名分配到 group */
-function getGroupForSource(source: string): string {
-  const lower = source.toLowerCase()
-  if (lower.includes('pdf')) return 'pdf'
-  if (lower.includes('ppt') || lower.includes('课件')) return 'ppt'
-  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image') || lower.includes('.jpg') || lower.includes('.png')) return 'image'
-  return 'other'
 }
 
 const handleSyncEvent = async (e: Event) => {
@@ -618,7 +609,7 @@ const selectedGroupId = ref<string | null>(null)
 
 const computedBlocks = computed(() => {
   if (!selected.value) return []
-  if (selected.value.id < 0) return selected.value.blockList
+  if (selected.value.id.startsWith('-')) return selected.value.blockList
   
   return blockStore.recentBlocks
     .filter(b => String(b.sourceFileId) === String(selected.value!.id) || b.source === selected.value!.name)
@@ -681,7 +672,7 @@ const saveBlock = async () => {
       source: selected.value ? selected.value.name : '手动新建',
       color: 'rgba(99, 102, 241, 0.2)',
       subjectId: currentSubjectId,
-      sourceFileId: selected.value && selected.value.id > 0 ? String(selected.value.id) : undefined,
+      sourceFileId: selected.value && !selected.value.id.startsWith('-') ? selected.value.id : undefined,
       tags: tags
     }
     await blockStore.addBlock(newBlock as any)
@@ -691,7 +682,7 @@ const saveBlock = async () => {
   blockDialogVisible.value = false
   
   // Optimizstic update for mock assets
-  if (selected.value && selected.value.id < 0) {
+  if (selected.value && selected.value.id.startsWith('-')) {
      if (editingBlockId.value) {
        const b = selected.value.blockList.find((x:any) => x.id === editingBlockId.value)
        if (b) { b.heading = blockForm.value.title; b.preview = blockForm.value.preview; b.tags = tags }
@@ -705,7 +696,7 @@ const handleDeleteBlock = async (id: string) => {
   if (!id) return
   try {
     await ElMessageBox.confirm('确认删除该知识块吗？', '删除提示', { type: 'warning' })
-    if (selected.value && selected.value.id < 0) {
+    if (selected.value && selected.value.id.startsWith('-')) {
       selected.value.blockList = selected.value.blockList.filter((b:any) => b.id !== id)
     } else {
       await blockStore.removeBlock(id)
@@ -724,11 +715,11 @@ const selectedGroup = computed(() => {
 // --- File Preview Logic ---
 const getFilesList = () => {
   if (!selected.value) return []
-  if (selected.value.id === -2) {
+  if (selected.value.id === '-2') {
     const all: AssetItem[] = []
     groups.value.forEach(g => {
       g.items.forEach(i => {
-        if (i.id > 0) all.push(i)
+        if (!i.id.startsWith('-')) all.push(i)
       })
     })
     return Array.from(new Set(all))
@@ -843,7 +834,7 @@ const handleFileUpload = async (file: File, subjectId: string) => {
 
     // Create a placeholder asset item (backend will process asynchronously)
     const newItem: AssetItem = {
-      id: asset.id as any, name: filename, icon: '📄',
+      id: String(asset.id), name: filename, icon: '📄',
       status: 'processing', statusText: '后台解析中',
       time: '刚刚', blocks: 0, tasks: 0,
       pages: 0, size: fileSizeMb,

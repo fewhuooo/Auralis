@@ -7,7 +7,6 @@ import com.studycore.server.service.ai.AiTaskScheduler;
 import com.studycore.server.common.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.Data;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;

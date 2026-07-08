@@ -332,7 +332,7 @@ import 'element-plus/theme-chalk/el-message-box.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
-import { useTaskStore, type Task, getTodayDayCode } from '@/store/useTaskStore'
+import { useTaskStore, getTodayDayCode } from '@/store/useTaskStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useBlockStore } from '@/store/useBlockStore'
 
@@ -344,7 +344,6 @@ const blockStore = useBlockStore()
 const { recentBlocks } = storeToRefs(blockStore)
 
 // Core timeline states
-const subjectFilter = ref('')
 const viewMode = ref<'day' | 'week'>('day')
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DAY_NAMES: Record<string, string> = { Mon: '周一', Tue: '周二', Wed: '周三', Thu: '周四', Fri: '周五', Sat: '周六', Sun: '周日' }

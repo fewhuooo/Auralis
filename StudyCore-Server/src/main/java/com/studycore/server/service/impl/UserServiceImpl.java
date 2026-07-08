@@ -6,12 +6,15 @@ import com.studycore.server.common.JwtUtil;
 import com.studycore.server.entity.User;
 import com.studycore.server.mapper.UserMapper;
 import com.studycore.server.service.UserService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     private final JwtUtil jwtUtil;
+    private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     public UserServiceImpl(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
@@ -20,8 +23,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     @Override
     public String login(String username, String password) {
         User user = getOne(new LambdaQueryWrapper<User>().eq(User::getUsername, username));
-        if (user == null || !user.getPassword().equals(password)) {
+        if (user == null || !passwordMatches(password, user.getPassword())) {
             throw new RuntimeException("Invalid username or password");
+        }
+        if (!isBcryptHash(user.getPassword())) {
+            user.setPassword(passwordEncoder.encode(password));
+            updateById(user);
         }
         return jwtUtil.generateToken(username, user.getId());
     }
@@ -34,8 +41,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
         User user = new User();
         user.setUsername(username);
-        // Note: In a real app, passwords should be hashed (e.g. BCrypt)
-        user.setPassword(password);
+        user.setPassword(passwordEncoder.encode(password));
         save(user);
+    }
+
+    private boolean passwordMatches(String rawPassword, String storedPassword) {
+        if (storedPassword == null) {
+            return false;
+        }
+        if (isBcryptHash(storedPassword)) {
+            return passwordEncoder.matches(rawPassword, storedPassword);
+        }
+        return storedPassword.equals(rawPassword);
+    }
+
+    private boolean isBcryptHash(String value) {
+        return value != null && (value.startsWith("$2a$") || value.startsWith("$2b$") || value.startsWith("$2y$"));
     }
 }
