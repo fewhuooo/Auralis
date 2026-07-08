@@ -10,6 +10,7 @@
           <text class="save-status">{{ saveStatus }}</text>
         </view>
         <view class="center tool-group">
+          <view class="tool-btn" :class="{ active: currentTool === 'pan' }" @click="currentTool = 'pan'">✋</view>
           <view class="tool-btn" :class="{ active: currentTool === 'pen' }" @click="currentTool = 'pen'">╱</view>
           <view class="tool-btn" :class="{ active: currentTool === 'pencil' }" @click="currentTool = 'pencil'">∕</view>
           <view class="tool-btn" :class="{ active: currentTool === 'highlighter' }" @click="currentTool = 'highlighter'">═</view>
@@ -38,6 +39,9 @@
           </view>
           <view class="divider"></view>
           <view class="tool-btn" @click="undo">↩</view>
+          <view class="tool-btn" @click="zoomOut">−</view>
+          <view class="tool-btn" @click="resetViewport">1:1</view>
+          <view class="tool-btn" @click="zoomIn">＋</view>
         </view>
         <view class="right">
           <view class="menu-btn" @click="exportPNG">导出 PNG</view>
@@ -48,18 +52,20 @@
       <!-- Canvas Area -->
       <view class="canvas-container" :class="'bg-' + notebook.background">
         <!-- Render Canvas using native element to support PointerEvents -->
-        <canvas 
-          ref="canvasRef" 
-          id="hw-canvas"
-          class="hw-canvas"
-          :width="canvasWidth"
-          :height="canvasHeight"
-          @pointerdown="onPointerDown"
-          @pointermove="onPointerMove"
-          @pointerup="onPointerUp"
-          @pointercancel="onPointerUp"
-          @pointerleave="onPointerUp"
-        ></canvas>
+        <view class="canvas-viewport" :style="viewportStyle">
+          <canvas
+            ref="canvasRef"
+            id="hw-canvas"
+            class="hw-canvas"
+            :width="canvasWidth"
+            :height="canvasHeight"
+            @pointerdown="onPointerDown"
+            @pointermove="onPointerMove"
+            @pointerup="onPointerUp"
+            @pointercancel="onPointerUp"
+            @pointerleave="onPointerUp"
+          ></canvas>
+        </view>
       </view>
 
     </view>
@@ -67,30 +73,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
-import { HandwritingEngine, type Stroke, type StrokePoint } from '@/services/handwritingEngine'
+import { HandwritingEngine, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
 import { uuidv7 } from '@/utils/uuid'
+import {
+  fromLegacyStroke,
+  toLegacyStrokes,
+  upsertStroke,
+  type NoteDocument,
+  type NoteStroke,
+} from '@/services/tabletNoteModel'
 
-const notebook = ref(NotebookStorage.createNewNotebook('随手记草稿本'))
+const notebook = ref<NoteDocument>(NotebookStorage.createQuickCanvasNote('随手记草稿本'))
 const saveStatus = ref('已保存')
 const notebookId = ref<string | null>(null)
 
-const currentTool = ref<'pen' | 'pencil' | 'highlighter' | 'eraser'>('pen')
+const currentTool = ref<'pan' | 'pen' | 'pencil' | 'highlighter' | 'eraser'>('pen')
 const currentColor = ref('#000')
 const currentSize = ref(4)
 const thicknessOptions = [2, 4, 6, 8, 12]
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let engine: HandwritingEngine | null = null
-let activeStroke: Stroke | null = null
+let activeStroke: NoteStroke | null = null
 let isDrawing = false
+let isPanning = false
+let lastPanPoint: { x: number; y: number } | null = null
 let saveTimeout: any = null
 
-const canvasWidth = ref(1200)
-const canvasHeight = ref(1600) // Virtual A4 like size
+const canvasWidth = ref(3200)
+const canvasHeight = ref(2400)
+
+const viewportStyle = computed(() => ({
+  transform: `translate(${notebook.value.viewport.x}px, ${notebook.value.viewport.y}px) scale(${notebook.value.viewport.scale})`
+}))
 
 onLoad((options) => {
   if (options?.id) {
@@ -101,9 +120,8 @@ onLoad((options) => {
 onMounted(async () => {
   await NotebookStorage.initSchema()
 
-  // Load existing notebook if ID provided
   if (notebookId.value) {
-    const existing = await NotebookStorage.loadNotebook(notebookId.value)
+    const existing = await NotebookStorage.loadNoteDocument(notebookId.value)
     if (existing) {
       notebook.value = existing
     }
@@ -113,10 +131,8 @@ onMounted(async () => {
     const ctx = canvasRef.value.getContext('2d')
     if (ctx) {
       engine = new HandwritingEngine(ctx)
-      // Render existing strokes
       if (notebook.value.strokes.length > 0) {
-        notebook.value.strokes.forEach(stroke => engine!.addStroke(stroke))
-        engine.render()
+        engine.loadStrokes(toLegacyStrokes(notebook.value))
       }
     }
   }
@@ -130,26 +146,28 @@ const onPointerDown = (e: PointerEvent) => {
   if (!engine) return
   isDrawing = true
   e.preventDefault()
-  
-  const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
-  const pt: StrokePoint = {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top,
-    pressure: e.pressure || 0.5, // Apple Pencil pressure
-    tiltX: e.tiltX || 0,
-    tiltY: e.tiltY || 0,
-    timestamp: Date.now()
+
+  if (currentTool.value === 'pan') {
+    isPanning = true
+    lastPanPoint = { x: e.clientX, y: e.clientY }
+    return
   }
+
+  const pt = getCanvasPoint(e)
 
   if (currentTool.value === 'eraser') {
     engine.erase([pt], 20)
+    syncDocumentFromEngine()
+    triggerAutoSave()
   } else {
+    const now = new Date().toISOString()
     activeStroke = {
       id: uuidv7(),
       points: [pt],
       tool: currentTool.value,
       color: currentColor.value,
-      size: currentSize.value
+      size: currentSize.value,
+      createdAt: now
     }
   }
 }
@@ -158,21 +176,31 @@ const onPointerMove = (e: PointerEvent) => {
   if (!isDrawing || !engine) return
   e.preventDefault()
 
+  if (isPanning && lastPanPoint) {
+    const dx = e.clientX - lastPanPoint.x
+    const dy = e.clientY - lastPanPoint.y
+    notebook.value = {
+      ...notebook.value,
+      viewport: {
+        ...notebook.value.viewport,
+        x: notebook.value.viewport.x + dx,
+        y: notebook.value.viewport.y + dy,
+      },
+      updatedAt: new Date().toISOString(),
+    }
+    lastPanPoint = { x: e.clientX, y: e.clientY }
+    return
+  }
+
   // Coalesced events for high refresh rate displays (iPad Pro 120Hz)
   const events = (e as any).getCoalescedEvents ? (e as any).getCoalescedEvents() : [e]
-  const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
   
-  const newPoints: StrokePoint[] = events.map((ev: PointerEvent) => ({
-    x: ev.clientX - rect.left,
-    y: ev.clientY - rect.top,
-    pressure: ev.pressure || 0.5,
-    tiltX: ev.tiltX || 0,
-    tiltY: ev.tiltY || 0,
-    timestamp: Date.now()
-  }))
+  const newPoints: StrokePoint[] = events.map((ev: PointerEvent) => getCanvasPoint(ev))
 
   if (currentTool.value === 'eraser') {
     engine.erase(newPoints, 20)
+    syncDocumentFromEngine()
+    triggerAutoSave()
   } else if (activeStroke) {
     activeStroke.points.push(...newPoints)
     // Fast render current stroke
@@ -195,10 +223,17 @@ const onPointerMove = (e: PointerEvent) => {
 const onPointerUp = (e: PointerEvent) => {
   if (!isDrawing || !engine) return
   isDrawing = false
+
+  if (isPanning) {
+    isPanning = false
+    lastPanPoint = null
+    triggerAutoSave()
+    return
+  }
   
   if (activeStroke && currentTool.value !== 'eraser') {
     engine.addStroke(activeStroke)
-    notebook.value.strokes.push(activeStroke)
+    notebook.value = upsertStroke(notebook.value, activeStroke)
     activeStroke = null
     triggerAutoSave()
   }
@@ -207,7 +242,7 @@ const onPointerUp = (e: PointerEvent) => {
 const undo = () => {
   if (engine) {
     engine.undo()
-    notebook.value.strokes.pop() // naive sync
+    syncDocumentFromEngine()
     triggerAutoSave()
   }
 }
@@ -220,8 +255,58 @@ const triggerAutoSave = () => {
 
 const save = async () => {
   saveStatus.value = '保存中...'
-  const success = await NotebookStorage.saveNotebook(notebook.value)
+  const success = await NotebookStorage.saveNoteDocument(notebook.value)
   saveStatus.value = success ? '已保存' : '保存失败'
+}
+
+const getCanvasPoint = (e: PointerEvent): StrokePoint => {
+  const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
+  return {
+    x: (e.clientX - rect.left) / notebook.value.viewport.scale,
+    y: (e.clientY - rect.top) / notebook.value.viewport.scale,
+    pressure: e.pressure || 0.5,
+    tiltX: e.tiltX || 0,
+    tiltY: e.tiltY || 0,
+    timestamp: Date.now()
+  }
+}
+
+const syncDocumentFromEngine = () => {
+  if (!engine) return
+  const now = new Date().toISOString()
+  notebook.value = {
+    ...notebook.value,
+    strokes: engine.getStrokes().map(stroke => {
+      const noteStroke = stroke as NoteStroke
+      return noteStroke.createdAt ? noteStroke : fromLegacyStroke(stroke, now)
+    }),
+    updatedAt: now,
+  }
+}
+
+const zoomBy = (delta: number) => {
+  const nextScale = Math.min(3, Math.max(0.25, Number((notebook.value.viewport.scale + delta).toFixed(2))))
+  notebook.value = {
+    ...notebook.value,
+    viewport: {
+      ...notebook.value.viewport,
+      scale: nextScale,
+    },
+    updatedAt: new Date().toISOString(),
+  }
+  triggerAutoSave()
+}
+
+const zoomIn = () => zoomBy(0.15)
+const zoomOut = () => zoomBy(-0.15)
+
+const resetViewport = () => {
+  notebook.value = {
+    ...notebook.value,
+    viewport: { x: 0, y: 0, scale: 1 },
+    updatedAt: new Date().toISOString(),
+  }
+  triggerAutoSave()
 }
 
 const exportPNG = async () => {
@@ -403,11 +488,21 @@ const goBack = () => {
 
 .canvas-container {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: flex-start;
   background: #EBEBE9;
-  padding: 60rpx;
+  padding: 0;
+  position: relative;
+}
+
+.canvas-viewport {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 .hw-canvas {

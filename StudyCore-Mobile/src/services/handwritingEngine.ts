@@ -86,6 +86,10 @@ export class HandwritingEngine {
     }
   }
 
+  public getStrokes(): Stroke[] {
+    return JSON.parse(JSON.stringify(this.strokes))
+  }
+
   // Render all strokes to the canvas
   public render() {
     if (!this.ctx) return

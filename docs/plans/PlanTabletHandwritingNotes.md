@@ -17,8 +17,9 @@
 - 平板端已有 `pages/tablet/workspace/index.vue`，其中集成了文件阅读与手写批注画布。
 - 平板端已有 `pages/tablet/handwriting/index.vue`，当前定位为随手记草稿本。
 - `StudyCore-Mobile/src/services/handwritingEngine.ts` 已基于 `perfect-freehand` 提供笔迹渲染、橡皮、撤销和 PNG 导出能力。
-- `StudyCore-Mobile/src/services/notebookStorage.ts` 已通过 `localDb.ts` 保存基础 notebook 数据，但当前模型偏单一草稿本。
-- workspace 内文件批注目前仍偏页面内存态，尚未形成 `subjectId + assetId` 级别的稳定本地持久化。
+- `StudyCore-Mobile/src/services/tabletNoteModel.ts`、`tabletNoteRepositoryCore.ts`、`tabletNoteRepository.ts` 与 `notebookStorage.ts` 已完成首版 `NoteDocument` 本地模型和 `tablet_notes` 仓库。
+- workspace 内文件批注已绑定 `subjectId + assetId` 保存为 `subject-asset-annotation`；“+ 笔记”会创建 `subject-handwriting-note` 并打开手写页。
+- `tablet/handwriting` 已支持 `quick-infinite-canvas` 随手记平移、缩放和 viewport 本地恢复。
 
 ## 架构决策
 
@@ -92,11 +93,11 @@ interface NoteDocument {
 
 | ID | 优先级 | 任务 | 状态 | 输入 | 产出 | 验收 |
 | --- | --- | --- | --- | --- | --- | --- |
-| TH-01 | P1 | 统一手写文档模型 | 计划中 | `handwritingEngine.ts`、`notebookStorage.ts`、`tablet/handwriting/index.vue`、`tablet/workspace/index.vue` | `NoteDocument`、`NoteMode`、`CanvasLayout`、`NoteStroke` 类型口径 | 三类笔记可用同一份数据结构表达 |
-| TH-02 | P1 | 本地笔记存储升级 | 计划中 | `localDb.ts`、`notebookStorage.ts` | 按 `noteId` 保存文档元数据、笔迹、背景和 viewport | 刷新或重新进入后可恢复笔记内容 |
-| TH-03 | P1 | 学科文件批注持久化 | 计划中 | `workspace` 文件批注画布、当前 `fileStrokesMap` | 批注绑定 `subjectId + assetId` 并本地持久化 | 切换文件、退出工作区、重新进入后批注仍存在 |
-| TH-04 | P1 | 学科独立手写笔记入口 | 计划中 | `workspace` 的“+ 笔记”入口、`tablet/handwriting` | 创建并打开 `subject-handwriting-note` | 学科内可新建、打开、保存独立手写笔记 |
-| TH-05 | P2 | 随手记无限画布 | 计划中 | `tablet/handwriting/index.vue`、`HandwritingEngine` | `quick-infinite-canvas` 模式、平移缩放、viewport 保存 | 随手记可无限画布书写，退出重进后恢复视口和笔迹 |
+| TH-01 | P1 | 统一手写文档模型 | 首版完成待真机验收 | `handwritingEngine.ts`、`notebookStorage.ts`、`tablet/handwriting/index.vue`、`tablet/workspace/index.vue` | `NoteDocument`、`NoteMode`、`CanvasLayout`、`NoteStroke` 类型口径 | 三类笔记可用同一份数据结构表达 |
+| TH-02 | P1 | 本地笔记存储升级 | 首版完成待真机验收 | `localDb.ts`、`notebookStorage.ts` | 按 `noteId` 保存文档元数据、笔迹、背景和 viewport | 刷新或重新进入后可恢复笔记内容 |
+| TH-03 | P1 | 学科文件批注持久化 | 首版完成待真机验收 | `workspace` 文件批注画布、当前 `fileStrokesMap` | 批注绑定 `subjectId + assetId` 并本地持久化 | 切换文件、退出工作区、重新进入后批注仍存在 |
+| TH-04 | P1 | 学科独立手写笔记入口 | 首版完成待真机验收 | `workspace` 的“+ 笔记”入口、`tablet/handwriting` | 创建并打开 `subject-handwriting-note` | 学科内可新建、打开、保存独立手写笔记 |
+| TH-05 | P2 | 随手记无限画布 | 首版完成待真机验收 | `tablet/handwriting/index.vue`、`HandwritingEngine` | `quick-infinite-canvas` 模式、平移缩放、viewport 保存 | 随手记可无限画布书写，退出重进后恢复视口和笔迹 |
 | TH-06 | P2 | 导入导出与验收记录 | 计划中 | `NotebookStorage`、现有 PNG/PDF 导出 | `.studycore-note.json` 导出/导入，保留 PNG 导出 | 三类模式可导出备份，导入后内容一致 |
 
 ## 执行顺序

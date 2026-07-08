@@ -1,6 +1,6 @@
 # Mobile / Tablet 前端模块说明
 
-更新时间：2026-07-07
+更新时间：2026-07-08
 
 ## 模块定位
 
@@ -58,8 +58,8 @@ StudyCore-Mobile/
 | --- | --- | --- | --- |
 | dashboard | `pages/tablet/dashboard/index` | 平板首页控制台（62% 日程行动与 38% 数据洞察的禅意弹性分栏；左侧添加日程功能改为与手机端一致的顶层悬浮弹窗结构，支持半透明遮罩、学科下拉菜单与 0-2 小时连滑式时段选择，点击不挤压下方视窗；右侧为全宽单列堆叠：顶部Hero卡收缩包裹内容，下方趋势、分布与热力图三卡等分剩余空间；热力图调整为近16周/112天并采用 repeat(16, 1fr) x repeat(7, 1fr) 100% 均分布局、常驻底部提示栏消除初次加载跳动与死循环渲染异常，同时增大间距 gap 至 10rpx 并加粗格子边框边界，大面积饱满铺满空间） | 已完成重构与构建 |
 | subject-hall | `pages/tablet/subject-hall/index` | 学科大厅（大图卡片矩阵、毛玻璃搜索框、全圆角渐变掌握度进度条；已移除冗余的右下角 AI 悬浮球，AI 规划功能统一收拢至左侧全局侧边栏 AI 专栏与单学科工作区内） | 已完成重构与构建 |
-| workspace | `pages/tablet/workspace/index` | 学科工作区（四大支柱：文件、知识库、总结、复习；支持新建笔记草稿、AI 章节要点与内嵌卡片记忆复习；升级为极简禅意圆角浮动卡片双栏架构，全面优化侧栏文件选择响应式布局及交互：左侧 `.tier2-drawer` 抽屉升级为 `380rpx`~`45vw` 弹性伸缩架构，针对 CSS Flexbox 默认 `min-width: auto` 导致的侧栏容器宽度被内部横向滚动条或长文本撑破问题，对 `.tier2-drawer`、`.drawer-content`、`.drawer-scroll`、`.file-item` 及 `.summary-file-selector` 增加了严格的 `width: 100%; min-width: 0; max-width: 100%; overflow: hidden; box-sizing: border-box` 约束，彻底解决“文件选择框没有在框内、穿入侧栏框中”的穿模溢出异常；总结与大纲面板顶端新增响应式多文件水平联动药丸选择器；主工作区新增响应式大屏文件详情与可手写标注专区（Photo/PDF Handwriting Stage），根据用户反馈“文件展示主要内容为照片和PDF、按钮简约、主体为可手写页面”，废除了原有的冗余文本卡片，直接在视窗中央呈现高清照片与 PDF 预览阅读层，并在顶层集成无缝叠加的自研手写笔迹引擎与标注画布（`HandwritingEngine` + `<canvas>`），支持使用钢笔、荧光笔、橡皮与色彩/线宽控制条在照片和文档上方直接圈画批注与推演；头部操作按钮与工具条全面精简为极简无表情符号样式（Zen Minimalist Style）；AI 助手由侧滑抽屉重构为右下角悬浮球触发、支持按住顶部自由拖拽且无遮罩不阻挡底层工作的全屏自由浮窗；浮窗底部的左下角与右下角配置了与边缘圆角契合的描边缩放手柄，支持双向调节窗口宽高与位置，内部集成三大模型模式下拉栏、极简 Spark 欢迎光环、快捷提问胶囊、Markdown 富文本渲染与多模态附件胶囊输入栏） | 已完成重构与构建 |
-| handwriting | `pages/tablet/handwriting/index` | 随手记草稿本（极简全圆角浮动工具栏、自由画布；正式笔记及文档已移入学科工作区文件面板） | 已完成重构与构建 |
+| workspace | `pages/tablet/workspace/index` | 学科工作区（四大支柱：文件、知识库、总结、复习；支持新建笔记草稿、AI 章节要点与内嵌卡片记忆复习；升级为极简禅意圆角浮动卡片双栏架构，全面优化侧栏文件选择响应式布局及交互：左侧 `.tier2-drawer` 抽屉升级为 `380rpx`~`45vw` 弹性伸缩架构，针对 CSS Flexbox 默认 `min-width: auto` 导致的侧栏容器宽度被内部横向滚动条或长文本撑破问题，对 `.tier2-drawer`、`.drawer-content`、`.drawer-scroll`、`.file-item` 及 `.summary-file-selector` 增加了严格的 `width: 100%; min-width: 0; max-width: 100%; overflow: hidden; box-sizing: border-box` 约束，彻底解决“文件选择框没有在框内、穿入侧栏框中”的穿模溢出异常；总结与大纲面板顶端新增响应式多文件水平联动药丸选择器；主工作区新增响应式大屏文件详情与可手写标注专区（Photo/PDF Handwriting Stage），根据用户反馈“文件展示主要内容为照片和PDF、按钮简约、主体为可手写页面”，废除了原有的冗余文本卡片，直接在视窗中央呈现高清照片与 PDF 预览阅读层，并在顶层集成无缝叠加的自研手写笔迹引擎与标注画布（`HandwritingEngine` + `<canvas>`），支持使用钢笔、荧光笔、橡皮与色彩/线宽控制条在照片和文档上方直接圈画批注与推演；文件批注已绑定 `subjectId + assetId` 保存为本地 `subject-asset-annotation` 文档；“+ 笔记”会创建 `subject-handwriting-note` 并打开同一手写页；头部操作按钮与工具条全面精简为极简无表情符号样式（Zen Minimalist Style）；AI 助手由侧滑抽屉重构为右下角悬浮球触发、支持按住顶部自由拖拽且无遮罩不阻挡底层工作的全屏自由浮窗；浮窗底部的左下角与右下角配置了与边缘圆角契合的描边缩放手柄，支持双向调节窗口宽高与位置，内部集成三大模型模式下拉栏、极简 Spark 欢迎光环、快捷提问胶囊、Markdown 富文本渲染与多模态附件胶囊输入栏） | 已完成首版实现与构建，待真机验收 |
+| handwriting | `pages/tablet/handwriting/index` | 随手记草稿本与学科手写笔记编辑页（统一使用 `NoteDocument`；随手记为 `quick-infinite-canvas`，支持平移、缩放和 viewport 本地恢复；学科笔记由 workspace 创建后复用本页打开保存） | 已完成首版实现与构建，待真机验收 |
 | pomodoro | `pages/tablet/pomodoro/index` | 专注计时（圆环计时器、自研 SVG 图标控件、每日进度统计） | 已完成重构与构建 |
 | review | `pages/tablet/review/index` | 知识复习（大屏卡片记忆堆叠，现已整合收拢至 `workspace` 学科工作区复习面板中） | 已完成整合收拢 |
 | stats | `pages/tablet/stats/index` | 数据洞察（双栏大指标、热力图、一周趋势与学科分布图表） | 已完成重构与构建 |
@@ -86,6 +86,8 @@ Mobile / Tablet 当前重构状态：
 
 - Store 层管理业务状态。
 - `localDb.ts` 负责本地数据读写。
+- `tabletNoteModel.ts`、`tabletNoteRepositoryCore.ts`、`tabletNoteRepository.ts` 和 `notebookStorage.ts` 共同维护 Tablet 手写 `NoteDocument`，覆盖 `subject-asset-annotation`、`subject-handwriting-note` 和 `quick-infinite-canvas` 三种模式。
+- 端侧 SQLite 新增 `tablet_notes` 表，本阶段只做本地保存，不新增后端接口和云同步。
 - `useSyncStore` 负责同步推送、拉取和 WebSocket 协调。
 - 移动端需要重点验证弱网、离线、重新登录后的数据恢复。
 

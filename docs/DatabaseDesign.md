@@ -1,6 +1,6 @@
 ﻿# 数据库设计与数据字典
 
-更新时间：2026-07-02
+更新时间：2026-07-08
 
 ## 文档来源与维护规则
 
@@ -12,6 +12,7 @@
 - `block_relations`
 - `mutation_log`
 - `asset`
+- Mobile / Tablet 本地表：`tablet_notes`
 
 维护规则：
 
@@ -110,6 +111,22 @@ erDiagram
 | `status` | `VARCHAR(32)` | default PENDING | PENDING/PROCESSING/COMPLETED/FAILED |
 | `subject` | `VARCHAR(256)` | default 文档导入 | 学科 |
 | `created_at` | `BIGINT` | NOT NULL | 创建时间戳 |
+
+## Mobile / Tablet 本地表
+
+`StudyCore-Mobile` 在端侧 SQLite 中维护以下本地表。该表当前不进入服务端同步，不影响后端 API。
+
+### tablet_notes
+
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `TEXT` | PK | 本地手写文档 ID；文件批注使用 `subject-asset-annotation:{subjectId}:{assetId}` |
+| `mode` | `TEXT` | index | `subject-asset-annotation`、`subject-handwriting-note`、`quick-infinite-canvas` |
+| `subject_id` | `TEXT` | index, nullable | 所属学科 ID |
+| `asset_id` | `TEXT` | index, nullable | 文件批注绑定的资料 ID |
+| `title` | `TEXT` | nullable | 文档标题 |
+| `data` | `TEXT` | NOT NULL | 序列化后的 `NoteDocument`，包含 pages、strokes、viewport、background |
+| `updated_at` | `TEXT` | index | 最近更新时间 |
 
 ## 同步字段说明
 

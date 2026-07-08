@@ -700,6 +700,14 @@ import { useSubjectStore, type CatalogItem } from '@/store/useSubjectStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { chatWithAI } from '@/api/aiClient'
 import { HandwritingEngine, type Stroke, type StrokePoint } from '@/services/handwritingEngine'
+import { NotebookStorage } from '@/services/notebookStorage'
+import {
+  fromLegacyStroke,
+  toLegacyStrokes,
+  upsertStroke,
+  type NoteDocument,
+  type NoteStroke,
+} from '@/services/tabletNoteModel'
 import { uuidv7 } from '@/utils/uuid'
 
 const blockStore = useBlockStore()
@@ -1004,6 +1012,7 @@ const goBack = () => {
 
 const getFileIcon = (type: string): string => {
   if (!type) return '□'
+  if (type === 'handwriting/note') return '✎'
   if (type.includes('pdf')) return '■'
   if (type.includes('image') || type.includes('png') || type.includes('jpg')) return '◇'
   if (type.includes('doc') || type.includes('txt') || type.includes('note') || type.includes('md') || type.includes('markdown')) return '∿'
@@ -1039,10 +1048,27 @@ const selectBlock = (block: KnowledgeBlock) => {
 }
 
 const selectFile = (file: any) => {
+  if (isHandwritingNoteFile(file)) {
+    openHandwritingNoteFile(file)
+    return
+  }
+
   activeFileId.value = file.id
   activeBlockId.value = null
   showCreateBlock.value = false
-  initFileHandwriting()
+  void initFileHandwriting()
+}
+
+const isHandwritingNoteFile = (file: any) => {
+  return file?.file_type === 'handwriting/note' || String(file?.file_path || '').startsWith('local://tablet-note/')
+}
+
+const openHandwritingNoteFile = (file: any) => {
+  const noteId = String(file?.file_path || '').replace('local://tablet-note/', '')
+  if (!noteId) return
+  uni.navigateTo({
+    url: `/pages/tablet/handwriting/index?id=${encodeURIComponent(noteId)}`
+  })
 }
 
 const isImageFileType = (type: string) => {
@@ -1063,50 +1089,75 @@ const hwColor = ref('#1C1C1A')
 const hwSize = ref(4)
 const fileCanvasRef = ref<HTMLCanvasElement | null>(null)
 let fileHwEngine: HandwritingEngine | null = null
-let fileActiveStroke: Stroke | null = null
+let fileActiveStroke: NoteStroke | null = null
 let isFileDrawing = false
+let fileAnnotationInitSeq = 0
 
-const fileStrokesMap = ref<Record<string, Stroke[]>>({})
+const fileAnnotationDocs = ref<Record<string, NoteDocument>>({})
 
-const initFileHandwriting = () => {
-  nextTick(() => {
-    if (fileCanvasRef.value) {
-      const canvas = fileCanvasRef.value
-      const rect = canvas.getBoundingClientRect()
-      if (rect.width && rect.height) {
-        canvas.width = rect.width
-        canvas.height = rect.height
-      } else {
-        canvas.width = 1200
-        canvas.height = 1600
-      }
-      const ctx = canvas.getContext('2d')
-      if (ctx) {
-        fileHwEngine = new HandwritingEngine(ctx)
-        const currentId = activeFileId.value
-        if (currentId && fileStrokesMap.value[currentId]) {
-          fileHwEngine.loadStrokes(fileStrokesMap.value[currentId])
-        } else {
-          fileHwEngine.loadStrokes([])
-        }
-      }
-    }
-  })
+const initFileHandwriting = async () => {
+  const currentId = activeFileId.value
+  const currentFile = selectedFile.value
+  if (!currentId || !currentFile || !subjectId.value) return
+
+  const seq = ++fileAnnotationInitSeq
+  const document = await NotebookStorage.loadOrCreateAssetAnnotation(subjectId.value, currentId, currentFile.name)
+  fileAnnotationDocs.value = {
+    ...fileAnnotationDocs.value,
+    [currentId]: document,
+  }
+
+  await nextTick()
+  if (seq !== fileAnnotationInitSeq || activeFileId.value !== currentId || !fileCanvasRef.value) return
+
+  const canvas = fileCanvasRef.value
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width && rect.height) {
+    canvas.width = rect.width
+    canvas.height = rect.height
+  } else {
+    canvas.width = 1200
+    canvas.height = 1600
+  }
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    fileHwEngine = new HandwritingEngine(ctx)
+    fileHwEngine.loadStrokes(toLegacyStrokes(document))
+  }
 }
 
-watch(activeFileId, (newId) => {
-  if (newId && activePanel.value === 'files') {
-    initFileHandwriting()
-  }
-})
+const syncFileAnnotationFromEngine = (): NoteDocument | null => {
+  const currentId = activeFileId.value
+  if (!currentId || !fileHwEngine) return null
 
-const onFilePointerDown = (e: PointerEvent) => {
-  if (!fileHwEngine || hwTool.value === 'none') return
-  isFileDrawing = true
-  e.preventDefault()
-  
+  const document = fileAnnotationDocs.value[currentId]
+  if (!document) return null
+
+  const now = new Date().toISOString()
+  const nextDocument: NoteDocument = {
+    ...document,
+    strokes: fileHwEngine.getStrokes().map(stroke => {
+      const noteStroke = stroke as NoteStroke
+      return noteStroke.createdAt ? noteStroke : fromLegacyStroke(stroke, now)
+    }),
+    updatedAt: now,
+  }
+
+  fileAnnotationDocs.value = {
+    ...fileAnnotationDocs.value,
+    [currentId]: nextDocument,
+  }
+  return nextDocument
+}
+
+const saveFileAnnotation = async (document: NoteDocument | null) => {
+  if (!document) return
+  await NotebookStorage.saveNoteDocument(document)
+}
+
+const getFileCanvasPoint = (e: PointerEvent): StrokePoint => {
   const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
-  const pt: StrokePoint = {
+  return {
     x: e.clientX - rect.left,
     y: e.clientY - rect.top,
     pressure: e.pressure || 0.5,
@@ -1114,6 +1165,55 @@ const onFilePointerDown = (e: PointerEvent) => {
     tiltY: e.tiltY || 0,
     timestamp: Date.now()
   }
+}
+
+const putFileAnnotationDocument = (fileId: string, document: NoteDocument) => {
+  fileAnnotationDocs.value = {
+    ...fileAnnotationDocs.value,
+    [fileId]: document,
+  }
+}
+
+const addFileAnnotationStroke = (stroke: NoteStroke): NoteDocument | null => {
+  const currentId = activeFileId.value
+  if (!currentId) return null
+
+  const document = fileAnnotationDocs.value[currentId]
+  if (!document) return null
+
+  const nextDocument = upsertStroke(document, stroke)
+  putFileAnnotationDocument(currentId, nextDocument)
+  return nextDocument
+}
+
+const clearFileAnnotationDocument = (): NoteDocument | null => {
+  const currentId = activeFileId.value
+  if (!currentId) return null
+
+  const document = fileAnnotationDocs.value[currentId]
+  if (!document) return null
+
+  const nextDocument: NoteDocument = {
+    ...document,
+    strokes: [],
+    updatedAt: new Date().toISOString(),
+  }
+  putFileAnnotationDocument(currentId, nextDocument)
+  return nextDocument
+}
+
+watch(activeFileId, (newId) => {
+  if (newId && activePanel.value === 'files') {
+    void initFileHandwriting()
+  }
+})
+
+const onFilePointerDown = (e: PointerEvent) => {
+  if (!fileHwEngine || hwTool.value === 'none') return
+  isFileDrawing = true
+  e.preventDefault()
+
+  const pt = getFileCanvasPoint(e)
 
   if (hwTool.value === 'eraser') {
     fileHwEngine.erase([pt], 24)
@@ -1121,9 +1221,10 @@ const onFilePointerDown = (e: PointerEvent) => {
     fileActiveStroke = {
       id: uuidv7(),
       points: [pt],
-      tool: hwTool.value as any,
+      tool: hwTool.value as Stroke['tool'],
       color: hwColor.value,
-      size: hwSize.value
+      size: hwSize.value,
+      createdAt: new Date().toISOString(),
     }
   }
 }
@@ -1133,16 +1234,7 @@ const onFilePointerMove = (e: PointerEvent) => {
   e.preventDefault()
 
   const events = (e as any).getCoalescedEvents ? (e as any).getCoalescedEvents() : [e]
-  const rect = (e.target as HTMLCanvasElement).getBoundingClientRect()
-  
-  const newPoints: StrokePoint[] = events.map((ev: PointerEvent) => ({
-    x: ev.clientX - rect.left,
-    y: ev.clientY - rect.top,
-    pressure: ev.pressure || 0.5,
-    tiltX: ev.tiltX || 0,
-    tiltY: ev.tiltY || 0,
-    timestamp: Date.now()
-  }))
+  const newPoints: StrokePoint[] = events.map((ev: PointerEvent) => getFileCanvasPoint(ev))
 
   if (hwTool.value === 'eraser') {
     fileHwEngine.erase(newPoints, 24)
@@ -1169,28 +1261,27 @@ const onFilePointerUp = (e: PointerEvent) => {
 
   if (fileActiveStroke && hwTool.value !== 'eraser') {
     fileHwEngine.addStroke(fileActiveStroke)
-    const currentId = activeFileId.value
-    if (currentId) {
-      if (!fileStrokesMap.value[currentId]) fileStrokesMap.value[currentId] = []
-      fileStrokesMap.value[currentId].push(fileActiveStroke)
-    }
+    void saveFileAnnotation(addFileAnnotationStroke(fileActiveStroke))
     fileActiveStroke = null
+    return
+  }
+
+  if (hwTool.value === 'eraser') {
+    void saveFileAnnotation(syncFileAnnotationFromEngine())
   }
 }
 
 const hwUndo = () => {
   if (fileHwEngine) {
     fileHwEngine.undo()
+    void saveFileAnnotation(syncFileAnnotationFromEngine())
   }
 }
 
 const hwClear = () => {
   if (fileHwEngine) {
     fileHwEngine.loadStrokes([])
-    const currentId = activeFileId.value
-    if (currentId) {
-      fileStrokesMap.value[currentId] = []
-    }
+    void saveFileAnnotation(clearFileAnnotationDocument())
   }
 }
 
@@ -1504,17 +1595,27 @@ const handleCreateNote = () => {
     title: '新建学科笔记',
     editable: true,
     placeholderText: '请输入笔记标题，如：核心定理推导',
-    success: (res) => {
+    success: async (res) => {
       if (res.confirm && res.content) {
         if (subjectId.value) {
-          subjectStore.addSourceFile(
+          const note = NotebookStorage.createSubjectHandwritingNote(subjectId.value, res.content)
+          const saved = await NotebookStorage.saveNoteDocument(note)
+          if (!saved) {
+            uni.showToast({ title: '笔记创建失败', icon: 'none' })
+            return
+          }
+
+          await subjectStore.addSourceFile(
             subjectId.value,
-            res.content + '.md',
-            'local://note-' + Date.now(),
-            'markdown/note',
-            1024
+            `${note.title}.note`,
+            `local://tablet-note/${note.id}`,
+            'handwriting/note',
+            0
           )
           uni.showToast({ title: '学科笔记已建立', icon: 'success' })
+          uni.navigateTo({
+            url: `/pages/tablet/handwriting/index?id=${encodeURIComponent(note.id)}`
+          })
         }
       }
     }
@@ -1747,6 +1848,8 @@ onLoad((options) => {
 })
 
 onMounted(async () => {
+  await NotebookStorage.initSchema()
+
   // 缓存窗口尺寸，避免在 touchmove/mousemove 高频事件中重复调用 getSystemInfoSync()
   try {
     const sys = uni.getSystemInfoSync()

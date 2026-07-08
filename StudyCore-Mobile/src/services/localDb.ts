@@ -402,6 +402,17 @@ export const localDb = {
         created_at INTEGER
       )
     `);
+    await sqlite.execute(`
+      CREATE TABLE IF NOT EXISTS tablet_notes (
+        id TEXT PRIMARY KEY,
+        mode TEXT NOT NULL,
+        subject_id TEXT,
+        asset_id TEXT,
+        title TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
   },
 
   async runMigrations() {

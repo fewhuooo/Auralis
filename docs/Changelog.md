@@ -4,6 +4,11 @@
 
 ## Unreleased
 
+- 实现 Tablet 手写笔记首版本地能力：
+  - 新增 `NoteDocument` / `NoteMode` / `NoteStroke` 模型与 `tablet_notes` 本地仓库，支持 `subject-asset-annotation`、`subject-handwriting-note`、`quick-infinite-canvas` 三类文档模式。
+  - `workspace` 文件批注从页面内存态升级为绑定 `subjectId + assetId` 的本地保存；橡皮、撤销、清屏和切换文件后可通过同一文档恢复。
+  - `workspace` 的“+ 笔记”会创建学科手写笔记并打开 `tablet/handwriting`；随手记页面升级为无限画布，支持平移、缩放和 viewport 保存。
+  - 新增 `scripts/tablet-note-model.test.ts` 与 `scripts/tablet-note-repository-core.test.ts` 覆盖模型和本地仓库核心行为；`npm.cmd run build:h5` 与 `npm.cmd run build:mp-weixin` 通过。
 - 新增 Tablet 手写笔记专项计划 `docs/plans/PlanTabletHandwritingNotes.md`，明确学科文件批注、学科独立手写笔记、随手记无限画布三类能力共用本地手写内核与本地存储，并在 Mobile / Tablet 任务表中登记 `MT-11` 到 `MT-15`。
 - 根据用户截图与反馈深入重构平板端独立 AI 助手页（`ai-search`）与侧边栏布局：
   - **新增 440rpx 历史会话记录侧栏卡片并内置“开启新对话”按钮**：针对用户“左边新增侧栏历史记录，把新增对话按钮也放侧栏里面”的需求，采用极简禅意圆角浮动双卡片架构：左侧新增 440rpx 宽度的历史记录侧边栏，顶部内置醒目的“+ 开启新对话”按键，下方提供多会话历史列表，支持随时切换历史对话与单条记录删除；

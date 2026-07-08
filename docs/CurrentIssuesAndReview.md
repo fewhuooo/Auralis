@@ -31,7 +31,7 @@
 | --- | --- | --- | --- | --- |
 | P2 | Mobile 平板端需开展多平台真机走查 | `pages.json` 已完整注册平板端全部 9 个页面，与手机端完成极简禅意风格统一；首屏进场动画白屏闪烁与首次页面切换侧栏胶囊闪动已修复，侧栏动效已有 120ms / 160ms 两帧余量和路由优先初始化脚本检查；`npm run build:h5` 通过 | 页面可达性、视觉风格与加载动效已稳定对齐，仍需真机触控验收 | 开展在微信小程序、App 等目标平台的真机运行与交互测试 |
 | P2 | 平板旧页面废弃与整合已完成收口 | git 状态显示 `asset`、`timeline`、独立 `review` 已废弃或收归 | 导航与路由链路非常清晰 | 已在文档和侧边栏导航明确：`workspace` 承接了资产编排、正式笔记与全套卡片复习能力；`dashboard` 55:45 控制台承接了动态时间线与图表统计能力 |
-| P2 | Tablet 手写能力尚未统一文档模型 | `workspace` 文件批注和 `tablet/handwriting` 随手记已有雏形，但仍分别维护页面状态和基础 notebook 数据 | 文件批注、学科独立手写笔记、随手记无限画布后续可能重复实现存储、撤销和视口逻辑 | 按 `docs/plans/PlanTabletHandwritingNotes.md` 推进统一本地模型和三类文档模式 |
+| P2 | Tablet 手写首版需真机验收 | `workspace` 文件批注、学科独立手写笔记入口和 `tablet/handwriting` 随手记已统一到本地 `NoteDocument` / `tablet_notes`；H5 与微信小程序构建通过 | 真实触控屏下长笔迹、橡皮、撤销、平移缩放和文件切换恢复仍可能暴露交互或性能问题 | 按 `docs/plans/PlanTabletHandwritingNotes.md` 的验收方式走 Tablet H5 真机，后续补导入导出备份 |
 | P2 | Docker Compose 使用默认密码 | `docker-compose.yml` 中 PostgreSQL、pgAdmin、MinIO 存在默认账号密码 | 不能直接用于生产 | 生产部署必须通过 `.env` 替换，部署文档已标风险 |
 | P2 | CI/CD 尚未配置 | 未发现现成 CI/CD 配置 | 发布依赖人工 | 建立最小流水线：后端 test、PC build、Mobile H5 build |
 | P2 | 历史 API 文档已移除 | 旧 `page_api_manifest.md` 当前不在工作区 | 历史接口来源不完整 | 如需参考可从 Git 历史恢复，现行接口以 `APIManifest.md` 为准 |
@@ -66,7 +66,7 @@ Mobile 当前注册页面：
 ## 当前建议执行顺序
 
 1. 开展前端新页面的多平台真机交互与走查验收。
-2. 推进 Tablet 手写笔记专项。
+2. 验收 Tablet 手写笔记首版并补导入导出备份。
 3. 恢复 PC 登录守卫。
 4. 补后端核心测试。
 5. 统一删除语义。
