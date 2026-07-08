@@ -57,6 +57,11 @@
 | MT-08 | P2 | 本地存储和离线恢复 | 进行中 | `localDb.ts`、Store | 冷启动和断网行为清楚 | 断网后不破坏本地数据 |
 | MT-09 | P2 | H5 构建警告清理 | 进行中 | `npm.cmd run build:h5` 输出 | 警告清单或修复记录 | 无关键构建警告或有解释 |
 | MT-10 | P3 | 目标平台验收计划 | 计划中 | Uni-app 目标平台 | App/小程序/Harmony 验收范围 | 明确不在当前里程碑的目标 |
+| MT-11 | P1 | Tablet 手写文档模型统一 | 计划中 | `PlanTabletHandwritingNotes.md`、`handwritingEngine.ts`、`notebookStorage.ts` | 三类手写文档共享 `NoteDocument` 模型 | 学科批注、学科手写笔记、随手记均可用同一模型表达 |
+| MT-12 | P1 | Tablet 手写本地持久化升级 | 计划中 | `localDb.ts`、`notebookStorage.ts` | 按 `noteId` 保存元数据、笔迹、背景、viewport | 刷新或重新进入后恢复对应笔记 |
+| MT-13 | P1 | 学科文件批注持久化 | 计划中 | `workspace` 文件批注画布 | 批注绑定 `subjectId + assetId` 本地保存 | 切换文件和重进工作区后批注仍存在 |
+| MT-14 | P1 | 学科独立手写笔记入口 | 计划中 | `workspace` 的“+ 笔记”、`tablet/handwriting` | 创建 `subject-handwriting-note` 并复用手写页 | 学科内可新建、打开、保存独立手写笔记 |
+| MT-15 | P2 | 随手记无限画布 | 计划中 | `tablet/handwriting/index.vue`、`HandwritingEngine` | `quick-infinite-canvas`、平移缩放、viewport 保存 | 随手记可无限画布书写并恢复视口 |
 
 ## 建议执行顺序
 
@@ -64,6 +69,7 @@
 2. `MT-03` 到 `MT-05`：确认平板新旧页面迁移。
 3. `MT-06` 到 `MT-09`：验证手机端、手写、本地存储和构建。
 4. `MT-10`：单独规划多平台验收。
+5. `MT-11` 到 `MT-15`：按 `PlanTabletHandwritingNotes.md` 推进 Tablet 手写笔记专项。
 
 ## 完成定义
 
@@ -71,4 +77,5 @@
 - 平板端旧资产、时间线能力去向明确。
 - Mobile H5 构建通过并记录警告处理结果。
 - 手机和平板核心入口人工验收通过。
+- Tablet 手写笔记专项按本地存储口径完成文件批注、学科手写笔记和随手记无限画布验收。
 - 文档同步到 `FrontendMobileTablet.md`、`StatusIndex.md`、`CurrentIssuesAndReview.md`。

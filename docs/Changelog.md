@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- 新增 Tablet 手写笔记专项计划 `docs/plans/PlanTabletHandwritingNotes.md`，明确学科文件批注、学科独立手写笔记、随手记无限画布三类能力共用本地手写内核与本地存储，并在 Mobile / Tablet 任务表中登记 `MT-11` 到 `MT-15`。
 - 根据用户截图与反馈深入重构平板端独立 AI 助手页（`ai-search`）与侧边栏布局：
   - **新增 440rpx 历史会话记录侧栏卡片并内置“开启新对话”按钮**：针对用户“左边新增侧栏历史记录，把新增对话按钮也放侧栏里面”的需求，采用极简禅意圆角浮动双卡片架构：左侧新增 440rpx 宽度的历史记录侧边栏，顶部内置醒目的“+ 开启新对话”按键，下方提供多会话历史列表，支持随时切换历史对话与单条记录删除；
   - **侧栏与 AI 按钮绝对竖直居中对齐重构**：在全局导航组件 `TabletLayout` 中将左侧导航侧栏（`.sidebar`）与底部 136rpx 宽独立悬浮 AI 按钮（`.tablet-ai-float`）统一包裹进入 `.left-nav-column` Flex 垂直列容器中，应用 `align-items: center` 与 `justify-content: space-between`，彻底排除了此前因 AI 按钮 `position: fixed` 独立定位而导致的侧栏与 AI 按钮未竖直居中对齐的问题，确保在各种窗口尺寸与设备下两者中轴线绝对垂直重合；

@@ -18,6 +18,7 @@
 | `PlanOverview.md` | 总览 | 当前阶段、优先级、依赖关系、推进顺序 |
 | `PlanFrontendPC.md` | PC 前端 | PC 路由、页面、交互、验收 |
 | `PlanFrontendMobileTablet.md` | Mobile / Tablet | 手机端、平板端重构与验收 |
+| `PlanTabletHandwritingNotes.md` | Tablet 手写笔记 | 学科文件批注、学科独立手写笔记、随手记无限画布 |
 | `PlanBackendCore.md` | 后端核心 | Auth、Asset、Sync、Stats、WebSocket、测试 |
 | `PlanAIRag.md` | AI / RAG | AI 接口、文档解析、向量检索、后续 RAG 能力 |
 | `PlanInfraRelease.md` | 基础设施与发布 | Docker、环境变量、CI/CD、部署和运维 |

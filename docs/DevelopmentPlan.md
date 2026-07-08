@@ -9,6 +9,7 @@
 - `docs/plans/PlanOverview.md`
 - `docs/plans/PlanFrontendPC.md`
 - `docs/plans/PlanFrontendMobileTablet.md`
+- `docs/plans/PlanTabletHandwritingNotes.md`
 - `docs/plans/PlanBackendCore.md`
 - `docs/plans/PlanAIRag.md`
 - `docs/plans/PlanInfraRelease.md`
