@@ -74,13 +74,14 @@
 import { ref, computed, onMounted } from 'vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useLayoutStore } from '@/store/useLayoutStore'
+import { tabletHandwritingNotesEnabled } from '@/config/features'
 
 const layoutStore = useLayoutStore()
 const getIndexByUrl = (path: string) => {
   if (path.includes('subject-hall') || path.includes('workspace')) return 1
   if (path.includes('pomodoro')) return 2
-  if (path.includes('handwriting')) return 3
-  if (path.includes('profile')) return 4
+  if (path.includes('handwriting')) return tabletHandwritingNotesEnabled ? 3 : -2
+  if (path.includes('profile')) return tabletHandwritingNotesEnabled ? 4 : 3
   if (path.includes('ai-search')) return -1
   return 0
 }
@@ -128,7 +129,9 @@ const navItems = [
   { path: '/pages/tablet/dashboard/index', icon: 'home', label: '仪表盘' },
   { path: '/pages/tablet/subject-hall/index', icon: 'menu', label: '学科' },
   { path: '/pages/tablet/pomodoro/index', icon: 'clock', label: '专注' },
-  { path: '/pages/tablet/handwriting/index', icon: 'edit', label: '随手记' },
+  ...(tabletHandwritingNotesEnabled
+    ? [{ path: '/pages/tablet/handwriting/index', icon: 'edit', label: '随手记' }]
+    : []),
   { path: '/pages/tablet/profile/index', icon: 'settings', label: '设置' },
 ]
 

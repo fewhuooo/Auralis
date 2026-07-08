@@ -57,11 +57,11 @@
 | MT-08 | P2 | 本地存储和离线恢复 | 进行中 | `localDb.ts`、Store | 冷启动和断网行为清楚 | 断网后不破坏本地数据 |
 | MT-09 | P2 | H5 构建警告清理 | 进行中 | `npm.cmd run build:h5` 输出 | 警告清单或修复记录 | 无关键构建警告或有解释 |
 | MT-10 | P3 | 目标平台验收计划 | 计划中 | Uni-app 目标平台 | App/小程序/Harmony 验收范围 | 明确不在当前里程碑的目标 |
-| MT-11 | P1 | Tablet 手写文档模型统一 | 首版完成待真机验收 | `PlanTabletHandwritingNotes.md`、`handwritingEngine.ts`、`notebookStorage.ts` | 三类手写文档共享 `NoteDocument` 模型 | 学科批注、学科手写笔记、随手记均可用同一模型表达 |
-| MT-12 | P1 | Tablet 手写本地持久化升级 | 首版完成待真机验收 | `localDb.ts`、`notebookStorage.ts` | 按 `noteId` 保存元数据、笔迹、背景、viewport | 刷新或重新进入后恢复对应笔记 |
-| MT-13 | P1 | 学科文件批注持久化 | 首版完成待真机验收 | `workspace` 文件批注画布 | 批注绑定 `subjectId + assetId` 本地保存 | 切换文件和重进工作区后批注仍存在 |
-| MT-14 | P1 | 学科独立手写笔记入口 | 首版完成待真机验收 | `workspace` 的“+ 笔记”、`tablet/handwriting` | 创建 `subject-handwriting-note` 并复用手写页 | 学科内可新建、打开、保存独立手写笔记 |
-| MT-15 | P2 | 随手记无限画布 | 首版完成待真机验收 | `tablet/handwriting/index.vue`、`HandwritingEngine` | `quick-infinite-canvas`、平移缩放、viewport 保存 | 随手记可无限画布书写并恢复视口 |
+| MT-11 | P1 | Tablet 手写文档模型统一 | 代码保留，入口默认隐藏 | `PlanTabletHandwritingNotes.md`、`handwritingEngine.ts`、`notebookStorage.ts` | 三类手写文档共享 `NoteDocument` 模型 | 后续打开 `VITE_TABLET_HANDWRITING_NOTES_ENABLED` 后再验收 |
+| MT-12 | P1 | Tablet 手写本地持久化升级 | 代码保留，入口默认隐藏 | `localDb.ts`、`notebookStorage.ts` | 按 `noteId` 保存元数据、笔迹、背景、viewport | 后续打开 feature flag 后再验收重进恢复 |
+| MT-13 | P1 | 学科文件批注持久化 | 代码保留，入口默认隐藏 | `workspace` 文件批注画布 | 批注绑定 `subjectId + assetId` 本地保存 | 后续打开 feature flag 后再验收文件切换恢复 |
+| MT-14 | P1 | 学科独立手写笔记入口 | 代码保留，入口默认隐藏 | `workspace` 的“+ 笔记”、`tablet/handwriting` | 创建 `subject-handwriting-note` 并复用手写页 | 后续打开 feature flag 后再验收 |
+| MT-15 | P2 | 随手记无限画布 | 代码保留，入口默认隐藏 | `tablet/handwriting/index.vue`、`HandwritingEngine` | `quick-infinite-canvas`、平移缩放、viewport 保存 | 后续打开 feature flag 后再验收 |
 
 ## 建议执行顺序
 
@@ -69,7 +69,7 @@
 2. `MT-03` 到 `MT-05`：确认平板新旧页面迁移。
 3. `MT-06` 到 `MT-09`：验证手机端、手写、本地存储和构建。
 4. `MT-10`：单独规划多平台验收。
-5. `MT-11` 到 `MT-15`：按 `PlanTabletHandwritingNotes.md` 推进 Tablet 手写笔记专项。
+5. `MT-11` 到 `MT-15`：代码保留但入口默认隐藏；待前后端主流程完成后按 `PlanTabletHandwritingNotes.md` 继续。
 
 ## 完成定义
 

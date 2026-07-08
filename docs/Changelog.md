@@ -4,6 +4,7 @@
 
 ## Unreleased
 
+- 隐藏并保留 Tablet 手写笔记首版能力：新增 `VITE_TABLET_HANDWRITING_NOTES_ENABLED` feature flag，默认关闭平板侧栏“随手记”、workspace “+ 笔记”、文件批注工具条和手写 note 文件展示；底层 `NoteDocument`、`tablet_notes` 与手写页面代码继续保留，后续可通过开关恢复开发和验收。
 - 实现 Tablet 手写笔记首版本地能力：
   - 新增 `NoteDocument` / `NoteMode` / `NoteStroke` 模型与 `tablet_notes` 本地仓库，支持 `subject-asset-annotation`、`subject-handwriting-note`、`quick-infinite-canvas` 三类文档模式。
   - `workspace` 文件批注从页面内存态升级为绑定 `subjectId + assetId` 的本地保存；橡皮、撤销、清屏和切换文件后可通过同一文档恢复。

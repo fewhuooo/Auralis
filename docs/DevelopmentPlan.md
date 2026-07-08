@@ -1,8 +1,10 @@
 # 开发计划入口
 
-更新时间：2026-07-02
+更新时间：2026-07-08
 
 当前开发计划已经从单一总表拆分到 `docs/plans/`，按领域分别维护，便于逐项推进和逐项验收。
+
+当前 Tablet 手写笔记专项代码已保留在分支中，但入口默认通过 `VITE_TABLET_HANDWRITING_NOTES_ENABLED` 关闭；待前后端主流程完成后再回到 `PlanTabletHandwritingNotes.md` 继续验收和完善。
 
 ## 计划入口
 

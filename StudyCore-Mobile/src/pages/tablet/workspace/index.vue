@@ -31,9 +31,9 @@
           <!-- Files Panel -->
           <view v-if="activePanel === 'files'" class="drawer-content">
             <view class="drawer-header">
-              <text class="drawer-title">文件与笔记</text>
+              <text class="drawer-title">{{ tabletHandwritingNotesEnabled ? '文件与笔记' : '文件' }}</text>
               <view class="drawer-actions-row">
-                <view class="drawer-action" @click="handleCreateNote">
+                <view v-if="tabletHandwritingNotesEnabled" class="drawer-action" @click="handleCreateNote">
                   <text>+ 笔记</text>
                 </view>
                 <view class="drawer-action primary" @click="handleAddFile">
@@ -42,12 +42,12 @@
               </view>
             </view>
             <scroll-view scroll-y class="drawer-scroll">
-              <view v-if="activeSourceFiles.length === 0" class="drawer-empty">
+              <view v-if="visibleSourceFiles.length === 0" class="drawer-empty">
                 <text>暂无相关文件</text>
-                <text class="drawer-hint">点击「+ 导入」或「+ 笔记」开始建立知识体系</text>
+                <text class="drawer-hint">{{ filesPanelEmptyHint }}</text>
               </view>
               <view
-                v-for="file in activeSourceFiles"
+                v-for="file in visibleSourceFiles"
                 :key="file.id"
                 class="file-item"
                 :class="{ active: activeFileId === file.id }"
@@ -74,10 +74,10 @@
               </view>
             </view>
             <!-- 响应式文件大纲切换栏：支持横向滚动点选目标文件，实现真正的响应式多文件联动 -->
-            <scroll-view scroll-x class="summary-file-selector" v-if="activeSourceFiles.length > 0">
+            <scroll-view scroll-x class="summary-file-selector" v-if="visibleSourceFiles.length > 0">
               <view class="selector-pills">
                 <view
-                  v-for="file in activeSourceFiles"
+                  v-for="file in visibleSourceFiles"
                   :key="file.id"
                   class="file-pill"
                   :class="{ active: activeFileId === file.id }"
@@ -89,7 +89,7 @@
               </view>
             </scroll-view>
             <scroll-view scroll-y class="drawer-scroll">
-              <view v-if="!activeFileId && activeSourceFiles.length > 0" class="drawer-empty">
+              <view v-if="!activeFileId && visibleSourceFiles.length > 0" class="drawer-empty">
                 <text>请在上方选择一个学习材料</text>
                 <text class="drawer-hint">点选后即可查看对应教材目录与核心提炼</text>
               </view>
@@ -190,7 +190,7 @@
         <!-- Status Bar -->
         <view class="status-bar">
           <text class="status-subject" v-if="activeSubject">{{ activeSubject.icon }} {{ activeSubject.name }}</text>
-          <text class="status-info">{{ subjectBlocks.length }} 知识块 · {{ activeSourceFiles.length }} 文件</text>
+          <text class="status-info">{{ subjectBlocks.length }} 知识块 · {{ visibleSourceFiles.length }} 文件</text>
           <view class="status-actions">
             <view class="status-btn" @click="showDrawer = !showDrawer">
               <LineIcon :name="showDrawer ? 'chevron-left' : 'chevron-right'" size="22rpx" />
@@ -279,7 +279,7 @@
               </view>
 
               <!-- 简约手写与浏览交互工具条 (Zen Minimalist Toolbar) -->
-              <view class="hw-mini-bar">
+              <view v-if="tabletHandwritingNotesEnabled" class="hw-mini-bar">
                 <view class="hw-tool" :class="{ active: hwTool === 'none' }" @click="hwTool = 'none'" title="浏览/缩放页面">
                   <text>✋ 浏览</text>
                 </view>
@@ -333,7 +333,7 @@
                       :src="selectedFile.file_path"
                       mode="widthFix"
                       class="study-photo-img"
-                      @click="hwTool === 'none' && previewImage(selectedFile.file_path)"
+                      @click="(!tabletHandwritingNotesEnabled || hwTool === 'none') && previewImage(selectedFile.file_path)"
                     />
                     <!-- PDF 文档展示 -->
                     <view v-else-if="isPdfFileType(selectedFile)" class="study-pdf-container">
@@ -367,6 +367,7 @@
 
                 <!-- 2. 顶层：自研手写笔迹渲染与标注交互层 (Interactive Canvas Layer) -->
                 <view
+                  v-if="tabletHandwritingNotesEnabled"
                   class="hw-canvas-layer"
                   :style="{ pointerEvents: hwTool === 'none' ? 'none' : 'auto' }"
                 >
@@ -699,6 +700,7 @@ import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore, type CatalogItem } from '@/store/useSubjectStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { chatWithAI } from '@/api/aiClient'
+import { tabletHandwritingNotesEnabled } from '@/config/features'
 import { HandwritingEngine, type Stroke, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
 import {
@@ -989,14 +991,24 @@ const selectedBlock = computed(() => {
   return recentBlocks.value.find(b => b.id === activeBlockId.value) || null
 })
 
+const visibleSourceFiles = computed(() => {
+  return activeSourceFiles.value.filter(file => tabletHandwritingNotesEnabled || !isHandwritingNoteFile(file))
+})
+
+const filesPanelEmptyHint = computed(() => {
+  return tabletHandwritingNotesEnabled
+    ? '点击「+ 导入」或「+ 笔记」开始建立知识体系'
+    : '点击「+ 导入」开始建立知识体系'
+})
+
 const selectedFile = computed(() => {
   if (!activeFileId.value) return null
-  return activeSourceFiles.value.find(f => f.id === activeFileId.value) || null
+  return visibleSourceFiles.value.find(f => f.id === activeFileId.value) || null
 })
 
 const catalog = computed<CatalogItem[]>(() => {
   if (!activeFileId.value) return []
-  const file = activeSourceFiles.value.find(f => f.id === activeFileId.value)
+  const file = visibleSourceFiles.value.find(f => f.id === activeFileId.value)
   if (!file?.catalog_json) return []
   try {
     return JSON.parse(file.catalog_json)
@@ -1049,7 +1061,9 @@ const selectBlock = (block: KnowledgeBlock) => {
 
 const selectFile = (file: any) => {
   if (isHandwritingNoteFile(file)) {
-    openHandwritingNoteFile(file)
+    if (tabletHandwritingNotesEnabled) {
+      openHandwritingNoteFile(file)
+    }
     return
   }
 
@@ -1059,7 +1073,7 @@ const selectFile = (file: any) => {
   void initFileHandwriting()
 }
 
-const isHandwritingNoteFile = (file: any) => {
+function isHandwritingNoteFile(file: any) {
   return file?.file_type === 'handwriting/note' || String(file?.file_path || '').startsWith('local://tablet-note/')
 }
 
@@ -1096,6 +1110,8 @@ let fileAnnotationInitSeq = 0
 const fileAnnotationDocs = ref<Record<string, NoteDocument>>({})
 
 const initFileHandwriting = async () => {
+  if (!tabletHandwritingNotesEnabled) return
+
   const currentId = activeFileId.value
   const currentFile = selectedFile.value
   if (!currentId || !currentFile || !subjectId.value) return
@@ -1203,12 +1219,13 @@ const clearFileAnnotationDocument = (): NoteDocument | null => {
 }
 
 watch(activeFileId, (newId) => {
-  if (newId && activePanel.value === 'files') {
+  if (tabletHandwritingNotesEnabled && newId && activePanel.value === 'files') {
     void initFileHandwriting()
   }
 })
 
 const onFilePointerDown = (e: PointerEvent) => {
+  if (!tabletHandwritingNotesEnabled) return
   if (!fileHwEngine || hwTool.value === 'none') return
   isFileDrawing = true
   e.preventDefault()
@@ -1230,6 +1247,7 @@ const onFilePointerDown = (e: PointerEvent) => {
 }
 
 const onFilePointerMove = (e: PointerEvent) => {
+  if (!tabletHandwritingNotesEnabled) return
   if (!isFileDrawing || !fileHwEngine || hwTool.value === 'none') return
   e.preventDefault()
 
@@ -1256,6 +1274,7 @@ const onFilePointerMove = (e: PointerEvent) => {
 }
 
 const onFilePointerUp = (e: PointerEvent) => {
+  if (!tabletHandwritingNotesEnabled) return
   if (!isFileDrawing || !fileHwEngine || hwTool.value === 'none') return
   isFileDrawing = false
 
@@ -1272,6 +1291,7 @@ const onFilePointerUp = (e: PointerEvent) => {
 }
 
 const hwUndo = () => {
+  if (!tabletHandwritingNotesEnabled) return
   if (fileHwEngine) {
     fileHwEngine.undo()
     void saveFileAnnotation(syncFileAnnotationFromEngine())
@@ -1279,6 +1299,7 @@ const hwUndo = () => {
 }
 
 const hwClear = () => {
+  if (!tabletHandwritingNotesEnabled) return
   if (fileHwEngine) {
     fileHwEngine.loadStrokes([])
     void saveFileAnnotation(clearFileAnnotationDocument())
@@ -1591,6 +1612,8 @@ const startVoice = () => uni.showToast({ title: '正在录制语音...', icon: '
 
 // --- NOTES & SUMMARY LOGIC ---
 const handleCreateNote = () => {
+  if (!tabletHandwritingNotesEnabled) return
+
   uni.showModal({
     title: '新建学科笔记',
     editable: true,
