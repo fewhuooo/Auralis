@@ -2,7 +2,7 @@
   <TabletLayout>
     <view class="t-workspace">
       <!-- Left: Unified Workspace Sidebar Card -->
-      <view class="workspace-sidebar-card">
+      <view class="workspace-sidebar-card" :class="{ 'drawer-collapsed': !showDrawer || showSummarySidePanel }">
         <!-- Tier-1: Icon Strip -->
         <view class="tier1-strip">
           <view class="strip-btn" @click="goBack">
@@ -27,7 +27,7 @@
         </view>
 
         <!-- Tier-2: Left Drawer -->
-        <view class="tier2-drawer" v-if="showDrawer">
+        <view class="tier2-drawer">
           <!-- Files Panel -->
           <view v-if="activePanel === 'files'" class="drawer-content">
             <view class="drawer-header">
@@ -60,60 +60,6 @@
                 </view>
                 <view class="file-delete" @click.stop="handleDeleteFile(file.id)">
                   <LineIcon name="close" size="22rpx" />
-                </view>
-              </view>
-            </scroll-view>
-          </view>
-
-          <!-- Summary Panel -->
-          <view v-if="activePanel === 'summary'" class="drawer-content">
-            <view class="drawer-header">
-              <text class="drawer-title">总结与大纲</text>
-              <view class="drawer-action" @click="generateAiSummary">
-                 <text>✨ AI 提炼</text>
-              </view>
-            </view>
-            <!-- 响应式文件大纲切换栏：支持横向滚动点选目标文件，实现真正的响应式多文件联动 -->
-            <scroll-view scroll-x class="summary-file-selector" v-if="visibleSourceFiles.length > 0">
-              <view class="selector-pills">
-                <view
-                  v-for="file in visibleSourceFiles"
-                  :key="file.id"
-                  class="file-pill"
-                  :class="{ active: activeFileId === file.id }"
-                  @click="selectFile(file)"
-                >
-                  <text class="pill-icon">{{ getFileIcon(file.file_type) }}</text>
-                  <text class="pill-name">{{ file.name }}</text>
-                </view>
-              </view>
-            </scroll-view>
-            <scroll-view scroll-y class="drawer-scroll">
-              <view v-if="!activeFileId && visibleSourceFiles.length > 0" class="drawer-empty">
-                <text>请在上方选择一个学习材料</text>
-                <text class="drawer-hint">点选后即可查看对应教材目录与核心提炼</text>
-              </view>
-              <view v-else-if="!aiSummaryContent && !catalog.length" class="drawer-empty">
-                <text>暂无总结或大纲</text>
-                <text class="drawer-hint" v-if="activeFileId">点击上方「✨ AI 提炼」智能分析当前材料要点</text>
-                <text class="drawer-hint" v-else>点击「✨ AI 提炼」智能提炼本学科要点</text>
-              </view>
-              <view v-else class="summary-container">
-                <view v-if="aiSummaryContent" class="summary-card">
-                  <text class="summary-badge">核心要点</text>
-                  <text class="summary-text">{{ aiSummaryContent }}</text>
-                </view>
-                <view v-if="catalog.length" class="catalog-section-wrap">
-                  <text class="catalog-label">教材目录结构</text>
-                  <view v-for="(chapter, idx) in catalog" :key="idx" class="catalog-chapter">
-                    <text class="chapter-title">{{ chapter.title }}</text>
-                    <view v-for="(sec, si) in chapter.sections" :key="si" class="catalog-section">
-                      <text class="section-text">{{ sec }}</text>
-                      <view class="section-actions" @click.stop="askAiAboutSection(chapter.title, sec)">
-                        <text class="section-ai-btn">✨ 解读</text>
-                      </view>
-                    </view>
-                  </view>
                 </view>
               </view>
             </scroll-view>
@@ -304,19 +250,13 @@
                 <view class="hw-tool icon-only" @click="hwClear" title="清空标注"><text>✕</text></view>
               </view>
 
-              <!-- 右侧简约功能按钮群 (Minimalist Action Buttons) -->
+              <!-- 右侧简约功能按钮群 (Zen Minimalist Action Buttons) -->
               <view class="minimal-actions">
-                <view class="min-btn primary" @click="askAiAboutFile(selectedFile)">
-                  <text>AI 伴读</text>
+                <view class="min-btn" :class="{ active: showSummarySidePanel }" @click="toggleSummarySidePanel" title="查看总结与大纲">
+                  <text>总结</text>
                 </view>
-                <view class="min-btn" @click="extractFileToBlock(selectedFile)">
-                  <text>提炼卡片</text>
-                </view>
-                <view class="min-btn" @click="openExternalDocument(selectedFile)">
-                  <text>外部打开</text>
-                </view>
-                <view class="min-btn danger" @click="handleDeleteFile(selectedFile.id)">
-                  <text>删除</text>
+                <view class="min-btn" @click="extractFileToBlock(selectedFile)" title="一键提炼至知识库">
+                  <text>提炼知识</text>
                 </view>
               </view>
             </view>
@@ -398,6 +338,9 @@
               <view class="btn secondary-btn" @click="activePanel = 'files'; showDrawer = true">
                 <text>管理学习材料</text>
               </view>
+              <view class="btn secondary-btn" @click="toggleSummarySidePanel()">
+                <text>总结</text>
+              </view>
             </view>
           </view>
 
@@ -467,6 +410,46 @@
         </view>
       </view>
 
+      <!-- Right: New Summary & Outline Side Panel -->
+      <transition name="summary-slide">
+        <view v-if="showSummarySidePanel" class="summary-side-panel">
+          <!-- Header -->
+          <view class="s-panel-header">
+            <view class="s-title-group">
+              <text class="s-panel-title">总结</text>
+              <text class="s-panel-sub">{{ activeFileId && selectedFile ? selectedFile.name : (activeSubject ? activeSubject.name + ' 全科总结' : '当前要点') }}</text>
+            </view>
+            <view class="s-header-actions">
+              <view class="s-action-btn icon-only" @click="closeSummarySidePanel" title="关闭总结侧栏">
+                <LineIcon name="close" size="28rpx" />
+              </view>
+            </view>
+          </view>
+
+          <!-- 总结要点内容滚动区 (不用切换，专显当前选择文件的核心要点) -->
+          <scroll-view scroll-y class="s-panel-body">
+            <view class="s-tab-content">
+              <view v-if="!currentAiSummary" class="s-empty">
+                <text class="s-empty-title">暂无要点总结</text>
+                <text class="s-empty-hint">正在智能梳理分析并呈现当前材料的核心导读与知识体系要点</text>
+              </view>
+              <view v-else class="summary-card">
+                <text class="summary-badge">{{ activeFileId && selectedFile ? selectedFile.name + ' 核心要点' : '核心要点' }}</text>
+                <text class="summary-text">{{ currentAiSummary }}</text>
+                <view class="summary-card-actions">
+                  <view class="s-action-pill" @click="extractSummaryToBlock">
+                    <text>+ 归纳至知识块</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+        </view>
+      </transition>
+    </view>
+
+    <!-- 挂载到 #modal 插槽，跳出 main-content 的 transform 堆叠上下文，确保 position: fixed 绝对定位相对于全屏 window 定位，彻底解决刚打开时右下方溢出页面的问题 -->
+    <template #modal>
       <!-- 右下角 AI 悬浮球 (打开浮窗时隐藏，保持界面清爽) -->
       <view class="ai-fab-btn" v-if="!showAiPanel" @click="openAiWindow">
         <text class="ai-fab-icon">◈</text>
@@ -685,7 +668,7 @@
           title="按住缩放窗口"
         />
       </view>
-    </view>
+    </template>
   </TabletLayout>
 </template>
 
@@ -726,17 +709,40 @@ const windowSize = ref({ width: 1024, height: 768 })
 const subjectId = ref<string>('')
 
 // Panel state
-const activePanel = ref<'files' | 'blocks' | 'summary' | 'review'>('blocks')
+const activePanel = ref<'files' | 'blocks' | 'review'>('files')
 const showDrawer = ref(true)
 const showAiPanel = ref(false)
+const showSummarySidePanel = ref(false)
 const activeFileId = ref<string | null>(null)
 const activeBlockId = ref<string | null>(null)
 const showCreateBlock = ref(false)
 
-const panelOptions: Array<{ key: 'summary' | 'files' | 'blocks' | 'review'; icon: string; label: string }> = [
+watch(activePanel, (newVal) => {
+  if (newVal !== 'files') {
+    showSummarySidePanel.value = false
+  }
+})
+
+watch(showSummarySidePanel, (newVal) => {
+  if (newVal) {
+    showDrawer.value = false
+    if (!currentAiSummary.value) {
+      void generateAiSummary()
+    }
+  } else {
+    showDrawer.value = true
+  }
+})
+
+watch(activeFileId, () => {
+  if (showSummarySidePanel.value && !currentAiSummary.value) {
+    void generateAiSummary()
+  }
+})
+
+const panelOptions: Array<{ key: 'files' | 'blocks' | 'review'; icon: string; label: string }> = [
   { key: 'files', icon: 'file', label: '文件' },
   { key: 'blocks', icon: 'grid', label: '知识' },
-  { key: 'summary', icon: 'list', label: '总结' },
   { key: 'review', icon: 'refresh', label: '复习' }
 ]
 
@@ -755,15 +761,21 @@ const dragStart = ref({ x: 0, y: 0, startLeft: 0, startTop: 0 })
 const openAiWindow = () => {
   showAiPanel.value = true
   if (aiPos.value.x === -1 || aiPos.value.y === -1) {
-    const winW = windowSize.value.width
-    const winH = windowSize.value.height
-    // 自适应屏幕比例计算默认尺寸 (宽约 360px，高约 520px)
-    const defW = Math.min(440, Math.max(340, Math.floor(winW * 0.36)))
+    let winW = windowSize.value.width
+    let winH = windowSize.value.height
+    try {
+      const sys = uni.getSystemInfoSync()
+      if (sys.windowWidth) winW = sys.windowWidth
+      if (sys.windowHeight) winH = sys.windowHeight
+      windowSize.value = { width: winW, height: winH }
+    } catch {}
+    // 自适应屏幕比例计算默认尺寸 (宽约 380px，高约 520px)
+    const defW = Math.min(460, Math.max(340, Math.floor(winW * 0.38)))
     const defH = Math.min(720, Math.max(480, Math.floor(winH * 0.68)))
     aiSize.value = { width: defW, height: defH }
     aiPos.value = {
-      x: Math.max(20, winW - defW - 20),
-      y: Math.max(60, winH - defH - 60)
+      x: Math.max(20, winW - defW - 28),
+      y: Math.max(30, winH - defH - 40)
     }
   }
 }
@@ -1315,12 +1327,12 @@ const previewImage = (url: string) => {
 }
 
 const askAiAboutFile = (file: any) => {
-  showAiPanel.value = true
+  openAiWindow()
   askAi(`请帮我深度解读学习材料《${file.name}》，梳理出最重要的核心考点和知识架构。`)
 }
 
 const askAiAboutSection = (chapterTitle: string, sectionTitle: string) => {
-  showAiPanel.value = true
+  openAiWindow()
   askAi(`请帮我深度讲解《${chapterTitle}》中「${sectionTitle}」这个知识点的核心内涵、常考题型和易错注意点。`)
 }
 
@@ -1645,17 +1657,64 @@ const handleCreateNote = () => {
   })
 }
 
-const aiSummaryContent = ref('')
+const aiSummaryMap = ref<Record<string, string>>({})
+
+const currentAiSummary = computed(() => {
+  const key = activeFileId.value || 'subject'
+  return aiSummaryMap.value[key] || ''
+})
+
+const selectSummarySubject = () => {
+  activeFileId.value = null
+  activeBlockId.value = null
+  showCreateBlock.value = false
+}
+
+const selectSummaryFile = (file: any) => {
+  activeFileId.value = file.id
+  activeBlockId.value = null
+  showCreateBlock.value = false
+  void initFileHandwriting()
+}
+
 const generateAiSummary = async () => {
+  const key = activeFileId.value || 'subject'
+  const targetName = activeFileId.value ? (selectedFile.value?.name || '当前材料') : (activeSubject.value?.name || '当前学科')
   uni.showLoading({ title: 'AI 智能提炼中...' })
   try {
     await new Promise(r => setTimeout(r, 1200))
-    aiSummaryContent.value = `《${activeSubject.value?.name || '当前学科'}》核心知识体系要点：\n\n1. 基础认知层：理解核心概念定义与基础公理，构建完整思维脑图。\n2. 逻辑进阶层：掌握关键定理推导过程与核心推演模式，搞懂底层机制。\n3. 实战突破层：跨模块知识串联，精炼典型例题解法与高频易错考点分析。`
+    if (!activeFileId.value) {
+      aiSummaryMap.value[key] = `《${targetName}》全科知识架构概览与核心体系要点：\n\n1. 基础认知层：深度解析核心概念定义与基础公理，构建完整学科思维脑图架构。\n2. 逻辑进阶层：掌握关键公式定理推导逻辑与典型解错模式，梳理跨章节联动关系。\n3. 重点难点分析：精炼高频易混淆考点与典型真题解构模型，建议配合复习卡片进行巩固。`
+    } else {
+      aiSummaryMap.value[key] = `《${targetName}》重点导读与精炼要点总结：\n\n1. 核心论点与概要：精准提炼本篇资料中心思想、基础定义与关键公式结论。\n2. 重难点考向剖析：针对重点段落与图表深入解析，提炼典型问题解决模型。\n3. 延伸学习建议：建议结合左侧大纲结构精读具体章节，并可通过「AI 伴读」深入解惑。`
+    }
     uni.hideLoading()
     uni.showToast({ title: '总结提纲已生成', icon: 'success' })
   } catch {
     uni.hideLoading()
   }
+}
+
+const toggleSummarySidePanel = () => {
+  showSummarySidePanel.value = !showSummarySidePanel.value
+}
+
+const closeSummarySidePanel = () => {
+  showSummarySidePanel.value = false
+}
+
+const extractSummaryToBlock = () => {
+  if (!currentAiSummary.value || !activeSubject.value) return
+  const title = activeFileId.value ? `${selectedFile.value?.name || '当前材料'} AI 总结` : `${activeSubject.value?.name || '学科'} 全科概览总结`
+  subjectStore.createBlock(activeSubject.value.id, {
+    title,
+    preview: currentAiSummary.value,
+    source: activeFileId.value ? selectedFile.value?.name : '全科总结',
+    color: activeSubject.value?.color || '#7D9372',
+    tags: ['AI总结', '提纲'],
+    difficulty: 'medium'
+  })
+  uni.showToast({ title: '已归纳至知识块', icon: 'success' })
 }
 
 // --- REVIEW LOGIC ---
@@ -1884,6 +1943,9 @@ onMounted(async () => {
   await blockStore.fetchBlocks(undefined, subjectId.value || undefined)
   if (subjectId.value) {
     await subjectStore.loadSourceFiles(subjectId.value)
+    if (activePanel.value === 'files' && visibleSourceFiles.value.length > 0 && !activeFileId.value && !activeBlockId.value) {
+      selectFile(visibleSourceFiles.value[0])
+    }
   }
 })
 
@@ -1988,7 +2050,7 @@ onUnmounted(() => {
   height: 100%;
   box-sizing: border-box;
   flex-shrink: 0;
-  transition: width 0.25s ease;
+  transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1), min-width 0.35s cubic-bezier(0.16, 1, 0.3, 1), max-width 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
   overflow: hidden;
   position: relative;
 }
@@ -2006,7 +2068,10 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24rpx 28rpx;
+  padding: 0 28rpx;
+  height: 120rpx;
+  min-height: 120rpx;
+  max-height: 120rpx;
   border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
   background: var(--color-zen-white, #FFFFFF);
   width: 100%;
@@ -2190,11 +2255,16 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 24rpx 36rpx;
+  padding: 0 36rpx;
+  height: 120rpx;
+  min-height: 120rpx;
+  max-height: 120rpx;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
   background: var(--color-zen-white, #FFFFFF);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 20rpx;
+  overflow: hidden;
 }
 .file-title-group {
   display: flex;
@@ -2583,8 +2653,15 @@ onUnmounted(() => {
 .detail-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16rpx;
+  align-items: center;
+  padding: 0 36rpx;
+  height: 120rpx;
+  min-height: 120rpx;
+  max-height: 120rpx;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
+  background: var(--color-zen-white, #FFFFFF);
+  overflow: hidden;
 }
 .detail-title {
   font-size: 40rpx;
@@ -3381,7 +3458,204 @@ onUnmounted(() => {
   background: #2e2e2b;
 }
 
-/* Summary Panel */
+/* 左侧栏折叠或在总结弹窗展开时的响应式收起收窄规则 */
+.workspace-sidebar-card.drawer-collapsed {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.workspace-sidebar-card.drawer-collapsed .tier2-drawer {
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* 左侧栏在总结弹窗展开时自动缩小缩简响应式规则 */
+.workspace-sidebar-card.drawer-shrunk {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.workspace-sidebar-card.drawer-shrunk .tier2-drawer {
+  width: 240rpx !important;
+  min-width: 240rpx !important;
+  max-width: 240rpx !important;
+}
+.workspace-sidebar-card.drawer-shrunk .drawer-header {
+  padding: 24rpx 16rpx;
+}
+.workspace-sidebar-card.drawer-shrunk .drawer-title {
+  font-size: 26rpx;
+}
+.workspace-sidebar-card.drawer-shrunk .drawer-actions-row {
+  gap: 6rpx;
+}
+.workspace-sidebar-card.drawer-shrunk .drawer-action text {
+  font-size: 20rpx;
+}
+.workspace-sidebar-card.drawer-shrunk .file-name {
+  font-size: 24rpx;
+}
+
+/* 右侧独立总结与大纲浮动卡片侧栏 */
+.summary-side-panel {
+  width: 580rpx;
+  min-width: 480rpx;
+  max-width: 42vw;
+  height: calc(100vh - 48rpx);
+  background: var(--color-zen-white, #FFFFFF);
+  border-radius: 36rpx;
+  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+  box-shadow: -8rpx 0 24rpx rgba(0, 0, 0, 0.03);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  animation: summarySlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes summarySlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(80rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.s-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 28rpx;
+  height: 120rpx;
+  min-height: 120rpx;
+  max-height: 120rpx;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--color-zen-hairline, #E6E6E4);
+  background: var(--color-zen-white, #FFFFFF);
+  overflow: hidden;
+}
+.s-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+.s-panel-title {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: var(--color-zen-graphite, #1C1C1A);
+  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.s-panel-sub {
+  font-size: 22rpx;
+  color: var(--color-zen-stone, #A8A8A5);
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.s-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+.s-action-btn {
+  padding: 10rpx 20rpx;
+  border-radius: 999rpx;
+  background: var(--color-zen-ivory, #F9F9F7);
+  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+  font-size: 22rpx;
+  font-weight: 700;
+  color: var(--color-zen-graphite, #1C1C1A);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.s-action-btn:hover {
+  background: #EEEEEC;
+}
+.s-action-btn.primary {
+  background: #7D9372;
+  color: #FFFFFF;
+  border-color: #7D9372;
+  box-shadow: 0 4rpx 12rpx rgba(125, 147, 114, 0.25);
+}
+.s-action-btn.icon-only {
+  padding: 10rpx;
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 50%;
+}
+
+.s-panel-tabs {
+  display: flex;
+  background: var(--color-zen-ivory, #F9F9F7);
+  padding: 8rpx;
+  margin: 16rpx 24rpx 8rpx;
+  border-radius: 20rpx;
+  border: 1px solid var(--color-zen-hairline, #E6E6E4);
+  gap: 8rpx;
+}
+.s-tab {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 0;
+  border-radius: 14rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: var(--color-zen-stone, #A8A8A5);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.s-tab.active {
+  background: var(--color-zen-white, #FFFFFF);
+  color: #7D9372;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+}
+
+.s-panel-body {
+  flex: 1;
+  padding: 16rpx 24rpx 32rpx;
+  box-sizing: border-box;
+}
+.s-tab-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+.s-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80rpx 32rpx;
+  text-align: center;
+  gap: 12rpx;
+}
+.s-empty-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: var(--color-zen-graphite, #1C1C1A);
+}
+.s-empty-hint {
+  font-size: 22rpx;
+  color: var(--color-zen-stone, #A8A8A5);
+  line-height: 1.5;
+}
+
 .summary-container {
   display: flex;
   flex-direction: column;
@@ -3409,6 +3683,26 @@ onUnmounted(() => {
   color: var(--color-zen-graphite, #1C1C1A);
   line-height: 1.6;
   white-space: pre-wrap;
+}
+.summary-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24rpx;
+  padding-top: 20rpx;
+  border-top: 1px dashed var(--color-zen-hairline, #E6E6E4);
+}
+.s-action-pill {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  background: rgba(125, 147, 114, 0.12);
+  color: #7D9372;
+  font-size: 22rpx;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.s-action-pill:hover {
+  background: rgba(125, 147, 114, 0.22);
 }
 .catalog-section-wrap {
   display: flex;

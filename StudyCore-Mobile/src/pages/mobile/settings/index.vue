@@ -73,7 +73,7 @@
               @click="item.type !== 'switch' && item.action ? item.action() : null"
             >
               <view class="item-left">
-                <LineIcon :name="item.icon" size="36rpx" color="var(--text-sub)" class="menu-item-icon" />
+                <LineIcon :name="item.icon" size="36rpx" color="#7D9372" class="menu-item-icon" />
                 <text class="menu-label">{{ item.label }}</text>
               </view>
               
@@ -81,7 +81,7 @@
                 <template v-if="item.type === 'switch'">
                   <switch 
                     :checked="item.value" 
-                    color="#34c759" 
+                    color="#7D9372" 
                     @change="item.action" 
                     class="ios-switch" 
                   />
@@ -416,7 +416,7 @@ const filteredGroups = computed(() => {
   --text-muted-val: var(--color-zen-stone);
   --arrow-color: var(--color-zen-stone);
   --divider-color: var(--color-zen-hairline);
-  --avatar-bg: var(--color-zen-hairline);
+  --avatar-bg: #7D9372;
   --logout-color: #ff3b30;
   --item-active-bg: var(--color-zen-ivory);
   --search-bg: var(--color-zen-white);
