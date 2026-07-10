@@ -1,92 +1,138 @@
-# Auralis v3 文档中心
+# Auralis 文档中心
 
-更新时间：2026-07-07
-版本：v3.1
+更新时间：2026-07-10
 
-本目录是 Auralis 当前推荐维护的中文文档入口。后续需求、开发、审查、部署、交付都优先以本目录为准。
+文档状态：现行
 
-重要约定：
+权威范围：现行文档的唯一入口、阅读路径、权威边界、状态词典与维护规则
 
-- 原始 PRD 和任务总表已归档到 `docs/archive/legacy-demand/`，不再作为现行维护入口。
-- 旧 `page_api_manifest.md`、`ReadNeed.md`、`obsidian_notion_analysis.md` 当前工作区里已不存在；如后续需要，可从 Git 历史恢复到归档目录。
-- 前端页面目前仍在重构中，PC 和 Mobile 的页面状态不能直接等同于最终验收通过。
-- Agent 每次写代码前必须先读 [AgentBeforeCoding.md](AgentBeforeCoding.md)。
+事实来源：仓库目录、`AGENTS.md` 与 `docs/design/DocumentationArchitecture.md`
 
-## 文档索引
+## 定位
 
-| 分类 | 文档 | 用途 |
+本目录服务于 Auralis 的开发者和编码 Agent。文档的首要目标是让维护者快速回答四个问题：
+
+1. 当前代码实际有什么？
+2. 哪份文档负责维护这类事实？
+3. 修改前必须读什么，修改后必须回写什么？
+4. 哪些内容已经验证，哪些仍需人工、GUI、真机或外部服务验收？
+
+`docs/README.md` 是唯一现行入口。`docs/archive/` 只保存历史，`docs/showcase/` 只保存展示材料，两者都不是工程事实来源。
+
+## 30 秒开始
+
+修改任何内容前：
+
+1. 阅读 [Agent 编码前协议](agent/BeforeCoding.md)。
+2. 阅读 [当前状态](current/Status.md) 与 [问题和审查](current/IssuesAndReview.md)。
+3. 按任务选择模块、契约或运维文档。
+4. 检查 Git 工作树，保护用户已有修改。
+5. 完成后按回写矩阵更新文档，并记录实际验证证据。
+
+## 按任务选择文档
+
+| 任务 | 必读 | 变化后必须回写 |
 | --- | --- | --- |
-| Agent 入口 | [AgentBeforeCoding.md](AgentBeforeCoding.md) | 给编码 Agent 的写代码前必读上下文、检查清单 |
-| 项目基础 | [ProjectReadme.md](ProjectReadme.md) | 项目简介、技术栈、环境依赖、启动方式 |
-| 项目基础 | [CodingAndGitStandards.md](CodingAndGitStandards.md) | 编码规范、Git 规范、提交要求 |
-| 需求设计 | [ProductRequirementsDocument.md](ProductRequirementsDocument.md) | 产品需求、模块范围、验收标准 |
-| 需求设计 | [ArchitectureDesign.md](ArchitectureDesign.md) | 系统架构、技术选型、核心数据流 |
-| 需求设计 | [frontend/design.md](frontend/design.md) | 前端页面功能设计总览 |
-| 模块说明 | [FrontendPC.md](FrontendPC.md) | PC 前端模块说明 |
-| 模块说明 | [FrontendMobileTablet.md](FrontendMobileTablet.md) | 移动端和平板端模块说明 |
-| 模块说明 | [Backend.md](Backend.md) | Spring Boot 后端模块说明 |
-| 模块说明 | [InfrastructureAndData.md](InfrastructureAndData.md) | 基础设施与数据层说明 |
-| 开发契约 | [APIManifest.md](APIManifest.md) | API 接口文档 |
-| 开发契约 | [MobilePagesAPIMap.md](MobilePagesAPIMap.md) | Mobile 页面接口映射与本地数据流 |
-| 开发契约 | [DatabaseDesign.md](DatabaseDesign.md) | 数据库设计与数据字典 |
-| 部署运维 | [DeploymentGuide.md](DeploymentGuide.md) | 部署指南 |
-| 部署运维 | [Runbook.md](Runbook.md) | 运维与应急手册 |
-| 迭代交付 | [DevelopmentPlan.md](DevelopmentPlan.md) | 阶段计划与验收口径 |
-| 迭代交付 | [StatusIndex.md](StatusIndex.md) | 当前项目状态索引 |
-| 迭代交付 | [CurrentIssuesAndReview.md](CurrentIssuesAndReview.md) | 当前问题清单与轻量代码审查 |
-| 迭代交付 | [Changelog.md](Changelog.md) | 更新日志 |
-| 迭代交付 | [UserManualOutline.md](UserManualOutline.md) | 用户手册提纲 |
-| 任务计划 | [plans/README.md](plans/README.md) | 按领域拆分的任务计划目录 |
+| PC 页面、路由、Store、Tauri | [PC 模块](modules/FrontendPC.md)、[前端设计](design/Frontend.md) | 两份文档；状态/风险变化时更新 `current/`；发布变化更新 Changelog |
+| Mobile / Tablet 页面、路由、端侧数据 | [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)、[前端设计](design/Frontend.md)、[页面 API 映射](contracts/MobilePagesAPIMap.md) | 所有受影响文档及状态、风险、Changelog |
+| 后端 Controller、Service、鉴权 | [后端模块](modules/Backend.md)、[API 契约](contracts/API.md) | 两份文档及状态、风险、Changelog |
+| Entity、DDL、同步字段、本地表 | [数据库契约](contracts/Database.md)、[后端模块](modules/Backend.md) | 两份文档；接口变化时同步 API |
+| Docker、环境变量、部署、运维 | [基础设施模块](modules/Infrastructure.md)、[部署指南](operations/Deployment.md)、[Runbook](operations/Runbook.md) | 所有受影响文档及状态、风险、Changelog |
+| 产品范围或验收条件 | [产品需求](project/ProductRequirements.md)、[系统架构](project/Architecture.md) | 产品、架构、计划、状态 |
+| 仅文档整理 | 本入口及受影响的权威文档 | 索引、元数据、链接；发布影响进入 Changelog |
+| 版本或发布 | [当前状态](current/Status.md)、[发布计划](planning/InfraRelease.md) | [Changelog](release/Changelog.md) 与实际验证证据 |
 
-## 文档命名规范
+## 文档权威边界
 
-命名格式：
+| 分类 | 唯一职责 | 禁止混入 |
+| --- | --- | --- |
+| `agent/` | Agent 开始前、修改中、完成后的强制行为 | 产品宣传、页面细节 |
+| `project/` | 产品范围、项目总览、系统架构 | 当前任务进度、接口明细 |
+| `current/` | 当前状态和未关闭风险 | 页面设计长文、未来愿景 |
+| `modules/` | 当前代码结构、边界、命令和限制 | 产品需求、完整接口字段表 |
+| `contracts/` | API、数据、页面调用契约 | 宣传文案、未批准设想 |
+| `design/` | 已批准的设计体系、交互和架构决策 | 构建通过或验收状态 |
+| `operations/` | 部署、排障、备份、恢复 | 不存在的命令或自动化 |
+| `planning/` | 尚未完成的任务、依赖、验收与完成定义 | 已完成历史 |
+| `release/` | 已发生且可确认的变化 | 未来计划 |
+| `user/` | 面向最终用户的操作说明 | 内部实现细节 |
+| `showcase/` | 比赛和展示材料 | 当前工程事实 |
+| `archive/` | 历史追溯 | 当前实现、状态和任务依据 |
 
-```text
-PascalCaseName.md
-```
+## 状态词典
 
-规则：
+| 状态 | 必须满足的判定条件 |
+| --- | --- |
+| 已验收 | 有构建、测试、联调或人工验收证据，并满足该项完成定义 |
+| 已构建待验收 | 代码或页面存在，但缺少足够测试、联调或人工证据 |
+| 进行中 | 部分实现存在，主流程、测试或文档尚未闭环 |
+| 计划中 | 只有需求、设计或任务，尚未开始实现 |
+| 已隐藏保留 | 实现仍存在，但入口被 feature flag 或路由配置关闭 |
+| 阻塞 | 依赖外部配置、资源、设备、权限或产品决策，当前无法继续验证 |
 
-- 使用完整英文语义名，采用 PascalCase。
-- 避免编号前缀。
-- 避免不必要缩写，保留通用缩写如 `API`、`PC`。
-- 正文标题继续使用中文。
+## 事实与验证口径
 
-## 历史归档
+- **代码确认**：给出文件、类、函数、路由或配置路径，只证明实现存在。
+- **命令验证**：给出执行日期、完整命令、退出结果，只证明该命令在当时环境中的结果。
+- **人工验收**：说明设备、GUI、外部服务和操作流程，不能由构建命令代替。
+- **历史证据**：只能进入 Changelog 或归档，不能伪装为本轮验证。
 
-已归档：
+禁止用“已完成”同时表达以上多种证据。若无法验证，必须写明未验证原因。
 
-- `docs/archive/legacy-demand/StudyCore_Detailed_PRD.md`
-- `docs/archive/legacy-demand/task.md`
+## 目录索引
 
-已从工作区移除，必要时从 Git 历史恢复：
+### Agent 与规范
 
-- `page_api_manifest.md`
-- `ReadNeed.md`
-- `obsidian_notion_analysis.md`
+- [编码前协议](agent/BeforeCoding.md)
+- [编码与 Git 规范](agent/CodingAndGitStandards.md)
 
-## 状态口径
+### 项目与设计
 
-- `已验收`：已有构建、测试、联调或人工验收依据。
-- `已构建待验收`：代码或页面已存在，但缺少测试、联调或人工验收。
-- `进行中`：部分实现已存在，尚未闭环。
-- `计划中`：有设计或需求，尚未开始实现。
-- `阻塞`：依赖外部配置、资源或产品决策。
+- [项目总览](project/Overview.md)
+- [产品需求](project/ProductRequirements.md)
+- [系统架构](project/Architecture.md)
+- [文档架构设计](design/DocumentationArchitecture.md)
+- [前端设计](design/Frontend.md)
 
-## 推荐阅读顺序
+### 当前实现与契约
 
-开发前：
+- [当前状态](current/Status.md)
+- [问题和审查](current/IssuesAndReview.md)
+- [PC 模块](modules/FrontendPC.md)
+- [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)
+- [后端模块](modules/Backend.md)
+- [基础设施模块](modules/Infrastructure.md)
+- [API 契约](contracts/API.md)
+- [数据库契约](contracts/Database.md)
+- [Mobile 页面 API 映射](contracts/MobilePagesAPIMap.md)
 
-1. [AgentBeforeCoding.md](AgentBeforeCoding.md)
-2. [StatusIndex.md](StatusIndex.md)
-3. [CurrentIssuesAndReview.md](CurrentIssuesAndReview.md)
-4. 对应模块文档：PC、Mobile、Backend、Infra。
-5. 涉及接口或数据库时阅读 [APIManifest.md](APIManifest.md) 和 [DatabaseDesign.md](DatabaseDesign.md)。
+### 运维、计划与交付
 
-交付前：
+- [部署指南](operations/Deployment.md)
+- [运维手册](operations/Runbook.md)
+- [计划入口](planning/README.md)
+- [任务总览](planning/Overview.md)
+- [变更记录](release/Changelog.md)
+- [用户手册](user/UserManual.md)
 
-1. 更新 [DevelopmentPlan.md](DevelopmentPlan.md)。
-2. 更新 [StatusIndex.md](StatusIndex.md)。
-3. 更新 [Changelog.md](Changelog.md)。
-4. 若涉及用户流程，更新 [UserManualOutline.md](UserManualOutline.md)。
+### 非工程事实
+
+- [展示材料](showcase/TraeCompetitionApplication.md)
+- [历史归档](archive/README.md)
+
+## 维护与冲突处理
+
+指令和事实冲突时按以下顺序处理：
+
+1. 用户在当前任务中的最新明确要求。
+2. 根目录 `AGENTS.md`。
+3. `docs/agent/BeforeCoding.md`。
+4. 本次任务对应的权威模块与契约文档。
+5. `docs/planning/` 中的计划。
+6. 展示材料和历史归档。
+
+代码与现行文档冲突时，必须核实实现并在任务范围内同步修正文档；禁止静默选择一方。新文档必须进入已有分类目录，确需新增分类时先更新本入口和文档架构设计。
+
+## 归档说明
+
+[2026-07-10 重构前快照](archive/snapshots/2026-07-10-pre-reorganization/SNAPSHOT.md) 保存了旧文档体系和当时工作树中的未提交文档修改。归档顶部的警告是强制约束；任何 Agent 都不得从归档恢复旧实现或判断当前状态。

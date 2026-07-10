@@ -36,7 +36,7 @@
 
 **文件：**
 
-- 新建：`docs/archive/snapshots/2026-07-10-pre-reorganization/README.md`
+- 新建：`docs/archive/snapshots/2026-07-10-pre-reorganization/SNAPSHOT.md`
 - 新建：`docs/archive/snapshots/2026-07-10-pre-reorganization/**`，镜像旧文档树
 - 重写：`docs/archive/README.md`
 - 移动：`docs/archive/PROJECT_OVERVIEW.md` → `docs/archive/legacy-project/PROJECT_OVERVIEW.md`
@@ -123,7 +123,7 @@ foreach ($source in $sources) {
 
 `docs/archive/README.md` 必须包含：归档用途、禁止作为现状依据、快照清单、`legacy-project/`、`legacy-demand/` 和返回现行入口的链接。
 
-快照 `README.md` 必须记录日期 `2026-07-10`、来源提交 `ecee5f0`、来源工作树存在未提交文档修改、排除文件、完整性校验方式和禁止性说明。
+快照 `SNAPSHOT.md` 必须记录日期 `2026-07-10`、来源提交 `5cbee8d`、来源工作树存在未提交文档修改、排除文件、完整性校验方式和禁止性说明。快照根目录的 `README.md` 是旧文档中心原文，禁止覆盖。
 
 确认快照副本存在后，将 `PROJECT_OVERVIEW.md` 移入 `legacy-project/`。
 

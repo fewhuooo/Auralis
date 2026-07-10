@@ -99,6 +99,7 @@ docs/
     ├── snapshots/
     │   └── 2026-07-10-pre-reorganization/
     │       ├── README.md
+    │       ├── SNAPSHOT.md
     │       ├── archive/
     │       ├── frontend/
     │       ├── plans/
@@ -318,7 +319,7 @@ Agent 禁止：
 - 包含整理前整个 `docs/` 目录的 Markdown 镜像，包括原有 `archive/`；仅排除为本次重构新写的 `docs/design/DocumentationArchitecture.md` 和快照目标目录自身。
 - 保存工作树当前内容，包括 `Changelog.md`、`FrontendPC.md`、`StatusIndex.md` 和 `frontend/design.md` 中尚未提交的用户修改。
 - 保持原有相对目录结构；每份文件只允许在顶部增加统一历史警告，警告之后的原始正文必须逐字保留，不得做事实修正。
-- 快照目录新增独立 `README.md`，记录生成日期、来源提交、工作树存在未提交修改以及不可作为现状依据的警告。
+- 快照目录新增独立 `SNAPSHOT.md`，记录生成日期、来源提交、工作树存在未提交修改以及不可作为现状依据的警告。快照根目录的 `README.md` 保留为旧文档中心原文，禁止覆盖。
 - 新文档不得链接到快照内容作为当前事实来源。
 - 原 `docs/archive/PROJECT_OVERVIEW.md` 在新结构中归入 `docs/archive/legacy-project/PROJECT_OVERVIEW.md`；原归档入口也保存在日期快照中。
 
