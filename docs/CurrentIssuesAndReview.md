@@ -13,13 +13,13 @@
 
 ## 总体判断
 
-项目已经具备 Spring Boot + Vue 前后端主干、Docker Compose 基础设施和 v3 中文文档体系。当前最大事实是：前端页面仍在重构中，所以 PC / Mobile 的构建通过不能等同于用户流程已验收。
+项目已经具备 Spring Boot + Vue 前后端主干、Docker Compose 基础设施和 v3 中文文档体系。当前最新事实是：PC 端页面已于 2026-07-09 完成了向手机/平板端一致的「极简禅意（Zen Minimalist）」视觉风格升级（全量更新了色板与发丝边框系统），且保持原有布局结构不变；PC / Mobile 的构建均已通过，后续重点转向多端用户流程与交互的人工验收。
 
 ## P0 / P1 问题
 
 | 优先级 | 问题 | 证据 | 影响 | 建议 |
 | --- | --- | --- | --- | --- |
-| P1 | PC 登录守卫临时关闭 | `StudyCore-PC/src/router/index.ts:50-59` 直接 `next()` | 未登录也可访问 `requiresAuth` 页面 | 重构完成后恢复 `useAuthStore` 守卫，并验证登录/刷新/退出 |
+| P1 | PC 登录守卫临时关闭 | `Auralis-PC/src/router/index.ts:50-59` 直接 `next()` | 未登录也可访问 `requiresAuth` 页面 | 重构完成后恢复 `useAuthStore` 守卫，并验证登录/刷新/退出 |
 | P1 | 后端缺少真实测试源码 | 当前状态为 `mvn test` 通过但无测试源码 | 安全和同步修复缺少回归保护 | 先补 Auth、Asset、Sync、MutationLog 测试 |
 | P1 | 直接 CRUD 删除与同步软删除语义需统一 | 任务总表和状态索引均列为当前风险 | 多端可能出现删除状态不一致 | Controller 删除、MutationLog 删除、冷启动拉取统一软删除口径 |
 | P1 | WebSocket 生命周期鉴权未验收 | `/ws/sync` 存在，但握手、心跳、token 过期断连仍待验证 | 长连接可能绕过 HTTP token 生命周期 | 增加握手鉴权和心跳 token 校验 |

@@ -1,18 +1,18 @@
-﻿# StudyCore 项目说明
+# Auralis 项目说明
 
 更新时间：2026-07-02
 
 ## 项目简介
 
-StudyCore（学核）是一个面向学习与校园生产力场景的跨平台系统。系统以“知识块”和“任务块”为核心数据结构，结合 PC、移动端、平板端和 Spring Boot 后端，实现知识捕获、文档解析、任务排期、多端同步和 AI 辅助学习。
+Auralis（Auralis）是一个面向学习与校园生产力场景的跨平台系统。系统以“知识块”和“任务块”为核心数据结构，结合 PC、移动端、平板端和 Spring Boot 后端，实现知识捕获、文档解析、任务排期、多端同步和 AI 辅助学习。
 
 ## 技术栈
 
 | 子项目 | 技术栈 | 说明 |
 | --- | --- | --- |
-| `StudyCore-PC` | Vue 3、Vite、TypeScript、Tauri、Pinia、Element Plus | PC 桌面端和 Web 前端 |
-| `StudyCore-Mobile` | Vue 3、Uni-app、TypeScript、Pinia | 手机端和平板端 |
-| `StudyCore-Server` | Spring Boot 3.2、Java 21、MyBatis Plus、LangChain4j | 后端业务、AI 编排、同步服务 |
+| `Auralis-PC` | Vue 3、Vite、TypeScript、Tauri、Pinia、Element Plus | PC 桌面端和 Web 前端 |
+| `Auralis-Mobile` | Vue 3、Uni-app、TypeScript、Pinia | 手机端和平板端 |
+| `Auralis-Server` | Spring Boot 3.2、Java 21、MyBatis Plus、LangChain4j | 后端业务、AI 编排、同步服务 |
 | 基础设施 | PostgreSQL、Redis、Milvus、MinIO、pgAdmin | 元数据、缓存、向量库、对象存储 |
 
 ## 环境依赖
@@ -35,14 +35,14 @@ docker compose up -d db redis etcd minio milvus pgadmin
 启动后端：
 
 ```powershell
-cd StudyCore-Server
+cd Auralis-Server
 mvn spring-boot:run
 ```
 
 启动 PC 前端：
 
 ```powershell
-cd StudyCore-PC
+cd Auralis-PC
 npm install
 npm run dev
 ```
@@ -50,14 +50,14 @@ npm run dev
 构建 PC 前端：
 
 ```powershell
-cd StudyCore-PC
+cd Auralis-PC
 npm.cmd run build
 ```
 
 启动 Mobile H5：
 
 ```powershell
-cd StudyCore-Mobile
+cd Auralis-Mobile
 npm install
 npm run dev:h5
 ```
@@ -65,26 +65,26 @@ npm run dev:h5
 构建 Mobile H5：
 
 ```powershell
-cd StudyCore-Mobile
+cd Auralis-Mobile
 npm.cmd run build:h5
 ```
 
 后端验证：
 
 ```powershell
-cd StudyCore-Server
+cd Auralis-Server
 mvn test
 ```
 
 ## 目录结构
 
 ```text
-StudyCore/
+Auralis/
 ├── docs/                # 当前推荐维护的文档体系
 │   └── archive/         # 历史文档归档
-├── StudyCore-PC/        # PC 前端 / Tauri 桌面端
-├── StudyCore-Mobile/    # Uni-app 移动端和平板端
-├── StudyCore-Server/    # Spring Boot 后端
+├── Auralis-PC/        # PC 前端 / Tauri 桌面端
+├── Auralis-Mobile/    # Uni-app 移动端和平板端
+├── Auralis-Server/    # Spring Boot 后端
 ├── data/                # 本地 Docker 数据卷
 ├── docker-compose.yml   # 本地基础设施和前后端容器编排
 ├── .env.example         # 环境变量示例

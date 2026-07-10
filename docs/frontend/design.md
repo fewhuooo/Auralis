@@ -2,21 +2,21 @@
 
 更新时间：2026-07-03
 
-本文档统一总结 StudyCore PC、Mobile、Tablet 三类前端页面的功能设计、页面入口、数据依赖和验收口径。页面状态以当前代码和 `docs/FrontendPC.md`、`docs/FrontendMobileTablet.md` 为基线；本文不描述后端接口细节，接口契约以 `docs/APIManifest.md` 为准。
+本文档统一总结 Auralis PC、Mobile、Tablet 三类前端页面的功能设计、页面入口、数据依赖和验收口径。页面状态以当前代码和 `docs/FrontendPC.md`、`docs/FrontendMobileTablet.md` 为基线；本文不描述后端接口细节，接口契约以 `docs/APIManifest.md` 为准。
 
 ## 1. 前端整体定位
 
 | 端 | 代码目录 | 核心场景 | 页面设计重点 |
 | --- | --- | --- | --- |
-| PC | `StudyCore-PC` | 桌面学习工作台、重型资产编排、学科工作区、任务排期 | 信息密度高、三栏/多栏工作流、支持拖拽、文件预览、知识图谱和长时间管理 |
-| Mobile | `StudyCore-Mobile/src/pages` | 手机端轻量捕获、AI 问答、复习、专注、查看统计 | 单手操作、快速入口、弱网/离线恢复、移动端输入和拍照能力 |
-| Tablet | `StudyCore-Mobile/src/pages/tablet` | 平板端大屏学习、学科工作区、手写、阅读、专注和复习 | 左侧导航、多面板并行、触控友好、适配横屏学习 |
+| PC | `Auralis-PC` | 桌面学习工作台、重型资产编排、学科工作区、任务排期 | 信息密度高、三栏/多栏工作流、支持拖拽、文件预览、知识图谱和长时间管理 |
+| Mobile | `Auralis-Mobile/src/pages` | 手机端轻量捕获、AI 问答、复习、专注、查看统计 | 单手操作、快速入口、弱网/离线恢复、移动端输入和拍照能力 |
+| Tablet | `Auralis-Mobile/src/pages/tablet` | 平板端大屏学习、学科工作区、手写、阅读、专注和复习 | 左侧导航、多面板并行、触控友好、适配横屏学习 |
 
 ## 2. 页面地图
 
 ### 2.1 PC 页面地图
 
-当前 PC 路由来自 `StudyCore-PC/src/router/index.ts`。
+当前 PC 路由来自 `Auralis-PC/src/router/index.ts`。
 
 | 页面 | 路由 | 文件 | 导航入口 | 状态 |
 | --- | --- | --- | --- | --- |
@@ -32,7 +32,7 @@
 
 ### 2.2 Mobile 页面地图
 
-当前 Mobile 页面来自 `StudyCore-Mobile/src/pages.json`。
+当前 Mobile 页面来自 `Auralis-Mobile/src/pages.json`。
 
 | 页面 | 路径 | 文件 | 核心入口 | 状态 |
 | --- | --- | --- | --- | --- |
@@ -50,7 +50,7 @@
 
 ### 2.3 Tablet 页面地图
 
-当前 Tablet 已注册页面来自 `StudyCore-Mobile/src/pages.json`，侧边导航来自 `src/components/tablet/TabletLayout.vue`。
+当前 Tablet 已注册页面来自 `Auralis-Mobile/src/pages.json`，侧边导航来自 `src/components/tablet/TabletLayout.vue`。
 
 | 页面 | 路径 | 文件 | 导航入口 | 状态 |
 | --- | --- | --- | --- | --- |

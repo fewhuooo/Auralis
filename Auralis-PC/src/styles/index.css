@@ -1,0 +1,322 @@
+/* ===== Google Fonts ===== */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap');
+
+/* ==========================================================================
+   CSS Variables Dictionary - Auralis Design System (Zen Minimalist PC)
+   ========================================================================== */
+
+:root {
+  /* ===== Zen Minimalist System Colors ===== */
+  --color-zen-ivory: #F9F9F7;
+  --color-zen-graphite: #1C1C1A;
+  --color-zen-sage: #A3B19B;
+  --color-zen-hairline: #E6E6E4;
+  --color-zen-white: #FFFFFF;
+  --color-zen-stone: #A8A8A5;
+  --color-sage-dark: #7D9372;
+
+  /* ===== 1. Base Palette ===== */
+  --color-white: var(--color-zen-white);
+  --color-black: var(--color-zen-graphite);
+  --color-transparent: transparent;
+  
+  /* Ins-style Clean Grays */
+  --color-gray-50: var(--color-zen-ivory);
+  --color-gray-100: #f4f4f2;
+  --color-gray-200: var(--color-zen-hairline);
+  --color-gray-300: #dadad8;
+  --color-gray-400: var(--color-zen-stone);
+  --color-gray-500: #777771;
+  --color-gray-600: #5f5e5c;
+  --color-gray-700: #474741;
+  --color-gray-800: #2f3130;
+  --color-gray-900: var(--color-zen-graphite);
+
+  /* Oatmeal & Minimalist Gray Palette mapped to Zen */
+  --color-oatmeal-light: var(--color-zen-ivory);
+  --color-oatmeal-mid: #eeeeec;
+  --color-oatmeal-dark: #e8e8e6;
+  --color-gray-soft: #f4f4f2;
+  --color-gray-muted: var(--color-zen-stone);
+
+  /* ===== 2. Semantic Colors (Light Mode) ===== */
+  /* Backgrounds */
+  --color-bg-primary: var(--color-zen-ivory);
+  --color-bg-secondary: var(--color-zen-ivory);
+  --color-bg-tertiary: var(--color-zen-white);
+  --color-bg-elevated: var(--color-zen-white);
+  
+  /* Text */
+  --text-primary: var(--color-zen-graphite);
+  --text-secondary: var(--color-zen-graphite);
+  --text-muted: var(--color-zen-stone);
+  --text-accent: var(--color-zen-sage);
+  --text-inverse: var(--color-zen-white);
+
+  /* Borders */
+  --border-subtle: var(--color-zen-hairline);
+  --border-default: var(--color-zen-hairline);
+  --border-strong: var(--color-zen-stone);
+  --border-accent: rgba(163, 177, 155, 0.4);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.75);
+  --glass-border: var(--color-zen-hairline);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.02);
+  --glass-blur: blur(20px);
+
+  /* Status / Feedback */
+  --color-success: var(--color-zen-sage);
+  --color-warning: #d9c5b2;
+  --color-danger: #d4a3a3;
+  --color-info: #b3c0cf;
+
+  /* Accent Colors - Zen Sage */
+  --accent-start: var(--color-zen-sage);
+  --accent-gradient: var(--accent-start);
+  --accent-glow: 0 0 20px rgba(163, 177, 155, 0.35);
+
+  /* ===== 3. Typography ===== */
+  --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  
+  --font-size-xs: 0.75rem;    /* 12px */
+  --font-size-sm: 0.875rem;   /* 14px */
+  --font-size-base: 1rem;     /* 16px */
+  --font-size-lg: 1.125rem;   /* 18px */
+  --font-size-xl: 1.25rem;    /* 20px */
+  --font-size-2xl: 1.5rem;    /* 24px */
+  --font-size-3xl: 1.875rem;  /* 30px */
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* ===== 4. Spacing System ===== */
+  --spacing-1: 0.25rem;  /* 4px */
+  --spacing-2: 0.5rem;   /* 8px */
+  --spacing-3: 0.75rem;  /* 12px */
+  --spacing-4: 1rem;     /* 16px */
+  --spacing-5: 1.25rem;  /* 20px */
+  --spacing-6: 1.5rem;   /* 24px */
+  --spacing-8: 2rem;     /* 32px */
+  --spacing-10: 2.5rem;  /* 40px */
+  --spacing-12: 3rem;    /* 48px */
+
+  /* ===== 5. Borders & Radius ===== */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* ===== 6. Shadows (Lightweight Zen) ===== */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px -1px rgba(0, 0, 0, 0.02);
+  --shadow-lg: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -2px rgba(0, 0, 0, 0.03);
+  --shadow-xl: 0 10px 20px -4px rgba(0, 0, 0, 0.06), 0 4px 8px -4px rgba(0, 0, 0, 0.03);
+
+  /* ===== 7. Transitions & Animations ===== */
+  --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ===== 8. Z-Index Scale ===== */
+  --z-index-base: 0;
+  --z-index-dropdown: 1000;
+  --z-index-sticky: 1020;
+  --z-index-fixed: 1030;
+  --z-index-modal-backdrop: 1040;
+  --z-index-modal: 1050;
+  --z-index-popover: 1060;
+  --z-index-tooltip: 1070;
+
+  /* ===== 9. Layout Constants ===== */
+  --sidebar-width: 68px;
+  --header-height: 64px;
+}
+
+/* ==========================================================================
+   Dark Mode Overrides
+   ========================================================================== */
+
+html.dark {
+  /* Backgrounds: Higher contrast between layers */
+  --color-bg-primary: #1f1e1c;       /* Warm Charcoal Base */
+  --color-bg-secondary: #292825;     /* Sidebar / Header */
+  --color-bg-tertiary: #33312e;      /* Cards / Inputs */
+  --color-bg-elevated: #3d3b38;      /* Modals */
+
+  /* Text */
+  --text-primary: #e6dfd8;           /* Light Oatmeal Text */
+  --text-secondary: #b0aca5;
+  --text-muted: #8a867e;
+  --text-accent: #d9d0c7;
+
+  /* Borders: Slightly more visible to define boundaries */
+  --border-subtle: rgba(230, 223, 216, 0.05);
+  --border-default: rgba(230, 223, 216, 0.1);
+  --border-strong: rgba(230, 223, 216, 0.15);
+  --border-accent: rgba(217, 208, 199, 0.3);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(31, 30, 28, 0.8);
+  --glass-border: rgba(230, 223, 216, 0.05);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+
+  /* Shadows (darker for dark mode) */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+  
+  /* Accent Glow */
+  --accent-glow: 0 0 24px rgba(163, 177, 155, 0.18);
+}
+
+/* ==========================================================================
+   Global Reset & Base HTML Elements
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 15px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-family-base);
+  background-color: var(--color-bg-primary);
+  color: var(--text-primary);
+  line-height: var(--line-height-normal);
+  overflow: hidden;
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* ===== Typography Global Styles ===== */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: var(--line-height-tight);
+  color: var(--text-primary);
+}
+
+a {
+  color: var(--text-accent);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+code, pre {
+  font-family: var(--font-family-mono);
+  font-size: 0.9em;
+}
+
+/* ===== Scrollbar Customization ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-transparent);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* ===== Selection ===== */
+::selection {
+  background: var(--border-accent);
+  color: var(--text-primary);
+}
+
+/* ===== Element Plus Overrides ===== */
+.el-menu {
+  border-right: none !important;
+  background-color: transparent !important;
+}
+
+.el-aside {
+  overflow: visible !important;
+}
+
+.el-main {
+  --el-main-padding: 0 !important;
+}
+
+/* Base utility classes for gradients */
+.text-gradient {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ==========================================================================
+   Custom Premium Auralis Notifications (Nordic / Warm Oatmeal Style)
+   ========================================================================== */
+.el-notification.auralis-notification {
+  background: var(--glass-bg) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  -webkit-backdrop-filter: var(--glass-blur) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--shadow-lg), var(--accent-glow) !important;
+  font-family: var(--font-family-base) !important;
+  padding: 16px 20px !important;
+  transition: all var(--transition-normal) !important;
+  width: 340px !important;
+}
+
+.el-notification.auralis-notification .el-notification__group {
+  margin-left: 0 !important;
+}
+
+.el-notification.auralis-notification .el-notification__title {
+  color: var(--text-primary) !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  margin-bottom: 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.el-notification.auralis-notification .el-notification__content {
+  color: var(--text-secondary) !important;
+  font-size: 11px !important;
+  line-height: 1.6 !important;
+  margin: 0 !important;
+}
+
+.el-notification.auralis-notification .el-notification__closeBtn {
+  color: var(--text-muted) !important;
+  top: 16px !important;
+  right: 16px !important;
+}
+
+.el-notification.auralis-notification .el-notification__closeBtn:hover {
+  color: var(--text-primary) !important;
+}
+

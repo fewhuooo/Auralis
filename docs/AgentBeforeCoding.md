@@ -1,7 +1,7 @@
-﻿# Agent 写代码前必读
+# Agent 写代码前必读
 
 更新时间：2026-07-02
-适用对象：所有参与 StudyCore 代码修改、审查、文档维护的 Agent。
+适用对象：所有参与 Auralis 代码修改、审查、文档维护的 Agent。
 
 ## 必读顺序
 
@@ -24,9 +24,9 @@
 ## 当前项目判断
 
 - 这是 Spring Boot + Vue 的前后端项目。
-- PC 端是 `StudyCore-PC`，使用 Vue 3、Vite、Pinia、Element Plus、Tauri。
-- Mobile 端是 `StudyCore-Mobile`，使用 Uni-app，手机端和平板端页面正在重构。
-- 后端是 `StudyCore-Server`，使用 Spring Boot、MyBatis Plus、JWT、LangChain4j、PostgreSQL、Redis、Milvus、MinIO。
+- PC 端是 `Auralis-PC`，使用 Vue 3、Vite、Pinia、Element Plus、Tauri。
+- Mobile 端是 `Auralis-Mobile`，使用 Uni-app，手机端和平板端页面正在重构。
+- 后端是 `Auralis-Server`，使用 Spring Boot、MyBatis Plus、JWT、LangChain4j、PostgreSQL、Redis、Milvus、MinIO。
 - 当前前端页面仍在重构中，看到页面删除、新增、路由调整时，先判断是否属于重构范围，不要直接恢复旧页面。
 
 ## 写代码前检查清单
@@ -54,9 +54,9 @@
 
 ## 当前高风险提醒
 
-- `StudyCore-PC/src/router/index.ts` 中登录守卫目前临时放开，不能按正式安全状态验收。
-- `StudyCore-Mobile/src/pages/tablet` 正在重构，旧 `asset`、`timeline` 平板页已删除，新 `pomodoro`、`review`、`stats` 等页面出现或计划接入。
-- `StudyCore-Server/src/main/resources/application-prod.yml` 仍有 `spring.ai.openai` 旧配置口径，需和 LangChain4j 配置统一。
+- `Auralis-PC/src/router/index.ts` 中登录守卫目前临时放开，不能按正式安全状态验收。
+- `Auralis-Mobile/src/pages/tablet` 正在重构，旧 `asset`、`timeline` 平板页已删除，新 `pomodoro`、`review`、`stats` 等页面出现或计划接入。
+- `Auralis-Server/src/main/resources/application-prod.yml` 仍有 `spring.ai.openai` 旧配置口径，需和 LangChain4j 配置统一。
 - 后端 `mvn test` 曾通过，但当前缺少真实测试源码，不能代表业务逻辑已验收。
 - 旧 `page_api_manifest.md` 等历史文件已从工作区移除；如确需参考，应从 Git 历史恢复到归档目录。
 

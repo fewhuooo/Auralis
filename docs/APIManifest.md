@@ -1,10 +1,10 @@
-﻿# API 接口文档
+# API 接口文档
 
 更新时间：2026-07-02
 
 ## 文档来源与维护规则
 
-当前接口清单以 `StudyCore-Server/src/main/java/com/studycore/server/controller` 下的 Controller 为准。旧 `page_api_manifest.md` 已从工作区移除，本文档不依赖该历史文件。
+当前接口清单以 `Auralis-Server/src/main/java/com/auralis/server/controller` 下的 Controller 为准。旧 `page_api_manifest.md` 已从工作区移除，本文档不依赖该历史文件。
 
 维护规则：
 

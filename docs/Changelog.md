@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+- **完成 PC 端 (`Auralis-PC`) 视觉设计风格向极简禅意（Zen Minimalist）体系的全面重构**：
+  - **保持原有布局不变**：在不改变 PC 端现有的三栏/多栏架构、路由与交互体验的前提下，全面升级视觉风格以对齐手机端与平板端。
+  - **设计令牌全量更新**：重定义并扩展了 `styles/index.css`，新增 `--color-zen-*` 变量体系（包括禅白 `#F9F9F7` 底色、石墨文字 `#1C1C1A`、鼠尾草绿 `#7D9372` / `#A3B19B` 强调色与发丝边框 `#E6E6E4`），并引入了 Google Fonts `DM Sans` 作为主力字体。
+  - **清除硬编码科技蓝与灰色底**：重构了 `Dashboard`、`SubjectHall`、`SubjectWorkspace`、`Timeline`、`Asset` 与 `Profile` 的全局与私有覆盖变量，移除了高饱和蓝色（`#0284c7`, `#0369a1`）与灰色底色（`#f1f3f5`）；重构了 `AppSidebar`、`AppHeader`、`SearchPalette` 与 `SubjectCreateModal` 等核心及通用组件，减轻多层投影，营造一致、轻盈与专注的禅意学习工作台氛围。
 - **优化平板端学科工作区 (`workspace`) 总结侧栏联动交互、默认视图与顶部操作栏**：
   - **消除侧栏折叠卡顿与添加平滑切换过渡 (`drawer-collapsed`)**：彻底移除左侧抽屉（`.tier2-drawer`）上的 `v-if="showDrawer"` 条件销毁渲染，采用纯 CSS 响应式类名 `:class="{ 'drawer-collapsed': !showDrawer || showSummarySidePanel }"` 结合 `width: 0 !important; opacity: 0` 驱动左侧栏自动缩窄收起与展开。从根本上消除了点击「总结」关闭按钮或展开切换按钮时数百个 DOM 节点同步销毁重建造成的界面卡顿与卡帧问题，并为左右双侧栏平稳展开与回归收起赋予了 350ms 丝滑流畅的平滑 GPU 硬件加速过渡动画。
   - **顶栏高度精准对齐统一至 120rpx**：对工作区全部三列横向联动卡片的顶部头栏（左导航 `.drawer-header`、中间文件/知识 `.file-detail-header` / `.detail-header`、右侧总结 `.s-panel-header`）设置统一的 `height: 120rpx; box-sizing: border-box;`，确保全屏分割横线在各个形态和折叠状态下始终精确处于同一水平线上。

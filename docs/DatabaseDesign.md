@@ -1,4 +1,4 @@
-﻿# 数据库设计与数据字典
+# 数据库设计与数据字典
 
 更新时间：2026-07-08
 
@@ -114,7 +114,7 @@ erDiagram
 
 ## Mobile / Tablet 本地表
 
-`StudyCore-Mobile` 在端侧 SQLite 中维护以下本地表。该表当前不进入服务端同步，不影响后端 API。
+`Auralis-Mobile` 在端侧 SQLite 中维护以下本地表。该表当前不进入服务端同步，不影响后端 API。
 
 ### tablet_notes
 

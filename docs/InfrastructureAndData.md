@@ -1,4 +1,4 @@
-﻿# 基础设施与数据层说明
+# 基础设施与数据层说明
 
 更新时间：2026-07-02
 
@@ -10,14 +10,14 @@
 
 | 服务 | 容器名 | 镜像 | 端口 | 用途 |
 | --- | --- | --- | --- | --- |
-| PostgreSQL | `studycore-db` | `postgres:15-alpine` | `5432` | 元数据和业务数据 |
-| Redis | `studycore-redis` | `redis:7-alpine` | `6379` | 缓存、同步、Stream 队列 |
-| pgAdmin | `studycore-pgadmin` | `dpage/pgadmin4` | `5050` | 数据库管理 |
-| etcd | `studycore-milvus-etcd` | `quay.io/coreos/etcd:v3.5.5` | 内部 | Milvus 依赖 |
-| MinIO | `studycore-milvus-minio` | `minio/minio` | `9000`, `9001` | 对象存储 |
-| Milvus | `studycore-milvus` | `milvusdb/milvus:v2.4.0` | `19530`, `9091` | 向量数据库 |
-| backend | `studycore-backend` | 本地构建 | `8080` | Spring Boot 服务 |
-| frontend | `studycore-frontend` | 本地构建 | `80` | PC Web 前端 |
+| PostgreSQL | `auralis-db` | `postgres:15-alpine` | `5432` | 元数据和业务数据 |
+| Redis | `auralis-redis` | `redis:7-alpine` | `6379` | 缓存、同步、Stream 队列 |
+| pgAdmin | `auralis-pgadmin` | `dpage/pgadmin4` | `5050` | 数据库管理 |
+| etcd | `auralis-milvus-etcd` | `quay.io/coreos/etcd:v3.5.5` | 内部 | Milvus 依赖 |
+| MinIO | `auralis-milvus-minio` | `minio/minio` | `9000`, `9001` | 对象存储 |
+| Milvus | `auralis-milvus` | `milvusdb/milvus:v2.4.0` | `19530`, `9091` | 向量数据库 |
+| backend | `auralis-backend` | 本地构建 | `8080` | Spring Boot 服务 |
+| frontend | `auralis-frontend` | 本地构建 | `80` | PC Web 前端 |
 
 ## 数据目录
 
@@ -51,7 +51,7 @@
 建议后续补充：
 
 - `JWT_SECRET`
-- `STUDYCORE_CORS_ALLOWED_ORIGINS`
+- `AURALIS_CORS_ALLOWED_ORIGINS`
 - `DB_HOST`
 - `DB_PORT`
 - `DB_NAME`

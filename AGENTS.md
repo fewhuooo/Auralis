@@ -1,4 +1,4 @@
-# StudyCore Agent Instructions
+# Auralis Agent Instructions
 
 本仓库的现行文档入口是 `docs/README.md`。
 

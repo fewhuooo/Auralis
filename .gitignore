@@ -31,7 +31,7 @@ ai_config_backup.json
 
 # Java/Maven build target directories
 **/target/
-StudyCore-Server/target/
+Auralis-Server/target/
 
 # Local database / run data
 data/

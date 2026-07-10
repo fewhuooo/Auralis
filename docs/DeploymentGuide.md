@@ -1,4 +1,4 @@
-﻿# 部署指南
+# 部署指南
 
 更新时间：2026-07-02
 
@@ -27,10 +27,10 @@ SILICONFLOW_API_KEY=your-siliconflow-api-key-here
 
 ```env
 JWT_SECRET=replace-with-strong-secret
-STUDYCORE_CORS_ALLOWED_ORIGINS=http://localhost:5173
+AURALIS_CORS_ALLOWED_ORIGINS=http://localhost:5173
 DB_HOST=127.0.0.1
 DB_PORT=5432
-DB_NAME=studycore
+DB_NAME=auralis
 DB_USERNAME=postgres
 DB_PASSWORD=password
 REDIS_HOST=127.0.0.1
@@ -38,7 +38,7 @@ REDIS_PORT=6379
 MINIO_ENDPOINT=http://127.0.0.1:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
-MINIO_BUCKET=studycore-assets
+MINIO_BUCKET=auralis-assets
 MILVUS_HOST=127.0.0.1
 MILVUS_PORT=19530
 ```
@@ -80,9 +80,9 @@ docker compose down
 ## 后端打包与启动
 
 ```powershell
-cd StudyCore-Server
+cd Auralis-Server
 mvn clean package
-java -jar target/studycore-server-0.0.1-SNAPSHOT.jar
+java -jar target/auralis-server-0.0.1-SNAPSHOT.jar
 ```
 
 Docker 构建：
@@ -95,7 +95,7 @@ docker compose up -d backend
 ## PC 前端打包与部署
 
 ```powershell
-cd StudyCore-PC
+cd Auralis-PC
 npm install
 npm.cmd run build
 ```
@@ -110,7 +110,7 @@ docker compose up -d frontend
 ## Mobile H5 打包
 
 ```powershell
-cd StudyCore-Mobile
+cd Auralis-Mobile
 npm install
 npm.cmd run build:h5
 ```

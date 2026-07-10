@@ -4,7 +4,7 @@
 
 ## 模块定位
 
-`StudyCore-Mobile` 是移动端和平板端入口。手机侧重轻量捕获、复习、查看进度；平板侧重大屏学习、手写、阅读、统计和专注。
+`Auralis-Mobile` 是移动端和平板端入口。手机侧重轻量捕获、复习、查看进度；平板侧重大屏学习、手写、阅读、统计和专注。
 
 页面级功能设计详见 `docs/frontend/design.md`。
 
@@ -23,7 +23,7 @@
 ## 目录结构
 
 ```text
-StudyCore-Mobile/
+Auralis-Mobile/
 ├── src/api/              # 请求、AI、同步、设备信息
 ├── src/components/       # 通用组件和平板布局组件
 ├── src/pages/mobile/     # 手机端独立页面
@@ -104,7 +104,7 @@ Mobile / Tablet 当前重构状态：
 安装依赖：
 
 ```powershell
-cd StudyCore-Mobile
+cd Auralis-Mobile
 npm install
 ```
 

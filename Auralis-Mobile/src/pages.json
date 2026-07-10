@@ -1,0 +1,162 @@
+{
+	"pages": [
+		{
+			"path": "pages/launch/index",
+			"style": {
+				"navigationBarTitleText": "Auralis",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/home/index",
+			"style": {
+				"navigationBarTitleText": "日程",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/mobile/pomodoro/index",
+			"style": {
+				"navigationBarTitleText": "专注",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/ai-search/index",
+			"style": {
+				"navigationBarTitleText": "AI",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/stats/index",
+			"style": {
+				"navigationBarTitleText": "统计",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/settings/index",
+			"style": {
+				"navigationBarTitleText": "设置",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/login/index",
+			"style": {
+				"navigationBarTitleText": "登录 / 注册",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/timeline/index",
+			"style": {
+				"navigationBarTitleText": "状态同步",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/review/index",
+			"style": {
+				"navigationBarTitleText": "知识复习",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/asset/index",
+			"style": {
+				"navigationBarTitleText": "资产编排",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/profile/index",
+			"style": {
+				"navigationBarTitleText": "个人空间",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/mobile/handwriting/index",
+			"style": {
+				"navigationBarTitleText": "手写笔记",
+				"navigationStyle": "custom"
+			}
+		}
+		// #ifndef MP-WEIXIN
+		,
+		{
+			"path": "pages/tablet/dashboard/index",
+			"style": {
+				"navigationBarTitleText": "仪表盘",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/subject-hall/index",
+			"style": {
+				"navigationBarTitleText": "学科大厅",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/workspace/index",
+			"style": {
+				"navigationBarTitleText": "工作区",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/handwriting/index",
+			"style": {
+				"navigationBarTitleText": "随手记",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/pomodoro/index",
+			"style": {
+				"navigationBarTitleText": "专注",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/review/index",
+			"style": {
+				"navigationBarTitleText": "复习",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/profile/index",
+			"style": {
+				"navigationBarTitleText": "个人中心",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/ai-search/index",
+			"style": {
+				"navigationBarTitleText": "AI助手",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/tablet/login/index",
+			"style": {
+				"navigationBarTitleText": "登录 / 注册",
+				"navigationStyle": "custom"
+			}
+		}
+		// #endif
+	],
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "Auralis",
+		"navigationBarBackgroundColor": "#ffffff",
+		"backgroundColor": "#f4f4f4",
+		"navigationStyle": "custom"
+	}
+}

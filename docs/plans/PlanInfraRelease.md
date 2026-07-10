@@ -11,9 +11,9 @@
 当前已有：
 
 - `docker-compose.yml`
-- `StudyCore-Server/Dockerfile`
-- `StudyCore-PC/Dockerfile`
-- `StudyCore-PC/nginx.conf`
+- `Auralis-Server/Dockerfile`
+- `Auralis-PC/Dockerfile`
+- `Auralis-PC/nginx.conf`
 - `.env.example`
 
 当前风险：

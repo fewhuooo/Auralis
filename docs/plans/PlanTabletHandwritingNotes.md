@@ -4,7 +4,7 @@
 
 ## 目标
 
-在 `StudyCore-Mobile` 的平板端建立统一的本地手写笔记与批注能力，覆盖三类场景：
+在 `Auralis-Mobile` 的平板端建立统一的本地手写笔记与批注能力，覆盖三类场景：
 
 - 学科内文件批注：绑定 `subjectId + assetId`，用于 PDF、图片、扫描件等资料上方的手写圈画和标注。
 - 学科内独立手写笔记：绑定 `subjectId`，不绑定具体文件，用于课堂推导、错题整理、章节笔记。
@@ -16,8 +16,8 @@
 
 - 平板端已有 `pages/tablet/workspace/index.vue`，其中集成了文件阅读与手写批注画布。
 - 平板端已有 `pages/tablet/handwriting/index.vue`，当前定位为随手记草稿本。
-- `StudyCore-Mobile/src/services/handwritingEngine.ts` 已基于 `perfect-freehand` 提供笔迹渲染、橡皮、撤销和 PNG 导出能力。
-- `StudyCore-Mobile/src/services/tabletNoteModel.ts`、`tabletNoteRepositoryCore.ts`、`tabletNoteRepository.ts` 与 `notebookStorage.ts` 已完成首版 `NoteDocument` 本地模型和 `tablet_notes` 仓库。
+- `Auralis-Mobile/src/services/handwritingEngine.ts` 已基于 `perfect-freehand` 提供笔迹渲染、橡皮、撤销和 PNG 导出能力。
+- `Auralis-Mobile/src/services/tabletNoteModel.ts`、`tabletNoteRepositoryCore.ts`、`tabletNoteRepository.ts` 与 `notebookStorage.ts` 已完成首版 `NoteDocument` 本地模型和 `tablet_notes` 仓库。
 - workspace 内文件批注已绑定 `subjectId + assetId` 保存为 `subject-asset-annotation`；打开 feature flag 后，“+ 笔记”会创建 `subject-handwriting-note` 并打开手写页。
 - `tablet/handwriting` 已支持 `quick-infinite-canvas` 随手记平移、缩放和 viewport 本地恢复。
 - 当前按产品节奏暂缓该功能验收，入口默认由 `VITE_TABLET_HANDWRITING_NOTES_ENABLED` 关闭；代码保留，后续再打开开关继续。
@@ -99,7 +99,7 @@ interface NoteDocument {
 | TH-03 | P1 | 学科文件批注持久化 | 代码保留，入口默认隐藏 | `workspace` 文件批注画布、当前 `fileStrokesMap` | 批注绑定 `subjectId + assetId` 并本地持久化 | 后续打开 feature flag 后再验收文件切换恢复 |
 | TH-04 | P1 | 学科独立手写笔记入口 | 代码保留，入口默认隐藏 | `workspace` 的“+ 笔记”入口、`tablet/handwriting` | 创建并打开 `subject-handwriting-note` | 后续打开 feature flag 后再验收 |
 | TH-05 | P2 | 随手记无限画布 | 代码保留，入口默认隐藏 | `tablet/handwriting/index.vue`、`HandwritingEngine` | `quick-infinite-canvas` 模式、平移缩放、viewport 保存 | 后续打开 feature flag 后再验收 |
-| TH-06 | P2 | 导入导出与验收记录 | 计划中 | `NotebookStorage`、现有 PNG/PDF 导出 | `.studycore-note.json` 导出/导入，保留 PNG 导出 | 三类模式可导出备份，导入后内容一致 |
+| TH-06 | P2 | 导入导出与验收记录 | 计划中 | `NotebookStorage`、现有 PNG/PDF 导出 | `.auralis-note.json` 导出/导入，保留 PNG 导出 | 三类模式可导出备份，导入后内容一致 |
 
 ## 执行顺序
 
@@ -110,8 +110,8 @@ interface NoteDocument {
 
 ## 验收方式
 
-- `cd StudyCore-Mobile && npm.cmd run build:h5` 通过。
-- `cd StudyCore-Mobile && npm.cmd run build:mp-weixin` 通过，且微信小程序仍不包含 Tablet 页面。
+- `cd Auralis-Mobile && npm.cmd run build:h5` 通过。
+- `cd Auralis-Mobile && npm.cmd run build:mp-weixin` 通过，且微信小程序仍不包含 Tablet 页面。
 - 人工验证 Tablet H5：
   - 学科文件 A 写批注，切换到文件 B，再切回文件 A，批注仍在。
   - 新建学科独立手写笔记，返回 workspace 后重新打开，笔迹仍在。

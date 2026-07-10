@@ -1,10 +1,10 @@
-﻿# PC 前端模块说明
+# PC 前端模块说明
 
 更新时间：2026-07-03
 
 ## 模块定位
 
-`StudyCore-PC` 是系统的 PC 端学习工作台，承担重型资产编排、学科管理、Timeline 排期、知识图谱、PDF 预览和个人设置等能力。
+`Auralis-PC` 是系统的 PC 端学习工作台，承担重型资产编排、学科管理、Timeline 排期、知识图谱、PDF 预览和个人设置等能力。
 
 页面级功能设计详见 `docs/frontend/design.md`。
 
@@ -24,7 +24,7 @@
 ## 目录结构
 
 ```text
-StudyCore-PC/
+Auralis-PC/
 ├── src/api/          # HTTP、AI、资产、同步等 API 封装
 ├── src/components/   # 通用组件
 ├── src/router/       # 路由配置
@@ -39,7 +39,7 @@ StudyCore-PC/
 
 ## 页面模块
 
-当前路由事实来自 `StudyCore-PC/src/router/index.ts`：
+当前路由事实来自 `Auralis-PC/src/router/index.ts`：
 
 | 页面 | 路由 | 路径 | 职责 | 状态 |
 | --- | --- | --- | --- |
@@ -53,9 +53,10 @@ StudyCore-PC/
 
 ## 重构状态
 
-PC 页面已经进入“学科大厅 + 学科工作区”方向，但仍需按真实用户流程验收：
+PC 页面已经进入“学科大厅 + 学科工作区”方向，并于 2026-07-09 完成了**视觉风格升级（极简禅意 Zen Minimalist 体系）**，全量迁移设计令牌为禅白 (`#F9F9F7`) 与鼠尾草绿 (`#7D9372`)，消除了重投影与科技蓝，统一发丝边框 (`#E6E6E4`)，使 PC 与 Mobile/Tablet 视觉调性保持高度一致。
 
-- Dashboard、Asset、Timeline 等页面已有重构痕迹，不能只用构建通过判断完成。
+需按真实用户流程验收：
+- Dashboard、Asset、Timeline 等页面已完全切换至禅意配色和轻阴影设计。
 - `/subjects` 和 `/subject/:id` 是当前学科体系核心入口。
 - 登录守卫目前在路由层临时放开，安全验收前必须恢复。
 - 页面若新增接口调用，需要同步 `APIManifest.md`。
@@ -82,7 +83,7 @@ PC 页面已经进入“学科大厅 + 学科工作区”方向，但仍需按�
 安装依赖：
 
 ```powershell
-cd StudyCore-PC
+cd Auralis-PC
 npm install
 ```
 

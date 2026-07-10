@@ -2,12 +2,12 @@ services:
   # PostgreSQL 数据库：存储元数据
   db:
     image: postgres:15-alpine
-    container_name: studycore-db
+    container_name: auralis-db
     restart: always
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: studycore
+      POSTGRES_DB: auralis
     ports:
       - "5432:5432"
     volumes:
@@ -16,7 +16,7 @@ services:
   # Redis：处理实时同步总线
   redis:
     image: redis:7-alpine
-    container_name: studycore-redis
+    container_name: auralis-redis
     restart: always
     ports:
       - "6379:6379"
@@ -26,10 +26,10 @@ services:
   # pgAdmin：可选的可视化管理工具 (访问 http://localhost:5050)
   pgadmin:
     image: dpage/pgadmin4
-    container_name: studycore-pgadmin
+    container_name: auralis-pgadmin
     restart: always
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@studycore.com
+      PGADMIN_DEFAULT_EMAIL: admin@auralis.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
       - "5050:80"
@@ -38,7 +38,7 @@ services:
 
   # Milvus etcd
   etcd:
-    container_name: studycore-milvus-etcd
+    container_name: auralis-milvus-etcd
     image: quay.io/coreos/etcd:v3.5.5
     environment:
       - ETCD_AUTO_COMPACTION_MODE=revision
@@ -56,7 +56,7 @@ services:
 
   # Milvus MinIO
   minio:
-    container_name: studycore-milvus-minio
+    container_name: auralis-milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     environment:
       MINIO_ACCESS_KEY: minioadmin
@@ -75,7 +75,7 @@ services:
 
   # Milvus Standalone
   milvus:
-    container_name: studycore-milvus
+    container_name: auralis-milvus
     image: milvusdb/milvus:v2.4.0
     command: ["milvus", "run", "standalone"]
     security_opt:
@@ -101,16 +101,16 @@ services:
   # Backend Spring Boot Service
   backend:
     build:
-      context: ./StudyCore-Server
+      context: ./Auralis-Server
       dockerfile: Dockerfile
-    container_name: studycore-backend
+    container_name: auralis-backend
     restart: always
     env_file:
       - .env
     ports:
       - "8080:8080"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/studycore
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/auralis
       - SPRING_DATA_REDIS_HOST=redis
       - LANGCHAIN4J_MILVUS_HOST=milvus
       - MINIO_ENDPOINT=http://minio:9000
@@ -123,9 +123,9 @@ services:
   # Frontend Vue + Nginx Service
   frontend:
     build:
-      context: ./StudyCore-PC
+      context: ./Auralis-PC
       dockerfile: Dockerfile
-    container_name: studycore-frontend
+    container_name: auralis-frontend
     restart: always
     ports:
       - "80:80"
@@ -134,4 +134,4 @@ services:
 
 networks:
   default:
-    name: studycore-network
+    name: auralis-network

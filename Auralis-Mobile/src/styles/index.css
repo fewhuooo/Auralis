@@ -1,0 +1,268 @@
+/* ===== Fonts: loaded via system fallback for cross-platform compatibility ===== */
+
+/* ==========================================================================
+   CSS Variables Dictionary - Auralis Design System (Mobile/Pad)
+   Aligned with PC Oatmeal Minimalist Style
+   ========================================================================== */
+
+page, :root {
+  /* ===== Zen Minimalist System Colors ===== */
+  --color-zen-ivory: #F9F9F7;
+  --color-zen-graphite: #1C1C1A;
+  --color-zen-sage: #A3B19B;
+  --color-zen-hairline: #E6E6E4;
+  --color-zen-white: #FFFFFF;
+  --color-zen-stone: #A8A8A5;
+
+  /* ===== 1. Base Palette (Light Mode Default mapped to Zen Minimalist) ===== */
+  --color-white: var(--color-zen-white);
+  --color-black: var(--color-zen-graphite);
+  --color-transparent: transparent;
+  
+  /* Ins-style Clean Grays */
+  --color-gray-50: var(--color-zen-ivory);
+  --color-gray-100: #f4f4f2;
+  --color-gray-200: var(--color-zen-hairline);
+  --color-gray-300: #dadad8;
+  --color-gray-400: var(--color-zen-stone);
+  --color-gray-500: #777771;
+  --color-gray-600: #5f5e5c;
+  --color-gray-700: #474741;
+  --color-gray-800: #2f3130;
+  --color-gray-900: var(--color-zen-graphite);
+
+  /* Oatmeal & Minimalist Gray Palette */
+  --color-oatmeal-light: var(--color-zen-ivory);
+  --color-oatmeal-mid: #eeeeec;
+  --color-oatmeal-dark: #e8e8e6;
+  --color-gray-soft: #f4f4f2;
+  --color-gray-muted: var(--color-zen-stone);
+
+  /* ===== 2. Semantic Colors (Light Mode) ===== */
+  /* Backgrounds */
+  --color-bg-primary: var(--color-zen-ivory);
+  --color-bg-secondary: var(--color-zen-ivory);
+  --color-bg-tertiary: var(--color-zen-white);
+  --color-bg-elevated: var(--color-zen-white);
+  
+  /* Text */
+  --text-primary: var(--color-zen-graphite);
+  --text-secondary: var(--color-zen-graphite);
+  --text-muted: var(--color-zen-stone);
+  --text-accent: var(--color-zen-sage);
+  --text-inverse: var(--color-zen-white);
+
+  /* Borders */
+  --border-subtle: var(--color-zen-hairline);
+  --border-default: var(--color-zen-hairline);
+  --border-strong: var(--color-zen-stone);
+  --border-accent: rgba(163, 177, 155, 0.4);
+
+  /* Glassmorphism */
+  --glass-bg: rgba(255, 255, 255, 0.7);
+  --glass-border: var(--color-zen-hairline);
+  --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.02);
+  --glass-blur: blur(40rpx);
+
+  /* Status / Feedback */
+  --color-success: var(--color-zen-sage);
+  --color-warning: #d9c5b2;
+  --color-danger: #ba1a1a;
+  --color-info: #b3c0cf;
+
+  /* Accent Colors - Solid Nordic */
+  --accent-start: var(--color-zen-sage);
+  --accent-gradient: var(--accent-start); /* Solid color instead of gradient */
+  --accent-glow: 0 0 40rpx rgba(163, 177, 155, 0.4);
+
+  /* ===== 3. Typography (Converted to rpx: 1px -> 2rpx) ===== */
+  --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  
+  --font-size-xs: 24rpx;    /* 12px */
+  --font-size-sm: 28rpx;    /* 14px */
+  --font-size-base: 32rpx;  /* 16px */
+  --font-size-lg: 36rpx;    /* 18px */
+  --font-size-xl: 40rpx;    /* 20px */
+  --font-size-2xl: 48rpx;   /* 24px */
+  --font-size-3xl: 60rpx;   /* 30px */
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* ===== 4. Spacing System (Converted to rpx) ===== */
+  --spacing-1: 8rpx;   /* 4px */
+  --spacing-2: 16rpx;  /* 8px */
+  --spacing-3: 24rpx;  /* 12px */
+  --spacing-4: 32rpx;  /* 16px */
+  --spacing-5: 40rpx;  /* 20px */
+  --spacing-6: 48rpx;  /* 24px */
+  --spacing-8: 64rpx;  /* 32px */
+  --spacing-10: 80rpx; /* 40px */
+  --spacing-12: 96rpx; /* 48px */
+
+  /* ===== 5. Borders & Radius ===== */
+  --radius-sm: 16rpx;
+  --radius-md: 32rpx;
+  --radius-lg: 48rpx;   /* 24px */
+  --radius-xl: 64rpx;   /* 32px */
+  --radius-full: 9999rpx;
+
+  /* ===== 6. Shadows ===== */
+  --shadow-sm: none;
+  --shadow-md: none;
+  --shadow-lg: none;
+  --shadow-xl: none;
+
+  /* ===== 7. Responsive & New Features ===== */
+  --phone-header-height: 110rpx;
+  --tablet-sidebar-width: 120rpx;
+  --tablet-panel-gap: 40rpx;
+  
+  --color-pomodoro: var(--color-zen-sage);
+  --color-pomodoro-glow: rgba(163, 177, 155, 0.3);
+  --color-pomodoro-break: #85967e;
+  --color-pomodoro-break-glow: rgba(133, 150, 126, 0.3);
+
+  --hw-canvas-bg: #fdfbf7;
+  --hw-tool-bg: rgba(255, 255, 255, 0.85);
+  --hw-lasso-bg: rgba(181, 172, 159, 0.1);
+  --hw-lasso-border: #8a867e;
+}
+
+/* ==========================================================================
+   Dark Mode Overrides
+   ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  page, :root {
+    --color-bg-primary: #1f1e1c;       /* Warm Charcoal Base */
+    --color-bg-secondary: #292825;     /* Sidebar / Header */
+    --color-bg-tertiary: #33312e;      /* Cards / Inputs */
+    --color-bg-elevated: #3d3b38;      /* Modals */
+
+    --text-primary: #e6dfd8;           /* Light Oatmeal Text */
+    --text-secondary: #b0aca5;
+    --text-muted: #8a867e;
+    --text-accent: #d9d0c7;
+
+    --border-subtle: rgba(230, 223, 216, 0.05);
+    --border-default: rgba(230, 223, 216, 0.1);
+    --border-strong: rgba(230, 223, 216, 0.15);
+    --border-accent: rgba(217, 208, 199, 0.3);
+
+    --glass-bg: rgba(31, 30, 28, 0.8);
+    --glass-border: rgba(230, 223, 216, 0.05);
+    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.2);
+
+    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.4), 0 4rpx 8rpx -2rpx rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.5), 0 8rpx 12rpx -4rpx rgba(0, 0, 0, 0.3);
+    
+    --accent-glow: 0 0 48rpx rgba(217, 208, 199, 0.15);
+  }
+}
+
+html.dark, page.dark {
+    --color-bg-primary: #1f1e1c;
+    --color-bg-secondary: #292825;
+    --color-bg-tertiary: #33312e;
+    --color-bg-elevated: #3d3b38;
+
+    --text-primary: #e6dfd8;
+    --text-secondary: #b0aca5;
+    --text-muted: #8a867e;
+    --text-accent: #d9d0c7;
+
+    --border-subtle: rgba(230, 223, 216, 0.05);
+    --border-default: rgba(230, 223, 216, 0.1);
+    --border-strong: rgba(230, 223, 216, 0.15);
+    --border-accent: rgba(217, 208, 199, 0.3);
+
+    --glass-bg: rgba(31, 30, 28, 0.8);
+    --glass-border: rgba(230, 223, 216, 0.05);
+    --glass-shadow: 0 16rpx 64rpx rgba(0, 0, 0, 0.2);
+
+    --shadow-sm: 0 2rpx 4rpx 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8rpx 12rpx -2rpx rgba(0, 0, 0, 0.4), 0 4rpx 8rpx -2rpx rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 20rpx 30rpx -6rpx rgba(0, 0, 0, 0.5), 0 8rpx 12rpx -4rpx rgba(0, 0, 0, 0.3);
+    
+    --accent-glow: 0 0 48rpx rgba(217, 208, 199, 0.15);
+}
+
+/* Base utility classes for gradients */
+.text-gradient {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+body, page {
+  background-color: var(--color-bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* ==========================================================================
+   Global Overrides for H5 (Uni-app Native Components) & Scrollbars
+   ========================================================================== */
+
+/* #ifdef H5 */
+/* 全局隐藏所有页面与容器的滚动条 / 侧边滑动条 */
+::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  color: transparent !important;
+  background: transparent !important;
+}
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+/* #endif */
+
+/* 加粗四大模块的 TabBar 字体 */
+.uni-tabbar__label {
+  font-weight: 700 !important;
+  font-size: 24rpx !important;
+}
+
+/* 加粗顶部导航栏标题字体 */
+.uni-page-head__title {
+  font-weight: 800 !important;
+  font-size: 34rpx !important;
+  letter-spacing: 1rpx;
+}
+
+/* ==========================================================================
+   Ambient Glow Effects (Background)
+   ========================================================================== */
+.bg-glow {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(240rpx);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+.bg-glow--1 {
+  width: 1200rpx;
+  height: 1200rpx;
+  background: rgba(230, 223, 216, 0.2);
+  top: -400rpx;
+  right: -200rpx;
+}
+
+.bg-glow--2 {
+  width: 800rpx;
+  height: 800rpx;
+  background: rgba(217, 208, 199, 0.2);
+  bottom: -200rpx;
+  left: 20%;
+}

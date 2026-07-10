@@ -1,10 +1,10 @@
-﻿# Spring Boot 后端模块说明
+# Spring Boot 后端模块说明
 
 更新时间：2026-07-02
 
 ## 模块定位
 
-`StudyCore-Server` 是系统后端中枢，负责账号鉴权、业务数据、同步、资产管理、AI 编排、对象存储、向量检索和 WebSocket 推送。
+`Auralis-Server` 是系统后端中枢，负责账号鉴权、业务数据、同步、资产管理、AI 编排、对象存储、向量检索和 WebSocket 推送。
 
 ## 技术栈
 
@@ -25,7 +25,7 @@
 ## 主要包结构
 
 ```text
-com.studycore.server/
+com.auralis.server/
 ├── common/       # Result、JWT、鉴权、用户上下文
 ├── config/       # 数据库、Redis、MinIO、LangChain4j、WebSocket 配置
 ├── controller/   # REST API 控制器
@@ -83,7 +83,7 @@ com.studycore.server/
 ## 构建与验收
 
 ```powershell
-cd StudyCore-Server
+cd Auralis-Server
 mvn test
 ```
 

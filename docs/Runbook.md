@@ -1,4 +1,4 @@
-﻿# 运维与应急手册
+# 运维与应急手册
 
 更新时间：2026-07-02
 
@@ -33,7 +33,7 @@ docker compose logs -f milvus
 
 ```powershell
 docker compose ps
-cd StudyCore-Server
+cd Auralis-Server
 mvn test
 ```
 
@@ -51,7 +51,7 @@ mvn test
 
 检查项：
 
-- 查看 `StudyCore-PC/src/router/index.ts` 中 `router.beforeEach` 是否直接 `next()`。
+- 查看 `Auralis-PC/src/router/index.ts` 中 `router.beforeEach` 是否直接 `next()`。
 - 确认 `useAuthStore` 是否恢复接入。
 - 确认登录后 token 是否写入并随请求携带。
 
@@ -111,7 +111,7 @@ docker compose restart db redis etcd minio milvus backend frontend
 PostgreSQL：
 
 ```powershell
-docker exec studycore-db pg_dump -U postgres studycore > backup-studycore.sql
+docker exec auralis-db pg_dump -U postgres auralis > backup-auralis.sql
 ```
 
 MinIO：

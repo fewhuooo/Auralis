@@ -6,7 +6,7 @@
 
 | 模块 | 状态 | 证据 | 下一步 |
 | --- | --- | --- | --- |
-| PC 前端 | 已构建待验收 | `npm.cmd run build` 通过；页面仍在重构 | 恢复登录守卫，做页面级人工验收 |
+| PC 前端 | 已构建待验收 | `npm.cmd run build` 通过；2026-07-09 已完成对齐手机端的极简禅意（Zen Minimalist）体系视觉风格重构 | 恢复登录守卫，做页面级人工与交互验收 |
 | Mobile / 微信小程序 | 已构建待验收 | `npm run build:h5`、`npm run build:mp-weixin` 通过；微信小程序产物只包含手机端页面 | 开展微信开发者工具、真机及其他平台的人工走查与交互验收 |
 | Tablet 手写笔记 | 已隐藏保留 | 已新增 `tablet_notes` 本地表、`NoteDocument` 模型与仓库；入口默认由 `VITE_TABLET_HANDWRITING_NOTES_ENABLED` 关闭，workspace 不显示“+ 笔记”和批注工具条，侧栏不显示“随手记” | 前后端主流程完成后再打开 feature flag，继续真机验收和导入导出备份 |
 | 后端 | 已构建待验收 | `mvn test` 通过，但缺少测试源码 | 补测试源码 |
