@@ -36,13 +36,14 @@
 | P2-Tablet-Validation | Tablet 多栏和手写缺真机验证 | 页面、feature flag、脚本 | 触控和长时间使用风险 | 设备走查与专项记录 | 指定设备清单全通过 | Tablet |
 | P2-Migration-Strategy | 程序化 DDL 与单个 SQL 混用 | config + `V2__...sql` | 生产升级/回滚不可预测 | 引入单一版本迁移方案 | 干净库升级、回滚演练 | Data/Infra |
 | P2-Infra-Readiness | 无 CI、监控、告警、正式备份演练 | 仓库现状 | 发布与恢复门禁不足 | 建流水线、指标、备份恢复 | 发布演练和告警测试 | Infra |
-| P2-Docs-Validation | 新文档链接与事实尚待最终扫描 | 本轮重构进行中 | Agent 可能读到断链或旧路径 | 任务 8/9 扫描 | 零断链、零旧现行路径 | Docs |
+| P2-Mobile-Build-Warning | Mobile H5 构建有动态/静态 import 与 Sass legacy API 警告 | 2026-07-10 `build:h5` 输出 | 未来打包与 Sass 升级可能出现行为或兼容性问题 | 明确 `useSyncStore` 的加载策略，升级/替换 Sass legacy API | 构建无对应警告，或有记录的接受决定 | Mobile |
 
 ## 审查结论
 
 - Server 的 AuthInterceptor、WebSocket 握手/心跳审计、资产用户前缀校验已在代码中存在；它们没有因缺测试而自动升级为“已验收”。
 - PC、Mobile/Tablet 近期视觉与布局改动属于用户工作树成果，文档已在归档快照保留；最终构建结果须与当前代码一起记录。
 - 不应依据 StudyCore 归档恢复旧目录、旧路由或旧任务。
+- 2026-07-10：PC Web、Mobile H5、微信小程序、Tablet 侧栏检查和 Maven 生命周期均通过；后端仍无测试源码，GUI/真机/外部服务仍未验收。
 
 ## 推荐关闭顺序
 

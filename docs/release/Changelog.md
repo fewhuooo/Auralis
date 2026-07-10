@@ -16,7 +16,15 @@
 - 新增 Agent 强制协议、权威边界、状态词典、回写矩阵和交接模板。
 - 完整归档 2026-07-10 重构前 35 份旧文档，并保留当时未提交的文档修改。
 - 新增项目、设计、模块、契约、运维、当前状态和计划文档。
-- 旧现行路径尚待最终切换与链接检查；构建/测试结果待本轮实际执行后追加。
+- 旧现行路径已切换，现行链接、根目录、元数据和旧路径扫描通过。
+
+### 本轮验证
+
+- PC：2026-07-10 `npm.cmd run build` 通过（`vue-tsc -b && vite build`）。
+- Mobile：2026-07-10 `npm.cmd run build:h5` 和 `npm.cmd run build:mp-weixin` 通过。
+- Tablet：2026-07-10 `node scripts\check-tablet-sidebar-transition.mjs` 通过，120ms 指示器在 160ms 路由重载前落位。
+- Server：2026-07-10 `mvn test` 通过；Maven 日志显示没有测试源码，不能当作业务测试覆盖。
+- Mobile H5 构建保留动态/静态 import 和 Sass legacy API 非阻断警告。
 
 ### 已确认的近期工作树变化（待随当前功能分支验证）
 
