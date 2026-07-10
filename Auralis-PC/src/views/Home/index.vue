@@ -494,14 +494,6 @@
             <option :value="240">4.0 小时 (240分钟)</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">脑力负荷</label>
-          <select v-model="taskForm.load" class="form-input" @change="updateTaskLoadText">
-            <option value="low">低负荷 (Low)</option>
-            <option value="medium">中负荷 (Medium)</option>
-            <option value="high">高负荷 (High)</option>
-          </select>
-        </div>
       </div>
       <div class="modal-footer">
         <button class="footer-btn secondary-btn" @click="showTaskModal = false">取消</button>
@@ -569,7 +561,7 @@
         <div class="modal-divider"></div>
         
         <div class="modal-content">
-          <span v-html="renderMarkdown(selectedBlock?.preview || '')"></span>
+          <span v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></span>
         </div>
       </div>
 
@@ -1215,11 +1207,6 @@ const triggerAddTask = (sectionName: string) => {
   showTaskModal.value = true
 }
 
-const updateTaskLoadText = () => {
-  if (taskForm.value.load === 'low') taskForm.value.loadText = '1.0 🧠'
-  else if (taskForm.value.load === 'medium') taskForm.value.loadText = '2.0 🧠'
-  else if (taskForm.value.load === 'high') taskForm.value.loadText = '3.0 🧠'
-}
 
 const handleAddTask = async () => {
   const currentSubjId = activeSubjectId.value || taskForm.value.subjectId

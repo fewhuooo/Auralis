@@ -9,9 +9,17 @@
         <button class="create-btn" @click="openCreateSubject(null)">＋ 新建学科</button>
       </div>
 
-      <div class="subjects-grid" v-if="subjectStore.subjects.length > 0">
+      <div class="hall-search" v-if="subjectStore.subjects.length > 0">
+        <input
+          v-model="searchQuery"
+          class="search-input"
+          placeholder="搜索学科空间..."
+        />
+      </div>
+
+      <div class="subjects-grid" v-if="filteredSubjects.length > 0">
         <div
-          v-for="subj in subjectStore.subjects"
+          v-for="subj in filteredSubjects"
           :key="subj.id"
           class="subject-card"
           :style="{ '--subj-theme-color': subj.color || '#7D9372' }"
@@ -30,6 +38,9 @@
           <div class="subject-card-meta">
             {{ subj.fileCount || 0 }} 个材料 · {{ subj.blockCount || 0 }} 个知识块
           </div>
+          <div class="mastery-bar">
+            <div class="mastery-fill" :style="{ width: getMasteryPercent(subj) + '%' }"></div>
+          </div>
         </div>
 
         <!-- Add Subject Card -->
@@ -39,11 +50,17 @@
         </div>
       </div>
 
-      <div class="empty-hall" v-else>
+      <div class="empty-hall" v-else-if="subjectStore.subjects.length === 0">
         <div class="empty-icon">🏛️</div>
         <h3>还没有学科空间</h3>
         <p>创建你的第一个学科空间，开始系统化管理知识</p>
         <button class="create-btn" @click="openCreateSubject(null)">＋ 新建学科</button>
+      </div>
+
+      <div class="empty-hall" v-else>
+        <div class="empty-icon">🔍</div>
+        <h3>未找到匹配的学科空间</h3>
+        <p>尝试更换关键词进行搜索</p>
       </div>
     </div>
 
@@ -58,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
@@ -71,6 +88,23 @@ const subjectStore = useSubjectStore()
 
 const showSubjectModal = ref(false)
 const selectedSubjectForEdit = ref<Subject | null>(null)
+const searchQuery = ref('')
+
+const filteredSubjects = computed(() => {
+  if (!searchQuery.value.trim()) return subjectStore.subjects
+  const q = searchQuery.value.toLowerCase()
+  return subjectStore.subjects.filter(s =>
+    (s.name || '').toLowerCase().includes(q) ||
+    (s.description || '').toLowerCase().includes(q)
+  )
+})
+
+const getMasteryPercent = (subj: any) => {
+  const blocks = subj.blockCount || 0
+  const files = subj.fileCount || 0
+  if (files === 0 && blocks === 0) return 0
+  return Math.min(100, Math.round((blocks / Math.max(files * 3, 1)) * 100))
+}
 
 onMounted(async () => {
   await subjectStore.loadSubjects()
@@ -193,6 +227,31 @@ html.dark .hall-content {
   transform: translateY(-1px);
 }
 
+.hall-search {
+  margin-bottom: 24px;
+}
+
+.search-input {
+  width: 100%;
+  max-width: 400px;
+  padding: 10px 16px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: all var(--transition-normal);
+}
+
+.search-input:focus {
+  border-color: #7D9372;
+  box-shadow: 0 0 20px rgba(125, 147, 114, 0.35);
+}
+
 .subjects-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(234px, 1fr));
@@ -298,6 +357,22 @@ html.dark .subject-card-icon {
   line-height: 1.4;
   font-weight: 500;
   opacity: 0.8;
+}
+
+.mastery-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.mastery-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: linear-gradient(90deg, #7D9372, #A3B19B);
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .add-card {

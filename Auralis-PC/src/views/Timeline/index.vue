@@ -276,14 +276,6 @@
           </select>
         </div>
         <div class="timeline-form-group">
-          <label class="timeline-form-label">脑力负荷</label>
-          <select v-model="newTaskForm.load" class="timeline-form-select">
-            <option value="low">低负荷 (Low)</option>
-            <option value="medium">中负荷 (Medium)</option>
-            <option value="high">高负荷 (High)</option>
-          </select>
-        </div>
-        <div class="timeline-form-group">
           <label class="timeline-form-label">任务描述备注</label>
           <textarea v-model="newTaskForm.desc" class="timeline-form-textarea" rows="3" placeholder="添加备注或任务要求..."></textarea>
         </div>
@@ -312,10 +304,10 @@
         <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
         <div class="modal-time">⏰ 记于 {{ selectedBlock?.time }}</div>
         <div class="modal-divider"></div>
-        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.preview || '')"></div>
+        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
       </div>
       <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="copyBlockContent(selectedBlock?.preview)">复制内容</button>
+        <button class="footer-btn secondary-btn" @click="copyBlockContent(selectedBlock?.content || selectedBlock?.preview)">复制内容</button>
         <button class="footer-btn primary-btn" @click="blockDialogVisible = false">确定</button>
       </div>
     </div>

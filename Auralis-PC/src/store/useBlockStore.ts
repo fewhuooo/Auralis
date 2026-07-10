@@ -8,6 +8,7 @@ export interface KnowledgeBlock {
   subject: string
   title: string
   preview: string
+  content?: string
   time: string
   source: string
   color: string

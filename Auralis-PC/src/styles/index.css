@@ -74,9 +74,11 @@
   --color-info: #b3c0cf;
 
   /* Accent Colors - Zen Sage */
-  --accent-start: var(--color-zen-sage);
+  --accent-start: var(--color-sage-dark);
   --accent-gradient: var(--accent-start);
-  --accent-glow: 0 0 20px rgba(163, 177, 155, 0.35);
+  --accent-glow: 0 0 20px rgba(125, 147, 114, 0.35);
+  --color-sage-bg: rgba(125, 147, 114, 0.08);
+  --color-sage-glow: rgba(125, 147, 114, 0.35);
 
   /* ===== 3. Typography ===== */
   --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -172,7 +174,7 @@ html.dark {
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
   
   /* Accent Glow */
-  --accent-glow: 0 0 24px rgba(163, 177, 155, 0.18);
+  --accent-glow: 0 0 24px rgba(125, 147, 114, 0.22);
 }
 
 /* ==========================================================================
@@ -224,6 +226,15 @@ a:hover {
 code, pre {
   font-family: var(--font-family-mono);
   font-size: 0.9em;
+}
+
+input[type="checkbox"] {
+  accent-color: #7D9372;
+}
+
+select:focus {
+  border-color: #7D9372;
+  outline: none;
 }
 
 /* ===== Scrollbar Customization ===== */

@@ -3,8 +3,8 @@
     <svg class="chart-svg" viewBox="0 0 360 150">
       <defs>
         <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stop-color="#7D9372" />
-          <stop offset="100%" stop-color="#9bb390" />
+          <stop offset="0%" stop-color="#A3B19B" />
+          <stop offset="100%" stop-color="#B8C5B1" />
         </linearGradient>
       </defs>
 
@@ -111,7 +111,7 @@ const chartData = computed(() => {
   fill: var(--text-secondary);
 }
 .day-label.is-today {
-  fill: var(--text-accent, #7D9372);
+  fill: var(--text-accent, #A3B19B);
   font-weight: 900;
   font-size: 16px;
 }

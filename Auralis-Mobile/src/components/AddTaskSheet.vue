@@ -31,14 +31,6 @@
           <slider :value="form.duration" min="30" max="120" step="30" @change="onDurationChange" activeColor="var(--text-primary)" />
         </view>
 
-        <view class="form-group">
-          <text class="form-label">脑力负荷</text>
-          <view class="load-options">
-            <view class="load-opt" :class="{ active: form.load === 'low' }" @click="form.load = 'low'">轻度</view>
-            <view class="load-opt" :class="{ active: form.load === 'medium' }" @click="form.load = 'medium'">中度</view>
-            <view class="load-opt" :class="{ active: form.load === 'high' }" @click="form.load = 'high'">重度</view>
-          </view>
-        </view>
       </view>
 
       <view class="sheet-footer">

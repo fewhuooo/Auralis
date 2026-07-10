@@ -30,8 +30,8 @@
     <main class="content-stream">
       <div class="stream-header">
         <h3 class="stream-title">知识流</h3>
-        <button class="link-btn" @click="router.push('/subjects')">查看全部</button>
       </div>
+
       <div class="stream-body" v-if="filteredBlocks.length > 0">
         <div
           v-for="block in filteredBlocks.slice(0, 20)"
@@ -41,13 +41,12 @@
         >
           <div class="row-title">{{ block.title }}</div>
           <div class="row-meta">
-            <span class="row-tag" :style="{ color: block.color }">{{ block.subject }}</span>
-            <span class="row-dot">·</span>
-            <span class="row-source">{{ block.source }}</span>
-            <span class="row-dot">·</span>
-            <span class="row-time">{{ timeAgo(block.time) }}</span>
+            <!-- 采用统一的浅鼠尾草绿背景+深色文字微标签 (Badge) -->
+            <span class="row-subj-badge">{{ block.subject }}</span>
+            <span class="row-source-badge">来源: {{ block.source }}</span>
+            <span class="row-time-badge">🕒 {{ timeAgo(block.time) }}</span>
           </div>
-          <p class="row-preview" v-if="block.preview">{{ block.preview }}</p>
+          <div class="row-preview" v-if="block.preview" v-html="renderMarkdown(block.preview || '')"></div>
         </div>
       </div>
       <div class="empty-stream" v-else>
@@ -70,7 +69,7 @@
               <option value="day">日视图</option>
               <option value="week">周视图</option>
             </select>
-            <button class="new-task-btn" @click="openCreateTaskDialog">+ 新建</button>
+            <button class="todo-fab-add-btn" @click="openCreateTaskDialog" title="新建任务">+</button>
           </div>
         </div>
 
@@ -202,73 +201,128 @@
 
     <!-- Block Detail Modal -->
     <div class="modal-overlay" v-if="blockDialogVisible" @click="blockDialogVisible = false"></div>
-    <div class="block-modal" v-if="blockDialogVisible">
-      <div class="modal-header">
-        <div class="modal-tags">
-          <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--border-subtle)' }">
-            {{ selectedBlock?.subject || '知识片' }}
-          </span>
-          <span class="modal-source-tag">来源: {{ selectedBlock?.source }}</span>
+    <div class="block-detail-modal" v-if="blockDialogVisible">
+      <!-- 1. 头部信息区 (直接在外层极浅鼠尾草绿背景 #F2F5F3 上，绝对左对齐) -->
+      <div class="block-detail-header">
+        <!-- 标签行 (Top Row) -->
+        <div class="hero-header-row">
+          <div class="hero-tags">
+            <!-- 微标签 (Badge)：浅绿色背景+深绿色文字，圆角处理 -->
+            <span class="hero-subj-pill">
+              {{ selectedBlock?.subject || '人工智能导论与大模型' }}
+            </span>
+            <!-- 辅助文字：中灰色字 #888888 -->
+            <span class="hero-source-text">来源: {{ selectedBlock?.source }}</span>
+          </div>
+          <!-- 极简的中灰色“X”关闭图标 (不需要圆形底色) -->
+          <button class="hero-close-btn" @click="blockDialogVisible = false" title="关闭">×</button>
         </div>
-        <button class="modal-close" @click="blockDialogVisible = false">×</button>
+        <!-- 主标题 (Title)：大字号，加粗，深灰色 #333333，严格左对齐 -->
+        <h2 class="hero-main-title">{{ selectedBlock?.title }}</h2>
+        <!-- 时间信息 (Metadata)：简洁线性时钟图标 + 中灰色文字 -->
+        <div class="hero-time-text">
+          <svg class="hero-clock-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>记于 {{ selectedBlock?.time }}</span>
+        </div>
       </div>
-      <div class="modal-body">
-        <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
-        <div class="modal-time">⏰ 记于 {{ selectedBlock?.time }}</div>
-        <div class="modal-divider"></div>
-        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.preview || '')"></div>
+
+      <!-- 2. 核心内容区 (物理分隔的独立纯白色 #FFFFFF 嵌套卡片，留白至少 24px) -->
+      <div class="block-detail-card">
+        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
       </div>
-      <div class="modal-footer">
-        <button class="footer-btn primary-btn" @click="blockDialogVisible = false">确定</button>
+
+      <!-- 3. 底部操作区 (右下角对齐 + 偏深鼠尾草绿 #849C8A 实心“确定”按钮) -->
+      <div class="block-detail-footer">
+        <button class="sage-primary-btn" @click="blockDialogVisible = false">确定</button>
       </div>
     </div>
 
-    <!-- Create Task Modal -->
+    <!-- Create Task Modal (借鉴移动端现代卡片化任务创建设计) -->
     <div class="modal-overlay" v-if="showTaskModal" @click="showTaskModal = false"></div>
-    <div class="block-modal task-modal" v-if="showTaskModal">
+    <div class="block-modal task-create-modal" v-if="showTaskModal">
       <div class="modal-header">
-        <h3 style="margin:0; font-weight:700; color:var(--text-primary);">创建学习任务</h3>
+        <h3 class="task-modal-title">新建学习任务</h3>
         <button class="modal-close" @click="showTaskModal = false">×</button>
       </div>
-      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
-        <div class="form-group">
-          <label class="form-label">任务名称 *</label>
-          <input v-model="taskForm.name" class="form-input" placeholder="例如: 学习网络层协议" />
+      <div class="task-modal-body">
+        <!-- 任务名称 -->
+        <div class="task-form-group">
+          <label class="task-form-label">任务名称</label>
+          <input v-model="taskForm.name" class="task-form-input" placeholder="请输入学习或专注任务名称..." autofocus />
         </div>
-        <div class="form-group">
-          <label class="form-label">归属学科 *</label>
-          <select v-model="taskForm.subjectId" class="form-input">
-            <option v-for="subj in subjectStore.subjects" :key="subj.id" :value="subj.id">
-              {{ subj.icon }} {{ subj.name }}
-            </option>
-            <option value="" disabled v-if="subjectStore.subjects.length === 0">暂无学科，请先创建</option>
-          </select>
+
+        <!-- 所属学科（胶囊网格选择，直观清晰） -->
+        <div class="task-form-group">
+          <label class="task-form-label">所属学科</label>
+          <div class="subject-capsule-grid">
+            <div
+              v-for="subj in availableSubjectsForTask"
+              :key="subj.id"
+              class="subject-capsule-item"
+              :class="{ active: taskForm.subjectId === subj.id }"
+              :style="taskForm.subjectId === subj.id ? { borderColor: subj.color, background: subj.color + '22' } : {}"
+              @click="taskForm.subjectId = subj.id"
+            >
+              <span class="subj-capsule-icon">{{ subj.icon || '📘' }}</span>
+              <span class="subj-capsule-name">{{ subj.name }}</span>
+            </div>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">预计专注时长</label>
-          <select v-model.number="taskForm.duration" class="form-input">
-            <option :value="30">0.5 小时 (30分钟)</option>
-            <option :value="60">1.0 小时 (60分钟)</option>
-            <option :value="90">1.5 小时 (90分钟)</option>
-            <option :value="120">2.0 小时 (120分钟)</option>
-            <option :value="150">2.5 小时 (150分钟)</option>
-            <option :value="180">3.0 小时 (180分钟)</option>
-            <option :value="240">4.0 小时 (240分钟)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">脑力负荷</label>
-          <select v-model="taskForm.load" class="form-input" @change="updateTaskLoadText">
-            <option value="low">低负荷 (Low)</option>
-            <option value="medium">中负荷 (Medium)</option>
-            <option value="high">高负荷 (High)</option>
-          </select>
+
+        <!-- 专注时长（在长条按钮交互条上拖动选择） -->
+        <div class="task-form-group">
+          <div class="duration-header">
+            <label class="task-form-label">专注时长</label>
+            <span class="duration-badge">{{ taskForm.duration }} 分钟 ({{ (taskForm.duration / 60).toFixed(1) }}h)</span>
+          </div>
+          <div 
+            class="duration-long-bar-btn" 
+            ref="durationBarRef"
+            @mousedown="startDurationDrag"
+            @mousemove="onDurationDrag"
+            @mouseup="endDurationDrag"
+            @mouseleave="endDurationDrag"
+            @click="onDurationBarClick"
+          >
+            <!-- 绿色进度填充 -->
+            <div 
+              class="duration-bar-fill" 
+              :style="{ width: Math.min(100, Math.max(0, ((taskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
+            ></div>
+            <!-- 长条刻度与选项文字 -->
+            <div class="duration-bar-steps">
+              <span 
+                v-for="step in [30, 60, 90, 120, 180, 240]" 
+                :key="step"
+                class="duration-step-item"
+                :class="{ active: taskForm.duration >= step }"
+                @click.stop="taskForm.duration = step"
+              >
+                {{ step < 60 ? step + 'm' : (step / 60) + 'h' }}
+              </span>
+            </div>
+            <!-- 拖动圆角手柄反馈 -->
+            <div 
+              class="duration-bar-thumb"
+              :style="{ left: Math.min(100, Math.max(0, ((taskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
+            >
+              <span>{{ taskForm.duration }}m</span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="showTaskModal = false">取消</button>
-        <button class="footer-btn primary-btn" :disabled="!taskForm.name.trim() || !taskForm.subjectId" @click="handleAddTask">
-          加入排期
+
+      <div class="task-modal-footer">
+        <button class="task-btn-cancel" @click="showTaskModal = false">取消</button>
+        <button
+          class="task-btn-submit"
+          :disabled="!taskForm.name.trim() || !taskForm.subjectId"
+          @click="handleAddTask"
+        >
+          添加到待办
         </button>
       </div>
     </div>
@@ -288,6 +342,7 @@ import { useBlockStore } from '@/store/useBlockStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task, getTodayDayCode } from '@/store/useTaskStore'
+import { localDb } from '@/services/localDb'
 
 marked.setOptions({ breaks: true, gfm: true })
 const renderMarkdown = (content: string) => {
@@ -313,8 +368,88 @@ const selectDay = async (day: string) => {
   await taskStore.loadLocalTasks()
 }
 
+// ==========================================
+// [STATIC MOCK DATA] 静态兜底数据定义区 (无后端/无数据库数据时瞬间即时渲染)
+// ==========================================
+const STATIC_SUBJECTS = [
+  { id: 'STATIC_SUB_1', name: '高等数学与线性代数', icon: '📐', color: '#7D9372', blockCount: 12 },
+  { id: 'STATIC_SUB_2', name: '人工智能导论与大模型', icon: '🤖', color: '#A3B19B', blockCount: 8 },
+  { id: 'STATIC_SUB_3', name: '操作系统与内核分析', icon: '💻', color: '#8E9C86', blockCount: 6 },
+  { id: 'STATIC_SUB_4', name: '心理学与禅意认知', icon: '🌿', color: '#A8BFA0', blockCount: 4 }
+]
+
+const STATIC_BLOCKS = [
+  {
+    id: 'STATIC_B_1',
+    subject: '人工智能导论与大模型',
+    subjectId: 'STATIC_SUB_2',
+    title: 'Transformer 架构中的 Self-Attention 矩阵计算推导',
+    preview: '**Self-Attention** 核心在于 **Q**, **K**, **V** 矩阵乘法及 **Softmax** 归一化，通过缩放因子 **d_k** 的平方根消除梯度消失问题，在高维空间捕获全局语义依赖。',
+    content: `### 1. 核心思想与动机
+
+在序列建模中，传统的循环神经网络难以高效并行且易丢失长跨度信息。**Self-Attention**（自注意力机制）打破了时序距离限制，让序列中的任意两个位置能直接建立纳秒级语义关联。
+
+### 2. 核心公式与推导步骤
+
+设输入矩阵为 **X**，分别乘以权重张量得到查询矩阵 **Q**、键矩阵 **K** 和值矩阵 **V**：
+* **Query 矩阵 (Q)**：代表当前词去向全局探寻匹配度的特征向量。
+* **Key 矩阵 (K)**：被检索特征，与 **Q** 进行内积运算以得出注意力分数。
+* **Value 矩阵 (V)**：真正承载具体语义内容的张量矩阵。
+
+标准缩放点积注意力公式为：
+> Attention(Q, K, V) = Softmax( (Q * K^T) / sqrt(d_k) ) * V
+
+### 3. 缩放因子 sqrt(d_k) 的关键作用
+
+当维度 **d_k** 增大时，矩阵内积 **Q * K^T** 的方差会按常数倍膨胀。如果直接输入到 **Softmax** 中，输出权重分布将向两端极端极化，导致反向传播时**梯度严重消失**。除以 **sqrt(d_k)** 后，内积方差重新缩并为 **1**，确保梯度的平稳回传。`,
+    source: 'AI 伴读笔记 · 第3章',
+    time: '10:30',
+    color: '#A3B19B',
+    difficulty: 'hard' as const,
+    mastery: 85
+  },
+  {
+    id: 'STATIC_B_2',
+    subject: '高等数学与线性代数',
+    subjectId: 'STATIC_SUB_1',
+    title: '常系数二阶线性齐次微分方程特征根法判定',
+    preview: '对于常系数齐次线性微分方程，通过求解特征方程 **r^2 + pr + q = 0** 可以准确判定通解的实根或复根形式。',
+    content: `### 1. 特征方程建立
+对于齐次微分方程 **y'' + py' + qy = 0**，设其解的形式为 **y = e^(rx)**，代入并消去非零因子得特征方程：
+> r^2 + pr + q = 0
+
+### 2. 三种根情况判定
+* **两个不相等的实根 (Δ > 0)**：通解为 **y = C1 * e^(r1*x) + C2 * e^(r2*x)**。
+* **两个相等的实根 (Δ = 0)**：通解为 **y = (C1 + C2*x) * e^(r*x)**。
+* **一对共轭复根 (Δ < 0)**：设根为 **α ± βi**，通解为 **y = e^(αx) * (C1*cos(βx) + C2*sin(βx))**。`,
+    source: '教材提炼 · P142',
+    time: '昨日',
+    color: '#7D9372',
+    difficulty: 'medium' as const,
+    mastery: 90
+  },
+  { id: 'STATIC_B_3', subject: '操作系统与内核分析', subjectId: 'STATIC_SUB_3', title: 'Linux 虚拟内存多级页表与 TLB 快表寻址机制', preview: '多级页表有效节省了内存页表项空间，而 **TLB** 高速缓存将页表查询由多级访存压缩至纳秒级直接物理映射，大幅提高访存命中率。', source: '课堂实录 · 第8讲', time: '前天', color: '#8E9C86', difficulty: 'medium' as const, mastery: 78 },
+  { id: 'STATIC_B_4', subject: '心理学与禅意认知', subjectId: 'STATIC_SUB_4', title: '正念冥想对前额叶皮层与专注力的神经重塑', preview: '研究证明持续的正念冥想能显著提升工作记忆与禅意专注力，有效降低杏仁核应激唤醒水平，增强情绪自主调控能力。', source: '文献综述 · 2026', time: '3天前', color: '#A8BFA0', difficulty: 'easy' as const, mastery: 95 },
+  { id: 'STATIC_B_5', subject: '高等数学与线性代数', subjectId: 'STATIC_SUB_1', title: '正交矩阵的几何性质与 SVD 奇异值分解应用', preview: '任意实矩阵 **A** 均可分解为 **UΣV^T**，**SVD** 在数据降维、推荐系统与主成分分析 **PCA** 中起着基础性与支柱性的数学作用。', source: '总结归纳', time: '4天前', color: '#7D9372', difficulty: 'hard' as const, mastery: 82 },
+  { id: 'STATIC_B_6', subject: '人工智能导论与大模型', subjectId: 'STATIC_SUB_2', title: '混合专家模型 (MoE) 稀疏门控路由工作原理', preview: '**MoE** 通过 **Top-K** 门控网络动态选择并激活部分专家子网，实现了模型总体参数规模指数级扩展与极低推理算力开销之间的完美平衡。', source: '论文研读', time: '本周', color: '#A3B19B', difficulty: 'hard' as const, mastery: 70 }
+]
+
+const STATIC_PENDING_TASKS: Task[] = [
+  { id: 'STATIC_T_P1', name: '复习矩阵特征值与对角化判定条件', subject: '高等数学与线性代数', subjectId: 'STATIC_SUB_1', color: '#7D9372', duration: 60, load: 'low', loadText: '低负荷', status: 'pending' },
+  { id: 'STATIC_T_P2', name: '整理本周心理学实验认知报告', subject: '心理学与禅意认知', subjectId: 'STATIC_SUB_4', color: '#A8BFA0', duration: 60, load: 'low', loadText: '低负荷', status: 'pending' },
+  { id: 'STATIC_T_P3', name: '完成 LangChain4j 本地 RAG 连通测试', subject: '人工智能导论与大模型', subjectId: 'STATIC_SUB_2', color: '#A3B19B', duration: 120, load: 'medium', loadText: '中负荷', status: 'pending' }
+]
+
+const STATIC_SCHEDULED_TASKS: Task[] = [
+  { id: 'STATIC_T_S1', name: '高数多元函数极值习题精练', subject: '高等数学与线性代数', subjectId: 'STATIC_SUB_1', color: '#7D9372', duration: 120, load: 'high', loadText: '高负荷', status: 'scheduled', startTime: '10:00', position: getTodayDayCode() },
+  { id: 'STATIC_T_S2', name: '研读 MoE 架构论文图表与公式', subject: '人工智能导论与大模型', subjectId: 'STATIC_SUB_2', color: '#A3B19B', duration: 60, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '14:00', position: getTodayDayCode() },
+  { id: 'STATIC_T_S3', name: '梳理 Linux 进程调度 CFS 源码图解', subject: '操作系统与内核分析', subjectId: 'STATIC_SUB_3', color: '#8E9C86', duration: 120, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '16:00', position: getTodayDayCode() }
+]
+// ==========================================
+
 const getScheduledTasksForDay = (day: string) => {
-  return allTasks.value.filter(t => {
+  const sourceTasks = allTasks.value.length > 0 ? allTasks.value : STATIC_SCHEDULED_TASKS
+  return sourceTasks.filter(t => {
     if (t.status !== 'scheduled' || !t.startTime) return false
     const parts = t.startTime.split(' ')
     if (parts.length === 2) {
@@ -416,15 +551,18 @@ const selectSubject = (id: string | null) => {
 }
 
 const allSubjectsOption = computed(() => {
+  const subjectsList = subjectStore.subjects.length > 0 ? subjectStore.subjects : STATIC_SUBJECTS
+  const count = recentBlocks.value.length > 0 ? recentBlocks.value.length : STATIC_BLOCKS.length
   return [
-    { id: null as string | null, name: '全部', icon: '📋', color: 'var(--text-muted)', blockCount: recentBlocks.value.length },
-    ...subjectStore.subjects
+    { id: null as string | null, name: '全部', icon: '📋', color: 'var(--text-muted)', blockCount: count },
+    ...subjectsList
   ]
 })
 
 const filteredBlocks = computed(() => {
-  if (!selectedSubjectId.value) return recentBlocks.value
-  return recentBlocks.value.filter(b => b.subjectId === selectedSubjectId.value)
+  const blocksList = recentBlocks.value.length > 0 ? recentBlocks.value : STATIC_BLOCKS
+  if (!selectedSubjectId.value) return blocksList
+  return blocksList.filter(b => b.subjectId === selectedSubjectId.value || b.subject === selectedSubjectId.value)
 })
 
 const timeAgo = (isoString: string): string => {
@@ -448,25 +586,55 @@ const taskForm = ref({
   loadText: '2.0 🧠'
 })
 
+const availableSubjectsForTask = computed(() => {
+  return subjectStore.subjects.length > 0 ? subjectStore.subjects : STATIC_SUBJECTS
+})
+
+const durationBarRef = ref<HTMLElement | null>(null)
+const isDraggingDuration = ref(false)
+
+const calculateDurationFromEvent = (e: MouseEvent) => {
+  if (!durationBarRef.value) return
+  const rect = durationBarRef.value.getBoundingClientRect()
+  const offsetX = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
+  const ratio = offsetX / rect.width
+  const rawDuration = 30 + ratio * (240 - 30)
+  const rounded = Math.round(rawDuration / 30) * 30
+  taskForm.value.duration = Math.max(30, Math.min(240, rounded))
+}
+
+const startDurationDrag = (e: MouseEvent) => {
+  isDraggingDuration.value = true
+  calculateDurationFromEvent(e)
+}
+
+const onDurationDrag = (e: MouseEvent) => {
+  if (!isDraggingDuration.value) return
+  calculateDurationFromEvent(e)
+}
+
+const endDurationDrag = () => {
+  isDraggingDuration.value = false
+}
+
+const onDurationBarClick = (e: MouseEvent) => {
+  calculateDurationFromEvent(e)
+}
+
 const openCreateTaskDialog = () => {
   taskForm.value = {
     name: '',
-    subjectId: subjectStore.subjects[0]?.id || '',
+    subjectId: availableSubjectsForTask.value[0]?.id || '',
     duration: 60,
     load: 'medium' as 'low' | 'medium' | 'high',
-    loadText: '2.0 🧠'
+    loadText: '常规专注'
   }
   showTaskModal.value = true
 }
 
-const updateTaskLoadText = () => {
-  if (taskForm.value.load === 'low') taskForm.value.loadText = '1.0 🧠'
-  else if (taskForm.value.load === 'medium') taskForm.value.loadText = '2.0 🧠'
-  else taskForm.value.loadText = '3.0 🧠'
-}
 
 const handleAddTask = async () => {
-  const subjObj = subjectStore.subjects.find(s => s.id === taskForm.value.subjectId)
+  const subjObj = availableSubjectsForTask.value.find(s => s.id === taskForm.value.subjectId)
   if (!taskForm.value.name.trim() || !subjObj) return
 
   try {
@@ -494,23 +662,36 @@ const handleAddTask = async () => {
 }
 
 const filteredPendingTasks = computed(() => {
-  return pendingTasks.value.filter(t => t.status === 'pending')
+  const tasksList = pendingTasks.value.length > 0 ? pendingTasks.value : STATIC_PENDING_TASKS
+  return tasksList.filter(t => t.status === 'pending')
 })
 
-const filteredTimeSlots = computed(() => timeSlots.value)
+const filteredTimeSlots = computed(() => {
+  const hasStoreSlots = timeSlots.value.some(s => s.task !== null)
+  if (hasStoreSlots || allTasks.value.length > 0) {
+    return timeSlots.value
+  }
+  return timeSlots.value.map(slot => {
+    const staticTask = STATIC_SCHEDULED_TASKS.find(t => t.startTime === slot.time && (selectedDay.value === getTodayDayCode() || t.position === selectedDay.value))
+    if (staticTask) {
+      return { ...slot, task: staticTask }
+    }
+    return slot
+  })
+})
 
-const HOUR_HEIGHT = 60
+const HOUR_HEIGHT = 52
 const getTaskHeight = (duration?: number) => {
   const d = duration || 60
   return `${(d / 60) * HOUR_HEIGHT}px`
 }
 
 const isSlotCovered = (slotTime: string) => {
-  const targetSlot = timeSlots.value.find(s => s.time === slotTime)
+  const targetSlot = filteredTimeSlots.value.find(s => s.time === slotTime)
   if (targetSlot?.task) return false
 
   const currentHour = parseInt(slotTime.split(':')[0], 10)
-  for (const slot of timeSlots.value) {
+  for (const slot of filteredTimeSlots.value) {
     if (slot.task && slot.time !== slotTime) {
       const taskHour = parseInt(slot.time.split(':')[0], 10)
       const durationHours = slot.task.duration / 60
@@ -592,6 +773,47 @@ onMounted(async () => {
   await blockStore.fetchBlocks()
   await taskStore.fetchTasks()
   await subjectStore.loadSubjects()
+
+  // 临时数据 / 演示数据种子 (当首屏无任何数据时自动写入，展示丰满界面)
+  if (subjectStore.subjects.length === 0 && recentBlocks.value.length === 0 && allTasks.value.length === 0) {
+    const s1 = { id: 's-math', name: '高等数学与线性代数', description: '微积分、线性代数与微分方程核心概念', icon: '📐', color: '#7D9372', created_at: Date.now() }
+    const s2 = { id: 's-ai', name: '人工智能导论与大模型', description: '深度学习、Transformer 与大语言模型架构', icon: '🤖', color: '#A3B19B', created_at: Date.now() }
+    const s3 = { id: 's-os', name: '操作系统与内核分析', description: '进程调度、虚拟内存管理与文件系统', icon: '💻', color: '#8E9C86', created_at: Date.now() }
+    const s4 = { id: 's-zen', name: '心理学与禅意认知', description: '正念专注、认知神经科学与情绪管理', icon: '🌿', color: '#A8BFA0', created_at: Date.now() }
+    await localDb.saveSubject(s1)
+    await localDb.saveSubject(s2)
+    await localDb.saveSubject(s3)
+    await localDb.saveSubject(s4)
+
+    const todayCode = getTodayDayCode()
+    const blocksDemo = [
+      { id: 'b-1', subject: '人工智能导论与大模型', subjectId: 's-ai', title: 'Transformer 架构中的 Self-Attention 矩阵计算推导', preview: '`Self-Attention` 核心在于 `Q`, `K`, `V` 矩阵乘法及 `Softmax` 归一化，通过缩放因子 `d_k` 的平方根消除梯度消失问题...', source: 'AI 伴读笔记 · 第3章', time: '10:30', color: '#A3B19B', difficulty: 'hard', mastery: 85 },
+      { id: 'b-2', subject: '高等数学与线性代数', subjectId: 's-math', title: '常系数二阶线性齐次微分方程特征根法判定', preview: '对于常系数齐次线性微分方程，通过求解特征方程 `r^2 + pr + q = 0` 可以准确判定通解的实根或复根形式...', source: '教材提炼 · P142', time: '昨日', color: '#7D9372', difficulty: 'medium', mastery: 90 },
+      { id: 'b-3', subject: '操作系统与内核分析', subjectId: 's-os', title: 'Linux 虚拟内存多级页表与 TLB 快表寻址机制', preview: '多级页表有效节省了内存页表项空间，而 `TLB` 高速缓存将页表查询由多级访存压缩至纳秒级直接物理映射...', source: '课堂实录 · 第8讲', time: '前天', color: '#8E9C86', difficulty: 'medium', mastery: 78 },
+      { id: 'b-4', subject: '心理学与禅意认知', subjectId: 's-zen', title: '正念冥想对前额叶皮层与专注力的神经重塑', preview: '研究证明持续的正念冥想能显著提升工作记忆与禅意专注力，有效降低杏仁核应激唤醒水平...', source: '文献综述 · 2026', time: '3天前', color: '#A8BFA0', difficulty: 'easy', mastery: 95 },
+      { id: 'b-5', subject: '高等数学与线性代数', subjectId: 's-math', title: '正交矩阵的几何性质与 SVD 奇异值分解应用', preview: '任意实矩阵 `A` 均可分解为 `UΣV^T`，`SVD` 在数据降维、推荐系统与主成分分析 `PCA` 中起着基础性作用...', source: '总结归纳', time: '4天前', color: '#7D9372', difficulty: 'hard', mastery: 82 },
+      { id: 'b-6', subject: '人工智能导论与大模型', subjectId: 's-ai', title: '混合专家模型 (MoE) 稀疏门控路由工作原理', preview: '`MoE` 通过 `Top-K` 门控网络动态选择并激活部分专家子网，实现了参数规模指数扩展与极低推理算力开销的平衡...', source: '论文研读', time: '本周', color: '#A3B19B', difficulty: 'hard', mastery: 70 }
+    ]
+    for (const b of blocksDemo) {
+      await localDb.saveBlock(b as any)
+    }
+
+    const tasksDemo = [
+      { id: 't-1', name: '高数多元函数极值习题精练', subject: '高等数学与线性代数', subjectId: 's-math', color: '#7D9372', duration: 2, load: 'high', loadText: '高负荷', status: 'scheduled', startTime: '10:00', position: todayCode },
+      { id: 't-2', name: '研读 MoE 架构论文图表与公式', subject: '人工智能导论与大模型', subjectId: 's-ai', color: '#A3B19B', duration: 1, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '14:00', position: todayCode },
+      { id: 't-3', name: '梳理 Linux 进程调度 CFS 源码图解', subject: '操作系统与内核分析', subjectId: 's-os', color: '#8E9C86', duration: 2, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '16:00', position: todayCode },
+      { id: 't-4', name: '复习矩阵特征值与对角化判定条件', subject: '高等数学与线性代数', subjectId: 's-math', color: '#7D9372', duration: 1, load: 'low', loadText: '低负荷', status: 'pending' },
+      { id: 't-5', name: '整理本周心理学实验认知报告', subject: '心理学与禅意认知', subjectId: 's-zen', color: '#A8BFA0', duration: 1, load: 'low', loadText: '低负荷', status: 'pending' },
+      { id: 't-6', name: '完成 LangChain4j 本地 RAG 连通测试', subject: '人工智能导论与大模型', subjectId: 's-ai', color: '#A3B19B', duration: 2, load: 'medium', loadText: '中负荷', status: 'pending' }
+    ]
+    for (const t of tasksDemo) {
+      await localDb.saveTask(t as any)
+    }
+
+    await blockStore.fetchBlocks()
+    await taskStore.fetchTasks()
+    await subjectStore.loadSubjects()
+  }
 })
 </script>
 
@@ -602,20 +824,22 @@ onMounted(async () => {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: var(--color-zen-ivory); /* Zen Ivory base */
-  padding: 8px;
-  gap: 8px;
+  background: #F5F7F5; /* 极浅灰绿色大背景，拉开卡片层次 */
+  padding: 14px;
+  gap: 14px;
 
   /* Zen Minimalist Theme override */
   --color-primary-accent: #7D9372;
-  --color-primary-accent-hover: #6c8062;
-  --color-primary-light: rgba(163, 177, 155, 0.12);
-  --color-primary-glow: rgba(163, 177, 155, 0.25);
-  --accent-gradient: var(--color-zen-sage);
+  --color-primary-accent-hover: #687F5D;
+  --color-primary-light: rgba(163, 177, 155, 0.18);
+  --color-primary-glow: rgba(125, 147, 114, 0.28);
+  --accent-gradient: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  --bg-card: #FFFFFF;
 }
 
 html.dark .dashboard-container {
-  background: #121110;
+  background: #111411;
+  --bg-card: #181C18;
 }
 
 /* ===== Splitters ===== */
@@ -649,18 +873,17 @@ html.dark .dashboard-container {
 .subject-index {
   display: flex;
   flex-direction: column;
-  padding: var(--spacing-6) var(--spacing-4);
+  padding: 20px 16px;
   overflow-y: auto;
   flex-shrink: 0;
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  background: var(--bg-card, #FFFFFF);
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
 }
 
 html.dark .subject-index {
-  background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
 .index-header {
@@ -668,17 +891,17 @@ html.dark .subject-index {
 }
 
 .welcome-title {
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 16px;
+  font-weight: 850;
   color: var(--text-primary);
   margin: 0;
   white-space: nowrap;
 }
 
 .welcome-sub {
-  font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
   white-space: nowrap;
 }
 
@@ -688,32 +911,40 @@ html.dark .subject-index {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   flex: 1;
 }
 
 .subject-item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-2);
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: all var(--transition-fast);
   position: relative;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--text-secondary);
+  border: 1px solid transparent;
 }
 
 .subject-item:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(163, 177, 155, 0.12);
+  color: var(--text-primary);
 }
 
 .subject-item.is-active {
-  font-weight: 700;
-  color: var(--text-primary);
-  background: var(--color-bg-primary);
-  box-shadow: var(--shadow-sm);
+  font-weight: 800;
+  color: #2D3E25;
+  background: rgba(163, 177, 155, 0.24);
+  border-color: rgba(163, 177, 155, 0.45);
+  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.15);
+}
+
+html.dark .subject-item.is-active {
+  color: #E2E8DE;
+  background: rgba(163, 177, 155, 0.26);
 }
 
 .active-dot {
@@ -744,21 +975,41 @@ html.dark .subject-index {
 }
 
 .manage-subjects-btn {
-  background: none;
-  border: 1px dashed var(--border-default);
-  color: var(--text-muted);
-  padding: var(--spacing-2) var(--spacing-3);
-  border-radius: var(--radius-sm);
-  font-size: 11px;
+  background: rgba(163, 177, 155, 0.18);
+  border: 1px solid rgba(163, 177, 155, 0.38);
+  color: #2D3E25;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  font-size: 11.5px;
+  font-weight: 750;
   cursor: pointer;
   margin-top: auto;
   transition: all var(--transition-fast);
   font-family: inherit;
+  box-shadow: 0 3px 10px rgba(125, 147, 114, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .manage-subjects-btn:hover {
-  border-color: var(--text-secondary);
-  color: var(--text-primary);
+  background: rgba(163, 177, 155, 0.28);
+  border-color: rgba(163, 177, 155, 0.55);
+  color: #2D3E25;
+  opacity: 0.92;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(125, 147, 114, 0.25);
+}
+
+html.dark .manage-subjects-btn {
+  color: #E2E8DE;
+  background: rgba(163, 177, 155, 0.22);
+  border-color: rgba(163, 177, 155, 0.42);
+}
+
+html.dark .manage-subjects-btn:hover {
+  background: rgba(163, 177, 155, 0.32);
+  color: #FFFFFF;
 }
 
 /* ===== Content Stream ===== */
@@ -768,106 +1019,127 @@ html.dark .subject-index {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  padding: var(--spacing-6) var(--spacing-8);
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  padding: 24px 28px;
+  background: var(--bg-card, #FFFFFF);
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
 }
 
 html.dark .content-stream {
-  background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
 .stream-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-4);
+  margin-bottom: 16px;
   flex-shrink: 0;
 }
 
+.stream-title-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
 .stream-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 850;
   color: var(--text-primary);
   margin: 0;
 }
 
-.link-btn {
-  background: none;
-  border: none;
-  font-size: 11px;
+.stream-subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
   font-weight: 600;
-  color: var(--text-accent);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: all var(--transition-fast);
 }
 
-.link-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
-}
+
 
 .stream-body {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+.stream-body::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+  width: 0;
+  height: 0;
 }
 
 .stream-row {
-  padding: 14px 0;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 18px 22px;
+  border-radius: 14px;
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary);
   cursor: pointer;
-  transition: background var(--transition-fast);
-  border-radius: var(--radius-sm);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.015);
 }
 
 .stream-row:hover {
-  background: var(--glass-bg);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  border-color: rgba(163, 177, 155, 0.45);
 }
 
 .row-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 800;
   color: var(--text-primary);
-  margin-bottom: 6px;
-  line-height: 1.4;
+  margin-bottom: 10px;
+  line-height: 1.45;
 }
 
 .row-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  font-size: 11.5px;
+  margin-bottom: 12px;
+}
+
+.row-subj-badge {
+  background: rgba(163, 177, 155, 0.22);
+  color: #2D3E25;
+  border: 1px solid rgba(163, 177, 155, 0.38);
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 12px;
   font-size: 11px;
-  color: var(--text-muted);
-  margin-bottom: 8px;
+}
+html.dark .row-subj-badge {
+  background: rgba(163, 177, 155, 0.25);
+  color: #E2E8DE;
+  border-color: rgba(163, 177, 155, 0.45);
 }
 
-.row-tag {
+.row-source-badge {
+  color: var(--text-secondary);
   font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 10px;
+  background: var(--color-bg-tertiary);
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-.row-dot {
-  opacity: 0.4;
-  font-size: 10px;
-}
-
-.row-source {
-  opacity: 0.7;
+.row-time-badge {
+  color: var(--text-secondary);
+  font-weight: 600;
+  opacity: 0.9;
 }
 
 .row-preview {
-  font-size: 12px;
+  font-size: 13.5px;
   color: var(--text-secondary);
-  line-height: 1.7;
+  line-height: 1.78;
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -875,6 +1147,27 @@ html.dark .content-stream {
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0.95;
+}
+
+.row-preview :deep(code) {
+  background: transparent;
+  color: #2D3E25;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  padding: 0;
+  border: none;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+html.dark .row-preview :deep(code) {
+  color: #A8BFA0;
+}
+
+.row-preview :deep(strong),
+.row-preview :deep(b) {
+  font-weight: 750;
+  color: var(--text-primary);
 }
 
 .empty-stream {
@@ -912,16 +1205,15 @@ html.dark .content-stream {
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  background: var(--color-bg-primary);
+  background: var(--bg-card, #FFFFFF);
   flex-shrink: 0;
-  border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
 }
 
 html.dark .dashboard-right {
-  background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
 /* ===== Compact Timeline (top 70%) ===== */
@@ -930,20 +1222,20 @@ html.dark .dashboard-right {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: var(--spacing-4) var(--spacing-4) var(--spacing-3);
+  padding: 20px 20px 16px;
 }
 
 .timeline-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-3);
+  margin-bottom: 14px;
   flex-shrink: 0;
 }
 
 .timeline-title {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 800;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -951,36 +1243,38 @@ html.dark .dashboard-right {
 }
 
 .new-task-btn {
-  background: var(--accent-gradient);
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: white;
   border: none;
-  padding: 5px 12px;
-  font-size: 11px;
-  font-weight: 700;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  font-weight: 750;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition-fast);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 3px 10px rgba(125, 147, 114, 0.25);
 }
 
 .new-task-btn:hover {
-  opacity: 0.9;
+  opacity: 0.92;
   transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(125, 147, 114, 0.35);
 }
 
 .dashboard-time-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .db-view-select {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-bg-tertiary);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
-  font-size: 10px;
-  border-radius: 4px;
-  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 4px 8px;
   cursor: pointer;
   outline: none;
   font-family: inherit;
@@ -988,41 +1282,42 @@ html.dark .dashboard-right {
 }
 
 .db-view-select:hover {
-  border-color: var(--border-strong);
+  border-color: #7D9372;
   color: var(--text-primary);
 }
 
 .db-day-selector {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .db-day-btn {
-  background: transparent;
+  background: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
-  padding: 4px;
-  border-radius: 4px;
-  font-size: 9px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  font-size: 11px;
   cursor: pointer;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   flex: 1;
   text-align: center;
-  font-weight: 600;
+  font-weight: 650;
   transition: all var(--transition-fast);
 }
 
 .db-day-btn:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(163, 177, 155, 0.12);
   color: var(--text-primary);
 }
 
 .db-day-btn.is-active {
-  background: var(--accent-gradient);
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: white;
   border-color: transparent;
-  font-weight: 800;
+  font-weight: 850;
+  box-shadow: 0 4px 10px rgba(125, 147, 114, 0.3);
 }
 
 .db-weekly-list-gantt {
@@ -1124,6 +1419,14 @@ html.dark .dashboard-right {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.timeline-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .tl-slot {
@@ -1133,28 +1436,28 @@ html.dark .dashboard-right {
   min-height: 52px;
   position: relative;
   transition: background var(--transition-fast);
-  padding: 6px 4px;
+  padding: 0 4px;
   box-sizing: border-box;
 }
 
 .tl-slot.has-task {
-  padding: 2px 4px;
+  padding: 0 4px;
 }
 
 .tl-time {
   width: 36px;
-  font-size: 9px;
-  font-weight: 500;
+  font-size: 9.5px;
+  font-weight: 600;
   color: var(--text-muted);
   text-align: right;
   flex-shrink: 0;
   letter-spacing: -0.2px;
-  opacity: 0.7;
-  margin-top: 8px;
+  opacity: 0.8;
+  margin-top: 6px;
 }
 
 .tl-slot.is-current .tl-time {
-  color: var(--color-oatmeal-dark);
+  color: #7D9372;
   font-weight: 800;
   opacity: 1;
 }
@@ -1165,6 +1468,7 @@ html.dark .dashboard-right {
   border-top: 1px dashed rgba(0, 0, 0, 0.08);
   flex-shrink: 1;
   min-width: 0;
+  margin-top: 11px;
 }
 
 .tl-slot.has-task .tl-dash {
@@ -1173,7 +1477,7 @@ html.dark .dashboard-right {
 
 .tl-task {
   flex: 1;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-left: 3px solid;
@@ -1181,10 +1485,11 @@ html.dark .dashboard-right {
   cursor: grab;
   transition: all var(--transition-fast);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--spacing-2);
   box-sizing: border-box;
+  margin: 0;
 }
 
 .tl-task:hover {
@@ -1230,27 +1535,29 @@ html.dark .dashboard-right {
 
 .current-indicator {
   position: absolute;
-  left: 48px;
+  left: 44px;
   right: 0;
-  top: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   pointer-events: none;
+  z-index: 5;
 }
 
 .current-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--color-oatmeal-dark);
+  background: #7D9372;
+  box-shadow: 0 0 6px rgba(125, 147, 114, 0.6);
   z-index: 1;
 }
 
 .current-line {
   flex: 1;
-  height: 1px;
-  background: var(--color-oatmeal-dark);
-  opacity: 0.3;
+  height: 1.5px;
+  background: linear-gradient(to right, #7D9372, rgba(125, 147, 114, 0.1));
 }
 
 /* ===== Right Divider ===== */
@@ -1278,6 +1585,28 @@ html.dark .dashboard-right {
   flex-shrink: 0;
 }
 
+.todo-fab-add-btn {
+  background: var(--color-zen-sage, #7D9372);
+  color: #FFFFFF;
+  border: none;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.todo-fab-add-btn:hover {
+  transform: translateY(-2px) scale(1.08);
+  box-shadow: 0 4px 12px rgba(125, 147, 114, 0.45);
+}
+
 .todo-title {
   font-size: 11px;
   font-weight: 700;
@@ -1292,7 +1621,8 @@ html.dark .dashboard-right {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px; /* 胶囊之间的间隙拉开至 8px，层次清晰 */
+  padding: 2px 2px 8px;
 }
 
 .todo-list.drag-over {
@@ -1300,18 +1630,35 @@ html.dark .dashboard-right {
   border-radius: var(--radius-sm);
 }
 
+/* 待办事件胶囊化包裹 (Capsule/Pill shape) */
 .todo-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 8px;
+  gap: 10px;
+  padding: 8px 14px;
   cursor: grab;
-  transition: background var(--transition-fast);
-  border-radius: var(--radius-sm);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 9999px; /* 胶囊圆角 */
+  background: var(--color-bg-tertiary, #F5F7F5);
+  border: 1px solid rgba(163, 177, 155, 0.32);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.018);
 }
 
 .todo-item:hover {
-  background: var(--glass-bg);
+  background: rgba(163, 177, 155, 0.16);
+  border-color: rgba(163, 177, 155, 0.55);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(125, 147, 114, 0.12);
+}
+
+html.dark .todo-item {
+  background: #1F241F;
+  border-color: rgba(163, 177, 155, 0.22);
+}
+
+html.dark .todo-item:hover {
+  background: #272D27;
+  border-color: rgba(163, 177, 155, 0.45);
 }
 
 .task-checkbox {
@@ -1320,7 +1667,7 @@ html.dark .dashboard-right {
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
-  accent-color: var(--color-oatmeal-dark);
+  accent-color: #7D9372;
 }
 
 .todo-color {
@@ -1342,9 +1689,18 @@ html.dark .dashboard-right {
 }
 
 .todo-subject {
-  font-size: 10px;
-  color: var(--text-muted);
+  background: rgba(163, 177, 155, 0.22);
+  color: #2D3E25;
+  border: 1px solid rgba(163, 177, 155, 0.35);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
   flex-shrink: 0;
+}
+html.dark .todo-subject {
+  background: rgba(163, 177, 155, 0.25);
+  color: #E2E8DE;
 }
 
 .drag-handle {
@@ -1378,8 +1734,8 @@ html.dark .dashboard-right {
 }
 
 .form-input {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
   border-radius: 6px;
   padding: 8px 10px;
   color: var(--text-primary);
@@ -1407,8 +1763,8 @@ html.dark .dashboard-right {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 520px;
-  max-height: 80vh;
+  width: 600px;
+  max-height: 85vh;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
@@ -1424,7 +1780,7 @@ html.dark .dashboard-right {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 16px 24px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -1435,22 +1791,22 @@ html.dark .dashboard-right {
 }
 
 .modal-tag {
-  font-size: 10px;
-  padding: 2px 8px;
+  font-size: 11px;
+  padding: 3px 10px;
   border-radius: var(--radius-sm);
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .modal-source-tag {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
 .modal-close {
   background: none;
   border: none;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--text-muted);
   cursor: pointer;
   padding: 4px 8px;
@@ -1464,60 +1820,477 @@ html.dark .dashboard-right {
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 24px 28px;
   overflow-y: auto;
   flex: 1;
 }
 
-.modal-title {
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--text-primary);
-  margin: 0 0 8px;
+/* ===== 知识块详情弹窗 (Block Detail Modal - 严格自上而下对齐架构) ===== */
+.block-detail-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 640px;
+  max-height: 86vh;
+  background: #F2F5F3; /* 外层极浅鼠尾草绿背景 #F2F5F3 */
+  border-radius: 20px; /* 大圆角约 20px */
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.03); /* 悬浮柔和阴影 */
+  border: 1px solid rgba(163, 177, 155, 0.38);
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 32px; /* 内部充足内边距 28-32px */
+  overflow-y: auto;
+  gap: 20px;
 }
 
-.modal-time {
-  font-size: 11px;
-  color: var(--text-muted);
+html.dark .block-detail-modal {
+  background: #181D18;
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.35);
 }
 
-.modal-divider {
-  height: 1px;
-  background: var(--border-subtle);
-  margin: 16px 0;
+/* 头部信息区 - 直接在外层浅鼠尾草绿背景上，绝对左对齐 */
+.block-detail-header {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.hero-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.hero-tags {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hero-subj-pill {
+  font-size: 11.5px;
+  padding: 4px 12px;
+  border-radius: 6px; /* 圆角处理 */
+  background: rgba(163, 177, 155, 0.28); /* 浅绿色背景 */
+  color: #2D3E25; /* 深绿色文字 */
+  font-weight: 750;
+  border: 1px solid rgba(163, 177, 155, 0.45);
+}
+
+html.dark .hero-subj-pill {
+  color: #D6E2D0;
+  background: rgba(163, 177, 155, 0.22);
+}
+
+.hero-source-text {
+  font-size: 12px;
+  color: #888888; /* 辅助信息使用中灰色 #888888 */
+  font-weight: 500;
+}
+
+.hero-close-btn {
+  background: transparent; /* 不需要圆形底色 */
+  border: none;
+  font-size: 22px;
+  line-height: 1;
+  color: #888888; /* 极简中灰色关闭图标 */
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: color var(--transition-fast);
+}
+
+.hero-close-btn:hover {
+  color: #333333;
+}
+
+html.dark .hero-close-btn:hover {
+  color: #FFFFFF;
+}
+
+.hero-main-title {
+  font-size: 22px;
+  font-weight: 800; /* 加粗 */
+  color: #333333; /* 主标题使用深灰色 #333333 */
+  line-height: 1.4;
+  letter-spacing: -0.4px;
+  margin: 0 0 10px 0;
+  text-align: left; /* 与上方标签严格左对齐 */
+}
+
+html.dark .hero-main-title {
+  color: #F0F4F1;
+}
+
+.hero-time-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #888888; /* 颜色为中灰色 #888888 */
+  font-weight: 500;
+}
+
+.hero-clock-icon {
+  width: 14px;
+  height: 14px;
+  stroke: #888888;
+  flex-shrink: 0;
+}
+
+/* 核心内容区 - 物理分隔为独立的纯白色 #FFFFFF 嵌套卡片 */
+.block-detail-card {
+  background: #FFFFFF; /* 纯白背景 #FFFFFF */
+  border-radius: 16px; /* 中等圆角约 16px */
+  padding: 26px 28px; /* 内部上下左右宽裕留白至少 24px */
+  border: 1px solid rgba(163, 177, 155, 0.28);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.022); /* 极浅阴影凸显边界 */
+  flex: 1;
+  overflow-y: auto;
+}
+
+html.dark .block-detail-card {
+  background: #1F241F;
+  border-color: rgba(163, 177, 155, 0.18);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 .modal-content {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.7;
+  font-size: 14.5px;
+  color: #333333; /* 正文使用深灰色 #333333 */
+  line-height: 1.62; /* 行高设置在 1.6 左右 */
+  letter-spacing: 0.2px;
 }
 
-.modal-footer {
+html.dark .modal-content {
+  color: #E2E8DE;
+}
+
+.modal-content :deep(h1),
+.modal-content :deep(h2) {
+  font-size: 16.5px;
+  font-weight: 750;
+  color: #333333;
+  margin: 16px 0 10px;
+}
+
+html.dark .modal-content :deep(h1),
+html.dark .modal-content :deep(h2) {
+  color: #F0F4F1;
+}
+
+.modal-content :deep(h3),
+.modal-content :deep(h4) {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: #333333;
+  margin: 14px 0 8px;
+}
+
+html.dark .modal-content :deep(h3),
+html.dark .modal-content :deep(h4) {
+  color: #F0F4F1;
+}
+
+.modal-content :deep(p) {
+  margin: 0 0 14px;
+}
+
+.modal-content :deep(strong),
+.modal-content :deep(b) {
+  color: #1E291B;
+  font-weight: 750;
+}
+
+html.dark .modal-content :deep(strong),
+html.dark .modal-content :deep(b) {
+  color: #FFFFFF;
+}
+
+/* 正常 Markdown 代码渲染，去除不必要的强调背景框 */
+.modal-content :deep(code) {
+  background: transparent;
+  color: #2D3E25;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+
+html.dark .modal-content :deep(code) {
+  color: #A8BFA0;
+}
+
+/* 底部操作区 - 右下角对齐 */
+.block-detail-footer {
+  display: flex;
+  justify-content: flex-end; /* 右下角对齐 */
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.sage-primary-btn {
+  background: #849C8A; /* 偏深的鼠尾草绿 #849C8A */
+  color: #FFFFFF; /* 白色文字“确定” */
+  border: none;
+  border-radius: 8px; /* 中等圆角 8px */
+  padding: 8px 26px; /* 高度适中 */
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(132, 156, 138, 0.3);
+}
+
+.sage-primary-btn:hover {
+  background: #758C7B;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(132, 156, 138, 0.42);
+}
+
+/* ===== 新建学习任务弹窗 (借鉴移动端卡片化与高交互设计) ===== */
+.task-create-modal {
+  width: 520px;
+  background: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-subtle);
+}
+
+html.dark .task-create-modal {
+  background: #181D18;
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.task-modal-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.task-modal-body {
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.task-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-form-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
+.task-form-input {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.task-form-input:focus {
+  border-color: #7D9372;
+  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15);
+  background: var(--color-bg-primary);
+}
+
+/* 学科选择网格胶囊 */
+.subject-capsule-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.subject-capsule-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--color-bg-secondary);
+  border: 1.5px solid transparent;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.subject-capsule-item:hover {
+  transform: translateY(-1px);
+  background: var(--color-bg-tertiary);
+}
+
+.subject-capsule-item.active {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  font-weight: 700;
+}
+
+.subj-capsule-icon {
+  font-size: 13px;
+}
+
+/* 专注时长头部与预设胶囊 */
+.duration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.duration-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7D9372;
+  background: rgba(125, 147, 114, 0.12);
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+/* 专注时长长条按钮拖动交互条 */
+.duration-long-bar-btn {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: var(--color-bg-secondary);
+  border: 1.5px solid var(--border-default);
+  border-radius: 9999px;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.duration-long-bar-btn:hover {
+  border-color: #7D9372;
+  box-shadow: 0 4px 16px rgba(125, 147, 114, 0.15);
+}
+
+.duration-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(to right, rgba(125, 147, 114, 0.25), #7D9372);
+  border-radius: 9999px;
+  transition: width 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.duration-bar-steps {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 20px;
+  align-items: center;
+}
+
+.duration-step-item {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.duration-step-item.active {
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-weight: 750;
+}
+
+.duration-bar-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  background: #FFFFFF;
+  border: 2.5px solid #7D9372;
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #7D9372;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  transition: left 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.dark .duration-bar-thumb {
+  background: #181D18;
+}
+
+/* 弹窗底部栏 */
+.task-modal-footer {
+  padding: 16px 28px 22px;
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 20px;
+  gap: 12px;
   border-top: 1px solid var(--border-subtle);
 }
 
-.footer-btn {
-  padding: 6px 16px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
+.task-btn-cancel {
+  background: transparent;
+  border: 1px solid var(--border-default);
+  border-radius: 9999px;
+  padding: 8px 20px;
+  font-size: 13px;
   font-weight: 600;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: all var(--transition-fast);
-  font-family: inherit;
+  transition: all 0.2s;
 }
 
-.primary-btn {
-  background: var(--accent-gradient);
-  color: white;
+.task-btn-cancel:hover {
+  background: var(--color-bg-secondary);
+  color: var(--text-primary);
+}
+
+.task-btn-submit {
+  background: #7D9372;
+  color: #FFFFFF;
   border: none;
+  border-radius: 9999px;
+  padding: 8px 26px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3);
 }
 
-.primary-btn:hover {
-  opacity: 0.9;
+.task-btn-submit:hover:not(:disabled) {
+  background: #6E8364;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45);
+}
+
+.task-btn-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 </style>

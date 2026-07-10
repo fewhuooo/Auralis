@@ -192,7 +192,7 @@ const subjects = ref<any[]>([])
 // === AI Insight ===
 const aiInsight = ref('根据您的学习习惯，持续整理知识库并合理编排专注任务能获得最佳的学习心流体验。')
 
-const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd', '#818cf8', '#a78bfa']
+const colors = ['#7D9372', '#5E7A53', '#95A88C', '#A3B19B', '#6B8560', '#B3C0AD']
 const dayMapping: Record<string, string> = {
   'Mon': '一', 'Tue': '二', 'Wed': '三', 'Thu': '四', 'Fri': '五', 'Sat': '六', 'Sun': '日'
 }
@@ -629,7 +629,7 @@ const handleDeleteAccount = async () => {
 .bar-today .bar-fill,
 .bar-fill.bar-today {
   opacity: 1;
-  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 0 8px rgba(125, 147, 114, 0.5);
 }
 
 .bar-day {

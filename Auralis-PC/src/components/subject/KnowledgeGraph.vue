@@ -30,10 +30,10 @@
           
           <div class="panel-divider"></div>
           
-          <div class="panel-content-markdown" v-html="renderMarkdown(selectedNode.block?.preview || '')"></div>
+          <div class="panel-content-markdown" v-html="renderMarkdown(selectedNode.block?.content || selectedNode.block?.preview || '')"></div>
         </div>
         <div class="panel-footer">
-          <button class="panel-action-btn secondary" @click="copyContent(selectedNode.block?.preview)">
+          <button class="panel-action-btn secondary" @click="copyContent(selectedNode.block?.content || selectedNode.block?.preview)">
             复制内容
           </button>
           <button class="panel-action-btn primary" @click="triggerOpenDetail(selectedNode.block)">
@@ -624,10 +624,11 @@ watch(() => props.subjectId, () => {
   margin-bottom: 8px;
 }
 .panel-content-markdown :deep(code) {
-  background: rgba(0,0,0,0.04);
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-family: monospace;
+  background: transparent;
+  padding: 0;
+  border: none;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', Consolas, monospace;
 }
 
 .panel-footer {

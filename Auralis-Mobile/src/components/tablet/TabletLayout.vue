@@ -399,13 +399,13 @@ const navigate = (path: string) => {
 .tablet-ai-float {
   width: 136rpx;
   height: 136rpx;
-  background-color: var(--color-zen-sage, #7D9372);
+  background-color: #A3B19B;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1px solid var(--color-zen-hairline, #E6E6E4);
-  box-shadow: 0 12rpx 36rpx rgba(125, 147, 114, 0.35), 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
+  box-shadow: 0 12rpx 36rpx rgba(163, 177, 155, 0.35), 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -413,7 +413,7 @@ const navigate = (path: string) => {
 
 .tablet-ai-float:hover {
   transform: translateY(-4rpx) scale(1.04);
-  box-shadow: 0 16rpx 44rpx rgba(125, 147, 114, 0.45), 0 6rpx 16rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 16rpx 44rpx rgba(163, 177, 155, 0.45), 0 6rpx 16rpx rgba(0, 0, 0, 0.08);
 }
 
 .tablet-ai-float:active {

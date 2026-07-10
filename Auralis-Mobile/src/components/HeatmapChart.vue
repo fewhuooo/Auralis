@@ -157,8 +157,8 @@ const currentMonthObj = computed<MonthData>(() => {
 .total-badge {
   font-size: 22rpx;
   font-weight: 700;
-  color: var(--text-accent, #7D9372);
-  background: rgba(125, 147, 114, 0.14);
+  color: var(--text-accent, #A3B19B);
+  background: rgba(163, 177, 155, 0.16);
   padding: 4rpx 16rpx;
   border-radius: 999rpx;
 }
@@ -218,7 +218,7 @@ const currentMonthObj = computed<MonthData>(() => {
   border: 3rpx solid var(--text-primary);
 }
 .day-cell.is-selected {
-  box-shadow: 0 0 0 4rpx var(--text-accent, #7D9372);
+  box-shadow: 0 0 0 4rpx var(--text-accent, #A3B19B);
   transform: scale(1.08);
   z-index: 2;
 }
@@ -229,16 +229,16 @@ const currentMonthObj = computed<MonthData>(() => {
   border: 2rpx solid rgba(0, 0, 0, 0.08);
 }
 .level-1 {
-  background: rgba(125, 147, 114, 0.28);
+  background: rgba(163, 177, 155, 0.28);
 }
 .level-2 {
-  background: rgba(125, 147, 114, 0.55);
+  background: rgba(163, 177, 155, 0.52);
 }
 .level-3 {
-  background: rgba(125, 147, 114, 0.8);
+  background: rgba(163, 177, 155, 0.76);
 }
 .level-4 {
-  background: var(--text-accent, #7D9372);
+  background: var(--text-accent, #A3B19B);
 }
 
 /* 提示悬浮卡 */

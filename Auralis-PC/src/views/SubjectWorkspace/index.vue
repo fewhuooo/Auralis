@@ -44,7 +44,7 @@
     </nav>
 
     <!-- ===== TIER-2: Expandable Drawer ===== -->
-    <aside class="tier2-drawer" :class="{ 'is-open': tier2Open }" v-show="tier2Open" :style="{ width: tier2Width + '%' }">
+    <aside class="tier2-drawer" :class="{ 'is-open': tier2Open }" :style="{ width: tier2Open ? tier2Width + '%' : '0px' }">
       <!-- Files Mode -->
       <div v-if="tier2Mode === 'files'" class="drawer-content">
         <div class="drawer-header">
@@ -387,7 +387,6 @@
       <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
         <div class="form-group"><label class="form-label">任务名称 *</label><input v-model="taskForm.name" class="form-input" /></div>
         <div class="form-group"><label class="form-label">预计时长</label><select v-model.number="taskForm.duration" class="form-input"><option :value="30">0.5 小时 (30分钟)</option><option :value="60">1.0 小时 (60分钟)</option><option :value="90">1.5 小时 (90分钟)</option><option :value="120">2.0 小时 (120分钟)</option><option :value="150">2.5 小时 (150分钟)</option><option :value="180">3.0 小时 (180分钟)</option><option :value="240">4.0 小时 (240分钟)</option></select></div>
-        <div class="form-group"><label class="form-label">脑力负荷</label><select v-model="taskForm.load" class="form-input"><option value="low">低</option><option value="medium">中</option><option value="high">高</option></select></div>
       </div>
       <div class="modal-footer">
         <button class="footer-btn secondary-btn" @click="showTaskModal = false">取消</button>
@@ -416,7 +415,7 @@
         <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
         <div class="modal-time">⏰ {{ selectedBlock?.time }}</div>
         <div class="modal-divider"></div>
-        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.preview || '')"></div>
+        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
       </div>
       <div class="modal-footer">
         <template v-if="isEditMode">
@@ -911,7 +910,6 @@ html.dark .tier1-btn:hover {
 
 /* ===== Tier-2 Drawer (Rounded Card) ===== */
 .tier2-drawer {
-  width: 240px;
   height: 100%;
   flex-shrink: 0;
   display: flex;
@@ -921,15 +919,20 @@ html.dark .tier1-btn:hover {
   border: 1.5px solid var(--border-default);
   box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
   overflow: hidden;
-  animation: drawerSlideIn 0.2s ease-out;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-width 0.3s ease;
+}
+
+.tier2-drawer:not(.is-open) {
+  width: 0 !important;
+  opacity: 0;
+  border-width: 0;
+  pointer-events: none;
 }
 
 html.dark .tier2-drawer {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border-color: var(--border-subtle);
 }
-
-@keyframes drawerSlideIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
 
 .drawer-content { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 
