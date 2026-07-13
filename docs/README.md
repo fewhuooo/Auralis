@@ -93,6 +93,7 @@
 - [系统架构](project/Architecture.md)
 - [文档架构设计](design/DocumentationArchitecture.md)
 - [前端设计](design/Frontend.md)
+- [PC 学科工作区重建设计（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-workspace-reconstruction-design.md)
 - [PC 学科工作区大纲三栏布局规格（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-outline-three-column-design.md)
 
 ### 当前实现与契约
