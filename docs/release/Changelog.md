@@ -26,6 +26,18 @@
 - Server：2026-07-10 `mvn test` 通过；Maven 日志显示没有测试源码，不能当作业务测试覆盖。
 - Mobile H5 构建保留动态/静态 import 和 Sass legacy API 非阻断警告。
 
+### PC 学科图标兼容（2026-07-13）
+
+- 新增 `src/utils/subjectIcon.ts`：学科图标统一兼容 Emoji 与历史名称（如 `book`、`code`），空值或未知名称回退为书本图标；大厅、工作区、首页和时间线使用同一解析逻辑。
+- `node scripts\check-subject-icon-rendering.mjs` 与 `npm.cmd run build` 已通过；浏览器/Tauri 显示仍待人工验收。
+
+### PC 学科工作区原型（2026-07-13）
+
+- 文件选择改为中栏 Markdown 总结；文件项移除右侧操作按钮。
+- 大纲改为“AI 梳理”与圆形“+”顶栏，支持左栏内联新增、章节排序与限定在章节内的小节排序；当前不持久化。
+- 右侧 AI 伴读采用移动端同源的星环、头像、气泡和胶囊输入视觉，清空改为图标按钮。
+- `npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 已通过；浏览器/Tauri 交互仍待人工验收。
+
 ### 已确认的近期工作树变化（待随当前功能分支验证）
 
 - PC 前端继续向 Zen Minimalist 体系对齐，使用禅白、鼠尾草绿和发丝边框。

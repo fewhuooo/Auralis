@@ -20,7 +20,7 @@
 | 模块 | 当前状态 | 代码证据 | 本轮命令证据 | 人工验收 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
 | 文档体系 | 已构建待验收 | 新分类体系、Agent 规则、归档快照、旧路径切换已完成 | 2026-07-10：链接、元数据、根目录、旧路径扫描通过 | 无 | 随后续代码变化持续回写 |
-| PC Web | 已构建待验收 | 7 条路由、页面、Store、API 客户端存在 | 2026-07-10：`npm.cmd run build` 通过（`vue-tsc -b && vite build`，1748 modules） | 页面交互、登录、路由刷新 | 恢复守卫并验收主流程 |
+| PC Web | 已构建待验收 | 7 条路由、页面、Store、API 客户端存在；学科工作区已改为文件总结、大纲内联编排和移动同源 AI 伴读视觉；学科图标兼容 Emoji 与历史名称并对未知值回退 | 2026-07-13：`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 通过（`vue-tsc -b && vite build`，1749 modules） | 文件总结、拖拽边界、AI 视觉与历史学科图标显示 | 恢复守卫并验收主流程 |
 | PC Tauri | 已构建待验收 | Tauri 2.11.1、SQL 插件配置存在 | 本轮未执行 GUI | Windows GUI、权限、安装包 | 手工桌面验收 |
 | Mobile H5 | 已构建待验收 | 手机页面、Store、本地服务与构建脚本存在 | 2026-07-10：`npm.cmd run build:h5` 通过；有动态/静态 import 与 Sass legacy API 警告 | 手机浏览器、弱网、输入法 | H5 真机走查与警告治理 |
 | 微信小程序 | 已构建待验收 | `MP-WEIXIN` 条件编译排除 Tablet 页面 | 2026-07-10：`npm.cmd run build:mp-weixin` 通过 | 开发者工具、真机、合法域名 | 微信走查 |

@@ -38,7 +38,7 @@
       </div>
       <div class="tier1-bottom">
         <div class="subject-mini-icon" :style="{ backgroundColor: activeSubject?.color }" :title="activeSubject?.name">
-          {{ activeSubject?.icon || '📚' }}
+          {{ getSubjectIcon(activeSubject?.icon) }}
         </div>
       </div>
     </nav>
@@ -64,10 +64,6 @@
               <span class="drawer-item-name">{{ file.name }}</span>
               <span class="drawer-item-meta">{{ (file.file_size / (1024 * 1024)).toFixed(1) }} MB</span>
             </div>
-            <div class="drawer-item-actions">
-              <button class="drawer-item-btn" title="查看大纲" @click.stop="viewFileOutline(file.id)">📋</button>
-              <button class="drawer-item-btn danger" title="删除" @click.stop="deleteSourceFile(file.id)">✕</button>
-            </div>
           </div>
         </div>
         <div class="drawer-empty" v-else>
@@ -77,41 +73,31 @@
 
       <!-- Outline Mode -->
       <div v-else-if="tier2Mode === 'outline'" class="drawer-content">
-        <div class="drawer-header">
-          <h3 class="drawer-title">目录大纲</h3>
-        </div>
-        <div class="drawer-file-select" v-if="activeSourceFiles.length > 0">
-          <select v-model="selectedFileId" class="drawer-select">
-            <option v-for="file in activeSourceFiles" :key="file.id" :value="file.id">{{ file.name }}</option>
-          </select>
-        </div>
-        <div class="drawer-list outline-list" v-if="selectedFile && parsedCatalog.length > 0">
-          <div v-for="(chap, cIndex) in parsedCatalog" :key="cIndex" class="outline-chapter">
-            <div class="outline-chapter-title" @click="toggleChapter(Number(cIndex))">
-              <span class="outline-arrow">{{ isChapterExpanded(Number(cIndex)) ? '▾' : '▸' }}</span>
-              <span>{{ chap.title }}</span>
-            </div>
-            <div v-if="isChapterExpanded(Number(cIndex))" class="outline-sections">
-              <div v-for="(sec, sIndex) in chap.sections" :key="sIndex" class="outline-section">
-                <span class="outline-section-name">{{ sec }}</span>
-                <div class="outline-section-actions">
-                  <button class="outline-btn ai" @click="triggerAiRefine(chap.title, sec)">✨</button>
-                  <button class="outline-btn task" @click="triggerAddTask(sec)">🎯</button>
-                </div>
-              </div>
-            </div>
+        <div class="drawer-header outline-header">
+          <h3 class="drawer-title">学科大纲</h3>
+          <div class="outline-header-actions">
+            <button class="outline-ai-button" @click="handleOutlineAi">AI 梳理</button>
+            <button class="outline-add-button" title="编排大纲" aria-label="编排大纲" @click="isOutlineComposer = !isOutlineComposer">+</button>
           </div>
         </div>
-        <div v-else-if="selectedFile && (!selectedFile.catalog_json || selectedFile.catalog_json === '[]')" class="drawer-empty">
-          <p>此材料尚未解析目录</p>
-          <textarea v-model="pasteCatalogText" class="drawer-textarea" placeholder="粘贴目录文本..." rows="4"></textarea>
-          <button class="drawer-primary-btn" :disabled="isAnalyzingCatalog || !pasteCatalogText.trim()" @click="handleAnalyzeCatalog">
-            <span class="loading-spinner" v-if="isAnalyzingCatalog"></span>
-            <span v-else>✨ AI 解析</span>
-          </button>
+        <div v-if="isOutlineComposer" class="outline-composer">
+          <p class="outline-composer-tip">拖拽章节或所属小节调整顺序</p>
+          <div v-for="(chapter, chapterIndex) in subjectOutline" :key="chapter.id" class="composer-chapter" draggable="true" @dragstart="startChapterDrag(chapterIndex)" @dragover.prevent @drop="handleChapterDrop(chapterIndex)">
+            <div class="composer-row"><span class="drag-handle" title="拖拽章节">⠿</span><strong>{{ chapter.title }}</strong></div>
+            <div class="composer-sections">
+              <div v-for="(section, sectionIndex) in chapter.sections" :key="section.id" class="composer-section" draggable="true" @dragstart.stop="startSectionDrag(chapterIndex, sectionIndex)" @dragover.prevent @drop.stop="handleSectionDrop(chapterIndex, sectionIndex)">
+                <span class="drag-handle">⠿</span><span>{{ section.title }}</span>
+              </div>
+              <input v-model="chapterDrafts[chapter.id]" class="outline-inline-input" placeholder="输入小节后按 Enter" @keyup.enter="addSection(chapter.id)" />
+            </div>
+          </div>
+          <input v-model="chapterDraft" class="outline-inline-input chapter-input" placeholder="输入新章节后按 Enter" @keyup.enter="addChapter" />
         </div>
-        <div class="drawer-empty" v-else>
-          <span>请先选择学习材料</span>
+        <div v-else class="outline-overview-list">
+          <div v-for="chapter in subjectOutline" :key="chapter.id" class="outline-overview-chapter">
+            <strong>{{ chapter.title }}</strong>
+            <button v-for="section in chapter.sections" :key="section.id" class="outline-file-link" @click="openOutlineFile(section.fileId)">{{ section.title }}<span v-if="fileById(section.fileId)"> · {{ fileById(section.fileId)?.name }}</span></button>
+          </div>
         </div>
       </div>
     </aside>
@@ -124,13 +110,12 @@
       <!-- Micro Status Bar -->
       <header class="center-status-bar">
         <div class="status-left">
-          <span v-if="centerView === 'pdf' && selectedFile" class="status-file">📄 {{ selectedFile.name }}</span>
+          <span v-if="centerView === 'summary' && selectedFile" class="status-file">📝 {{ selectedFile.name }} · 文件总结</span>
           <span v-else-if="centerView === 'blocks'" class="status-file">🧩 知识库 · {{ filteredBlocks.length }} 个知识块</span>
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
-          <span v-if="centerView === 'pdf' && pdfPageInfo" class="status-page">{{ pdfPageInfo }}</span>
-          <button v-if="centerView !== 'pdf' && selectedFileId" class="status-btn" @click="openPdfCompanion(selectedFileId)">打开 PDF 伴读</button>
+          <span class="status-page" v-if="centerView === 'summary'">总结视图</span>
         </div>
       </header>
 
@@ -141,24 +126,10 @@
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="tier2Open ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
         </button>
 
-        <!-- Skeleton Loading -->
-        <div v-if="isLoading" class="skeleton-screen">
-          <div class="skeleton-line w80"></div>
-          <div class="skeleton-line w60"></div>
-          <div class="skeleton-block"></div>
-          <div class="skeleton-line w90"></div>
-          <div class="skeleton-line w70"></div>
-          <div class="skeleton-block"></div>
-        </div>
-
-        <!-- PDF View -->
-        <div v-else-if="centerView === 'pdf' && selectedFile" class="pdf-workspace">
-          <PdfViewer
-            :filePath="selectedFile.file_path"
-            :fileName="selectedFile.name"
-            @page-changed="onPdfPageChange"
-            @loaded="onPdfLoaded"
-          />
+        <div v-if="centerView === 'summary' && selectedFile" class="file-summary-workspace">
+          <div class="file-summary-head"><span class="file-summary-icon">{{ getFileIcon(selectedFile.file_type) }}</span><div><p>文件学习总结</p><h2>{{ selectedFile.name }}</h2></div></div>
+          <div class="summary-markdown" v-if="selectedFileBlocks.length" v-html="renderMarkdown(fileSummaryMarkdown)"></div>
+          <div class="summary-empty" v-else><span>✦</span><h3>还没有可展示的总结</h3><p>该材料关联的知识块会集中展示在这里；也可以在右侧让 AI 为当前文件整理总结。</p><button class="summary-ask-ai" @click="sendPreset('请总结当前文件的核心内容，并按章节列出重点。')">让 AI 整理总结</button></div>
         </div>
 
         <!-- Knowledge Blocks Grid -->
@@ -267,15 +238,17 @@
     <!-- ===== RIGHT: AI Assistant ===== -->
     <aside class="workspace-right" v-show="!rightCollapsed" :style="{ width: rightWidth + '%' }">
       <div class="ai-header">
-        <span class="ai-title">AI 助手</span>
-        <button class="ai-clear" @click="clearChat" title="清空对话">清空</button>
+        <button class="ai-model-switch" @click="showModelMenu = !showModelMenu">{{ currentAiMode }}⌄</button>
+        <div v-if="showModelMenu" class="ai-model-menu"><button v-for="mode in aiModes" :key="mode" @click="currentAiMode = mode; showModelMenu = false">{{ mode }}</button></div>
+        <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
       </div>
 
       <!-- Chat Flow -->
       <div class="ai-messages" ref="chatScrollRef">
         <div class="ai-welcome" v-if="chatMessages.length === 0">
-          <p class="welcome-title">👋 您好！我是您的智能学习伴读。</p>
-          <p class="welcome-desc">我可以帮您理解当前材料、提炼核心概念、解答疑问。您可以点击下方示例问题快速开始：</p>
+          <div class="ai-star-ring">✦</div>
+          <p class="welcome-title">你好，我是你的 AI 学习伴读</p>
+          <p class="welcome-desc">围绕当前材料，帮你梳理重点、解释概念并一起学习。</p>
           
           <div class="preset-questions">
             <button
@@ -284,7 +257,7 @@
               class="preset-btn"
               @click="sendPreset(q)"
             >
-              ✨ {{ q }}
+              {{ q }}
             </button>
           </div>
         </div>
@@ -296,9 +269,7 @@
           :class="msg.role"
         >
           <!-- Assistant Avatar -->
-          <div class="msg-avatar ai-avatar" v-if="msg.role === 'assistant'">
-            <span>🤖</span>
-          </div>
+            <div class="msg-avatar ai-avatar" v-if="msg.role === 'assistant'">✦</div>
 
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
@@ -308,15 +279,11 @@
           </div>
 
           <!-- User Avatar -->
-          <div class="msg-avatar user-avatar" v-if="msg.role === 'user'">
-            <span>U</span>
-          </div>
+            <div class="msg-avatar user-avatar" v-if="msg.role === 'user'">我</div>
         </div>
 
         <div class="chat-msg-row assistant" v-if="isAiStreaming">
-          <div class="msg-avatar ai-avatar">
-            <span>🤖</span>
-          </div>
+          <div class="msg-avatar ai-avatar">✦</div>
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
               <div class="chat-content ai-reply">
@@ -330,12 +297,13 @@
 
       <!-- Input Box -->
       <div class="ai-input-area">
-        <div class="ai-input-wrapper">
+        <div class="ai-input-wrapper ai-capsule-input">
+          <span class="ai-input-plus">+</span>
           <textarea
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            placeholder="询问关于当前材料的问题..."
+            placeholder="问点什么..."
             rows="1"
             @keydown.enter.exact.prevent="sendChat"
             @input="autoResizeInput"
@@ -449,8 +417,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { streamFetch } from '@/utils/streamFetch'
-
-import PdfViewer from '@/components/subject/PdfViewer.vue'
+import { getSubjectIcon } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
 const renderMarkdown = (c: string) => c ? DOMPurify.sanitize(marked.parse(c) as string) : ''
@@ -477,9 +444,8 @@ const timeAgo = (iso: string) => {
 // ===== Tier-1 / Tier-2 State =====
 const tier2Open = ref(true)
 const tier2Mode = ref<'files' | 'outline'>('files')
-const centerView = ref<'blocks' | 'pdf' | 'overview'>('overview')
+const centerView = ref<'blocks' | 'summary' | 'overview'>('overview')
 const rightCollapsed = ref(false)
-const isLoading = ref(false)
 
 const toggleTier2 = (mode: 'files' | 'outline') => {
   if (tier2Open.value && tier2Mode.value === mode && centerView.value !== 'blocks') {
@@ -488,7 +454,7 @@ const toggleTier2 = (mode: 'files' | 'outline') => {
     tier2Mode.value = mode
     tier2Open.value = true
     if (centerView.value === 'blocks') {
-      centerView.value = selectedFileId.value ? 'pdf' : 'overview'
+      centerView.value = selectedFileId.value ? 'summary' : 'overview'
     }
   }
 }
@@ -535,29 +501,15 @@ const startResizeRight = (e: MouseEvent) => {
   document.addEventListener('mouseup', onUp)
 }
 
-// ===== File & PDF =====
+// ===== File summary =====
 const selectedFileId = ref<string | null>(null)
 const selectedFile = computed(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
-const pdfPageInfo = ref('')
+const selectedFileBlocks = computed(() => recentBlocks.value.filter(block => block.sourceFileId === selectedFileId.value))
+const fileSummaryMarkdown = computed(() => selectedFileBlocks.value.map(block => `## ${block.title}\n\n${block.preview}`).join('\n\n'))
 
 const selectFile = (id: string) => {
   selectedFileId.value = id
-  centerView.value = 'pdf'
-  isLoading.value = true
-  setTimeout(() => { isLoading.value = false }, 300)
-}
-
-const openPdfCompanion = (id: string) => {
-  selectedFileId.value = id
-  centerView.value = 'pdf'
-}
-
-const onPdfPageChange = (info: { current: number; total: number }) => {
-  pdfPageInfo.value = `${info.current} / ${info.total} 页`
-}
-
-const onPdfLoaded = (info: { total: number }) => {
-  pdfPageInfo.value = `1 / ${info.total} 页`
+  centerView.value = 'summary'
 }
 
 const getFileIcon = (t: string) => {
@@ -569,34 +521,63 @@ const getFileIcon = (t: string) => {
   return '📄'
 }
 
-// ===== Outline =====
-const pasteCatalogText = ref('')
-const isAnalyzingCatalog = ref(false)
-const expandedChapters = ref<Record<number, boolean>>({ 0: true })
-
-const parsedCatalog = computed(() => {
-  if (!selectedFile.value?.catalog_json) return []
-  try { return JSON.parse(selectedFile.value.catalog_json) } catch { return [] }
-})
-
-const toggleChapter = (i: number) => { expandedChapters.value[i] = !expandedChapters.value[i] }
-const isChapterExpanded = (i: number) => expandedChapters.value[i] !== false
-
-const viewFileOutline = (id: string) => {
-  selectedFileId.value = id
-  tier2Mode.value = 'outline'
-  tier2Open.value = true
+// ===== Subject outline (visual prototype; not persisted) =====
+interface OutlineSection { id: string; title: string; fileId?: string }
+interface OutlineChapter { id: string; title: string; sections: OutlineSection[] }
+const isOutlineComposer = ref(false)
+const chapterDraft = ref('')
+const chapterDrafts = ref<Record<string, string>>({})
+const chapterDragIndex = ref<number | null>(null)
+const sectionDrag = ref<{ chapterIndex: number; sectionIndex: number } | null>(null)
+const subjectOutline = ref<OutlineChapter[]>([
+  { id: 'chapter-foundation', title: '第一章 · 基础概念', sections: [{ id: 'section-overview', title: '核心概念总览' }] },
+  { id: 'chapter-practice', title: '第二章 · 重点与练习', sections: [{ id: 'section-application', title: '典型应用与易错点' }] }
+])
+const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id === id)
+const openOutlineFile = (id?: string) => { if (id) selectFile(id) }
+const syncOutlineFileLinks = () => {
+  const files = activeSourceFiles.value
+  if (!files.length) return
+  subjectOutline.value.forEach((chapter, chapterIndex) => {
+    chapter.sections.forEach((section, sectionIndex) => {
+      section.fileId = files[(chapterIndex + sectionIndex) % files.length].id
+    })
+  })
 }
-
-const handleAnalyzeCatalog = async () => {
-  if (!selectedFile.value || !pasteCatalogText.value.trim()) return
-  isAnalyzingCatalog.value = true
-  try {
-    await subjectStore.analyzeCatalogViaAi(selectedFile.value.id, pasteCatalogText.value.trim())
-    pasteCatalogText.value = ''
-    ElNotification({ title: '目录解析完成', type: 'success', position: 'top-right' })
-  } catch { ElNotification({ title: '解析失败', type: 'error', position: 'top-right' }) }
-  finally { isAnalyzingCatalog.value = false }
+const addChapter = () => {
+  const title = chapterDraft.value.trim()
+  if (!title) return
+  subjectOutline.value.push({ id: `chapter-${Date.now()}`, title, sections: [] })
+  chapterDraft.value = ''
+}
+const addSection = (chapterId: string) => {
+  const title = chapterDrafts.value[chapterId]?.trim()
+  if (!title) return
+  const chapter = subjectOutline.value.find(item => item.id === chapterId)
+  if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, title })
+  chapterDrafts.value[chapterId] = ''
+}
+const startChapterDrag = (index: number) => { chapterDragIndex.value = index }
+const handleChapterDrop = (target: number) => {
+  const source = chapterDragIndex.value
+  if (source === null || source === target) return
+  const [chapter] = subjectOutline.value.splice(source, 1)
+  subjectOutline.value.splice(target, 0, chapter)
+  chapterDragIndex.value = null
+}
+const startSectionDrag = (chapterIndex: number, sectionIndex: number) => { sectionDrag.value = { chapterIndex, sectionIndex } }
+const handleSectionDrop = (chapterIndex: number, target: number) => {
+  const source = sectionDrag.value
+  if (!source || source.chapterIndex !== chapterIndex || source.sectionIndex === target) return
+  const sections = subjectOutline.value[chapterIndex].sections
+  const [section] = sections.splice(source.sectionIndex, 1)
+  sections.splice(target, 0, section)
+  sectionDrag.value = null
+}
+const handleOutlineAi = () => {
+  tier2Open.value = true
+  rightCollapsed.value = false
+  sendPreset('请为当前学科梳理章节结构与学习重点。')
 }
 
 // ===== Knowledge Blocks =====
@@ -623,21 +604,9 @@ const handleRegisterFile = async () => {
   } catch (e) { console.error(e) }
 }
 
-const deleteSourceFile = async (id: string) => {
-  if (!confirm('确定移除此材料？')) return
-  await subjectStore.deleteSourceFile(id)
-  if (selectedFileId.value === id) { selectedFileId.value = null; centerView.value = 'blocks' }
-  ElNotification({ title: '已移除', type: 'success', position: 'top-right' })
-}
-
 // ===== Task Creation =====
 const showTaskModal = ref(false)
 const taskForm = ref({ name: '', duration: 60, load: 'medium' as 'low' | 'medium' | 'high' })
-
-const triggerAddTask = (sec: string) => {
-  taskForm.value = { name: `学习 ${sec}`, duration: 60, load: 'medium' }
-  showTaskModal.value = true
-}
 
 const handleAddTask = async () => {
   if (!taskForm.value.name.trim() || !activeSubject.value) return
@@ -651,18 +620,6 @@ const handleAddTask = async () => {
 const isRefiningAi = ref(false)
 const aiRefiningText = ref('')
 let abortController: AbortController | null = null
-
-const triggerAiRefine = async (chap: string, sec: string) => {
-  if (!selectedFile.value) return
-  isRefiningAi.value = true
-  aiRefiningText.value = `提炼 [${sec}]...`
-  let content = ''
-  abortController = new AbortController()
-  try {
-    const authStore = useAuthStore()
-    await streamFetch(`/api/ai/chat?message=${encodeURIComponent(`提炼《${selectedFile.value.name}》"${chap} - ${sec}"的核心概念，Markdown格式`)}&subjectId=${subjectId.value}&sourceFileName=${encodeURIComponent(selectedFile.value.name)}`, authStore.token || '', (c) => { content += c }, () => { isRefiningAi.value = false; openCreateDialogWithContent(sec, content) }, (err) => { isRefiningAi.value = false; if (err.name !== 'AbortError') ElNotification({ title: '提炼失败', type: 'error', position: 'top-right' }) }, abortController.signal)
-  } catch { isRefiningAi.value = false }
-}
 
 // ===== Block CRUD =====
 const blockDialogVisible = ref(false)
@@ -682,7 +639,6 @@ const themeColors = [
 const handleBlockClick = (b: any) => { selectedBlock.value = b; isEditMode.value = false; blockDialogVisible.value = true }
 const startEdit = () => { isEditMode.value = true; isCreateMode.value = false; if (selectedBlock.value) editForm.value = { id: selectedBlock.value.id, subject: selectedBlock.value.subject, title: selectedBlock.value.title, color: selectedBlock.value.color, preview: selectedBlock.value.preview, source: selectedBlock.value.source } }
 const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; editForm.value = { id: '', subject: activeSubject.value?.name || '', title: '', color: activeSubject.value?.color || 'rgba(181,196,177,0.4)', preview: '', source: '手动创建' }; blockDialogVisible.value = true }
-const openCreateDialogWithContent = (t: string, c: string) => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; editForm.value = { id: '', subject: activeSubject.value?.name || '', title: t, color: activeSubject.value?.color || 'rgba(181,196,177,0.4)', preview: c, source: 'AI 提炼' }; blockDialogVisible.value = true }
 const cancelEdit = () => { isCreateMode.value ? (blockDialogVisible.value = false) : (isEditMode.value = false) }
 const closeBlockDialog = () => { blockDialogVisible.value = false; isEditMode.value = false; isCreateMode.value = false }
 
@@ -723,6 +679,9 @@ const isAiStreaming = ref(false)
 const streamingContent = ref('')
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
+const aiModes = ['学习伴读', '重点梳理', '练习出题']
+const currentAiMode = ref(aiModes[0])
+const showModelMenu = ref(false)
 
 const autoResizeInput = () => {
   const el = chatInputRef.value
@@ -774,9 +733,10 @@ onMounted(async () => {
     subjectStore.setActiveSubject(id)
     await subjectStore.loadSourceFiles(id)
     await blockStore.fetchBlocks(undefined, id)
+    syncOutlineFileLinks()
     if (activeSourceFiles.value.length > 0) {
       selectedFileId.value = activeSourceFiles.value[0].id
-      centerView.value = 'pdf'
+      centerView.value = 'summary'
     } else {
       centerView.value = 'overview'
     }
@@ -788,9 +748,10 @@ watch(subjectId, async (newId) => {
     subjectStore.setActiveSubject(newId)
     await subjectStore.loadSourceFiles(newId)
     await blockStore.fetchBlocks(undefined, newId)
+    syncOutlineFileLinks()
     if (activeSourceFiles.value.length > 0) {
       selectedFileId.value = activeSourceFiles.value[0].id
-      centerView.value = 'pdf'
+      centerView.value = 'summary'
     } else {
       selectedFileId.value = null
       centerView.value = 'overview'
@@ -1788,4 +1749,35 @@ html.dark .ai-input-wrapper {
 .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: all var(--transition-fast); }
 .color-dot:hover { transform: scale(1.1); }
 .color-dot.is-selected { border-color: var(--text-primary); transform: scale(1.15); }
+
+/* ===== Subject summary & outline prototype ===== */
+.outline-header-actions { display: flex; align-items: center; gap: 8px; }
+.outline-ai-button { border: 0; border-radius: 7px; padding: 6px 9px; background: var(--color-primary-light); color: var(--color-primary-accent); font-size: 11px; font-weight: 700; cursor: pointer; }
+.outline-add-button { width: 27px; height: 27px; border: 0; border-radius: 50%; background: var(--color-primary-accent); color: white; font-size: 19px; line-height: 1; cursor: pointer; }
+.outline-composer, .outline-overview-list { padding: 0 12px 14px; overflow-y: auto; }
+.outline-composer-tip { margin: 0 0 10px; color: var(--text-muted); font-size: 11px; }
+.composer-chapter { margin-bottom: 10px; border: 1px solid var(--border-default); border-radius: 9px; background: rgba(255,255,255,.35); }
+.composer-row, .composer-section { display: flex; align-items: center; gap: 7px; padding: 8px 10px; font-size: 12px; }
+.composer-row { border-bottom: 1px solid var(--border-subtle); }
+.composer-sections { padding: 3px 8px 8px 26px; }
+.composer-section { border-radius: 6px; color: var(--text-secondary); }
+.composer-section:hover { background: var(--color-primary-light); }
+.drag-handle { color: var(--text-muted); cursor: grab; font-size: 14px; }
+.outline-inline-input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px dashed var(--border-strong); padding: 7px 3px; background: transparent; color: var(--text-primary); outline: none; font-size: 12px; }
+.chapter-input { margin-top: 4px; padding: 10px 4px; }
+.outline-overview-chapter { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; font-size: 12px; }
+.outline-overview-chapter strong { color: var(--text-primary); font-size: 13px; }
+.outline-file-link { padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; font: inherit; }
+.outline-file-link:hover { background: var(--color-primary-light); color: var(--color-primary-accent); }
+.file-summary-workspace { width: min(780px, 100%); margin: 0 auto; padding: 46px 52px; overflow-y: auto; }
+.file-summary-head { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; margin-bottom: 26px; border-bottom: 1px solid var(--border-default); }
+.file-summary-head p { margin: 0 0 4px; color: var(--text-muted); font-size: 12px; }.file-summary-head h2 { margin: 0; font-size: 22px; color: var(--text-primary); }.file-summary-icon { font-size: 30px; }
+.summary-markdown { color: var(--text-secondary); line-height: 1.8; font-size: 14px; }.summary-markdown :deep(h2) { color: var(--text-primary); font-size: 17px; margin-top: 26px; }
+.summary-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 90px 15%; color: var(--text-secondary); }.summary-empty > span { color: var(--color-primary-accent); font-size: 28px; }.summary-empty h3 { color: var(--text-primary); margin: 12px 0 4px; }.summary-empty p { font-size: 13px; line-height: 1.7; }.summary-ask-ai { margin-top: 12px; padding: 9px 13px; border: 0; border-radius: 8px; background: var(--color-primary-accent); color: white; font-weight: 700; cursor: pointer; }
+
+/* ===== Mobile AI visual language on PC ===== */
+.ai-header { position: relative; justify-content: space-between; }.ai-model-switch { border: 0; background: transparent; color: var(--text-primary); font-weight: 700; cursor: pointer; padding: 6px 0; }.ai-model-menu { position: absolute; top: 42px; left: 16px; z-index: 4; min-width: 112px; padding: 5px; background: var(--color-bg-primary); border: 1px solid var(--border-default); border-radius: 9px; box-shadow: var(--shadow-md); }.ai-model-menu button { display: block; width: 100%; border: 0; border-radius: 5px; padding: 7px; background: transparent; color: var(--text-secondary); font-size: 12px; text-align: left; cursor: pointer; }.ai-model-menu button:hover { background: var(--color-primary-light); }
+.ai-clear { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; font-size: 0; }.ai-clear svg { stroke: currentColor; }
+.ai-welcome { align-items: center; text-align: center; padding: 46px 25px 24px; }.ai-star-ring { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 50%; color: var(--color-primary-accent); font-size: 25px; background: radial-gradient(circle, rgba(255,255,255,.96) 38%, transparent 40%), conic-gradient(from 30deg, rgba(125,147,114,.18), rgba(125,147,114,.8), rgba(125,147,114,.15)); box-shadow: 0 0 0 7px rgba(125,147,114,.08); margin-bottom: 18px; }.welcome-title { font-size: 17px; }.preset-btn { border-radius: 12px; background: var(--color-bg-primary); text-align: left; }
+.msg-avatar.ai-avatar { background: #e7eee3; color: var(--color-primary-accent); font-weight: 800; }.msg-avatar.user-avatar { background: #303431; color: white; font-size: 11px; }.chat-msg-row.user .chat-bubble { background: #303431; color: white; }.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-primary); border: 1px solid var(--border-default); }.ai-capsule-input { border-radius: 20px; padding-left: 10px; background: var(--color-bg-primary); border: 1px solid var(--border-default); }.ai-input-plus { color: var(--text-muted); font-size: 19px; }.ai-input { background: transparent; }.ai-send-btn { border-radius: 50%; }
 </style>

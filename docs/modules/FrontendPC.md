@@ -100,7 +100,8 @@ Auralis-PC/
 
 - Dashboard：时间线、待办和快速创建；当前用户改动已移除首页知识流上方统计与热力图卡片。
 - SubjectHall：学科卡片、搜索、创建和进入工作区。
-- SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文。
+- SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，兼容历史的图标名称（如 `book`、`code`）与 Emoji 值，并为未知或空值回退书本图标。
+- SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织。
 - Timeline：排期和任务时间管理。
 - Profile：账号、外观和设置。
@@ -121,6 +122,7 @@ cd Auralis-PC
 npm install
 npm run dev
 npm.cmd run build
+npm.cmd run check:subject-workspace
 npm run tauri dev
 ```
 
@@ -128,6 +130,7 @@ npm run tauri dev
 | --- | --- | --- |
 | `npm run dev` | Vite 开发服务可启动 | 生产构建、桌面能力 |
 | `npm.cmd run build` | 类型构建与 Web bundle | Tauri GUI、业务流程 |
+| `npm.cmd run check:subject-workspace` | 学科工作区关键 UI 结构契约 | 浏览器拖拽、AI 流式请求与视觉效果 |
 | `npm run tauri dev` | 当前机器桌面开发启动 | 安装包和其他系统 |
 
 ## 当前限制

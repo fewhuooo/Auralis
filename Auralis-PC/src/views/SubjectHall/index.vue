@@ -27,7 +27,7 @@
         >
           <div class="subject-card-header">
             <div class="subject-card-icon">
-              {{ subj.icon || '📚' }}
+              {{ getSubjectIcon(subj.icon) }}
             </div>
             <div class="subject-card-actions" @click.stop>
               <button class="card-action-btn" title="编辑" @click="openCreateSubject(subj)">✎</button>
@@ -82,6 +82,7 @@ import 'element-plus/theme-chalk/el-notification.css'
 
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import SubjectCreateModal from '@/components/subject/SubjectCreateModal.vue'
+import { getSubjectIcon } from '@/utils/subjectIcon'
 
 const router = useRouter()
 const subjectStore = useSubjectStore()

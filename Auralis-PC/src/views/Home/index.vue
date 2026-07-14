@@ -25,7 +25,7 @@
             >
               <div class="subject-card-header">
                 <div class="subject-card-icon" :style="{ backgroundColor: subj.color }">
-                  {{ subj.icon || '📚' }}
+                  {{ getSubjectIcon(subj.icon) }}
                 </div>
                 <div class="subject-card-actions" @click.stop>
                   <button class="card-action-btn" title="编辑" @click="openCreateSubject(subj)">✎</button>
@@ -301,7 +301,7 @@
           @click="viewMode = 'timeline'"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          时间流
+          日视图
         </button>
         <button
           class="view-tab-btn"
@@ -310,14 +310,6 @@
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           周视图
-        </button>
-        <button
-          class="view-tab-btn"
-          :class="{ 'is-active': viewMode === 'checklist' }"
-          @click="viewMode = 'checklist'"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-          待办清单
         </button>
       </div>
 
@@ -477,7 +469,7 @@
           <label class="form-label">归属学科 *</label>
           <select v-model="taskForm.subjectId" class="form-input">
             <option v-for="subj in subjectStore.subjects" :key="subj.id" :value="subj.id">
-              {{ subj.icon }} {{ subj.name }}
+              {{ getSubjectIcon(subj.icon) }} {{ subj.name }}
             </option>
             <option value="" disabled v-if="subjectStore.subjects.length === 0">暂无学科，请先创建</option>
           </select>
@@ -615,6 +607,7 @@ import 'element-plus/theme-chalk/el-message-box.css'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
+import { getSubjectIcon } from '@/utils/subjectIcon'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
 import { streamFetch } from '@/utils/streamFetch'
 
