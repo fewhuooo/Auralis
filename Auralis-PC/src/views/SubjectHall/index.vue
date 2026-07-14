@@ -27,7 +27,10 @@
         >
           <div class="subject-card-header">
             <div class="subject-card-icon">
-              {{ getSubjectIcon(subj.icon) }}
+              <ElIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :size="28">
+                <component :is="getSubjectIconComponent(subj.icon)" />
+              </ElIcon>
+              <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
             </div>
             <div class="subject-card-actions" @click.stop>
               <button class="card-action-btn" title="编辑" @click="openCreateSubject(subj)">✎</button>
@@ -77,12 +80,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElNotification } from 'element-plus'
+import { ElIcon, ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import SubjectCreateModal from '@/components/subject/SubjectCreateModal.vue'
-import { getSubjectIcon } from '@/utils/subjectIcon'
+import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 const router = useRouter()
 const subjectStore = useSubjectStore()

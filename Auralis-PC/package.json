@@ -8,9 +8,11 @@
     "tauri": "tauri",
     "build": "vue-tsc -b && vite build",
     "check:subject-workspace": "node scripts/check-subject-workspace-reconstruction.mjs",
+    "check:subject-icons": "node scripts/check-subject-icon-rendering.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@types/dompurify": "^3.0.5",

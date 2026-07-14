@@ -13,7 +13,10 @@
             class="preview-card"
             :style="{ backgroundColor: form.color || 'rgba(163, 177, 155, 0.2)', color: form.color ? 'var(--text-primary)' : 'inherit' }"
           >
-            {{ form.icon || '📚' }}
+            <ElIcon v-if="isSubjectIconKey(form.icon) || !getLegacySubjectIcon(form.icon)" :size="28">
+              <component :is="getSubjectIconComponent(form.icon)" />
+            </ElIcon>
+            <span v-else>{{ getLegacySubjectIcon(form.icon) }}</span>
           </div>
           <div class="preview-meta">
             <span class="preview-title">{{ form.name || '学科名称预览' }}</span>
@@ -48,19 +51,21 @@
           ></textarea>
         </div>
 
-        <!-- Icon (Emoji) Selector -->
+        <!-- Icon Selector -->
         <div class="form-group">
           <label>选择空间图标</label>
-          <div class="emoji-grid">
+          <div class="icon-grid">
             <button 
-              v-for="emoji in emojis" 
-              :key="emoji"
+              v-for="option in subjectIconOptions"
+              :key="option.key"
               type="button"
-              class="emoji-btn"
-              :class="{ 'is-selected': form.icon === emoji }"
-              @click="form.icon = emoji"
+              class="icon-btn"
+              :class="{ 'is-selected': form.icon === option.key }"
+              :title="option.label"
+              :aria-label="`选择${option.label}图标`"
+              @click="form.icon = option.key"
             >
-              {{ emoji }}
+              <ElIcon :size="20"><component :is="option.component" /></ElIcon>
             </button>
           </div>
         </div>
@@ -97,6 +102,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { ElIcon } from 'element-plus'
+import {
+  getLegacySubjectIcon,
+  getSubjectIconComponent,
+  isSubjectIconKey,
+  subjectIconOptions
+} from '@/utils/subjectIcon'
 
 const props = defineProps({
   subjectData: {
@@ -112,11 +124,9 @@ const form = ref({
   id: '',
   name: '',
   description: '',
-  icon: '📚',
+  icon: 'book',
   color: 'rgba(163, 177, 155, 0.2)'
 })
-
-const emojis = ['📚', '🔬', '💻', '🧮', '🌍', '🎨', '🏛️', '⚗️', '🧬', '🪐', '📖', '📝', '🧠', '⚙️', '💡', '🏆']
 
 const themeColors = [
   { name: '极光蓝 (Aurora Blue)', value: 'rgba(59, 130, 246, 0.2)' },
@@ -136,7 +146,7 @@ onMounted(() => {
       id: props.subjectData.id || '',
       name: props.subjectData.name || '',
       description: props.subjectData.description || '',
-      icon: props.subjectData.icon || '📚',
+      icon: props.subjectData.icon || 'book',
       color: props.subjectData.color || 'rgba(163, 177, 155, 0.2)'
     }
   }
@@ -324,14 +334,14 @@ const handleSave = () => {
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* Emoji Grid */
-.emoji-grid {
+/* Icon Grid */
+.icon-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
   gap: 8px;
 }
 
-.emoji-btn {
+.icon-btn {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 8px;
@@ -344,18 +354,18 @@ const handleSave = () => {
   transition: all 0.2s;
 }
 
-.emoji-btn:hover {
+.icon-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   transform: scale(1.08);
 }
 
-.emoji-btn.custom-trigger:hover {
+.icon-btn.custom-trigger:hover {
   background: rgba(255, 255, 255, 0.12);
   border-color: var(--color-zen-sage, #A3B19B);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-.emoji-btn.is-selected {
+.icon-btn.is-selected {
   background: rgba(255, 255, 255, 0.12);
   border-color: var(--color-zen-sage, #A3B19B);
   transform: scale(1.08);

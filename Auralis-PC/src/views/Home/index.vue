@@ -25,7 +25,10 @@
             >
               <div class="subject-card-header">
                 <div class="subject-card-icon" :style="{ backgroundColor: subj.color }">
-                  {{ getSubjectIcon(subj.icon) }}
+                  <ElIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :size="28">
+                    <component :is="getSubjectIconComponent(subj.icon)" />
+                  </ElIcon>
+                  <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
                 </div>
                 <div class="subject-card-actions" @click.stop>
                   <button class="card-action-btn" title="编辑" @click="openCreateSubject(subj)">✎</button>
@@ -54,7 +57,12 @@
             <div class="header-left">
               <button class="back-btn" @click="selectSubject(null)">🏛️ 返回大厅</button>
               <div class="subject-title-area">
-                <span class="subject-emoji" :style="{ backgroundColor: activeSubject?.color }">{{ activeSubject?.icon || '📚' }}</span>
+                <span class="subject-emoji" :style="{ backgroundColor: activeSubject?.color }">
+                  <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="24">
+                    <component :is="getSubjectIconComponent(activeSubject?.icon)" />
+                  </ElIcon>
+                  <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
+                </span>
                 <div class="subject-meta-text">
                   <h2 class="subject-title">{{ activeSubject?.name }}</h2>
                   <p class="subject-description">{{ activeSubject?.description || '这是您的专属学科知识沉淀空间。' }}</p>
@@ -469,7 +477,7 @@
           <label class="form-label">归属学科 *</label>
           <select v-model="taskForm.subjectId" class="form-input">
             <option v-for="subj in subjectStore.subjects" :key="subj.id" :value="subj.id">
-              {{ getSubjectIcon(subj.icon) }} {{ subj.name }}
+              {{ isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon) ? '' : `${getLegacySubjectIcon(subj.icon)} ` }}{{ subj.name }}
             </option>
             <option value="" disabled v-if="subjectStore.subjects.length === 0">暂无学科，请先创建</option>
           </select>
@@ -600,14 +608,14 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ElNotification, ElMessageBox } from 'element-plus'
+import { ElIcon, ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 
 import { useBlockStore } from '@/store/useBlockStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
-import { getSubjectIcon } from '@/utils/subjectIcon'
+import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
 import { streamFetch } from '@/utils/streamFetch'
 

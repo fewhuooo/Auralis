@@ -1,6 +1,6 @@
 # Auralis 变更记录
 
-更新时间：2026-07-10
+更新时间：2026-07-14
 
 文档状态：现行历史记录
 
@@ -30,6 +30,12 @@
 
 - 新增 `src/utils/subjectIcon.ts`：学科图标统一兼容 Emoji 与历史名称（如 `book`、`code`），空值或未知名称回退为书本图标；大厅、工作区、首页和时间线使用同一解析逻辑。
 - `node scripts\check-subject-icon-rendering.mjs` 与 `npm.cmd run build` 已通过；浏览器/Tauri 显示仍待人工验收。
+
+### PC 新建学科线条图标（2026-07-14）
+
+- 创建学科弹层改用 16 个可访问的 Element Plus 线条图标，新建学科保存语义键；大厅、首页和工作区用同一解析器渲染。
+- 已有 Emoji 学科不迁移，编辑时未重选图标会原样保存；原生任务学科下拉保留旧 Emoji 前缀但不输出新的语义键。
+- 2026-07-14：`npm.cmd run check:subject-icons` 与 `npm.cmd run build` 通过；浏览器/Tauri 图标显示仍待人工验收。
 
 ### PC 学科工作区原型（2026-07-13）
 

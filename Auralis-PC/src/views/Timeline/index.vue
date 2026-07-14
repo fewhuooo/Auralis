@@ -250,7 +250,7 @@
           <select v-model="newTaskForm.subjectId" class="timeline-form-select" @change="onDialogSubjectChange">
             <option value="" disabled>选择一个学科</option>
             <option v-for="subj in subjectStore.subjects" :key="subj.id" :value="subj.id">
-              {{ getSubjectIcon(subj.icon) }} {{ subj.name }}
+              {{ isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon) ? '' : `${getLegacySubjectIcon(subj.icon)} ` }}{{ subj.name }}
             </option>
           </select>
         </div>
@@ -326,7 +326,7 @@ import DOMPurify from 'dompurify'
 
 import { useTaskStore, getTodayDayCode } from '@/store/useTaskStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { getSubjectIcon } from '@/utils/subjectIcon'
+import { getLegacySubjectIcon, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useBlockStore } from '@/store/useBlockStore'
 
 const taskStore = useTaskStore()

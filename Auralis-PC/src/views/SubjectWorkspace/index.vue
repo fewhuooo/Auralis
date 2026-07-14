@@ -38,7 +38,10 @@
       </div>
       <div class="tier1-bottom">
         <div class="subject-mini-icon" :style="{ backgroundColor: activeSubject?.color }" :title="activeSubject?.name">
-          {{ getSubjectIcon(activeSubject?.icon) }}
+          <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="24">
+            <component :is="getSubjectIconComponent(activeSubject?.icon)" />
+          </ElIcon>
+          <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
         </div>
       </div>
     </nav>
@@ -190,7 +193,12 @@
         <!-- Default: Subject Onboarding Overview -->
         <div v-else class="onboarding-workspace">
           <div class="onboarding-header">
-            <div class="onboarding-emoji">{{ activeSubject?.icon || '📚' }}</div>
+            <div class="onboarding-emoji">
+              <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="60">
+                <component :is="getSubjectIconComponent(activeSubject?.icon)" />
+              </ElIcon>
+              <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
+            </div>
             <h2 class="onboarding-title">欢迎来到 {{ activeSubject?.name }} 智能学习工作区</h2>
             <p class="onboarding-subtitle">{{ activeSubject?.description || '在这里，您可以轻松管理您的材料，使用 AI 进行章节大纲提取与核心概念提炼，打造您的专属记忆库。' }}</p>
           </div>
@@ -409,7 +417,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ElNotification } from 'element-plus'
+import { ElIcon, ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
 import { useBlockStore } from '@/store/useBlockStore'
@@ -417,7 +425,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { streamFetch } from '@/utils/streamFetch'
-import { getSubjectIcon } from '@/utils/subjectIcon'
+import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
 const renderMarkdown = (c: string) => c ? DOMPurify.sanitize(marked.parse(c) as string) : ''
