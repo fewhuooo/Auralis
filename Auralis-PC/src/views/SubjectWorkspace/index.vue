@@ -251,12 +251,19 @@
         <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
       </div>
 
-      <!-- Chat Flow -->
-      <div class="ai-messages" ref="chatScrollRef">
-        <div class="ai-welcome" v-if="chatMessages.length === 0">
-          <div class="ai-star-ring">✦</div>
-          <p class="welcome-title">你好，我是你的 AI 学习伴读</p>
-          <p class="welcome-desc">围绕当前材料，帮你梳理重点、解释概念并一起学习。</p>
+        <!-- Chat Flow -->
+        <div class="ai-messages" ref="chatScrollRef">
+          <div class="ai-welcome" v-if="chatMessages.length === 0">
+          <div class="ai-spark-wrap" aria-hidden="true">
+            <div class="ai-spark-ring"></div>
+            <svg class="ai-spark-svg" viewBox="0 0 52 52" fill="none">
+              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-welcome-gradient)" />
+              <defs><linearGradient id="workspace-ai-welcome-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset=".5" stop-color="#9AB08F" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
+            </svg>
+          </div>
+          <p class="welcome-title">{{ aiGreetingName }}，</p>
+          <p class="welcome-desc">今天想探索点什么？</p>
+          <p class="welcome-context">我会结合当前学科与材料，帮你梳理重点、解释概念并一起学习。</p>
           
           <div class="preset-questions">
             <button
@@ -276,8 +283,12 @@
           class="chat-msg-row"
           :class="msg.role"
         >
-          <!-- Assistant Avatar -->
-            <div class="msg-avatar ai-avatar" v-if="msg.role === 'assistant'">✦</div>
+          <div class="assistant-spark-avatar" v-if="msg.role === 'assistant'" aria-hidden="true">
+            <svg viewBox="0 0 52 52" fill="none">
+              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-avatar-gradient)" />
+              <defs><linearGradient id="workspace-ai-avatar-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
+            </svg>
+          </div>
 
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
@@ -291,10 +302,18 @@
         </div>
 
         <div class="chat-msg-row assistant" v-if="isAiStreaming">
-          <div class="msg-avatar ai-avatar">✦</div>
+          <div class="assistant-spark-avatar" aria-hidden="true">
+            <svg viewBox="0 0 52 52" fill="none">
+              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-stream-gradient)" />
+              <defs><linearGradient id="workspace-ai-stream-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
+            </svg>
+          </div>
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
-              <div class="chat-content ai-reply">
+              <div class="ai-typing-dots" v-if="!streamingContent" aria-label="AI 正在思考">
+                <span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>
+              </div>
+              <div class="chat-content ai-reply" v-else>
                 <span v-html="renderMarkdown(streamingContent)"></span>
                 <span class="typing-cursor"></span>
               </div>
@@ -305,13 +324,12 @@
 
       <!-- Input Box -->
       <div class="ai-input-area">
-        <div class="ai-input-wrapper ai-capsule-input">
-          <span class="ai-input-plus">+</span>
+        <div class="ai-input-wrapper ai-chat-capsule">
           <textarea
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            placeholder="问点什么..."
+            placeholder="问问 Auralis AI..."
             rows="1"
             @keydown.enter.exact.prevent="sendChat"
             @input="autoResizeInput"
@@ -321,8 +339,10 @@
             :class="{ 'is-ready': chatInput.trim() }"
             :disabled="!chatInput.trim() || isAiStreaming"
             @click="sendChat"
+            title="发送消息"
+            aria-label="发送消息"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>
           </button>
         </div>
       </div>
@@ -434,6 +454,7 @@ const route = useRoute()
 const router = useRouter()
 const blockStore = useBlockStore()
 const { recentBlocks } = storeToRefs(blockStore)
+const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const { activeSubject, activeSourceFiles } = storeToRefs(subjectStore)
 const taskStore = useTaskStore()
@@ -690,6 +711,7 @@ const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const aiModes = ['学习伴读', '重点梳理', '练习出题']
 const currentAiMode = ref(aiModes[0])
 const showModelMenu = ref(false)
+const aiGreetingName = computed(() => authStore.username || '同学')
 
 const autoResizeInput = () => {
   const el = chatInputRef.value
@@ -719,7 +741,6 @@ const sendChat = async () => {
   const url = `/api/ai/chat?message=${encodeURIComponent(msg)}&subjectId=${subjectId.value}&context=${encodeURIComponent(context)}`
 
   try {
-    const authStore = useAuthStore()
     await streamFetch(url, authStore.token || '', (c) => { streamingContent.value += c; scrollChatToBottom() }, () => {
       chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
       streamingContent.value = ''
@@ -1786,8 +1807,39 @@ html.dark .ai-input-wrapper {
 .summary-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 90px 15%; color: var(--text-secondary); }.summary-empty > span { color: var(--color-primary-accent); font-size: 28px; }.summary-empty h3 { color: var(--text-primary); margin: 12px 0 4px; }.summary-empty p { font-size: 13px; line-height: 1.7; }.summary-ask-ai { margin-top: 12px; padding: 9px 13px; border: 0; border-radius: 8px; background: var(--color-primary-accent); color: white; font-weight: 700; cursor: pointer; }
 
 /* ===== Mobile AI visual language on PC ===== */
-.ai-header { position: relative; justify-content: space-between; }.ai-model-switch { border: 0; background: transparent; color: var(--text-primary); font-weight: 700; cursor: pointer; padding: 6px 0; }.ai-model-menu { position: absolute; top: 42px; left: 16px; z-index: 4; min-width: 112px; padding: 5px; background: var(--color-bg-primary); border: 1px solid var(--border-default); border-radius: 9px; box-shadow: var(--shadow-md); }.ai-model-menu button { display: block; width: 100%; border: 0; border-radius: 5px; padding: 7px; background: transparent; color: var(--text-secondary); font-size: 12px; text-align: left; cursor: pointer; }.ai-model-menu button:hover { background: var(--color-primary-light); }
-.ai-clear { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; font-size: 0; }.ai-clear svg { stroke: currentColor; }
-.ai-welcome { align-items: center; text-align: center; padding: 46px 25px 24px; }.ai-star-ring { width: 58px; height: 58px; display: grid; place-items: center; border-radius: 50%; color: var(--color-primary-accent); font-size: 25px; background: radial-gradient(circle, rgba(255,255,255,.96) 38%, transparent 40%), conic-gradient(from 30deg, rgba(125,147,114,.18), rgba(125,147,114,.8), rgba(125,147,114,.15)); box-shadow: 0 0 0 7px rgba(125,147,114,.08); margin-bottom: 18px; }.welcome-title { font-size: 17px; }.preset-btn { border-radius: 12px; background: var(--color-bg-primary); text-align: left; }
-.msg-avatar.ai-avatar { background: #e7eee3; color: var(--color-primary-accent); font-weight: 800; }.msg-avatar.user-avatar { background: #303431; color: white; font-size: 11px; }.chat-msg-row.user .chat-bubble { background: #303431; color: white; }.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-primary); border: 1px solid var(--border-default); }.ai-capsule-input { border-radius: 20px; padding-left: 10px; background: var(--color-bg-primary); border: 1px solid var(--border-default); }.ai-input-plus { color: var(--text-muted); font-size: 19px; }.ai-input { background: transparent; }.ai-send-btn { border-radius: 50%; }
+.ai-header { position: relative; justify-content: space-between; }
+.ai-model-switch { border: 0; background: transparent; color: var(--text-primary); font-weight: 700; cursor: pointer; padding: 6px 0; }
+.ai-model-menu { position: absolute; top: 42px; left: 16px; z-index: 4; min-width: 112px; padding: 5px; background: var(--color-bg-primary); border: 1px solid var(--border-default); border-radius: 9px; box-shadow: var(--shadow-md); }
+.ai-model-menu button { display: block; width: 100%; border: 0; border-radius: 5px; padding: 7px; background: transparent; color: var(--text-secondary); font-size: 12px; text-align: left; cursor: pointer; }
+.ai-model-menu button:hover { background: var(--color-primary-light); }
+.ai-clear { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; font-size: 0; }
+.ai-clear svg { stroke: currentColor; }
+.ai-welcome { align-items: center; text-align: center; padding: 46px 25px 24px; }
+.ai-spark-wrap { position: relative; width: 60px; height: 60px; display: grid; place-items: center; margin-bottom: 18px; }
+.ai-spark-ring { position: absolute; inset: -8px; border-radius: 50%; background: radial-gradient(circle, rgba(125, 147, 114, .22), transparent 70%); animation: ai-spark-pulse 3s ease-in-out infinite; }
+.ai-spark-svg { width: 52px; height: 52px; filter: drop-shadow(0 4px 12px rgba(125, 147, 114, .35)); animation: ai-spark-float 4s ease-in-out infinite; }
+.welcome-title { font-size: 22px; letter-spacing: -.4px; }
+.welcome-desc { font-size: 16px; color: var(--text-primary); }
+.welcome-context { margin: -7px 0 3px; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
+.preset-questions { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+.preset-btn { border-radius: 999px; padding: 7px 11px; background: var(--color-bg-primary); text-align: center; font-size: 12px; }
+.preset-btn:hover { transform: none; }
+.assistant-spark-avatar { width: 32px; height: 32px; border: 1px solid var(--border-default); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-primary); flex: 0 0 auto; }
+.assistant-spark-avatar svg { width: 18px; height: 18px; }
+.msg-avatar.user-avatar { background: #303431; color: white; font-size: 11px; }
+.chat-msg-row.user .chat-bubble { background: #303431; color: white; }
+.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-primary); border: 1px solid var(--border-default); }
+.ai-chat-capsule { min-height: 48px; border-radius: 999px; padding: 7px 8px 7px 16px; gap: 8px; background: var(--color-bg-primary); border: 1px solid var(--border-default); }
+.ai-input { background: transparent; }
+.ai-send-btn { width: 32px; height: 32px; border-radius: 50%; }
+.ai-send-btn.is-ready { background: var(--color-primary-accent); color: #fff; }
+.ai-send-btn.is-ready:hover { background: var(--color-zen-sage); }
+.ai-typing-dots { display: flex; align-items: center; gap: 5px; min-height: 20px; padding: 3px 1px; }
+.ai-typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #7D9372; animation: ai-dot-bounce 1.4s ease-in-out infinite both; }
+.ai-typing-dot:nth-child(1) { animation-delay: -.32s; }
+.ai-typing-dot:nth-child(2) { animation-delay: -.16s; }
+html.dark .assistant-spark-avatar, html.dark .ai-chat-capsule { background: var(--color-bg-tertiary); border-color: var(--border-subtle); }
+@keyframes ai-spark-pulse { 0%, 100% { transform: scale(1); opacity: .6; } 50% { transform: scale(1.15); opacity: 1; } }
+@keyframes ai-spark-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes ai-dot-bounce { 0%, 80%, 100% { transform: scale(0); opacity: .3; } 40% { transform: scale(1); opacity: 1; } }
 </style>
