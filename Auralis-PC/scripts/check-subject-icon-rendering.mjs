@@ -9,6 +9,7 @@ const hall = await readFile(new URL('views/SubjectHall/index.vue', root), 'utf8'
 const home = await readFile(new URL('views/Home/index.vue', root), 'utf8')
 const modal = await readFile(new URL('components/subject/SubjectCreateModal.vue', root), 'utf8')
 const timeline = await readFile(new URL('views/Timeline/index.vue', root), 'utf8')
+const sidebar = await readFile(new URL('components/layout/AppSidebar.vue', root), 'utf8')
 
 assert.match(iconUtility, /export const subjectIconOptions/, 'new subjects need a line-icon option list')
 assert.match(iconUtility, /export const isSubjectIconKey/, 'rendering must distinguish semantic keys from legacy values')
@@ -24,5 +25,8 @@ assert.match(workspace, /\.subject-mini-icon\s*\{[\s\S]*?background:\s*#7D9372/,
 assert.match(hall, /isSubjectIconKey\(subj\.icon\)/, 'hall must preserve legacy Emoji while rendering new keys')
 assert.match(home, /isSubjectIconKey\(subj\.icon\)/, 'home must preserve legacy Emoji while rendering new keys')
 assert.match(timeline, /isSubjectIconKey\(subj\.icon\)/, 'native select must not print semantic keys')
+assert.match(sidebar, /isSubjectIconKey\(subj\.icon\)/, 'global sidebar must render semantic subject icon keys')
+assert.match(sidebar, /getLegacySubjectIcon\(subj\.icon\)/, 'global sidebar must preserve legacy Emoji')
+assert.doesNotMatch(sidebar, /\{\{ subj\.icon \|\| '📚' \}\}/, 'global sidebar must not print semantic icon keys as text')
 
 console.log('Subject icon rendering contract passed.')

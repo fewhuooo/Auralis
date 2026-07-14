@@ -68,8 +68,13 @@
           @mouseenter="handleMouseEnter($event, 'subject', subj)"
           @mouseleave="handleMouseLeave"
         >
-          <div class="subject-icon-bg" :style="{ backgroundColor: subj.color }">
-            {{ subj.icon || '📚' }}
+          <div class="subject-icon-bg">
+            <component
+              v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
+              :is="getSubjectIconComponent(subj.icon)"
+              class="subject-icon-glyph"
+            />
+            <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
           </div>
         </div>
       </div>
@@ -118,6 +123,11 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import {
+  getLegacySubjectIcon,
+  getSubjectIconComponent,
+  isSubjectIconKey
+} from '@/utils/subjectIcon'
 
 const route = useRoute()
 const router = useRouter()
@@ -369,6 +379,13 @@ onMounted(async () => {
   justify-content: center;
   font-size: 15px;
   flex-shrink: 0;
+  background: #7D9372;
+  color: #fff;
+}
+
+.subject-icon-glyph {
+  width: 18px;
+  height: 18px;
 }
 
 /* Floating Hover Subject Card */

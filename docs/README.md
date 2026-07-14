@@ -93,6 +93,8 @@
 - [系统架构](project/Architecture.md)
 - [文档架构设计](design/DocumentationArchitecture.md)
 - [前端设计](design/Frontend.md)
+- [PC 学习页 AI 伴读移动端视觉复刻设计（2026-07-14）](superpowers/specs/2026-07-14-pc-workspace-ai-mobile-visual-design.md)
+- [PC 学习页 AI 伴读移动端视觉复刻实施计划（2026-07-14）](superpowers/plans/2026-07-14-pc-workspace-ai-mobile-visual.md)
 - [PC 学科线条图标设计（2026-07-14）](superpowers/specs/2026-07-14-pc-subject-outline-icon-design.md)
 - [PC 学科线条图标实施计划（2026-07-14）](superpowers/plans/2026-07-14-pc-subject-outline-icon.md)
 - [PC 学科工作区重建设计（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-workspace-reconstruction-design.md)
