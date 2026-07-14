@@ -36,6 +36,7 @@
 - 创建学科弹层改用 16 个可访问的 Element Plus 线条图标，新建学科保存语义键；大厅、首页和工作区用同一解析器渲染。
 - 已有 Emoji 学科不迁移，编辑时未重选图标会原样保存；原生任务学科下拉保留旧 Emoji 前缀但不输出新的语义键。
 - 应用入口加载 `element-plus/theme-chalk/el-icon.css`，确保图标容器及 SVG 按指定尺寸渲染。
+- 移除创建学科的主题色选择；新建学科默认色及工作区左下角学科图标底色统一为 Sage Green `#7D9372`，图标使用白色。
 - 2026-07-14：`npm.cmd run check:subject-icons` 与 `npm.cmd run build` 通过；浏览器/Tauri 图标显示仍待人工验收。
 
 ### PC 学科工作区原型（2026-07-13）

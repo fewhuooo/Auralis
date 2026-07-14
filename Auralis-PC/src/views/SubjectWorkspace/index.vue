@@ -37,7 +37,7 @@
         </button>
       </div>
       <div class="tier1-bottom">
-        <div class="subject-mini-icon" :style="{ backgroundColor: activeSubject?.color }" :title="activeSubject?.name">
+        <div class="subject-mini-icon" :title="activeSubject?.name">
           <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="24">
             <component :is="getSubjectIconComponent(activeSubject?.icon)" />
           </ElIcon>
@@ -874,6 +874,8 @@ html.dark .tier1-btn:hover {
   align-items: center;
   justify-content: center;
   font-size: 18px;
+  background: #7D9372;
+  color: #fff;
   box-shadow: var(--shadow-sm);
 }
 

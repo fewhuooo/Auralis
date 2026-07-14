@@ -11,7 +11,7 @@
         <div class="subject-preview-section">
           <div 
             class="preview-card"
-            :style="{ backgroundColor: form.color || 'rgba(163, 177, 155, 0.2)', color: form.color ? 'var(--text-primary)' : 'inherit' }"
+            style="background: #7D9372; color: #fff"
           >
             <ElIcon v-if="isSubjectIconKey(form.icon) || !getLegacySubjectIcon(form.icon)" :size="28">
               <component :is="getSubjectIconComponent(form.icon)" />
@@ -70,24 +70,6 @@
           </div>
         </div>
 
-        <!-- Theme Color Selector -->
-        <div class="form-group">
-          <label>主题氛围颜色</label>
-          <div class="color-row">
-            <button 
-              v-for="color in themeColors" 
-              :key="color.value"
-              type="button"
-              class="color-btn"
-              :class="{ 'is-selected': form.color === color.value }"
-              :style="{ backgroundColor: color.value }"
-              :title="color.name"
-              @click="form.color = color.value"
-            >
-              <span class="check-mark" v-if="form.color === color.value">✓</span>
-            </button>
-          </div>
-        </div>
       </div>
 
       <div class="modal-footer">
@@ -125,19 +107,8 @@ const form = ref({
   name: '',
   description: '',
   icon: 'book',
-  color: 'rgba(163, 177, 155, 0.2)'
+  color: '#7D9372'
 })
-
-const themeColors = [
-  { name: '极光蓝 (Aurora Blue)', value: 'rgba(59, 130, 246, 0.2)' },
-  { name: '清新绿 (Mint Green)', value: 'rgba(16, 185, 129, 0.2)' },
-  { name: '复古粉 (Dusty Rose)', value: 'rgba(244, 63, 94, 0.2)' },
-  { name: '梦幻紫 (Dreamy Violet)', value: 'rgba(139, 92, 246, 0.2)' },
-  { name: '日光黄 (Amber Yellow)', value: 'rgba(245, 158, 11, 0.2)' },
-  { name: '活力橙 (Coral Orange)', value: 'rgba(239, 68, 68, 0.2)' },
-  { name: '温柔沙 (Desert Sand)', value: 'rgba(180, 83, 9, 0.15)' },
-  { name: '深幽灰 (Slate Gray)', value: 'rgba(107, 114, 128, 0.25)' }
-]
 
 onMounted(() => {
   if (props.subjectData) {
@@ -147,7 +118,7 @@ onMounted(() => {
       name: props.subjectData.name || '',
       description: props.subjectData.description || '',
       icon: props.subjectData.icon || 'book',
-      color: props.subjectData.color || 'rgba(163, 177, 155, 0.2)'
+      color: props.subjectData.color || '#7D9372'
     }
   }
 })
@@ -370,40 +341,6 @@ const handleSave = () => {
   border-color: var(--color-zen-sage, #A3B19B);
   transform: scale(1.08);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-/* Color Palette Row */
-.color-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.color-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-.color-btn:hover {
-  transform: scale(1.1);
-}
-
-.color-btn.is-selected {
-  border-color: var(--text-primary, #fff);
-  transform: scale(1.1);
-}
-
-.check-mark {
-  font-size: 11px;
-  color: var(--text-primary, #fff);
-  font-weight: bold;
 }
 
 /* Footer */

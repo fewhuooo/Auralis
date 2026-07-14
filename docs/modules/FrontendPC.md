@@ -100,7 +100,7 @@ Auralis-PC/
 
 - Dashboard：时间线、待办和快速创建；当前用户改动已移除首页知识流上方统计与热力图卡片。
 - SubjectHall：学科卡片、搜索、创建和进入工作区。
-- SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Element Plus 线条图标，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。
+- SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Element Plus 线条图标，创建弹层不提供主题色选择，默认和左下角图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。
 - SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织。
 - Timeline：排期和任务时间管理。
