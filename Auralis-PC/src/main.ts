@@ -6,6 +6,7 @@ import App from './App.vue'
 
 // Global styles
 import './styles/index.css'
+import 'element-plus/theme-chalk/el-icon.css'
 import 'element-plus/theme-chalk/dark/css-vars.css' // Element Plus dark mode
 
 const app = createApp(App)
