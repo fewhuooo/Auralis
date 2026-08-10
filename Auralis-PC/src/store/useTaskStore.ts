@@ -67,12 +67,12 @@ export const useTaskStore = defineStore('task', () => {
       updateCurrentSlot()
       const tasks = await localDb.getTasks()
       allTasks.value = tasks
-      
+
       pendingTasks.value = tasks.filter((t: Task) => t.status === 'pending' || t.status === 'learning' || t.status === 'to_review' || (t.status === 'completed' && (!t.startTime || t.startTime.trim() === '')))
-      
+
       // Reset time slot tasks
       timeSlots.value.forEach(slot => { slot.task = null })
-      
+
       const scheduledTasks = tasks.filter((t: Task) => t.startTime && t.startTime.trim() !== '')
       timeSlots.value.forEach(slot => {
         const t = scheduledTasks.find((st: Task) => {
@@ -183,11 +183,11 @@ export const useTaskStore = defineStore('task', () => {
   const analyzeSchedule = () => {
     aiSuggestions.value = []
     hasOverload.value = false
-    
+
     let continuousHighLoad = 0
     let totalLoadScore = 0
     const MAX_LOAD_SCORE = 12 // Simulated threshold based on historical focus capacity
-    
+
     timeSlots.value.forEach(slot => {
       if (slot.task) {
         if (slot.task.load === 'high') {
@@ -200,16 +200,16 @@ export const useTaskStore = defineStore('task', () => {
           continuousHighLoad = 0
           totalLoadScore += 1
         }
-        
+
         if (continuousHighLoad >= 2) {
           aiSuggestions.value.push(`⚠️ 连续的高负荷任务会导致疲劳，建议在【${slot.time}】前后插入休息或低负荷任务。`)
-          continuousHighLoad = 0 
+          continuousHighLoad = 0
         }
       } else {
         continuousHighLoad = 0
       }
     })
-    
+
     if (totalLoadScore > MAX_LOAD_SCORE) {
       hasOverload.value = true
       const lastScheduled = [...timeSlots.value].reverse().find(s => s.task && s.task.status === 'scheduled')
@@ -217,7 +217,7 @@ export const useTaskStore = defineStore('task', () => {
         aiSuggestions.value.push(`🚨 今日认知负荷 (${totalLoadScore}) 已超出您的历史最佳承受力。建议将【${lastScheduled.task.name}】自动延后。`)
       }
     }
-    
+
     if (aiSuggestions.value.length === 0 && timeSlots.value.some(s => s.task)) {
       aiSuggestions.value.push(`✨ 当前排期科学合理，符合您的心流节奏！`)
     }
@@ -235,10 +235,10 @@ export const useTaskStore = defineStore('task', () => {
       if (slot.task) {
         slot.task.status = 'pending'
         slot.task.startTime = ''
-        
+
         const lastPos = pendingTasks.value.length > 0 ? (pendingTasks.value[pendingTasks.value.length - 1].position || '0') : ''
         const newSwapPos = Lexorank.getMedian(lastPos, '')
-        
+
         const updatedSwap: Task = {
           ...slot.task,
           sync_status: slot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update',
@@ -259,9 +259,37 @@ export const useTaskStore = defineStore('task', () => {
       slot.task = updatedTask
       pendingTasks.value.splice(taskIndex, 1)
       analyzeSchedule()
-      
+
       syncPendingChanges()
     }
+  }
+
+  // Action to move a task to a specific day (used in Week view)
+  const scheduleTaskToDay = async (taskId: string, day: string) => {
+    const taskIndex = pendingTasks.value.findIndex(t => t.id === taskId)
+    if (taskIndex === -1) return
+    const task = pendingTasks.value[taskIndex]
+    
+    // Find next available hour for that day
+    const dayTasks = allTasks.value.filter(t => t.startTime && t.startTime.startsWith(day))
+    let nextHour = 8
+    while (dayTasks.some(t => t.startTime === `${day} ${nextHour.toString().padStart(2, '0')}:00`) && nextHour <= 22) {
+      nextHour++
+    }
+    const slotTime = `${nextHour.toString().padStart(2, '0')}:00`
+    
+    task.status = 'scheduled'
+    task.startTime = `${day} ${slotTime}`
+    const updatedTask: Task = {
+      ...task,
+      sync_status: task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
+    }
+    await localDb.saveTask(updatedTask, updatedTask.sync_status)
+    await recordMutation('task', updatedTask.id || '', 'update', updatedTask)
+    
+    pendingTasks.value.splice(taskIndex, 1)
+    await loadLocalTasks()
+    syncPendingChanges()
   }
 
   // Action to move a task from one slot to another (supports swapping between slots)
@@ -274,10 +302,10 @@ export const useTaskStore = defineStore('task', () => {
         const temp = toSlot.task
         toSlot.task = fromSlot.task
         fromSlot.task = temp
-        
+
         toSlot.task.startTime = `${selectedDay.value} ${toSlotTime}`
         fromSlot.task.startTime = `${selectedDay.value} ${fromSlotTime}`
-        
+
         const u1: Task = {
           ...toSlot.task,
           sync_status: toSlot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
@@ -286,7 +314,7 @@ export const useTaskStore = defineStore('task', () => {
           ...fromSlot.task,
           sync_status: fromSlot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
         }
-        
+
         await localDb.saveTask(u1, u1.sync_status)
         await recordMutation('task', u1.id || '', 'update', u1)
         await localDb.saveTask(u2, u2.sync_status)
@@ -295,7 +323,7 @@ export const useTaskStore = defineStore('task', () => {
         toSlot.task = fromSlot.task
         fromSlot.task = null
         toSlot.task.startTime = `${selectedDay.value} ${toSlotTime}`
-        
+
         const u: Task = {
           ...toSlot.task,
           sync_status: toSlot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
@@ -304,7 +332,7 @@ export const useTaskStore = defineStore('task', () => {
         await recordMutation('task', u.id || '', 'update', u)
       }
       analyzeSchedule()
-      
+
       syncPendingChanges()
     }
   }
@@ -315,10 +343,10 @@ export const useTaskStore = defineStore('task', () => {
     if (slot && slot.task) {
       slot.task.status = 'pending'
       slot.task.startTime = ''
-      
+
       const lastPos = pendingTasks.value.length > 0 ? (pendingTasks.value[pendingTasks.value.length - 1].position || '0') : ''
       const newPos = Lexorank.getMedian(lastPos, '')
-      
+
       const u: Task = {
         ...slot.task,
         sync_status: slot.task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update',
@@ -329,7 +357,7 @@ export const useTaskStore = defineStore('task', () => {
       pendingTasks.value.push(u)
       slot.task = null
       analyzeSchedule()
-      
+
       syncPendingChanges()
     }
   }
@@ -355,7 +383,7 @@ export const useTaskStore = defineStore('task', () => {
     let task = pendingTasks.value.find(t => t.id === taskId)
     let isScheduled = false
     let slotTime = ''
-    
+
     if (!task) {
       const slot = timeSlots.value.find(s => s.task?.id === taskId)
       if (slot && slot.task) {
@@ -372,12 +400,12 @@ export const useTaskStore = defineStore('task', () => {
         const slot = timeSlots.value.find(s => s.time === slotTime)
         if (slot) slot.task = null
       }
-      
+
       const updated: Task = {
         ...task,
         sync_status: task.sync_status === 'pending_create' ? 'pending_create' : 'pending_update'
       }
-      
+
       await localDb.saveTask(updated, updated.sync_status)
       await recordMutation('task', task.id || '', 'update', updated)
       await loadLocalTasks()
@@ -405,6 +433,7 @@ export const useTaskStore = defineStore('task', () => {
     fetchTasks,
     addTask,
     scheduleTask,
+    scheduleTaskToDay,
     rescheduleTask,
     unscheduleTask,
     deleteTask,

@@ -4,13 +4,13 @@
     <!-- ===== TIER-1: Icon Strip (72px fixed) ===== -->
     <nav class="tier1-strip">
       <div class="tier1-top">
-        <button class="tier1-btn" title="返回学科大厅" @click="router.push('/subjects')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          <span class="tier1-btn-text">大厅</span>
+        <button class="tier1-btn" title="返回" @click="router.push('/subjects')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          <span class="tier1-btn-text">返回</span>
         </button>
         <button
           class="tier1-btn"
-          :class="{ 'is-active': tier2Mode === 'files' }"
+          :class="{ 'is-active': tier2Open && tier2Mode === 'files' }"
           title="学习材料"
           @click="toggleTier2('files')"
         >
@@ -19,7 +19,7 @@
         </button>
         <button
           class="tier1-btn"
-          :class="{ 'is-active': tier2Mode === 'outline' }"
+          :class="{ 'is-active': tier2Open && tier2Mode === 'outline' }"
           title="目录大纲"
           @click="toggleTier2('outline')"
         >
@@ -51,8 +51,8 @@
       <!-- Files Mode -->
       <div v-if="tier2Mode === 'files'" class="drawer-content">
         <div class="drawer-header">
-          <h3 class="drawer-title">学习材料</h3>
-          <button class="drawer-action" @click="showRegisterModal = true" title="登记文件">+</button>
+          <h3 class="drawer-title">学习文件</h3>
+          <button class="drawer-action" @click="openRegisterModal" title="添加文件">+</button>
         </div>
         <div class="drawer-list" v-if="activeSourceFiles.length > 0">
           <div
@@ -70,7 +70,7 @@
           </div>
         </div>
         <div class="drawer-empty" v-else>
-          <span>暂无学习材料</span>
+          <span>暂无学习文件</span>
         </div>
       </div>
 
@@ -89,7 +89,39 @@
             <div class="composer-row"><span class="drag-handle" title="拖拽章节">⠿</span><strong>{{ chapter.title }}</strong></div>
             <div class="composer-sections">
               <div v-for="(section, sectionIndex) in chapter.sections" :key="section.id" class="composer-section" draggable="true" @dragstart.stop="startSectionDrag(chapterIndex, sectionIndex)" @dragover.prevent @drop.stop="handleSectionDrop(chapterIndex, sectionIndex)">
-                <span class="drag-handle">⠿</span><span>{{ section.title }}</span>
+                <span class="drag-handle">⠿</span>
+                <div class="composer-section-content">
+                  <span class="composer-section-title">{{ section.title }}</span>
+                  <div class="composer-section-file" v-if="section.fileId">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                    <span class="composer-section-file-name">{{ fileById(section.fileId)?.name || '未知文件' }}</span>
+                    <button class="composer-unlink-btn" title="解除关联" @click.stop="unlinkFile(chapterIndex, sectionIndex)">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                  </div>
+                </div>
+                <el-popover placement="bottom-end" trigger="click" width="280" popper-class="zen-popover" :hide-after="0">
+                  <template #reference>
+                    <button class="composer-link-btn" title="关联文件" @click.stop>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                    </button>
+                  </template>
+                  <div style="margin-bottom: 12px; font-size: 13px; font-weight: 700; color: var(--text-primary);">选择工作区文件</div>
+                  <div class="subject-capsule-grid" v-if="activeSourceFiles.length">
+                    <div
+                      v-for="file in activeSourceFiles"
+                      :key="file.id"
+                      class="subject-capsule-item"
+                      @click="handleLinkFile(chapterIndex, sectionIndex, file.id)"
+                    >
+                      <span class="subj-capsule-icon">📄</span>
+                      <span class="subj-capsule-name">{{ file.name }}</span>
+                    </div>
+                  </div>
+                  <div v-else style="padding: 12px 0; text-align: center; color: var(--text-muted); font-size: 12px;">
+                    暂无学习文件，请先导入
+                  </div>
+                </el-popover>
               </div>
               <input v-model="chapterDrafts[chapter.id]" class="outline-inline-input" placeholder="输入小节后按 Enter" @keyup.enter="addSection(chapter.id)" />
             </div>
@@ -99,7 +131,13 @@
         <div v-else class="outline-overview-list">
           <div v-for="chapter in subjectOutline" :key="chapter.id" class="outline-overview-chapter">
             <strong>{{ chapter.title }}</strong>
-            <button v-for="section in chapter.sections" :key="section.id" class="outline-file-link" @click="openOutlineFile(section.fileId)">{{ section.title }}<span v-if="fileById(section.fileId)"> · {{ fileById(section.fileId)?.name }}</span></button>
+            <div v-for="section in chapter.sections" :key="section.id" class="outline-section-container">
+              <div class="outline-section-title">{{ section.title }}</div>
+              <button class="outline-file-link" v-if="section.fileId" @click="openOutlineFile(section.fileId)">
+                <svg class="outline-file-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                <span class="outline-file-link-file">{{ fileById(section.fileId)?.name || '未知文件' }}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -130,9 +168,20 @@
         </button>
 
         <div v-if="centerView === 'summary' && selectedFile" class="file-summary-workspace">
-          <div class="file-summary-head"><span class="file-summary-icon">{{ getFileIcon(selectedFile.file_type) }}</span><div><p>文件学习总结</p><h2>{{ selectedFile.name }}</h2></div></div>
+          <div class="file-summary-head">
+            <span class="file-summary-icon">{{ getFileIcon(selectedFile.file_type) }}</span>
+            <div class="file-summary-head-text">
+              <p>文件学习总结</p>
+              <h2>{{ selectedFile.name }}</h2>
+            </div>
+          </div>
           <div class="summary-markdown" v-if="selectedFileBlocks.length" v-html="renderMarkdown(fileSummaryMarkdown)"></div>
-          <div class="summary-empty" v-else><span>✦</span><h3>还没有可展示的总结</h3><p>该材料关联的知识块会集中展示在这里；也可以在右侧让 AI 为当前文件整理总结。</p><button class="summary-ask-ai" @click="sendPreset('请总结当前文件的核心内容，并按章节列出重点。')">让 AI 整理总结</button></div>
+          <div class="summary-empty" v-else>
+            <div class="summary-empty-icon-wrap">✦</div>
+            <h3>还没有可展示的总结</h3>
+            <p>该材料关联的知识块会集中展示在这里；<br/>也可以直接让 AI 为当前文件整理重点概览。</p>
+            <button class="summary-ask-ai" @click="sendPreset('请总结当前文件的核心内容，并按章节列出重点。')">让 AI 整理总结</button>
+          </div>
         </div>
 
         <!-- Knowledge Blocks Grid -->
@@ -203,39 +252,15 @@
             <p class="onboarding-subtitle">{{ activeSubject?.description || '在这里，您可以轻松管理您的材料，使用 AI 进行章节大纲提取与核心概念提炼，打造您的专属记忆库。' }}</p>
           </div>
 
-          <div class="onboarding-grid">
-            <div class="onboarding-card" @click="showRegisterModal = true">
-              <div class="onboarding-card-icon">📄</div>
-              <div class="onboarding-card-body">
-                <h4>第 1 步：导入学习材料</h4>
-                <p>登记您的 PDF 或 MD 学习材料，AI 将智能解析章节目录大纲。</p>
-                <button class="onboarding-card-btn">登记材料</button>
-              </div>
+            <div class="onboarding-drag-capsule">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <span>将 PDF 或图片文件拖入此处进行关联</span>
             </div>
-
-            <div class="onboarding-card" @click="openCreateDialog">
-              <div class="onboarding-card-icon">🧩</div>
-              <div class="onboarding-card-body">
-                <h4>第 2 步：提炼核心概念</h4>
-                <p>阅读材料时一键 AI 提炼要点，或手动录入记录为结构化卡片。</p>
-                <button class="onboarding-card-btn">手动录入</button>
-              </div>
-            </div>
-
-            <div class="onboarding-card" @click="focusAndOpenAi">
-              <div class="onboarding-card-icon">✨</div>
-              <div class="onboarding-card-body">
-                <h4>第 3 步：智能 AI 伴读</h4>
-                <p>就难点与 AI 助手实时对话问答，自动关联您当前查看的内容。</p>
-                <button class="onboarding-card-btn">开启对话</button>
-              </div>
-            </div>
-          </div>
         </div>
 
         <!-- Collapse Right Button -->
         <button class="edge-collapse edge-right" @click="rightCollapsed = !rightCollapsed" :title="rightCollapsed ? '展开 AI 助手' : '收起 AI 助手'">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="rightCollapsed ? '9 18 15 12 9 6' : '15 18 9 12 15 6'"/></svg>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="rightCollapsed ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
         </button>
       </div>
     </main>
@@ -244,26 +269,43 @@
     <div class="resizer" v-show="!rightCollapsed" @mousedown="startResizeRight"></div>
 
     <!-- ===== RIGHT: AI Assistant ===== -->
-    <aside class="workspace-right" v-show="!rightCollapsed" :style="{ width: rightWidth + '%' }">
+    <aside class="workspace-right" :class="{ 'is-open': !rightCollapsed }" :style="{ width: !rightCollapsed ? rightWidth + '%' : '0px' }">
       <div class="ai-header">
-        <button class="ai-model-switch" @click="showModelMenu = !showModelMenu">{{ currentAiMode }}⌄</button>
-        <div v-if="showModelMenu" class="ai-model-menu"><button v-for="mode in aiModes" :key="mode" @click="currentAiMode = mode; showModelMenu = false">{{ mode }}</button></div>
-        <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
+        <button class="ai-model-switch" @click="showModelMenu = !showModelMenu">
+          <span class="model-icon-top">{{ currentAiModeObj.icon }}</span>
+          <span class="model-text">{{ currentAiModeObj.label }}</span>
+          <svg class="chevron-icon" :class="{ 'is-rotated': showModelMenu }" width="10" height="7" viewBox="0 0 10 7" fill="none">
+            <path d="M1 1L5 5.5L9 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div class="dropdown-mask" v-if="showModelMenu" @click="showModelMenu = false" style="position: fixed; inset: 0; z-index: 3;"></div>
+        <div v-if="showModelMenu" class="ai-model-menu" style="z-index: 4;">
+          <div v-for="m in aiModesOptions" :key="m.id" class="mini-menu-item" @click="currentAiMode = m.label; showModelMenu = false">
+            <span class="mini-menu-icon">{{ m.icon }}</span>
+            <div class="mini-menu-text">
+              <span class="mini-menu-label" :class="{ 'is-active': currentAiMode === m.label }">{{ m.label }}</span>
+              <span class="mini-menu-desc">{{ m.desc }}</span>
+            </div>
+            <span v-if="currentAiMode === m.label" class="mini-check">✓</span>
+          </div>
+        </div>
+        <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
       </div>
 
         <!-- Chat Flow -->
         <div class="ai-messages" ref="chatScrollRef">
           <div class="ai-welcome" v-if="chatMessages.length === 0">
           <div class="ai-spark-wrap" aria-hidden="true">
-            <div class="ai-spark-ring"></div>
+            <div class="ai-spark-ring" style="display: none;"></div>
             <svg class="ai-spark-svg" viewBox="0 0 52 52" fill="none">
               <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-welcome-gradient)" />
               <defs><linearGradient id="workspace-ai-welcome-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset=".5" stop-color="#9AB08F" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
             </svg>
           </div>
-          <p class="welcome-title">{{ aiGreetingName }}，</p>
-          <p class="welcome-desc">今天想探索点什么？</p>
-          <p class="welcome-context">我会结合当前学科与材料，帮你梳理重点、解释概念并一起学习。</p>
+          <p class="welcome-title">今天想探索点什么？</p>
+          <p class="welcome-desc">{{ aiGreetingName }}，我会结合当前学科与文件，帮你梳理重点、解释概念并一起学习。</p>
+          
+          <div class="preset-section-title">试 试 问 我</div>
           
           <div class="preset-questions">
             <button
@@ -297,8 +339,7 @@
             </div>
           </div>
 
-          <!-- User Avatar -->
-            <div class="msg-avatar user-avatar" v-if="msg.role === 'user'">我</div>
+          <!-- User Avatar removed -->
         </div>
 
         <div class="chat-msg-row assistant" v-if="isAiStreaming">
@@ -358,74 +399,108 @@
     </div>
 
     <!-- Register File Modal -->
-    <div class="modal-overlay" v-if="showRegisterModal" @click="showRegisterModal = false"></div>
-    <div class="block-modal register-modal" v-if="showRegisterModal">
-      <div class="modal-header">
-        <h3>登记本地参考材料</h3>
-        <button class="modal-close" @click="showRegisterModal = false">×</button>
-      </div>
-      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
-        <div class="form-group"><label class="form-label">材料名称 *</label><input v-model="registerForm.name" class="form-input" placeholder="例如: 计算机网络.pdf" /></div>
-        <div class="form-group"><label class="form-label">本地绝对路径 *</label><input v-model="registerForm.filePath" class="form-input" placeholder="例如: D:/Books/Network.pdf" /></div>
-        <div class="form-group"><label class="form-label">类型 *</label><select v-model="registerForm.fileType" class="form-input"><option value="PDF">PDF</option><option value="Markdown">Markdown</option><option value="PPT">PPT</option><option value="Word">Word</option><option value="Other">其他</option></select></div>
-        <div class="form-group"><label class="form-label">文件大小 (MB)</label><input type="number" v-model="registerForm.fileSize" class="form-input" placeholder="15.4" /></div>
-      </div>
-      <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="showRegisterModal = false">取消</button>
-        <button class="footer-btn primary-btn" :disabled="!registerForm.name.trim() || !registerForm.filePath.trim()" @click="handleRegisterFile">确认登记</button>
+    <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
+      <div class="modal-container register-modal">
+        <div class="modal-header">
+          <h3>登记本地参考文件</h3>
+          <button class="close-btn" @click="showRegisterModal = false">✕</button>
+        </div>
+        <div 
+          class="modal-body" 
+          @dragover.prevent="isDraggingFile = true"
+          @dragleave.prevent="isDraggingFile = false"
+          @drop.prevent="handleFileDrop"
+        >
+          <div class="drag-drop-zone" :class="{ 'is-active': isDraggingFile }" @click="triggerFileInput">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px; color: var(--text-muted);"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <div class="drag-text">拖拽文件到此处自动识别，或点击选择</div>
+          </div>
+          <input type="file" ref="hiddenFileInput" style="display: none" @change="handleFileSelect" />
+          <div class="form-group"><label>文件名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络.pdf" /></div>
+          <div class="form-group"><label>归档至 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
+            <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
+              <div
+                v-for="subj in subjectStore.subjects"
+                :key="subj.id"
+                class="subject-capsule-item"
+                :class="{ 'is-active': registerForm.subjectId === subj.id }"
+                @click="registerForm.subjectId = subj.id"
+              >
+                <span class="subj-capsule-name">{{ subj.name }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end">
+          <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
+          <button class="btn-primary" :disabled="!registerForm.name.trim()" @click="handleRegisterFile">确认登记</button>
+        </div>
       </div>
     </div>
 
     <!-- Create Task Modal -->
-    <div class="modal-overlay" v-if="showTaskModal" @click="showTaskModal = false"></div>
-    <div class="block-modal" v-if="showTaskModal">
-      <div class="modal-header"><h3>创建学习任务</h3><button class="modal-close" @click="showTaskModal = false">×</button></div>
-      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
-        <div class="form-group"><label class="form-label">任务名称 *</label><input v-model="taskForm.name" class="form-input" /></div>
-        <div class="form-group"><label class="form-label">预计时长</label><select v-model.number="taskForm.duration" class="form-input"><option :value="30">0.5 小时 (30分钟)</option><option :value="60">1.0 小时 (60分钟)</option><option :value="90">1.5 小时 (90分钟)</option><option :value="120">2.0 小时 (120分钟)</option><option :value="150">2.5 小时 (150分钟)</option><option :value="180">3.0 小时 (180分钟)</option><option :value="240">4.0 小时 (240分钟)</option></select></div>
-      </div>
-      <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="showTaskModal = false">取消</button>
-        <button class="footer-btn primary-btn" :disabled="!taskForm.name.trim()" @click="handleAddTask">加入排期</button>
+    <div class="modal-overlay" v-if="showTaskModal" @click.self="showTaskModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
+      <div class="modal-container">
+        <div class="modal-header">
+          <h3>创建学习任务</h3>
+          <button class="close-btn" @click="showTaskModal = false">✕</button>
+        </div>
+        <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+          <div class="form-group"><label>任务名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="taskForm.name" class="styled-input" /></div>
+          <div class="form-group"><label>预计时长</label><select v-model.number="taskForm.duration" class="styled-input"><option :value="30">0.5 小时 (30分钟)</option><option :value="60">1.0 小时 (60分钟)</option><option :value="90">1.5 小时 (90分钟)</option><option :value="120">2.0 小时 (120分钟)</option><option :value="150">2.5 小时 (150分钟)</option><option :value="180">3.0 小时 (180分钟)</option><option :value="240">4.0 小时 (240分钟)</option></select></div>
+        </div>
+        <div class="modal-footer" style="justify-content: flex-end">
+          <button class="btn-secondary" @click="showTaskModal = false">取消</button>
+          <button class="btn-primary" :disabled="!taskForm.name.trim()" @click="handleAddTask">加入排期</button>
+        </div>
       </div>
     </div>
 
     <!-- Block Detail / Edit Modal -->
-    <div class="modal-overlay" v-if="blockDialogVisible" @click="closeBlockDialog"></div>
-    <div class="block-modal" v-if="blockDialogVisible">
-      <div class="modal-header">
-        <div class="modal-tags" v-if="!isEditMode">
-          <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--border-subtle)' }">{{ selectedBlock?.subject }}</span>
-          <span class="modal-source-tag">来源: {{ selectedBlock?.source }}</span>
-        </div>
-        <span v-else style="font-weight:700; color:var(--text-primary);">{{ isCreateMode ? '录入新知识块' : '编辑知识内容' }}</span>
-        <button class="modal-close" @click="closeBlockDialog">×</button>
-      </div>
-      <div class="modal-body" v-if="isEditMode" style="display:flex; flex-direction:column; gap:14px;">
-        <div class="form-group"><label class="form-label">分类 *</label><input v-model="editForm.subject" class="form-input" /></div>
-        <div class="form-group"><label class="form-label">标题 *</label><input v-model="editForm.title" class="form-input" /></div>
-        <div class="form-group"><label class="form-label">色彩</label><div class="color-options"><span v-for="c in themeColors" :key="c.value" class="color-dot" :class="{ 'is-selected': editForm.color === c.value }" :style="{ background: c.value }" @click="editForm.color = c.value"></span></div></div>
-        <div class="form-group"><label class="form-label">内容 *</label><textarea v-model="editForm.preview" class="form-textarea" rows="8" placeholder="支持 Markdown"></textarea></div>
-      </div>
-      <div class="modal-body" v-else>
-        <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
-        <div class="modal-time">⏰ {{ selectedBlock?.time }}</div>
-        <div class="modal-divider"></div>
-        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
-      </div>
-      <div class="modal-footer">
-        <template v-if="isEditMode">
-          <button class="footer-btn secondary-btn" @click="cancelEdit">取消</button>
-          <button class="footer-btn primary-btn" @click="handleSaveBlock">{{ isCreateMode ? '创建' : '保存' }}</button>
-        </template>
-        <template v-else>
-          <button class="footer-btn danger-btn" @click="handleDeleteBlock(selectedBlock?.id)">删除</button>
-          <div class="footer-right">
-            <button class="footer-btn secondary-btn" @click="handleCopyBlockContent(selectedBlock?.preview)">复制</button>
-            <button class="footer-btn secondary-btn" @click="startEdit">编辑</button>
-            <button class="footer-btn primary-btn" @click="closeBlockDialog">确定</button>
+    <div class="modal-overlay" v-if="blockDialogVisible" @click.self="closeBlockDialog" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
+      <div class="modal-container">
+        <div class="modal-header">
+          <div class="modal-tags" v-if="!isEditMode">
+            <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--border-subtle)' }">{{ selectedBlock?.subject }}</span>
+            <span class="modal-source-tag">来源: {{ selectedBlock?.source }}</span>
           </div>
-        </template>
+          <h3 v-else>{{ isCreateMode ? '录入新知识块' : '编辑知识内容' }}</h3>
+          <button class="close-btn" @click="closeBlockDialog">✕</button>
+        </div>
+        <div class="modal-body" v-if="isEditMode" style="display:flex; flex-direction:column; gap:14px;">
+          <div class="form-group"><label>分类 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="editForm.subject" class="styled-input" /></div>
+          <div class="form-group"><label>标题 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="editForm.title" class="styled-input" /></div>
+          <div class="form-group"><label>色彩</label><div class="color-options"><span v-for="c in themeColors" :key="c.value" class="color-dot" :class="{ 'is-selected': editForm.color === c.value }" :style="{ background: c.value }" @click="editForm.color = c.value"></span></div></div>
+          <div class="form-group"><label>内容 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><textarea v-model="editForm.preview" class="styled-textarea" rows="8" placeholder="支持 Markdown"></textarea></div>
+        </div>
+        <div class="modal-body" v-else>
+          <div class="block-read-header">
+            <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
+            <div class="modal-meta-row">
+              <span class="modal-time-badge">
+                <ElIcon style="margin-right:4px;"><Clock /></ElIcon>
+                {{ selectedBlock?.time }}
+              </span>
+              <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--color-bg-secondary)' }">{{ selectedBlock?.subject }}</span>
+            </div>
+          </div>
+          <div class="modal-divider"></div>
+          <div class="modal-content summary-markdown" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
+        </div>
+        <div class="modal-footer" :style="{ justifyContent: isEditMode ? 'flex-end' : 'space-between' }">
+          <template v-if="isEditMode">
+            <button class="btn-secondary" @click="cancelEdit">取消</button>
+            <button class="btn-primary" @click="handleSaveBlock">{{ isCreateMode ? '创建' : '保存' }}</button>
+          </template>
+          <template v-else>
+            <button class="btn-secondary" style="color: #ef4444; border-color: rgba(239,68,68,0.3);" @click="handleDeleteBlock(selectedBlock?.id)">删除</button>
+            <div class="footer-right" style="display: flex; gap: 12px;">
+              <button class="btn-secondary" @click="handleCopyBlockContent(selectedBlock?.preview)">复制</button>
+              <button class="btn-secondary" @click="startEdit">编辑</button>
+              <button class="btn-primary" @click="closeBlockDialog">确定</button>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
   </div>
@@ -437,8 +512,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ElIcon, ElNotification } from 'element-plus'
+import { ElIcon, ElNotification, ElMessage } from 'element-plus'
+import { Clock } from '@element-plus/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
+import 'element-plus/theme-chalk/el-message.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-option.css'
 
 import { useBlockStore } from '@/store/useBlockStore'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -603,6 +682,22 @@ const handleSectionDrop = (chapterIndex: number, target: number) => {
   sections.splice(target, 0, section)
   sectionDrag.value = null
 }
+
+
+
+const handleLinkFile = (chapterIndex: number, sectionIndex: number, fileId: string) => {
+  if (fileId) {
+    subjectOutline.value[chapterIndex].sections[sectionIndex].fileId = fileId
+    ElMessage.success('已关联文件')
+  }
+  document.body.click() // close popover
+}
+
+const unlinkFile = (chapterIndex: number, sectionIndex: number) => {
+  delete subjectOutline.value[chapterIndex].sections[sectionIndex].fileId
+  ElMessage.success('已解除关联')
+}
+
 const handleOutlineAi = () => {
   tier2Open.value = true
   rightCollapsed.value = false
@@ -620,16 +715,84 @@ const filteredBlocks = computed(() => {
 
 // ===== Register Files =====
 const showRegisterModal = ref(false)
-const registerForm = ref({ name: '', filePath: '', fileType: 'PDF', fileSize: 0 })
+const registerForm = ref({ name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' })
+const isDraggingFile = ref(false)
+const hiddenFileInput = ref<HTMLInputElement | null>(null)
+const droppedFile = ref<File | null>(null)
+
+const openRegisterModal = () => {
+  registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: subjectId.value || '' }
+  droppedFile.value = null
+  isDraggingFile.value = false
+  showRegisterModal.value = true
+}
+
+const parseFileMetadata = (file: File & { path?: string }) => {
+  droppedFile.value = file
+  registerForm.value.name = file.name
+  if (file.path) registerForm.value.filePath = file.path
+  else registerForm.value.filePath = file.name
+  registerForm.value.fileSize = Number((file.size / (1024 * 1024)).toFixed(2))
+  
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  if (ext === 'pdf') registerForm.value.fileType = 'PDF'
+  else if (ext === 'md') registerForm.value.fileType = 'Markdown'
+  else if (['ppt', 'pptx'].includes(ext)) registerForm.value.fileType = 'PPT'
+  else if (['doc', 'docx'].includes(ext)) registerForm.value.fileType = 'Word'
+  else registerForm.value.fileType = 'Other'
+}
+
+const handleFileDrop = (e: DragEvent) => {
+  isDraggingFile.value = false
+  const file = e.dataTransfer?.files[0] as (File & { path?: string }) | undefined
+  if (file) parseFileMetadata(file)
+}
+
+const handleFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0] as (File & { path?: string }) | undefined
+  if (file) parseFileMetadata(file)
+  if (hiddenFileInput.value) hiddenFileInput.value.value = ''
+}
+
+const triggerFileInput = () => hiddenFileInput.value?.click()
+
+import { getPresignedUrl, uploadToMinIO, bindAsset } from '@/api/useAssetApi'
 
 const handleRegisterFile = async () => {
-  if (!registerForm.value.name.trim() || !registerForm.value.filePath.trim() || !subjectId.value) return
+  const targetSubjectId = registerForm.value.subjectId
+  if (!registerForm.value.name.trim() || !targetSubjectId) return
+  
+  const currentFile = droppedFile.value
+  const targetSubject = subjectStore.subjects.find(s => s.id === targetSubjectId)
+  
   try {
-    const newId = await subjectStore.addSourceFile(subjectId.value, registerForm.value.name.trim(), registerForm.value.filePath.trim(), registerForm.value.fileType, Math.round(registerForm.value.fileSize * 1024 * 1024))
-    if (!selectedFileId.value) selectedFileId.value = newId
+    // 1. 本地沙盒极速落库 (方案4 - 本地部分)
+    const newId = await subjectStore.addSourceFile(targetSubjectId, registerForm.value.name.trim(), registerForm.value.filePath.trim() || registerForm.value.name.trim(), registerForm.value.fileType, Math.round(registerForm.value.fileSize * 1024 * 1024))
+    
+    if (targetSubjectId === subjectId.value && !selectedFileId.value) {
+      selectedFileId.value = newId
+    }
+    
     showRegisterModal.value = false
-    registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0 }
-    ElNotification({ title: '登记成功', type: 'success', position: 'top-right' })
+    registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' }
+    droppedFile.value = null
+    ElNotification({ title: '本地录入成功', message: '已保存至应用目录，即将后台同步至云端', type: 'success', position: 'top-right' })
+    
+    // 2. 后台静默直传云端 (方案4 - 同步部分)
+    if (currentFile && targetSubject) {
+      setTimeout(async () => {
+        try {
+          const { presignedUrl, objectName } = await getPresignedUrl(currentFile.name, currentFile.type || 'application/octet-stream')
+          await uploadToMinIO(presignedUrl, currentFile)
+          await bindAsset(objectName, currentFile.name, currentFile.size, currentFile.type || 'application/octet-stream', targetSubject.name)
+          ElNotification({ title: '云端同步完成', message: currentFile.name, type: 'success', position: 'top-right' })
+        } catch (err) {
+          console.error('[Async Upload] Failed:', err)
+          ElNotification({ title: '云端同步异常', message: '将稍后重试', type: 'warning', position: 'top-right' })
+        }
+      }, 500)
+    }
   } catch (e) { console.error(e) }
 }
 
@@ -681,7 +844,7 @@ const handleSaveBlock = async () => {
 const handleDeleteBlock = async (id: string) => { if (!id || !confirm('确定删除？')) return; await blockStore.removeBlock(id); blockDialogVisible.value = false; ElNotification({ title: '已删除', type: 'success', position: 'top-right' }) }
 const handleCopyBlockContent = (c: string) => { if (c) { navigator.clipboard.writeText(c); ElNotification({ title: '已复制', type: 'success', position: 'top-right', duration: 2000 }) } }
 const presetQuestions = [
-  '总结当前材料的核心概念',
+  '总结当前文件的核心概念',
   '查找本章的关键定义与解释',
   '针对当前内容生成 3 道测试题'
 ]
@@ -691,14 +854,7 @@ const sendPreset = (q: string) => {
   sendChat()
 }
 
-const focusAndOpenAi = () => {
-  rightCollapsed.value = false
-  nextTick(() => {
-    if (chatInputRef.value) {
-      chatInputRef.value.focus()
-    }
-  })
-}
+
 
 // ===== AI Chat (Right Panel) =====
 interface ChatMsg { role: 'user' | 'assistant'; content: string }
@@ -708,8 +864,13 @@ const isAiStreaming = ref(false)
 const streamingContent = ref('')
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
-const aiModes = ['学习伴读', '重点梳理', '练习出题']
-const currentAiMode = ref(aiModes[0])
+const aiModesOptions = [
+  { id: 1, icon: '✦', label: '学习伴读', desc: '深度严谨，为你推演难题' },
+  { id: 2, icon: '◈', label: '重点梳理', desc: '全科架构概览与核心提炼' },
+  { id: 3, icon: '✧', label: '练习出题', desc: '知识巩固与测试检验' }
+]
+const currentAiMode = ref(aiModesOptions[0].label)
+const currentAiModeObj = computed(() => aiModesOptions.find(m => m.label === currentAiMode.value) || aiModesOptions[0])
 const showModelMenu = ref(false)
 const aiGreetingName = computed(() => authStore.username || '同学')
 
@@ -941,19 +1102,30 @@ html.dark .tier2-drawer {
 .drawer-action {
   width: 26px;
   height: 26px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 6px;
-  background: none;
+  border: 1.5px solid transparent;
+  border-radius: 50%;
+  background: var(--color-bg-secondary);
   color: var(--text-secondary);
   font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.drawer-action:hover { border-color: var(--color-primary-accent); color: var(--color-primary-accent); background: rgba(255, 255, 255, 0.5); }
+.drawer-action:hover { 
+  border-color: rgba(125, 147, 114, 0.3); 
+  color: #7D9372; 
+  background: rgba(125, 147, 114, 0.1); 
+  transform: translateY(-1px); 
+}
+
+html.dark .drawer-action:hover {
+  background: rgba(154, 176, 143, 0.15);
+  border-color: rgba(154, 176, 143, 0.3);
+  color: #9AB08F;
+}
 
 .drawer-list { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 4px; }
 
@@ -1265,11 +1437,14 @@ html.dark .workspace-center {
 .blocks-grid {
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 20px;
   align-content: start;
 }
+.blocks-grid::-webkit-scrollbar { display: none; }
 
 .block-card {
   background: var(--color-bg-primary);
@@ -1349,6 +1524,29 @@ html.dark .workspace-center {
   font-size: 14.5px;
   color: var(--text-secondary);
   line-height: 1.65;
+}
+
+.onboarding-drag-capsule {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 32px;
+  padding: 12px 24px;
+  border-radius: 999px;
+  background: rgba(125,147,114,0.06);
+  color: #7D9372;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px dashed rgba(125,147,114,0.3);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.onboarding-drag-capsule:hover {
+  background: rgba(125,147,114,0.12);
+  border-color: rgba(125,147,114,0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(125,147,114,0.1);
 }
 
 .onboarding-grid {
@@ -1435,7 +1633,6 @@ html.dark .workspace-center {
 
 /* ===== Right: AI Assistant (Rounded Card) ===== */
 .workspace-right {
-  width: 340px;
   height: 100%;
   flex-shrink: 0;
   display: flex;
@@ -1445,6 +1642,14 @@ html.dark .workspace-center {
   border: 1.5px solid var(--border-default);
   box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
   overflow: hidden;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-width 0.3s ease;
+}
+
+.workspace-right:not(.is-open) {
+  width: 0 !important;
+  opacity: 0;
+  border-width: 0;
+  pointer-events: none;
 }
 
 html.dark .workspace-right {
@@ -1481,54 +1686,7 @@ html.dark .ai-header {
 
 .ai-clear:hover { color: var(--text-primary); background: rgba(0, 0, 0, 0.06); }
 
-/* Chat Welcome Prompts */
-.ai-welcome {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 10px 4px;
-}
-
-.welcome-title {
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.welcome-desc {
-  font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.55;
-  margin: 0;
-}
-
-.preset-questions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.preset-btn {
-  background: var(--color-bg-primary);
-  border: 1.5px solid var(--border-default);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  line-height: 1.4;
-}
-
-.preset-btn:hover {
-  border-color: var(--color-primary-accent);
-  color: var(--color-primary-accent);
-  background: var(--color-primary-light);
-  transform: translateX(3px);
-}
+/* Legacy Chat Welcome Prompts Removed (Now at bottom) */
 
 /* Chat Bubbles & Rows */
 .ai-messages {
@@ -1567,16 +1725,16 @@ html.dark .ai-header {
 }
 
 .chat-msg-row.user .chat-bubble {
-  background: var(--color-primary-accent);
+  background: #303431;
   color: white;
-  border-bottom-right-radius: 2px;
+  border-radius: 14px 2px 14px 14px;
 }
 
 .chat-msg-row.assistant .chat-bubble {
   background: var(--color-bg-primary);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid rgba(0, 0, 0, 0.08);
   color: var(--text-primary);
-  border-bottom-left-radius: 2px;
+  border-radius: 2px 14px 14px 14px;
 }
 
 .chat-content {
@@ -1735,46 +1893,15 @@ html.dark .ai-input-wrapper {
 /* ===== Modals ===== */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 1000; }
 
-.block-modal {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  width: 540px; max-height: 80vh;
-  background: var(--glass-bg); backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border); border-radius: var(--radius-xl);
-  box-shadow: var(--glass-shadow); z-index: 1001;
-  display: flex; flex-direction: column; overflow: hidden;
-}
-
-.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--border-subtle); }
-.modal-header h3 { margin: 0; font-weight: 700; color: var(--text-primary); font-size: 15px; }
 .modal-tags { display: flex; align-items: center; gap: 8px; }
-.modal-tag { font-size: 10.5px; padding: 3px 10px; border-radius: var(--radius-sm); color: var(--text-primary); font-weight: 600; }
-.modal-source-tag { font-size: 11px; color: var(--text-muted); }
-.modal-close { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; }
-.modal-close:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
-.modal-body { padding: 24px; overflow-y: auto; flex: 1; }
-.modal-title { font-size: 20px; font-weight: 800; color: var(--text-primary); margin: 0 0 10px; }
-.modal-time { font-size: 12px; color: var(--text-muted); }
-.modal-divider { height: 1px; background: var(--border-subtle); margin: 18px 0; }
-.modal-content { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
-.modal-content :deep(p) { margin-bottom: 12px; }
-.modal-content :deep(strong) { letter-spacing: 0.2px; }
-
-.modal-footer { display: flex; justify-content: space-between; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--border-subtle); }
-.footer-right { display: flex; gap: 8px; }
-
-.footer-btn { padding: 8px 20px; border-radius: var(--radius-md); font-size: 13px; font-weight: 600; cursor: pointer; transition: all var(--transition-fast); font-family: inherit; }
-.primary-btn { background: var(--accent-gradient); color: white; border: none; }
-.primary-btn:hover { opacity: 0.9; }
-.secondary-btn { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); }
-.secondary-btn:hover { border-color: var(--border-strong); color: var(--text-primary); }
-.danger-btn { background: transparent; border: 1px solid rgba(239,68,68,0.3); color: #ef4444; }
-.danger-btn:hover { background: rgba(239,68,68,0.1); }
-
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
-.form-input { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 10px 12px; color: var(--text-primary); font-size: 13px; outline: none; font-family: inherit; }
-.form-input:focus { border-color: var(--color-primary-accent); }
-.form-textarea { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: var(--radius-md); padding: 12px 14px; color: var(--text-primary); font-size: 13px; resize: vertical; outline: none; font-family: inherit; }
+.modal-tag { font-size: 11px; padding: 4px 12px; border-radius: 999px; color: var(--text-primary); font-weight: 600; border: 1px solid var(--border-default); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+.modal-source-tag { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.block-read-header { display: flex; flex-direction: column; gap: 12px; }
+.modal-title { font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 0; letter-spacing: -0.5px; line-height: 1.3; }
+.modal-meta-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.modal-time-badge { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); background: var(--color-bg-secondary); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-default); }
+.modal-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border-subtle) 15%, var(--border-subtle) 85%, transparent); margin: 20px 0; border: none; }
+.modal-content { font-size: 14.5px; color: var(--text-secondary); line-height: 1.8; }
 
 .color-options { display: flex; gap: 8px; }
 .color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: all var(--transition-fast); }
@@ -1784,62 +1911,237 @@ html.dark .ai-input-wrapper {
 /* ===== Subject summary & outline prototype ===== */
 .outline-header-actions { display: flex; align-items: center; gap: 8px; }
 .outline-ai-button { border: 0; border-radius: 7px; padding: 6px 9px; background: var(--color-primary-light); color: var(--color-primary-accent); font-size: 11px; font-weight: 700; cursor: pointer; }
-.outline-add-button { width: 27px; height: 27px; border: 0; border-radius: 50%; background: var(--color-primary-accent); color: white; font-size: 19px; line-height: 1; cursor: pointer; }
-.outline-composer, .outline-overview-list { padding: 0 12px 14px; overflow-y: auto; }
-.outline-composer-tip { margin: 0 0 10px; color: var(--text-muted); font-size: 11px; }
-.composer-chapter { margin-bottom: 10px; border: 1px solid var(--border-default); border-radius: 9px; background: rgba(255,255,255,.35); }
-.composer-row, .composer-section { display: flex; align-items: center; gap: 7px; padding: 8px 10px; font-size: 12px; }
-.composer-row { border-bottom: 1px solid var(--border-subtle); }
-.composer-sections { padding: 3px 8px 8px 26px; }
-.composer-section { border-radius: 6px; color: var(--text-secondary); }
-.composer-section:hover { background: var(--color-primary-light); }
-.drag-handle { color: var(--text-muted); cursor: grab; font-size: 14px; }
-.outline-inline-input { width: 100%; box-sizing: border-box; border: 0; border-bottom: 1px dashed var(--border-strong); padding: 7px 3px; background: transparent; color: var(--text-primary); outline: none; font-size: 12px; }
-.chapter-input { margin-top: 4px; padding: 10px 4px; }
-.outline-overview-chapter { display: flex; flex-direction: column; gap: 5px; margin-bottom: 16px; font-size: 12px; }
-.outline-overview-chapter strong { color: var(--text-primary); font-size: 13px; }
-.outline-file-link { padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); text-align: left; cursor: pointer; font: inherit; }
-.outline-file-link:hover { background: var(--color-primary-light); color: var(--color-primary-accent); }
-.file-summary-workspace { width: min(780px, 100%); margin: 0 auto; padding: 46px 52px; overflow-y: auto; }
-.file-summary-head { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; margin-bottom: 26px; border-bottom: 1px solid var(--border-default); }
-.file-summary-head p { margin: 0 0 4px; color: var(--text-muted); font-size: 12px; }.file-summary-head h2 { margin: 0; font-size: 22px; color: var(--text-primary); }.file-summary-icon { font-size: 30px; }
-.summary-markdown { color: var(--text-secondary); line-height: 1.8; font-size: 14px; }.summary-markdown :deep(h2) { color: var(--text-primary); font-size: 17px; margin-top: 26px; }
-.summary-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 90px 15%; color: var(--text-secondary); }.summary-empty > span { color: var(--color-primary-accent); font-size: 28px; }.summary-empty h3 { color: var(--text-primary); margin: 12px 0 4px; }.summary-empty p { font-size: 13px; line-height: 1.7; }.summary-ask-ai { margin-top: 12px; padding: 9px 13px; border: 0; border-radius: 8px; background: var(--color-primary-accent); color: white; font-weight: 700; cursor: pointer; }
+.outline-add-button { width: 27px; height: 27px; border: 0; border-radius: 50%; background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); color: white; font-size: 19px; line-height: 1; cursor: pointer; }
+.outline-composer, .outline-overview-list { padding: 0 12px 14px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.outline-composer::-webkit-scrollbar, .outline-overview-list::-webkit-scrollbar { display: none; }
+.outline-composer-tip { margin: 0 0 16px; color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.outline-composer-tip::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #7D9372; }
+.composer-chapter { margin-bottom: 12px; border: 1px solid transparent; border-radius: 12px; background: rgba(0,0,0,0.02); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.composer-chapter:hover { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
+.composer-row, .composer-section { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; transition: all 0.2s; }
+.composer-row { border-bottom: 1px solid rgba(0,0,0,0.03); }
+.composer-sections { padding: 6px 10px 10px 32px; display: flex; flex-direction: column; gap: 4px; }
+.composer-section { border-radius: 8px; color: var(--text-secondary); padding: 8px 12px; justify-content: space-between; align-items: flex-start; }
+.composer-section:hover { background: rgba(125,147,114,0.08); color: var(--text-primary); }
+.composer-section-content { flex: 1; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+.composer-section-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
+.composer-section-file { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #7D9372; background: rgba(125,147,114,0.1); padding: 4px 8px 4px 10px; border-radius: 6px; width: fit-content; max-width: 100%; border: 1px solid rgba(125,147,114,0.15); }
+.composer-section-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.composer-unlink-btn { background: transparent; border: none; padding: 2px; margin-left: 2px; cursor: pointer; color: inherit; opacity: 0.5; display: flex; border-radius: 4px; transition: all 0.2s; }
+.composer-unlink-btn:hover { opacity: 1; background: rgba(0,0,0,0.08); }
+.composer-link-btn { width: 24px; height: 24px; margin-top: 0px; border: none; border-radius: 6px; background: rgba(0,0,0,0.04); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; opacity: 0; padding: 0; }
+.composer-section:hover .composer-link-btn { opacity: 1; }
+.composer-link-btn:hover { background: #7D9372; color: #fff; transform: scale(1.05); }
+.drag-handle { color: var(--text-muted); cursor: grab; font-size: 14px; opacity: 0.3; transition: opacity 0.2s; user-select: none; }
+.composer-row:hover .drag-handle, .composer-section:hover .drag-handle { opacity: 0.8; }
+.outline-inline-input { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 8px; padding: 8px 12px; background: rgba(0,0,0,0.04); color: var(--text-primary); outline: none; font-size: 12.5px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.outline-inline-input:focus { background: #ffffff; border-color: rgba(125,147,114,0.3); box-shadow: 0 4px 12px rgba(125,147,114,0.08); }
+.outline-inline-input::placeholder { color: var(--text-muted); transition: color 0.2s; }
+.outline-inline-input:focus::placeholder { color: transparent; }
+.chapter-input { margin-top: 8px; padding: 10px 14px; font-size: 13px; background: rgba(0,0,0,0.03); border-radius: 10px; }
 
-/* ===== Mobile AI visual language on PC ===== */
-.ai-header { position: relative; justify-content: space-between; }
-.ai-model-switch { border: 0; background: transparent; color: var(--text-primary); font-weight: 700; cursor: pointer; padding: 6px 0; }
-.ai-model-menu { position: absolute; top: 42px; left: 16px; z-index: 4; min-width: 112px; padding: 5px; background: var(--color-bg-primary); border: 1px solid var(--border-default); border-radius: 9px; box-shadow: var(--shadow-md); }
-.ai-model-menu button { display: block; width: 100%; border: 0; border-radius: 5px; padding: 7px; background: transparent; color: var(--text-secondary); font-size: 12px; text-align: left; cursor: pointer; }
-.ai-model-menu button:hover { background: var(--color-primary-light); }
-.ai-clear { width: 30px; height: 30px; display: grid; place-items: center; padding: 0; font-size: 0; }
+.outline-overview-chapter { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.outline-overview-chapter strong { position: relative; color: var(--text-primary); font-size: 13.5px; font-weight: 700; padding: 0 0 8px 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; }
+.outline-overview-chapter strong::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 12px; border-radius: 4px; background: #7D9372; }
+.outline-section-container { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.outline-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); padding-left: 12px; position: relative; display: flex; align-items: center; }
+.outline-section-title::before { content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 4px; height: 4px; border-radius: 50%; background: rgba(0,0,0,0.15); }
+.outline-file-link { margin-left: 12px; padding: 10px 12px; border: 1px solid transparent; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: rgba(0,0,0,0.02); color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; }
+.outline-file-link:hover { background: rgba(125,147,114,0.08); border-color: rgba(125,147,114,0.15); transform: translateX(2px); color: #7D9372; }
+.outline-file-link-icon { opacity: 0.7; }
+.outline-file-link-file { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
+.file-summary-workspace { width: min(780px, 100%); margin: 0 auto; padding: 56px 64px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.file-summary-workspace::-webkit-scrollbar { display: none; }
+.file-summary-head { display: flex; align-items: flex-start; gap: 20px; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.file-summary-head-text { flex: 1; }
+.file-summary-head p { margin: 0 0 6px; color: var(--text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+.file-summary-head h2 { margin: 0; font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; line-height: 1.3; }
+.file-summary-icon { font-size: 38px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.06)); }
+
+.summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
+.summary-markdown :deep(h1), .summary-markdown :deep(h2), .summary-markdown :deep(h3), .summary-markdown :deep(h4) { color: var(--text-primary); font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; }
+.summary-markdown :deep(h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-default); padding-bottom: 0.3em; }
+.summary-markdown :deep(h2) { font-size: 1.25em; margin: 2em 0 1em; padding-bottom: 8px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.summary-markdown :deep(h3) { font-size: 1.1em; margin: 1.5em 0 1em; }
+.summary-markdown :deep(p) { margin-bottom: 16px; }
+.summary-markdown :deep(ul), .summary-markdown :deep(ol) { margin: 0 0 16px 0; padding-left: 24px; }
+.summary-markdown :deep(li) { margin-bottom: 6px; }
+.summary-markdown :deep(li::marker) { color: var(--text-muted); }
+.summary-markdown :deep(blockquote) { margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #7D9372; background: rgba(125, 147, 114, 0.05); border-radius: 0 8px 8px 0; color: var(--text-muted); font-style: italic; }
+.summary-markdown :deep(pre) { background: #1C1C1A; padding: 16px; border-radius: 12px; overflow-x: auto; margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+.summary-markdown :deep(code) { font-family: var(--font-family-mono); font-size: 13px; background: rgba(0,0,0,0.04); padding: 3px 6px; border-radius: 6px; color: #7D9372; font-weight: 500; }
+.summary-markdown :deep(pre code) { background: transparent; padding: 0; color: #E6E6E4; font-weight: 400; font-size: 13.5px; }
+.summary-markdown :deep(a) { color: #7D9372; text-decoration: none; border-bottom: 1px solid transparent; transition: all 0.2s; }
+.summary-markdown :deep(a:hover) { border-bottom-color: #7D9372; }
+.summary-markdown :deep(img) { max-width: 100%; border-radius: 12px; margin: 16px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+.summary-markdown :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 16px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+.summary-markdown :deep(th), .summary-markdown :deep(td) { padding: 10px 14px; border: 1px solid var(--border-subtle); text-align: left; }
+.summary-markdown :deep(th) { background: rgba(0,0,0,0.02); font-weight: 600; color: var(--text-primary); }
+
+.summary-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 100px 15%; color: var(--text-secondary); animation: ai-fade-in 0.6s ease-out; }
+.summary-empty-icon-wrap { width: 64px; height: 64px; border-radius: 20px; background: rgba(125,147,114,0.08); display: grid; place-items: center; margin-bottom: 20px; color: #7D9372; font-size: 28px; box-shadow: 0 8px 24px rgba(125,147,114,0.06); }
+.summary-empty h3 { color: var(--text-primary); margin: 0 0 8px; font-size: 18px; font-weight: 700; }
+.summary-empty p { font-size: 14px; line-height: 1.6; color: var(--text-muted); margin-bottom: 24px; max-width: 320px; }
+.summary-ask-ai { padding: 12px 28px; border: 0; border-radius: 999px; background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); color: #ffffff; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 4px 16px rgba(125,147,114,0.2); }
+.summary-ask-ai:hover { background: #6c8062; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(125,147,114,0.3); }
+
+html.dark .file-summary-head { border-color: rgba(255,255,255,0.04); }
+html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
+html.dark .summary-empty-icon-wrap { background: rgba(255,255,255,0.05); color: #9AB08F; }
+
+/* ===== Refined Zen Minimalist AI Visual Language (PC) ===== */
+.ai-header { position: relative; justify-content: space-between; background: transparent; backdrop-filter: blur(12px); border-bottom: none; z-index: 10; padding: 24px 20px 12px; }
+.ai-model-switch { display: flex; align-items: center; gap: 6px; border: none; background: rgba(0,0,0,0.04); color: var(--text-secondary); font-weight: 600; cursor: pointer; padding: 8px 16px; border-radius: 999px; transition: all 0.2s; font-size: 13px; }
+.ai-model-switch:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); }
+.model-icon-top { font-size: 14px; color: #7D9372; }
+.model-text { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.chevron-icon { transition: transform 0.2s; opacity: 0.6; }
+.chevron-icon.is-rotated { transform: rotate(180deg); opacity: 1; }
+.ai-model-menu { position: absolute; top: 72px; left: 20px; z-index: 4; min-width: 200px; padding: 8px; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border: 1px solid rgba(0,0,0,0.08); border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 4px; }
+.mini-menu-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; transition: background 0.2s; }
+.mini-menu-item:hover { background: rgba(125,147,114,0.08); }
+.mini-menu-icon { font-size: 16px; color: #7D9372; display: flex; align-items: center; justify-content: center; width: 24px; }
+.mini-menu-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.mini-menu-label { font-size: 13.5px; font-weight: 600; color: var(--text-primary); line-height: 1.2; }
+.mini-menu-label.is-active { color: #7D9372; }
+.mini-menu-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.2; }
+.mini-check { color: #7D9372; font-weight: bold; font-size: 14px; margin-left: auto; padding-right: 4px; }
+.ai-clear { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; font-size: 0; border-radius: 50%; border: none; background: rgba(0,0,0,0.04); transition: all 0.2s; color: var(--text-secondary); cursor: pointer; }
 .ai-clear svg { stroke: currentColor; }
-.ai-welcome { align-items: center; text-align: center; padding: 46px 25px 24px; }
-.ai-spark-wrap { position: relative; width: 60px; height: 60px; display: grid; place-items: center; margin-bottom: 18px; }
-.ai-spark-ring { position: absolute; inset: -8px; border-radius: 50%; background: radial-gradient(circle, rgba(125, 147, 114, .22), transparent 70%); animation: ai-spark-pulse 3s ease-in-out infinite; }
-.ai-spark-svg { width: 52px; height: 52px; filter: drop-shadow(0 4px 12px rgba(125, 147, 114, .35)); animation: ai-spark-float 4s ease-in-out infinite; }
-.welcome-title { font-size: 22px; letter-spacing: -.4px; }
-.welcome-desc { font-size: 16px; color: var(--text-primary); }
-.welcome-context { margin: -7px 0 3px; color: var(--text-secondary); font-size: 12px; line-height: 1.55; }
-.preset-questions { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
-.preset-btn { border-radius: 999px; padding: 7px 11px; background: var(--color-bg-primary); text-align: center; font-size: 12px; }
-.preset-btn:hover { transform: none; }
-.assistant-spark-avatar { width: 32px; height: 32px; border: 1px solid var(--border-default); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-primary); flex: 0 0 auto; }
-.assistant-spark-avatar svg { width: 18px; height: 18px; }
-.msg-avatar.user-avatar { background: #303431; color: white; font-size: 11px; }
-.chat-msg-row.user .chat-bubble { background: #303431; color: white; }
-.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-primary); border: 1px solid var(--border-default); }
-.ai-chat-capsule { min-height: 48px; border-radius: 999px; padding: 7px 8px 7px 16px; gap: 8px; background: var(--color-bg-primary); border: 1px solid var(--border-default); }
-.ai-input { background: transparent; }
-.ai-send-btn { width: 32px; height: 32px; border-radius: 50%; }
-.ai-send-btn.is-ready { background: var(--color-primary-accent); color: #fff; }
-.ai-send-btn.is-ready:hover { background: var(--color-zen-sage); }
-.ai-typing-dots { display: flex; align-items: center; gap: 5px; min-height: 20px; padding: 3px 1px; }
-.ai-typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #7D9372; animation: ai-dot-bounce 1.4s ease-in-out infinite both; }
+.ai-clear:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); }
+
+.ai-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 24px; animation: ai-fade-in 0.6s ease-out; }
+.ai-spark-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 20px; }
+.ai-spark-svg { width: 56px; height: 56px; opacity: 0.95; filter: drop-shadow(0 4px 12px rgba(125, 147, 114, 0.15)); }
+.welcome-title { font-size: 24px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), #5C7051); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; letter-spacing: -0.2px; }
+.welcome-desc { font-size: 13.5px; font-weight: 400; color: var(--text-secondary); margin-bottom: 40px; max-width: 260px; line-height: 1.6; opacity: 0.85; }
+.preset-section-title { display: flex; align-items: center; width: 100%; max-width: 240px; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 16px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.6; }
+.preset-section-title::before, .preset-section-title::after { content: ''; flex: 1; height: 1px; background: rgba(0,0,0,0.1); }
+.preset-section-title::before { margin-right: 12px; }
+.preset-section-title::after { margin-left: 12px; }
+.preset-questions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 12px; width: 100%; max-width: 340px; }
+.preset-btn { border-radius: 999px; padding: 10px 18px; background: rgba(255,255,255,0.8); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); text-align: center; font-size: 13px; color: var(--text-primary); font-weight: 500; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.02); cursor: pointer; }
+.preset-btn:hover { border-color: #7D9372; background: rgba(125, 147, 114, 0.08); box-shadow: 0 4px 12px rgba(125, 147, 114, 0.15); color: #5C7051; transform: translateY(-1px); }
+
+.assistant-spark-avatar { width: 34px; height: 34px; border: 1px solid rgba(0,0,0,0.06); border-radius: 50%; display: grid; place-items: center; background: #ffffff; flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+.assistant-spark-avatar svg { width: 20px; height: 20px; }
+.chat-msg-row.user .chat-bubble { background: var(--text-primary); color: var(--color-bg-primary); border-radius: 16px 4px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
+.chat-msg-row.assistant .chat-bubble { background: #ffffff; border: 1px solid rgba(0,0,0,0.06); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 4px 16px rgba(0,0,0,0.02); }
+
+.ai-input-area { padding: 16px 20px 24px; background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
+.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 4px 16px rgba(0,0,0,0.03); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-chat-capsule:focus-within { border-color: rgba(125,147,114,0.3); box-shadow: 0 6px 24px rgba(125,147,114,0.08); transform: translateY(-1px); }
+.ai-input { flex: 1; background: transparent; font-size: 14.5px; line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
+.ai-input::placeholder { color: var(--text-muted); }
+.ai-send-btn { width: 38px; height: 38px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: transparent; color: var(--text-muted); }
+.ai-send-btn.is-ready { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); color: #fff; box-shadow: 0 4px 12px rgba(125, 147, 114, 0.25); }
+.ai-send-btn.is-ready:hover { transform: scale(1.05); background: #6c8062; box-shadow: 0 6px 16px rgba(125, 147, 114, 0.3); }
+
+.ai-typing-dots { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 4px 6px; }
+.ai-typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: ai-dot-bounce 1.4s ease-in-out infinite both; }
 .ai-typing-dot:nth-child(1) { animation-delay: -.32s; }
 .ai-typing-dot:nth-child(2) { animation-delay: -.16s; }
-html.dark .assistant-spark-avatar, html.dark .ai-chat-capsule { background: var(--color-bg-tertiary); border-color: var(--border-subtle); }
-@keyframes ai-spark-pulse { 0%, 100% { transform: scale(1); opacity: .6; } 50% { transform: scale(1.15); opacity: 1; } }
-@keyframes ai-spark-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+
+html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html.dark .assistant-spark-avatar, html.dark .chat-msg-row.assistant .chat-bubble { background: #1C1C1C; border-color: rgba(255,255,255,0.08); }
+html.dark .preset-btn { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); color: var(--text-secondary); }
+html.dark .preset-btn:hover { background: rgba(125, 147, 114, 0.15); border-color: #7D9372; color: #9AB08F; }
+html.dark .welcome-title { background: linear-gradient(135deg, #ffffff, #9AB08F); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+html.dark .preset-section-title::before, html.dark .preset-section-title::after { background: rgba(255,255,255,0.1); }
+
+html.dark .outline-overview-chapter strong { border-color: rgba(255,255,255,0.04); }
+html.dark .outline-section-title::before { background: rgba(255,255,255,0.15); }
+html.dark .outline-file-link { background: rgba(255,255,255,0.02); }
+html.dark .outline-file-link:hover { background: rgba(125,147,114,0.15); border-color: rgba(125,147,114,0.25); }
+html.dark .composer-chapter { background: rgba(255,255,255,0.02); }
+html.dark .composer-chapter:hover { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); }
+html.dark .composer-row { border-color: rgba(255,255,255,0.04); }
+html.dark .composer-link-btn { background: rgba(255,255,255,0.05); }
+html.dark .composer-section-file { background: rgba(125,147,114,0.15); border-color: rgba(125,147,114,0.25); color: #9AB08F; }
+html.dark .composer-unlink-btn:hover { background: rgba(255,255,255,0.1); }
+html.dark .outline-inline-input { background: rgba(255,255,255,0.05); }
+html.dark .outline-inline-input:focus { background: #1C1C1C; border-color: rgba(125, 147, 114, 0.4); box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+html.dark .chapter-input { background: rgba(255,255,255,0.03); }
+html.dark .onboarding-drag-capsule { background: rgba(125,147,114,0.1); border-color: rgba(125,147,114,0.3); color: #9AB08F; }
+html.dark .onboarding-drag-capsule:hover { background: rgba(125,147,114,0.2); border-color: rgba(125,147,114,0.5); }
+
+/* Custom Zen Dropdown (Unified for el-dropdown & el-select) */
+.zen-dropdown,
+.zen-dropdown.el-popper { border-radius: 14px !important; padding: 4px !important; background: rgba(255,255,255,0.85) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; border: 1px solid rgba(0,0,0,0.06) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.12) !important; overflow: hidden !important; }
+.zen-dropdown .el-popper__arrow { display: none !important; }
+.zen-dropdown .el-select-dropdown { background: transparent !important; border: none !important; box-shadow: none !important; border-radius: 14px !important; }
+.zen-dropdown .el-select-dropdown__list,
+.zen-dropdown .el-dropdown-menu { padding: 2px !important; background: transparent !important; border: none !important; }
+.zen-dropdown .el-dropdown-menu__item,
+.zen-dropdown .el-select-dropdown__item { border-radius: 8px !important; margin: 2px !important; font-size: 13px !important; color: var(--text-primary) !important; transition: all 0.2s !important; padding: 8px 12px !important; line-height: 1.4 !important; height: auto !important; }
+.zen-dropdown .el-dropdown-menu__item:hover,
+.zen-dropdown .el-select-dropdown__item.is-hovering,
+.zen-dropdown .el-select-dropdown__item:hover { background: rgba(125,147,114,0.1) !important; color: #7D9372 !important; }
+.zen-dropdown .el-select-dropdown__item.selected,
+.zen-dropdown .el-select-dropdown__item.is-selected { background: rgba(125,147,114,0.15) !important; color: #7D9372 !important; font-weight: 700 !important; }
+.zen-dropdown .el-dropdown-menu__item.is-disabled,
+.zen-dropdown .el-select-dropdown__item.is-disabled { opacity: 0.5 !important; background: transparent !important; color: var(--text-muted) !important; cursor: not-allowed !important; }
+.zen-dropdown .el-dropdown-menu__item--divided { border-top: none !important; margin-top: 6px !important; position: relative; }
+.zen-dropdown .el-dropdown-menu__item--divided::before { content: ''; position: absolute; top: -4px; left: 8px; right: 8px; height: 1px; background-color: rgba(0,0,0,0.06) !important; margin: 0 !important; }
+
+html.dark .zen-dropdown,
+html.dark .zen-dropdown.el-popper { background: rgba(30,30,30,0.85) !important; border-color: rgba(255,255,255,0.05) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.4) !important; }
+html.dark .zen-dropdown .el-dropdown-menu__item:hover,
+html.dark .zen-dropdown .el-select-dropdown__item.is-hovering,
+html.dark .zen-dropdown .el-select-dropdown__item:hover { background: rgba(125,147,114,0.2) !important; color: #9AB08F !important; }
+html.dark .zen-dropdown .el-select-dropdown__item.selected,
+html.dark .zen-dropdown .el-select-dropdown__item.is-selected { background: rgba(125,147,114,0.25) !important; color: #9AB08F !important; }
+html.dark .zen-dropdown .el-dropdown-menu__item--divided::before { background-color: rgba(255,255,255,0.08) !important; }
+
+/* ===== 关联文件气泡弹窗 (借鉴移动端卡片化胶囊设计) ===== */
+.zen-popover { border-radius: 14px !important; padding: 16px !important; background: rgba(255,255,255,0.85) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; border: 1px solid rgba(0,0,0,0.05) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.1) !important; }
+html.dark .zen-popover { background: rgba(30,30,30,0.85) !important; border-color: rgba(255,255,255,0.05) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.4) !important; }
+.subject-capsule-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.subject-capsule-item { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-bg-secondary); border: 1.5px solid transparent; border-radius: 9999px; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.subject-capsule-item:hover { transform: translateY(-1px); background: var(--color-bg-tertiary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); border-color: rgba(125,147,114,0.3); color: #7D9372; }
+.subject-capsule-item.is-active { background: rgba(125, 147, 114, 0.1) !important; border-color: #7D9372 !important; color: #7D9372 !important; box-shadow: 0 2px 8px rgba(125, 147, 114, 0.15); }
+html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15) !important; border-color: #9AB08F !important; color: #9AB08F !important; }
+.subj-capsule-icon { font-size: 13px; }
+@keyframes ai-spark-pulse { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.2); opacity: 1; } }
+@keyframes ai-spark-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes ai-dot-bounce { 0%, 80%, 100% { transform: scale(0); opacity: .3; } 40% { transform: scale(1); opacity: 1; } }
+@keyframes ai-fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ai-slide-up { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* Drag and Drop Zone */
+.drag-drop-zone { border: 2px dashed rgba(0,0,0,0.1); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255,255,255,0.4); margin-bottom: 8px; }
+.drag-drop-zone:hover { border-color: rgba(0,0,0,0.2); background: rgba(255,255,255,0.8); }
+.drag-drop-zone.is-active { border-color: #7D9372; background: rgba(125, 147, 114, 0.05); }
+.drag-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+html.dark .drag-drop-zone { border-color: rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
+html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); }
+html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }
+
+/* Home Modal Styles for Register Modal */
+.modal-container { width: 90%; max-width: 520px; background: #FFFFFF; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+@keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
+.modal-container .modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
+.close-btn { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all var(--transition-fast); }
+.close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.modal-container .modal-body { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; max-height: 70vh; overflow-y: auto; }
+.form-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input:focus, .styled-textarea:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
+html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
+.styled-textarea { resize: vertical; line-height: 1.6; min-height: 100px; }
+.styled-el-select { width: 100%; }
+.styled-el-select :deep(.el-input__wrapper) { background: var(--color-bg-secondary); border-radius: 12px; box-shadow: 0 0 0 1px var(--border-default) inset; padding: 4px 14px; transition: all 0.2s; }
+.styled-el-select :deep(.el-input__wrapper.is-focus) { background: var(--color-bg-primary); box-shadow: 0 0 0 1px #7D9372 inset, 0 0 0 3px rgba(125, 147, 114, 0.15) !important; }
+html.dark .styled-el-select :deep(.el-input__wrapper.is-focus) { background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 1px #9AB08F inset, 0 0 0 3px rgba(125, 147, 114, 0.2) !important; }
+.modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--border-subtle); background: transparent; }
+.btn-secondary { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-secondary:hover { background: var(--color-bg-secondary); color: var(--text-primary); }
+.btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3); }
+.btn-primary:hover:not(:disabled) { background: #6E8364; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+html.dark .btn-primary { background: #9AB08F; color: #1a1a1a; }
+html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(154, 176, 143, 0.2); }
 </style>

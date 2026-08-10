@@ -6,16 +6,44 @@
         <h1 class="welcome-title">{{ greeting }}，{{ username }}</h1>
         <p class="welcome-sub">已完成 {{ completedCount }} 项 · {{ totalFocusHours }}</p>
       </div>
+      <div 
+        class="global-view-card"
+        :class="{ 'is-active': selectedSubjectId === null }"
+        @click="selectSubject(null)"
+      >
+        <div class="global-icon-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+          </svg>
+        </div>
+        <div class="global-text-wrap">
+          <span class="global-title">全部知识</span>
+        </div>
+        <span class="global-count">{{ allSubjectsOption[0].blockCount }}</span>
+      </div>
+
+      <div class="section-label">学科空间</div>
+
       <ul class="subject-list">
         <li
-          v-for="subj in allSubjectsOption"
-          :key="subj.id ?? 'all'"
+          v-for="subj in allSubjectsOption.slice(1)"
+          :key="subj.id!"
           class="subject-item"
           :class="{ 'is-active': selectedSubjectId === subj.id }"
           @click="selectSubject(subj.id)"
         >
           <span v-if="selectedSubjectId === subj.id" class="active-dot" :style="{ background: subj.color }"></span>
-          <span class="subject-icon">{{ subj.icon }}</span>
+          <span class="subject-icon">
+            <component
+              v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
+              :is="getSubjectIconComponent(subj.icon)"
+              style="width: 1em; height: 1em;"
+            />
+            <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
+          </span>
           <span class="subject-name">{{ subj.name }}</span>
           <span class="subject-count">{{ subj.blockCount || 0 }}</span>
         </li>
@@ -65,10 +93,22 @@
         <div class="timeline-header">
           <h3 class="timeline-title">时间轴 ({{ DAY_NAMES[selectedDay] }})</h3>
           <div class="dashboard-time-actions">
-            <select v-model="dashboardViewMode" class="db-view-select">
-              <option value="day">日视图</option>
-              <option value="week">周视图</option>
-            </select>
+            <div class="db-view-toggle">
+              <button 
+                class="db-view-toggle-btn" 
+                :class="{ 'is-active': dashboardViewMode === 'day' }"
+                @click="dashboardViewMode = 'day'"
+              >
+                日视图
+              </button>
+              <button 
+                class="db-view-toggle-btn" 
+                :class="{ 'is-active': dashboardViewMode === 'week' }"
+                @click="dashboardViewMode = 'week'"
+              >
+                周视图
+              </button>
+            </div>
             <button class="todo-fab-add-btn" @click="openCreateTaskDialog" title="新建任务">+</button>
           </div>
         </div>
@@ -266,7 +306,14 @@
               :style="taskForm.subjectId === subj.id ? { borderColor: subj.color, background: subj.color + '22' } : {}"
               @click="taskForm.subjectId = subj.id"
             >
-              <span class="subj-capsule-icon">{{ subj.icon || '📘' }}</span>
+              <span class="subj-capsule-icon">
+                <component
+                  v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
+                  :is="getSubjectIconComponent(subj.icon)"
+                  style="width: 1em; height: 1em;"
+                />
+                <span v-else>{{ getLegacySubjectIcon(subj.icon) || '📘' }}</span>
+              </span>
               <span class="subj-capsule-name">{{ subj.name }}</span>
             </div>
           </div>
@@ -343,6 +390,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task, getTodayDayCode } from '@/store/useTaskStore'
 import { localDb } from '@/services/localDb'
+import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
 const renderMarkdown = (content: string) => {
@@ -905,6 +953,97 @@ html.dark .subject-index {
   white-space: nowrap;
 }
 
+/* ===== Global View Card ===== */
+.global-view-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: all var(--transition-normal);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+html.dark .global-view-card {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.global-view-card:hover {
+  border-color: var(--color-primary-accent);
+  box-shadow: 0 4px 12px rgba(125, 147, 114, 0.1);
+  transform: translateY(-1px);
+}
+
+.global-view-card.is-active {
+  background: var(--accent-gradient);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(125, 147, 114, 0.2);
+}
+
+.global-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(163, 177, 155, 0.15);
+  color: var(--color-primary-accent);
+}
+
+.global-view-card.is-active .global-icon-wrap {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.global-text-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.global-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.global-view-card.is-active .global-title {
+  color: #fff;
+}
+
+.global-count {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(163, 177, 155, 0.15);
+  color: var(--text-secondary);
+}
+
+html.dark .global-count {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.global-view-card.is-active .global-count {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-left: 4px;
+  letter-spacing: 0.5px;
+}
+
 .subject-list {
   list-style: none;
   padding: 0;
@@ -1182,7 +1321,7 @@ html.dark .row-preview :deep(code) {
 }
 
 .create-first-btn {
-  background: var(--accent-gradient);
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   border: none;
   color: white;
   padding: 10px 20px;
@@ -1267,23 +1406,40 @@ html.dark .dashboard-right {
   gap: 8px;
 }
 
-.db-view-select {
+.db-view-toggle {
+  display: flex;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--border-default);
+  border-radius: 9999px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.db-view-toggle-btn {
+  background: none;
+  border: none;
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
-  border-radius: 6px;
-  padding: 4px 8px;
+  padding: 4px 10px;
+  border-radius: 9999px;
   cursor: pointer;
   outline: none;
   font-family: inherit;
   transition: all var(--transition-fast);
+  line-height: 1.2;
 }
 
-.db-view-select:hover {
-  border-color: #7D9372;
+.db-view-toggle-btn:hover {
   color: var(--text-primary);
+  background: rgba(163, 177, 155, 0.15);
+}
+
+.db-view-toggle-btn.is-active {
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(125, 147, 114, 0.28);
 }
 
 .db-day-selector {
@@ -1586,7 +1742,7 @@ html.dark .dashboard-right {
 }
 
 .todo-fab-add-btn {
-  background: var(--color-zen-sage, #7D9372);
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: #FFFFFF;
   border: none;
   border-radius: 50%;
@@ -2034,7 +2190,7 @@ html.dark .modal-content :deep(code) {
 }
 
 .sage-primary-btn {
-  background: #849C8A; /* 偏深的鼠尾草绿 #849C8A */
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: #FFFFFF; /* 白色文字“确定” */
   border: none;
   border-radius: 8px; /* 中等圆角 8px */
@@ -2043,13 +2199,13 @@ html.dark .modal-content :deep(code) {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 8px rgba(132, 156, 138, 0.3);
+  box-shadow: 0 3px 10px rgba(125, 147, 114, 0.25);
 }
 
 .sage-primary-btn:hover {
-  background: #758C7B;
+  opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(132, 156, 138, 0.42);
+  box-shadow: 0 5px 14px rgba(125, 147, 114, 0.35);
 }
 
 /* ===== 新建学习任务弹窗 (借鉴移动端卡片化与高交互设计) ===== */
@@ -2067,12 +2223,22 @@ html.dark .task-create-modal {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
+.task-create-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 0 16px 0;
+  margin: 0 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 .task-modal-title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.3px;
+  font-size: 19px;
+  font-weight: 850;
+  color: var(--color-primary-accent, #7D9372);
+  letter-spacing: -0.4px;
+  -webkit-text-stroke: 0.35px rgba(90, 111, 80, 0.65);
 }
 
 .task-modal-body {

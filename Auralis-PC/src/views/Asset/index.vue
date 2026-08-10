@@ -1,15 +1,17 @@
 <template>
   <div class="asset-studio">
-    <!-- LEFT: Asset Tree -->
+    <!-- LEFT: Asset Tree (Nested Folder Explorer + Upload Inline) -->
     <aside class="studio-left">
       <div class="panel-header">
         <span class="panel-title">资产库</span>
-        <button class="icon-btn" title="导入文件" @click="triggerUpload()">＋</button>
+        <button class="icon-btn" title="导入文件" @click="showRegisterModal = true">
+          <Plus :size="16" />
+        </button>
       </div>
 
       <!-- Search -->
       <div class="tree-search">
-        <input v-model="searchQ" class="search-input" placeholder="搜索资产..." />
+        <input v-model="searchQ" class="search-input" placeholder="搜索资产/知识/任务..." />
       </div>
 
       <!-- Upload Progress -->
@@ -18,274 +20,277 @@
         <div class="mini-bar-bg"><div class="mini-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
       </div>
 
-      <!-- Tree Groups -->
+
+
+      <!-- Tree Hierarchy -->
       <div class="tree-body">
         <div v-if="isLoadingAssets" class="tree-loading">
           <span class="loading-spinner"></span> 加载中...
         </div>
         <div v-else-if="filteredGroups.length === 0" class="tree-empty">
-          暂无资产，请上传文件
+          <Archive :size="24" class="empty-tree-icon" />
+          <p>暂无数据</p>
         </div>
         <template v-else>
+          <!-- Level 1: Groups (e.g. 全部, 学科A) -->
           <div v-for="group in filteredGroups" :key="group.id" class="tree-group">
             <div class="tree-group-header" @click="group.open = !group.open">
               <span class="group-arrow">{{ group.open ? '▾' : '▸' }}</span>
-              <span class="group-icon">{{ group.icon }}</span>
+              <component :is="group.lucideIcon" :size="13" class="group-icon" />
               <span class="group-name">{{ group.name }}</span>
-              <span class="group-count">{{ group.items.length }}</span>
-              <button class="header-action-btn" title="上传资产到该学科" @click.stop="triggerUpload(group.id === 'all' ? undefined : group.id)">＋</button>
+              <button v-if="group.id !== 'all'" class="header-action-btn" title="上传资产" @click.stop="openUploadForGroup(group.id)">
+                <Plus :size="12" />
+              </button>
             </div>
-            <div v-if="group.open" class="tree-items">
-              <div
-                v-for="item in group.items"
-                :key="item.id"
-                class="tree-item"
-                :class="{ 'is-active': selected?.id === item.id }"
-                @click="selectItem(item, group.id)"
-              >
-                <span class="item-icon">{{ item.icon }}</span>
-                <div class="item-info">
-                  <span class="item-name">{{ item.name }}</span>
-                  <span class="item-meta">{{ item.time }} · {{ item.blocks }}块</span>
+            
+            <div v-if="group.open" class="tree-children">
+              <!-- Level 2: Folders (e.g. 全部文件, 任务) -->
+              <div v-for="folder in group.children" :key="folder.id" class="tree-folder-container">
+                <div class="tree-folder-header" @click="folder.open = !folder.open">
+                  <span class="folder-arrow">{{ folder.open ? '▾' : '▸' }}</span>
+                  <component :is="folder.lucideIcon" :size="13" class="folder-icon" />
+                  <span class="folder-name">{{ folder.name }}</span>
+                  <span class="folder-count">{{ folder.children?.length || 0 }}</span>
                 </div>
-                <span class="status-dot" :class="item.status"></span>
+                
+                <div v-if="folder.open" class="tree-items">
+                  <!-- Level 3: Items (File, Block, Task) -->
+                  <div
+                    v-for="item in folder.children"
+                    :key="item.id"
+                    class="tree-item"
+                    :class="{ 'is-active': selected?.id === item.id }"
+                    @click="selectItem(item)"
+                  >
+                    <component :is="item.lucideIcon" :size="14" class="item-icon" />
+                    <div class="item-info">
+                      <span class="item-name" :class="{'is-done': item.type === 'task' && item.done}">{{ item.name }}</span>
+                      <span v-if="item.type === 'file'" class="item-meta">{{ item.time }}</span>
+                      <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due }}</span>
+                    </div>
+                    <span v-if="item.type === 'file'" class="status-dot" :class="item.status"></span>
+                    <span v-if="item.type === 'task' && item.done" class="task-done-icon"><Check :size="12" /></span>
+                  </div>
+                  <div v-if="!folder.children?.length" class="tree-empty-folder">无内容</div>
+                </div>
               </div>
             </div>
           </div>
         </template>
       </div>
 
-      <!-- Drop Zone -->
+      <!-- Drop Zone (Clickable) -->
       <div
         class="drop-zone"
         :class="{ 'is-over': isDragover }"
         @dragover.prevent="isDragover = true"
         @dragleave.prevent="isDragover = false"
         @drop.prevent="handleDrop"
-        @click="triggerUpload()"
+        @click="showRegisterModal = true"
       >
-        <span class="drop-icon">↑</span>
-        <span class="drop-text">拖拽或点击上传</span>
+        <UploadCloud :size="16" class="drop-icon" />
+        <span class="drop-text">拖拽文件或点击此处上传</span>
       </div>
     </aside>
 
-    <!-- COLUMN 2: MIDDLE Details & Blocks -->
+    <!-- COLUMN 2: MIDDLE Dynamic Viewer (File / Block / Task) -->
     <main class="studio-middle">
-      <!-- Empty state -->
       <div v-if="!selected" class="empty-state">
-        <div class="empty-icon">⚙</div>
-        <h2 class="empty-title">选择一个资产开始编排</h2>
-        <p class="empty-desc">从左侧资产树中选择文件，即可在此预览知识块与编辑任务</p>
-        <button class="upload-cta" @click="triggerUpload()">上传新资产</button>
+        <LayoutDashboard :size="48" class="empty-icon" />
+        <h2 class="empty-title">资产阅览区</h2>
+        <p class="empty-desc">在左侧树状目录中选择文件、知识块或任务以开始沉浸式工作</p>
       </div>
-
-      <!-- Detail view -->
       <template v-else>
+        <!-- Dynamic Header based on Type -->
         <div class="detail-header">
           <div class="detail-title-row">
-            <span class="detail-icon">{{ selected.icon }}</span>
+            <component :is="selected.lucideIcon" :size="28" class="detail-icon" />
             <div>
-              <h1 class="detail-name">{{ selected.name }}</h1>
-              <p class="detail-path">重型资产 · {{ selected.pages }} 页 · {{ selected.size }}</p>
+              <h1 class="detail-name" :class="{'is-done': selected.type === 'task' && selected.done}">{{ selected.name }}</h1>
+              <p v-if="selected.type === 'file'" class="detail-path">上传于 {{ selected.time }} · {{ selected.pages }} 页 · {{ selected.size }}</p>
+              <p v-else-if="selected.type === 'block'" class="detail-path">知识块 · 所属学科: {{ getSubjectName(selected.groupId) }}</p>
+              <p v-else-if="selected.type === 'task'" class="detail-path">生成任务 · 优先级: {{ selected.load }} · 截止: {{ selected.due }}</p>
             </div>
-            <span class="status-badge" :class="selected.status">{{ selected.statusText }}</span>
-          </div>
-
-          <!-- Tab bar -->
-          <div class="tab-bar">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              class="tab-btn"
-              :class="{ 'is-active': activeTab === tab.id }"
-              @click="activeTab = tab.id"
-            >
-              {{ tab.label }}
+            <span v-if="selected.type === 'file'" class="status-badge" :class="selected.status">{{ selected.statusText }}</span>
+            <button v-if="selected.type === 'task'" class="btn-primary sm-btn" style="margin-left:auto;" @click="toggleTaskDone(selected)">
+              {{ selected.done ? '标记为未完成' : '标记为完成' }}
+            </button>
+            <button v-if="selected.type === 'block'" class="btn-primary sm-btn" style="margin-left:auto;" @click="saveBlockEdit(selected)">
+              保存修改
             </button>
           </div>
         </div>
 
         <div class="middle-content-scroll">
-          <div v-if="activeTab === 'blocks'" class="tab-content">
-            <div class="blocks-summary" style="display: flex; justify-content: space-between; align-items: center;">
-              <div style="display: flex; gap: 12px;">
-                <div class="summary-stat"><span class="s-val">{{ computedBlocks.length }}</span><span class="s-lbl">知识块</span></div>
-                <div class="summary-stat"><span class="s-val">{{ selected.tasks }}</span><span class="s-lbl">生成任务</span></div>
-                <div class="summary-stat"><span class="s-val">{{ selected.pages }}</span><span class="s-lbl">页</span></div>
-              </div>
-              <button class="btn-primary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; border: none; background: #7D9372; color: white; cursor: pointer;" @click="openBlockDialog()">+ 新增知识块</button>
-            </div>
-            <div class="blocks-list">
-              <div v-for="(b, idx) in computedBlocks" :key="b.id" class="block-row">
-                <div class="block-num">{{ idx + 1 }}</div>
-                <div class="block-body">
-                  <p class="block-heading">{{ b.heading }}</p>
-                  <p class="block-preview">{{ b.preview }}</p>
-                </div>
-                <div class="block-actions" style="display: flex; gap: 12px; align-items: center;">
-                  <div class="block-tags">
-                    <span v-for="t in b.tags" :key="t" class="block-tag">{{ t }}</span>
-                  </div>
-                  <button style="border: none; background: none; color: #7D9372; cursor: pointer; font-size: 12px;" @click="openBlockDialog(b.originalBlock || b)">编辑</button>
-                  <button style="border: none; background: none; color: #ef4444; cursor: pointer; font-size: 12px;" @click="handleDeleteBlock(b.id)">删除</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB: 任务 -->
-          <div v-else-if="activeTab === 'tasks'" class="tab-content">
-            <div class="tasks-list">
-              <div v-for="t in selected.taskList" :key="t.id" class="task-row">
-                <div class="task-check" :class="{ done: t.done }" @click="t.done = !t.done">
-                  <span v-if="t.done">✓</span>
-                </div>
-                <div class="task-body">
-                  <span class="task-title" :class="{ done: t.done }">{{ t.title }}</span>
-                  <span class="task-due">截止：{{ t.due }}</span>
-                </div>
-                <span class="task-load" :class="t.load">{{ t.load }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB: 文件清单 -->
-          <div v-else-if="activeTab === 'files'" class="tab-content">
-            <div class="file-list-container" style="display: flex; flex-direction: column; gap: 12px; padding: 12px 0;">
-              <div v-for="f in getFilesList()" :key="f.id" class="file-list-item" style="display: flex; align-items: center; justify-content: space-between; padding: 16px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-                <div style="display: flex; align-items: center; gap: 12px;">
-                  <span style="font-size: 24px;">{{ f.icon }}</span>
-                  <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <span style="font-size: 14px; font-weight: 600; color: #111827;">{{ f.name }}</span>
-                    <span style="font-size: 12px; color: #6b7280;">上传于 {{ f.time }} · {{ f.size }}</span>
-                  </div>
-                </div>
-                <button class="btn-primary" style="padding: 6px 12px; font-size: 12px; border-radius: 6px; border: none; background: #7D9372; color: white; cursor: pointer;" @click="previewFile(f)">点击查看</button>
-              </div>
-              <div v-if="getFilesList().length === 0" style="text-align: center; color: #9ca3af; padding: 32px 0; font-size: 13px;">
-                暂无源文件
-              </div>
-            </div>
-          </div>
-
-          <!-- TAB: Markdown 结构化 -->
-          <div v-else-if="activeTab === 'markdown'" class="tab-content">
-            <div class="markdown-preview">
+          <!-- View: FILE -->
+          <div v-if="selected.type === 'file'" class="full-height-viewer">
+            <div v-if="selected.markdown" class="markdown-preview">
               <pre class="markdown-content">{{ selected.markdown }}</pre>
+            </div>
+            <div v-else class="pdf-viewer-container">
+              <PdfViewer :filePath="selected.filePath || selected.name" :fileName="selected.name" />
+            </div>
+          </div>
+
+          <!-- View: BLOCK -->
+          <div v-else-if="selected.type === 'block'" class="block-editor-view">
+            <div class="editor-header">
+              <div class="editor-title-row">
+                <div class="editor-icon-wrapper"><Blocks class="editor-icon" /></div>
+                <div class="editor-meta">
+                  <span class="editor-type">知识块编辑</span>
+                  <span class="editor-subject">{{ getSubjectName(selected.groupId) }}</span>
+                </div>
+              </div>
+              <button class="editor-save-btn" @click="saveBlockEdit(selected)">
+                <Check class="btn-icon" />保存修改
+              </button>
+            </div>
+            
+            <div class="block-editor-container">
+              <input v-model="selected.name" class="editor-title-input" placeholder="输入知识块标题..." />
+              
+              <div class="editor-content-wrapper">
+                <textarea v-model="selected.preview" class="editor-textarea" placeholder="在此编写知识块的核心内容（支持 Markdown）..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- View: TASK -->
+          <div v-else-if="selected.type === 'task'" class="task-editor-view">
+             <div class="block-editor-container">
+              <!-- Task Title -->
+              <input v-model="selected.name" class="editor-title-input" placeholder="输入任务描述..." />
+              
+              <!-- Notion-like Property Grid -->
+              <div class="property-grid">
+                <div class="property-row">
+                  <div class="property-label">
+                    <Calendar :size="14" />
+                    <span>截止日期</span>
+                  </div>
+                  <div class="property-value">
+                    <el-date-picker 
+                      v-model="selected.due" 
+                      type="date" 
+                      placeholder="选择截止日期"
+                      format="YYYY-MM-DD"
+                      value-format="YYYY-MM-DD"
+                      class="zen-date-picker"
+                      popper-class="zen-date-popper"
+                      style="width: 220px;"
+                    />
+                  </div>
+                </div>
+
+                <div class="property-row">
+                  <div class="property-label" style="align-self: flex-start; padding-top: 8px;">
+                    <Activity :size="14" />
+                    <span>负荷级别</span>
+                  </div>
+                  <div class="property-value">
+                    <div class="view-toggle" style="width: fit-content;">
+                      <button 
+                        class="toggle-btn" 
+                        :class="{ 'is-active': selected.load === '低' }"
+                        @click="selected.load = '低'"
+                      >低负荷</button>
+                      <button 
+                        class="toggle-btn" 
+                        :class="{ 'is-active': selected.load === '中' }"
+                        @click="selected.load = '中'"
+                      >中负荷</button>
+                      <button 
+                        class="toggle-btn" 
+                        :class="{ 'is-active': selected.load === '高' }"
+                        @click="selected.load = '高'"
+                      >高负荷</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Task Notes -->
+              <div class="editor-content-wrapper">
+                <textarea v-model="selected.preview" class="editor-textarea" placeholder="在此编写任务备注或细节说明..."></textarea>
+              </div>
             </div>
           </div>
         </div>
       </template>
     </main>
 
-    <!-- COLUMN 3: RIGHT Obsidian Relationship Graph -->
-    <aside class="studio-right-graph">
+    <!-- COLUMN 3: RIGHT Context (Only Graph) -->
+    <aside class="studio-right-context" style="width: 450px;">
       <div v-if="!selected" class="graph-empty-state">
-        <div class="empty-graph-icon">🌌</div>
-        <p class="empty-graph-desc">选择一个资产来加载知识星空图</p>
+        <Network :size="40" class="empty-graph-icon" />
+        <p class="empty-graph-desc">选择项目以加载上下文星空图</p>
       </div>
       <template v-else>
-        <div class="graph-header">
-          <span class="graph-title">关系星图</span>
+        <div class="panel-header" style="background: var(--color-bg-secondary);">
+          <span class="panel-title">关系星图</span>
         </div>
-        <div class="graph-container-wrapper">
-          <KnowledgeGraph
-            v-if="selectedGroup"
-            :subjectId="selectedGroup.id === 'all' && selected ? selected.id : selectedGroup.id"
-            :blocks="groupBlocks"
-            :subjectName="selectedGroup.id === 'all' && selected ? selected.name : selectedGroup.name"
-            :subjectColor="selectedGroup.id === 'all' ? 'rgba(59,130,246,0.2)' : (selectedGroup.color || 'rgba(99,102,241,0.2)')"
-          />
-          <div v-else class="empty-state">
-            <p>无法定位学科信息</p>
+        <div class="context-body">
+          <div class="ctx-graph">
+             <KnowledgeGraph
+              v-if="selectedGroupForGraph"
+              :subjectId="selectedGroupForGraph.id"
+              :blocks="graphBlocks"
+              :subjectName="selectedGroupForGraph.name"
+              :subjectColor="selectedGroupForGraph.id === 'all' ? 'rgba(59,130,246,0.2)' : (selectedGroupForGraph.color || 'rgba(99,102,241,0.2)')"
+            />
           </div>
         </div>
       </template>
     </aside>
 
-    <!-- Subject Selection Modal/Dialog -->
-    <el-dialog
-      v-model="showUploadDialog"
-      title="上传资产"
-      width="400px"
-      append-to-body
-    >
-      <div class="upload-dialog-content" style="display: flex; flex-direction: column; gap: 16px;">
-        <div class="form-item">
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">选择目标学科</label>
-          <el-select v-model="selectedSubjectId" placeholder="选择学科" style="width: 100%;">
-            <el-option
-              v-for="s in subjectStore.subjects"
-              :key="s.id"
-              :label="s.name"
-              :value="s.id"
-            />
-          </el-select>
+    <!-- Register File Modal -->
+    <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
+      <div class="modal-container register-modal" style="background: var(--color-bg-primary); padding: 24px; border-radius: 12px; width: 480px; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h3 style="margin: 0; font-size: 18px; color: var(--text-primary);">登记本地参考文件</h3>
+          <button style="background: none; border: none; cursor: pointer; font-size: 16px; color: var(--text-secondary);" @click="showRegisterModal = false">✕</button>
         </div>
-        <div class="form-item">
-          <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 13px;">选择文件</label>
-          <div 
-            class="dialog-file-picker" 
-            style="border: 1.5px dashed var(--border-default); border-radius: var(--radius-md); padding: 20px; text-align: center; cursor: pointer; background: var(--color-bg-tertiary);"
-            @click="triggerFileSelect"
-          >
-            <span v-if="!selectedFileToUpload" style="font-size: 12px; color: var(--text-muted);">点击选择要上传的文件</span>
-            <span v-else style="font-size: 13px; font-weight: 600; color: var(--text-primary);">📄 {{ selectedFileToUpload.name }}</span>
+        
+        <div 
+          style="border: 2px dashed var(--border-default); border-radius: 8px; padding: 32px; text-align: center; cursor: pointer; margin-bottom: 20px; transition: all 0.2s;"
+          :style="isDragover ? 'border-color: var(--color-primary-accent); background: var(--color-primary-light);' : ''"
+          @dragover.prevent="isDragover = true"
+          @dragleave.prevent="isDragover = false"
+          @drop.prevent="handleDrop"
+          @click="triggerFileSelect"
+        >
+          <UploadCloud :size="24" style="color: var(--text-muted); margin-bottom: 8px;" />
+          <div style="font-size: 13px; color: var(--text-secondary);">
+            <span v-if="!selectedFileToUpload">拖拽文件到此处，或点击选择</span>
+            <span v-else style="color: var(--color-primary-accent); font-weight: 600;">已选择: {{ selectedFileToUpload.name }}</span>
           </div>
-          <input 
-            ref="dialogFileInput" 
-            type="file" 
-            accept=".pdf,.ppt,.pptx,.doc,.docx,.jpg,.png,.jpeg" 
-            style="display: none;" 
-            @change="handleDialogFileChange"
-          />
         </div>
-      </div>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showUploadDialog = false">取消</el-button>
-          <el-button type="primary" :disabled="!selectedSubjectId || !selectedFileToUpload" @click="confirmUpload">
-            确认上传
-          </el-button>
-        </span>
-      </template>
-    </el-dialog>
+        <input type="file" ref="dialogFileInput" style="display: none" accept=".pdf,.ppt,.pptx,.doc,.docx,.jpg,.png,.jpeg" @change="handleDialogFileChange" />
+        
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary);">归档至 <span style="color: #ef4444;">*</span></label>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 120px; overflow-y: auto;">
+            <div
+              v-for="subj in subjectStore.subjects"
+              :key="subj.id"
+              style="padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border-default); font-size: 12px; cursor: pointer; transition: all 0.2s;"
+              :style="selectedSubjectId === subj.id ? 'background: var(--color-primary-accent); color: white; border-color: var(--color-primary-accent);' : 'background: var(--color-bg-secondary); color: var(--text-primary);'"
+              @click="selectedSubjectId = subj.id"
+            >
+              {{ subj.name }}
+            </div>
+          </div>
+        </div>
 
-    <!-- Block CRUD Dialog -->
-    <el-dialog
-      v-model="blockDialogVisible"
-      :title="editingBlockId ? '编辑知识块' : '新增知识块'"
-      width="500px"
-      append-to-body
-    >
-      <div style="display: flex; flex-direction: column; gap: 16px;">
-        <div class="form-item">
-          <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600;">标题</label>
-          <el-input v-model="blockForm.title" placeholder="输入知识块标题" />
-        </div>
-        <div class="form-item">
-          <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600;">内容</label>
-          <el-input v-model="blockForm.preview" type="textarea" :rows="4" placeholder="输入核心内容" />
-        </div>
-        <div class="form-item">
-          <label style="display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600;">标签 (逗号分隔)</label>
-          <el-input v-model="blockForm.tagsStr" placeholder="例如: 前端, Vue" />
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
+          <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
+          <button class="btn-primary" :disabled="!selectedSubjectId || !selectedFileToUpload" @click="confirmUpload">
+            确定登记
+          </button>
         </div>
       </div>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="blockDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="saveBlock">保存</el-button>
-        </span>
-      </template>
-    </el-dialog>
-
-    <!-- PDF Preview Modal -->
-    <el-dialog v-model="previewVisible" :title="'原文查看 - ' + previewTarget?.name" width="80%" top="5vh" append-to-body>
-      <div style="height: 70vh; display: flex; flex-direction: column;">
-        <PdfViewer v-if="previewTarget" :filePath="previewTarget.filePath || previewTarget.name" :fileName="previewTarget.name" />
-      </div>
-    </el-dialog>
+    </div>
   </div>
 </template>
 
@@ -293,14 +298,15 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ingestFile } from '@/api/aiClient'
 import { uploadAsset, validateFileSize, getAssetStatus } from '@/api/useAssetApi'
-import { ElNotification, ElMessageBox } from 'element-plus'
+import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
-import 'element-plus/theme-chalk/el-dialog.css'
-import 'element-plus/theme-chalk/el-select.css'
-import 'element-plus/theme-chalk/el-option.css'
-import 'element-plus/theme-chalk/el-button.css'
+
+import { Plus, Archive, FileText, UploadCloud, LayoutDashboard, Network, Check, BookOpen, Blocks, File, PieChart, ImageIcon, Mic, Folder, ListTodo, Calendar, Activity } from 'lucide-vue-next'
 import PdfViewer from '@/components/subject/PdfViewer.vue'
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
+
+// ---- Layout States ----
+const showRegisterModal = ref(false)
 
 // ---- Upload ----
 const isDragover = ref(false)
@@ -308,35 +314,38 @@ const isUploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStatusText = ref('')
 const searchQ = ref('')
-const activeTab = ref('blocks')
 const isLoadingAssets = ref(false)
-const baseTabs = ref([
-  { id: 'blocks', label: '知识块' },
-  { id: 'tasks', label: '生成任务' },
-  { id: 'files', label: '源文件清单' }
-])
 
-const tabs = computed(() => {
-  if (selected.value?.markdown) {
-    return [{ id: 'markdown', label: '结构化 Markdown' }, ...baseTabs.value]
-  }
-  return baseTabs.value
-})
+// ---- Data Models ----
+type TreeNodeType = 'group' | 'folder' | 'file' | 'block' | 'task'
 
-interface AssetItem {
-  id: string; name: string; icon: string; status: string; statusText: string
-  time: string; blocks: number; tasks: number; pages: number; size: string
-  filePath?: string;
-  blockList: any[]; taskList: any[]; markdown?: string
+interface TreeNode {
+  id: string
+  name: string
+  type: TreeNodeType
+  lucideIcon?: any
+  open?: boolean
+  children?: TreeNode[]
+  // For files
+  status?: string
+  statusText?: string
+  time?: string
+  size?: string
+  pages?: number
+  filePath?: string
+  markdown?: string
+  // For blocks
+  preview?: string
+  tags?: string[]
+  // For tasks
+  due?: string
+  load?: string
+  done?: boolean
+  // Meta
+  groupId?: string
+  originalData?: any
 }
 
-interface AssetGroup {
-  id: string; name: string; icon: string; color?: string; open: boolean
-  items: AssetItem[]
-}
-
-// Upload Dialog
-const showUploadDialog = ref(false)
 const selectedSubjectId = ref('')
 const selectedFileToUpload = ref<File | null>(null)
 const dialogFileInput = ref<HTMLInputElement | null>(null)
@@ -348,140 +357,92 @@ import { localDb } from '@/services/localDb'
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
 
-const groups = ref<AssetGroup[]>([])
+const rootNodes = ref<TreeNode[]>([])
 
-/**
- * 按照学科分组从本地数据库加载资产和参考材料
- */
+function getIconForSource(source: string): any {
+  const lower = source.toLowerCase()
+  if (lower.includes('pdf')) return FileText
+  if (lower.includes('ppt') || lower.includes('课件')) return PieChart
+  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return ImageIcon
+  if (lower.includes('voice') || lower.includes('语音')) return Mic
+  return File
+}
+
 const loadAssetsFromBackend = async () => {
   isLoadingAssets.value = true
   try {
     await subjectStore.loadSubjects()
     await blockStore.loadLocalBlocks()
     
-    const newGroups: AssetGroup[] = []
+    const newRoots: TreeNode[] = []
     
-    // 1. Fetch all files to create "全部资产" group
+    // --- 1. 汇总 (All) Group ---
     const allFilesRaw = await localDb.getSourceFiles()
-    const allItems: AssetItem[] = allFilesRaw.map(file => {
-      const fileBlocks = blockStore.recentBlocks.filter(b => b.sourceFileId === file.id || b.source === file.name)
-      return {
-        id: String(file.id),
-        name: file.name,
-        icon: getIconForSource(file.name),
-        status: 'success',
-        statusText: '正常',
-        time: new Date(file.created_at || Date.now()).toLocaleDateString(),
-        blocks: fileBlocks.length,
-        tasks: 0,
-        pages: 1,
-        size: (file.file_size / (1024 * 1024)).toFixed(2) + ' MB',
-        filePath: file.file_path,
-        blockList: fileBlocks.map((b, idx) => ({
-          id: idx + 1,
-          heading: b.title,
-          preview: b.preview,
-          tags: b.tags || []
-        })),
-        taskList: []
-      }
-    })
     
-    // Add Placeholder and All Blocks Aggregation
-    const mockItem: AssetItem = {
-      id: '-1',
-      name: '💡 示例编排资产 (点击预览)',
-      icon: '📚',
-      status: 'success',
-      statusText: '完美解析',
-      time: '今天',
-      blocks: 3,
-      tasks: 2,
-      pages: 15,
-      size: '1.2 MB',
-      blockList: [
-        { id: 1, heading: '知识点：Vue 响应式', preview: 'Vue 3 使用 Proxy 对象实现对数据属性的劫持...', tags: ['前端', 'Vue'] },
-        { id: 2, heading: '知识点：Tauri 架构', preview: 'Tauri 分为 Rust 后端和 Web 前端，通过 IPC 通信...', tags: ['桌面端'] },
-        { id: 3, heading: '知识点：大模型 Prompt', preview: '编写清晰、明确的 Prompt 可以显著提高模型输出质量。', tags: ['AI', '提示词'] }
-      ],
-      taskList: [
-        { id: 1, title: '复习 Vue 响应式原理', due: '今天', load: '中', done: false },
-        { id: 2, title: '编写 Tauri IPC 示例', due: '明天', load: '高', done: false }
-      ],
-      markdown: '# 示例架构文档\n\n- Vue 3\n- Tauri 2.0\n- SQLite'
-    }
+    const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+    const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+    const allTasksFolder: TreeNode = { id: 'all-tasks', name: '全部任务', type: 'folder', lucideIcon: Folder, open: false, children: [] }
 
-    const allBlocksItem: AssetItem = {
-      id: '-2',
-      name: '📦 全部分类知识块汇总',
-      icon: '🧠',
-      status: 'success',
-      statusText: '动态聚合',
-      time: '实时',
-      blocks: blockStore.recentBlocks.length,
-      tasks: 0,
-      pages: 0,
-      size: '--',
-      blockList: blockStore.recentBlocks.map((b, idx) => ({
-        id: b.id || idx + 1,
-        heading: b.title,
-        preview: b.preview,
-        tags: b.tags || [b.subject]
-      })),
-      taskList: [],
-      markdown: '# 全部分类知识块\n\n' + blockStore.recentBlocks.map(b => `## ${b.title}\n\n${b.preview}`).join('\n\n')
-    }
-
-    allItems.unshift(allBlocksItem, mockItem)
-    
-    newGroups.push({
-      id: 'all',
-      name: '全部资产',
-      icon: '🗂️',
-      color: 'rgba(100, 116, 139, 0.2)',
-      open: true,
-      items: allItems
+    // Map all files
+    allFilesRaw.forEach(file => {
+      allFilesFolder.children!.push({
+        id: `f-${file.id}`, type: 'file', groupId: 'all', name: file.name, lucideIcon: getIconForSource(file.name),
+        status: 'success', statusText: '正常', time: new Date(file.created_at || Date.now()).toLocaleDateString(),
+        size: (file.file_size / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.file_path, originalData: file
+      })
     })
-    
-    // 2. Load subject-specific files
+
+    // Map all blocks
+    blockStore.recentBlocks.forEach(b => {
+      allBlocksFolder.children!.push({
+        id: `b-${b.id}`, type: 'block', groupId: 'all', name: b.title || '无标题块', lucideIcon: Blocks,
+        preview: b.preview, tags: b.tags || [b.subject], originalData: b
+      })
+    })
+
+    // Mock Tasks for All
+    allTasksFolder.children = [
+      { id: 't-1', type: 'task', groupId: 'all', name: '复习 Vue 响应式原理', lucideIcon: ListTodo, due: '今天', load: '中', done: false },
+      { id: 't-2', type: 'task', groupId: 'all', name: '编写 Tauri IPC 示例', lucideIcon: ListTodo, due: '明天', load: '高', done: true }
+    ]
+
+    newRoots.push({
+      id: 'all', name: '汇总分类', type: 'group', lucideIcon: Archive, open: false,
+      children: [allFilesFolder, allBlocksFolder, allTasksFolder]
+    })
+
+    // --- 2. 学科分类 (Subjects) ---
     for (const subj of subjectStore.subjects) {
       await subjectStore.loadSourceFiles(subj.id)
       const files = subjectStore.activeSourceFiles
-      
-      const items: AssetItem[] = files.map(file => {
-        const fileBlocks = blockStore.recentBlocks.filter(b => b.sourceFileId === file.id || b.source === file.name)
-        return {
-          id: String(file.id),
-          name: file.name,
-          icon: getIconForSource(file.name),
-          status: 'success',
-          statusText: '正常',
-          time: new Date(file.created_at || Date.now()).toLocaleDateString(),
-          blocks: fileBlocks.length,
-          tasks: 0,
-          pages: 1,
-          size: (file.file_size / (1024 * 1024)).toFixed(2) + ' MB',
-          filePath: file.file_path,
-          blockList: fileBlocks.map((b, idx) => ({
-            id: idx + 1,
-            heading: b.title,
-            preview: b.preview,
-            tags: b.tags || []
-          })),
-          taskList: []
-        }
+      const blocks = blockStore.recentBlocks.filter(b => b.subjectId === subj.id)
+
+      const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+      const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: '知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: '任务', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+
+      files.forEach(file => {
+        subjFilesFolder.children!.push({
+          id: `f-${file.id}`, type: 'file', groupId: subj.id, name: file.name, lucideIcon: getIconForSource(file.name),
+          status: 'success', statusText: '正常', time: new Date(file.created_at || Date.now()).toLocaleDateString(),
+          size: (file.file_size / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.file_path, originalData: file
+        })
       })
-      
-      newGroups.push({
-        id: subj.id,
-        name: subj.name,
-        icon: subj.icon || '📚',
-        color: subj.color,
-        open: true,
-        items
+
+      blocks.forEach(b => {
+        subjBlocksFolder.children!.push({
+          id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || '无标题块', lucideIcon: Blocks,
+          preview: b.preview, tags: b.tags || [b.subject], originalData: b
+        })
+      })
+
+      newRoots.push({
+        id: subj.id, name: subj.name, type: 'group', lucideIcon: BookOpen, open: false,
+        children: [subjFilesFolder, subjBlocksFolder, subjTasksFolder]
       })
     }
-    groups.value = newGroups
+    
+    rootNodes.value = newRoots
   } catch (e) {
     console.error('[Asset] Failed to load local assets:', e)
   } finally {
@@ -489,326 +450,110 @@ const loadAssetsFromBackend = async () => {
   }
 }
 
-/** 根据资产来源推断图标 */
-function getIconForSource(source: string): string {
-  const lower = source.toLowerCase()
-  if (lower.includes('pdf')) return '📄'
-  if (lower.includes('ppt') || lower.includes('课件')) return '📊'
-  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return '🖼️'
-  if (lower.includes('voice') || lower.includes('语音')) return '🎤'
-  return '📄'
-}
-
-const handleSyncEvent = async (e: Event) => {
-  const customEvent = e as CustomEvent
-  const syncEvent = customEvent.detail
-
-  if (syncEvent.entity === 'assets') {
-    if (syncEvent.type === 'DOC_INGESTED') {
-      try {
-        const data = typeof syncEvent.data === 'string' ? JSON.parse(syncEvent.data) : syncEvent.data
-        const assetId = syncEvent.refId || data.refId
-
-        // Retrieve asset metadata to get its name
-        const assetInfo = await getAssetStatus(assetId)
-
-        // Register in local SQLite source_files table to keep in sync
-        const subjectId = assetInfo.subject
-        if (subjectId && subjectId !== '文档导入') {
-          await subjectStore.loadSourceFiles(subjectId)
-          const alreadyExists = subjectStore.activeSourceFiles.some(
-            f => f.name === assetInfo.fileName || f.file_path === assetInfo.objectName
-          )
-          if (!alreadyExists) {
-            await subjectStore.addSourceFile(
-              subjectId,
-              assetInfo.fileName,
-              assetInfo.objectName,
-              assetInfo.contentType || 'PDF',
-              assetInfo.fileSize || 0
-            )
-          }
-        }
-
-        // Refresh local assets tree
-        await loadAssetsFromBackend()
-
-        // Update selected if we have it or if it is currently processing
-        const allItems = groups.value.flatMap(g => g.items)
-        const updatedItem = allItems.find(item => item.name === assetInfo.fileName)
-
-        if (updatedItem) {
-          // If we had a processing item selected with this name, switch selected to this real item
-          if (selected.value && (selected.value.name === assetInfo.fileName || selected.value.id === assetId)) {
-            selected.value = updatedItem
-          }
-        }
-
-        ElNotification({
-          title: '🎉 资产编排完成',
-          message: `文档《${assetInfo.fileName}》已成功入库并生成 ${data.segmentCount || 0} 个知识块`,
-          type: 'success',
-          position: 'top-right',
-          duration: 5000
-        })
-      } catch (err) {
-        console.error('Failed to handle DOC_INGESTED event:', err)
+// ---- Search Filter (Recursive) ----
+const filterTree = (nodes: TreeNode[], query: string): TreeNode[] => {
+  if (!query) return nodes
+  const q = query.toLowerCase()
+  return nodes.map(node => {
+    const match = node.name.toLowerCase().includes(q)
+    if (node.children) {
+      const filteredChildren = filterTree(node.children, query)
+      if (match || filteredChildren.length > 0) {
+        return { ...node, open: true, children: filteredChildren }
       }
-    } else if (syncEvent.type === 'INGEST_FAILED') {
-      try {
-        const data = typeof syncEvent.data === 'string' ? JSON.parse(syncEvent.data) : syncEvent.data
-        const filename = data.fileName || '未知文件'
-
-        // Update selected/placeholder item status to failed
-        for (const group of groups.value) {
-          const item = group.items.find(i => i.name === filename || i.id === syncEvent.refId)
-          if (item) {
-            item.status = 'failed'
-            item.statusText = '编排失败'
-          }
-        }
-
-        ElNotification({
-          title: '❌ 资产编排失败',
-          message: `文档《${filename}》解析失败：${data.error || '未知错误'}`,
-          type: 'error',
-          position: 'top-right',
-          duration: 5000
-        })
-      } catch (err) {
-        console.error('Failed to handle INGEST_FAILED event:', err)
-      }
+    } else if (match) {
+      return { ...node }
     }
-  }
+    return null
+  }).filter(Boolean) as TreeNode[]
 }
 
-onMounted(() => {
-  loadAssetsFromBackend()
-  if (typeof window !== 'undefined') {
-    window.addEventListener('auralis-sync-event', handleSyncEvent)
-  }
-})
+const filteredGroups = computed(() => filterTree(rootNodes.value, searchQ.value))
 
-onUnmounted(() => {
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('auralis-sync-event', handleSyncEvent)
-  }
-})
-
-const filteredGroups = computed(() =>
-  groups.value.map(g => ({
-    ...g,
-    items: searchQ.value
-      ? g.items.filter(i => i.name.toLowerCase().includes(searchQ.value.toLowerCase()))
-      : g.items
-  })).filter(g => searchQ.value ? g.items.length > 0 : true)
-)
-
-const selected = ref<AssetItem | null>(null)
-const selectedGroupId = ref<string | null>(null)
-
-const computedBlocks = computed(() => {
-  if (!selected.value) return []
-  if (selected.value.id.startsWith('-')) return selected.value.blockList
-  
-  return blockStore.recentBlocks
-    .filter(b => String(b.sourceFileId) === String(selected.value!.id) || b.source === selected.value!.name)
-    .map(b => ({
-      id: b.id,
-      heading: b.title,
-      preview: b.preview,
-      tags: b.tags || [],
-      originalBlock: b
-    }))
-})
-
-// --- Block CRUD Actions ---
-const blockDialogVisible = ref(false)
-const editingBlockId = ref('')
-const blockForm = ref({ title: '', preview: '', tagsStr: '' })
-
-const openBlockDialog = (b?: any) => {
-  if (b && b.id) {
-    editingBlockId.value = b.id
-    blockForm.value = {
-      title: b.title || b.heading || '',
-      preview: b.preview || '',
-      tagsStr: (b.tags || []).join(', ')
-    }
-  } else {
-    editingBlockId.value = ''
-    blockForm.value = { title: '', preview: '', tagsStr: '' }
-  }
-  blockDialogVisible.value = true
-}
-
-const saveBlock = async () => {
-  if (!blockForm.value.title.trim()) {
-    ElNotification({ title: '⚠️ 提示', message: '标题不能为空', type: 'warning' })
-    return
-  }
-  
-  const tags = blockForm.value.tagsStr.split(',').map(s => s.trim()).filter(Boolean)
-  const currentSubjectId = selectedGroup.value?.id === 'all' ? (subjectStore.subjects[0]?.id || 'unknown') : (selectedGroup.value?.id || 'unknown')
-  const currentSubjectName = subjectStore.subjects.find(s => s.id === currentSubjectId)?.name || '未分类'
-  
-  if (editingBlockId.value) {
-    const original = blockStore.recentBlocks.find(x => x.id === editingBlockId.value)
-    if (original) {
-       await blockStore.updateBlock({
-         ...original,
-         title: blockForm.value.title,
-         preview: blockForm.value.preview,
-         tags: tags
-       })
-       ElNotification({ title: '✅ 成功', message: '知识块已更新', type: 'success' })
-    }
-  } else {
-    const newBlock = {
-      subject: currentSubjectName,
-      title: blockForm.value.title,
-      preview: blockForm.value.preview,
-      time: new Date().toISOString().split('T')[0],
-      source: selected.value ? selected.value.name : '手动新建',
-      color: 'rgba(99, 102, 241, 0.2)',
-      subjectId: currentSubjectId,
-      sourceFileId: selected.value && !selected.value.id.startsWith('-') ? selected.value.id : undefined,
-      tags: tags
-    }
-    await blockStore.addBlock(newBlock as any)
-    ElNotification({ title: '✅ 成功', message: '知识块已添加', type: 'success' })
-  }
-  
-  blockDialogVisible.value = false
-  
-  // Optimizstic update for mock assets
-  if (selected.value && selected.value.id.startsWith('-')) {
-     if (editingBlockId.value) {
-       const b = selected.value.blockList.find((x:any) => x.id === editingBlockId.value)
-       if (b) { b.heading = blockForm.value.title; b.preview = blockForm.value.preview; b.tags = tags }
-     } else {
-       selected.value.blockList.push({ id: Date.now(), heading: blockForm.value.title, preview: blockForm.value.preview, tags })
-     }
-  }
-}
-
-const handleDeleteBlock = async (id: string) => {
-  if (!id) return
-  try {
-    await ElMessageBox.confirm('确认删除该知识块吗？', '删除提示', { type: 'warning' })
-    if (selected.value && selected.value.id.startsWith('-')) {
-      selected.value.blockList = selected.value.blockList.filter((b:any) => b.id !== id)
-    } else {
-      await blockStore.removeBlock(id)
-    }
-    ElNotification({ title: '🗑️ 已删除', message: '知识块已被删除', type: 'success' })
-  } catch (e) {
-    // User canceled
-  }
-}
-
-const selectedGroup = computed(() => {
-  if (!selected.value || !selectedGroupId.value) return null
-  return groups.value.find(g => g.id === selectedGroupId.value) || null
-})
-
-// --- File Preview Logic ---
-const getFilesList = () => {
-  if (!selected.value) return []
-  if (selected.value.id === '-2') {
-    const all: AssetItem[] = []
-    groups.value.forEach(g => {
-      g.items.forEach(i => {
-        if (!i.id.startsWith('-')) all.push(i)
-      })
-    })
-    return Array.from(new Set(all))
-  }
-  return [selected.value]
-}
-
-const previewVisible = ref(false)
-const previewTarget = ref<AssetItem | null>(null)
-const previewFile = (f: AssetItem) => {
-  previewTarget.value = f
-  previewVisible.value = true
-}
-
-const groupBlocks = computed(() => {
-  if (!selectedGroup.value) return []
-  if (selectedGroup.value.id === 'all') {
-    if (selected.value) {
-      return blockStore.recentBlocks.filter(b => b.sourceFileId === selected.value!.id || b.source === selected.value!.name)
-    }
-    return blockStore.recentBlocks
-  }
-  return blockStore.recentBlocks.filter(b => b.subjectId === selectedGroup.value!.id)
-})
-
-const selectItem = (item: AssetItem, groupId: string) => {
+// ---- Selection & Inline Editors ----
+const selected = ref<TreeNode | null>(null)
+const selectItem = (item: TreeNode) => {
+  if (item.type !== 'file' && item.type !== 'block' && item.type !== 'task') return
   selected.value = item
-  selectedGroupId.value = groupId
-  activeTab.value = 'blocks'
+  showRegisterModal.value = false
 }
 
-const triggerUpload = (subjectId?: string) => {
-  selectedSubjectId.value = subjectId || (subjectStore.subjects[0]?.id || '')
+const getSubjectName = (id?: string) => {
+  if (!id || id === 'all') return '全部'
+  return subjectStore.subjects.find(s => s.id === id)?.name || '未知学科'
+}
+
+const toggleTaskDone = (task: TreeNode) => {
+  task.done = !task.done
+}
+
+const saveBlockEdit = async (block: TreeNode) => {
+  if (!block.originalData) return
+  try {
+    await blockStore.updateBlock({
+      ...block.originalData,
+      title: block.name,
+      preview: block.preview,
+      tags: block.tags
+    })
+    ElNotification({ title: '✅ 成功', message: '知识块已更新', type: 'success' })
+  } catch (err) {
+    console.error(err)
+  }
+}
+
+
+// ---- Right Panel Context (Knowledge Graph) ----
+const selectedGroupForGraph = computed(() => {
+  if (!selected.value || !selected.value.groupId) return null
+  if (selected.value.groupId === 'all') {
+    return { id: 'all', name: '全局关联图', color: 'rgba(59,130,246,0.2)' }
+  }
+  return subjectStore.subjects.find(s => s.id === selected.value!.groupId) || null
+})
+
+const graphBlocks = computed(() => {
+  if (!selectedGroupForGraph.value) return []
+  if (selectedGroupForGraph.value.id === 'all') return blockStore.recentBlocks
+  return blockStore.recentBlocks.filter(b => b.subjectId === selectedGroupForGraph.value!.id)
+})
+
+
+const openUploadForGroup = (groupId: string) => {
+  selectedSubjectId.value = groupId === 'all' ? (subjectStore.subjects[0]?.id || '') : groupId
   selectedFileToUpload.value = null
-  showUploadDialog.value = true
+  showRegisterModal.value = true
 }
 
-const triggerFileSelect = () => {
-  dialogFileInput.value?.click()
-}
-
+const triggerFileSelect = () => { dialogFileInput.value?.click() }
 const handleDialogFileChange = (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
-  if (file) {
-    selectedFileToUpload.value = file
-  }
+  if (file) selectedFileToUpload.value = file
 }
-
 const confirmUpload = () => {
   if (selectedFileToUpload.value && selectedSubjectId.value) {
-    const file = selectedFileToUpload.value
-    const subjId = selectedSubjectId.value
-    showUploadDialog.value = false
-    handleFileUpload(file, subjId)
+    handleFileUpload(selectedFileToUpload.value, selectedSubjectId.value)
+    showRegisterModal.value = false
   }
 }
-
 const handleDrop = (e: DragEvent) => {
   isDragover.value = false
   const f = e.dataTransfer?.files?.[0]
   if (f) {
     selectedFileToUpload.value = f
-    selectedSubjectId.value = subjectStore.subjects[0]?.id || ''
-    showUploadDialog.value = true
+    if (!selectedSubjectId.value) {
+      selectedSubjectId.value = subjectStore.subjects[0]?.id || ''
+    }
   }
 }
 
-/**
- * 15.7 Real upload pipeline: validate → presign → MinIO direct upload → bind asset
- * Falls back to legacy AI text ingestion for small images.
- */
 const handleFileUpload = async (file: File, subjectId: string) => {
   const filename = file.name
   const isImage = /\.(jpg|jpeg|png)$/i.test(filename)
-  const fileSizeMb = file.size < 1024 * 1024
-    ? (file.size / 1024).toFixed(0) + ' KB'
-    : (file.size / (1024 * 1024)).toFixed(1) + ' MB'
-
-  // Client-side size validation
   try {
     validateFileSize(file)
   } catch (e: any) {
-    ElNotification({
-      title: '⚠️ 文件校验失败',
-      message: e.message,
-      type: 'warning',
-      position: 'top-right',
-      duration: 4000
-    })
+    ElNotification({ title: '⚠️ 文件校验失败', message: e.message, type: 'warning' })
     return
   }
 
@@ -817,37 +562,21 @@ const handleFileUpload = async (file: File, subjectId: string) => {
   uploadStatusText.value = '校验文件...'
 
   try {
-    // For images (small files), use legacy AI text extraction path
     if (isImage) {
       await handleImageUpload(file, filename, subjectId)
       return
     }
 
-    // 15.7 MinIO direct upload pipeline for documents
-    const asset = await uploadAsset(file, subjectId, (percent, stage) => {
+    await uploadAsset(file, subjectId, (percent, stage) => {
       uploadProgress.value = percent
       uploadStatusText.value = stage
     })
-
     uploadProgress.value = 98
     uploadStatusText.value = '资产已提交后台解析...'
-
-    // Create a placeholder asset item (backend will process asynchronously)
-    const newItem: AssetItem = {
-      id: String(asset.id), name: filename, icon: '📄',
-      status: 'processing', statusText: '后台解析中',
-      time: '刚刚', blocks: 0, tasks: 0,
-      pages: 0, size: fileSizeMb,
-      blockList: [], taskList: [],
-    }
-
-    const group = groups.value.find(g => g.id === subjectId)
-    if (group) {
-      group.items.unshift(newItem)
-    }
-    selected.value = newItem
+    
+    // Refresh
+    await loadAssetsFromBackend()
     uploadProgress.value = 100
-
     setTimeout(() => { isUploading.value = false }, 800)
 
   } catch (err: any) {
@@ -857,40 +586,15 @@ const handleFileUpload = async (file: File, subjectId: string) => {
   }
 }
 
-/** Real image upload: upload via multipart formData and extract blocks */
 const handleImageUpload = async (file: File, filename: string, subjectId: string) => {
   uploadProgress.value = 30
   uploadStatusText.value = 'AI 笔记解析中...'
-
   try {
     const subjObj = subjectStore.subjects.find(s => s.id === subjectId)
-
     await ingestFile(file, subjObj ? subjObj.name : '图片笔记')
-
-    // Register locally
-    await subjectStore.addSourceFile(
-      subjectId,
-      filename,
-      filename,
-      file.type || 'image/png',
-      file.size
-    )
-
+    await subjectStore.addSourceFile(subjectId, filename, filename, file.type || 'image/png', file.size)
     uploadProgress.value = 80
-    uploadStatusText.value = '更新资产列表中...'
-
     await loadAssetsFromBackend()
-
-    // Find the item in subject group matching filename
-    const group = groups.value.find(g => g.id === subjectId)
-    if (group) {
-      const item = group.items.find(i => i.name === filename)
-      if (item) {
-        selected.value = item
-        activeTab.value = 'blocks'
-      }
-    }
-
     uploadProgress.value = 100
     setTimeout(() => { isUploading.value = false }, 500)
   } catch (err: any) {
@@ -899,6 +603,41 @@ const handleImageUpload = async (file: File, filename: string, subjectId: string
     setTimeout(() => { isUploading.value = false }, 2000)
   }
 }
+
+// ---- Sync Events ----
+const handleSyncEvent = async (e: Event) => {
+  const customEvent = e as CustomEvent
+  const syncEvent = customEvent.detail
+  if (syncEvent.entity === 'assets') {
+    if (syncEvent.type === 'DOC_INGESTED') {
+      try {
+        const data = typeof syncEvent.data === 'string' ? JSON.parse(syncEvent.data) : syncEvent.data
+        const assetId = syncEvent.refId || data.refId
+        const assetInfo = await getAssetStatus(assetId)
+        const subjectId = assetInfo.subject
+        if (subjectId && subjectId !== '文档导入') {
+          await subjectStore.loadSourceFiles(subjectId)
+          const exists = subjectStore.activeSourceFiles.some(f => f.name === assetInfo.fileName)
+          if (!exists) {
+            await subjectStore.addSourceFile(subjectId, assetInfo.fileName, assetInfo.objectName, assetInfo.contentType || 'PDF', assetInfo.fileSize || 0)
+          }
+        }
+        await loadAssetsFromBackend()
+        ElNotification({ title: '🎉 编排完成', message: `文档《${assetInfo.fileName}》解析成功`, type: 'success' })
+      } catch (err) { }
+    } else if (syncEvent.type === 'INGEST_FAILED') {
+      ElNotification({ title: '❌ 编排失败', message: `解析失败`, type: 'error' })
+    }
+  }
+}
+
+onMounted(() => {
+  loadAssetsFromBackend()
+  if (typeof window !== 'undefined') window.addEventListener('auralis-sync-event', handleSyncEvent)
+})
+onUnmounted(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('auralis-sync-event', handleSyncEvent)
+})
 </script>
 
 <style scoped>
@@ -916,12 +655,45 @@ const handleImageUpload = async (file: File, filename: string, subjectId: string
   --color-primary-accent-hover: #6c8062;
   --color-primary-light: rgba(163, 177, 155, 0.12);
   --color-primary-glow: rgba(163, 177, 155, 0.25);
-  --accent-gradient: var(--color-zen-sage);
+  --accent-gradient: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
 }
 
 html.dark .asset-studio {
   background: var(--color-bg-primary);
 }
+
+/* Common Buttons */
+.btn-primary {
+  background: var(--btn-primary-bg, var(--accent-gradient));
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-primary:hover:not(:disabled) { box-shadow: var(--accent-glow); transform: scale(1.02); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  padding: 8px 16px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.btn-secondary:hover { background: var(--border-subtle); }
+
+.sm-btn { padding: 6px 12px; font-size: 12px; }
 
 /* ===== LEFT PANEL ===== */
 .studio-left {
@@ -956,6 +728,33 @@ html.dark .studio-left {
   letter-spacing: 0.2px;
 }
 
+.drop-zone {
+  margin: 16px;
+  border: 2px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  background: var(--color-bg-tertiary);
+  cursor: pointer;
+}
+.drop-zone:hover {
+  border-color: var(--color-primary-accent);
+  color: var(--color-primary-accent);
+}
+.drop-zone.is-over {
+  border-color: var(--color-primary-accent);
+  background: var(--color-primary-light);
+  color: var(--color-primary-accent);
+}
+.drop-icon { opacity: 0.6; }
+.drop-text { font-size: 13px; font-weight: 500; text-align: center; }
+
 .icon-btn {
   width: 26px; height: 26px;
   border-radius: var(--radius-md);
@@ -981,6 +780,35 @@ html.dark .studio-left {
 .search-input:focus { border-color: var(--border-accent); }
 .search-input::placeholder { color: var(--text-muted); }
 
+/* Inline Upload Panel */
+.inline-upload-panel {
+  padding: 12px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.form-item { display: flex; flex-direction: column; gap: 4px; }
+.form-item label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
+.zen-select {
+  width: 100%; padding: 6px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: 12px;
+}
+.dialog-file-picker {
+  border: 1.5px dashed var(--border-default); border-radius: var(--radius-md);
+  padding: 12px; text-align: center; cursor: pointer; background: var(--color-bg-tertiary);
+  font-size: 12px; color: var(--text-muted);
+  transition: all var(--transition-fast);
+  display: flex; justify-content: center; align-items: center;
+}
+.dialog-file-picker:hover { border-color: var(--border-accent); background: var(--border-subtle); }
+.selected-file-name { font-weight: 600; color: var(--text-primary); display: flex; align-items: center; }
+.upload-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 4px; }
+
 /* Upload Banner */
 .upload-banner {
   padding: 8px 12px;
@@ -993,6 +821,11 @@ html.dark .studio-left {
 
 /* Tree */
 .tree-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+.tree-empty {
+  padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.empty-tree-icon { opacity: 0.3; }
 
 .tree-group-header {
   display: flex; align-items: center; gap: 6px;
@@ -1003,12 +836,25 @@ html.dark .studio-left {
 .group-arrow { font-size: 10px; color: var(--text-muted); width: 10px; }
 .group-icon { font-size: 13px; }
 .group-name { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; flex: 1; }
-.group-count { font-size: 10px; background: var(--color-bg-tertiary); color: var(--text-muted); padding: 1px 5px; border-radius: var(--radius-full); }
+
+.tree-folder-container { padding-left: 6px; }
+.tree-folder-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 14px 6px 20px; cursor: pointer;
+  user-select: none; transition: background var(--transition-fast);
+}
+.tree-folder-header:hover { background: rgba(255,255,255,0.03); }
+.folder-arrow { font-size: 10px; color: var(--text-muted); width: 10px; }
+.folder-icon { font-size: 13px; color: var(--text-secondary); }
+.folder-name { font-size: 12px; font-weight: 500; color: var(--text-secondary); flex: 1; }
+.folder-count { font-size: 10px; background: var(--color-bg-tertiary); color: var(--text-muted); padding: 1px 5px; border-radius: var(--radius-full); }
+
+.tree-empty-folder { padding: 4px 14px 4px 40px; font-size: 10px; color: var(--text-muted); }
 
 .tree-items { padding: 2px 0; }
 .tree-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 14px 8px 26px; cursor: pointer;
+  padding: 8px 14px 8px 40px; cursor: pointer;
   transition: all var(--transition-fast); border-radius: 0;
 }
 .tree-item:hover { background: rgba(255,255,255,0.03); }
@@ -1016,10 +862,12 @@ html.dark .studio-left {
 .item-icon { font-size: 14px; flex-shrink: 0; }
 .item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .item-name { font-size: 12px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-name.is-done { text-decoration: line-through; opacity: 0.6; }
 .item-meta { font-size: 10px; color: var(--text-muted); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .status-dot.success { background: #22c55e; }
 .status-dot.processing { background: var(--text-accent); animation: blink 1.5s infinite; }
+.task-done-icon { color: #22c55e; flex-shrink: 0; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* Drop Zone */
@@ -1055,71 +903,8 @@ html.dark .studio-middle {
 .middle-content-scroll {
   flex: 1;
   overflow-y: auto;
-}
-
-/* ===== RIGHT GRAPH PANEL ===== */
-.studio-right-graph {
-  width: 480px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg-primary);
-  border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
-  overflow: hidden;
-}
-
-html.dark .studio-right-graph {
-  background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
-}
-
-.graph-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--color-bg-primary);
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-html.dark .graph-header {
-  background: var(--color-bg-secondary);
-}
-
-.graph-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: 0.2px;
-}
-
-.graph-container-wrapper {
-  flex: 1;
   position: relative;
-  overflow: hidden;
-}
-
-.graph-empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 40px;
-  text-align: center;
-  color: var(--text-muted);
-}
-
-.empty-graph-icon {
-  font-size: 40px;
-  opacity: 0.3;
-}
-
-.empty-graph-desc {
-  font-size: 12px;
+  background: var(--color-bg-secondary);
 }
 
 /* Empty */
@@ -1130,19 +915,14 @@ html.dark .graph-header {
 .empty-icon { font-size: 48px; color: var(--text-muted); opacity: 0.4; }
 .empty-title { font-size: 20px; font-weight: 700; color: var(--text-primary); }
 .empty-desc { font-size: 13px; color: var(--text-muted); max-width: 320px; line-height: 1.7; }
-.upload-cta {
-  background: var(--accent-gradient); color: white; border: none;
-  padding: 10px 24px; border-radius: var(--radius-md); font-weight: 600; font-size: 14px;
-  cursor: pointer; transition: all var(--transition-fast); margin-top: 8px;
-}
-.upload-cta:hover { box-shadow: var(--accent-glow); transform: scale(1.02); }
 
 /* Detail */
-.detail-header { padding: 24px 28px 0; border-bottom: 1px solid var(--border-subtle); }
-.detail-title-row { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 20px; }
+.detail-header { padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); background: var(--color-bg-primary); }
+.detail-title-row { display: flex; align-items: center; gap: 14px; }
 .detail-icon { font-size: 32px; flex-shrink: 0; }
-.detail-name { font-size: 18px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; line-height: 1.3; }
-.detail-path { font-size: 12px; color: var(--text-muted); }
+.detail-name { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
+.detail-name.is-done { text-decoration: line-through; opacity: 0.6; }
+.detail-path { font-size: 11px; color: var(--text-muted); }
 .status-badge {
   margin-left: auto; font-size: 11px; font-weight: 600;
   padding: 3px 10px; border-radius: var(--radius-full); flex-shrink: 0;
@@ -1150,108 +930,10 @@ html.dark .graph-header {
 .status-badge.success { background: rgba(34,197,94,0.12); color: #22c55e; }
 .status-badge.processing { background: var(--border-subtle); color: var(--text-accent); }
 
-/* Tabs */
-.tab-bar { display: flex; gap: 4px; }
-.tab-btn {
-  padding: 8px 16px; background: none; border: none; border-bottom: 2px solid transparent;
-  font-size: 13px; font-weight: 600; color: var(--text-muted); cursor: pointer;
-  transition: all var(--transition-fast); font-family: inherit;
-}
-.tab-btn:hover { color: var(--text-primary); }
-.tab-btn.is-active { color: var(--text-primary); border-bottom-color: var(--text-accent); }
-
-.tab-content { padding: 24px 28px; }
-.graph-tab { padding: 0; overflow: hidden; }
-
-/* Blocks tab */
-.blocks-summary { display: flex; gap: 20px; margin-bottom: 20px; }
-.summary-stat { display: flex; flex-direction: column; align-items: center; background: var(--color-bg-tertiary); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 14px 24px; }
-.s-val { font-size: 22px; font-weight: 800; color: var(--text-primary); }
-.s-lbl { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-
-.blocks-list { display: flex; flex-direction: column; gap: 10px; }
-.block-row {
-  display: flex; gap: 14px; align-items: flex-start;
-  background: var(--color-bg-secondary); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: 16px;
-  transition: all var(--transition-normal);
-}
-.block-row:hover { border-color: var(--border-accent); transform: translateX(2px); }
-.block-num {
-  width: 24px; height: 24px; background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 700; color: var(--text-muted); flex-shrink: 0;
-}
-.block-body { flex: 1; min-width: 0; }
-.block-heading { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
-.block-preview { font-size: 12px; color: var(--text-secondary); line-height: 1.6; }
-.block-tags { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
-.block-tag {
-  font-size: 10px; color: var(--text-accent); background: var(--border-subtle);
-  padding: 2px 7px; border-radius: var(--radius-sm); white-space: nowrap;
-}
-
-/* Tasks tab */
-.tasks-list { display: flex; flex-direction: column; gap: 8px; }
-.task-row {
-  display: flex; align-items: center; gap: 12px;
-  background: var(--color-bg-secondary); border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg); padding: 14px 16px;
-  transition: all var(--transition-fast);
-}
-.task-check {
-  width: 20px; height: 20px; border-radius: var(--radius-sm); border: 1.5px solid var(--border-strong);
-  display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
-  font-size: 11px; font-weight: 700; transition: all var(--transition-fast);
-}
-.task-check.done { background: var(--accent-gradient); border-color: transparent; color: white; }
-.task-body { flex: 1; display: flex; flex-direction: column; gap: 2px; }
-.task-title { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.task-title.done { text-decoration: line-through; color: var(--text-muted); }
-.task-due { font-size: 11px; color: var(--text-muted); }
-.task-load { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: var(--radius-full); }
-.task-load.high { background: rgba(239,68,68,0.12); color: #ef4444; }
-.task-load.medium { background: rgba(245,158,11,0.12); color: #f59e0b; }
-.task-load.low { background: rgba(34,197,94,0.12); color: #22c55e; }
-
-/* PDF Preview (12.5: dark-mode canvas wrapper) */
-.pdf-canvas-wrapper {
-  background: var(--color-oatmeal-light); border-radius: var(--radius-xl); padding: 24px;
-  border: 1px solid var(--border-default); min-height: 400px;
-  transition: filter var(--transition-normal), background var(--transition-normal);
-}
-html.dark .pdf-canvas-wrapper {
-  background: var(--color-bg-primary);
-  /* 12.5: invert + hue-rotate for dark-mode PDF contrast enhancement */
-  filter: none;
-}
-.pdf-canvas-wrapper.dark-invert {
-  /* When dark mode is active, boost contrast without full inversion */
-  filter: brightness(0.92) contrast(1.05);
-}
-.pdf-page-mock { background: white; border-radius: 8px; padding: 32px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
-html.dark .pdf-page-mock {
-  background: #3a3835;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-  /* 12.5: dark-mode text rendering: lighter contrast */
-  color: #e8e6e1;
-  filter: contrast(0.95) brightness(1.05);
-}
-.pdf-mock-header { height: 20px; background: var(--accent-gradient); border-radius: 4px; margin-bottom: 20px; opacity: 0.7; }
-.pdf-mock-line { height: 10px; background: #e8e6e1; border-radius: 4px; margin-bottom: 10px; }
-html.dark .pdf-mock-line { background: #4a4843; }
-.pdf-mock-img { height: 100px; background: linear-gradient(135deg,#f0f0f0,#e0e0e0); border-radius: 6px; margin: 16px 0; }
-html.dark .pdf-mock-img { background: linear-gradient(135deg,#3a3835,#2a2926); }
-.pdf-hint { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 14px; }
+/* Markdown & PDF Viewer inside Middle */
 .markdown-preview {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-xl);
   padding: 24px;
-  overflow-y: auto;
-  max-height: 500px;
 }
-
 .markdown-content {
   font-family: inherit;
   font-size: 13px;
@@ -1260,19 +942,381 @@ html.dark .pdf-mock-img { background: linear-gradient(135deg,#3a3835,#2a2926); }
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-
-.tab-btn.is-disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.pdf-viewer-container {
+  height: 100%;
 }
 
-.tree-loading, .tree-empty {
+.full-height-viewer { height: 100%; display: flex; flex-direction: column; }
+.block-editor-view, .task-editor-view { padding: 40px 60px; max-width: 900px; margin: 0 auto; }
+
+/* Editor Header */
+.editor-header {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle);
+}
+.editor-title-row { display: flex; align-items: center; gap: 16px; }
+.editor-icon-wrapper {
+  width: 48px; height: 48px; border-radius: 12px;
+  background: var(--color-primary-light);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-primary-accent);
+}
+.editor-icon { width: 24px; height: 24px; }
+.editor-meta { display: flex; flex-direction: column; gap: 4px; }
+.editor-type { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+.editor-subject { font-size: 12px; font-weight: 600; color: var(--text-muted); background: var(--color-bg-tertiary); padding: 2px 8px; border-radius: 4px; display: inline-block; width: fit-content; }
+.editor-save-btn {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--color-primary-accent); color: #fff;
+  padding: 8px 16px; border-radius: var(--radius-full); font-size: 13px; font-weight: 600;
+  border: none; cursor: pointer; transition: all var(--transition-fast);
+}
+.editor-save-btn:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 4px 12px var(--color-primary-glow); }
+.editor-save-btn .btn-icon { width: 14px; height: 14px; }
+
+/* Editor Body */
+.block-editor-container { display: flex; flex-direction: column; gap: 16px; }
+.editor-title-input {
+  font-size: 28px; font-weight: 800; color: var(--text-primary);
+  width: 100%; border: none; background: transparent; padding: 0; outline: none;
+}
+.editor-title-input::placeholder { color: var(--text-muted); font-weight: 600; }
+
+.editor-content-wrapper {
+  background: var(--color-bg-primary); border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle); padding: 24px; min-height: 400px;
+  display: flex; flex-direction: column;
+}
+
+/* Task Property Grid (Notion/Linear style) */
+.property-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 32px 0;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.property-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+}
+.property-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  width: 120px;
+  flex-shrink: 0;
+}
+
+/* Zen Date Picker overriding Element Plus */
+:deep(.zen-date-picker) {
+  box-shadow: none !important;
+  border: none !important;
+  --el-input-border-color: transparent;
+  --el-input-hover-border-color: transparent;
+  --el-input-focus-border-color: transparent;
+}
+:deep(.zen-date-picker .el-input__wrapper) {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: 1px solid #7D9372 !important; /* Theme color stroke */
+  border-radius: 9999px !important; /* Fully rounded pill shape */
+  transition: all var(--transition-fast) !important;
+  padding-left: 12px;
+}
+:deep(.zen-date-picker:hover .el-input__wrapper),
+:deep(.zen-date-picker .el-input__wrapper:hover) {
+  background-color: var(--color-bg-secondary) !important;
+  border-color: #65775c !important;
+}
+:deep(.zen-date-picker.is-active .el-input__wrapper),
+:deep(.zen-date-picker.is-focus .el-input__wrapper),
+:deep(.zen-date-picker .el-input__wrapper.is-focus) {
+  background-color: var(--color-bg-primary) !important;
+  border-color: #A3B19B !important;
+  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.2) !important;
+}
+
+/* Zen Date Popper overriding Element Plus */
+:global(.zen-date-popper.el-popper) {
+  border: 1px solid #7D9372 !important; /* Theme color stroke */
+  border-radius: 12px !important; /* Rounded corners */
+  box-shadow: 0 4px 16px rgba(125, 147, 114, 0.15) !important;
+}
+:global(.zen-date-popper .el-picker-panel) {
+  border: none !important;
+  border-radius: 12px !important;
+}
+:global(.zen-date-popper .el-popper__arrow::before) {
+  border-color: #7D9372 !important;
+}
+
+.property-value {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.prop-input {
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+  width: 200px;
+  transition: all var(--transition-fast);
+}
+.prop-input:hover {
+  background: var(--color-bg-secondary);
+}
+.prop-input:focus {
+  background: var(--color-bg-primary);
+  border-color: var(--color-primary-accent);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
+}
+.prop-badge {
+  background: var(--color-bg-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.prop-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+.prop-empty:hover {
+  background: var(--color-bg-secondary);
+}
+.task-empty-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  min-height: 200px;
+}
+.empty-state-mini {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Custom View Toggle (Pill Segmented Control) */
+.view-toggle {
+  display: flex;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9999px;
+  padding: 4px;
+  gap: 4px;
+}
+.toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  cursor: pointer;
+  outline: none;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+  line-height: 1.2;
+}
+.toggle-btn:hover {
+  color: var(--text-primary);
+  background: var(--color-bg-secondary);
+}
+.toggle-btn.is-active {
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(125, 147, 114, 0.28);
+}
+.editor-textarea {
+  width: 100%; height: 100%; min-height: 350px;
+  border: none; background: transparent; padding: 0; outline: none;
+  resize: none; font-size: 14px;
+  color: var(--text-primary); line-height: 1.8;
+}
+.editor-textarea::placeholder { color: var(--text-muted); }
+
+.zen-input {
+  width: 100%; padding: 10px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: 13px; font-family: inherit;
+  transition: all var(--transition-fast);
+}
+.zen-input:focus { outline: none; border-color: var(--text-accent); }
+.zen-input.large { font-size: 18px; font-weight: 700; padding: 12px; }
+.zen-input.sm { padding: 6px; font-size: 11px; width: 200px; }
+.block-tag {
+  font-size: 11px; color: var(--text-accent); background: var(--border-subtle);
+  padding: 4px 8px; border-radius: var(--radius-sm); display: inline-flex; align-items: center; gap: 4px;
+}
+.tag-del { background: none; border: none; color: inherit; font-size: 10px; cursor: pointer; padding: 0; }
+.tag-del:hover { color: #ef4444; }
+
+/* ===== RIGHT CONTEXT PANEL ===== */
+.studio-right-context {
+  width: 450px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  border: 1.5px solid var(--border-default);
+  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  overflow: hidden;
+}
+html.dark .studio-right-context {
+  background: var(--color-bg-secondary);
+  border: 1.5px solid var(--border-subtle);
+}
+
+.graph-empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 40px; text-align: center; color: var(--text-muted);
+}
+.empty-graph-icon { opacity: 0.3; }
+.empty-graph-desc { font-size: 12px; }
+
+.context-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-secondary);
+}
+.ctx-tab {
+  flex: 1;
+  padding: 12px 0;
+  background: none; border: none; border-bottom: 2px solid transparent;
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+  cursor: pointer; transition: all var(--transition-fast);
+}
+.ctx-tab:hover { color: var(--text-primary); }
+.ctx-tab.active { color: var(--text-primary); border-bottom-color: var(--text-accent); }
+
+.context-body {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+  background: var(--color-bg-primary);
+}
+
+/* Blocks Tab */
+.ctx-blocks { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.blocks-toolbar { display: flex; justify-content: flex-end; }
+.new-block-btn { width: 100%; }
+
+.inline-block-editor {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-accent);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inline-input {
+  width: 100%; padding: 8px;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: 12px; font-family: inherit;
+  resize: vertical;
+}
+.inline-input:focus { outline: none; border-color: var(--text-accent); }
+.title-input { font-weight: 600; }
+.tag-input { font-size: 11px; }
+.inline-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+.blocks-list { display: flex; flex-direction: column; gap: 10px; }
+.block-row {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: var(--color-bg-secondary); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 12px;
+  transition: all var(--transition-normal);
+  position: relative;
+}
+.block-row:hover { border-color: var(--border-accent); }
+.block-num {
+  width: 20px; height: 20px; background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: var(--text-muted); flex-shrink: 0;
+}
+.block-body { flex: 1; min-width: 0; }
+.block-heading { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.block-preview { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
+.block-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.block-tag {
+  font-size: 9px; color: var(--text-accent); background: var(--border-subtle);
+  padding: 2px 6px; border-radius: var(--radius-sm);
+}
+.block-actions {
+  display: flex; flex-direction: column; gap: 6px;
+  opacity: 0; transition: opacity var(--transition-fast);
+}
+.block-row:hover .block-actions { opacity: 1; }
+.action-btn {
+  background: none; border: none; padding: 4px; cursor: pointer;
+  color: var(--text-muted); border-radius: 4px;
+}
+.action-btn:hover { background: var(--color-bg-tertiary); color: var(--text-primary); }
+.action-btn.danger:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+/* Tasks Tab */
+.ctx-tasks { padding: 16px; }
+.tasks-list { display: flex; flex-direction: column; gap: 8px; }
+.task-row {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--color-bg-secondary); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md); padding: 10px 12px;
+}
+.task-check {
+  width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--border-strong);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0;
+  color: transparent; transition: all var(--transition-fast);
+}
+.task-check.done { background: var(--accent-gradient); border-color: transparent; color: white; }
+.task-body { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.task-title { font-size: 12px; font-weight: 500; color: var(--text-primary); }
+.task-title.done { text-decoration: line-through; color: var(--text-muted); }
+.task-due { font-size: 10px; color: var(--text-muted); }
+.task-load { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: var(--radius-full); }
+.task-load.high { background: rgba(239,68,68,0.12); color: #ef4444; }
+.task-load.medium { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.task-load.low { background: rgba(34,197,94,0.12); color: #22c55e; }
+.ctx-empty { padding: 32px 0; text-align: center; font-size: 12px; color: var(--text-muted); }
+
+/* Graph Tab */
+.ctx-graph {
+  height: 100%;
+  width: 100%;
+}
+
+.tree-loading {
   padding: 24px;
   text-align: center;
   font-size: 12px;
   color: var(--text-muted);
 }
-
 .loading-spinner {
   display: inline-block;
   width: 14px;
@@ -1284,12 +1328,8 @@ html.dark .pdf-mock-img { background: linear-gradient(135deg,#3a3835,#2a2926); }
   vertical-align: middle;
   margin-right: 6px;
 }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-/* Direct upload action button on group headers */
 .header-action-btn {
   opacity: 0;
   width: 20px;
@@ -1306,12 +1346,6 @@ html.dark .pdf-mock-img { background: linear-gradient(135deg,#3a3835,#2a2926); }
   transition: all var(--transition-fast);
   margin-left: auto;
 }
-.tree-group-header:hover .header-action-btn {
-  opacity: 1;
-}
-.header-action-btn:hover {
-  background: var(--accent-gradient);
-  color: white;
-  border-color: transparent;
-}
+.tree-group-header:hover .header-action-btn { opacity: 1; }
+.header-action-btn:hover { background: var(--accent-gradient); color: white; border-color: transparent; }
 </style>

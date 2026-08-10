@@ -75,7 +75,8 @@
 
   /* Accent Colors - Zen Sage */
   --accent-start: var(--color-sage-dark);
-  --accent-gradient: var(--accent-start);
+  --accent-gradient: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  --btn-primary-bg: var(--accent-gradient);
   --accent-glow: 0 0 20px rgba(125, 147, 114, 0.35);
   --color-sage-bg: rgba(125, 147, 114, 0.08);
   --color-sage-glow: rgba(125, 147, 114, 0.35);

@@ -133,9 +133,9 @@ const handleSave = () => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -145,15 +145,21 @@ const handleSave = () => {
 
 .modal-container {
   width: 90%;
-  max-width: 480px;
-  background: var(--glass-bg, rgba(28, 28, 30, 0.85));
-  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
-  border-radius: var(--radius-xl, 24px);
-  box-shadow: var(--glass-shadow, 0 32px 64px rgba(0, 0, 0, 0.4));
+  max-width: 520px;
+  background: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.dark .modal-container {
+  background: #181D18;
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 @keyframes fade-in {
@@ -171,36 +177,43 @@ const handleSave = () => {
   justify-content: space-between;
   align-items: center;
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .modal-header h3 {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary, #fff);
   margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
 .close-btn {
   background: none;
   border: none;
-  font-size: 18px;
-  color: var(--text-muted, #8e8e93);
+  font-size: 20px;
+  color: var(--text-muted);
   cursor: pointer;
-  padding: 4px;
-  transition: color 0.2s;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all var(--transition-fast);
 }
 
 .close-btn:hover {
-  color: var(--text-primary, #fff);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+}
+
+html.dark .close-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .modal-body {
-  padding: 24px;
+  padding: 22px 28px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  max-height: 60vh;
+  max-height: 70vh;
   overflow-y: auto;
 }
 
@@ -210,9 +223,14 @@ const handleSave = () => {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-bg-secondary);
   border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-default);
+}
+
+html.dark .subject-preview-section {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.04);
 }
 
 .preview-card {
@@ -223,9 +241,13 @@ const handleSave = () => {
   align-items: center;
   justify-content: center;
   font-size: 28px;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 6px 16px rgba(125, 147, 114, 0.2);
   transition: all 0.3s ease;
   flex-shrink: 0;
+}
+
+html.dark .preview-card {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
 }
 
 .preview-meta {
@@ -237,7 +259,7 @@ const handleSave = () => {
 .preview-title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text-primary, #fff);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -245,64 +267,56 @@ const handleSave = () => {
 
 .preview-desc {
   font-size: 12px;
-  color: var(--text-muted, #8e8e93);
-  margin-top: 2px;
+  color: var(--text-muted);
+  margin-top: 4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.4;
 }
 
 /* Form Styles */
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .form-group label {
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted, #8e8e93);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-weight: 650;
+  color: var(--text-secondary);
 }
 
 .required {
   color: #ff453a;
 }
 
-.styled-input {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+.styled-input, .styled-textarea {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-default);
   border-radius: 10px;
-  padding: 12px 16px;
-  font-size: 14px;
-  color: var(--text-primary, #fff);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
   outline: none;
-  transition: all 0.2s;
+  font-family: inherit;
+  transition: all 0.2s ease;
 }
 
-.styled-input:focus {
-  border-color: var(--color-zen-sage, #A3B19B);
-  background: rgba(255, 255, 255, 0.06);
+.styled-input:focus, .styled-textarea:focus {
+  border-color: #7D9372;
+  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15);
+  background: var(--color-bg-primary);
+}
+
+html.dark .styled-input:focus, html.dark .styled-textarea:focus {
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2);
 }
 
 .styled-textarea {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 12px 16px;
-  font-size: 14px;
-  color: var(--text-primary, #fff);
-  outline: none;
   resize: none;
-  font-family: inherit;
-  transition: all 0.2s;
-}
-
-.styled-textarea:focus {
-  border-color: var(--color-zen-sage, #A3B19B);
-  background: rgba(255, 255, 255, 0.06);
 }
 
 /* Icon Grid */
@@ -313,81 +327,85 @@ const handleSave = () => {
 }
 
 .icon-btn {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  height: 40px;
+  background: var(--color-bg-secondary);
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  height: 44px;
   font-size: 20px;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .icon-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  transform: scale(1.08);
-}
-
-.icon-btn.custom-trigger:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--color-zen-sage, #A3B19B);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  background: var(--color-bg-tertiary);
+  transform: translateY(-1px);
 }
 
 .icon-btn.is-selected {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: var(--color-zen-sage, #A3B19B);
-  transform: scale(1.08);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  background: rgba(125, 147, 114, 0.1);
+  border-color: #7D9372;
+  color: #7D9372;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+html.dark .icon-btn.is-selected {
+  background: rgba(125, 147, 114, 0.2);
 }
 
 /* Footer */
 .modal-footer {
-  padding: 16px 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 16px 28px 22px;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
 }
 
 .btn-secondary {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary, #d1d1d6);
-  padding: 10px 20px;
-  border-radius: 10px;
-  font-size: 14px;
+  background: transparent;
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  padding: 8px 20px;
+  border-radius: 9999px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary, #fff);
+  background: var(--color-bg-secondary);
+  color: var(--text-primary);
 }
 
 .btn-primary {
-  background: var(--accent-gradient, var(--color-zen-sage, #A3B19B));
+  background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%));
   border: none;
-  color: #fff;
-  padding: 10px 24px;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
+  color: #FFFFFF;
+  padding: 8px 26px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3);
 }
 
 .btn-primary:hover:not(:disabled) {
+  opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(163, 177, 155, 0.3);
+  box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45);
 }
 
 .btn-primary:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
+  box-shadow: none;
 }
 </style>

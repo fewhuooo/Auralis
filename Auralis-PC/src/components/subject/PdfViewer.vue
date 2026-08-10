@@ -1,13 +1,37 @@
 <template>
   <div class="pdf-viewer-container">
-    <!-- Toolbar -->
-    <div class="pdf-toolbar">
-      <div class="toolbar-left">
-        <span class="file-name" :title="fileName">{{ fileName }}</span>
+    <!-- Viewer Body -->
+    <div class="pdf-body" ref="viewerBodyRef">
+      <div v-if="loading" class="pdf-loading">
+        <div class="loading-spinner"></div>
+        <span class="loading-text">{{ loadingText }}</span>
       </div>
       
+      <div v-else-if="error" class="pdf-error">
+        <div class="error-icon-wrapper">
+          <FileQuestion class="error-icon" />
+        </div>
+        <div class="error-content">
+          <h3 class="error-title">文档加载失败</h3>
+          <p class="error-desc">{{ error }}</p>
+        </div>
+        <button class="retry-btn" @click="retryLoad">
+          <RefreshCw class="retry-icon" />
+          <span>重新尝试加载</span>
+        </button>
+      </div>
+      
+      <div class="pdf-canvas-container" v-show="!loading && !error">
+        <canvas ref="pdfCanvasRef"></canvas>
+      </div>
+    </div>
+
+    <!-- Toolbar (Bottom) -->
+    <div class="pdf-toolbar" v-show="!loading && !error">
       <div class="toolbar-center">
-        <button class="tool-btn" :disabled="currentPage <= 1" @click="prevPage">◀</button>
+        <button class="tool-btn" :disabled="currentPage <= 1" @click="prevPage" title="上一页">
+          <ChevronLeft class="tool-icon" />
+        </button>
         <span class="page-info">
           <input 
             type="number" 
@@ -17,32 +41,28 @@
             min="1"
             :max="totalPages"
           />
-          / {{ totalPages || '?' }}
+          <span class="page-divider">/</span>
+          <span class="page-total">{{ totalPages || '?' }}</span>
         </span>
-        <button class="tool-btn" :disabled="currentPage >= totalPages" @click="nextPage">▶</button>
+        <button class="tool-btn" :disabled="currentPage >= totalPages" @click="nextPage" title="下一页">
+          <ChevronRight class="tool-icon" />
+        </button>
       </div>
+
+      <div class="toolbar-divider"></div>
 
       <div class="toolbar-right">
-        <button class="tool-btn" @click="zoomOut">➖</button>
+        <button class="tool-btn" @click="zoomOut" title="缩小">
+          <ZoomOut class="tool-icon" />
+        </button>
         <span class="zoom-info">{{ Math.round(scale * 100) }}%</span>
-        <button class="tool-btn" @click="zoomIn">➕</button>
-        <button class="tool-btn" @click="fitWidth">自适应</button>
-      </div>
-    </div>
-
-    <!-- Viewer Body -->
-    <div class="pdf-body" ref="viewerBodyRef">
-      <div v-if="loading" class="pdf-loading">
-        <span class="loading-spinner"></span>
-        <span class="loading-text">{{ loadingText }}</span>
-      </div>
-      <div v-else-if="error" class="pdf-error">
-        <span class="error-icon">⚠️</span>
-        <span class="error-text">{{ error }}</span>
-      </div>
-      
-      <div class="pdf-canvas-container" v-show="!loading && !error">
-        <canvas ref="pdfCanvasRef"></canvas>
+        <button class="tool-btn" @click="zoomIn" title="放大">
+          <ZoomIn class="tool-icon" />
+        </button>
+        <button class="tool-btn fit-btn" @click="fitWidth" title="自适应宽度">
+          <Maximize class="tool-icon" />
+          <span>适应宽度</span>
+        </button>
       </div>
     </div>
   </div>
@@ -51,11 +71,9 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, onUnmounted } from 'vue'
 import * as pdfjsLib from 'pdfjs-dist'
+import { ChevronLeft, ChevronRight, ZoomOut, ZoomIn, Maximize, FileQuestion, RefreshCw } from 'lucide-vue-next'
 
 // Setup worker
-// Since tauri uses standard ES modules in Vite, we can fetch the worker from node_modules or use CDN.
-// To make it robust and local first, we use the standard cdn worker import or configure it properly.
-// A common tauri-friendly solution is pointing to cdnjs or local path. We will use CDN to be 100% reliable without local packaging issues, or a local import.
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
 
 const props = defineProps({
@@ -86,9 +104,15 @@ const scale = ref(1.0)
 let pdfDoc: any = null
 let currentRenderTask: any = null
 
+const retryLoad = () => {
+  if (props.filePath) {
+    loadPdf(props.filePath)
+  }
+}
+
 const loadPdf = async (path: string) => {
   if (!path) {
-    error.value = '未指定 PDF 文件路径'
+    error.value = '未指定 PDF 文件路径或路径为空。'
     loading.value = false
     return
   }
@@ -101,14 +125,10 @@ const loadPdf = async (path: string) => {
   try {
     loadingText.value = '正在读取文件...'
     
-    // In Tauri, direct file paths require converting to an asset URL if using custom protocols or read as binary array.
-    // Let's use Tauri's API to fetch or convert, or read as binary array.
-    // If it's a local file path, we can read it using Tauri's fs API or convertFileSrc.
     let pdfData: any = path
     
     if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
       try {
-        // Dynamic path template to bypass bundler static analysis
         const fsPluginName = '@tauri-apps/plugin-fs'
         const { readFile } = await import(/* @vite-ignore */ fsPluginName)
         loadingText.value = '正在加载本地文件内容...'
@@ -116,7 +136,6 @@ const loadPdf = async (path: string) => {
         pdfData = { data: new Uint8Array(binary) }
       } catch (fsErr) {
         console.warn('Failed to read file via Tauri FS, attempting direct url conversion:', fsErr)
-        // Fallback to tauri convertFileSrc if plugin-fs fails or is not configured
         const corePluginName = '@tauri-apps/api/core'
         const { convertFileSrc } = await import(/* @vite-ignore */ corePluginName)
         pdfData = { url: convertFileSrc(path) }
@@ -134,12 +153,11 @@ const loadPdf = async (path: string) => {
     
     emit('loaded', { totalPages: totalPages.value })
     
-    // Auto fit width after loading
     await fitWidth()
     await renderPage(1)
   } catch (err: any) {
     console.error('Error loading PDF:', err)
-    error.value = `无法载入 PDF 文件: ${err.message || err}`
+    error.value = `文件解析失败: ${err.message || err}。请检查文件是否损坏或不存在。`
     loading.value = false
   }
 }
@@ -176,7 +194,6 @@ const renderPage = async (pageNumber: number) => {
     emit('page-changed', pageNumber)
   } catch (err: any) {
     if (err.name === 'RenderingCancelledException' || err.name === 'WorkerDragCancelledException') {
-      // Normal cancellation, do nothing
       return
     }
     console.error('Error rendering page:', err)
@@ -218,7 +235,7 @@ const fitWidth = async () => {
   try {
     const page = await pdfDoc.getPage(currentPage.value)
     const defaultViewport = page.getViewport({ scale: 1.0 })
-    const containerWidth = viewerBodyRef.value.clientWidth - 40 // subtract padding
+    const containerWidth = viewerBodyRef.value.clientWidth - 40
     scale.value = Math.max(0.5, Math.min(2.0, containerWidth / defaultViewport.width))
     renderPage(currentPage.value)
   } catch (err) {
@@ -251,24 +268,41 @@ onUnmounted(() => {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  background: var(--bg-card, #262629);
+  background: transparent;
   border-radius: var(--radius-lg, 12px);
   overflow: hidden;
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.pdf-body {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: var(--color-bg-secondary);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 24px;
 }
 
 .pdf-toolbar {
-  height: 48px;
-  background: var(--bg-app, #1c1c1e);
-  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  height: 52px;
+  background: var(--color-bg-primary);
+  border-top: 1px solid var(--border-subtle); /* changed to border-top */
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  gap: 12px;
+  justify-content: center;
+  padding: 0 20px;
+  gap: 24px;
+  backdrop-filter: blur(10px);
 }
 
-.toolbar-left, .toolbar-right {
+.toolbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-default);
+}
+
+.toolbar-right {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -277,77 +311,105 @@ onUnmounted(() => {
 .toolbar-center {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.file-name {
-  font-size: 13px;
-  font-weight: 600;
-  max-width: 200px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--text-primary, #fff);
+  gap: 8px;
 }
 
 .tool-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #fff);
-  padding: 4px 8px;
-  font-size: 12px;
-  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .tool-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+
+.tool-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .tool-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
 }
 
-.page-info {
+.tool-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2px;
+}
+
+.fit-btn {
+  padding: 6px 12px;
+  gap: 6px;
+}
+
+.fit-btn span {
   font-size: 12px;
-  color: var(--text-secondary, #d1d1d6);
+  font-weight: 500;
+}
+
+.page-info {
+  font-size: 13px;
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  background: var(--color-bg-tertiary);
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
 }
 
 .page-input {
-  width: 40px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #fff;
-  border-radius: 4px;
-  padding: 2px 4px;
-  text-align: center;
-  font-size: 12px;
+  width: 32px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: right;
+  font-size: 13px;
+  padding: 0;
+}
+
+.page-input:focus {
+  outline: none;
+  color: var(--color-primary-accent);
+}
+
+/* Hide number input arrows */
+.page-input::-webkit-outer-spin-button,
+.page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.page-input[type=number] {
+  -moz-appearance: textfield;
+}
+
+.page-divider {
+  color: var(--text-muted);
+}
+
+.page-total {
+  font-weight: 500;
 }
 
 .zoom-info {
   font-size: 12px;
-  color: var(--text-secondary, #d1d1d6);
-  min-width: 40px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 44px;
   text-align: center;
-}
-
-.pdf-body {
-  flex: 1;
-  overflow: auto;
-  position: relative;
-  background: #151516;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 20px;
 }
 
 .pdf-loading, .pdf-error {
@@ -358,34 +420,107 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  color: var(--text-secondary, #d1d1d6);
+  gap: 16px;
+  background: var(--color-bg-primary);
+  padding: 32px 40px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.05);
 }
 
 .loading-spinner {
-  width: 24px;
-  height: 24px;
-  border: 2px solid rgba(255,255,255,0.1);
-  border-top-color: var(--color-oatmeal-dark, #c5a880);
+  width: 36px;
+  height: 36px;
+  border: 3px solid var(--color-bg-tertiary);
+  border-top-color: var(--color-primary-accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.loading-text {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.error-icon-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ef4444;
 }
 
 .error-icon {
-  font-size: 24px;
+  width: 24px;
+  height: 24px;
 }
 
-.error-text {
-  color: #ef4444;
-  font-size: 13px;
+.error-content {
   text-align: center;
 }
 
-.pdf-canvas-container {
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  background: #fff;
-  border-radius: 4px;
+.error-title {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+}
+
+.error-desc {
+  color: var(--text-secondary);
+  font-size: 13px;
+  max-width: 280px;
+  line-height: 1.5;
+  margin: 0;
+  word-wrap: break-word;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.retry-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  padding: 8px 20px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  margin-top: 4px;
+}
+
+.retry-btn:hover {
+  background: var(--color-primary-light);
+  color: var(--color-primary-accent);
+  border-color: var(--color-primary-accent);
+}
+
+.retry-btn:active {
+  transform: scale(0.96);
+}
+
+.retry-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.pdf-canvas-container {
+  box-shadow: 0 12px 40px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.05);
+  background: #ffffff;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: transform var(--transition-normal);
 }
 
 @keyframes spin {

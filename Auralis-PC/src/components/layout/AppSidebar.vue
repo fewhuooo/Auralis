@@ -27,7 +27,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '首页看盘', desc: '日程 · 知识块速览' })"
         @mouseleave="handleMouseLeave"
       >
-        <span class="nav-icon">✦</span>
+        <el-icon class="nav-icon"><LayoutDashboard /></el-icon>
       </router-link>
 
       <!-- Subject Hall -->
@@ -35,7 +35,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '学科大厅', desc: '管理与浏览所有学科' })"
         @mouseleave="handleMouseLeave"
       >
-        <span class="nav-icon">🏛</span>
+        <el-icon class="nav-icon"><Compass /></el-icon>
       </router-link>
 
       <!-- Timeline -->
@@ -43,7 +43,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '排期副驾', desc: '任务排期 · 拖拽看板' })"
         @mouseleave="handleMouseLeave"
       >
-        <span class="nav-icon">◫</span>
+        <el-icon class="nav-icon"><CalendarClock /></el-icon>
       </router-link>
 
       <!-- Asset -->
@@ -51,7 +51,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '资产编排', desc: '材料管理 · 本地文件登记' })"
         @mouseleave="handleMouseLeave"
       >
-        <span class="nav-icon">⚙</span>
+        <el-icon class="nav-icon"><Database /></el-icon>
       </router-link>
 
       <!-- Divider -->
@@ -121,6 +121,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { LayoutDashboard, Compass, CalendarClock, Database } from 'lucide-vue-next'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import {

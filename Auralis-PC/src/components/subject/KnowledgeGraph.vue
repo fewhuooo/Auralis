@@ -142,7 +142,7 @@ const initGraph = () => {
   const coreNode: GraphNode = {
     id: 'core',
     name: props.subjectName,
-    color: '#3b82f6',
+    color: '#7D9372',
     radius: 12,
     x: 0, y: 0, vx: 0, vy: 0,
     isCore: true,
@@ -193,7 +193,7 @@ const initGraph = () => {
     const angle = Math.random() * Math.PI * 2
     const distance = 20 + Math.random() * 20
     
-    let color = '#a855f7' // default block color
+    let color = '#A3B19B' // default block color
     if (block.difficulty === 'easy') color = '#10b981'
     else if (block.difficulty === 'medium') color = '#f59e0b'
     else if (block.difficulty === 'hard') color = '#ef4444'
@@ -519,7 +519,7 @@ watch(() => props.subjectId, () => {
 }
 
 .legend-dot.core {
-  background: #3b82f6;
+  background: #7D9372;
 }
 
 .legend-dot.source {
@@ -527,7 +527,7 @@ watch(() => props.subjectId, () => {
 }
 
 .legend-dot.block {
-  background: #a855f7;
+  background: #A3B19B;
 }
 
 /* Sidebar slide over styling */
@@ -659,7 +659,7 @@ watch(() => props.subjectId, () => {
 }
 
 .panel-action-btn.primary {
-  background: linear-gradient(135deg, #0284c7, #0d9488);
+  background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%));
   color: #fff;
 }
 

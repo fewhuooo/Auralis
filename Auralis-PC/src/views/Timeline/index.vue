@@ -4,10 +4,19 @@
     <div class="timeline-header-card">
       <!-- Page header -->
       <div class="page-header">
-        <div>
+        <div class="header-left">
           <h1 class="page-headline">任务编排中心</h1>
-          <p class="page-subtitle">{{ viewMode === 'day' ? '拖拽任务块至时间轴以安排日程' : '周视图下可总览本周每天的排期日程' }}</p>
         </div>
+        
+        <!-- Pill stats in the middle -->
+        <div class="header-middle-stats">
+          <div v-for="stat in stats" :key="stat.label" class="stat-pill">
+            <component :is="stat.icon" class="stat-icon" :size="15" :stroke-width="2.5" />
+            <span class="stat-value">{{ stat.value }}</span>
+            <span class="stat-label">{{ stat.label }}</span>
+          </div>
+        </div>
+
         <div class="header-actions">
           <!-- Day/Week View Switcher -->
           <div class="view-toggle">
@@ -16,33 +25,22 @@
               :class="{ 'is-active': viewMode === 'day' }"
               @click="viewMode = 'day'"
             >
-              ⏱️ 日视图
+              日视图
             </button>
             <button 
               class="toggle-btn" 
               :class="{ 'is-active': viewMode === 'week' }"
               @click="viewMode = 'week'"
             >
-              📅 周视图
+              周视图
             </button>
           </div>
           <button class="btn-secondary" @click="triggerImport">
-            <span>📥</span> 导入任务
+            <Inbox :size="15" :stroke-width="2.5" /> 导入任务
           </button>
           <button class="btn-primary" @click="triggerCreate">
-            <span>＋</span> 新建任务
+            <Plus :size="16" :stroke-width="2.5" /> 新建任务
           </button>
-        </div>
-      </div>
-
-      <!-- Stats overview -->
-      <div class="stats-row">
-        <div v-for="stat in stats" :key="stat.label" class="stat-card">
-          <span class="stat-icon">{{ stat.icon }}</span>
-          <div class="stat-info">
-            <span class="stat-value">{{ stat.value }}</span>
-            <span class="stat-label">{{ stat.label }}</span>
-          </div>
         </div>
       </div>
 
@@ -50,7 +48,7 @@
       <div v-if="aiSuggestions && aiSuggestions.length > 0" class="ai-suggestion-bubble">
         <div class="ai-bubble-header">
           <div class="ai-title">
-            <span class="ai-icon">✨</span>
+            <Sparkles class="ai-icon" :size="16" :stroke-width="2.5" />
             <span>AI 智能排期建议</span>
           </div>
           <button v-if="hasOverload" class="btn-auto-delay" @click="taskStore.applyAutoDelay()">
@@ -77,8 +75,8 @@
             @click="selectDay(day)"
           >
             <div class="weekly-overview-row-header">
-              <span class="day-dot" v-if="day === getTodayDayCode()"></span>
-              <span class="weekly-overview-day-name">{{ DAY_NAMES[day] }}</span>
+              <span class="day-dot" v-if="day === getTodayDayCode()">今</span>
+              <span class="weekly-overview-day-name" :class="{ 'is-today-text': day === getTodayDayCode() }">{{ DAY_NAMES[day] }}</span>
               <span class="weekly-overview-task-count">{{ getScheduledTasksForDay(day).length }} 项任务</span>
             </div>
             <div class="weekly-overview-tasks-timeline">
@@ -111,6 +109,7 @@
           >
             <span class="slot-time">{{ slot.time }}</span>
             <div class="slot-right-container">
+              <div class="slot-grid-line"></div>
               <div 
                 v-if="slot.task" 
                 class="slot-task" 
@@ -140,7 +139,6 @@
                 </div>
               </div>
               <div v-else-if="!isSlotCovered(slot.time)" class="slot-empty">
-                <span>空闲</span>
               </div>
             </div>
             <div v-if="slot.isCurrent" class="current-indicator">
@@ -161,10 +159,15 @@
           @dragleave.prevent="dragOverPending = false"
           @drop.prevent="handleDropOnPending"
         >
+          <div v-if="filteredTimelinePendingTasks.length === 0" class="pending-empty-state">
+            <span class="empty-icon">🍃</span>
+            <p>目前没有待排期任务<br>快去新建吧</p>
+          </div>
           <div
             v-for="task in filteredTimelinePendingTasks"
             :key="task.id"
             class="pending-card"
+            :class="{ 'is-dragging': draggedItem?.idOrTime === task.id }"
             draggable="true"
             @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
           >
@@ -194,40 +197,72 @@
     </div>
 
     <!-- VIEW: Week Mode -->
-    <div v-else-if="viewMode === 'week'" class="weekly-view-body">
-      <div 
-        v-for="day in DAYS" 
-        :key="day" 
-        class="weekly-column"
-        :class="{ 'is-today': day === getTodayDayCode() }"
-      >
-        <div class="weekly-column-header">
-          <span class="day-dot" v-if="day === getTodayDayCode()"></span>
-          <span class="weekly-column-title">{{ DAY_NAMES[day] }}</span>
-          <span class="weekly-column-count">
-            {{ getScheduledTasksForDay(day).length }}
-          </span>
-        </div>
-        <div class="weekly-tasks-list">
-          <div 
-            v-for="task in getScheduledTasksForDay(day)" 
-            :key="task.id" 
-            class="weekly-task-card"
-            :style="{ borderLeftColor: task.color }"
-          >
-            <div class="weekly-task-header">
-              <span class="weekly-task-name">{{ task.name }}</span>
-              <button class="card-delete-btn" @click.stop="handleDeleteTaskById(task.id!)" title="删除任务">✕</button>
-            </div>
-            <div class="weekly-task-meta">
-              <span class="weekly-task-time">⏰ {{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
-              <span class="weekly-task-tag" :style="{ backgroundColor: task.color || 'rgba(255,255,255,0.08)' }">
-                {{ task.subject }}
-              </span>
+    <div v-else-if="viewMode === 'week'" class="weekly-view-container">
+      <div class="weekly-view-body">
+        <div 
+          v-for="day in DAYS" 
+          :key="day" 
+          class="weekly-column"
+          :class="{ 'is-today': day === getTodayDayCode(), 'drag-over': dragOverDay === day }"
+          @dragover.prevent="dragOverDay = day"
+          @dragleave.prevent="dragOverDay = null"
+          @drop.prevent="handleDropOnDay(day)"
+        >
+          <div class="weekly-column-header">
+            <span class="day-dot" v-if="day === getTodayDayCode()">今</span>
+            <span class="weekly-column-title" :class="{ 'is-today-text': day === getTodayDayCode() }">
+              {{ DAY_NAMES[day] }} · {{ getDayDateStr(day) }}
+            </span>
+            <span class="weekly-column-count">
+              {{ getScheduledTasksForDay(day).length }}
+            </span>
+          </div>
+          <div class="weekly-tasks-list">
+            <div 
+              v-for="task in getScheduledTasksForDay(day)" 
+              :key="task.id" 
+              class="weekly-task-card"
+              :style="{ borderLeftColor: task.color }"
+              draggable="true"
+              @dragstart.stop="handleDragStart($event, 'scheduled', task.id || '')"
+            >
+              <div class="weekly-task-header">
+                <span class="weekly-task-name">{{ task.name }}</span>
+                <button class="card-delete-btn" @click.stop="handleDeleteTaskById(task.id!)" title="删除任务">✕</button>
+              </div>
+              <div class="weekly-task-meta">
+                <span class="weekly-task-time">⏰ {{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
+                <span class="weekly-task-tag" :style="{ backgroundColor: task.color || 'rgba(255,255,255,0.08)' }">
+                  {{ task.subject }}
+                </span>
+              </div>
             </div>
           </div>
-          <div v-if="getScheduledTasksForDay(day).length === 0" class="weekly-empty-placeholder">
-            暂无日程
+        </div>
+      </div>
+      
+      <!-- Week Mode Bottom Dock -->
+      <div class="weekly-bottom-dock"
+           :class="{ 'drag-over': dragOverPending }"
+           @dragover.prevent="dragOverPending = true"
+           @dragleave.prevent="dragOverPending = false"
+           @drop.prevent="handleDropOnPending">
+        
+        <div v-if="filteredTimelinePendingTasks.length === 0" class="dock-empty">
+          🎉 太棒了，本周待排期任务已全部安排妥当！
+        </div>
+        
+        <div class="dock-tasks-container" v-else>
+          <div
+            v-for="task in filteredTimelinePendingTasks"
+            :key="task.id"
+            class="pending-pill"
+            :class="{ 'is-dragging': draggedItem?.idOrTime === task.id }"
+            draggable="true"
+            @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
+          >
+            <span class="pill-name">{{ task.name }}</span>
+            <span class="pill-duration" :style="{ color: task.color }">{{ task.duration }}m</span>
           </div>
         </div>
       </div>
@@ -235,54 +270,96 @@
 
     <!-- Task Creation Modal -->
     <div class="modal-overlay" v-if="taskDialogVisible" @click="taskDialogVisible = false"></div>
-    <div class="task-modal" v-if="taskDialogVisible">
+    <div class="modal-container task-create-modal" v-if="taskDialogVisible">
       <div class="modal-header">
-        <h3>✨ 新建排期任务块</h3>
+        <h3 class="task-modal-title">新建学习任务</h3>
         <button class="modal-close" @click="taskDialogVisible = false">×</button>
       </div>
-      <div class="modal-body timeline-form-body">
-        <div class="timeline-form-group">
-          <label class="timeline-form-label">任务名称 *</label>
-          <input v-model="newTaskForm.name" class="timeline-form-input" placeholder="例如：复习 JVM 垃圾回收" />
+      <div class="task-modal-body">
+        <!-- 任务名称 -->
+        <div class="task-form-group">
+          <label class="task-form-label">任务名称</label>
+          <input v-model="newTaskForm.name" class="task-form-input" placeholder="请输入学习或专注任务名称..." autofocus @keyup.enter="handleCreateTask" />
         </div>
-        <div class="timeline-form-group">
-          <label class="timeline-form-label">所属学科 *</label>
-          <select v-model="newTaskForm.subjectId" class="timeline-form-select" @change="onDialogSubjectChange">
-            <option value="" disabled>选择一个学科</option>
-            <option v-for="subj in subjectStore.subjects" :key="subj.id" :value="subj.id">
-              {{ isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon) ? '' : `${getLegacySubjectIcon(subj.icon)} ` }}{{ subj.name }}
-            </option>
-          </select>
+
+        <!-- 所属学科（胶囊网格选择，直观清晰） -->
+        <div class="task-form-group">
+          <label class="task-form-label">所属学科</label>
+          <div class="subject-capsule-grid">
+            <div
+              v-for="subj in subjectStore.subjects"
+              :key="subj.id"
+              class="subject-capsule-item"
+              :class="{ active: newTaskForm.subjectId === subj.id }"
+              :style="newTaskForm.subjectId === subj.id ? { borderColor: subj.color, background: subj.color + '22' } : {}"
+              @click="newTaskForm.subjectId = subj.id"
+            >
+              <span class="subj-capsule-icon">
+                <component
+                  v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
+                  :is="getSubjectIconComponent(subj.icon)"
+                  style="width: 1em; height: 1em;"
+                />
+                <span v-else>{{ getLegacySubjectIcon(subj.icon) || '📘' }}</span>
+              </span>
+              <span class="subj-capsule-name">{{ subj.name }}</span>
+            </div>
+            <div v-if="subjectStore.subjects.length === 0" class="subject-capsule-item">暂无学科，请先创建</div>
+          </div>
         </div>
-        <div class="timeline-form-group" v-if="newTaskForm.subjectId">
-          <label class="timeline-form-label">关联知识点 (可选)</label>
-          <select v-model="newTaskForm.relatedBlockId" class="timeline-form-select">
-            <option value="">无关联</option>
-            <option v-for="block in dialogBlocks" :key="block.id" :value="block.id">
-              {{ block.title }}
-            </option>
-          </select>
-        </div>
-        <div class="timeline-form-group">
-          <label class="timeline-form-label">预计时长</label>
-          <select v-model.number="newTaskForm.duration" class="timeline-form-select">
-            <option :value="30">0.5 小时 (30分钟)</option>
-            <option :value="60">1.0 小时 (60分钟)</option>
-            <option :value="90">1.5 小时 (90分钟)</option>
-            <option :value="120">2.0 小时 (120分钟)</option>
-            <option :value="150">2.5 小时 (150分钟)</option>
-            <option :value="180">3.0 小时 (180分钟)</option>
-            <option :value="240">4.0 小时 (240分钟)</option>
-          </select>
-        </div>
-        <div class="timeline-form-group">
-          <label class="timeline-form-label">任务描述备注</label>
-          <textarea v-model="newTaskForm.desc" class="timeline-form-textarea" rows="3" placeholder="添加备注或任务要求..."></textarea>
+
+        <!-- 专注时长（在长条按钮交互条上拖动选择） -->
+        <div class="task-form-group">
+          <div class="duration-header">
+            <label class="task-form-label">专注时长</label>
+            <span class="duration-badge">{{ newTaskForm.duration }} 分钟 ({{ (newTaskForm.duration / 60).toFixed(1) }}h)</span>
+          </div>
+          <div 
+            class="duration-long-bar-btn" 
+            ref="durationBarRef"
+            @mousedown="startDurationDrag"
+            @mousemove="onDurationDrag"
+            @mouseup="endDurationDrag"
+            @mouseleave="endDurationDrag"
+            @click="onDurationBarClick"
+          >
+            <!-- 绿色进度填充 -->
+            <div 
+              class="duration-bar-fill" 
+              :style="{ width: Math.min(100, Math.max(0, ((newTaskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
+            ></div>
+            <!-- 长条刻度与选项文字 -->
+            <div class="duration-bar-steps">
+              <span 
+                v-for="step in [30, 60, 90, 120, 180, 240]" 
+                :key="step"
+                class="duration-step-item"
+                :class="{ active: newTaskForm.duration >= step }"
+                @click.stop="newTaskForm.duration = step"
+              >
+                {{ step < 60 ? step + 'm' : (step / 60) + 'h' }}
+              </span>
+            </div>
+            <!-- 拖动圆角手柄反馈 -->
+            <div 
+              class="duration-bar-thumb"
+              :style="{ left: Math.min(100, Math.max(0, ((newTaskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
+            >
+              <span>{{ newTaskForm.duration }}m</span>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="modal-footer timeline-modal-footer">
-        <button class="btn-secondary" @click="taskDialogVisible = false">取消</button>
-        <button class="btn-primary" @click="handleCreateTask">确认创建</button>
+
+      <div class="task-modal-footer">
+        <button class="task-btn-cancel" @click="taskDialogVisible = false">取消</button>
+        <button
+          class="task-btn-submit"
+          :disabled="!newTaskForm.name.trim() || !newTaskForm.subjectId"
+          @click="handleCreateTask"
+        >
+          添加到待办
+        </button>
       </div>
     </div>
 
@@ -323,10 +400,11 @@ import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
+import { ListTodo, CheckCircle, Clock, Inbox, Plus, Sparkles } from 'lucide-vue-next'
 
 import { useTaskStore, getTodayDayCode } from '@/store/useTaskStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { getLegacySubjectIcon, isSubjectIconKey } from '@/utils/subjectIcon'
+import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useBlockStore } from '@/store/useBlockStore'
 
 const taskStore = useTaskStore()
@@ -397,10 +475,9 @@ onMounted(async () => {
 })
 
 const stats = computed(() => [
-  { icon: '📋', value: pendingCount.value.toString(), label: '待处理任务' },
-  { icon: '🔥', value: completedCount.value.toString(), label: '累计已完成' },
-  { icon: '⏱', value: totalFocusHours.value, label: '今日专注时长' },
-  { icon: '🧠', value: hasOverload.value ? '⚠️ 过载' : pendingCount.value > 5 ? '较高' : '适中', label: '今日认知负荷' },
+  { icon: ListTodo, value: pendingCount.value.toString(), label: '待排期' },
+  { icon: CheckCircle, value: completedCount.value.toString(), label: '已完成' },
+  { icon: Clock, value: totalFocusHours.value, label: '专注时长' }
 ])
 
 // Filter pending tasks (without subject filter)
@@ -417,13 +494,13 @@ const filteredTimelinePendingTasks = computed(() => {
 const draggedItem = ref<{ type: 'pending' | 'scheduled', idOrTime: string } | null>(null)
 const dragOverSlot = ref<string | null>(null)
 const dragOverPending = ref(false)
+const dragOverDay = ref<string | null>(null)
 
 const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', idOrTime: string) => {
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', idOrTime)
+    draggedItem.value = { type, idOrTime }
   }
-  draggedItem.value = { type, idOrTime }
 }
 
 const handleDragOver = (slotTime: string) => {
@@ -448,6 +525,20 @@ const handleDrop = (slotTime: string) => {
   }
   draggedItem.value = null
   dragOverSlot.value = null
+  dragOverPending.value = false
+  dragOverDay.value = null
+}
+
+const handleDropOnDay = (day: string) => {
+  if (draggedItem.value) {
+    if (draggedItem.value.type === 'pending') {
+      taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
+    } else if (draggedItem.value.type === 'scheduled') {
+      taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
+    }
+  }
+  draggedItem.value = null
+  dragOverDay.value = null
   dragOverPending.value = false
 }
 
@@ -474,6 +565,19 @@ const getCleanDesc = (desc?: string): string => {
 const getBlockTitle = (blockId: string): string => {
   const block = recentBlocks.value.find(b => b.id === blockId)
   return block ? block.title : '已删除知识点'
+}
+
+const getDayDateStr = (dayCode: string) => {
+  const dayMap: Record<string, number> = { 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7 }
+  const today = new Date()
+  const todayIndex = today.getDay() || 7
+  const targetIndex = dayMap[dayCode]
+  const diff = targetIndex - todayIndex
+  const targetDate = new Date(today)
+  targetDate.setDate(today.getDate() + diff)
+  const m = (targetDate.getMonth() + 1).toString().padStart(2, '0')
+  const d = targetDate.getDate().toString().padStart(2, '0')
+  return `${m}/${d}`
 }
 
 // Spaced Repetition Daily reminder checks
@@ -568,13 +672,37 @@ const newTaskForm = ref({
   relatedBlockId: ''
 })
 
-const dialogBlocks = computed(() => {
-  if (!newTaskForm.value.subjectId) return []
-  return recentBlocks.value.filter(b => b.subjectId === newTaskForm.value.subjectId)
-})
 
-const onDialogSubjectChange = () => {
-  newTaskForm.value.relatedBlockId = ''
+
+const durationBarRef = ref<HTMLElement | null>(null)
+const isDraggingDuration = ref(false)
+
+const calculateDurationFromEvent = (e: MouseEvent) => {
+  if (!durationBarRef.value) return
+  const rect = durationBarRef.value.getBoundingClientRect()
+  const offsetX = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
+  const ratio = offsetX / rect.width
+  const rawDuration = 30 + ratio * (240 - 30)
+  const rounded = Math.round(rawDuration / 30) * 30
+  newTaskForm.value.duration = Math.max(30, Math.min(240, rounded))
+}
+
+const startDurationDrag = (e: MouseEvent) => {
+  isDraggingDuration.value = true
+  calculateDurationFromEvent(e)
+}
+
+const onDurationDrag = (e: MouseEvent) => {
+  if (!isDraggingDuration.value) return
+  calculateDurationFromEvent(e)
+}
+
+const endDurationDrag = () => {
+  isDraggingDuration.value = false
+}
+
+const onDurationBarClick = (e: MouseEvent) => {
+  calculateDurationFromEvent(e)
 }
 
 const triggerImport = () => {
@@ -584,7 +712,7 @@ const triggerImport = () => {
 const triggerCreate = () => {
   newTaskForm.value = {
     name: '',
-    subjectId: '',
+    subjectId: subjectStore.subjects.length > 0 ? subjectStore.subjects[0].id : '',
     duration: 60,
     load: 'medium',
     desc: '',
@@ -692,7 +820,7 @@ const handleDeleteTaskById = async (id: string) => {
   padding: 8px;
   gap: 8px;
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden; /* Prevent page scroll to avoid width shifts */
   box-sizing: border-box;
   background: var(--color-zen-ivory); /* Zen Ivory base */
 
@@ -713,9 +841,10 @@ html.dark .timeline-page {
   border-radius: var(--radius-lg);
   border: 1.5px solid var(--border-default);
   box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
-  padding: 24px 28px;
+  padding: 20px 24px;
   display: flex;
   flex-direction: column;
+  gap: 16px;
 }
 
 html.dark .timeline-header-card {
@@ -726,9 +855,12 @@ html.dark .timeline-header-card {
 /* Page header */
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+}
+
+.header-left {
+  flex-shrink: 0;
 }
 
 .page-headline {
@@ -736,12 +868,7 @@ html.dark .timeline-header-card {
   font-weight: 800;
   color: var(--text-primary);
   letter-spacing: -0.3px;
-}
-
-.page-subtitle {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-top: 4px;
+  margin: 0;
 }
 
 .header-actions {
@@ -753,32 +880,38 @@ html.dark .timeline-header-card {
 /* View switcher styling */
 .view-toggle {
   display: flex;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-md, 8px);
-  padding: 2px;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-default);
+  border-radius: 9999px;
+  padding: 3px;
+  gap: 2px;
 }
 
 .toggle-btn {
   background: none;
   border: none;
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-secondary);
+  font-size: 11px;
   font-weight: 600;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 9999px;
   cursor: pointer;
-  transition: all 0.25s;
+  outline: none;
+  font-family: inherit;
+  transition: all var(--transition-fast);
+  line-height: 1.2;
 }
 
 .toggle-btn:hover {
   color: var(--text-primary);
+  background: rgba(163, 177, 155, 0.15);
 }
 
 .toggle-btn.is-active {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(125, 147, 114, 0.28);
 }
 
 .btn-primary,
@@ -845,43 +978,45 @@ html.dark .timeline-header-card {
   cursor: pointer;
 }
 
-/* Stats */
-.stats-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 14px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
+/* Header Middle Stats (Pill Tags) */
+.header-middle-stats {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 16px 18px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  gap: 12px;
+  margin: 0 24px;
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--color-bg-secondary);
+  border-radius: 9999px;
+  border: 1px solid var(--border-default);
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.stat-pill:hover {
+  background: var(--color-bg-tertiary);
+  border-color: rgba(125, 147, 114, 0.3);
+  transform: translateY(-1px);
 }
 
 .stat-icon {
-  font-size: 24px;
-}
-
-.stat-info {
-  display: flex;
-  flex-direction: column;
+  font-size: 14px;
 }
 
 .stat-value {
-  font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
 .stat-label {
-  font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -891,7 +1026,6 @@ html.dark .timeline-header-card {
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: var(--radius-lg);
   padding: 16px 20px;
-  margin-bottom: 24px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -953,8 +1087,10 @@ html.dark .timeline-header-card {
 /* Timeline body */
 .timeline-body {
   display: grid;
-  grid-template-columns: 280px 1fr 280px;
+  grid-template-columns: 280px 1fr 340px;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .timeline-column, .tasks-column, .weekly-overview-column {
@@ -965,6 +1101,7 @@ html.dark .timeline-header-card {
   padding: 20px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-column {
@@ -1000,7 +1137,12 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 
 .weekly-overview-row.is-active {
   border-color: var(--color-primary-accent, #7D9372);
+  border-left: 3px solid var(--color-primary-accent, #7D9372);
   background: rgba(163, 177, 155, 0.08);
+}
+
+.weekly-overview-row.is-active .weekly-overview-day-name {
+  font-weight: 800;
 }
 
 .weekly-overview-row-header {
@@ -1017,7 +1159,7 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 
 .weekly-overview-task-count {
   font-size: 10px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   margin-left: auto;
 }
 
@@ -1025,6 +1167,19 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.day-dot {
+  background: var(--color-primary-accent, #7D9372);
+  color: white;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.is-today-text {
+  color: var(--color-primary-accent, #7D9372);
 }
 
 .weekly-overview-task-dot {
@@ -1057,6 +1212,10 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
 }
 
 .time-slot {
@@ -1072,7 +1231,7 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   width: 52px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   padding-top: 6px;
   flex-shrink: 0;
   text-align: right;
@@ -1081,6 +1240,21 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 .slot-right-container {
   flex: 1;
   position: relative;
+}
+
+.slot-grid-line {
+  position: absolute;
+  top: 15px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  border-top: 1px dashed rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  z-index: 1;
+}
+
+html.dark .slot-grid-line {
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
 }
 
 .slot-task {
@@ -1161,20 +1335,12 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 .slot-empty {
   height: 100%;
   width: 100%;
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  border: 1px dashed rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-md);
-  color: var(--text-muted);
-  font-size: 12px;
-  transition: all var(--transition-normal);
-  box-sizing: border-box;
 }
 
 .time-slot.drag-over .slot-empty {
   background: rgba(255, 255, 255, 0.04);
-  border-color: var(--border-accent);
+  border: 1px dashed var(--border-accent);
+  border-radius: var(--radius-md);
 }
 
 .time-slot.drag-over .slot-task {
@@ -1183,33 +1349,35 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 
 /* Current time indicator */
 .is-current .slot-time {
-  color: var(--color-oatmeal-dark);
+  color: var(--color-primary-accent, #7D9372);
+  font-weight: 800;
 }
 
 .current-indicator {
   position: absolute;
   left: 64px;
   right: 0;
-  top: 0;
+  top: 15px;
   display: flex;
   align-items: center;
   pointer-events: none;
+  z-index: 20;
 }
 
 .current-dot {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--color-oatmeal-dark);
+  background: var(--color-primary-accent, #7D9372);
   flex-shrink: 0;
-  z-index: 1;
+  margin-left: -4px;
 }
 
 .current-line {
   flex: 1;
-  height: 1px;
-  background: var(--color-oatmeal-dark);
-  opacity: 0.4;
+  height: 1.5px;
+  background: var(--color-primary-accent, #7D9372);
+  opacity: 0.6;
 }
 
 /* Pending tasks sidebar */
@@ -1217,28 +1385,60 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 240px;
   padding-bottom: 20px;
   transition: background var(--transition-normal);
   border-radius: var(--radius-md);
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-right: 4px;
+}
+
+.pending-empty-state {
+  position: absolute;
+  top: 40px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.empty-icon {
+  font-size: 32px;
+  opacity: 0.6;
 }
 
 .pending-card {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
   cursor: grab;
-  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
 }
 
 .pending-card:hover {
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateX(-2px);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.pending-card.is-dragging {
+  opacity: 0.2;
+  border-style: dashed;
+  background: transparent;
+  transform: none;
+  box-shadow: none;
 }
 
 .pending-color {
@@ -1359,6 +1559,103 @@ html.dark .kanban-column {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.weekly-column-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  padding: 2px 6px;
+  border-radius: 9999px;
+}
+
+.weekly-column.drag-over-column {
+  background: rgba(125, 147, 114, 0.08) !important;
+  border-color: var(--color-primary-accent, #7D9372);
+}
+
+.weekly-view-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 16px;
+  min-height: 0; /* Allows children to scroll if needed */
+}
+
+.weekly-view-body {
+  flex: 3; /* roughly 75% */
+  overflow-y: auto; /* Allow swimlanes to scroll if they get too tall */
+}
+
+.weekly-bottom-dock {
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+  flex: 1; /* roughly 25% */
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  transition: all 0.2s ease;
+  overflow-y: auto;
+}
+
+html.dark .weekly-bottom-dock {
+  background: var(--surface-1);
+  box-shadow: 0 -2px 15px rgba(0,0,0,0.2);
+}
+
+.weekly-bottom-dock.drag-over {
+  border-color: var(--color-primary-accent, #7D9372);
+  background: rgba(125, 147, 114, 0.04);
+}
+
+.dock-empty {
+  margin: auto;
+  font-size: 14px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.dock-tasks-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.pending-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-default);
+  border-radius: 9999px;
+  cursor: grab;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
+}
+
+.pending-pill:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+}
+
+.pending-pill.is-dragging {
+  opacity: 0.2;
+  border-style: dashed;
+  background: transparent;
+  transform: none;
+  box-shadow: none;
+}
+
+.pill-duration {
+  font-size: 11px;
+  opacity: 0.8;
 }
 
 .column-count {
@@ -1503,36 +1800,44 @@ html.dark .kanban-column {
   animation: fade-in 0.2s ease;
 }
 
-.task-modal, .block-modal {
+.modal-container {
   position: fixed;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
   width: 90%;
-  max-width: 440px;
-  background: var(--glass-bg, rgba(28, 28, 30, 0.85));
-  backdrop-filter: var(--glass-blur, blur(20px));
-  -webkit-backdrop-filter: var(--glass-blur, blur(20px));
-  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  max-width: 520px;
+  background: #FFFFFF;
   border-radius: 20px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
-  z-index: 201;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  animation: modal-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
+  animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1001;
 }
 
-.block-modal {
-  max-width: 540px;
+html.dark .modal-container {
+  background: #181D18;
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
 .modal-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
 .modal-tags {
@@ -1572,9 +1877,11 @@ html.dark .kanban-column {
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
   overflow-y: auto;
-  max-height: 60vh;
 }
 
 .modal-title {
@@ -1604,60 +1911,28 @@ html.dark .kanban-column {
 
 .modal-footer {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.timeline-form-body {
-  display: flex;
-  flex-direction: column;
+  justify-content: flex-end;
   gap: 12px;
-  padding: 20px;
+  padding: 16px 28px 22px;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
 }
 
-.timeline-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  text-align: left;
-}
-
-.timeline-form-label {
-  font-size: 11px;
-  font-weight: 700;
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-secondary);
 }
 
-.timeline-form-input, .timeline-form-select, .timeline-form-textarea {
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary);
-  outline: none;
-  font-family: inherit;
-  font-size: 12.5px;
-}
+.close-btn { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all var(--transition-fast); }
+.close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
 
-.timeline-form-input:focus, .timeline-form-select:focus, .timeline-form-textarea:focus {
-  border-color: var(--color-oatmeal-dark);
-}
-
-.timeline-form-textarea {
-  resize: vertical;
-}
-
-.timeline-modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
-}
+.styled-input, .styled-textarea, .styled-select { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input:focus, .styled-textarea:focus, .styled-select:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
+html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styled-select:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
 
 /* Day Selector Bar */
 .day-selector-bar {
@@ -1696,14 +1971,6 @@ html.dark .kanban-column {
   font-weight: 700;
 }
 
-.day-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
-}
-
 /* Weekly View Body */
 .weekly-view-body {
   display: grid;
@@ -1714,25 +1981,31 @@ html.dark .kanban-column {
 
 .weekly-column {
   background: var(--color-bg-primary);
-  border: 1.5px solid var(--border-default);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 480px;
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  transition: all 0.3s ease;
   box-sizing: border-box;
 }
 
 html.dark .weekly-column {
-  background: var(--color-bg-secondary);
-  border-color: var(--border-subtle);
+  background: var(--surface-1);
+  border-color: transparent;
 }
 
 .weekly-column.is-today {
   border-color: var(--color-primary-accent, #7D9372);
-  background: rgba(163, 177, 155, 0.08);
+  background: var(--color-bg-primary);
+  box-shadow: 0 0 16px rgba(125, 147, 114, 0.12), inset 0 0 0 1px var(--color-primary-accent, #7D9372);
+}
+
+html.dark .weekly-column.is-today {
+  background: var(--surface-1);
+  box-shadow: 0 0 16px rgba(125, 147, 114, 0.15), inset 0 0 0 1px var(--color-primary-accent, #7D9372);
 }
 
 .weekly-column-header {
@@ -1831,5 +2104,257 @@ html.dark .weekly-column {
   border: 1px dashed var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 16px 8px;
+}
+
+/* ===== 新建学习任务弹窗 (复刻 Dashboard) ===== */
+.task-create-modal {
+  width: 520px;
+  background: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-subtle);
+}
+
+html.dark .task-create-modal {
+  background: #181D18;
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.task-create-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 22px 0 16px 0;
+  margin: 0 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.task-modal-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 850;
+  color: var(--color-primary-accent, #7D9372);
+  letter-spacing: -0.4px;
+  -webkit-text-stroke: 0.35px rgba(90, 111, 80, 0.65);
+}
+
+.task-modal-body {
+  padding: 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.task-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-form-label {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-secondary);
+}
+
+.task-form-input {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.task-form-input:focus {
+  border-color: #7D9372;
+  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15);
+  background: var(--color-bg-primary);
+}
+
+/* 学科选择网格胶囊 */
+.subject-capsule-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.subject-capsule-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--color-bg-secondary);
+  border: 1.5px solid transparent;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.subject-capsule-item:hover {
+  transform: translateY(-1px);
+  background: var(--color-bg-tertiary);
+}
+
+.subject-capsule-item.active {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  font-weight: 700;
+}
+
+.subj-capsule-icon {
+  font-size: 13px;
+}
+
+/* 专注时长头部与预设胶囊 */
+.duration-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.duration-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #7D9372;
+  background: rgba(125, 147, 114, 0.12);
+  padding: 2px 8px;
+  border-radius: 9999px;
+}
+
+/* 专注时长长条按钮拖动交互条 */
+.duration-long-bar-btn {
+  position: relative;
+  width: 100%;
+  height: 48px;
+  background: var(--color-bg-secondary);
+  border: 1.5px solid var(--border-default);
+  border-radius: 9999px;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.duration-long-bar-btn:hover {
+  border-color: #7D9372;
+  box-shadow: 0 4px 16px rgba(125, 147, 114, 0.15);
+}
+
+.duration-bar-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(to right, rgba(125, 147, 114, 0.25), #7D9372);
+  border-radius: 9999px;
+  transition: width 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.duration-bar-steps {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 20px;
+  align-items: center;
+}
+
+.duration-step-item {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-secondary);
+  transition: all 0.2s;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.duration-step-item.active {
+  color: #FFFFFF;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-weight: 750;
+}
+
+.duration-bar-thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  background: #FFFFFF;
+  border: 2.5px solid #7D9372;
+  border-radius: 9999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #7D9372;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  transition: left 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.dark .duration-bar-thumb {
+  background: #181D18;
+}
+
+.task-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 28px 22px;
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+}
+
+.task-btn-cancel,
+.task-btn-submit {
+  padding: 10px 20px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+
+.task-btn-cancel {
+  background: var(--color-bg-secondary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+.task-btn-cancel:hover {
+  background: var(--color-bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.task-btn-submit {
+  background: var(--accent-gradient);
+  color: white;
+  border: none;
+  box-shadow: 0 4px 14px rgba(125, 147, 114, 0.25);
+}
+
+.task-btn-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(125, 147, 114, 0.35);
+}
+
+.task-btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 </style>

@@ -424,23 +424,23 @@
 
     <!-- Register File Modal -->
     <div class="modal-overlay" v-if="showRegisterModal" @click="showRegisterModal = false"></div>
-    <div class="block-modal register-modal" v-if="showRegisterModal">
+    <div class="modal-container" v-if="showRegisterModal">
       <div class="modal-header">
-        <h3 style="margin:0; font-weight:700; color:var(--text-primary);">登记本地参考材料</h3>
-        <button class="modal-close" @click="showRegisterModal = false">×</button>
+        <h3>登记本地参考材料</h3>
+        <button class="close-btn" @click="showRegisterModal = false">✕</button>
       </div>
-      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">材料名称 *</label>
-          <input v-model="registerForm.name" class="form-input" placeholder="例如: 计算机网络 自顶向下方法.pdf" />
+          <label>材料名称 *</label>
+          <input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络 自顶向下方法.pdf" />
         </div>
         <div class="form-group">
-          <label class="form-label">本地绝对路径 *</label>
-          <input v-model="registerForm.filePath" class="form-input" placeholder="例如: D:/Books/Computer Network.pdf" />
+          <label>本地绝对路径 *</label>
+          <input v-model="registerForm.filePath" class="styled-input" placeholder="例如: D:/Books/Computer Network.pdf" />
         </div>
         <div class="form-group">
-          <label class="form-label">类型 *</label>
-          <select v-model="registerForm.fileType" class="form-input">
+          <label>类型 *</label>
+          <select v-model="registerForm.fileType" class="styled-select">
             <option value="PDF">PDF 电子书</option>
             <option value="Markdown">Markdown 文档</option>
             <option value="PPT">PowerPoint 课件</option>
@@ -449,13 +449,13 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">文件大小 (MB)</label>
-          <input type="number" v-model="registerForm.fileSize" class="form-input" placeholder="例如: 15.4" />
+          <label>文件大小 (MB)</label>
+          <input type="number" v-model="registerForm.fileSize" class="styled-input" placeholder="例如: 15.4" />
         </div>
       </div>
       <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="showRegisterModal = false">取消</button>
-        <button class="footer-btn primary-btn" :disabled="!registerForm.name.trim() || !registerForm.filePath.trim()" @click="handleRegisterFile">
+        <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
+        <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerForm.filePath.trim()" @click="handleRegisterFile">
           确认登记
         </button>
       </div>
@@ -463,19 +463,19 @@
 
     <!-- Create Task Modal -->
     <div class="modal-overlay" v-if="showTaskModal" @click="showTaskModal = false"></div>
-    <div class="block-modal task-modal" v-if="showTaskModal">
+    <div class="modal-container" v-if="showTaskModal">
       <div class="modal-header">
-        <h3 style="margin:0; font-weight:700; color:var(--text-primary);">创建学习任务</h3>
-        <button class="modal-close" @click="showTaskModal = false">×</button>
+        <h3>创建学习任务</h3>
+        <button class="close-btn" @click="showTaskModal = false">✕</button>
       </div>
-      <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
+      <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">任务名称 *</label>
-          <input v-model="taskForm.name" class="form-input" placeholder="例如: 学习网络层协议" />
+          <label>任务名称 *</label>
+          <input v-model="taskForm.name" class="styled-input" placeholder="例如: 学习网络层协议" />
         </div>
         <div class="form-group" v-if="!activeSubjectId">
-          <label class="form-label">归属学科 *</label>
-          <select v-model="taskForm.subjectId" class="form-input">
+          <label>归属学科 *</label>
+          <select v-model="taskForm.subjectId" class="styled-select">
             <option v-for="subj in subjectStore.subjects" :key="subj.id" :value="subj.id">
               {{ isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon) ? '' : `${getLegacySubjectIcon(subj.icon)} ` }}{{ subj.name }}
             </option>
@@ -483,8 +483,8 @@
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">预计专注时长</label>
-          <select v-model.number="taskForm.duration" class="form-input">
+          <label>预计专注时长</label>
+          <select v-model.number="taskForm.duration" class="styled-select">
             <option :value="30">0.5 小时 (30分钟)</option>
             <option :value="60">1.0 小时 (60分钟)</option>
             <option :value="90">1.5 小时 (90分钟)</option>
@@ -496,100 +496,89 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="showTaskModal = false">取消</button>
-        <button class="footer-btn primary-btn" :disabled="!taskForm.name.trim() || (!activeSubjectId && !taskForm.subjectId)" @click="handleAddTask">
+        <button class="btn-secondary" @click="showTaskModal = false">取消</button>
+        <button class="btn-primary" :disabled="!taskForm.name.trim() || (!activeSubjectId && !taskForm.subjectId)" @click="handleAddTask">
           加入排期
         </button>
       </div>
     </div>
 
     <!-- Knowledge Block Detail / Create / Edit Modal -->
-    <div class="modal-overlay" v-if="blockDialogVisible" @click="handleModalOverlayClick"></div>
-    <div class="block-modal" v-if="blockDialogVisible">
-      <div class="modal-header">
-        <div class="modal-tags" v-if="!isEditMode">
-          <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--border-subtle)' }">
-            {{ selectedBlock?.subject || '知识片' }}
-          </span>
-          <span class="modal-source-tag">
-            来源: {{ selectedBlock?.source }}
-          </span>
+    <div class="modal-overlay" v-if="blockDialogVisible" @click.self="handleModalOverlayClick">
+      <div class="modal-container" v-if="blockDialogVisible">
+        <div class="modal-header">
+          <div class="modal-tags" v-if="!isEditMode">
+            <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--color-bg-secondary)' }">
+              {{ selectedBlock?.subject || '知识片' }}
+            </span>
+            <span class="modal-source-tag">来源: {{ selectedBlock?.source }}</span>
+          </div>
+          <h3 v-else>{{ isCreateMode ? '录入新知识块' : '编辑知识内容' }}</h3>
+          <button class="close-btn" @click="closeBlockDialog">✕</button>
         </div>
-        <div class="modal-tags-edit" v-else>
-          <span class="modal-edit-title" style="font-weight: 700; color: var(--text-primary);">
-            {{ isCreateMode ? '✨ 录入新知识块' : '📝 编辑知识内容' }}
-          </span>
-        </div>
-        <button class="modal-close" @click="closeBlockDialog">×</button>
-      </div>
 
-      <!-- EDIT & CREATE MODE FORM -->
-      <div class="modal-body" v-if="isEditMode" style="display: flex; flex-direction: column; gap: 14px;">
-        <div class="form-group">
-          <label class="form-label">分类 (Subject) *</label>
-          <input v-model="editForm.subject" class="form-input" placeholder="例如：Java, 算法, 操作系统, 英语..." />
-        </div>
-        <div class="form-group">
-          <label class="form-label">标题 (Title) *</label>
-          <input v-model="editForm.title" class="form-input" placeholder="输入知识点的核心概念名称" />
-        </div>
-        <div class="form-group">
-          <label class="form-label">色彩标签 (Theme Color)</label>
-          <div class="color-options">
-            <span 
-              v-for="color in themeColors" 
-              :key="color.value"
-              class="color-dot"
-              :class="{ 'is-selected': editForm.color === color.value }"
-              :style="{ background: color.value }"
-              :title="color.name"
-              @click="editForm.color = color.value"
-            ></span>
+        <!-- EDIT & CREATE MODE FORM -->
+        <div class="modal-body" v-if="isEditMode" style="display: flex; flex-direction: column; gap: 14px;">
+          <div class="form-group">
+            <label>分类 (Subject) <span style="color: #ef4444; margin-left: 4px;">*</span></label>
+            <input v-model="editForm.subject" class="styled-input" placeholder="例如：Java, 算法, 操作系统, 英语..." />
+          </div>
+          <div class="form-group">
+            <label>标题 (Title) <span style="color: #ef4444; margin-left: 4px;">*</span></label>
+            <input v-model="editForm.title" class="styled-input" placeholder="输入知识点的核心概念名称" />
+          </div>
+          <div class="form-group">
+            <label>色彩标签 (Theme Color)</label>
+            <div class="color-options">
+              <span 
+                v-for="color in themeColors" 
+                :key="color.value"
+                class="color-dot"
+                :class="{ 'is-selected': editForm.color === color.value }"
+                :style="{ background: color.value }"
+                :title="color.name"
+                @click="editForm.color = color.value"
+              ></span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>知识内容 (Content) <span style="color: #ef4444; margin-left: 4px;">*</span></label>
+            <textarea v-model="editForm.preview" class="styled-textarea" rows="8" placeholder="在此处输入详细的知识点解析或定义描述... (支持 Markdown)"></textarea>
           </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">知识内容 (Content) *</label>
-          <textarea v-model="editForm.preview" class="form-textarea" rows="8" placeholder="在此处输入详细的知识点解析或定义描述... (支持 Markdown)"></textarea>
-        </div>
-      </div>
 
-      <!-- VIEW MODE -->
-      <div class="modal-body" v-else>
-        <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
-        <div class="modal-time">⏰ 记于 {{ selectedBlock?.time }}</div>
-        
-        <div class="modal-divider"></div>
-        
-        <div class="modal-content">
-          <span v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></span>
-        </div>
-      </div>
-
-      <!-- MODAL FOOTER -->
-      <div class="modal-footer">
-        <template v-if="isEditMode">
-          <button class="footer-btn secondary-btn" @click="cancelEdit">取消</button>
-          <button class="footer-btn primary-btn" @click="handleSaveBlock">
-            {{ isCreateMode ? '创建知识块' : '保存修改' }}
-          </button>
-        </template>
-        <template v-else>
-          <button class="footer-btn danger-btn" @click="handleDeleteBlock(selectedBlock?.id)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
-            删除
-          </button>
-          <div class="footer-right">
-            <button class="footer-btn secondary-btn" @click="handleCopyBlockContent(selectedBlock?.preview)">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-              复制
-            </button>
-            <button class="footer-btn secondary-btn" @click="startEdit">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              编辑
-            </button>
-            <button class="footer-btn primary-btn" @click="closeBlockDialog">确定</button>
+        <!-- VIEW MODE -->
+        <div class="modal-body" v-else>
+          <div class="block-read-header">
+            <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
+            <div class="modal-meta-row">
+              <span class="modal-time-badge">
+                <ElIcon style="margin-right:4px;"><Clock /></ElIcon>
+                记于 {{ selectedBlock?.time }}
+              </span>
+            </div>
           </div>
-        </template>
+          <div class="modal-divider"></div>
+          <div class="modal-content summary-markdown" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
+        </div>
+
+        <!-- MODAL FOOTER -->
+        <div class="modal-footer" :style="{ justifyContent: isEditMode ? 'flex-end' : 'space-between' }">
+          <template v-if="isEditMode">
+            <button class="btn-secondary" @click="cancelEdit">取消</button>
+            <button class="btn-primary" @click="handleSaveBlock">
+              {{ isCreateMode ? '创建知识块' : '保存修改' }}
+            </button>
+          </template>
+          <template v-else>
+            <button class="btn-secondary" style="color: #ef4444; border-color: rgba(239,68,68,0.3);" @click="handleDeleteBlock(selectedBlock?.id)">删除</button>
+            <div class="footer-right" style="display: flex; gap: 12px;">
+              <button class="btn-secondary" @click="handleCopyBlockContent(selectedBlock?.preview)">复制</button>
+              <button class="btn-secondary" @click="startEdit">编辑</button>
+              <button class="btn-primary" @click="closeBlockDialog">确定</button>
+            </div>
+          </template>
+        </div>
       </div>
     </div>
 
@@ -609,6 +598,7 @@ import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElIcon, ElNotification, ElMessageBox } from 'element-plus'
+import { Clock } from '@element-plus/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 
@@ -2630,4 +2620,68 @@ const handleDropOnPending = () => {
   color: var(--text-muted);
   line-height: 1.5;
 }
+
+/* ===== Modals ===== */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+
+.modal-container { width: 90%; max-width: 520px; background: #FFFFFF; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); z-index: 1001; position: relative; margin: 0 auto; max-height: 90vh; }
+html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+@keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
+.modal-container .modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
+.close-btn { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all var(--transition-fast); }
+.close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.modal-container .modal-body { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+.form-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.styled-input, .styled-textarea, .styled-select { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input:focus, .styled-textarea:focus, .styled-select:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
+html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styled-select:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
+.styled-textarea { resize: vertical; line-height: 1.6; min-height: 100px; }
+.modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--border-subtle); background: transparent; }
+.btn-secondary { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-secondary:hover { background: var(--color-bg-secondary); color: var(--text-primary); }
+.btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3); }
+.btn-primary:hover:not(:disabled) { background: #6E8364; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+html.dark .btn-primary { background: #9AB08F; color: #1a1a1a; }
+html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(154, 176, 143, 0.2); }
+
+.modal-tags { display: flex; align-items: center; gap: 8px; }
+.modal-tag { font-size: 11px; padding: 4px 12px; border-radius: 999px; color: var(--text-primary); font-weight: 600; border: 1px solid var(--border-default); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+.modal-source-tag { font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.block-read-header { display: flex; flex-direction: column; gap: 12px; }
+.modal-title { font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 0; letter-spacing: -0.5px; line-height: 1.3; }
+.modal-meta-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.modal-time-badge { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); background: var(--color-bg-secondary); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-default); }
+.modal-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border-subtle) 15%, var(--border-subtle) 85%, transparent); margin: 20px 0; border: none; }
+
+.color-options { display: flex; gap: 8px; }
+.color-dot { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: all var(--transition-fast); }
+.color-dot:hover { transform: scale(1.1); }
+.color-dot.is-selected { border-color: var(--text-primary); transform: scale(1.15); }
+
+.summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
+.summary-markdown :deep(h1), .summary-markdown :deep(h2), .summary-markdown :deep(h3), .summary-markdown :deep(h4) { color: var(--text-primary); font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; }
+.summary-markdown :deep(h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-default); padding-bottom: 0.3em; }
+.summary-markdown :deep(h2) { font-size: 1.25em; margin: 2em 0 1em; padding-bottom: 8px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.summary-markdown :deep(h3) { font-size: 1.1em; margin: 1.5em 0 1em; }
+.summary-markdown :deep(p) { margin-bottom: 16px; }
+.summary-markdown :deep(ul), .summary-markdown :deep(ol) { margin: 0 0 16px 0; padding-left: 24px; }
+.summary-markdown :deep(li) { margin-bottom: 6px; }
+.summary-markdown :deep(li::marker) { color: var(--text-muted); }
+.summary-markdown :deep(blockquote) { margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #7D9372; background: rgba(125, 147, 114, 0.05); border-radius: 0 8px 8px 0; color: var(--text-muted); font-style: italic; }
+.summary-markdown :deep(pre) { background: #1C1C1A; padding: 16px; border-radius: 12px; overflow-x: auto; margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+.summary-markdown :deep(code) { font-family: var(--font-family-mono); font-size: 13px; background: rgba(0,0,0,0.04); padding: 3px 6px; border-radius: 6px; color: #7D9372; font-weight: 500; }
+.summary-markdown :deep(pre code) { background: transparent; padding: 0; color: #E6E6E4; font-weight: 400; font-size: 13.5px; }
+.summary-markdown :deep(a) { color: #7D9372; text-decoration: none; border-bottom: 1px solid transparent; transition: all 0.2s; }
+.summary-markdown :deep(a:hover) { border-bottom-color: #7D9372; }
+.summary-markdown :deep(img) { max-width: 100%; border-radius: 12px; margin: 16px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+.summary-markdown :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 16px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+.summary-markdown :deep(th), .summary-markdown :deep(td) { padding: 10px 14px; border: 1px solid var(--border-subtle); text-align: left; }
+.summary-markdown :deep(th) { background: rgba(0,0,0,0.02); font-weight: 600; color: var(--text-primary); }
+html.dark .summary-markdown :deep(h2) { border-bottom-color: rgba(255,255,255,0.04); }
+html.dark .summary-markdown :deep(code) { background: rgba(255,255,255,0.06); color: #9AB08F; }
+html.dark .summary-markdown :deep(blockquote) { background: rgba(154, 176, 143, 0.08); border-left-color: #9AB08F; }
+html.dark .summary-markdown :deep(th) { background: rgba(255,255,255,0.02); }
 </style>
