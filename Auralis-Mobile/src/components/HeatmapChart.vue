@@ -4,7 +4,7 @@
     <view class="month-header">
       <view class="month-title">
         <text class="m-name">专注持续热力</text>
-        <text class="total-badge">近16周共 {{ currentMonthObj.totalCount }} 次打卡</text>
+        <text class="total-badge">{{ props.weeks <= 5 ? '近一个月' : `近${props.weeks}周` }}共 {{ currentMonthObj.totalCount }} 次打卡</text>
       </view>
 
       <view class="legend">
@@ -18,9 +18,13 @@
       </view>
     </view>
 
-    <!-- 活跃度色块网格：自上而下按周横向排列 (GitHub Style 16 Weeks x 7 Days) -->
+    <!-- 活跃度色块网格：自上而下按周横向排列 -->
     <view class="calendar-grid">
-      <view class="days-container">
+      <view 
+        class="days-container" 
+        :class="{ 'is-calendar': props.weeks <= 5 }"
+        :style="props.weeks <= 5 ? { gridTemplateRows: `repeat(${props.weeks}, 1fr)` } : { gridTemplateRows: 'repeat(7, 1fr)' }"
+      >
         <!-- 纯色日期块 -->
         <view 
           v-for="day in currentMonthObj.days" 
@@ -62,9 +66,12 @@ interface MonthData {
   days: DayData[]
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   dataset: { date: string; count: number }[]
-}>()
+  weeks?: number
+}>(), {
+  weeks: 16
+})
 
 const selectedDay = ref<DayData | null>(null)
 
@@ -95,8 +102,8 @@ const currentMonthObj = computed<MonthData>(() => {
   const year = today.getFullYear()
   const month = today.getMonth() + 1
 
-  // 生成从今日倒推 112 天（16周）的数据矩阵
-  const totalDays = 112
+  // 生成从今日倒推的数据矩阵
+  const totalDays = props.weeks * 7
   let totalCount = 0
   const days: DayData[] = []
 
@@ -191,17 +198,25 @@ const currentMonthObj = computed<MonthData>(() => {
 
 .days-container {
   display: grid;
-  width: 100%;
   height: 100%;
-  grid-template-rows: repeat(7, 1fr);
-  grid-template-columns: repeat(16, 1fr);
+  gap: 14rpx;
+  justify-content: center;
+  align-content: center;
+}
+
+.days-container.is-calendar {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(7, auto);
+}
+
+.days-container:not(.is-calendar) {
   grid-auto-flow: column;
-  gap: 10rpx;
+  grid-auto-columns: auto;
 }
 
 .day-cell {
-  width: 100%;
   height: 100%;
+  aspect-ratio: 1 / 1;
   border-radius: 8rpx;
   cursor: pointer;
   transition: all 0.2s;

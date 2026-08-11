@@ -224,7 +224,7 @@
 
           <!-- Card 4: Heatmap (Full width, flex-shrink: 0, compact) -->
           <view class="stats-card card-heatmap-vertical">
-            <HeatmapChart :dataset="heatmapData" />
+            <HeatmapChart :dataset="heatmapData" :weeks="5" />
           </view>
         </view>
       </view>
@@ -1021,7 +1021,7 @@ onMounted(async () => {
 
 /* Card 1: Hero Summary Banner (Shrink to wrap text) */
 .card-hero-summary {
-  background: linear-gradient(135deg, #7D9372 0%, #687f5d 100%);
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: #FFFFFF;
   padding: 18rpx 28rpx;
   flex: none;
