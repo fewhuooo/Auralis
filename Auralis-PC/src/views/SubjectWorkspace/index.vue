@@ -86,20 +86,31 @@
         <div v-if="isOutlineComposer" class="outline-composer">
           <p class="outline-composer-tip">拖拽章节或所属小节调整顺序</p>
           <div v-for="(chapter, chapterIndex) in subjectOutline" :key="chapter.id" class="composer-chapter" draggable="true" @dragstart="startChapterDrag(chapterIndex)" @dragover.prevent @drop="handleChapterDrop(chapterIndex)">
-            <div class="composer-row"><span class="drag-handle" title="拖拽章节">⠿</span><strong>{{ chapter.title }}</strong></div>
+            <div class="composer-row">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="drag-handle" title="拖拽章节">⠿</span>
+                <strong>{{ chapter.title }}</strong>
+              </div>
+              <button class="composer-link-btn" title="删除章节" @click.stop="deleteChapter(chapterIndex)">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
             <div class="composer-sections">
               <div v-for="(section, sectionIndex) in chapter.sections" :key="section.id" class="composer-section" draggable="true" @dragstart.stop="startSectionDrag(chapterIndex, sectionIndex)" @dragover.prevent @drop.stop="handleSectionDrop(chapterIndex, sectionIndex)">
-                <span class="drag-handle">⠿</span>
-                <div class="composer-section-content">
-                  <span class="composer-section-title">{{ section.title }}</span>
-                  <div class="composer-section-file" v-if="section.fileId">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                    <span class="composer-section-file-name">{{ fileById(section.fileId)?.name || '未知文件' }}</span>
-                    <button class="composer-unlink-btn" title="解除关联" @click.stop="unlinkFile(chapterIndex, sectionIndex)">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
+                <div style="display: flex; gap: 10px; flex: 1;">
+                  <span class="drag-handle">⠿</span>
+                  <div class="composer-section-content">
+                    <span class="composer-section-title">{{ section.title }}</span>
+                    <div class="composer-section-file" v-if="section.fileId">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                      <span class="composer-section-file-name">{{ fileById(section.fileId)?.name || '未知文件' }}</span>
+                      <button class="composer-unlink-btn" title="解除关联" @click.stop="unlinkFile(chapterIndex, sectionIndex)">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </div>
                   </div>
                 </div>
+                <div style="display: flex; gap: 6px; align-items: center;">
                 <el-popover placement="bottom-end" trigger="click" width="280" popper-class="zen-popover" :hide-after="0">
                   <template #reference>
                     <button class="composer-link-btn" title="关联文件" @click.stop>
@@ -122,9 +133,13 @@
                     暂无学习文件，请先导入
                   </div>
                 </el-popover>
+                <button class="composer-link-btn" title="删除小节" @click.stop="deleteSection(chapterIndex, sectionIndex)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
               </div>
-              <input v-model="chapterDrafts[chapter.id]" class="outline-inline-input" placeholder="输入小节后按 Enter" @keyup.enter="addSection(chapter.id)" />
             </div>
+            <input v-model="chapterDrafts[chapter.id]" class="outline-inline-input" placeholder="输入小节后按 Enter" @keyup.enter="addSection(chapter.id)" />
+          </div>
           </div>
           <input v-model="chapterDraft" class="outline-inline-input chapter-input" placeholder="输入新章节后按 Enter" @keyup.enter="addChapter" />
         </div>
@@ -151,8 +166,12 @@
       <!-- Micro Status Bar -->
       <header class="center-status-bar">
         <div class="status-left">
-          <span v-if="centerView === 'summary' && selectedFile" class="status-file">📝 {{ selectedFile.name }} · 文件总结</span>
-          <span v-else-if="centerView === 'blocks'" class="status-file">🧩 知识库 · {{ filteredBlocks.length }} 个知识块</span>
+          <span v-if="centerView === 'summary' && selectedFile" class="status-file">
+            <FileText :size="14" class="status-icon" /> {{ selectedFile.name }} · 文件总结
+          </span>
+          <span v-else-if="centerView === 'blocks'" class="status-file">
+            <Blocks :size="14" class="status-icon" /> 知识块 · {{ filteredBlocks.length }} 个知识块
+          </span>
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
@@ -177,7 +196,7 @@
           </div>
           <div class="summary-markdown" v-if="selectedFileBlocks.length" v-html="renderMarkdown(fileSummaryMarkdown)"></div>
           <div class="summary-empty" v-else>
-            <div class="summary-empty-icon-wrap">✦</div>
+            <div class="summary-empty-icon-wrap"><FileText :size="28" /></div>
             <h3>还没有可展示的总结</h3>
             <p>该材料关联的知识块会集中展示在这里；<br/>也可以直接让 AI 为当前文件整理重点概览。</p>
             <button class="summary-ask-ai" @click="sendPreset('请总结当前文件的核心内容，并按章节列出重点。')">让 AI 整理总结</button>
@@ -214,21 +233,27 @@
           <!-- Empty Knowledge Blocks Onboarding -->
           <div class="onboarding-workspace" v-else>
             <div class="onboarding-header" style="margin-bottom: 24px;">
-              <div class="onboarding-emoji" style="font-size: 40px; margin-bottom: 8px;">🧩</div>
+              <div class="onboarding-emoji" style="margin-bottom: 12px; opacity: 0.3; color: var(--text-muted);">
+                <Blocks :size="60" />
+              </div>
               <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary);">知识库暂无内容</h3>
-              <p style="font-size: 12px; color: var(--text-secondary);">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
+              <p style="font-size: 12px; color: var(--text-muted);">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
             </div>
             <div class="onboarding-grid" style="max-width: 640px; margin: 0 auto;">
               <div class="onboarding-card" @click="openCreateDialog">
-                <div class="onboarding-card-icon">➕</div>
+                <div class="onboarding-card-icon">
+                  <Plus :size="24" />
+                </div>
                 <div class="onboarding-card-body">
                   <h4>手动新建知识块</h4>
                   <p>手动录入笔记、重要定义或概念卡片，支持 Markdown 渲染。</p>
                   <button class="onboarding-card-btn">手动录入</button>
                 </div>
               </div>
-              <div class="onboarding-card" @click="tier2Mode = 'files'; tier2Open = true">
-                <div class="onboarding-card-icon">📄</div>
+              <div class="onboarding-card" @click="tier2Mode = 'files'; tier2Open = true; centerView = 'overview'">
+                <div class="onboarding-card-icon">
+                  <FileText :size="24" />
+                </div>
                 <div class="onboarding-card-body">
                   <h4>关联学习材料</h4>
                   <p>去左侧材料列表中选择或登记文件，然后使用 AI 自动分析目录大纲。</p>
@@ -338,8 +363,6 @@
               <div class="chat-content ai-reply" v-else v-html="renderMarkdown(msg.content)"></div>
             </div>
           </div>
-
-          <!-- User Avatar removed -->
         </div>
 
         <div class="chat-msg-row assistant" v-if="isAiStreaming">
@@ -388,7 +411,6 @@
         </div>
       </div>
     </aside>
-
 
     <!-- AI Refine Loading -->
     <div v-if="isRefiningAi" class="refine-overlay">
@@ -468,7 +490,6 @@
           <button class="close-btn" @click="closeBlockDialog">✕</button>
         </div>
         <div class="modal-body" v-if="isEditMode" style="display:flex; flex-direction:column; gap:14px;">
-          <div class="form-group"><label>分类 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="editForm.subject" class="styled-input" /></div>
           <div class="form-group"><label>标题 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="editForm.title" class="styled-input" /></div>
           <div class="form-group"><label>色彩</label><div class="color-options"><span v-for="c in themeColors" :key="c.value" class="color-dot" :class="{ 'is-selected': editForm.color === c.value }" :style="{ background: c.value }" @click="editForm.color = c.value"></span></div></div>
           <div class="form-group"><label>内容 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><textarea v-model="editForm.preview" class="styled-textarea" rows="8" placeholder="支持 Markdown"></textarea></div>
@@ -514,6 +535,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElIcon, ElNotification, ElMessage } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
+import { Blocks, Plus, FileText } from 'lucide-vue-next'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-select.css'
@@ -835,7 +857,7 @@ const cancelEdit = () => { isCreateMode.value ? (blockDialogVisible.value = fals
 const closeBlockDialog = () => { blockDialogVisible.value = false; isEditMode.value = false; isCreateMode.value = false }
 
 const handleSaveBlock = async () => {
-  if (!editForm.value.subject.trim() || !editForm.value.title.trim() || !editForm.value.preview.trim()) { ElNotification({ title: '请填写必填项', type: 'warning', position: 'top-right' }); return }
+  if (!editForm.value.title.trim() || !editForm.value.preview.trim()) { ElNotification({ title: '请填写必填项', type: 'warning', position: 'top-right' }); return }
   if (isCreateMode.value) { await blockStore.addBlock({ subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, time: new Date().toLocaleString(), source: editForm.value.source, color: editForm.value.color, subjectId: subjectId.value, sourceFileId: selectedFileId.value || undefined }); ElNotification({ title: '已录入', type: 'success', position: 'top-right' }) }
   else { await blockStore.updateBlock({ ...selectedBlock.value, subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, color: editForm.value.color, time: new Date().toLocaleString() }); ElNotification({ title: '已更新', type: 'success', position: 'top-right' }) }
   closeBlockDialog()
@@ -1327,7 +1349,8 @@ html.dark .workspace-center {
 }
 
 .status-left, .status-right { display: flex; align-items: center; gap: 10px; }
-.status-file { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status-file { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.status-icon { color: var(--text-muted); opacity: 0.7; }
 .status-page { font-size: 12px; color: var(--text-muted); }
 .status-btn {
   background: none;
@@ -1502,14 +1525,10 @@ html.dark .workspace-center {
 }
 
 .onboarding-emoji {
-  font-size: 60px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   margin-bottom: 20px;
-  animation: bounce 2s infinite;
-}
-
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
 }
 
 .onboarding-title {
@@ -1918,8 +1937,9 @@ html.dark .ai-input-wrapper {
 .outline-composer-tip::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #7D9372; }
 .composer-chapter { margin-bottom: 12px; border: 1px solid transparent; border-radius: 12px; background: rgba(0,0,0,0.02); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .composer-chapter:hover { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
-.composer-row, .composer-section { display: flex; align-items: center; gap: 10px; padding: 10px 12px; font-size: 13px; transition: all 0.2s; }
+.composer-row, .composer-section { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; font-size: 13px; transition: all 0.2s; }
 .composer-row { border-bottom: 1px solid rgba(0,0,0,0.03); }
+.composer-row:hover .composer-link-btn { opacity: 1; }
 .composer-sections { padding: 6px 10px 10px 32px; display: flex; flex-direction: column; gap: 4px; }
 .composer-section { border-radius: 8px; color: var(--text-secondary); padding: 8px 12px; justify-content: space-between; align-items: flex-start; }
 .composer-section:hover { background: rgba(125,147,114,0.08); color: var(--text-primary); }
@@ -2019,8 +2039,8 @@ html.dark .summary-empty-icon-wrap { background: rgba(255,255,255,0.05); color: 
 .preset-section-title::before, .preset-section-title::after { content: ''; flex: 1; height: 1px; background: rgba(0,0,0,0.1); }
 .preset-section-title::before { margin-right: 12px; }
 .preset-section-title::after { margin-left: 12px; }
-.preset-questions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 12px; width: 100%; max-width: 340px; }
-.preset-btn { border-radius: 999px; padding: 10px 18px; background: rgba(255,255,255,0.8); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); text-align: center; font-size: 13px; color: var(--text-primary); font-weight: 500; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.02); cursor: pointer; }
+.preset-questions { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-top: 12px; width: 100%; max-width: 280px; }
+.preset-btn { width: 100%; border-radius: 999px; padding: 10px 18px; background: rgba(255,255,255,0.8); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); text-align: center; font-size: 13px; color: var(--text-primary); font-weight: 500; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.02); cursor: pointer; }
 .preset-btn:hover { border-color: #7D9372; background: rgba(125, 147, 114, 0.08); box-shadow: 0 4px 12px rgba(125, 147, 114, 0.15); color: #5C7051; transform: translateY(-1px); }
 
 .assistant-spark-avatar { width: 34px; height: 34px; border: 1px solid rgba(0,0,0,0.06); border-radius: 50%; display: grid; place-items: center; background: #ffffff; flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }

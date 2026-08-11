@@ -1276,9 +1276,9 @@ html.dark .row-subj-badge {
 }
 
 .row-preview {
-  font-size: 13.5px;
+  font-size: 12px;
   color: var(--text-secondary);
-  line-height: 1.78;
+  line-height: 1.6;
   margin: 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1289,13 +1289,17 @@ html.dark .row-subj-badge {
   opacity: 0.95;
 }
 
+.row-preview :deep(*) {
+  font-size: 12px !important;
+}
+
 .row-preview :deep(code) {
   background: transparent;
   color: #2D3E25;
   font-family: 'JetBrains Mono', Consolas, monospace;
   padding: 0;
   border: none;
-  font-size: 12.5px;
+  font-size: 12px !important;
   font-weight: 700;
 }
 

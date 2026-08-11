@@ -43,6 +43,12 @@ const router = createRouter({
       name: 'Profile',
       component: () => import('@/views/Profile/index.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/pomodoro',
+      name: 'Pomodoro',
+      component: () => import('@/views/Pomodoro/index.vue'),
+      meta: { requiresAuth: true }
     }
   ]
 })

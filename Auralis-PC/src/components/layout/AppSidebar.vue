@@ -54,6 +54,14 @@
         <el-icon class="nav-icon"><Database /></el-icon>
       </router-link>
 
+      <!-- Pomodoro -->
+      <router-link to="/pomodoro" class="nav-item" :class="{ 'is-active': route.path === '/pomodoro' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '专注时钟', desc: '番茄钟 · 沉浸学习' })"
+        @mouseleave="handleMouseLeave"
+      >
+        <el-icon class="nav-icon"><Timer /></el-icon>
+      </router-link>
+
       <!-- Divider -->
       <div class="sidebar-divider"></div>
 
@@ -121,7 +129,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LayoutDashboard, Compass, CalendarClock, Database } from 'lucide-vue-next'
+import { LayoutDashboard, Compass, CalendarClock, Database, Timer } from 'lucide-vue-next'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import {
@@ -372,16 +380,17 @@ onMounted(async () => {
 }
 
 .subject-icon-bg {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 31px;
+  height: 31px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 15px;
   flex-shrink: 0;
-  background: #7D9372;
+  background: var(--accent-gradient, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%));
   color: #fff;
+  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.25);
 }
 
 .subject-icon-glyph {

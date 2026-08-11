@@ -246,48 +246,44 @@
 
     <!-- Register File Modal -->
     <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-      <div class="modal-container register-modal" style="background: var(--color-bg-primary); padding: 24px; border-radius: 12px; width: 480px; box-shadow: 0 10px 40px rgba(0,0,0,0.1);">
-        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <h3 style="margin: 0; font-size: 18px; color: var(--text-primary);">登记本地参考文件</h3>
-          <button style="background: none; border: none; cursor: pointer; font-size: 16px; color: var(--text-secondary);" @click="showRegisterModal = false">✕</button>
+      <div class="modal-container register-modal">
+        <div class="modal-header">
+          <h3>登记本地参考文件</h3>
+          <button class="close-btn" @click="showRegisterModal = false">×</button>
         </div>
-        
         <div 
-          style="border: 2px dashed var(--border-default); border-radius: 8px; padding: 32px; text-align: center; cursor: pointer; margin-bottom: 20px; transition: all 0.2s;"
-          :style="isDragover ? 'border-color: var(--color-primary-accent); background: var(--color-primary-light);' : ''"
+          class="modal-body" 
           @dragover.prevent="isDragover = true"
           @dragleave.prevent="isDragover = false"
           @drop.prevent="handleDrop"
-          @click="triggerFileSelect"
         >
-          <UploadCloud :size="24" style="color: var(--text-muted); margin-bottom: 8px;" />
-          <div style="font-size: 13px; color: var(--text-secondary);">
-            <span v-if="!selectedFileToUpload">拖拽文件到此处，或点击选择</span>
-            <span v-else style="color: var(--color-primary-accent); font-weight: 600;">已选择: {{ selectedFileToUpload.name }}</span>
+          <div class="drag-drop-zone" :class="{ 'is-active': isDragover }" @click="triggerFileSelect">
+            <UploadCloud :size="24" style="margin-bottom: 8px; color: var(--text-muted);" />
+            <div class="drag-text">{{ selectedFileToUpload ? selectedFileToUpload.name : '拖拽文件或点击此处上传' }}</div>
           </div>
-        </div>
-        <input type="file" ref="dialogFileInput" style="display: none" accept=".pdf,.ppt,.pptx,.doc,.docx,.jpg,.png,.jpeg" @change="handleDialogFileChange" />
-        
-        <div style="margin-bottom: 16px;">
-          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary);">归档至 <span style="color: #ef4444;">*</span></label>
-          <div style="display: flex; flex-wrap: wrap; gap: 8px; max-height: 120px; overflow-y: auto;">
-            <div
-              v-for="subj in subjectStore.subjects"
-              :key="subj.id"
-              style="padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border-default); font-size: 12px; cursor: pointer; transition: all 0.2s;"
-              :style="selectedSubjectId === subj.id ? 'background: var(--color-primary-accent); color: white; border-color: var(--color-primary-accent);' : 'background: var(--color-bg-secondary); color: var(--text-primary);'"
-              @click="selectedSubjectId = subj.id"
-            >
-              {{ subj.name }}
+          <input type="file" ref="dialogFileInput" style="display: none" @change="handleDialogFileChange" />
+          
+          <div class="form-group" style="margin-top: 12px;">
+            <label>文件名称<span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
+            <input type="text" v-model="inputFileName" class="styled-input" placeholder="输入文件的显示名称" />
+          </div>
+          
+          <div class="form-group"><label>归档到<span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
+            <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
+              <div
+                v-for="subj in subjectStore.subjects"
+                :key="subj.id"
+                class="subject-capsule-item"
+                :class="{ 'is-active': selectedSubjectId === subj.id }"
+                @click="selectedSubjectId = subj.id"
+              >
+                <span class="subj-capsule-name">{{ subj.name }}</span>
+              </div>
             </div>
           </div>
         </div>
-
-        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px;">
-          <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
-          <button class="btn-primary" :disabled="!selectedSubjectId || !selectedFileToUpload" @click="confirmUpload">
-            确定登记
-          </button>
+        <div class="modal-footer" style="justify-content: flex-end">
+          <button class="btn-primary" :disabled="!selectedSubjectId || !selectedFileToUpload" @click="confirmUpload">确定登记</button>
         </div>
       </div>
     </div>
@@ -348,6 +344,7 @@ interface TreeNode {
 
 const selectedSubjectId = ref('')
 const selectedFileToUpload = ref<File | null>(null)
+const inputFileName = ref('')
 const dialogFileInput = ref<HTMLInputElement | null>(null)
 
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -381,7 +378,12 @@ const loadAssetsFromBackend = async () => {
     
     const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
     const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-    const allTasksFolder: TreeNode = { id: 'all-tasks', name: '全部任务', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+    const todayStr = new Date().toISOString().split('T')[0]
+    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+    const allTasksFolder: TreeNode = { id: 'all-tasks', name: '全部任务', type: 'folder', lucideIcon: Folder, open: true, children: [
+      { id: 't-1', type: 'task', groupId: 'all', name: '复习 Vue 响应式原理', lucideIcon: ListTodo, due: todayStr, load: '中', done: false },
+      { id: 't-2', type: 'task', groupId: 'all', name: '编写 Tauri IPC 示例', lucideIcon: ListTodo, due: tomorrowStr, load: '高', done: true }
+    ] }
 
     // Map all files
     allFilesRaw.forEach(file => {
@@ -522,18 +524,27 @@ const graphBlocks = computed(() => {
 const openUploadForGroup = (groupId: string) => {
   selectedSubjectId.value = groupId === 'all' ? (subjectStore.subjects[0]?.id || '') : groupId
   selectedFileToUpload.value = null
+  inputFileName.value = ''
   showRegisterModal.value = true
 }
 
-const triggerFileSelect = () => { dialogFileInput.value?.click() }
+const triggerFileSelect = () => {
+  dialogFileInput.value?.click()
+}
 const handleDialogFileChange = (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0]
-  if (file) selectedFileToUpload.value = file
+  if (file) {
+    selectedFileToUpload.value = file
+    inputFileName.value = file.name
+  }
 }
 const confirmUpload = () => {
   if (selectedFileToUpload.value && selectedSubjectId.value) {
-    handleFileUpload(selectedFileToUpload.value, selectedSubjectId.value)
+    const finalName = inputFileName.value.trim() || selectedFileToUpload.value.name
+    const finalFile = new window.File([selectedFileToUpload.value], finalName, { type: selectedFileToUpload.value.type })
+    handleFileUpload(finalFile, selectedSubjectId.value)
     showRegisterModal.value = false
+    inputFileName.value = ''
   }
 }
 const handleDrop = (e: DragEvent) => {
@@ -541,6 +552,7 @@ const handleDrop = (e: DragEvent) => {
   const f = e.dataTransfer?.files?.[0]
   if (f) {
     selectedFileToUpload.value = f
+    inputFileName.value = f.name
     if (!selectedSubjectId.value) {
       selectedSubjectId.value = subjectStore.subjects[0]?.id || ''
     }
@@ -979,6 +991,7 @@ html.dark .studio-middle {
 .editor-title-input {
   font-size: 28px; font-weight: 800; color: var(--text-primary);
   width: 100%; border: none; background: transparent; padding: 0; outline: none;
+  font-family: inherit;
 }
 .editor-title-input::placeholder { color: var(--text-muted); font-weight: 600; }
 
@@ -1151,7 +1164,7 @@ html.dark .studio-middle {
 .editor-textarea {
   width: 100%; height: 100%; min-height: 350px;
   border: none; background: transparent; padding: 0; outline: none;
-  resize: none; font-size: 14px;
+  resize: none; font-size: 14px; font-weight: 500; font-family: inherit;
   color: var(--text-primary); line-height: 1.8;
 }
 .editor-textarea::placeholder { color: var(--text-muted); }
@@ -1348,4 +1361,44 @@ html.dark .studio-right-context {
 }
 .tree-group-header:hover .header-action-btn { opacity: 1; }
 .header-action-btn:hover { background: var(--accent-gradient); color: white; border-color: transparent; }
+/* Drag and Drop Zone (Copied from SubjectWorkspace) */
+.drag-drop-zone { border: 2px dashed rgba(0,0,0,0.1); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255,255,255,0.4); margin-bottom: 8px; }
+.drag-drop-zone:hover { border-color: rgba(0,0,0,0.2); background: rgba(255,255,255,0.8); }
+.drag-drop-zone.is-active { border-color: #7D9372; background: rgba(125, 147, 114, 0.05); }
+.drag-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+html.dark .drag-drop-zone { border-color: rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
+html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); }
+html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }
+
+/* Home Modal Styles for Register Modal (Copied from SubjectWorkspace) */
+.modal-container { width: 90%; max-width: 520px; background: #FFFFFF; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+@keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
+.modal-container .modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
+.close-btn { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all var(--transition-fast); }
+.close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
+.modal-container .modal-body { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; max-height: 70vh; overflow-y: auto; }
+.form-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input:focus, .styled-textarea:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
+html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
+.styled-textarea { resize: vertical; line-height: 1.6; min-height: 100px; }
+.modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--border-subtle); background: transparent; }
+.btn-secondary { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-secondary:hover { background: var(--color-bg-secondary); color: var(--text-primary); }
+.btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3); }
+.btn-primary:hover:not(:disabled) { background: #6E8364; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+html.dark .btn-primary { background: #9AB08F; color: #1a1a1a; }
+html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(154, 176, 143, 0.2); }
+
+/* Subject Capsule Grid */
+.subject-capsule-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.subject-capsule-item { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-bg-secondary); border: 1.5px solid transparent; border-radius: 9999px; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.subject-capsule-item:hover { transform: translateY(-1px); background: var(--color-bg-tertiary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); border-color: rgba(125,147,114,0.3); color: #7D9372; }
+.subject-capsule-item.is-active { background: rgba(125, 147, 114, 0.1) !important; border-color: #7D9372 !important; color: #7D9372 !important; box-shadow: 0 2px 8px rgba(125, 147, 114, 0.15); }
+html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15) !important; border-color: #9AB08F !important; color: #9AB08F !important; }
+.subj-capsule-name { font-size: 13px; }
 </style>

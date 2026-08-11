@@ -39,6 +39,11 @@ export const useTaskStore = defineStore('task', () => {
   const isSyncing = ref(false)
   const selectedDay = ref(getTodayDayCode())
 
+  const todayPomodoros = ref(0)
+  const incrementPomodoro = () => {
+    todayPomodoros.value++
+  }
+
   const generateTimeSlots = (): TimeSlot[] => {
     const slots: TimeSlot[] = []
     for (let h = 8; h <= 22; h++) {
@@ -442,6 +447,8 @@ export const useTaskStore = defineStore('task', () => {
     hasOverload,
     analyzeSchedule,
     applyAutoDelay,
-    syncPendingChanges
+    syncPendingChanges,
+    todayPomodoros,
+    incrementPomodoro
   }
 })

@@ -19,14 +19,18 @@ declare module 'vue' {
     ElFormItem: typeof import('element-plus/es')['ElFormItem']
     ElIcon: typeof import('element-plus/es')['ElIcon']
     ElInput: typeof import('element-plus/es')['ElInput']
+    ElOption: typeof import('element-plus/es')['ElOption']
     ElPopover: typeof import('element-plus/es')['ElPopover']
+    ElSelect: typeof import('element-plus/es')['ElSelect']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     KnowledgeGraph: typeof import('./src/components/subject/KnowledgeGraph.vue')['default']
     PdfViewer: typeof import('./src/components/subject/PdfViewer.vue')['default']
+    PomodoroRing: typeof import('./src/components/pomodoro/PomodoroRing.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScheduleWeekView: typeof import('./src/components/schedule/ScheduleWeekView.vue')['default']
     SearchPalette: typeof import('./src/components/SearchPalette.vue')['default']
     SubjectCreateModal: typeof import('./src/components/subject/SubjectCreateModal.vue')['default']
+    TimerCore: typeof import('./src/components/pomodoro/TimerCore.vue')['default']
   }
 }

@@ -128,61 +128,126 @@ let height = 0
 // Viewport / Camera
 let transform = { x: 0, y: 0, k: 1 }
 
+// Animation state
+let hoveredNode: GraphNode | null = null
+let draggedNode: GraphNode | null = null
+
 // Force directed layout constants
 const REPULSION_STRENGTH = 2000
 const ATTRACTION_STRENGTH = 0.05
 const CENTER_GRAVITY = 0.01
-const DAMPING = 0.85
+const DAMPING = 0.90 // Reduced from 0.93 for softer, less wild dynamics
 
 const initGraph = () => {
   nodes = []
   links = []
 
-  // 1. Core node
-  const coreNode: GraphNode = {
-    id: 'core',
-    name: props.subjectName,
-    color: '#7D9372',
-    radius: 12,
-    x: 0, y: 0, vx: 0, vy: 0,
-    isCore: true,
-    isSource: false
-  }
-  nodes.push(coreNode)
-
   const blockList = props.blocks as any[]
-  const sourcesMap = new Map<string, { id: string, name: string }>()
-  
-  blockList.forEach(block => {
-    const sourceKey = block.sourceFileId || block.source || '未分类材料'
-    const sourceName = block.source || '未分类材料'
-    if (!sourcesMap.has(sourceKey)) {
-      sourcesMap.set(sourceKey, {
-        id: `source-${sourceKey}`,
-        name: sourceName
-      })
-    }
-  })
 
-  // 2. Source nodes
-  sourcesMap.forEach((source) => {
-    const angle = Math.random() * Math.PI * 2
-    const distance = 50 + Math.random() * 50
-    nodes.push({
-      id: source.id,
-      name: source.name,
-      color: '#9ca3af', // lighter grey for modern feel
-      radius: 8,
-      x: Math.cos(angle) * distance,
-      y: Math.sin(angle) * distance,
-      vx: 0, vy: 0,
-      isCore: false,
-      isSource: true
+  if (props.subjectId === 'all') {
+    // Global view: Parallel subjects
+    const subjectsMap = new Map<string, { id: string, name: string }>()
+    blockList.forEach(block => {
+      const sId = block.subjectId || 'unknown'
+      const sName = block.subject || '未分类'
+      if (!subjectsMap.has(sId)) {
+        subjectsMap.set(sId, { id: `subj-${sId}`, name: sName })
+      }
     })
-    links.push({ source: source.id, target: 'core', distance: 100 })
-  })
 
-  // 3. Block nodes
+    let idx = 0
+    const angleStep = (Math.PI * 2) / Math.max(1, subjectsMap.size)
+    subjectsMap.forEach((subj) => {
+      const distance = 100 + Math.random() * 50
+      const angle = idx * angleStep
+      nodes.push({
+        id: subj.id,
+        name: subj.name,
+        color: '#7D9372',
+        radius: 12,
+        x: Math.cos(angle) * distance,
+        y: Math.sin(angle) * distance,
+        vx: 0, vy: 0,
+        isCore: true,
+        isSource: false
+      })
+      idx++
+    })
+
+    const sourcesMap = new Map<string, { id: string, name: string, subjectNodeId: string }>()
+    blockList.forEach(block => {
+      const sourceKey = block.sourceFileId || block.source || '未分类材料'
+      const sourceName = block.source || '未分类材料'
+      const sId = block.subjectId || 'unknown'
+      if (!sourcesMap.has(sourceKey)) {
+        sourcesMap.set(sourceKey, {
+          id: `source-${sourceKey}`,
+          name: sourceName,
+          subjectNodeId: `subj-${sId}`
+        })
+      }
+    })
+
+    sourcesMap.forEach((source) => {
+      const parentNode = nodes.find(n => n.id === source.subjectNodeId)
+      const px = parentNode ? parentNode.x : 0
+      const py = parentNode ? parentNode.y : 0
+      const angle = Math.random() * Math.PI * 2
+      const distance = 50 + Math.random() * 50
+      nodes.push({
+        id: source.id,
+        name: source.name,
+        color: '#9ca3af',
+        radius: 8,
+        x: px + Math.cos(angle) * distance,
+        y: py + Math.sin(angle) * distance,
+        vx: 0, vy: 0,
+        isCore: false,
+        isSource: true
+      })
+      links.push({ source: source.id, target: source.subjectNodeId, distance: 100 })
+    })
+
+  } else {
+    // Single subject view: One core node
+    nodes.push({
+      id: 'core',
+      name: props.subjectName,
+      color: '#7D9372',
+      radius: 12,
+      x: 0, y: 0, vx: 0, vy: 0,
+      isCore: true,
+      isSource: false
+    })
+
+    const sourcesMap = new Map<string, { id: string, name: string }>()
+    blockList.forEach(block => {
+      const sourceKey = block.sourceFileId || block.source || '未分类材料'
+      const sourceName = block.source || '未分类材料'
+      if (!sourcesMap.has(sourceKey)) {
+        sourcesMap.set(sourceKey, { id: `source-${sourceKey}`, name: sourceName })
+      }
+    })
+
+    sourcesMap.forEach((source) => {
+      const angle = Math.random() * Math.PI * 2
+      const distance = 50 + Math.random() * 50
+      nodes.push({
+        id: source.id,
+        name: source.name,
+        color: '#9ca3af',
+        radius: 8,
+        x: Math.cos(angle) * distance,
+        y: Math.sin(angle) * distance,
+        vx: 0, vy: 0,
+        isCore: false,
+        isSource: true
+      })
+      links.push({ source: source.id, target: 'core', distance: 100 })
+    })
+  }
+
+  // 3. Block nodes (same for both modes)
   blockList.forEach(block => {
     const sourceKey = block.sourceFileId || block.source || '未分类材料'
     const parentId = `source-${sourceKey}`
@@ -193,7 +258,7 @@ const initGraph = () => {
     const angle = Math.random() * Math.PI * 2
     const distance = 20 + Math.random() * 20
     
-    let color = '#A3B19B' // default block color
+    let color = '#A3B19B'
     if (block.difficulty === 'easy') color = '#10b981'
     else if (block.difficulty === 'medium') color = '#f59e0b'
     else if (block.difficulty === 'hard') color = '#ef4444'
@@ -211,9 +276,8 @@ const initGraph = () => {
       block: block
     })
     
-    links.push({ source: block.id, target: parentNode ? parentId : 'core', distance: 40 })
+    links.push({ source: block.id, target: parentId, distance: 40 })
 
-    // related links
     if (block.relatedBlockIds && Array.isArray(block.relatedBlockIds)) {
       block.relatedBlockIds.forEach((relId: string) => {
         if (relId && relId.localeCompare(block.id) > 0) {
@@ -226,6 +290,8 @@ const initGraph = () => {
 
 const updatePhysics = () => {
   if (nodes.length <= 1) return
+
+  const isGlobalView = props.subjectId === 'all'
 
   // Repulsion
   for (let i = 0; i < nodes.length; i++) {
@@ -242,8 +308,11 @@ const updatePhysics = () => {
         const fx = (dx / dist) * force
         const fy = (dy / dist) * force
 
-        if (!nodeA.isCore) { nodeA.vx += fx; nodeA.vy += fy }
-        if (!nodeB.isCore) { nodeB.vx -= fx; nodeB.vy -= fy }
+        const isPinnedA = nodeA.isCore && !isGlobalView
+        const isPinnedB = nodeB.isCore && !isGlobalView
+
+        if (!isPinnedA) { nodeA.vx += fx; nodeA.vy += fy }
+        if (!isPinnedB) { nodeB.vx -= fx; nodeB.vy -= fy }
       }
     }
   }
@@ -262,20 +331,39 @@ const updatePhysics = () => {
     const fx = (dx / dist) * force
     const fy = (dy / dist) * force
 
-    if (!sourceNode.isCore) { sourceNode.vx -= fx; sourceNode.vy -= fy }
-    if (!targetNode.isCore) { targetNode.vx += fx; targetNode.vy += fy }
+    const isPinnedSource = sourceNode.isCore && !isGlobalView
+    const isPinnedTarget = targetNode.isCore && !isGlobalView
+
+    if (!isPinnedSource) { sourceNode.vx -= fx; sourceNode.vy -= fy }
+    if (!isPinnedTarget) { targetNode.vx += fx; targetNode.vy += fy }
   })
 
   // Center Gravity & Damping
   nodes.forEach(node => {
-    if (node.isCore) {
+    const isPinned = node.isCore && !isGlobalView
+    if (isPinned) {
       node.x = 0
       node.y = 0
       return
     }
 
-    node.vx -= node.x * CENTER_GRAVITY
-    node.vy -= node.y * CENTER_GRAVITY
+    if (draggedNode && node.id === draggedNode.id) {
+      // Don't apply forces to actively dragged node
+      return
+    }
+
+    if (node.isCore) {
+      node.vx -= node.x * CENTER_GRAVITY
+      node.vy -= node.y * CENTER_GRAVITY
+    }
+    
+    // Velocity cap for stability
+    const MAX_VELOCITY = 10;
+    const vMag = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
+    if (vMag > MAX_VELOCITY) {
+      node.vx = (node.vx / vMag) * MAX_VELOCITY;
+      node.vy = (node.vy / vMag) * MAX_VELOCITY;
+    }
 
     node.vx *= DAMPING
     node.vy *= DAMPING
@@ -296,33 +384,91 @@ const draw = () => {
 
   // Draw links
   ctx.lineWidth = 1
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.06)' // Very light grey for modern flat look
   ctx.beginPath()
   links.forEach(link => {
     const sourceNode = nodes.find(n => n.id === link.source)
     const targetNode = nodes.find(n => n.id === link.target)
     if (!sourceNode || !targetNode) return
-    ctx?.moveTo(sourceNode.x, sourceNode.y)
-    ctx?.lineTo(targetNode.x, targetNode.y)
+    
+    ctx!.strokeStyle = `rgba(163, 177, 155, 0.2)`
+    ctx!.moveTo(sourceNode.x, sourceNode.y)
+    ctx!.lineTo(targetNode.x, targetNode.y)
   })
   ctx.stroke()
 
   // Draw nodes
   nodes.forEach(node => {
+    const isHovered = hoveredNode && hoveredNode.id === node.id
+    const isSelected = selectedNode.value && selectedNode.value.id === node.id
+    
+    let currentRadius = node.radius
+    
+    if (isHovered) {
+      currentRadius += 2 // Enlarge on hover
+    }
+
     ctx!.beginPath()
-    ctx!.arc(node.x, node.y, node.radius, 0, Math.PI * 2)
+    ctx!.arc(node.x, node.y, currentRadius, 0, Math.PI * 2)
     ctx!.fillStyle = node.color
+    
+    // Add glow (simplified)
+    ctx!.shadowBlur = isHovered || isSelected ? 12 : 0
+    ctx!.shadowColor = isHovered || isSelected ? node.color : 'transparent'
+    
     ctx!.fill()
     
-    // Selection highlight
-    if (selectedNode.value && selectedNode.value.id === node.id) {
+    // Reset shadow for stroke
+    ctx!.shadowBlur = 0
+    
+    // Selection highlight or Hover
+    if (isSelected || isHovered) {
       ctx!.lineWidth = 2
-      ctx!.strokeStyle = 'rgba(0,0,0,0.3)'
+      ctx!.strokeStyle = node.color
+      ctx!.globalAlpha = 0.4
       ctx!.stroke()
+      ctx!.globalAlpha = 1.0
       ctx!.beginPath()
-      ctx!.arc(node.x, node.y, node.radius + 4, 0, Math.PI * 2)
-      ctx!.strokeStyle = 'rgba(0,0,0,0.1)'
+      ctx!.arc(node.x, node.y, currentRadius + 5, 0, Math.PI * 2)
+      ctx!.strokeStyle = node.color
+      ctx!.globalAlpha = 0.15
       ctx!.stroke()
+      ctx!.globalAlpha = 1.0
+    }
+    
+    // Central indicator for core node
+    if (node.isCore) {
+      ctx!.beginPath()
+      ctx!.arc(node.x, node.y, currentRadius * 0.5, 0, Math.PI * 2)
+      ctx!.fillStyle = 'rgba(255,255,255,0.4)'
+      ctx!.fill()
+    }
+  })
+
+  // Draw Labels for hover or selected
+  nodes.forEach(node => {
+    const isHovered = hoveredNode && hoveredNode.id === node.id
+    const isSelected = selectedNode.value && selectedNode.value.id === node.id
+    if (isHovered || isSelected || node.isCore) {
+      ctx!.font = (node.isCore ? 'bold 12px' : '500 11px') + ' Inter, sans-serif'
+      const textWidth = ctx!.measureText(node.name).width
+      const paddingX = 6
+      const paddingY = 4
+      const labelY = node.y + node.radius + 14
+      
+      // Background pill
+      ctx!.fillStyle = 'rgba(255, 255, 255, 0.85)'
+      ctx!.shadowBlur = 8
+      ctx!.shadowColor = 'rgba(0,0,0,0.1)'
+      ctx!.beginPath()
+      ctx!.roundRect(node.x - textWidth/2 - paddingX, labelY - 9 - paddingY, textWidth + paddingX*2, 11 + paddingY*2, 6)
+      ctx!.fill()
+      ctx!.shadowBlur = 0
+      
+      // Text
+      ctx!.fillStyle = '#1f2937'
+      ctx!.textAlign = 'center'
+      ctx!.textBaseline = 'middle'
+      ctx!.fillText(node.name, node.x, labelY)
     }
   })
 
@@ -340,19 +486,64 @@ let isDragging = false
 let dragStart = { x: 0, y: 0 }
 
 const handleMouseDown = (e: MouseEvent) => {
-  isDragging = true
-  dragStart = { x: e.clientX - transform.x, y: e.clientY - transform.y }
+  if (hoveredNode && !hoveredNode.isCore) {
+    draggedNode = hoveredNode
+    if (canvasEl.value) canvasEl.value.style.cursor = 'grabbing'
+  } else {
+    isDragging = true
+    dragStart = { x: e.clientX - transform.x, y: e.clientY - transform.y }
+    if (canvasEl.value) canvasEl.value.style.cursor = 'grabbing'
+  }
 }
 
 const handleMouseMove = (e: MouseEvent) => {
-  if (isDragging) {
+  if (!canvasEl.value) return
+  const rect = canvasEl.value.getBoundingClientRect()
+  const mx = (e.clientX - rect.left - transform.x - width / 2) / transform.k
+  const my = (e.clientY - rect.top - transform.y - height / 2) / transform.k
+
+  if (draggedNode) {
+    draggedNode.x = mx
+    draggedNode.y = my
+    draggedNode.vx = 0
+    draggedNode.vy = 0
+  } else if (isDragging) {
     transform.x = e.clientX - dragStart.x
     transform.y = e.clientY - dragStart.y
+  } else {
+    // Hover detection
+    let found: GraphNode | null = null
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const node = nodes[i]
+      const dx = node.x - mx
+      const dy = node.y - my
+      if (dx * dx + dy * dy <= (node.radius + 10) ** 2) {
+        found = node
+        break
+      }
+    }
+    hoveredNode = found
+    canvasEl.value.style.cursor = found ? (found.isCore ? 'default' : 'grab') : 'default'
   }
 }
 
 const handleMouseUp = () => {
+  if (draggedNode) {
+    links.forEach(link => {
+      if (link.source === draggedNode!.id || link.target === draggedNode!.id) {
+        const nA = nodes.find(n => n.id === link.source)
+        const nB = nodes.find(n => n.id === link.target)
+        if (nA && nB) {
+          const dx = nA.x - nB.x
+          const dy = nA.y - nB.y
+          link.distance = Math.max(30, Math.min(Math.sqrt(dx * dx + dy * dy), 350))
+        }
+      }
+    })
+  }
   isDragging = false
+  draggedNode = null
+  if (canvasEl.value) canvasEl.value.style.cursor = hoveredNode ? (hoveredNode.isCore ? 'default' : 'grab') : 'default'
 }
 
 const handleWheel = (e: WheelEvent) => {
