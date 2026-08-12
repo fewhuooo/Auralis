@@ -124,6 +124,7 @@
 - [后端绿地重写完整实施计划](plans/backend-greenfield-rewrite-plan.md)
 - [后端绿地重写阶段 0 实施计划](plans/backend-greenfield-phase-0-plan.md)
 - [后端阶段 1 身份实施计划](superpowers/plans/2026-08-12-backend-phase-1-identity.md)
+- [后端阶段 2A 核心领域实施计划](superpowers/plans/2026-08-12-backend-phase-2-core-domain.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
 - [变更记录](release/Changelog.md)
