@@ -1,18 +1,11 @@
-server:
-  port: 8080
-
 spring:
-  datasource:
-    url: jdbc:postgresql://${DB_HOST:127.0.0.1}:${DB_PORT:5432}/${DB_NAME:auralis}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:password}
-    driver-class-name: org.postgresql.Driver
-  ai:
-    openai:
-      base-url: http://127.0.0.1:3000/v1
-      api-key: ${AI_API_KEY:mock-key}
+  config:
+    activate:
+      on-profile: prod
 
-mybatis-plus:
-  mapper-locations: classpath*:/mapper/**/*.xml
-  configuration:
-    map-underscore-to-camel-case: true
+auralis:
+  environment: prod
+  api:
+    public-base-url: ${AURALIS_PUBLIC_BASE_URL}
+  upload:
+    max-file-size-bytes: ${AURALIS_UPLOAD_MAX_FILE_SIZE_BYTES}

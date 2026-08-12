@@ -1,33 +1,31 @@
 spring:
-  profiles:
-    active: dev
   application:
-    name: Auralis-server
-  threads:
-    virtual:
-      enabled: true
-  servlet:
-    multipart:
-      max-file-size: 50MB
-      max-request-size: 55MB
+    name: auralis-server
+  profiles:
+    default: local
 
-# Auralis custom configuration
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui/index.html
+
 auralis:
-  ingest:
-    max-file-size-mb: 50
-
-langchain4j:
-  open-ai:
-    chat-model:
-      base-url: https://api.openai.com/v1
-      api-key: ${AI_API_KEY:demo}
-      model-name: gpt-4o-mini
-    embedding-model:
-      base-url: https://api.siliconflow.cn/v1
-      api-key: ${AI_API_KEY:demo}
-      model-name: BAAI/bge-m3
-  milvus:
-    host: localhost
-    port: 19530
-    collection-name: auralis_blocks
-
+  environment: local
+  api:
+    public-base-url: http://localhost:8080
+  upload:
+    max-file-size-bytes: 52428800
