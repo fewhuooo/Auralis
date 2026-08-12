@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -120,6 +121,51 @@ public class IdentityService {
                 .ifPresent(session -> session.revoke(clock.instant()));
     }
 
+    @Transactional(readOnly = true)
+    public UserView currentUser(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(this::unauthenticated);
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw unauthenticated();
+        }
+        return toUserView(user);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SessionView> listSessions(UUID userId, UUID currentSessionId) {
+        return refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId).stream()
+                .map(session -> {
+                    DeviceEntity device = deviceRepository.findByIdAndUserId(session.getDeviceId(), userId)
+                            .orElseThrow(this::unauthenticated);
+                    return new SessionView(
+                            session.getId(),
+                            device.getId(),
+                            device.getName(),
+                            device.getPlatform(),
+                            session.getCreatedAt(),
+                            session.getLastUsedAt(),
+                            session.getExpiresAt(),
+                            session.getRevokedAt(),
+                            session.getId().equals(currentSessionId));
+                })
+                .toList();
+    }
+
+    @Transactional(noRollbackFor = IdentityException.class)
+    public void revokeSession(UUID userId, UUID sessionId) {
+        RefreshSessionEntity session = refreshSessionRepository.findByIdAndUserId(sessionId, userId)
+                .orElseThrow(this::resourceNotFound);
+        session.revoke(clock.instant());
+    }
+
+    @Transactional(noRollbackFor = IdentityException.class)
+    public void revokeOtherSessions(UUID userId, UUID currentSessionId) {
+        Instant now = clock.instant();
+        refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId).stream()
+                .filter(session -> !session.getId().equals(currentSessionId))
+                .forEach(session -> session.revoke(now));
+    }
+
     private AuthResult issueForUser(UserEntity user, DeviceCommand deviceCommand) {
         DeviceEntity device = deviceRepository.findByUserIdAndDeviceId(user.getId(), deviceCommand.deviceId())
                 .map(existing -> {
@@ -163,5 +209,13 @@ public class IdentityService {
 
     private IdentityException invalidCredentials() {
         return new IdentityException(INVALID_CREDENTIALS_CODE, INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    private IdentityException unauthenticated() {
+        return new IdentityException(INVALID_CREDENTIALS_CODE, INVALID_CREDENTIALS_MESSAGE);
+    }
+
+    private IdentityException resourceNotFound() {
+        return new IdentityException("RESOURCE_NOT_FOUND", "Session was not found");
     }
 }

@@ -10,5 +10,7 @@ public interface DeviceRepository extends JpaRepository<DeviceEntity, UUID> {
 
     Optional<DeviceEntity> findByUserIdAndDeviceId(UUID userId, String deviceId);
 
+    Optional<DeviceEntity> findByIdAndUserId(UUID id, UUID userId);
+
     List<DeviceEntity> findAllByUserIdOrderByLastActiveAtDesc(UUID userId);
 }
