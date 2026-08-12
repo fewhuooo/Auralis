@@ -23,7 +23,7 @@ public interface RefreshSessionRepository extends JpaRepository<RefreshSessionEn
 
     List<RefreshSessionEntity> findAllByUserIdOrderByLastUsedAtDesc(UUID userId);
 
-    @Modifying(clearAutomatically = true)
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
     @Query("update RefreshSessionEntity session set session.revokedAt = :revokedAt "
             + "where session.rotationFamilyId = :familyId and session.revokedAt is null")

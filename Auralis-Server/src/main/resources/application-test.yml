@@ -24,3 +24,7 @@ auralis:
     public-base-url: http://localhost
   upload:
     max-file-size-bytes: 52428800
+  identity:
+    jwt-secret: phase-one-test-secret-with-at-least-32-bytes
+    access-token-ttl-seconds: 900
+    refresh-session-ttl-seconds: 30

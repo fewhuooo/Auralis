@@ -11,11 +11,18 @@ import org.springframework.validation.annotation.Validated;
 public record AuralisProperties(
         @NotBlank String environment,
         @Valid Api api,
-        @Valid Upload upload
+        @Valid Upload upload,
+        @Valid Identity identity
 ) {
     public record Api(@NotBlank String publicBaseUrl) {
     }
 
     public record Upload(@Positive long maxFileSizeBytes) {
+    }
+
+    public record Identity(
+            String jwtSecret,
+            @Positive long accessTokenTtlSeconds,
+            @Positive long refreshSessionTtlSeconds) {
     }
 }
