@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：阶段 1 Auth 已实现并通过 H2 自动测试与 test profile HTTP smoke；其余业务接口仍为 planned
+文档状态：阶段 1 Auth 与阶段 2A Subject/KnowledgeBlock/Task 已实现并通过 H2 自动测试与 MockMvc；Source/Asset/Relation 及其余业务接口仍为 planned
 
 权威范围：新后端 REST、SSE、WebSocket 的目标路径、鉴权、请求/响应规则和阶段状态。
 
@@ -21,7 +21,7 @@
 | GET | /actuator/health/readiness | 阶段 0 就绪探针 |
 | GET | /v3/api-docs | OpenAPI 文档，骨架完成后可访问 |
 | GET | /swagger-ui/index.html | OpenAPI UI，骨架完成后可访问 |
-| POST | /api/auth/register | 注册用户、设备和 refresh session，HTTP 201，并返回 Location |
+| POST | /api/auth/register | 注册用户、设备、refresh session 和受保护的默认 Subject，HTTP 201，并返回 Location |
 | POST | /api/auth/login | 校验凭据并签发 token pair，HTTP 200 |
 | POST | /api/auth/refresh | rotation refresh session 并签发新 token pair，HTTP 200 |
 | POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
@@ -30,7 +30,7 @@
 | DELETE | /api/auth/sessions/{sessionId} | owner-scoped 撤销会话，HTTP 204 |
 | DELETE | /api/auth/sessions/others | 撤销当前会话以外的会话，HTTP 204 |
 
-除上述 Auth 路径外，阶段 1 不实现业务 Controller，不创建临时业务路径。
+阶段 2A 已开放 Subject、KnowledgeBlock、Task 的认证业务 Controller；Source、Asset、Relation 和其余业务路径仍不创建临时实现。
 
 阶段 0 HTTP 验证：`/actuator/health/liveness` 和 `/actuator/health/readiness` 真实启动返回 HTTP 200、`status=UP`；`/v3/api-docs` 返回 HTTP 200 且 `info.title=Auralis API`；`/swagger-ui/index.html` 返回 HTTP 200。MockMvc 同时验证未知路由的 `404`、`RESOURCE_NOT_FOUND`、`application/problem+json` 和 `X-Trace-Id` 回写。
 
@@ -72,11 +72,11 @@
 | 模块 | 目标路径 | 状态 |
 | --- | --- | --- |
 | Auth | /api/auth/register、/login、/refresh、/logout、/me、/sessions | implemented-phase-1 |
-| Subject | /api/subjects、/api/subjects/{id}、/api/subjects/{id}/restore | planned |
+| Subject | /api/subjects、/api/subjects/{id}、/api/subjects/{id}/restore | implemented-phase-2a |
 | Asset | /api/assets/upload-intents、/api/assets/{id}/complete、/api/assets/{id}/download-url | planned |
 | Source | /api/sources、/api/sources/{id}、/api/sources/{id}/restore、/api/sources/{id}/reingest | planned |
-| Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | planned |
-| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore | planned |
+| Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | implemented-phase-2a |
+| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore | implemented-phase-2a |
 | Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore | planned |
 | Review | /api/reviews/due、/api/reviews/events、/api/reviews/history | planned |
 | Stats | /api/stats/overview、/api/stats/weekly | planned |
@@ -104,6 +104,16 @@
 - 重复使用已轮换的 refresh token 会撤销整个 rotation family；跨用户撤销不存在的 owner-scoped session 返回 HTTP 404、`RESOURCE_NOT_FOUND`，不泄漏归属。
 - 参数校验返回 HTTP 400、`VALIDATION_FAILED` 和 `fieldErrors`；重复用户名返回 HTTP 409、`MUTATION_REJECTED`。安全过滤器错误也返回 `application/problem+json` 和 `X-Trace-Id`。
 
+## 阶段 2A Subject、KnowledgeBlock、Task 已实现契约
+
+- 三类资源均使用 `POST` 创建、`GET` 列表/详情、`PUT` 更新、`DELETE` 软删除和 `POST /{id}/restore` 恢复；创建返回 `201 + Location`，删除返回 `204`。
+- 创建请求必须携带 `baseVersion=0`；更新、删除和恢复请求携带精确的 `baseVersion`。成功更新、删除、恢复均使服务器 `version` 增加 1；默认 Subject 不允许删除。
+- `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，阶段 2A 尚未接入 cursor，因此 `nextCursor=null`、`hasMore=false`，默认过滤已删除记录。
+- Subject 请求字段为 `name`、`description`、`iconKey`、`color`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。
+- KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2A 尚未实现 Source，因此非空 `sourceId` 会返回 `MUTATION_REJECTED`。响应不序列化 Entity。
+- Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`cognitiveLoad`、`sortKey`、`colorOverride`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`，cognitiveLoad 仅接受 `LOW`、`MEDIUM`、`HIGH`。
+- 所有资源的用户归属均从 Bearer access token 推导；跨用户 ID 统一按未找到处理。版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`，删除后的普通详情/列表不返回墓碑。
+
 ## 目标认证规则
 
 除公开注册、登录和刷新路径外，业务请求使用 Authorization: Bearer access-token。
@@ -121,8 +131,8 @@
 
 这些旧路径、Result 包装、状态码、请求体、响应体和行为不被新后端承诺兼容。旧前端迁移必须等待新 OpenAPI 稳定后单独进行。
 
-## 阶段 0/1 契约边界
+## 阶段 0/1/2A 契约边界
 
-已完成：目标路由表、通用响应规则、Problem Details 字段、阶段 1 Auth 请求/响应与错误规则、分页/版本规则和旧契约不兼容结论。
+已完成：目标路由表、通用响应规则、Problem Details 字段、阶段 1 Auth 与阶段 2A 三类核心资源请求/响应、分页/版本规则和旧契约不兼容结论。
 
-未完成：Subject 及后续业务 Controller、固定 OpenAPI artifact/SDK 生成、PostgreSQL/容器集成、前后端联调和人工业务验收。
+未完成：Source/Asset/Relation 及后续业务 Controller、完整 cursor、固定 OpenAPI artifact/SDK 生成、PostgreSQL/容器集成、前后端联调和人工业务验收。

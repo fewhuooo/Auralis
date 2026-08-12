@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：旧 Server 代码已归档；绿地重写阶段 1 Identity 已构建待验收
+文档状态：旧 Server 代码已归档；绿地重写阶段 2A 核心领域已构建待验收
 
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
@@ -21,10 +21,10 @@
 | 模块 | 责任 | 阶段状态 |
 | --- | --- | --- |
 | identity | User、Password、JWT、RefreshSession、Device、Auth HTTP | 阶段 1 已实现，待 PostgreSQL/人工验收 |
-| subject | Subject 和默认未分类学科 | 仅边界 |
+| subject | Subject 和默认未分类学科 | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
 | source | Source、Asset、MinIO、解析任务 | 仅边界 |
-| knowledge | KnowledgeBlock | 仅边界 |
-| task | Task | 仅边界 |
+| knowledge | KnowledgeBlock | 阶段 2A 已实现，Source 关联待阶段 2B |
+| task | Task | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
 | relation | 通用跨对象关系 | 仅边界 |
 | review | ReviewState、ReviewEvent、FSRS | 仅边界 |
 | sync | Device、mutation、change log、snapshot、墓碑 | 仅边界 |
@@ -33,7 +33,7 @@
 | realtime | WebSocket ticket 和用户级事件 | 仅边界 |
 | shared | 错误模型、时钟、ID、分页、最小公共设施 | 配置/错误/OpenAPI 基础 |
 
-阶段 1 延续 Spring Modulith 模块边界：identity 的 Entity、Repository 和 security 实现放在 internal 包，公开 DTO、Service 和 Controller 位于模块根包；shared 的 config、error、web 通过 named interface 暴露。业务模块只能通过模块根公开 API、显式 DTO 或领域事件协作。
+阶段 2A 延续 Spring Modulith 模块边界：identity 的 Entity、Repository 和 security 实现放在 internal 包，认证主体放在 `shared.security` named interface，公开 DTO、Service 和 Controller 位于各业务模块根包；业务模块只能通过模块根公开 API、显式 DTO 或领域事件协作。identity 通过公开 SubjectService 在注册事务中初始化默认 Subject，subject 不反向依赖 identity。
 
 ## 阶段 1 实际 HTTP 表面
 
@@ -53,9 +53,19 @@
 - DELETE /api/auth/sessions/{sessionId}
 - DELETE /api/auth/sessions/others
 
-除 Auth 外的业务目标路由仍未实现。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
+除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task 的业务路由；Source、Asset、Relation 和其余业务目标路由仍未实现。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
 
-阶段 1 验证证据：`Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，执行 19 个真实测试；包含 V1 schema、Repository owner isolation、refresh rotation/replay、JWT、Auth MockMvc、Problem Details 和 Modulith 边界。使用 H2 test scope 的 test profile HTTP smoke 中，health/OpenAPI 返回 200，register 返回 201、login 返回 200，token pair 存在。上述证据不包含 PostgreSQL、Docker、MinIO 或三端联调。
+## 阶段 2A 实际 HTTP 表面
+
+阶段 2A 新增：
+
+- Subject：`POST/GET /api/subjects`、`GET/PUT/DELETE /api/subjects/{id}`、`POST /api/subjects/{id}/restore`。
+- KnowledgeBlock：`POST/GET /api/knowledge-blocks`、`GET/PUT/DELETE /api/knowledge-blocks/{id}`、`POST /api/knowledge-blocks/{id}/restore`。
+- Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`。
+
+创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；列表暂返回 `nextCursor=null`、`hasMore=false`。KnowledgeBlock 的 `sourceId` 在 Source 模块完成前保持可空且拒绝非空写入。
+
+阶段 2A 验证证据：`Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，执行 31 个真实测试；包含 V1/V2 schema、三类 Repository owner isolation、默认 Subject、版本/软删除/恢复、Subject/KnowledgeBlock/Task MockMvc、Auth 回归、Problem Details 和 Modulith 边界。使用 H2 test scope 的 test profile HTTP smoke 中，health/OpenAPI 返回 200，register 返回 201、login 返回 200，token pair 存在。上述证据不包含 PostgreSQL、Docker、MinIO、真实对象验证或三端联调。
 
 ## 目标技术基线
 
@@ -77,7 +87,7 @@
 
 ## 验证边界
 
-阶段 1 已有：
+阶段 2A 已有：
 
 - Maven Wrapper 完整构建和真实测试。
 - Spring context test。
@@ -85,12 +95,13 @@
 - Problem Details 和 traceId MockMvc 测试。
 - 健康检查和 OpenAPI smoke test。
 - Flyway V1、JPA entity/repository、密码/JWT/refresh rotation、Auth Controller 和用户隔离测试。
+- Flyway V2、Subject/KnowledgeBlock/Task Entity/Repository/Service/Controller、版本/墓碑/恢复和跨用户 Subject 引用测试。
 - 旧包、旧依赖和生成目录静态检查。
 
-阶段 1 不证明：
+阶段 2A 不证明：
 
 - PostgreSQL/pgvector/MinIO 容器联调。
-- Subject、核心对象、Sync、Review、Stats、AI/RAG 或 WebSocket 业务可用。
+- Source、Asset、Relation、Sync、Review、Stats、AI/RAG 或 WebSocket 业务可用。
 - PC、Mobile、Tablet 与新契约联调。
 - GUI、真机、外部服务或产品验收。
 

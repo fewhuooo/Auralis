@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
+import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
+import com.auralis.app.subject.internal.persistence.SubjectRepository;
+import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,8 +47,20 @@ class AuthControllerTests {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private KnowledgeBlockRepository knowledgeBlockRepository;
+
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private SubjectRepository subjectRepository;
+
     @BeforeEach
     void cleanIdentityData() {
+        knowledgeBlockRepository.deleteAll();
+        taskRepository.deleteAll();
+        subjectRepository.deleteAll();
         refreshSessionRepository.deleteAll();
         deviceRepository.deleteAll();
         userRepository.deleteAll();

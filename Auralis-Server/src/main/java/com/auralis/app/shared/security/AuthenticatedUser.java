@@ -1,4 +1,4 @@
-package com.auralis.app.identity;
+package com.auralis.app.shared.security;
 
 import java.util.UUID;
 

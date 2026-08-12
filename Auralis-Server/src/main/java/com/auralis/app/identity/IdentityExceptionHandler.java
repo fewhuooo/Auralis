@@ -34,7 +34,8 @@ public class IdentityExceptionHandler {
                 request.getRequestURI(),
                 code.name(),
                 traceId == null ? "missing-trace-id" : traceId,
-                List.of());
+                List.of(),
+                null);
         return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(body);

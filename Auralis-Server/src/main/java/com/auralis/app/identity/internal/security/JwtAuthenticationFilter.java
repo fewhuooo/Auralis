@@ -1,6 +1,6 @@
 package com.auralis.app.identity.internal.security;
 
-import com.auralis.app.identity.AuthenticatedUser;
+import com.auralis.app.shared.security.AuthenticatedUser;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.BadCredentialsException;

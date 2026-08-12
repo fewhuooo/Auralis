@@ -9,6 +9,9 @@ import com.auralis.app.identity.TokenPair;
 import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
+import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
+import com.auralis.app.subject.internal.persistence.SubjectRepository;
+import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +54,15 @@ class IdentityServiceTests {
     private DeviceRepository deviceRepository;
 
     @Autowired
+    private KnowledgeBlockRepository knowledgeBlockRepository;
+
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private SubjectRepository subjectRepository;
+
+    @Autowired
     private JwtDecoder jwtDecoder;
 
     @Autowired
@@ -58,6 +70,9 @@ class IdentityServiceTests {
 
     @BeforeEach
     void cleanIdentityData() {
+        knowledgeBlockRepository.deleteAll();
+        taskRepository.deleteAll();
+        subjectRepository.deleteAll();
         refreshSessionRepository.deleteAll();
         deviceRepository.deleteAll();
         userRepository.deleteAll();

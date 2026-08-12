@@ -22,7 +22,7 @@
 | P1-Backend-Contract-Cutover | 新后端保留 `/api` 前缀但不兼容旧 DTO、状态码和行为，三端仍依赖旧契约 | `docs/contracts/API.md`、`docs/contracts/ObjectModelMatrix.md`；阶段 1 仅实现 Auth，核心业务仍未迁移 | 新后端启动后，旧前端不能直接完成登录、同步、资产、AI 等主流程 | 先稳定业务 OpenAPI 和对象矩阵，再独立生成 SDK、迁移本地模型并逐端联调 | PC、Mobile、Tablet 目标流程全部使用新生成契约且联调证据齐全 | Frontend/Backend |
 | P1-Backend-Docker-Gate | 阶段 1 仍未执行 Docker、PostgreSQL/pgvector、MinIO 和 Testcontainers 验收 | 阶段 1 `clean test` 和 H2 HTTP smoke 通过；计划明确 H2 不替代 PostgreSQL/容器证据 | JVM/H2 测试和启动 smoke 不能证明真实迁移、对象存储、向量检索和 Compose 可用 | 完成业务代码阶段后启动 Docker Desktop，运行 Testcontainers 与最小 Compose 验证 | PostgreSQL/pgvector、MinIO、Server 的集成与健康检查均有退出码 0 证据 | Backend/Infra |
 | P1-Auth-Guard | PC 登录守卫临时直接 `next()` | `Auralis-PC/src/router/index.ts` | 未登录可打开受保护页面 | 恢复 `useAuthStore` 守卫并测试所有跳转 | 未登录、登录、刷新、退出自动测试/人工证据齐全 | PC/Auth |
-| P1-Test-Coverage | 新后端已覆盖 Identity/Auth，但同步、删除、资产和后续领域仍无业务回归保护 | 2026-08-12 `Auralis-Server/src/test` 的 8 个测试类执行 19 个真实测试；尚无 Sync、Asset 或核心领域 Controller | 后续业务实现若缺少隔离、冲突、上传和同步测试，仍可能回归 | 阶段 2 起建立 Subject、核心对象、Sync、Asset、WS 和领域服务测试 | CI 或本地测试执行到真实业务断言并保留报告 | Backend |
+| P1-Test-Coverage | 新后端已覆盖 Identity/Auth 和阶段2A核心领域，但同步、资产、关系和后续领域仍无业务回归保护 | 2026-08-12 `Auralis-Server/src/test` 的 12 个测试类执行 31 个真实测试；尚无 Sync、Asset、Relation 或 Source 业务测试 | 后续业务实现若缺少隔离、冲突、上传和同步测试，仍可能回归 | 阶段 2B 起建立 Source、Asset、Relation、Sync、WS 和领域服务测试 | CI 或本地测试执行到全部目标业务断言并保留报告 | Backend |
 | P1-Delete-Semantics | 目标 DELETE 与 mutation 软删除尚未实现和验证 | `docs/contracts/Database.md` 同步不变量；阶段 0 无业务写入路径 | 已删除数据可能在冷启动/多端重现 | 按墓碑、change_log、inbound mutation 设计实现删除状态机 | CRUD、push/pull、冷启动、多端 delete 一致 | Sync/Data |
 | P1-Asset-Verification | 目标 Asset 上传完成和对象实体验证尚未实现 | `docs/contracts/API.md`、`docs/contracts/Database.md`；阶段 0 无 MinIO 接入 | 后续实现若只信任客户端元数据，可绑定不存在或伪造对象 | 服务端 HEAD/stat 并校验对象归属、大小和 MIME | 跨用户、伪造 object、大小/MIME 测试通过 | Asset |
 
@@ -30,7 +30,7 @@
 
 | ID | 问题 | 证据 | 影响 | 处理动作 | 关闭条件 | 领域 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P2-Task-Model-Cutover | Task 的 status、sortKey、durationMinutes 和时间字段尚未从端侧模型落地到新实体 | `docs/contracts/ObjectModelMatrix.md`、`docs/contracts/Database.md` | 排序、排期和同步字段可能在迁移时漂移 | 阶段 1 固化 Entity、DTO、API 和端侧映射 | 字段往返、排序和同步测试通过 | Data/Sync |
+| P2-Source-Linking-Phase2A | KnowledgeBlock 已保留可空 sourceId，但 Source 表、Source 归属外键和非空关联尚未进入阶段2A | `V2__core_domain_schema.sql`、KnowledgeBlockService；阶段2A 对非空 sourceId 返回 MUTATION_REJECTED | Source 接入前无法创建带来源的知识块，跨表归属约束暂未由数据库表达 | 阶段2B 一并创建 Source/Asset 表、外键、关联校验和迁移测试 | Source/Asset/KnowledgeBlock 关联、跨用户和删除恢复测试通过 | Data/Backend |
 | P2-Relation-Isolation | Relation 的端点类型、同用户校验和端点删除语义尚未实现 | `docs/contracts/Database.md` Relation 与同步不变量 | 关系可能跨用户或在端点删除后残留 | 在领域命令与 Repository 层同时校验 userId 和墓碑 | 跨用户关系访问被拒绝，删除/恢复行为符合契约 | Backend/Data |
 | P2-Mobile-BaseUrl | Mobile Auth/WS 使用 localhost/127.0.0.1 | Mobile Store/API | 真机无法访问开发服务 | 使用平台环境配置 | 模拟器、真机、生产地址均验证 | Mobile |
 | P2-Mobile-Contract | Mobile 多数页面依赖端侧数据，未接完整 Server API | 页面 API 映射 | 多端功能完成度易被误判 | 标注 local-only，逐步定义契约 | 主流程页面来源与同步一致 | Mobile |
@@ -47,6 +47,7 @@
 
 - 2026-08-12：后端阶段 0 已完成仓库外备份、精确路径替换、Boot 4.1 / Modulith 骨架、12 个模块边界、Problem Details、健康检查、OpenAPI 和基础测试。
 - 2026-08-12：后端阶段 1 Identity 已实现 Flyway V1、User/Device/RefreshSession、密码/JWT、refresh rotation/replay 撤销、Auth 路由和 owner-scoped session 操作；19 个自动测试和 H2 test profile HTTP smoke 通过。PostgreSQL、Docker 和人工业务验收仍开放为风险。
+- 2026-08-12：后端阶段 2A 已实现 Flyway V2、Subject/KnowledgeBlock/Task、默认 Subject、版本/软删除/恢复、核心 MockMvc 和 31 个全量自动测试；Source/Asset/Relation、PostgreSQL、Docker 和人工业务验收仍开放为风险。
 - 新后端继续使用 `/api` 只代表保留总前缀，不代表旧客户端兼容。OpenAPI 和对象差异矩阵完成前，禁止声明前后端已可直接联调。
 - 旧 Server 的 AuthInterceptor、WebSocket 握手/心跳审计、资产用户前缀校验只属于替换前盘点，已移至仓库外备份；新实现不得将其视为已迁移能力。
 - PC、Mobile/Tablet 近期视觉与布局改动属于用户工作树成果，文档已在归档快照保留；最终构建结果须与当前代码一起记录。
@@ -60,7 +61,7 @@
 ## 推荐关闭顺序
 
 1. 完成阶段 1 的 PostgreSQL/Testcontainers/Docker 门禁，并保留 Identity/Auth 人工验收缺口。
-2. 创建核心领域对象，实现新 OpenAPI 业务路由。
+2. 完成阶段 2B 的 Source、Asset、Relation，并实现新 OpenAPI 业务路由。
 3. 完成删除、冲突、墓碑和同步回归。
 4. 完成资产对象实体验证及 pgvector/AI 安全测试。
 5. 生成客户端后再进行 WebSocket 与多端联调。

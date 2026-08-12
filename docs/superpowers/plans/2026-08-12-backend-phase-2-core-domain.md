@@ -1,8 +1,10 @@
 # Auralis 后端阶段 2A：核心领域实施计划
 
-> 状态：执行中
+> 状态：阶段 2A 已完成；阶段 2B（Source、Asset、Relation）待执行
 >
 > 范围：在阶段 1 身份与数据隔离基线上，先完成 Subject、KnowledgeBlock、Task 三个核心领域对象的后端闭环；Source、Asset、Relation 作为阶段 2B 继续实施。
+
+> 实际证据：2026-08-12 `Auralis-Server\\mvnw.cmd -B -ntp clean test` 通过，31 个测试全部通过；证据范围为 H2/JPA/MockMvc/Modulith，PostgreSQL、Docker、Source/Asset/Relation 和人工验收未包含在内。
 
 ## 背景与目标
 
@@ -103,4 +105,3 @@ V2 计划包含：
 - 若环境具备 PostgreSQL/Docker，再执行真实数据库迁移与启动验证；否则明确标记为未验证。
 
 完成定义：任务 1-5 的代码、测试、契约和状态记录均已落地；阶段 2A 的测试证据完整，Source/Asset/Relation 仍在阶段 2B，不将其写成已完成。
-

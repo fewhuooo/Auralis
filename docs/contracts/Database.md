@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：阶段 1 Identity V1 已实现并通过 H2 clean-schema 验证；PostgreSQL/容器集成仍未验证
+文档状态：阶段 1 Identity V1 与阶段 2A Subject/KnowledgeBlock/Task V2 已实现并通过 H2 clean-schema/JPA validate 验证；PostgreSQL/容器集成仍未验证
 
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
 
@@ -40,7 +40,7 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | users | 用户账号 | normalized_username 唯一，status 索引 |
 | refresh_sessions | refresh token rotation 链和设备会话 | token_hash 唯一；user、expiry、revoked 索引 |
 | devices | 离线设备和同步状态 | user_id + device_id 唯一 |
-| subjects | 用户学科和默认未分类学科 | 活跃记录按用户名称唯一；默认学科受保护 |
+| subjects | 用户学科和默认未分类学科 | 活跃记录按用户名称唯一（服务校验）；默认学科受保护 |
 | assets | MinIO 物理对象元数据 | user_id + object_key 唯一；status 索引 |
 | sources | 用户可见逻辑来源 | user、subject、status、updated 索引 |
 | knowledge_blocks | 知识正文 | user、subject、source、updated 索引 |
@@ -69,6 +69,15 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 | `refresh_sessions` | `id UUID` 主键、`user_id`/`device_id` 外键、`rotation_family_id`、唯一 `token_hash`、`created_at`、`expires_at`、`last_used_at`、`rotated_at`、`revoked_at`、自引用 `replaced_by_session_id` |
 
 三张表均使用 `ON DELETE RESTRICT` 的归属外键；V1 为 owner、expiry、revocation、rotation family 和 token hash 建立查询索引。JPA Entity 使用 `Instant`、UUID、字符串枚举和 `@Version` 映射，Repository 查询包含当前 `userId` 的方法不省略归属条件。
+
+## 阶段 2A 核心领域 V2 已实现 schema
+
+Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。
+
+- `subjects` 保存 `name`、`description`、`icon_key`、`color`、`sort_key`、`is_default`；注册事务内创建受保护的“未分类”默认 Subject。名称唯一、默认 Subject 保护和恢复占用冲突由 SubjectService 校验。
+- `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2A 尚未创建 `sources` 表，因此 `source_id` 暂只作为可空预留字段，非空写入由服务拒绝；阶段 2B 接入 Source 时补齐归属外键和校验。
+- `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`cognitive_load`、`sort_key`、`color_override`；数据库 CHECK 与服务同时约束状态、认知负荷、非负时长和排期顺序。
+- KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
 
 ## 核心模型字段决策
 
@@ -123,6 +132,6 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 ## 迁移状态
 
-阶段 1 已创建 `V1__identity_schema.sql`，并在 H2 PostgreSQL mode 的空库中验证 Flyway version `1`、三张身份表、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
+阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`；两者均在 H2 PostgreSQL mode 的空库中验证 Flyway version `1→2`、表结构、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
 
-阶段 1 验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 19 个自动测试，包含 schema、Repository owner isolation、refresh rotation/replay、JWT、MockMvc Auth 和架构测试；test profile HTTP smoke 以 H2 启动并验证 health、OpenAPI、register、login。PostgreSQL 17/pgvector、Testcontainers、Docker、MinIO 和生产迁移演练仍未声称通过。
+阶段 2A 验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 31 个自动测试，包含 V1/V2 schema、三类 Repository owner isolation、默认 Subject、版本/软删除/恢复、Subject/KnowledgeBlock/Task MockMvc、Auth 回归和架构测试；PostgreSQL 17/pgvector、Testcontainers、Docker、MinIO 和生产迁移演练仍未声称通过。

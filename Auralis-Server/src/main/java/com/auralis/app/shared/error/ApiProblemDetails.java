@@ -11,8 +11,21 @@ public record ApiProblemDetails(
         String instance,
         String code,
         String traceId,
-        List<FieldError> fieldErrors
+        List<FieldError> fieldErrors,
+        Object current
 ) {
+    public ApiProblemDetails(
+            URI type,
+            String title,
+            int status,
+            String detail,
+            String instance,
+            String code,
+            String traceId,
+            List<FieldError> fieldErrors) {
+        this(type, title, status, detail, instance, code, traceId, fieldErrors, null);
+    }
+
     public ApiProblemDetails {
         fieldErrors = fieldErrors == null ? List.of() : List.copyOf(fieldErrors);
     }

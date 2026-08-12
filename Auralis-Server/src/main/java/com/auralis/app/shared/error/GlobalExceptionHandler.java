@@ -15,6 +15,26 @@ import java.util.List;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(DomainException.class)
+    ResponseEntity<ApiProblemDetails> handleDomain(
+            DomainException exception,
+            HttpServletRequest request
+    ) {
+        ApiErrorCode code;
+        try {
+            code = ApiErrorCode.valueOf(exception.code());
+        } catch (IllegalArgumentException ignored) {
+            code = ApiErrorCode.INTERNAL_ERROR;
+        }
+        HttpStatus status = switch (code) {
+            case RESOURCE_NOT_FOUND, RESOURCE_DELETED -> HttpStatus.NOT_FOUND;
+            case RESOURCE_VERSION_CONFLICT, MUTATION_REJECTED -> HttpStatus.CONFLICT;
+            case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+        return response(status, code, exception.getMessage(), List.of(), exception.current(), request);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiProblemDetails> handleValidation(
             MethodArgumentNotValidException exception,
@@ -31,6 +51,7 @@ public class GlobalExceptionHandler {
                 ApiErrorCode.VALIDATION_FAILED,
                 "Request validation failed",
                 fieldErrors,
+                null,
                 request
         );
     }
@@ -45,6 +66,7 @@ public class GlobalExceptionHandler {
                 ApiErrorCode.RESOURCE_NOT_FOUND,
                 "Resource was not found",
                 List.of(),
+                null,
                 request
         );
     }
@@ -59,6 +81,7 @@ public class GlobalExceptionHandler {
                 ApiErrorCode.INTERNAL_ERROR,
                 "An unexpected error occurred",
                 List.of(),
+                null,
                 request
         );
     }
@@ -68,6 +91,7 @@ public class GlobalExceptionHandler {
             ApiErrorCode code,
             String detail,
             List<ApiProblemDetails.FieldError> fieldErrors,
+            Object current,
             HttpServletRequest request
     ) {
         String traceId = (String) request.getAttribute(TraceIdFilter.ATTRIBUTE);
@@ -80,7 +104,8 @@ public class GlobalExceptionHandler {
                 instance,
                 code.name(),
                 traceId == null ? "missing-trace-id" : traceId,
-                fieldErrors
+                fieldErrors,
+                current
         );
 
         return ResponseEntity.status(status)
