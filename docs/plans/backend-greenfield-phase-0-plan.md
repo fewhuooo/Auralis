@@ -95,11 +95,11 @@ if (-not (Test-Path (Join-Path $verifyRoot 'Auralis-Server\\pom.xml') -PathType 
 }
 ```
 
-预期：补丁非空、文件清单非空、ZIP 可展开且包含旧 Server 的 `pom.xml`、源码、资源和已有构建产物。备份目录不在待替换目录中。
+预期：文件清单非空、ZIP 可展开且包含旧 Server 的 `pom.xml`、源码、资源和已有构建产物。若 `git status --short -- Auralis-Server` 有修改，补丁必须非空；若 Server 工作树干净，零字节补丁是有效的干净基线证据。备份目录不在待替换目录中。
 
 - [ ] **Step 3: 记录安全门**
 
-记录实际 `backupRoot`、归档 SHA-256、归档文件数、补丁大小、未跟踪文件数和路径审计结果。此任务不提交旧 Server 内容。未通过安全门不得移动或删除 Server 目录。
+记录实际 `backupRoot`、归档 SHA-256、归档文件数、补丁大小、Server 状态行数、未跟踪文件数和路径审计结果。此任务不提交旧 Server 内容。未通过安全门不得移动或删除 Server 目录。
 
 ---
 
