@@ -1,238 +1,98 @@
 # Auralis API 契约
 
-更新时间：2026-07-10
+更新时间：2026-08-12
 
-文档状态：现行，代码确认，待自动化与联调验收
+文档状态：阶段 0 已固化新目标契约；业务接口尚未在新 Server 实现
 
-权威范围：Server REST/WebSocket 路径、鉴权、请求、响应、调用现状与已知契约风险
+权威范围：新后端 REST、SSE、WebSocket 的目标路径、鉴权、请求/响应规则和阶段状态。
 
-事实来源：`Auralis-Server/.../controller`、`common/Result.java`、WebSocket 代码与客户端 API 调用
+事实来源：docs/plans/backend-greenfield-rewrite-plan.md、阶段 0 对象差异矩阵、替换前旧 Server 代码盘点。
 
-## 基础地址
+## 契约状态说明
 
-本地开发：
+本文件同时保留替换前旧 Server 的代码事实，和绿地重写后的目标契约。旧代码事实不代表新 Server 兼容旧请求；目标契约的 planned-after-phase-0 路由必须在对应阶段实现并测试后，才能升级为可用。
 
-```text
-http://localhost:8080
-```
+阶段 0 可访问的实际路径只有：
 
-PC Web 可通过 Vite 代理使用相对 `/api`。Mobile Auth Store 当前硬编码 `http://127.0.0.1:8080/api`；真机上的 `127.0.0.1` 指向设备自身，联调时必须改为可访问地址或采用环境配置。
-
-## 鉴权
-
-除 `/api/auth/**` 外，`/api/**` 请求必须携带：
-
-```http
-Authorization: Bearer <access-token>
-```
-
-- refresh token 只允许用于 `POST /api/auth/refresh`。
-- `AuthInterceptor` 拒绝把 refresh token 当作普通 API token。
-- WebSocket 使用 `?token=<access-token>` 握手，后续 PING 可携带更新 token。
-- 客户端传入的 userId 不构成授权依据。
-
-## 统一响应
-
-普通 REST 使用 `Result<T>`：
-
-```json
-{
-  "code": 200,
-  "message": "Success",
-  "data": {}
-}
-```
-
-`Result.error(code, message)` 支持业务错误，但当前仓库没有完整稳定的全局错误码契约。调用方不得只依赖 HTTP status，也不得假设所有异常都有固定 code。
-
-## Auth
-
-| Method | Path | 请求 | `data` | 鉴权 | 代码来源 |
-| --- | --- | --- | --- | --- | --- |
-| POST | `/api/auth/login` | `{username,password}` | `{accessToken,refreshToken}` | 公开 | `AuthController.login` |
-| POST | `/api/auth/register` | `{username,password}` | `Boolean` | 公开 | `AuthController.register` |
-| POST | `/api/auth/refresh` | `{refreshToken}` | `{accessToken,refreshToken}` | refresh body | `AuthController.refresh` |
-
-行为：登录校验 BCrypt；旧明文密码可在成功登录后迁移。刷新端点验证有效期和 token 类型。
-
-待测：重复用户名、空字段、错误密码、过期 token、access token 误传刷新端点、refresh token 误传普通端点。
-
-## KnowledgeBlock
-
-基础路径：`/api/blocks`
-
-| Method | Path | 参数 | 响应 | 说明 |
-| --- | --- | --- | --- | --- |
-| POST | `/api/blocks` | `KnowledgeBlock` body | `KnowledgeBlock` | userId 由当前用户边界决定 |
-| GET | `/api/blocks` | `subject?`, `page=1`, `size=10` | `Page<KnowledgeBlock>` | 分页查询当前用户 |
-| PUT | `/api/blocks/{id}` | path id + body | `KnowledgeBlock` | path id 为目标 id |
-| DELETE | `/api/blocks/{id}` | path id | `Boolean` | 与同步软删除语义仍需统一验证 |
-
-字段以 [数据库契约](Database.md) 为准。
-
-## TaskBlock
-
-基础路径：`/api/tasks`
-
-| Method | Path | 参数 | 响应 | 说明 |
-| --- | --- | --- | --- | --- |
-| POST | `/api/tasks` | `TaskBlock` body | `TaskBlock` | 当前用户任务 |
-| GET | `/api/tasks` | `subject?`, `status?`, `page=1`, `size=10` | `Page<TaskBlock>` | 分页过滤 |
-| PUT | `/api/tasks/{id}` | path id + body | `TaskBlock` | 更新目标任务 |
-| DELETE | `/api/tasks/{id}` | path id | `Boolean` | 删除语义待统一 |
-
-风险：数据库 DDL 有 `position`，Server Entity 没有该字段，直接 API 无法稳定表达同一排序值。
-
-## BlockRelation
-
-基础路径：`/api/relations`
-
-| Method | Path | 参数 | 响应 |
-| --- | --- | --- | --- |
-| POST | `/api/relations` | `BlockRelation` body | `BlockRelation` |
-| GET | `/api/relations` | `sourceId?`, `targetId?` | `List<BlockRelation>` |
-| DELETE | `/api/relations/{id}` | path id | `Boolean` |
-
-客户端当前没有完整正式对接清单。关系端点存在不等于图谱数据链路已验收。
-
-## Sync
-
-基础路径：`/api/sync`
-
-### Pull
-
-```http
-GET /api/sync/pull?afterId=0
-```
-
-响应：`SyncPullResponse`。
-
-- `afterId=0`：当前用户冷启动，返回未删除知识块和任务块。
-- `afterId>0`：返回该 cursor 后当前用户 mutation。
-- 客户端必须保存并单调推进服务端 cursor，不能用客户端时间替代。
-
-### Push
-
-```http
-POST /api/sync/push
-Content-Type: application/json
-
-[
-  {
-    "clientId": "device-id",
-    "entityType": "block",
-    "entityId": "entity-id",
-    "action": "create",
-    "payload": {}
-  }
-]
-```
-
-响应：`List<Long>`，表示处理后的 mutation id。
-
-`entityType` 当前语义包括 `block`、`task`；`action` 包括 `create`、`update`、`delete`。服务端必须覆盖 userId，不能采用客户端提交的用户归属。
-
-待测：重复 mutation、非法类型、乱序、跨用户、冷启动、增量、软删除、断网重试。
-
-## FileStorage 与 Asset
-
-### 预签名 URL
-
-```http
-GET /api/fs/presigned-url?fileName=<name>&contentType=<mime>
-```
-
-`contentType` 默认 `application/octet-stream`。响应 data 包含：
-
-- `presignedUrl`
-- `objectName`
-- `bucket`
-- `maxFileSizeMb`
-- `expiresInMinutes`
-
-`objectName` 由后端按当前用户生成前缀，并清理文件名。
-
-### 绑定资产
-
-```http
-POST /api/assets/bind
-```
-
-```json
-{
-  "objectName": "user-prefix/object",
-  "fileName": "source.pdf",
-  "fileSize": 12345,
-  "contentType": "application/pdf",
-  "subject": "数学"
-}
-```
-
-响应 `Asset`。当前代码校验 objectName 用户前缀；仍需校验 MinIO 对象存在、真实大小和 MIME。
-
-### 查询资产
-
-```http
-GET /api/assets/{id}
-```
-
-只允许查询当前用户资产。
-
-## AI / RAG
-
-基础路径：`/api/ai`
-
-| Method | Path | 请求 | 响应 |
-| --- | --- | --- | --- |
-| POST | `/chat` | `systemPrompt?`, `message`, `requireJson`, `subjectId?`, `sourceFileName?` | `Result<String>` |
-| GET | `/chat` | query `message`, `subjectId?`, `sourceFileName?` | `text/event-stream` |
-| POST | `/ingest` | `content`, `source?`, `subject?` | `llmExtraction`, `ingestedBlockIds`, `totalChunks` |
-| POST | `/ingest/file` | multipart `file`, `subject=文档导入` | 文件名、块 ids、chunk 数 |
-| POST | `/extract-tasks` | `{text}` | `Result<String>` |
-| POST | `/convert-handwriting` | `{text}` | `Result<String>` |
-| POST | `/schedule-suggest` | `{text}` | `Result<String>` |
-
-约束：
-
-- 客户端不能传入服务端 AI key 或 base URL。
-- `requireJson=true` 只能表达模型输出期望，不保证永远得到有效 JSON。
-- SSE 调用方必须处理断流、取消、超时和部分输出。
-- 文件摄入必须遵守服务端上传上限和不可信文件处理规则。
-
-## Stats
-
-| Method | Path | 响应 |
+| Method | Path | 阶段 0 行为 |
 | --- | --- | --- |
-| GET | `/api/stats/overview` | `Map<String,Object>` |
-| GET | `/api/stats/weekly` | `Map<String,Object>` |
+| GET | /actuator/health | Spring Boot 健康汇总 |
+| GET | /actuator/health/liveness | 进程存活探针 |
+| GET | /actuator/health/readiness | 阶段 0 就绪探针 |
+| GET | /v3/api-docs | OpenAPI 文档，骨架完成后可访问 |
+| GET | /swagger-ui/index.html | OpenAPI UI，骨架完成后可访问 |
 
-当前 Map 未形成强类型公开 schema。前端不得把未声明键作为长期稳定契约；后续应引入 DTO 和测试。
+阶段 0 不实现业务 Controller，不创建临时业务路径。
 
-## WebSocket
+## 新后端基础规则
 
-连接：
+- REST 业务路径保留 /api 总前缀，不增加 /v1，也不承诺旧子路径兼容。
+- API 字段使用 camelCase；ID 使用 UUID 字符串；时间使用 RFC 3339 UTC。
+- 成功响应直接返回显式 DTO，不使用统一 Result 包装。
+- 创建成功返回 HTTP 201 和 Location；成功删除返回 HTTP 204。
+- 更新、删除和恢复请求必须提供 baseVersion；创建使用 baseVersion = 0。
+- 版本冲突返回 HTTP 409、错误码 RESOURCE_VERSION_CONFLICT 和服务器当前 DTO；服务器不执行 last-write-wins。
+- 列表统一使用不透明 cursor；响应包含 items、nextCursor、hasMore。
+- 默认不返回已删除记录；同步接口和显式 includeDeleted 才能读取必要墓碑。
+- userId 只能从 SecurityContext 推导，不能进入资源创建/更新请求，也不能信任客户端提交。
+- Entity、JPA lazy proxy 和内部持久化类型不得直接序列化为 API。
+- 空值使用 JSON null，不用空字符串、0 或展示文案替代。
 
-```text
-ws://localhost:8080/ws/sync?token=<access-token>
-```
+## Problem Details
 
-代码确认的生命周期：
+所有错误使用 RFC Problem Details，并增加 code、traceId、fieldErrors：
 
-1. 握手拦截器验证 query token 并保存 token/username。
-2. JSON 消息 `type=PING` 时读取可选 token。
-3. token 有效则更新 session 并返回 `PONG` 与时间戳。
-4. token 无效或过期则关闭连接。
-5. 后台每 60 秒审计活动连接 token。
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| type | URI | 稳定问题类型 |
+| title | string | 安全标题 |
+| status | integer | HTTP 状态码 |
+| detail | string | 安全业务说明，不包含异常、SQL、路径或 secret |
+| instance | string | 当前请求路径 |
+| code | string | 稳定错误码 |
+| traceId | string | 诊断关联值 |
+| fieldErrors | array | 参数字段错误 |
 
-用途：同步事件、文档解析完成/失败通知。消息业务 schema 尚未完整固化为本文档契约，必须通过联调或测试补齐。
+错误码至少包含 VALIDATION_FAILED、UNAUTHENTICATED、FORBIDDEN、RESOURCE_NOT_FOUND、RESOURCE_DELETED、RESOURCE_VERSION_CONFLICT、MUTATION_REJECTED、UPLOAD_VALIDATION_FAILED、INGESTION_FAILED、MODEL_UNAVAILABLE 和 RATE_LIMITED。
 
-## 客户端调用覆盖
+## 目标路由总览
 
-PC 当前调用 Auth、Sync、FileStorage、Asset、Stats、AI 和 WebSocket。Mobile 当前调用 Auth、Sync、AI 和 WebSocket；部分页面仍使用本地数据或间接 Store。
+以下路由是已批准目标契约，状态为 planned-after-phase-0：
 
-## 修改规则
+| 模块 | 目标路径 |
+| --- | --- |
+| Auth | /api/auth/register、/login、/refresh、/logout、/me、/sessions |
+| Subject | /api/subjects、/api/subjects/{id}、/api/subjects/{id}/restore |
+| Asset | /api/assets/upload-intents、/api/assets/{id}/complete、/api/assets/{id}/download-url |
+| Source | /api/sources、/api/sources/{id}、/api/sources/{id}/restore、/api/sources/{id}/reingest |
+| Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore |
+| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore |
+| Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore |
+| Review | /api/reviews/due、/api/reviews/events、/api/reviews/history |
+| Stats | /api/stats/overview、/api/stats/weekly |
+| Sync | /api/sync/push、/api/sync/pull、/api/sync/snapshot |
+| AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、建议类接口 |
+| Realtime | /api/realtime/ticket；WebSocket 地址 /ws/events |
 
-- Controller 路径、方法、参数、响应或鉴权变化必须同步本文件。
-- Entity/DDL 变化同步 `Database.md`。
-- Mobile 页面调用变化同步 `MobilePagesAPIMap.md`。
-- 未自动测试的端点保持“代码确认，待验收”，禁止升级状态。
+## 目标认证规则
+
+除公开注册、登录和刷新路径外，业务请求使用 Authorization: Bearer access-token。
+
+- access JWT 有效期 15 分钟，只包含最小 subject、session/device、签发和过期信息。
+- refresh session 有效期 30 天；每次刷新执行 rotation。
+- refresh token 只保存不可逆 hash，不能作为普通 access token 使用。
+- refresh token 重放会撤销对应 rotation 链。
+- 登录失败对未知用户和错误密码返回相同外部错误。
+- 所有业务 Repository 必须在查询条件中包含当前 userId。
+
+## 旧 Server 代码事实（仅供替换前盘点）
+
+旧代码仍使用 /api/auth、/api/blocks、/api/tasks、/api/relations、/api/sync、/api/fs、/api/assets 和 /api/ai；普通 REST 使用 Result<T>，分页和错误码没有新目标契约的稳定定义，WebSocket 使用 /ws/sync。
+
+这些旧路径、Result 包装、状态码、请求体、响应体和行为不被新后端承诺兼容。旧前端迁移必须等待新 OpenAPI 稳定后单独进行。
+
+## 阶段 0 契约边界
+
+已完成：目标路由表、通用响应规则、Problem Details 字段、认证规则、分页/版本规则和旧契约不兼容结论。
+
+未完成：业务 Controller、OpenAPI 业务 schema、Flyway 数据库、MockMvc 业务测试、SDK 生成、前后端联调和业务验收。
