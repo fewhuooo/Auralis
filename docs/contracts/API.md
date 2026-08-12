@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：阶段 0 已固化新目标契约；业务接口尚未在新 Server 实现
+文档状态：阶段 0 已固化新目标契约；健康/文档基础已实现，业务接口尚未在新 Server 实现
 
 权威范围：新后端 REST、SSE、WebSocket 的目标路径、鉴权、请求/响应规则和阶段状态。
 
@@ -23,6 +23,8 @@
 | GET | /swagger-ui/index.html | OpenAPI UI，骨架完成后可访问 |
 
 阶段 0 不实现业务 Controller，不创建临时业务路径。
+
+阶段 0 HTTP 验证：`/actuator/health/liveness` 和 `/actuator/health/readiness` 真实启动返回 HTTP 200、`status=UP`；`/v3/api-docs` 返回 HTTP 200 且 `info.title=Auralis API`；`/swagger-ui/index.html` 返回 HTTP 200。MockMvc 同时验证未知路由的 `404`、`RESOURCE_NOT_FOUND`、`application/problem+json` 和 `X-Trace-Id` 回写。
 
 ## 新后端基础规则
 
@@ -95,4 +97,4 @@
 
 已完成：目标路由表、通用响应规则、Problem Details 字段、认证规则、分页/版本规则和旧契约不兼容结论。
 
-未完成：业务 Controller、OpenAPI 业务 schema、Flyway 数据库、MockMvc 业务测试、SDK 生成、前后端联调和业务验收。
+未完成：业务 Controller、OpenAPI 业务 schema、Flyway 数据库、业务安全/隔离/同步测试、SDK 生成、前后端联调和业务验收。

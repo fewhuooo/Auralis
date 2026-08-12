@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：阶段 0 已固化新目标模型；Flyway 和业务迁移尚未开始
+文档状态：阶段 0 已固化新目标模型；Server 骨架已构建，Flyway 和业务迁移尚未开始
 
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
 
@@ -112,3 +112,5 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 ## 迁移状态
 
 阶段 0 已完成目标表、共同字段、索引、同步不变量和端侧边界设计；未创建 V1__*.sql，未接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。Flyway V1 从阶段 1 开始，并只针对干净新数据库。
+
+阶段 0 验证边界：新 Maven 工程未引入 datasource、JPA、Flyway、Redis、Milvus 或 MinIO；数据库表、Entity、Repository 和容器连接均未声称已实现。`clean test` 只证明配置、模块边界、错误协议、健康检查和 OpenAPI 基础。

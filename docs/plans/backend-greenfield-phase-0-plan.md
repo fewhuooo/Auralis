@@ -1,6 +1,6 @@
 # 后端绿地重写阶段 0 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. All phase 0 steps below were executed on `agent/backend-phase-0`.
 
 **Goal:** 在不丢失当前工作树的前提下备份并替换旧 `Auralis-Server`，建立一个无旧实现依赖、可编译、可启动、可查看 OpenAPI 的 `com.auralis.app` Spring Boot 4.1 / Spring Modulith 2.1 骨架，并固化阶段 0 的对象、API 和数据库设计。
 
@@ -26,10 +26,12 @@
 
 2026-08-12 只读盘点确认：
 
-- 当前分支为 `main`；工作树有前端、文档和旧 Server 的用户未提交修改，必须原样保护。
+- 开始时基于用户已推送的 `main` 创建分支 `agent/backend-phase-0`；前端、Mobile 和既有文档修改均原样保护。
 - 旧 Server 使用 `com.auralis.server`、Spring Boot 3.2.5、MyBatis Plus、Redis、Milvus、旧 LangChain4j、JJWT、MinIO 和程序化 DDL。
 - 根 Compose 仍是旧 PostgreSQL/Redis/pgAdmin/etcd/Milvus/MinIO/backend 拓扑；阶段 0 不改它。
 - 对象矩阵必须引用现有文件：`Auralis-PC/src/services/localDb.ts`、`Auralis-PC/src/store/useBlockStore.ts`、`Auralis-PC/src/store/useTaskStore.ts`、`Auralis-PC/src/api/useAuthApi.ts`、`Auralis-PC/src/api/useSyncApi.ts`、`Auralis-Mobile/src/services/localDb.ts`、`Auralis-Mobile/src/store/useBlockStore.ts`、`Auralis-Mobile/src/store/useTaskStore.ts`、`Auralis-Mobile/src/store/useAuthStore.ts`、`Auralis-Mobile/src/store/useSyncStore.ts`、`Auralis-Mobile/src/services/tabletNoteModel.ts`。
+
+执行证据：旧 Server 备份位于 `D:\CodeBase\Active\Auralis-backups\20260812-205737`，完整归档 SHA-256 为 `C59AD2AB39F05B114D7B13FAA948C8A8ED29CB0CA1F26DDBCF04794B431C4BEC`；归档 152 个文件、210984 bytes，补丁 0 bytes，展开复核通过。阶段 0 最终 `clean test` 退出码为 0，4 份 Surefire 报告、5 个测试全通过；真实 HTTP smoke 的 readiness/liveness 为 200 + `UP`，OpenAPI 和 Swagger UI 为 200。
 
 ## 文件变更总览
 
@@ -56,7 +58,7 @@
 - Produces: 备份目录、工作树状态、旧 Server 跟踪补丁、未跟踪清单、文件清单和可展开 ZIP。
 - Consumed by: Task 2 的对象盘点和 Task 3 的目录替换。
 
-- [ ] **Step 1: 记录状态并验证绝对路径**
+- [x] **Step 1: 记录状态并验证绝对路径**
 
 执行：
 
@@ -79,7 +81,7 @@ $backupRoot
 
 预期：退出码为 0；输出的 `$backupRoot` 在 Server 目录之外；`git-status.txt` 保留当前用户修改。
 
-- [ ] **Step 2: 创建并校验完整归档**
+- [x] **Step 2: 创建并校验完整归档**
 
 执行：
 
@@ -97,7 +99,7 @@ if (-not (Test-Path (Join-Path $verifyRoot 'Auralis-Server\\pom.xml') -PathType 
 
 预期：文件清单非空、ZIP 可展开且包含旧 Server 的 `pom.xml`、源码、资源和已有构建产物。若 `git status --short -- Auralis-Server` 有修改，补丁必须非空；若 Server 工作树干净，零字节补丁是有效的干净基线证据。备份目录不在待替换目录中。
 
-- [ ] **Step 3: 记录安全门**
+- [x] **Step 3: 记录安全门**
 
 记录实际 `backupRoot`、归档 SHA-256、归档文件数、补丁大小、Server 状态行数、未跟踪文件数和路径审计结果。此任务不提交旧 Server 内容。未通过安全门不得移动或删除 Server 目录。
 
@@ -118,11 +120,11 @@ if (-not (Test-Path (Join-Path $verifyRoot 'Auralis-Server\\pom.xml') -PathType 
 - Consumes: 绿地重写计划第 7、8、9、10、13、16 节和当前 PC/Mobile/旧 Server 盘点。
 - Produces: 后续阶段可直接使用的对象字段、所有权、删除、版本、时间、API 和数据库决策，并明确阶段 0 未实现的内容。
 
-- [ ] **Step 1: 建立矩阵固定列**
+- [x] **Step 1: 建立矩阵固定列**
 
 `ObjectModelMatrix.md` 使用列：`对象`、`PC 页面/Store`、`Mobile/Tablet 页面/Store`、`端侧本地库`、`旧 Server 事实`、`新 Server 模型`、`迁移决策`、`阶段 0 证据状态`。必须建立 `Subject`、`Source/Asset`、`KnowledgeBlock`、`Task`、`Relation`、`User/Auth`、`Tablet NoteDocument` 七行，且每行引用实际路径。
 
-- [ ] **Step 2: 固化已确认差异**
+- [x] **Step 2: 固化已确认差异**
 
 矩阵必须写入这些具体结论：
 
@@ -136,7 +138,7 @@ Tablet NoteDocument 的 stroke、snapshot、viewport、pages 和多存储路径�
 Mobile 本地库按 userId 分区是后续接入必需条件。
 ```
 
-- [ ] **Step 3: 更新 API 目标契约**
+- [x] **Step 3: 更新 API 目标契约**
 
 `docs/contracts/API.md` 明确新 Server 保留 `/api` 总前缀但不兼容旧子路径；成功响应直接返回 DTO；创建返回 201 + `Location`；删除返回 204；错误为 RFC Problem Details + `code`、`traceId`、`fieldErrors`；更新/删除/恢复要求 `baseVersion`；列表使用不透明 cursor；`userId` 只从 SecurityContext 推导。
 
@@ -150,11 +152,11 @@ GET /v3/api-docs
 GET /swagger-ui/index.html
 ```
 
-- [ ] **Step 4: 更新数据库目标契约**
+- [x] **Step 4: 更新数据库目标契约**
 
 `docs/contracts/Database.md` 改为“旧 DDL/Entity 盘点 + 新目标模型”双区段，写入 UUID、`user_id`、`version`、`created_at`、`updated_at`、`deleted_at`、TIMESTAMPTZ、Flyway 唯一 schema 权威、BIGSERIAL change cursor、inbound mutation 幂等键、30 天墓碑、Asset/Source 拆分和 `source_chunks vector(1024)`。阶段 0 不创建 `V1__*.sql`；迁移实现属于阶段 1。
 
-- [ ] **Step 5: 登记本计划并提交文档**
+- [x] **Step 5: 登记本计划并提交文档**
 
 在 `docs/README.md` 的后端绿地重写入口增加：
 
@@ -186,7 +188,7 @@ git commit -m "docs(backend): define greenfield phase 0 contract baseline"
 - Consumes: Task 1 的 `backupRoot`、路径审计和可展开归档。
 - Produces: 不含旧源码/构建产物的空 Server 路径，供 Task 4-7 创建新工程。
 
-- [ ] **Step 1: 再次审计目标**
+- [x] **Step 1: 再次审计目标**
 
 ```powershell
 $serverPath = (Resolve-Path -LiteralPath 'Auralis-Server').Path
@@ -198,7 +200,7 @@ git status --short
 
 若出现新的用户修改，重新更新备份清单；不得用还原命令“清理”状态。
 
-- [ ] **Step 2: 可恢复移动旧目录**
+- [x] **Step 2: 可恢复移动旧目录**
 
 ```powershell
 $legacyServerBackup = Join-Path $backupRoot 'Auralis-Server-source'
@@ -211,7 +213,7 @@ if (Test-Path 'D:\\CodeBase\\Active\\Auralis\\Auralis-Server') {
 
 只允许移动这个已审计的目录；不得对仓库根目录或其他模块执行递归移动/删除。
 
-- [ ] **Step 3: 创建空骨架路径并复核范围**
+- [x] **Step 3: 创建空骨架路径并复核范围**
 
 创建 `Auralis-Server/.mvn/wrapper`、`src/main/java/com/auralis/app`、`src/main/resources`、`src/test/java/com/auralis/app`。随后确认新 Server 路径为空，且 PC、Mobile、docs、Compose 的原有差异仍然可见。
 
@@ -232,7 +234,7 @@ if (Test-Path 'D:\\CodeBase\\Active\\Auralis\\Auralis-Server') {
 - Produces: Java 21 Maven 工程，后续任务只依赖 `com.auralis.app` 和 Spring 公开组件。
 - Does not produce: 旧依赖、业务迁移、数据库连接、Redis、Milvus、MinIO、AI 或 WebSocket 自动配置。
 
-- [ ] **Step 1: 写入固定 POM 坐标**
+- [x] **Step 1: 写入固定 POM 坐标**
 
 ```xml
 <parent>
@@ -252,7 +254,7 @@ if (Test-Path 'D:\\CodeBase\\Active\\Auralis\\Auralis-Server') {
 
 主依赖只包含 Web、Validation、Actuator、Spring Modulith Core、Configuration Processor 和与 Boot 4.1 兼容的固定版本 springdoc；测试依赖包含 Spring Boot Test 与 Spring Modulith Test。禁止 MyBatis Plus、Redis、Milvus、etcd、JJWT、LangChain4j、MinIO、旧 JJWT 配置、运行时 DDL 和旧包引用。禁止动态版本、`LATEST` 和 `SNAPSHOT` 依赖；springdoc 必须在首次 Maven 解析前固定具体版本。
 
-- [ ] **Step 2: 生成并验证 Wrapper**
+- [x] **Step 2: 生成并验证 Wrapper**
 
 ```powershell
 mvn -N wrapper:wrapper -Dmaven=3.9.11
@@ -263,7 +265,7 @@ Set-Location ..
 
 预期：Wrapper 文件存在，validate 退出码为 0。
 
-- [ ] **Step 3: 做旧依赖静态检查并提交**
+- [x] **Step 3: 做旧依赖静态检查并提交**
 
 ```powershell
 $hits = Select-String -Path 'Auralis-Server\\pom.xml' -Pattern 'mybatis|redis|milvus|etcd|jjwt|langchain4j|minio|com\\.auralis\\.server' -CaseSensitive:$false
@@ -296,7 +298,7 @@ git commit -m "build(backend): create Boot 4 modulith project baseline"
 - Problem Details: `type`、`title`、`status`、`detail`、`instance`、`code`、`traceId`、`fieldErrors`。
 - HTTP: `X-Trace-Id`；`application/problem+json`；OpenAPI 标题 `Auralis API`、版本 `0.1.0`。
 
-- [ ] **Step 1: 写入应用入口**
+- [x] **Step 1: 写入应用入口**
 
 ```java
 package com.auralis.app;
@@ -314,7 +316,7 @@ public class AuralisApplication {
 }
 ```
 
-- [ ] **Step 2: 写入配置绑定和 profile**
+- [x] **Step 2: 写入配置绑定和 profile**
 
 ```java
 @ConfigurationProperties(prefix = "auralis")
@@ -331,17 +333,17 @@ public record AuralisProperties(
 
 `application.yml` 设置应用名 `auralis-server`、默认 profile `local`、端口 8080、Actuator health/info 暴露、health probes、`/v3/api-docs`、`/swagger-ui/index.html` 和 50 MiB 上传限制。local 只能提供无秘密本机值；prod 只能引用环境变量，不得提供默认密码/key。阶段 0 不引入 datasource、Flyway、Redis、Milvus、MinIO 或 AI 配置。
 
-- [ ] **Step 3: 实现错误协议**
+- [x] **Step 3: 实现错误协议**
 
 `ApiErrorCode` 至少包含：`VALIDATION_FAILED`、`UNAUTHENTICATED`、`FORBIDDEN`、`RESOURCE_NOT_FOUND`、`RESOURCE_DELETED`、`RESOURCE_VERSION_CONFLICT`、`MUTATION_REJECTED`、`UPLOAD_VALIDATION_FAILED`、`INGESTION_FAILED`、`MODEL_UNAVAILABLE`、`RATE_LIMITED`、`INTERNAL_ERROR`。
 
 `TraceIdFilter` 接受长度不超过 64 的安全 `X-Trace-Id`，否则生成 UUID，并在响应回写。`GlobalExceptionHandler` 处理校验错误、未知路由和未分类异常；detail 不得输出异常消息、SQL、主机路径、堆栈或 secret。
 
-- [ ] **Step 4: 配置 OpenAPI**
+- [x] **Step 4: 配置 OpenAPI**
 
 `OpenApiConfiguration` 注册固定的 `OpenAPI` Bean，描述写明阶段 0 仅提供健康检查和文档，业务路由按绿地计划分阶段开放；不得声明旧 `/api/blocks`、`/api/fs`、`/ws/sync` 或 `Result<T>`。
 
-- [ ] **Step 5: 提交基础协议**
+- [x] **Step 5: 提交基础协议**
 
 执行：
 
@@ -382,7 +384,7 @@ git commit -m "feat(backend): add phase 0 health error and openapi baseline"
 - Produces: 12 个业务模块和 `shared` 模块的明确边界。
 - Test gate: `ApplicationModules.of(AuralisApplication.class).verify()`、配置绑定、健康检查、404 Problem Details、OpenAPI 文档均有真实断言。
 
-- [ ] **Step 1: 写入模块包声明**
+- [x] **Step 1: 写入模块包声明**
 
 每个 `package-info.java` 使用同一结构，仅替换包名：
 
@@ -393,7 +395,7 @@ package com.auralis.app.identity;
 
 依次替换为 `shared`、`subject`、`source`、`knowledge`、`task`、`relation`、`review`、`sync`、`ai`、`stats`、`realtime`。阶段 0 不添加跨模块依赖。
 
-- [ ] **Step 2: 写入模块测试**
+- [x] **Step 2: 写入模块测试**
 
 ```java
 package com.auralis.app;
@@ -411,7 +413,7 @@ class ArchitectureTests {
 
 MockMvc 测试必须断言 liveness/readiness 为 200 + `UP`、未知路由为 404 + `RESOURCE_NOT_FOUND` + `application/problem+json`、`X-Trace-Id` 可追踪、`/v3/api-docs` 的 `info.title` 为 `Auralis API`，以及配置的 50 MiB 值绑定成功。
 
-- [ ] **Step 3: 验证旧包和旧依赖不存在**
+- [x] **Step 3: 验证旧包和旧依赖不存在**
 
 ```powershell
 $oldHits = Get-ChildItem Auralis-Server\\src -Recurse -File |
@@ -419,7 +421,7 @@ $oldHits = Get-ChildItem Auralis-Server\\src -Recurse -File |
 if ($oldHits) { $oldHits | Format-Table; throw 'Legacy reference remains.' }
 ```
 
-- [ ] **Step 4: 运行测试并提交**
+- [x] **Step 4: 运行测试并提交**
 
 ```powershell
 Set-Location Auralis-Server
@@ -445,7 +447,7 @@ git commit -m "test(backend): enforce modulith phase 0 boundaries"
 - Consumes: Task 1-6 的真实命令输出和文件状态。
 - Produces: 可审计的阶段 0 交接；不把骨架、构建、测试、启动、容器和业务验收混成一个状态。
 
-- [ ] **Step 1: 运行完整 Maven 门禁**
+- [x] **Step 1: 运行完整 Maven 门禁**
 
 ```powershell
 Set-Location Auralis-Server
@@ -459,7 +461,7 @@ if ($surefireFiles.Count -lt 4) { throw "Expected at least four Surefire reports
 
 记录命令、退出码、报告数量、测试类和警告。该门禁不证明容器或业务链路。
 
-- [ ] **Step 2: 启动新 Server 做健康和 OpenAPI smoke**
+- [x] **Step 2: 启动新 Server 做健康和 OpenAPI smoke**
 
 执行时使用本次进程的精确 PID，并在 `finally` 中只停止该 PID：
 
@@ -490,13 +492,13 @@ finally {
 
 记录实际 HTTP 状态和响应关键字段。该步骤不证明旧前端可联调。
 
-- [ ] **Step 3: 回写状态与风险**
+- [x] **Step 3: 回写状态与风险**
 
 `docs/current/Status.md` 只有在证据齐全后写“后端绿地重写：阶段 0 已构建待验收”，并列出代码、构建、测试、启动和 OpenAPI 证据；明确未证明 PostgreSQL/pgvector/MinIO、业务身份、前端联调、GUI、真机和外部 AI。
 
 `docs/current/IssuesAndReview.md`：只有备份可读取、目标路径审计和替换范围检查全部有证据时关闭 `P1-Backend-Rewrite-Safety`；保留 `P1-Backend-Contract-Cutover`、`P1-Backend-Docker-Gate` 和业务安全风险。`docs/release/Changelog.md` 只记录已发生的备份、替换和骨架验证，不写成业务能力已交付。
 
-- [ ] **Step 4: 提交并保护剩余用户修改**
+- [x] **Step 4: 提交并保护剩余用户修改**
 
 ```powershell
 git add Auralis-Server docs/modules/Backend.md docs/contracts/API.md docs/contracts/Database.md docs/contracts/ObjectModelMatrix.md docs/current/Status.md docs/current/IssuesAndReview.md docs/release/Changelog.md

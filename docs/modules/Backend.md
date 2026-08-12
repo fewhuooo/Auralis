@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：旧 Server 代码确认；绿地重写阶段 0 契约已设计，骨架尚未替换
+文档状态：旧 Server 代码已归档；绿地重写阶段 0 骨架已构建待验收
 
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
@@ -46,6 +46,8 @@
 - /swagger-ui/index.html
 
 业务目标路由、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
+
+阶段 0 验证证据：`Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，Surefire 生成 4 份报告并执行 5 个真实测试；真实启动 smoke 中 readiness/liveness 返回 HTTP 200 + `UP`，`/v3/api-docs` 和 Swagger UI 返回 HTTP 200。上述证据不包含业务路由或基础设施联调。
 
 ## 目标技术基线
 
@@ -91,4 +93,4 @@
     cd Auralis-Server
     .\mvnw.cmd -B -ntp clean test
 
-旧 Server 的历史 mvn test 结果不作为新 Server 证据。
+旧 Server 的历史 `mvn test` 结果不作为新 Server 证据；旧源码已移至仓库外备份，阶段 0 新实现只使用 `com.auralis.app`。
