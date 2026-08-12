@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-07-10
+更新时间：2026-08-12
 
 文档状态：现行
 
@@ -29,6 +29,8 @@
 4. 检查 Git 工作树，保护用户已有修改。
 5. 完成后按回写矩阵更新文档，并记录实际验证证据。
 
+补充：仓库根目录的 Agent 规则文件是 `AGENTS.md`；如果搜索 `agent.md`，应以该文件和本中心的现行文档为准。
+
 ## 按任务选择文档
 
 | 任务 | 必读 | 变化后必须回写 |
@@ -39,6 +41,7 @@
 | Entity、DDL、同步字段、本地表 | [数据库契约](contracts/Database.md)、[后端模块](modules/Backend.md) | 两份文档；接口变化时同步 API |
 | Docker、环境变量、部署、运维 | [基础设施模块](modules/Infrastructure.md)、[部署指南](operations/Deployment.md)、[Runbook](operations/Runbook.md) | 所有受影响文档及状态、风险、Changelog |
 | 产品范围或验收条件 | [产品需求](project/ProductRequirements.md)、[系统架构](project/Architecture.md) | 产品、架构、计划、状态 |
+| 后端绿地重写 | [后端绿地重写完整实施计划](plans/backend-greenfield-rewrite-plan.md)、[后端模块](modules/Backend.md)、[API 契约](contracts/API.md)、[数据库契约](contracts/Database.md) | 实施计划及所有发生实际变化的模块、契约、状态、风险和 Changelog |
 | 仅文档整理 | 本入口及受影响的权威文档 | 索引、元数据、链接；发布影响进入 Changelog |
 | 版本或发布 | [当前状态](current/Status.md)、[发布计划](planning/InfraRelease.md) | [Changelog](release/Changelog.md) 与实际验证证据 |
 
@@ -54,6 +57,7 @@
 | `design/` | 已批准的设计体系、交互和架构决策 | 构建通过或验收状态 |
 | `operations/` | 部署、排障、备份、恢复 | 不存在的命令或自动化 |
 | `planning/` | 尚未完成的任务、依赖、验收与完成定义 | 已完成历史 |
+| `plans/` | 已批准、可直接执行的跨模块详细实施计划 | 当前实现事实、未验证的完成声明 |
 | `release/` | 已发生且可确认的变化 | 未来计划 |
 | `user/` | 面向最终用户的操作说明 | 内部实现细节 |
 | `showcase/` | 比赛和展示材料 | 当前工程事实 |
@@ -117,6 +121,8 @@
 
 - [部署指南](operations/Deployment.md)
 - [运维手册](operations/Runbook.md)
+- [后端绿地重写完整实施计划](plans/backend-greenfield-rewrite-plan.md)
+- [后端绿地重写阶段 0 实施计划](plans/backend-greenfield-phase-0-plan.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
 - [变更记录](release/Changelog.md)
@@ -135,8 +141,9 @@
 2. 根目录 `AGENTS.md`。
 3. `docs/agent/BeforeCoding.md`。
 4. 本次任务对应的权威模块与契约文档。
-5. `docs/planning/` 中的计划。
-6. 展示材料和历史归档。
+5. `docs/plans/` 中已批准的详细实施计划。
+6. `docs/planning/` 中的任务总览和领域计划。
+7. 展示材料和历史归档。
 
 代码与现行文档冲突时，必须核实实现并在任务范围内同步修正文档；禁止静默选择一方。新文档必须进入已有分类目录，确需新增分类时先更新本入口和文档架构设计。
 

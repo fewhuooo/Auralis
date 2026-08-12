@@ -16,6 +16,7 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/relations")
+@SuppressWarnings("null")
 public class BlockRelationController {
 
     private final BlockRelationService blockRelationService;

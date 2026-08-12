@@ -22,7 +22,10 @@
           </view>
           <view class="strip-spacer"></view>
           <view class="strip-subject" v-if="activeSubject">
-            <text class="subject-mini-icon">{{ activeSubject.icon }}</text>
+            <view class="subject-mini-icon">
+              <LineIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :name="`subj-${activeSubject?.icon || 'book'}`" size="32rpx" />
+              <text v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</text>
+            </view>
           </view>
         </view>
 
@@ -135,7 +138,11 @@
       <view class="main-area">
         <!-- Status Bar -->
         <view class="status-bar">
-          <text class="status-subject" v-if="activeSubject">{{ activeSubject.icon }} {{ activeSubject.name }}</text>
+          <view class="status-subject" v-if="activeSubject">
+            <LineIcon v-if="isSubjectIconKey(activeSubject.icon) || !getLegacySubjectIcon(activeSubject.icon)" :name="`subj-${activeSubject.icon || 'book'}`" size="28rpx" />
+            <text v-else>{{ getLegacySubjectIcon(activeSubject.icon) }}</text>
+            <text class="status-subject-name">{{ activeSubject.name }}</text>
+          </view>
           <text class="status-info">{{ subjectBlocks.length }} 知识块 · {{ visibleSourceFiles.length }} 文件</text>
           <view class="status-actions">
             <view class="status-btn" @click="showDrawer = !showDrawer">
@@ -328,7 +335,10 @@
 
           <!-- Onboarding / Empty State -->
           <view v-else-if="!activeBlockId && !showCreateBlock" class="onboarding">
-            <text class="onboard-icon">{{ activeSubject?.icon || '⊞' }}</text>
+            <view class="onboard-icon">
+              <LineIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :name="`subj-${activeSubject?.icon || 'book'}`" size="88rpx" />
+              <text v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</text>
+            </view>
             <text class="onboard-title">{{ activeSubject?.name || '学科工作区' }}</text>
             <text class="onboard-hint">从左侧选择学习材料或知识块查看详情，也可新建内容</text>
             <view class="onboard-actions">
@@ -679,6 +689,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import FlashCard from '@/components/FlashCard.vue'
+import { isSubjectIconKey, getLegacySubjectIcon } from '@/utils/subjectIcon'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore, type CatalogItem } from '@/store/useSubjectStore'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -2036,7 +2047,11 @@ onUnmounted(() => {
   padding: 12rpx;
 }
 .subject-mini-icon {
-  font-size: 40rpx;
+  margin-right: 8rpx;
+  font-size: 32rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Tier-2 Drawer (响应式宽度架构) */
@@ -2580,6 +2595,14 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+.status-subject-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .status-info {
   font-size: 22rpx;
@@ -2624,7 +2647,13 @@ onUnmounted(() => {
   gap: 16rpx;
   padding: 40rpx;
 }
-.onboard-icon { font-size: 88rpx; }
+.onboard-icon { 
+  font-size: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24rpx;
+}
 .onboard-title {
   font-size: 40rpx;
   font-weight: 800;

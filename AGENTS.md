@@ -1,5 +1,7 @@
 # Auralis Agent Instructions
 
+本文件就是仓库根目录的 Agent 指令入口，文件名为 `AGENTS.md`；当前没有另行维护的 `agent.md`。
+
 本仓库的唯一现行文档入口是 `docs/README.md`。
 
 ## 修改前必须阅读

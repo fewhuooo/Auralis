@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/blocks")
+@SuppressWarnings("null")
 public class KnowledgeBlockController {
 
     private final KnowledgeBlockService knowledgeBlockService;

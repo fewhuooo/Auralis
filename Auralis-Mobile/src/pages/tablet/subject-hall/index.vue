@@ -37,7 +37,10 @@
           >
             <view class="card-color-stripe" :style="{ background: subj.color || '#7D9372' }" />
             <view class="card-header">
-              <text class="s-icon">{{ subj.icon }}</text>
+              <view class="s-icon">
+                <LineIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :name="`subj-${subj.icon || 'book'}`" size="56rpx" />
+                <text v-else>{{ getLegacySubjectIcon(subj.icon) }}</text>
+              </view>
               <view class="card-actions">
                 <view class="action-btn" @click.stop="openEditModal(subj)">
                   <text>编辑</text>
@@ -80,7 +83,6 @@
         <view class="modal-card" @click.stop>
           <view class="modal-header">
             <view class="title-group">
-              <view class="color-indicator" :style="{ background: formData.color || '#6d635b' }"></view>
               <text class="modal-title">{{ isEditing ? '编辑学科' : '新建学科' }}</text>
             </view>
             <view class="modal-close" @click="showModal = false"><LineIcon name="close" size="26rpx" /></view>
@@ -111,35 +113,22 @@
               <text class="form-label">标志图标</text>
               <view class="icon-grid">
                 <view
-                  v-for="icon in iconOptions"
-                  :key="icon"
+                  v-for="option in subjectIconOptions"
+                  :key="option.key"
                   class="icon-option"
-                  :class="{ selected: formData.icon === icon }"
-                  @click="formData.icon = icon"
+                  :class="{ selected: formData.icon === option.key }"
+                  @click="formData.icon = option.key"
+                  :title="option.label"
                 >
-                  <text>{{ icon }}</text>
+                  <LineIcon :name="`subj-${option.key}`" size="40rpx" :color="formData.icon === option.key ? '#7D9372' : 'var(--color-zen-stone)'" />
                 </view>
-              </view>
-            </view>
-
-            <view class="form-group">
-              <text class="form-label">主题配色</text>
-              <view class="color-grid">
-                <view
-                  v-for="color in colorOptions"
-                  :key="color"
-                  class="color-option"
-                  :class="{ selected: formData.color === color }"
-                  :style="{ background: color }"
-                  @click="formData.color = color"
-                ></view>
               </view>
             </view>
           </scroll-view>
 
           <view class="modal-footer">
             <view class="btn secondary-btn" @click="showModal = false"><text>取消</text></view>
-            <view class="btn primary-btn submit-btn" :style="{ background: formData.color }" @click="handleSave">
+            <view class="btn primary-btn submit-btn" @click="handleSave">
               <text class="btn-text">{{ isEditing ? '保存修改' : '立即创建' }}</text>
             </view>
           </view>
@@ -157,6 +146,7 @@ import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import { useBlockStore } from '@/store/useBlockStore'
+import { subjectIconOptions, isSubjectIconKey, getLegacySubjectIcon } from '@/utils/subjectIcon'
 
 const subjectStore = useSubjectStore()
 const blockStore = useBlockStore()
@@ -171,17 +161,9 @@ const editingId = ref<string | null>(null)
 const formData = ref({
   name: '',
   description: '',
-  icon: '📖',
-  color: '#6d635b'
+  icon: 'book',
+  color: '#7D9372'
 })
-
-const iconOptions = ['⊞', '∠', '⊕', '◇', '◈', '◉', '≡', '∿', '⊗', '□', '◎', '△', '▽', '⊙', '☰', '△']
-
-const colorOptions = [
-  '#6d635b', '#b05555', '#a0845e', '#6b8a65',
-  '#5a7fa0', '#7b6b8a', '#8a6b6b', '#6b8a8a',
-  '#a07b5a', '#5a6b8a', '#8a7b6b', '#6b7b8a'
-]
 
 // Computed
 const filteredSubjects = computed(() => {
@@ -204,7 +186,7 @@ const getMasteryPercent = (subj: Subject): number => {
 const openCreateModal = () => {
   isEditing.value = false
   editingId.value = null
-  formData.value = { name: '', description: '', icon: '📖', color: '#6d635b' }
+  formData.value = { name: '', description: '', icon: 'book', color: '#7D9372' }
   showModal.value = true
 }
 
@@ -609,12 +591,6 @@ onMounted(async () => {
   align-items: center;
   gap: 16rpx;
 }
-.color-indicator {
-  width: 12rpx;
-  height: 36rpx;
-  border-radius: 999rpx;
-  transition: background 0.3s;
-}
 .modal-title {
   font-size: 36rpx;
   font-weight: 800;
@@ -687,31 +663,10 @@ onMounted(async () => {
   background: #f0f0ee;
 }
 .icon-option.selected {
-  border-color: var(--color-zen-graphite, #1C1C1A);
+  border-color: #7D9372;
   border-width: 3rpx;
-  background: var(--color-zen-white, #FFFFFF);
+  background: rgba(125, 147, 114, 0.1);
   box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.06);
-}
-
-.color-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20rpx;
-}
-.color-option {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 50%;
-  border: 4rpx solid transparent;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-.color-option:hover {
-  transform: scale(1.08);
-}
-.color-option.selected {
-  border-color: var(--color-zen-graphite, #1C1C1A);
-  box-shadow: 0 0 0 4rpx var(--color-zen-white, #FFFFFF), 0 0 0 8rpx var(--color-zen-graphite, #1C1C1A);
 }
 
 .modal-footer {
@@ -721,6 +676,10 @@ onMounted(async () => {
   padding: 28rpx 40rpx;
   border-top: 1px solid var(--color-zen-hairline, #E6E6E4);
   background: var(--color-zen-white, #FFFFFF);
+}
+.primary-btn {
+  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  color: #FFFFFF;
 }
 .submit-btn {
   transition: opacity 0.2s;

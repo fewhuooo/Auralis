@@ -687,6 +687,12 @@ const addSection = (chapterId: string) => {
   if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, title })
   chapterDrafts.value[chapterId] = ''
 }
+const deleteChapter = (chapterIndex: number) => {
+  subjectOutline.value.splice(chapterIndex, 1)
+}
+const deleteSection = (chapterIndex: number, sectionIndex: number) => {
+  subjectOutline.value[chapterIndex].sections.splice(sectionIndex, 1)
+}
 const startChapterDrag = (index: number) => { chapterDragIndex.value = index }
 const handleChapterDrop = (target: number) => {
   const source = chapterDragIndex.value
@@ -2033,7 +2039,7 @@ html.dark .summary-empty-icon-wrap { background: rgba(255,255,255,0.05); color: 
 .ai-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 24px; animation: ai-fade-in 0.6s ease-out; }
 .ai-spark-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 20px; }
 .ai-spark-svg { width: 56px; height: 56px; opacity: 0.95; filter: drop-shadow(0 4px 12px rgba(125, 147, 114, 0.15)); }
-.welcome-title { font-size: 24px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), #5C7051); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; letter-spacing: -0.2px; }
+.welcome-title { font-size: 24px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), #5C7051); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; letter-spacing: -0.2px; }
 .welcome-desc { font-size: 13.5px; font-weight: 400; color: var(--text-secondary); margin-bottom: 40px; max-width: 260px; line-height: 1.6; opacity: 0.85; }
 .preset-section-title { display: flex; align-items: center; width: 100%; max-width: 240px; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 16px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.6; }
 .preset-section-title::before, .preset-section-title::after { content: ''; flex: 1; height: 1px; background: rgba(0,0,0,0.1); }
@@ -2066,7 +2072,7 @@ html.dark .summary-empty-icon-wrap { background: rgba(255,255,255,0.05); color: 
 html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html.dark .assistant-spark-avatar, html.dark .chat-msg-row.assistant .chat-bubble { background: #1C1C1C; border-color: rgba(255,255,255,0.08); }
 html.dark .preset-btn { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); color: var(--text-secondary); }
 html.dark .preset-btn:hover { background: rgba(125, 147, 114, 0.15); border-color: #7D9372; color: #9AB08F; }
-html.dark .welcome-title { background: linear-gradient(135deg, #ffffff, #9AB08F); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+html.dark .welcome-title { background: linear-gradient(135deg, #ffffff, #9AB08F); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 html.dark .preset-section-title::before, html.dark .preset-section-title::after { background: rgba(255,255,255,0.1); }
 
 html.dark .outline-overview-chapter strong { border-color: rgba(255,255,255,0.04); }

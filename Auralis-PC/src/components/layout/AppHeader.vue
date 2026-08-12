@@ -43,8 +43,6 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
-import { ElMessage } from 'element-plus'
-
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()

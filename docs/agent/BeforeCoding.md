@@ -21,8 +21,9 @@
 2. 根目录 `AGENTS.md`。
 3. 本文件。
 4. 对应模块、契约和设计权威文档。
-5. `docs/planning/` 中的计划。
-6. `docs/showcase/` 和 `docs/archive/`。
+5. `docs/plans/` 中已批准的详细实施计划。
+6. `docs/planning/` 中的任务总览和领域计划。
+7. `docs/showcase/` 和 `docs/archive/`。
 
 展示和归档不能覆盖当前代码或现行文档。代码与现行文档冲突时，必须核实代码、指出差异并同步修正文档。
 
@@ -77,7 +78,8 @@
 | Mobile 页面调用 | `contracts/MobilePagesAPIMap.md` |
 | 状态或风险 | `current/Status.md`、`current/IssuesAndReview.md` |
 | 部署与排障 | `operations/Deployment.md`、`operations/Runbook.md` |
-| 未来任务 | `planning/` 对应计划 |
+| 已批准的跨模块实施方案 | `plans/` 对应详细计划 |
+| 未来任务和领域待办 | `planning/` 对应计划 |
 | 已发生变化 | `release/Changelog.md` |
 
 ## 禁止事项

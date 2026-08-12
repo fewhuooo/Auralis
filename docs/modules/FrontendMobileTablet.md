@@ -1,16 +1,18 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-07-10
+更新时间：2026-08-12
 
 文档状态：现行
 
 权威范围：`Auralis-Mobile` 的当前依赖、页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
 
-事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/` 和 `scripts/`
+事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/`、`scripts/` 与 2026-08-12 当前代码
 
 ## 模块定位
 
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
+
+截至 2026-08-12，Mobile/Tablet 的基础页面和主要视觉布局重构已基本收敛。近期平板首页热力图支持按周数自适应布局，当前首页使用 5 周日历网格，Hero Banner 已统一使用 `Primary Gradient`；构建仍需结合开发者工具、浏览器和真机验收。
 
 ## 当前技术栈
 
@@ -128,6 +130,7 @@ Auralis-Mobile/src/
 - 侧栏指示器动画当前目标为 `120ms`，路由切换延迟为 `160ms`，脚本检查至少两帧余量。
 - workspace 默认文件面板，总结栏通过 CSS 折叠联动。
 - AI 浮窗通过 modal 插槽脱离 transform 堆叠上下文。
+- `HeatmapChart.vue` 支持 `weeks` 配置；Tablet Dashboard 当前传入 `weeks=5`，使用 7 列 × 5 行的正方形日历网格，并在 Hero Banner 使用统一的 `Primary Gradient`。
 
 设计目标和页面布局见 [前端设计](../design/Frontend.md)。
 
@@ -153,6 +156,7 @@ node scripts\check-tablet-sidebar-transition.mjs
 ## 当前限制
 
 - H5/微信命令行构建不能替代微信开发者工具和真机。
+- 2026-08-12：H5 与微信构建通过，但仍有动态/静态 import 与 Sass legacy API 非阻断警告。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
 - `type-check` 可能受当前 `vue-tsc`、Node 和 TypeScript 组合影响，需独立记录结果。
 - Tablet 复杂交互需要真实触控屏。

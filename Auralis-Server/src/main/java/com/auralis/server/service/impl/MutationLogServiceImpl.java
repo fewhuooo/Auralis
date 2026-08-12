@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class MutationLogServiceImpl extends ServiceImpl<MutationLogMapper, MutationLog> implements MutationLogService {
 
     private final KnowledgeBlockService knowledgeBlockService;

@@ -390,6 +390,7 @@ onUnmounted(() => {
 .page-input::-webkit-outer-spin-button,
 .page-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
+  appearance: textfield;
   margin: 0;
 }
 .page-input[type=number] {
@@ -480,6 +481,7 @@ onUnmounted(() => {
   word-break: break-all;
   display: -webkit-box;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

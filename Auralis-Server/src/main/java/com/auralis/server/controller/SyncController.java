@@ -21,6 +21,7 @@ import java.util.List;
 @RequestMapping("/api/sync")
 @RequiredArgsConstructor
 @Slf4j
+@SuppressWarnings("null")
 public class SyncController {
 
     private final MutationLogService mutationLogService;

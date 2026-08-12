@@ -1,6 +1,6 @@
 # Auralis 当前问题与审查登记
 
-更新时间：2026-07-14
+更新时间：2026-08-12
 
 文档状态：现行风险登记
 
@@ -19,6 +19,9 @@
 
 | ID | 问题 | 证据 | 影响 | 处理动作 | 关闭条件 | 领域 |
 | --- | --- | --- | --- | --- | --- | --- |
+| P1-Backend-Rewrite-Safety | 后端将原路径绿地替换，当前工作树和旧 Server 均有未提交修改 | `git status --short`；`docs/plans/backend-greenfield-rewrite-plan.md` 第 4 节 | 未经备份或路径校验直接替换可能造成不可恢复的数据与代码丢失 | 实施前保存仓库外补丁、未跟踪清单和完整压缩包，并严格验证绝对目标路径 | 备份可读取、目标路径审计通过，且替换操作只影响 `Auralis-Server` | Backend/Data |
+| P1-Backend-Contract-Cutover | 新后端保留 `/api` 前缀但不兼容旧 DTO、状态码和行为，三端仍依赖旧契约 | 当前 PC/Mobile API 与 `docs/contracts/API.md`；绿地计划第 3、10、16 节 | 新后端启动后，旧前端不能直接完成登录、同步、资产、AI 等主流程 | 先稳定 OpenAPI 和对象矩阵，再独立生成 SDK、迁移本地模型并逐端联调 | PC、Mobile、Tablet 目标流程全部使用新生成契约且联调证据齐全 | Frontend/Backend |
+| P1-Backend-Docker-Gate | Docker Desktop 当前未启动，pgvector、MinIO 和最终 Testcontainers 无法验收 | 2026-08-12 环境盘点；绿地计划测试边界 | 单元测试通过也不能证明迁移、对象存储、向量检索和 Compose 可用 | 完成代码阶段后启动 Docker Desktop，运行 Testcontainers 与最小 Compose 验证 | PostgreSQL/pgvector、MinIO、Server 的集成与健康检查均有退出码 0 证据 | Backend/Infra |
 | P1-Auth-Guard | PC 登录守卫临时直接 `next()` | `Auralis-PC/src/router/index.ts` | 未登录可打开受保护页面 | 恢复 `useAuthStore` 守卫并测试所有跳转 | 未登录、登录、刷新、退出自动测试/人工证据齐全 | PC/Auth |
 | P1-Test-Coverage | 后端无实际测试源码 | `Auralis-Server/src/test` 为空 | 安全、同步、删除和资产无回归保护 | 建立 Auth、隔离、Sync、Asset、WS 测试 | CI 或本地测试执行到真实断言 | Backend |
 | P1-Delete-Semantics | 直接 DELETE 与 mutation 软删除未形成已验证统一语义 | Controller、Sync、localDb 删除路径 | 已删除数据可能在冷启动/多端重现 | 定义删除状态机并实现/测试 | CRUD、push/pull、冷启动、多端 delete 一致 | Sync/Data |
@@ -36,27 +39,34 @@
 | P2-Tablet-Validation | Tablet 多栏和手写缺真机验证 | 页面、feature flag、脚本 | 触控和长时间使用风险 | 设备走查与专项记录 | 指定设备清单全通过 | Tablet |
 | P2-PC-Subject-Icon-Validation | PC 新建学科线条图标与已有 Emoji 的实际显示未做 GUI 验收 | `src/utils/subjectIcon.ts`、`AppSidebar.vue`；2026-07-14 `check:subject-icons` 与生产构建通过 | 线条图标的尺寸、对齐、统一 Sage Green 底色或选择态可能异常，已有 Emoji 可能在个别入口未保持原样 | 在浏览器或 Tauri 中检查既有学科及新建学科，覆盖全局功能侧栏 | 新建线条图标与统一底色、既有 Emoji、空值/未知语义键三类均显示正确且可操作 | PC |
 | P2-PC-Workspace-Prototype-Validation | 学科大纲编排与文件总结目前仅为静态交互原型，且 PC AI 伴读尚未进行 GUI 验收 | `SubjectWorkspace/index.vue`；2026-07-14 `check:subject-workspace` 与生产构建通过 | 刷新后编排丢失；浏览器中的拖拽手势、三栏尺寸、AI 星环/三点动效、窄栏换行和深色主题仍可能有问题 | 确认持久化模型后接入 Store；在浏览器/Tauri 验收文件选择、章节排序、小节边界与 AI 右栏 | 指定原型范围获确认或持久化完成，且 GUI 验收记录通过 | PC |
+| P2-PC-Frontend-Refactor-Validation | PC 近期页面重构（Pomodoro、Timeline、Asset、Dashboard 与全局导航）尚未完成跨页面 GUI 验收 | 最近 PC 提交与 `Auralis-PC/src/views/`、`src/components/`；2026-08-12 构建与两个静态契约检查通过，但未做 GUI | 宽屏布局、任务计时、弹窗、删除操作和导航图标可能存在只在浏览器/Tauri 中暴露的回归 | 按正式路由逐页走查主要任务和失败/空状态 | PC Web 构建通过，且 Dashboard、Subject、Asset、Timeline、Pomodoro、Profile 主流程 GUI 记录通过 | PC |
+| P2-PC-Bundle-Size | PC 生产构建存在大 chunk 警告 | 2026-08-12 `npm.cmd run build`：`Asset-B7Y2PPYt.js` 约 595 kB，Vite 提示部分 chunk 超过 500 kB | 首屏加载和缓存粒度可能受影响 | 评估 Asset、Element Plus 等依赖的拆包与懒加载策略 | 关键入口 chunk 达到团队阈值，或形成明确的警告接受记录 | PC/Performance |
 | P2-Migration-Strategy | 程序化 DDL 与单个 SQL 混用 | config + `V2__...sql` | 生产升级/回滚不可预测 | 引入单一版本迁移方案 | 干净库升级、回滚演练 | Data/Infra |
 | P2-Infra-Readiness | 无 CI、监控、告警、正式备份演练 | 仓库现状 | 发布与恢复门禁不足 | 建流水线、指标、备份恢复 | 发布演练和告警测试 | Infra |
-| P2-Mobile-Build-Warning | Mobile H5 构建有动态/静态 import 与 Sass legacy API 警告 | 2026-07-10 `build:h5` 输出 | 未来打包与 Sass 升级可能出现行为或兼容性问题 | 明确 `useSyncStore` 的加载策略，升级/替换 Sass legacy API | 构建无对应警告，或有记录的接受决定 | Mobile |
+| P2-Mobile-Build-Warning | Mobile H5/微信构建有动态/静态 import 与 Sass legacy API 警告 | 2026-08-12 `build:h5` 与 `build:mp-weixin` 输出 | 未来打包与 Sass 升级可能出现行为或兼容性问题 | 明确 `useSyncStore` 的加载策略，升级/替换 Sass legacy API | 构建无对应警告，或有记录的接受决定 | Mobile |
 
 ## 审查结论
 
+- 2026-08-12：后端路线已改为原路径绿地重写，当前只完成详细计划落盘；旧 Server 仍是代码现状，新模块、接口、数据库和基础设施均未开始实施。
+- 新后端继续使用 `/api` 只代表保留总前缀，不代表旧客户端兼容。OpenAPI 和对象差异矩阵完成前，禁止声明前后端已可直接联调。
 - Server 的 AuthInterceptor、WebSocket 握手/心跳审计、资产用户前缀校验已在代码中存在；它们没有因缺测试而自动升级为“已验收”。
 - PC、Mobile/Tablet 近期视觉与布局改动属于用户工作树成果，文档已在归档快照保留；最终构建结果须与当前代码一起记录。
 - 不应依据 StudyCore 归档恢复旧目录、旧路由或旧任务。
 - 2026-07-10：PC Web、Mobile H5、微信小程序、Tablet 侧栏检查和 Maven 生命周期均通过；后端仍无测试源码，GUI/真机/外部服务仍未验收。
 - 2026-07-14：PC 新建学科改为语义线条图标，已有 Emoji 不迁移；`npm.cmd run check:subject-icons` 与 `npm.cmd run build` 通过，仍需 P2-PC-Subject-Icon-Validation 所列 GUI 验收。
 - 2026-07-14：PC 学科工作区右侧 AI 伴读已复刻手机端四芒星、星环、气泡、三点输入中状态和纯文本胶囊输入；`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 通过，仍需 P2-PC-Workspace-Prototype-Validation 所列 GUI 验收。
+- 2026-08-11：PC 已加入 Pomodoro 页面并继续收敛 Dashboard、Timeline、Asset、全局导航和工作区交互；Mobile/Tablet 已更新平板热力图自适应布局与品牌渐变，代码变化已记录在 Changelog，仍需当前构建与 GUI/真机验收。
+- 2026-08-12：PC 学科图标、工作区静态契约检查和生产构建均通过；移除弃用 `baseUrl`、删除未使用 `ElMessage` 导入后，Vite 仍提示大 chunk。Mobile H5、微信小程序构建与 Tablet 侧栏检查通过，保留既有非阻断警告，未进行 GUI/真机验收。
 
 ## 推荐关闭顺序
 
-1. Auth 守卫与后端 Auth/隔离测试。
-2. 删除语义和同步回归。
-3. 资产对象实体验证。
-4. 生产 AI 配置统一。
-5. WebSocket 与多端人工联调。
-6. CI、备份、监控和发布演练。
+1. 完成旧 Server 仓库外备份和精确替换边界审计。
+2. 建立新后端骨架、Identity 和用户隔离测试。
+3. 固化对象矩阵、核心领域与新 OpenAPI。
+4. 完成删除、冲突、墓碑和同步回归。
+5. 完成资产对象实体验证及 pgvector/AI 安全测试。
+6. 生成客户端后再进行 WebSocket 与多端联调。
+7. 完成 PC GUI 验收、CI、备份、监控和发布演练。
 
 ## 更新方式
 

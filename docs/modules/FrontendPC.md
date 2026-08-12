@@ -1,16 +1,18 @@
 # PC 前端模块
 
-更新时间：2026-07-14
+更新时间：2026-08-12
 
 文档状态：现行
 
 权威范围：`Auralis-PC` 的当前依赖、路由、页面、Store、API 边界、Tauri 集成、构建方式与限制
 
-事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 当前代码
+事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-12 当前代码
 
 ## 模块定位
 
 `Auralis-PC` 是桌面与 Web 共用的 Vue 客户端，负责高信息密度的学科工作区、资产、任务时间线、知识关系和设置。浏览器开发与构建由 Vite 提供；桌面能力由 Tauri 2 提供。
+
+截至 2026-08-12，PC 页面与基础视觉重构已基本收敛：学科工作区、语义线条图标、统一弹窗、全局导航、Timeline 和 Pomodoro 已进入当前正式路由与组件结构。PC Web 构建已通过，仍需处理 bundle 体积警告并完成浏览器/Tauri GUI 验收。
 
 ## 当前技术栈
 
@@ -54,6 +56,7 @@ Auralis-PC/
 | `/asset` | Asset | `src/views/Asset/index.vue` | `requiresAuth` |
 | `/timeline` | Timeline | `src/views/Timeline/index.vue` | `requiresAuth` |
 | `/profile` | Profile | `src/views/Profile/index.vue` | `requiresAuth` |
+| `/pomodoro` | Pomodoro | `src/views/Pomodoro/index.vue` | `requiresAuth` |
 
 `src/views/Home` 和 `src/views/Settings` 等目录不等于正式页面；未注册路由不得作为用户入口。
 
@@ -105,6 +108,7 @@ Auralis-PC/
 - Asset：上传、处理状态和资料组织。
 - Timeline：排期和任务时间管理。
 - Profile：账号、外观和设置。
+- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；由 `TimerCore.vue`、`PomodoroRing.vue` 与 `useTaskStore` 协作。
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。
 
@@ -139,6 +143,7 @@ npm run tauri dev
 
 - 登录守卫临时关闭。
 - 当前没有 PC 自动化测试脚本。
+- `tsconfig.app.json` 的 TypeScript 6 `baseUrl` 弃用错误（TS5101）已通过移除配置项解决，`AppHeader.vue` 的未使用 `ElMessage` 导入也已清理；2026-08-12 `npm.cmd run build` 通过，但 Vite 提示部分 chunk 超过 500 kB。
 - Tauri GUI 和打包需本地人工验收。
 - API、同步、资产和 AI 需要真实 Server/基础设施联调。
 - 用户当前工作树包含页面、Store、样式和 Tauri 依赖改动；在提交前必须按范围复核。

@@ -1,6 +1,6 @@
 # PC 前端计划
 
-更新时间：2026-07-10
+更新时间：2026-08-12
 
 文档状态：现行计划
 
@@ -14,15 +14,16 @@
 
 ## 当前事实
 
-- 7 条正式路由、页面、Store 和 API 封装存在。
+- 8 条正式路由、页面、Store 和 API 封装存在；近期已完成学科工作区、语义线条图标、统一弹窗、全局导航、Timeline 与 Pomodoro 的基础整理。
 - `beforeEach` 当前直接 `next()`，未登录页面保护关闭。
+- `check:subject-icons`、`check:subject-workspace` 与 `npm.cmd run build` 已通过；构建仍有 Vite 大 chunk 警告，GUI 尚待验收。
 - Tauri 版本统一为 2.11.1，但桌面 GUI 未验收。
 
 ## 有序任务
 
 1. 恢复基于 `useAuthStore` 的守卫，定义 `/login`、requiresAuth、刷新和退出行为。
 2. 为路由守卫、401 刷新失败和退出后回退建立前端测试或人工验收脚本。
-3. 核对 Dashboard、SubjectHall、Workspace、Asset、Timeline、Profile 的 Store 字段与 API 调用。
+3. 核对 Dashboard、SubjectHall、Workspace、Asset、Timeline、Pomodoro、Profile 的 Store 字段与 API 调用。
 4. 验收上传、解析、错误、重试和用户提示。
 5. 验收时间线拖拽、保存、冲突和任务排序。
 6. 验收工作区文件预览、AI 上下文、关系图和辅助栏折叠。
@@ -33,11 +34,13 @@
 
 ```powershell
 cd Auralis-PC
+npm.cmd run check:subject-icons
+npm.cmd run check:subject-workspace
 npm.cmd run build
 npm run tauri dev
 ```
 
-Web build 与 Tauri GUI 结果必须分开记录。
+2026-08-12 的两个静态检查和 Web build 已通过；Vite 输出部分 chunk 超过 500 kB 的警告。Web build 与 Tauri GUI 结果必须分开记录。
 
 ## 阻塞
 

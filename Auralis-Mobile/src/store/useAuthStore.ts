@@ -7,6 +7,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(uni.getStorageSync('token') || null)
   const refreshToken = ref<string | null>(uni.getStorageSync('refreshToken') || null)
   const username = ref<string | null>(uni.getStorageSync('username') || null)
+  const avatar = ref<string | null>(uni.getStorageSync('avatar') || null)
 
   const request = (url: string, method: 'GET' | 'POST' = 'GET', data?: any) => {
     return new Promise((resolve, reject) => {
@@ -34,9 +35,13 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = res.accessToken
     refreshToken.value = res.refreshToken
     username.value = data.username
+    avatar.value = data.avatar || null
     uni.setStorageSync('token', res.accessToken)
     uni.setStorageSync('refreshToken', res.refreshToken)
     uni.setStorageSync('username', data.username)
+    if (data.avatar) {
+      uni.setStorageSync('avatar', data.avatar)
+    }
   }
 
   const register = async (data: any) => {
@@ -66,15 +71,18 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     refreshToken.value = null
     username.value = null
+    avatar.value = null
     uni.removeStorageSync('token')
     uni.removeStorageSync('refreshToken')
     uni.removeStorageSync('username')
+    uni.removeStorageSync('avatar')
   }
 
   return {
     token,
     refreshToken,
     username,
+    avatar,
     login,
     register,
     refreshAccessToken,

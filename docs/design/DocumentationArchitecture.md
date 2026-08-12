@@ -88,6 +88,8 @@ docs/
 │   ├── FrontendPC.md
 │   ├── InfraRelease.md
 │   └── TabletHandwritingNotes.md
+├── plans/
+│   └── backend-greenfield-rewrite-plan.md
 ├── release/
 │   └── Changelog.md
 ├── user/
@@ -110,7 +112,9 @@ docs/
         └── StudyCore 阶段的更早历史材料
 ```
 
-目录名使用小写英文，文档文件名使用 PascalCase。`docs/README.md` 是唯一允许保留在 `docs/` 根目录的 Markdown 文档。
+目录名使用小写英文，常规文档文件名使用 PascalCase。`docs/plans/backend-greenfield-rewrite-plan.md` 是经用户明确指定路径的已批准详细实施计划例外。`docs/README.md` 是唯一允许保留在 `docs/` 根目录的 Markdown 文档。
+
+`planning/` 继续承载按领域维护的任务总览、依赖和未来事项；`plans/` 只承载已经批准、能够直接交给工程人员逐阶段执行的跨模块详细计划。不得为同一计划在两个目录维护可编辑副本，其他文档必须链接到唯一计划文件。
 
 ### 4.1 旧路径到新路径的迁移
 
@@ -134,7 +138,7 @@ docs/
 | `docs/DeploymentGuide.md` | `docs/operations/Deployment.md` |
 | `docs/Runbook.md` | `docs/operations/Runbook.md` |
 | `docs/DevelopmentPlan.md` | 由 `docs/planning/README.md` 取代 |
-| `docs/plans/*` | `docs/planning/*`，去除冗余 `Plan` 前缀 |
+| 整理前历史 `docs/plans/*` | `docs/planning/*`，去除冗余 `Plan` 前缀；2026-08-12 后明确批准的跨模块详细计划可重新进入 `docs/plans/`，但必须登记到入口 |
 | `docs/Changelog.md` | `docs/release/Changelog.md` |
 | `docs/UserManualOutline.md` | `docs/user/UserManual.md` |
 | `docs/TraeCompetitionApplicationAuralis.md` | `docs/showcase/TraeCompetitionApplication.md` |
@@ -181,6 +185,7 @@ docs/
 | `docs/current/IssuesAndReview.md` | 尚未关闭的风险、优先级、证据、影响、处置建议和关闭条件 |
 | `docs/planning/README.md` | 计划体系入口和阅读方式 |
 | `docs/planning/` 中其他文件 | 按领域维护未来任务、依赖、验收方式和完成定义 |
+| `docs/plans/` | 已批准、决策完整、可直接执行的跨模块详细实施计划；每项只能有一个权威文件 |
 | `docs/release/Changelog.md` | 已发生且可确认的历史变化，不承载未来计划 |
 | `docs/operations/Deployment.md` | 从构建到部署的标准流程和生产门禁 |
 | `docs/operations/Runbook.md` | 运行期诊断、备份、恢复和应急处理 |
