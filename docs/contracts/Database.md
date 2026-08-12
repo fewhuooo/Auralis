@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：阶段 0 已固化新目标模型；Server 骨架已构建，Flyway 和业务迁移尚未开始
+文档状态：阶段 1 Identity V1 已实现并通过 H2 clean-schema 验证；PostgreSQL/容器集成仍未验证
 
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
 
@@ -58,6 +58,18 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | conversations | AI 会话 | user/updated/deleted 索引 |
 | messages | AI 消息 | conversation + sequence 唯一 |
 
+## 阶段 1 Identity V1 已实现 schema
+
+Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源，面向干净数据库，不接管旧 schema，也不提供旧数据迁移。V1 包含：
+
+| 表 | 已实现字段和约束 |
+| --- | --- |
+| `users` | `id UUID` 主键、`username`、唯一 `normalized_username`、`password_hash`、`display_name`、`avatar_url`、`status`（ACTIVE/DISABLED CHECK）、`version BIGINT`、`created_at/updated_at TIMESTAMPTZ` |
+| `devices` | `id UUID` 主键、`user_id UUID` 引用 `users`、`device_id`、`name`、`platform`、`last_active_at`、`last_pull_cursor`、`revoked_at`、`version`、审计时间；`(user_id, device_id)` 唯一 |
+| `refresh_sessions` | `id UUID` 主键、`user_id`/`device_id` 外键、`rotation_family_id`、唯一 `token_hash`、`created_at`、`expires_at`、`last_used_at`、`rotated_at`、`revoked_at`、自引用 `replaced_by_session_id` |
+
+三张表均使用 `ON DELETE RESTRICT` 的归属外键；V1 为 owner、expiry、revocation、rotation family 和 token hash 建立查询索引。JPA Entity 使用 `Instant`、UUID、字符串枚举和 `@Version` 映射，Repository 查询包含当前 `userId` 的方法不省略归属条件。
+
 ## 核心模型字段决策
 
 ### Subject
@@ -111,6 +123,6 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 ## 迁移状态
 
-阶段 0 已完成目标表、共同字段、索引、同步不变量和端侧边界设计；未创建 V1__*.sql，未接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。Flyway V1 从阶段 1 开始，并只针对干净新数据库。
+阶段 1 已创建 `V1__identity_schema.sql`，并在 H2 PostgreSQL mode 的空库中验证 Flyway version `1`、三张身份表、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
 
-阶段 0 验证边界：新 Maven 工程未引入 datasource、JPA、Flyway、Redis、Milvus 或 MinIO；数据库表、Entity、Repository 和容器连接均未声称已实现。`clean test` 只证明配置、模块边界、错误协议、健康检查和 OpenAPI 基础。
+阶段 1 验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 19 个自动测试，包含 schema、Repository owner isolation、refresh rotation/replay、JWT、MockMvc Auth 和架构测试；test profile HTTP smoke 以 H2 启动并验证 health、OpenAPI、register、login。PostgreSQL 17/pgvector、Testcontainers、Docker、MinIO 和生产迁移演练仍未声称通过。

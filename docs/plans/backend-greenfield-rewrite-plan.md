@@ -724,6 +724,7 @@ Redis、Milvus、etcd 和 pgAdmin 不属于最小生产拓扑。开发工具如 
 截至 2026-08-12：
 
 - PC、Mobile、Tablet 的基础页面与主要视觉/布局重构已基本收敛，但仍有 GUI、真机和联调验收缺口。
-- 旧 Server 仍在仓库中，本计划尚未开始替换或实现。
-- 当前任务只完成计划文档落盘和状态/风险登记，不修改后端代码、配置、数据库或容器。
-- 下一次开始实施时必须从阶段 0 的工作树保护和仓库外备份开始。
+- 旧 Server 已按阶段 0 规则移至仓库外可恢复备份；当前工作树使用 `com.auralis.app` 绿地后端。
+- 阶段 0 已完成骨架、错误协议、健康/OpenAPI、模块边界和工作树保护；阶段 1 已完成 Flyway V1、User/Device/RefreshSession、认证链路、owner-scoped session 操作及自动测试。
+- 阶段 1 本轮证据为 H2 clean-schema、19 个 Maven 自动测试和 test profile HTTP smoke；PostgreSQL/pgvector、Docker、Testcontainers、前端联调和人工业务验收仍未完成。
+- 下一步从阶段 2 的 Subject、Source、KnowledgeBlock、Task、Relation 开始，并继续保留阶段 1 的 PostgreSQL/容器集成门禁。

@@ -2,7 +2,7 @@
 
 更新时间：2026-08-12
 
-文档状态：阶段 0 已固化新目标契约；健康/文档基础已实现，业务接口尚未在新 Server 实现
+文档状态：阶段 1 Auth 已实现并通过 H2 自动测试与 test profile HTTP smoke；其余业务接口仍为 planned
 
 权威范围：新后端 REST、SSE、WebSocket 的目标路径、鉴权、请求/响应规则和阶段状态。
 
@@ -12,17 +12,25 @@
 
 本文件同时保留替换前旧 Server 的代码事实，和绿地重写后的目标契约。旧代码事实不代表新 Server 兼容旧请求；目标契约的 planned-after-phase-0 路由必须在对应阶段实现并测试后，才能升级为可用。
 
-阶段 0 可访问的实际路径只有：
+当前已实现并可访问的实际路径：
 
-| Method | Path | 阶段 0 行为 |
+| Method | Path | 当前行为 |
 | --- | --- | --- |
 | GET | /actuator/health | Spring Boot 健康汇总 |
 | GET | /actuator/health/liveness | 进程存活探针 |
 | GET | /actuator/health/readiness | 阶段 0 就绪探针 |
 | GET | /v3/api-docs | OpenAPI 文档，骨架完成后可访问 |
 | GET | /swagger-ui/index.html | OpenAPI UI，骨架完成后可访问 |
+| POST | /api/auth/register | 注册用户、设备和 refresh session，HTTP 201，并返回 Location |
+| POST | /api/auth/login | 校验凭据并签发 token pair，HTTP 200 |
+| POST | /api/auth/refresh | rotation refresh session 并签发新 token pair，HTTP 200 |
+| POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
+| GET | /api/auth/me | 返回当前用户公开资料，需 Bearer access token |
+| GET | /api/auth/sessions | 返回当前用户会话元数据，需 Bearer access token |
+| DELETE | /api/auth/sessions/{sessionId} | owner-scoped 撤销会话，HTTP 204 |
+| DELETE | /api/auth/sessions/others | 撤销当前会话以外的会话，HTTP 204 |
 
-阶段 0 不实现业务 Controller，不创建临时业务路径。
+除上述 Auth 路径外，阶段 1 不实现业务 Controller，不创建临时业务路径。
 
 阶段 0 HTTP 验证：`/actuator/health/liveness` 和 `/actuator/health/readiness` 真实启动返回 HTTP 200、`status=UP`；`/v3/api-docs` 返回 HTTP 200 且 `info.title=Auralis API`；`/swagger-ui/index.html` 返回 HTTP 200。MockMvc 同时验证未知路由的 `404`、`RESOURCE_NOT_FOUND`、`application/problem+json` 和 `X-Trace-Id` 回写。
 
@@ -59,22 +67,42 @@
 
 ## 目标路由总览
 
-以下路由是已批准目标契约，状态为 planned-after-phase-0：
+以下路由是已批准目标契约；Auth 已在阶段 1 实现，其余仍为 planned-after-phase-0：
 
-| 模块 | 目标路径 |
-| --- | --- |
-| Auth | /api/auth/register、/login、/refresh、/logout、/me、/sessions |
-| Subject | /api/subjects、/api/subjects/{id}、/api/subjects/{id}/restore |
-| Asset | /api/assets/upload-intents、/api/assets/{id}/complete、/api/assets/{id}/download-url |
-| Source | /api/sources、/api/sources/{id}、/api/sources/{id}/restore、/api/sources/{id}/reingest |
-| Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore |
-| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore |
-| Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore |
-| Review | /api/reviews/due、/api/reviews/events、/api/reviews/history |
-| Stats | /api/stats/overview、/api/stats/weekly |
-| Sync | /api/sync/push、/api/sync/pull、/api/sync/snapshot |
-| AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、建议类接口 |
-| Realtime | /api/realtime/ticket；WebSocket 地址 /ws/events |
+| 模块 | 目标路径 | 状态 |
+| --- | --- | --- |
+| Auth | /api/auth/register、/login、/refresh、/logout、/me、/sessions | implemented-phase-1 |
+| Subject | /api/subjects、/api/subjects/{id}、/api/subjects/{id}/restore | planned |
+| Asset | /api/assets/upload-intents、/api/assets/{id}/complete、/api/assets/{id}/download-url | planned |
+| Source | /api/sources、/api/sources/{id}、/api/sources/{id}/restore、/api/sources/{id}/reingest | planned |
+| Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | planned |
+| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore | planned |
+| Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore | planned |
+| Review | /api/reviews/due、/api/reviews/events、/api/reviews/history | planned |
+| Stats | /api/stats/overview、/api/stats/weekly | planned |
+| Sync | /api/sync/push、/api/sync/pull、/api/sync/snapshot | planned |
+| AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、建议类接口 | planned |
+| Realtime | /api/realtime/ticket；WebSocket 地址 /ws/events | planned |
+
+## 阶段 1 Auth 已实现契约
+
+### 请求与成功响应
+
+- `POST /api/auth/register` 请求字段为 `username`、`password`、`displayName`、`deviceId`、`deviceName`、`platform`；成功返回 HTTP 201、`Location: /api/auth/sessions/{sessionId}` 和 AuthResult。
+- `POST /api/auth/login` 请求字段为 `username`、`password`、`deviceId`、`deviceName`、`platform`；成功返回 HTTP 200 和 AuthResult。
+- `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult。旧 refresh token 立即失效。
+- AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`deviceId`。
+- `GET /api/auth/me` 返回 `UserView { id, username, displayName }`。
+- `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`deviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。
+- 登出和会话撤销成功返回 HTTP 204；会话查询和撤销始终从 SecurityContext 的 userId 推导归属，不接受客户端 userId。
+
+### 鉴权和安全错误
+
+- 注册、登录、刷新为公开路径；登出、当前用户和会话路径使用 `Authorization: Bearer <accessToken>`。
+- access JWT 有效期配置默认 900 秒；refresh session 默认 2,592,000 秒（30 天）。JWT 只含 `sub`、`sid`、`did`、`typ=access`、`iat`、`exp`；refresh token 只保存 SHA-256 hash。
+- 未登录、无效、过期、撤销或重放 refresh token 返回 HTTP 401、错误码 `UNAUTHENTICATED` 和安全 detail，不返回 token 内容。refresh token 不能作为 access token 使用。
+- 重复使用已轮换的 refresh token 会撤销整个 rotation family；跨用户撤销不存在的 owner-scoped session 返回 HTTP 404、`RESOURCE_NOT_FOUND`，不泄漏归属。
+- 参数校验返回 HTTP 400、`VALIDATION_FAILED` 和 `fieldErrors`；重复用户名返回 HTTP 409、`MUTATION_REJECTED`。安全过滤器错误也返回 `application/problem+json` 和 `X-Trace-Id`。
 
 ## 目标认证规则
 
@@ -93,8 +121,8 @@
 
 这些旧路径、Result 包装、状态码、请求体、响应体和行为不被新后端承诺兼容。旧前端迁移必须等待新 OpenAPI 稳定后单独进行。
 
-## 阶段 0 契约边界
+## 阶段 0/1 契约边界
 
-已完成：目标路由表、通用响应规则、Problem Details 字段、认证规则、分页/版本规则和旧契约不兼容结论。
+已完成：目标路由表、通用响应规则、Problem Details 字段、阶段 1 Auth 请求/响应与错误规则、分页/版本规则和旧契约不兼容结论。
 
-未完成：业务 Controller、OpenAPI 业务 schema、Flyway 数据库、业务安全/隔离/同步测试、SDK 生成、前后端联调和业务验收。
+未完成：Subject 及后续业务 Controller、固定 OpenAPI artifact/SDK 生成、PostgreSQL/容器集成、前后端联调和人工业务验收。

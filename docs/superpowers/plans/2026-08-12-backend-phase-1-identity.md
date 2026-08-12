@@ -36,19 +36,19 @@
 - V1 creates `users`, `devices`, `refresh_sessions` with UUID primary keys, UTC timestamp columns, ownership foreign keys, normalized username uniqueness, `(user_id, device_id)` uniqueness, token hash uniqueness and rotation-family indexes.
 - `IdentitySchemaTests` starts the context with H2/PostgreSQL mode and asserts Flyway has applied `1`, the three tables exist, and no `com.auralis.server` or old persistence dependency is required.
 
-- [ ] **Step 1: Add fixed dependency coordinates**
+- [x] **Step 1: Add fixed dependency coordinates**
 
 Add these dependencies without dynamic versions: `spring-boot-starter-data-jpa`, `spring-boot-starter-security`, `spring-security-oauth2-jose`, `spring-boot-starter-oauth2-resource-server`, `flyway-core`, `flyway-database-postgresql`, PostgreSQL runtime, and H2 test scope. Keep the existing Boot/Modulith dependency management.
 
-- [ ] **Step 2: Write the failing schema test**
+- [x] **Step 2: Write the failing schema test**
 
 Create a `@SpringBootTest` with `@ActiveProfiles("test")` that autowires `JdbcTemplate` and asserts the Flyway history contains version `1` plus tables `users`, `devices`, `refresh_sessions`. Run `..\mvnw.cmd -B -ntp -Dtest=IdentitySchemaTests test`; it must fail because the migration and test profile do not exist yet.
 
-- [ ] **Step 3: Add V1 and test profile**
+- [x] **Step 3: Add V1 and test profile**
 
 Use application-generated UUIDs, `TIMESTAMP WITH TIME ZONE`, `BIGINT`, explicit `CHECK` constraints for statuses, foreign keys with `ON DELETE RESTRICT`, and indexes for owner/expiry/revocation lookups. Configure H2 with `MODE=PostgreSQL;DB_CLOSE_DELAY=-1`, Flyway enabled, and `spring.jpa.hibernate.ddl-auto=validate`.
 
-- [ ] **Step 4: Run the schema test and commit**
+- [x] **Step 4: Run the schema test and commit**
 
 Run `..\mvnw.cmd -B -ntp -Dtest=IdentitySchemaTests test` and expect the targeted test to pass. Commit as `build(backend): add identity persistence baseline`.
 
@@ -75,23 +75,23 @@ Run `..\mvnw.cmd -B -ntp -Dtest=IdentitySchemaTests test` and expect the targete
 - `RefreshSessionRepository.findByTokenHashForUpdate(String)` locks one session; `findByIdAndUserId(UUID, UUID)` and `findAllByUserIdOrderByLastUsedAtDesc(UUID)` never omit owner; `revokeFamily(UUID, Instant)` updates only the requested family.
 - Entities expose only persistence fields; password hash and token hash never appear in response DTOs.
 
-- [ ] **Step 1: Write failing repository isolation tests**
+- [x] **Step 1: Write failing repository isolation tests**
 
 Persist two users with same display values but different IDs, devices with the same client device ID under each user, and sessions under each user. Assert same-user queries find records, cross-user `findByIdAndUserId` returns empty, and family revocation changes only the requested family.
 
-- [ ] **Step 2: Run the repository tests to verify the expected red state**
+- [x] **Step 2: Run the repository tests to verify the expected red state**
 
 Run `..\mvnw.cmd -B -ntp -Dtest=IdentityRepositoryTests test`; expect compilation failure for missing entities/repositories, not a missing dependency or test typo.
 
-- [ ] **Step 3: Implement minimal entities and repositories**
+- [x] **Step 3: Implement minimal entities and repositories**
 
 Map V1 exactly with UUID IDs, `@Enumerated(EnumType.STRING)`, `Instant`, `@Version` on mutable entities, explicit `@Table` indexes, and Spring Data derived/annotated queries carrying `userId` in every owner lookup.
 
-- [ ] **Step 4: Run all identity persistence tests**
+- [x] **Step 4: Run all identity persistence tests**
 
 Run `..\mvnw.cmd -B -ntp -Dtest=IdentitySchemaTests,IdentityRepositoryTests test`; expect all assertions to pass.
 
-- [ ] **Step 5: Commit persistence**
+- [x] **Step 5: Commit persistence**
 
 Commit as `feat(backend): add identity persistence entities and isolation queries`.
 
@@ -119,23 +119,23 @@ Commit as `feat(backend): add identity persistence entities and isolation querie
 - `IdentityService.logout(UUID userId, UUID sessionId)`, `revokeSession(UUID userId, UUID sessionId)`, `revokeOtherSessions(UUID userId, UUID currentSessionId)` all use owner-scoped repository queries.
 - `TokenService` issues access JWT with only `sub`, `sid`, `did`, `typ=access`, `iat`, `exp`; it never accepts refresh tokens as access credentials.
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Test password hashes are delegated/one-way, registration normalizes usernames, login rejects unknown and wrong passwords identically, refresh creates a new session and invalidates the old one, replay revokes the family, expired/revoked tokens fail, and access JWT claims contain no password or refresh token.
 
-- [ ] **Step 2: Run service tests to verify red**
+- [x] **Step 2: Run service tests to verify red**
 
 Run `..\mvnw.cmd -B -ntp -Dtest=IdentityServiceTests test`; expect missing service classes or methods, then correct only test setup errors until the failure is caused by absent behavior.
 
-- [ ] **Step 3: Implement minimal token and service behavior**
+- [x] **Step 3: Implement minimal token and service behavior**
 
 Use `PasswordEncoderFactories.createDelegatingPasswordEncoder()`, `SecureRandom` for 32-byte refresh values, SHA-256 + Base64URL for storage, `NimbusJwtEncoder`/`NimbusJwtDecoder` with a runtime secret key, transaction boundaries around registration and rotation, and `Clock` injection for deterministic expiry tests.
 
-- [ ] **Step 4: Run service and persistence tests**
+- [x] **Step 4: Run service and persistence tests**
 
 Run `..\mvnw.cmd -B -ntp -Dtest=IdentitySchemaTests,IdentityRepositoryTests,IdentityServiceTests test`; expect all to pass.
 
-- [ ] **Step 5: Commit security services**
+- [x] **Step 5: Commit security services**
 
 Commit as `feat(backend): implement identity tokens and refresh rotation`.
 
@@ -160,23 +160,23 @@ Commit as `feat(backend): implement identity tokens and refresh rotation`.
 - `POST /api/auth/logout` returns `204`; `GET /api/auth/me` returns public user; `GET /api/auth/sessions` returns owner-scoped session metadata; `DELETE /api/auth/sessions/{id}` and `DELETE /api/auth/sessions/others` revoke sessions.
 - Unauthenticated protected routes use `application/problem+json`, `401`, `UNAUTHENTICATED`, safe detail and a trace ID; cross-user session IDs look like not-found and never reveal ownership.
 
-- [ ] **Step 1: Write failing MockMvc tests**
+- [x] **Step 1: Write failing MockMvc tests**
 
 Cover register/login/me, duplicate username, invalid credentials, refresh rotation and replay, logout, session listing, cross-user revoke rejection, protected route without bearer token, refresh token used as access token, and validation error fields.
 
-- [ ] **Step 2: Run controller tests to verify red**
+- [x] **Step 2: Run controller tests to verify red**
 
 Run `..\mvnw.cmd -B -ntp -Dtest=AuthControllerTests test`; expect missing controller/security classes or unimplemented routes.
 
-- [ ] **Step 3: Implement DTOs, controller and security filter**
+- [x] **Step 3: Implement DTOs, controller and security filter**
 
 Use `@Valid` request records, `SecurityContext` principal `AuthenticatedUser`, `SecurityFilterChain` permitting only register/login/refresh and actuator/docs, stateless sessions, bearer JWT validation, and Problem Details entrypoint/access-denied handlers.
 
-- [ ] **Step 4: Run complete backend test suite**
+- [x] **Step 4: Run complete backend test suite**
 
 Run `..\mvnw.cmd -B -ntp clean test`; expect phase 0 tests plus all identity tests to pass.
 
-- [ ] **Step 5: Commit the authentication surface**
+- [x] **Step 5: Commit the authentication surface**
 
 Commit as `feat(backend): expose identity authentication endpoints`.
 
@@ -201,19 +201,19 @@ Commit as `feat(backend): expose identity authentication endpoints`.
 - Database contract records V1 tables as implemented against a clean schema, while PostgreSQL/pgvector/Docker/Testcontainers remain unverified.
 - Status records code/build/test/startup evidence separately; risks keep Docker, frontend cutover, business acceptance and any unverified production concerns open.
 
-- [ ] **Step 1: Run static checks and final tests**
+- [x] **Step 1: Run static checks and final tests**
 
 Run `git diff --check`, the old package/dependency scan under `Auralis-Server/src`, `..\mvnw.cmd -B -ntp clean test`, and inspect Surefire reports. No PC/Mobile/Compose files may appear in the diff.
 
-- [ ] **Step 2: Run test-profile startup smoke**
+- [x] **Step 2: Run test-profile startup smoke**
 
 Start the application with the test/local datasource configuration, exercise registration and login over HTTP if the environment supports it, verify health and OpenAPI, then stop only the exact process PID. Record that H2 was used and PostgreSQL/Docker were not tested.
 
-- [ ] **Step 3: Update all authoritative docs**
+- [x] **Step 3: Update all authoritative docs**
 
 Change only statements supported by this round's evidence. Keep the phase status as “已构建待验收” until PostgreSQL/Docker and manual acceptance gates are completed.
 
-- [ ] **Step 4: Commit final phase 1 handoff**
+- [x] **Step 4: Commit final phase 1 handoff**
 
 Run `git add Auralis-Server docs/contracts docs/modules/Backend.md docs/current docs/release docs/plans/backend-greenfield-rewrite-plan.md docs/README.md`, `git diff --cached --check`, then commit as `feat(backend): deliver identity and database phase 1`.
 
