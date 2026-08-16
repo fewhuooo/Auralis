@@ -52,7 +52,7 @@
 执行记录：
 
 日期：2026-08-16
-提交：本任务范围文档提交见 `git log --oneline -- docs/project/ProductRequirements.md docs/current/Status.md docs/current/IssuesAndReview.md docs/planning/PreDeploymentReadinessTasks.md`
+提交：`958aa43`（范围冻结文档提交）
 命令：文档内容核对；`git diff --check`
 结果：目标端、范围外项、7 条主流程验收结果和 5 类责任角色已同步；未改变任何模块的验收状态。
 人工证据：无；本项是产品范围与证据口径冻结，不替代 GUI、真机或真实依赖验收。
