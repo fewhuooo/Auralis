@@ -3,7 +3,7 @@ package com.auralis.app.ai;
 import com.auralis.app.ai.internal.persistence.AiCredentialEntity;
 import com.auralis.app.ai.internal.persistence.AiCredentialRepository;
 import com.auralis.app.ai.internal.security.AiKeyCipher;
-import com.auralis.app.shared.config.AuralisProperties;
+import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,15 +16,15 @@ public class AiSettingsService {
 
     private final AiCredentialRepository credentialRepository;
     private final AiKeyCipher keyCipher;
-    private final AuralisProperties properties;
+    private final ProviderEndpointPolicy endpointPolicy;
 
     public AiSettingsService(
             AiCredentialRepository credentialRepository,
             AiKeyCipher keyCipher,
-            AuralisProperties properties) {
+            ProviderEndpointPolicy endpointPolicy) {
         this.credentialRepository = credentialRepository;
         this.keyCipher = keyCipher;
-        this.properties = properties;
+        this.endpointPolicy = endpointPolicy;
     }
 
     @Transactional(readOnly = true)
@@ -36,12 +36,13 @@ public class AiSettingsService {
 
     @Transactional
     public AiSettingsView upsert(UUID userId, AiSettingsCommand command) {
-        validate(command);
+        java.net.URI validatedBaseUrl = validate(command);
+        String baseUrl = validatedBaseUrl.toString();
         AiCredentialEntity entity = credentialRepository
                 .findByUserIdAndProvider(userId, command.provider())
                 .orElseGet(() -> new AiCredentialEntity(
                         UUID.randomUUID(), userId, command.provider(),
-                        command.baseUrl(), command.chatModel(), command.embeddingModel(), null));
+                        baseUrl, command.chatModel(), command.embeddingModel(), null));
         String encryptedApiKey = entity.getEncryptedApiKey();
         if (command.apiKey() != null && !command.apiKey().isBlank()) {
             encryptedApiKey = keyCipher.encrypt(command.apiKey().trim());
@@ -49,7 +50,7 @@ public class AiSettingsService {
         if (encryptedApiKey == null || encryptedApiKey.isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "apiKey is required when configuring a provider");
         }
-        entity.update(command.baseUrl(), command.chatModel(), command.embeddingModel(), encryptedApiKey);
+        entity.update(baseUrl, command.chatModel(), command.embeddingModel(), encryptedApiKey);
         return toView(credentialRepository.save(entity));
     }
 
@@ -66,7 +67,7 @@ public class AiSettingsService {
                 new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey()), entity.getEmbeddingModel()));
     }
 
-    private void validate(AiSettingsCommand command) {
+    private java.net.URI validate(AiSettingsCommand command) {
         if (command.baseUrl() == null || command.baseUrl().isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "baseUrl is required");
         }
@@ -76,20 +77,7 @@ public class AiSettingsService {
         if (command.embeddingModel() == null || command.embeddingModel().isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "embeddingModel is required");
         }
-        try {
-            java.net.URI uri = java.net.URI.create(command.baseUrl().trim());
-            boolean testEnvironment = properties == null
-                    || "test".equalsIgnoreCase(properties.environment())
-                    || "local".equalsIgnoreCase(properties.environment());
-            if (!"https".equalsIgnoreCase(uri.getScheme()) && !(testEnvironment && "http".equalsIgnoreCase(uri.getScheme()))) {
-                throw new DomainException("VALIDATION_FAILED", "baseUrl must use HTTPS");
-            }
-            if (uri.getHost() == null) {
-                throw new DomainException("VALIDATION_FAILED", "baseUrl must include a host");
-            }
-        } catch (IllegalArgumentException exception) {
-            throw new DomainException("VALIDATION_FAILED", "baseUrl is invalid");
-        }
+        return endpointPolicy.validate(command.provider(), command.baseUrl());
     }
 
     private AiSettingsView toView(AiCredentialEntity entity) {

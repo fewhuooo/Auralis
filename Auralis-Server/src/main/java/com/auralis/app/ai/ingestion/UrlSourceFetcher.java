@@ -2,13 +2,16 @@ package com.auralis.app.ai.ingestion;
 
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
+import javax.net.ssl.HttpsURLConnection;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.net.InetAddress;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 @Component
 public class UrlSourceFetcher {
@@ -29,10 +32,10 @@ public class UrlSourceFetcher {
             throw new DomainException("INGESTION_FAILED", "URL is not allowed");
         }
         for (int redirect = 0; redirect <= properties.ai().urlMaxRedirects(); redirect++) {
-            current = validateDnsTargets(current);
+            CheckedAddressResolver checkedResolver = validateDnsTargets(current);
             HttpURLConnection connection = null;
             try {
-                connection = (HttpURLConnection) current.toURL().openConnection();
+                connection = openConnection(current, checkedResolver);
                 connection.setInstanceFollowRedirects(false);
                 connection.setConnectTimeout(Math.toIntExact(properties.ai().urlConnectTimeoutMillis()));
                 connection.setReadTimeout(Math.toIntExact(properties.ai().urlReadTimeoutMillis()));
@@ -63,15 +66,47 @@ public class UrlSourceFetcher {
         throw new DomainException("INGESTION_FAILED", "URL redirect limit was exceeded");
     }
 
-    private URI validateDnsTargets(URI uri) {
+    private CheckedAddressResolver validateDnsTargets(URI uri) {
         try {
-            for (java.net.InetAddress address : java.net.InetAddress.getAllByName(uri.getHost())) {
-                securityPolicy.validateResolvedAddress(address);
-            }
-            return uri;
+            return CheckedAddressResolver.forHost(
+                    uri.getHost(), securityPolicy.resolvePublicAddresses(uri));
         } catch (Exception exception) {
             throw new DomainException("INGESTION_FAILED", "URL target is not public");
         }
+    }
+
+    private HttpURLConnection openConnection(URI uri, CheckedAddressResolver checkedResolver) throws Exception {
+        List<InetAddress> addresses = checkedResolver.resolveHost(uri.getHost());
+        if ("https".equalsIgnoreCase(uri.getScheme())) {
+            HttpsURLConnection connection = (HttpsURLConnection) uri.toURL().openConnection();
+            connection.setSSLSocketFactory(new com.auralis.app.ai.internal.security.PinnedSslSocketFactory(
+                    HttpsURLConnection.getDefaultSSLSocketFactory(),
+                    addresses,
+                    uri.getPort() == -1 ? 443 : uri.getPort(),
+                    Math.toIntExact(properties.ai().urlConnectTimeoutMillis())));
+            connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+            return connection;
+        }
+        InetAddress selectedAddress = addresses.get(0);
+        URI pinnedUri = new URI(
+                uri.getScheme(),
+                null,
+                selectedAddress.getHostAddress(),
+                uri.getPort(),
+                uri.getPath(),
+                uri.getQuery(),
+                null);
+        HttpURLConnection connection = (HttpURLConnection) pinnedUri.toURL().openConnection();
+        connection.setRequestProperty("Host", hostHeader(uri));
+        return connection;
+    }
+
+    private String hostHeader(URI uri) {
+        String host = uri.getHost();
+        if (uri.getPort() == -1) {
+            return host;
+        }
+        return host + ":" + uri.getPort();
     }
 
     private String readBounded(InputStream input, long maxBytes) throws java.io.IOException {

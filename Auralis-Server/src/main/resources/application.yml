@@ -51,3 +51,5 @@ auralis:
     url-connect-timeout-millis: ${AURALIS_AI_URL_CONNECT_TIMEOUT_MILLIS:3000}
     url-read-timeout-millis: ${AURALIS_AI_URL_READ_TIMEOUT_MILLIS:10000}
     url-max-redirects: ${AURALIS_AI_URL_MAX_REDIRECTS:3}
+    provider-max-response-bytes: ${AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES:1048576}
+    allowed-provider-hosts: ${AURALIS_AI_ALLOWED_PROVIDER_HOSTS:api.deepseek.com,api.openai.com,api.siliconflow.cn}

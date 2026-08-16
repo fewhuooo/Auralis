@@ -134,10 +134,10 @@
 
 ## 阶段 5 AI/RAG 后端实现边界
 
-- `ai` 模块通过 `AiProviderPort`、`EmbeddingProviderPort` 与 `RestClient` 适配 OpenAI-compatible/DeepSeek 聊天和 SiliconFlow embedding；BYOK 使用 AES-GCM，日志与 DTO 不回显 key。
+- `ai` 模块通过 `AiProviderPort`、`EmbeddingProviderPort` 与统一的 `ProviderHttpClient` 适配 OpenAI-compatible/DeepSeek 聊天和 SiliconFlow embedding；Provider URL 使用 HTTPS 精确 allowlist、全 DNS 地址校验和固定地址连接，重定向关闭，并受超时/响应体上限约束。BYOK 使用 AES-GCM，日志、异常、DTO 与凭据 `toString()` 不回显 key。
 - ingestion 由 Source 提交后事件触发，`IngestionJobService` 做用户/Source 归属和活动任务去重；`IngestionWorker` 负责租约、解析、固定大小重叠切块、1024 维 embedding 和 chunk 替换。
 - `RetrievalService` 只查询当前 userId 的 chunks，使用 JSON embedding 在 H2/当前 JPA 基线内计算 cosine similarity；PostgreSQL vector/HNSW 只是 V9 目标能力，尚未通过真实数据库测试。
 - Conversation/Message 服务提供 owner-scoped CRUD、软删除、消息序列和安全错误持久化。SSE 使用 Spring MVC，不引入 WebFlux；上游 completion 目前转换为单个 delta。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
 
-阶段 5 自动验证：完整 `mvn -B -ntp clean test` 在 2026-08-16 通过 92 个测试；证据限于 H2/JPA/MockMvc/Stub Provider/架构检查，不包含 PostgreSQL/pgvector、MinIO、真实 Provider、性能和前端联调。
+阶段 5 自动验证：完整 `mvn -B -ntp clean test` 在 2026-08-16 通过 103 个测试；新增 Provider URL/IPv4/IPv6 SSRF、allowlist/端口、固定 DNS、来源重定向、响应体上限、超时安全错误和 key 脱敏测试。证据仍限于 H2/JPA/MockMvc/Stub Provider/架构及受控网络测试，不包含 PostgreSQL/pgvector、MinIO、真实 Provider、性能和前端联调。

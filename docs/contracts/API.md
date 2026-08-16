@@ -67,7 +67,7 @@
 
 ## 目标路由总览
 
-以下路由是已批准目标契约；Auth、Subject、Knowledge、Task、Source、Asset、Relation、Review、Stats、Sync、Realtime 已分别在阶段 1/2A/2B/3/4 构建，AI 仍为 planned：
+以下路由是已批准目标契约；Auth、Subject、Knowledge、Task、Source、Asset、Relation、Review、Stats、Sync、Realtime 已分别在阶段 1/2A/2B/3/4 构建，AI 已完成阶段 5 后端基线：
 
 | 模块 | 目标路径 | 状态 |
 | --- | --- | --- |
@@ -81,7 +81,7 @@
 | Review | /api/reviews/due、/api/reviews/events、/api/reviews/history | implemented-phase-4 |
 | Stats | /api/stats/overview、/api/stats/weekly | implemented-phase-4 |
 | Sync | /api/sync/push、/api/sync/pull、/api/sync/snapshot | implemented-phase-3 |
-| AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、建议类接口 | planned |
+| AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、建议类接口 | implemented-phase-5-baseline |
 | Realtime | /api/realtime/ticket；WebSocket 地址 /ws/events | implemented-phase-4 |
 
 ## 阶段 1 Auth 已实现契约
@@ -172,4 +172,6 @@
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
 - Source 创建、更新和 reingest 在提交后发布 ingestion 请求；worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。检索使用用户隔离的 cosine 相似度排序。
 - 当前 SSE 是 Spring MVC `StreamingResponseBody` 基线；真实 OpenAI-compatible 适配器当前以 completion 结果转换为单个 delta，不代表已经完成上游 token 级流式联调。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
-- 阶段 5 的自动证据限于 H2/JPA/MockMvc、Stub Provider、Flyway V1–V9 和架构测试；PostgreSQL/pgvector HNSW、MinIO、SSRF/安全专项、真实 Provider、性能、前端和人工业务验收仍未完成。
+- Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443），host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；保存和实际请求前都会校验所有 DNS 地址，实际连接固定到已检查地址，Provider 重定向关闭。
+- Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
+- 阶段 5 的自动证据为 H2/JPA/MockMvc、Stub Provider、Flyway V1–V9、架构测试和出站安全专项；PostgreSQL/pgvector HNSW、MinIO、真实 Provider 网络/证书/限流、性能、前端和人工业务验收仍未完成。

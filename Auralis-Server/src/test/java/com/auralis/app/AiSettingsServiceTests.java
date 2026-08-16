@@ -7,6 +7,8 @@ import com.auralis.app.ai.AiSettingsView;
 import com.auralis.app.ai.internal.persistence.AiCredentialEntity;
 import com.auralis.app.ai.internal.persistence.AiCredentialRepository;
 import com.auralis.app.ai.internal.security.AiKeyCipher;
+import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
+import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -16,10 +18,13 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -33,6 +38,9 @@ class AiSettingsServiceTests {
     @Mock
     private AiKeyCipher keyCipher;
 
+    @Mock
+    private ProviderEndpointPolicy endpointPolicy;
+
     @InjectMocks
     private AiSettingsService settingsService;
 
@@ -45,6 +53,8 @@ class AiSettingsServiceTests {
                 "deepseek-chat",
                 "bge-m3",
                 "sk-secret-value");
+        when(endpointPolicy.validate(AiProviderType.DEEPSEEK, command.baseUrl()))
+                .thenReturn(URI.create(command.baseUrl()));
         when(keyCipher.encrypt("sk-secret-value")).thenReturn("ciphertext");
         when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.DEEPSEEK))
                 .thenReturn(Optional.empty());
@@ -61,5 +71,24 @@ class AiSettingsServiceTests {
         assertThat(view.hasApiKey()).isTrue();
         assertThat(view).extracting(AiSettingsView::baseUrl, AiSettingsView::chatModel)
                 .containsExactly("https://api.deepseek.com", "deepseek-chat");
+    }
+
+    @Test
+    void rejectsUnsafeProviderUrlBeforeEncryptingOrPersistingApiKey() {
+        AiSettingsCommand command = new AiSettingsCommand(
+                AiProviderType.OPENAI_COMPATIBLE,
+                "https://evil.example",
+                "model",
+                "embedding-model",
+                "sk-secret-value");
+        when(endpointPolicy.validate(AiProviderType.OPENAI_COMPATIBLE, command.baseUrl()))
+                .thenThrow(new DomainException("VALIDATION_FAILED", "Provider URL is not allowed"));
+
+        AiSettingsService service = new AiSettingsService(credentialRepository, keyCipher, endpointPolicy);
+
+        assertThatThrownBy(() -> service.upsert(UUID.randomUUID(), command))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Provider URL is not allowed");
+        verifyNoInteractions(keyCipher, credentialRepository);
     }
 }

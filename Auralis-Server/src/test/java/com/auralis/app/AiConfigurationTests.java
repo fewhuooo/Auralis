@@ -21,5 +21,8 @@ class AiConfigurationTests {
         assertThat(properties.ai().maxRetrievedChunks()).isEqualTo(8);
         assertThat(properties.ai().ingestionMaxBytes()).isEqualTo(5_242_880L);
         assertThat(properties.ai().urlMaxRedirects()).isEqualTo(3);
+        assertThat(properties.ai().providerMaxResponseBytes()).isEqualTo(1_048_576L);
+        assertThat(properties.ai().allowedProviderHosts())
+                .containsExactly("api.deepseek.com", "api.openai.com", "api.siliconflow.cn");
     }
 }

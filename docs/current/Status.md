@@ -99,10 +99,10 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 
 ## 阶段 5 AI/RAG 当前状态（2026-08-16）
 
-- 代码实现：已完成 V8/V9、AI 配置、BYOK AES-GCM、Provider/embedding 端口、DeepSeek/OpenAI-compatible/SiliconFlow 适配器、Source ingestion job/解析/切块/embedding、用户隔离 cosine retrieval、Conversation/Message、SSE 生命周期和 Suggestions 基线。
-- 自动测试：`Auralis-Server\mvn -B -ntp clean test` 退出码 0，92 个测试全部通过，失败/错误/跳过均为 0；包含 Flyway V1–V9、Spring context、JPA validate、MockMvc、Stub Provider、AI/RAG 单测和架构测试。
+- 代码实现：已完成 V8/V9、AI 配置、BYOK AES-GCM、Provider/embedding 端口、DeepSeek/OpenAI-compatible/SiliconFlow 适配器、HTTPS Provider allowlist、全 DNS 地址校验与固定连接、来源 URL 重定向复核/固定连接、Source ingestion job/解析/切块/embedding、用户隔离 cosine retrieval、Conversation/Message、SSE 生命周期和 Suggestions 基线。
+- 自动测试：`Auralis-Server\mvn -B -ntp clean test` 退出码 0，103 个测试全部通过，失败/错误/跳过均为 0；包含 Flyway V1–V9、Spring context、JPA validate、MockMvc、Stub Provider、SSRF/IPv4/IPv6、DNS 固定、重定向、超时、响应体上限、key 脱敏、AI/RAG 单测和架构测试。
 - 已修复问题：默认 local profile 缺少 `auralis.ai.encryption-key` 会使 AI 未启用的上下文也启动失败；已加入仅 local profile 使用的 32 字节开发占位值，生产仍要求 `AURALIS_AI_ENCRYPTION_KEY`，并保留空值拒绝。
-- 未完成验收：真实 PostgreSQL/pgvector/HNSW、MinIO、外部 DeepSeek/SiliconFlow/BYOK Provider、真实 token 流式、SSRF/密钥/并发安全专项、性能、前端联调和人工业务验收。
+- 未完成验收：真实 PostgreSQL/pgvector/HNSW、MinIO、外部 DeepSeek/SiliconFlow/BYOK Provider 网络/证书/限流、真实 token 流式、生产网络策略与 secret rotation、性能、前端联调和人工业务验收。受控安全测试不替代真实网络专项。
 - 实现边界：当前 chunk 替换没有 generation/旧新索引原子切换；Suggestions 尚未使用真实 LLM 或 retrieval citations；文件解析只覆盖文本型 MIME；上述内容已登记为未关闭风险。
 
 以上结果只证明对应命令的执行范围，不替代 GUI、真机、真实基础设施或外部 AI 服务验收。

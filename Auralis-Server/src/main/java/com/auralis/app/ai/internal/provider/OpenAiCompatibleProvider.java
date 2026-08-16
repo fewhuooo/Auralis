@@ -7,12 +7,17 @@ import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
+import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
+import com.auralis.app.ai.internal.security.ProviderHttpClient;
+import com.auralis.app.ai.internal.security.ProviderHttpException;
+import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;
+import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
 import com.auralis.app.shared.error.DomainException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
-import org.springframework.web.client.RestClientResponseException;
 
+import java.io.IOException;
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -20,13 +25,21 @@ import java.util.Map;
 public class OpenAiCompatibleProvider implements AiProviderPort {
 
     private final AiProviderType providerType;
+    private final ProviderEndpointPolicy endpointPolicy;
+    private final ProviderHttpClient httpClient;
 
-    public OpenAiCompatibleProvider() {
-        this(AiProviderType.OPENAI_COMPATIBLE);
+    @Autowired
+    public OpenAiCompatibleProvider(ProviderEndpointPolicy endpointPolicy, ProviderHttpClient httpClient) {
+        this(AiProviderType.OPENAI_COMPATIBLE, endpointPolicy, httpClient);
     }
 
-    protected OpenAiCompatibleProvider(AiProviderType providerType) {
+    protected OpenAiCompatibleProvider(
+            AiProviderType providerType,
+            ProviderEndpointPolicy endpointPolicy,
+            ProviderHttpClient httpClient) {
         this.providerType = providerType;
+        this.endpointPolicy = endpointPolicy;
+        this.httpClient = httpClient;
     }
 
     @Override
@@ -38,21 +51,18 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
     public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
         validateCredential(credential);
         try {
-            JsonNode body = RestClient.builder()
-                    .baseUrl(trimTrailingSlash(credential.baseUrl()))
-                    .defaultHeader("Authorization", "Bearer " + credential.apiKey())
-                    .build()
-                    .post()
-                    .uri("/chat/completions")
-                    .body(requestBody(request))
-                    .retrieve()
-                    .body(JsonNode.class);
+            ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
+                    providerType, URI.create(credential.baseUrl().trim()));
+            JsonNode body = httpClient.postJson(
+                    endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class);
             return parseResponse(body);
         } catch (DomainException exception) {
             throw exception;
-        } catch (RestClientResponseException exception) {
-            throw providerError(exception);
-        } catch (RestClientException exception) {
+        } catch (ProviderHttpException exception) {
+            throw providerError(exception.status());
+        } catch (ProviderResponseTooLargeException exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+        } catch (IOException exception) {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable");
         } catch (Exception exception) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
@@ -93,8 +103,7 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
                 usage.path("completion_tokens").asLong(0));
     }
 
-    private DomainException providerError(RestClientResponseException exception) {
-        int status = exception.getStatusCode().value();
+    private DomainException providerError(int status) {
         if (status == 429) {
             return new DomainException("RATE_LIMITED", "AI provider rate limit reached");
         }
@@ -108,7 +117,4 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         return role.name().toLowerCase(java.util.Locale.ROOT);
     }
 
-    private String trimTrailingSlash(String baseUrl) {
-        return baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
-    }
 }

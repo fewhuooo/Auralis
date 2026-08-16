@@ -6,6 +6,8 @@ import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.List;
+
 @Validated
 @ConfigurationProperties(prefix = "auralis")
 public record AuralisProperties(
@@ -48,6 +50,8 @@ public record AuralisProperties(
             @Positive long ingestionMaxBytes,
             @Positive long urlConnectTimeoutMillis,
             @Positive long urlReadTimeoutMillis,
-            @jakarta.validation.constraints.PositiveOrZero int urlMaxRedirects) {
+            @jakarta.validation.constraints.PositiveOrZero int urlMaxRedirects,
+            @Positive long providerMaxResponseBytes,
+            List<String> allowedProviderHosts) {
     }
 }

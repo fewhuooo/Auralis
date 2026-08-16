@@ -95,13 +95,21 @@
 
 主要范围：`Auralis-Server/src/main/java/com/auralis/app/ai/`、相关安全测试。
 
-- [ ] Provider URL 拒绝回环、私网、链路本地地址、危险端口和非 HTTPS。
-- [ ] DNS 解析前后都执行地址校验，限制重定向并防止 DNS 重绑定。
-- [ ] Provider key 只以密文存储，日志和异常不输出明文或密文。
-- [ ] 请求超时、最大响应大小和允许的 Provider 策略实际生效。
-- [ ] 增加 SSRF、重定向、DNS、超时和密钥泄漏测试。
+- [x] Provider URL 拒绝回环、私网、链路本地地址、危险端口和非 HTTPS。
+- [x] DNS 解析前后都执行地址校验，限制重定向并防止 DNS 重绑定。
+- [x] Provider key 只以密文存储，日志和异常不输出明文或密文。
+- [x] 请求超时、最大响应大小和允许的 Provider 策略实际生效。
+- [x] 增加 SSRF、重定向、DNS、超时和密钥泄漏测试。
 
 完成条件：安全测试通过，所有出站请求走统一安全策略。
+
+执行记录：
+
+日期：2026-08-16
+提交：本项实现提交（见本文件对应提交）
+命令：`mvn -B -ntp clean test`；`git diff --check`
+结果：退出码均为 0；103 个测试全部通过，失败/错误/跳过均为 0。实现 Provider HTTPS 精确 allowlist、默认/显式 443 端口、IPv4/IPv6 公网地址校验、固定 DNS 地址连接、Provider 禁止重定向、来源 URL 每跳重校验、超时和响应体上限；受控网络测试覆盖手动重定向、地址固定、超时安全错误和 key 脱敏。
+剩余限制：真实 Provider 的 DNS/证书/代理/429/5xx/限流和生产 secret rotation 仍由 R2-05 与 P1-Phase5-Provider-Security 风险跟踪；本项不等同于真实外部服务或前端联调验收。
 
 ### R1-02 摄取任务自动执行（P0）
 
