@@ -42,12 +42,21 @@
 
 ### R0-01 冻结首个候选版本范围（P0）
 
-- [ ] 确认目标端：PC Web、PC Tauri、Mobile H5、微信小程序、Tablet 主工作区。
-- [ ] 确认“范围外”列表继续有效。
-- [ ] 为注册登录、资料上传、学习工作区、同步、复习、统计和 AI 对话定义验收结果。
-- [ ] 将范围同步到 `docs/project/ProductRequirements.md`、`docs/current/Status.md` 和 `docs/current/IssuesAndReview.md`。
+- [x] 确认目标端：PC Web、PC Tauri、Mobile H5、微信小程序、Tablet 主工作区。
+- [x] 确认“范围外”列表继续有效。
+- [x] 为注册登录、资料上传、学习工作区、同步、复习、统计和 AI 对话定义验收结果。
+- [x] 将范围同步到 `docs/project/ProductRequirements.md`、`docs/current/Status.md` 和 `docs/current/IssuesAndReview.md`。
 
 完成条件：目标端、主流程、排除项和验收负责人角色均已写入现行文档。
+
+执行记录：
+
+日期：2026-08-16
+提交：本任务范围文档提交见 `git log --oneline -- docs/project/ProductRequirements.md docs/current/Status.md docs/current/IssuesAndReview.md docs/planning/PreDeploymentReadinessTasks.md`
+命令：文档内容核对；`git diff --check`
+结果：目标端、范围外项、7 条主流程验收结果和 5 类责任角色已同步；未改变任何模块的验收状态。
+人工证据：无；本项是产品范围与证据口径冻结，不替代 GUI、真机或真实依赖验收。
+剩余限制：R0-02 工作树保护与 G0 阶段门禁仍未完成；主流程的实现和验收证据仍按后续 R1-R5 任务推进。
 
 ### R0-02 保护当前工作树（P0）
 
