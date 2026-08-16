@@ -125,9 +125,9 @@
 执行记录：
 
 日期：2026-08-16
-提交：本项实现提交（见后续提交记录）
-命令：`mvn -B -ntp "-Dtest=AiIngestionJobTests,AiIngestionWorkerTests" test`；`mvn -B -ntp clean test`
-结果：定向测试 5 个通过；实现数据库悲观锁 claim-next、PARSING/INDEXING lease 过期恢复、最大次数重试、FAILED 终态、条件化定时 worker，以及 Source 失败回到 PENDING 的状态同步。全量验证待本项最终提交后执行。
+提交：`6707034` (`fix(ai): automate ingestion job processing`)
+命令：`mvn -B -ntp "-Dtest=AiConfigurationTests,AiIngestionSchedulerTests,AiIngestionJobTests,AiIngestionWorkerTests" test`；`mvn -B -ntp clean test`
+结果：定向测试 7/7、全量测试 108/108 通过，失败 0、错误 0、跳过 0；实现数据库悲观锁 claim-next、PARSING/INDEXING lease 过期恢复、最大次数重试、FAILED 终态、条件化定时 worker，以及 Source 失败回到 PENDING 的状态同步。
 剩余限制：当前仍没有 generation、lease fencing、旧新索引原子切换或真实 PostgreSQL/崩溃恢复证据；这些风险继续由 P1-Phase5-Ingestion-Cutover 跟踪。
 
 ### R1-03 pgvector 检索和原子切换（P0）
