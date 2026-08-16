@@ -60,11 +60,20 @@
 
 ### R0-02 保护当前工作树（P0）
 
-- [ ] 记录当前分支、提交和 `git status --short`。
-- [ ] 将后续任务按后端、契约、客户端、基础设施和文档拆分提交。
-- [ ] 不覆盖当前未提交修改；任务开始前检查目标文件是否已有用户改动。
+- [x] 记录当前分支、提交和 `git status --short`。
+- [x] 将后续任务按后端、契约、客户端、基础设施和文档拆分提交。
+- [x] 不覆盖当前未提交修改；任务开始前检查目标文件是否已有用户改动。
 
 完成条件：每个执行任务都有明确修改范围，能够独立审查和回退。
+
+执行记录：
+
+日期：2026-08-16
+提交：基线提交 `daf88e5`；本次任务清单回写提交见后续 Git 历史
+命令：`git branch --show-current`；`git rev-parse HEAD`；`git status --short`
+结果：当前分支为 `agent/backend-phases-2b-5-baseline`，基线 HEAD 为 `daf88e52078f42354e47520cd0c04cafb9ff3c19`；工作树仅有 `?? .claude/`，具体文件为本机 `.claude/settings.local.json`。该目录未被纳入提交或修改。
+修改边界：后端为 `Auralis-Server/`；契约/数据为 `docs/contracts/` 与对应迁移/实体；客户端为 `Auralis-PC/`、`Auralis-Mobile/`；基础设施为 Compose、Dockerfile、环境变量和部署配置；文档为 `docs/`。接口或数据变更所需契约回写与对应变更保持同一可审查范围。
+剩余限制：当前分支相对 `origin/agent/backend-phases-2b-5-baseline` 领先 R0-01 的 2 个提交；未提交的 `.claude/` 本机配置仍保留在工作树中，后续任务继续避开。
 
 ### G0 阶段门禁
 
