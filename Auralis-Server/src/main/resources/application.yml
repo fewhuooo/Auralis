@@ -53,3 +53,7 @@ auralis:
     url-max-redirects: ${AURALIS_AI_URL_MAX_REDIRECTS:3}
     provider-max-response-bytes: ${AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES:1048576}
     allowed-provider-hosts: ${AURALIS_AI_ALLOWED_PROVIDER_HOSTS:api.deepseek.com,api.openai.com,api.siliconflow.cn}
+    ingestion-worker-enabled: ${AURALIS_AI_INGESTION_WORKER_ENABLED:false}
+    ingestion-poll-delay-millis: ${AURALIS_AI_INGESTION_POLL_DELAY_MILLIS:1000}
+    ingestion-lease-millis: ${AURALIS_AI_INGESTION_LEASE_MILLIS:300000}
+    ingestion-max-attempts: ${AURALIS_AI_INGESTION_MAX_ATTEMPTS:3}

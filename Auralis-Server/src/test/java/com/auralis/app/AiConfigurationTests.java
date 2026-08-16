@@ -24,5 +24,9 @@ class AiConfigurationTests {
         assertThat(properties.ai().providerMaxResponseBytes()).isEqualTo(1_048_576L);
         assertThat(properties.ai().allowedProviderHosts())
                 .containsExactly("api.deepseek.com", "api.openai.com", "api.siliconflow.cn");
+        assertThat(properties.ai().ingestionWorkerEnabled()).isTrue();
+        assertThat(properties.ai().ingestionPollDelayMillis()).isEqualTo(1_000L);
+        assertThat(properties.ai().ingestionLeaseMillis()).isEqualTo(300_000L);
+        assertThat(properties.ai().ingestionMaxAttempts()).isEqualTo(3);
     }
 }

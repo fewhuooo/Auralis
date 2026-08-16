@@ -30,3 +30,4 @@ auralis:
     refresh-session-ttl-seconds: 30
   ai:
     encryption-key: phase-five-test-encryption-32b!!
+    ingestion-worker-enabled: false

@@ -9,3 +9,5 @@ auralis:
     public-base-url: ${AURALIS_PUBLIC_BASE_URL}
   upload:
     max-file-size-bytes: ${AURALIS_UPLOAD_MAX_FILE_SIZE_BYTES}
+  ai:
+    ingestion-worker-enabled: ${AURALIS_AI_INGESTION_WORKER_ENABLED:true}

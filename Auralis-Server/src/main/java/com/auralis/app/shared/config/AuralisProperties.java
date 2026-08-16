@@ -52,6 +52,10 @@ public record AuralisProperties(
             @Positive long urlReadTimeoutMillis,
             @jakarta.validation.constraints.PositiveOrZero int urlMaxRedirects,
             @Positive long providerMaxResponseBytes,
-            List<String> allowedProviderHosts) {
+            List<String> allowedProviderHosts,
+            boolean ingestionWorkerEnabled,
+            @Positive long ingestionPollDelayMillis,
+            @Positive long ingestionLeaseMillis,
+            @Positive int ingestionMaxAttempts) {
     }
 }

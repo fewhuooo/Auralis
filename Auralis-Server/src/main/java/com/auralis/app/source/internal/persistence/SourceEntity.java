@@ -160,6 +160,12 @@ public class SourceEntity {
         safeErrorDetail = null;
     }
 
+    public void markPending() {
+        ingestionStatus = SourceIngestionStatus.PENDING;
+        safeErrorCode = null;
+        safeErrorDetail = null;
+    }
+
     public void markIndexing() {
         ingestionStatus = SourceIngestionStatus.INDEXING;
         safeErrorCode = null;

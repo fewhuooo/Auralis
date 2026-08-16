@@ -119,4 +119,13 @@ public class IngestionJobEntity {
         this.errorCode = errorCode;
         this.errorDetail = errorDetail;
     }
+
+    public void markRetry(Instant now, String errorCode, String errorDetail) {
+        status = IngestionJobStatus.PENDING;
+        leaseUntil = null;
+        completedAt = null;
+        this.errorCode = errorCode;
+        this.errorDetail = errorDetail;
+        updatedAt = now;
+    }
 }

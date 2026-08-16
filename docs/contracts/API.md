@@ -170,7 +170,7 @@
 - `POST /api/ai/conversations` 创建会话；`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 执行 owner-scoped 软删除。
 - `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、`provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。事件为 `message.started`、`message.delta`、`message.completed`、`message.error`；USER 消息先持久化，ASSISTANT 成功或安全失败状态随后持久化。
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
-- Source 创建、更新和 reingest 在提交后发布 ingestion 请求；worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。检索使用用户隔离的 cosine 相似度排序。
+- Source 创建、更新和 reingest 在提交后发布 ingestion 请求；启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行，租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。检索使用用户隔离的 cosine 相似度排序。
 - 当前 SSE 是 Spring MVC `StreamingResponseBody` 基线；真实 OpenAI-compatible 适配器当前以 completion 结果转换为单个 delta，不代表已经完成上游 token 级流式联调。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
 - Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443），host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；保存和实际请求前都会校验所有 DNS 地址，实际连接固定到已检查地址，Provider 重定向关闭。
 - Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。

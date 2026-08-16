@@ -8,3 +8,4 @@ auralis:
   ai:
     # Local-only placeholder; production must provide AURALIS_AI_ENCRYPTION_KEY.
     encryption-key: auralis-local-dev-key-32-bytes!!
+    ingestion-worker-enabled: ${AURALIS_AI_INGESTION_WORKER_ENABLED:true}

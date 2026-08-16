@@ -142,6 +142,14 @@ public class SourceService {
     }
 
     @Transactional
+    public SourceView markPending(UUID userId, UUID id) {
+        SourceEntity entity = mutable(userId, id);
+        requireActive(entity);
+        entity.markPending();
+        return view(sourceRepository.saveAndFlush(entity));
+    }
+
+    @Transactional
     public SourceView markIndexing(UUID userId, UUID id) {
         SourceEntity entity = mutable(userId, id);
         requireActive(entity);
