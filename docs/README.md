@@ -105,6 +105,7 @@
 - [PC 学科工作区重建实施计划（2026-07-13）](superpowers/plans/2026-07-13-pc-subject-workspace-reconstruction.md)
 - [PC 学科工作区大纲三栏布局规格（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-outline-three-column-design.md)
 - [后端阶段五 AI 与 RAG 设计（2026-08-16）](superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md)
+- [R1-01 BYOK 与出站网络安全设计（2026-08-16）](superpowers/specs/2026-08-16-r1-01-provider-security-design.md)
 
 ### 当前实现与契约
 
@@ -130,6 +131,7 @@
 - [后端阶段 2B Source、Asset、Relation 实施计划](superpowers/plans/2026-08-12-backend-phase-2b-source-asset-relation.md)
 - [后端阶段 3/4 同步、复习、统计与实时实施计划](superpowers/plans/2026-08-13-backend-phase-3-4-sync-review-realtime.md)
 - [后端阶段五 AI 与 RAG 实施计划（2026-08-16）](superpowers/plans/2026-08-16-backend-phase-5-ai-rag.md)
+- [R1-01 BYOK 与出站网络安全实施计划（2026-08-16）](superpowers/plans/2026-08-16-r1-01-provider-security.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
