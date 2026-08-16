@@ -69,7 +69,7 @@
 执行记录：
 
 日期：2026-08-16
-提交：基线提交 `daf88e5`；本次任务清单回写提交见后续 Git 历史
+提交：基线提交 `daf88e5`；任务清单回写提交 `76e89d2`
 命令：`git branch --show-current`；`git rev-parse HEAD`；`git status --short`
 结果：当前分支为 `agent/backend-phases-2b-5-baseline`，基线 HEAD 为 `daf88e52078f42354e47520cd0c04cafb9ff3c19`；工作树仅有 `?? .claude/`，具体文件为本机 `.claude/settings.local.json`。该目录未被纳入提交或修改。
 修改边界：后端为 `Auralis-Server/`；契约/数据为 `docs/contracts/` 与对应迁移/实体；客户端为 `Auralis-PC/`、`Auralis-Mobile/`；基础设施为 Compose、Dockerfile、环境变量和部署配置；文档为 `docs/`。接口或数据变更所需契约回写与对应变更保持同一可审查范围。
