@@ -1,7 +1,11 @@
 package com.auralis.app.task;
 
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.ResourceDeletedEvent;
+import com.auralis.app.shared.domain.ResourceChangedEvent;
+import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.subject.SubjectService;
+import org.springframework.context.ApplicationEventPublisher;
 import com.auralis.app.task.internal.persistence.TaskEntity;
 import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.springframework.stereotype.Service;
@@ -15,20 +19,32 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final SubjectService subjectService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public TaskService(TaskRepository taskRepository, SubjectService subjectService) {
+    public TaskService(
+            TaskRepository taskRepository,
+            SubjectService subjectService,
+            ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
         this.subjectService = subjectService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public TaskView create(UUID userId, TaskCommand command) {
+        return create(userId, UUID.randomUUID(), command);
+    }
+
+    @Transactional(noRollbackFor = DomainException.class)
+    public TaskView create(UUID userId, UUID taskId, TaskCommand command) {
         subjectService.requireActiveSubject(userId, command.subjectId());
         validateSchedule(command);
-        return view(taskRepository.save(new TaskEntity(
-                UUID.randomUUID(), userId, command.subjectId(), required(command.title()), command.description(),
+        TaskView result = view(taskRepository.save(new TaskEntity(
+                taskId, userId, command.subjectId(), required(command.title()), command.description(),
                 status(command.status()), command.scheduledAt(), command.dueAt(), command.durationMinutes(),
                 command.cognitiveLoad(), defaultSortKey(command.sortKey()), command.colorOverride())));
+        publishChange(userId, result, "CREATE");
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -38,11 +54,17 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
+    public List<TaskView> listIncludingDeleted(UUID userId) {
+        return taskRepository.findAllByUserIdOrderByUpdatedAtDescIdAsc(userId)
+                .stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
     public TaskView get(UUID userId, UUID id) {
         return view(active(userId, id));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public TaskView update(UUID userId, UUID id, long baseVersion, TaskCommand command) {
         TaskEntity entity = mutable(userId, id);
         requireActive(entity);
@@ -52,19 +74,23 @@ public class TaskService {
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
                 command.scheduledAt(), command.dueAt(), command.durationMinutes(), command.cognitiveLoad(),
                 defaultSortKey(command.sortKey()), command.colorOverride());
-        return view(taskRepository.saveAndFlush(entity));
+        TaskView result = view(taskRepository.saveAndFlush(entity));
+        publishChange(userId, result, "UPDATE");
+        return result;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
         TaskEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         entity.softDelete();
         taskRepository.saveAndFlush(entity);
+        publishChange(userId, view(entity), "DELETE");
+        eventPublisher.publishEvent(new ResourceDeletedEvent(userId, ResourceType.TASK, id));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public TaskView restore(UUID userId, UUID id, long baseVersion) {
         TaskEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
@@ -73,7 +99,9 @@ public class TaskService {
         requireVersion(entity, baseVersion);
         subjectService.requireActiveSubject(userId, entity.getSubjectId());
         entity.restore();
-        return view(taskRepository.saveAndFlush(entity));
+        TaskView result = view(taskRepository.saveAndFlush(entity));
+        publishChange(userId, result, "RESTORE");
+        return result;
     }
 
     private TaskEntity active(UUID userId, UUID id) {
@@ -129,5 +157,10 @@ public class TaskService {
                 entity.getScheduledAt(), entity.getDueAt(), entity.getDurationMinutes(), entity.getCognitiveLoad(),
                 entity.getSortKey(), entity.getColorOverride(), entity.getVersion(), entity.getCreatedAt(),
                 entity.getUpdatedAt(), entity.getDeletedAt());
+    }
+
+    private void publishChange(UUID userId, TaskView view, String mutationType) {
+        eventPublisher.publishEvent(new ResourceChangedEvent(
+                userId, ResourceType.TASK, view.id(), mutationType, view.version(), view.deletedAt(), view));
     }
 }

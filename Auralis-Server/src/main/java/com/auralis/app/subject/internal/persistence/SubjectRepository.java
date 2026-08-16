@@ -14,6 +14,8 @@ public interface SubjectRepository extends JpaRepository<SubjectEntity, UUID> {
 
     List<SubjectEntity> findAllByUserIdAndDeletedAtIsNullOrderBySortKeyAscUpdatedAtDescIdAsc(UUID userId);
 
+    List<SubjectEntity> findAllByUserIdOrderBySortKeyAscUpdatedAtDescIdAsc(UUID userId);
+
     Optional<SubjectEntity> findByUserIdAndDefaultSubjectTrueAndDeletedAtIsNull(UUID userId);
 
     boolean existsByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(UUID userId, String name);

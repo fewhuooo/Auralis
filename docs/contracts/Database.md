@@ -1,8 +1,8 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
-文档状态：阶段 1 Identity V1 与阶段 2A Subject/KnowledgeBlock/Task V2 已实现并通过 H2 clean-schema/JPA validate 验证；PostgreSQL/容器集成仍未验证
+文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7 已实现并通过 H2 clean-schema/JPA validate 验证；PostgreSQL/MinIO/容器集成仍未验证
 
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
 
@@ -44,12 +44,12 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | assets | MinIO 物理对象元数据 | user_id + object_key 唯一；status 索引 |
 | sources | 用户可见逻辑来源 | user、subject、status、updated 索引 |
 | knowledge_blocks | 知识正文 | user、subject、source、updated 索引 |
-| tasks | 任务和排期 | user、status、scheduled、due 索引 |
+| tasks | 任务和排期 | user、status、scheduled、due 索引；`completed_at` 记录进入 DONE 的时间 |
 | relations | 跨对象关系 | 节点类型 CHECK；定向/无向去重 |
 | review_parameter_sets | FSRS 参数版本 | scheduler/version 唯一 |
 | review_states | 每个知识块当前复习状态 | knowledge_block_id 唯一；user/due 索引 |
 | review_events | 不可变复习历史 | user_id + client_event_id 唯一 |
-| change_log | 用户增量同步日志 | BIGSERIAL cursor；user_id + cursor 索引 |
+| change_log | 用户增量同步日志 | 用户域内递增 BIGINT cursor；user_id + cursor 索引 |
 | inbound_mutations | push 幂等结果 | user_id + device_id + client_mutation_id 唯一 |
 | domain_event_outbox | 数据库事件 | status/available_at 索引；幂等消费 |
 | ingestion_jobs | 文档解析与索引任务 | status/available_at/lease 索引 |
@@ -75,9 +75,42 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。
 
 - `subjects` 保存 `name`、`description`、`icon_key`、`color`、`sort_key`、`is_default`；注册事务内创建受保护的“未分类”默认 Subject。名称唯一、默认 Subject 保护和恢复占用冲突由 SubjectService 校验。
-- `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2A 尚未创建 `sources` 表，因此 `source_id` 暂只作为可空预留字段，非空写入由服务拒绝；阶段 2B 接入 Source 时补齐归属外键和校验。
+- `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
 - `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`cognitive_load`、`sort_key`、`color_override`；数据库 CHECK 与服务同时约束状态、认知负荷、非负时长和排期顺序。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
+
+## 阶段 2B Source、Asset、Relation V3 已实现 schema
+
+Flyway `V3__source_asset_relation_schema.sql` 在 V2 之后新增 `assets`、`sources`、`relations`，并给 `knowledge_blocks.source_id` 补充指向 `sources(id)` 的可空 `ON DELETE RESTRICT` 外键。V3 不修改已执行的 V1/V2。
+
+- `assets` 保存 `id`、`user_id`、`object_key`、`original_name`、`size_bytes`、`mime_type`、可空 `sha256`、`upload_status`、可空 `completed_at` 和审计时间；`(user_id, object_key)` 唯一，size 必须为正，状态为 `UPLOADING`、`READY`、`FAILED`、`ORPHANED`。Asset 不含 `version/deleted_at`，不属于普通同步资源。
+- `sources` 保存共同同步字段、`type`、`subject_id`、`title`、可空 `asset_id`/`origin_url`/`raw_text`/`outline`、`ingestion_status`、安全错误码和安全错误说明；type 为 `FILE`、`TEXT`、`URL`，状态为 `PENDING`、`PARSING`、`INDEXING`、`READY`、`FAILED`。数据库外键表达用户、Subject、Asset 归属表约束，跨用户/活动状态由服务层校验。
+- `relations` 保存共同同步字段、`source_type/source_id`、`target_type/target_id`、`type` 和可空 `label`；数据库 CHECK 限定四种节点和五种关系类型、端点非空、禁止同类型同 ID 自关联。Relation 的跨表端点存在性、用户隔离和 `RELATED_TO` 规范化去重由 RelationService 保证。
+- 删除端点通过 shared `ResourceDeletedEvent` 由 Relation 模块批量软删除相关活动关系并递增关系版本；恢复端点不自动恢复关系。
+
+V3 的 Entity 使用显式 DTO 边界；AssetStoragePort 抽象预签名 PUT、HEAD/stat 和预签名 GET。test profile 使用可控测试适配器，MinIO 适配器只在 `auralis.upload.storage-provider=minio` 时启用。
+
+## 阶段 3 Sync V4 已实现 schema
+
+Flyway `V4__sync_schema.sql` 新增 `change_log` 和 `inbound_mutations`。`change_log` 以 `(user_id, cursor)` 唯一约束维护用户域内的同步顺序，保存资源类型/ID、操作、版本、墓碑时间、稳定 JSON payload 和创建时间；`inbound_mutations` 以 `(user_id, device_id, client_mutation_id)` 唯一约束保存请求 hash、决策、change cursor、当前资源快照、错误码和审计时间。两张表均有保留清理索引，首批同步资源受 CHECK 约束限制为 Subject、Source、KnowledgeBlock、Task、Relation。
+
+Sync push 在每条 mutation 的独立事务内先预留幂等键，再完成领域写入、change log 和最终决策，保证领域写入与幂等结果原子提交；同键 hash 不同的 mutation 只返回该条 REJECTED。`V6__sync_atomicity_and_cursor_high_water.sql` 增加 PROCESSING 决策和用户域 cursor 高水位表，cursor 分配使用行锁并在 change log 清理后保持单调。REST 领域服务和 push 通过 shared `ResourceChangedEvent` 进入同一个 change log 记录器；PostgreSQL 并发压力仍未验收。
+
+## 阶段 4 Review、Stats、Realtime V5 已实现 schema
+
+Flyway `V5__review_stats_realtime_schema.sql` 新增：
+
+- `review_parameter_sets`：scheduler/version 唯一，保存不可原地覆盖的参数 JSON。
+- `review_states`：用户与 KnowledgeBlock 一对一，保存 difficulty、stability、due/lastReviewed、reps、lapses、参数集和版本；用户/知识块/参数集外键与非负 CHECK 已建立。
+- `review_events`：不可变复习历史，保存 clientEventId、评分、复习时间、耗时、baseVersion、调度器/版本、参数集和完整前后 ReviewState JSON 快照；`(user_id, client_event_id)` 唯一，幂等重放使用事件中的 afterState。
+- `realtime_tickets`：只存 ticket hash、用户/设备、过期时间、消费时间和创建时间；hash 唯一，用户和设备外键级联清理。
+
+V5 同时将 change log、inbound mutation 的 owner 外键改为级联删除，以免账户清理被审计/幂等记录阻塞；业务软删除仍由领域服务负责。Review/Stats 查询与 Realtime ticket 消费均按 userId 过滤。
+
+## 阶段 3/4 审核修复迁移
+
+- `V6__sync_atomicity_and_cursor_high_water.sql` 放宽 inbound mutation 决策约束以容纳事务内 `PROCESSING` 占位，并新增 `sync_cursor_high_water(user_id, cursor)`；高水位不随 change log 保留清理删除。
+- `V7__task_completion_timestamp.sql` 为 `tasks` 新增可空 `completed_at`；任务进入 DONE 时写入，离开 DONE 时清空，保持 DONE 状态的后续编辑不改写该时间。weekly completed task 统计按该字段过滤，而不是按 `updated_at`。
 
 ## 核心模型字段决策
 
@@ -99,7 +132,7 @@ Asset 不作为 Relation 节点，也不进入普通离线 mutation；Source 才
 
 ### Task
 
-保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、cognitiveLoad、sortKey、colorOverride 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED。排期不自动改变状态；cognitiveLoad 使用 LOW、MEDIUM、HIGH 稳定代码。
+保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、cognitiveLoad、sortKey、colorOverride、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间。排期不自动改变状态；cognitiveLoad 使用 LOW、MEDIUM、HIGH 稳定代码。
 
 ### Relation
 
@@ -132,6 +165,17 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 ## 迁移状态
 
-阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`；两者均在 H2 PostgreSQL mode 的空库中验证 Flyway version `1→2`、表结构、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
+阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`，阶段 2B 已新增 `V3__source_asset_relation_schema.sql`，阶段 3/4 已新增 `V4__sync_schema.sql`、`V5__review_stats_realtime_schema.sql`、`V6__sync_atomicity_and_cursor_high_water.sql` 和 `V7__task_completion_timestamp.sql`；七者均在 H2 PostgreSQL mode 的空库中验证 Flyway version `1→2→3→4→5→6→7`、表结构、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
 
-阶段 2A 验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 31 个自动测试，包含 V1/V2 schema、三类 Repository owner isolation、默认 Subject、版本/软删除/恢复、Subject/KnowledgeBlock/Task MockMvc、Auth 回归和架构测试；PostgreSQL 17/pgvector、Testcontainers、Docker、MinIO 和生产迁移演练仍未声称通过。
+阶段 3/4 审核后验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 69 个自动测试；PostgreSQL 17/pgvector、Testcontainers、Docker、真实 MinIO、双设备和生产迁移演练仍未声称通过。
+
+## 阶段 5 AI/RAG schema（V8/V9，2026-08-16）
+
+- `V8__ai_rag_schema.sql` 新增 `ai_credentials`、`ingestion_jobs`、`source_chunks`、`conversations`、`messages`。所有表均保存 `user_id` 或可通过会话/Source 追溯用户，并建立用户/资源外键和查询索引。
+- `ai_credentials` 按 `(user_id, provider)` 唯一；API key 只保存 AES-GCM 生成的 `api_key_ciphertext` 和 `key_version`，数据库不保存明文 key。Provider 当前约束为 `DEEPSEEK`、`OPENAI_COMPATIBLE`、`SILICONFLOW`。
+- `ingestion_jobs` 保存 Source ingestion 状态、attempt、lease、错误安全摘要及开始/完成时间；当前状态约束为 `PENDING`、`PARSING`、`INDEXING`、`READY`、`FAILED`。
+- `source_chunks` 保存 ordinal、正文、SHA-256、字符偏移和 `embedding_json`；唯一键为 `(user_id, source_id, ordinal)`。embedding 业务校验固定为 1024 个有限浮点数。
+- `conversations` 支持用户隔离和软删除；`messages` 保存 `message_sequence`、`role`、`status`、正文、模型和安全错误元数据，按 `(conversation_id, message_sequence)` 唯一。
+- `V9__postgres_vector_support.java` 仅在 PostgreSQL 增加 `vector` 扩展、`source_chunks.embedding vector(1024)` 和 HNSW cosine 索引；H2 使用 V8 的 JSON 兼容列，便于自动测试。JPA 当前读取 JSON 列，PostgreSQL vector 列尚未进行真实数据库联调。
+
+阶段 5 schema 验证：`mvn -B -ntp clean test` 在 H2 PostgreSQL mode 上通过 92 个测试并验证 Flyway V1→V9、JPA `ddl-auto=validate`。该证据不等价于 PostgreSQL/pgvector migration、索引、并发 ingestion 或数据恢复演练通过。

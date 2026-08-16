@@ -29,7 +29,13 @@ public class GlobalExceptionHandler {
         HttpStatus status = switch (code) {
             case RESOURCE_NOT_FOUND, RESOURCE_DELETED -> HttpStatus.NOT_FOUND;
             case RESOURCE_VERSION_CONFLICT, MUTATION_REJECTED -> HttpStatus.CONFLICT;
-            case VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case VALIDATION_FAILED, UPLOAD_VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case MODEL_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
+            case MODEL_PROVIDER_ERROR -> HttpStatus.BAD_GATEWAY;
+            case RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
+            case INGESTION_FAILED -> HttpStatus.UNPROCESSABLE_ENTITY;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
         return response(status, code, exception.getMessage(), List.of(), exception.current(), request);

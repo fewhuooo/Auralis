@@ -1,8 +1,12 @@
 package com.auralis.app.subject;
 
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.ResourceDeletedEvent;
+import com.auralis.app.shared.domain.ResourceChangedEvent;
+import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.subject.internal.persistence.SubjectEntity;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,20 +19,29 @@ public class SubjectService {
     public static final String DEFAULT_SUBJECT_NAME = "未分类";
 
     private final SubjectRepository subjectRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public SubjectService(SubjectRepository subjectRepository) {
+    public SubjectService(SubjectRepository subjectRepository, ApplicationEventPublisher eventPublisher) {
         this.subjectRepository = subjectRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public SubjectView create(UUID userId, SubjectCommand command) {
+        return create(userId, UUID.randomUUID(), command);
+    }
+
+    @Transactional(noRollbackFor = DomainException.class)
+    public SubjectView create(UUID userId, UUID subjectId, SubjectCommand command) {
         String name = requiredName(command.name());
         if (subjectRepository.existsByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(userId, name)) {
             throw new DomainException("MUTATION_REJECTED", "Subject name is already used");
         }
-        return view(subjectRepository.save(new SubjectEntity(
-                UUID.randomUUID(), userId, name, command.description(), command.iconKey(),
+        SubjectView result = view(subjectRepository.save(new SubjectEntity(
+                subjectId, userId, name, command.description(), command.iconKey(),
                 command.color(), defaultSortKey(command.sortKey()), false)));
+        publishChange(userId, result, "CREATE");
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -40,11 +53,19 @@ public class SubjectService {
     }
 
     @Transactional(readOnly = true)
+    public List<SubjectView> listIncludingDeleted(UUID userId) {
+        return subjectRepository.findAllByUserIdOrderBySortKeyAscUpdatedAtDescIdAsc(userId)
+                .stream()
+                .map(this::view)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public SubjectView get(UUID userId, UUID id) {
         return view(active(userId, id));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public SubjectView update(UUID userId, UUID id, long baseVersion, SubjectCommand command) {
         SubjectEntity entity = mutable(userId, id);
         requireActive(entity);
@@ -55,10 +76,12 @@ public class SubjectService {
             throw new DomainException("MUTATION_REJECTED", "Subject name is already used");
         }
         entity.update(name, command.description(), command.iconKey(), command.color(), command.sortKey());
-        return view(subjectRepository.saveAndFlush(entity));
+        SubjectView result = view(subjectRepository.saveAndFlush(entity));
+        publishChange(userId, result, "UPDATE");
+        return result;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
         SubjectEntity entity = mutable(userId, id);
         requireActive(entity);
@@ -68,9 +91,11 @@ public class SubjectService {
         }
         entity.softDelete();
         subjectRepository.saveAndFlush(entity);
+        publishChange(userId, view(entity), "DELETE");
+        eventPublisher.publishEvent(new ResourceDeletedEvent(userId, ResourceType.SUBJECT, id));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public SubjectView restore(UUID userId, UUID id, long baseVersion) {
         SubjectEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
@@ -81,7 +106,9 @@ public class SubjectService {
             throw new DomainException("MUTATION_REJECTED", "Subject name is already used");
         }
         entity.restore();
-        return view(subjectRepository.saveAndFlush(entity));
+        SubjectView result = view(subjectRepository.saveAndFlush(entity));
+        publishChange(userId, result, "RESTORE");
+        return result;
     }
 
     @Transactional
@@ -138,5 +165,10 @@ public class SubjectService {
                 entity.getId(), entity.getName(), entity.getDescription(), entity.getIconKey(), entity.getColor(),
                 entity.getSortKey(), entity.isDefaultSubject(), entity.getVersion(), entity.getCreatedAt(),
                 entity.getUpdatedAt(), entity.getDeletedAt());
+    }
+
+    private void publishChange(UUID userId, SubjectView view, String mutationType) {
+        eventPublisher.publishEvent(new ResourceChangedEvent(
+                userId, ResourceType.SUBJECT, view.id(), mutationType, view.version(), view.deletedAt(), view));
     }
 }

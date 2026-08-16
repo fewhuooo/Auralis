@@ -13,4 +13,6 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     Optional<TaskEntity> findByIdAndUserId(UUID id, UUID userId);
 
     List<TaskEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
+
+    List<TaskEntity> findAllByUserIdOrderByUpdatedAtDescIdAsc(UUID userId);
 }

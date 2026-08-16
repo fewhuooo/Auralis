@@ -28,3 +28,5 @@ auralis:
     jwt-secret: phase-one-test-secret-with-at-least-32-bytes
     access-token-ttl-seconds: 900
     refresh-session-ttl-seconds: 30
+  ai:
+    encryption-key: phase-five-test-encryption-32b!!

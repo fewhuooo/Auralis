@@ -4,9 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.ResourceDeletedEvent;
+import com.auralis.app.shared.domain.ResourceChangedEvent;
+import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.source.SourceService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,22 +23,35 @@ public class KnowledgeBlockService {
 
     private final KnowledgeBlockRepository knowledgeBlockRepository;
     private final SubjectService subjectService;
+    private final SourceService sourceService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public KnowledgeBlockService(
             KnowledgeBlockRepository knowledgeBlockRepository,
-            SubjectService subjectService) {
+            SubjectService subjectService,
+            SourceService sourceService,
+            ApplicationEventPublisher eventPublisher) {
         this.knowledgeBlockRepository = knowledgeBlockRepository;
         this.subjectService = subjectService;
+        this.sourceService = sourceService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
     public KnowledgeBlockView create(UUID userId, KnowledgeBlockCommand command) {
-        validateSource(command.sourceId());
+        return create(userId, UUID.randomUUID(), command);
+    }
+
+    @Transactional(noRollbackFor = DomainException.class)
+    public KnowledgeBlockView create(UUID userId, UUID blockId, KnowledgeBlockCommand command) {
+        validateSource(userId, command.sourceId());
         subjectService.requireActiveSubject(userId, command.subjectId());
-        return view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
-                UUID.randomUUID(), userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
+        KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
+                blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
                 command.summary(), required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride())));
+        publishChange(userId, result, "CREATE");
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -43,32 +61,42 @@ public class KnowledgeBlockService {
     }
 
     @Transactional(readOnly = true)
+    public List<KnowledgeBlockView> listIncludingDeleted(UUID userId) {
+        return knowledgeBlockRepository.findAllByUserIdOrderByUpdatedAtDescIdAsc(userId)
+                .stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
     public KnowledgeBlockView get(UUID userId, UUID id) {
         return view(active(userId, id));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView update(UUID userId, UUID id, long baseVersion, KnowledgeBlockCommand command) {
-        validateSource(command.sourceId());
+        validateSource(userId, command.sourceId());
         KnowledgeBlockEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         subjectService.requireActiveSubject(userId, command.subjectId());
         entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"), command.summary(),
                 required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride());
-        return view(knowledgeBlockRepository.saveAndFlush(entity));
+        KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
+        publishChange(userId, result, "UPDATE");
+        return result;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
         KnowledgeBlockEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         entity.softDelete();
         knowledgeBlockRepository.saveAndFlush(entity);
+        publishChange(userId, view(entity), "DELETE");
+        eventPublisher.publishEvent(new ResourceDeletedEvent(userId, ResourceType.KNOWLEDGE_BLOCK, id));
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView restore(UUID userId, UUID id, long baseVersion) {
         KnowledgeBlockEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
@@ -77,7 +105,9 @@ public class KnowledgeBlockService {
         requireVersion(entity, baseVersion);
         subjectService.requireActiveSubject(userId, entity.getSubjectId());
         entity.restore();
-        return view(knowledgeBlockRepository.saveAndFlush(entity));
+        KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
+        publishChange(userId, result, "RESTORE");
+        return result;
     }
 
     private KnowledgeBlockEntity active(UUID userId, UUID id) {
@@ -109,9 +139,9 @@ public class KnowledgeBlockService {
         return value.trim();
     }
 
-    private void validateSource(UUID sourceId) {
+    private void validateSource(UUID userId, UUID sourceId) {
         if (sourceId != null) {
-            throw new DomainException("MUTATION_REJECTED", "Source linking is not available in phase 2A");
+            sourceService.requireActiveSource(userId, sourceId);
         }
     }
 
@@ -136,5 +166,10 @@ public class KnowledgeBlockService {
         } catch (JsonProcessingException exception) {
             throw new DomainException("INTERNAL_ERROR", "Stored tags could not be decoded");
         }
+    }
+
+    private void publishChange(UUID userId, KnowledgeBlockView view, String mutationType) {
+        eventPublisher.publishEvent(new ResourceChangedEvent(
+                userId, ResourceType.KNOWLEDGE_BLOCK, view.id(), mutationType, view.version(), view.deletedAt(), view));
     }
 }

@@ -171,6 +171,13 @@ public class IdentityService {
                 .forEach(session -> session.revoke(now));
     }
 
+    @Transactional(readOnly = true)
+    public void requireActiveDevice(UUID userId, UUID deviceId) {
+        deviceRepository.findByIdAndUserId(deviceId, userId)
+                .filter(device -> device.getRevokedAt() == null)
+                .orElseThrow(() -> new IdentityException("FORBIDDEN", "Device is not active for this user"));
+    }
+
     private AuthResult issueForUser(UserEntity user, DeviceCommand deviceCommand) {
         DeviceEntity device = deviceRepository.findByUserIdAndDeviceId(user.getId(), deviceCommand.deviceId())
                 .map(existing -> {

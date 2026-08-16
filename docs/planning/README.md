@@ -1,6 +1,6 @@
 # Auralis 计划目录
 
-更新时间：2026-07-10
+更新时间：2026-08-16
 
 文档状态：现行计划入口
 
@@ -19,14 +19,15 @@
 
 ## 阅读顺序
 
-1. [任务总览](Overview.md)
-2. [后端核心](BackendCore.md)
-3. [PC](FrontendPC.md) 或 [Mobile / Tablet](FrontendMobileTablet.md)
-4. [AI / RAG](AIRag.md)
-5. [基础设施与发布](InfraRelease.md)
-6. [Tablet 手写](TabletHandwritingNotes.md)
-7. [文档验收](DocsAcceptance.md)
-8. [文档重构实施计划](DocumentationReorganizationImplementation.md)
+1. [部署测试前主任务清单](PreDeploymentReadinessTasks.md)
+2. [任务总览](Overview.md)
+3. [后端核心](BackendCore.md)
+4. [PC](FrontendPC.md) 或 [Mobile / Tablet](FrontendMobileTablet.md)
+5. [AI / RAG](AIRag.md)
+6. [基础设施与发布](InfraRelease.md)
+7. [Tablet 手写](TabletHandwritingNotes.md)
+8. [文档验收](DocsAcceptance.md)
+9. [文档重构实施计划](DocumentationReorganizationImplementation.md)
 
 ## 任务字段
 

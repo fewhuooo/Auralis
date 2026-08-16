@@ -13,4 +13,6 @@ public interface KnowledgeBlockRepository extends JpaRepository<KnowledgeBlockEn
     Optional<KnowledgeBlockEntity> findByIdAndUserId(UUID id, UUID userId);
 
     List<KnowledgeBlockEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
+
+    List<KnowledgeBlockEntity> findAllByUserIdOrderByUpdatedAtDescIdAsc(UUID userId);
 }

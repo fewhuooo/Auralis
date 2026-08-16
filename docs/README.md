@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-08-12
+更新时间：2026-08-16
 
 文档状态：现行
 
@@ -104,11 +104,13 @@
 - [PC 学科工作区重建设计（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-workspace-reconstruction-design.md)
 - [PC 学科工作区重建实施计划（2026-07-13）](superpowers/plans/2026-07-13-pc-subject-workspace-reconstruction.md)
 - [PC 学科工作区大纲三栏布局规格（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-outline-three-column-design.md)
+- [后端阶段五 AI 与 RAG 设计（2026-08-16）](superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md)
 
 ### 当前实现与契约
 
 - [当前状态](current/Status.md)
 - [问题和审查](current/IssuesAndReview.md)
+- [整体项目未完成项综合审计（2026-08-16）](current/OverallProjectCompletionAudit.md)
 - [PC 模块](modules/FrontendPC.md)
 - [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)
 - [后端模块](modules/Backend.md)
@@ -125,6 +127,10 @@
 - [后端绿地重写阶段 0 实施计划](plans/backend-greenfield-phase-0-plan.md)
 - [后端阶段 1 身份实施计划](superpowers/plans/2026-08-12-backend-phase-1-identity.md)
 - [后端阶段 2A 核心领域实施计划](superpowers/plans/2026-08-12-backend-phase-2-core-domain.md)
+- [后端阶段 2B Source、Asset、Relation 实施计划](superpowers/plans/2026-08-12-backend-phase-2b-source-asset-relation.md)
+- [后端阶段 3/4 同步、复习、统计与实时实施计划](superpowers/plans/2026-08-13-backend-phase-3-4-sync-review-realtime.md)
+- [后端阶段五 AI 与 RAG 实施计划（2026-08-16）](superpowers/plans/2026-08-16-backend-phase-5-ai-rag.md)
+- [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
 - [变更记录](release/Changelog.md)

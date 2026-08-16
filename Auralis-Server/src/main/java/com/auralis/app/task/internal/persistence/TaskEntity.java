@@ -70,6 +70,9 @@ public class TaskEntity {
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
+    @Column(name = "completed_at")
+    private Instant completedAt;
+
     protected TaskEntity() {
     }
 
@@ -112,6 +115,9 @@ public class TaskEntity {
         if (sortKey == null) {
             sortKey = "";
         }
+        if (status == TaskStatus.DONE && completedAt == null) {
+            completedAt = now;
+        }
         createdAt = now;
         updatedAt = now;
     }
@@ -137,6 +143,7 @@ public class TaskEntity {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
+    public Instant getCompletedAt() { return completedAt; }
 
     public void update(
             UUID subjectId,
@@ -152,7 +159,13 @@ public class TaskEntity {
         this.subjectId = subjectId;
         this.title = title;
         this.description = description;
+        TaskStatus previousStatus = this.status;
         this.status = status;
+        if (status == TaskStatus.DONE && previousStatus != TaskStatus.DONE) {
+            this.completedAt = Instant.now();
+        } else if (status != TaskStatus.DONE) {
+            this.completedAt = null;
+        }
         this.scheduledAt = scheduledAt;
         this.dueAt = dueAt;
         this.durationMinutes = durationMinutes;

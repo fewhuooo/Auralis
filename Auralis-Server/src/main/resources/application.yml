@@ -29,7 +29,25 @@ auralis:
     public-base-url: http://localhost:8080
   upload:
     max-file-size-bytes: 52428800
+    storage-provider: ${AURALIS_UPLOAD_STORAGE_PROVIDER:unavailable}
+    storage:
+      endpoint: ${AURALIS_MINIO_ENDPOINT:}
+      bucket: ${AURALIS_MINIO_BUCKET:auralis-assets}
+      access-key: ${AURALIS_MINIO_ACCESS_KEY:}
+      secret-key: ${AURALIS_MINIO_SECRET_KEY:}
+      presign-ttl-seconds: ${AURALIS_MINIO_PRESIGN_TTL_SECONDS:300}
   identity:
     jwt-secret: ${AURALIS_JWT_SECRET:}
     access-token-ttl-seconds: ${AURALIS_ACCESS_TOKEN_TTL_SECONDS:900}
     refresh-session-ttl-seconds: ${AURALIS_REFRESH_SESSION_TTL_SECONDS:2592000}
+  ai:
+    enabled: ${AURALIS_AI_ENABLED:false}
+    encryption-key: ${AURALIS_AI_ENCRYPTION_KEY:}
+    default-provider: ${AURALIS_AI_DEFAULT_PROVIDER:DEEPSEEK}
+    request-timeout-millis: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:10000}
+    max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}
+    max-retrieved-chunks: ${AURALIS_AI_MAX_RETRIEVED_CHUNKS:8}
+    ingestion-max-bytes: ${AURALIS_AI_INGESTION_MAX_BYTES:5242880}
+    url-connect-timeout-millis: ${AURALIS_AI_URL_CONNECT_TIMEOUT_MILLIS:3000}
+    url-read-timeout-millis: ${AURALIS_AI_URL_READ_TIMEOUT_MILLIS:10000}
+    url-max-redirects: ${AURALIS_AI_URL_MAX_REDIRECTS:3}
