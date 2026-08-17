@@ -107,7 +107,7 @@
 - [PC 学科工作区大纲三栏布局规格（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-outline-three-column-design.md)
 - [后端阶段五 AI 与 RAG 设计（2026-08-16）](superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md)
 - [R1-06 后端工具链和运行配置设计（2026-08-17）](superpowers/specs/2026-08-17-backend-r1-06-toolchain-config-design.md)
-- [R4-01 PC 鉴权、环境与实时协议重写设计（2026-08-17）](superpowers/specs/2026-08-17-r4-01-pc-auth-realtime-design.md)
+- [R4 PC 全量客户端迁移与 Tauri 重写设计（2026-08-17）](superpowers/specs/2026-08-17-r4-01-pc-auth-realtime-design.md)
 
 ### 当前实现与契约
 

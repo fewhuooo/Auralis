@@ -1,4 +1,4 @@
-# R4-01 PC 鉴权、环境与实时协议重写设计
+# R4 PC 全量客户端迁移与 Tauri 重写设计
 
 更新时间：2026-08-17
 
@@ -6,9 +6,9 @@
 
 ## 目标
 
-直接将 `Auralis-PC` 的鉴权、HTTP 请求基础层、运行时地址和实时同步入口切换到冻结的 Auralis 新契约，移除尚未上线的旧响应包装、旧 `/ws/sync`、固定本机地址和旧 cursor 模型，为 R4-02 的业务页面迁移提供单一基础。
+直接将 `Auralis-PC` 全量切换到冻结的 Auralis 新契约，覆盖鉴权、HTTP 请求基础层、运行时地址、所有主页面 API、Pinia Store、cursor 同步、本地数据库和 Tauri 桌面边界；移除尚未上线的旧响应包装、旧 `/ws/sync`、固定本机地址、旧 cursor 模型和旧本地字段。
 
-本设计只覆盖 PC Web/Tauri 的 R4-01，不迁移 Mobile/Tablet 页面，不处理 PC 业务页面 DTO，不把真实 Provider 或 GUI/Tauri 人工验收写成自动测试结果。
+本设计覆盖 R4-01、R4-02、R4-03 的全部 PC 内容，不迁移 Mobile/Tablet 页面，不修改后端 Controller 或服务器数据库迁移。真实 Provider、浏览器/Tauri GUI、Windows 安装升级和人工业务验收仍单列为验收证据，不把构建结果写成已验收。
 
 ## 已确认的契约
 
@@ -27,13 +27,13 @@
 
 不采用。它能降低首轮破坏面，但会继续保留两套错误、刷新、地址和 WebSocket 语义；R4 后续迁移必须同时维护两条主路径，且容易把旧接口误当成兼容层。
 
-### 方案 B：直接重写 PC 基础请求与实时链路（采用）
+### 方案 B：直接重写 PC 基础请求与实时链路
 
-重写现有 `request.ts`、Auth API、Sync API、路由守卫和实时入口，让 PC 主请求基础层只遵守新契约。旧 API 尚未部署，删除旧包装和 `/ws/sync` 不产生线上兼容负担；业务页面将在 R4-02 逐项改用新 DTO。
+只重写基础请求、Auth、Sync、路由守卫和实时入口，业务页面继续分阶段迁移。不采用，因为本轮已经确认需要一次完成 PC 迁移。
 
-### 方案 C：一次性迁移所有 PC 页面和本地模型
+### 方案 C：一次性迁移所有 PC 页面、本地模型和 Tauri（采用）
 
-暂不采用。它会把 R4-02 的业务 DTO、SQLite userId 隔离、版本/墓碑和页面验收混入 R4-01，无法形成一个可审查、可回滚的鉴权/实时基础提交。
+直接删除旧 PC API/Store/本地同步语义，按冻结 OpenAPI 重新建立统一调用链；一次迁移 Dashboard、SubjectHall、SubjectWorkspace、Asset、Timeline、Profile、Pomodoro 和 AI 伴读相关数据流，并同步 Tauri SQL、权限和构建配置。旧 API 从未部署，因而不保留线上兼容层；风险通过模块化提交、测试和人工验收边界控制。
 
 ## 架构与模块边界
 
@@ -72,7 +72,7 @@
 
 ### Cursor Sync 与 Realtime
 
-`useSyncApi` 改用新 cursor envelope；`useSyncStore` 保存 `syncCursor` 和 `resetRequired`，不再读取或写入 `afterId`、`lastMutationId`、`truncated`。业务资源的完整 DTO merge 和 SQLite schema 迁移属于 R4-02，但 R4-01 先建立新 cursor 生命周期和可重试边界。
+`useSyncApi` 改用新 cursor envelope；`useSyncStore` 保存 `syncCursor` 和 `resetRequired`，不再读取或写入 `afterId`、`lastMutationId`、`truncated`。本次全量迁移同时完成业务资源 DTO merge、SQLite schema、snapshot/reset 和冲突状态，不保留 R4-02 的旧本地同步边界。
 
 新增 PC realtime service：
 
@@ -87,7 +87,39 @@
 
 ### Tauri
 
-`api/tauri.ts` 只保留 Rust command invoke 和必要的桌面能力封装；WebSocket 逻辑移出该文件，Web 和 Tauri 共用同一个 realtime service。Tauri 权限、安装包和 Windows GUI 仍单列人工验收。
+`api/tauri.ts` 只保留 Rust command invoke 和必要的桌面能力封装；WebSocket 逻辑移出该文件，Web 和 Tauri 共用同一个 realtime service。`src-tauri` 保留 SQL、crypto 和 log 插件，但校验 SQL 权限、数据库路径、网络访问和窗口配置。`npm.cmd run tauri -- build` 作为制品构建门禁；安装、升级、卸载、本地数据保留和 Windows GUI 仍单列人工验收。
+
+### PC 业务 API 与页面迁移
+
+所有 PC 页面改用冻结 OpenAPI 的 typed client 和直接 DTO，不再在 Store 或页面内直接调用 axios，也不再解析旧 `res.data.data`。按领域建立或重写以下边界：
+
+- Auth：登录、注册、refresh、logout、me、sessions。
+- Subject / KnowledgeBlock / Task：列表 cursor、创建、更新、删除、恢复和 `baseVersion`。
+- Source / Asset / Relation：Source 生命周期、presigned intent、完成/下载 URL、关系和用户归属。
+- Review / Stats：due、events、history、overview、weekly。
+- Sync / Realtime：push、pull、snapshot、ticket、`/ws/events`。
+- AI：Provider 设置、Conversation、消息 SSE、citation 和上传/摄取上下文；旧 `/api/ai/chat`、`/api/ai/ingest` 等调用全部删除或映射到当前契约。
+
+页面职责保持现有正式路由不变，但数据来源改为 Store → typed API → local repository：
+
+- Dashboard：Subject/Task/Stats 的服务端 DTO 和本地缓存。
+- SubjectHall / SubjectWorkspace：Subject、Source、Asset、KnowledgeBlock、Relation 和 AI 上下文。
+- Asset：upload intent → presigned PUT → complete → download URL。
+- Timeline / Pomodoro：Task、状态、排期和 Review/Stats 数据。
+- Profile：Auth me、sessions、AI settings；不显示敏感 key。
+
+页面必须显式区分 loading、empty、error、offline、saving、synced、conflict 和 reset；不以本地假数据或旧字段填充新接口响应。
+
+### 本地数据库与离线同步
+
+重写 `localDb.ts` 为 user-scoped local repository。Tauri 使用 SQLite；Web fallback 可以继续使用浏览器存储，但键和记录必须按当前 `userId` 命名空间隔离，并遵守同一 DTO 映射。
+
+- `sync_metadata` 至少保存 `userId`、`deviceId`、`cursor`、`resetRequired` 和 schema version。
+- 本地资源记录保存 `userId`、服务器 `version`、`deletedAt`、`syncStatus` 和必要的 `baseVersion`。
+- `local_mutations` 保存 `clientMutationId`、资源类型/ID、mutation type、`baseVersion`、payload、创建时间和同步状态；禁止使用旧 `clientId/entityType/action/lastMutationId` 作为新契约字段。
+- chat session/message、Subject、Source、Asset、KnowledgeBlock、Task、Relation、Review 本地表或缓存均按用户隔离；查询不得依赖全局主键唯一来推断用户归属。
+- snapshot/reset 在事务中保留未提交 mutation，替换服务器快照后再按冲突策略重放；不得执行旧的静默 hard delete cold start。
+- 版本冲突保留本地 mutation 和服务器 DTO，交给页面冲突状态处理；不使用 last-write-wins。
 
 ## 错误与边界
 
@@ -95,7 +127,7 @@
 - access 401：统一 refresh；refresh 失败清理本地会话并返回登录页。
 - ticket 401/过期：断开当前连接，重新申请 ticket；重试达到上限后显示离线状态，不能伪装已同步。
 - 重复事件：只保留一次刷新信号，不重复推进 cursor。
-- `resetRequired=true`：保留本地待提交 mutation，设置 reset 状态，交由 R4-02 snapshot/merge 流程处理；不得静默清空数据。
+- `resetRequired=true`：保留本地待提交 mutation，设置 reset 状态并执行本次迁移实现的 snapshot/merge 流程；不得静默清空数据。
 - 离线：暂停连接和请求重试，保留本地会话与待同步数据；恢复网络后重新申请 ticket 和 cursor pull。
 
 ## 文件范围
@@ -106,11 +138,36 @@
 - `Auralis-PC/src/api/useAuthApi.ts`
 - `Auralis-PC/src/api/useSyncApi.ts`
 - `Auralis-PC/src/api/tauri.ts`
+- `Auralis-PC/src/api/aiClient.ts`
+- `Auralis-PC/src/api/useAssetApi.ts`
+- `Auralis-PC/src/api/useStatsApi.ts`
+- `Auralis-PC/src/api/useSubjectApi.ts`（新增或替换现有调用边界）
+- `Auralis-PC/src/api/useKnowledgeApi.ts`（新增或替换现有调用边界）
+- `Auralis-PC/src/api/useTaskApi.ts`（新增或替换现有调用边界）
+- `Auralis-PC/src/api/useSourceApi.ts`（新增或替换现有调用边界）
+- `Auralis-PC/src/api/useRelationApi.ts`（新增或替换现有调用边界）
+- `Auralis-PC/src/api/useReviewApi.ts`（新增或替换现有调用边界）
 - `Auralis-PC/src/router/index.ts`
 - `Auralis-PC/src/store/useAuthStore.ts`
+- `Auralis-PC/src/store/useSubjectStore.ts`
+- `Auralis-PC/src/store/useBlockStore.ts`
+- `Auralis-PC/src/store/useTaskStore.ts`
+- `Auralis-PC/src/store/useChatStore.ts`
 - `Auralis-PC/src/store/useSyncStore.ts`
+- `Auralis-PC/src/services/localDb.ts`
 - `Auralis-PC/src/App.vue`
+- `Auralis-PC/src/views/Dashboard/index.vue`
+- `Auralis-PC/src/views/SubjectHall/index.vue`
+- `Auralis-PC/src/views/SubjectWorkspace/index.vue`
+- `Auralis-PC/src/views/Asset/index.vue`
+- `Auralis-PC/src/views/Timeline/index.vue`
+- `Auralis-PC/src/views/Profile/index.vue`
+- `Auralis-PC/src/views/Pomodoro/index.vue`
 - `Auralis-PC/vite.config.ts`
+- `Auralis-PC/src-tauri/tauri.conf.json`
+- `Auralis-PC/src-tauri/capabilities/default.json`
+- `Auralis-PC/src-tauri/src/lib.rs`
+- `Auralis-PC/src-tauri/Cargo.toml`（仅在权限/插件确有变化时）
 - `Auralis-PC/package.json`
 
 预计新增：
@@ -118,39 +175,44 @@
 - `Auralis-PC/src/config/runtime.ts`
 - `Auralis-PC/src/api/realtime.ts`
 - `Auralis-PC/src/types/api.ts`（只放非生成的错误/运行时辅助类型）
-- `Auralis-PC/scripts/check-r4-01.mjs`
+- `Auralis-PC/src/types/domain.ts`（页面和 Store 共用的当前 DTO 映射类型）
+- `Auralis-PC/scripts/check-r4-pc.mjs`
+- `Auralis-PC/scripts/test-r4-pc.mjs`（可在当前 Node 工具链下运行的纯协议/映射测试）
 
 必须同步：
 
 - `docs/modules/FrontendPC.md`
 - `docs/design/Frontend.md`（仅记录鉴权失效、离线、同步和实时连接交互）
 - `docs/contracts/API.md`
-- `docs/contracts/Database.md`（仅在 cursor/本地同步字段边界实际变化时更新）
+- `docs/contracts/Database.md`（同步本地 userId/version/deletedAt/baseVersion 边界）
 - `docs/current/Status.md`
 - `docs/current/IssuesAndReview.md`
 - `docs/planning/PreDeploymentReadinessTasks.md`
 - `docs/release/Changelog.md`
 
-不修改：Mobile/Tablet 代码、生成 `schema.ts`、后端 Controller/数据库迁移、`.claude/` 本机配置。
+不修改：Mobile/Tablet 代码、生成 `schema.ts`、后端 Controller/服务器数据库迁移、`.claude/` 本机配置。生成 schema 必须通过既有脚本；如果 typed client 模板需要改变，只修改生成脚本并重新生成，不手改 schema。
 
 ## 测试与验收
 
-实现遵循 Red-Green-Refactor：
+实现遵循 Red-Green-Refactor，并按领域分批完成但保持本次任务总范围不变：
 
-1. 先增加 R4-01 静态契约检查，确认当前旧路径/固定地址会失败。
-2. 最小实现新 runtime、Auth、route guard、cursor 和 realtime service。
-3. 运行静态检查确认旧路径消失、配置入口存在、ticket 连接使用新协议。
-4. 运行 `npm.cmd run build`，确认 TypeScript/Vite 构建通过。
-5. 运行 `scripts/check-openapi.ps1 -SkipExport`，确认生成契约未漂移。
-6. 保留人工验收边界：浏览器登录/刷新/退出、真实 WebSocket、Tauri GUI、断网重连和后端 Compose 联调不能由静态检查或构建代替。
+1. 先增加 PC 全量静态契约检查，确认当前旧路径、固定地址、旧字段和旧 API 调用会失败。
+2. 先写纯协议/映射测试：直接 DTO、Problem Details、route guard、refresh 队列、ticket 重连、事件去重、cursor reset、版本冲突和 userId namespace。
+3. 最小实现新 runtime、HTTP/Auth、route guard、全部 typed API、cursor/realtime 和本地 repository。
+4. 按页面域迁移 Store 和页面，删除旧 `axios` 直调、旧字段映射和本地假数据。
+5. 运行 `npm.cmd run check:r4-pc`、`npm.cmd run build` 和 `npm.cmd run tauri -- build`。
+6. 运行 `scripts/check-openapi.ps1 -SkipExport`，确认生成契约未漂移。
+7. 运行后端 Compose 联调 smoke，并单独记录浏览器登录/刷新/退出、真实 WebSocket、断网重连、Tauri GUI、安装升级和本地数据保留结果；任何未执行项都不能写成已验收。
 
 ## 完成定义
 
-R4-01 只有在以下条件全部满足时才标记完成：
+PC 全量 R4 只有在以下条件全部满足时才标记完成：
 
-- PC 路由守卫、直接 DTO Auth、环境基址和 refresh 语义均切换到新契约。
+- PC 所有正式页面、Store、API 和 AI/Asset/Sync 调用均使用冻结新契约，不再存在旧 DTO、旧同步路径或本地假数据主路径。
+- PC 路由守卫、直接 DTO Auth、环境基址、refresh、userId 隔离、version/deletedAt/baseVersion 和冲突语义均切换到新契约。
 - PC 不再通过生产代码访问固定 `127.0.0.1`、`localhost` 或 `/ws/sync`。
 - PC realtime 通过 ticket 连接 `/ws/events`，重连重新取 ticket，事件 cursor 去重并保留 reset 边界。
-- R4-01 静态检查、PC build 和 OpenAPI drift 检查通过。
-- 相关前端模块、契约、状态、风险、任务和 Changelog 文档已同步。
+- Tauri SQL、权限、网络配置和构建边界通过自动检查；`tauri build` 有实际退出码和制品记录。
+- PC 全量静态检查、协议测试、类型检查、Web build、Tauri build 和 OpenAPI drift 检查通过。
+- 相关前端模块、设计、API、Database、状态、风险、任务和 Changelog 文档已同步。
 - 未把代码存在、构建通过、自动测试通过、真实联调或 GUI 验收合并成同一个状态。
