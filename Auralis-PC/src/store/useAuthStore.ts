@@ -1,41 +1,181 @@
-import { defineStore } from 'pinia'
-import { ref } from 'vue'
-import { useAuthApi } from '@/api/useAuthApi'
+import { defineStore, type PiniaPluginContext } from 'pinia'
+import { ref, computed } from 'vue'
+import {
+  useAuthApi,
+  type AuthResult,
+  type UserView,
+  type TokenPair,
+  type LoginRequest,
+  type RegisterRequest,
+} from '@/api/useAuthApi'
+import { getDeviceIdentity } from '@/auth/deviceIdentity'
+import { isValidSession } from '@/auth/sessionValidation'
 
-export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string | null>(null)
-  const refreshToken = ref<string | null>(null)
-  const username = ref<string | null>(null)
+export { isValidSession }
 
-  const login = async (data: any) => {
-    const res: any = await useAuthApi.login(data)
-    // Backend now returns { accessToken, refreshToken }
-    token.value = res.accessToken
-    refreshToken.value = res.refreshToken
-    username.value = data.username
-  }
+export interface LoginPayload {
+  username: string
+  password: string
+  deviceId?: string
+  deviceName?: string
+  platform?: 'WEB' | 'WINDOWS' | 'MACOS' | 'IOS' | 'ANDROID' | 'HARMONY' | 'UNKNOWN'
+}
 
-  const register = async (data: any) => {
-    await useAuthApi.register(data)
-  }
+export interface RegisterPayload {
+  username: string
+  password: string
+  displayName?: string
+  deviceId?: string
+  deviceName?: string
+  platform?: 'WEB' | 'WINDOWS' | 'MACOS' | 'IOS' | 'ANDROID' | 'HARMONY' | 'UNKNOWN'
+}
 
-  const logout = () => {
-    token.value = null
-    refreshToken.value = null
-    username.value = null
-  }
+export const useAuthStore = defineStore(
+  'auth',
+  () => {
+    const user = ref<UserView | null>(null)
+    const tokens = ref<TokenPair | null>(null)
+    const sessionId = ref<string | null>(null)
+    const deviceId = ref<string | null>(null)
+    const isHydrated = ref<boolean>(true)
+    const showAuthModal = ref(false)
 
-  const showAuthModal = ref(false)
+    const token = computed({
+      get: () => tokens.value?.accessToken ?? null,
+      set: (val: string | null) => {
+        if (tokens.value) {
+          tokens.value.accessToken = val ?? undefined
+        } else if (val) {
+          tokens.value = { accessToken: val }
+        }
+      },
+    })
 
-  return {
-    token,
-    refreshToken,
-    username,
-    showAuthModal,
-    login,
-    register,
-    logout
-  }
-}, {
-  persist: true
-})
+    const refreshToken = computed({
+      get: () => tokens.value?.refreshToken ?? null,
+      set: (val: string | null) => {
+        if (tokens.value) {
+          tokens.value.refreshToken = val ?? undefined
+        } else if (val) {
+          tokens.value = { refreshToken: val }
+        }
+      },
+    })
+
+    const username = computed(() => user.value?.displayName || user.value?.username || null)
+    const isAuthenticated = computed(() => Boolean(tokens.value?.accessToken && user.value?.id))
+
+    function setSession(result: AuthResult | null | undefined): void {
+      if (!result || !result.user || !result.tokens) {
+        clearSession()
+        return
+      }
+      user.value = result.user ?? null
+      tokens.value = result.tokens ?? null
+      sessionId.value = result.sessionId ?? null
+      deviceId.value = result.deviceId ?? null
+    }
+
+    function setTokens(tokenPair: TokenPair | null | undefined): void {
+      tokens.value = tokenPair ?? null
+    }
+
+    function clearSession(): void {
+      user.value = null
+      tokens.value = null
+      sessionId.value = null
+      deviceId.value = null
+    }
+
+    async function login(payload: LoginPayload): Promise<AuthResult> {
+      const identity = getDeviceIdentity()
+      const req: LoginRequest = {
+        username: payload.username.trim(),
+        password: payload.password,
+        deviceId: payload.deviceId || identity.deviceId,
+        deviceName: payload.deviceName?.trim() || identity.deviceName,
+        platform: payload.platform || identity.platform,
+      }
+      const result = await useAuthApi.login(req)
+      setSession(result)
+      return result
+    }
+
+    async function register(payload: RegisterPayload): Promise<AuthResult> {
+      const identity = getDeviceIdentity()
+      const req: RegisterRequest = {
+        username: payload.username.trim(),
+        password: payload.password,
+        displayName: payload.displayName?.trim() || payload.username.trim(),
+        deviceId: payload.deviceId || identity.deviceId,
+        deviceName: payload.deviceName?.trim() || identity.deviceName,
+        platform: payload.platform || identity.platform,
+      }
+      const result = await useAuthApi.register(req)
+      setSession(result)
+      return result
+    }
+
+    async function logout(): Promise<void> {
+      try {
+        if (tokens.value?.accessToken) {
+          await useAuthApi.logout()
+        }
+      } catch {
+        // Ignore server logout failures during client session cleanup
+      } finally {
+        clearSession()
+      }
+    }
+
+    async function fetchMe(): Promise<UserView> {
+      const me = await useAuthApi.getMe()
+      if (me) {
+        user.value = me
+      }
+      return me
+    }
+
+    return {
+      user,
+      tokens,
+      sessionId,
+      deviceId,
+      isHydrated,
+      token,
+      refreshToken,
+      username,
+      isAuthenticated,
+      showAuthModal,
+      setSession,
+      setTokens,
+      clearSession,
+      login,
+      register,
+      logout,
+      fetchMe,
+    }
+  },
+  {
+    persist: {
+      key: 'auralis_auth_session',
+      pick: ['user', 'tokens', 'sessionId', 'deviceId'],
+      afterHydrate: (ctx: PiniaPluginContext) => {
+        const store = ctx.store as unknown as {
+          user: UserView | null
+          tokens: TokenPair | null
+          sessionId: string | null
+          deviceId: string | null
+          isHydrated: boolean
+        }
+        if (!isValidSession(store.user, store.tokens)) {
+          store.user = null
+          store.tokens = null
+          store.sessionId = null
+          store.deviceId = null
+        }
+        store.isHydrated = true
+      },
+    },
+  },
+)

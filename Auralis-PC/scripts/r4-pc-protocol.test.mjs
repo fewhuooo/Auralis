@@ -11,6 +11,15 @@ import {
 import { ApiProblemError, assertDirectDto, toApiProblem } from '../src/api/httpError.ts';
 import { createRefreshCoordinator } from '../src/api/authRefresh.ts';
 import { getRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts';
+import {
+  formatDeviceName,
+  getDeviceIdentity,
+  getOrCreateDeviceId,
+  isValidUuid,
+  resolveDevicePlatform,
+} from '../src/auth/deviceIdentity.ts';
+import { resolveAuthRedirect } from '../src/auth/authGuard.ts';
+import { isValidSession } from '../src/auth/sessionValidation.ts';
 
 test('parses RFC 9457 Problem Details without trusting legacy wrappers', () => {
   const problem = parseProblemDetails({
@@ -100,4 +109,92 @@ test('shares one refresh promise for concurrent 401 retries', async () => {
   assert.equal(first, second);
   assert.deepEqual(await Promise.all([first, second]), ['access-token-2', 'access-token-2']);
   assert.equal(calls, 1);
+});
+
+test('validates UUID format and stable generation for device identity', () => {
+  const storageMap = new Map();
+  const mockStorage = {
+    getItem: (key) => storageMap.get(key) ?? null,
+    setItem: (key, value) => { storageMap.set(key, String(value)); },
+    removeItem: (key) => { storageMap.delete(key); },
+    clear: () => { storageMap.clear(); },
+    key: (i) => Array.from(storageMap.keys())[i] ?? null,
+    length: storageMap.size,
+  };
+
+  const id1 = getOrCreateDeviceId(mockStorage);
+  assert.equal(isValidUuid(id1), true);
+  const id2 = getOrCreateDeviceId(mockStorage);
+  assert.equal(id1, id2);
+
+  mockStorage.setItem('auralis_device_id', 'not-a-valid-uuid');
+  const id3 = getOrCreateDeviceId(mockStorage);
+  assert.notEqual(id3, 'not-a-valid-uuid');
+  assert.equal(isValidUuid(id3), true);
+});
+
+test('resolves device platform and formats device name under bounds', () => {
+  assert.equal(resolveDevicePlatform(false), 'WEB');
+  assert.equal(resolveDevicePlatform(true), 'WINDOWS');
+
+  assert.equal(formatDeviceName(null, false), 'Web Browser');
+  assert.equal(formatDeviceName(null, true), 'Windows Desktop');
+  assert.equal(formatDeviceName('  My Custom Workstation  ', false), 'My Custom Workstation');
+
+  const longName = 'A'.repeat(100);
+  assert.equal(formatDeviceName(longName, false).length, 64);
+});
+
+test('constructs complete device identity without touching tokens', () => {
+  const storageMap = new Map();
+  const mockStorage = {
+    getItem: (key) => storageMap.get(key) ?? null,
+    setItem: (key, value) => { storageMap.set(key, String(value)); },
+  };
+
+  const identity = getDeviceIdentity({ storage: mockStorage, isTauri: false });
+  assert.equal(isValidUuid(identity.deviceId), true);
+  assert.equal(identity.platform, 'WEB');
+  assert.equal(identity.deviceName, 'Web Browser');
+  assert.equal(Object.prototype.hasOwnProperty.call(identity, 'token'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(identity, 'accessToken'), false);
+});
+
+test('resolves route redirects for public, protected, and login routes', () => {
+  // Login route redirects to '/' if user already has an active session
+  assert.equal(resolveAuthRedirect('/login', false, true), '/');
+  assert.equal(resolveAuthRedirect('/login?redirect=%2Fsubjects', false, true), '/');
+  // Login route allows unauthenticated users to enter
+  assert.equal(resolveAuthRedirect('/login', false, false), null);
+
+  // Protected routes require authentication; redirect unauthenticated users to '/login'
+  assert.equal(resolveAuthRedirect('/', true, false), '/login');
+  assert.equal(resolveAuthRedirect('/subjects', true, false), '/login');
+  assert.equal(resolveAuthRedirect('/asset', true, false), '/login');
+  assert.equal(resolveAuthRedirect('/subject/sub-1', true, false), '/login');
+
+  // Protected routes allow authenticated users
+  assert.equal(resolveAuthRedirect('/', true, true), null);
+  assert.equal(resolveAuthRedirect('/subjects', true, true), null);
+  assert.equal(resolveAuthRedirect('/asset', true, true), null);
+
+  // Unprotected routes allow navigation regardless of session
+  assert.equal(resolveAuthRedirect('/about', false, false), null);
+  assert.equal(resolveAuthRedirect('/about', false, true), null);
+});
+
+test('validates session hydration data and discards corrupted state', () => {
+  const validUser = { id: 'u-123', username: 'alice', displayName: 'Alice' };
+  const validTokens = { accessToken: 'token-abc', refreshToken: 'refresh-xyz' };
+
+  assert.equal(isValidSession(validUser, validTokens), true);
+
+  // Reject missing or incomplete objects
+  assert.equal(isValidSession(null, validTokens), false);
+  assert.equal(isValidSession(validUser, null), false);
+  assert.equal(isValidSession({}, validTokens), false);
+  assert.equal(isValidSession(validUser, {}), false);
+  assert.equal(isValidSession({ id: '' }, validTokens), false);
+  assert.equal(isValidSession(validUser, { accessToken: '', refreshToken: 'xyz' }), false);
+  assert.equal(isValidSession(validUser, { accessToken: 'abc', refreshToken: '' }), false);
 });
