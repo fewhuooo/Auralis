@@ -1,0 +1,10 @@
+.git
+.gitignore
+.claude
+.env
+.env.*
+!.env.example
+target
+src/test
+data
+*.log

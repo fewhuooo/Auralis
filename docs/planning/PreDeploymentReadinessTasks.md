@@ -128,58 +128,74 @@
 提交：`6707034` (`fix(ai): automate ingestion job processing`)
 命令：`mvn -B -ntp "-Dtest=AiConfigurationTests,AiIngestionSchedulerTests,AiIngestionJobTests,AiIngestionWorkerTests" test`；`mvn -B -ntp clean test`
 结果：定向测试 7/7、全量测试 108/108 通过，失败 0、错误 0、跳过 0；实现数据库悲观锁 claim-next、PARSING/INDEXING lease 过期恢复、最大次数重试、FAILED 终态、条件化定时 worker，以及 Source 失败回到 PENDING 的状态同步。
-剩余限制：当前仍没有 generation、lease fencing、旧新索引原子切换或真实 PostgreSQL/崩溃恢复证据；这些风险继续由 P1-Phase5-Ingestion-Cutover 跟踪。
+剩余限制：当前仍没有 lease fencing、完整 PostgreSQL/崩溃恢复证据；generation 和旧新索引原子切换已由 R1-03 完成，并由 P1-Phase5-Ingestion-Fencing 继续跟踪剩余风险。
 
 ### R1-03 pgvector 检索和原子切换（P0）
 
 主要范围：`source_chunks`、Flyway、Repository、retrieval service。
 
-- [ ] embedding 写入 PostgreSQL `vector(1024)` 列。
-- [ ] 相似度检索使用 pgvector SQL 和 HNSW，而不是加载全部 JSON 后在 Java 计算。
-- [ ] chunk 重建使用 generation 或等价原子切换，失败时保留旧可用索引。
-- [ ] Source 删除、重建和权限变化能够及时影响检索结果。
+- [x] embedding 写入 PostgreSQL `vector(1024)` 列。
+- [x] 相似度检索使用 pgvector SQL 和 HNSW，而不是加载全部 JSON 后在 Java 计算。
+- [x] chunk 重建使用 generation 或等价原子切换，失败时保留旧可用索引。
+- [x] Source 删除、重建和权限变化能够及时影响检索结果。
 
 完成条件：真实 PostgreSQL 集成测试证明向量写入、索引查询、用户隔离和失败回滚均正确。
+
+执行记录：
+
+日期：2026-08-17
+实现：Flyway V10/V11、`PgVectorSourceChunkRepository`、`PgVectorRetrievalRepository`、generation/active cutover 和 H2 活动 generation fallback。
+命令：`mvn -B -ntp clean "-Dtest=AiSchemaTests,AiRetrievalTests,AiSourceChunkTests,AiIngestionWorkerTests" test`；`mvn -B -ntp "-Dauralis.postgres.it=true" "-Dtest=PgVectorIntegrationTests" test`；`git diff --check`
+结果：定向 H2/schema/worker/retrieval 测试 11/11 通过；PostgreSQL 17.11 + pgvector 真实容器集成 1/1 通过，验证 HNSW、vector(1024) 写入、用户隔离、非正相似度过滤、Source 删除过滤和失败 generation 回滚；V11 回填历史 `embedding_json`。
+剩余限制：本项使用临时隔离 PostgreSQL 容器，未启动仓库旧 compose；完整 PostgreSQL 全模块门禁、MinIO、真实 Provider、lease fencing、性能和前端联调仍由 R2/P1 风险跟踪。
 
 ### R1-04 AI 请求与真实流式（P0）
 
 主要范围：AI message command、streaming service、Provider adapter、Controller。
 
-- [ ] `retrievalEnabled`、`topK`、`clientRequestId` 实际进入执行链。
-- [ ] `topK` 使用正确的数值范围校验。
-- [ ] `clientRequestId` 支持安全重试和幂等。
-- [ ] Provider 增量内容直接写入 SSE，不先构造完整事件列表。
-- [ ] 支持超时、取消、断流、限流、错误事件和 assistant 失败状态持久化。
-- [ ] 引用结果包含可追踪 Source / chunk 信息。
+- [x] `retrievalEnabled`、`topK`、`clientRequestId` 实际进入执行链。
+- [x] `topK` 使用正确的数值范围校验。
+- [x] `clientRequestId` 支持安全重试和幂等。
+- [x] Provider 增量内容直接写入 SSE，不先构造完整事件列表。
+- [x] 支持超时、取消、断流、限流、错误事件和 assistant 失败状态持久化。
+- [x] 引用结果包含可追踪 Source / chunk 信息。
 
 完成条件：首包、增量、取消、重试、断流和引用测试通过。
+
+执行记录：2026-08-17；实现 `AiStreamingService` 回调式 sink、`AiStreamAbortException`、Provider `streamInto`、OpenAI-compatible SSE `data:`/`[DONE]` 解析和 Flyway V12 client request id 唯一键。R1-04 定向 AI 流式/Provider/Controller 测试 16/16、全量后端 `mvn -B -ntp test` 121 通过且 1 个 opt-in PostgreSQL 测试跳过。证据使用 Stub/受控 HTTP，不等价于真实 Provider 网络或前端联调通过。
 
 ### R1-05 并发、版本和分页（P0）
 
 主要范围：Conversation、Message、核心列表 API、同步服务。
 
-- [ ] Conversation 删除实际校验 `baseVersion`。
-- [ ] Message sequence 在并发写入时不重复。
-- [ ] 所有接收 cursor 的列表接口返回稳定的 `nextCursor` 和 `hasMore`。
-- [ ] Sync 保留期清理拥有自动任务、指标和过期 cursor reset 行为。
-- [ ] 增加竞争写入、重复请求、分页边界和清理后恢复测试。
+- [x] Conversation 删除实际校验 `baseVersion`。
+- [x] Message sequence 在并发写入时不重复。
+- [x] 所有接收 cursor 的列表接口返回稳定的 `nextCursor` 和 `hasMore`。
+- [x] Sync 保留期清理拥有自动任务、指标和过期 cursor reset 行为。
+- [x] 增加竞争写入、重复请求、分页边界和清理后恢复测试。
 
 完成条件：并发与分页测试稳定通过，没有依赖 `max + 1` 的竞争窗口。
 
+执行记录：2026-08-17；新增 Flyway V13 会话版本/消息序号计数器、写锁保护的消息追加、五类核心列表 keyset cursor（默认 limit 100、最大 200）、Sync 定时保留清理与 Micrometer 指标。R1-05 定向套件 16/16、全量 `mvn -B -ntp clean test` 126 通过、0 失败/错误、1 个 opt-in PostgreSQL 测试跳过；覆盖会话版本冲突、并发消息序号、五类分页、过期 cursor reset、高水位延续和清理指标。
+
 ### R1-06 后端工具链和运行配置（P1）
 
-- [ ] 修复 Windows `mvnw.cmd` 对非符号链接 Maven 仓库路径的处理。
-- [ ] 生产 profile 显式关闭不需要的 Swagger / OpenAPI UI。
-- [ ] 显式关闭 `spring.jpa.open-in-view`，修复因此暴露的懒加载问题。
-- [ ] 固定 Flyway 支持的 H2 版本，配置 Mockito Agent，消除升级警告。
+- [x] 修复 Windows `mvnw.cmd` 对非符号链接 Maven 仓库路径的处理。
+- [x] 生产 profile 显式关闭不需要的 Swagger / OpenAPI UI。
+- [x] 显式关闭 `spring.jpa.open-in-view`，修复因此暴露的懒加载问题。
+- [x] 固定 Flyway 支持的 H2 版本，配置 Mockito Agent，消除升级警告。
 
 完成条件：系统 Maven 和 Wrapper 均能在干净 Windows 环境运行全量测试。
 
+执行记录：2026-08-17；修复 `mvnw.cmd` 普通 Maven 仓库路径的空 `Target` 判定；全局关闭 `spring.jpa.open-in-view`；prod profile 关闭 springdoc API docs/Swagger UI；H2 固定为 2.2.224；Surefire 使用 Mockito 5.23.0 Java agent，并在默认配置中启用 PostgreSQL/MinIO Testcontainers。配置定向测试 6/6、系统 Maven `mvn -B -ntp clean test` 和 Wrapper `.\mvnw.cmd -B -ntp clean test` 均退出码 0；两次均为 135 通过、0 失败、0 错误、0 跳过。当前证据不等价于真实 Provider 或 GUI 验收。
+
 ### G1 阶段门禁
 
-- [ ] R1-01 至 R1-05 全部完成；R1-06 无影响契约冻结的未关闭问题。
-- [ ] 在 `Auralis-Server` 执行 `mvn -B -ntp clean test`，退出码为 0，失败、错误、跳过均为 0。
-- [ ] API 和数据变化已同步 `docs/contracts/API.md`、`docs/contracts/Database.md`、`docs/modules/Backend.md`。
+- [x] R1-01 至 R1-05 全部完成；R1-06 无影响契约冻结的未关闭问题。
+- [x] 在 `Auralis-Server` 执行 `mvn -B -ntp clean test`，退出码为 0，失败、错误、跳过均为 0。
+- [x] API 和数据变化已同步 `docs/contracts/API.md`、`docs/contracts/Database.md`、`docs/modules/Backend.md`。
+
+执行记录：2026-08-17；默认 Surefire 自动设置 `auralis.postgres.it=true` 和 `auralis.minio.it=true`，普通系统 Maven 与 Wrapper 全量测试均为 135/0/0；G1 通过。Docker 不可用时默认测试会失败，不再静默跳过真实依赖测试；真实 Provider、lease fencing、性能和前端业务验收仍由后续任务跟踪。
 
 ---
 
@@ -189,40 +205,48 @@
 
 主要文件：`docker-compose.yml`、`.env.example`。
 
-- [ ] 移除新后端不使用的 Redis、Milvus 和 etcd 主依赖。
-- [ ] 使用 PostgreSQL 17 + pgvector、MinIO 和新 Auralis Server。
-- [ ] 增加健康检查、固定镜像版本、非默认凭据示例和持久卷说明。
-- [ ] 补齐 JWT、AI 加密密钥、MinIO、CORS、Provider、超时和上传限制变量。
+- [x] 移除新后端不使用的 Redis、Milvus 和 etcd 主依赖。
+- [x] 使用 PostgreSQL 17 + pgvector、MinIO 和新 Auralis Server。
+- [x] 增加健康检查、固定镜像版本、非默认凭据示例和持久卷说明。
+- [x] 补齐 JWT、AI 加密密钥、MinIO、CORS、Provider、超时和上传限制变量。
 
 完成条件：`docker compose config` 退出码为 0，配置不包含生产默认密码。
+
+执行记录：2026-08-17；Compose 已切换到 `pgvector/pgvector:0.8.6-pg17-bookworm`、固定 MinIO/mc 镜像、`minio-init` bucket 初始化、PostgreSQL/MinIO/backend healthcheck、命名持久卷和 secret fail-fast；`docker compose --env-file .env.example config --quiet` 退出码 0，未发现 Redis/Milvus/etcd 服务或旧默认密码。真实 Compose 启动时修复了 `minio-init` 单字符串命令解析问题，并将 `.env.example` 的 AI 加密示例固定为 32 字节；db、MinIO、bucket init、backend readiness 均已验证通过。
 
 ### R2-02 创建后端镜像（P0）
 
 主要文件：`Auralis-Server/Dockerfile`、`.dockerignore`。
 
-- [ ] 使用 Java 21 多阶段构建。
-- [ ] 运行阶段使用非 root 用户。
-- [ ] 暴露健康检查需要的端口和 Actuator 路径。
-- [ ] 固定基础镜像版本，并保证镜像不包含源码、测试缓存和本地密钥。
+- [x] 使用 Java 21 多阶段构建。
+- [x] 运行阶段使用非 root 用户。
+- [x] 暴露健康检查需要的端口和 Actuator 路径。
+- [x] 固定基础镜像版本，并保证镜像不包含源码、测试缓存和本地密钥。
 
 完成条件：`docker compose build backend` 成功，镜像可启动且健康检查通过。
 
+执行记录：2026-08-17；已新增 Java 21 多阶段 `Auralis-Server/Dockerfile`、固定 Temurin 21.0.8_9 基础镜像、非 root UID/GID 10001、Actuator readiness healthcheck 和 `.dockerignore`；`docker compose --env-file .env.example build backend frontend` 成功，backend 容器 readiness 返回 `{"status":"UP"}` 且 Compose health 为 healthy。
+
 ### R2-03 PostgreSQL / pgvector 集成测试（P0）
 
-- [ ] 为 PostgreSQL 增加 Testcontainers 或等效独立集成测试 profile。
-- [ ] 验证 Flyway V1-V9 干净库迁移、JPA validate、vector 扩展和 HNSW 索引。
+- [x] 为 PostgreSQL 增加 Testcontainers 或等效独立集成测试 profile。
+- [x] 验证 Flyway V1-V9 干净库迁移、JPA validate、vector 扩展和 HNSW 索引。
 - [ ] 验证并发 cursor、乐观锁、唯一约束、时间类型和查询计划。
-- [ ] 增加升级迁移输入，禁止只验证空库。
+- [x] 增加升级迁移输入，禁止只验证空库。
 
 完成条件：`mvn -B -ntp -Ppostgres-it verify` 退出码为 0。
 
+执行记录：2026-08-17；已引入 Testcontainers 2.0.5 和固定 pgvector PostgreSQL 17 镜像；`PgVectorIntegrationTests` 改为容器动态 datasource，新增 `PgVectorMigrationIntegrationTests` 从 V8 历史输入升级并校验 V9 vector/HNSW/V11 回填。Docker Desktop 恢复后，`mvn -B -ntp -Ppostgres-it verify` 退出码 0，测试结果 135 通过、0 失败/错误、1 个非 PostgreSQL opt-in 测试跳过；真实 PostgreSQL 17.11 + pgvector 两个集成类均通过。并发 cursor、乐观锁、约束/时间类型和查询计划仍需专项 PostgreSQL 覆盖。
+
 ### R2-04 MinIO 与资源链路（P0）
 
-- [ ] 验证预签名 PUT、HEAD、完成、GET 和删除流程。
+- [x] 验证预签名 PUT、HEAD、完成、GET 和删除流程。
 - [ ] 覆盖对象不存在、大小不符、hash 不符、超时和重复完成。
-- [ ] 建立数据库孤儿记录与 MinIO 孤儿对象的核对方法。
+- [x] 建立数据库孤儿记录与 MinIO 孤儿对象的核对方法。
 
 完成条件：真实 MinIO 集成测试通过，异常路径不会产生不可恢复状态。
+
+执行记录：2026-08-17；已新增 `MinioAssetStorageIntegrationTests`（presigned PUT、HEAD、MIME/size/hash、GET/open、幂等删除）以及 `scripts/audit-minio-assets.ps1` 孤儿核对方法。真实 MinIO profile 测试退出码 0，1/1 通过；为兼容 MinIO 对已发送 header 的 SigV4 校验，PUT intent 使用包含 host、Content-Type、Content-Length 和 sha256 metadata 的签名请求。对象异常路径专项仍未完成。
 
 ### R2-05 Provider 测试矩阵（P0）
 
@@ -232,11 +256,13 @@
 
 完成条件：stub 自动测试通过，真实 Provider smoke 有日期、模型和脱敏日志。
 
+执行记录：2026-08-17；新增 `AiProviderResilienceTests`，2/2 通过，覆盖 429、5xx、客户端错误、错误 JSON 和错误 SSE 事件；真实 Provider chat/embedding smoke 尚未执行，需显式 key、模型和网络条件。
+
 ### G2 阶段门禁
 
-- [ ] `docker compose config`、镜像构建和健康检查通过。
-- [ ] PostgreSQL / pgvector、MinIO 和 Provider stub 集成测试通过。
-- [ ] H2 仍可用于快速单元测试，但不再作为唯一数据库证据。
+- [x] `docker compose config`、镜像构建和健康检查通过。
+- [x] PostgreSQL / pgvector、MinIO 和 Provider stub 集成测试通过。
+- [x] H2 仍可用于快速单元测试，但不再作为唯一数据库证据。
 
 ---
 
@@ -244,36 +270,44 @@
 
 ### R3-01 固定 OpenAPI（P0）
 
-- [ ] 将服务生成的 OpenAPI 固定到 `docs/contracts/openapi/auralis-openapi.json`。
-- [ ] 校对鉴权、错误模型、分页、同步、WebSocket ticket、SSE 和上传接口。
-- [ ] 在 CI 中比较生成结果，未同步的契约变化直接失败。
-- [ ] 更新 `docs/contracts/API.md` 中仍标为 planned 的已实现接口。
+- [x] 将服务生成的 OpenAPI 固定到 `docs/contracts/openapi/auralis-openapi.json`。
+- [x] 校对鉴权、错误模型、分页、同步、WebSocket ticket、SSE 和上传接口，并在 API 契约中记录当前未验收边界。
+- [x] 在 CI 中比较生成结果，未同步的契约变化直接失败。
+- [x] 更新 `docs/contracts/API.md` 中仍标为 planned 的已实现接口。
 
 完成条件：OpenAPI 产物与 Controller / DTO 一致，契约 diff 门禁可重复执行。
 
+执行记录：2026-08-17；`OpenApiArtifactTests` 在 test profile 通过导出 `/v3/api-docs` 并在默认模式比较冻结 artifact，均为 3/3；新增 `scripts/export-openapi.ps1`、`scripts/generate-openapi-sdk.ps1`、`scripts/check-openapi.ps1` 和 `.github/workflows/openapi-contract.yml`。鉴权、Problem Details、cursor 分页、Sync、Realtime ticket、SSE 和 Asset 上传边界已回写 `docs/contracts/API.md`；真实 PostgreSQL/MinIO、浏览器 WebSocket、Provider 和人工联调仍未完成。
+
 ### R3-02 生成 PC 与 Mobile TypeScript SDK（P0）
 
-- [ ] 从同一 OpenAPI 产物生成类型和请求客户端组成的轻量 TypeScript SDK。
-- [ ] PC 生成代码放入 `Auralis-PC/src/api/generated/`。
-- [ ] Mobile 生成代码放入 `Auralis-Mobile/src/api/generated/`。
-- [ ] 两端使用同一 OpenAPI 产物和同一生成器版本。
-- [ ] 增加固定的生成、校验和禁止手改说明。
+- [x] 从同一 OpenAPI 产物生成类型和请求客户端组成的轻量 TypeScript SDK。
+- [x] PC 生成代码放入 `Auralis-PC/src/api/generated/`。
+- [x] Mobile 生成代码放入 `Auralis-Mobile/src/api/generated/`。
+- [x] 两端使用同一 OpenAPI 产物和同一生成器版本。
+- [x] 增加固定的生成、校验和禁止手改说明。
 
 完成条件：重新生成没有未解释差异，两端类型检查能够引用新 DTO。
 
+执行记录：2026-08-17；PC/Mobile 均从同一 artifact 使用 `openapi-typescript@7.13.0` 生成 `src/api/generated/schema.ts`，两端加入 typed `client.ts` 与禁止手改 README；`scripts/check-openapi.ps1` 的固定版本重生成字节比对通过。将 Mobile TypeScript 固定为 5.3.3 以匹配现有 `vue-tsc@1.8.27` 后，`npm run type-check`、H5 `npm run build:h5` 和 PC `npm run build` 均通过；该证据仍不等于前后端联调。
+
 ### R3-03 冻结兼容策略（P0）
 
-- [ ] 明确 API 版本、最低客户端版本和兼容窗口。
-- [ ] 明确旧 `/ws/sync`、旧 DTO 和旧字段的移除时间。
-- [ ] 明确 cursor 过期、版本冲突和强制升级的客户端行为。
+- [x] 明确 API 版本、最低客户端版本和兼容窗口。
+- [x] 明确旧 `/ws/sync`、旧 DTO 和旧字段的移除时间。
+- [x] 明确 cursor 过期、版本冲突和强制升级的客户端行为。
 
 完成条件：`docs/contracts/API.md`、`Database.md` 和客户端模块文档描述一致。
 
+执行记录：2026-08-17；API、Database、FrontendPC、FrontendMobileTablet 已同步 `/api` 版本边界、最低客户端基线、旧 `/ws/sync`/旧 DTO 退出策略、cursor 过期、版本冲突和未来强制升级行为。该策略只冻结兼容规则，不表示 R4 页面迁移或前后端联调已完成。
+
 ### G3 阶段门禁
 
-- [ ] G1、G2 已通过。
-- [ ] OpenAPI、两端生成类型和契约 diff 门禁通过。
-- [ ] 契约冻结后才能开始大规模客户端迁移。
+- [x] G1、G2 已通过。
+- [x] OpenAPI、两端生成类型和契约 diff 门禁通过。
+- [x] 契约冻结后才能开始大规模客户端迁移。
+
+执行记录：2026-08-17；G1 的默认容器测试与 G2 的 Compose/真实 PostgreSQL/pgvector、MinIO 主链路和 Provider stub 门禁均已通过；R3 OpenAPI artifact 运行时对比、PC/Mobile 固定版本生成比对、PC build、Mobile type-check/H5 build 均通过。G3 仅表示契约已冻结并满足 R4 大规模迁移的前置条件，不表示真实 Provider chat/embedding smoke、MinIO/PostgreSQL 异常专项或 R4 前后端业务联调已完成。
 
 ---
 
@@ -309,7 +343,7 @@
 
 ### R4-04 Mobile 工具链（P0）
 
-- [ ] 解决 `vue-tsc 1.8.27` 与 TypeScript 5.9.3 不兼容。
+- [x] 通过将 Mobile TypeScript 固定为 5.3.3，解决 `vue-tsc 1.8.27` 与 TypeScript 5.9.3 的版本漂移。
 - [ ] 解决 Pinia / Vue peer 版本不一致。
 - [ ] 将三个 Tablet 逻辑脚本纳入统一 `npm test` 或 `test:tablet` 命令。
 - [ ] 保留 H5 和微信构建，消除阻断性类型错误。

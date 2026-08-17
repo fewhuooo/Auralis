@@ -5,7 +5,10 @@ import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.shared.pagination.CursorCodec;
+import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import com.auralis.app.task.internal.persistence.TaskEntity;
 import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.springframework.stereotype.Service;
@@ -51,6 +54,25 @@ public class TaskService {
     public List<TaskView> list(UUID userId) {
         return taskRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
                 .stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<TaskView> list(UUID userId, String encodedCursor, int requestedLimit) {
+        int limit = pageLimit(requestedLimit);
+        CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
+                ? null
+                : CursorCodec.decode("tasks", encodedCursor);
+        var rows = cursor == null
+                ? taskRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+                        userId, PageRequest.of(0, limit + 1))
+                : taskRepository.findPageAfter(
+                        userId, cursor.updatedAt(), cursor.id(), PageRequest.of(0, limit + 1));
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        String nextCursor = hasMore
+                ? CursorCodec.encode("tasks", "", page.getLast().getUpdatedAt(), page.getLast().getId())
+                : null;
+        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
@@ -162,5 +184,12 @@ public class TaskService {
     private void publishChange(UUID userId, TaskView view, String mutationType) {
         eventPublisher.publishEvent(new ResourceChangedEvent(
                 userId, ResourceType.TASK, view.id(), mutationType, view.version(), view.deletedAt(), view));
+    }
+
+    private int pageLimit(int requestedLimit) {
+        if (requestedLimit < 1 || requestedLimit > 200) {
+            throw new DomainException("VALIDATION_FAILED", "limit must be between 1 and 200");
+        }
+        return requestedLimit;
     }
 }

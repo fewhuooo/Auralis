@@ -3,9 +3,11 @@ package com.auralis.app.sync;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
+import io.micrometer.core.instrument.Counter;
 import com.auralis.app.sync.internal.persistence.ChangeLogEntity;
 import com.auralis.app.sync.internal.persistence.ChangeLogRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -29,19 +31,24 @@ public class ChangeLogService {
     private final JdbcTemplate jdbcTemplate;
     private final ChangeLogCapture changeLogCapture;
     private final boolean postgres;
+    private final Counter resetRequired;
 
     public ChangeLogService(
             ChangeLogRepository changeLogRepository,
             ObjectMapper objectMapper,
             Clock clock,
             JdbcTemplate jdbcTemplate,
-            ChangeLogCapture changeLogCapture) {
+            ChangeLogCapture changeLogCapture,
+            MeterRegistry meterRegistry) {
         this.changeLogRepository = changeLogRepository;
         this.objectMapper = objectMapper;
         this.clock = clock;
         this.jdbcTemplate = jdbcTemplate;
         this.changeLogCapture = changeLogCapture;
         this.postgres = isPostgres(jdbcTemplate);
+        this.resetRequired = Counter.builder("auralis.sync.pull.reset_required")
+                .description("Sync pulls that require a snapshot reset after cursor expiry")
+                .register(meterRegistry);
     }
 
     @Transactional
@@ -73,6 +80,7 @@ public class ChangeLogService {
                 .map(first -> after.value() < first.getCursor() - 1)
                 .orElse(true);
         if (resetRequired) {
+            this.resetRequired.increment();
             return new ChangeLogPage(List.of(), after, false, true);
         }
         List<ChangeLogEntity> rows = changeLogRepository

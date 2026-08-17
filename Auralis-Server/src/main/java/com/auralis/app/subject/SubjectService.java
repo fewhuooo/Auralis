@@ -6,7 +6,10 @@ import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.subject.internal.persistence.SubjectEntity;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
+import com.auralis.app.shared.pagination.CursorCodec;
+import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +53,26 @@ public class SubjectService {
                 .stream()
                 .map(this::view)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<SubjectView> list(UUID userId, String encodedCursor, int requestedLimit) {
+        int limit = pageLimit(requestedLimit);
+        CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
+                ? null
+                : CursorCodec.decode("subjects", encodedCursor);
+        var rows = cursor == null
+                ? subjectRepository.findAllByUserIdAndDeletedAtIsNullOrderBySortKeyAscUpdatedAtDescIdAsc(
+                        userId, PageRequest.of(0, limit + 1))
+                : subjectRepository.findPageAfter(
+                        userId, cursor.sortKey(), cursor.updatedAt(), cursor.id(), PageRequest.of(0, limit + 1));
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        String nextCursor = hasMore
+                ? CursorCodec.encode("subjects", page.getLast().getSortKey(), page.getLast().getUpdatedAt(),
+                        page.getLast().getId())
+                : null;
+        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
@@ -170,5 +193,12 @@ public class SubjectService {
     private void publishChange(UUID userId, SubjectView view, String mutationType) {
         eventPublisher.publishEvent(new ResourceChangedEvent(
                 userId, ResourceType.SUBJECT, view.id(), mutationType, view.version(), view.deletedAt(), view));
+    }
+
+    private int pageLimit(int requestedLimit) {
+        if (requestedLimit < 1 || requestedLimit > 200) {
+            throw new DomainException("VALIDATION_FAILED", "limit must be between 1 and 200");
+        }
+        return requestedLimit;
     }
 }

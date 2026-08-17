@@ -13,7 +13,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "source_chunks", uniqueConstraints = @UniqueConstraint(
-        name = "uq_source_chunks_user_source_ordinal", columnNames = {"user_id", "source_id", "ordinal"}))
+        name = "uq_source_chunks_user_source_generation_ordinal",
+        columnNames = {"user_id", "source_id", "generation", "ordinal"}))
 public class SourceChunkEntity {
 
     @Id
@@ -24,6 +25,12 @@ public class SourceChunkEntity {
 
     @Column(name = "source_id", nullable = false)
     private UUID sourceId;
+
+    @Column(nullable = false)
+    private UUID generation;
+
+    @Column(nullable = false)
+    private boolean active;
 
     @Column(nullable = false)
     private int ordinal;
@@ -62,9 +69,27 @@ public class SourceChunkEntity {
             int charStart,
             int charEnd,
             String embeddingJson) {
+        this(id, userId, sourceId, ordinal, content, contentHash, charStart, charEnd,
+                embeddingJson, new UUID(0, 0), true);
+    }
+
+    public SourceChunkEntity(
+            UUID id,
+            UUID userId,
+            UUID sourceId,
+            int ordinal,
+            String content,
+            String contentHash,
+            int charStart,
+            int charEnd,
+            String embeddingJson,
+            UUID generation,
+            boolean active) {
         this.id = id;
         this.userId = userId;
         this.sourceId = sourceId;
+        this.generation = generation;
+        this.active = active;
         this.ordinal = ordinal;
         this.content = content;
         this.contentHash = contentHash;
@@ -91,6 +116,8 @@ public class SourceChunkEntity {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getSourceId() { return sourceId; }
+    public UUID getGeneration() { return generation; }
+    public boolean isActive() { return active; }
     public int getOrdinal() { return ordinal; }
     public String getContent() { return content; }
     public String getContentHash() { return contentHash; }

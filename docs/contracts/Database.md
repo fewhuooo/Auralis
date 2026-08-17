@@ -1,8 +1,8 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-13
+更新时间：2026-08-17
 
-文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7 已实现并通过 H2 clean-schema/JPA validate 验证；PostgreSQL/MinIO/容器集成仍未验证
+文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V13 已实现；R1-03 已通过真实 PostgreSQL/pgvector 隔离集成验证，R1-04/R1-05 已通过受控 Provider、并发和分页测试，完整 PostgreSQL/MinIO/容器门禁仍未完成
 
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
 
@@ -12,7 +12,7 @@
 
 | 数据源 | 新后端目标作用 | 阶段 0 状态 |
 | --- | --- | --- |
-| PostgreSQL 17 + pgvector | 用户、业务资源、同步日志、任务、事件、RAG chunk 和向量 | 设计已确定，未创建迁移 |
+| PostgreSQL 17 + pgvector | 用户、业务资源、同步日志、任务、事件、RAG chunk 和向量 | V1–V13 已创建；R1-03 隔离集成已验证 |
 | MinIO | Asset 物理对象内容 | 设计已确定，阶段 2/5 接入 |
 | PC/Mobile 本地数据库 | 用户按 userId 分区的离线副本 | 现有实现仍使用旧字段，后续逐端迁移 |
 | Tablet 本地笔记存储 | NoteDocument、stroke、snapshot、viewport 等端侧专有内容 | 不进入阶段 0 Server |
@@ -53,10 +53,10 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | inbound_mutations | push 幂等结果 | user_id + device_id + client_mutation_id 唯一 |
 | domain_event_outbox | 数据库事件 | status/available_at 索引；幂等消费 |
 | ingestion_jobs | 文档解析与索引任务 | status/available_at/lease 索引 |
-| source_chunks | RAG 文本块和向量 | user/source/ordinal 唯一；vector(1024) 索引 |
+| source_chunks | RAG 文本块和向量 | user/source/generation/ordinal 唯一；active generation 查询索引；PostgreSQL vector(1024) HNSW 索引 |
 | ai_credentials | 用户 BYOK 密文 | user_id + provider 唯一；只存密文 |
-| conversations | AI 会话 | user/updated/deleted 索引 |
-| messages | AI 消息 | conversation + sequence 唯一 |
+| conversations | AI 会话 | user/updated/deleted 索引；version 乐观版本与 next_message_sequence 并发序号计数器 |
+| messages | AI 消息 | conversation + sequence 唯一；可选 user + client request id 幂等键 |
 
 ## 阶段 1 Identity V1 已实现 schema
 
@@ -165,17 +165,22 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 ## 迁移状态
 
-阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`，阶段 2B 已新增 `V3__source_asset_relation_schema.sql`，阶段 3/4 已新增 `V4__sync_schema.sql`、`V5__review_stats_realtime_schema.sql`、`V6__sync_atomicity_and_cursor_high_water.sql` 和 `V7__task_completion_timestamp.sql`；七者均在 H2 PostgreSQL mode 的空库中验证 Flyway version `1→2→3→4→5→6→7`、表结构、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
+阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`，阶段 2B 已新增 `V3__source_asset_relation_schema.sql`，阶段 3/4 已新增 `V4__sync_schema.sql`、`V5__review_stats_realtime_schema.sql`、`V6__sync_atomicity_and_cursor_high_water.sql` 和 `V7__task_completion_timestamp.sql`；阶段 5/R1 已新增 `V8`–`V13`。迁移在 H2 PostgreSQL mode 的空库中验证 Flyway version `1→...→13`、表结构、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
 
-阶段 3/4 审核后验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 69 个自动测试；PostgreSQL 17/pgvector、Testcontainers、Docker、真实 MinIO、双设备和生产迁移演练仍未声称通过。
+阶段 3/4 审核后验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 69 个自动测试；PostgreSQL 17/pgvector、Testcontainers、Docker、真实 MinIO、双设备和生产迁移演练仍未声称通过。R3 的 OpenAPI/SDK 只冻结 HTTP DTO、字段和游标/版本冲突策略，不改变数据库 schema 或端侧旧表迁移边界。
 
-## 阶段 5 AI/RAG schema（V8/V9，2026-08-16）
+## 阶段 5 AI/RAG schema（V8–V13，2026-08-17）
 
 - `V8__ai_rag_schema.sql` 新增 `ai_credentials`、`ingestion_jobs`、`source_chunks`、`conversations`、`messages`。所有表均保存 `user_id` 或可通过会话/Source 追溯用户，并建立用户/资源外键和查询索引。
 - `ai_credentials` 按 `(user_id, provider)` 唯一；API key 只保存 AES-GCM 生成的 `api_key_ciphertext` 和 `key_version`，数据库不保存明文 key。Provider 当前约束为 `DEEPSEEK`、`OPENAI_COMPATIBLE`、`SILICONFLOW`。
 - `ingestion_jobs` 保存 Source ingestion 状态、attempt、lease、错误安全摘要及开始/完成时间；当前状态约束为 `PENDING`、`PARSING`、`INDEXING`、`READY`、`FAILED`。worker 通过 `PESSIMISTIC_WRITE` claim-next 选择最早任务，`PARSING/INDEXING` 的过期 lease 可恢复；达到最大 attempt 后进入 `FAILED`，当前不新增 schema 列。
-- `source_chunks` 保存 ordinal、正文、SHA-256、字符偏移和 `embedding_json`；唯一键为 `(user_id, source_id, ordinal)`。embedding 业务校验固定为 1024 个有限浮点数。
-- `conversations` 支持用户隔离和软删除；`messages` 保存 `message_sequence`、`role`、`status`、正文、模型和安全错误元数据，按 `(conversation_id, message_sequence)` 唯一。
-- `V9__postgres_vector_support.java` 仅在 PostgreSQL 增加 `vector` 扩展、`source_chunks.embedding vector(1024)` 和 HNSW cosine 索引；H2 使用 V8 的 JSON 兼容列，便于自动测试。JPA 当前读取 JSON 列，PostgreSQL vector 列尚未进行真实数据库联调。
+- `source_chunks` 保存 ordinal、正文、SHA-256、字符偏移、兼容性 `embedding_json`、`generation` 和 `active`；唯一键为 `(user_id, source_id, generation, ordinal)`。embedding 业务校验固定为 1024 个有限浮点数。
+- `conversations` 支持用户隔离和软删除；`messages` 保存 `message_sequence`、`role`、`status`、正文、模型和安全错误元数据，按 `(conversation_id, message_sequence)` 唯一；USER 消息可保存 `client_request_id`，按 `(user_id, client_request_id)` 唯一用于安全重试。
+- `V9__postgres_vector_support.java` 仅在 PostgreSQL 增加 `vector` 扩展、`source_chunks.embedding vector(1024)` 和 HNSW cosine 索引；H2 使用 V8 的 JSON 兼容列，便于自动测试。
+- `V10__source_chunk_generation_cutover.sql` 增加 `ingestion_jobs.generation`、`source_chunks.generation/active`、新 generation 唯一约束和活动 chunk 查询索引。新 generation 写入完成后才切换 active，失败由事务回滚并保留旧 generation。
+- `V11__backfill_postgres_vectors.java` 仅在 PostgreSQL 将历史 `embedding_json` 回填到 vector 列，避免升级后旧 chunk 因 vector 为空而无法检索。
+- `V12__ai_message_client_request_id.sql` 为 `messages` 增加可空 `client_request_id VARCHAR(128)`，并建立 `(user_id, client_request_id)` 唯一约束和查询索引；只有 USER 请求消息写入该键，重试通过用户隔离的键回放既有 assistant 结果。
+- `V13__conversation_concurrency_control.sql` 为 `conversations` 增加 `version` 和 `next_message_sequence`，并从既有 messages 回填序号计数器；ConversationEntity 使用 `@Version`，消息追加在会话行写锁下递增计数器，避免并发 `max + 1` 竞争窗口。
+- PostgreSQL 写入通过 JDBC 将 1024 维 embedding 同时写入 JSON 兼容列和 vector 列；检索通过带 `user_id`、`active`、未删除 Source 过滤的 pgvector cosine SQL，并由 HNSW 索引支持排序。H2 继续使用活动 generation 的 JSON cosine fallback。
 
-阶段 5 schema 验证：`mvn -B -ntp clean test` 在 H2 PostgreSQL mode 上通过 92 个测试并验证 Flyway V1→V9、JPA `ddl-auto=validate`。该证据不等价于 PostgreSQL/pgvector migration、索引、并发 ingestion 或数据恢复演练通过。
+阶段 5/R1 schema 验证：H2 PostgreSQL mode 验证 Flyway V1→V13、JPA `ddl-auto=validate`；R2 新增 Testcontainers PostgreSQL 17 + pgvector clean/upgrade 两类输入，验证 V8 历史 `embedding_json` 在 V9/V11 后得到 `vector`、HNSW 索引和回填结果。R1-04 以 H2/JPA/受控 Provider 测试验证消息幂等键、失败/断流状态和引用事件；R1-05 以并发消息、版本冲突、分页边界、清理恢复和指标测试验证 V13。当前真实容器因本机 Docker Desktop 引擎未连接尚未形成退出码 0 证据。

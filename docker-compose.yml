@@ -1,136 +1,122 @@
 services:
-  # PostgreSQL 数据库：存储元数据
   db:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:0.8.6-pg17-bookworm
     container_name: auralis-db
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: auralis
+      POSTGRES_USER: ${AURALIS_DB_USER:?AURALIS_DB_USER must be set}
+      POSTGRES_PASSWORD: ${AURALIS_DB_PASSWORD:?AURALIS_DB_PASSWORD must be set}
+      POSTGRES_DB: ${AURALIS_DB_NAME:?AURALIS_DB_NAME must be set}
     ports:
-      - "5432:5432"
+      - "${AURALIS_DB_PORT:-5432}:5432"
     volumes:
-      - ./data/postgres:/var/lib/postgresql/data
-
-  # Redis：处理实时同步总线
-  redis:
-    image: redis:7-alpine
-    container_name: auralis-redis
-    restart: always
-    ports:
-      - "6379:6379"
-    volumes:
-      - ./data/redis:/data
-
-  # pgAdmin：可选的可视化管理工具 (访问 http://localhost:5050)
-  pgadmin:
-    image: dpage/pgadmin4
-    container_name: auralis-pgadmin
-    restart: always
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@auralis.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
-
-  # Milvus etcd
-  etcd:
-    container_name: auralis-milvus-etcd
-    image: quay.io/coreos/etcd:v3.5.5
-    environment:
-      - ETCD_AUTO_COMPACTION_MODE=revision
-      - ETCD_AUTO_COMPACTION_RETENTION=1000
-      - ETCD_QUOTA_BACKEND_BYTES=4294967296
-      - ETCD_SNAPSHOT_COUNT=50000
-    volumes:
-      - ./data/milvus/etcd:/etcd
-    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+      - auralis-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "etcdctl", "endpoint", "health"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
-  # Milvus MinIO
   minio:
-    container_name: auralis-milvus-minio
-    image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: auralis-minio
+    restart: unless-stopped
     environment:
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      MINIO_ROOT_USER: ${AURALIS_MINIO_ROOT_USER:?AURALIS_MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${AURALIS_MINIO_ROOT_PASSWORD:?AURALIS_MINIO_ROOT_PASSWORD must be set}
     ports:
-      - "9001:9001"
-      - "9000:9000"
+      - "${AURALIS_MINIO_API_PORT:-9000}:9000"
+      - "${AURALIS_MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
-      - ./data/milvus/minio:/minio_data
-    command: minio server /minio_data --console-address ":9001"
+      - auralis-minio-data:/data
+    command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
-  # Milvus Standalone
-  milvus:
-    container_name: auralis-milvus
-    image: milvusdb/milvus:v2.4.0
-    command: ["milvus", "run", "standalone"]
-    security_opt:
-    - seccomp:unconfined
-    environment:
-      ETCD_ENDPOINTS: etcd:2379
-      MINIO_ADDRESS: minio:9000
-    volumes:
-      - ./data/milvus/milvus:/var/lib/milvus
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
-      interval: 30s
-      start_period: 90s
-      timeout: 20s
-      retries: 3
-    ports:
-      - "19530:19530"
-      - "9091:9091"
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: auralis-minio-init
+    restart: "no"
     depends_on:
-      - "etcd"
-      - "minio"
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${AURALIS_MINIO_ROOT_USER:?AURALIS_MINIO_ROOT_USER must be set}
+      MINIO_ROOT_PASSWORD: ${AURALIS_MINIO_ROOT_PASSWORD:?AURALIS_MINIO_ROOT_PASSWORD must be set}
+      MINIO_BUCKET: ${AURALIS_MINIO_BUCKET:?AURALIS_MINIO_BUCKET must be set}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
 
-  # Backend Spring Boot Service
   backend:
     build:
       context: ./Auralis-Server
       dockerfile: Dockerfile
     container_name: auralis-backend
-    restart: always
+    restart: unless-stopped
     env_file:
-      - .env
-    ports:
-      - "8080:8080"
+      - path: .env
+        required: false
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/auralis
-      - SPRING_DATA_REDIS_HOST=redis
-      - LANGCHAIN4J_MILVUS_HOST=milvus
-      - MINIO_ENDPOINT=http://minio:9000
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${AURALIS_DB_NAME:?AURALIS_DB_NAME must be set}
+      SPRING_DATASOURCE_USERNAME: ${AURALIS_DB_USER:?AURALIS_DB_USER must be set}
+      SPRING_DATASOURCE_PASSWORD: ${AURALIS_DB_PASSWORD:?AURALIS_DB_PASSWORD must be set}
+      AURALIS_PUBLIC_BASE_URL: ${AURALIS_PUBLIC_BASE_URL:?AURALIS_PUBLIC_BASE_URL must be set}
+      AURALIS_UPLOAD_MAX_FILE_SIZE_BYTES: ${AURALIS_UPLOAD_MAX_FILE_SIZE_BYTES:-52428800}
+      AURALIS_UPLOAD_STORAGE_PROVIDER: minio
+      AURALIS_MINIO_ENDPOINT: http://minio:9000
+      AURALIS_MINIO_BUCKET: ${AURALIS_MINIO_BUCKET:?AURALIS_MINIO_BUCKET must be set}
+      AURALIS_MINIO_ACCESS_KEY: ${AURALIS_MINIO_ROOT_USER:?AURALIS_MINIO_ROOT_USER must be set}
+      AURALIS_MINIO_SECRET_KEY: ${AURALIS_MINIO_ROOT_PASSWORD:?AURALIS_MINIO_ROOT_PASSWORD must be set}
+      AURALIS_MINIO_PRESIGN_TTL_SECONDS: ${AURALIS_MINIO_PRESIGN_TTL_SECONDS:-300}
+      AURALIS_JWT_SECRET: ${AURALIS_JWT_SECRET:?AURALIS_JWT_SECRET must be set}
+      AURALIS_AI_ENCRYPTION_KEY: ${AURALIS_AI_ENCRYPTION_KEY:?AURALIS_AI_ENCRYPTION_KEY must be set}
+      AURALIS_AI_ENABLED: ${AURALIS_AI_ENABLED:-false}
+      AURALIS_AI_INGESTION_WORKER_ENABLED: ${AURALIS_AI_INGESTION_WORKER_ENABLED:-false}
+      AURALIS_AI_REQUEST_TIMEOUT_MILLIS: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:-10000}
+      AURALIS_AI_URL_CONNECT_TIMEOUT_MILLIS: ${AURALIS_AI_URL_CONNECT_TIMEOUT_MILLIS:-3000}
+      AURALIS_AI_URL_READ_TIMEOUT_MILLIS: ${AURALIS_AI_URL_READ_TIMEOUT_MILLIS:-10000}
+      AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES: ${AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES:-1048576}
+      AURALIS_AI_DEFAULT_PROVIDER: ${AURALIS_AI_DEFAULT_PROVIDER:-DEEPSEEK}
+      AURALIS_AI_ALLOWED_PROVIDER_HOSTS: ${AURALIS_AI_ALLOWED_PROVIDER_HOSTS:-api.deepseek.com,api.openai.com,api.siliconflow.cn}
+      AURALIS_CORS_ALLOWED_ORIGINS: ${AURALIS_CORS_ALLOWED_ORIGINS:?AURALIS_CORS_ALLOWED_ORIGINS must be set}
+    ports:
+      - "${AURALIS_SERVER_PORT:-8080}:8080"
     depends_on:
-      - db
-      - redis
-      - milvus
-      - minio
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
-  # Frontend Vue + Nginx Service
   frontend:
     build:
       context: ./Auralis-PC
       dockerfile: Dockerfile
     container_name: auralis-frontend
-    restart: always
+    restart: unless-stopped
     ports:
-      - "80:80"
+      - "${AURALIS_FRONTEND_PORT:-80}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+
+volumes:
+  auralis-postgres-data:
+  auralis-minio-data:
 
 networks:
   default:

@@ -14,6 +14,8 @@
 
 截至 2026-08-12，PC 页面与基础视觉重构已基本收敛：学科工作区、语义线条图标、统一弹窗、全局导航、Timeline 和 Pomodoro 已进入当前正式路由与组件结构。PC Web 构建已通过，仍需处理 bundle 体积警告并完成浏览器/Tauri GUI 验收。
 
+前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须经过当前模块边界、API/鉴权、视觉可访问性、构建和 GUI 验收审查。
+
 ## 当前技术栈
 
 | 依赖 | 当前声明 |
@@ -96,8 +98,16 @@ Auralis-PC/
 | `api/useSyncApi.ts` | push/pull 同步 |
 | `api/e2ee.ts` | 端到端加密辅助 |
 | `api/tauri.ts` | Tauri 环境和本地能力封装 |
+| `api/generated/schema.ts` | 从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改） |
+| `api/generated/client.ts` | 约束路径、HTTP 方法、path/query/body 与成功响应的轻量请求适配器 |
 
 所有端点契约以 [API 文档](../contracts/API.md) 为准；页面不得自行硬编码新的 Server 地址或 token 逻辑。
+
+生成 SDK 的源文件是 `docs/contracts/openapi/auralis-openapi.json`，生成器固定为
+`openapi-typescript@7.13.0`。从仓库根目录执行
+`scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
+`scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
+只冻结类型和请求边界，现有页面/API 仍需按 R4 计划逐模块迁移，不能把类型检查通过写成前后端联调完成。
 
 ## 页面职责
 

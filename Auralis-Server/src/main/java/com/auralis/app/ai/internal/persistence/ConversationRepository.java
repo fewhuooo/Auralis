@@ -1,5 +1,8 @@
 package com.auralis.app.ai.internal.persistence;
 
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -11,4 +14,12 @@ public interface ConversationRepository extends JpaRepository<ConversationEntity
     List<ConversationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     Optional<ConversationEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select conversation from ConversationEntity conversation
+            where conversation.id = :id and conversation.userId = :userId
+              and conversation.deletedAt is null
+            """)
+    Optional<ConversationEntity> findForUpdateByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 }

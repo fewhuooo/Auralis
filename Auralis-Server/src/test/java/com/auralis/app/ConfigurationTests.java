@@ -4,6 +4,7 @@ import com.auralis.app.shared.config.AuralisProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.core.env.Environment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -12,8 +13,16 @@ class ConfigurationTests {
     @Autowired
     private AuralisProperties properties;
 
+    @Autowired
+    private Environment environment;
+
     @Test
     void bindsThePhaseZeroUploadLimit() {
         assertThat(properties.upload().maxFileSizeBytes()).isEqualTo(52_428_800L);
+    }
+
+    @Test
+    void disablesOpenInViewByDefault() {
+        assertThat(environment.getProperty("spring.jpa.open-in-view", Boolean.class)).isFalse();
     }
 }

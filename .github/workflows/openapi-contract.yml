@@ -1,0 +1,28 @@
+name: OpenAPI contract
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  contract-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Compare runtime OpenAPI and generated SDKs
+        shell: pwsh
+        run: ./scripts/check-openapi.ps1

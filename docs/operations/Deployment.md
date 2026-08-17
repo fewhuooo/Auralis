@@ -1,6 +1,6 @@
 # Auralis 部署指南
 
-更新时间：2026-07-10
+更新时间：2026-08-17
 
 文档状态：现行，生产方案待加固
 
@@ -17,7 +17,7 @@
 | PC Tauri | 桌面开发/打包 | Web 前端 + Rust/Tauri + Server |
 | Mobile H5 | 移动 Web | Uni-app H5 产物 + Server |
 | 微信小程序 | 微信运行 | mp-weixin 产物 + Server 公网 HTTPS/WSS |
-| Compose 组合 | 本地/受控环境 | PostgreSQL、Redis、Milvus、MinIO、Server、PC Web |
+| Compose 组合 | 本地/受控环境 | PostgreSQL/pgvector、MinIO、Server、PC Web |
 
 当前 Compose 含开发默认凭据，禁止未经加固直接作为公网生产方案。
 
@@ -26,7 +26,7 @@
 - Git 工作树和目标提交已确认。
 - Node.js/npm 能安装两个前端 lockfile。
 - Java 21 与 Maven 可用。
-- Docker Engine 与 Compose 可用。
+- Docker Engine 与 Compose 可用；Testcontainers 使用同一 Docker Engine。
 - Tauri 需要 Rust、Cargo 和目标系统构建依赖。
 - 微信发布需要开发者工具、AppID、合法域名、HTTPS/WSS 和平台审核配置。
 - 生产 secret、域名、证书、备份位置和回滚负责人已确定。
@@ -35,49 +35,45 @@
 
 ### 开发
 
-1. 根据 `.env.example` 配置 AI key。
-2. 检查 `application-dev.yml` 的数据库、Redis、MinIO、Milvus 地址。
-3. 本地默认密码只允许在隔离开发环境使用。
+1. 复制 `.env.example` 为 `.env`。
+2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单。
+3. 先运行 `docker compose --env-file .env config --quiet`；缺少必填值时应 fail-fast。
 
 ### 生产
 
 至少准备：
 
 ```text
-JWT_SECRET
-DB_HOST / DB_PORT / DB_NAME / DB_USERNAME / DB_PASSWORD
-REDIS_HOST / REDIS_PORT / Redis 凭据
-MINIO_ENDPOINT / MINIO_ACCESS_KEY / MINIO_SECRET_KEY / MINIO_BUCKET
-MILVUS_HOST / MILVUS_PORT
-AI_BASE_URL / AI_API_KEY / AI_MODEL
-CORS_ALLOWED_ORIGINS
+AURALIS_DB_USER / AURALIS_DB_PASSWORD / AURALIS_DB_NAME
+AURALIS_JWT_SECRET / AURALIS_AI_ENCRYPTION_KEY
+AURALIS_MINIO_ROOT_USER / AURALIS_MINIO_ROOT_PASSWORD / AURALIS_MINIO_BUCKET
+AURALIS_CORS_ALLOWED_ORIGINS
+AURALIS_AI_ALLOWED_PROVIDER_HOSTS / AURALIS_AI_*_TIMEOUT_MILLIS
 ```
 
-实际变量名必须与最终配置绑定一致。`application-prod.yml` 当前 AI 键仍使用 `spring.ai.openai`，在统一为 LangChain4j 并验证前不得宣称生产 AI 可用。
+实际变量名必须与最终配置绑定一致。Provider 用户密钥仍通过 API 加密存储；`.env` Provider key 只用于显式 smoke，不写入日志。
 
 ## 本地基础设施
 
 ### 启动核心依赖
 
 ```powershell
-docker compose up -d db redis etcd minio milvus
+docker compose --env-file .env up -d db minio minio-init
 docker compose ps
 ```
 
 成功判据：
 
 - PostgreSQL `5432` 可连接。
-- Redis `6379` 可连接。
 - MinIO API `9000`、Console `9001` 可访问。
-- Milvus `19530` 可连接，`9091` 健康端点可用。
+- `minio-init` 成功退出且 `auralis-assets` bucket 存在。
 
 ### 查看日志
 
 ```powershell
 docker compose logs db
-docker compose logs redis
 docker compose logs minio
-docker compose logs milvus
+docker compose logs minio-init
 ```
 
 禁止只因容器状态为 Running 就认定服务已就绪。
@@ -91,15 +87,23 @@ mvn package
 mvn spring-boot:run
 ```
 
+Windows 环境优先验证 Wrapper：
+
+```powershell
+.\mvnw.cmd -B -ntp clean test
+```
+
+当前 Wrapper 已覆盖普通 Maven 仓库目录；生产 profile 关闭 springdoc API docs/Swagger UI，local profile 仍可用于 OpenAPI smoke。两者均不替代真实 PostgreSQL、MinIO、Provider 和生产 secret 验收。
+
 成功判据：
 
 - Maven 命令退出码 0。
 - Server 监听 `8080`。
-- 日志显示数据库、Redis、MinIO/Milvus 配置按目标 profile 加载。
+- 日志显示 PostgreSQL、MinIO 配置按目标 profile 加载。
 - 公开 Auth 端点可响应。
 - 受保护端点在无 token 时被拒绝。
 
-当前 `src/test` 没有测试源码，`mvn test` 只能作为构建门禁，不能作为业务测试证据。
+普通 `mvn -B -ntp clean test` 同时执行 H2、PostgreSQL/pgvector 和 MinIO Testcontainers；Docker Engine 不可用时应直接失败，不允许静默跳过真实依赖测试。`postgres-it`/`minio-it` profiles 仍可用于兼容旧命令和独立定向执行。
 
 ## PC Web
 
@@ -158,7 +162,7 @@ npm.cmd run build:mp-weixin
 
 ```powershell
 docker compose build backend frontend
-docker compose up -d
+docker compose --env-file .env up -d
 docker compose ps
 docker compose logs backend
 docker compose logs frontend
@@ -171,7 +175,7 @@ docker compose logs frontend
 - 管理端口不对公网开放。
 - CORS 仅允许目标前端域名。
 - AI 与存储配置使用 secret 注入。
-- MinIO 用户资产和 Milvus 内部对象权限已隔离。
+- MinIO 用户资产使用独立 bucket/凭据；当前 Compose 不启动 Milvus/etcd。
 
 ## 冒烟检查
 

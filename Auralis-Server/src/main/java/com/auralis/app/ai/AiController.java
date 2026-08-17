@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -64,6 +65,7 @@ public class AiController {
     }
 
     @PostMapping("/conversations")
+    @ResponseStatus(CREATED)
     public ResponseEntity<ConversationView> createConversation(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody ConversationCommand command) {
@@ -79,10 +81,11 @@ public class AiController {
     }
 
     @DeleteMapping("/conversations/{conversationId}")
+    @ResponseStatus(NO_CONTENT)
     public ResponseEntity<Void> deleteConversation(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID conversationId,
-            @RequestParam(defaultValue = "0") long baseVersion) {
+            @RequestParam long baseVersion) {
         conversationService.delete(principal.userId(), conversationId, baseVersion);
         return ResponseEntity.status(NO_CONTENT).build();
     }
@@ -92,15 +95,21 @@ public class AiController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AiMessageCommand command) {
         StreamingResponseBody body = output -> {
-            for (AiStreamEvent event : streamingService.stream(principal.userId(), command)) {
-                output.write(("id: " + event.id() + "\n" +
-                        "event: " + event.event() + "\n" +
-                        "data: " + objectMapper.writeValueAsString(event.data()) + "\n\n")
-                        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                output.flush();
-            }
+            streamingService.stream(principal.userId(), command, event -> writeEvent(output, event));
         };
         return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM).body(body);
+    }
+
+    private void writeEvent(java.io.OutputStream output, AiStreamEvent event) {
+        try {
+            output.write(("id: " + event.id() + "\n" +
+                    "event: " + event.event() + "\n" +
+                    "data: " + objectMapper.writeValueAsString(event.data()) + "\n\n")
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            output.flush();
+        } catch (java.io.IOException exception) {
+            throw new AiStreamAbortException("SSE client disconnected", exception);
+        }
     }
 
     @PostMapping("/suggestions")

@@ -3,6 +3,7 @@ package com.auralis.app.relation.internal.persistence;
 import com.auralis.app.relation.RelationNodeType;
 import com.auralis.app.relation.RelationType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,6 +20,22 @@ public interface RelationRepository extends JpaRepository<RelationEntity, UUID> 
     Optional<RelationEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
     List<RelationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
+
+    List<RelationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+            UUID userId, Pageable pageable);
+
+    @Query("""
+            select relation from RelationEntity relation
+            where relation.userId = :userId and relation.deletedAt is null
+              and (relation.updatedAt < :updatedAt
+                or (relation.updatedAt = :updatedAt and relation.id > :id))
+            order by relation.updatedAt desc, relation.id asc
+            """)
+    List<RelationEntity> findPageAfter(
+            @Param("userId") UUID userId,
+            @Param("updatedAt") Instant updatedAt,
+            @Param("id") UUID id,
+            Pageable pageable);
 
     List<RelationEntity> findAllByUserIdOrderByUpdatedAtDescIdAsc(UUID userId);
 

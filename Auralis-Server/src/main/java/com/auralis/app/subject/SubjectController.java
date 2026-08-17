@@ -2,6 +2,8 @@ package com.auralis.app.subject;
 
 import com.auralis.app.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -31,6 +34,7 @@ public class SubjectController {
     }
 
     @PostMapping
+    @ResponseStatus(CREATED)
     public ResponseEntity<SubjectDtos.Response> create(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody SubjectDtos.CreateRequest request) {
@@ -45,11 +49,12 @@ public class SubjectController {
     @GetMapping
     public SubjectDtos.ListResponse list(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) String cursor) {
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "100") @Min(1) @Max(200) int limit) {
+        var page = subjectService.list(principal.userId(), cursor, limit);
         return new SubjectDtos.ListResponse(
-                subjectService.list(principal.userId()).stream().map(SubjectDtos.Response::from).toList(),
-                null,
-                false);
+                page.items().stream().map(SubjectDtos.Response::from).toList(),
+                page.nextCursor(), page.hasMore());
     }
 
     @GetMapping("/{id}")
@@ -69,6 +74,7 @@ public class SubjectController {
     }
 
     @DeleteMapping("/{id}")
+    @ResponseStatus(NO_CONTENT)
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID id,

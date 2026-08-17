@@ -14,6 +14,8 @@
 
 截至 2026-08-12，Mobile/Tablet 的基础页面和主要视觉布局重构已基本收敛。近期平板首页热力图支持按周数自适应布局，当前首页使用 5 周日历网格，Hero Banner 已统一使用 `Primary Gradient`；构建仍需结合开发者工具、浏览器和真机验收。
 
+前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须额外审查条件编译、弱网/输入法、触控、feature flag、数据同步和真机验收边界。
+
 ## 当前技术栈
 
 - Uni-app `3.0.0-4080420251103001`
@@ -102,6 +104,14 @@ Auralis-Mobile/src/
 - `api/sync.ts`、`api/useSyncApi.ts`：同步。
 - `api/device.ts`：设备相关能力。
 - `api/e2ee.ts`：加密辅助。
+- `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。
+- `api/generated/client.ts`：约束路径、HTTP 方法、path/query/body 与成功响应的轻量请求适配器。
+
+生成 SDK 的源文件是 `docs/contracts/openapi/auralis-openapi.json`，生成器固定为
+`openapi-typescript@7.13.0`。从仓库根目录执行
+`scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
+`scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
+只冻结类型和请求边界，页面和旧 API 调用仍需按 R4 计划逐模块迁移，不能把类型检查通过写成前后端联调完成。
 
 ### 端侧服务
 
@@ -158,7 +168,7 @@ node scripts\check-tablet-sidebar-transition.mjs
 - H5/微信命令行构建不能替代微信开发者工具和真机。
 - 2026-08-12：H5 与微信构建通过，但仍有动态/静态 import 与 Sass legacy API 非阻断警告。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
-- `type-check` 可能受当前 `vue-tsc`、Node 和 TypeScript 组合影响，需独立记录结果。
+- Mobile 当前将 TypeScript 固定为 5.3.3 以匹配 `vue-tsc@1.8.27`；`npm run type-check` 已通过。后续升级 Node、TypeScript 或 `vue-tsc` 时必须重新执行并记录结果。
 - Tablet 复杂交互需要真实触控屏。
 - 手写、图片上传、AI 转换和同步恢复需要 Server/外部服务联调。
 

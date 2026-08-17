@@ -1,6 +1,6 @@
 # Auralis 当前问题与审查登记
 
-更新时间：2026-08-16
+更新时间：2026-08-17
 
 文档状态：现行风险登记
 
@@ -29,11 +29,11 @@
 
 | ID | 问题 | 证据 | 影响 | 处理动作 | 关闭条件 | 领域 |
 | --- | --- | --- | --- | --- | --- | --- |
-| P1-Backend-Contract-Cutover | 新后端保留 `/api` 前缀但不兼容旧 DTO、状态码和行为，三端仍依赖旧契约 | `docs/contracts/API.md`、`docs/contracts/ObjectModelMatrix.md`；阶段 1 仅实现 Auth，核心业务仍未迁移 | 新后端启动后，旧前端不能直接完成登录、同步、资产、AI 等主流程 | 先稳定业务 OpenAPI 和对象矩阵，再独立生成 SDK、迁移本地模型并逐端联调 | PC、Mobile、Tablet 目标流程全部使用新生成契约且联调证据齐全 | Frontend/Backend |
-| P1-Backend-Docker-Gate | 阶段 1 仍未执行 Docker、PostgreSQL/pgvector、MinIO 和 Testcontainers 验收 | 阶段 1 `clean test` 和 H2 HTTP smoke 通过；计划明确 H2 不替代 PostgreSQL/容器证据 | JVM/H2 测试和启动 smoke 不能证明真实迁移、对象存储、向量检索和 Compose 可用 | 完成业务代码阶段后启动 Docker Desktop，运行 Testcontainers 与最小 Compose 验证 | PostgreSQL/pgvector、MinIO、Server 的集成与健康检查均有退出码 0 证据 | Backend/Infra |
+| P1-Backend-Contract-Cutover | 新后端保留 `/api` 前缀但不兼容旧 DTO、状态码和行为，三端仍依赖旧契约 | R3 已固定 `docs/contracts/openapi/auralis-openapi.json` 并生成两端 SDK；现有页面/API 尚未完成迁移 | 新后端启动后，旧前端不能直接完成登录、同步、资产、AI 等主流程 | 按 R4 使用生成 DTO 迁移本地模型和页面，再逐端联调 | PC、Mobile、Tablet 目标流程全部使用新生成契约且联调证据齐全 | Frontend/Backend |
+| P1-Backend-Docker-Gate | [已关闭] Docker、PostgreSQL/pgvector、MinIO 和 Compose/Testcontainers 基础门禁 | 2026-08-17 Docker Desktop Linux engine 已恢复；`docker compose --env-file .env.example config --quiet`、backend/frontend 构建、Compose 启动与健康检查通过；默认 `clean test` 135/0/0，真实 PostgreSQL/pgvector 2/2、MinIO 主链路 1/1 | 基础设施主链路已具备可重复验证证据；异常专项和真实 Provider 仍由独立风险跟踪 | 保留 Docker 门禁并在 CI/本地复跑；继续完成 R2-03/R2-04 异常专项和 R2-05 真实 Provider smoke | Compose 服务健康、默认容器测试零跳过、PostgreSQL/MinIO 主链路集成证据齐全 | Backend/Infra |
 | P1-Auth-Guard | PC 登录守卫临时直接 `next()` | `Auralis-PC/src/router/index.ts` | 未登录可打开受保护页面 | 恢复 `useAuthStore` 守卫并测试所有跳转 | 未登录、登录、刷新、退出自动测试/人工证据齐全 | PC/Auth |
-| P1-Test-Coverage | 新后端已覆盖 Identity/Auth、阶段2A核心领域、阶段2B Source/Asset/Relation 和阶段3/4主要服务路径；真实基础设施、多设备和浏览器客户端仍缺业务回归保护 | 2026-08-14 `Auralis-Server/src/test` 的 27 个测试类执行 69 个真实测试，失败/错误/跳过均为 0 | H2/JPA/MockMvc 通过不等于 PostgreSQL、双设备断网恢复和真实 WebSocket 可用 | 增加 Testcontainers、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
-| P1-Asset-Verification | Asset 上传完成的服务端对象实体验证已构建，但真实 MinIO 链路尚未验收 | V3 Asset、`AssetStoragePort`、测试存储和配置开关已实现；2026-08-13 服务/Controller 与全量 42 测试通过，覆盖大小/MIME/SHA 校验和失败状态 | 未完成真实 MinIO 验证前，部署配置或 presigned PUT/GET 差异仍可能导致上传失败或错误绑定 | 启动 MinIO 完成 presigned PUT/GET、HEAD/stat、metadata 和异常路径验证 | 真实 MinIO、凭据、bucket policy 和部署配置测试通过 | Asset/Infrastructure |
+| P1-Test-Coverage | 新后端已覆盖主要模块自动测试；全量 PostgreSQL、真实基础设施、多设备和浏览器客户端仍缺业务回归保护 | 2026-08-17 默认 `clean test` 已执行 PostgreSQL/MinIO 容器测试并通过 135/0/0；真实 PostgreSQL/pgvector 主链路 2/2、MinIO 主链路 1/1，但其余业务仍主要依赖 H2/JPA/MockMvc | 主链路通过不等于 PostgreSQL 全量并发行为、双设备断网恢复和真实 WebSocket 可用 | 增加 PostgreSQL/MinIO 异常与并发、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
+| P1-Asset-Verification | Asset 上传完成的服务端对象实体验证已构建，异常分支仍未闭环 | R2 已补充 sha256 metadata header、失败对象清理、MinIO integration test 和 `scripts/audit-minio-assets.ps1`；真实 MinIO presigned PUT/HEAD/GET/open/delete 主链路 1/1 通过 | 对象不存在、大小/hash 不符、超时和重复完成仍可能在部署差异下产生未覆盖行为 | 补充真实 MinIO 异常路径、完成回调和生产凭据验证 | 真实 MinIO 主链路与异常路径、凭据、bucket policy 和部署配置测试通过 | Asset/Infrastructure |
 
 ## P2 风险
 
@@ -50,11 +50,11 @@
 | P2-Infra-Readiness | 无 CI、监控、告警、正式备份演练 | 仓库现状 | 发布与恢复门禁不足 | 建流水线、指标、备份恢复 | 发布演练和告警测试 | Infra |
 | P2-Mobile-Build-Warning | Mobile H5/微信构建有动态/静态 import 与 Sass legacy API 警告 | 2026-08-12 `build:h5` 与 `build:mp-weixin` 输出 | 未来打包与 Sass 升级可能出现行为或兼容性问题 | 明确 `useSyncStore` 的加载策略，升级/替换 Sass legacy API | 构建无对应警告，或有记录的接受决定 | Mobile |
 
-| P1-Phase5-External-Infra | 阶段 5 只在 H2/JPA/Stub Provider 上验证，尚未通过 PostgreSQL/pgvector/HNSW、MinIO 和真实模型服务 | 2026-08-16 clean test：92/92；V8/V9 与 Provider 代码存在，但无真实外部环境证据 | 方言、vector 索引、对象读取、超时、限流和真实模型响应可能与基线不同 | 增加 PostgreSQL/pgvector/Testcontainers、MinIO 和 WireMock/受控 Provider 集成门禁 | migration、JPA validate、embedding 检索、对象链路和错误路径在真实依赖上通过 |
-| P1-Phase5-Ingestion-Cutover | ingestion 已具备数据库锁 claim-next、lease 过期恢复、自动轮询和有限重试，但仍没有 generation/旧新索引原子切换或 lease fencing | `IngestionJobService`、`IngestionWorkerScheduler`、`IngestionWorker`；新增 claim/lease/retry/terminal 单测，完整测试当前 108/108；`SourceChunkService.replace` 仍删除旧 chunks 后保存新 chunks | 重试、进程中断或 lease 过期并发可能造成短暂空索引、旧新版本边界不清或 stale worker 写入 | 引入 generation/lease fencing、临时索引和成功后原子切换，补数据库崩溃/并发/重复执行测试 | 重复执行、崩溃恢复和读路径均证明不会暴露不完整索引 |
+| P1-Phase5-External-Infra | 阶段 5 的 PostgreSQL/pgvector 核心检索已完成隔离集成，但 MinIO、真实模型服务和完整容器门禁仍未通过 | 2026-08-17 `PgVectorIntegrationTests`：PostgreSQL 17.11 + pgvector 1/1；覆盖 V1→V11、HNSW、vector 写入、检索隔离、失败回滚和 Source 删除 | 对象读取、超时、限流、真实模型响应和完整部署拓扑仍可能与基线不同 | 增加 MinIO 和 WireMock/受控 Provider 集成门禁，并执行完整 PostgreSQL/Compose 验证 | migration、JPA validate、embedding 检索、对象链路和错误路径在真实依赖上通过 |
+| P1-Phase5-Ingestion-Fencing | ingestion 已具备数据库锁 claim-next、lease 过期恢复、自动轮询、有限重试和 generation 原子切换，但仍没有 lease fencing | `IngestionJobService`、`IngestionWorkerScheduler`、`IngestionWorker`、`SourceChunkService`；2026-08-17 R1-03 定向 11/11 和真实 PostgreSQL 1/1，失败 generation 不会替换旧 active generation | lease 过期后的 stale worker 仍可能在极端并发/恢复场景写入较新的任务边界之外 | 为 worker 写入增加 lease token/version fencing，并补数据库崩溃/并发/重复执行测试 | stale worker 无法提交旧任务结果，重复执行、崩溃恢复和读路径均有真实数据库证据 |
 | P1-Phase5-Provider-Security | BYOK/URL 已具备 HTTPS allowlist、IPv4/IPv6 SSRF、全地址 DNS 固定、重定向关闭/复核、超时和响应体上限；真实网络、限流、审计和密钥轮换仍未验收 | `ProviderEndpointPolicy`、`ProviderHttpClient`、`PinnedSslSocketFactory`、`UrlSourceFetcher`；2026-08-16 `mvn -B -ntp clean test` 103/103，含受控重定向/DNS/超时/key 脱敏测试 | 真实 DNS/证书/代理环境仍可能暴露连接兼容性、网络策略或 provider 异常映射问题 | 补受控真实网络、DNS rebinding、redirect、超时、429/5xx、日志脱敏、审计和密钥轮换专项 | 安全专项测试和生产 secret/网络策略记录通过 |
 | P1-Phase5-Suggestion-Quality | Suggestions 是确定性基线，未接入真实 LLM、RAG citation 或质量评估 | `SuggestionService` owner check 与 controller 测试通过，返回 citations 当前为空 | 产品可能误认为已具备 AI 总结/提问质量 | 接入受控模型与 RetrievalService，增加 schema、引用正确性、提示注入和人工质量验收 | 质量指标、引用回链和人工样例验收记录完成 |
-| P2-Phase5-Stream-Granularity | SSE API 已实现，但当前 completion adapter 只产生单个 delta，未完成上游 token 级流 | `AiStreamingTests`、`AiStreamingControllerTests` 通过；适配器使用 completion REST | UI 流式体验和取消/背压语义不等同真实 token stream | 接入真实 SSE provider 或明确 completion-only 产品契约，补断线/取消/超时测试 | 真实 provider 的增量、断线、取消和错误事件契约通过 |
+| P2-Phase5-Stream-Granularity | SSE 回调链和 OpenAI-compatible 上游增量解析已构建，但真实 Provider 网络/证书/背压和前端消费仍未验收 | `AiStreamingService`、`AiController`、`OpenAiCompatibleProvider`、`AiProviderSecurityTests`；2026-08-17 受控 SSE/超时/断流/错误测试通过 | 真实网络断线、代理缓冲、Provider 特有 SSE 变体或客户端背压仍可能影响 UI 流式体验 | 在 R2 受控真实 Provider 环境验证首包、增量、取消、断流、429/5xx、超时和前端消费 | 真实 Provider 的增量、断线、取消、超时、错误事件和前端消费契约通过 |
 
 ## 审查结论
 
@@ -62,7 +62,7 @@
 - 2026-08-12：后端阶段 1 Identity 已实现 Flyway V1、User/Device/RefreshSession、密码/JWT、refresh rotation/replay 撤销、Auth 路由和 owner-scoped session 操作；19 个自动测试和 H2 test profile HTTP smoke 通过。PostgreSQL、Docker 和人工业务验收仍开放为风险。
 - 2026-08-13：后端阶段 2B 已实现 Flyway V3、Source/Asset/Relation、KnowledgeBlock Source 关联、对象存储端口、核心 MockMvc 和 42 个全量自动测试；PostgreSQL、Docker、真实 MinIO、ingestion worker 和人工业务验收仍开放为风险。
 - 2026-08-14：针对审核发现的同步原子性、游标高水位、墓碑快照、实时提交后事件、Review 历史回放和任务完成时间统计完成修复；新增 V6/V7 迁移，`clean test` 通过 27 个测试类、69 个 H2/JPA/MockMvc 自动测试，并增加并发 cursor 与并发 mutation 重放回归。原 P1-Sync-Cursor-Concurrency 与 P1-Sync-Snapshot-Tombstone 已关闭；PostgreSQL、双设备、浏览器 WebSocket 和前端联调仍由 P1-Test-Coverage/基础设施风险覆盖。
-- 新后端继续使用 `/api` 只代表保留总前缀，不代表旧客户端兼容。OpenAPI 和对象差异矩阵完成前，禁止声明前后端已可直接联调。
+- 新后端继续使用 `/api` 只代表保留总前缀，不代表旧客户端兼容。R3 已完成 OpenAPI artifact/SDK 冻结，但在 R4 页面迁移和真实服务联调完成前，仍禁止声明前后端已可直接联调。
 - 旧 Server 的 AuthInterceptor、WebSocket 握手/心跳审计、资产用户前缀校验只属于替换前盘点，已移至仓库外备份；新实现不得将其视为已迁移能力。
 - PC、Mobile/Tablet 近期视觉与布局改动属于用户工作树成果，文档已在归档快照保留；最终构建结果须与当前代码一起记录。
 - 不应依据 StudyCore 归档恢复旧目录、旧路由或旧任务。
@@ -71,9 +71,16 @@
 - 2026-07-14：PC 学科工作区右侧 AI 伴读已复刻手机端四芒星、星环、气泡、三点输入中状态和纯文本胶囊输入；`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 通过，仍需 P2-PC-Workspace-Prototype-Validation 所列 GUI 验收。
 - 2026-08-11：PC 已加入 Pomodoro 页面并继续收敛 Dashboard、Timeline、Asset、全局导航和工作区交互；Mobile/Tablet 已更新平板热力图自适应布局与品牌渐变，代码变化已记录在 Changelog，仍需当前构建与 GUI/真机验收。
 - 2026-08-12：PC 学科图标、工作区静态契约检查和生产构建均通过；移除弃用 `baseUrl`、删除未使用 `ElMessage` 导入后，Vite 仍提示大 chunk。Mobile H5、微信小程序构建与 Tablet 侧栏检查通过，保留既有非阻断警告，未进行 GUI/真机验收。
-- 2026-08-16：阶段 5 AI/RAG 后端基线完成，V8/V9、BYOK、ingestion/retrieval、Conversation、SSE 和 Suggestions 已实现；完整 clean test 通过 92 个测试。上述 P1 风险保持开放，未声称 PostgreSQL/pgvector、MinIO、真实 Provider、性能、安全专项或前端业务验收通过。
+- 2026-08-17：阶段 5 R1-03 完成 V10/V11、PostgreSQL pgvector/HNSW 检索、generation 原子切换和历史 vector 回填；定向测试 11/11、真实 PostgreSQL 17.11 + pgvector 集成 2/2 通过。P1-Backend-Docker-Gate 已完成 Compose/db/MinIO/backend/frontend 健康门禁；P1-Phase5-External-Infra 和 P1-Phase5-Ingestion-Fencing 仍保持开放，未声称真实 Provider、lease fencing、性能或前端业务验收通过。
+- 2026-08-17：R1-05 完成 V13 Conversation 版本/消息序号并发控制、五类核心列表 keyset cursor、Sync 定时保留清理/指标/reset；定向套件 16/16、全量 `mvn -B -ntp clean test` 126 通过且 1 个 opt-in PostgreSQL 测试跳过。该证据仍不等价于全量 PostgreSQL 并发、生产调度、双设备断网、前端联调或人工业务验收。
+- 2026-08-17：R3 固定 `/v3/api-docs` 运行时导出 artifact，新增 OpenAPI runtime/artifact 对比测试、固定 `openapi-typescript@7.13.0` 的 PC/Mobile schema 与轻量 typed client、PowerShell 生成/校验脚本和 CI drift workflow；R3 本地门禁通过，PC/Mobile 类型与构建检查通过；G3 契约迁移前置门禁通过。R2-05 真实 Provider smoke、R4 前端页面迁移和真实业务联调仍保持开放。
+- 2026-08-17：G1 已通过；默认 Surefire 启用 PostgreSQL/MinIO Testcontainers，系统 Maven 与 Wrapper `clean test` 均为 135/0/0。G1 的 Docker/零跳过门禁已关闭；真实 Provider、lease fencing、性能、前端业务联调和人工验收仍保持开放。
 
 ## 推荐关闭顺序
+
+R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动测试闭环；仍需完成 R2 剩余真实 Provider/异常专项和 R4 前端契约迁移验收。
+
+2026-08-17：R2 代码/配置基线已完成，Compose config/build/up/health、真实 PostgreSQL 17.11 + pgvector 2/2、真实 MinIO 1/1 和 Provider stub 2/2 已通过；MinIO 异常路径、真实 Provider smoke 仍需要明确模型、key 和网络窗口。
 
 1. 完成阶段 1–5 的 PostgreSQL/Testcontainers/Docker/MinIO/Provider 外部门禁，验证 Sync、Source ingestion 和 pgvector 检索在真实依赖上成立。
 2. 补齐 ingestion generation/崩溃恢复、BYOK/SSRF/限流专项和真实 SSE 取消/断线契约。

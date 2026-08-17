@@ -12,12 +12,10 @@ onMounted(() => {
   const deviceStore = useDeviceStore()
   deviceStore.detect()
 
-  // #ifdef MP-WEIXIN
-  const target = '/pages/mobile/home/index'
-  // #endif
+  let target = '/pages/mobile/home/index'
 
   // #ifndef MP-WEIXIN
-  const target = deviceStore.isTablet
+  target = deviceStore.isTablet
     ? '/pages/tablet/dashboard/index'
     : '/pages/mobile/home/index'
   // #endif

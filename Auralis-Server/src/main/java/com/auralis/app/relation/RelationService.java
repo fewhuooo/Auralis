@@ -10,8 +10,11 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.task.TaskService;
+import com.auralis.app.shared.pagination.CursorCodec;
+import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.event.EventListener;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -69,6 +72,25 @@ public class RelationService {
     public List<RelationView> list(UUID userId) {
         return relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
                 .stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<RelationView> list(UUID userId, String encodedCursor, int requestedLimit) {
+        int limit = pageLimit(requestedLimit);
+        CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
+                ? null
+                : CursorCodec.decode("relations", encodedCursor);
+        var rows = cursor == null
+                ? relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+                        userId, PageRequest.of(0, limit + 1))
+                : relationRepository.findPageAfter(
+                        userId, cursor.updatedAt(), cursor.id(), PageRequest.of(0, limit + 1));
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        String nextCursor = hasMore
+                ? CursorCodec.encode("relations", "", page.getLast().getUpdatedAt(), page.getLast().getId())
+                : null;
+        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
@@ -226,6 +248,13 @@ public class RelationService {
     private void publishChange(UUID userId, RelationView view, String mutationType) {
         eventPublisher.publishEvent(new ResourceChangedEvent(
                 userId, ResourceType.RELATION, view.id(), mutationType, view.version(), view.deletedAt(), view));
+    }
+
+    private int pageLimit(int requestedLimit) {
+        if (requestedLimit < 1 || requestedLimit > 200) {
+            throw new DomainException("VALIDATION_FAILED", "limit must be between 1 and 200");
+        }
+        return requestedLimit;
     }
 
     private record NormalizedRelation(

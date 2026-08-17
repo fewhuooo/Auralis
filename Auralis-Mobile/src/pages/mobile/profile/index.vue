@@ -246,7 +246,7 @@ const blockCount = computed(() => blockStore.recentBlocks.length)
 const completedCount = computed(() => taskStore.completedCount || 38)
 const focusHours = computed(() => taskStore.totalFocusHours || 24.5)
 
-const username = computed(() => authStore.user?.username || 'Auralis 同学')
+const username = computed(() => authStore.username || 'Auralis 同学')
 const joinedDays = ref(42)
 
 const toggleDarkMode = () => {
@@ -330,7 +330,7 @@ const handleLogout = () => {
     content: '确定要退出当前账号吗？',
     success: (res) => {
       if (res.confirm) {
-        authStore.clearToken()
+        authStore.logout()
         uni.reLaunch({ url: '/pages/mobile/login/index' })
       }
     }

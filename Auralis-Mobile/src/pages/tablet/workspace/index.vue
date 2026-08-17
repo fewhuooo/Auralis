@@ -1714,14 +1714,16 @@ const closeSummarySidePanel = () => {
   showSummarySidePanel.value = false
 }
 
-const extractSummaryToBlock = () => {
+const extractSummaryToBlock = async () => {
   if (!currentAiSummary.value || !activeSubject.value) return
   const title = activeFileId.value ? `${selectedFile.value?.name || '当前材料'} AI 总结` : `${activeSubject.value?.name || '学科'} 全科概览总结`
-  subjectStore.createBlock(activeSubject.value.id, {
+  await blockStore.addBlock({
+    subject: activeSubject.value.name,
     title,
     preview: currentAiSummary.value,
-    source: activeFileId.value ? selectedFile.value?.name : '全科总结',
+    source: activeFileId.value ? selectedFile.value?.name || '当前材料' : '全科总结',
     color: activeSubject.value?.color || '#7D9372',
+    subjectId: activeSubject.value.id,
     tags: ['AI总结', '提纲'],
     difficulty: 'medium'
   })

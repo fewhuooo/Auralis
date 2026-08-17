@@ -19,7 +19,7 @@ import java.io.InputStream;
 public class UnavailableAssetStorage implements AssetStoragePort {
 
     @Override
-    public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes) {
+    public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes, String sha256) {
         throw unavailable();
     }
 
@@ -35,6 +35,11 @@ public class UnavailableAssetStorage implements AssetStoragePort {
 
     @Override
     public InputStream openObject(String objectKey) {
+        throw unavailable();
+    }
+
+    @Override
+    public void deleteObject(String objectKey) {
         throw unavailable();
     }
 

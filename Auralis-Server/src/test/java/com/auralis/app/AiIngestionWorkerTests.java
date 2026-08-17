@@ -1,6 +1,10 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.AiSettingsService;
+import com.auralis.app.ai.AiCredential;
+import com.auralis.app.ai.AiProviderType;
+import com.auralis.app.ai.EmbeddingProviderPort;
+import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.ai.ingestion.IngestionWorker;
@@ -29,6 +33,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,11 +64,13 @@ class AiIngestionWorkerTests {
     private IngestionWorker worker;
     private UUID userId;
     private UUID sourceId;
+    private UUID generation;
 
     @BeforeEach
     void setUp() {
         userId = UUID.randomUUID();
         sourceId = UUID.randomUUID();
+        generation = UUID.randomUUID();
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.ingestionLeaseMillis()).thenReturn(300_000L);
         when(aiProperties.ingestionMaxAttempts()).thenReturn(3);
@@ -104,9 +111,33 @@ class AiIngestionWorkerTests {
         verify(jobRepository).saveAndFlush(job);
     }
 
+    @Test
+    void successfulIngestionCommitsTheClaimedGeneration() {
+        IngestionJobEntity job = claimedJob(1);
+        SourceView source = source();
+        EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.markParsing(userId, sourceId)).thenReturn(source);
+        when(parser.supports(SourceType.TEXT)).thenReturn(true);
+        when(parser.parse(userId, source)).thenReturn("source text");
+        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW))
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.SILICONFLOW, "embedding-model",
+                        new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of(vector())));
+        when(sourceService.markIndexing(userId, sourceId)).thenReturn(source);
+        when(sourceService.markReady(userId, sourceId)).thenReturn(source);
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(chunkService).replace(eq(userId), eq(sourceId), eq(generation), anyList(), anyList());
+        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.READY);
+    }
+
     private IngestionJobEntity claimedJob(int attempts) {
         IngestionJobEntity job = new IngestionJobEntity(
-                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING);
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
         Instant now = clock.instant();
         for (int attempt = 0; attempt < attempts; attempt++) {
             job.claim(now, now.plusSeconds(300));
@@ -119,5 +150,9 @@ class AiIngestionWorkerTests {
         return new SourceView(
                 sourceId, UUID.randomUUID(), SourceType.TEXT, "Notes", null, null, "text", null,
                 SourceIngestionStatus.PARSING, null, null, 0, now, now, null);
+    }
+
+    private static List<Double> vector() {
+        return java.util.stream.Stream.generate(() -> 0.0).limit(1024).toList();
     }
 }

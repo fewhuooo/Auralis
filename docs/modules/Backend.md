@@ -1,8 +1,8 @@
 # Spring Boot 后端模块
 
-更新时间：2026-08-16
+更新时间：2026-08-17
 
-文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 后端基线已构建待验收
+文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 后端基线已构建，R1-03 pgvector/原子切换已完成真实数据库验证，R1-04 AI 请求与受控真实流式已完成，整体仍待外部验收
 
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
@@ -28,7 +28,7 @@
 | relation | 通用跨对象关系 | 阶段 2B 已实现端点校验、去重、软删除级联，待 PostgreSQL/人工验收 |
 | review | ReviewState、ReviewEvent、FSRS-lite | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | sync | Device、mutation、change log、高水位 cursor、snapshot、墓碑 | 阶段 3 已实现，待双设备/过期 cursor/生产验收 |
-| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions | 阶段 5 后端基线已实现，待真实 Provider/pgvector/MinIO/业务验收 |
+| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions | 阶段 5 后端基线已实现；R1-03 pgvector 已通过隔离 PostgreSQL 验证，R1-04 已完成参数透传、幂等、引用和回调式 SSE，待真实 Provider/MinIO/业务验收 |
 | stats | 强类型统计读取模型 | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | realtime | WebSocket ticket 和用户级事件 | 阶段 4 已实现，待浏览器/跨实例验收 |
 | shared | 错误模型、时钟、ID、分页、最小公共设施 | 配置/错误/OpenAPI 基础 |
@@ -53,7 +53,7 @@
 - DELETE /api/auth/sessions/{sessionId}
 - DELETE /api/auth/sessions/others
 
-除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task，阶段 2B 已实现 Source、Asset、Relation，阶段 3 已实现 Sync，阶段 4 已实现 Review、Stats、Realtime，阶段 5 已实现 AI settings、Conversation、SSE message、Suggestions 和 ingestion/retrieval 后端基线。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
+除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task，阶段 2B 已实现 Source、Asset、Relation，阶段 3 已实现 Sync，阶段 4 已实现 Review、Stats、Realtime，阶段 5 已实现 AI settings、Conversation、SSE message、Suggestions 和 ingestion/retrieval 后端基线；R1-05 已完成会话并发版本、消息序号、核心列表 cursor 与 Sync 清理调度。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
 
 ## 阶段 2A 实际 HTTP 表面
 
@@ -63,7 +63,7 @@
 - KnowledgeBlock：`POST/GET /api/knowledge-blocks`、`GET/PUT/DELETE /api/knowledge-blocks/{id}`、`POST /api/knowledge-blocks/{id}/restore`。
 - Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`。
 
-创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；列表暂返回 `nextCursor=null`、`hasMore=false`。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
+创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
 
 阶段 2B 验证证据：2026-08-13 `Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，阶段2B基线执行 42 个真实测试；包含 V1/V2/V3 schema、Source/Asset/Relation Repository/Service/Controller、KnowledgeBlock Source 关联、RELATED_TO 反向去重、端点删除级联、Auth/阶段 2A 回归和 Modulith 边界。阶段 3/4 审核修复后在全量 clean test 中验证 Sync、Review、Stats、Realtime、V6/V7 迁移和并发回归，最终合计 69 个测试。证据范围为 H2、JPA、MockMvc 和测试存储适配器，不包含 PostgreSQL、Docker、真实 MinIO、解析 worker、双设备、浏览器 WebSocket、三端联调或人工业务验收。
 
@@ -74,8 +74,8 @@
 - Spring Modulith 2.1。
 - Maven Wrapper + Maven。
 - Spring MVC、Bean Validation、Actuator、springdoc OpenAPI。
-- 当前持久化使用 Spring Data JPA + Flyway V1；后续业务表继续沿用该边界。
-- 后续数据库使用 PostgreSQL 17 + pgvector。
+- 当前持久化使用 Spring Data JPA + Flyway V1–V11；R1-03 的 pgvector 写入/检索通过 JDBC repository 接入，H2 保留 JSON fallback。
+- 目标数据库使用 PostgreSQL 17 + pgvector；V9 创建 vector(1024)/HNSW，V10 提供 generation cutover，V11 回填历史 JSON embedding。
 - 后续对象存储使用 MinIO。
 - 新工程移除 MyBatis Plus、运行时 DDL、Redis、Milvus、etcd、旧 JJWT 配置、统一 Result 和 encryptedPayload。
 
@@ -90,11 +90,11 @@
 - Asset：`POST /api/assets/upload-intents`、`POST /api/assets/{id}/complete`、`POST /api/assets/{id}/download-url`；AssetStoragePort 提供 test 适配器与配置启用的 MinIO 适配器。
 - Source：`POST/GET /api/sources`、`GET/PUT/DELETE /api/sources/{id}`、`POST /api/sources/{id}/restore`、`POST /api/sources/{id}/reingest`。
 - Relation：`POST/GET /api/relations`、`GET/PUT/DELETE /api/relations/{id}`、`POST /api/relations/{id}/restore`。
-- Source 的 ingestion worker、Tika 解析、source_chunks/pgvector 和 cursor 分页仍不在本阶段。
+- Source 的 ingestion worker、Tika 解析和 source_chunks/pgvector 已在阶段 5 后端基线接入；Source/Relation 列表同样使用稳定 keyset cursor；真实 MinIO、完整 PostgreSQL 门禁和生产分页性能仍不在本阶段验收范围。
 
 ## 阶段 3/4 实际 HTTP 表面
 
-- Sync：`POST /api/sync/push`、`GET /api/sync/pull`、`GET /api/sync/snapshot`；SyncService 校验活动设备，SyncMutationProcessor 在独立事务内原子完成幂等占位、领域命令、change log 和最终结果，并提供高水位不回退的不透明 cursor；snapshot 包含必要墓碑。
+- Sync：`POST /api/sync/push`、`GET /api/sync/pull`、`GET /api/sync/snapshot`；SyncService 校验活动设备，SyncMutationProcessor 在独立事务内原子完成幂等占位、领域命令、change log 和最终结果，并提供高水位不回退的不透明 cursor；snapshot 包含必要墓碑。`SyncRetentionService` 按配置定时清理 30 天外日志/幂等记录，保留高水位并记录清理与 reset 指标。
 - Review：`GET /api/reviews/due`、`POST /api/reviews/events`、`GET /api/reviews/history`；ReviewService 使用版本化 FSRS-lite 参数集，SKIP 只写事件。
 - Stats：`GET /api/stats/overview`、`GET /api/stats/weekly`；StatsQueryRepository 对所有聚合带 userId 条件，weekly 固定连续 7 天。
 - Realtime：`POST /api/realtime/ticket` 和 `/ws/events`；RealtimeService 对短期 ticket 做 hash-only 存储、一次性消费和设备归属校验，提交后事件监听器向用户级订阅者转发 Sync/Review 通知。
@@ -132,12 +132,27 @@
 
 旧 Server 的历史 `mvn test` 结果不作为新 Server 证据；旧源码已移至仓库外备份，阶段 1 新实现只使用 `com.auralis.app`。
 
+## R1-06 工具链和运行配置
+
+- `mvnw.cmd` 对 Maven 本地仓库先区分普通目录与有效链接目标，普通 Windows Maven 仓库不再触发空 `Target` 数组异常。
+- `application.yml` 全局设置 `spring.jpa.open-in-view=false`；现有服务在关闭 Open-in-View 后通过 context/MockMvc/全量测试。
+- `application-prod.yml` 显式设置 `springdoc.api-docs.enabled=false` 和 `springdoc.swagger-ui.enabled=false`；local profile 的 `/v3/api-docs` smoke 保持启用。
+- POM 固定测试 H2 2.2.224，并用 Mockito 5.23.0 Java agent 配置 Surefire；默认自动启用 PostgreSQL/MinIO Testcontainers。R1-06/G1 定向配置测试 6/6，系统 Maven 与 Wrapper `clean test` 均为 135 通过、0 失败/错误/跳过。
+- 该命令证据不替代真实 Provider、干净机器网络下载或前端/GUI 验收。
+
+## R2 真实依赖与对象存储门禁
+
+- `AssetStoragePort` 的 MinIO 实现生成 presigned PUT/GET URL，并在声明 sha256 时把 `X-Amz-Meta-Sha256` 一并交给客户端；完成阶段继续由服务端 HEAD/stat 校验 size、MIME 和 hash。
+- 上传校验失败会先持久化 `FAILED`，再尝试幂等删除对象；删除失败仍保留可审计数据库状态，并由 `scripts/audit-minio-assets.ps1` 做数据库/对象对账。
+- `PgVectorIntegrationTests` 改为 Testcontainers PostgreSQL/pgvector，另有升级输入测试覆盖既有 V8 `embedding_json` 经 V9/V11 的 vector/HNSW/回填；`AiProviderResilienceTests` 覆盖 429、5xx、错误 JSON 和错误流事件。
+- R2 真实依赖测试默认随 `mvn -B -ntp clean test` 执行；`postgres-it`/`minio-it` profiles 仍作为兼容别名保留。Docker Engine 不可用时默认测试应失败，而不是跳过容器集成测试。
+
 ## 阶段 5 AI/RAG 后端实现边界
 
 - `ai` 模块通过 `AiProviderPort`、`EmbeddingProviderPort` 与统一的 `ProviderHttpClient` 适配 OpenAI-compatible/DeepSeek 聊天和 SiliconFlow embedding；Provider URL 使用 HTTPS 精确 allowlist、全 DNS 地址校验和固定地址连接，重定向关闭，并受超时/响应体上限约束。BYOK 使用 AES-GCM，日志、异常、DTO 与凭据 `toString()` 不回显 key。
 - ingestion 由 Source 提交后事件触发，`IngestionJobService` 做用户/Source 归属和活动任务去重，并通过数据库锁定的 claim-next 分配租约；条件化 `IngestionWorkerScheduler` 自动轮询，lease 过期可恢复，失败按最大次数回到 PENDING，耗尽后进入 FAILED。`IngestionWorker` 负责解析、固定大小重叠切块、1024 维 embedding 和 chunk 替换。
-- `RetrievalService` 只查询当前 userId 的 chunks，使用 JSON embedding 在 H2/当前 JPA 基线内计算 cosine similarity；PostgreSQL vector/HNSW 只是 V9 目标能力，尚未通过真实数据库测试。
-- Conversation/Message 服务提供 owner-scoped CRUD、软删除、消息序列和安全错误持久化。SSE 使用 Spring MVC，不引入 WebFlux；上游 completion 目前转换为单个 delta。
+- `RetrievalService` 只查询当前 userId 的活动 generation chunks。PostgreSQL 通过 `PgVectorRetrievalRepository` 执行带 user/source/active/deleted 过滤的 pgvector cosine SQL，由 HNSW 索引支持 top-k；非 PostgreSQL 环境使用活动 chunk 的 JSON cosine fallback。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
+- Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、`clientRequestId` 幂等回放和安全错误/断流状态持久化。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
 
-阶段 5 自动验证：完整 `mvn -B -ntp clean test` 在 2026-08-16 通过 108 个测试；新增 Provider 出站安全、自动 ingestion claim/lease/retry/terminal 和 scheduler 测试。证据仍限于 H2/JPA/MockMvc/Stub Provider/架构及受控网络测试，不包含 PostgreSQL/pgvector、MinIO、真实 Provider、性能和前端联调。
+阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1-03 定向测试 11/11、R1-04 AI 流式/Provider/Controller 定向测试 16/16，R1-05 覆盖 V13、消息竞争、会话版本、五类列表分页、清理恢复和指标；全量测试结果以本轮 Status/Changelog 为准。`PgVectorIntegrationTests` 在 PostgreSQL 17.11 + pgvector 容器通过 1/1。真实 Provider、MinIO、全量 Compose、性能和前端联调仍未完成。

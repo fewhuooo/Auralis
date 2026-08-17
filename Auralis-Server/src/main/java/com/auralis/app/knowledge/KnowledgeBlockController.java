@@ -2,6 +2,8 @@ package com.auralis.app.knowledge;
 
 import com.auralis.app.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
@@ -31,6 +34,7 @@ public class KnowledgeBlockController {
     }
 
     @PostMapping
+    @ResponseStatus(CREATED)
     public ResponseEntity<KnowledgeBlockDtos.Response> create(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody KnowledgeBlockDtos.CreateRequest request) {
@@ -45,10 +49,12 @@ public class KnowledgeBlockController {
     @GetMapping
     public KnowledgeBlockDtos.ListResponse list(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @RequestParam(required = false) String cursor) {
+            @RequestParam(required = false) String cursor,
+            @RequestParam(defaultValue = "100") @Min(1) @Max(200) int limit) {
+        var page = knowledgeBlockService.list(principal.userId(), cursor, limit);
         return new KnowledgeBlockDtos.ListResponse(
-                knowledgeBlockService.list(principal.userId()).stream()
-                        .map(KnowledgeBlockDtos.Response::from).toList(), null, false);
+                page.items().stream().map(KnowledgeBlockDtos.Response::from).toList(),
+                page.nextCursor(), page.hasMore());
     }
 
     @GetMapping("/{id}")
@@ -68,6 +74,7 @@ public class KnowledgeBlockController {
     }
 
     @DeleteMapping("/{id}")
+    @ResponseStatus(NO_CONTENT)
     public ResponseEntity<Void> delete(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID id,

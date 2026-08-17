@@ -1,7 +1,10 @@
 package com.auralis.app.ai.internal.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.auralis.app.ai.AiCredential;
+import com.auralis.app.ai.AiStreamAbortException;
+import com.auralis.app.ai.AiProviderChunk;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderRequest;
@@ -20,9 +23,13 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 @Component
 public class OpenAiCompatibleProvider implements AiProviderPort {
+
+    private static final ObjectMapper STREAM_OBJECT_MAPPER = new ObjectMapper();
 
     private final AiProviderType providerType;
     private final ProviderEndpointPolicy endpointPolicy;
@@ -69,6 +76,36 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
     }
 
+    @Override
+    public void streamInto(
+            AiProviderRequest request,
+            AiCredential credential,
+            Consumer<AiProviderChunk> sink) {
+        validateCredential(credential);
+        Objects.requireNonNull(sink, "sink");
+        try {
+            ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
+                    providerType, URI.create(credential.baseUrl().trim()));
+            Map<String, Object> body = new LinkedHashMap<>(requestBody(request));
+            body.put("stream", true);
+            httpClient.postStream(
+                    endpoint, "/chat/completions", credential.apiKey(), body,
+                    line -> parseStreamLine(line, sink));
+        } catch (AiStreamAbortException exception) {
+            throw exception;
+        } catch (DomainException exception) {
+            throw exception;
+        } catch (ProviderHttpException exception) {
+            throw providerError(exception.status());
+        } catch (ProviderResponseTooLargeException exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+        } catch (IOException exception) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable");
+        } catch (Exception exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+        }
+    }
+
     protected void validateCredential(AiCredential credential) {
         if (credential == null || credential.baseUrl() == null || credential.baseUrl().isBlank()
                 || credential.apiKey() == null || credential.apiKey().isBlank()) {
@@ -101,6 +138,33 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
                 content.asText(),
                 usage.path("prompt_tokens").asLong(0),
                 usage.path("completion_tokens").asLong(0));
+    }
+
+    private void parseStreamLine(String line, Consumer<AiProviderChunk> sink) {
+        if (line == null || line.isBlank() || !line.startsWith("data:")) {
+            return;
+        }
+        String payload = line.substring("data:".length()).trim();
+        if (payload.equals("[DONE]")) {
+            sink.accept(new AiProviderChunk("", true));
+            return;
+        }
+        try {
+            JsonNode body = STREAM_OBJECT_MAPPER.readTree(payload);
+            JsonNode choice = body.path("choices").path(0);
+            JsonNode content = choice.path("delta").path("content");
+            if (content.isTextual() && !content.asText().isEmpty()) {
+                sink.accept(new AiProviderChunk(content.asText(), false));
+            }
+            JsonNode finishReason = choice.path("finish_reason");
+            if (!finishReason.isMissingNode() && !finishReason.isNull()) {
+                sink.accept(new AiProviderChunk("", true));
+            }
+        } catch (AiStreamAbortException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event");
+        }
     }
 
     private DomainException providerError(int status) {

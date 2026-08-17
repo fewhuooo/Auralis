@@ -1,6 +1,6 @@
 # Auralis 运维与应急 Runbook
 
-更新时间：2026-07-10
+更新时间：2026-08-17
 
 文档状态：现行，部分流程待生产演练
 
@@ -22,9 +22,8 @@
 docker compose ps
 docker compose logs backend
 docker compose logs db
-docker compose logs redis
 docker compose logs minio
-docker compose logs milvus
+docker compose logs minio-init
 ```
 
 应用侧同时记录：时间、用户（脱敏）、端、页面、请求路径、HTTP/code、WebSocket 状态和最近同步 cursor。
@@ -38,15 +37,16 @@ Server 退出、`8080` 不监听或健康检查失败。
 ### 检查
 
 - Java 21 与 Maven。
+- Windows Maven Wrapper 的本地仓库路径；普通目录不应触发 `Cannot index into a null array`。
 - 激活 profile。
-- PostgreSQL、Redis、MinIO、Milvus 地址和凭据。
+- PostgreSQL、MinIO 地址和凭据。
 - 端口冲突。
 - 数据库建表/ALTER 错误。
 - LangChain4j 配置解析。
 
 ```powershell
 cd Auralis-Server
-mvn spring-boot:run
+.\mvnw.cmd -B -ntp spring-boot:run
 docker compose logs backend
 ```
 
@@ -77,19 +77,6 @@ docker compose logs db
 
 成功判据：Server 能查询用户、块和任务，数据量与恢复点一致。
 
-## Redis 异常
-
-### 影响
-
-缓存、同步辅助或 Stream 能力可能退化。
-
-```powershell
-docker compose ps redis
-docker compose logs redis
-```
-
-确认哪些数据可重建，哪些承担事件传递。禁止在未知业务语义下直接清空 Redis。
-
 ## MinIO 上传失败
 
 ### 检查顺序
@@ -108,22 +95,18 @@ docker compose logs backend
 
 成功判据：重新获取的预签名 URL 可上传，bind 后查询资产属于当前用户，且对象实际存在。
 
-## Milvus / RAG 异常
+### 数据库与对象孤儿核对
 
-### 检查
-
-- etcd、MinIO、Milvus 三个服务状态。
-- collection 名称与 dimension。
-- embedding 模型输出维度。
-- Server 日志中的连接、索引和查询错误。
+上传完成失败或人工恢复后，先只读核对，不直接删除对象：
 
 ```powershell
-docker compose ps etcd minio milvus
-docker compose logs milvus
-docker compose logs backend
+$env:AURALIS_DB_PASSWORD = '<从 secret 管理器读取>'
+$env:AURALIS_MINIO_ROOT_USER = '<从 secret 管理器读取>'
+$env:AURALIS_MINIO_ROOT_PASSWORD = '<从 secret 管理器读取>'
+.\scripts\audit-minio-assets.ps1
 ```
 
-禁止只恢复 Milvus 单个 volume 后立即开放写入；etcd、MinIO 和 Milvus 必须保持一致恢复点。
+脚本比较 `assets.object_key` 与 MinIO bucket 中的对象，分别报告数据库无对象和对象无数据库记录；删除前必须人工确认保留期、状态和备份。
 
 ## AI 接口失败
 
@@ -220,8 +203,7 @@ node scripts\check-tablet-sidebar-transition.mjs
 必须协调备份：
 
 - PostgreSQL 业务数据。
-- MinIO 用户资产和 Milvus 对象。
-- Milvus 与 etcd。
+- MinIO 用户资产。
 - 部署配置与 secret 的安全备份。
 - 必要的客户端端侧笔记导出。
 
@@ -232,7 +214,7 @@ node scripts\check-tablet-sidebar-transition.mjs
 1. 明确恢复点和允许的数据丢失窗口。
 2. 停止应用写入。
 3. 保存故障现场。
-4. 按依赖顺序恢复数据库、对象/向量服务和配置。
+4. 按依赖顺序恢复 PostgreSQL、MinIO 和配置。
 5. 启动 Server，再启动客户端入口。
 6. 执行 Auth、数据、同步、资产和 AI 冒烟。
 7. 对比数据量、cursor 和关键对象。

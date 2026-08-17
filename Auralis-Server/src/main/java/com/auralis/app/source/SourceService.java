@@ -10,7 +10,10 @@ import com.auralis.app.source.internal.persistence.AssetRepository;
 import com.auralis.app.source.internal.persistence.SourceEntity;
 import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.shared.pagination.CursorCodec;
+import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +62,25 @@ public class SourceService {
     public List<SourceView> list(UUID userId) {
         return sourceRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
                 .stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<SourceView> list(UUID userId, String encodedCursor, int requestedLimit) {
+        int limit = pageLimit(requestedLimit);
+        CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
+                ? null
+                : CursorCodec.decode("sources", encodedCursor);
+        var rows = cursor == null
+                ? sourceRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+                        userId, PageRequest.of(0, limit + 1))
+                : sourceRepository.findPageAfter(
+                        userId, cursor.updatedAt(), cursor.id(), PageRequest.of(0, limit + 1));
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        String nextCursor = hasMore
+                ? CursorCodec.encode("sources", "", page.getLast().getUpdatedAt(), page.getLast().getId())
+                : null;
+        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
@@ -265,6 +287,13 @@ public class SourceService {
     private void publishChange(UUID userId, SourceView view, String mutationType) {
         eventPublisher.publishEvent(new ResourceChangedEvent(
                 userId, ResourceType.SOURCE, view.id(), mutationType, view.version(), view.deletedAt(), view));
+    }
+
+    private int pageLimit(int requestedLimit) {
+        if (requestedLimit < 1 || requestedLimit > 200) {
+            throw new DomainException("VALIDATION_FAILED", "limit must be between 1 and 200");
+        }
+        return requestedLimit;
     }
 
     private record ValidatedSource(SourceType type, UUID assetId, String originUrl, String rawText) {

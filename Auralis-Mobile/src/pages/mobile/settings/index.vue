@@ -258,7 +258,7 @@ const handleLogout = () => {
     content: '确定要退出当前账号吗？',
     success: (res) => {
       if (res.confirm) {
-        authStore.clearToken()
+        authStore.logout()
         uni.reLaunch({ url: '/pages/mobile/login/index' })
       }
     }
@@ -266,7 +266,24 @@ const handleLogout = () => {
 }
 
 // Settings menu structure definition with LineIcon names
-const groups = computed(() => [
+type SettingItem = {
+  id: string
+  label: string
+  icon: string
+  bgColor: string
+  type: 'switch' | 'select' | 'link' | 'text'
+  value?: boolean
+  valueText?: string
+  action?: () => void
+}
+
+type SettingGroup = {
+  title: string
+  items: SettingItem[]
+  footer?: string
+}
+
+const groups = computed<SettingGroup[]>(() => [
   {
     title: '通用',
     items: [

@@ -111,7 +111,7 @@ public class IngestionWorker {
             EmbeddingResult embeddings = embeddingProvider.embed(
                     chunks.stream().map(com.auralis.app.ai.ingestion.TextChunk::content).toList(),
                     settings.credential());
-            chunkService.replace(userId, source.id(), chunks, embeddings.vectors());
+            chunkService.replace(userId, source.id(), job.getGeneration(), chunks, embeddings.vectors());
             sourceService.markReady(userId, source.id());
             job.markReady(clock.instant());
         } catch (DomainException exception) {

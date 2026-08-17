@@ -30,6 +30,7 @@ public class AuthController {
     }
 
     @PostMapping("/register")
+    @ResponseStatus(CREATED)
     public ResponseEntity<AuthResult> register(@Valid @RequestBody AuthDtos.RegisterRequest request) {
         AuthResult result = identityService.register(
                 request.username(),

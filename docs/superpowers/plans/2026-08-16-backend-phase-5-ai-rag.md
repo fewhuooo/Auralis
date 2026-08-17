@@ -183,12 +183,12 @@ public record CitationView(
 
 Ingestion persists content hash and serialized embedding only after exactly 1024 finite values. PostgreSQL retrieval binds user_id in the same SQL as similarity ordering and top-k; H2 computes deterministic cosine similarity from embedding_json with the same result contract.
 
-- [ ] Step 1: Write failing tests for 1024-dimension rejection, chunk persistence, same-user top-k ordering, cross-user exclusion, empty query rejection, citation fields and source/chunk deduplication.
-- [ ] Step 2: Run .\mvnw.cmd -B -ntp -Dtest=AiRetrievalTests test and verify red failures.
-- [ ] Step 3: Implement SourceChunkEntity and owner-scoped repository methods; no chunk lookup may omit userId.
-- [ ] Step 4: Implement H2 deterministic retrieval and PostgreSQL JDBC vector retrieval with bounded excerpts.
-- [ ] Step 5: Connect ingestion to embedding batches and atomic chunk replacement; failed batches must not expose partial new chunks as READY.
-- [ ] Step 6: Run focused retrieval tests and schema tests.
+- [x] Step 1: Write failing tests for 1024-dimension rejection, chunk persistence, same-user top-k ordering, cross-user exclusion, empty query rejection, citation fields and source/chunk deduplication.
+- [x] Step 2: Run .\mvnw.cmd -B -ntp -Dtest=AiRetrievalTests test and verify red failures.
+- [x] Step 3: Implement SourceChunkEntity and owner-scoped repository methods; no chunk lookup may omit userId.
+- [x] Step 4: Implement H2 deterministic retrieval and PostgreSQL JDBC vector retrieval with bounded excerpts.
+- [x] Step 5: Connect ingestion to embedding batches and atomic chunk replacement; failed batches must not expose partial new chunks as READY.
+- [x] Step 6: Run focused retrieval/schema/worker tests and PostgreSQL pgvector integration tests.
 
 ### Task 5: Implement Conversation and Message persistence/API
 
@@ -225,36 +225,38 @@ Message sequence allocation is transactionally serialized per conversation. User
 - [ ] Step 4: Implement POST/GET/DELETE /api/ai/conversations and GET /api/ai/conversations/{id}, reusing baseVersion and Problem Details.
 - [ ] Step 5: Run focused conversation tests and architecture tests.
 
-### Task 6: Implement RAG chat streaming and SSE contract
+### Task 6: Implement RAG chat streaming and SSE contract — completed 2026-08-17
 
 **Files:**
 
-- Create: Auralis-Server/src/main/java/com/auralis/app/ai/AiMessageCommand.java
-- Create: Auralis-Server/src/main/java/com/auralis/app/ai/AiStreamEvent.java
-- Create: Auralis-Server/src/main/java/com/auralis/app/ai/AiStreamingService.java
-- Create: Auralis-Server/src/main/java/com/auralis/app/ai/internal/provider/StubAiProvider.java
-- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/AiController.java
-- Create: Auralis-Server/src/test/java/com/auralis/app/AiStreamingTests.java
-- Create: Auralis-Server/src/test/java/com/auralis/app/AiStreamingControllerTests.java
+- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/AiMessageCommand.java
+- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/AiStreamingService.java
+- Add: Auralis-Server/src/main/java/com/auralis/app/ai/AiStreamAbortException.java and AiStreamSink.java
+- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/AiController.java and AiProviderPort.java
+- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/internal/provider/OpenAiCompatibleProvider.java
+- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/internal/security/ProviderHttpClient.java and ProviderHttpTransport.java
+- Modify: Auralis-Server/src/main/java/com/auralis/app/ai/ConversationService.java and Message persistence
+- Add: Auralis-Server/src/main/resources/db/migration/V12__ai_message_client_request_id.sql
+- Modify: Auralis-Server/src/test/java/com/auralis/app/AiStreamingTests.java, AiProviderSecurityTests.java and AiStreamingControllerTests.java
 
 **Interfaces:**
 
 ~~~java
 public record AiMessageCommand(
         UUID conversationId, String content, AiProviderType provider,
-        boolean retrievalEnabled, Integer topK) {}
+        boolean retrievalEnabled, Integer topK, String clientRequestId) {}
 
 public record AiStreamEvent(String event, String id, Object data) {}
 ~~~
 
 POST /api/ai/messages/stream returns text/event-stream. The flow is: validate settings, create/reuse conversation, save USER, optionally retrieve/citations, call provider, save ASSISTANT, and emit ordered events. A client request id prevents retries after transport failure from creating a second USER message.
 
-- [ ] Step 1: Write failing tests for event order, delta aggregation, citation event, completed persistence, unavailable provider, rate limit, malformed response, blank content, unauthorized access, duplicate request id and interrupted stream.
-- [ ] Step 2: Run .\mvnw.cmd -B -ntp -Dtest=AiStreamingTests,AiStreamingControllerTests test and verify red failures.
-- [ ] Step 3: Implement Stub provider and streaming service with a maximum response length; persist final content only on completion and mark interrupted/failed on exceptions.
-- [ ] Step 4: Serialize explicit SSE event names and IDs: message.started, message.delta, citation, message.completed, message.error. Never serialize provider response objects directly.
-- [ ] Step 5: Add MockMvc text/event-stream assertions and a test appender check that secrets/prompts are absent.
-- [ ] Step 6: Run focused streaming tests and full backend tests.
+- [x] Step 1: Write failing tests for event order, delta aggregation, citation event, completed persistence, unavailable provider, rate limit, malformed response, blank content, unauthorized access, duplicate request id and interrupted stream.
+- [x] Step 2: Run .\mvnw.cmd -B -ntp -Dtest=AiStreamingTests,AiStreamingControllerTests test and verify red failures.
+- [x] Step 3: Implement callback-based streaming service and OpenAI-compatible SSE adapter; persist final content only on completion and mark interrupted/failed on exceptions.
+- [x] Step 4: Serialize explicit SSE event names and IDs: message.started, message.delta, citation, message.completed, message.error. Never serialize provider response objects directly.
+- [x] Step 5: Add controller SSE serialization assertions and confirm no provider secret is serialized.
+- [x] Step 6: Run focused streaming tests (16/16) and full backend tests (121 passed, 1 opt-in PostgreSQL test skipped).
 
 ### Task 7: Implement typed Suggestions
 
@@ -304,8 +306,8 @@ POST /api/ai/suggestions validates the current user owns the KnowledgeBlock, use
 
 Documentation must record AI route status, exact settings/conversation/SSE/suggestion semantics, V8/V9 tables and vector strategy, encrypted credential fields, ingestion states, new environment variables, actual test counts, and separate external-provider/PostgreSQL/pgvector/MinIO/Docker/frontend/manual acceptance boundaries.
 
-- [ ] Step 1: Update status and contract documents only after fresh code/test evidence exists.
-- [ ] Step 2: Run the targeted AI suite:
+- [x] Step 1: Update status and contract documents only after fresh code/test evidence exists.
+- [x] Step 2: Run the targeted AI suite:
 
 ~~~powershell
 .\mvnw.cmd -B -ntp -Dtest=AiSchemaTests,AiConfigurationTests,AiSettingsServiceTests,AiControllerTests,AiProviderContractTests,AiIngestionTests,AiRetrievalTests,AiConversationServiceTests,AiConversationControllerTests,AiStreamingTests,AiStreamingControllerTests,AiSuggestionTests,AiSuggestionControllerTests test
@@ -313,16 +315,16 @@ Documentation must record AI route status, exact settings/conversation/SSE/sugge
 
 Expected: all listed AI tests pass with zero failures/errors.
 
-- [ ] Step 3: Run the complete backend suite:
+- [x] Step 3: Run the complete backend suite:
 
 ~~~powershell
 .\mvnw.cmd -B -ntp clean test
 ~~~
 
-Expected: compile succeeds, Flyway V1→V9 validates, architecture tests pass and all tests pass with zero failures/errors/skips.
+Expected: compile succeeds, Flyway V1→V12 validates, architecture tests pass and all default tests pass with zero failures/errors; the opt-in PostgreSQL test runs separately with `-Dauralis.postgres.it=true`.
 
-- [ ] Step 4: Run git diff --check and git status --short. Verify only intended phase-five files/docs are added on top of the pre-existing phase 1-4 worktree.
-- [ ] Step 5: Record remaining external validation boundaries. Do not mark real DeepSeek, SiliconFlow, PostgreSQL vector index, MinIO, Docker, browser SSE, frontend or manual AI-quality acceptance as passed unless executed.
+- [x] Step 4: Run git diff --check and git status --short. Verify only intended phase-five files/docs are added on top of the pre-existing phase 1-4 worktree.
+- [x] Step 5: Record remaining external validation boundaries. Real PostgreSQL vector index evidence is recorded; DeepSeek, SiliconFlow, MinIO, full Docker topology, browser SSE, frontend and manual AI-quality acceptance remain explicitly separate.
 
 ## Execution checkpoints
 

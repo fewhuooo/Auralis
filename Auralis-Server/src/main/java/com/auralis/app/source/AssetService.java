@@ -51,7 +51,7 @@ public class AssetService {
         UUID assetId = UUID.randomUUID();
         String objectKey = "users/" + userId + "/assets/" + assetId;
         AssetStoragePort.UploadIntent intent = assetStorage.createUploadIntent(
-                objectKey, mimeType, command.sizeBytes());
+                objectKey, mimeType, command.sizeBytes(), sha256);
         assetRepository.save(new AssetEntity(
                 assetId, userId, objectKey, originalName, command.sizeBytes(), mimeType, sha256,
                 AssetUploadStatus.UPLOADING));
@@ -119,6 +119,11 @@ public class AssetService {
 
     private DomainException failUpload(UUID userId, AssetEntity asset, String detail) {
         assetFailureRecorder.markFailed(userId, asset.getId());
+        try {
+            assetStorage.deleteObject(asset.getObjectKey());
+        } catch (RuntimeException ignored) {
+            // The failed DB state remains auditable when object cleanup is unavailable.
+        }
         return new DomainException("UPLOAD_VALIDATION_FAILED", detail);
     }
 

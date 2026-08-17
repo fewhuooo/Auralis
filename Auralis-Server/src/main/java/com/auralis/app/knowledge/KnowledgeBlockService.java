@@ -11,7 +11,10 @@ import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.source.SourceService;
+import com.auralis.app.shared.pagination.CursorCodec;
+import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,6 +61,25 @@ public class KnowledgeBlockService {
     public List<KnowledgeBlockView> list(UUID userId) {
         return knowledgeBlockRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
                 .stream().map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<KnowledgeBlockView> list(UUID userId, String encodedCursor, int requestedLimit) {
+        int limit = pageLimit(requestedLimit);
+        CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
+                ? null
+                : CursorCodec.decode("knowledge-blocks", encodedCursor);
+        var rows = cursor == null
+                ? knowledgeBlockRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
+                        userId, PageRequest.of(0, limit + 1))
+                : knowledgeBlockRepository.findPageAfter(
+                        userId, cursor.updatedAt(), cursor.id(), PageRequest.of(0, limit + 1));
+        boolean hasMore = rows.size() > limit;
+        var page = hasMore ? rows.subList(0, limit) : rows;
+        String nextCursor = hasMore
+                ? CursorCodec.encode("knowledge-blocks", "", page.getLast().getUpdatedAt(), page.getLast().getId())
+                : null;
+        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
@@ -171,5 +193,12 @@ public class KnowledgeBlockService {
     private void publishChange(UUID userId, KnowledgeBlockView view, String mutationType) {
         eventPublisher.publishEvent(new ResourceChangedEvent(
                 userId, ResourceType.KNOWLEDGE_BLOCK, view.id(), mutationType, view.version(), view.deletedAt(), view));
+    }
+
+    private int pageLimit(int requestedLimit) {
+        if (requestedLimit < 1 || requestedLimit > 200) {
+            throw new DomainException("VALIDATION_FAILED", "limit must be between 1 and 200");
+        }
+        return requestedLimit;
     }
 }

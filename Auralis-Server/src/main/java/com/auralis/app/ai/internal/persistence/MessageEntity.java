@@ -47,6 +47,9 @@ public class MessageEntity {
     @Column(name = "error_code", length = 64)
     private String errorCode;
 
+    @Column(name = "client_request_id", length = 128)
+    private String clientRequestId;
+
     @Column(name = "usage_json", columnDefinition = "TEXT")
     private String usageJson;
 
@@ -70,6 +73,21 @@ public class MessageEntity {
             String model,
             String errorCode,
             String usageJson) {
+        this(id, conversationId, userId, messageSequence, role, status, content, model, errorCode, usageJson, null);
+    }
+
+    public MessageEntity(
+            UUID id,
+            UUID conversationId,
+            UUID userId,
+            long messageSequence,
+            AiMessageRole role,
+            AiMessageStatus status,
+            String content,
+            String model,
+            String errorCode,
+            String usageJson,
+            String clientRequestId) {
         this.id = id;
         this.conversationId = conversationId;
         this.userId = userId;
@@ -80,6 +98,7 @@ public class MessageEntity {
         this.model = model;
         this.errorCode = errorCode;
         this.usageJson = usageJson;
+        this.clientRequestId = clientRequestId;
     }
 
     @PrePersist
@@ -106,6 +125,7 @@ public class MessageEntity {
     public String getContent() { return content; }
     public String getModel() { return model; }
     public String getErrorCode() { return errorCode; }
+    public String getClientRequestId() { return clientRequestId; }
     public String getUsageJson() { return usageJson; }
     public Instant getCreatedAt() { return createdAt; }
 }

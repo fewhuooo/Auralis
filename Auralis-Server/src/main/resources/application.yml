@@ -3,6 +3,8 @@ spring:
     name: auralis-server
   profiles:
     default: local
+  jpa:
+    open-in-view: false
 
 server:
   port: 8080
@@ -27,6 +29,7 @@ auralis:
   environment: local
   api:
     public-base-url: http://localhost:8080
+    allowed-origins: ${AURALIS_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost}
   upload:
     max-file-size-bytes: 52428800
     storage-provider: ${AURALIS_UPLOAD_STORAGE_PROVIDER:unavailable}
@@ -57,3 +60,6 @@ auralis:
     ingestion-poll-delay-millis: ${AURALIS_AI_INGESTION_POLL_DELAY_MILLIS:1000}
     ingestion-lease-millis: ${AURALIS_AI_INGESTION_LEASE_MILLIS:300000}
     ingestion-max-attempts: ${AURALIS_AI_INGESTION_MAX_ATTEMPTS:3}
+  sync:
+    retention-cleanup-delay-millis: ${AURALIS_SYNC_RETENTION_CLEANUP_DELAY_MILLIS:3600000}
+    retention-cleanup-initial-delay-millis: ${AURALIS_SYNC_RETENTION_CLEANUP_INITIAL_DELAY_MILLIS:60000}

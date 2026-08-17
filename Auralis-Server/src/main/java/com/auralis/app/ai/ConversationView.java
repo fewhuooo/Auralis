@@ -10,7 +10,18 @@ public record ConversationView(
         List<MessageView> messages,
         Instant createdAt,
         Instant updatedAt,
-        Instant deletedAt) {
+        Instant deletedAt,
+        long version) {
+
+    public ConversationView(
+            UUID id,
+            String title,
+            List<MessageView> messages,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant deletedAt) {
+        this(id, title, messages, createdAt, updatedAt, deletedAt, 0L);
+    }
 
     public ConversationView {
         messages = messages == null ? List.of() : List.copyOf(messages);

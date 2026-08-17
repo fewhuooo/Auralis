@@ -12,6 +12,8 @@ export interface KnowledgeBlock {
   source: string
   color: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete'
+  is_deleted?: boolean
+  sync_version?: number
   subjectId?: string
   sourceFileId?: string
   tags?: string[]

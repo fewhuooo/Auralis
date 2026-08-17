@@ -1,6 +1,6 @@
 # Auralis 变更记录
 
-更新时间：2026-08-14
+更新时间：2026-08-17
 
 文档状态：现行历史记录
 
@@ -9,6 +9,56 @@
 事实来源：Git 提交、本轮实际验证记录与重构前快照
 
 ## Unreleased
+
+### 前端 AI 辅助开发约定（2026-08-17）
+
+- 新增 `docs/agent/FrontendAIAssistedDevelopment.md`：前端实现默认优先使用 AGY/Antigravity 中当时可用的 Gemini，但要求对生成代码进行范围、契约、安全、视觉、响应式、可访问性和验证证据审查。
+- 在文档入口、PC 模块和 Mobile/Tablet 模块中登记该约定；该偏好不改变后端、API、数据库、鉴权、密钥和人工验收规则。
+- 已联网核对 Antigravity 官方关于模型选择、Review-driven development、代码 diff、walkthrough、浏览器检查和 workspace rules 的资料；当前 Codex 工作区没有直接调用 AGY/Gemini 的模型入口，因此不把本轮文档变更声称为 Gemini 生成。
+- 补充 Codex 沙箱与宿主机 AGY 的边界：本机 `cmd.exe /c agy --version` 实测为 `1.1.13`，调用时需使用沙箱外的一次一审命令审批；文档给出 `where agy`、`agy models`、计划模式和前端任务调用示例，并明确禁止 `--dangerously-skip-permissions`。
+
+### R3：OpenAPI 与客户端类型冻结（2026-08-17）
+
+- 从 Spring MVC `/v3/api-docs` 导出并固定 `docs/contracts/openapi/auralis-openapi.json`；新增运行时 artifact 对比测试、可重复导出/生成/校验脚本和 GitHub Actions 契约漂移门禁。
+- 使用固定 `openapi-typescript@7.13.0` 从同一 artifact 生成 PC/Mobile `schema.ts`，并增加由生成路径、方法、请求体、path/query 参数和成功响应类型约束的轻量请求客户端；两端均通过同一生成器重新生成比对。
+- 在 API、Database、PC 与 Mobile/Tablet 文档中冻结 `/api` 版本边界、旧 `/ws/sync`/旧 DTO 退出策略、cursor 过期、版本冲突和未来强制升级行为；当前只完成契约/类型冻结，未宣称前后端联调或业务验收完成。
+- 后端默认全量 `mvn -B -ntp clean test`（系统 Maven 与 Wrapper）均为 135 通过、0 失败/错误/跳过，PostgreSQL/MinIO 容器测试已自动执行；PC `npm run build`、Mobile `npm run type-check` 与 H5 `npm run build:h5` 均通过。Mobile TypeScript 已固定为 5.3.3 以匹配 `vue-tsc@1.8.27`；G3 契约迁移前置门禁通过，但前端页面仍未完成新契约迁移与联调。
+- G3 已确认 G1/G2 阶段门禁、OpenAPI artifact、两端生成类型和契约 diff 均通过；该门禁只允许进入 R4 大规模客户端迁移，不代表真实 Provider smoke 或前后端业务验收完成。
+
+### R2：真实依赖测试基线（2026-08-17）
+
+- Compose 已切换为固定版本的 PostgreSQL 17/pgvector、MinIO、bucket 初始化和新 Server 健康检查，移除 Redis/Milvus/etcd 主依赖；`.env.example` 补齐数据库、JWT、AI 加密、CORS、MinIO、Provider 和超时变量，并将本地 AI 加密示例固定为 32 字节。
+- 新增 Java 21 多阶段、非 root 后端 Dockerfile 与 `.dockerignore`；新增 Testcontainers 2.0.5 PostgreSQL clean/upgrade 测试、MinIO presigned PUT/HEAD/GET/delete 测试和 Provider 错误矩阵测试。
+- MinIO 资产 intent 在声明 sha256 时传递签名 metadata；完成校验失败尝试清理对象，并新增数据库/对象孤儿核对脚本。
+- `docker compose --env-file .env.example config --quiet`、backend/frontend 镜像构建、Compose db/MinIO/backend/frontend 启动与健康检查均通过；PostgreSQL 17.11 + pgvector verify 135/0/0（另 1 个非 PostgreSQL opt-in 测试跳过）、MinIO 真实链路 1/1、Provider stub 2/2 通过。真实 Provider chat/embedding smoke 和 MinIO 异常路径仍需显式模型、密钥与网络条件。
+
+### R1-06：后端工具链和运行配置（2026-08-17）
+
+- 修复 Windows Maven Wrapper 对普通 Maven 仓库目录的空 `Target` 索引异常；`.\mvnw.cmd -v` 和 `.\mvnw.cmd -B -ntp clean test` 均可运行。
+- 全局关闭 `spring.jpa.open-in-view`；prod profile 显式关闭 springdoc API docs 和 Swagger UI，local OpenAPI smoke 保持可用。
+- H2 固定到 2.2.224，Surefire 配置 Mockito 5.23.0 Java agent，并在默认生命周期自动启用 PostgreSQL/MinIO Testcontainers；定向配置测试 6/6、系统 Maven 与 Wrapper 全量各 135 通过、0 失败/错误/跳过。
+- G1 已通过；该证据仍不包含真实 Provider、生产 secret 或 GUI/真机验收。
+
+### R1-05：并发、版本和分页（2026-08-17）
+
+- 新增 Flyway V13，为 Conversation 增加 `version` 与 `next_message_sequence`；删除严格校验 `baseVersion`，消息追加通过会话行写锁和计数器分配序号，移除 `max + 1` 竞争窗口。
+- Subject、KnowledgeBlock、Task、Source、Relation 列表接入带资源类型校验的不透明 keyset cursor，支持 `limit=1..200`，返回稳定 `nextCursor` 与 `hasMore`。
+- Sync 保留清理增加可配置定时任务，并记录清理行数、失败数和过期 cursor reset 指标；清理不回退用户 cursor 高水位。
+- 新增 R1-05 并发、版本、分页边界、清理恢复、指标和 Modulith 架构测试；定向套件 16/16、全量后端 `mvn -B -ntp clean test` 126 通过、0 失败/错误、1 个 opt-in PostgreSQL 测试跳过。真实 PostgreSQL 全量并发、生产调度、前端联调和人工验收仍未完成。
+
+### R1-03：pgvector 检索和原子切换（2026-08-17）
+
+- 新增 Flyway V10/V11：source chunk generation/active cutover、活动 chunk 查询索引，以及 PostgreSQL 历史 JSON embedding 回填。
+- PostgreSQL 写入同时保存 `embedding_json` 和 `vector(1024)`；检索使用带用户、活动 generation、Source 删除过滤的 pgvector cosine SQL 和 HNSW，H2 保留 JSON fallback。
+- chunk 重建先写入新 generation，事务成功后切换 active；数据库失败时旧 generation 保持可检索；Source 删除和用户隔离均进入检索过滤。
+- 2026-08-17：R1-03 定向测试 11/11 通过；PostgreSQL 17.11 + pgvector 隔离容器集成测试 1/1 通过。该证据不包含完整 Compose、MinIO、真实 Provider、lease fencing、性能、前端联调或人工验收。
+
+### R1-04：AI 请求与真实流式（2026-08-17）
+
+- 新增 `V12__ai_message_client_request_id.sql`，为 AI USER 消息提供用户隔离的 `clientRequestId` 唯一键；重复请求回放已有 assistant 结果，不重复调用 Provider。
+- `retrievalEnabled`、动态 topK 校验和 SiliconFlow embedding → pgvector/JSON retrieval 已进入消息执行链；citation 事件携带 Source/chunk 可追踪字段。
+- Controller 改为 callback 式 SSE，Provider 增量直接写入 `StreamingResponseBody`；OpenAI-compatible 适配器解析上游 `data:`/`[DONE]`，并统一映射超时、限流、断流、错误和 assistant FAILED/INTERRUPTED 状态。
+- 2026-08-17：R1-04 定向 AI 流式/Provider/Controller 测试 16/16 通过，全量后端测试 121 通过且 1 个 opt-in PostgreSQL 测试跳过。证据使用 Stub/受控 HTTP，不包含真实 Provider 网络/证书/配额、前端联调或人工验收。
 
 ### 后端绿地重写阶段 5：AI/RAG 后端基线（2026-08-16）
 

@@ -54,18 +54,17 @@ class AiConversationServiceTests {
     }
 
     @Test
-    void allocatesIncreasingMessageSequencesAndRejectsBlankContent() {
+    void allocatesMessageSequencesFromTheConversationCounterAndRejectsBlankContent() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        when(conversationRepository.findByIdAndUserIdAndDeletedAtIsNull(conversationId, userId))
+        when(conversationRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId))
                 .thenReturn(Optional.of(new ConversationEntity(conversationId, userId, "Study")));
-        when(messageRepository.findMaxMessageSequence(conversationId)).thenReturn(Optional.of(4L));
         when(messageRepository.save(any(MessageEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MessageView message = conversationService.appendMessage(
                 userId, conversationId, AiMessageRole.USER, "hello", AiMessageStatus.COMPLETED, null, null);
 
-        assertThat(message.messageSequence()).isEqualTo(5L);
+        assertThat(message.messageSequence()).isEqualTo(1L);
         assertThatThrownBy(() -> conversationService.appendMessage(
                 userId, conversationId, AiMessageRole.USER, " ", AiMessageStatus.COMPLETED, null, null))
                 .isInstanceOf(IllegalArgumentException.class);

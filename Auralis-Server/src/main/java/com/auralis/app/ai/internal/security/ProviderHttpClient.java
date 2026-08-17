@@ -10,10 +10,14 @@ import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
 import java.io.ByteArrayOutputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.util.function.Consumer;
 
 @Component
 public class ProviderHttpClient {
@@ -63,6 +67,25 @@ public class ProviderHttpClient {
         }
     }
 
+    public void postStream(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Consumer<String> lineConsumer) throws IOException {
+        if (endpoint == null || path == null || !path.startsWith("/")
+                || apiKey == null || apiKey.isBlank() || lineConsumer == null) {
+            throw new IllegalArgumentException("Provider streaming request is invalid");
+        }
+        byte[] requestBody;
+        try {
+            requestBody = objectMapper.writeValueAsBytes(body);
+        } catch (JsonProcessingException exception) {
+            throw new IOException("Could not serialize provider request", exception);
+        }
+        transport.postStream(endpoint, path, apiKey, requestBody, lineConsumer);
+    }
+
     private static final class HttpsUrlConnectionTransport implements ProviderHttpTransport {
 
         private final int timeoutMillis;
@@ -100,6 +123,50 @@ public class ProviderHttpClient {
                 }
                 try (InputStream input = connection.getInputStream()) {
                     return readBounded(input, maxResponseBytes);
+                }
+            } finally {
+                connection.disconnect();
+            }
+        }
+
+        @Override
+        public void postStream(
+                ResolvedProviderEndpoint endpoint,
+                String path,
+                String apiKey,
+                byte[] requestBody,
+                java.util.function.Consumer<String> lineConsumer) throws IOException {
+            URI target = buildTargetUri(endpoint, path);
+            HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
+            connection.setConnectTimeout(timeoutMillis);
+            connection.setReadTimeout(timeoutMillis);
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestMethod("POST");
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Accept", "text/event-stream");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setFixedLengthStreamingMode(requestBody.length);
+            connection.setSSLSocketFactory(new PinnedSslSocketFactory(
+                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), timeoutMillis));
+            connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+            try {
+                connection.getOutputStream().write(requestBody);
+                int status = connection.getResponseCode();
+                if (status < 200 || status >= 300) {
+                    throw new ProviderHttpException(status);
+                }
+                try (InputStream input = connection.getInputStream();
+                     BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                    long total = 0;
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        total += line.getBytes(StandardCharsets.UTF_8).length + 1L;
+                        if (total > maxResponseBytes) {
+                            throw new ProviderResponseTooLargeException();
+                        }
+                        lineConsumer.accept(line);
+                    }
                 }
             } finally {
                 connection.disconnect();

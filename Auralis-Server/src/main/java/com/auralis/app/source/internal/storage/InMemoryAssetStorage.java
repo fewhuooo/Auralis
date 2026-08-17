@@ -19,7 +19,7 @@ public class InMemoryAssetStorage implements AssetStoragePort {
     private final Map<String, byte[]> contents = new ConcurrentHashMap<>();
 
     @Override
-    public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes) {
+    public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes, String sha256) {
         return new UploadIntent(
                 "https://memory-storage.test/upload/" + objectKey,
                 Map.of("Content-Type", mimeType),
@@ -45,6 +45,12 @@ public class InMemoryAssetStorage implements AssetStoragePort {
             throw new IllegalArgumentException("Object was not found");
         }
         return new ByteArrayInputStream(content);
+    }
+
+    @Override
+    public void deleteObject(String objectKey) {
+        objects.remove(objectKey);
+        contents.remove(objectKey);
     }
 
     public void putObject(String objectKey, byte[] content) {

@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -36,6 +37,9 @@ class SyncServiceTests {
 
     @Autowired
     private SyncRetentionService syncRetentionService;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
 
     @Autowired
     private SyncService syncService;
@@ -202,6 +206,40 @@ class SyncServiceTests {
                 SyncMutationType.CREATE, 0, null, new Payload("after"));
 
         assertThat(afterCleanup.cursor()).isEqualTo(2L);
+    }
+
+    @Test
+    void expiredCursorRequiresResetAfterRetentionGap() {
+        UUID userId = insertUser("sync-reset-" + UUID.randomUUID());
+        changeLogService.record(userId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("old-1"));
+        changeLogService.record(userId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("old-2"));
+        changeLogService.record(userId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("retained"));
+        jdbcTemplate.update("update change_log set created_at = ? where user_id = ? and cursor < 3",
+                java.time.Instant.parse("2020-01-01T00:00:00Z"), userId);
+
+        syncRetentionService.purgeExpired();
+
+        ChangeLogPage page = changeLogService.pull(userId, new SyncCursor(1), 10);
+        assertThat(page.resetRequired()).isTrue();
+        assertThat(page.changes()).isEmpty();
+    }
+
+    @Test
+    void retentionCleanupPublishesPurgedRowsMetric() {
+        UUID userId = insertUser("sync-metric-" + UUID.randomUUID());
+        changeLogService.record(userId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("old"));
+        jdbcTemplate.update("update change_log set created_at = ? where user_id = ?",
+                java.time.Instant.parse("2020-01-01T00:00:00Z"), userId);
+
+        double before = meterRegistry.get("auralis.sync.retention.purged").counter().count();
+        syncRetentionService.purgeExpired();
+
+        assertThat(meterRegistry.get("auralis.sync.retention.purged").counter().count())
+                .isGreaterThan(before);
     }
 
     @Test

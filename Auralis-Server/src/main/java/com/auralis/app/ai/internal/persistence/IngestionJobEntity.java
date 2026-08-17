@@ -26,6 +26,9 @@ public class IngestionJobEntity {
     @Column(name = "source_id", nullable = false)
     private UUID sourceId;
 
+    @Column(nullable = false)
+    private UUID generation;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private IngestionJobStatus status;
@@ -58,10 +61,16 @@ public class IngestionJobEntity {
     }
 
     public IngestionJobEntity(UUID id, UUID userId, UUID sourceId, IngestionJobStatus status) {
+        this(id, userId, sourceId, status, UUID.randomUUID());
+    }
+
+    public IngestionJobEntity(
+            UUID id, UUID userId, UUID sourceId, IngestionJobStatus status, UUID generation) {
         this.id = id;
         this.userId = userId;
         this.sourceId = sourceId;
         this.status = status;
+        this.generation = generation;
     }
 
     @PrePersist
@@ -82,6 +91,7 @@ public class IngestionJobEntity {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getSourceId() { return sourceId; }
+    public UUID getGeneration() { return generation; }
     public IngestionJobStatus getStatus() { return status; }
     public int getAttemptCount() { return attemptCount; }
     public Instant getLeaseUntil() { return leaseUntil; }

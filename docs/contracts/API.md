@@ -1,8 +1,8 @@
 # Auralis API 契约
 
-更新时间：2026-08-16
+更新时间：2026-08-17
 
-文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建并通过 H2/JPA/MockMvc 自动测试；PostgreSQL/pgvector、真实 MinIO、外部模型、前端联调和人工验收仍未完成
+文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
 权威范围：新后端 REST、SSE、WebSocket 的目标路径、鉴权、请求/响应规则和阶段状态。
 
@@ -30,7 +30,7 @@
 | DELETE | /api/auth/sessions/{sessionId} | owner-scoped 撤销会话，HTTP 204 |
 | DELETE | /api/auth/sessions/others | 撤销当前会话以外的会话，HTTP 204 |
 
-阶段 2A 已开放 Subject、KnowledgeBlock、Task；阶段 2B 已开放 Source、Asset、Relation；阶段 3 已开放 Sync push/pull/snapshot；阶段 4 已开放 Review、Stats 和 Realtime ticket。核心领域旧列表仍返回 `nextCursor=null`、`hasMore=false`，同步 cursor 使用独立不透明字符串；真实 PostgreSQL/MinIO、双设备和三端联调未验证。
+阶段 2A 已开放 Subject、KnowledgeBlock、Task；阶段 2B 已开放 Source、Asset、Relation；阶段 3 已开放 Sync push/pull/snapshot；阶段 4 已开放 Review、Stats 和 Realtime ticket。R1-05 已为五类核心资源列表接入稳定 keyset cursor；真实 PostgreSQL/MinIO、双设备和三端联调未验证。
 
 阶段 0 HTTP 验证：`/actuator/health/liveness` 和 `/actuator/health/readiness` 真实启动返回 HTTP 200、`status=UP`；`/v3/api-docs` 返回 HTTP 200 且 `info.title=Auralis API`；`/swagger-ui/index.html` 返回 HTTP 200。MockMvc 同时验证未知路由的 `404`、`RESOURCE_NOT_FOUND`、`application/problem+json` 和 `X-Trace-Id` 回写。
 
@@ -46,6 +46,14 @@
 - 默认不返回已删除记录；同步接口和显式 includeDeleted 才能读取必要墓碑。
 - userId 只能从 SecurityContext 推导，不能进入资源创建/更新请求，也不能信任客户端提交。
 - Entity、JPA lazy proxy 和内部持久化类型不得直接序列化为 API。
+
+## OpenAPI 产物与兼容策略
+
+- 当前冻结产物为 `docs/contracts/openapi/auralis-openapi.json`，由测试 profile 的真实 Spring MVC `/v3/api-docs` 运行时文档导出；`OpenApiArtifactTests` 比较运行时 JSON，`scripts/check-openapi.ps1` 还会用固定的 `openapi-typescript@7.13.0` 重新生成两端 schema 并拒绝漂移。
+- API 版本继续使用现有 `/api` 前缀，不新增 `/v1`；当前最低客户端基线是本产物对应的 R3 生成 SDK。向后兼容的字段只允许以可选字段或新增路由方式加入；删除字段、改变类型、改变状态码/错误码或改变语义必须先更新契约并安排客户端迁移。
+- 当前没有为旧客户端保留兼容窗口：旧 `/ws/sync`、旧 `Result<T>` DTO、旧字段和旧接口不属于新 Server 契约；R4 客户端迁移完成后应删除旧调用路径，R5 前不得把旧协议重新接回主路径。
+- cursor 过期或服务端返回 `resetRequired=true` 时，客户端必须停止增量 pull，清理本地同步游标并执行完整 snapshot；版本冲突必须保留本地未提交 mutation、展示服务器当前 DTO 并由用户或上层冲突策略决定重试，不使用 last-write-wins。
+- 当前服务端尚未启用最低版本强制门禁；未来若返回 HTTP 426 / `CLIENT_UPGRADE_REQUIRED`，客户端必须停止写入、保留本地待同步数据并引导升级，不得静默降级到旧 DTO。
 - 空值使用 JSON null，不用空字符串、0 或展示文案替代。
 
 ## Problem Details
@@ -108,7 +116,7 @@
 
 - 三类资源均使用 `POST` 创建、`GET` 列表/详情、`PUT` 更新、`DELETE` 软删除和 `POST /{id}/restore` 恢复；创建返回 `201 + Location`，删除返回 `204`。
 - 创建请求必须携带 `baseVersion=0`；更新、删除和恢复请求携带精确的 `baseVersion`。成功更新、删除、恢复均使服务器 `version` 增加 1；默认 Subject 不允许删除。
-- `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，阶段 2A 尚未接入 cursor，因此 `nextCursor=null`、`hasMore=false`，默认过滤已删除记录。
+- `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 和可选 `limit`（默认 100，范围 1–200），默认过滤已删除记录。Subject 按 `sortKey ASC, updatedAt DESC, id ASC` 稳定分页，其余三类按 `updatedAt DESC, id ASC` 稳定分页。
 - Subject 请求字段为 `name`、`description`、`iconKey`、`color`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。
 - KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity。
 - Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`cognitiveLoad`、`sortKey`、`colorOverride`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`，cognitiveLoad 仅接受 `LOW`、`MEDIUM`、`HIGH`。
@@ -116,13 +124,14 @@
 
 ## 阶段 2B Source、Asset、Relation 已构建契约
 
-- `POST /api/assets/upload-intents` 请求字段为 `baseVersion`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt}`。服务端生成用户前缀 object key，不接受客户端提交 object key。
+- `POST /api/assets/upload-intents` 请求字段为 `baseVersion`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt}`。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
 - `POST /api/assets/{id}/complete` 不接受客户端对象元数据；服务端对绑定 object key 执行 HEAD/stat，校验真实大小、MIME 和已声明 sha256，成功返回 `AssetResponse` 并将状态置为 `READY`。校验失败返回 `400 UPLOAD_VALIDATION_FAILED` 并记录 `FAILED`。
 - `POST /api/assets/{id}/download-url` 只对当前用户拥有且 `READY` 的 Asset 返回 `{url,expiresAt}`；Asset 不作为 Relation 节点，也不进入普通同步资源列表。
 - Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。
 - Source 创建成功状态为 `PENDING`；更新和 `POST /api/sources/{id}/reingest` 清理安全错误并回到 `PENDING`。Source 其余成功操作沿用直接 DTO、版本冲突、软删除、恢复和列表 envelope 规则。
 - Relation 创建/更新字段为 `baseVersion`、`sourceType`、`sourceId`、`targetType`、`targetId`、`type`、可选 `label`；节点仅允许 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`，关系类型仅允许 `CONTAINS`、`REFERENCES`、`DERIVED_FROM`、`DEPENDS_ON`、`RELATED_TO`。
 - Relation 创建、更新、恢复都会验证两端属于当前用户且未删除，禁止自关联；`RELATED_TO` 对端点排序后去重，其他类型保持方向性。端点软删除会级联软删除相关 Relation，端点恢复不自动恢复关系。
+- `GET /api/sources` 和 `GET /api/relations` 同样返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 与 `limit`（1–200），按 `updatedAt DESC, id ASC` 稳定分页。
 - 阶段 2B 的 H2/MockMvc 自动测试覆盖以上路由、错误、版本、用户隔离和级联语义；真实 MinIO 签名 URL、HEAD/stat、PostgreSQL 和人工验收仍未执行。
 
 ## 阶段 3 离线同步已实现契约
@@ -131,7 +140,7 @@
 - Push 返回 `results` 和 `serverCursor`。结果 decision 为 `APPLIED`、`CONFLICT` 或 `REJECTED`，包含资源、mutation、change cursor、当前 DTO/快照、稳定 code 和 `recordedAt`。同一用户/设备/`clientMutationId` 重放时返回首次结果；同键不同内容只拒绝该条 mutation，并返回 `MUTATION_REJECTED`，不会中止同批其他 mutation。
 - `GET /api/sync/pull?cursor=<opaque>&limit=<1..200>` 返回 `changes`、`nextCursor`、`hasMore`、`resetRequired`；省略 cursor 从 0 开始。cursor 为 Base64URL 不透明值，资源变更由 REST 直接写入和 push 共同记录。
 - `GET /api/sync/snapshot` 返回 `snapshotCursor` 以及当前用户 subjects、sources、knowledgeBlocks、tasks、relations 的完整视图，包含 `deletedAt` 非空的墓碑记录；快照 cursor 与这些列表在同一可重复读事务中确定。快照与同步数据不暴露 JPA Entity，Asset 不进入普通 mutation。
-- 同步设备必须属于当前用户且未撤销；所有资源、change log 和幂等记录均执行 userId 隔离。默认保留窗口为 30 天，清理方法可被后续调度任务调用；PostgreSQL、双设备断网重连和过期 cursor 的生产验收仍未执行。
+- 同步设备必须属于当前用户且未撤销；所有资源、change log 和幂等记录均执行 userId 隔离。默认保留窗口为 30 天，`SyncRetentionService` 按 `auralis.sync.retention-cleanup-delay-millis` 定时清理，并通过 Micrometer 记录清理行数、失败数和 `resetRequired` 次数；高水位 cursor 不随清理回退，过期 cursor 返回 `resetRequired=true`，客户端应执行完整 snapshot。PostgreSQL、双设备断网重连和生产调度验收仍未执行。
 
 ## 阶段 4 Review、Stats、Realtime 已实现契约
 
@@ -160,18 +169,18 @@
 
 ## 阶段 0/1/2A/2B/3/4 契约边界
 
-已完成：目标路由表、通用响应规则、Problem Details 字段、阶段 1 Auth、阶段 2A 三类核心资源、阶段 2B Source/Asset/Relation 请求/响应、阶段 3 Sync、阶段 4 Review/Stats/Realtime、分页/版本规则和旧契约不兼容结论。
+已完成：目标路由表、通用响应规则、Problem Details 字段、阶段 1 Auth、阶段 2A 三类核心资源、阶段 2B Source/Asset/Relation 请求/响应、阶段 3 Sync、阶段 4 Review/Stats/Realtime、R1-05 核心列表 cursor/会话并发版本规则和旧契约不兼容结论。
 
-未完成：核心资源列表 cursor、固定 OpenAPI artifact/SDK 生成、PostgreSQL/容器集成、真实 MinIO/外部模型联调、双设备/过期 cursor 验收、浏览器 WebSocket、前后端联调和人工业务验收。
+未完成：全量 PostgreSQL/容器门禁、真实 MinIO/外部模型联调、双设备/过期 cursor 生产验收、浏览器 WebSocket、前后端联调和人工业务验收。R1-03 的 pgvector 集成已在隔离 PostgreSQL 测试容器形成证据；R2 新增的全量 clean/upgrade、MinIO 和 Compose 门禁仍待 Docker 引擎执行，不代表完整 Compose 或全模块生产验收。
 
 ## 阶段 5 AI/RAG 后端基线契约（2026-08-16）
 
 - `GET /api/ai/settings` 返回当前用户各 Provider 的配置摘要；`PUT /api/ai/settings` 接受 `provider`、`baseUrl`、`chatModel`、`embeddingModel` 和可选 `apiKey`。返回值只暴露 `hasApiKey`，不返回明文或密文。Provider 配置按用户隔离，首次创建必须提供 key，更新时可保留原 key。
-- `POST /api/ai/conversations` 创建会话；`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 执行 owner-scoped 软删除。
-- `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、`provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。事件为 `message.started`、`message.delta`、`message.completed`、`message.error`；USER 消息先持久化，ASSISTANT 成功或安全失败状态随后持久化。
+- `POST /api/ai/conversations` 创建会话；`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息和会话 `version`；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 必须携带当前 `baseVersion` 并执行 owner-scoped 软删除，版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`。
+- `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、`provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。`topK` 必须为正整数且不超过 `auralis.ai.max-retrieved-chunks`（当前 DTO 上限为 32）；同一用户的 `clientRequestId` 重试会回放已持久化结果，不重复创建 USER 消息或调用 Provider。事件为 `message.started`、零个或多个 `citation`、零个或多个 `message.delta`、`message.completed`、`message.error`；citation 包含 `sourceId`、`chunkId`、ordinal、标题、excerpt 和 similarity，USER 消息先持久化，ASSISTANT 成功、失败或断流状态随后持久化。
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
-- Source 创建、更新和 reingest 在提交后发布 ingestion 请求；启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行，租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。检索使用用户隔离的 cosine 相似度排序。
-- 当前 SSE 是 Spring MVC `StreamingResponseBody` 基线；真实 OpenAI-compatible 适配器当前以 completion 结果转换为单个 delta，不代表已经完成上游 token 级流式联调。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
+- Source 创建、更新和 reingest 在提交后发布 ingestion 请求；启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行，租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。PostgreSQL 使用 pgvector SQL/HNSW 执行用户隔离的 cosine 检索；H2 保留 JSON embedding 的确定性 cosine fallback。
+- SSE 使用 Spring MVC `StreamingResponseBody`，Controller 通过回调把 Provider 增量直接写入响应，不先构造完整事件列表；OpenAI-compatible 适配器解析上游 SSE 的 `data:` 增量、`[DONE]`、超时、429/5xx 和 malformed event。当前自动证据为 Stub/受控 HTTP，不代表真实 Provider 网络、证书、配额或前端联调已通过。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
 - Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443），host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；保存和实际请求前都会校验所有 DNS 地址，实际连接固定到已检查地址，Provider 重定向关闭。
 - Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
-- 阶段 5 的自动证据为 H2/JPA/MockMvc、Stub Provider、Flyway V1–V9、架构测试和出站安全专项；PostgreSQL/pgvector HNSW、MinIO、真实 Provider 网络/证书/限流、性能、前端和人工业务验收仍未完成。
+- 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V13、架构测试、出站安全专项，以及 `postgres-it` profile 下真实 PostgreSQL 17/pgvector 集成测试。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04 定向 AI 流式/Provider/Controller 测试 16/16，R1-05 增加会话并发、五类列表分页、清理恢复和指标测试。MinIO、真实 Provider 网络/证书/限流、性能、前端和人工业务验收仍未完成。

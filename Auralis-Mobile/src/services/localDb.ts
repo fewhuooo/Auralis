@@ -669,8 +669,12 @@ export const localDb = {
   },
 
   async saveTask(task: Task, syncStatus = 'synced', syncVersion = 0) {
+    if (!task.id) {
+      throw new Error('Cannot save a task without an id')
+    }
     const esc = (val: string) => (val || '').replace(/'/g, "''");
-    const exists = await sqlite.select(`SELECT id FROM task_blocks WHERE id = '${esc(task.id)}'`);
+    const taskId = task.id
+    const exists = await sqlite.select(`SELECT id FROM task_blocks WHERE id = '${esc(taskId)}'`);
     const isDeletedVal = task.is_deleted ? 1 : 0;
     const versionVal = task.sync_version || syncVersion || 0;
     const positionVal = task.position || '0';
@@ -692,13 +696,13 @@ export const localDb = {
           sync_version = ${versionVal},
           position = '${esc(positionVal)}',
           subject_id = '${esc(subjectIdVal)}'
-        WHERE id = '${esc(task.id)}'
+        WHERE id = '${esc(taskId)}'
       `);
     } else {
       await sqlite.execute(`
         INSERT INTO task_blocks (id, name, subject, desc, color, duration, load, loadText, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
         VALUES (
-          '${esc(task.id)}',
+          '${esc(taskId)}',
           '${esc(task.name)}',
           '${esc(task.subject)}',
           '${esc(task.desc || '')}',

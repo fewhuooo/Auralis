@@ -17,7 +17,9 @@ public record AuralisProperties(
         @Valid Identity identity,
         @Valid Ai ai
 ) {
-    public record Api(@NotBlank String publicBaseUrl) {
+    public record Api(
+            @NotBlank String publicBaseUrl,
+            @NotBlank String allowedOrigins) {
     }
 
     public record Upload(

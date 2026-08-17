@@ -213,7 +213,7 @@ class SourceAssetRelationServiceTests {
         private final Map<String, ObjectMetadata> objects = new HashMap<>();
 
         @Override
-        public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes) {
+        public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes, String sha256) {
             return new UploadIntent(
                     "https://storage.test/upload/" + objectKey,
                     Map.of("Content-Type", mimeType),
@@ -235,6 +235,11 @@ class SourceAssetRelationServiceTests {
         @Override
         public InputStream openObject(String objectKey) {
             return new ByteArrayInputStream(new byte[0]);
+        }
+
+        @Override
+        public void deleteObject(String objectKey) {
+            objects.remove(objectKey);
         }
 
         void put(String objectKey, ObjectMetadata metadata) {

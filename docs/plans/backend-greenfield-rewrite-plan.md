@@ -168,7 +168,7 @@ Flyway 是唯一 schema 权威。首个迁移创建干净 schema，不接管或�
 | `inbound_mutations` | push 幂等结果 | `(user_id, device_id, client_mutation_id)` 唯一 |
 | `domain_event_outbox` | 数据库事件 | status/available_at 索引；幂等消费 |
 | `ingestion_jobs` | 文档解析与索引任务 | status/available_at/lease 索引 |
-| `source_chunks` | RAG 文本块和 vector(1024) | user/source/ordinal 唯一；向量索引 |
+| `source_chunks` | RAG 文本块和 vector(1024) | user/source/generation/ordinal 唯一；active generation 查询索引；HNSW 向量索引 |
 | `ai_credentials` | 用户 BYOK | `(user_id, provider)` 唯一；只存密文 |
 | `conversations` | AI 会话 | user/updated/deleted 索引 |
 | `messages` | AI 消息 | conversation/sequence 唯一 |
@@ -721,7 +721,7 @@ Redis、Milvus、etcd 和 pgAdmin 不属于最小生产拓扑。开发工具如 
 
 ## 25. 当前计划状态
 
-截至 2026-08-16：
+截至 2026-08-17：
 
 - PC、Mobile、Tablet 的基础页面与主要视觉/布局重构已基本收敛，但仍有 GUI、真机和联调验收缺口。
 - 旧 Server 已按阶段 0 规则移至仓库外可恢复备份；当前工作树使用 `com.auralis.app` 绿地后端。
@@ -731,7 +731,7 @@ Redis、Milvus、etcd 和 pgAdmin 不属于最小生产拓扑。开发工具如 
 - 阶段 2B 本轮证据为 H2 clean-schema、42 个 Maven 自动测试、MockMvc 核心接口、MinIO 可替换适配器和 Modulith named interface；PostgreSQL/pgvector、Docker、真实 MinIO、ingestion worker、前端联调和人工业务验收仍未完成。
 - 阶段 3 已构建 Flyway V4、统一 change log、inbound mutation 幂等、push/pull/snapshot、设备校验、版本冲突和 30 天清理入口；阶段 4 已构建 Flyway V5、FSRS-lite Review、用户隔离 Stats 和一次性 Realtime ticket/事件桥。详细执行记录见 [阶段 3/4 Sync、Review、Stats、Realtime 实施计划](../superpowers/plans/2026-08-13-backend-phase-3-4-sync-review-realtime.md)。
 - 阶段 3/4 本轮证据为 H2 clean-schema、27 个测试类/61 个自动测试、MockMvc、JPA validate 和架构测试；PostgreSQL/pgvector、Docker、真实 MinIO、双设备、浏览器 WebSocket、跨实例 broker、前端联调和人工业务验收仍未完成。
-- 阶段 5 已完成后端基线：V8/V9、BYOK、Provider/embedding 端口、Source ingestion/retrieval、Conversation/Message、SSE 和 Suggestions；详细执行记录见 [阶段 5 AI/RAG 设计](../superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md) 与 [阶段 5 AI/RAG 实施计划](../superpowers/plans/2026-08-16-backend-phase-5-ai-rag.md)。
-- 阶段 5 本轮证据为 H2 clean-schema、Flyway V1→V9、JPA validate、MockMvc/Stub Provider、架构检查和 92 个全量自动测试；PostgreSQL/pgvector/HNSW、真实 MinIO、真实 Provider、generation cutover、性能/安全专项、前端联调和人工业务验收仍未完成。
-- 与原计划的实现差异：当前采用内部 Provider ports + Spring RestClient，没有引入 LangChain4j；embedding 在 H2/JPA 基线中以 1024 维 JSON 编解码并计算 cosine，真实 PostgreSQL vector 查询尚未接入；Suggestions 先提供确定性类型化基线，后续再接入 LLM/RAG citations；文件解析暂限文本型 MIME。
-- 下一步先完成阶段 1–5 的 PostgreSQL/Testcontainers/Docker/MinIO/Provider 外部门禁，再补 ingestion generation/崩溃恢复、AI 安全专项、Suggestions 质量、真实 SSE 和客户端契约迁移。
+- 阶段 5 已完成后端基线：V8–V12、BYOK、Provider/embedding 端口、Source ingestion/retrieval、Conversation/Message、clientRequestId 幂等、citation、回调式 SSE 和 Suggestions；详细执行记录见 [阶段 5 AI/RAG 设计](../superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md) 与 [阶段 5 AI/RAG 实施计划](../superpowers/plans/2026-08-16-backend-phase-5-ai-rag.md)。
+- 阶段 5 本轮证据为 H2 clean-schema、Flyway V1→V12、JPA validate、MockMvc/Stub Provider、架构检查，以及 R1-03 定向 11/11、R1-04 定向 16/16、全量后端 121 通过和 PostgreSQL 17.11 + pgvector 集成 1/1；完整 PostgreSQL/Compose、真实 MinIO、真实 Provider、lease fencing、性能/安全专项、前端联调和人工业务验收仍未完成。
+- 与原计划的实现差异：当前采用内部 Provider ports + Spring RestClient，没有引入 LangChain4j；H2/JPA 基线以 1024 维 JSON 编解码计算 cosine，PostgreSQL 使用 JDBC pgvector SQL/HNSW，chunk generation 通过事务原子切换；Suggestions 先提供确定性类型化基线，后续再接入 LLM/RAG citations；文件解析暂限文本型 MIME。
+- 下一步先完成阶段 1–5 的全量 PostgreSQL/Docker/MinIO/Provider 外部门禁，再补 ingestion lease fencing/崩溃恢复、AI 安全专项、Suggestions 质量、真实 SSE 和客户端契约迁移。

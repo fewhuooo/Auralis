@@ -10,9 +10,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+
+import static org.springframework.http.HttpStatus.CREATED;
 
 @RestController
 public class RealtimeController {
@@ -23,6 +26,7 @@ public class RealtimeController {
     }
 
     @PostMapping("/api/realtime/ticket")
+    @ResponseStatus(CREATED)
     public ResponseEntity<RealtimeDtos.TicketResponse> issue(
             @AuthenticationPrincipal AuthenticatedUser user,
             @Valid @RequestBody RealtimeDtos.TicketRequest request) {

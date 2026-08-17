@@ -35,8 +35,8 @@
 
 | 任务 | 必读 | 变化后必须回写 |
 | --- | --- | --- |
-| PC 页面、路由、Store、Tauri | [PC 模块](modules/FrontendPC.md)、[前端设计](design/Frontend.md) | 两份文档；状态/风险变化时更新 `current/`；发布变化更新 Changelog |
-| Mobile / Tablet 页面、路由、端侧数据 | [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)、[前端设计](design/Frontend.md)、[页面 API 映射](contracts/MobilePagesAPIMap.md) | 所有受影响文档及状态、风险、Changelog |
+| PC 页面、路由、Store、Tauri | [PC 模块](modules/FrontendPC.md)、[前端设计](design/Frontend.md)；使用 AGY/Gemini 时阅读[前端 AI 辅助开发约定](agent/FrontendAIAssistedDevelopment.md) | 两份文档；状态/风险变化时更新 `current/`；发布变化更新 Changelog |
+| Mobile / Tablet 页面、路由、端侧数据 | [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)、[前端设计](design/Frontend.md)、[页面 API 映射](contracts/MobilePagesAPIMap.md)；使用 AGY/Gemini 时阅读[前端 AI 辅助开发约定](agent/FrontendAIAssistedDevelopment.md) | 所有受影响文档及状态、风险、Changelog |
 | 后端 Controller、Service、鉴权 | [后端模块](modules/Backend.md)、[API 契约](contracts/API.md) | 两份文档及状态、风险、Changelog |
 | Entity、DDL、同步字段、本地表 | [数据库契约](contracts/Database.md)、[后端模块](modules/Backend.md) | 两份文档；接口变化时同步 API |
 | Docker、环境变量、部署、运维 | [基础设施模块](modules/Infrastructure.md)、[部署指南](operations/Deployment.md)、[Runbook](operations/Runbook.md) | 所有受影响文档及状态、风险、Changelog |
@@ -89,6 +89,7 @@
 
 - [编码前协议](agent/BeforeCoding.md)
 - [编码与 Git 规范](agent/CodingAndGitStandards.md)
+- [前端 AI 辅助开发约定](agent/FrontendAIAssistedDevelopment.md)
 
 ### 项目与设计
 
@@ -105,7 +106,7 @@
 - [PC 学科工作区重建实施计划（2026-07-13）](superpowers/plans/2026-07-13-pc-subject-workspace-reconstruction.md)
 - [PC 学科工作区大纲三栏布局规格（2026-07-13）](superpowers/specs/2026-07-13-pc-subject-outline-three-column-design.md)
 - [后端阶段五 AI 与 RAG 设计（2026-08-16）](superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md)
-- [R1-01 BYOK 与出站网络安全设计（2026-08-16）](superpowers/specs/2026-08-16-r1-01-provider-security-design.md)
+- [R1-06 后端工具链和运行配置设计（2026-08-17）](superpowers/specs/2026-08-17-backend-r1-06-toolchain-config-design.md)
 
 ### 当前实现与契约
 
@@ -117,6 +118,7 @@
 - [后端模块](modules/Backend.md)
 - [基础设施模块](modules/Infrastructure.md)
 - [API 契约](contracts/API.md)
+- [冻结 OpenAPI 产物](contracts/openapi/auralis-openapi.json)
 - [数据库契约](contracts/Database.md)
 - [Mobile 页面 API 映射](contracts/MobilePagesAPIMap.md)
 
@@ -131,7 +133,7 @@
 - [后端阶段 2B Source、Asset、Relation 实施计划](superpowers/plans/2026-08-12-backend-phase-2b-source-asset-relation.md)
 - [后端阶段 3/4 同步、复习、统计与实时实施计划](superpowers/plans/2026-08-13-backend-phase-3-4-sync-review-realtime.md)
 - [后端阶段五 AI 与 RAG 实施计划（2026-08-16）](superpowers/plans/2026-08-16-backend-phase-5-ai-rag.md)
-- [R1-01 BYOK 与出站网络安全实施计划（2026-08-16）](superpowers/plans/2026-08-16-r1-01-provider-security.md)
+- [R1-06 后端工具链和运行配置实施计划（2026-08-17）](superpowers/plans/2026-08-17-backend-r1-06-toolchain-config.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)

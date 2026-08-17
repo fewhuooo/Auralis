@@ -1,6 +1,7 @@
 /**
  * 基于 OpenAI 兼容接口封装的 AI Client (Mobile)
  */
+import { useAuthStore } from '@/store/useAuthStore'
 
 export interface AiConfig {
   baseUrl: string;
@@ -117,14 +118,10 @@ export async function convertHandwritingToMarkdown(rawOcrText: string) {
  */
 export function chatWithAI(text: string, history: any[], onMessage: (content: string) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    // #ifdef H5
-    const BASE_URL = 'http://127.0.0.1:8080';
-    // #endif
-    // #ifndef H5
-    const BASE_URL = 'http://10.0.2.2:8080';
-    // #endif
+    const BASE_URL = typeof window !== 'undefined'
+      ? 'http://127.0.0.1:8080'
+      : 'http://10.0.2.2:8080'
 
-    const { useAuthStore } = require('@/store/useAuthStore');
     const authStore = useAuthStore();
     
     const requestTask = uni.request({
