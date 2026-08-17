@@ -127,13 +127,16 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  const initE2EE = async () => {
-    console.log('[E2EE] Initializing end-to-end encryption keys...');
+  const pullChanges = async (_options?: { reason?: string }) => {
+    return triggerSync()
   }
+
+  const initE2EE = async () => {}
 
   return {
     isSyncing,
     triggerSync,
-    initE2EE
+    pullChanges,
+    initE2EE,
   }
 })

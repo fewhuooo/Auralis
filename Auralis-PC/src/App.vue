@@ -27,37 +27,34 @@ import { onMounted, onUnmounted, watch } from 'vue'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
-import { subscribeToCloudSync } from '@/api/tauri'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useSyncStore } from '@/store/useSyncStore'
+import { realtimeController } from '@/services/realtimeController'
 
-let unlisten: (() => void) | null = null
-
-const initSync = async () => {
-  const syncStore = useSyncStore()
-  await syncStore.initE2EE()
-  unlisten = subscribeToCloudSync()
-}
+let stopWatchingAuth: (() => void) | undefined
 
 onMounted(() => {
   const authStore = useAuthStore()
 
   if (authStore.token) {
-    initSync()
+    realtimeController.start()
   }
 
-  watch(() => authStore.token, (newToken) => {
-    if (newToken && !unlisten) {
-      initSync()
-    } else if (!newToken && unlisten) {
-      unlisten()
-      unlisten = null
-    }
-  })
+  stopWatchingAuth = watch(
+    () => authStore.token,
+    (newToken) => {
+      if (newToken) {
+        realtimeController.start()
+      } else {
+        realtimeController.stop()
+      }
+    },
+  )
 })
 
 onUnmounted(() => {
-  if (unlisten) unlisten()
+  stopWatchingAuth?.()
+  stopWatchingAuth = undefined
+  realtimeController.stop()
 })
 </script>
 
