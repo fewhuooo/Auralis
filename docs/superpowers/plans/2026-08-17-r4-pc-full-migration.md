@@ -188,7 +188,7 @@ npm.cmd run build
 - [ ] Workspace 的摘要、AI context、相关资料和聊天面板全部从 Store 获取状态；Provider 未配置、限流、超时和无检索结果分别显示可理解的 Problem Details/UI 状态。
 - [x] 运行 SSE reducer、Store、类型、构建和静态检查，确认生产源码没有旧 `/api/ai/chat`、`/api/ai/ingest/file` 等路径。
 
-执行记录（2026-08-20）：SSE reducer 覆盖 delta、completed fallback 和 citation 去重；`check:r4-pc` 扫描 57 个生产文件通过。Controller 的独立 abort/Problem Details/重连测试与资料摄取真实服务验证仍待联调阶段。
+执行记录（2026-08-20）：SSE reducer 与 controller 测试覆盖 delta、completed fallback、citation 去重、provider error 和 abort；`test:r4-pc` 已扩展为 53/53，`check:r4-pc` 扫描 57 个生产文件通过。断线重连不重复追加消息、资料摄取真实服务和 Provider UI 错误矩阵仍待联调阶段。
 
 ## Task 11: 完成 Vite/Web/Tauri 运行时与权限边界
 

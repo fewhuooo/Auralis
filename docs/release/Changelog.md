@@ -14,7 +14,7 @@
 
 - `useTaskStore`、`useReviewStore`、`useStatsStore`、`useChatStore`、`usePomodoroStore` 已切换到当前 typed DTO、用户/设备隔离 repository 和页面模型；Dashboard、Timeline、Profile、Home、SearchPalette、SubjectWorkspace、Pomodoro 不再以旧 `localDb` 或静态演示数据作为云端事实。
 - Profile 增加当前 user/device/session 展示和其它会话撤销；AI `AiStreamController` 统一处理 SSE 增量、citation 去重、取消、中断和失败；Vite 开发代理改为环境驱动，Tauri 默认 capability 保持最小权限。
-- R4 PC 静态检查扫描 57 个生产文件通过，`test:r4-pc` 51/51、type-check、Web build 通过；Tauri `--no-bundle` 生成 `src-tauri/target/release/app.exe`。完整 MSI bundling 返回宿主权限错误 `拒绝访问 (os error 5)`，因此安装包、GUI、真实服务和前后端业务联调仍未完成。
+- R4 PC 静态检查扫描 57 个生产文件通过，`test:r4-pc` 53/53、type-check、Web build 通过；Tauri `--no-bundle` 生成 `src-tauri/target/release/app.exe`。完整 MSI bundling 返回宿主权限错误 `拒绝访问 (os error 5)`，因此安装包、GUI、真实服务和前后端业务联调仍未完成。
 
 ### R4：PC Subject/KnowledgeBlock/Source/Asset 主流程迁移（2026-08-20）
 

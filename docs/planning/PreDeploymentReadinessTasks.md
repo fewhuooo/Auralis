@@ -333,7 +333,7 @@
 
 完成条件：PC 主流程不依赖旧 DTO、旧同步路径或本地假数据。
 
-PC 执行记录（2026-08-20）：PC 侧 Subject、Source、Asset、KnowledgeBlock、Task、Review、Stats、AI 已完成 typed DTO/store 迁移；本地 repository 使用 userId/deviceId、version/deletedAt/baseVersion，`test:r4-pc` 51/51、`check:r4-pc` 57 个生产文件和 `type-check` 通过。该记录只覆盖 PC 代码与自动检查，真实服务、浏览器/Tauri GUI、双设备和前后端联调仍不属于已完成证据。
+PC 执行记录（2026-08-20）：PC 侧 Subject、Source、Asset、KnowledgeBlock、Task、Review、Stats、AI 已完成 typed DTO/store 迁移；本地 repository 使用 userId/deviceId、version/deletedAt/baseVersion，`test:r4-pc` 53/53、`check:r4-pc` 57 个生产文件和 `type-check` 通过。该记录只覆盖 PC 代码与自动检查，真实服务、浏览器/Tauri GUI、双设备和前后端联调仍不属于已完成证据。
 
 ### R4-03 PC Tauri（P1）
 

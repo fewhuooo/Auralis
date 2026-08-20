@@ -30,7 +30,7 @@
 | 模块 | 当前状态 | 代码证据 | 命令证据 | 人工验收 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
 | 文档体系 | 已构建待验收 | 新分类体系、Agent 规则、归档快照、旧路径切换已完成 | 2026-08-12：`docs/README.md` 相对链接检查 33 项通过；2026-07-10 的元数据、根目录、旧路径扫描仍保留为历史证据 | 无 | 随后续代码变化持续回写 |
-| PC Web | 已构建待验收 | 8 条正式路由、typed API Store、用户/设备隔离本地 repository、AI SSE 控制器和环境驱动运行时存在；正式页面已移除静态演示数据主路径 | 2026-08-20：`check:r4-pc` 扫描 57 个生产文件通过，`test:r4-pc` 51/51、`type-check`、Web build 通过；Vite 仍提示 Asset chunk 约 560 kB 和无效动态 import | 浏览器主流程、真实 API/SSE、会话撤销、AI 失败态、窄栏/深色主题和 GUI | 恢复守卫并完成真实前后端联调、浏览器/Tauri GUI 验收，评估 bundle 拆分 |
+| PC Web | 已构建待验收 | 8 条正式路由、typed API Store、用户/设备隔离本地 repository、AI SSE 控制器和环境驱动运行时存在；正式页面已移除静态演示数据主路径 | 2026-08-20：`check:r4-pc` 扫描 57 个生产文件通过，`test:r4-pc` 53/53、`type-check`、Web build 通过；Vite 仍提示 Asset chunk 约 560 kB 和无效动态 import | 浏览器主流程、真实 API/SSE、会话撤销、AI 失败态、窄栏/深色主题和 GUI | 恢复守卫并完成真实前后端联调、浏览器/Tauri GUI 验收，评估 bundle 拆分 |
 | PC Tauri | 已构建待验收 | Tauri 2.11.1、SQL 插件配置存在 | 本轮未执行 GUI | Windows GUI、权限、安装包 | 手工桌面验收 |
 | Mobile H5 | 已构建待验收 | 手机页面、Store、本地服务与构建脚本存在 | 2026-08-12：`npm.cmd run build:h5` 通过；保留动态/静态 import 与 Sass legacy API 警告 | 手机浏览器、弱网、输入法 | H5 真机走查与警告治理 |
 | 微信小程序 | 已构建待验收 | `MP-WEIXIN` 条件编译排除 Tablet 页面 | 2026-08-12：`npm.cmd run build:mp-weixin` 通过；保留 Sass legacy API 警告 | 开发者工具、真机、合法域名 | 微信走查 |
@@ -110,7 +110,7 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 
 - `useTaskStore`、`useReviewStore`、`useStatsStore`、`useChatStore`、`usePomodoroStore` 已建立 typed DTO 到页面模型的边界；Dashboard、Timeline、Profile、Home、SearchPalette、SubjectWorkspace 和 Pomodoro 不再直接把 `localDb` 或旧 block Store 当作云端事实。Profile 展示当前 user/device/session，并支持撤销其它会话；Dashboard 的静态演示知识、任务和学科数据已移除。
 - AI 已由 `AiStreamController` 管理取消、增量合并、citation 去重、失败和中断状态；Vite `/api`、`/ws` 开发代理只读取 `VITE_DEV_API_TARGET` / `VITE_DEV_WS_TARGET`，Tauri capability 保持 `core:default`、`log:default`、`sql:default`，未授予 shell/http/fs。
-- `npm.cmd run check:r4-pc` 扫描 57 个生产文件通过；`npm.cmd run test:r4-pc` 51/51、`npm.cmd run type-check`、`npm.cmd run build` 通过。`npm.cmd run tauri -- build --no-bundle` 通过并生成 `Auralis-PC/src-tauri/target/release/app.exe`；完整 `tauri build` 在 MSI bundling 阶段被宿主权限错误 `拒绝访问 (os error 5)` 阻断，不能写成安装包验收通过。
+- `npm.cmd run check:r4-pc` 扫描 57 个生产文件通过；`npm.cmd run test:r4-pc` 53/53、`npm.cmd run type-check`、`npm.cmd run build` 通过。`npm.cmd run tauri -- build --no-bundle` 通过并生成 `Auralis-PC/src-tauri/target/release/app.exe`；完整 `tauri build` 在 MSI bundling 阶段被宿主权限错误 `拒绝访问 (os error 5)` 阻断，不能写成安装包验收通过。
 - 本条只证明 PC 代码、类型、自动测试、Web 构建和桌面应用本体构建；真实 Server/MinIO/Provider、浏览器或 Tauri GUI、安装升级卸载、双设备同步、真实 AI SSE 和前后端业务联调仍未执行。构建保留 Asset 大 chunk 与 `useSyncStore` 无效动态 import 警告。
 
 ## 本轮验证结论（2026-08-13）
