@@ -99,6 +99,13 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - `useSyncStore` 已维护 `cursor`、`resetRequired`、`isPulling`、`isPushing`、`lastSyncError`；realtime、启动恢复、网络恢复和主动同步统一调用 cursor pull，reset 会先 snapshot、保留 unresolved mutation，再重放 pending。
 - `npm.cmd run test:r4-pc` 39/39 通过；`npm.cmd run type-check` 通过。`npm.cmd run check:r4-pc` 仍只命中 Task 8/10 的 Subject/页面/AI 旧实现；真实后端、多设备、浏览器 WebSocket、Tauri、GUI 和前后端联调仍未验证。
 
+2026-08-20 R4 Task 8 已完成 PC Subject/KnowledgeBlock/Source/Asset 主流程代码迁移与自动验证：
+
+- `useSubjectStore`、`useSourceStore`、`useKnowledgeStore`、`useAssetStore` 已使用 typed API、user/device-scoped local repository、`version/deletedAt/baseVersion` 和 pending mutation；SubjectWorkspace、Asset、Home 的资料上传改为 upload-intent → object storage PUT → complete → Source create，目录更新使用当前 Source DTO，AI 流改用 `/api/ai/messages/stream`。
+- 新增 `domainMappers.ts` 和固定 DTO mapping/cursor/optimistic mutation 测试；旧 PC snake_case 资料字段、旧 `/api/ai/chat`、旧 Asset 兼容调用已从本轮正式页面路径移除。`npm.cmd run check:r4-pc` 扫描 52 个生产文件通过。
+- `npm.cmd run test:r4-pc` 44/44、`npm.cmd run type-check`、`npm.cmd run build` 和 `git diff --check` 通过；Vite 仍提示 Asset chunk 约 594 kB 超过 500 kB 阈值。
+- R4-08 不等于真实前后端联调或人工验收：真实 Auth/Subject/Source/Asset/AI SSE、MinIO 异常路径、Tauri SQLite 升级、浏览器/Tauri GUI、离线双设备和业务验收仍未执行；`useBlockStore`、`useTaskStore` 等剩余 Store 仍待后续 R4 任务迁移。
+
 ## 本轮验证结论（2026-08-13）
 
 - PC：`npm.cmd run check:subject-icons` 与 `npm.cmd run check:subject-workspace` 通过。

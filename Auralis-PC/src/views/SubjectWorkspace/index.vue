@@ -62,10 +62,10 @@
             :class="{ 'is-active': selectedFileId === file.id }"
             @click="selectFile(file.id)"
           >
-            <span class="drawer-item-icon">{{ getFileIcon(file.file_type) }}</span>
+<span class="drawer-item-icon">{{ getFileIcon(file.fileType) }}</span>
             <div class="drawer-item-body">
               <span class="drawer-item-name">{{ file.name }}</span>
-              <span class="drawer-item-meta">{{ (file.file_size / (1024 * 1024)).toFixed(1) }} MB</span>
+<span class="drawer-item-meta">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
             </div>
           </div>
         </div>
@@ -188,7 +188,7 @@
 
         <div v-if="centerView === 'summary' && selectedFile" class="file-summary-workspace">
           <div class="file-summary-head">
-            <span class="file-summary-icon">{{ getFileIcon(selectedFile.file_type) }}</span>
+<span class="file-summary-icon">{{ getFileIcon(selectedFile.fileType) }}</span>
             <div class="file-summary-head-text">
               <p>文件学习总结</p>
               <h2>{{ selectedFile.name }}</h2>
@@ -541,11 +541,14 @@ import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 
-import { useBlockStore } from '@/store/useBlockStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
-import { streamFetch } from '@/utils/streamFetch'
+import { useAssetStore } from '@/store/useAssetStore'
+import { useSourceStore } from '@/store/useSourceStore'
+import { streamAiMessage } from '@/api/aiClient'
+import { uuidv7 } from '@/utils/uuid'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -553,10 +556,12 @@ const renderMarkdown = (c: string) => c ? DOMPurify.sanitize(marked.parse(c) as 
 
 const route = useRoute()
 const router = useRouter()
-const blockStore = useBlockStore()
+const blockStore = useKnowledgeStore()
 const { recentBlocks } = storeToRefs(blockStore)
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
+const assetStore = useAssetStore()
+const sourceStore = useSourceStore()
 const { activeSubject, activeSourceFiles } = storeToRefs(subjectStore)
 const taskStore = useTaskStore()
 
@@ -785,18 +790,15 @@ const handleFileSelect = (e: Event) => {
 
 const triggerFileInput = () => hiddenFileInput.value?.click()
 
-import { getPresignedUrl, uploadToMinIO, bindAsset } from '@/api/useAssetApi'
-
 const handleRegisterFile = async () => {
   const targetSubjectId = registerForm.value.subjectId
-  if (!registerForm.value.name.trim() || !targetSubjectId) return
+  if (!registerForm.value.name.trim() || !targetSubjectId || !droppedFile.value) return
   
   const currentFile = droppedFile.value
-  const targetSubject = subjectStore.subjects.find(s => s.id === targetSubjectId)
   
   try {
-    // 1. 本地沙盒极速落库 (方案4 - 本地部分)
-    const newId = await subjectStore.addSourceFile(targetSubjectId, registerForm.value.name.trim(), registerForm.value.filePath.trim() || registerForm.value.name.trim(), registerForm.value.fileType, Math.round(registerForm.value.fileSize * 1024 * 1024))
+    const asset = await assetStore.upload(currentFile)
+    const newId = await sourceStore.createFileSource(targetSubjectId, registerForm.value.name.trim(), asset.id)
     
     if (targetSubjectId === subjectId.value && !selectedFileId.value) {
       selectedFileId.value = newId
@@ -805,22 +807,7 @@ const handleRegisterFile = async () => {
     showRegisterModal.value = false
     registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' }
     droppedFile.value = null
-    ElNotification({ title: '本地录入成功', message: '已保存至应用目录，即将后台同步至云端', type: 'success', position: 'top-right' })
-    
-    // 2. 后台静默直传云端 (方案4 - 同步部分)
-    if (currentFile && targetSubject) {
-      setTimeout(async () => {
-        try {
-          const { presignedUrl, objectName } = await getPresignedUrl(currentFile.name, currentFile.type || 'application/octet-stream')
-          await uploadToMinIO(presignedUrl, currentFile)
-          await bindAsset(objectName, currentFile.name, currentFile.size, currentFile.type || 'application/octet-stream', targetSubject.name)
-          ElNotification({ title: '云端同步完成', message: currentFile.name, type: 'success', position: 'top-right' })
-        } catch (err) {
-          console.error('[Async Upload] Failed:', err)
-          ElNotification({ title: '云端同步异常', message: '将稍后重试', type: 'warning', position: 'top-right' })
-        }
-      }, 500)
-    }
+    ElNotification({ title: '云端录入成功', message: currentFile.name, type: 'success', position: 'top-right' })
   } catch (e) { console.error(e) }
 }
 
@@ -926,20 +913,30 @@ const sendChat = async () => {
   let abortCtrl = new AbortController()
   abortController = abortCtrl
 
-  const context = selectedFile.value ? `当前文件: ${selectedFile.value.name}` : `学科: ${activeSubject.value?.name}`
-  const url = `/api/ai/chat?message=${encodeURIComponent(msg)}&subjectId=${subjectId.value}&context=${encodeURIComponent(context)}`
-
   try {
-    await streamFetch(url, authStore.token || '', (c) => { streamingContent.value += c; scrollChatToBottom() }, () => {
-      chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
-      streamingContent.value = ''
-      isAiStreaming.value = false
-      scrollChatToBottom()
-    }, (err) => {
-      isAiStreaming.value = false
-      if (err.name !== 'AbortError') chatMessages.value.push({ role: 'assistant', content: '抱歉，请求失败。' })
-    }, abortCtrl.signal)
-  } catch { isAiStreaming.value = false }
+    const context = selectedFile.value ? `当前文件: ${selectedFile.value.name}` : `学科: ${activeSubject.value?.name || ''}`
+    for await (const event of streamAiMessage({
+      content: `${context}\n\n${msg}`,
+      retrievalEnabled: Boolean(selectedFile.value),
+      clientRequestId: uuidv7(),
+    }, abortCtrl.signal)) {
+      if (event.event === 'message.delta' && typeof event.data === 'string') {
+        streamingContent.value += event.data
+        scrollChatToBottom()
+      } else if (event.event === 'message.completed' && typeof event.data === 'object' && event.data && 'content' in event.data && typeof event.data.content === 'string' && !streamingContent.value) {
+        streamingContent.value = event.data.content
+      } else if (event.event === 'message.error') {
+        throw new Error(typeof event.data === 'object' && event.data && 'message' in event.data ? String(event.data.message || 'AI 请求失败') : 'AI 请求失败')
+      }
+    }
+    if (streamingContent.value) chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
+  } catch (error) {
+    if (!(error instanceof DOMException && error.name === 'AbortError')) chatMessages.value.push({ role: 'assistant', content: '抱歉，请求失败。' })
+  } finally {
+    streamingContent.value = ''
+    isAiStreaming.value = false
+    scrollChatToBottom()
+  }
 }
 
 const clearChat = () => { chatMessages.value = []; streamingContent.value = '' }

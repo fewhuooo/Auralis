@@ -1,6 +1,6 @@
 # Auralis 变更记录
 
-更新时间：2026-08-17
+更新时间：2026-08-20
 
 文档状态：现行历史记录
 
@@ -9,6 +9,12 @@
 事实来源：Git 提交、本轮实际验证记录与重构前快照
 
 ## Unreleased
+
+### R4：PC Subject/KnowledgeBlock/Source/Asset 主流程迁移（2026-08-20）
+
+- 新增固定 DTO mapping、分页 cursor 和 optimistic mutation 测试；`useSubjectStore`、`useSourceStore`、`useKnowledgeStore`、`useAssetStore` 通过 typed API 和 user/device-scoped local repository 处理版本、软删除、离线 pending 与冲突边界。
+- SubjectWorkspace、Asset、Home 的文件路径登记改为真实 Asset upload-intent → 对象存储 PUT → complete → Source create；目录更新使用 Source API，上传失败保留明确 pending/failed 状态，不伪造云端成功。
+- 正式页面路径移除旧资料 snake_case、旧 `/api/ai/chat` 和兼容 Asset 调用；AI 伴读改用当前消息 SSE。R4 PC 静态检查、mapping/protocol/local repository/sync 测试、type-check、Web build 已通过；真实服务、GUI、Tauri、双设备和前后端业务联调仍未完成。
 
 ### 前端 AI 辅助开发约定（2026-08-17）
 

@@ -248,7 +248,7 @@
     <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
       <div class="modal-container register-modal">
         <div class="modal-header">
-          <h3>登记本地参考文件</h3>
+          <h3>上传参考文件</h3>
           <button class="close-btn" @click="showRegisterModal = false">×</button>
         </div>
         <div 
@@ -292,14 +292,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ingestFile } from '@/api/aiClient'
-import { uploadAsset, validateFileSize, getAssetStatus } from '@/api/useAssetApi'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
 import { Plus, Archive, FileText, UploadCloud, LayoutDashboard, Network, Check, BookOpen, Blocks, File, PieChart, ImageIcon, Mic, Folder, ListTodo, Calendar, Activity } from 'lucide-vue-next'
 import PdfViewer from '@/components/subject/PdfViewer.vue'
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
+import { useAssetStore } from '@/store/useAssetStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
+import { useSourceStore } from '@/store/useSourceStore'
 
 // ---- Layout States ----
 const showRegisterModal = ref(false)
@@ -348,11 +349,11 @@ const inputFileName = ref('')
 const dialogFileInput = ref<HTMLInputElement | null>(null)
 
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { useBlockStore } from '@/store/useBlockStore'
-import { localDb } from '@/services/localDb'
 
 const subjectStore = useSubjectStore()
-const blockStore = useBlockStore()
+const blockStore = useKnowledgeStore()
+const sourceStore = useSourceStore()
+const assetStore = useAssetStore()
 
 const rootNodes = ref<TreeNode[]>([])
 
@@ -369,12 +370,13 @@ const loadAssetsFromBackend = async () => {
   isLoadingAssets.value = true
   try {
     await subjectStore.loadSubjects()
+    await sourceStore.loadSources()
     await blockStore.loadLocalBlocks()
     
     const newRoots: TreeNode[] = []
     
     // --- 1. 汇总 (All) Group ---
-    const allFilesRaw = await localDb.getSourceFiles()
+    const allFilesRaw = sourceStore.sources
     
     const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
     const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
@@ -389,8 +391,8 @@ const loadAssetsFromBackend = async () => {
     allFilesRaw.forEach(file => {
       allFilesFolder.children!.push({
         id: `f-${file.id}`, type: 'file', groupId: 'all', name: file.name, lucideIcon: getIconForSource(file.name),
-        status: 'success', statusText: '正常', time: new Date(file.created_at || Date.now()).toLocaleDateString(),
-        size: (file.file_size / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.file_path, originalData: file
+        status: 'success', statusText: '正常', time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
+        size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.filePath, originalData: file
       })
     })
 
@@ -415,8 +417,7 @@ const loadAssetsFromBackend = async () => {
 
     // --- 2. 学科分类 (Subjects) ---
     for (const subj of subjectStore.subjects) {
-      await subjectStore.loadSourceFiles(subj.id)
-      const files = subjectStore.activeSourceFiles
+      const files = sourceStore.sources.filter((file) => file.subjectId === subj.id)
       const blocks = blockStore.recentBlocks.filter(b => b.subjectId === subj.id)
 
       const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
@@ -426,8 +427,8 @@ const loadAssetsFromBackend = async () => {
       files.forEach(file => {
         subjFilesFolder.children!.push({
           id: `f-${file.id}`, type: 'file', groupId: subj.id, name: file.name, lucideIcon: getIconForSource(file.name),
-          status: 'success', statusText: '正常', time: new Date(file.created_at || Date.now()).toLocaleDateString(),
-          size: (file.file_size / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.file_path, originalData: file
+          status: 'success', statusText: '正常', time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
+          size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.filePath, originalData: file
         })
       })
 
@@ -560,33 +561,18 @@ const handleDrop = (e: DragEvent) => {
 }
 
 const handleFileUpload = async (file: File, subjectId: string) => {
-  const filename = file.name
-  const isImage = /\.(jpg|jpeg|png)$/i.test(filename)
-  try {
-    validateFileSize(file)
-  } catch (e: any) {
-    ElNotification({ title: '⚠️ 文件校验失败', message: e.message, type: 'warning' })
-    return
-  }
-
   isUploading.value = true
   uploadProgress.value = 5
   uploadStatusText.value = '校验文件...'
 
   try {
-    if (isImage) {
-      await handleImageUpload(file, filename, subjectId)
-      return
-    }
-
-    await uploadAsset(file, subjectId, (percent, stage) => {
+    const asset = await assetStore.upload(file, (percent, stage) => {
       uploadProgress.value = percent
       uploadStatusText.value = stage
     })
+    await sourceStore.createFileSource(subjectId, file.name, asset.id)
     uploadProgress.value = 98
-    uploadStatusText.value = '资产已提交后台解析...'
-    
-    // Refresh
+    uploadStatusText.value = '资料已关联，等待后台解析...'
     await loadAssetsFromBackend()
     uploadProgress.value = 100
     setTimeout(() => { isUploading.value = false }, 800)
@@ -598,58 +584,10 @@ const handleFileUpload = async (file: File, subjectId: string) => {
   }
 }
 
-const handleImageUpload = async (file: File, filename: string, subjectId: string) => {
-  uploadProgress.value = 30
-  uploadStatusText.value = 'AI 笔记解析中...'
-  try {
-    const subjObj = subjectStore.subjects.find(s => s.id === subjectId)
-    await ingestFile(file, subjObj ? subjObj.name : '图片笔记')
-    await subjectStore.addSourceFile(subjectId, filename, filename, file.type || 'image/png', file.size)
-    uploadProgress.value = 80
-    await loadAssetsFromBackend()
-    uploadProgress.value = 100
-    setTimeout(() => { isUploading.value = false }, 500)
-  } catch (err: any) {
-    console.error('图片处理失败:', err)
-    uploadStatusText.value = '图片 AI 处理失败: ' + (err.message || '未知错误')
-    setTimeout(() => { isUploading.value = false }, 2000)
-  }
-}
-
-// ---- Sync Events ----
-const handleSyncEvent = async (e: Event) => {
-  const customEvent = e as CustomEvent
-  const syncEvent = customEvent.detail
-  if (syncEvent.entity === 'assets') {
-    if (syncEvent.type === 'DOC_INGESTED') {
-      try {
-        const data = typeof syncEvent.data === 'string' ? JSON.parse(syncEvent.data) : syncEvent.data
-        const assetId = syncEvent.refId || data.refId
-        const assetInfo = await getAssetStatus(assetId)
-        const subjectId = assetInfo.subject
-        if (subjectId && subjectId !== '文档导入') {
-          await subjectStore.loadSourceFiles(subjectId)
-          const exists = subjectStore.activeSourceFiles.some(f => f.name === assetInfo.fileName)
-          if (!exists && assetInfo.fileName && assetInfo.objectName) {
-            await subjectStore.addSourceFile(subjectId, assetInfo.fileName, assetInfo.objectName, assetInfo.contentType || 'PDF', assetInfo.fileSize || 0)
-          }
-        }
-        await loadAssetsFromBackend()
-        ElNotification({ title: '🎉 编排完成', message: `文档《${assetInfo.fileName}》解析成功`, type: 'success' })
-      } catch (err) { }
-    } else if (syncEvent.type === 'INGEST_FAILED') {
-      ElNotification({ title: '❌ 编排失败', message: `解析失败`, type: 'error' })
-    }
-  }
-}
-
 onMounted(() => {
   loadAssetsFromBackend()
-  if (typeof window !== 'undefined') window.addEventListener('auralis-sync-event', handleSyncEvent)
 })
-onUnmounted(() => {
-  if (typeof window !== 'undefined') window.removeEventListener('auralis-sync-event', handleSyncEvent)
-})
+onUnmounted(() => undefined)
 </script>
 
 <style scoped>

@@ -115,15 +115,15 @@
                 <div class="materials-list" v-if="activeSourceFiles.length > 0">
                   <div v-for="file in activeSourceFiles" :key="file.id" class="file-item">
                     <div class="file-icon-wrapper">
-                      <span class="file-icon">{{ getFileIcon(file.file_type) }}</span>
+<span class="file-icon">{{ getFileIcon(file.fileType) }}</span>
                     </div>
                     <div class="file-meta-info">
                       <span class="file-name">{{ file.name }}</span>
-                      <span class="file-path" :title="file.file_path">{{ file.file_path }}</span>
+<span class="file-path" :title="file.filePath">{{ file.filePath }}</span>
                     </div>
                     <div class="file-stats">
-                      <span class="file-size">{{ (file.file_size / (1024 * 1024)).toFixed(2) }} MB</span>
-                      <span class="file-blocks" v-if="file.block_count !== undefined && file.block_count > 0">{{ file.block_count }} 知识块</span>
+<span class="file-size">{{ (file.fileSize / (1024 * 1024)).toFixed(2) }} MB</span>
+<span class="file-blocks" v-if="file.blockCount !== undefined && file.blockCount > 0">{{ file.blockCount }} 知识块</span>
                     </div>
                     <div class="file-actions">
                       <button class="file-action-btn" title="PDF伴读" @click="openPdfCompanion(file.id)">📖 伴读</button>
@@ -155,7 +155,7 @@
                 <!-- Outline Content -->
                 <div v-if="selectedFile" class="outline-body">
                   <!-- If no catalog exists -->
-                  <div v-if="!selectedFile.catalog_json || selectedFile.catalog_json === '[]'" class="paste-catalog-prompt">
+<div v-if="!selectedFile.catalogJson || selectedFile.catalogJson === '[]'" class="paste-catalog-prompt">
                     <p class="catalog-hint">💡 <b>此参考书尚未解析目录</b>。请粘贴目录文本，我们将通过 AI 结构化提炼为章节节点大纲。</p>
                     <textarea 
                       v-model="pasteCatalogText" 
@@ -229,7 +229,7 @@
               <div v-if="activeTab === 'pdf'" class="tab-content pdf-tab">
                 <PdfViewer 
                   v-if="selectedFile"
-                  :filePath="selectedFile.file_path"
+:filePath="selectedFile.filePath"
                   :fileName="selectedFile.name"
                 />
                 <div class="empty-state" v-else>
@@ -426,7 +426,7 @@
     <div class="modal-overlay" v-if="showRegisterModal" @click="showRegisterModal = false"></div>
     <div class="modal-container" v-if="showRegisterModal">
       <div class="modal-header">
-        <h3>登记本地参考材料</h3>
+        <h3>上传参考材料</h3>
         <button class="close-btn" @click="showRegisterModal = false">✕</button>
       </div>
       <div class="modal-body">
@@ -435,28 +435,15 @@
           <input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络 自顶向下方法.pdf" />
         </div>
         <div class="form-group">
-          <label>本地绝对路径 *</label>
-          <input v-model="registerForm.filePath" class="styled-input" placeholder="例如: D:/Books/Computer Network.pdf" />
-        </div>
-        <div class="form-group">
-          <label>类型 *</label>
-          <select v-model="registerForm.fileType" class="styled-select">
-            <option value="PDF">PDF 电子书</option>
-            <option value="Markdown">Markdown 文档</option>
-            <option value="PPT">PowerPoint 课件</option>
-            <option value="Word">Word 文档</option>
-            <option value="Other">其他类型</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>文件大小 (MB)</label>
-          <input type="number" v-model="registerForm.fileSize" class="styled-input" placeholder="例如: 15.4" />
+          <label>选择文件 *</label>
+          <input type="file" class="styled-input" @change="handleRegisterFileSelected" />
+          <small v-if="registerFile" class="file-path">{{ registerFile.name }}</small>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
-        <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerForm.filePath.trim()" @click="handleRegisterFile">
-          确认登记
+        <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerFile" @click="handleRegisterFile">
+          确认上传
         </button>
       </div>
     </div>
@@ -603,11 +590,13 @@ import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 
 import { useBlockStore } from '@/store/useBlockStore'
-import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
-import { streamFetch } from '@/utils/streamFetch'
+import { streamAiMessage } from '@/api/aiClient'
+import { uuidv7 } from '@/utils/uuid'
+import { useAssetStore } from '@/store/useAssetStore'
+import { useSourceStore } from '@/store/useSourceStore'
 
 // Import components
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
@@ -637,6 +626,8 @@ const { activeSubjectId, activeSubject, activeSourceFiles } = storeToRefs(subjec
 
 const taskStore = useTaskStore()
 const { pendingTasks, timeSlots } = storeToRefs(taskStore)
+const assetStore = useAssetStore()
+const sourceStore = useSourceStore()
 
 // Drag Resizing States
 const leftWidthPercent = ref(50) // Default to 50/50 (左右均分)
@@ -680,10 +671,18 @@ const selectedSubjectForEdit = ref<Subject | null>(null)
 const showRegisterModal = ref(false)
 const registerForm = ref({
   name: '',
-  filePath: '',
-  fileType: 'PDF',
-  fileSize: 0
+  filePath: ''
 })
+const registerFile = ref<File | null>(null)
+
+const handleRegisterFileSelected = (event: Event) => {
+  const file = (event.target as HTMLInputElement).files?.[0] || null
+  registerFile.value = file
+  if (file) {
+    registerForm.value.name = file.name
+    registerForm.value.filePath = file.name
+  }
+}
 
 // Task creation dialog
 const showTaskModal = ref(false)
@@ -758,11 +757,11 @@ const subjectBlocks = computed(() => {
 })
 
 const parsedCatalog = computed(() => {
-  if (!selectedFile.value || !selectedFile.value.catalog_json) return []
+  if (!selectedFile.value || !selectedFile.value.catalogJson) return []
   try {
-    return JSON.parse(selectedFile.value.catalog_json)
+  return JSON.parse(selectedFile.value.catalogJson)
   } catch (e) {
-    console.error('Failed to parse catalog_json:', e)
+    console.error('Failed to parse catalogJson:', e)
     return []
   }
 })
@@ -856,27 +855,22 @@ const handleAnalyzeCatalog = async () => {
 
 // Register materials
 const handleRegisterFile = async () => {
-  if (!registerForm.value.name.trim() || !registerForm.value.filePath.trim()) return
+  if (!registerForm.value.name.trim() || !registerFile.value) return
   if (!activeSubjectId.value) return
 
   try {
-    const sizeInBytes = Math.round(registerForm.value.fileSize * 1024 * 1024)
-    const newFileId = await subjectStore.addSourceFile(
-      activeSubjectId.value,
-      registerForm.value.name.trim(),
-      registerForm.value.filePath.trim(),
-      registerForm.value.fileType,
-      sizeInBytes
-    )
+    const asset = await assetStore.upload(registerFile.value)
+    const newFileId = await sourceStore.createFileSource(activeSubjectId.value, registerForm.value.name.trim(), asset.id)
     if (!selectedFileId.value) {
       selectedFileId.value = newFileId
     }
     showRegisterModal.value = false
-    registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0 }
+    registerForm.value = { name: '', filePath: '' }
+    registerFile.value = null
     
     ElNotification({
       title: '📁 材料登记成功',
-      message: '已成功在本地登记了该参考材料路径。',
+      message: '文件已上传并创建资料记录。',
       type: 'success',
       position: 'top-right'
     })
@@ -894,7 +888,7 @@ const deleteSourceFile = async (fileId: string) => {
       }
       ElNotification({
         title: '🗑️ 登记已移除',
-        message: '参考材料记录已从本地 SQLite 中清除。',
+        message: '参考材料已软删除并等待同步确认。',
         type: 'success',
         position: 'top-right'
       })
@@ -1135,45 +1129,24 @@ const triggerAiRefine = async (chapterTitle: string, sectionName: string) => {
   abortController = new AbortController()
   
   try {
-    const authStore = useAuthStore()
-    const token = authStore.token || ''
-    
-    let url = `/api/ai/chat?message=${encodeURIComponent(refinePrompt)}`
-    if (activeSubjectId.value) {
-      url += `&subjectId=${encodeURIComponent(activeSubjectId.value)}`
+    for await (const event of streamAiMessage({
+      content: refinePrompt,
+      retrievalEnabled: true,
+      clientRequestId: uuidv7(),
+    }, abortController.signal)) {
+      if (event.event === 'message.delta' && typeof event.data === 'string') responseContent += event.data
+      if (event.event === 'message.completed' && typeof event.data === 'object' && event.data && 'content' in event.data && typeof event.data.content === 'string' && !responseContent) responseContent = event.data.content
+      if (event.event === 'message.error') throw new Error(typeof event.data === 'object' && event.data && 'message' in event.data ? String(event.data.message || 'AI 请求失败') : 'AI 请求失败')
     }
-    if (selectedFile.value) {
-      url += `&sourceFileName=${encodeURIComponent(selectedFile.value.name)}`
-    }
-    
-    await streamFetch(
-      url,
-      token,
-      (chunk) => {
-        responseContent += chunk
-      },
-      () => {
-        isRefiningAi.value = false
-        abortController = null
-        openCreateDialogWithContent(sectionName, responseContent)
-      },
-      (err) => {
-        isRefiningAi.value = false
-        abortController = null
-        if (err.name !== 'AbortError') {
-          ElNotification({
-            title: '⚠️ AI 提炼失败',
-            message: err.message || '网络连接异常',
-            type: 'error',
-            position: 'top-right'
-          })
-        }
-      },
-      abortController.signal
-    )
+    if (responseContent) openCreateDialogWithContent(sectionName, responseContent)
   } catch (error) {
     console.error('AI refinement failed:', error)
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      ElNotification({ title: '⚠️ AI 提炼失败', message: error instanceof Error ? error.message : '网络连接异常', type: 'error', position: 'top-right' })
+    }
+  } finally {
     isRefiningAi.value = false
+    abortController = null
   }
 }
 

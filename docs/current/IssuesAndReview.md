@@ -30,7 +30,7 @@
 | ID | 问题 | 证据 | 影响 | 处理动作 | 关闭条件 | 领域 |
 | --- | --- | --- | --- | --- | --- | --- |
 | P1-Backend-Contract-Cutover | 新后端保留 `/api` 前缀但不兼容旧 DTO、状态码和行为，三端仍依赖旧契约 | R3 已固定 `docs/contracts/openapi/auralis-openapi.json` 并生成两端 SDK；现有页面/API 尚未完成迁移 | 新后端启动后，旧前端不能直接完成登录、同步、资产、AI 等主流程 | 按 R4 使用生成 DTO 迁移本地模型和页面，再逐端联调 | PC、Mobile、Tablet 目标流程全部使用新生成契约且联调证据齐全 | Frontend/Backend |
-| P1-PC-Local-Repository-Cutover | PC 旧页面仍通过 account-less `localDb` facade，尚未全部迁移到用户隔离 v2 repository | 2026-08-20 R4-06：临时 SQLite/localStorage 测试 6/6；R4-07 cursor sync 测试 4/4，`useSyncApi`/`useSyncStore` 已使用新 repository，但 `useBlockStore`、`useTaskStore`、`useSubjectStore` 仍使用旧方法 | 登录切换、reset、离线恢复前可能混用旧全局数据；新 schema 的自动迁移和 GUI 选择尚未被正式页面消费 | 在 R4-08 将正式 Store 切换到 repository，保留 pending/conflict payload，并验证真实 Tauri 与首次登录迁移 UI | 所有正式 PC Store/页面只经 userId/deviceId repository；旧全局 key 不再被业务路径读写；Tauri/Web/GUI 证据齐全 | PC/Data |
+| P1-PC-Local-Repository-Cutover | PC 仍有 `useBlockStore`、`useTaskStore` 和部分剩余页面使用 account-less `localDb` facade，尚未全部迁移到用户隔离 v2 repository | 2026-08-20 R4-08：Subject/Source/Knowledge/Asset 主路径已切换 typed API + repository；mapping/静态/类型/构建验证通过；`localDb` facade 仍仅供未迁移 Store | 剩余页面登录切换、reset、离线恢复前可能混用旧全局数据；新 schema 的自动迁移和 GUI 选择尚未被正式页面消费 | 后续 R4-09 迁移 Task/Review/Stats/Chat 及剩余页面，并验证真实 Tauri 与首次登录迁移 UI | 所有正式 PC Store/页面只经 userId/deviceId repository；旧全局 key 不再被业务路径读写；Tauri/Web/GUI 证据齐全 | PC/Data |
 | P1-Backend-Docker-Gate | [已关闭] Docker、PostgreSQL/pgvector、MinIO 和 Compose/Testcontainers 基础门禁 | 2026-08-17 Docker Desktop Linux engine 已恢复；`docker compose --env-file .env.example config --quiet`、backend/frontend 构建、Compose 启动与健康检查通过；默认 `clean test` 135/0/0，真实 PostgreSQL/pgvector 2/2、MinIO 主链路 1/1 | 基础设施主链路已具备可重复验证证据；异常专项和真实 Provider 仍由独立风险跟踪 | 保留 Docker 门禁并在 CI/本地复跑；继续完成 R2-03/R2-04 异常专项和 R2-05 真实 Provider smoke | Compose 服务健康、默认容器测试零跳过、PostgreSQL/MinIO 主链路集成证据齐全 | Backend/Infra |
 | P1-Auth-Guard | PC 登录守卫临时直接 `next()` | `Auralis-PC/src/router/index.ts` | 未登录可打开受保护页面 | 恢复 `useAuthStore` 守卫并测试所有跳转 | 未登录、登录、刷新、退出自动测试/人工证据齐全 | PC/Auth |
 | P1-Test-Coverage | 新后端已覆盖主要模块自动测试；全量 PostgreSQL、真实基础设施、多设备和浏览器客户端仍缺业务回归保护 | 2026-08-17 默认 `clean test` 已执行 PostgreSQL/MinIO 容器测试并通过 135/0/0；真实 PostgreSQL/pgvector 主链路 2/2、MinIO 主链路 1/1，但其余业务仍主要依赖 H2/JPA/MockMvc | 主链路通过不等于 PostgreSQL 全量并发行为、双设备断网恢复和真实 WebSocket 可用 | 增加 PostgreSQL/MinIO 异常与并发、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
@@ -79,6 +79,7 @@
 - 2026-08-20：R4 Task 5 完成 PC typed API 边界、Asset upload-intent/complete/download-url、AI conversation/message SSE 和分块安全解析；PC 定向协议测试 29/29、type-check 与 Web build 通过。全局 `check:r4-pc` 仍报告后续 Task 6–8 的旧 Store/页面命中，真实后端/MinIO/Provider/GUI/业务联调风险保持开放。
 - 2026-08-20：R4 Task 6 完成 PC v2 localSchema/localRepository/legacy backup 边界；临时 SQLite/localStorage 定向测试 6/6，合并 `test:r4-pc` 为 35/35，type-check 通过。旧 Store 尚未切换，P1-PC-Local-Repository-Cutover 保持开放；真实 Tauri 数据库升级、首次登录迁移选择、GUI 和前后端联调未声称通过。
 - 2026-08-20：R4 Task 7 完成 cursor Sync API/Store 迁移；定向 Sync 测试 4/4，合并 `test:r4-pc` 为 39/39，type-check 通过；静态检查仅剩 Task 8/10 的 Subject/页面/AI 旧实现命中。真实后端、多设备断网、浏览器 WebSocket、Tauri、GUI 和前后端联调未声称通过。
+- 2026-08-20：R4 Task 8 完成 Subject/KnowledgeBlock/Source/Asset Store 与 SubjectHall/SubjectWorkspace/Asset/Home 主路径迁移；mapping 测试纳入 `test:r4-pc` 后为 44/44，`check:r4-pc` 扫描 52 个生产文件通过，type-check/build/diff check 通过。真实后端、MinIO/Provider、Tauri、GUI、双设备和前后端业务联调仍未声称通过。
 
 ## 推荐关闭顺序
 

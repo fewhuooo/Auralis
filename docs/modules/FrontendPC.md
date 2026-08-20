@@ -80,6 +80,9 @@ Auralis-PC/
 | `useBlockStore.ts` | 知识块、本地持久化与块操作 |
 | `useTaskStore.ts` | 任务、排期与状态 |
 | `useSubjectStore.ts` | 学科列表和当前学科 |
+| `useSourceStore.ts` | Source 分页、资料目录、软删除和 Source mutation |
+| `useKnowledgeStore.ts` | KnowledgeBlock 列表、关联 Source、离线缓存和 mutation |
+| `useAssetStore.ts` | Asset upload-intent、对象存储上传、complete、下载 URL 和失败 pending 状态 |
 | `useSyncStore.ts` | cursor、resetRequired、pull/push 状态、错误和统一同步入口 |
 | `useChatStore.ts` | AI 会话与消息 |
 | `useSettingsStore.ts` | 主题和偏好 |
@@ -118,13 +121,13 @@ Auralis-PC/
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
 | `services/localDb.ts` | 尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
 
-R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。Task 8 前，旧 `useBlockStore`、`useTaskStore`、`useSubjectStore` 仍不能视为已完成新本地边界迁移。
+R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。R4-08 已将 Subject、Source、KnowledgeBlock、Asset 主路径切换到 `typed API → repository → view model`，并用固定 DTO mapping/cursor/mutation 测试保护字段边界；`useBlockStore`、`useTaskStore` 和剩余页面仍待后续任务迁移。
 
 ## 页面职责
 
 - Dashboard：时间线、待办和快速创建；当前用户改动已移除首页知识流上方统计与热力图卡片。
 - SubjectHall：学科卡片、搜索、创建和进入工作区。
-- SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；保留当前 `streamFetch`、模型菜单及学科/文件上下文，不提供附件或麦克风入口。
+- SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口。
 - SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织。
 - Timeline：排期和任务时间管理。
