@@ -64,11 +64,11 @@ Auralis-PC/
 
 ## 登录守卫现状
 
-`src/router/index.ts` 的 `beforeEach` 当前直接调用 `next()`，原登录判断被注释并标记为临时关闭。结论：
+`src/router/index.ts` 的 `beforeEach` 使用 `useAuthStore` 会话和 `resolveAuthRedirect` 处理公开/受保护路由。当前结论：
 
-- 页面路由当前不会阻止未登录访问。
+- 未登录访问受保护页面会重定向到 `/login`，已有会话访问 `/login` 会回到 `/`。
 - Server 受保护 API 仍必须验证 access token。
-- 恢复守卫前需验证登录后跳转、刷新持久化、未登录访问、已登录访问 `/login` 和退出。
+- `r4-pc-protocol.test.mjs` 已覆盖守卫决策；浏览器/Tauri 中的登录、刷新持久化、退出和过期仍需人工验收。
 
 该问题属于 P1，不能因页面能够打开而写成鉴权已验收。
 
@@ -176,7 +176,7 @@ npm.cmd run tauri -- build --no-bundle
 
 ## 当前限制
 
-- 登录守卫临时关闭。
+- 登录守卫逻辑已恢复并有路由决策测试；浏览器/Tauri 登录、刷新、退出和过期仍待人工验收。
 - 当前已有 R4 协议、本地 repository、Store mapping、SSE reducer 和运行时配置自动测试，但没有替代真实服务的浏览器 E2E。
 - `tsconfig.app.json` 的 TypeScript 6 `baseUrl` 弃用错误（TS5101）已通过移除配置项解决，`AppHeader.vue` 的未使用 `ElMessage` 导入也已清理；2026-08-12 `npm.cmd run build` 通过，但 Vite 提示部分 chunk 超过 500 kB。
 - Tauri GUI 和 MSI 打包需本地人工验收；当前 MSI bundling 被宿主权限错误阻断。
