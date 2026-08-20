@@ -1,29 +1,99 @@
 import request from './request'
+import type { LocalMutation } from '@/types/api'
+import type {
+  SyncChange,
+  SyncMutationRequest,
+  SyncPullQuery,
+  SyncPullResponse,
+  SyncPushResponse,
+  SyncSnapshotResponse,
+} from '@/types/sync'
 
-export interface Mutation {
-  id?: number
-  clientId: string
-  userId?: string
-  entityType: 'block' | 'task'
-  entityId: string
-  action: 'create' | 'update' | 'delete'
-  payload: any
-  createdAt: number
+const RESOURCE_TYPES = new Set(['SUBJECT', 'SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION'])
+const MUTATION_TYPES = new Set(['CREATE', 'UPDATE', 'DELETE', 'RESTORE'])
+
+function assertMutationValue<T extends string>(value: string, values: Set<string>, label: string): T {
+  if (!values.has(value)) throw new Error(`Unsupported sync ${label}: ${value}`)
+  return value as T
 }
 
-export interface SyncPullResponse {
-  mutations: Mutation[]
-  truncated: boolean
-  blocks: any[]
-  tasks: any[]
-  lastMutationId: number
+function toMutationRequest(mutation: LocalMutation): SyncMutationRequest {
+  return {
+    clientMutationId: mutation.clientMutationId,
+    resourceType: assertMutationValue(mutation.resourceType, RESOURCE_TYPES, 'resourceType'),
+    resourceId: mutation.resourceId,
+    mutationType: assertMutationValue(mutation.mutationType, MUTATION_TYPES, 'mutationType'),
+    baseVersion: mutation.baseVersion,
+    payload: mutation.payload,
+  }
+}
+
+function normalizeChange(change: Partial<SyncChange>): SyncChange {
+  if (!change.resourceType || !RESOURCE_TYPES.has(change.resourceType)) {
+    throw new Error('Sync pull returned an invalid resourceType')
+  }
+  if (!change.resourceId || !change.mutationType || !MUTATION_TYPES.has(change.mutationType)) {
+    throw new Error('Sync pull returned an invalid resource identity or mutationType')
+  }
+  return {
+    cursor: change.cursor ?? null,
+    resourceType: change.resourceType,
+    resourceId: change.resourceId,
+    mutationType: change.mutationType,
+    version: Number(change.version ?? 0),
+    deletedAt: change.deletedAt ?? null,
+    payload: change.payload ?? null,
+    createdAt: change.createdAt ?? null,
+  }
+}
+
+function normalizePullResponse(response: Partial<SyncPullResponse>): SyncPullResponse {
+  return {
+    changes: Array.isArray(response.changes) ? response.changes.map((change) => normalizeChange(change)) : [],
+    nextCursor: response.nextCursor ?? null,
+    hasMore: response.hasMore === true,
+    resetRequired: response.resetRequired === true,
+  }
+}
+
+function normalizePushResponse(response: Partial<SyncPushResponse>): SyncPushResponse {
+  return {
+    results: Array.isArray(response.results) ? response.results : [],
+    serverCursor: response.serverCursor ?? null,
+  }
+}
+
+function normalizeSnapshotResponse(response: Partial<SyncSnapshotResponse>): SyncSnapshotResponse {
+  return {
+    snapshotCursor: response.snapshotCursor ?? null,
+    subjects: Array.isArray(response.subjects) ? response.subjects : [],
+    sources: Array.isArray(response.sources) ? response.sources : [],
+    knowledgeBlocks: Array.isArray(response.knowledgeBlocks) ? response.knowledgeBlocks : [],
+    tasks: Array.isArray(response.tasks) ? response.tasks : [],
+    relations: Array.isArray(response.relations) ? response.relations : [],
+  }
 }
 
 export const useSyncApi = {
-  pull(afterId = 0): Promise<SyncPullResponse> {
-    return request.get('/api/sync/pull', { params: { afterId } })
+  async pullChanges(input: SyncPullQuery = {}): Promise<SyncPullResponse> {
+    const response = await request.get('/api/sync/pull', { params: input }) as unknown as Partial<SyncPullResponse>
+    return normalizePullResponse(response)
   },
-  push(mutations: Mutation[]): Promise<number[]> {
-    return request.post('/api/sync/push', mutations)
-  }
+
+  async pushChanges(input: { deviceId: string; mutations: LocalMutation[] }): Promise<SyncPushResponse> {
+    const response = await request.post('/api/sync/push', {
+      deviceId: input.deviceId,
+      mutations: input.mutations.map(toMutationRequest),
+    }) as unknown as Partial<SyncPushResponse>
+    return normalizePushResponse(response)
+  },
+
+  async getSnapshot(): Promise<SyncSnapshotResponse> {
+    const response = await request.get('/api/sync/snapshot') as unknown as Partial<SyncSnapshotResponse>
+    return normalizeSnapshotResponse(response)
+  },
 }
+
+export const pullChanges = useSyncApi.pullChanges
+export const pushChanges = useSyncApi.pushChanges
+export const getSnapshot = useSyncApi.getSnapshot

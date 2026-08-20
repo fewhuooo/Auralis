@@ -358,6 +358,30 @@ export class LocalRepository {
       .map(clone)
   }
 
+  async listUnresolved(resourceType?: string): Promise<LocalMutation[]> {
+    if (this.sql) {
+      await this.ensureSql()
+      const params: unknown[] = [this.userId]
+      const typeClause = resourceType ? ` AND resource_type = $2` : ''
+      if (resourceType) params.push(resourceType)
+      const rows = await this.sql.select<LocalMutationRow>(
+        `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type,
+                base_version, payload, status, created_at, error
+         FROM local_mutations
+         WHERE user_id = $1 AND status IN ('pending', 'conflict', 'error')${typeClause}
+         ORDER BY created_at ASC`,
+        params,
+      )
+      return rows.map(mutationFromRow)
+    }
+    const state = this.readBrowserState()
+    return state.mutations
+      .filter((item) => item.userId === this.userId && ['pending', 'conflict', 'error'].includes(item.status))
+      .filter((item) => !resourceType || item.resourceType === resourceType)
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .map(clone)
+  }
+
   async markApplied(
     clientMutationId: string,
     status: LocalMutationStatus = 'applied',
@@ -432,7 +456,7 @@ export class LocalRepository {
   }
 
   async replaceSnapshotPreservingPending(snapshot: LocalSnapshotItem[]): Promise<void> {
-    const pending = await this.listPending()
+    const pending = await this.listUnresolved()
     const pendingKeys = new Set(pending.map((item) => resourceKey(item.resourceType, item.resourceId)))
     const current = await this.list(undefined, { includeDeleted: true })
     const preserved = current.filter((item) => pendingKeys.has(resourceKey(item.resourceType, item.id)))

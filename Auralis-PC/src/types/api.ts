@@ -53,7 +53,7 @@ export type LocalResourceType =
   | 'CHAT';
 
 export type LocalSyncStatus = 'synced' | 'pending' | 'conflict' | 'error';
-export type LocalMutationType = 'CREATE' | 'UPDATE' | 'DELETE';
+export type LocalMutationType = 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE';
 export type LocalMutationStatus = 'pending' | 'applied' | 'conflict' | 'error';
 
 export interface LocalMutation {

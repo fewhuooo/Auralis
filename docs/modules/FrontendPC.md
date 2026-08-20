@@ -80,7 +80,7 @@ Auralis-PC/
 | `useBlockStore.ts` | 知识块、本地持久化与块操作 |
 | `useTaskStore.ts` | 任务、排期与状态 |
 | `useSubjectStore.ts` | 学科列表和当前学科 |
-| `useSyncStore.ts` | mutation、cursor、同步状态 |
+| `useSyncStore.ts` | cursor、resetRequired、pull/push 状态、错误和统一同步入口 |
 | `useChatStore.ts` | AI 会话与消息 |
 | `useSettingsStore.ts` | 主题和偏好 |
 
@@ -118,7 +118,7 @@ Auralis-PC/
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
 | `services/localDb.ts` | 尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
 
-R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。Task 7/8 前，旧 `useBlockStore`、`useTaskStore`、`useSubjectStore` 和 `useSyncStore` 仍不能视为已完成新本地边界迁移。
+R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。Task 8 前，旧 `useBlockStore`、`useTaskStore`、`useSubjectStore` 仍不能视为已完成新本地边界迁移。
 
 ## 页面职责
 

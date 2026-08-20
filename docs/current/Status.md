@@ -93,6 +93,12 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - `npm.cmd run test:r4-pc` 35/35 通过，其中包含临时内存 SQLite 和独立 localStorage namespace 测试；`npm.cmd run type-check` 通过。
 - Task 7/8 尚未将正式 Sync/Subject/Task/Workspace Store 全部切换到 repository，`npm.cmd run check:r4-pc` 的既有旧 cursor/response/AI endpoint 命中仍保持开放；真实 Tauri plugin、旧数据库升级、GUI 迁移选择、后端/对象存储/Provider 和前后端业务联调仍未验证。
 
+2026-08-20 R4 Task 7 已完成代码与定向自动测试：
+
+- `Auralis-PC/src/api/useSyncApi.ts` 已切换到 OpenAPI 的 `pullChanges`、`pushChanges`、`getSnapshot`；生产源码不再使用 `afterId`、`lastMutationId`、`truncated` 或旧 block/task merge。
+- `useSyncStore` 已维护 `cursor`、`resetRequired`、`isPulling`、`isPushing`、`lastSyncError`；realtime、启动恢复、网络恢复和主动同步统一调用 cursor pull，reset 会先 snapshot、保留 unresolved mutation，再重放 pending。
+- `npm.cmd run test:r4-pc` 39/39 通过；`npm.cmd run type-check` 通过。`npm.cmd run check:r4-pc` 仍只命中 Task 8/10 的 Subject/页面/AI 旧实现；真实后端、多设备、浏览器 WebSocket、Tauri、GUI 和前后端联调仍未验证。
+
 ## 本轮验证结论（2026-08-13）
 
 - PC：`npm.cmd run check:subject-icons` 与 `npm.cmd run check:subject-workspace` 通过。

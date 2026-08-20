@@ -1,142 +1,299 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncApi } from '@/api/useSyncApi'
-import { localDb } from '@/services/localDb'
-import { useBlockStore } from './useBlockStore'
-import { useTaskStore } from './useTaskStore'
+import { getLocalRepository } from '@/services/localDb'
+import type { LocalRepository } from '@/services/localRepository'
+import type { LocalEntity, LocalMutation } from '@/types/api'
+import type {
+  SyncChange,
+  SyncMutationResponse,
+  SyncPullResponse,
+  SyncResourceType,
+  SyncSnapshotResponse,
+} from '@/types/sync'
 
-export const getClientId = () => {
-  let cid = localStorage.getItem('auralis_client_id')
-  if (!cid) {
-    cid = 'pc_' + Math.random().toString(36).substring(2, 15)
-    localStorage.setItem('auralis_client_id', cid)
+const SYNC_RESOURCE_TYPES = new Set<SyncResourceType>(['SUBJECT', 'SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION'])
+
+function encodeKeyPart(value: string): string {
+  return encodeURIComponent(value).replace(/%/g, '_')
+}
+
+function storage(): Storage | null {
+  return typeof window === 'undefined' ? null : window.localStorage
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isOnline(): boolean {
+  return typeof navigator === 'undefined' || navigator.onLine !== false
+}
+
+function resourceId(value: unknown): string | null {
+  if (!isRecord(value) || typeof value.id !== 'string' || !value.id) return null
+  return value.id
+}
+
+function resourceVersion(value: unknown, fallback = 0): number {
+  if (!isRecord(value) || typeof value.version !== 'number') return fallback
+  return value.version
+}
+
+function snapshotResourceItems(snapshot: SyncSnapshotResponse): Array<{
+  resourceType: SyncResourceType
+  resourceId: string
+  version: number
+  deletedAt: string | null
+  value: unknown
+}> {
+  const groups: Array<[SyncResourceType, unknown[]]> = [
+    ['SUBJECT', snapshot.subjects],
+    ['SOURCE', snapshot.sources],
+    ['KNOWLEDGE_BLOCK', snapshot.knowledgeBlocks],
+    ['TASK', snapshot.tasks],
+    ['RELATION', snapshot.relations],
+  ]
+  return groups.flatMap(([type, values]) => values.flatMap((value) => {
+    const id = resourceId(value)
+    if (!id) return []
+    return [{
+      resourceType: type,
+      resourceId: id,
+      version: resourceVersion(value),
+      deletedAt: isRecord(value) && typeof value.deletedAt === 'string' ? value.deletedAt : null,
+      value,
+    }]
+  }))
+}
+
+function mergedMutationValue(current: unknown, mutation: LocalMutation): unknown {
+  if (mutation.mutationType === 'CREATE') return mutation.payload
+  if (!isRecord(current)) return mutation.payload
+  return { ...current, ...mutation.payload }
+}
+
+async function replayPendingMutations(repository: LocalRepository): Promise<void> {
+  const pending = await repository.listPending()
+  for (const mutation of pending) {
+    const current = await repository.read<Record<string, unknown>>(mutation.resourceType, mutation.resourceId)
+    if (mutation.mutationType === 'DELETE') {
+      if (current) {
+        await repository.tombstone(mutation.resourceType, mutation.resourceId, { syncStatus: 'pending' })
+      }
+      continue
+    }
+    await repository.upsert(
+      mutation.resourceType,
+      mutation.resourceId,
+      mergedMutationValue(current?.value, mutation),
+      {
+        version: current?.version ?? 0,
+        deletedAt: mutation.mutationType === 'RESTORE' ? null : current?.deletedAt ?? null,
+        syncStatus: 'pending',
+      },
+    )
   }
-  return cid
+}
+
+function changeValue(change: SyncChange, current: LocalEntity<unknown> | null): unknown {
+  if (isRecord(change.payload) || Array.isArray(change.payload)) return change.payload
+  return current?.value ?? {}
+}
+
+async function applyPullChange(repository: LocalRepository, change: SyncChange): Promise<void> {
+  const current = await repository.read(change.resourceType, change.resourceId)
+  const unresolved = await repository.listUnresolved()
+  if (unresolved.some((mutation) => mutation.resourceType === change.resourceType && mutation.resourceId === change.resourceId)) {
+    return
+  }
+
+  const deletedAt = change.mutationType === 'DELETE'
+    ? change.deletedAt ?? new Date().toISOString()
+    : change.mutationType === 'RESTORE' ? null : change.deletedAt
+  await repository.upsert(change.resourceType, change.resourceId, changeValue(change, current), {
+    version: change.version,
+    deletedAt,
+    syncStatus: 'synced',
+  })
+}
+
+async function applyPushResult(repository: LocalRepository, result: SyncMutationResponse): Promise<void> {
+  if (!result.clientMutationId || !result.decision) return
+  if (result.decision === 'PROCESSING') return
+
+  if (result.decision === 'APPLIED') {
+    await repository.markApplied(result.clientMutationId, 'applied')
+  } else if (result.decision === 'CONFLICT') {
+    await repository.markApplied(result.clientMutationId, 'conflict', result.code)
+  } else {
+    await repository.markApplied(result.clientMutationId, 'error', result.code)
+  }
+
+  if (!result.resourceType || !result.resourceId || !SYNC_RESOURCE_TYPES.has(result.resourceType)) return
+  const current = await repository.read(result.resourceType, result.resourceId)
+  if (result.decision === 'APPLIED' && current) {
+    await repository.upsert(result.resourceType, result.resourceId, current.value, {
+      version: resourceVersion(result.current, current.version),
+      deletedAt: current.deletedAt,
+      syncStatus: 'synced',
+    })
+  } else if (result.decision === 'CONFLICT' && current) {
+    await repository.upsert(result.resourceType, result.resourceId, current.value, {
+      version: current.version,
+      deletedAt: current.deletedAt,
+      syncStatus: 'conflict',
+    })
+  }
+}
+
+export const getClientId = (): string => {
+  const authStore = useAuthStore()
+  const userId = authStore.user?.id ?? 'anonymous'
+  const deviceId = authStore.deviceId ?? 'browser'
+  const key = `auralis:v2:${encodeKeyPart(userId)}:${encodeKeyPart(deviceId)}:client-id`
+  const local = storage()
+  const existing = local?.getItem(key)
+  if (existing) return existing
+  const generated = globalThis.crypto?.randomUUID?.() ?? `pc_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  local?.setItem(key, generated)
+  return generated
 }
 
 export const useSyncStore = defineStore('sync', () => {
-  const isSyncing = ref(false)
+  const cursor = ref<string | null>(null)
+  const resetRequired = ref(false)
+  const isPulling = ref(false)
+  const isPushing = ref(false)
+  const lastSyncError = ref<string | null>(null)
+  const isSyncing = computed(() => isPulling.value || isPushing.value)
 
-  const triggerSync = async () => {
-    if (!navigator.onLine || isSyncing.value) return
-    isSyncing.value = true
+  let repository: LocalRepository | null = null
+  let repositoryKey: string | null = null
+  let pullPromise: Promise<void> | null = null
+  let cyclePromise: Promise<void> | null = null
 
-    try {
-      console.log('[SyncStore] Starting event-sourced sync cycle...')
+  async function getRepository(): Promise<LocalRepository> {
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const deviceId = authStore.deviceId
+    if (!userId || !deviceId) throw new Error('Sync requires an authenticated user and device')
+    const key = `${userId}:${deviceId}`
+    if (!repository || repositoryKey !== key) {
+      repository = await getLocalRepository(userId, deviceId)
+      repositoryKey = key
+      const state = await repository.getSyncState()
+      cursor.value = state.cursor
+      resetRequired.value = state.resetRequired
+    }
+    return repository
+  }
 
-      // 1. PUSH local mutations
-      const unsyncedMutations = await localDb.getUnsyncedMutations()
-      if (unsyncedMutations.length > 0) {
-        console.log(`[SyncStore] Pushing ${unsyncedMutations.length} local mutations to server...`)
-        
-        const mapped = unsyncedMutations.map(m => ({
-          clientId: m.client_id,
-          entityType: m.entity_type,
-          entityId: m.entity_id,
-          action: m.action,
-          payload: typeof m.payload === 'string' ? JSON.parse(m.payload) : m.payload,
-          createdAt: m.created_at
-        }))
+  function publishUpdated(): void {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return
+    window.dispatchEvent(new CustomEvent('auralis-sync-updated'))
+  }
 
-        await useSyncApi.push(mapped)
+  async function applySnapshot(repositoryForSync: LocalRepository, snapshot: SyncSnapshotResponse): Promise<void> {
+    await repositoryForSync.replaceSnapshotPreservingPending(snapshotResourceItems(snapshot))
+    await replayPendingMutations(repositoryForSync)
+    cursor.value = snapshot.snapshotCursor
+    resetRequired.value = false
+    await repositoryForSync.saveCursor(snapshot.snapshotCursor, false)
+    publishUpdated()
+  }
 
-        // Clear pushed mutations
-        for (const m of unsyncedMutations) {
-          await localDb.markMutationSynced(m.id)
-        }
-        console.log('[SyncStore] Pushed mutations successfully synced.')
+  async function pullLoop(): Promise<void> {
+    const repositoryForSync = await getRepository()
+    if (resetRequired.value) {
+      await applySnapshot(repositoryForSync, await useSyncApi.getSnapshot())
+      return
+    }
+    let nextCursor = cursor.value ?? undefined
+    let hasMore = true
+    while (hasMore) {
+      const response: SyncPullResponse = await useSyncApi.pullChanges({ cursor: nextCursor, limit: 100 })
+      if (response.resetRequired) {
+        resetRequired.value = true
+        await applySnapshot(repositoryForSync, await useSyncApi.getSnapshot())
+        return
       }
-
-      // 2. PULL remote mutations
-      const lastMutationIdStr = await localDb.getMetadata('last_mutation_id') || '0'
-      const lastMutationId = parseInt(lastMutationIdStr, 10)
-      console.log(`[SyncStore] Pulling remote mutations since: ${lastMutationId}`)
-
-      const pullRes = await useSyncApi.pull(lastMutationId)
-
-      // 3. REPLAY & MERGE
-      const blockStore = useBlockStore()
-      const taskStore = useTaskStore()
-
-      if (pullRes.truncated) {
-        console.warn('[SyncStore] Server reported sliding window truncation! Initiating cold start...');
-        
-        // Cold start full state overwrite
-        // Clear local entities (hard delete active items)
-        const blocks = await localDb.getBlocks()
-        for (const b of blocks) {
-          if (b.id) await localDb.hardDeleteBlock(b.id)
-        }
-        const tasks = await localDb.getTasks()
-        for (const t of tasks) {
-          if (t.id) await localDb.hardDeleteTask(t.id)
-        }
-
-        // Save server snapshot
-        if (pullRes.blocks) {
-          for (const b of pullRes.blocks) {
-            await localDb.saveBlock(b, 'synced', b.syncVersion || b.sync_version || 0)
-          }
-        }
-        if (pullRes.tasks) {
-          for (const t of pullRes.tasks) {
-            await localDb.saveTask(t, 'synced', t.syncVersion || t.sync_version || 0)
-          }
-        }
-
-        // Update meta cursors
-        await localDb.setMetadata('last_mutation_id', pullRes.lastMutationId.toString())
-        
-        // Reload stores memory
-        if (blockStore.loadLocalBlocks) await blockStore.loadLocalBlocks()
-        if (taskStore.loadLocalTasks) await taskStore.loadLocalTasks()
-
-        console.log('[SyncStore] Cold start synchronization completed successfully.')
-      } else {
-        // Incremental replay
-        const cId = getClientId()
-        let appliedRemote = false
-
-        if (pullRes.mutations && pullRes.mutations.length > 0) {
-          console.log(`[SyncStore] Replaying ${pullRes.mutations.length} mutations...`)
-          for (const m of pullRes.mutations) {
-            if (m.clientId === cId) {
-              // Ignore own mutations since we already applied them locally (optimistic lock)
-              continue
-            }
-            await localDb.applyRemoteMutation(m)
-            appliedRemote = true
-          }
-        }
-
-        // Save new cursor index
-        await localDb.setMetadata('last_mutation_id', pullRes.lastMutationId.toString())
-
-        // Refresh stores memory if new remote data was applied
-        if (appliedRemote || (pullRes.mutations && pullRes.mutations.length > 0)) {
-          if (blockStore.loadLocalBlocks) await blockStore.loadLocalBlocks()
-          if (taskStore.loadLocalTasks) await taskStore.loadLocalTasks()
-        }
-
-        console.log(`[SyncStore] Replay completed. Cursor advanced to: ${pullRes.lastMutationId}`)
-      }
-    } catch (e) {
-      console.error('[SyncStore] Mutation synchronization failed:', e)
-    } finally {
-      isSyncing.value = false
+      for (const change of response.changes) await applyPullChange(repositoryForSync, change)
+      cursor.value = response.nextCursor
+      resetRequired.value = false
+      await repositoryForSync.saveCursor(response.nextCursor, false)
+      publishUpdated()
+      const previousCursor = nextCursor ?? null
+      nextCursor = response.nextCursor ?? undefined
+      hasMore = response.hasMore && nextCursor !== previousCursor
     }
   }
 
-  const pullChanges = async (_options?: { reason?: string }) => {
-    return triggerSync()
+  async function pullChanges(_options?: { reason?: string }): Promise<void> {
+    if (!isOnline() || pullPromise) return pullPromise ?? Promise.resolve()
+    pullPromise = (async () => {
+      isPulling.value = true
+      lastSyncError.value = null
+      try {
+        await pullLoop()
+      } catch (error) {
+        lastSyncError.value = error instanceof Error ? error.message : String(error)
+        throw error
+      } finally {
+        isPulling.value = false
+        pullPromise = null
+      }
+    })()
+    return pullPromise
   }
 
-  const initE2EE = async () => {}
+  async function pushChanges(): Promise<void> {
+    if (!isOnline() || isPushing.value) return
+    isPushing.value = true
+    lastSyncError.value = null
+    try {
+      const authStore = useAuthStore()
+      if (!authStore.deviceId) throw new Error('Sync push requires an authenticated device')
+      const repositoryForSync = await getRepository()
+      const pending = await repositoryForSync.listPending()
+      if (pending.length === 0) return
+      const response = await useSyncApi.pushChanges({ deviceId: authStore.deviceId, mutations: pending })
+      for (const result of response.results) await applyPushResult(repositoryForSync, result)
+      publishUpdated()
+    } catch (error) {
+      lastSyncError.value = error instanceof Error ? error.message : String(error)
+      throw error
+    } finally {
+      isPushing.value = false
+    }
+  }
+
+  async function triggerSync(): Promise<void> {
+    if (!isOnline() || cyclePromise) return cyclePromise ?? Promise.resolve()
+    cyclePromise = (async () => {
+      try {
+        await pushChanges()
+        await pullChanges({ reason: 'cycle' })
+      } finally {
+        cyclePromise = null
+      }
+    })()
+    return cyclePromise
+  }
+
+  const initE2EE = async (): Promise<void> => {}
 
   return {
+    cursor,
+    resetRequired,
+    isPulling,
+    isPushing,
     isSyncing,
+    lastSyncError,
     triggerSync,
     pullChanges,
+    pushChanges,
     initE2EE,
   }
 })
