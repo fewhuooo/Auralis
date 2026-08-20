@@ -1,6 +1,8 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
+import { createLocalRepository, type LocalRepository } from '@/services/localRepository';
+import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/localSchema';
 
 let db: any = null;
 
@@ -25,14 +27,15 @@ export const localDb = {
 
   async createTables() {
     if (!db || db === 'localstorage') return;
+    await createVersionedLocalSchema(db as LocalSqlDatabase);
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS sync_metadata (
+      CREATE TABLE IF NOT EXISTS legacy_sync_metadata (
         key TEXT PRIMARY KEY,
         value TEXT
       )
     `);
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS local_mutations (
+      CREATE TABLE IF NOT EXISTS legacy_local_mutations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         client_id TEXT,
         entity_type TEXT,
@@ -177,7 +180,7 @@ export const localDb = {
       const meta = JSON.parse(localStorage.getItem('auralis_sync_metadata') || '{}');
       return meta[key] !== undefined ? String(meta[key]) : null;
     }
-    const rows = await db.select('SELECT value FROM sync_metadata WHERE key = $1', [key]);
+    const rows = await db.select('SELECT value FROM legacy_sync_metadata WHERE key = $1', [key]);
     if (rows && rows.length > 0) {
       return rows[0].value;
     }
@@ -192,11 +195,11 @@ export const localDb = {
       localStorage.setItem('auralis_sync_metadata', JSON.stringify(meta));
       return;
     }
-    const exists = await db.select('SELECT key FROM sync_metadata WHERE key = $1', [key]);
+    const exists = await db.select('SELECT key FROM legacy_sync_metadata WHERE key = $1', [key]);
     if (exists && exists.length > 0) {
-      await db.execute('UPDATE sync_metadata SET value = $1 WHERE key = $2', [value, key]);
+      await db.execute('UPDATE legacy_sync_metadata SET value = $1 WHERE key = $2', [value, key]);
     } else {
-      await db.execute('INSERT INTO sync_metadata (key, value) VALUES ($1, $2)', [key, value]);
+      await db.execute('INSERT INTO legacy_sync_metadata (key, value) VALUES ($1, $2)', [key, value]);
     }
   },
 
@@ -807,7 +810,7 @@ export const localDb = {
     const payloadStr = JSON.stringify(payload);
     const createdAt = Date.now();
     await db.execute(
-      `INSERT INTO local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
+      `INSERT INTO legacy_local_mutations (client_id, entity_type, entity_id, action, payload, created_at, sync_status)
        VALUES ($1, $2, $3, $4, $5, $6, 'pending')`,
       [clientId, entityType, entityId, action, payloadStr, createdAt]
     );
@@ -819,7 +822,7 @@ export const localDb = {
       const mutations: any[] = JSON.parse(localStorage.getItem('auralis_local_mutations') || '[]');
       return mutations.filter((m: any) => m.sync_status === 'pending');
     }
-    return db.select("SELECT * FROM local_mutations WHERE sync_status = 'pending' ORDER BY id ASC");
+    return db.select("SELECT * FROM legacy_local_mutations WHERE sync_status = 'pending' ORDER BY id ASC");
   },
 
   async markMutationSynced(id: number) {
@@ -833,7 +836,7 @@ export const localDb = {
       }
       return;
     }
-    await db.execute("DELETE FROM local_mutations WHERE id = $1", [id]);
+    await db.execute("DELETE FROM legacy_local_mutations WHERE id = $1", [id]);
   },
 
   async applyRemoteMutation(mutation: any) {
@@ -1080,3 +1083,17 @@ export const localDb = {
     await db.execute('DELETE FROM source_files WHERE id = $1', [id]);
   }
 };
+
+/**
+ * New R4 callers obtain a user/device-scoped repository. The legacy methods
+ * above remain available only while the remaining stores are migrated.
+ */
+export async function getLocalRepository(userId: string, deviceId: string): Promise<LocalRepository> {
+  await localDb.init();
+  if (db === 'localstorage') {
+    const repository = createLocalRepository(userId, deviceId);
+    await repository.backupLegacyData();
+    return repository;
+  }
+  return createLocalRepository(userId, deviceId, { sql: db as LocalSqlDatabase });
+}

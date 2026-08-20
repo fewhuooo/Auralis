@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | PostgreSQL 17 + pgvector | 用户、业务资源、同步日志、任务、事件、RAG chunk 和向量 | V1–V13 已创建；R1-03 隔离集成已验证 |
 | MinIO | Asset 物理对象内容 | 设计已确定，阶段 2/5 接入 |
-| PC/Mobile 本地数据库 | 用户按 userId 分区的离线副本 | 现有实现仍使用旧字段，后续逐端迁移 |
+| PC/Mobile 本地数据库 | 用户按 userId 分区的离线副本 | PC R4-06 已建立 v2 repository/schema；旧页面仍经兼容 facade，后续逐 Store 切换 |
 | Tablet 本地笔记存储 | NoteDocument、stroke、snapshot、viewport 等端侧专有内容 | 不进入阶段 0 Server |
 | Redis、Milvus、etcd | 旧栈组件 | 不属于新后端目标拓扑 |
 
@@ -156,6 +156,17 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 ## 端侧现状与迁移边界
 
 替换前 PC/Mobile localDb 仍有 sync_version、is_deleted、sync_status、position、loadText、related_block_ids、source_file_id 等旧字段；Mobile 的类型和数据库字段并不完全一致。新 API 稳定后，端侧数据库必须按 userId 分区并逐步迁移为 version/createdAt/updatedAt/deletedAt/baseVersion 语义。
+
+### PC R4-06 本地副本边界（2026-08-20）
+
+`Auralis-PC/src/services/localSchema.ts` 与 `localRepository.ts` 定义了新的端侧 v2 边界：
+
+- Tauri SQLite 使用 `sync_metadata(user_id, device_id, cursor, reset_required, schema_version)`、`local_resource_records(user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)` 和 `local_mutations(client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version, payload, status, created_at, error)`；资源主键和查询均包含当前用户域。
+- 浏览器 fallback 使用 `auralis:v2:<userId>:<deviceId>:state` namespace，业务记录、tombstone、mutation 和 cursor 不再写入新的全局未命名业务 key。`localDb.ts` 中的旧全局 key/字段仅作为尚未迁移 Store 的兼容 facade，Task 7/8 完成后应移除。
+- repository 对外返回 camelCase `LocalEntity`/`LocalMutation` DTO；snake_case 只存在于 SQLite adapter。`baseVersion` 不匹配返回 `LocalConflictError`，删除保留 `deletedAt` tombstone，snapshot reset 会保留当前用户所有 pending mutation 及其本地 payload。
+- 旧 account-less localStorage 数据仅复制到 `auralis:legacy_unassigned:v1` 备份空间；Tauri 旧 SQLite 资源行复制到 `legacy_unassigned_records`，均保留原值。首次登录必须由用户明确选择“导入当前账号”或“保留未归属备份”，不得静默归属或删除。
+
+该边界已用临时内存 SQLite 与独立 localStorage namespace 覆盖用户隔离、旧 SQLite 行备份、tombstone、版本冲突、snapshot pending 保留和 legacy backup；真实 Tauri plugin、跨版本旧数据库升级和 GUI 迁移选择仍未验收。
 
 Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和二进制资源仍属于端侧专有数据，不进入本阶段 Server 表。
 

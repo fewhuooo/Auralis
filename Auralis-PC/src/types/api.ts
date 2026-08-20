@@ -32,6 +32,8 @@ export interface RealtimeEvent {
 }
 
 export interface LocalEntity<T> {
+  id: string;
+  resourceType: string;
   userId: string;
   version: number;
   deletedAt: string | null;
@@ -39,14 +41,30 @@ export interface LocalEntity<T> {
   value: T;
 }
 
+export type LocalResourceType =
+  | 'SUBJECT'
+  | 'KNOWLEDGE_BLOCK'
+  | 'TASK'
+  | 'SOURCE'
+  | 'ASSET'
+  | 'RELATION'
+  | 'REVIEW'
+  | 'STATS'
+  | 'CHAT';
+
+export type LocalSyncStatus = 'synced' | 'pending' | 'conflict' | 'error';
+export type LocalMutationType = 'CREATE' | 'UPDATE' | 'DELETE';
+export type LocalMutationStatus = 'pending' | 'applied' | 'conflict' | 'error';
+
 export interface LocalMutation {
   clientMutationId: string;
   userId: string;
   resourceType: string;
   resourceId: string;
-  mutationType: 'CREATE' | 'UPDATE' | 'DELETE';
-  baseVersion: number | null;
+  mutationType: LocalMutationType;
+  baseVersion: number;
   payload: Record<string, unknown>;
   createdAt: string;
-  status: 'pending' | 'applied' | 'conflict' | 'error';
+  status: LocalMutationStatus;
+  error?: string;
 }

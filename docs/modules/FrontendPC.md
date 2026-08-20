@@ -1,12 +1,12 @@
 # PC 前端模块
 
-更新时间：2026-08-12
+更新时间：2026-08-20
 
 文档状态：现行
 
 权威范围：`Auralis-PC` 的当前依赖、路由、页面、Store、API 边界、Tauri 集成、构建方式与限制
 
-事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-12 当前代码
+事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-20 当前代码
 
 ## 模块定位
 
@@ -108,6 +108,17 @@ Auralis-PC/
 `scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
 `scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
 只冻结类型和请求边界，现有页面/API 仍需按 R4 计划逐模块迁移，不能把类型检查通过写成前后端联调完成。
+
+## 本地数据边界
+
+| 文件 | 职责 |
+| --- | --- |
+| `services/localSchema.ts` | Tauri SQLite v2 schema、旧 key/value 表的可恢复改名和 snake_case 行转换 |
+| `services/localRepository.ts` | 按 `userId + deviceId` 隔离的资源、tombstone、mutation、cursor 与 snapshot repository |
+| `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
+| `services/localDb.ts` | 尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
+
+R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。Task 7/8 前，旧 `useBlockStore`、`useTaskStore`、`useSubjectStore` 和 `useSyncStore` 仍不能视为已完成新本地边界迁移。
 
 ## 页面职责
 
