@@ -91,9 +91,9 @@ Auralis-PC/
 | 文件 | 职责 |
 | --- | --- |
 | `api/request.ts` | base URL、Authorization、401/刷新等请求基础能力 |
-| `api/aiClient.ts` | AI 聊天与摄入调用 |
+| `api/aiClient.ts` | AI 设置、会话、SSE 消息流与建议接口 |
 | `api/useAuthApi.ts` | 登录、注册、刷新 |
-| `api/useAssetApi.ts` | 预签名上传与资产绑定/查询 |
+| `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
 | `api/useStatsApi.ts` | 概览与周统计 |
 | `api/useSyncApi.ts` | push/pull 同步 |
 | `api/e2ee.ts` | 端到端加密辅助 |

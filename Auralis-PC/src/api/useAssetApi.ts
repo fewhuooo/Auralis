@@ -1,39 +1,37 @@
-import request from './request'
-import axios from 'axios'
+import request from './request.ts'
+import type { components } from './generated/schema.ts'
 
 const MAX_FILE_SIZE_MB = 50
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
-/**
- * 15.7 Asset API — MinIO Presigned URL Direct Upload Pipeline
- *
- * Flow: validateSize → getPresignedUrl → uploadToMinIO → bindAsset
- */
+export type UploadIntentRequest = components['schemas']['UploadIntentRequest']
+export type UploadIntentResponse = components['schemas']['UploadIntentResponse']
+export type DownloadUrlResponse = components['schemas']['DownloadUrlResponse']
 
-export interface PresignedUrlResponse {
-  presignedUrl: string
-  objectName: string
-  bucket: string
-  maxFileSizeMb: number
-  expiresInMinutes: number
+export interface AssetView {
+  id?: string
+  originalName?: string
+  sizeBytes?: number
+  mimeType?: string
+  sha256?: string
+  uploadStatus?: 'UPLOADING' | 'READY' | 'FAILED' | 'ORPHANED'
+  completedAt?: string
+  createdAt?: string
+  updatedAt?: string
 }
 
-export interface AssetResponse {
-  id: string
-  userId: string
-  fileName: string
-  objectName: string
-  fileSize: number
-  contentType: string
-  status: string
-  subject: string
-  createdAt: number
+export type AssetStatusCompat = DownloadUrlResponse & {
+  subject?: string
+  fileName?: string
+  objectName?: string
+  contentType?: string
+  fileSize?: number
 }
 
 /**
- * Validate file size on the client side before uploading.
+ * Validate file size on client side before upload intent.
  */
-export function validateFileSize(file: File): void {
+export function validateFileSize(file: { size: number }): void {
   if (file.size > MAX_FILE_SIZE_BYTES) {
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1)
     throw new Error(`文件大小 ${sizeMb} MB 超过上限 ${MAX_FILE_SIZE_MB} MB，请压缩后重试`)
@@ -41,96 +39,170 @@ export function validateFileSize(file: File): void {
 }
 
 /**
- * Step 1: Get a presigned PUT URL from the backend.
+ * Step 1: Create upload intent.
  */
-export async function getPresignedUrl(fileName: string, contentType: string = 'application/octet-stream'): Promise<PresignedUrlResponse> {
-  const res: any = await request.get('/api/fs/presigned-url', {
-    params: { fileName, contentType }
-  })
-  return res
+export function createUploadIntent(data: UploadIntentRequest): Promise<UploadIntentResponse> {
+  return request.post('/api/assets/upload-intents', data) as unknown as Promise<UploadIntentResponse>
 }
 
 /**
- * Step 2: Upload file directly to MinIO via presigned PUT URL.
- * This bypasses Spring Boot entirely — binary data goes straight to object storage.
+ * Step 2: Upload binary data directly to object storage via presigned PUT URL.
  */
-export async function uploadToMinIO(
-  presignedUrl: string,
-  file: File,
+export function uploadToObjectStorage(
+  uploadUrl: string,
+  file: Blob | File,
+  headers?: Record<string, string>,
   onProgress?: (percent: number) => void
 ): Promise<void> {
-  await axios.put(presignedUrl, file, {
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-    },
-    // Capture native upload progress from XMLHttpRequest
-    onUploadProgress: (progressEvent) => {
-      if (onProgress && progressEvent.total) {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-        onProgress(percent)
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', uploadUrl, true)
+
+    const uploadHeaders = { ...headers }
+    if (!Object.keys(uploadHeaders).some((key) => key.toLowerCase() === 'content-type')) {
+      uploadHeaders['Content-Type'] = file.type || 'application/octet-stream'
+    }
+    for (const [key, value] of Object.entries(uploadHeaders)) {
+      // Browsers manage Content-Length; setting it from JavaScript is forbidden.
+      if (key.toLowerCase() !== 'content-length') xhr.setRequestHeader(key, value)
+    }
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const percent = Math.round((event.loaded * 100) / event.total)
+          onProgress(percent)
+        }
       }
-    },
-    // No auth header — presigned URL is self-authenticating
-    timeout: 300000, // 5 min timeout for large files
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+      } else {
+        reject(new Error(`Object storage upload failed with status ${xhr.status}`))
+      }
+    }
+
+    xhr.onerror = () => {
+      reject(new Error('Object storage upload network error'))
+    }
+
+    xhr.ontimeout = () => {
+      reject(new Error('Object storage upload timeout'))
+    }
+
+    xhr.timeout = 300000 // 5 min timeout
+    xhr.send(file)
   })
 }
 
 /**
- * Step 3: Bind the uploaded file — notify backend to record metadata and dispatch processing.
+ * Step 3: Complete upload and transition asset to READY.
  */
-export async function bindAsset(
-  objectName: string,
-  fileName: string,
-  fileSize: number,
-  contentType: string,
-  subject?: string
-): Promise<AssetResponse> {
-  const res: any = await request.post('/api/assets/bind', {
-    objectName,
-    fileName,
-    fileSize,
-    contentType,
-    subject: subject || '文档导入',
-  })
-  return res
+export function completeUpload(assetId: string): Promise<AssetView> {
+  return request.post(`/api/assets/${encodeURIComponent(assetId)}/complete`) as unknown as Promise<AssetView>
 }
 
 /**
- * Query asset processing status.
+ * Step 4: Get temporary download URL for a READY asset.
  */
-export async function getAssetStatus(assetId: string): Promise<AssetResponse> {
-  const res: any = await request.get(`/api/assets/${assetId}`)
-  return res
+export function getDownloadUrl(assetId: string): Promise<DownloadUrlResponse> {
+  return request.post(`/api/assets/${encodeURIComponent(assetId)}/download-url`) as unknown as Promise<DownloadUrlResponse>
+}
+
+export interface UploadAssetOptions {
+  baseVersion?: number
+  sha256?: string
+  onProgress?: (percent: number, stage: string) => void
 }
 
 /**
- * Convenience: Full upload pipeline (validate → presign → upload → bind).
+ * Full Asset Upload Pipeline: validate -> upload-intent -> object storage PUT -> complete
  */
 export async function uploadAsset(
   file: File,
-  subject?: string,
-  onProgress?: (percent: number, stage: string) => void
-): Promise<AssetResponse> {
-  // Stage 1: Validate
+  optionsOrSubject?: UploadAssetOptions | string,
+  legacyOnProgress?: (percent: number, stage: string) => void
+): Promise<{ assetId: string; asset: AssetView }> {
   validateFileSize(file)
-  onProgress?.(5, '校验文件...')
 
-  // Stage 2: Get presigned URL
-  onProgress?.(10, '获取上传凭证...')
-  const { presignedUrl, objectName } = await getPresignedUrl(file.name, file.type)
+  const options: UploadAssetOptions =
+    typeof optionsOrSubject === 'object' && optionsOrSubject !== null
+      ? optionsOrSubject
+      : { onProgress: legacyOnProgress }
 
-  // Stage 3: Direct upload to MinIO
-  onProgress?.(15, '上传至对象存储...')
-  await uploadToMinIO(presignedUrl, file, (percent) => {
-    // Map MinIO upload progress to 15%-85% range
-    const mappedPercent = 15 + Math.round(percent * 0.7)
-    onProgress?.(mappedPercent, '上传中...')
+  options.onProgress?.(5, '校验文件...')
+  options.onProgress?.(10, '申请上传凭证...')
+
+  const intent = await createUploadIntent({
+    baseVersion: options.baseVersion ?? 0,
+    originalName: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    sizeBytes: file.size,
+    sha256: options.sha256,
   })
 
-  // Stage 4: Bind asset
-  onProgress?.(88, '绑定资产元数据...')
-  const asset = await bindAsset(objectName, file.name, file.size, file.type, subject)
+  if (!intent.assetId || !intent.uploadUrl) {
+    throw new Error('Upload intent response missing assetId or uploadUrl')
+  }
 
-  onProgress?.(95, '已提交后台处理...')
-  return asset
+  options.onProgress?.(20, '上传至对象存储...')
+  await uploadToObjectStorage(intent.uploadUrl, file, intent.headers, (percent) => {
+    const mapped = 20 + Math.round(percent * 0.65)
+    options.onProgress?.(mapped, '上传中...')
+  })
+
+  options.onProgress?.(88, '确认上传完成...')
+  const asset = await completeUpload(intent.assetId)
+  options.onProgress?.(100, '上传处理完成')
+
+  return { assetId: intent.assetId, asset }
+}
+
+// Temporary compatibility adapters for unmigrated view components (migrating in Task 8)
+export async function getPresignedUrl(fileName: string, contentType: string = 'application/octet-stream') {
+  const intent = await createUploadIntent({
+    baseVersion: 0,
+    originalName: fileName,
+    mimeType: contentType,
+  })
+  return {
+    presignedUrl: intent.uploadUrl ?? '',
+    objectName: intent.assetId ?? '',
+    bucket: '',
+    maxFileSizeMb: 50,
+    expiresInMinutes: 15,
+  }
+}
+
+export function uploadToMinIO(
+  uploadUrl: string,
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<void> {
+  return uploadToObjectStorage(uploadUrl, file, undefined, onProgress)
+}
+
+export async function bindAsset(
+  objectName: string,
+  _fileName: string,
+  _fileSize: number,
+  _contentType: string,
+  _subject?: string
+) {
+  return completeUpload(objectName)
+}
+
+export async function getAssetStatus(assetId: string): Promise<AssetStatusCompat> {
+  return getDownloadUrl(assetId)
+}
+
+export const useAssetApi = {
+  validateFileSize,
+  createUploadIntent,
+  uploadToObjectStorage,
+  completeUpload,
+  getDownloadUrl,
+  uploadAsset,
 }

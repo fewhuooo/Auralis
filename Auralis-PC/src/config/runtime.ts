@@ -35,7 +35,7 @@ export function getRuntimeConfig(env: RuntimeEnv): RuntimeConfig {
 }
 
 export function getClientRuntimeConfig(): RuntimeConfig {
-  const env = import.meta.env as RuntimeEnv;
+  const env = (import.meta.env ?? {}) as RuntimeEnv;
   const tauriGlobal = (globalThis as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__;
   return getRuntimeConfig({ ...env, TAURI_ENV: tauriGlobal ? '1' : env.TAURI_ENV });
 }

@@ -630,7 +630,7 @@ const handleSyncEvent = async (e: Event) => {
         if (subjectId && subjectId !== '文档导入') {
           await subjectStore.loadSourceFiles(subjectId)
           const exists = subjectStore.activeSourceFiles.some(f => f.name === assetInfo.fileName)
-          if (!exists) {
+          if (!exists && assetInfo.fileName && assetInfo.objectName) {
             await subjectStore.addSourceFile(subjectId, assetInfo.fileName, assetInfo.objectName, assetInfo.contentType || 'PDF', assetInfo.fileSize || 0)
           }
         }

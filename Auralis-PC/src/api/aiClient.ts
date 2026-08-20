@@ -1,77 +1,121 @@
-import request from './request';
+import request from './request.ts'
+import { getClientRuntimeConfig } from '../config/runtime.ts'
+import { useAuthStore } from '../store/useAuthStore.ts'
+import { fetchSseStream, parseSseStream, type AiStreamEvent, type SseEvent } from './sse.ts'
+import { uploadAsset } from './useAssetApi.ts'
+import type { components } from './generated/schema.ts'
 
-export const checkHealth = async (): Promise<boolean> => {
+export type AiSettingsView = components['schemas']['AiSettingsView']
+export type AiSettingsCommand = components['schemas']['AiSettingsCommand']
+export type ConversationView = components['schemas']['ConversationView']
+export type ConversationCommand = components['schemas']['ConversationCommand']
+export type MessageView = components['schemas']['MessageView']
+export type AiMessageCommand = components['schemas']['AiMessageCommand']
+export type SuggestionCommand = components['schemas']['SuggestionCommand']
+export type SuggestionView = components['schemas']['SuggestionView']
+export type CitationView = components['schemas']['CitationView']
+
+export async function checkHealth(): Promise<boolean> {
   try {
-    const res: any = await request.get('/actuator/health');
-    // 如果没有抛异常则认为健康（具体看后端的 actuator/health 返回）
-    return !!res;
+    const res = await request.get('/actuator/health')
+    return !!res
   } catch (e) {
-    console.error("Backend health check failed:", e);
-    return false;
+    console.error('Backend health check failed:', e)
+    return false
   }
 }
 
-export async function chatCompletion(systemPrompt: string, userMessage: string, requireJson = false) {
+export function getAiSettings(): Promise<AiSettingsView[]> {
+  return request.get('/api/ai/settings') as unknown as Promise<AiSettingsView[]>
+}
+
+export function updateAiSettings(data: AiSettingsCommand): Promise<AiSettingsView> {
+  return request.put('/api/ai/settings', data) as unknown as Promise<AiSettingsView>
+}
+
+export function listConversations(): Promise<ConversationView[]> {
+  return request.get('/api/ai/conversations') as unknown as Promise<ConversationView[]>
+}
+
+export function createConversation(data: ConversationCommand): Promise<ConversationView> {
+  return request.post('/api/ai/conversations', data) as unknown as Promise<ConversationView>
+}
+
+export function getConversation(conversationId: string): Promise<ConversationView> {
+  return request.get(`/api/ai/conversations/${encodeURIComponent(conversationId)}`) as unknown as Promise<ConversationView>
+}
+
+export function deleteConversation(conversationId: string, baseVersion: number): Promise<void> {
+  return request.delete(`/api/ai/conversations/${encodeURIComponent(conversationId)}`, {
+    params: { baseVersion },
+  }) as unknown as Promise<void>
+}
+
+export function getSuggestions(data: SuggestionCommand): Promise<SuggestionView> {
+  return request.post('/api/ai/suggestions', data) as unknown as Promise<SuggestionView>
+}
+
+/**
+ * Streams AI message events via Server-Sent Events (SSE).
+ * Returns an AsyncIterable of AiStreamEvent.
+ */
+export async function* streamAiMessage(
+  data: AiMessageCommand,
+  signal?: AbortSignal
+): AsyncIterable<AiStreamEvent> {
+  const runtime = getClientRuntimeConfig()
+  let token: string | null = null
   try {
-    const res: any = await request.post('/api/ai/chat', { systemPrompt, message: userMessage, requireJson });
-    return res;
-  } catch (error) {
-    console.error("AI 请求失败:", error);
-    throw error;
+    const authStore = useAuthStore()
+    token = authStore?.token ?? null
+  } catch {
+    // pinia may not be active in non-vue contexts
+  }
+
+  const url = `${runtime.apiBaseUrl.replace(/\/+$/, '')}/api/ai/messages/stream`
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'text/event-stream',
+  }
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const sseIterable = fetchSseStream<unknown>(
+    url,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    },
+    { signal }
+  )
+
+  for await (const event of sseIterable) {
+    if (event.event) {
+      yield { event: event.event, data: event.data } as AiStreamEvent
+    }
   }
 }
 
-export async function fragmentPDFToAtomBlocks(documentText: string) {
-  try {
-    const res: any = await request.post('/api/ai/ingest', { content: documentText });
-    return res;
-  } catch (error) {
-    console.error("PDF 碎分化失败:", error);
-    throw error;
-  }
+// Temporary compatibility adapter for unmigrated view components (migrating in Task 8/10)
+export async function ingestFile(file: File, _subject: string = '文档导入') {
+  return uploadAsset(file)
 }
 
-export async function transcribeAndExtractTasks(text: string) {
-  try {
-    const res: any = await request.post('/api/ai/extract-tasks', { text });
-    return res;
-  } catch (error) {
-    console.error("任务提取失败:", error);
-    throw error;
-  }
+export const useAiApi = {
+  checkHealth,
+  getAiSettings,
+  updateAiSettings,
+  listConversations,
+  createConversation,
+  getConversation,
+  deleteConversation,
+  getSuggestions,
+  streamAiMessage,
+  ingestFile,
 }
 
-export async function convertHandwritingToMarkdown(rawOcrText: string) {
-  try {
-    const res: any = await request.post('/api/ai/convert-handwriting', { text: rawOcrText });
-    return res;
-  } catch (error) {
-    console.error("Markdown 结构化失败:", error);
-    throw error;
-  }
-}
-
-export async function scheduleSuggest(text: string) {
-  try {
-    const res: any = await request.post('/api/ai/schedule-suggest', { text });
-    return res;
-  } catch (error) {
-    console.error("AI 日程建议失败:", error);
-    throw error;
-  }
-}
-
-export async function ingestFile(file: File, subject: string = '文档导入') {
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('subject', subject);
-    const res: any = await request.post('/api/ai/ingest/file', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-    return res;
-  } catch (error) {
-    console.error("文件入库失败:", error);
-    throw error;
-  }
-}
+export { parseSseStream, type AiStreamEvent, type SseEvent }

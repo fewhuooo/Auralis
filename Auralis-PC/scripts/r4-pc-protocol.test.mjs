@@ -21,6 +21,117 @@ import {
 import { resolveAuthRedirect } from '../src/auth/authGuard.ts';
 import { isValidSession } from '../src/auth/sessionValidation.ts';
 import { RealtimeController } from '../src/services/realtimeController.ts';
+import { register } from 'node:module';
+
+const srcRootUrl = new URL('../src/', import.meta.url).href;
+const loaderCode = `
+export async function resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@/')) {
+    const root = '${srcRootUrl}';
+    const subPath = specifier.slice(2);
+    const withExt = subPath.endsWith('.ts') || subPath.endsWith('.vue') || subPath.endsWith('.mjs') || subPath.endsWith('.js') ? subPath : subPath + '.ts';
+    const resolved = new URL(withExt, root).href;
+    return nextResolve(resolved, context);
+  }
+  if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    const parentUrl = context.parentURL;
+    if (parentUrl && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs') && !specifier.endsWith('.json')) {
+      const candidate = new URL(specifier + '.ts', parentUrl).href;
+      try {
+        return await nextResolve(candidate, context);
+      } catch {
+        // fallback
+      }
+    }
+  }
+  return nextResolve(specifier, context);
+}
+`;
+register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url);
+
+const { parseSseStream } = await import('../src/api/sse.ts');
+const {
+  useSubjectApi,
+  listSubjects,
+  getSubject,
+  createSubject,
+  updateSubject,
+  deleteSubject,
+  restoreSubject,
+} = await import('../src/api/useSubjectApi.ts');
+const {
+  useKnowledgeApi,
+  getKnowledgeBlocks,
+  getKnowledgeBlock,
+  createKnowledgeBlock,
+  updateKnowledgeBlock,
+  deleteKnowledgeBlock,
+  restoreKnowledgeBlock,
+} = await import('../src/api/useKnowledgeApi.ts');
+const {
+  useTaskApi,
+  listTasks,
+  getTask,
+  createTask,
+  updateTask,
+  deleteTask,
+  restoreTask,
+} = await import('../src/api/useTaskApi.ts');
+const {
+  useSourceApi,
+  listSources,
+  getSource,
+  createSource,
+  updateSource,
+  deleteSource,
+  restoreSource,
+  reingestSource,
+} = await import('../src/api/useSourceApi.ts');
+const {
+  useRelationApi,
+  listRelations,
+  getRelation,
+  createRelation,
+  updateRelation,
+  deleteRelation,
+  restoreRelation,
+} = await import('../src/api/useRelationApi.ts');
+const {
+  useReviewApi,
+  getDueReviews,
+  getReviewQueue,
+  recordEvent,
+  recordReviewEvent,
+  getHistory,
+  getReviewHistory,
+} = await import('../src/api/useReviewApi.ts');
+const {
+  useStatsApi,
+  getOverview,
+  getStatsOverview,
+  getWeekly,
+  getWeeklyStats,
+} = await import('../src/api/useStatsApi.ts');
+const {
+  useAssetApi,
+  createUploadIntent,
+  completeUpload,
+  getDownloadUrl,
+  validateFileSize,
+} = await import('../src/api/useAssetApi.ts');
+const {
+  useAiApi,
+  checkHealth,
+  getAiSettings,
+  updateAiSettings,
+  listConversations,
+  createConversation,
+  getConversation,
+  deleteConversation,
+  getSuggestions,
+  streamAiMessage,
+} = await import('../src/api/aiClient.ts');
+const { default: request } = await import('../src/api/request.ts');
 
 
 test('parses RFC 9457 Problem Details without trusting legacy wrappers', () => {
@@ -520,4 +631,685 @@ test('RealtimeController.stop() cleans up timers, listeners, and WebSocket', asy
   // Even if ws close or retry was queued, no new socket should be created
   await new Promise((r) => setTimeout(r, 50));
   assert.equal(MockWebSocket.instances.length, 1);
+});
+
+test('parseSseStream parses events, multiline data, comments, chunk splits, and abort signal', async () => {
+  async function* makeChunks(chunks) {
+    for (const chunk of chunks) {
+      yield chunk;
+    }
+  }
+
+  // 1. Basic SSE stream with multiple event types
+  const chunks = [
+    'event: message.started\ndata: {"conversationId":"conv-1","messageId":"m-1"}\n\n',
+    ': keepalive ping\n',
+    'event: citation\ndata: {"sourceId":"s-10","chunkId":"c-10","ordinal":1,"similarity":0.92}\n\n',
+    'event: message.delta\ndata: Hello \n\n',
+    'event: message.delta\ndata: World!\n\n',
+    'event: message.completed\ndata: {"conversationId":"conv-1","messageId":"m-1","content":"Hello World!"}\n\n',
+  ];
+
+  const events = [];
+  for await (const ev of parseSseStream(makeChunks(chunks))) {
+    events.push(ev);
+  }
+
+  assert.equal(events.length, 5);
+  assert.equal(events[0].event, 'message.started');
+  assert.deepEqual(events[0].data, { conversationId: 'conv-1', messageId: 'm-1' });
+  assert.equal(events[1].event, 'citation');
+  assert.deepEqual(events[1].data, { sourceId: 's-10', chunkId: 'c-10', ordinal: 1, similarity: 0.92 });
+  assert.equal(events[2].event, 'message.delta');
+  assert.equal(events[2].data, 'Hello ');
+  assert.equal(events[3].event, 'message.delta');
+  assert.equal(events[3].data, 'World!');
+  assert.equal(events[4].event, 'message.completed');
+  assert.deepEqual(events[4].data, { conversationId: 'conv-1', messageId: 'm-1', content: 'Hello World!' });
+
+  // 2. Chunks split across field and line boundaries
+  const splitChunks = [
+    'event: message.',
+    'delta\ndata: split-',
+    'chunk\n',
+    '\n',
+  ];
+  const splitEvents = [];
+  for await (const ev of parseSseStream(makeChunks(splitChunks))) {
+    splitEvents.push(ev);
+  }
+  assert.equal(splitEvents.length, 1);
+  assert.equal(splitEvents[0].event, 'message.delta');
+  assert.equal(splitEvents[0].data, 'split-chunk');
+
+  const crlfSplitEvents = [];
+  for await (const ev of parseSseStream(makeChunks([
+    'event: message.delta\r',
+    '\ndata: CRLF\r\n\r',
+    '\n',
+  ]))) {
+    crlfSplitEvents.push(ev);
+  }
+  assert.equal(crlfSplitEvents.length, 1);
+  assert.equal(crlfSplitEvents[0].data, 'CRLF');
+
+  // 3. Multiline data lines concatenated with \n
+  const multilineChunks = ['data: first line\ndata: second line\n\n'];
+  const multilineEvents = [];
+  for await (const ev of parseSseStream(makeChunks(multilineChunks))) {
+    multilineEvents.push(ev);
+  }
+  assert.equal(multilineEvents.length, 1);
+  assert.equal(multilineEvents[0].data, 'first line\nsecond line');
+
+  // 4. AbortSignal cleanly terminates stream
+  const abortController = new AbortController();
+  async function* infiniteStream() {
+    let count = 0;
+    while (true) {
+      yield `event: message.delta\ndata: ${count++}\n\n`;
+    }
+  }
+  const receivedWhileAborting = [];
+  for await (const ev of parseSseStream(infiniteStream(), { signal: abortController.signal })) {
+    receivedWhileAborting.push(ev);
+    if (receivedWhileAborting.length === 2) {
+      abortController.abort();
+    }
+  }
+  assert.equal(receivedWhileAborting.length, 2);
+});
+
+test('Subject API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+  const origPut = request.put;
+  const origDelete = request.delete;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      if (url === '/api/subjects') return { items: [{ id: 'sub-1', name: 'Math' }], nextCursor: 'nc-1', hasMore: false };
+      return { id: 'sub-1', name: 'Math' };
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+       return { id: 'sub-created', name: data?.name ?? 'Created' };
+    };
+    request.put = async (url, data, config) => {
+      calls.push({ method: 'PUT', url, data, config });
+       return { id: 'sub-updated', name: data?.name ?? 'Updated' };
+    };
+    request.delete = async (url, config) => {
+      calls.push({ method: 'DELETE', url, config });
+      return undefined;
+    };
+
+    // listSubjects
+    const listRes = await listSubjects({ cursor: 'cur-1', limit: 20 });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/subjects');
+    assert.deepEqual(calls[0].config?.params, { cursor: 'cur-1', limit: 20 });
+    assert.equal(listRes.items?.length, 1);
+
+    // getSubject
+    const getRes = await getSubject('sub-1');
+    assert.equal(calls[1].method, 'GET');
+    assert.equal(calls[1].url, '/api/subjects/sub-1');
+     assert.equal(getRes.id, 'sub-1');
+
+    // createSubject
+     await createSubject({ baseVersion: 0, name: 'Physics' });
+    assert.equal(calls[2].method, 'POST');
+    assert.equal(calls[2].url, '/api/subjects');
+     assert.deepEqual(calls[2].data, { baseVersion: 0, name: 'Physics' });
+
+    // updateSubject
+     await updateSubject('sub-1', { baseVersion: 1, name: 'Advanced Math' });
+    assert.equal(calls[3].method, 'PUT');
+    assert.equal(calls[3].url, '/api/subjects/sub-1');
+    assert.equal(calls[3].data?.baseVersion, 1);
+
+    // deleteSubject
+    await deleteSubject('sub-1', { baseVersion: 2 });
+    assert.equal(calls[4].method, 'DELETE');
+    assert.equal(calls[4].url, '/api/subjects/sub-1');
+    assert.deepEqual(calls[4].config?.data, { baseVersion: 2 });
+
+    // restoreSubject
+    await restoreSubject('sub-1', { baseVersion: 3 });
+    assert.equal(calls[5].method, 'POST');
+    assert.equal(calls[5].url, '/api/subjects/sub-1/restore');
+    assert.deepEqual(calls[5].data, { baseVersion: 3 });
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+    request.put = origPut;
+    request.delete = origDelete;
+  }
+});
+
+test('KnowledgeBlock API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+  const origPut = request.put;
+  const origDelete = request.delete;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      return { items: [{ id: 'kb-1', title: 'Theorem 1' }], nextCursor: null, hasMore: false };
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      return { id: 'kb-created' };
+    };
+    request.put = async (url, data, config) => {
+      calls.push({ method: 'PUT', url, data, config });
+      return { id: 'kb-updated' };
+    };
+    request.delete = async (url, config) => {
+      calls.push({ method: 'DELETE', url, config });
+      return undefined;
+    };
+
+    // getKnowledgeBlocks
+     await getKnowledgeBlocks('sub-1', { limit: 50 });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/knowledge-blocks');
+     assert.deepEqual(calls[0].config?.params, { limit: 50 });
+
+    // getKnowledgeBlock
+    await getKnowledgeBlock('kb-1');
+    assert.equal(calls[1].method, 'GET');
+    assert.equal(calls[1].url, '/api/knowledge-blocks/kb-1');
+
+    // createKnowledgeBlock
+     await createKnowledgeBlock({ baseVersion: 0, subjectId: 'sub-1', title: 'Calculus Intro', content: 'Limits' });
+    assert.equal(calls[2].method, 'POST');
+    assert.equal(calls[2].url, '/api/knowledge-blocks');
+    assert.equal(calls[2].data?.baseVersion, 0);
+
+    // updateKnowledgeBlock
+     await updateKnowledgeBlock('kb-1', { baseVersion: 1, subjectId: 'sub-1', title: 'Calculus Advanced', content: 'Derivatives' });
+    assert.equal(calls[3].method, 'PUT');
+    assert.equal(calls[3].url, '/api/knowledge-blocks/kb-1');
+    assert.equal(calls[3].data?.baseVersion, 1);
+
+    // deleteKnowledgeBlock
+    await deleteKnowledgeBlock('kb-1', { baseVersion: 2 });
+    assert.equal(calls[4].method, 'DELETE');
+    assert.equal(calls[4].url, '/api/knowledge-blocks/kb-1');
+    assert.deepEqual(calls[4].config?.data, { baseVersion: 2 });
+
+    // restoreKnowledgeBlock
+    await restoreKnowledgeBlock('kb-1', { baseVersion: 3 });
+    assert.equal(calls[5].method, 'POST');
+    assert.equal(calls[5].url, '/api/knowledge-blocks/kb-1/restore');
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+    request.put = origPut;
+    request.delete = origDelete;
+  }
+});
+
+test('Task API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+  const origPut = request.put;
+  const origDelete = request.delete;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      return { items: [{ id: 't-1', title: 'Task 1' }], nextCursor: null, hasMore: false };
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      return { id: 't-created' };
+    };
+    request.put = async (url, data, config) => {
+      calls.push({ method: 'PUT', url, data, config });
+      return { id: 't-updated' };
+    };
+    request.delete = async (url, config) => {
+      calls.push({ method: 'DELETE', url, config });
+      return undefined;
+    };
+
+    // listTasks
+     await listTasks({ cursor: 'cur-task', limit: 30 });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/tasks');
+     assert.deepEqual(calls[0].config?.params, { cursor: 'cur-task', limit: 30 });
+
+    // getTask
+    await getTask('t-1');
+    assert.equal(calls[1].method, 'GET');
+    assert.equal(calls[1].url, '/api/tasks/t-1');
+
+    // createTask
+    await createTask({ baseVersion: 0, subjectId: 'sub-1', title: 'Finish homework', status: 'TODO' });
+    assert.equal(calls[2].method, 'POST');
+    assert.equal(calls[2].url, '/api/tasks');
+
+    // updateTask
+    await updateTask('t-1', { baseVersion: 1, subjectId: 'sub-1', title: 'Done homework', status: 'DONE' });
+    assert.equal(calls[3].method, 'PUT');
+    assert.equal(calls[3].url, '/api/tasks/t-1');
+
+    // deleteTask
+    await deleteTask('t-1', { baseVersion: 2 });
+    assert.equal(calls[4].method, 'DELETE');
+    assert.equal(calls[4].url, '/api/tasks/t-1');
+
+    // restoreTask
+    await restoreTask('t-1', { baseVersion: 3 });
+    assert.equal(calls[5].method, 'POST');
+    assert.equal(calls[5].url, '/api/tasks/t-1/restore');
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+    request.put = origPut;
+    request.delete = origDelete;
+  }
+});
+
+test('Source API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+  const origPut = request.put;
+  const origDelete = request.delete;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      return { items: [{ id: 'src-1', title: 'Notes.pdf' }], nextCursor: null, hasMore: false };
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      return { id: 'src-created' };
+    };
+    request.put = async (url, data, config) => {
+      calls.push({ method: 'PUT', url, data, config });
+      return { id: 'src-updated' };
+    };
+    request.delete = async (url, config) => {
+      calls.push({ method: 'DELETE', url, config });
+      return undefined;
+    };
+
+    // listSources
+     await listSources({ cursor: 'cur-source', limit: 30 });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/sources');
+     assert.deepEqual(calls[0].config?.params, { cursor: 'cur-source', limit: 30 });
+
+    // getSource
+    await getSource('src-1');
+    assert.equal(calls[1].method, 'GET');
+    assert.equal(calls[1].url, '/api/sources/src-1');
+
+    // createSource
+    await createSource({ baseVersion: 0, subjectId: 'sub-1', title: 'Chapter 1', type: 'TEXT' });
+    assert.equal(calls[2].method, 'POST');
+    assert.equal(calls[2].url, '/api/sources');
+
+    // updateSource
+    await updateSource('src-1', { baseVersion: 1, subjectId: 'sub-1', title: 'Chapter 1 v2' });
+    assert.equal(calls[3].method, 'PUT');
+    assert.equal(calls[3].url, '/api/sources/src-1');
+
+    // deleteSource
+    await deleteSource('src-1', { baseVersion: 2 });
+    assert.equal(calls[4].method, 'DELETE');
+    assert.equal(calls[4].url, '/api/sources/src-1');
+
+    // restoreSource
+    await restoreSource('src-1', { baseVersion: 3 });
+    assert.equal(calls[5].method, 'POST');
+    assert.equal(calls[5].url, '/api/sources/src-1/restore');
+
+    // reingestSource
+    await reingestSource('src-1', { baseVersion: 4 });
+    assert.equal(calls[6].method, 'POST');
+    assert.equal(calls[6].url, '/api/sources/src-1/reingest');
+    assert.deepEqual(calls[6].data, { baseVersion: 4 });
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+    request.put = origPut;
+    request.delete = origDelete;
+  }
+});
+
+test('Relation API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+  const origPut = request.put;
+  const origDelete = request.delete;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      return { items: [{ id: 'rel-1' }], nextCursor: null, hasMore: false };
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      return { id: 'rel-created' };
+    };
+    request.put = async (url, data, config) => {
+      calls.push({ method: 'PUT', url, data, config });
+      return { id: 'rel-updated' };
+    };
+    request.delete = async (url, config) => {
+      calls.push({ method: 'DELETE', url, config });
+      return undefined;
+    };
+
+    // listRelations
+     await listRelations({ cursor: 'cur-relation', limit: 30 });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/relations');
+     assert.deepEqual(calls[0].config?.params, { cursor: 'cur-relation', limit: 30 });
+
+    // getRelation
+    await getRelation('rel-1');
+    assert.equal(calls[1].method, 'GET');
+    assert.equal(calls[1].url, '/api/relations/rel-1');
+
+    // createRelation
+     await createRelation({
+       baseVersion: 0,
+       sourceType: 'SUBJECT',
+       sourceId: 'sub-1',
+       targetType: 'TASK',
+       targetId: 'task-1',
+       type: 'RELATED_TO',
+     });
+    assert.equal(calls[2].method, 'POST');
+    assert.equal(calls[2].url, '/api/relations');
+
+    // updateRelation
+     await updateRelation('rel-1', {
+       baseVersion: 1,
+       sourceType: 'SUBJECT',
+       sourceId: 'sub-1',
+       targetType: 'TASK',
+       targetId: 'task-1',
+       type: 'RELATED_TO',
+       label: 'rel-up',
+     });
+    assert.equal(calls[3].method, 'PUT');
+    assert.equal(calls[3].url, '/api/relations/rel-1');
+
+    // deleteRelation
+    await deleteRelation('rel-1', { baseVersion: 2 });
+    assert.equal(calls[4].method, 'DELETE');
+    assert.equal(calls[4].url, '/api/relations/rel-1');
+
+    // restoreRelation
+    await restoreRelation('rel-1', { baseVersion: 3 });
+    assert.equal(calls[5].method, 'POST');
+    assert.equal(calls[5].url, '/api/relations/rel-1/restore');
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+    request.put = origPut;
+    request.delete = origDelete;
+  }
+});
+
+test('Review API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      if (url === '/api/reviews/due') {
+        return [{ id: 'rs-1', knowledgeBlockId: 'kb-1', difficulty: 0.3, stability: 2.5 }];
+      }
+      return [{ id: 'rev-1', knowledgeBlockId: 'kb-1', rating: 'GOOD' }];
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      return { event: { id: 'rev-1' }, state: { id: 'rs-1' } };
+    };
+
+    // getReviewQueue
+    const queue = await getReviewQueue({ at: '2026-08-20T00:00:00Z', limit: 25 });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/reviews/due');
+    assert.deepEqual(calls[0].config?.params, { at: '2026-08-20T00:00:00Z', limit: 25 });
+    assert.equal(queue.length, 1);
+
+    // recordReviewEvent
+    const recorded = await recordReviewEvent({
+      clientEventId: 'ev-uuid-1',
+      knowledgeBlockId: 'kb-1',
+      rating: 'GOOD',
+      reviewedAt: '2026-08-20T00:00:00Z',
+      durationSeconds: 15,
+      baseVersion: 0,
+    });
+    assert.equal(calls[1].method, 'POST');
+    assert.equal(calls[1].url, '/api/reviews/events');
+    assert.equal(calls[1].data?.rating, 'GOOD');
+    assert.equal(recorded.state?.id, 'rs-1');
+
+    // getReviewHistory
+     const history = await getReviewHistory({ knowledgeBlockId: 'kb-1' });
+    assert.equal(calls[2].method, 'GET');
+    assert.equal(calls[2].url, '/api/reviews/history');
+     assert.deepEqual(calls[2].config?.params, { knowledgeBlockId: 'kb-1' });
+    assert.equal(history.length, 1);
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+  }
+});
+
+test('Stats API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
+  const calls = [];
+  const origGet = request.get;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      if (url === '/api/stats/overview') {
+        return { activeKnowledgeBlocks: 12, activeTasks: 5, dueReviews: 3 };
+      }
+      return { days: [{ date: '2026-08-20', studySeconds: 1800 }] };
+    };
+
+    // getStatsOverview
+    const overview = await getStatsOverview({ at: '2026-08-20T12:00:00Z' });
+    assert.equal(calls[0].method, 'GET');
+    assert.equal(calls[0].url, '/api/stats/overview');
+    assert.deepEqual(calls[0].config?.params, { at: '2026-08-20T12:00:00Z' });
+    assert.equal(overview.activeKnowledgeBlocks, 12);
+
+    // getWeeklyStats
+    const weekly = await getWeeklyStats({ from: '2026-08-14', to: '2026-08-20' });
+    assert.equal(calls[1].method, 'GET');
+    assert.equal(calls[1].url, '/api/stats/weekly');
+    assert.deepEqual(calls[1].config?.params, { from: '2026-08-14', to: '2026-08-20' });
+    assert.equal(weekly.days?.length, 1);
+  } finally {
+    request.get = origGet;
+  }
+});
+
+test('Asset API upload-intent, complete, download-url and size validation contract', async () => {
+  const calls = [];
+  const origPost = request.post;
+
+  try {
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      if (url === '/api/assets/upload-intents') {
+        return {
+          assetId: 'ast-100',
+          uploadUrl: 'https://minio.auralis.test/bucket/ast-100',
+          headers: { 'Content-Type': 'application/pdf' },
+          expiresAt: '2026-08-20T13:00:00Z',
+        };
+      }
+      if (url.endsWith('/complete')) {
+        return { id: 'ast-100', status: 'READY', version: 1 };
+      }
+      if (url.endsWith('/download-url')) {
+        return { url: 'https://minio.auralis.test/bucket/ast-100?sign=xyz', expiresAt: '2026-08-20T13:00:00Z' };
+      }
+      return {};
+    };
+
+    // createUploadIntent
+    const intent = await createUploadIntent({
+      baseVersion: 0,
+      originalName: 'notes.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 2048,
+    });
+    assert.equal(calls[0].method, 'POST');
+    assert.equal(calls[0].url, '/api/assets/upload-intents');
+    assert.equal(intent.assetId, 'ast-100');
+
+    // completeUpload
+    const completed = await completeUpload('ast-100');
+    assert.equal(calls[1].method, 'POST');
+    assert.equal(calls[1].url, '/api/assets/ast-100/complete');
+    assert.equal(completed.id, 'ast-100');
+
+    // getDownloadUrl
+    const download = await getDownloadUrl('ast-100');
+    assert.equal(calls[2].method, 'POST');
+    assert.equal(calls[2].url, '/api/assets/ast-100/download-url');
+    assert.match(download.url ?? '', /minio/);
+
+    // validateFileSize
+    assert.throws(() => validateFileSize({ size: 55 * 1024 * 1024 }), /超过上限/);
+    assert.doesNotThrow(() => validateFileSize({ size: 10 * 1024 * 1024 }));
+  } finally {
+    request.post = origPost;
+  }
+});
+
+test('AI Client calls settings, conversations, suggestions, and health without legacy paths', async () => {
+  const calls = [];
+  const origGet = request.get;
+  const origPost = request.post;
+  const origPut = request.put;
+  const origDelete = request.delete;
+
+  try {
+    request.get = async (url, config) => {
+      calls.push({ method: 'GET', url, config });
+      if (url === '/actuator/health') return { status: 'UP' };
+      if (url === '/api/ai/settings') return [{ provider: 'DEEPSEEK', hasApiKey: true }];
+      if (url === '/api/ai/conversations') return [{ id: 'conv-1', title: 'Chat 1' }];
+      if (url.startsWith('/api/ai/conversations/')) return { id: 'conv-1', title: 'Chat 1', messages: [] };
+      return {};
+    };
+    request.post = async (url, data, config) => {
+      calls.push({ method: 'POST', url, data, config });
+      if (url === '/api/ai/conversations') return { id: 'conv-created', title: data?.title };
+      if (url === '/api/ai/suggestions') return { id: 'sug-1', title: 'Summary', body: 'AI summary' };
+      return {};
+    };
+    request.put = async (url, data, config) => {
+      calls.push({ method: 'PUT', url, data, config });
+      return { provider: data?.provider, hasApiKey: true };
+    };
+    request.delete = async (url, config) => {
+      calls.push({ method: 'DELETE', url, config });
+      return undefined;
+    };
+
+    // checkHealth
+    const isHealthy = await checkHealth();
+    assert.equal(isHealthy, true);
+    assert.equal(calls[0].url, '/actuator/health');
+
+    // getAiSettings & updateAiSettings
+    const settings = await getAiSettings();
+    assert.equal(settings[0].provider, 'DEEPSEEK');
+     await updateAiSettings({
+       provider: 'DEEPSEEK',
+       baseUrl: 'https://api.deepseek.com',
+       chatModel: 'deepseek-chat',
+       embeddingModel: 'text-embedding-3-small',
+       apiKey: 'sk-test',
+     });
+    assert.equal(calls[2].method, 'PUT');
+    assert.equal(calls[2].url, '/api/ai/settings');
+
+    // listConversations & createConversation & getConversation & deleteConversation
+    const convs = await listConversations();
+    assert.equal(convs.length, 1);
+    await createConversation({ baseVersion: 0, title: 'Math Help' });
+    assert.equal(calls[4].method, 'POST');
+    assert.equal(calls[4].url, '/api/ai/conversations');
+
+    await getConversation('conv-1');
+    assert.equal(calls[5].method, 'GET');
+    assert.equal(calls[5].url, '/api/ai/conversations/conv-1');
+
+    await deleteConversation('conv-1', 2);
+    assert.equal(calls[6].method, 'DELETE');
+    assert.equal(calls[6].url, '/api/ai/conversations/conv-1');
+    assert.deepEqual(calls[6].config?.params, { baseVersion: 2 });
+
+    // getSuggestions
+    const suggestions = await getSuggestions({ type: 'SUMMARY', knowledgeBlockId: 'kb-1', limit: 3 });
+    assert.equal(calls[7].method, 'POST');
+    assert.equal(calls[7].url, '/api/ai/suggestions');
+    assert.equal(suggestions.title, 'Summary');
+  } finally {
+    request.get = origGet;
+    request.post = origPost;
+    request.put = origPut;
+    request.delete = origDelete;
+  }
+});
+
+test('AI Client streams the current message endpoint as parsed SSE events', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestUrl;
+  let requestInit;
+
+  globalThis.fetch = async (url, init) => {
+    requestUrl = url;
+    requestInit = init;
+    return new Response(
+      'id: msg-1\nevent: message.started\ndata: {"conversationId":"conv-1","messageId":"msg-1"}\n\n'
+      + 'event: message.delta\ndata: Hello\n\n',
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    );
+  };
+
+  try {
+    const events = [];
+    for await (const event of streamAiMessage({ conversationId: 'conv-1', content: 'Hi' })) {
+      events.push(event);
+    }
+
+    assert.match(requestUrl, /\/api\/ai\/messages\/stream$/);
+    assert.equal(requestInit.method, 'POST');
+    assert.equal(requestInit.headers.Accept, 'text/event-stream');
+    assert.deepEqual(JSON.parse(requestInit.body), { conversationId: 'conv-1', content: 'Hi' });
+    assert.equal(events[0].event, 'message.started');
+    assert.equal(events[1].event, 'message.delta');
+    assert.equal(events[1].data, 'Hello');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

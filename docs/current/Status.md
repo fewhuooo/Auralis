@@ -1,6 +1,6 @@
 # Auralis 当前状态
 
-更新时间：2026-08-17
+更新时间：2026-08-20
 
 文档状态：现行状态快照
 
@@ -78,6 +78,12 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - `Auralis-Mobile`: `node scripts\check-tablet-sidebar-transition.mjs` 通过。
 - 旧 `Auralis-Server`: 2026-07-10 `mvn test` 通过；日志明确为 `No sources to compile`，该结果仅是替换前历史证据。
 - 文档相对链接、元数据、根目录和旧路径扫描通过。
+
+2026-08-20 R4 Task 5 已实际完成：
+
+- `Auralis-PC` 新增 Subject、KnowledgeBlock、Task、Source、Relation、Review、Stats typed API wrapper 和 SSE 解析器；Asset 已迁移到 upload-intent → 对象存储 PUT → complete → download-url，AI 客户端已移除旧 chat/ingest 路径并接入 `/api/ai/messages/stream`。
+- `Auralis-PC`：`npm.cmd run test:r4-pc` 29/29 通过；`npm.cmd run type-check` 通过；`npm.cmd run build` 通过，保留既有大 chunk 非阻断警告。
+- `npm.cmd run check:r4-pc` 仍因后续 Task 6–8 尚未迁移的 `useSyncApi`、`useSubjectStore`、`useSyncStore`、Home 和 SubjectWorkspace 旧实现而失败；本任务 wrapper/API 文件未命中旧 asset/AI 路径。真实后端、对象存储、Provider、GUI 和前后端业务联调未验证。
 
 这些结果不替代 GUI、真机、真实基础设施或外部 AI 服务验收。
 
