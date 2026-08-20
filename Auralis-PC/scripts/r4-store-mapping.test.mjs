@@ -5,6 +5,9 @@ import {
   createOptimisticMutation,
   mapAssetView,
   mapKnowledgeBlockView,
+  mapReviewStateView,
+  mapStatsOverviewView,
+  mapTaskView,
   mapSourceView,
   mapSubjectView,
   nextPageCursor,
@@ -121,4 +124,72 @@ test('advances only with a declared next page cursor', () => {
   assert.equal(nextPageCursor({ hasMore: true, nextCursor: 'cursor-2' }), 'cursor-2')
   assert.equal(nextPageCursor({ hasMore: false, nextCursor: 'cursor-ignored' }), undefined)
   assert.equal(nextPageCursor({ hasMore: true }), undefined)
+})
+
+test('maps task DTO fields without reusing legacy UI field names', () => {
+  const task = mapTaskView({
+    id: 'task-1',
+    subjectId: 'subject-1',
+    title: 'Review algorithms',
+    description: 'Spaced repetition',
+    status: 'IN_PROGRESS',
+    scheduledAt: '2026-08-20T09:30:00Z',
+    dueAt: '2026-08-21T00:00:00Z',
+    durationMinutes: 45,
+    cognitiveLoad: 'MEDIUM',
+    sortKey: 'a',
+    colorOverride: '#7D9372',
+    version: 7,
+    deletedAt: null,
+  })
+
+  assert.deepEqual(task, {
+    id: 'task-1',
+    subjectId: 'subject-1',
+    title: 'Review algorithms',
+    description: 'Spaced repetition',
+    status: 'IN_PROGRESS',
+    scheduledAt: '2026-08-20T09:30:00Z',
+    dueAt: '2026-08-21T00:00:00Z',
+    durationMinutes: 45,
+    cognitiveLoad: 'MEDIUM',
+    sortKey: 'a',
+    colorOverride: '#7D9372',
+    version: 7,
+    createdAt: undefined,
+    updatedAt: undefined,
+    deletedAt: null,
+  })
+  assert.equal('startTime' in task, false)
+  assert.equal('loadText' in task, false)
+})
+
+test('maps review and stats DTOs with stable defaults and query-safe fields', () => {
+  const review = mapReviewStateView({
+    knowledgeBlockId: 'block-1',
+    dueAt: '2026-08-20T10:00:00Z',
+    difficulty: 4.2,
+    stability: 2.5,
+    reps: 3,
+    lapses: 1,
+    version: 2,
+  })
+  const stats = mapStatsOverviewView({
+    activeKnowledgeBlocks: 12,
+    activeTasks: 5,
+    dueReviews: 3,
+    completedReviewEvents: 8,
+    activeSources: 4,
+  })
+
+  assert.equal(review.knowledgeBlockId, 'block-1')
+  assert.equal(review.reps, 3)
+  assert.equal(review.version, 2)
+  assert.deepEqual(stats, {
+    activeKnowledgeBlocks: 12,
+    activeTasks: 5,
+    dueReviews: 3,
+    completedReviewEvents: 8,
+    activeSources: 4,
+  })
 })

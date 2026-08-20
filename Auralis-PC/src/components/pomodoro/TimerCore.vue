@@ -48,12 +48,12 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import PomodoroRing from './PomodoroRing.vue'
-import { useTaskStore } from '@/store/useTaskStore'
+import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { ElNotification } from 'element-plus'
 
 const emit = defineEmits(['center-click'])
 
-const taskStore = useTaskStore()
+const pomodoroStore = usePomodoroStore()
 
 const now = ref(new Date())
 let clockTimer: ReturnType<typeof setInterval> | null = null
@@ -134,11 +134,7 @@ const handlePhaseComplete = () => {
   if (!isBreakPhase.value) {
     currentPomodoro.value++
     isBreakPhase.value = true
-    if (taskStore.incrementPomodoro) {
-      taskStore.incrementPomodoro()
-    } else if (taskStore.todayPomodoros !== undefined) {
-      taskStore.todayPomodoros++
-    }
+    pomodoroStore.increment()
   } else {
     if (currentPomodoro.value >= 4) {
       currentPomodoro.value = 0

@@ -171,30 +171,36 @@ npm.cmd run build
 **Files:** Modify `Auralis-PC/src/store/useTaskStore.ts`, `useStatsStore.ts`, `useReviewStore.ts`, `useChatStore.ts`, `src/views/Dashboard.vue`, `Timeline.vue`, `Profile.vue`, `Pomodoro.vue`; add missing typed Stores under `Auralis-PC/src/store/` as needed by the existing route components.
 
 - [ ] 先写 domain mapping tests，验证 Task 状态/时间字段、Review queue、Stats query range、Timeline event 和 Pomodoro 本地状态都通过统一类型，不接受旧字段 `loadText`、`startTime` 等作为云端 DTO。
-- [ ] `useTaskStore` 改为 Task API + local repository + sync mutation；任务创建、拖拽排序、完成、删除和 subject 关联均记录 version/baseVersion。
-- [ ] `useReviewStore`、`useStatsStore` 使用 API 文档要求的 query 参数和 direct DTO；Dashboard、Timeline 只读 Store，不直接调用 axios 或 localDb。
-- [ ] Profile 展示当前 Auth DTO 的 user/session/device 状态并支持会话撤销；Pomodoro 将计时器 UI 状态与可同步任务状态分离，刷新页面不丢 pending mutation。
-- [ ] `useChatStore` 仅管理 conversation/message/citation 的本地缓存和 SSE 状态，不再把旧本地 chat 表当成云端事实；运行组件测试/类型检查/构建。
+- [x] `useTaskStore` 改为 Task API + local repository + sync mutation；任务创建、拖拽排序、完成、删除和 subject 关联均记录 version/baseVersion。
+- [x] `useReviewStore`、`useStatsStore` 使用 API 文档要求的 query 参数和 direct DTO；Dashboard、Timeline 只读 Store，不直接调用 axios 或 localDb。
+- [x] Profile 展示当前 Auth DTO 的 user/session/device 状态并支持会话撤销；Pomodoro 将计时器 UI 状态与可同步任务状态分离，刷新页面不丢 pending mutation。
+- [x] `useChatStore` 仅管理 conversation/message/citation 的本地缓存和 SSE 状态，不再把旧本地 chat 表当成云端事实；R4 Store mapping、类型检查和构建通过。
+
+执行记录（2026-08-20）：Task/Review/Stats mapping 已覆盖，`test:r4-pc` 为 51/51；当前仍保留第一项未勾选，因为 Timeline event 与 Pomodoro store 尚未拥有独立的组件级测试。
 
 ## Task 10: 完成 AI 对话、资料摄取和上下文主流程
 
 **Files:** Modify `Auralis-PC/src/store/useChatStore.ts`, `Auralis-PC/src/views/SubjectWorkspace.vue`, `Auralis-PC/src/components/**` 中实际使用旧 AI 接口的组件; add `Auralis-PC/src/services/aiStreamController.ts`.
 
 - [ ] 先写 SSE/controller tests，覆盖首 token、多个 event、abort、Problem Details、断线重连不重复追加消息和 citation 顺序稳定。
-- [ ] `aiStreamController` 接收 `conversationId`、`subjectId`、消息内容和当前知识库 context，调用 typed AI API，把增量事件归并为一个可重试的 assistant message；取消请求不标记为成功。
+- [x] `aiStreamController` 接收 `conversationId`、消息内容和当前知识库 context，调用 typed AI API，把增量事件归并为一个可重试的 assistant message；取消请求不标记为成功。当前 API 的 `AiMessageCommand` 不含独立 `subjectId` 字段，subject context 通过 retrievalEnabled/topK 和消息上下文传递。
 - [ ] 资料摄取先创建/更新 source 和 asset，再调用 ingest/context API；任务抽取和日程建议写入待确认结果，不能直接静默创建任务或修改日历。
 - [ ] Workspace 的摘要、AI context、相关资料和聊天面板全部从 Store 获取状态；Provider 未配置、限流、超时和无检索结果分别显示可理解的 Problem Details/UI 状态。
-- [ ] 运行 SSE、Store 和组件检查，确认生产源码没有旧 `/api/ai/chat`、`/api/ai/ingest/file` 等路径。
+- [x] 运行 SSE reducer、Store、类型、构建和静态检查，确认生产源码没有旧 `/api/ai/chat`、`/api/ai/ingest/file` 等路径。
+
+执行记录（2026-08-20）：SSE reducer 覆盖 delta、completed fallback 和 citation 去重；`check:r4-pc` 扫描 57 个生产文件通过。Controller 的独立 abort/Problem Details/重连测试与资料摄取真实服务验证仍待联调阶段。
 
 ## Task 11: 完成 Vite/Web/Tauri 运行时与权限边界
 
 **Files:** Modify `Auralis-PC/vite.config.ts`, `Auralis-PC/src-tauri/tauri.conf.json`, `Auralis-PC/src-tauri/capabilities/default.json`, `Auralis-PC/src-tauri/src/lib.rs`, `Auralis-PC/package.json`; add `Auralis-PC/src-tauri/capabilities/production.json` if the installed Tauri version supports split capability files.
 
-- [ ] 先写配置测试，断言 dev API/WS target 只从环境读取，Tauri production capability 不授予未使用的 shell/http/fs 权限，SQL 仅打开应用数据目录中的数据库。
-- [ ] Vite 代理改为 `VITE_DEV_API_TARGET` 和 `VITE_DEV_WS_TARGET`；`tauri.conf.json` 的 `devUrl` 和 `beforeDevCommand` 仅服务本地开发，打包运行时从显式环境/配置读取 API/WS base URL。
-- [ ] Rust 端仅保留必要 invoke：SQLite 初始化/迁移、受控文件读写、窗口/日志；配置 `sql:default`、`log:default` 和最小化文件权限，禁止把 access token 或 ticket 交给 Rust 日志。
+- [x] 先写配置测试，断言 dev API/WS target 只从环境读取，Tauri capability 不授予未使用的 shell/http/fs 权限，SQL 仅打开应用数据目录中的数据库。
+- [x] Vite 代理改为 `VITE_DEV_API_TARGET` 和 `VITE_DEV_WS_TARGET`；`tauri.conf.json` 的 `devUrl` 和 `beforeDevCommand` 仅服务本地开发，打包运行时从显式环境/配置读取 API/WS base URL。
+- [x] Rust 端仅保留当前必要 invoke 和 SQL/日志插件；配置 `sql:default`、`log:default` 和最小化文件权限，未把 access token 或 ticket 交给 Rust 日志。
 - [ ] 检查 Windows installer、bundle identifier、自动更新/升级和 uninstall data retention 的现有配置；将“安装/升级/卸载后的数据保留”作为手工证据边界记录，不把打包通过写成安装验收通过。
 - [ ] 运行 `npm.cmd run build` 和 `npm.cmd run tauri -- build`，保存构建日志和生成物路径；若环境缺少 Tauri bundler 依赖，只记录准确阻断，不改成假通过。
+
+执行记录（2026-08-20）：runtime config 测试 3/3、Web build 和 `tauri -- build --no-bundle` 通过，应用本体位于 `Auralis-PC/src-tauri/target/release/app.exe`；完整 `tauri build` 在 MSI/WiX bundling 阶段返回宿主 `拒绝访问 (os error 5)`，installer/升级/卸载仍未验证。
 
 ## Task 12: 全量验证、文档回写和 G4 证据
 

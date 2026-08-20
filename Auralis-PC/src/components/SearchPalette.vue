@@ -76,10 +76,10 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { useBlockStore } from '@/store/useBlockStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 
 const router = useRouter()
-const blockStore = useBlockStore()
+const knowledgeStore = useKnowledgeStore()
 
 const isVisible = ref(false)
 const query = ref('')
@@ -99,8 +99,8 @@ const doSearch = (q: string) => {
   isSearching.value = true
   searchTimeout = setTimeout(async () => {
     try {
-      await blockStore.loadLocalBlocks()
-      const all = blockStore.recentBlocks || []
+      await knowledgeStore.loadLocalBlocks()
+      const all = knowledgeStore.recentBlocks || []
       searchResults.value = all.filter((b: any) =>
         (b.title && b.title.toLowerCase().includes(q.toLowerCase())) ||
         (b.subject && b.subject.toLowerCase().includes(q.toLowerCase())) ||

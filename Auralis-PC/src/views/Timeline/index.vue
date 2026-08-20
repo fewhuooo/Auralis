@@ -405,14 +405,14 @@ import { ListTodo, CheckCircle, Clock, Inbox, Plus, Sparkles } from 'lucide-vue-
 import { useTaskStore, getTodayDayCode } from '@/store/useTaskStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
-import { useBlockStore } from '@/store/useBlockStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 
 const taskStore = useTaskStore()
 const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours, aiSuggestions, hasOverload } = storeToRefs(taskStore)
 
 const subjectStore = useSubjectStore()
-const blockStore = useBlockStore()
-const { recentBlocks } = storeToRefs(blockStore)
+const knowledgeStore = useKnowledgeStore()
+const { recentBlocks } = storeToRefs(knowledgeStore)
 
 // Core timeline states
 const viewMode = ref<'day' | 'week'>('day')
@@ -470,7 +470,7 @@ const isSlotCovered = (slotTime: string) => {
 onMounted(async () => {
   await taskStore.fetchTasks()
   await subjectStore.loadSubjects()
-  await blockStore.fetchBlocks()
+  await knowledgeStore.fetchBlocks()
   await checkSpacedRepetition()
 })
 
@@ -590,7 +590,7 @@ const checkSpacedRepetition = async () => {
     const taskName = `复习: ${block.title}`
     const exists = pendingTasks.value.some(t => t.name === taskName) || timeSlots.value.some(s => s.task?.name === taskName)
     
-    if (!exists && block.id) {
+    if (!exists && block.id && block.subjectId) {
       await taskStore.addTask({
         name: taskName,
         subject: block.subject,
@@ -606,7 +606,7 @@ const checkSpacedRepetition = async () => {
       // Compute next interval (e.g. +3 days) to avoid repeated creation today
       const nextDate = new Date()
       nextDate.setDate(nextDate.getDate() + 3)
-      await blockStore.updateBlock({
+      await knowledgeStore.updateBlock({
         ...block,
         reviewAt: nextDate.toISOString().split('T')[0]
       })

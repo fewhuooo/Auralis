@@ -547,8 +547,7 @@ import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useSourceStore } from '@/store/useSourceStore'
-import { streamAiMessage } from '@/api/aiClient'
-import { uuidv7 } from '@/utils/uuid'
+import { useChatStore } from '@/store/useChatStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -562,7 +561,9 @@ const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const assetStore = useAssetStore()
 const sourceStore = useSourceStore()
+const chatStore = useChatStore()
 const { activeSubject, activeSourceFiles } = storeToRefs(subjectStore)
+const { messages: storedChatMessages, isStreaming: storedChatStreaming, streamingContent: storedStreamingContent } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
 
 const subjectId = computed(() => route.params.id as string)
@@ -826,7 +827,6 @@ const handleAddTask = async () => {
 // ===== AI Refine =====
 const isRefiningAi = ref(false)
 const aiRefiningText = ref('')
-let abortController: AbortController | null = null
 
 // ===== Block CRUD =====
 const blockDialogVisible = ref(false)
@@ -873,10 +873,12 @@ const sendPreset = (q: string) => {
 
 // ===== AI Chat (Right Panel) =====
 interface ChatMsg { role: 'user' | 'assistant'; content: string }
-const chatMessages = ref<ChatMsg[]>([])
+const chatMessages = computed<ChatMsg[]>(() => storedChatMessages.value
+  .filter((message) => message.role === 'USER' || message.role === 'ASSISTANT')
+  .map((message) => ({ role: message.role === 'USER' ? 'user' : 'assistant', content: message.content })))
 const chatInput = ref('')
-const isAiStreaming = ref(false)
-const streamingContent = ref('')
+const isAiStreaming = computed(() => storedChatStreaming.value)
+const streamingContent = computed(() => storedStreamingContent.value)
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const aiModesOptions = [
@@ -903,46 +905,32 @@ const scrollChatToBottom = () => {
 const sendChat = async () => {
   const msg = chatInput.value.trim()
   if (!msg || isAiStreaming.value) return
-  chatMessages.value.push({ role: 'user', content: msg })
   chatInput.value = ''
   autoResizeInput()
   scrollChatToBottom()
-
-  isAiStreaming.value = true
-  streamingContent.value = ''
-  let abortCtrl = new AbortController()
-  abortController = abortCtrl
-
   try {
     const context = selectedFile.value ? `当前文件: ${selectedFile.value.name}` : `学科: ${activeSubject.value?.name || ''}`
-    for await (const event of streamAiMessage({
-      content: `${context}\n\n${msg}`,
-      retrievalEnabled: Boolean(selectedFile.value),
-      clientRequestId: uuidv7(),
-    }, abortCtrl.signal)) {
-      if (event.event === 'message.delta' && typeof event.data === 'string') {
-        streamingContent.value += event.data
-        scrollChatToBottom()
-      } else if (event.event === 'message.completed' && typeof event.data === 'object' && event.data && 'content' in event.data && typeof event.data.content === 'string' && !streamingContent.value) {
-        streamingContent.value = event.data.content
-      } else if (event.event === 'message.error') {
-        throw new Error(typeof event.data === 'object' && event.data && 'message' in event.data ? String(event.data.message || 'AI 请求失败') : 'AI 请求失败')
-      }
-    }
-    if (streamingContent.value) chatMessages.value.push({ role: 'assistant', content: streamingContent.value })
+    await chatStore.sendMessage(msg, { subjectId: subjectId.value, context })
   } catch (error) {
-    if (!(error instanceof DOMException && error.name === 'AbortError')) chatMessages.value.push({ role: 'assistant', content: '抱歉，请求失败。' })
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
+    }
   } finally {
-    streamingContent.value = ''
-    isAiStreaming.value = false
     scrollChatToBottom()
   }
 }
 
-const clearChat = () => { chatMessages.value = []; streamingContent.value = '' }
+const clearChat = () => { chatStore.clearActiveConversation() }
 
 // ===== Lifecycle =====
 onMounted(async () => {
+  try {
+    const sessions = await chatStore.loadSessions()
+    if (sessions.length === 0) await chatStore.startNewSession('学科伴读')
+    else if (chatStore.activeSessionId) await chatStore.loadMessages(chatStore.activeSessionId)
+  } catch {
+    // The workspace remains usable when chat is unavailable.
+  }
   const id = subjectId.value
   if (id) {
     subjectStore.setActiveSubject(id)
@@ -974,7 +962,7 @@ watch(subjectId, async (newId) => {
   }
 })
 
-onUnmounted(() => { if (abortController) abortController.abort() })
+onUnmounted(() => { chatStore.abortStream() })
 </script>
 
 <style scoped>

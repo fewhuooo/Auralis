@@ -385,11 +385,10 @@ import DOMPurify from 'dompurify'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
-import { useBlockStore } from '@/store/useBlockStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task, getTodayDayCode } from '@/store/useTaskStore'
-import { localDb } from '@/services/localDb'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -399,8 +398,8 @@ const renderMarkdown = (content: string) => {
 }
 
 const router = useRouter()
-const blockStore = useBlockStore()
-const { recentBlocks } = storeToRefs(blockStore)
+const knowledgeStore = useKnowledgeStore()
+const { recentBlocks } = storeToRefs(knowledgeStore)
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
 const { pendingTasks, allTasks, timeSlots, selectedDay } = storeToRefs(taskStore)
@@ -416,87 +415,8 @@ const selectDay = async (day: string) => {
   await taskStore.loadLocalTasks()
 }
 
-// ==========================================
-// [STATIC MOCK DATA] 静态兜底数据定义区 (无后端/无数据库数据时瞬间即时渲染)
-// ==========================================
-const STATIC_SUBJECTS = [
-  { id: 'STATIC_SUB_1', name: '高等数学与线性代数', icon: '📐', color: '#7D9372', blockCount: 12 },
-  { id: 'STATIC_SUB_2', name: '人工智能导论与大模型', icon: '🤖', color: '#A3B19B', blockCount: 8 },
-  { id: 'STATIC_SUB_3', name: '操作系统与内核分析', icon: '💻', color: '#8E9C86', blockCount: 6 },
-  { id: 'STATIC_SUB_4', name: '心理学与禅意认知', icon: '🌿', color: '#A8BFA0', blockCount: 4 }
-]
-
-const STATIC_BLOCKS = [
-  {
-    id: 'STATIC_B_1',
-    subject: '人工智能导论与大模型',
-    subjectId: 'STATIC_SUB_2',
-    title: 'Transformer 架构中的 Self-Attention 矩阵计算推导',
-    preview: '**Self-Attention** 核心在于 **Q**, **K**, **V** 矩阵乘法及 **Softmax** 归一化，通过缩放因子 **d_k** 的平方根消除梯度消失问题，在高维空间捕获全局语义依赖。',
-    content: `### 1. 核心思想与动机
-
-在序列建模中，传统的循环神经网络难以高效并行且易丢失长跨度信息。**Self-Attention**（自注意力机制）打破了时序距离限制，让序列中的任意两个位置能直接建立纳秒级语义关联。
-
-### 2. 核心公式与推导步骤
-
-设输入矩阵为 **X**，分别乘以权重张量得到查询矩阵 **Q**、键矩阵 **K** 和值矩阵 **V**：
-* **Query 矩阵 (Q)**：代表当前词去向全局探寻匹配度的特征向量。
-* **Key 矩阵 (K)**：被检索特征，与 **Q** 进行内积运算以得出注意力分数。
-* **Value 矩阵 (V)**：真正承载具体语义内容的张量矩阵。
-
-标准缩放点积注意力公式为：
-> Attention(Q, K, V) = Softmax( (Q * K^T) / sqrt(d_k) ) * V
-
-### 3. 缩放因子 sqrt(d_k) 的关键作用
-
-当维度 **d_k** 增大时，矩阵内积 **Q * K^T** 的方差会按常数倍膨胀。如果直接输入到 **Softmax** 中，输出权重分布将向两端极端极化，导致反向传播时**梯度严重消失**。除以 **sqrt(d_k)** 后，内积方差重新缩并为 **1**，确保梯度的平稳回传。`,
-    source: 'AI 伴读笔记 · 第3章',
-    time: '10:30',
-    color: '#A3B19B',
-    difficulty: 'hard' as const,
-    mastery: 85
-  },
-  {
-    id: 'STATIC_B_2',
-    subject: '高等数学与线性代数',
-    subjectId: 'STATIC_SUB_1',
-    title: '常系数二阶线性齐次微分方程特征根法判定',
-    preview: '对于常系数齐次线性微分方程，通过求解特征方程 **r^2 + pr + q = 0** 可以准确判定通解的实根或复根形式。',
-    content: `### 1. 特征方程建立
-对于齐次微分方程 **y'' + py' + qy = 0**，设其解的形式为 **y = e^(rx)**，代入并消去非零因子得特征方程：
-> r^2 + pr + q = 0
-
-### 2. 三种根情况判定
-* **两个不相等的实根 (Δ > 0)**：通解为 **y = C1 * e^(r1*x) + C2 * e^(r2*x)**。
-* **两个相等的实根 (Δ = 0)**：通解为 **y = (C1 + C2*x) * e^(r*x)**。
-* **一对共轭复根 (Δ < 0)**：设根为 **α ± βi**，通解为 **y = e^(αx) * (C1*cos(βx) + C2*sin(βx))**。`,
-    source: '教材提炼 · P142',
-    time: '昨日',
-    color: '#7D9372',
-    difficulty: 'medium' as const,
-    mastery: 90
-  },
-  { id: 'STATIC_B_3', subject: '操作系统与内核分析', subjectId: 'STATIC_SUB_3', title: 'Linux 虚拟内存多级页表与 TLB 快表寻址机制', preview: '多级页表有效节省了内存页表项空间，而 **TLB** 高速缓存将页表查询由多级访存压缩至纳秒级直接物理映射，大幅提高访存命中率。', source: '课堂实录 · 第8讲', time: '前天', color: '#8E9C86', difficulty: 'medium' as const, mastery: 78 },
-  { id: 'STATIC_B_4', subject: '心理学与禅意认知', subjectId: 'STATIC_SUB_4', title: '正念冥想对前额叶皮层与专注力的神经重塑', preview: '研究证明持续的正念冥想能显著提升工作记忆与禅意专注力，有效降低杏仁核应激唤醒水平，增强情绪自主调控能力。', source: '文献综述 · 2026', time: '3天前', color: '#A8BFA0', difficulty: 'easy' as const, mastery: 95 },
-  { id: 'STATIC_B_5', subject: '高等数学与线性代数', subjectId: 'STATIC_SUB_1', title: '正交矩阵的几何性质与 SVD 奇异值分解应用', preview: '任意实矩阵 **A** 均可分解为 **UΣV^T**，**SVD** 在数据降维、推荐系统与主成分分析 **PCA** 中起着基础性与支柱性的数学作用。', source: '总结归纳', time: '4天前', color: '#7D9372', difficulty: 'hard' as const, mastery: 82 },
-  { id: 'STATIC_B_6', subject: '人工智能导论与大模型', subjectId: 'STATIC_SUB_2', title: '混合专家模型 (MoE) 稀疏门控路由工作原理', preview: '**MoE** 通过 **Top-K** 门控网络动态选择并激活部分专家子网，实现了模型总体参数规模指数级扩展与极低推理算力开销之间的完美平衡。', source: '论文研读', time: '本周', color: '#A3B19B', difficulty: 'hard' as const, mastery: 70 }
-]
-
-const STATIC_PENDING_TASKS: Task[] = [
-  { id: 'STATIC_T_P1', name: '复习矩阵特征值与对角化判定条件', subject: '高等数学与线性代数', subjectId: 'STATIC_SUB_1', color: '#7D9372', duration: 60, load: 'low', loadText: '低负荷', status: 'pending' },
-  { id: 'STATIC_T_P2', name: '整理本周心理学实验认知报告', subject: '心理学与禅意认知', subjectId: 'STATIC_SUB_4', color: '#A8BFA0', duration: 60, load: 'low', loadText: '低负荷', status: 'pending' },
-  { id: 'STATIC_T_P3', name: '完成 LangChain4j 本地 RAG 连通测试', subject: '人工智能导论与大模型', subjectId: 'STATIC_SUB_2', color: '#A3B19B', duration: 120, load: 'medium', loadText: '中负荷', status: 'pending' }
-]
-
-const STATIC_SCHEDULED_TASKS: Task[] = [
-  { id: 'STATIC_T_S1', name: '高数多元函数极值习题精练', subject: '高等数学与线性代数', subjectId: 'STATIC_SUB_1', color: '#7D9372', duration: 120, load: 'high', loadText: '高负荷', status: 'scheduled', startTime: '10:00', position: getTodayDayCode() },
-  { id: 'STATIC_T_S2', name: '研读 MoE 架构论文图表与公式', subject: '人工智能导论与大模型', subjectId: 'STATIC_SUB_2', color: '#A3B19B', duration: 60, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '14:00', position: getTodayDayCode() },
-  { id: 'STATIC_T_S3', name: '梳理 Linux 进程调度 CFS 源码图解', subject: '操作系统与内核分析', subjectId: 'STATIC_SUB_3', color: '#8E9C86', duration: 120, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '16:00', position: getTodayDayCode() }
-]
-// ==========================================
-
 const getScheduledTasksForDay = (day: string) => {
-  const sourceTasks = allTasks.value.length > 0 ? allTasks.value : STATIC_SCHEDULED_TASKS
+  const sourceTasks = allTasks.value
   return sourceTasks.filter(t => {
     if (t.status !== 'scheduled' || !t.startTime) return false
     const parts = t.startTime.split(' ')
@@ -599,8 +519,8 @@ const selectSubject = (id: string | null) => {
 }
 
 const allSubjectsOption = computed(() => {
-  const subjectsList = subjectStore.subjects.length > 0 ? subjectStore.subjects : STATIC_SUBJECTS
-  const count = recentBlocks.value.length > 0 ? recentBlocks.value.length : STATIC_BLOCKS.length
+  const subjectsList = subjectStore.subjects
+  const count = recentBlocks.value.length
   return [
     { id: null as string | null, name: '全部', icon: '📋', color: 'var(--text-muted)', blockCount: count },
     ...subjectsList
@@ -608,7 +528,7 @@ const allSubjectsOption = computed(() => {
 })
 
 const filteredBlocks = computed(() => {
-  const blocksList = recentBlocks.value.length > 0 ? recentBlocks.value : STATIC_BLOCKS
+  const blocksList = recentBlocks.value
   if (!selectedSubjectId.value) return blocksList
   return blocksList.filter(b => b.subjectId === selectedSubjectId.value || b.subject === selectedSubjectId.value)
 })
@@ -635,7 +555,7 @@ const taskForm = ref({
 })
 
 const availableSubjectsForTask = computed(() => {
-  return subjectStore.subjects.length > 0 ? subjectStore.subjects : STATIC_SUBJECTS
+  return subjectStore.subjects
 })
 
 const durationBarRef = ref<HTMLElement | null>(null)
@@ -710,7 +630,7 @@ const handleAddTask = async () => {
 }
 
 const filteredPendingTasks = computed(() => {
-  const tasksList = pendingTasks.value.length > 0 ? pendingTasks.value : STATIC_PENDING_TASKS
+  const tasksList = pendingTasks.value
   return tasksList.filter(t => t.status === 'pending')
 })
 
@@ -719,13 +639,7 @@ const filteredTimeSlots = computed(() => {
   if (hasStoreSlots || allTasks.value.length > 0) {
     return timeSlots.value
   }
-  return timeSlots.value.map(slot => {
-    const staticTask = STATIC_SCHEDULED_TASKS.find(t => t.startTime === slot.time && (selectedDay.value === getTodayDayCode() || t.position === selectedDay.value))
-    if (staticTask) {
-      return { ...slot, task: staticTask }
-    }
-    return slot
-  })
+  return timeSlots.value
 })
 
 const HOUR_HEIGHT = 52
@@ -818,50 +732,9 @@ const toggleTaskCompletion = async (task: Task) => {
 }
 
 onMounted(async () => {
-  await blockStore.fetchBlocks()
+  await knowledgeStore.fetchBlocks()
   await taskStore.fetchTasks()
   await subjectStore.loadSubjects()
-
-  // 临时数据 / 演示数据种子 (当首屏无任何数据时自动写入，展示丰满界面)
-  if (subjectStore.subjects.length === 0 && recentBlocks.value.length === 0 && allTasks.value.length === 0) {
-    const s1 = { id: 's-math', name: '高等数学与线性代数', description: '微积分、线性代数与微分方程核心概念', icon: '📐', color: '#7D9372', created_at: Date.now() }
-    const s2 = { id: 's-ai', name: '人工智能导论与大模型', description: '深度学习、Transformer 与大语言模型架构', icon: '🤖', color: '#A3B19B', created_at: Date.now() }
-    const s3 = { id: 's-os', name: '操作系统与内核分析', description: '进程调度、虚拟内存管理与文件系统', icon: '💻', color: '#8E9C86', created_at: Date.now() }
-    const s4 = { id: 's-zen', name: '心理学与禅意认知', description: '正念专注、认知神经科学与情绪管理', icon: '🌿', color: '#A8BFA0', created_at: Date.now() }
-    await localDb.saveSubject(s1)
-    await localDb.saveSubject(s2)
-    await localDb.saveSubject(s3)
-    await localDb.saveSubject(s4)
-
-    const todayCode = getTodayDayCode()
-    const blocksDemo = [
-      { id: 'b-1', subject: '人工智能导论与大模型', subjectId: 's-ai', title: 'Transformer 架构中的 Self-Attention 矩阵计算推导', preview: '`Self-Attention` 核心在于 `Q`, `K`, `V` 矩阵乘法及 `Softmax` 归一化，通过缩放因子 `d_k` 的平方根消除梯度消失问题...', source: 'AI 伴读笔记 · 第3章', time: '10:30', color: '#A3B19B', difficulty: 'hard', mastery: 85 },
-      { id: 'b-2', subject: '高等数学与线性代数', subjectId: 's-math', title: '常系数二阶线性齐次微分方程特征根法判定', preview: '对于常系数齐次线性微分方程，通过求解特征方程 `r^2 + pr + q = 0` 可以准确判定通解的实根或复根形式...', source: '教材提炼 · P142', time: '昨日', color: '#7D9372', difficulty: 'medium', mastery: 90 },
-      { id: 'b-3', subject: '操作系统与内核分析', subjectId: 's-os', title: 'Linux 虚拟内存多级页表与 TLB 快表寻址机制', preview: '多级页表有效节省了内存页表项空间，而 `TLB` 高速缓存将页表查询由多级访存压缩至纳秒级直接物理映射...', source: '课堂实录 · 第8讲', time: '前天', color: '#8E9C86', difficulty: 'medium', mastery: 78 },
-      { id: 'b-4', subject: '心理学与禅意认知', subjectId: 's-zen', title: '正念冥想对前额叶皮层与专注力的神经重塑', preview: '研究证明持续的正念冥想能显著提升工作记忆与禅意专注力，有效降低杏仁核应激唤醒水平...', source: '文献综述 · 2026', time: '3天前', color: '#A8BFA0', difficulty: 'easy', mastery: 95 },
-      { id: 'b-5', subject: '高等数学与线性代数', subjectId: 's-math', title: '正交矩阵的几何性质与 SVD 奇异值分解应用', preview: '任意实矩阵 `A` 均可分解为 `UΣV^T`，`SVD` 在数据降维、推荐系统与主成分分析 `PCA` 中起着基础性作用...', source: '总结归纳', time: '4天前', color: '#7D9372', difficulty: 'hard', mastery: 82 },
-      { id: 'b-6', subject: '人工智能导论与大模型', subjectId: 's-ai', title: '混合专家模型 (MoE) 稀疏门控路由工作原理', preview: '`MoE` 通过 `Top-K` 门控网络动态选择并激活部分专家子网，实现了参数规模指数扩展与极低推理算力开销的平衡...', source: '论文研读', time: '本周', color: '#A3B19B', difficulty: 'hard', mastery: 70 }
-    ]
-    for (const b of blocksDemo) {
-      await localDb.saveBlock(b as any)
-    }
-
-    const tasksDemo = [
-      { id: 't-1', name: '高数多元函数极值习题精练', subject: '高等数学与线性代数', subjectId: 's-math', color: '#7D9372', duration: 2, load: 'high', loadText: '高负荷', status: 'scheduled', startTime: '10:00', position: todayCode },
-      { id: 't-2', name: '研读 MoE 架构论文图表与公式', subject: '人工智能导论与大模型', subjectId: 's-ai', color: '#A3B19B', duration: 1, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '14:00', position: todayCode },
-      { id: 't-3', name: '梳理 Linux 进程调度 CFS 源码图解', subject: '操作系统与内核分析', subjectId: 's-os', color: '#8E9C86', duration: 2, load: 'medium', loadText: '中负荷', status: 'scheduled', startTime: '16:00', position: todayCode },
-      { id: 't-4', name: '复习矩阵特征值与对角化判定条件', subject: '高等数学与线性代数', subjectId: 's-math', color: '#7D9372', duration: 1, load: 'low', loadText: '低负荷', status: 'pending' },
-      { id: 't-5', name: '整理本周心理学实验认知报告', subject: '心理学与禅意认知', subjectId: 's-zen', color: '#A8BFA0', duration: 1, load: 'low', loadText: '低负荷', status: 'pending' },
-      { id: 't-6', name: '完成 LangChain4j 本地 RAG 连通测试', subject: '人工智能导论与大模型', subjectId: 's-ai', color: '#A3B19B', duration: 2, load: 'medium', loadText: '中负荷', status: 'pending' }
-    ]
-    for (const t of tasksDemo) {
-      await localDb.saveTask(t as any)
-    }
-
-    await blockStore.fetchBlocks()
-    await taskStore.fetchTasks()
-    await subjectStore.loadSubjects()
-  }
 })
 </script>
 

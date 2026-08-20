@@ -2,7 +2,6 @@ import request from './request.ts'
 import { getClientRuntimeConfig } from '../config/runtime.ts'
 import { useAuthStore } from '../store/useAuthStore.ts'
 import { fetchSseStream, parseSseStream, type AiStreamEvent, type SseEvent } from './sse.ts'
-import { uploadAsset } from './useAssetApi.ts'
 import type { components } from './generated/schema.ts'
 
 export type AiSettingsView = components['schemas']['AiSettingsView']
@@ -100,11 +99,6 @@ export async function* streamAiMessage(
   }
 }
 
-// Temporary compatibility adapter for unmigrated view components (migrating in Task 8/10)
-export async function ingestFile(file: File, _subject: string = '文档导入') {
-  return uploadAsset(file)
-}
-
 export const useAiApi = {
   checkHealth,
   getAiSettings,
@@ -115,7 +109,6 @@ export const useAiApi = {
   deleteConversation,
   getSuggestions,
   streamAiMessage,
-  ingestFile,
 }
 
 export { parseSseStream, type AiStreamEvent, type SseEvent }

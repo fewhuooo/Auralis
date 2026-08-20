@@ -72,8 +72,10 @@ import { ref, computed, onMounted } from 'vue'
 import { Check } from 'lucide-vue-next'
 import TimerCore from '@/components/pomodoro/TimerCore.vue'
 import { useTaskStore } from '@/store/useTaskStore'
+import { usePomodoroStore } from '@/store/usePomodoroStore'
 
 const taskStore = useTaskStore()
+const pomodoroStore = usePomodoroStore()
 
 const currentTaskId = ref<string | null>(null)
 
@@ -84,7 +86,7 @@ const pendingTasks = computed(() => {
 const FOCUS_MINS = 25
 
 const completedToday = computed(() => {
-  return taskStore.todayPomodoros || 0
+  return pomodoroStore.completedToday
 })
 
 onMounted(() => {

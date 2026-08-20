@@ -333,6 +333,8 @@
 
 完成条件：PC 主流程不依赖旧 DTO、旧同步路径或本地假数据。
 
+PC 执行记录（2026-08-20）：PC 侧 Subject、Source、Asset、KnowledgeBlock、Task、Review、Stats、AI 已完成 typed DTO/store 迁移；本地 repository 使用 userId/deviceId、version/deletedAt/baseVersion，`test:r4-pc` 51/51、`check:r4-pc` 57 个生产文件和 `type-check` 通过。该记录只覆盖 PC 代码与自动检查，真实服务、浏览器/Tauri GUI、双设备和前后端联调仍不属于已完成证据。
+
 ### R4-03 PC Tauri（P1）
 
 - [ ] 验证本地 SQL、文件权限、窗口和网络权限。
@@ -340,6 +342,8 @@
 - [ ] 执行 `npm.cmd run tauri -- build` 并保留制品信息。
 
 完成条件：Windows 实机可安装、启动、登录和完成主流程。
+
+PC 执行记录（2026-08-20）：R4 PC typed Store/页面迁移、runtime config 和 capability 静态门禁已通过；`npm.cmd run tauri -- build --no-bundle` 退出 0 并生成 `Auralis-PC/src-tauri/target/release/app.exe`。完整 `tauri build` 在 MSI/WiX bundling 阶段返回宿主 `拒绝访问 (os error 5)`，因此安装、升级、卸载、本地数据保留和 Windows GUI 不勾选为完成。
 
 ### R4-04 Mobile 工具链（P0）
 

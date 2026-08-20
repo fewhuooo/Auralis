@@ -589,7 +589,7 @@ import { Clock } from '@element-plus/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 
-import { useBlockStore } from '@/store/useBlockStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useTaskStore, type Task } from '@/store/useTaskStore'
@@ -618,8 +618,8 @@ const renderMarkdown = (content: string) => {
   return DOMPurify.sanitize(marked.parse(content) as string)
 }
 
-const blockStore = useBlockStore()
-const { recentBlocks } = storeToRefs(blockStore)
+const knowledgeStore = useKnowledgeStore()
+const { recentBlocks } = storeToRefs(knowledgeStore)
 
 const subjectStore = useSubjectStore()
 const { activeSubjectId, activeSubject, activeSourceFiles } = storeToRefs(subjectStore)
@@ -733,7 +733,7 @@ const dragOverPending = ref(false)
 
 // Lifecycle
 onMounted(async () => {
-  await blockStore.fetchBlocks(undefined, activeSubjectId.value || undefined)
+  await knowledgeStore.fetchBlocks(undefined, activeSubjectId.value || undefined)
   await taskStore.fetchTasks()
   if (activeSubjectId.value) {
     await subjectStore.loadSourceFiles(activeSubjectId.value)
@@ -937,7 +937,7 @@ const confirmDeleteSubject = async (subject: Subject) => {
 
 // Watch subject change
 watch(activeSubjectId, (newId) => {
-  blockStore.fetchBlocks(undefined, newId || undefined)
+  knowledgeStore.fetchBlocks(undefined, newId || undefined)
   if (newId) {
     subjectStore.loadSourceFiles(newId)
     setTimeout(() => {
@@ -1037,6 +1037,10 @@ const handleSaveBlock = async () => {
   }
 
   if (isCreateMode.value) {
+    if (!activeSubjectId.value) {
+      ElNotification({ title: '无法创建知识块', message: '请先选择一个学科。', type: 'warning', position: 'top-right' })
+      return
+    }
     const newBlock = {
       subject: editForm.value.subject,
       title: editForm.value.title,
@@ -1044,10 +1048,10 @@ const handleSaveBlock = async () => {
       time: new Date().toLocaleString(),
       source: editForm.value.source,
       color: editForm.value.color,
-      subjectId: activeSubjectId.value || undefined,
+      subjectId: activeSubjectId.value,
       sourceFileId: selectedFileId.value || undefined
     }
-    await blockStore.addBlock(newBlock)
+    await knowledgeStore.addBlock(newBlock)
     ElNotification({
       title: '✨ 知识已录入本地',
       message: `已成功保存 [${editForm.value.subject}] 知识块。`,
@@ -1063,7 +1067,7 @@ const handleSaveBlock = async () => {
       color: editForm.value.color,
       time: new Date().toLocaleString()
     }
-    await blockStore.updateBlock(updatedBlock)
+    await knowledgeStore.updateBlock(updatedBlock)
     selectedBlock.value = updatedBlock
     ElNotification({
       title: '📝 知识块更新成功',
@@ -1081,7 +1085,7 @@ const handleDeleteBlock = async (id: string) => {
   if (!id) return
   if (confirm('确定要删除这个知识块吗？此操作将同步至所有设备。')) {
     try {
-      await blockStore.removeBlock(id)
+      await knowledgeStore.removeBlock(id)
       blockDialogVisible.value = false
       ElNotification({
         title: '🗑️ 知识已删除',

@@ -73,6 +73,48 @@ export interface AssetModel {
   updatedAt?: string
 }
 
+export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'
+export type CognitiveLoad = 'LOW' | 'MEDIUM' | 'HIGH'
+
+export interface TaskModel {
+  id: string
+  subjectId: string
+  title: string
+  description: string
+  status: TaskStatus
+  scheduledAt?: string
+  dueAt?: string
+  durationMinutes: number
+  cognitiveLoad: CognitiveLoad
+  sortKey?: string
+  colorOverride?: string
+  version: number
+  createdAt?: string
+  updatedAt?: string
+  deletedAt: string | null
+}
+
+export interface ReviewStateModel {
+  id?: string
+  knowledgeBlockId: string
+  dueAt?: string
+  difficulty?: number
+  stability?: number
+  lastReviewedAt?: string
+  reps: number
+  lapses: number
+  version: number
+  createdAt?: string
+}
+
+export interface StatsOverviewModel {
+  activeKnowledgeBlocks: number
+  activeTasks: number
+  dueReviews: number
+  completedReviewEvents: number
+  activeSources: number
+}
+
 export interface SubjectDtoLike {
   id?: string
   name?: string
@@ -131,6 +173,45 @@ export interface AssetDtoLike {
   completedAt?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export interface TaskDtoLike {
+  id?: string
+  subjectId?: string
+  title?: string
+  description?: string
+  status?: TaskStatus
+  scheduledAt?: string
+  dueAt?: string
+  durationMinutes?: number
+  cognitiveLoad?: CognitiveLoad
+  sortKey?: string
+  colorOverride?: string
+  version?: number
+  createdAt?: string
+  updatedAt?: string
+  deletedAt?: string | null
+}
+
+export interface ReviewStateDtoLike {
+  id?: string
+  knowledgeBlockId?: string
+  dueAt?: string
+  difficulty?: number
+  stability?: number
+  lastReviewedAt?: string
+  reps?: number
+  lapses?: number
+  version?: number
+  createdAt?: string
+}
+
+export interface StatsOverviewDtoLike {
+  activeKnowledgeBlocks?: number
+  activeTasks?: number
+  dueReviews?: number
+  completedReviewEvents?: number
+  activeSources?: number
 }
 
 function requiredId(id: string | undefined, resource: string): string {
@@ -222,6 +303,51 @@ export function mapAssetView(view: AssetDtoLike): AssetModel {
     completedAt: view.completedAt,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
+  }
+}
+
+export function mapTaskView(view: TaskDtoLike): TaskModel {
+  return {
+    id: requiredId(view.id, 'Task'),
+    subjectId: view.subjectId || '',
+    title: view.title || '未命名任务',
+    description: view.description || '',
+    status: view.status || 'TODO',
+    scheduledAt: view.scheduledAt,
+    dueAt: view.dueAt,
+    durationMinutes: view.durationMinutes ?? 25,
+    cognitiveLoad: view.cognitiveLoad || 'MEDIUM',
+    sortKey: view.sortKey,
+    colorOverride: view.colorOverride,
+    version: view.version ?? 0,
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt,
+    deletedAt: view.deletedAt ?? null,
+  }
+}
+
+export function mapReviewStateView(view: ReviewStateDtoLike): ReviewStateModel {
+  return {
+    id: view.id,
+    knowledgeBlockId: view.knowledgeBlockId || '',
+    dueAt: view.dueAt,
+    difficulty: view.difficulty,
+    stability: view.stability,
+    lastReviewedAt: view.lastReviewedAt,
+    reps: view.reps ?? 0,
+    lapses: view.lapses ?? 0,
+    version: view.version ?? 0,
+    createdAt: view.createdAt,
+  }
+}
+
+export function mapStatsOverviewView(view: StatsOverviewDtoLike): StatsOverviewModel {
+  return {
+    activeKnowledgeBlocks: view.activeKnowledgeBlocks ?? 0,
+    activeTasks: view.activeTasks ?? 0,
+    dueReviews: view.dueReviews ?? 0,
+    completedReviewEvents: view.completedReviewEvents ?? 0,
+    activeSources: view.activeSources ?? 0,
   }
 }
 

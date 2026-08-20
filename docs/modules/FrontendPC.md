@@ -12,7 +12,7 @@
 
 `Auralis-PC` 是桌面与 Web 共用的 Vue 客户端，负责高信息密度的学科工作区、资产、任务时间线、知识关系和设置。浏览器开发与构建由 Vite 提供；桌面能力由 Tauri 2 提供。
 
-截至 2026-08-12，PC 页面与基础视觉重构已基本收敛：学科工作区、语义线条图标、统一弹窗、全局导航、Timeline 和 Pomodoro 已进入当前正式路由与组件结构。PC Web 构建已通过，仍需处理 bundle 体积警告并完成浏览器/Tauri GUI 验收。
+截至 2026-08-20，PC 页面与基础视觉重构已基本收敛，R4 Task 9–11 已完成联调前的 PC Store、AI SSE、运行时代理和 Tauri 权限边界迁移。PC Web 与 Tauri 应用本体构建已通过；MSI bundling、浏览器/Tauri GUI、真实服务和前后端业务联调仍未验收。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须经过当前模块边界、API/鉴权、视觉可访问性、构建和 GUI 验收审查。
 
@@ -77,14 +77,17 @@ Auralis-PC/
 | Store | 主要职责 |
 | --- | --- |
 | `useAuthStore.ts` | token、用户与会话 |
-| `useBlockStore.ts` | 知识块、本地持久化与块操作 |
-| `useTaskStore.ts` | 任务、排期与状态 |
+| `useBlockStore.ts` | 旧知识块兼容 facade；正式页面使用 `useKnowledgeStore` |
+| `useTaskStore.ts` | Task typed API、user/device repository、排期、状态和 mutation |
 | `useSubjectStore.ts` | 学科列表和当前学科 |
 | `useSourceStore.ts` | Source 分页、资料目录、软删除和 Source mutation |
 | `useKnowledgeStore.ts` | KnowledgeBlock 列表、关联 Source、离线缓存和 mutation |
 | `useAssetStore.ts` | Asset upload-intent、对象存储上传、complete、下载 URL 和失败 pending 状态 |
 | `useSyncStore.ts` | cursor、resetRequired、pull/push 状态、错误和统一同步入口 |
-| `useChatStore.ts` | AI 会话与消息 |
+| `useReviewStore.ts` | Review queue/history/event 的 typed DTO 状态 |
+| `useStatsStore.ts` | Stats overview/weekly query 和展示模型 |
+| `useChatStore.ts` | conversation/message/citation 本地缓存与 SSE 状态，不把旧本地 chat 表当云端事实 |
+| `usePomodoroStore.ts` | 用户/设备隔离的番茄钟 UI 与每日完成计数 |
 | `useSettingsStore.ts` | 主题和偏好 |
 
 修改 Store 字段前必须搜索页面、组件、持久化、同步和 API 使用方，禁止新增同职责 Store。
@@ -95,7 +98,7 @@ Auralis-PC/
 | --- | --- |
 | `api/request.ts` | base URL、Authorization、401/刷新等请求基础能力 |
 | `api/aiClient.ts` | AI 设置、会话、SSE 消息流与建议接口 |
-| `api/useAuthApi.ts` | 登录、注册、刷新 |
+| `api/useAuthApi.ts` | 登录、注册、刷新、会话列表与撤销 |
 | `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
 | `api/useStatsApi.ts` | 概览与周统计 |
 | `api/useSyncApi.ts` | push/pull 同步 |
@@ -121,18 +124,18 @@ Auralis-PC/
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
 | `services/localDb.ts` | 尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
 
-R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。R4-08 已将 Subject、Source、KnowledgeBlock、Asset 主路径切换到 `typed API → repository → view model`，并用固定 DTO mapping/cursor/mutation 测试保护字段边界；`useBlockStore`、`useTaskStore` 和剩余页面仍待后续任务迁移。
+R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。R4-08/09 已将 Subject、Source、KnowledgeBlock、Asset、Task、Review、Stats、Chat、Pomodoro 主路径切换到 `typed API → repository → view model`，并用固定 DTO mapping/cursor/mutation/SSE/runtime 测试保护字段边界；`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
 
 ## 页面职责
 
-- Dashboard：时间线、待办和快速创建；当前用户改动已移除首页知识流上方统计与热力图卡片。
+- Dashboard：时间线、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。
 - SubjectHall：学科卡片、搜索、创建和进入工作区。
 - SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口。
 - SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织。
-- Timeline：排期和任务时间管理。
-- Profile：账号、外观和设置。
-- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；由 `TimerCore.vue`、`PomodoroRing.vue` 与 `useTaskStore` 协作。
+- Timeline：排期和任务时间管理，任务变化通过 `useTaskStore` 写入 API/repository mutation。
+- Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。
+- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；计时 UI 通过 `usePomodoroStore`，任务同步仍由 `useTaskStore` 负责。
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。
 
@@ -140,8 +143,9 @@ R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离�
 
 - JavaScript API、CLI 和 Rust crate 当前统一为 `2.11.1`。
 - 使用 `@tauri-apps/plugin-sql` 提供 SQL 插件能力。
+- 默认 capability 只启用 `core:default`、`log:default` 和 `sql:default`；当前未启用 shell/http/fs。Vite 开发代理只接受 `VITE_DEV_API_TARGET` 与 `VITE_DEV_WS_TARGET`，Tauri 运行时 API/WS base 必须显式配置。
 - 目录从 StudyCore 重命名后，旧绝对路径可能残留在 Rust 构建缓存；仅在确认属于缓存时执行 `cargo clean`。
-- Web 构建通过不能证明桌面权限、窗口、插件、安装包和系统集成可用。
+- `npm.cmd run tauri -- build --no-bundle` 已验证 Rust/桌面应用本体生成；完整 MSI bundling 曾因宿主 `拒绝访问 (os error 5)` 阻断。Web/Tauri 本体构建通过不能证明桌面权限、窗口、插件、安装包和系统集成可用。
 
 ## 开发与验证命令
 
@@ -153,6 +157,10 @@ npm.cmd run build
 npm.cmd run check:subject-icons
 npm.cmd run check:subject-workspace
 npm run tauri dev
+npm.cmd run check:r4-pc
+npm.cmd run test:r4-pc
+npm.cmd run type-check
+npm.cmd run tauri -- build --no-bundle
 ```
 
 | 命令 | 证明范围 | 不证明 |
@@ -162,13 +170,16 @@ npm run tauri dev
 | `npm.cmd run check:subject-icons` | 学科语义图标、旧 Emoji 分支与页面接入静态契约 | 浏览器/Tauri 的实际图标显示、键盘和视觉效果 |
 | `npm.cmd run check:subject-workspace` | 学科工作区关键 UI 结构契约 | 浏览器拖拽、AI 流式请求与视觉效果 |
 | `npm run tauri dev` | 当前机器桌面开发启动 | 安装包和其他系统 |
+| `npm.cmd run check:r4-pc` | 生产源码未命中旧 DTO、旧同步字段、旧地址和旧 AI 路径 | 真实 API、GUI、安装包 |
+| `npm.cmd run test:r4-pc` | PC 协议、本地 repository、Store mapping、SSE reducer 和运行时配置测试 | 浏览器、Tauri GUI、真实后端 |
+| `npm.cmd run tauri -- build --no-bundle` | Rust/桌面应用本体和前端 bundle 可生成 | MSI、安装/升级/卸载和 GUI 验收 |
 
 ## 当前限制
 
 - 登录守卫临时关闭。
-- 当前没有 PC 自动化测试脚本。
+- 当前已有 R4 协议、本地 repository、Store mapping、SSE reducer 和运行时配置自动测试，但没有替代真实服务的浏览器 E2E。
 - `tsconfig.app.json` 的 TypeScript 6 `baseUrl` 弃用错误（TS5101）已通过移除配置项解决，`AppHeader.vue` 的未使用 `ElMessage` 导入也已清理；2026-08-12 `npm.cmd run build` 通过，但 Vite 提示部分 chunk 超过 500 kB。
-- Tauri GUI 和打包需本地人工验收。
+- Tauri GUI 和 MSI 打包需本地人工验收；当前 MSI bundling 被宿主权限错误阻断。
 - API、同步、资产和 AI 需要真实 Server/基础设施联调。
 - 用户当前工作树包含页面、Store、样式和 Tauri 依赖改动；在提交前必须按范围复核。
 

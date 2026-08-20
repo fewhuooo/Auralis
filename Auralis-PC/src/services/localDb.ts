@@ -540,7 +540,7 @@ export const localDb = {
         is_deleted: r.is_deleted === true || r.is_deleted === 1,
         position: r.position || '0',
         subjectId: r.subject_id || undefined
-      }));
+      })) as unknown as Task[];
     }
 
     const records = await db.select('SELECT * FROM task_blocks WHERE is_deleted = 0 ORDER BY position ASC');
@@ -560,7 +560,7 @@ export const localDb = {
       is_deleted: r.is_deleted === 1,
       position: r.position || '0',
       subjectId: r.subject_id || undefined
-    }));
+    })) as unknown as Task[];
   },
 
   async saveTask(task: Task, syncStatus = 'synced', syncVersion = 0) {
@@ -715,7 +715,7 @@ export const localDb = {
           }
         }
         
-        const mappedTask: Task = {
+        const mappedTask = {
           id: task.id,
           name: task.name,
           subject: task.subject,
@@ -730,7 +730,7 @@ export const localDb = {
           is_deleted: false,
           position: task.position || '0',
           subjectId: task.subjectId || task.subject_id || undefined
-        };
+        } as unknown as Task;
         await this.saveTask(mappedTask, 'synced', serverVer);
       }
       return;
@@ -765,7 +765,7 @@ export const localDb = {
         }
       }
       
-      const mappedTask: Task = {
+      const mappedTask = {
         id: task.id,
         name: task.name,
         subject: task.subject,
@@ -780,7 +780,7 @@ export const localDb = {
         is_deleted: false,
         position: task.position || '0',
         subjectId: task.subjectId || task.subject_id || undefined
-      };
+      } as unknown as Task;
       await this.saveTask(mappedTask, 'synced', task.syncVersion || task.sync_version || 0);
     }
   },
@@ -871,7 +871,7 @@ export const localDb = {
       }
     } else if (entityType === 'task') {
       if (action === 'create' || action === 'update') {
-        const task: Task = {
+        const task = {
           id: entityId,
           name: payload.name,
           subject: payload.subject,
@@ -885,7 +885,7 @@ export const localDb = {
           sync_status: 'synced',
           position: payload.position || '0',
           subjectId: payload.subjectId || payload.subject_id || undefined
-        };
+        } as unknown as Task;
         await this.saveTask(task, 'synced', mutation.createdAt);
       } else if (action === 'delete') {
         await this.hardDeleteTask(entityId);

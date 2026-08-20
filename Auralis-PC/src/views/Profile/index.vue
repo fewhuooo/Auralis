@@ -9,7 +9,8 @@
           <div class="avatar-pulse"></div>
         </div>
         <div class="user-meta">
-          <h2 class="user-name">Auralis 同学</h2>
+          <h2 class="user-name">{{ displayName }}</h2>
+          <p class="user-account">{{ accountName }} · {{ deviceName }}</p>
           <p class="user-streak">🔥 连续学习第 <strong>{{ continuousStudyDays }}</strong> 天</p>
         </div>
         <div class="user-level">
@@ -138,6 +139,38 @@
         </div>
       </div>
 
+      <!-- Auth sessions -->
+      <div class="settings-group session-group">
+        <h3 class="group-title">🔐 登录会话</h3>
+        <div v-if="sessionsLoading" class="session-empty">正在加载会话...</div>
+        <div v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</div>
+        <div v-else-if="sessions.length === 0" class="session-empty">暂无可展示的登录会话</div>
+        <div v-else class="group-items">
+          <div v-for="session in sessions" :key="session.id || session.deviceId" class="settings-row">
+            <div class="row-info">
+              <span class="row-label">
+                {{ session.deviceName || session.platform || '未知设备' }}
+                <span v-if="isCurrentSession(session)" class="session-current">当前会话</span>
+              </span>
+              <span class="row-desc">
+                {{ session.platform || 'UNKNOWN' }} · 最近使用 {{ formatSessionDate(session.lastUsedAt) }}
+              </span>
+            </div>
+            <div class="row-control">
+              <span v-if="isCurrentSession(session)" class="session-current-label">当前设备</span>
+              <button
+                v-else-if="session.id"
+                class="action-btn danger"
+                :disabled="revokingSessionId === session.id"
+                @click="handleRevokeSession(session)"
+              >
+                {{ revokingSessionId === session.id ? '撤销中...' : '撤销' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Danger Zone -->
       <div class="danger-zone">
         <h3 class="group-title">⚠️ 危险操作</h3>
@@ -161,17 +194,30 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useStatsApi } from '@/api/useStatsApi'
+import { ref, reactive, computed, onMounted } from 'vue'
+import { useAuthApi, type SessionResponse } from '@/api/useAuthApi'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
-import { useBlockStore } from '@/store/useBlockStore'
+import { useKnowledgeStore } from '@/store/useKnowledgeStore'
+import { useStatsStore } from '@/store/useStatsStore'
+import { useAuthStore } from '@/store/useAuthStore'
 import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 
 const settingsStore = useSettingsStore()
-const blockStore = useBlockStore()
+const knowledgeStore = useKnowledgeStore()
+const statsStore = useStatsStore()
+const authStore = useAuthStore()
+
+const sessions = ref<SessionResponse[]>([])
+const sessionsLoading = ref(false)
+const sessionsError = ref<string | null>(null)
+const revokingSessionId = ref<string | null>(null)
+
+const displayName = computed(() => authStore.user?.displayName || authStore.user?.username || 'Auralis 同学')
+const accountName = computed(() => authStore.user?.username || '未登录')
+const deviceName = computed(() => authStore.deviceId ? `设备 ${authStore.deviceId.slice(0, 8)}` : '未绑定设备')
 
 const continuousStudyDays = ref(1)
 
@@ -192,7 +238,41 @@ const subjects = ref<any[]>([])
 // === AI Insight ===
 const aiInsight = ref('根据您的学习习惯，持续整理知识库并合理编排专注任务能获得最佳的学习心流体验。')
 
-const colors = ['#7D9372', '#5E7A53', '#95A88C', '#A3B19B', '#6B8560', '#B3C0AD']
+const formatSessionDate = (value?: string) => {
+  if (!value) return '未知'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? '未知' : parsed.toLocaleString('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+const isCurrentSession = (session: SessionResponse) => Boolean(session.current || session.id === authStore.sessionId)
+
+const loadSessions = async () => {
+  sessionsLoading.value = true
+  sessionsError.value = null
+  try {
+    const response = await useAuthApi.listSessions()
+    sessions.value = response?.items ?? []
+  } catch (error) {
+    sessionsError.value = error instanceof Error ? error.message : '会话加载失败'
+  } finally {
+    sessionsLoading.value = false
+  }
+}
+
+const handleRevokeSession = async (session: SessionResponse) => {
+  if (!session.id || isCurrentSession(session)) return
+  revokingSessionId.value = session.id
+  try {
+    await useAuthApi.revokeSession(session.id)
+    sessions.value = sessions.value.filter((item) => item.id !== session.id)
+    ElNotification({ title: '会话已撤销', message: '该设备将无法继续使用当前登录状态。', type: 'success', duration: 3000 })
+  } catch (error) {
+    ElNotification({ title: '撤销失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
+  } finally {
+    revokingSessionId.value = null
+  }
+}
+
 const dayMapping: Record<string, string> = {
   'Mon': '一', 'Tue': '二', 'Wed': '三', 'Thu': '四', 'Fri': '五', 'Sat': '六', 'Sun': '日'
 }
@@ -201,46 +281,35 @@ const syncStore = useSyncStore()
 
 const loadStats = async () => {
   try {
-    const overviewRes: any = await useStatsApi.getOverview()
-    const weeklyRes: any = await useStatsApi.getWeekly()
+    await statsStore.loadDashboard()
+    const overview = statsStore.overview
+    const weekly = statsStore.weekly
 
-    const overview = overviewRes || {}
-    const weekly = weeklyRes || { weekBars: [] }
-
-    continuousStudyDays.value = overview.continuousStudyDays || 1
+    const activeDays = weekly.days.filter((day) => day.studySeconds > 0)
+    continuousStudyDays.value = activeDays.length || 0
     
     coreStats.value = [
-      { label: '知识块', value: String(overview.totalBlocks || 0), accent: false },
-      { label: '完成任务', value: String(overview.totalTasks || 0), accent: false },
-      { label: '总专注时长', value: ((overview.totalFocusMinutes || 0) / 60).toFixed(1) + 'h', accent: true },
-      { label: '本周新增', value: String(overview.weeklyNewBlocks || 0), accent: false },
+      { label: '知识块', value: String(overview.activeKnowledgeBlocks), accent: false },
+      { label: '活动任务', value: String(overview.activeTasks), accent: false },
+      { label: '总专注时长', value: (weekly.days.reduce((sum, day) => sum + day.studySeconds, 0) / 3600).toFixed(1) + 'h', accent: true },
+      { label: '本周新增', value: String(weekly.days.reduce((sum, day) => sum + day.createdKnowledgeCount, 0)), accent: false },
     ]
 
     // Map week bars
-    const rawBars = weekly.weekBars || []
-    const maxMins = Math.max(...rawBars.map((b: any) => b.focusMinutes), 60)
-    const todayName = new Date().getDay() // 0 = Sun, 1 = Mon...
-    const todayMapIndex = todayName === 0 ? 6 : todayName - 1
-    const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-    const todayStr = weekDays[todayMapIndex]
-
-    weekBars.value = rawBars.map((bar: any) => ({
-      day: dayMapping[bar.day] || bar.day,
-      pct: Math.round(((bar.focusMinutes || 0) * 100) / maxMins),
-      today: bar.day === todayStr
+    const maxSeconds = Math.max(...weekly.days.map((day) => day.studySeconds), 3600)
+    const todayStr = new Date().toISOString().slice(0, 10)
+    weekBars.value = weekly.days.map((day) => ({
+      day: dayMapping[new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short' })] || day.date.slice(5),
+      pct: Math.round((day.studySeconds * 100) / maxSeconds),
+      today: day.date === todayStr
     }))
 
     // Map subjects
-    const rawSubjects = overview.subjectDistribution || []
-    subjects.value = rawSubjects.map((item: any, index: number) => ({
-      name: item.subject || '未分类',
-      pct: item.pct || 0,
-      color: colors[index % colors.length]
-    }))
+    subjects.value = []
 
     // Dynamic AI Insight based on stats
-    if (overview.totalFocusMinutes > 240) {
-      aiInsight.value = '您本周的专注学习状态极其出色！主要精力集中在 ' + (subjects.value[0]?.name || '重点学科') + '，建议继续保持现有的心流节奏。'
+    if (weekly.days.some((day) => day.studySeconds > 14_400)) {
+      aiInsight.value = '您本周的专注学习状态极其出色，建议继续保持现有的心流节奏。'
     } else {
       aiInsight.value = '开启您的每日学习任务吧！合理利用番茄钟进行大纲拆解与目标管理，知识库会自动记录您的每次成长。'
     }
@@ -362,8 +431,8 @@ const handleAction = async (item: SettingItem) => {
     }
   } else if (item.id === 'export') {
     try {
-      await blockStore.loadLocalBlocks()
-      const blocks = blockStore.recentBlocks || []
+      await knowledgeStore.loadLocalBlocks()
+      const blocks = knowledgeStore.recentBlocks || []
       const jsonData = JSON.stringify(blocks, null, 2)
       const blob = new Blob([jsonData], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
@@ -385,6 +454,7 @@ const handleInputBlur = (_item: SettingItem) => {
 
 onMounted(async () => {
   await loadStats()
+  await loadSessions()
 })
 
 const handleClearCache = async () => {
@@ -743,6 +813,27 @@ const handleDeleteAccount = async () => {
   border-radius: var(--radius-xl);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
+}
+
+.session-empty {
+  padding: 18px 20px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.session-error {
+  color: var(--color-danger, #ef4444);
+}
+
+.session-current,
+.session-current-label {
+  color: var(--text-accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.session-current {
+  margin-left: 8px;
 }
 
 .group-title {
