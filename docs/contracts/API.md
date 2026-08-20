@@ -26,7 +26,7 @@
 | POST | /api/auth/refresh | rotation refresh session 并签发新 token pair，HTTP 200 |
 | POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
 | GET | /api/auth/me | 返回当前用户公开资料，需 Bearer access token |
-| GET | /api/auth/sessions | 返回当前用户会话元数据，需 Bearer access token |
+| GET | /api/auth/sessions | 返回当前用户每台设备的活动会话元数据，需 Bearer access token |
 | DELETE | /api/auth/sessions/{sessionId} | owner-scoped 撤销会话，HTTP 204 |
 | DELETE | /api/auth/sessions/others | 撤销当前会话以外的会话，HTTP 204 |
 
@@ -101,8 +101,8 @@
 - `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult。旧 refresh token 立即失效。
 - AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`deviceId`。
 - `GET /api/auth/me` 返回 `UserView { id, username, displayName }`。
-- `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`deviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。
-- 登出和会话撤销成功返回 HTTP 204；会话查询和撤销始终从 SecurityContext 的 userId 推导归属，不接受客户端 userId。
+- `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`deviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。列表只展示未轮换、未撤销、未过期的活动会话，并按 `deviceId` 归并为一条；同一用户在同一设备再次登录会先撤销该设备的旧活动 refresh session，再签发新的会话。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。
+- 登出和会话撤销成功返回 HTTP 204；会话查询和撤销始终从 SecurityContext 的 userId 推导归属，不接受客户端 userId。撤销会阻止 refresh token 续期；已签发的 access JWT 仍在其 15 分钟有效期内自然过期，不承诺瞬时断开。
 
 ### 鉴权和安全错误
 
@@ -171,16 +171,16 @@
 
 已完成：目标路由表、通用响应规则、Problem Details 字段、阶段 1 Auth、阶段 2A 三类核心资源、阶段 2B Source/Asset/Relation 请求/响应、阶段 3 Sync、阶段 4 Review/Stats/Realtime、R1-05 核心列表 cursor/会话并发版本规则和旧契约不兼容结论。
 
-未完成：全量 PostgreSQL/容器门禁、真实 MinIO/外部模型联调、双设备/过期 cursor 生产验收、浏览器 WebSocket、前后端联调和人工业务验收。R1-03 的 pgvector 集成已在隔离 PostgreSQL 测试容器形成证据；R2 新增的全量 clean/upgrade、MinIO 和 Compose 门禁仍待 Docker 引擎执行，不代表完整 Compose 或全模块生产验收。
+未完成：真实 Provider/外部模型联调、MinIO 异常路径、双设备/过期 cursor 生产验收、浏览器 WebSocket、前后端联调和人工业务验收。R1/R2 已由默认 `clean test` 实际执行 PostgreSQL clean/upgrade、pgvector 与 MinIO Testcontainers；这不代表完整 Compose 或全模块生产验收。
 
 ## 阶段 5 AI/RAG 后端基线契约（2026-08-16）
 
-- `GET /api/ai/settings` 返回当前用户各 Provider 的配置摘要；`PUT /api/ai/settings` 接受 `provider`、`baseUrl`、`chatModel`、`embeddingModel` 和可选 `apiKey`。返回值只暴露 `hasApiKey`，不返回明文或密文。Provider 配置按用户隔离，首次创建必须提供 key，更新时可保留原 key。
-- `POST /api/ai/conversations` 创建会话；`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息和会话 `version`；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 必须携带当前 `baseVersion` 并执行 owner-scoped 软删除，版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`。
-- `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、`provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。`topK` 必须为正整数且不超过 `auralis.ai.max-retrieved-chunks`（当前 DTO 上限为 32）；同一用户的 `clientRequestId` 重试会回放已持久化结果，不重复创建 USER 消息或调用 Provider。事件为 `message.started`、零个或多个 `citation`、零个或多个 `message.delta`、`message.completed`、`message.error`；citation 包含 `sourceId`、`chunkId`、ordinal、标题、excerpt 和 similarity，USER 消息先持久化，ASSISTANT 成功、失败或断流状态随后持久化。
+- `GET /api/ai/settings` 返回当前用户各 Provider 的配置摘要；`PUT /api/ai/settings` 接受 `provider`、`baseUrl`、`chatModel`、`embeddingModel` 和可选 `apiKey`。返回值只暴露 `hasApiKey`，不返回明文或密文。Provider 配置按用户隔离，首次创建必须提供 key，更新时可保留原 key。客户端只能在本请求 body 中提交 key，禁止持久化明文或在普通请求中附加 BYOK header。
+- `POST /api/ai/conversations` 创建会话；请求可选 `clientRequestId`，同一用户重放同一非空值必须返回同一会话，供离线会话恢复使用。`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息和会话 `version`；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 必须携带当前 `baseVersion` 并执行 owner-scoped 软删除，版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`。
+- `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、`provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。`topK` 必须为正整数且不超过 `auralis.ai.max-retrieved-chunks`（当前 DTO 上限为 32）；同一用户的 `clientRequestId` 重试会回放已持久化结果，不重复创建 USER 消息或调用 Provider。相同会话并发请求会在短事务中先唯一保留 USER 消息，Provider I/O 不持有数据库事务；assistant 仅关联其对应的 USER 消息。事件为 `message.started`、零个或多个 `citation`、零个或多个 `message.delta`、`message.completed`、`message.error`；citation 包含 `sourceId`、`chunkId`、ordinal、标题、excerpt 和 similarity，USER 消息先持久化，ASSISTANT 成功、失败或断流状态随后持久化。
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
 - Source 创建、更新和 reingest 在提交后发布 ingestion 请求；启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行，租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。PostgreSQL 使用 pgvector SQL/HNSW 执行用户隔离的 cosine 检索；H2 保留 JSON embedding 的确定性 cosine fallback。
 - SSE 使用 Spring MVC `StreamingResponseBody`，Controller 通过回调把 Provider 增量直接写入响应，不先构造完整事件列表；OpenAI-compatible 适配器解析上游 SSE 的 `data:` 增量、`[DONE]`、超时、429/5xx 和 malformed event。当前自动证据为 Stub/受控 HTTP，不代表真实 Provider 网络、证书、配额或前端联调已通过。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
 - Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443），host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；保存和实际请求前都会校验所有 DNS 地址，实际连接固定到已检查地址，Provider 重定向关闭。
 - Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
-- 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V13、架构测试、出站安全专项，以及 `postgres-it` profile 下真实 PostgreSQL 17/pgvector 集成测试。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04 定向 AI 流式/Provider/Controller 测试 16/16，R1-05 增加会话并发、五类列表分页、清理恢复和指标测试。MinIO、真实 Provider 网络/证书/限流、性能、前端和人工业务验收仍未完成。
+- 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V14、架构测试、出站安全专项，以及默认 `clean test` 的真实 PostgreSQL 17/pgvector 与 MinIO Testcontainers。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04/R1-05 增加了会话恢复键、同一请求并发保留、精确 assistant 关联及流式回放测试。真实 Provider 网络/证书/限流、浏览器前端联调和人工业务验收仍未完成。

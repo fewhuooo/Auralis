@@ -15,6 +15,8 @@ public interface ConversationRepository extends JpaRepository<ConversationEntity
 
     Optional<ConversationEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
+    Optional<ConversationEntity> findByUserIdAndClientRequestId(UUID userId, String clientRequestId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select conversation from ConversationEntity conversation

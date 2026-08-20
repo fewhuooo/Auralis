@@ -1,4 +1,5 @@
-import request from './request.ts'
+import request, { refreshAccessToken } from './request.ts'
+import { streamWithAccessTokenRefresh } from './authenticatedSse.ts'
 import { getClientRuntimeConfig } from '../config/runtime.ts'
 import { useAuthStore } from '../store/useAuthStore.ts'
 import { fetchSseStream, parseSseStream, type AiStreamEvent, type SseEvent } from './sse.ts'
@@ -73,29 +74,25 @@ export async function* streamAiMessage(
 
   const url = `${runtime.apiBaseUrl.replace(/\/+$/, '')}/api/ai/messages/stream`
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-  }
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
-  }
-
-  const sseIterable = fetchSseStream<unknown>(
-    url,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data),
-    },
-    { signal }
-  )
-
-  for await (const event of sseIterable) {
-    if (event.event) {
-      yield { event: event.event, data: event.data } as AiStreamEvent
+  const open = (accessToken: string | null) => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
     }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+    return fetchSseStream<unknown>(
+        url,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(data),
+        },
+        { signal }
+      )
+  }
+
+  for await (const event of streamWithAccessTokenRefresh(token, open, refreshAccessToken, signal)) {
+    if (event.event) yield { event: event.event, data: event.data } as AiStreamEvent
   }
 }
 

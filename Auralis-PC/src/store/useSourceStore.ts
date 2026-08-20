@@ -7,15 +7,7 @@ import type { LocalRepository } from '@/services/localRepository'
 import { mapSourceView, nextPageCursor, type SourceFileModel } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
-
-function isOfflineLike(error: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = Number((error as { status?: unknown }).status)
-    return !Number.isFinite(status) || status >= 500
-  }
-  return true
-}
+import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -90,7 +82,7 @@ export const useSourceStore = defineStore('source', () => {
         : merged
       return merged
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '资料加载失败，当前使用离线缓存'
       const local = await readLocal()
       sources.value = local
@@ -125,37 +117,29 @@ export const useSourceStore = defineStore('source', () => {
       assetId,
       outline,
     }
-    try {
-      const view = await useSourceApi.create(payload)
-      await cache(view)
-      await loadSourceFiles(subjectId)
-      return String(view.id)
-    } catch (error) {
-      if (!isOfflineLike(error)) throw error
-      const id = uuidv7()
-      const localView: SourceView = {
-        ...payload,
-        id,
-        version: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        deletedAt: undefined,
-        ingestionStatus: 'PENDING',
-      }
-      const repo = await repository()
-      await repo.upsert('SOURCE', id, localView, { version: 0, syncStatus: 'pending' })
-      await repo.enqueueMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'SOURCE',
-        resourceId: id,
-        mutationType: 'CREATE',
-        baseVersion: 0,
-        payload: localView as unknown as Record<string, unknown>,
-      })
-      scheduleSync()
-      await loadSourceFiles(subjectId)
-      return id
+    const id = uuidv7()
+    const localView: SourceView = {
+      ...payload,
+      id,
+      version: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: undefined,
+      ingestionStatus: 'PENDING',
     }
+    const repo = await repository()
+    await repo.upsert('SOURCE', id, localView, { version: 0, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'SOURCE',
+      resourceId: id,
+      mutationType: 'CREATE',
+      baseVersion: 0,
+      payload: localView as unknown as Record<string, unknown>,
+    }))
+    scheduleSync()
+    await loadSourceFiles(subjectId)
+    return id
   }
 
   async function addSourceFile(subjectId: string, name: string, filePath: string, _fileType: string, _fileSize: number, catalogJson = '[]'): Promise<string> {
@@ -170,17 +154,17 @@ export const useSourceStore = defineStore('source', () => {
       const repo = await repository()
       await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'synced' })
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       const repo = await repository()
       await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'pending' })
-      await repo.enqueueMutation({
+      await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
         resourceType: 'SOURCE',
         resourceId: id,
         mutationType: 'DELETE',
         baseVersion: source.version,
         payload: { id },
-      })
+      }))
       scheduleSync()
     }
     sources.value = sources.value.filter((item) => item.id !== id)
@@ -201,7 +185,7 @@ export const useSourceStore = defineStore('source', () => {
       const view = await useSourceApi.update(file.id, payload)
       await cache(view)
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       const repo = await repository()
       const localView: SourceView = {
         id: file.id,
@@ -217,14 +201,14 @@ export const useSourceStore = defineStore('source', () => {
         ingestionStatus: file.ingestionStatus,
       }
       await repo.upsert('SOURCE', file.id, localView, { version: file.version, syncStatus: 'pending' })
-      await repo.enqueueMutation({
+      await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
         resourceType: 'SOURCE',
         resourceId: file.id,
         mutationType: 'UPDATE',
         baseVersion: file.version,
         payload: { outline: file.catalogJson },
-      })
+      }))
       scheduleSync()
     }
     await loadSourceFiles(file.subjectId)

@@ -24,6 +24,9 @@ public class ConversationEntity {
     @Column(length = 240)
     private String title;
 
+    @Column(name = "client_request_id", length = 128)
+    private String clientRequestId;
+
     @Column(name = "deleted_at")
     private Instant deletedAt;
 
@@ -44,9 +47,14 @@ public class ConversationEntity {
     }
 
     public ConversationEntity(UUID id, UUID userId, String title) {
+        this(id, userId, title, null);
+    }
+
+    public ConversationEntity(UUID id, UUID userId, String title, String clientRequestId) {
         this.id = id;
         this.userId = userId;
         this.title = title;
+        this.clientRequestId = clientRequestId;
     }
 
     @PrePersist
@@ -67,6 +75,7 @@ public class ConversationEntity {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getTitle() { return title; }
+    public String getClientRequestId() { return clientRequestId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }

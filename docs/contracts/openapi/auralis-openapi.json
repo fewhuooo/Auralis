@@ -2748,6 +2748,11 @@
           "baseVersion" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "clientRequestId" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
           }
         },
         "required" : [ "baseVersion" ]

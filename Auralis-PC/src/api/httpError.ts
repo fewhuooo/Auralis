@@ -34,6 +34,8 @@ interface FailedResponse {
     status?: unknown;
     data?: unknown;
   };
+  /** Axios sets request when the transport was attempted but no response arrived. */
+  request?: unknown;
   message?: unknown;
 }
 
@@ -41,7 +43,9 @@ export function toApiProblem(error: unknown): ApiProblemDetails {
   const failed = (error && typeof error === 'object' ? error : {}) as FailedResponse;
   const status = typeof failed.response?.status === 'number' && Number.isInteger(failed.response.status)
     ? failed.response.status
-    : 500;
+    : failed.request
+      ? 0
+      : 500;
 
   if (isProblemDetails(failed.response?.data)) return failed.response.data;
 

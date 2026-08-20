@@ -1,8 +1,8 @@
 # Spring Boot 后端模块
 
-更新时间：2026-08-17
+更新时间：2026-08-20
 
-文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 后端基线已构建，R1-03 pgvector/原子切换已完成真实数据库验证，R1-04 AI 请求与受控真实流式已完成，整体仍待外部验收
+文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线已构建，R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；默认 Docker Testcontainers 门禁通过，整体仍待真实 Provider 与外部验收
 
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
@@ -28,7 +28,7 @@
 | relation | 通用跨对象关系 | 阶段 2B 已实现端点校验、去重、软删除级联，待 PostgreSQL/人工验收 |
 | review | ReviewState、ReviewEvent、FSRS-lite | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | sync | Device、mutation、change log、高水位 cursor、snapshot、墓碑 | 阶段 3 已实现，待双设备/过期 cursor/生产验收 |
-| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions | 阶段 5 后端基线已实现；R1-03 pgvector 已通过隔离 PostgreSQL 验证，R1-04 已完成参数透传、幂等、引用和回调式 SSE，待真实 Provider/MinIO/业务验收 |
+| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions | 阶段 5 后端基线已实现；R1-03 pgvector、R1-04 流式、会话/消息幂等保留和精确 reply 关联已通过；待真实 Provider 与业务验收 |
 | stats | 强类型统计读取模型 | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | realtime | WebSocket ticket 和用户级事件 | 阶段 4 已实现，待浏览器/跨实例验收 |
 | shared | 错误模型、时钟、ID、分页、最小公共设施 | 配置/错误/OpenAPI 基础 |
@@ -53,7 +53,9 @@
 - DELETE /api/auth/sessions/{sessionId}
 - DELETE /api/auth/sessions/others
 
-除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task，阶段 2B 已实现 Source、Asset、Relation，阶段 3 已实现 Sync，阶段 4 已实现 Review、Stats、Realtime，阶段 5 已实现 AI settings、Conversation、SSE message、Suggestions 和 ingestion/retrieval 后端基线；R1-05 已完成会话并发版本、消息序号、核心列表 cursor 与 Sync 清理调度。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
+除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task，阶段 2B 已实现 Source、Asset、Relation，阶段 3 已实现 Sync，阶段 4 已实现 Review、Stats、Realtime，阶段 5 已实现 AI settings、Conversation、SSE message、Suggestions 和 ingestion/retrieval 后端基线；R1 已完成会话并发版本/消息序号、短事务请求保留、离线会话恢复键、核心列表 cursor 与 Sync 清理调度。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
+
+Identity 的登录设备列表以活动 refresh session 为边界：同一用户/设备重复登录会替换旧活动会话，`GET /api/auth/sessions` 仅返回每台设备一条当前或最近活动记录，轮换、撤销和过期记录不作为设备条目展示。
 
 ## 阶段 2A 实际 HTTP 表面
 
@@ -152,7 +154,7 @@
 - `ai` 模块通过 `AiProviderPort`、`EmbeddingProviderPort` 与统一的 `ProviderHttpClient` 适配 OpenAI-compatible/DeepSeek 聊天和 SiliconFlow embedding；Provider URL 使用 HTTPS 精确 allowlist、全 DNS 地址校验和固定地址连接，重定向关闭，并受超时/响应体上限约束。BYOK 使用 AES-GCM，日志、异常、DTO 与凭据 `toString()` 不回显 key。
 - ingestion 由 Source 提交后事件触发，`IngestionJobService` 做用户/Source 归属和活动任务去重，并通过数据库锁定的 claim-next 分配租约；条件化 `IngestionWorkerScheduler` 自动轮询，lease 过期可恢复，失败按最大次数回到 PENDING，耗尽后进入 FAILED。`IngestionWorker` 负责解析、固定大小重叠切块、1024 维 embedding 和 chunk 替换。
 - `RetrievalService` 只查询当前 userId 的活动 generation chunks。PostgreSQL 通过 `PgVectorRetrievalRepository` 执行带 user/source/active/deleted 过滤的 pgvector cosine SQL，由 HNSW 索引支持 top-k；非 PostgreSQL 环境使用活动 chunk 的 JSON cosine fallback。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
-- Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、`clientRequestId` 幂等回放和安全错误/断流状态持久化。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
+- Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、会话和 USER 消息的 `clientRequestId` 幂等回放及安全错误/断流状态持久化。流式请求先在短事务中锁定会话并保留唯一 USER 消息，Provider I/O 不持有数据库事务；assistant 以 `reply_to_message_id` 精确关联该 USER 消息。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
 
-阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1-03 定向测试 11/11、R1-04 AI 流式/Provider/Controller 定向测试 16/16，R1-05 覆盖 V13、消息竞争、会话版本、五类列表分页、清理恢复和指标；全量测试结果以本轮 Status/Changelog 为准。`PgVectorIntegrationTests` 在 PostgreSQL 17.11 + pgvector 容器通过 1/1。真实 Provider、MinIO、全量 Compose、性能和前端联调仍未完成。
+阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1 定向套件验证 V14、会话重试、并发同请求仅一次保留和流式回放；默认 `mvn -B -ntp clean test` 已实际执行 PostgreSQL 17/pgvector clean/upgrade 与 MinIO 容器，137/137 通过。真实 Provider、性能和前端联调仍未完成。

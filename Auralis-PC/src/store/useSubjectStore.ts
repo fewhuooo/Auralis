@@ -8,6 +8,7 @@ import { mapSubjectView, nextPageCursor, type SourceFileModel, type SubjectModel
 import { useSourceStore } from '@/store/useSourceStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { uuidv7 } from '@/utils/uuid'
+import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
 
 export type Subject = SubjectModel
 export type SourceFile = SourceFileModel
@@ -15,15 +16,6 @@ export type SourceFile = SourceFileModel
 export interface CatalogItem {
   title: string
   sections: string[]
-}
-
-function isOfflineLike(error: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = Number((error as { status?: unknown }).status)
-    return !Number.isFinite(status) || status >= 500
-  }
-  return true
 }
 
 function asSubjectDto(value: unknown): SubjectView | null {
@@ -133,7 +125,7 @@ export const useSubjectStore = defineStore('subject', () => {
         fileCount: sourceRows.filter((row) => asRecord(row.value)?.subjectId === subject.id).length,
       }))
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '学科加载失败，当前使用离线缓存'
       subjects.value = await localSubjects()
     } finally {
@@ -155,30 +147,24 @@ export const useSubjectStore = defineStore('subject', () => {
       iconKey: icon,
       color,
     }
-    try {
-      const view = await useSubjectApi.create(payload)
-      const model = await cache(view)
-      subjects.value = [...subjects.value.filter((item) => item.id !== model.id), model]
-      return String(view.id)
-    } catch (error) {
-      if (!isOfflineLike(error)) throw error
-      const id = uuidv7()
-      const now = new Date().toISOString()
-      const localView: SubjectView = { ...payload, id, version: 0, createdAt: now, updatedAt: now, deletedAt: undefined }
-      const repo = await repository()
-      await repo.upsert('SUBJECT', id, localView, { version: 0, syncStatus: 'pending' })
-      await repo.enqueueMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'SUBJECT',
-        resourceId: id,
-        mutationType: 'CREATE',
-        baseVersion: 0,
-        payload: localView as unknown as Record<string, unknown>,
-      })
-      scheduleSync()
-      subjects.value = [...subjects.value, mapSubjectView(localView)]
-      return id
-    }
+    // CREATE is local-first even while online. The durable outbox keeps the
+    // resource ID and clientMutationId intact if the HTTP response is lost.
+    const id = uuidv7()
+    const now = new Date().toISOString()
+    const localView: SubjectView = { ...payload, id, version: 0, createdAt: now, updatedAt: now, deletedAt: undefined }
+    const repo = await repository()
+    await repo.upsert('SUBJECT', id, localView, { version: 0, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'SUBJECT',
+      resourceId: id,
+      mutationType: 'CREATE',
+      baseVersion: 0,
+      payload: localView as unknown as Record<string, unknown>,
+    }))
+    scheduleSync()
+    subjects.value = [...subjects.value, mapSubjectView(localView)]
+    return id
   }
 
   async function updateSubject(subject: Subject): Promise<void> {
@@ -195,17 +181,17 @@ export const useSubjectStore = defineStore('subject', () => {
       const model = await cache(view)
       subjects.value = subjects.value.map((item) => item.id === model.id ? model : item)
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       const repo = await repository()
       await repo.upsert('SUBJECT', subject.id, { ...payload, id: subject.id }, { version: subject.version, syncStatus: 'pending' })
-      await repo.enqueueMutation({
+      await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
         resourceType: 'SUBJECT',
         resourceId: subject.id,
         mutationType: 'UPDATE',
         baseVersion: subject.version,
         payload: payload as unknown as Record<string, unknown>,
-      })
+      }))
       scheduleSync()
       subjects.value = subjects.value.map((item) => item.id === subject.id ? { ...subject } : item)
     }
@@ -219,17 +205,17 @@ export const useSubjectStore = defineStore('subject', () => {
       const repo = await repository()
       await repo.tombstone('SUBJECT', id, { version: subject.version, syncStatus: 'synced' })
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       const repo = await repository()
       await repo.tombstone('SUBJECT', id, { version: subject.version, syncStatus: 'pending' })
-      await repo.enqueueMutation({
+      await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
         resourceType: 'SUBJECT',
         resourceId: id,
         mutationType: 'DELETE',
         baseVersion: subject.version,
         payload: { id },
-      })
+      }))
       scheduleSync()
     }
     if (activeSubjectId.value === id) setActiveSubject(null)

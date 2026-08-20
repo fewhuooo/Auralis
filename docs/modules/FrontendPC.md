@@ -12,7 +12,7 @@
 
 `Auralis-PC` 是桌面与 Web 共用的 Vue 客户端，负责高信息密度的学科工作区、资产、任务时间线、知识关系和设置。浏览器开发与构建由 Vite 提供；桌面能力由 Tauri 2 提供。
 
-截至 2026-08-20，PC 页面与基础视觉重构已基本收敛，R4 Task 9–11 已完成联调前的 PC Store、AI SSE、运行时代理和 Tauri 权限边界迁移。PC Web 与 Tauri 应用本体构建已通过；MSI bundling、浏览器/Tauri GUI、真实服务和前后端业务联调仍未验收。
+截至 2026-08-20，PC 页面与基础视觉重构已基本收敛；R4 在原有 Store、AI SSE、运行时代理和 Tauri 权限边界之上，补齐了 BYOK 浏览器明文清理、离线写入幂等、SSE 401 单次刷新和离线 AI 会话恢复。PC Web 与 Tauri 应用本体构建已通过；MSI bundling、浏览器/Tauri GUI、真实 Provider 和前后端业务联调仍未验收。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须经过当前模块边界、API/鉴权、视觉可访问性、构建和 GUI 验收审查。
 
@@ -86,7 +86,7 @@ Auralis-PC/
 | `useSyncStore.ts` | cursor、resetRequired、pull/push 状态、错误和统一同步入口 |
 | `useReviewStore.ts` | Review queue/history/event 的 typed DTO 状态 |
 | `useStatsStore.ts` | Stats overview/weekly query 和展示模型 |
-| `useChatStore.ts` | conversation/message/citation 本地缓存与 SSE 状态，不把旧本地 chat 表当云端事实 |
+| `useChatStore.ts` | 本地稳定会话/消息 ID、会话创建与消息请求幂等键、citation/SSE 状态及 online 顺序恢复；不把旧本地 chat 表当云端事实 |
 | `usePomodoroStore.ts` | 用户/设备隔离的番茄钟 UI 与每日完成计数 |
 | `useSettingsStore.ts` | 主题和偏好 |
 
@@ -96,8 +96,8 @@ Auralis-PC/
 
 | 文件 | 职责 |
 | --- | --- |
-| `api/request.ts` | base URL、Authorization、401/刷新等请求基础能力 |
-| `api/aiClient.ts` | AI 设置、会话、SSE 消息流与建议接口 |
+| `api/request.ts` | base URL、Authorization、401 单飞刷新；不读取或发送浏览器 BYOK key/header |
+| `api/aiClient.ts` | AI 设置、会话、带单次 401 刷新且复用同一请求 ID 的 SSE 消息流与建议接口 |
 | `api/useAuthApi.ts` | 登录、注册、刷新、会话列表与撤销 |
 | `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
 | `api/useStatsApi.ts` | 概览与周统计 |
@@ -124,7 +124,7 @@ Auralis-PC/
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
 | `services/localDb.ts` | 尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
 
-R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。R4-08/09 已将 Subject、Source、KnowledgeBlock、Asset、Task、Review、Stats、Chat、Pomodoro 主路径切换到 `typed API → repository → view model`，并用固定 DTO mapping/cursor/mutation/SSE/runtime 测试保护字段边界；`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
+R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用 `pullChanges`。R4-08/09 已将 Subject、Source、KnowledgeBlock、Asset、Task、Review、Stats、Chat、Pomodoro 主路径切换到 `typed API → repository → view model`。核心资源 CREATE 先以稳定 `resourceId/clientMutationId` 写入 outbox，只有明确离线或传输失败才排队，5xx 不伪装成离线。Chat 的 `CONVERSATION` 和本地专用 `CHAT_MESSAGE` 行保存 `creationRequestId/clientRequestId`，上线后依会话与消息顺序恢复；`CHAT_MESSAGE` 不进入 Sync 推送。`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
 
 ## 页面职责
 
@@ -134,7 +134,7 @@ R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离�
 - SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织。
 - Timeline：排期和任务时间管理，任务变化通过 `useTaskStore` 写入 API/repository mutation。
-- Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。
+- Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
 - Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；计时 UI 通过 `usePomodoroStore`，任务同步仍由 `useTaskStore` 负责。
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。
@@ -171,7 +171,7 @@ npm.cmd run tauri -- build --no-bundle
 | `npm.cmd run check:subject-workspace` | 学科工作区关键 UI 结构契约 | 浏览器拖拽、AI 流式请求与视觉效果 |
 | `npm run tauri dev` | 当前机器桌面开发启动 | 安装包和其他系统 |
 | `npm.cmd run check:r4-pc` | 生产源码未命中旧 DTO、旧同步字段、旧地址和旧 AI 路径 | 真实 API、GUI、安装包 |
-| `npm.cmd run test:r4-pc` | PC 协议、本地 repository、Store mapping、SSE reducer 和运行时配置测试 | 浏览器、Tauri GUI、真实后端 |
+| `npm.cmd run test:r4-pc` | PC 协议、本地 repository、Store mapping、SSE reducer、BYOK 禁止浏览器明文、离线幂等与运行时配置测试 | 浏览器、Tauri GUI、真实后端 |
 | `npm.cmd run tauri -- build --no-bundle` | Rust/桌面应用本体和前端 bundle 可生成 | MSI、安装/升级/卸载和 GUI 验收 |
 
 ## 当前限制
@@ -181,6 +181,7 @@ npm.cmd run tauri -- build --no-bundle
 - `tsconfig.app.json` 的 TypeScript 6 `baseUrl` 弃用错误（TS5101）已通过移除配置项解决，`AppHeader.vue` 的未使用 `ElMessage` 导入也已清理；2026-08-12 `npm.cmd run build` 通过，但 Vite 提示部分 chunk 超过 500 kB。
 - Tauri GUI 和 MSI 打包需本地人工验收；当前 MSI bundling 被宿主权限错误阻断。
 - API、同步、资产和 AI 需要真实 Server/基础设施联调。
+- AI key 的持久化安全、网络中断后的会话恢复和 token 刷新均有自动测试，但仍需要浏览器连接真实 Server/SSE 的人工业务验收。
 - 用户当前工作树包含页面、Store、样式和 Tauri 依赖改动；在提交前必须按范围复核。
 
 ## 修改后的强制回写

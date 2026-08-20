@@ -139,6 +139,103 @@
         </div>
       </div>
 
+      <!-- AI BYOK Settings -->
+      <div class="settings-group byok-group">
+        <h3 class="group-title">✦ AI 模型引擎 (BYOK)</h3>
+        <div class="byok-intro">
+          <div class="row-info">
+            <span class="row-label">自定义模型代理与密钥</span>
+            <span class="row-desc">配置会直接安全加密保存至服务端。此设备本地不保存明文密钥，亦不在普通请求中附加密钥。</span>
+          </div>
+          <div class="byok-status-pill" :class="{ 'is-active': currentProviderHasKey }">
+            <span class="status-dot"></span>
+            <span>{{ currentProviderHasKey ? '已配置云端密钥' : '未配置密钥' }}</span>
+          </div>
+        </div>
+
+        <div class="group-items">
+          <div class="settings-row byok-field-row">
+            <div class="row-info">
+              <span class="row-label">服务商 (Provider)</span>
+              <span class="row-desc">选择要配置的大语言模型供应商</span>
+            </div>
+            <div class="row-control byok-control-wrap">
+              <select v-model="customProvider" class="settings-select byok-select" @change="handleProviderChange">
+                <option value="OPENAI_COMPATIBLE">OpenAI Compatible</option>
+                <option value="DEEPSEEK">DeepSeek</option>
+                <option value="SILICONFLOW">SiliconFlow</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="settings-row byok-field-row">
+            <div class="row-info">
+              <span class="row-label">模型选择 (Chat Model)</span>
+              <span class="row-desc">选择或输入该服务商下用于对话的模型标识</span>
+            </div>
+            <div class="row-control byok-control-wrap byok-model-control">
+              <select
+                v-model="selectedModelPreset"
+                class="settings-select byok-select"
+                @change="handleModelPresetChange"
+              >
+                <option v-for="m in currentModelPresets" :key="m" :value="m">{{ m }}</option>
+                <option value="CUSTOM">自定义模型名称...</option>
+              </select>
+              <input
+                v-if="selectedModelPreset === 'CUSTOM'"
+                v-model="customChatModel"
+                type="text"
+                class="settings-input byok-input byok-custom-input"
+                placeholder="输入模型标识 (如 qwen-plus)"
+              />
+            </div>
+          </div>
+
+          <div class="settings-row byok-field-row">
+            <div class="row-info">
+              <span class="row-label">Base URL</span>
+              <span class="row-desc">API 代理端点地址</span>
+            </div>
+            <div class="row-control byok-control-wrap">
+              <input
+                v-model="customBaseUrl"
+                type="text"
+                class="settings-input byok-input"
+                :placeholder="providerDefaultBaseUrl"
+              />
+            </div>
+          </div>
+
+          <div class="settings-row byok-field-row">
+            <div class="row-info">
+              <span class="row-label">API Key</span>
+              <span class="row-desc">服务端使用 AES-GCM 安全托管密钥</span>
+            </div>
+            <div class="row-control byok-control-wrap">
+              <input
+                v-model="customApiKey"
+                type="password"
+                class="settings-input byok-input"
+                :placeholder="currentProviderHasKey ? '•••••••• (已配置，留空保持原密钥)' : 'sk-...'"
+                autocomplete="new-password"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="byok-action-footer">
+          <span class="byok-tip">留空 API Key 保存将仅更新模型与 Base URL</span>
+          <button
+            class="action-btn primary"
+            :disabled="aiSettingsLoading"
+            @click="handleSaveAiSettings"
+          >
+            {{ aiSettingsLoading ? '保存中...' : '保存 AI 配置' }}
+          </button>
+        </div>
+      </div>
+
       <!-- Auth sessions -->
       <div class="settings-group session-group">
         <h3 class="group-title">🔐 登录会话</h3>
@@ -196,6 +293,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useAuthApi, type SessionResponse } from '@/api/useAuthApi'
+import { getAiSettings, updateAiSettings, type AiSettingsCommand, type AiSettingsView } from '@/api/aiClient'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
@@ -265,7 +363,7 @@ const handleRevokeSession = async (session: SessionResponse) => {
   try {
     await useAuthApi.revokeSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
-    ElNotification({ title: '会话已撤销', message: '该设备将无法继续使用当前登录状态。', type: 'success', duration: 3000 })
+    ElNotification({ title: '会话已撤销', message: '该设备的登录续期已撤销，现有访问令牌会在到期后失效。', type: 'success', duration: 3000 })
   } catch (error) {
     ElNotification({ title: '撤销失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
   } finally {
@@ -275,6 +373,141 @@ const handleRevokeSession = async (session: SessionResponse) => {
 
 const dayMapping: Record<string, string> = {
   'Mon': '一', 'Tue': '二', 'Wed': '三', 'Thu': '四', 'Fri': '五', 'Sat': '六', 'Sun': '日'
+}
+
+// === BYOK AI Settings ===
+type AiProvider = NonNullable<AiSettingsCommand['provider']>
+
+const customProvider = ref<AiProvider>('OPENAI_COMPATIBLE')
+const customBaseUrl = ref('')
+const customApiKey = ref('')
+const aiSettingsList = ref<AiSettingsView[]>([])
+const aiSettingsLoading = ref(false)
+
+const defaultBaseUrls: Record<AiProvider, string> = {
+  OPENAI_COMPATIBLE: 'https://api.openai.com/v1',
+  DEEPSEEK: 'https://api.deepseek.com',
+  SILICONFLOW: 'https://api.siliconflow.cn/v1',
+}
+
+const defaultChatModels: Record<AiProvider, string> = {
+  OPENAI_COMPATIBLE: 'gpt-4o-mini',
+  DEEPSEEK: 'deepseek-chat',
+  SILICONFLOW: 'deepseek-ai/DeepSeek-V3',
+}
+
+const defaultEmbeddingModels: Record<AiProvider, string> = {
+  OPENAI_COMPATIBLE: 'text-embedding-3-small',
+  DEEPSEEK: 'bge-m3',
+  SILICONFLOW: 'BAAI/bge-m3',
+}
+
+const modelOptionsMap: Record<AiProvider, string[]> = {
+  OPENAI_COMPATIBLE: ['gpt-4o-mini', 'gpt-4o', 'gpt-3.5-turbo', 'claude-3-5-sonnet-20241022', 'qwen-plus'],
+  DEEPSEEK: ['deepseek-chat', 'deepseek-reasoner'],
+  SILICONFLOW: ['deepseek-ai/DeepSeek-V3', 'deepseek-ai/DeepSeek-R1', 'Qwen/Qwen2.5-72B-Instruct', 'Qwen/Qwen2.5-14B-Instruct'],
+}
+
+const selectedModelPreset = ref(defaultChatModels.OPENAI_COMPATIBLE)
+const customChatModel = ref(defaultChatModels.OPENAI_COMPATIBLE)
+const customEmbeddingModel = ref(defaultEmbeddingModels.OPENAI_COMPATIBLE)
+
+const providerDefaultBaseUrl = computed(() => defaultBaseUrls[customProvider.value] || 'https://api.openai.com/v1')
+const currentModelPresets = computed(() => modelOptionsMap[customProvider.value] || [])
+
+const currentProviderSetting = computed(() => aiSettingsList.value.find((item) => item.provider === customProvider.value))
+const currentProviderHasKey = computed(() => Boolean(currentProviderSetting.value?.hasApiKey))
+
+const handleModelPresetChange = () => {
+  if (selectedModelPreset.value !== 'CUSTOM') {
+    customChatModel.value = selectedModelPreset.value
+  } else {
+    customChatModel.value = ''
+  }
+}
+
+const handleProviderChange = () => {
+  const saved = aiSettingsList.value.find((item) => item.provider === customProvider.value)
+  customBaseUrl.value = saved?.baseUrl || ''
+  customApiKey.value = ''
+
+  const savedChat = saved?.chatModel
+  if (savedChat) {
+    if (currentModelPresets.value.includes(savedChat)) {
+      selectedModelPreset.value = savedChat
+      customChatModel.value = savedChat
+    } else {
+      selectedModelPreset.value = 'CUSTOM'
+      customChatModel.value = savedChat
+    }
+  } else {
+    selectedModelPreset.value = defaultChatModels[customProvider.value]
+    customChatModel.value = defaultChatModels[customProvider.value]
+  }
+
+  customEmbeddingModel.value = saved?.embeddingModel || defaultEmbeddingModels[customProvider.value]
+}
+
+const loadAiSettings = async () => {
+  try {
+    const list = await getAiSettings()
+    aiSettingsList.value = list || []
+    const saved = list?.find((item) => item.provider === 'OPENAI_COMPATIBLE') || list?.[0]
+    if (saved?.provider) {
+      customProvider.value = saved.provider
+      customBaseUrl.value = saved.baseUrl || ''
+      const savedChat = saved.chatModel
+      if (savedChat) {
+        if (modelOptionsMap[saved.provider]?.includes(savedChat)) {
+          selectedModelPreset.value = savedChat
+          customChatModel.value = savedChat
+        } else {
+          selectedModelPreset.value = 'CUSTOM'
+          customChatModel.value = savedChat
+        }
+      } else {
+        selectedModelPreset.value = defaultChatModels[saved.provider]
+        customChatModel.value = defaultChatModels[saved.provider]
+      }
+      customEmbeddingModel.value = saved.embeddingModel || defaultEmbeddingModels[saved.provider]
+    } else {
+      selectedModelPreset.value = defaultChatModels[customProvider.value]
+      customChatModel.value = defaultChatModels[customProvider.value]
+      customEmbeddingModel.value = defaultEmbeddingModels[customProvider.value]
+    }
+  } catch (error) {
+    console.error('Failed to load AI settings:', error)
+  }
+}
+
+const handleSaveAiSettings = async () => {
+  aiSettingsLoading.value = true
+  try {
+    const key = customApiKey.value.trim()
+    const chatModel = (selectedModelPreset.value === 'CUSTOM' ? customChatModel.value.trim() : selectedModelPreset.value) || defaultChatModels[customProvider.value]
+    const baseUrl = customBaseUrl.value.trim() || defaultBaseUrls[customProvider.value]
+    const embeddingModel = customEmbeddingModel.value.trim() || defaultEmbeddingModels[customProvider.value]
+
+    const updated = await updateAiSettings({
+      provider: customProvider.value,
+      baseUrl,
+      chatModel,
+      embeddingModel,
+      apiKey: key || undefined,
+    })
+    customApiKey.value = ''
+    const idx = aiSettingsList.value.findIndex((item) => item.provider === customProvider.value)
+    if (idx >= 0) {
+      aiSettingsList.value[idx] = updated
+    } else {
+      aiSettingsList.value.push(updated)
+    }
+    ElNotification({ title: 'AI 配置已保存', message: '已安全保存到服务端。', type: 'success', duration: 3000 })
+  } catch (error) {
+    ElNotification({ title: '保存失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
+  } finally {
+    aiSettingsLoading.value = false
+  }
 }
 
 const syncStore = useSyncStore()
@@ -455,6 +688,7 @@ const handleInputBlur = (_item: SettingItem) => {
 onMounted(async () => {
   await loadStats()
   await loadSessions()
+  await loadAiSettings()
 })
 
 const handleClearCache = async () => {
@@ -577,6 +811,12 @@ const handleDeleteAccount = async () => {
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 3px;
+}
+
+.user-account {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
 }
 
 .user-streak {
@@ -984,6 +1224,107 @@ const handleDeleteAccount = async () => {
 .action-btn.primary:hover {
   box-shadow: var(--accent-glow);
   transform: scale(1.02);
+}
+
+/* ===== BYOK Card Styling ===== */
+.byok-group {
+  border-color: rgba(163, 177, 155, 0.35);
+  background: linear-gradient(180deg, rgba(163, 177, 155, 0.03) 0%, var(--color-bg-secondary) 100%);
+}
+
+.byok-intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(163, 177, 155, 0.05);
+  gap: 16px;
+}
+
+.byok-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.byok-status-pill.is-active {
+  background: rgba(125, 147, 114, 0.12);
+  border-color: rgba(125, 147, 114, 0.35);
+  color: var(--color-sage-dark, #7D9372);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.byok-status-pill.is-active .status-dot {
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+}
+
+.byok-field-row {
+  transition: background var(--transition-fast);
+}
+
+.byok-control-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1;
+  max-width: 320px;
+}
+
+.byok-model-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.byok-select {
+  width: 100%;
+  max-width: 320px;
+  height: 34px;
+}
+
+.byok-input {
+  width: 100% !important;
+  max-width: 320px;
+  height: 34px;
+}
+
+.byok-custom-input {
+  width: 100% !important;
+  max-width: 320px;
+}
+
+.byok-action-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: rgba(0, 0, 0, 0.015);
+  border-top: 1px solid var(--border-subtle);
+  gap: 16px;
+}
+
+.byok-tip {
+  font-size: 11px;
+  color: var(--text-muted);
 }
 
 /* Danger Zone */

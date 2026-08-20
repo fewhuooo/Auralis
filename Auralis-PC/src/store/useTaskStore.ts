@@ -12,6 +12,7 @@ import type { LocalRepository } from '@/services/localRepository'
 import { mapTaskView, type CognitiveLoad, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
+import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 export type DayCode = typeof DAY_CODES[number]
@@ -83,15 +84,6 @@ export interface TimeSlot {
   time: string
   task: Task | null
   isCurrent: boolean
-}
-
-function isOfflineLike(error: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = Number((error as { status?: unknown }).status)
-    return !Number.isFinite(status) || status >= 500
-  }
-  return true
 }
 
 function loadFromLegacy(value: TaskInput['load']): CognitiveLoad {
@@ -261,14 +253,14 @@ function generateTimeSlots(): TimeSlot[] {
 }
 
 function clientMutation(resourceId: string, mutationType: 'CREATE' | 'UPDATE' | 'DELETE', baseVersion: number, payload: Record<string, unknown>) {
-  return {
+  return createStableMutation({
     clientMutationId: uuidv7(),
     resourceType: 'TASK' as const,
     resourceId,
     mutationType,
     baseVersion,
     payload,
-  }
+  })
 }
 
 function scheduleSync(): void {
@@ -376,7 +368,7 @@ export const useTaskStore = defineStore('task', () => {
     try {
       return await loadFromApi()
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '任务服务不可用，当前使用离线缓存'
       return allTasks.value
     } finally {
@@ -410,15 +402,8 @@ export const useTaskStore = defineStore('task', () => {
     const model = toTaskModel(input, (selectedDay.value as DayCode) || getTodayDayCode())
     if (!model.subjectId) throw new Error('Task requires a subjectId')
     const payload = createPayload(model)
-    try {
-      const view = await useTaskApi.create(payload)
-      replaceInMemory(await cache(view))
-      return String(view.id)
-    } catch (error) {
-      if (!isOfflineLike(error)) throw error
-      await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
-      return model.id
-    }
+    await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
+    return model.id
   }
 
   async function updateTaskModel(model: TaskModel): Promise<void> {
@@ -427,7 +412,7 @@ export const useTaskStore = defineStore('task', () => {
       const view = await useTaskApi.update(model.id, payload)
       replaceInMemory(await cache(view))
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       await persistOffline(model, 'UPDATE', payload as unknown as Record<string, unknown>)
     }
   }
@@ -505,7 +490,7 @@ export const useTaskStore = defineStore('task', () => {
       const repo = await repository()
       await repo.tombstone('TASK', id, { version: model.version + 1, syncStatus: 'synced' })
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       model.deletedAt = new Date().toISOString()
       await persistOffline(model, 'DELETE', { id })
     }

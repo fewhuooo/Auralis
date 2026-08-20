@@ -65,6 +65,38 @@ class R1ConcurrencyTests {
                 .containsExactly(1L, 2L);
     }
 
+    @Test
+    void conversationCreateReplaysTheSameClientRequestIdAfterLostResponse() {
+        UUID userId = insertUser("r1-conversation-retry-" + UUID.randomUUID());
+        ConversationCommand command = new ConversationCommand("Recovered", 0L, "conversation-retry");
+
+        ConversationView first = conversationService.create(userId, command);
+        ConversationView retry = conversationService.create(userId, command);
+
+        assertThat(retry.id()).isEqualTo(first.id());
+        assertThat(conversationService.list(userId)).hasSize(1);
+    }
+
+    @Test
+    void concurrentDuplicateAiRequestReservesOneUserMessageAndOneProviderOwner() throws Exception {
+        UUID userId = insertUser("r1-ai-idempotency-" + UUID.randomUUID());
+        ConversationView conversation = conversationService.create(
+                userId, new ConversationCommand("Idempotent", 0L));
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var first = executor.submit(() -> conversationService.reserveUserMessage(
+                    userId, conversation.id(), "Idempotent", "hello", "request-concurrent"));
+            var second = executor.submit(() -> conversationService.reserveUserMessage(
+                    userId, conversation.id(), "Idempotent", "hello", "request-concurrent"));
+
+            assertThat(first.get().started()).isNotEqualTo(second.get().started());
+        }
+
+        assertThat(conversationService.get(userId, conversation.id()).messages())
+                .filteredOn(message -> message.role() == AiMessageRole.USER)
+                .hasSize(1);
+    }
+
     private MessageView append(UUID userId, UUID conversationId, String content) {
         return conversationService.appendMessage(
                 userId, conversationId, AiMessageRole.USER, content,

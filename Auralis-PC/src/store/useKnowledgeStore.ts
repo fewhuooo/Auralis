@@ -7,15 +7,7 @@ import type { LocalRepository } from '@/services/localRepository'
 import { mapKnowledgeBlockView, nextPageCursor, type KnowledgeBlockModel } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
-
-function isOfflineLike(error: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
-  if (error && typeof error === 'object' && 'status' in error) {
-    const status = Number((error as { status?: unknown }).status)
-    return !Number.isFinite(status) || status >= 500
-  }
-  return true
-}
+import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
 
 function asBlockDto(value: unknown): KnowledgeBlockView | null {
   if (!value || typeof value !== 'object') return null
@@ -83,7 +75,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       recentBlocks.value = merged
       return merged
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '知识块加载失败，当前使用离线缓存'
       const local = await localBlocks(subjectId)
       recentBlocks.value = local
@@ -110,37 +102,29 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       tags: block.tags || [],
       colorOverride: block.color,
     }
-    try {
-      const view = await useKnowledgeApi.create(payload)
-      const model = await cache(view)
-      recentBlocks.value = [model, ...recentBlocks.value.filter((item) => item.id !== model.id)]
-      return String(view.id)
-    } catch (error) {
-      if (!isOfflineLike(error)) throw error
-      const id = uuidv7()
-      const localView: KnowledgeBlockView = {
-        ...payload,
-        id,
-        version: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        deletedAt: undefined,
-      }
-      const repo = await repository()
-      await repo.upsert('KNOWLEDGE_BLOCK', id, localView, { version: 0, syncStatus: 'pending' })
-      await repo.enqueueMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'KNOWLEDGE_BLOCK',
-        resourceId: id,
-        mutationType: 'CREATE',
-        baseVersion: 0,
-        payload: localView as unknown as Record<string, unknown>,
-      })
-      scheduleSync()
-      const model = mapKnowledgeBlockView(localView)
-      recentBlocks.value = [model, ...recentBlocks.value]
-      return id
+    const id = uuidv7()
+    const localView: KnowledgeBlockView = {
+      ...payload,
+      id,
+      version: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      deletedAt: undefined,
     }
+    const repo = await repository()
+    await repo.upsert('KNOWLEDGE_BLOCK', id, localView, { version: 0, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'KNOWLEDGE_BLOCK',
+      resourceId: id,
+      mutationType: 'CREATE',
+      baseVersion: 0,
+      payload: localView as unknown as Record<string, unknown>,
+    }))
+    scheduleSync()
+    const model = mapKnowledgeBlockView(localView)
+    recentBlocks.value = [model, ...recentBlocks.value]
+    return id
   }
 
   async function updateBlock(block: KnowledgeBlockModel): Promise<void> {
@@ -159,17 +143,17 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       const model = await cache(view)
       recentBlocks.value = recentBlocks.value.map((item) => item.id === model.id ? model : item)
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       const repo = await repository()
       await repo.upsert('KNOWLEDGE_BLOCK', block.id, payload, { version: block.version, syncStatus: 'pending' })
-      await repo.enqueueMutation({
+      await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
         resourceType: 'KNOWLEDGE_BLOCK',
         resourceId: block.id,
         mutationType: 'UPDATE',
         baseVersion: block.version,
         payload: payload as unknown as Record<string, unknown>,
-      })
+      }))
       scheduleSync()
       recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? { ...block } : item)
     }
@@ -183,17 +167,17 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       const repo = await repository()
       await repo.tombstone('KNOWLEDGE_BLOCK', id, { version: block.version, syncStatus: 'synced' })
     } catch (error) {
-      if (!isOfflineLike(error)) throw error
+      if (!isOfflineTransportFailure(error)) throw error
       const repo = await repository()
       await repo.tombstone('KNOWLEDGE_BLOCK', id, { version: block.version, syncStatus: 'pending' })
-      await repo.enqueueMutation({
+      await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
         resourceType: 'KNOWLEDGE_BLOCK',
         resourceId: id,
         mutationType: 'DELETE',
         baseVersion: block.version,
         payload: { id },
-      })
+      }))
       scheduleSync()
     }
     recentBlocks.value = recentBlocks.value.filter((item) => item.id !== id)

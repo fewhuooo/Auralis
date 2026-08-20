@@ -177,6 +177,35 @@ class AuthControllerTests {
     }
 
     @Test
+    void keepsOneCurrentSessionForRepeatedLoginsOnTheSameDevice() throws Exception {
+        JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
+        JsonNode current = login("alice@example.com", "browser-1");
+
+        JsonNode listed = json(mockMvc.perform(get("/api/auth/sessions")
+                        .header(HttpHeaders.AUTHORIZATION,
+                                bearer(current.path("tokens").path("accessToken").asText())))
+                .andExpect(status().isOk())
+                .andReturn());
+
+        int currentDeviceEntries = 0;
+        JsonNode currentDeviceEntry = null;
+        for (JsonNode session : listed.path("items")) {
+            if (session.path("deviceId").asText().equals(current.path("deviceId").asText())) {
+                currentDeviceEntries++;
+                if (session.path("current").asBoolean()) {
+                    currentDeviceEntry = session;
+                }
+            }
+        }
+        assertThat(currentDeviceEntries).isEqualTo(1);
+        assertThat(currentDeviceEntry).isNotNull();
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + registered.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void protectsPrivateRoutesAndDoesNotAcceptRefreshTokensAsAccessTokens() throws Exception {
         JsonNode registered = register("alice@example.com", "browser-1", "Alice's browser");
         String refreshToken = registered.path("tokens").path("refreshToken").asText();

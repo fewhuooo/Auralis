@@ -15,8 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -138,7 +141,14 @@ public class IdentityService {
 
     @Transactional(readOnly = true)
     public List<SessionView> listSessions(UUID userId, UUID currentSessionId) {
+        Instant now = clock.instant();
+        Set<UUID> listedDevices = new HashSet<>();
         return refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId).stream()
+                .filter(session -> !session.isRotatedOrRevoked() && !session.isExpired(now))
+                .sorted(Comparator
+                        .comparing((RefreshSessionEntity session) -> !session.getId().equals(currentSessionId))
+                        .thenComparing(RefreshSessionEntity::getLastUsedAt, Comparator.reverseOrder()))
+                .filter(session -> listedDevices.add(session.getDeviceId()))
                 .map(session -> {
                     DeviceEntity device = deviceRepository.findByIdAndUserId(session.getDeviceId(), userId)
                             .orElseThrow(this::unauthenticated);
@@ -191,6 +201,10 @@ public class IdentityService {
                         deviceCommand.name(),
                         deviceCommand.platform())));
         Instant now = clock.instant();
+        refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(user.getId()).stream()
+                .filter(session -> session.getDeviceId().equals(device.getId()))
+                .filter(session -> !session.isRotatedOrRevoked())
+                .forEach(session -> session.revoke(now));
         String refreshToken = tokenService.newRefreshToken();
         UUID sessionId = UUID.randomUUID();
         RefreshSessionEntity session = refreshSessionRepository.save(new RefreshSessionEntity(

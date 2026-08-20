@@ -10,6 +10,14 @@
 
 ## Unreleased
 
+### R1/R4：AI 可靠性与离线恢复（2026-08-20）
+
+- Identity 登录设备列表改为每用户/设备一条活动 refresh session：重复登录同一设备会撤销旧会话，Profile 不再展示同设备的旧会话为可撤销设备；撤销提示明确 access token 会按有效期自然失效。
+- PC 不再把 BYOK key/base URL 保存为浏览器明文或附加到普通请求 header；正式个人中心内嵌的 BYOK 卡片仅通过 `PUT /api/ai/settings` 请求体提交 key，展示服务端脱敏状态并在成功后清空输入框。
+- 核心资源的离线 CREATE 改为本地优先且保留同一 `resourceId/clientMutationId`；仅明确离线或传输失败进入 outbox，5xx/冲突不再伪装为离线成功。SSE 在 401 时共享一次刷新并以原请求 ID 重试。
+- Chat 会话与待发送 USER 消息持久化稳定创建/请求 ID，在网络恢复后按会话和消息顺序恢复。服务端 V14 为会话恢复键和 assistant→USER 精确关联建模，流式 Provider I/O 移出数据库事务，并发重复请求只保留一次 USER 消息。
+- `test:r4-pc` 58/58、PC type-check、OpenAPI artifact/两端生成比对、服务端专项 12/12 和含 MinIO/PostgreSQL/pgvector Testcontainers 的 `mvn -B -ntp clean test` 137/137 通过；真实 Provider 与浏览器业务联调仍未验收。
+
 ### R4：PC Task/Review/Stats/Chat、运行时与联调前门禁（2026-08-20）
 
 - `useTaskStore`、`useReviewStore`、`useStatsStore`、`useChatStore`、`usePomodoroStore` 已切换到当前 typed DTO、用户/设备隔离 repository 和页面模型；Dashboard、Timeline、Profile、Home、SearchPalette、SubjectWorkspace、Pomodoro 不再以旧 `localDb` 或静态演示数据作为云端事实。

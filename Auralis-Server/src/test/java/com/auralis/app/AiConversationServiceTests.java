@@ -41,7 +41,7 @@ class AiConversationServiceTests {
     @Test
     void createsAndListsOnlyTheCurrentUsersConversations() {
         UUID userId = UUID.randomUUID();
-        when(conversationRepository.save(any(ConversationEntity.class)))
+        when(conversationRepository.saveAndFlush(any(ConversationEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(conversationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId))
                 .thenReturn(List.of());
@@ -59,7 +59,7 @@ class AiConversationServiceTests {
         UUID conversationId = UUID.randomUUID();
         when(conversationRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId))
                 .thenReturn(Optional.of(new ConversationEntity(conversationId, userId, "Study")));
-        when(messageRepository.save(any(MessageEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(messageRepository.saveAndFlush(any(MessageEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         MessageView message = conversationService.appendMessage(
                 userId, conversationId, AiMessageRole.USER, "hello", AiMessageStatus.COMPLETED, null, null);

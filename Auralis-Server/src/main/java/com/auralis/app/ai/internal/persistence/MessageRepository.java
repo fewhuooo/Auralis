@@ -11,4 +11,7 @@ public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
     List<MessageEntity> findAllByConversationIdAndUserIdOrderByMessageSequenceAsc(UUID conversationId, UUID userId);
 
     Optional<MessageEntity> findByUserIdAndClientRequestId(UUID userId, String clientRequestId);
+
+    Optional<MessageEntity> findByConversationIdAndUserIdAndReplyToMessageId(
+            UUID conversationId, UUID userId, UUID replyToMessageId);
 }

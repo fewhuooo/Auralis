@@ -1004,6 +1004,7 @@ export interface components {
             title?: string;
             /** Format: int64 */
             baseVersion: number;
+            clientRequestId?: string;
         };
         ConversationView: {
             /** Format: uuid */

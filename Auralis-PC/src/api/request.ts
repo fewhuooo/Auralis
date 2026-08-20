@@ -36,18 +36,9 @@ const refreshClient = axios.create({
   headers: { Accept: 'application/json' },
 })
 
-function readLocalStorage(key: string): string | null {
-  return typeof window === 'undefined' ? null : window.localStorage.getItem(key)
-}
-
 function attachToken(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
   const authStore = useAuthStore()
   if (authStore.token) config.headers.Authorization = `Bearer ${authStore.token}`
-
-  const customApiKey = readLocalStorage('auralis_custom_api_key')
-  const customBaseUrl = readLocalStorage('auralis_custom_base_url')
-  if (customApiKey) config.headers['X-User-Api-Key'] = customApiKey
-  if (customBaseUrl) config.headers['X-User-Base-Url'] = customBaseUrl
   return config
 }
 
@@ -76,6 +67,11 @@ async function performRefresh(): Promise<string> {
 }
 
 const refreshCoordinator = createRefreshCoordinator(performRefresh)
+
+/** Shared by Axios and native-fetch SSE calls so a 401 only performs one refresh. */
+export function refreshAccessToken(): Promise<string> {
+  return refreshCoordinator.refresh()
+}
 
 function redirectToLogin(): void {
   useAuthStore().logout()
@@ -108,7 +104,7 @@ function createResponseInterceptor(instance: AxiosInstance): void {
       ) {
         originalRequest._r4Retried = true
         try {
-          const token = await refreshCoordinator.refresh()
+          const token = await refreshAccessToken()
           return instance.request(withAuthorization(originalRequest, token))
         } catch (refreshError) {
           redirectToLogin()

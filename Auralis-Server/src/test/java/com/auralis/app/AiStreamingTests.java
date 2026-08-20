@@ -14,7 +14,6 @@ import com.auralis.app.ai.AiStreamAbortException;
 import com.auralis.app.ai.AiStreamingService;
 import com.auralis.app.ai.AiStreamEvent;
 import com.auralis.app.ai.ConversationService;
-import com.auralis.app.ai.ConversationView;
 import com.auralis.app.ai.EmbeddingProviderPort;
 import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.MessageView;
@@ -25,21 +24,23 @@ import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -74,25 +75,32 @@ class AiStreamingTests {
     @InjectMocks
     private AiStreamingService streamingService;
 
+    @BeforeEach
+    void reservesAUserMessageForProviderFlowByDefault() {
+        lenient().when(conversationService.reserveUserMessage(any(), any(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> {
+                    UUID conversationId = invocation.getArgument(1);
+                    String content = invocation.getArgument(3);
+                    return new ConversationService.ClientRequestReservation(
+                            conversationId,
+                            new MessageView(UUID.randomUUID(), 1, AiMessageRole.USER, AiMessageStatus.COMPLETED,
+                                    content, null, null, null),
+                            null,
+                            true);
+                });
+        lenient().when(conversationService.appendAssistantReply(any(), any(), any(), anyString(), any(), any(), any()))
+                .thenAnswer(invocation -> new MessageView(
+                        UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, invocation.getArgument(4),
+                        invocation.getArgument(3), invocation.getArgument(5), invocation.getArgument(6), null));
+    }
+
     @Test
     void emitsOrderedEventsAndPersistsCompletedAssistantMessage() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
-        UUID userMessageId = UUID.randomUUID();
         AiProviderPort provider = new FakeStreamingProvider();
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
-        when(conversationService.findClientRequestReplay(userId, "request-1")).thenReturn(Optional.empty());
-        when(conversationService.get(userId, conversationId)).thenReturn(new ConversationView(
-                conversationId, "Study", List.of(), null, null, null));
-        when(conversationService.appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.USER),
-                eq("hello"), eq(AiMessageStatus.COMPLETED), eq(null), eq(null), eq("request-1")))
-                .thenReturn(new MessageView(userMessageId, 1, AiMessageRole.USER, AiMessageStatus.COMPLETED,
-                        "hello", null, null, null));
-        when(conversationService.appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.ASSISTANT),
-                eq("hello world"), eq(AiMessageStatus.COMPLETED), eq("deepseek-chat"), eq(null)))
-                .thenReturn(new MessageView(UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, AiMessageStatus.COMPLETED,
-                        "hello world", "deepseek-chat", null, null));
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK))
                 .thenReturn(new AiSettingsService.ResolvedSettings(
                         AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
@@ -105,7 +113,7 @@ class AiStreamingTests {
                 .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
         assertThat(events.get(1).data()).isEqualTo("hello ");
         assertThat(events.get(2).data()).isEqualTo("world");
-        verify(conversationService).appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.ASSISTANT),
+        verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
                 eq("hello world"), eq(AiMessageStatus.COMPLETED), eq("deepseek-chat"), eq(null));
     }
 
@@ -119,17 +127,6 @@ class AiStreamingTests {
         AiProviderPort provider = new CapturingStreamingProvider(request);
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
-        when(conversationService.findClientRequestReplay(userId, "request-retrieval")).thenReturn(Optional.empty());
-        when(conversationService.get(userId, conversationId)).thenReturn(new ConversationView(
-                conversationId, "Study", List.of(), null, null, null));
-        when(conversationService.appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.USER),
-                eq("hello"), eq(AiMessageStatus.COMPLETED), eq(null), eq(null), eq("request-retrieval")))
-                .thenReturn(new MessageView(UUID.randomUUID(), 1, AiMessageRole.USER, AiMessageStatus.COMPLETED,
-                        "hello", null, null, null));
-        when(conversationService.appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.ASSISTANT),
-                eq("answer"), eq(AiMessageStatus.COMPLETED), eq("deepseek-chat"), eq(null)))
-                .thenReturn(new MessageView(UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, AiMessageStatus.COMPLETED,
-                        "answer", "deepseek-chat", null, null));
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
         when(settingsService.resolve(userId, AiProviderType.SILICONFLOW)).thenReturn(new AiSettingsService.ResolvedSettings(
@@ -181,7 +178,9 @@ class AiStreamingTests {
                 AiMessageStatus.COMPLETED, "answer", "deepseek-chat", null, null);
         ConversationService.ClientRequestReplay replay = new ConversationService.ClientRequestReplay(
                 conversationId, userMessage, assistantMessage);
-        when(conversationService.findClientRequestReplay(userId, "duplicate")).thenReturn(Optional.of(replay));
+        when(conversationService.reserveUserMessage(eq(userId), any(), anyString(), anyString(), eq("duplicate")))
+                .thenReturn(new ConversationService.ClientRequestReservation(
+                        conversationId, userMessage, assistantMessage, false));
 
         List<AiStreamEvent> events = streamingService.stream(userId,
                 new AiMessageCommand(null, "retry", AiProviderType.DEEPSEEK, false, 3, "duplicate"));
@@ -199,13 +198,6 @@ class AiStreamingTests {
         UUID conversationId = UUID.randomUUID();
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
-        when(conversationService.findClientRequestReplay(userId, "request-abort")).thenReturn(Optional.empty());
-        when(conversationService.get(userId, conversationId)).thenReturn(new ConversationView(
-                conversationId, "Study", List.of(), null, null, null));
-        when(conversationService.appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.USER),
-                eq("hello"), eq(AiMessageStatus.COMPLETED), eq(null), eq(null), eq("request-abort")))
-                .thenReturn(new MessageView(UUID.randomUUID(), 1, AiMessageRole.USER, AiMessageStatus.COMPLETED,
-                        "hello", null, null, null));
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
@@ -218,7 +210,7 @@ class AiStreamingTests {
                     }
                 });
 
-        verify(conversationService).appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.ASSISTANT),
+        verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
                 eq("hello "), eq(AiMessageStatus.INTERRUPTED), eq("deepseek-chat"), eq("CLIENT_DISCONNECTED"));
     }
 
@@ -228,13 +220,6 @@ class AiStreamingTests {
         UUID conversationId = UUID.randomUUID();
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
-        when(conversationService.findClientRequestReplay(userId, "request-limit")).thenReturn(Optional.empty());
-        when(conversationService.get(userId, conversationId)).thenReturn(new ConversationView(
-                conversationId, "Study", List.of(), null, null, null));
-        when(conversationService.appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.USER),
-                eq("hello"), eq(AiMessageStatus.COMPLETED), eq(null), eq(null), eq("request-limit")))
-                .thenReturn(new MessageView(UUID.randomUUID(), 1, AiMessageRole.USER, AiMessageStatus.COMPLETED,
-                        "hello", null, null, null));
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new AiProviderPort() {
@@ -257,7 +242,7 @@ class AiStreamingTests {
         assertThat(events.get(1).data()).isInstanceOf(java.util.Map.class)
                 .extracting(value -> ((java.util.Map<?, ?>) value).get("code"))
                 .isEqualTo("RATE_LIMITED");
-        verify(conversationService).appendMessage(eq(userId), eq(conversationId), eq(AiMessageRole.ASSISTANT),
+        verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
                 eq(""), eq(AiMessageStatus.FAILED), eq("deepseek-chat"), eq("RATE_LIMITED"));
     }
 

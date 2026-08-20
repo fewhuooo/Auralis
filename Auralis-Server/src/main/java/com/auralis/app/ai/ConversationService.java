@@ -29,7 +29,16 @@ public class ConversationService {
             throw new DomainException("VALIDATION_FAILED", "Create baseVersion must be 0");
         }
         String title = command.title() == null || command.title().isBlank() ? null : command.title().trim();
-        return toView(conversationRepository.save(new ConversationEntity(UUID.randomUUID(), userId, title)), List.of());
+        String clientRequestId = normalizeClientRequestId(command.clientRequestId());
+        if (clientRequestId != null) {
+            Optional<ConversationEntity> existing = conversationRepository
+                    .findByUserIdAndClientRequestId(userId, clientRequestId);
+            if (existing.isPresent()) {
+                return toView(existing.get(), List.of());
+            }
+        }
+        return toView(conversationRepository.saveAndFlush(
+                new ConversationEntity(UUID.randomUUID(), userId, title, clientRequestId)), List.of());
     }
 
     @Transactional(readOnly = true)
@@ -85,50 +94,98 @@ public class ConversationService {
         if (content == null || (content.isBlank() && status == AiMessageStatus.COMPLETED)) {
             throw new IllegalArgumentException("Message content must not be blank");
         }
-        ConversationEntity conversation = conversationRepository
-                .findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Conversation was not found"));
-        String normalizedClientRequestId = clientRequestId == null || clientRequestId.isBlank()
-                ? null
-                : clientRequestId.trim();
-        long nextSequence = conversation.allocateNextMessageSequence();
-        conversationRepository.saveAndFlush(conversation);
-        MessageEntity message = new MessageEntity(
-                UUID.randomUUID(), conversationId, userId, nextSequence, role, status,
-                content.trim(), model, errorCode, null, normalizedClientRequestId);
-        return toView(messageRepository.save(message));
+        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
+        return appendMessageLocked(conversation, userId, role, content, status, model, errorCode,
+                normalizeClientRequestId(clientRequestId), null);
+    }
+
+    /**
+     * Reserves the USER message in one short, conversation-row-locked transaction.
+     * Streaming and provider I/O happen only after this transaction has committed.
+     */
+    @Transactional
+    public ClientRequestReservation reserveUserMessage(
+            UUID userId,
+            UUID requestedConversationId,
+            String titleIfCreating,
+            String content,
+            String clientRequestId) {
+        String normalizedClientRequestId = normalizeClientRequestId(clientRequestId);
+        if (normalizedClientRequestId != null) {
+            Optional<ClientRequestReplay> existing = findClientRequestReplay(userId, normalizedClientRequestId);
+            if (existing.isPresent()) {
+                return ClientRequestReservation.replay(existing.get());
+            }
+        }
+
+        ConversationView created = requestedConversationId == null
+                ? create(userId, new ConversationCommand(titleIfCreating, 0L, normalizedClientRequestId))
+                : null;
+        UUID conversationId = created == null ? requestedConversationId : created.id();
+        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
+
+        // A second caller with the same conversation waits on the row lock and
+        // observes the first caller's reservation before it can call a provider.
+        if (normalizedClientRequestId != null) {
+            Optional<ClientRequestReplay> existing = findClientRequestReplay(userId, normalizedClientRequestId);
+            if (existing.isPresent()) {
+                return ClientRequestReservation.replay(existing.get());
+            }
+        }
+
+        MessageView userMessage = appendMessageLocked(conversation, userId, AiMessageRole.USER, content,
+                AiMessageStatus.COMPLETED, null, null, normalizedClientRequestId, null);
+        return ClientRequestReservation.started(conversationId, userMessage);
+    }
+
+    @Transactional
+    public MessageView appendAssistantReply(
+            UUID userId,
+            UUID conversationId,
+            UUID replyToMessageId,
+            String content,
+            AiMessageStatus status,
+            String model,
+            String errorCode) {
+        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
+        return appendMessageLocked(conversation, userId, AiMessageRole.ASSISTANT, content, status, model, errorCode,
+                null, replyToMessageId);
     }
 
     @Transactional(readOnly = true)
     public Optional<ClientRequestReplay> findClientRequestReplay(UUID userId, String clientRequestId) {
-        String normalized = clientRequestId == null || clientRequestId.isBlank()
-                ? null
-                : clientRequestId.trim();
+        String normalized = normalizeClientRequestId(clientRequestId);
         if (normalized == null) {
             return Optional.empty();
         }
         return messageRepository.findByUserIdAndClientRequestId(userId, normalized)
-                .flatMap(message -> {
-                    try {
-                        ConversationView conversation = get(userId, message.getConversationId());
-                        MessageView userMessage = conversation.messages().stream()
-                                .filter(candidate -> candidate.id().equals(message.getId()))
-                                .findFirst()
-                                .orElse(null);
-                        if (userMessage == null) {
-                            return Optional.empty();
-                        }
-                        MessageView assistantMessage = conversation.messages().stream()
-                                .filter(candidate -> candidate.messageSequence() > userMessage.messageSequence())
-                                .filter(candidate -> candidate.role() == AiMessageRole.ASSISTANT)
-                                .findFirst()
-                                .orElse(null);
-                        return Optional.of(new ClientRequestReplay(
-                                conversation.id(), userMessage, assistantMessage));
-                    } catch (DomainException exception) {
-                        return Optional.empty();
-                    }
-                });
+                .map(userMessage -> new ClientRequestReplay(
+                        userMessage.getConversationId(), toView(userMessage), messageRepository
+                                .findByConversationIdAndUserIdAndReplyToMessageId(
+                                        userMessage.getConversationId(), userId, userMessage.getId())
+                                .map(this::toView)
+                                .orElse(null)));
+    }
+
+    private MessageView appendMessageLocked(
+            ConversationEntity conversation,
+            UUID userId,
+            AiMessageRole role,
+            String content,
+            AiMessageStatus status,
+            String model,
+            String errorCode,
+            String clientRequestId,
+            UUID replyToMessageId) {
+        if (content == null || (content.isBlank() && status == AiMessageStatus.COMPLETED)) {
+            throw new IllegalArgumentException("Message content must not be blank");
+        }
+        long nextSequence = conversation.allocateNextMessageSequence();
+        conversationRepository.saveAndFlush(conversation);
+        MessageEntity message = new MessageEntity(
+                UUID.randomUUID(), conversation.getId(), userId, nextSequence, role, status,
+                content.trim(), model, errorCode, null, clientRequestId, replyToMessageId);
+        return toView(messageRepository.saveAndFlush(message));
     }
 
     private ConversationEntity requireActiveEntity(UUID userId, UUID conversationId) {
@@ -138,6 +195,22 @@ public class ConversationService {
 
     private ConversationEntity requireActive(UUID userId, UUID conversationId) {
         return requireActiveEntity(userId, conversationId);
+    }
+
+    private ConversationEntity requireActiveForUpdate(UUID userId, UUID conversationId) {
+        return conversationRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(conversationId, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Conversation was not found"));
+    }
+
+    private String normalizeClientRequestId(String clientRequestId) {
+        if (clientRequestId == null || clientRequestId.isBlank()) {
+            return null;
+        }
+        String normalized = clientRequestId.trim();
+        if (normalized.length() > 128) {
+            throw new DomainException("VALIDATION_FAILED", "clientRequestId is too long");
+        }
+        return normalized;
     }
 
     private ConversationView toView(ConversationEntity entity, List<MessageView> messages) {
@@ -161,5 +234,19 @@ public class ConversationService {
             UUID conversationId,
             MessageView userMessage,
             MessageView assistantMessage) {
+    }
+
+    public record ClientRequestReservation(
+            UUID conversationId,
+            MessageView userMessage,
+            MessageView assistantMessage,
+            boolean started) {
+        static ClientRequestReservation started(UUID conversationId, MessageView userMessage) {
+            return new ClientRequestReservation(conversationId, userMessage, null, true);
+        }
+
+        static ClientRequestReservation replay(ClientRequestReplay replay) {
+            return new ClientRequestReservation(replay.conversationId(), replay.userMessage(), replay.assistantMessage(), false);
+        }
     }
 }

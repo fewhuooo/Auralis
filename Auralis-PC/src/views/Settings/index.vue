@@ -11,9 +11,17 @@
         <div class="setting-row" style="flex-direction: column; align-items: stretch; gap: 16px; border-bottom: none; padding-bottom: 0; margin-bottom: 0;">
           <div class="setting-info" style="max-width: 100%;">
             <span class="setting-label">自定义模型代理 (可选)</span>
-            <span class="setting-desc">您可以提供个人 API Key 及代理地址。配置后，系统内的所有 AI 分析和向量嵌入都将优先走您的自定义代理，彻底避免公共算力排队或限流。</span>
+            <span class="setting-desc">配置会直接安全保存到服务端。此设备不会保存或在普通请求中转发您的 API Key。</span>
           </div>
           <div class="form-group" style="display: flex; flex-direction: column; gap: 12px; margin-top: 4px;">
+            <div class="input-item" style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 13px; font-weight: 600; width: 100px; color: var(--text-secondary);">Provider:</span>
+              <select v-model="customProvider" class="form-input" style="flex: 1; background: var(--color-bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; color: var(--text-primary); font-size: 13px;">
+                <option value="OPENAI_COMPATIBLE">OpenAI Compatible</option>
+                <option value="DEEPSEEK">DeepSeek</option>
+                <option value="SILICONFLOW">SiliconFlow</option>
+              </select>
+            </div>
             <div class="input-item" style="display: flex; align-items: center; gap: 12px;">
               <span style="font-size: 13px; font-weight: 600; width: 100px; color: var(--text-secondary);">API Key:</span>
               <input type="password" v-model="customApiKey" placeholder="sk-..." class="form-input" style="flex: 1; background: var(--color-bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; color: var(--text-primary); font-size: 13px;" />
@@ -23,7 +31,7 @@
               <input type="text" v-model="customBaseUrl" placeholder="https://api.openai.com/v1" class="form-input" style="flex: 1; background: var(--color-bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 8px 12px; color: var(--text-primary); font-size: 13px;" />
             </div>
             <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
-              <button class="btn-primary" @click="saveCustomAiSettings">保存 AI 配置</button>
+              <button class="btn-primary" :disabled="aiSettingsLoading" @click="saveCustomAiSettings">{{ aiSettingsLoading ? '保存中...' : '保存 AI 配置' }}</button>
             </div>
           </div>
         </div>
@@ -79,6 +87,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { e2ee } from '@/api/e2ee'
+import { getAiSettings, updateAiSettings, type AiSettingsCommand } from '@/api/aiClient'
 
 const e2eeEnabled = ref(false)
 const backupLoading = ref(false)
@@ -88,6 +97,8 @@ const msgType = ref<'success' | 'error'>('success')
 
 const customApiKey = ref('')
 const customBaseUrl = ref('')
+const customProvider = ref<AiSettingsCommand['provider']>('OPENAI_COMPATIBLE')
+const aiSettingsLoading = ref(false)
 
 const showMsg = (text: string, type: 'success' | 'error' = 'success') => {
   msg.value = text
@@ -97,14 +108,35 @@ const showMsg = (text: string, type: 'success' | 'error' = 'success') => {
 
 onMounted(async () => {
   e2eeEnabled.value = await e2ee.isEnabled()
-  customApiKey.value = localStorage.getItem('auralis_custom_api_key') || ''
-  customBaseUrl.value = localStorage.getItem('auralis_custom_base_url') || ''
+  // Remove obsolete plaintext browser values. The key is intentionally never read.
+  localStorage.removeItem('auralis_custom_api_key')
+  localStorage.removeItem('auralis_custom_base_url')
+  try {
+    const settings = await getAiSettings()
+    const saved = settings.find((item) => item.provider === 'OPENAI_COMPATIBLE') || settings[0]
+    if (saved?.provider) customProvider.value = saved.provider
+    customBaseUrl.value = saved?.baseUrl || ''
+  } catch (error) {
+    showMsg(error instanceof Error ? error.message : '无法加载 AI 配置', 'error')
+  }
 })
 
-const saveCustomAiSettings = () => {
-  localStorage.setItem('auralis_custom_api_key', customApiKey.value.trim())
-  localStorage.setItem('auralis_custom_base_url', customBaseUrl.value.trim())
-  showMsg('AI 引擎自定义代理配置已保存！')
+const saveCustomAiSettings = async () => {
+  aiSettingsLoading.value = true
+  try {
+    const apiKey = customApiKey.value.trim()
+    await updateAiSettings({
+      provider: customProvider.value,
+      baseUrl: customBaseUrl.value.trim() || undefined,
+      apiKey: apiKey || undefined,
+    })
+    customApiKey.value = ''
+    showMsg('AI 配置已安全保存到服务端。')
+  } catch (error) {
+    showMsg(error instanceof Error ? error.message : 'AI 配置保存失败', 'error')
+  } finally {
+    aiSettingsLoading.value = false
+  }
 }
 
 const handleBackup = async () => {

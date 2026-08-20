@@ -7,12 +7,10 @@ import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -41,14 +39,12 @@ public class AiStreamingService {
         this.properties = properties;
     }
 
-    @Transactional
     public List<AiStreamEvent> stream(UUID userId, AiMessageCommand command) {
         List<AiStreamEvent> events = new ArrayList<>();
         stream(userId, command, events::add);
         return List.copyOf(events);
     }
 
-    @Transactional
     public void stream(UUID userId, AiMessageCommand command, AiStreamSink sink) {
         if (command == null || command.content() == null || command.content().isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "Message content is required");
@@ -58,25 +54,21 @@ public class AiStreamingService {
         String content = command.content().trim();
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
 
-        if (clientRequestId != null) {
-            Optional<ConversationService.ClientRequestReplay> replay =
-                    conversationService.findClientRequestReplay(userId, clientRequestId);
-            if (replay.isPresent()) {
-                replay(replay.get(), sink);
-                return;
-            }
+        ConversationService.ClientRequestReservation reservation = conversationService.reserveUserMessage(
+                userId, command.conversationId(), firstTitle(content), content, clientRequestId);
+        if (!reservation.started()) {
+            replay(new ConversationService.ClientRequestReplay(
+                    reservation.conversationId(), reservation.userMessage(), reservation.assistantMessage()), sink);
+            return;
         }
-
-        ConversationView conversation = command.conversationId() == null
-                ? conversationService.create(userId, new ConversationCommand(firstTitle(content), 0L))
-                : conversationService.get(userId, command.conversationId());
-        MessageView userMessage = appendUserMessage(userId, conversation.id(), content, clientRequestId);
+        UUID conversationId = reservation.conversationId();
+        MessageView userMessage = reservation.userMessage();
         StringBuilder complete = new StringBuilder();
         String model = null;
         boolean assistantPersisted = false;
         try {
             sink.emit(new AiStreamEvent("message.started", userMessage.id().toString(),
-                    Map.of("conversationId", conversation.id(), "messageId", userMessage.id())));
+                    Map.of("conversationId", conversationId, "messageId", userMessage.id())));
 
             AiSettingsService.ResolvedSettings settings = settingsService.resolve(userId, providerType);
             model = settings.chatModel();
@@ -110,43 +102,33 @@ public class AiStreamingService {
                 throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned blank content");
             }
 
-            MessageView assistant = conversationService.appendMessage(
-                    userId, conversation.id(), AiMessageRole.ASSISTANT, complete.toString(),
+            MessageView assistant = conversationService.appendAssistantReply(
+                    userId, conversationId, userMessage.id(), complete.toString(),
                     AiMessageStatus.COMPLETED, settings.chatModel(), null);
             assistantPersisted = true;
             sink.emit(new AiStreamEvent("message.completed", assistant.id().toString(),
-                    Map.of("conversationId", conversation.id(), "messageId", assistant.id(),
+                    Map.of("conversationId", conversationId, "messageId", assistant.id(),
                             "content", complete.toString())));
         } catch (AiStreamAbortException exception) {
             if (!assistantPersisted) {
-                appendFailure(userId, conversation.id(), complete.toString(), AiMessageStatus.INTERRUPTED,
+                appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.INTERRUPTED,
                         model, "CLIENT_DISCONNECTED");
             }
         } catch (DomainException exception) {
             if (!assistantPersisted) {
-                appendFailure(userId, conversation.id(), complete.toString(), AiMessageStatus.FAILED,
+                appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
                         model, exception.code());
             }
             sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
                     Map.of("code", exception.code(), "detail", safeDetail(exception.getMessage()))));
         } catch (Exception exception) {
             if (!assistantPersisted) {
-                appendFailure(userId, conversation.id(), complete.toString(), AiMessageStatus.FAILED,
+                appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
                         model, "MODEL_PROVIDER_ERROR");
             }
             sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
                     Map.of("code", "MODEL_PROVIDER_ERROR", "detail", "AI provider request failed")));
         }
-    }
-
-    private MessageView appendUserMessage(UUID userId, UUID conversationId, String content, String clientRequestId) {
-        if (clientRequestId == null) {
-            return conversationService.appendMessage(
-                    userId, conversationId, AiMessageRole.USER, content, AiMessageStatus.COMPLETED, null, null);
-        }
-        return conversationService.appendMessage(
-                userId, conversationId, AiMessageRole.USER, content, AiMessageStatus.COMPLETED, null, null,
-                clientRequestId);
     }
 
     private void replay(ConversationService.ClientRequestReplay replay, AiStreamSink sink) {
@@ -163,10 +145,10 @@ public class AiStreamingService {
             return;
         }
         String errorCode = assistant == null || assistant.errorCode() == null
-                ? "MODEL_PROVIDER_ERROR"
+                ? "REQUEST_IN_PROGRESS"
                 : assistant.errorCode();
         sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
-                Map.of("code", errorCode, "detail", "The previous AI request did not complete")));
+                    Map.of("code", errorCode, "detail", "The previous AI request is still processing or did not complete")));
     }
 
     private List<Citation> retrieve(UUID userId, String content, int topK) {
@@ -213,11 +195,12 @@ public class AiStreamingService {
     private void appendFailure(
             UUID userId,
             UUID conversationId,
+            UUID replyToMessageId,
             String content,
             AiMessageStatus status,
             String model,
             String errorCode) {
-        conversationService.appendMessage(userId, conversationId, AiMessageRole.ASSISTANT,
+        conversationService.appendAssistantReply(userId, conversationId, replyToMessageId,
                 content == null ? "" : content, status, model, errorCode);
     }
 
