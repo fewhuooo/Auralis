@@ -136,6 +136,7 @@
 - [后端阶段五 AI 与 RAG 实施计划（2026-08-16）](superpowers/plans/2026-08-16-backend-phase-5-ai-rag.md)
 - [R1-06 后端工具链和运行配置实施计划（2026-08-17）](superpowers/plans/2026-08-17-backend-r1-06-toolchain-config.md)
 - [R4 PC 全量客户端迁移实施计划（2026-08-17）](superpowers/plans/2026-08-17-r4-pc-full-migration.md)
+- [R4 Mobile / Tablet 客户端迁移实施计划（2026-08-20）](superpowers/plans/2026-08-20-r4-mobile-tablet-migration.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
