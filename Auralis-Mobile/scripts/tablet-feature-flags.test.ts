@@ -1,4 +1,4 @@
-import { parseFeatureFlagValue } from '../src/config/featureFlagParser'
+import { parseFeatureFlagValue } from '../src/config/featureFlagParser.ts'
 
 function expectEqual<T>(actual: T, expected: T, label: string) {
   if (actual !== expected) {

@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { localDb } from '@/services/localDb'
 import { uuidv7 } from '@/utils/uuid'
-import mobileRequest from '@/api/request'
+import { completeAiText } from '@/api/aiClient'
 
 export interface Subject {
   id: string
@@ -13,6 +13,7 @@ export interface Subject {
   created_at?: number
   blockCount?: number
   fileCount?: number
+  version?: number
 }
 
 export interface SourceFile {
@@ -25,6 +26,7 @@ export interface SourceFile {
   catalog_json?: string
   block_count?: number
   created_at?: number
+  version?: number
 }
 
 export interface CatalogItem {
@@ -79,17 +81,24 @@ export const useSubjectStore = defineStore('subject', () => {
       created_at: Date.now()
     }
     await localDb.saveSubject(newSubject)
+    const { getClientId } = await import('./useSyncStore')
+    await localDb.addLocalMutation(getClientId(), 'subject', newSubject.id, 'create', newSubject)
     await loadSubjects()
     return newSubject.id
   }
 
   const updateSubject = async (subject: Subject) => {
     await localDb.saveSubject(subject)
+    const { getClientId } = await import('./useSyncStore')
+    await localDb.addLocalMutation(getClientId(), 'subject', subject.id, 'update', subject)
     await loadSubjects()
   }
 
   const deleteSubject = async (id: string) => {
+    const current = subjects.value.find(subject => subject.id === id)
     await localDb.deleteSubject(id)
+    const { getClientId } = await import('./useSyncStore')
+    await localDb.addLocalMutation(getClientId(), 'subject', id, 'delete', current || {})
     if (activeSubjectId.value === id) {
       activeSubjectId.value = null
       activeSourceFiles.value = []
@@ -120,13 +129,18 @@ export const useSubjectStore = defineStore('subject', () => {
       created_at: Date.now()
     }
     await localDb.saveSourceFile(newFile)
+    const { getClientId } = await import('./useSyncStore')
+    await localDb.addLocalMutation(getClientId(), 'source', newFile.id, 'create', newFile)
     await loadSourceFiles(subjectId)
     await loadSubjects() // refresh fileCount
     return newFile.id
   }
 
   const deleteSourceFile = async (id: string) => {
+    const current = activeSourceFiles.value.find(file => file.id === id)
     await localDb.deleteSourceFile(id)
+    const { getClientId } = await import('./useSyncStore')
+    await localDb.addLocalMutation(getClientId(), 'source', id, 'delete', current || {})
     if (activeSubjectId.value) {
       await loadSourceFiles(activeSubjectId.value)
     }
@@ -135,6 +149,8 @@ export const useSubjectStore = defineStore('subject', () => {
 
   const saveSourceFileCatalog = async (file: SourceFile) => {
     await localDb.saveSourceFile(file)
+    const { getClientId } = await import('./useSyncStore')
+    await localDb.addLocalMutation(getClientId(), 'source', file.id, 'update', file)
     if (activeSubjectId.value) {
       await loadSourceFiles(activeSubjectId.value)
     }
@@ -159,13 +175,7 @@ export const useSubjectStore = defineStore('subject', () => {
 以下是目录大纲文本：
 ${catalogText}`
 
-      // Using the mobile custom request client
-      const res: any = await mobileRequest.post('/api/ai/chat', {
-        message: prompt,
-        requireJson: true
-      })
-
-      const rawText = res.data || ''
+      const rawText = await completeAiText(prompt)
       let cleaned = rawText.trim()
       if (cleaned.startsWith('```json')) {
         cleaned = cleaned.substring(7);

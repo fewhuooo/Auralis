@@ -348,22 +348,26 @@ PC 执行记录（2026-08-20）：R4 PC typed Store/页面迁移、runtime confi
 ### R4-04 Mobile 工具链（P0）
 
 - [x] 通过将 Mobile TypeScript 固定为 5.3.3，解决 `vue-tsc 1.8.27` 与 TypeScript 5.9.3 的版本漂移。
-- [ ] 解决 Pinia / Vue peer 版本不一致。
-- [ ] 将三个 Tablet 逻辑脚本纳入统一 `npm test` 或 `test:tablet` 命令。
-- [ ] 保留 H5 和微信构建，消除阻断性类型错误。
+- [x] 解决 Pinia / Vue peer 版本不一致。
+- [x] 将三个 Tablet 逻辑脚本纳入统一 `npm test` 或 `test:tablet` 命令。
+- [x] 保留 H5 和微信构建，消除阻断性类型错误。
 
 完成条件：`npm.cmd run type-check`、H5 构建、微信构建和 Tablet 测试全部通过。
+
+执行记录：2026-08-20；Pinia 固定为 2.1.7 并与 Vue 3.4.21 clean dedupe，三个 Tablet 脚本接入 `test:tablet`。`type-check`、`test:tablet`、H5 build、微信 build 均退出 0；构建仍保留 Sass legacy API 与 H5 Sync Store import 非阻断警告，不等于开发者工具或真机验收。
 
 ### R4-05 Mobile / 微信 API 与实时迁移（P0）
 
 主要范围：`Auralis-Mobile/src/api/`、`src/store/`、页面和配置。
 
-- [ ] 移除 localhost / 127.0.0.1 固定地址。
-- [ ] 迁移注册登录、资料、任务、同步、复习、统计和 AI 接口。
-- [ ] 将 `/ws/sync` 迁移到 `/ws/events` + realtime ticket。
-- [ ] 本地数据按 `userId` 隔离并支持冲突和 reset。
+- [x] 移除 localhost / 127.0.0.1 固定地址。
+- [x] 迁移注册登录、资料、任务、同步、复习、统计和 AI 接口。
+- [x] 将 `/ws/sync` 迁移到 `/ws/events` + realtime ticket。
+- [x] 本地数据按 `userId` 隔离并支持冲突和 reset。
 
 完成条件：H5 和微信主路径只使用新契约。
+
+执行记录：2026-08-20；新增环境驱动 HTTPS/WSS runtime、直接 DTO/Problem Details/单次 refresh、稳定 deviceId、opaque cursor Sync/snapshot、Realtime ticket、AI SSE、Review/Stats 与 Asset intent/PUT/complete。H5/原生本地库按 userId/deviceId 新建 namespace，用户明确授权后一次性清除旧全局库；冲突保留 pending mutation。`check:r4-mobile` 扫描 62 个生产文件、协议测试 15/15、type-check、H5 与微信 build 均通过。真实 Server/MinIO/Provider、双设备 reset、微信合法域名及真机仍未验收。
 
 ### R4-06 微信平台配置（P1）
 
@@ -377,7 +381,7 @@ PC 执行记录（2026-08-20）：R4 PC typed Store/页面迁移、runtime confi
 
 - [ ] 接入新 Subject、Asset、Task、Review、Stats 和 AI 契约。
 - [ ] 验证横屏侧栏、触控、键盘、缩放和前后台切换。
-- [ ] 手写能力继续受 feature flag 控制，不纳入云同步。
+- [x] 手写能力继续受 feature flag 控制，不纳入云同步。
 
 完成条件：Tablet 主工作区在目标设备完成主流程；隐藏手写不阻塞 G4。
 

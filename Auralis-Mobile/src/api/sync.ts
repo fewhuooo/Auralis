@@ -1,143 +1,84 @@
-/**
- * 跨端同步服务 (Sync Service)
- * 14.5: 接收后端 Redis Pub/Sub 推送的 WebSocket 消息并更新 Store
- */
-import { useBlockStore } from '@/store/useBlockStore'
-import { useTaskStore } from '@/store/useTaskStore'
+import { dedupeEventKey } from './protocol'
+import { realtimeApi } from './realtimeApi'
+import { getRuntimeConfig, resolveWebsocketUrl } from '@/config/runtime'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
 
-const WS_URL = 'ws://localhost:8080/ws/sync'
-
-interface SyncEvent {
-  type: string      // e.g. "block_created", "task_updated"
-  entity: string    // "blocks" or "tasks"
-  entityId: string
-  data: string      // JSON payload
-  timestamp: number
+interface RealtimeEvent {
+  type?: string
+  cursor?: string
+  eventId?: string
 }
 
 let socketTask: UniApp.SocketTask | null = null
-let reconnectTimer: number | null = null
-let pingTimer: number | null = null
-
-/**
- * 建立 WebSocket 长连接
- */
-export const connectRealtimeSync = () => {
-  if (socketTask) return
-
-  const authStore = useAuthStore()
-  const token = authStore.token || ''
-  const finalUrl = `${WS_URL}?token=${encodeURIComponent(token)}`
-
-  console.log('[Sync] Connecting to WebSocket:', finalUrl)
-  socketTask = uni.connectSocket({
-    url: finalUrl,
-    fail: (err) => {
-      console.error('[Sync] WebSocket connection failed:', err)
-      scheduleReconnect()
-    }
-  })
-
-  socketTask.onOpen(() => {
-    console.log('[Sync] WebSocket connected')
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
-    
-    // Start heartbeat keep-alive
-    pingTimer = setInterval(() => {
-      if (socketTask) {
-        uni.sendSocketMessage({
-          data: JSON.stringify({ type: 'PING', token: authStore.token || '' }),
-          fail: (err) => {
-            console.error('[Sync] Failed to send heartbeat Ping:', err)
-          }
-        })
-      }
-    }, 30000) as unknown as number
-    
-    // Initial bidirectional sync to catch up on connection
-    const syncStore = useSyncStore()
-    syncStore.triggerSync()
-  })
-
-  socketTask.onMessage((res) => {
-    try {
-      let rawData = res.data as string
-      let event: SyncEvent
-
-      // Skip PONG packets
-      if (rawData.includes('"type":"PONG"')) {
-        return
-      }
-
-      // Handle GenericJackson2JsonRedisSerializer format: ["class", {data}]
-      if (rawData.startsWith('[')) {
-        const parsed = JSON.parse(rawData)
-        if (Array.isArray(parsed) && parsed.length >= 2) {
-          event = parsed[1] as SyncEvent
-        } else {
-          return
-        }
-      } else {
-        event = JSON.parse(rawData) as SyncEvent
-      }
-
-      console.log('[Sync] Received event:', event.type, 'for', event.entity)
-
-      // Trigger bidirectional sync自愈
-      const syncStore = useSyncStore()
-      syncStore.triggerSync()
-    } catch (e) {
-      console.warn('[Sync] Failed to parse sync event:', e)
-    }
-  })
-
-  socketTask.onClose((res) => {
-    console.log('[Sync] WebSocket closed', res)
-    clearPingTimer()
-    socketTask = null
-    scheduleReconnect()
-  })
-
-  socketTask.onError((err) => {
-    console.error('[Sync] WebSocket error:', err)
-    clearPingTimer()
-    socketTask = null
-    scheduleReconnect()
-  })
-}
-
-function clearPingTimer() {
-  if (pingTimer) {
-    clearInterval(pingTimer)
-    pingTimer = null
-  }
-}
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectAttempt = 0
+let explicitlyDisconnected = false
+const recentEvents = new Set<string>()
 
 function scheduleReconnect() {
-  if (reconnectTimer) return
-  console.log('[Sync] Reconnecting in 5s...')
+  if (explicitlyDisconnected || reconnectTimer || !useAuthStore().isAuthenticated) return
+  const delay = Math.min(30_000, 1_000 * (2 ** reconnectAttempt))
+  reconnectAttempt += 1
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
-    connectRealtimeSync()
-  }, 5000) as unknown as number
+    void connectRealtimeSync()
+  }, delay)
 }
 
-/**
- * 断开连接
- */
-export const disconnectRealtimeSync = () => {
-  clearPingTimer()
-  if (socketTask) {
-    socketTask.close({})
-    socketTask = null
+function rememberEvent(event: RealtimeEvent): boolean {
+  const key = event.eventId || dedupeEventKey(event)
+  if (recentEvents.has(key)) return false
+  recentEvents.add(key)
+  if (recentEvents.size > 200) recentEvents.delete(recentEvents.values().next().value!)
+  return true
+}
+
+export async function connectRealtimeSync() {
+  if (socketTask || !useAuthStore().isAuthenticated) return
+  explicitlyDisconnected = false
+  try {
+    const auth = useAuthStore()
+    const ticket = await realtimeApi.issueTicket(auth.deviceId)
+    if (!ticket.ticket && !ticket.websocketUrl) throw new Error('Realtime ticket response is incomplete')
+    const path = ticket.websocketUrl || `/ws/events?ticket=${encodeURIComponent(ticket.ticket!)}`
+    const url = resolveWebsocketUrl(path, getRuntimeConfig())
+    const task = uni.connectSocket({ url }) as unknown as UniApp.SocketTask
+    socketTask = task
+    task.onOpen(() => {
+      reconnectAttempt = 0
+      void useSyncStore().triggerSync()
+    })
+    task.onMessage((message) => {
+      try {
+        const event = JSON.parse(String(message.data)) as RealtimeEvent
+        if (rememberEvent(event) && (event.type === 'SYNC_CHANGED' || event.type === 'REVIEW_UPDATED')) {
+          void useSyncStore().triggerSync()
+        }
+      } catch (error) {
+        console.warn('[Realtime] Ignored malformed event:', error)
+      }
+    })
+    task.onClose(() => {
+      socketTask = null
+      scheduleReconnect()
+    })
+    task.onError(() => {
+      socketTask = null
+      scheduleReconnect()
+    })
+  } catch (error) {
+    console.error('[Realtime] Connection failed:', error)
+    scheduleReconnect()
   }
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
-  }
+}
+
+export function disconnectRealtimeSync() {
+  explicitlyDisconnected = true
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  reconnectAttempt = 0
+  const activeSocket = socketTask
+  socketTask = null
+  activeSocket?.close({})
 }

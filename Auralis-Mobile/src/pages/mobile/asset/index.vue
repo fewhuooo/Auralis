@@ -47,8 +47,8 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { convertHandwritingToMarkdown } from '@/api/aiClient'
 import { useBlockStore } from '@/store/useBlockStore'
+import { uploadAsset } from '@/services/assetUpload'
 
 const blockStore = useBlockStore()
 
@@ -93,82 +93,62 @@ const chooseFile = () => {
   uni.chooseMessageFile?.({
     count: 1,
     type: 'file',
-    success: () => simulateUpload(),
-    fail: () => simulateUpload()
+    success: (result: any) => {
+      const file = result.tempFiles?.[0]
+      if (file) void handleSelectedFile({
+        path: file.path,
+        name: file.name || 'document',
+        size: Number(file.size || 0),
+        mimeType: file.type || 'application/octet-stream',
+      })
+    },
   })
 }
 const takePhoto = () => {
   uni.chooseImage({
     count: 1,
     sourceType: ['camera'],
-    success: () => processHandwriting(),
-    fail: () => processHandwriting() // 这里因为是模拟在PC浏览器或开发者工具点击，容易触发fail，所以也调用
+    success: (result: any) => {
+      const file = result.tempFiles?.[0]
+      const path = file?.path || result.tempFilePaths?.[0]
+      if (path) void handleSelectedFile({
+        path,
+        name: `scan-${Date.now()}.jpg`,
+        size: Number(file?.size || 0),
+        mimeType: 'image/jpeg',
+      })
+    },
   })
 }
 
-const processHandwriting = async () => {
-  isUploading.value = true; uploadProgress.value = 10;
-  uploadStatus.value = 'OCR 识别中...';
-  
-  // 模拟从手写图片中OCR出来的杂乱无章的文本
-  const rawOcrText = "分布式系统... 不可能同时满足三个... 一致性、可用性、容错... 这是CAP定理... 记得本周复习Raft算法流程图...";
-  
-  uploadProgress.value = 50;
-  uploadStatus.value = 'AI 结构化排版中...';
-
+const handleSelectedFile = async (file: { path: string; name: string; size: number; mimeType: string }) => {
+  isUploading.value = true
+  uploadProgress.value = 15
+  uploadStatus.value = '创建上传凭证...'
   try {
-    const mdResult = await convertHandwritingToMarkdown(rawOcrText);
-    uploadProgress.value = 90;
-    uploadStatus.value = '生成知识块...';
-    
-    setTimeout(async () => {
-      isUploading.value = false;
-      const newBlock = {
-        id: 'hw_' + Date.now(),
-        subject: '手写笔记',
-        title: '手写扫描_结构化.md',
-        preview: mdResult.substring(0, 100),
-        time: '刚刚',
-        source: '手写扫描',
-        color: 'rgba(181, 172, 159, 0.2)',
-      };
-      await blockStore.addBlock(newBlock);
-      const newItem = {
-        id: Date.now(), icon: '✎', name: '手写扫描_结构化.md', time: '刚刚',
-        status: 'done', statusText: '已完成', tasks: 0, blocks: 1, pages: 1
-      };
-      history.value.unshift(newItem);
-      uni.showToast({ title: '已转换并存入知识库', icon: 'none' });
-    }, 800);
-
-  } catch (err: any) {
-    console.error("AI 处理失败，退回 Mock", err);
-    uploadStatus.value = '请求失败，采用普通图片存入...';
-    setTimeout(() => {
-      isUploading.value = false;
-      const newItem = {
-        id: Date.now(), icon: '🖼', name: '手写扫描.jpg', time: '刚刚',
-        status: 'done', statusText: 'Mock完成', tasks: 0, blocks: 1, pages: 1
-      };
-      history.value.unshift(newItem);
-      uni.showToast({ title: '未配置Key或请求失败，已回退', icon: 'none' });
-    }, 1000);
+    uploadProgress.value = 45
+    uploadStatus.value = '上传文件...'
+    const assetId = await uploadAsset(file)
+    uploadProgress.value = 100
+    uploadStatus.value = '上传完成'
+    history.value.unshift({
+      id: assetId,
+      icon: file.mimeType.startsWith('image/') ? '✎' : '🕮',
+      name: file.name,
+      time: '刚刚',
+      status: 'done',
+      statusText: '已上传',
+      tasks: 0,
+      blocks: 0,
+      pages: 0,
+    })
+    uni.showToast({ title: '文件上传完成', icon: 'success' })
+  } catch (error) {
+    console.error('[Asset] Upload failed:', error)
+    uni.showToast({ title: '文件上传失败', icon: 'none' })
+  } finally {
+    isUploading.value = false
   }
-}
-const simulateUpload = () => {
-  isUploading.value = true; uploadProgress.value = 0
-  const steps = ['上传中...', '解析文档结构...', 'AI 语义切片...', '生成知识块...', '完成！']
-  let i = 0
-  const timer = setInterval(() => {
-    uploadProgress.value = Math.min(100, uploadProgress.value + 5)
-    uploadStatus.value = steps[Math.min(i, steps.length - 1)]
-    if (uploadProgress.value % 25 === 0) i++
-    if (uploadProgress.value >= 100) {
-      clearInterval(timer)
-      setTimeout(() => { isUploading.value = false }, 1000)
-      uni.showToast({ title: '编排完成', icon: 'success' })
-    }
-  }, 120)
 }
 </script>
 

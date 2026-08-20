@@ -1,29 +1,27 @@
-import mobileRequest from './request'
+import type { components } from './generated/schema'
+import { defaultApiCallClient, type ApiCallClient } from './apiCallClient.ts'
 
-export interface Mutation {
-  id?: number
-  clientId: string
-  userId?: string
-  entityType: 'block' | 'task'
-  entityId: string
-  action: 'create' | 'update' | 'delete'
-  payload: any
-  createdAt: number
-}
+export type SyncMutation = components['schemas']['MutationRequest']
+export type SyncPushRequest = components['schemas']['PushRequest']
+export type SyncPushResponse = components['schemas']['PushResponse']
+export type SyncPullResponse = components['schemas']['PullResponse']
+export type SyncSnapshotResponse = components['schemas']['SnapshotResponse']
+export type SyncChange = components['schemas']['ChangeResponse']
 
-export interface SyncPullResponse {
-  mutations: Mutation[]
-  truncated: boolean
-  blocks: any[]
-  tasks: any[]
-  lastMutationId: number
-}
-
-export const useSyncApi = {
-  pull(afterId = 0): Promise<SyncPullResponse> {
-    return mobileRequest.get('/api/sync/pull', { afterId })
-  },
-  push(mutations: Mutation[]): Promise<number[]> {
-    return mobileRequest.post('/api/sync/push', mutations)
+export function createSyncApi(client: ApiCallClient = defaultApiCallClient) {
+  return {
+    push: (body: SyncPushRequest) => client.request(
+      '/api/sync/push', 'post', { body },
+    ) as Promise<SyncPushResponse>,
+    pull: (cursor?: string | null, limit = 200) => client.request(
+      '/api/sync/pull', 'get', {
+        query: { cursor: cursor || undefined, limit },
+      },
+    ) as Promise<SyncPullResponse>,
+    snapshot: () => client.request(
+      '/api/sync/snapshot', 'get',
+    ) as Promise<SyncSnapshotResponse>,
   }
 }
+
+export const useSyncApi = createSyncApi()

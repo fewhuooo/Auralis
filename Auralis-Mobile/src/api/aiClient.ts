@@ -1,174 +1,181 @@
-/**
- * 基于 OpenAI 兼容接口封装的 AI Client (Mobile)
- */
+import type { components } from './generated/schema'
+import { aiApi } from './aiApi'
+import { createSseDecoder } from './sse'
+import { ApiProblemError, parseProblemDetails } from './protocol'
+import { getRuntimeConfig } from '@/config/runtime'
 import { useAuthStore } from '@/store/useAuthStore'
+import { uuidv7 } from '@/utils/uuid'
+
+type AiMessageCommand = components['schemas']['AiMessageCommand']
+type Provider = NonNullable<AiMessageCommand['provider']>
 
 export interface AiConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
+  provider: Provider
+  baseUrl: string
+  model: string
+  apiKey: string
+  hasApiKey: boolean
 }
 
-export const getAiConfig = (): AiConfig => {
-  return {
-    baseUrl: uni.getStorageSync('ai_base_url') || 'https://api.openai.com/v1',
-    apiKey: uni.getStorageSync('ai_api_key') || '',
-    model: uni.getStorageSync('ai_model') || 'gpt-4o-mini',
+let cachedConfig: AiConfig = {
+  provider: 'OPENAI_COMPATIBLE',
+  baseUrl: '',
+  model: '',
+  apiKey: '',
+  hasApiKey: false,
+}
+
+export const getAiConfig = () => ({ ...cachedConfig })
+
+export async function refreshAiConfig(): Promise<AiConfig> {
+  const settings = await aiApi.getSettings()
+  const current = settings.find(item => item.provider === cachedConfig.provider) || settings[0]
+  if (current) {
+    cachedConfig = {
+      provider: current.provider || 'OPENAI_COMPATIBLE',
+      baseUrl: current.baseUrl || '',
+      model: current.chatModel || '',
+      apiKey: '',
+      hasApiKey: Boolean(current.hasApiKey),
+    }
+  }
+  return getAiConfig()
+}
+
+export async function setAiConfig(config: Partial<AiConfig>): Promise<void> {
+  const provider = config.provider || cachedConfig.provider
+  const updated = await aiApi.updateSettings({
+    provider,
+    baseUrl: config.baseUrl || cachedConfig.baseUrl || undefined,
+    chatModel: config.model || cachedConfig.model || undefined,
+    apiKey: config.apiKey || undefined,
+  })
+  cachedConfig = {
+    provider: updated.provider || provider,
+    baseUrl: updated.baseUrl || config.baseUrl || cachedConfig.baseUrl,
+    model: updated.chatModel || config.model || cachedConfig.model,
+    apiKey: '',
+    hasApiKey: Boolean(updated.hasApiKey),
   }
 }
 
-export const setAiConfig = (config: Partial<AiConfig>) => {
-  if (config.baseUrl) uni.setStorageSync('ai_base_url', config.baseUrl);
-  if (config.apiKey) uni.setStorageSync('ai_api_key', config.apiKey);
-  if (config.model) uni.setStorageSync('ai_model', config.model);
+function decodeChunk(value: unknown, decoder: TextDecoder): string {
+  if (typeof value === 'string') return value
+  if (value instanceof ArrayBuffer) return decoder.decode(new Uint8Array(value), { stream: true })
+  return ''
 }
 
-/**
- * 核心：向兼容 OpenAI 的接口发送请求 (使用 uni.request)
- */
-function chatCompletion(systemPrompt: string, userMessage: string, requireJson = false): Promise<string> {
+async function streamMessage(
+  body: AiMessageCommand,
+  onMessage: (content: string) => void,
+  retried = false,
+): Promise<string> {
+  const auth = useAuthStore()
+  const runtime = getRuntimeConfig()
   return new Promise((resolve, reject) => {
-    const config = getAiConfig();
-    if (!config.apiKey) {
-      return reject(new Error('请先在设置中配置 API Key'));
-    }
-
-    const cleanBaseUrl = config.baseUrl.endsWith('/') ? config.baseUrl.slice(0, -1) : config.baseUrl;
-    const endpoint = `${cleanBaseUrl}/chat/completions`;
-    const body: any = {
-      model: config.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-      ],
-      temperature: 0.3
-    };
-
-    if (requireJson) {
-      body.response_format = { type: 'json_object' };
-    }
-
-    uni.request({
-      url: endpoint,
-      method: 'POST',
-      header: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      },
-      data: body,
-      success: (res: any) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          const content = res.data.choices[0].message.content;
-          resolve(content);
-        } else {
-          reject(new Error(`AI 请求失败: ${res.statusCode} - ${JSON.stringify(res.data)}`));
-        }
-      },
-      fail: (err) => {
-        reject(new Error(`网络请求失败: ${err.errMsg}`));
+    let content = ''
+    let receivedChunk = false
+    let settled = false
+    const textDecoder = new TextDecoder('utf-8')
+    const sse = createSseDecoder((event) => {
+      if (event.event === 'message.delta' && typeof event.data === 'string') {
+        content += event.data
+        onMessage(event.data)
       }
-    });
-  });
-}
-
-/**
- * 13.1c 语音/文本转任务
- */
-export async function transcribeAndExtractTasks(text: string) {
-  const systemPrompt = `你是一个任务分析助手。请从用户输入的口语化备忘录中提取出具体的“待办任务”。
-请必须返回严格的 JSON 格式，结构如下：
-{
-  "tasks": [
-    {
-      "title": "具体的行动事项",
-      "load": "low" | "medium" | "high",
-      "due": "推测的截止时间"
-    }
-  ],
-  "summary": "这段备忘录的一句话总结"
-}`;
-
-  try {
-    const res = await chatCompletion(systemPrompt, `备忘录内容：\\n${text}`, true);
-    const parsed = JSON.parse(res);
-    return parsed;
-  } catch (error) {
-    console.error("任务提取失败:", error);
-    throw error;
-  }
-}
-
-/**
- * 13.1a 手写笔记 -> Markdown 结构化
- */
-export async function convertHandwritingToMarkdown(rawOcrText: string) {
-  const systemPrompt = `你是一个笔记整理专家。请将用户提供的凌乱手写/扫描文本，整理成条理清晰的结构化 Markdown，保留重要标题和列表。直接返回 Markdown 文本，不要加多余的废话。`;
-  
-  try {
-    const res = await chatCompletion(systemPrompt, `杂乱文本如下：\\n${rawOcrText}`, false);
-    return res;
-  } catch (error) {
-    console.error("Markdown 结构化失败:", error);
-    throw error;
-  }
-}
-
-/**
- * 移动端流式 AI 对话 (适配 uni.request chunked)
- */
-export function chatWithAI(text: string, history: any[], onMessage: (content: string) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const BASE_URL = typeof window !== 'undefined'
-      ? 'http://127.0.0.1:8080'
-      : 'http://10.0.2.2:8080'
-
-    const authStore = useAuthStore();
-    
-    const requestTask = uni.request({
-      url: `${BASE_URL}/api/ai/chat`,
+      if (event.event === 'message.completed' && !content && event.data && typeof event.data === 'object') {
+        const completed = event.data as { content?: unknown }
+        if (typeof completed.content === 'string') {
+          content = completed.content
+          onMessage(completed.content)
+        }
+      }
+      if (event.event === 'message.error' && !settled) {
+        const value = event.data as { message?: string; detail?: string }
+        settled = true
+        reject(new Error(value?.message || value?.detail || 'AI stream failed'))
+      }
+    })
+    const task = uni.request({
+      url: `${runtime.apiBaseUrl}/api/ai/messages/stream`,
       method: 'POST',
       enableChunked: true,
       header: {
         'Content-Type': 'application/json',
-        'Authorization': authStore.token ? `Bearer ${authStore.token}` : ''
+        Accept: 'text/event-stream',
+        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
       },
-      data: {
-        systemPrompt: "你是Auralis AI 助手。",
-        message: text,
-        history: history
-      },
-      success: (res: any) => {
-        if (res.statusCode >= 400) {
-          reject(new Error(`请求失败: ${res.statusCode}`));
-        } else {
-          resolve();
-        }
-      },
-      fail: (err) => {
-        reject(new Error(err.errMsg || 'Network Error'));
-      }
-    });
-
-    // @ts-ignore
-    if (requestTask.onChunkReceived) {
-      const decoder = new TextDecoder();
-      // @ts-ignore
-      requestTask.onChunkReceived((response: any) => {
-        const chunk = decoder.decode(new Uint8Array(response.data));
-        const lines = chunk.split('\n').filter(l => l.startsWith('data: '));
-        
-        for (const line of lines) {
-          const dataStr = line.replace('data: ', '').trim();
-          if (dataStr === '[DONE]') continue;
+      data: body,
+      async success(response: any) {
+        if (settled) return
+        if (response.statusCode === 401 && !retried && await auth.refreshAccessToken()) {
+          settled = true
           try {
-            const data = JSON.parse(dataStr);
-            const content = data.choices ? data.choices[0]?.delta?.content : (data.content || '');
-            if (content) {
-              onMessage(content);
-            }
-          } catch (e) {}
+            resolve(await streamMessage(body, onMessage, true))
+          } catch (error) {
+            reject(error)
+          }
+          return
         }
-      });
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          settled = true
+          reject(new ApiProblemError(parseProblemDetails(response.data, response.statusCode)))
+          return
+        }
+        if (!receivedChunk) sse.push(decodeChunk(response.data, textDecoder))
+        sse.finish()
+        settled = true
+        resolve(content)
+      },
+      fail(error) {
+        if (!settled) reject(new Error(error.errMsg || 'Network Error'))
+      },
+    })
+    const chunkedTask = task as typeof task & {
+      onChunkReceived?(handler: (response: { data: unknown }) => void): void
     }
-  });
+    chunkedTask.onChunkReceived?.((response) => {
+      receivedChunk = true
+      sse.push(decodeChunk(response.data, textDecoder))
+    })
+  })
+}
+
+const conversationIds = new Map<string, string>()
+
+async function conversationForCurrentUser(title: string): Promise<string> {
+  const userId = useAuthStore().user?.id || 'anonymous'
+  const existing = conversationIds.get(userId)
+  if (existing) return existing
+  const created = await aiApi.createConversation({ title, baseVersion: 0, clientRequestId: uuidv7() })
+  if (!created.id) throw new Error('Conversation response is incomplete')
+  conversationIds.set(userId, created.id)
+  return created.id
+}
+
+export async function completeAiText(text: string): Promise<string> {
+  return streamMessage({ content: text, retrievalEnabled: true, clientRequestId: uuidv7() }, () => undefined)
+}
+
+export async function transcribeAndExtractTasks(text: string) {
+  const result = await completeAiText(`从以下备忘录提取待办任务，只返回 JSON：\n${text}`)
+  return JSON.parse(result.replace(/^```json\s*|\s*```$/g, '').trim())
+}
+
+export function convertHandwritingToMarkdown(rawOcrText: string): Promise<string> {
+  return completeAiText(`将以下文本整理为结构化 Markdown，只返回正文：\n${rawOcrText}`)
+}
+
+export async function chatWithAI(
+  text: string,
+  _history: unknown[],
+  onMessage: (content: string) => void,
+): Promise<void> {
+  const conversationId = await conversationForCurrentUser(text.slice(0, 60))
+  await streamMessage({
+    conversationId,
+    content: text,
+    retrievalEnabled: true,
+    topK: 8,
+    clientRequestId: uuidv7(),
+  }, onMessage)
 }

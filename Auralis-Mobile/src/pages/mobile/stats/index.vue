@@ -82,25 +82,18 @@ import LineIcon from '@/components/LineIcon.vue'
 import WeeklyChart from '@/components/WeeklyChart.vue'
 import SubjectPieChart from '@/components/SubjectPieChart.vue'
 import HeatmapChart from '@/components/HeatmapChart.vue'
+import { statsApi } from '@/api/statsApi'
 
 // Overview stats
 const overview = ref({
-  streakDays: 12,
-  totalBlocks: 145,
-  completedTasks: 38,
-  totalFocusHours: 24.5
+  streakDays: 0,
+  totalBlocks: 0,
+  completedTasks: 0,
+  totalFocusHours: 0
 })
 
 // Weekly focus data
-const weeklyData = ref([
-  { day: '一', minutes: 120 },
-  { day: '二', minutes: 90 },
-  { day: '三', minutes: 150 },
-  { day: '四', minutes: 60 },
-  { day: '五', minutes: 200 },
-  { day: '六', minutes: 45, isToday: true },
-  { day: '日', minutes: 0 }
-])
+const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
 
 const weeklyAverage = computed(() => {
   const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
@@ -108,49 +101,41 @@ const weeklyAverage = computed(() => {
 })
 
 // Subject distribution
-const subjectSegments = ref([
-  { subject: '计算机网络', percentage: 45, color: '#3b82f6' },
-  { subject: '操作系统', percentage: 30, color: '#10b981' },
-  { subject: '算法与数据结构', percentage: 25, color: '#f59e0b' }
-])
+const subjectSegments = ref<{ subject: string; percentage: number; color: string }[]>([])
 
 // Heatmap contribution data
 const heatmapData = ref<{ date: string; count: number }[]>([])
 
-const generateHeatmapData = () => {
-  const data = []
+onMounted(async () => {
   const today = new Date()
-  
-  // Create last 180 days of counts (6 months)
-  for (let i = 179; i >= 0; i--) {
-    const day = new Date()
-    day.setDate(today.getDate() - i)
-    const dateStr = day.toISOString().split('T')[0]
-    
-    // Generate some interesting activity patterns
-    let count = 0
-    const dayOfWeek = day.getDay()
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
-      // Less active on weekends
-      count = Math.floor(Math.random() * 5)
-    } else {
-      // More active on weekdays
-      count = Math.floor(Math.random() * 12)
+  const fromDate = new Date(today)
+  fromDate.setUTCDate(today.getUTCDate() - 6)
+  const from = fromDate.toISOString().slice(0, 10)
+  const to = today.toISOString().slice(0, 10)
+  try {
+    const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
+    const days = weekly.days || []
+    overview.value = {
+      streakDays: [...days].reverse().findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0))) < 0
+        ? days.length
+        : [...days].reverse().findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0))),
+      totalBlocks: Number(summary.activeKnowledgeBlocks || 0),
+      completedTasks: days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0),
+      totalFocusHours: Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1)),
     }
-    
-    // Add occasional zero days
-    if (Math.random() < 0.15) {
-      count = 0
-    }
-    
-    data.push({ date: dateStr, count })
+    weeklyData.value = days.map((day) => ({
+      day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
+      minutes: Math.round(Number(day.studySeconds || 0) / 60),
+      isToday: day.date === to,
+    }))
+    heatmapData.value = days.map(day => ({
+      date: day.date || '',
+      count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
+    }))
+  } catch (error) {
+    console.error('[Stats] Failed to load server statistics:', error)
+    uni.showToast({ title: '统计数据加载失败', icon: 'none' })
   }
-  
-  heatmapData.value = data
-}
-
-onMounted(() => {
-  generateHeatmapData()
 })
 </script>
 

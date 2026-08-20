@@ -1,91 +1,178 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import type { components } from '@/api/generated/schema'
+import { getOrCreateDeviceIdentity } from '@/api/deviceIdentity'
+import { createRefreshCoordinator } from '@/api/protocol'
+import { configureAuthSessionBridge } from '@/api/request'
+import { useAuthApi } from '@/api/useAuthApi'
+import { localDataScope } from '@/services/localDataScope'
+import { purgeLegacyLocalData } from '@/services/legacyDataPurge'
 
-const BASE_URL = 'http://127.0.0.1:8080/api'
+type AuthResult = components['schemas']['AuthResult']
+type TokenPair = components['schemas']['TokenPair']
+type UserView = components['schemas']['UserView']
+
+interface PersistedAuthSession {
+  user: UserView
+  tokens: TokenPair
+  sessionId: string
+  deviceId: string
+}
+
+const AUTH_STORAGE_KEY = 'auralis:auth:v2'
+
+function loadPersistedSession(): PersistedAuthSession | null {
+  const value = uni.getStorageSync(AUTH_STORAGE_KEY)
+  if (!value) return null
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value
+    if (!parsed?.user?.id || !parsed?.tokens?.accessToken || !parsed?.tokens?.refreshToken) return null
+    return parsed as PersistedAuthSession
+  } catch {
+    return null
+  }
+}
+
+function normalizeAuthResult(result: AuthResult): PersistedAuthSession {
+  if (!result.user?.id || !result.user.username || !result.tokens?.accessToken
+    || !result.tokens.refreshToken || !result.sessionId || !result.deviceId) {
+    throw new Error('Authentication response is incomplete')
+  }
+  return {
+    user: result.user,
+    tokens: result.tokens,
+    sessionId: result.sessionId,
+    deviceId: result.deviceId,
+  }
+}
+
+function currentLoginRoute(): string {
+  const pages = getCurrentPages()
+  const route = pages.length > 0 ? pages[pages.length - 1].route || '' : ''
+  return route.startsWith('pages/tablet/')
+    ? '/pages/tablet/login/index'
+    : '/pages/mobile/login/index'
+}
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string | null>(uni.getStorageSync('token') || null)
-  const refreshToken = ref<string | null>(uni.getStorageSync('refreshToken') || null)
-  const username = ref<string | null>(uni.getStorageSync('username') || null)
+  const persisted = loadPersistedSession()
+  const user = ref<UserView | null>(persisted?.user || null)
+  const tokens = ref<TokenPair | null>(persisted?.tokens || null)
+  const sessionId = ref(persisted?.sessionId || '')
   const avatar = ref<string | null>(uni.getStorageSync('avatar') || null)
 
-  const request = (url: string, method: 'GET' | 'POST' = 'GET', data?: any) => {
-    return new Promise((resolve, reject) => {
-      uni.request({
-        url: BASE_URL + url,
-        method,
-        data,
-        success: (res: any) => {
-          if (res.data && res.data.code === 200) {
-            resolve(res.data.data)
-          } else {
-            reject(new Error(res.data.message || 'Error'))
-          }
-        },
-        fail: (err) => {
-          reject(err)
-        }
-      })
-    })
+  const identity = getOrCreateDeviceIdentity({
+    get: (key) => uni.getStorageSync(key),
+    set: (key, value) => uni.setStorageSync(key, value),
+  }, uni.getSystemInfoSync())
+  const deviceId = ref(persisted?.deviceId || identity.deviceId)
+  if (persisted?.user.id) localDataScope.activate(persisted.user.id, deviceId.value)
+  if (persisted?.user.id) void purgeLegacyLocalData()
+
+  const token = computed(() => tokens.value?.accessToken || null)
+  const refreshToken = computed(() => tokens.value?.refreshToken || null)
+  const username = computed(() => user.value?.displayName || user.value?.username || null)
+  const isAuthenticated = computed(() => Boolean(token.value && user.value?.id))
+
+  function persistSession(session: PersistedAuthSession): void {
+    localDataScope.activate(session.user.id!, session.deviceId)
+    void purgeLegacyLocalData()
+    user.value = session.user
+    tokens.value = session.tokens
+    sessionId.value = session.sessionId
+    deviceId.value = session.deviceId
+    uni.setStorageSync(AUTH_STORAGE_KEY, JSON.stringify(session))
+    for (const legacyKey of ['token', 'refreshToken', 'username']) uni.removeStorageSync(legacyKey)
   }
 
-  const login = async (data: any) => {
-    const res: any = await request('/auth/login', 'POST', data)
-    // Backend returns { accessToken, refreshToken }
-    token.value = res.accessToken
-    refreshToken.value = res.refreshToken
-    username.value = data.username
-    avatar.value = data.avatar || null
-    uni.setStorageSync('token', res.accessToken)
-    uni.setStorageSync('refreshToken', res.refreshToken)
-    uni.setStorageSync('username', data.username)
-    if (data.avatar) {
-      uni.setStorageSync('avatar', data.avatar)
-    }
+  function clearSession(): void {
+    user.value = null
+    tokens.value = null
+    sessionId.value = ''
+    uni.removeStorageSync(AUTH_STORAGE_KEY)
+    for (const legacyKey of ['token', 'refreshToken', 'username']) uni.removeStorageSync(legacyKey)
   }
 
-  const register = async (data: any) => {
-    await request('/auth/register', 'POST', data)
-  }
-
-  /**
-   * 14.3 Refresh token — attempt to get a new access token using the stored refresh token
-   */
-  const refreshAccessToken = async (): Promise<boolean> => {
-    if (!refreshToken.value) return false
+  const refreshCoordinator = createRefreshCoordinator(async () => {
+    const currentRefreshToken = refreshToken.value
+    if (!currentRefreshToken) return false
     try {
-      const res: any = await request('/auth/refresh', 'POST', {
-        refreshToken: refreshToken.value
-      })
-      token.value = res.accessToken
-      refreshToken.value = res.refreshToken
-      uni.setStorageSync('token', res.accessToken)
-      uni.setStorageSync('refreshToken', res.refreshToken)
+      persistSession(normalizeAuthResult(await useAuthApi.refresh({ refreshToken: currentRefreshToken })))
       return true
-    } catch (e) {
+    } catch {
+      clearSession()
+      return false
+    }
+  })
+
+  const refreshAccessToken = () => refreshCoordinator.refresh()
+
+  configureAuthSessionBridge({
+    getAccessToken: () => token.value,
+    refreshAccessToken,
+    onUnauthenticated: () => {
+      clearSession()
+      uni.reLaunch({ url: currentLoginRoute() })
+    },
+  })
+
+  async function login(data: { username: string; password: string }): Promise<void> {
+    persistSession(normalizeAuthResult(await useAuthApi.login({
+      ...data,
+      deviceId: identity.deviceId,
+      deviceName: identity.deviceName,
+      platform: identity.platform,
+    })))
+  }
+
+  async function register(data: { username: string; password: string; displayName?: string }): Promise<void> {
+    persistSession(normalizeAuthResult(await useAuthApi.register({
+      username: data.username,
+      password: data.password,
+      displayName: data.displayName?.trim() || data.username,
+      deviceId: identity.deviceId,
+      deviceName: identity.deviceName,
+      platform: identity.platform,
+    })))
+  }
+
+  async function restoreSession(): Promise<boolean> {
+    if (!token.value) return false
+    try {
+      const currentUser = await useAuthApi.me()
+      if (!currentUser.id) throw new Error('Current user response is incomplete')
+      user.value = currentUser
+      if (tokens.value && sessionId.value) {
+        persistSession({ user: currentUser, tokens: tokens.value, sessionId: sessionId.value, deviceId: deviceId.value })
+      }
+      return true
+    } catch {
       return false
     }
   }
 
-  const logout = () => {
-    token.value = null
-    refreshToken.value = null
-    username.value = null
-    avatar.value = null
-    uni.removeStorageSync('token')
-    uni.removeStorageSync('refreshToken')
-    uni.removeStorageSync('username')
-    uni.removeStorageSync('avatar')
+  async function logout(): Promise<void> {
+    try {
+      if (token.value) await useAuthApi.logout()
+    } finally {
+      clearSession()
+    }
   }
 
   return {
+    user,
+    tokens,
+    sessionId,
+    deviceId,
     token,
     refreshToken,
     username,
     avatar,
+    isAuthenticated,
     login,
     register,
+    restoreSession,
     refreshAccessToken,
-    logout
+    logout,
   }
 })

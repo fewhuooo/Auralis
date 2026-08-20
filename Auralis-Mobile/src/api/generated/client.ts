@@ -92,7 +92,7 @@ function defaultTransport<Response>(options: Parameters<ApiTransport>[0]): Promi
     case 'PUT':
       return mobileRequest.put<Response>(options.url, options.data)
     case 'DELETE':
-      return mobileRequest.delete<Response>(options.url)
+      return mobileRequest.delete<Response>(options.url, options.data, options.params)
   }
 }
 

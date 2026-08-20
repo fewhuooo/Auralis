@@ -1,18 +1,18 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-08-12
+更新时间：2026-08-20
 
 文档状态：现行
 
 权威范围：`Auralis-Mobile` 的当前依赖、页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
 
-事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/`、`scripts/` 与 2026-08-12 当前代码
+事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/`、`scripts/` 与 2026-08-20 当前代码
 
 ## 模块定位
 
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
 
-截至 2026-08-12，Mobile/Tablet 的基础页面和主要视觉布局重构已基本收敛。近期平板首页热力图支持按周数自适应布局，当前首页使用 5 周日历网格，Hero Banner 已统一使用 `Primary Gradient`；构建仍需结合开发者工具、浏览器和真机验收。
+截至 2026-08-20，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；H5 与微信命令行构建通过。平板首页仍使用 5 周日历网格和 `Primary Gradient`；微信开发者工具、浏览器及真机主流程尚未人工验收。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须额外审查条件编译、弱网/输入法、触控、feature flag、数据同步和真机验收边界。
 
@@ -20,9 +20,9 @@
 
 - Uni-app `3.0.0-4080420251103001`
 - Vue `^3.4.21`
-- Pinia `^2.3.1`
+- Pinia `2.1.7`
 - Vite `5.2.8`
-- TypeScript `^5.3.3`
+- TypeScript `5.3.3`
 - `perfect-freehand`、`jspdf`、`marked`
 
 ## 目录边界
@@ -99,9 +99,10 @@ Auralis-Mobile/src/
 
 ### API
 
-- `api/request.ts`：base URL、Authorization、refresh 和错误处理。
-- `api/aiClient.ts`：AI 调用。
-- `api/sync.ts`、`api/useSyncApi.ts`：同步。
+- `api/request.ts`、`requestCore.ts`：环境基址、Bearer、Problem Details 和共享单次 refresh。
+- `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation 和 `/api/ai/messages/stream`。
+- `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset 和 `/ws/events` 一次性 ticket。
+- `api/assetApi.ts`、`reviewApi.ts`、`statsApi.ts`：预签名上传、复习事件和强类型统计。
 - `api/device.ts`：设备相关能力。
 - `api/e2ee.ts`：加密辅助。
 - `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。
@@ -111,13 +112,16 @@ Auralis-Mobile/src/
 `openapi-typescript@7.13.0`。从仓库根目录执行
 `scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
 `scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
-只冻结类型和请求边界，页面和旧 API 调用仍需按 R4 计划逐模块迁移，不能把类型检查通过写成前后端联调完成。
+冻结类型已进入 Mobile 主路径；`check:r4-mobile` 禁止旧 Result、旧 `/ws/sync`、固定本机地址、数值旧游标和旧 AI 路由。Tablet 仍有页面级领域接入与真机验收缺口，不能把类型检查或构建通过写成前后端联调完成。
 
 ### 端侧服务
 
 | 服务 | 职责 |
 | --- | --- |
 | `localDb.ts` | 端侧 SQLite 表与访问入口 |
+| `localDataScope.ts` | 按 userId/deviceId 选择独立 H5/SQLite namespace |
+| `legacyDataPurge.ts` | 用户授权后一次性删除旧全局 `h5_db_*`/`auralis.db` 业务表 |
+| `assetUpload.ts` | upload-intent、预签名 PUT、complete |
 | `notebookStorage.ts` | 笔记存储兼容层 |
 | `tabletNoteModel.ts` | `NoteDocument` 模型与序列化 |
 | `tabletNoteRepository.ts` | 平台仓库入口 |
@@ -152,6 +156,9 @@ npm install
 npm.cmd run build:h5
 npm.cmd run build:mp-weixin
 npm run type-check
+npm run check:r4-mobile
+npm run test:r4-mobile
+npm run test:tablet
 node scripts\check-tablet-sidebar-transition.mjs
 ```
 
@@ -161,16 +168,16 @@ node scripts\check-tablet-sidebar-transition.mjs
 - `scripts/tablet-note-model.test.ts`
 - `scripts/tablet-note-repository-core.test.ts`
 
-这些 TypeScript 文件存在不等于已接入统一 `npm test`；执行方式必须以实际脚本和环境为准。
+三个 Tablet TypeScript 逻辑脚本已接入 `npm run test:tablet`。
 
 ## 当前限制
 
 - H5/微信命令行构建不能替代微信开发者工具和真机。
-- 2026-08-12：H5 与微信构建通过，但仍有动态/静态 import 与 Sass legacy API 非阻断警告。
+- 2026-08-20：H5 与微信构建通过；H5 仍有 Sync Store 动态/静态 import 和 Sass legacy API 非阻断警告。
 - App、Harmony 和其他小程序平台虽然有脚本，不表示已验收。
 - Mobile 当前将 TypeScript 固定为 5.3.3 以匹配 `vue-tsc@1.8.27`；`npm run type-check` 已通过。后续升级 Node、TypeScript 或 `vue-tsc` 时必须重新执行并记录结果。
 - Tablet 复杂交互需要真实触控屏。
-- 手写、图片上传、AI 转换和同步恢复需要 Server/外部服务联调。
+- 图片上传已实现客户端 intent/PUT/complete，但请求/upload/download 合法域名、MinIO、AI、双设备 reset 和弱网恢复仍需真实环境联调。
 
 ## 修改后的强制回写
 

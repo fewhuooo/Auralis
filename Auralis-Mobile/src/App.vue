@@ -4,23 +4,28 @@ import { connectRealtimeSync, disconnectRealtimeSync } from "@/api/sync";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useSyncStore } from "@/store/useSyncStore";
 import { watch } from "vue";
+import { localDb } from "@/services/localDb";
+
+async function startAuthenticatedRuntime() {
+  await localDb.init();
+  const syncStore = useSyncStore();
+  await syncStore.initE2EE();
+  await syncStore.triggerSync();
+  await connectRealtimeSync();
+}
 
 onLaunch(async () => {
   console.log("App Launch");
 
   const authStore = useAuthStore();
 
-  if (authStore.token) {
-    const syncStore = useSyncStore();
-    await syncStore.initE2EE();
-    connectRealtimeSync();
+  if (authStore.token && await authStore.restoreSession()) {
+    await startAuthenticatedRuntime();
   }
 
   watch(() => authStore.token, async (newToken) => {
     if (newToken) {
-      const syncStore = useSyncStore();
-      await syncStore.initE2EE();
-      connectRealtimeSync();
+      await startAuthenticatedRuntime();
     } else {
       disconnectRealtimeSync();
     }
@@ -29,6 +34,7 @@ onLaunch(async () => {
 
 onShow(() => {
   console.log("App Show");
+  if (useAuthStore().isAuthenticated) void connectRealtimeSync();
 });
 
 onHide(() => {

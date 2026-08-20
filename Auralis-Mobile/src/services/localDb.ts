@@ -1,8 +1,14 @@
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
+import { localDataScope } from './localDataScope';
 
-const DB_NAME = 'auralis';
-const DB_PATH = '_doc/auralis.db';
+function databaseIdentity() {
+  const scope = localDataScope.current();
+  return {
+    name: `auralis_${scope}`,
+    path: `_doc/auralis_${scope}.db`,
+  };
+}
 
 declare const plus: any;
 
@@ -11,12 +17,12 @@ const isH5 = typeof plus === 'undefined' || !plus.sqlite;
 // H5 模式下使用 localStorage 模拟 SQLite 数据表结构
 const h5Db = {
   getTable(name: string): any[] {
-    const key = `h5_db_${name}`;
+    const key = `auralis:local:${localDataScope.current()}:${name}`;
     const data = uni.getStorageSync(key);
     return data ? JSON.parse(data) : [];
   },
   saveTable(name: string, data: any[]): void {
-    const key = `h5_db_${name}`;
+    const key = `auralis:local:${localDataScope.current()}:${name}`;
     uni.setStorageSync(key, JSON.stringify(data));
   }
 };
@@ -219,7 +225,7 @@ function selectH5Query(sql: string): any[] {
 const sqlite = {
   isOpen(): boolean {
     if (isH5) return true;
-    return plus.sqlite.isOpenDatabase({ name: DB_NAME, path: DB_PATH });
+    return plus.sqlite.isOpenDatabase(databaseIdentity());
   },
 
   open(): Promise<void> {
@@ -231,8 +237,7 @@ const sqlite = {
         return resolve();
       }
       plus.sqlite.openDatabase({
-        name: DB_NAME,
-        path: DB_PATH,
+        ...databaseIdentity(),
         success: () => resolve(),
         fail: (e: any) => reject(new Error('Failed to open database: ' + JSON.stringify(e)))
       });
@@ -252,7 +257,7 @@ const sqlite = {
           }
         }
         plus.sqlite.executeSql({
-          name: DB_NAME,
+          name: databaseIdentity().name,
           sql: sql,
           success: () => resolve(),
           fail: (e: any) => reject(new Error(`Failed to execute SQL: ${sql}. Error: ${JSON.stringify(e)}`))
@@ -276,7 +281,7 @@ const sqlite = {
           }
         }
         plus.sqlite.selectSql({
-          name: DB_NAME,
+          name: databaseIdentity().name,
           sql: sql,
           success: (data: any) => resolve(data || []),
           fail: (e: any) => reject(new Error(`Failed to select SQL: ${sql}. Error: ${JSON.stringify(e)}`))
@@ -386,7 +391,8 @@ export const localDb = {
         description TEXT,
         icon TEXT,
         color TEXT,
-        created_at INTEGER
+        created_at INTEGER,
+        version INTEGER DEFAULT 0
       )
     `);
     await sqlite.execute(`
@@ -399,7 +405,8 @@ export const localDb = {
         file_size INTEGER,
         catalog_json TEXT,
         block_count INTEGER DEFAULT 0,
-        created_at INTEGER
+        created_at INTEGER,
+        version INTEGER DEFAULT 0
       )
     `);
     await sqlite.execute(`
@@ -454,6 +461,12 @@ export const localDb = {
     } catch (e) {}
     try {
       await sqlite.execute("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE subjects ADD COLUMN version INTEGER DEFAULT 0");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
     } catch (e) {}
   },
 
@@ -882,19 +895,21 @@ export const localDb = {
           name = '${esc(subject.name)}', 
           description = '${esc(subject.description || '')}', 
           icon = '${esc(subject.icon || '')}', 
-          color = '${esc(subject.color || '')}' 
+          color = '${esc(subject.color || '')}',
+          version = ${Number(subject.version || 0)}
         WHERE id = '${esc(subject.id)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO subjects (id, name, description, icon, color, created_at) 
+        INSERT INTO subjects (id, name, description, icon, color, created_at, version)
         VALUES (
           '${esc(subject.id)}', 
           '${esc(subject.name)}', 
           '${esc(subject.description || '')}', 
           '${esc(subject.icon || '')}', 
           '${esc(subject.color || '')}', 
-          ${subject.created_at || Date.now()}
+          ${subject.created_at || Date.now()},
+          ${Number(subject.version || 0)}
         )
       `);
     }
@@ -927,12 +942,13 @@ export const localDb = {
           file_type = '${esc(file.file_type)}', 
           file_size = ${file.file_size}, 
           catalog_json = '${esc(catalogJsonVal)}', 
-          block_count = ${blockCountVal} 
+          block_count = ${blockCountVal},
+          version = ${Number(file.version || 0)}
         WHERE id = '${esc(file.id)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at) 
+        INSERT INTO source_files (id, subject_id, name, file_path, file_type, file_size, catalog_json, block_count, created_at, version)
         VALUES (
           '${esc(file.id)}', 
           '${esc(file.subject_id)}', 
@@ -942,7 +958,8 @@ export const localDb = {
           ${file.file_size}, 
           '${esc(catalogJsonVal)}', 
           ${blockCountVal}, 
-          ${file.created_at || Date.now()}
+          ${file.created_at || Date.now()},
+          ${Number(file.version || 0)}
         )
       `);
     }

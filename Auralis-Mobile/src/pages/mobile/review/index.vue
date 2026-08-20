@@ -119,6 +119,8 @@ import AppPageLayout from '@/components/AppPageLayout.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import FlashCard from '@/components/FlashCard.vue'
+import { reviewApi } from '@/api/reviewApi'
+import { uuidv7 } from '@/utils/uuid'
 
 const blockStore = useBlockStore()
 
@@ -127,6 +129,9 @@ const sessionQueue = ref<any[]>([])
 const currentIndex = ref(0)
 const isFlipped = ref(false)
 const completedCount = ref(0)
+const dueQueue = ref<any[]>([])
+const reviewVersions = new Map<string, number>()
+let cardStartedAt = Date.now()
 
 // History stack to support Swipe Right (Undo / Prev card)
 interface HistoryAction {
@@ -149,58 +154,25 @@ const animateFly = ref(false)
 
 onMounted(async () => {
   await blockStore.fetchBlocks()
-  
-  // Seed demo data if none exists
-  if (blockStore.recentBlocks.length === 0) {
-    const mockBlocks = [
-      {
-        subject: '计算机网络',
-        title: 'TCP 三次握手的过程',
-        preview: '1. 客户端发送 SYN 报文，进入 SYN_SENT 状态。\n2. 服务端收到后发送 SYN + ACK 报文，进入 SYN_RCVD 状态。\n3. 客户端收到后发送 ACK 报文，双方进入 ESTABLISHED 状态。',
-        color: '#3b82f6',
-        mastery: 60
-      },
-      {
-        subject: '操作系统',
-        title: '进程和线程的区别',
-        preview: '1. 进程是系统资源分配的最小单位，拥有独立地址空间。\n2. 线程是CPU调度的最小单位，是进程内一条执行路径，共享进程资源。\n3. 线程切换开销小于进程。',
-        color: '#10b981',
-        mastery: 80
-      },
-      {
-        subject: '算法与数据结构',
-        title: '快速排序的时间复杂度',
-        preview: '平均时间复杂度: O(n log n)\n最好情况: O(n log n) [每次基准划分都均匀]\n最坏情况: O(n²) [数组已排序且每次选第一个/最后一个作为基准]',
-        color: '#f59e0b',
-        mastery: 40
-      },
-      {
-        subject: '计算机网络',
-        title: 'HTTP/2 的核心特性',
-        preview: '1. 二进制分帧：应用层与传输层之间增加二进制分帧层。\n2. 多路复用：共享同一连接发送多个并发请求和响应。\n3. 首部压缩：HPACK 算法，维护客户端与服务端的静态/动态表。\n4. 服务器推送：服务端主动向客户端推送资源。',
-        color: '#3b82f6',
-        mastery: 75
-      }
-    ]
-    for (const b of mockBlocks) {
-      await blockStore.addBlock({
-        ...b,
-        source: '自动添加',
-        time: new Date().toISOString()
-      })
-    }
-  }
-
+  const states = await reviewApi.due()
+  const blocks = new Map(blockStore.recentBlocks.map(block => [block.id, block]))
+  dueQueue.value = states.flatMap((state) => {
+    if (!state.knowledgeBlockId) return []
+    reviewVersions.set(state.knowledgeBlockId, Number(state.version || 0))
+    const block = blocks.get(state.knowledgeBlockId)
+    return block ? [{ ...block, mastery: Math.round(Math.min(100, Number(state.stability || 0) * 10)) }] : []
+  })
   resetReview()
 })
 
 const resetReview = () => {
   // Initialize queue with copy of store blocks
-  sessionQueue.value = [...blockStore.recentBlocks]
+  sessionQueue.value = [...dueQueue.value]
   currentIndex.value = 0
   completedCount.value = 0
   isFlipped.value = false
   historyStack.value = []
+  cardStartedAt = Date.now()
   resetDrag()
 }
 
@@ -330,12 +302,7 @@ const onTouchEnd = () => {
       triggerFlyAnimation('left')
     } else {
       // Swipe Right -> undo previous action if exists
-      if (historyStack.value.length > 0) {
-        triggerFlyAnimation('right')
-      } else {
-        // No history to undo, bounce back
-        triggerResetAnimation()
-      }
+      triggerResetAnimation()
     }
   } else {
     // Vertical
@@ -378,64 +345,40 @@ const handleSwipeAction = async (dir: 'left' | 'right' | 'up' | 'down') => {
   const card = activeCard.value
   if (!card) return
 
-  if (dir === 'right') {
-    // Undo previous action
-    const lastAction = historyStack.value.pop()
-    if (lastAction) {
-      // Restore index
-      currentIndex.value = Math.max(0, currentIndex.value - 1)
-      
-      // If requeued, pop the re-queued item from tail of queue
-      if (lastAction.requeued) {
-        sessionQueue.value.pop()
-      }
-
-      // If it was mastered, decrease completedCount
-      if (lastAction.actionType === 'mastered') {
-        completedCount.value = Math.max(0, completedCount.value - 1)
-      }
-
-      // Restore block mastery
-      await blockStore.updateBlock({
-        ...sessionQueue.value[currentIndex.value],
-        mastery: lastAction.prevMastery
-      })
-    }
-    isFlipped.value = false
-    return
-  }
+  if (dir === 'right') return
 
   // For other directions, we advance the deck
   let actionType: 'mastered' | 'retry' | 'skip' = 'skip'
   let requeued = false
   const prevMastery = card.mastery || 50
 
+  const rating = dir === 'up' ? 'GOOD' : dir === 'down' ? 'AGAIN' : 'SKIP'
+  try {
+    const result = await reviewApi.record({
+      clientEventId: uuidv7(),
+      knowledgeBlockId: card.id,
+      rating,
+      reviewedAt: new Date().toISOString(),
+      durationSeconds: Math.max(0, Math.round((Date.now() - cardStartedAt) / 1000)),
+      baseVersion: reviewVersions.get(card.id),
+    })
+    if (result.state?.version !== undefined) reviewVersions.set(card.id, result.state.version)
+  } catch (error) {
+    console.error('[Review] Failed to persist event:', error)
+    uni.showToast({ title: '复习结果保存失败', icon: 'none' })
+    return
+  }
+
   if (dir === 'up') {
     // Mastered 🟢
     actionType = 'mastered'
     completedCount.value++
-    const newMastery = Math.min(prevMastery + 15, 100)
-    await blockStore.updateBlock({
-      ...card,
-      mastery: newMastery,
-      difficulty: 'easy'
-    })
   } else if (dir === 'down') {
     // Not mastered 🔴 -> Add to end of queue
     actionType = 'retry'
     requeued = true
-    const newMastery = Math.max(prevMastery - 15, 10)
-    await blockStore.updateBlock({
-      ...card,
-      mastery: newMastery,
-      difficulty: 'hard'
-    })
-    
     // Append to end of queue
-    sessionQueue.value.push({
-      ...card,
-      mastery: newMastery
-    })
+    sessionQueue.value.push(card)
   } else if (dir === 'left') {
     // Skip / Next card
     actionType = 'skip'
@@ -451,6 +394,7 @@ const handleSwipeAction = async (dir: 'left' | 'right' | 'up' | 'down') => {
 
   // Advance index
   currentIndex.value++
+  cardStartedAt = Date.now()
   isFlipped.value = false
 }
 </script>

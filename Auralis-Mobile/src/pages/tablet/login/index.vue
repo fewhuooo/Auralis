@@ -37,6 +37,10 @@ const handleAction = async () => {
     uni.showToast({ title: '请输入用户名和密码', icon: 'none' })
     return
   }
+  if (form.value.username.length > 64 || (!isLogin.value && form.value.password.length < 12)) {
+    uni.showToast({ title: isLogin.value ? '用户名不能超过 64 个字符' : '注册密码至少需要 12 个字符', icon: 'none' })
+    return
+  }
 
   loading.value = true
   try {
@@ -46,8 +50,8 @@ const handleAction = async () => {
       uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
     } else {
       await authStore.register(form.value)
-      uni.showToast({ title: '注册成功，请登录' })
-      isLogin.value = true
+      uni.showToast({ title: '注册成功' })
+      uni.reLaunch({ url: '/pages/tablet/dashboard/index' })
     }
   } catch (error: any) {
     uni.showToast({ title: error.message || '操作失败', icon: 'none' })

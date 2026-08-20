@@ -1,8 +1,8 @@
 import {
   createTabletNoteRepository,
   type TabletNoteDb,
-} from '../src/services/tabletNoteRepositoryCore'
-import { createNoteDocument } from '../src/services/tabletNoteModel'
+} from '../src/services/tabletNoteRepositoryCore.ts'
+import { createNoteDocument } from '../src/services/tabletNoteModel.ts'
 
 function expectEqual<T>(actual: T, expected: T, label: string) {
   if (actual !== expected) {

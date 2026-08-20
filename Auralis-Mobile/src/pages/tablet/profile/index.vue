@@ -262,7 +262,7 @@ import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSyncStore } from '@/store/useSyncStore'
-import { getAiConfig, setAiConfig } from '@/api/aiClient'
+import { refreshAiConfig, setAiConfig } from '@/api/aiClient'
 
 const authStore = useAuthStore()
 const blockStore = useBlockStore()
@@ -283,6 +283,7 @@ const ragEnabled = ref(true)
 const autoTag = ref(true)
 const taskReminder = ref(true)
 const weeklyReport = ref(false)
+const hasApiKey = ref(false)
 
 const avatarLetter = computed(() => (authStore.username || 'U').charAt(0).toUpperCase())
 const userLevel = computed(() => {
@@ -304,8 +305,6 @@ const weeklyNew = computed(() => {
 })
 const fontSizeLabel = computed(() => ({ small: '小', medium: '中', large: '大' })[settingsStore.fontSize] || '中')
 const fontSizeOptions: Array<{ value: 'small' | 'medium' | 'large'; label: string }> = [{ value: 'small', label: '小' }, { value: 'medium', label: '中' }, { value: 'large', label: '大' }]
-const hasApiKey = computed(() => !!getAiConfig().apiKey)
-
 const aiInsight = computed(() => {
   const blocks = recentBlocks.value.length
   const tasks = totalTasks.value
@@ -359,10 +358,16 @@ const toggleLanguage = () => {
   uni.showToast({ title: settingsStore.language === 'zh-CN' ? '已切换中文' : 'Switched to English', icon: 'none' })
 }
 
-const saveApiKey = () => {
-  setAiConfig({ apiKey: apiKeyInput.value })
-  showApiKeyModal.value = false
-  uni.showToast({ title: 'API Key 已保存', icon: 'success' })
+const saveApiKey = async () => {
+  try {
+    await setAiConfig({ apiKey: apiKeyInput.value })
+    hasApiKey.value = true
+    apiKeyInput.value = ''
+    showApiKeyModal.value = false
+    uni.showToast({ title: 'API Key 已安全保存', icon: 'success' })
+  } catch {
+    uni.showToast({ title: 'API Key 保存失败', icon: 'none' })
+  }
 }
 
 const handleClearCache = () => {
@@ -377,8 +382,11 @@ onMounted(async () => {
   await blockStore.fetchBlocks()
   await subjectStore.loadSubjects()
   await taskStore.fetchTasks()
-  const config = getAiConfig()
-  apiKeyInput.value = config.apiKey
+  try {
+    hasApiKey.value = (await refreshAiConfig()).hasApiKey
+  } catch {
+    hasApiKey.value = false
+  }
 })
 </script>
 

@@ -3,7 +3,7 @@ import {
   createSubjectAssetAnnotationId,
   upsertStroke,
   type NoteStroke,
-} from '../src/services/tabletNoteModel'
+} from '../src/services/tabletNoteModel.ts'
 
 function expectEqual<T>(actual: T, expected: T, label: string) {
   if (actual !== expected) {

@@ -34,7 +34,10 @@
     "build:quickapp-webview": "uni build -p quickapp-webview",
     "build:quickapp-webview-huawei": "uni build -p quickapp-webview-huawei",
     "build:quickapp-webview-union": "uni build -p quickapp-webview-union",
-    "type-check": "vue-tsc --noEmit"
+    "type-check": "vue-tsc --noEmit",
+    "check:r4-mobile": "node scripts/check-r4-mobile.mjs",
+    "test:r4-mobile": "node --experimental-strip-types --test scripts/r4-mobile-protocol.test.mjs",
+    "test:tablet": "node --experimental-strip-types scripts/tablet-feature-flags.test.ts && node --experimental-strip-types scripts/tablet-note-model.test.ts && node --experimental-strip-types scripts/tablet-note-repository-core.test.ts"
   },
   "dependencies": {
     "@dcloudio/uni-app": "3.0.0-4080420251103001",
@@ -56,7 +59,7 @@
     "jspdf": "^4.2.1",
     "marked": "^18.0.5",
     "perfect-freehand": "^1.2.3",
-    "pinia": "^2.3.1",
+    "pinia": "2.1.7",
     "vue": "^3.4.21",
     "vue-i18n": "^9.1.9"
   },
@@ -67,7 +70,7 @@
     "@dcloudio/uni-stacktracey": "3.0.0-4080420251103001",
     "@dcloudio/vite-plugin-uni": "3.0.0-4080420251103001",
     "@types/marked": "^5.0.2",
-    "@vue/runtime-core": "^3.4.21",
+    "@vue/runtime-core": "3.4.21",
     "@vue/tsconfig": "^0.5.1",
     "sass": "^1.100.0",
     "typescript": "5.3.3",

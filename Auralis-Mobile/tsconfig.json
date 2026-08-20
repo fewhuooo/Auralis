@@ -8,6 +8,7 @@
     },
     "target": "esnext",
     "module": "esnext",
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "strict": true,
     "lib": ["esnext", "dom"],
