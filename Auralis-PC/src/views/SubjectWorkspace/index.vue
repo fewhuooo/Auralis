@@ -923,11 +923,15 @@ const sendChat = async () => {
 const clearChat = () => { chatStore.clearActiveConversation() }
 
 // ===== Lifecycle =====
+const startFreshChatSession = async () => {
+  chatStore.abortStream()
+  chatStore.clearActiveConversation()
+  await chatStore.startNewSession('学科伴读')
+}
+
 onMounted(async () => {
   try {
-    const sessions = await chatStore.loadSessions()
-    if (sessions.length === 0) await chatStore.startNewSession('学科伴读')
-    else if (chatStore.activeSessionId) await chatStore.loadMessages(chatStore.activeSessionId)
+    await startFreshChatSession()
   } catch {
     // The workspace remains usable when chat is unavailable.
   }
@@ -948,6 +952,11 @@ onMounted(async () => {
 
 watch(subjectId, async (newId) => {
   if (newId) {
+    try {
+      await startFreshChatSession()
+    } catch {
+      // Keep the workspace usable when a fresh chat session cannot be created.
+    }
     subjectStore.setActiveSubject(newId)
     await subjectStore.loadSourceFiles(newId)
     await blockStore.fetchBlocks(undefined, newId)

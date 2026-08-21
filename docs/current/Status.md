@@ -41,6 +41,8 @@
 
 2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
 
+2026-08-21：修复 PC 学科工作区 AI 回溯：进入或切换学科时清空当前消息并创建新的伴读会话，不再加载全局会话列表或恢复旧 `activeSessionId`；PC 回归测试 59/59、type-check 和 SubjectWorkspace 静态契约通过，浏览器真实 SSE 仍需人工验收。
+
 低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
 
 | 模块 | 当前状态 | 代码证据 | 命令证据 | 人工验收 | 下一步 |

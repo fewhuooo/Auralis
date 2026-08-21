@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   dedupeEventKey,
@@ -1313,4 +1314,12 @@ test('AI Client streams the current message endpoint as parsed SSE events', asyn
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('subject workspace starts a fresh AI session instead of restoring history', () => {
+  const source = readFileSync(new URL('../src/views/SubjectWorkspace/index.vue', import.meta.url), 'utf8');
+
+  assert.match(source, /await chatStore\.startNewSession\('学科伴读'\)/);
+  assert.doesNotMatch(source, /await chatStore\.loadSessions\(\)/);
+  assert.doesNotMatch(source, /await chatStore\.loadMessages\(chatStore\.activeSessionId\)/);
 });
