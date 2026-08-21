@@ -268,6 +268,18 @@
         </div>
       </div>
 
+      <div class="group-items" style="margin-top: 16px; border-top: 1px solid var(--border-subtle); padding-top: 16px;">
+        <div class="settings-row">
+          <div class="row-info">
+            <span class="row-label">退出登录</span>
+            <span class="row-desc">退出当前设备的登录状态</span>
+          </div>
+          <div class="row-control">
+            <button class="action-btn" @click="handleLogout">退出登录</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Danger Zone -->
       <div class="danger-zone">
         <h3 class="group-title">⚠️ 危险操作</h3>
@@ -292,6 +304,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthApi, type SessionResponse } from '@/api/useAuthApi'
 import { getAiSettings, updateAiSettings, type AiSettingsCommand, type AiSettingsView } from '@/api/aiClient'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -307,6 +320,7 @@ const settingsStore = useSettingsStore()
 const knowledgeStore = useKnowledgeStore()
 const statsStore = useStatsStore()
 const authStore = useAuthStore()
+const router = useRouter()
 
 const sessions = ref<SessionResponse[]>([])
 const sessionsLoading = ref(false)
@@ -690,6 +704,27 @@ onMounted(async () => {
   await loadSessions()
   await loadAiSettings()
 })
+
+const handleLogout = async () => {
+  try {
+    await ElMessageBox.confirm('确定要退出当前设备的登录状态吗？', '退出登录', {
+      confirmButtonText: '退出',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
+
+  try {
+    await authStore.logout()
+    ElNotification({ title: '已退出登录', message: '期待您的再次使用', type: 'success', duration: 2000 })
+  } catch {
+    ElNotification({ title: '登出异常', message: '无法连接到服务器完成会话清理，本地状态已强制清除', type: 'warning', duration: 3000 })
+  } finally {
+    await router.push('/login')
+  }
+}
 
 const handleClearCache = async () => {
   try {

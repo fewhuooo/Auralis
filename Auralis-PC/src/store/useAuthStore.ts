@@ -121,8 +121,8 @@ export const useAuthStore = defineStore(
         if (tokens.value?.accessToken) {
           await useAuthApi.logout()
         }
-      } catch {
-        // Ignore server logout failures during client session cleanup
+      } catch (error) {
+        throw error // Re-throw so the UI can provide feedback
       } finally {
         clearSession()
       }

@@ -134,7 +134,7 @@ R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离�
 - SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织。
 - Timeline：排期和任务时间管理，任务变化通过 `useTaskStore` 写入 API/repository mutation。
-- Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
+- Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
 - Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；计时 UI 通过 `usePomodoroStore`，任务同步仍由 `useTaskStore` 负责。
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。

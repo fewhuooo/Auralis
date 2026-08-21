@@ -74,7 +74,7 @@ export function refreshAccessToken(): Promise<string> {
 }
 
 function redirectToLogin(): void {
-  useAuthStore().logout()
+  void useAuthStore().logout().catch(() => undefined)
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
     window.location.assign('/login')
   }
