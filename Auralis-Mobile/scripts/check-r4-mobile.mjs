@@ -89,6 +89,16 @@ if (/joinedDays\s*=\s*ref\(12\)/.test(mobileSettings)) {
   violations.push('src/pages/mobile/settings/index.vue: joined days must not use a fixed demo value')
 }
 
+const mobileHome = sources.get('src/pages/mobile/home/index.vue') || ''
+if (/staticDemoTasks|demo-\d+|注入演示|静态测试数据/.test(mobileHome)) {
+  violations.push('src/pages/mobile/home/index.vue: home schedule must not inject demo tasks')
+}
+
+const mobileProfile = sources.get('src/pages/mobile/profile/index.vue') || ''
+if (/completedCount\s*\|\|\s*38|focusHours\s*\|\|\s*24\.5|joinedDays\s*=\s*ref\(42\)/.test(mobileProfile)) {
+  violations.push('src/pages/mobile/profile/index.vue: profile metrics must not use fixed demo values')
+}
+
 const tabletAi = sources.get('src/pages/tablet/ai-search/index.vue') || ''
 if (!tabletAi.includes("@/api/aiApi")) {
   violations.push('src/pages/tablet/ai-search/index.vue: AI history must use the conversation API')

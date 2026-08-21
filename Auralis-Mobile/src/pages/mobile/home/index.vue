@@ -254,15 +254,6 @@ onMounted(async () => {
   await taskStore.fetchTasks()
 })
 
-// 静态测试数据（根据您的要求在页面展示静态设计数据）
-const staticDemoTasks = ref([
-  { id: 'demo-1', name: '晨间冥想与正念呼吸', duration: 25, timeLabel: '7:00 AM', completed: true },
-  { id: 'demo-2', name: '回顾本周核心目标', duration: 30, timeLabel: '8:30 AM', completed: true },
-  { id: 'demo-3', name: '深度工作：架构设计', duration: 90, timeLabel: '10:00 AM', completed: true },
-  { id: 'demo-4', name: '文献阅读与知识内化', duration: 45, timeLabel: '2:30 PM', completed: false },
-  { id: 'demo-5', name: '健身散步与日落小憩', duration: 40, timeLabel: '6:00 PM', completed: false }
-])
-
 const dayTasksMap = computed(() => {
   const map: Record<string, any[]> = {}
   weekDays.value.forEach(d => {
@@ -282,12 +273,7 @@ const dayTasksMap = computed(() => {
     }
   })
 
-  // 针对今天或选中天如果真实任务为0，注入演示列表以完整展示极简胶囊效果
-  if (realTasks.length === 0 && map[today]) {
-    map[today] = staticDemoTasks.value
-  } else if (map[today]) {
-    map[today] = realTasks
-  }
+  if (map[today]) map[today] = realTasks
 
   return map
 })
@@ -314,15 +300,10 @@ const completedCountDisplay = computed(() => {
 const toggleTaskStatus = (task: any) => {
   const newCompleted = !task.completed
   task.completed = newCompleted
-  if (task.id && String(task.id).startsWith('demo-')) {
-    const demo = staticDemoTasks.value.find(t => t.id === task.id)
-    if (demo) demo.completed = newCompleted
-  } else {
-    taskStore.updateTask({
-      ...task,
-      status: newCompleted ? 'completed' : 'scheduled'
-    })
-  }
+  taskStore.updateTask({
+    ...task,
+    status: newCompleted ? 'completed' : 'scheduled'
+  })
 }
 
 const showAddSheet = ref(false)
@@ -391,26 +372,7 @@ const onDurTouchMove = (e: any) => {
 }
 
 const displaySubjects = computed(() => {
-  if (subjects.value && subjects.value.length > 0) {
-    return subjects.value
-  }
-  return [
-    { id: 'sub-1', name: '高等数学', color: '#4A90E2' },
-    { id: 'sub-2', name: '线性代数', color: '#50E3C2' },
-    { id: 'sub-3', name: '概率统计', color: '#5C8550' },
-    { id: 'sub-4', name: '微观经济学', color: '#E67E22' },
-    { id: 'sub-5', name: '宏观经济学', color: '#D35400' },
-    { id: 'sub-6', name: '财务管理', color: '#16A085' },
-    { id: 'sub-7', name: '数据结构', color: '#2980B9' },
-    { id: 'sub-8', name: '计算机网络', color: '#34495E' },
-    { id: 'sub-9', name: '操作系统', color: '#1ABC9C' },
-    { id: 'sub-10', name: '大学英语', color: '#F5A623' },
-    { id: 'sub-11', name: '思想政治', color: '#D0021B' },
-    { id: 'sub-12', name: 'Python程序设计', color: '#F39C12' },
-    { id: 'sub-13', name: '法学概论', color: '#C0392B' },
-    { id: 'sub-14', name: '心理学导论', color: '#E84393' },
-    { id: 'sub-15', name: '通用学习', color: '#9B9B9B' }
-  ]
+  return subjects.value || []
 })
 
 const submitQuickAdd = async () => {
@@ -418,20 +380,12 @@ const submitQuickAdd = async () => {
   if (!name) return
 
   const selectedSub = quickSubject.value || displaySubjects.value[0]
+  if (!selectedSub) {
+    uni.showToast({ title: '请先同步或创建学科', icon: 'none' })
+    return
+  }
   const now = new Date()
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
-
-  const newTask = {
-    id: 'demo-' + Date.now(),
-    name,
-    subject: selectedSub.name,
-    color: selectedSub.color || '#4A90E2',
-    duration: quickDuration.value,
-    timeLabel: timeStr,
-    completed: false
-  }
-
-  staticDemoTasks.value.unshift(newTask)
   
   await taskStore.addTask({
     name,

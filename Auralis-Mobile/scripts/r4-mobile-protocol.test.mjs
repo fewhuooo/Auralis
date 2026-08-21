@@ -228,6 +228,16 @@ test('pomodoro counts use the active local data scope', async () => {
   assert.match(appSource, /loadPomodoroCount/)
 })
 
+test('mobile home and profile do not inject demo task or profile metrics', async () => {
+  const homeSource = await readFile(new URL('../src/pages/mobile/home/index.vue', import.meta.url), 'utf8')
+  const profileSource = await readFile(new URL('../src/pages/mobile/profile/index.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(homeSource, /staticDemoTasks|demo-\d+/)
+  assert.doesNotMatch(homeSource, /注入演示|静态测试数据/)
+  assert.doesNotMatch(profileSource, /completedCount\s*\|\|\s*38/)
+  assert.doesNotMatch(profileSource, /focusHours\s*\|\|\s*24\.5/)
+  assert.doesNotMatch(profileSource, /joinedDays\s*=\s*ref\(42\)/)
+})
+
 test('SSE decoder preserves event boundaries across transport chunks', () => {
   const events = []
   const decoder = createSseDecoder((event) => events.push(event))

@@ -26,7 +26,7 @@
             </view>
             <view class="user-info">
               <text class="account-name">{{ username }}</text>
-              <text class="account-sub">持续学习第 {{ joinedDays }} 天 ✦</text>
+              <text class="account-sub">{{ accountMeta }}</text>
             </view>
           </view>
 
@@ -243,11 +243,11 @@ const scrollTop = ref(0)
 const remindersEnabled = ref(true)
 
 const blockCount = computed(() => blockStore.recentBlocks.length)
-const completedCount = computed(() => taskStore.completedCount || 38)
-const focusHours = computed(() => taskStore.totalFocusHours || 24.5)
+const completedCount = computed(() => taskStore.completedCount)
+const focusHours = computed(() => taskStore.totalFocusHours.replace(/h$/, ''))
 
 const username = computed(() => authStore.username || 'Auralis 同学')
-const joinedDays = ref(42)
+const accountMeta = computed(() => '跨端同步与账户')
 
 const toggleDarkMode = () => {
   settingsStore.toggleDarkMode()

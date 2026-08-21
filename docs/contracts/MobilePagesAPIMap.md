@@ -21,14 +21,14 @@
 | 页面 | 远程 API / 数据入口 | 当前边界 |
 | --- | --- | --- |
 | Login | `POST /api/auth/register`、`login`、`refresh`，`GET /api/auth/me` | 注册密码前置校验至少 12 字符；服务端 fieldErrors 仍只显示通用 toast，尚未逐输入框映射 |
-| Home | Task/Subject/Block Store → Sync push/pull/snapshot | 离线副本优先；服务端统计不由首页本地派生值冒充 |
+| Home | Task/Subject/Block Store → Sync push/pull/snapshot | 离线副本优先；只展示真实排期，无任务时保持空态；服务端统计不由首页本地派生值冒充 |
 | Pomodoro | Task Store → Sync；任务选择器只展示真实 pendingTasks，完成专注写入今日 Store 计数 | 后台、锁屏、跨日时间语义仍需真机 |
 | AI Search | `POST /api/ai/conversations`、`POST /api/ai/messages/stream` | SSE 支持 chunk 边界、401 单次重试和稳定 clientRequestId；真实 Provider/断流未验收 |
 | Stats | `GET /api/stats/overview`、`GET /api/stats/weekly` | 已移除随机演示数据；学科分布无对应统计契约时保持空，不伪造 |
 | Timeline | Task Store → Sync | 拖拽保留 sortKey/startTime 映射；真实冲突 UI 待联调 |
 | Review | `GET /api/reviews/due`、`POST /api/reviews/events` | 已移除示例知识块注入；服务端事件不可撤销，右滑不再伪造回滚 |
 | Asset | `POST /api/assets/upload-intents` → 预签名 PUT → `POST /api/assets/{id}/complete` | 已移除模拟上传/失败伪成功；微信 upload 合法域名、MinIO 和大文件仍待验证 |
-| Settings/Profile | Auth/Settings Store | 无独立 profile API；只显示当前会话用户数据，注册天数未由 User DTO 提供时显示中性元信息，不伪造天数 |
+| Settings/Profile | Auth/Settings Store 与 Task/Block Store | 无独立 profile API；统计来自当前 Store，注册天数未由 User DTO 提供时显示中性元信息，不伪造天数 |
 | Handwriting | 手写引擎与本地输入 | 不自动伪造 OCR；AI 转换失败不得丢失输入 |
 
 ## Tablet 页面
@@ -48,7 +48,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。Login、AI Searc
 
 ## 自动证据与人工边界
 
-- `npm run check:r4-mobile`：扫描生产路径并禁止旧 Result、固定本机地址、旧 `/ws/sync`、access token socket URL、旧数值游标和旧 AI 路由。
+- `npm run check:r4-mobile`：扫描生产路径并禁止旧 Result、固定本机地址、旧 `/ws/sync`、access token socket URL、旧数值游标、旧 AI 路由和 Mobile Home/Profile 演示数据。
 - `npm run test:r4-mobile`：runtime、Problem Details、refresh、device、Auth/Sync/Realtime route、scope、SSE 与 request core 协议测试。
 - `npm run test:tablet`：三个 Tablet 逻辑脚本。
 - `npm run type-check`、`build:h5`、`build:mp-weixin` 已通过。
