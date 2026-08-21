@@ -108,6 +108,7 @@
 - [后端阶段五 AI 与 RAG 设计（2026-08-16）](superpowers/specs/2026-08-16-backend-phase-5-ai-rag-design.md)
 - [R1-06 后端工具链和运行配置设计（2026-08-17）](superpowers/specs/2026-08-17-backend-r1-06-toolchain-config-design.md)
 - [R4 PC 全量客户端迁移与 Tauri 重写设计（2026-08-17）](superpowers/specs/2026-08-17-r4-01-pc-auth-realtime-design.md)
+- [AI env 默认 Provider 与 BYOK 覆盖设计（2026-08-21）](superpowers/specs/2026-08-21-ai-env-provider-fallback-design.md)
 
 ### 当前实现与契约
 
@@ -137,6 +138,7 @@
 - [R1-06 后端工具链和运行配置实施计划（2026-08-17）](superpowers/plans/2026-08-17-backend-r1-06-toolchain-config.md)
 - [R4 PC 全量客户端迁移实施计划（2026-08-17）](superpowers/plans/2026-08-17-r4-pc-full-migration.md)
 - [R4 Mobile / Tablet 客户端迁移实施计划（2026-08-20）](superpowers/plans/2026-08-20-r4-mobile-tablet-migration.md)
+- [AI env 默认 Provider 与 BYOK 覆盖实施计划（2026-08-21）](superpowers/plans/2026-08-21-ai-env-provider-fallback.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
