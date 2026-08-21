@@ -447,6 +447,21 @@ const scrollToBottom = () => {
 const handleSearch = async () => {
   if (!query.value.trim()) return
   const text = query.value.trim()
+  if (!currentSessionId.value) {
+    try {
+      const conversation = await aiApi.createConversation({
+        title: text.slice(0, 60),
+        baseVersion: 0,
+        clientRequestId: uuidv7(),
+      })
+      if (!conversation.id) throw new Error('Conversation response is incomplete')
+      currentSessionId.value = conversation.id
+    } catch (error) {
+      console.error('[TabletAI] Failed to create conversation:', error)
+      uni.showToast({ title: '新对话创建失败', icon: 'none' })
+      return
+    }
+  }
   messages.value.push({ role: 'user', content: text })
   query.value = ''
   scrollToBottom()
@@ -457,10 +472,6 @@ const handleSearch = async () => {
   try {
     await chatWithAI(text, [], (delta) => { messages.value[aiMsgIndex].content += delta; scrollToBottom() }, currentSessionId.value || undefined)
     await loadHistory()
-    if (!currentSessionId.value) {
-      const latest = historySessions.value[0]
-      if (latest) currentSessionId.value = latest.id
-    }
   } catch (err) { messages.value[aiMsgIndex].content = '网络异常，请重试。' }
   finally { isAiTyping.value = false; scrollToBottom() }
 }

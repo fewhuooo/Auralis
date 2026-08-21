@@ -167,10 +167,12 @@ test('AI conversation wrapper uses list/detail/delete routes with versioned dele
     },
   }
   const ai = createAiApi(client)
+  await ai.createConversation({ title: 'New chat', baseVersion: 0, clientRequestId: 'client-request-1' })
   await ai.listConversations()
   await ai.getConversation('conversation-1')
   await ai.deleteConversation('conversation-1', 2)
   assert.deepEqual(calls, [
+    { path: '/api/ai/conversations', method: 'post', options: { body: { title: 'New chat', baseVersion: 0, clientRequestId: 'client-request-1' } } },
     { path: '/api/ai/conversations', method: 'get', options: undefined },
     { path: '/api/ai/conversations/{conversationId}', method: 'get', options: { pathParams: { conversationId: 'conversation-1' } } },
     { path: '/api/ai/conversations/{conversationId}', method: 'delete', options: { pathParams: { conversationId: 'conversation-1' }, query: { baseVersion: 2 } } },
