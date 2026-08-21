@@ -118,6 +118,29 @@ class AiStreamingTests {
     }
 
     @Test
+    void omittedProviderUsesConfiguredDefaultProvider() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        AiProviderPort provider = new FakeStreamingProvider();
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(aiProperties.defaultProvider()).thenReturn("OPENAI_COMPATIBLE");
+        when(settingsService.resolve(userId, AiProviderType.OPENAI_COMPATIBLE))
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.OPENAI_COMPATIBLE, "gpt-4o-mini",
+                        new AiCredential("https://provider.test", "secret")));
+        when(providerRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(provider);
+
+        List<AiStreamEvent> events = streamingService.stream(userId,
+                new AiMessageCommand(conversationId, "hello", null, false, 3, "request-default"));
+
+        assertThat(events).extracting(AiStreamEvent::event)
+                .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
+        verify(settingsService).resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
+        verify(providerRegistry).require(AiProviderType.OPENAI_COMPATIBLE);
+    }
+
+    @Test
     void retrievalSettingsFlowIntoProviderRequestAndCitationEvent() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();

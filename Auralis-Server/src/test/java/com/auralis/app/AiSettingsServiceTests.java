@@ -8,6 +8,7 @@ import com.auralis.app.ai.internal.persistence.AiCredentialEntity;
 import com.auralis.app.ai.internal.persistence.AiCredentialRepository;
 import com.auralis.app.ai.internal.security.AiKeyCipher;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
+import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +41,12 @@ class AiSettingsServiceTests {
 
     @Mock
     private ProviderEndpointPolicy endpointPolicy;
+
+    @Mock
+    private AuralisProperties properties;
+
+    @Mock
+    private AuralisProperties.Ai aiProperties;
 
     @InjectMocks
     private AiSettingsService settingsService;
@@ -84,11 +91,34 @@ class AiSettingsServiceTests {
         when(endpointPolicy.validate(AiProviderType.OPENAI_COMPATIBLE, command.baseUrl()))
                 .thenThrow(new DomainException("VALIDATION_FAILED", "Provider URL is not allowed"));
 
-        AiSettingsService service = new AiSettingsService(credentialRepository, keyCipher, endpointPolicy);
+        AiSettingsService service = new AiSettingsService(credentialRepository, keyCipher, endpointPolicy, properties);
 
         assertThatThrownBy(() -> service.upsert(UUID.randomUUID(), command))
                 .isInstanceOf(DomainException.class)
                 .hasMessage("Provider URL is not allowed");
         verifyNoInteractions(keyCipher, credentialRepository);
+    }
+
+    @Test
+    void resolveUsesEnvDefaultWhenUserHasNoByok() {
+        UUID userId = UUID.randomUUID();
+        when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.DEEPSEEK))
+                .thenReturn(Optional.empty());
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.defaults()).thenReturn(new AuralisProperties.Defaults(
+                new AuralisProperties.Provider(
+                        "https://api.deepseek.com", "deepseek-chat", "bge-m3", "env-deepseek-key"),
+                new AuralisProperties.Provider(
+                        "https://api.openai.com/v1", "gpt-4o-mini", "text-embedding-3-small", ""),
+                new AuralisProperties.Provider(
+                        "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3", "BAAI/bge-m3", "")));
+
+        AiSettingsService.ResolvedSettings resolved = settingsService.resolve(userId, AiProviderType.DEEPSEEK);
+
+        assertThat(resolved.provider()).isEqualTo(AiProviderType.DEEPSEEK);
+        assertThat(resolved.chatModel()).isEqualTo("deepseek-chat");
+        assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
+                "https://api.deepseek.com", "env-deepseek-key", "bge-m3"));
+        verifyNoInteractions(keyCipher);
     }
 }

@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### AI env 默认 Provider 与 BYOK 覆盖（2026-08-21）
+
+- 后端新增服务端 env Provider 默认配置：未指定聊天 Provider 时使用 `AURALIS_AI_DEFAULT_PROVIDER`，按 Provider 从 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 或 `SILICONFLOW_API_KEY` 解析默认凭据。
+- 用户 BYOK 仍优先于 env 默认，API Key 仅在服务端运行时使用；不写入 `ai_credentials`，也不返回前端。
+- 新增配置绑定、env fallback、默认 Provider 流式回归测试；真实 Provider 网络与 PC 浏览器联调仍未验收。
+
 权威范围：已发生且可确认的产品、代码、文档和验证变化
 
 事实来源：Git 提交、本轮实际验证记录与重构前快照

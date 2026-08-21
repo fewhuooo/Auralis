@@ -4,6 +4,7 @@ import com.auralis.app.ai.internal.persistence.AiCredentialEntity;
 import com.auralis.app.ai.internal.persistence.AiCredentialRepository;
 import com.auralis.app.ai.internal.security.AiKeyCipher;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
+import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,14 +18,17 @@ public class AiSettingsService {
     private final AiCredentialRepository credentialRepository;
     private final AiKeyCipher keyCipher;
     private final ProviderEndpointPolicy endpointPolicy;
+    private final AuralisProperties properties;
 
     public AiSettingsService(
             AiCredentialRepository credentialRepository,
             AiKeyCipher keyCipher,
-            ProviderEndpointPolicy endpointPolicy) {
+            ProviderEndpointPolicy endpointPolicy,
+            AuralisProperties properties) {
         this.credentialRepository = credentialRepository;
         this.keyCipher = keyCipher;
         this.endpointPolicy = endpointPolicy;
+        this.properties = properties;
     }
 
     @Transactional(readOnly = true)
@@ -56,15 +60,35 @@ public class AiSettingsService {
 
     @Transactional(readOnly = true)
     public ResolvedSettings resolve(UUID userId, AiProviderType provider) {
-        AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider)
-                .orElseThrow(() -> new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured"));
-        if (entity.getEncryptedApiKey() == null || entity.getEncryptedApiKey().isBlank()) {
+        AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
+        if (entity != null && entity.getEncryptedApiKey() != null && !entity.getEncryptedApiKey().isBlank()) {
+            return new ResolvedSettings(
+                    entity.getProvider(),
+                    entity.getChatModel(),
+                    new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey()),
+                            entity.getEmbeddingModel()));
+        }
+
+        AuralisProperties.Provider defaults = defaultProvider(provider);
+        if (defaults == null || defaults.apiKey() == null || defaults.apiKey().isBlank()) {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
         }
+
         return new ResolvedSettings(
-                entity.getProvider(),
-                entity.getChatModel(),
-                new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey()), entity.getEmbeddingModel()));
+                provider,
+                defaults.chatModel(),
+                new AiCredential(defaults.baseUrl(), defaults.apiKey(), defaults.embeddingModel()));
+    }
+
+    private AuralisProperties.Provider defaultProvider(AiProviderType provider) {
+        if (properties == null || properties.ai() == null || properties.ai().defaults() == null) {
+            return null;
+        }
+        return switch (provider) {
+            case DEEPSEEK -> properties.ai().defaults().deepseek();
+            case OPENAI_COMPATIBLE -> properties.ai().defaults().openaiCompatible();
+            case SILICONFLOW -> properties.ai().defaults().siliconflow();
+        };
     }
 
     private java.net.URI validate(AiSettingsCommand command) {

@@ -46,6 +46,7 @@ public record AuralisProperties(
             boolean enabled,
             String encryptionKey,
             String defaultProvider,
+            @Valid Defaults defaults,
             @Positive long requestTimeoutMillis,
             @Positive int maxPromptChars,
             @Positive int maxRetrievedChunks,
@@ -59,5 +60,26 @@ public record AuralisProperties(
             @Positive long ingestionPollDelayMillis,
             @Positive long ingestionLeaseMillis,
             @Positive int ingestionMaxAttempts) {
+    }
+
+    public record Defaults(
+            @Valid Provider deepseek,
+            @Valid Provider openaiCompatible,
+            @Valid Provider siliconflow) {
+    }
+
+    public record Provider(
+            String baseUrl,
+            String chatModel,
+            String embeddingModel,
+            String apiKey) {
+
+        @Override
+        public String toString() {
+            return "Provider[baseUrl=" + baseUrl
+                    + ", chatModel=" + chatModel
+                    + ", embeddingModel=" + embeddingModel
+                    + ", apiKey=<redacted>]";
+        }
     }
 }

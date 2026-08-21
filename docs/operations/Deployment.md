@@ -49,9 +49,10 @@ AURALIS_JWT_SECRET / AURALIS_AI_ENCRYPTION_KEY
 AURALIS_MINIO_ROOT_USER / AURALIS_MINIO_ROOT_PASSWORD / AURALIS_MINIO_BUCKET
 AURALIS_CORS_ALLOWED_ORIGINS
 AURALIS_AI_ALLOWED_PROVIDER_HOSTS / AURALIS_AI_*_TIMEOUT_MILLIS
+DEEPSEEK_API_KEY / OPENAI_API_KEY / SILICONFLOW_API_KEY（可选默认 Provider）
 ```
 
-实际变量名必须与最终配置绑定一致。Provider 用户密钥仍通过 API 加密存储；`.env` Provider key 只用于显式 smoke，不写入日志。
+实际变量名必须与最终配置绑定一致。Provider 默认 key 由 Compose 注入后端运行时；用户 BYOK 仍通过 API 加密存储，任何 key 都不写入日志。
 
 ## 本地基础设施
 

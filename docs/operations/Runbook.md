@@ -117,7 +117,8 @@ chat/ingest 超时、401、模型不存在、无效 JSON 或空结果。
 ### 检查
 
 - 激活 profile 和配置键。
-- API key、base URL、model。
+- 默认 Provider 的 `DEEPSEEK_API_KEY`/`OPENAI_API_KEY`/`SILICONFLOW_API_KEY` 是否已注入后端进程；用户 BYOK 是否在 `GET /api/ai/settings` 显示 `hasApiKey=true`。
+- API key、base URL、model 与 `AURALIS_AI_DEFAULT_PROVIDER` 是否匹配。
 - 网络和提供商状态。
 - 请求是否超过文件/上下文限制。
 - `application-prod.yml` 是否仍使用错误的 `spring.ai.openai` 口径。

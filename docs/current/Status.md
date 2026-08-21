@@ -35,6 +35,8 @@
 
 2026-08-21：Mobile/微信共享主路径已切到当前 Auth、Sync/Realtime、Asset、Review、Stats 与 AI 契约；Mobile Home/Profile 移除演示日程和固定统计，手写页移除伪 OCR/知识抽取，Tablet Workspace 总结改用真实 AI SSE，Dashboard/Review/Stats 也已使用 Stats/Review 服务端契约并移除随机统计和本地结果伪写。本地数据使用 userId/deviceId 独立 namespace，Pomodoro 计数同样按 namespace 隔离，旧全局库按用户授权一次性清除。`check:r4-mobile` 扫描 62 个生产文件、协议测试 20/20、Tablet 逻辑测试、type-check、H5 与微信构建通过；真实服务、微信合法域名、开发者工具、双设备和真机仍未验收。
 
+2026-08-21：AI 运行时配置改为服务端 env 默认 Provider + 用户 BYOK 覆盖：`AURALIS_AI_DEFAULT_PROVIDER` 决定未指定 Provider 的聊天请求，`DEEPSEEK_API_KEY`/`OPENAI_API_KEY`/`SILICONFLOW_API_KEY` 仅在服务端运行时作为 fallback，不写入用户表或 API 响应；BYOK 仍按 userId/provider 加密保存。后端定向 AI 配置、设置和流式测试 10/10 通过，真实 Provider 与 PC 浏览器联调仍待验收。
+
 低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
 
 | 模块 | 当前状态 | 代码证据 | 命令证据 | 人工验收 | 下一步 |

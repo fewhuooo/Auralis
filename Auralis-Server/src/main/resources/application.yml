@@ -47,6 +47,22 @@ auralis:
     enabled: ${AURALIS_AI_ENABLED:false}
     encryption-key: ${AURALIS_AI_ENCRYPTION_KEY:}
     default-provider: ${AURALIS_AI_DEFAULT_PROVIDER:DEEPSEEK}
+    defaults:
+      deepseek:
+        base-url: ${AURALIS_AI_DEEPSEEK_BASE_URL:https://api.deepseek.com}
+        chat-model: ${AURALIS_AI_DEEPSEEK_CHAT_MODEL:deepseek-chat}
+        embedding-model: ${AURALIS_AI_DEEPSEEK_EMBEDDING_MODEL:bge-m3}
+        api-key: ${DEEPSEEK_API_KEY:}
+      openai-compatible:
+        base-url: ${AURALIS_AI_OPENAI_BASE_URL:https://api.openai.com/v1}
+        chat-model: ${AURALIS_AI_OPENAI_CHAT_MODEL:gpt-4o-mini}
+        embedding-model: ${AURALIS_AI_OPENAI_EMBEDDING_MODEL:text-embedding-3-small}
+        api-key: ${OPENAI_API_KEY:}
+      siliconflow:
+        base-url: ${AURALIS_AI_SILICONFLOW_BASE_URL:https://api.siliconflow.cn/v1}
+        chat-model: ${AURALIS_AI_SILICONFLOW_CHAT_MODEL:deepseek-ai/DeepSeek-V3}
+        embedding-model: ${AURALIS_AI_SILICONFLOW_EMBEDDING_MODEL:BAAI/bge-m3}
+        api-key: ${SILICONFLOW_API_KEY:}
     request-timeout-millis: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:10000}
     max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}
     max-retrieved-chunks: ${AURALIS_AI_MAX_RETRIEVED_CHUNKS:8}

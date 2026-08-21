@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Locale;
 
 @Service
 public class AiStreamingService {
@@ -50,7 +51,7 @@ public class AiStreamingService {
             throw new DomainException("VALIDATION_FAILED", "Message content is required");
         }
         int topK = validateTopK(command.topK());
-        AiProviderType providerType = command.provider() == null ? AiProviderType.DEEPSEEK : command.provider();
+        AiProviderType providerType = command.provider() == null ? defaultProvider() : command.provider();
         String content = command.content().trim();
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
 
@@ -213,6 +214,18 @@ public class AiStreamingService {
             throw new DomainException("VALIDATION_FAILED", "clientRequestId is too long");
         }
         return normalized;
+    }
+
+    private AiProviderType defaultProvider() {
+        String configured = properties.ai().defaultProvider();
+        if (configured == null || configured.isBlank()) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI default provider is not configured");
+        }
+        try {
+            return AiProviderType.valueOf(configured.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI default provider is invalid");
+        }
     }
 
     private String firstTitle(String content) {

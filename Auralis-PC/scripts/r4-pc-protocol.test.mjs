@@ -1305,6 +1305,7 @@ test('AI Client streams the current message endpoint as parsed SSE events', asyn
     assert.match(requestUrl, /\/api\/ai\/messages\/stream$/);
     assert.equal(requestInit.method, 'POST');
     assert.equal(requestInit.headers.Accept, 'text/event-stream');
+    // Provider is intentionally omitted; the server resolves AURALIS_AI_DEFAULT_PROVIDER.
     assert.deepEqual(JSON.parse(requestInit.body), { conversationId: 'conv-1', content: 'Hi' });
     assert.equal(events[0].event, 'message.started');
     assert.equal(events[1].event, 'message.delta');
