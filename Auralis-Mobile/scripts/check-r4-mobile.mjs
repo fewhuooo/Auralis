@@ -99,6 +99,12 @@ if (/completedCount\s*\|\|\s*38|focusHours\s*\|\|\s*24\.5|joinedDays\s*=\s*ref\(
   violations.push('src/pages/mobile/profile/index.vue: profile metrics must not use fixed demo values')
 }
 
+const mobileHandwriting = sources.get('src/pages/mobile/handwriting/index.vue') || ''
+if (/Mock handwriting|Mock AI|识别内容：|已为您建立结构化关系|mock-hw-layer/.test(mobileHandwriting)
+  || !mobileHandwriting.includes('识别服务尚未接通')) {
+  violations.push('src/pages/mobile/handwriting/index.vue: handwriting must not fabricate OCR or extraction')
+}
+
 const tabletAi = sources.get('src/pages/tablet/ai-search/index.vue') || ''
 if (!tabletAi.includes("@/api/aiApi")) {
   violations.push('src/pages/tablet/ai-search/index.vue: AI history must use the conversation API')

@@ -238,6 +238,12 @@ test('mobile home and profile do not inject demo task or profile metrics', async
   assert.doesNotMatch(profileSource, /joinedDays\s*=\s*ref\(42\)/)
 })
 
+test('mobile handwriting does not fabricate OCR or knowledge extraction', async () => {
+  const source = await readFile(new URL('../src/pages/mobile/handwriting/index.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /Mock handwriting|Mock AI|识别内容：|已为您建立结构化关系/)
+  assert.match(source, /识别服务尚未接通/)
+})
+
 test('SSE decoder preserves event boundaries across transport chunks', () => {
   const events = []
   const decoder = createSseDecoder((event) => events.push(event))

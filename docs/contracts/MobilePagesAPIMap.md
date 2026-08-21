@@ -29,7 +29,7 @@
 | Review | `GET /api/reviews/due`、`POST /api/reviews/events` | 已移除示例知识块注入；服务端事件不可撤销，右滑不再伪造回滚 |
 | Asset | `POST /api/assets/upload-intents` → 预签名 PUT → `POST /api/assets/{id}/complete` | 已移除模拟上传/失败伪成功；微信 upload 合法域名、MinIO 和大文件仍待验证 |
 | Settings/Profile | Auth/Settings Store 与 Task/Block Store | 无独立 profile API；统计来自当前 Store，注册天数未由 User DTO 提供时显示中性元信息，不伪造天数 |
-| Handwriting | 手写引擎与本地输入 | 不自动伪造 OCR；AI 转换失败不得丢失输入 |
+| Handwriting | 手写引擎与本地输入 | 当前只保留本地画布；识别服务未接通时明确提示，不自动伪造 OCR 或知识抽取 |
 
 ## Tablet 页面
 
@@ -48,7 +48,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。Login、AI Searc
 
 ## 自动证据与人工边界
 
-- `npm run check:r4-mobile`：扫描生产路径并禁止旧 Result、固定本机地址、旧 `/ws/sync`、access token socket URL、旧数值游标、旧 AI 路由和 Mobile Home/Profile 演示数据。
+- `npm run check:r4-mobile`：扫描生产路径并禁止旧 Result、固定本机地址、旧 `/ws/sync`、access token socket URL、旧数值游标、旧 AI 路由、Mobile Home/Profile 演示数据和手写伪 OCR。
 - `npm run test:r4-mobile`：runtime、Problem Details、refresh、device、Auth/Sync/Realtime route、scope、SSE 与 request core 协议测试。
 - `npm run test:tablet`：三个 Tablet 逻辑脚本。
 - `npm run type-check`、`build:h5`、`build:mp-weixin` 已通过。
