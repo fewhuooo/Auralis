@@ -3,11 +3,13 @@ import { onLaunch, onShow, onHide } from "@dcloudio/uni-app";
 import { connectRealtimeSync, disconnectRealtimeSync } from "@/api/sync";
 import { useAuthStore } from "@/store/useAuthStore";
 import { useSyncStore } from "@/store/useSyncStore";
+import { useTaskStore } from "@/store/useTaskStore";
 import { watch } from "vue";
 import { localDb } from "@/services/localDb";
 
 async function startAuthenticatedRuntime() {
   await localDb.init();
+  useTaskStore().loadPomodoroCount();
   const syncStore = useSyncStore();
   await syncStore.initE2EE();
   await syncStore.triggerSync();

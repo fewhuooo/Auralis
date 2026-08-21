@@ -13,7 +13,7 @@
 - `VITE_API_BASE_URL` 与 `VITE_WS_BASE_URL` 是必填运行时配置；微信只接受 HTTPS/WSS。生产代码不提供 localhost fallback。
 - `requestCore.ts` 发送 Bearer token、接收直接 DTO/RFC Problem Details，并对并发 401 共享一次 refresh；refresh 请求本身禁止递归刷新。
 - Auth 会话保存在 `auralis:auth:v2`，稳定设备 ID 保存在 `auralis:device:id:v2`；注册成功直接建立会话并进入对应端首页。
-- H5 表键和原生 SQLite 文件按 userId/deviceId 使用独立 scope；reset 切换到新的 generation scope 后重建。用户已授权一次性删除旧全局 `h5_db_*`/`_doc/auralis.db` 业务表。
+- H5 表键、Pomodoro 今日计数和原生 SQLite 文件按 userId/deviceId 使用独立 scope；reset 切换到新的 generation scope 后重建。用户已授权一次性删除旧全局 `h5_db_*`/`_doc/auralis.db` 业务表。
 - Sync 使用 `/api/sync/push`、`/api/sync/pull?cursor=<opaque>`、`/api/sync/snapshot`；Realtime 先请求 `/api/realtime/ticket`，再连接 `/ws/events`，URL 和心跳不携带 access token。
 
 ## 手机页面

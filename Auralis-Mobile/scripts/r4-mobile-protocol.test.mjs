@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 import { resolveRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts'
 import {
@@ -215,6 +216,16 @@ test('local data scope isolates users without deleting the legacy namespace', ()
   assert.notEqual(resetBob, bob)
   assert.equal(scope.activate('user-b', 'device-a'), resetBob)
   assert.equal(values.has('h5_db_subjects'), false)
+})
+
+test('pomodoro counts use the active local data scope', async () => {
+  const source = await readFile(new URL('../src/store/useTaskStore.ts', import.meta.url), 'utf8')
+  const appSource = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.match(source, /localDataScope/)
+  assert.doesNotMatch(source, /getStorageSync\(['"]pomodoro_counts['"]\)/)
+  assert.doesNotMatch(source, /setStorageSync\(['"]pomodoro_counts['"]\)/)
+  assert.match(source, /auralis:local:\$\{localDataScope\.current\(\)\}:pomodoro_counts/)
+  assert.match(appSource, /loadPomodoroCount/)
 })
 
 test('SSE decoder preserves event boundaries across transport chunks', () => {

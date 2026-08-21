@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { localDb } from '@/services/localDb'
+import { localDataScope } from '@/services/localDataScope'
 import { uuidv7 } from '@/utils/uuid'
 import { Lexorank } from '@/utils/lexorank'
 
@@ -265,9 +266,10 @@ export const useTaskStore = defineStore('task', () => {
 
   // Pomodoro local tracking
   const todayPomodoros = ref(0)
+  const pomodoroStorageKey = () => `auralis:local:${localDataScope.current()}:pomodoro_counts`
   const loadPomodoroCount = () => {
     const dateStr = new Date().toISOString().split('T')[0]
-    const storedStr = uni.getStorageSync('pomodoro_counts')
+    const storedStr = uni.getStorageSync(pomodoroStorageKey())
     if (storedStr) {
       try {
         const counts = JSON.parse(storedStr)
@@ -280,13 +282,14 @@ export const useTaskStore = defineStore('task', () => {
   const incrementPomodoro = () => {
     todayPomodoros.value++
     const dateStr = new Date().toISOString().split('T')[0]
-    const storedStr = uni.getStorageSync('pomodoro_counts')
+    const storageKey = pomodoroStorageKey()
+    const storedStr = uni.getStorageSync(storageKey)
     let counts: Record<string, number> = {}
     if (storedStr) {
       try { counts = JSON.parse(storedStr) } catch(e) {}
     }
     counts[dateStr] = todayPomodoros.value
-    uni.setStorageSync('pomodoro_counts', JSON.stringify(counts))
+    uni.setStorageSync(storageKey, JSON.stringify(counts))
   }
 
   return {
@@ -296,6 +299,7 @@ export const useTaskStore = defineStore('task', () => {
     pendingCount,
     totalFocusHours,
     todayPomodoros,
+    loadPomodoroCount,
     loadLocalTasks,
     fetchTasks,
     addTask,
