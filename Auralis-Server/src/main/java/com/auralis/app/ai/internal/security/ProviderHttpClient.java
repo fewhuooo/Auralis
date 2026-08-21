@@ -3,6 +3,8 @@ package com.auralis.app.ai.internal.security;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.config.AuralisProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
@@ -18,9 +20,12 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.function.Consumer;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class ProviderHttpClient {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProviderHttpClient.class);
 
     private final ObjectMapper objectMapper;
     private final ProviderHttpTransport transport;
@@ -56,14 +61,41 @@ public class ProviderHttpClient {
         } catch (JsonProcessingException exception) {
             throw new IOException("Could not serialize provider request", exception);
         }
-        byte[] responseBody = transport.post(endpoint, path, apiKey, requestBody);
-        if (responseBody == null || responseBody.length > maxResponseBytes) {
-            throw new ProviderResponseTooLargeException();
-        }
+        long startedAt = System.nanoTime();
+        LOGGER.info(
+                "AI_PROVIDER_HTTP_START kind=json host={} port={} path={} resolvedAddressCount={} requestBytes={} responseType={}",
+                endpoint.host(), endpoint.port(), path, endpoint.addresses().size(), requestBody.length,
+                responseType.getSimpleName());
         try {
-            return objectMapper.readValue(responseBody, responseType);
-        } catch (JsonProcessingException exception) {
-            throw new IOException("Could not parse provider response", exception);
+            byte[] responseBody = transport.post(endpoint, path, apiKey, requestBody);
+            if (responseBody == null || responseBody.length > maxResponseBytes) {
+                throw new ProviderResponseTooLargeException();
+            }
+            try {
+                T response = objectMapper.readValue(responseBody, responseType);
+                LOGGER.info(
+                        "AI_PROVIDER_HTTP_SUCCESS kind=json host={} port={} path={} status=2xx responseBytes={} elapsedMs={}",
+                        endpoint.host(), endpoint.port(), path, responseBody.length, elapsedMillis(startedAt));
+                return response;
+            } catch (JsonProcessingException exception) {
+                throw new IOException("Could not parse provider response", exception);
+            }
+        } catch (ProviderHttpException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=json host={} port={} path={} status={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.status(), elapsedMillis(startedAt));
+            throw exception;
+        } catch (ProviderResponseTooLargeException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=json host={} port={} path={} error=response_too_large elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, elapsedMillis(startedAt));
+            throw exception;
+        } catch (IOException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=json host={} port={} path={} errorType={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(),
+                    elapsedMillis(startedAt));
+            throw exception;
         }
     }
 
@@ -83,7 +115,41 @@ public class ProviderHttpClient {
         } catch (JsonProcessingException exception) {
             throw new IOException("Could not serialize provider request", exception);
         }
-        transport.postStream(endpoint, path, apiKey, requestBody, lineConsumer);
+        long startedAt = System.nanoTime();
+        AtomicLong lineCount = new AtomicLong();
+        AtomicLong responseBytes = new AtomicLong();
+        LOGGER.info(
+                "AI_PROVIDER_HTTP_START kind=stream host={} port={} path={} resolvedAddressCount={} requestBytes={}",
+                endpoint.host(), endpoint.port(), path, endpoint.addresses().size(), requestBody.length);
+        try {
+            transport.postStream(endpoint, path, apiKey, requestBody, line -> {
+                lineCount.incrementAndGet();
+                responseBytes.addAndGet(line == null ? 0 : line.getBytes(StandardCharsets.UTF_8).length + 1L);
+                lineConsumer.accept(line);
+            });
+            LOGGER.info(
+                    "AI_PROVIDER_HTTP_SUCCESS kind=stream host={} port={} path={} status=2xx lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, lineCount.get(), responseBytes.get(),
+                    elapsedMillis(startedAt));
+        } catch (ProviderHttpException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=stream host={} port={} path={} status={} lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.status(), lineCount.get(), responseBytes.get(),
+                    elapsedMillis(startedAt));
+            throw exception;
+        } catch (IOException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=stream host={} port={} path={} errorType={} lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(), lineCount.get(),
+                    responseBytes.get(), elapsedMillis(startedAt));
+            throw exception;
+        } catch (RuntimeException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=stream host={} port={} path={} errorType={} lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(), lineCount.get(),
+                    responseBytes.get(), elapsedMillis(startedAt));
+            throw exception;
+        }
     }
 
     private static final class HttpsUrlConnectionTransport implements ProviderHttpTransport {
@@ -211,6 +277,10 @@ public class ProviderHttpClient {
                 throw new IllegalStateException("Could not initialize TLS", exception);
             }
         }
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
 }

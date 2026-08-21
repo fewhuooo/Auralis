@@ -12,6 +12,8 @@ import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -28,7 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class AiSettingsServiceTests {
 
     private static final String KEY = "01234567890123456789012345678901";
@@ -100,7 +102,7 @@ class AiSettingsServiceTests {
     }
 
     @Test
-    void resolveUsesEnvDefaultWhenUserHasNoByok() {
+    void resolveUsesEnvDefaultWhenUserHasNoByok(CapturedOutput output) {
         UUID userId = UUID.randomUUID();
         when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.DEEPSEEK))
                 .thenReturn(Optional.empty());
@@ -119,6 +121,11 @@ class AiSettingsServiceTests {
         assertThat(resolved.chatModel()).isEqualTo("deepseek-chat");
         assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
                 "https://api.deepseek.com", "env-deepseek-key", "bge-m3"));
+        assertThat(output.getOut())
+                .contains("AI_SETTINGS_RESOLVED")
+                .contains("source=ENV_DEFAULT")
+                .contains("provider=DEEPSEEK")
+                .doesNotContain("env-deepseek-key");
         verifyNoInteractions(keyCipher);
     }
 }

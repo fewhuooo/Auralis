@@ -4,11 +4,17 @@
 
 文档状态：现行历史记录
 
+### AI 后端运行日志补强（2026-08-21）
+
+- 为 AI 请求增加 `AI_STREAM_*`、`AI_SETTINGS_RESOLVED`、`AI_EMBEDDING_*`、`AI_RETRIEVAL_SUCCESS` 和 `AI_PROVIDER_HTTP_*` 事件，覆盖请求保留、Provider/模型与 env/BYOK 来源、Embedding/检索、Chat SSE、上游状态、字节/行数、耗时和失败阶段。
+- 日志仅输出安全诊断元数据，不输出 API Key、Authorization、完整 prompt、模型回复或上游响应体；新增默认 Provider 选择失败、Embedding 失败和 HTTP 生命周期脱敏回归测试。
+- AI 日志/Provider 定向测试 26/26 通过；真实 Provider、生产日志采集/轮转和前端业务验收仍需人工/部署环境验证。
+
 ### Java 21 Provider 固定地址 TLS 连接修复（2026-08-21）
 
 - 修复 `HttpsURLConnection` 在 Java 21 先调用 `SSLSocketFactory.createSocket()`、再调用 `Socket.connect()` 时，固定地址 TLS 工厂提前抛错并令 embedding/chat 在发出请求前失败的问题。
 - 无参 Socket 路径在 `connect` 时仍只连接安全策略已确认的公网 IP 和配置端口，保留 DNS 固定地址与 SSRF 防护；新增本地连接生命周期回归测试。
-- 真实 Java `ProviderHttpClient` 链路调用 SiliconFlow `BAAI/bge-m3` 返回 1 条 embedding；全量后端测试 144/144 通过，Compose backend 重建后健康。PC 浏览器业务验收仍由人工完成。
+- 真实 Java `ProviderHttpClient` 链路调用 SiliconFlow `BAAI/bge-m3` 返回 1 条 embedding；全量后端测试 148/148 通过，Compose backend 重建后健康。PC 浏览器业务验收仍由人工完成。
 
 ### Provider DNS 与 SiliconFlow 模型配置修复（2026-08-21）
 

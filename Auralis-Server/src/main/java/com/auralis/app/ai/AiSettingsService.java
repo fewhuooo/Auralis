@@ -6,6 +6,8 @@ import com.auralis.app.ai.internal.security.AiKeyCipher;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +16,8 @@ import java.util.UUID;
 
 @Service
 public class AiSettingsService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiSettingsService.class);
 
     private final AiCredentialRepository credentialRepository;
     private final AiKeyCipher keyCipher;
@@ -62,6 +66,9 @@ public class AiSettingsService {
     public ResolvedSettings resolve(UUID userId, AiProviderType provider) {
         AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
         if (entity != null && entity.getEncryptedApiKey() != null && !entity.getEncryptedApiKey().isBlank()) {
+            LOGGER.info(
+                    "AI_SETTINGS_RESOLVED userId={} provider={} source=BYOK endpointHost={} chatModel={} embeddingModel={}",
+                    userId, provider, safeHost(entity.getBaseUrl()), entity.getChatModel(), entity.getEmbeddingModel());
             return new ResolvedSettings(
                     entity.getProvider(),
                     entity.getChatModel(),
@@ -74,6 +81,9 @@ public class AiSettingsService {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
         }
 
+        LOGGER.info(
+                "AI_SETTINGS_RESOLVED userId={} provider={} source=ENV_DEFAULT endpointHost={} chatModel={} embeddingModel={}",
+                userId, provider, safeHost(defaults.baseUrl()), defaults.chatModel(), defaults.embeddingModel());
         return new ResolvedSettings(
                 provider,
                 defaults.chatModel(),
@@ -113,6 +123,15 @@ public class AiSettingsService {
                 entity.getEmbeddingModel(),
                 entity.getEncryptedApiKey() != null && !entity.getEncryptedApiKey().isBlank(),
                 entity.getUpdatedAt());
+    }
+
+    private String safeHost(String baseUrl) {
+        try {
+            String host = java.net.URI.create(baseUrl == null ? "" : baseUrl.trim()).getHost();
+            return host == null || host.isBlank() ? "<unknown>" : host;
+        } catch (IllegalArgumentException exception) {
+            return "<invalid>";
+        }
     }
 
     public record ResolvedSettings(AiProviderType provider, String chatModel, AiCredential credential) {

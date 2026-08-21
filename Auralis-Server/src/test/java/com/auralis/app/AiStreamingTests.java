@@ -26,6 +26,8 @@ import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -45,7 +47,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class AiStreamingTests {
 
     @Mock
@@ -267,6 +269,79 @@ class AiStreamingTests {
                 .isEqualTo("RATE_LIMITED");
         verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
                 eq(""), eq(AiMessageStatus.FAILED), eq("deepseek-chat"), eq("RATE_LIMITED"));
+    }
+
+    @Test
+    void logsSafeRequestLifecycleMetadataWithoutPromptOrApiKey(CapturedOutput output) {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String prompt = "private prompt that must not appear in logs";
+        String apiKey = "provider-secret-key";
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", apiKey)));
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
+
+        streamingService.stream(userId,
+                new AiMessageCommand(conversationId, prompt, AiProviderType.DEEPSEEK, false, 3, "request-log"));
+
+        assertThat(output.getOut())
+                .contains("AI_STREAM_START")
+                .contains("AI_CHAT_PROVIDER_RESOLVED")
+                .contains("AI_STREAM_SUCCESS")
+                .contains("contentLength=" + prompt.length())
+                .doesNotContain(prompt)
+                .doesNotContain(apiKey);
+    }
+
+    @Test
+    void logsEmbeddingFailureStageWithoutPrompt(CapturedOutput output) {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String prompt = "private retrieval prompt";
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-ai/DeepSeek-V3",
+                new AiCredential("https://api.deepseek.com", "chat-secret-key", "deepseek-chat")));
+        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.SILICONFLOW, "deepseek-ai/DeepSeek-V3",
+                new AiCredential("https://api.siliconflow.cn/v1", "provider-secret-key", "BAAI/bge-m3")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(embeddingProvider.embed(any(), any()))
+                .thenThrow(new DomainException("MODEL_UNAVAILABLE", "Embedding provider is unavailable"));
+
+        streamingService.stream(userId,
+                new AiMessageCommand(conversationId, prompt, AiProviderType.DEEPSEEK, true, 3, "request-embedding-failure"));
+
+        assertThat(output.getOut())
+                .contains("AI_EMBEDDING_START")
+                .contains("AI_EMBEDDING_FAILED")
+                .contains("errorCode=MODEL_UNAVAILABLE")
+                .doesNotContain(prompt)
+                .doesNotContain("provider-secret-key");
+    }
+
+    @Test
+    void logsDefaultProviderSelectionFailureBeforeCreatingMessage(CapturedOutput output) {
+        UUID userId = UUID.randomUUID();
+        String prompt = "private provider selection prompt";
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(aiProperties.defaultProvider()).thenReturn("");
+
+        assertThatThrownBy(() -> streamingService.stream(userId,
+                new AiMessageCommand(UUID.randomUUID(), prompt, null, false, 3, "request-provider-failure")))
+                .isInstanceOf(DomainException.class)
+                .extracting("code")
+                .isEqualTo("MODEL_UNAVAILABLE");
+
+        assertThat(output.getOut())
+                .contains("AI_STREAM_START")
+                .contains("AI_PROVIDER_SELECTION_FAILED")
+                .contains("errorCode=MODEL_UNAVAILABLE")
+                .doesNotContain(prompt);
     }
 
     private static final class FakeStreamingProvider implements AiProviderPort {

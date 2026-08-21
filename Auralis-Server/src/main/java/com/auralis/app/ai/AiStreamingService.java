@@ -6,8 +6,11 @@ import com.auralis.app.ai.retrieval.Citation;
 import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +20,8 @@ import java.util.Locale;
 
 @Service
 public class AiStreamingService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AiStreamingService.class);
 
     private final ConversationService conversationService;
     private final AiSettingsService settingsService;
@@ -50,13 +55,39 @@ public class AiStreamingService {
         if (command == null || command.content() == null || command.content().isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "Message content is required");
         }
-        int topK = validateTopK(command.topK());
-        AiProviderType providerType = command.provider() == null ? defaultProvider() : command.provider();
         String content = command.content().trim();
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
+        long requestStartedAt = System.nanoTime();
+        LOGGER.info(
+                "AI_STREAM_START userId={} conversationId={} requestedProvider={} retrievalEnabled={} topK={} contentLength={} clientRequestIdPresent={}",
+                userId, command.conversationId(), command.provider() == null ? "DEFAULT" : command.provider(),
+                command.retrievalEnabled(), command.topK(), content.length(), clientRequestId != null);
+        int topK;
+        try {
+            topK = validateTopK(command.topK());
+        } catch (DomainException exception) {
+            LOGGER.warn(
+                    "AI_STREAM_VALIDATION_FAILED userId={} conversationId={} errorCode={} elapsedMs={}",
+                    userId, command.conversationId(), exception.code(), elapsedMillis(requestStartedAt));
+            throw exception;
+        }
+        AiProviderType providerType;
+        try {
+            providerType = command.provider() == null ? defaultProvider() : command.provider();
+        } catch (DomainException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_SELECTION_FAILED userId={} conversationId={} requestedProvider={} errorCode={} elapsedMs={}",
+                    userId, command.conversationId(), command.provider() == null ? "DEFAULT" : command.provider(),
+                    exception.code(), elapsedMillis(requestStartedAt));
+            throw exception;
+        }
 
         ConversationService.ClientRequestReservation reservation = conversationService.reserveUserMessage(
                 userId, command.conversationId(), firstTitle(content), content, clientRequestId);
+        LOGGER.info(
+                "AI_STREAM_RESERVATION userId={} conversationId={} userMessageId={} started={} assistantReplayed={}",
+                userId, reservation.conversationId(), reservation.userMessage().id(), reservation.started(),
+                reservation.assistantMessage() != null);
         if (!reservation.started()) {
             replay(new ConversationService.ClientRequestReplay(
                     reservation.conversationId(), reservation.userMessage(), reservation.assistantMessage()), sink);
@@ -73,8 +104,12 @@ public class AiStreamingService {
 
             AiSettingsService.ResolvedSettings settings = settingsService.resolve(userId, providerType);
             model = settings.chatModel();
+            LOGGER.info(
+                    "AI_CHAT_PROVIDER_RESOLVED userId={} conversationId={} messageId={} provider={} model={} endpointHost={}",
+                    userId, conversationId, userMessage.id(), providerType, settings.chatModel(),
+                    safeHost(settings.credential().baseUrl()));
             List<Citation> citations = command.retrievalEnabled()
-                    ? retrieve(userId, content, topK)
+                    ? retrieve(userId, conversationId, userMessage.id(), content, topK)
                     : List.of();
             for (Citation citation : citations) {
                 sink.emit(new AiStreamEvent("citation", citation.chunkId().toString(), toView(citation)));
@@ -86,11 +121,18 @@ public class AiStreamingService {
                     promptMessages(content, citations),
                     0.2,
                     null);
+            long providerStartedAt = System.nanoTime();
+            LOGGER.info(
+                    "AI_CHAT_PROVIDER_START userId={} conversationId={} messageId={} provider={} model={} promptMessageCount={} citationCount={}",
+                    userId, conversationId, userMessage.id(), providerType, settings.chatModel(),
+                    request.messages().size(), citations.size());
+            int[] chunkCount = {0};
             AtomicBoolean completed = new AtomicBoolean(false);
             provider.streamInto(request, settings.credential(), chunk -> {
                 if (chunk == null) {
                     throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid chunk");
                 }
+                chunkCount[0]++;
                 if (chunk.content() != null && !chunk.content().isEmpty()) {
                     complete.append(chunk.content());
                     sink.emit(new AiStreamEvent("message.delta", userMessage.id().toString(), chunk.content()));
@@ -102,20 +144,36 @@ public class AiStreamingService {
             if (!completed.get() || complete.isEmpty()) {
                 throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned blank content");
             }
+            LOGGER.info(
+                    "AI_CHAT_PROVIDER_SUCCESS userId={} conversationId={} messageId={} provider={} model={} chunks={} outputChars={} elapsedMs={}",
+                    userId, conversationId, userMessage.id(), providerType, settings.chatModel(), chunkCount[0],
+                    complete.length(), elapsedMillis(providerStartedAt));
 
             MessageView assistant = conversationService.appendAssistantReply(
                     userId, conversationId, userMessage.id(), complete.toString(),
                     AiMessageStatus.COMPLETED, settings.chatModel(), null);
             assistantPersisted = true;
+            LOGGER.info(
+                    "AI_STREAM_SUCCESS userId={} conversationId={} userMessageId={} assistantMessageId={} provider={} model={} outputChars={} elapsedMs={}",
+                    userId, conversationId, userMessage.id(), assistant.id(), providerType, model, complete.length(),
+                    elapsedMillis(requestStartedAt));
             sink.emit(new AiStreamEvent("message.completed", assistant.id().toString(),
                     Map.of("conversationId", conversationId, "messageId", assistant.id(),
                             "content", complete.toString())));
         } catch (AiStreamAbortException exception) {
+            LOGGER.warn(
+                    "AI_STREAM_INTERRUPTED userId={} conversationId={} userMessageId={} provider={} model={} partialOutputChars={} elapsedMs={} reason=CLIENT_DISCONNECTED",
+                    userId, conversationId, userMessage.id(), providerType, model, complete.length(),
+                    elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.INTERRUPTED,
                         model, "CLIENT_DISCONNECTED");
             }
         } catch (DomainException exception) {
+            LOGGER.warn(
+                    "AI_STREAM_FAILED userId={} conversationId={} userMessageId={} provider={} model={} errorCode={} partialOutputChars={} elapsedMs={}",
+                    userId, conversationId, userMessage.id(), providerType, model, exception.code(), complete.length(),
+                    elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
                         model, exception.code());
@@ -123,6 +181,10 @@ public class AiStreamingService {
             sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
                     Map.of("code", exception.code(), "detail", safeDetail(exception.getMessage()))));
         } catch (Exception exception) {
+            LOGGER.error(
+                    "AI_STREAM_FAILED_UNEXPECTED userId={} conversationId={} userMessageId={} provider={} model={} exceptionType={} partialOutputChars={} elapsedMs={}",
+                    userId, conversationId, userMessage.id(), providerType, model,
+                    exception.getClass().getSimpleName(), complete.length(), elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
                         model, "MODEL_PROVIDER_ERROR");
@@ -152,15 +214,49 @@ public class AiStreamingService {
                     Map.of("code", errorCode, "detail", "The previous AI request is still processing or did not complete")));
     }
 
-    private List<Citation> retrieve(UUID userId, String content, int topK) {
-        AiSettingsService.ResolvedSettings embeddingSettings =
-                settingsService.resolve(userId, AiProviderType.SILICONFLOW);
-        EmbeddingProviderPort embeddingProvider = embeddingProviderRegistry.require(AiProviderType.SILICONFLOW);
-        EmbeddingResult result = embeddingProvider.embed(List.of(content), embeddingSettings.credential());
-        if (result == null || result.vectors().isEmpty()) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned no vector");
+    private List<Citation> retrieve(UUID userId, UUID conversationId, UUID userMessageId, String content, int topK) {
+        long embeddingStartedAt = System.nanoTime();
+        LOGGER.info(
+                "AI_EMBEDDING_START userId={} conversationId={} messageId={} provider={} model={} endpointHost={} inputCount=1 inputChars={} topK={}",
+                userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, "<pending>", "<pending>",
+                content.length(), topK);
+        String embeddingModel = "<unknown>";
+        try {
+            AiSettingsService.ResolvedSettings embeddingSettings =
+                    settingsService.resolve(userId, AiProviderType.SILICONFLOW);
+            embeddingModel = embeddingSettings.credential().model();
+            LOGGER.info(
+                    "AI_EMBEDDING_CONFIG_RESOLVED userId={} conversationId={} messageId={} provider={} model={} endpointHost={}",
+                    userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
+                    safeHost(embeddingSettings.credential().baseUrl()));
+            EmbeddingProviderPort embeddingProvider = embeddingProviderRegistry.require(AiProviderType.SILICONFLOW);
+            EmbeddingResult result = embeddingProvider.embed(List.of(content), embeddingSettings.credential());
+            if (result == null || result.vectors().isEmpty()) {
+                throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned no vector");
+            }
+            int dimensions = result.vectors().get(0) == null ? 0 : result.vectors().get(0).size();
+            LOGGER.info(
+                    "AI_EMBEDDING_SUCCESS userId={} conversationId={} messageId={} provider={} model={} vectorCount={} dimensions={} elapsedMs={}",
+                    userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
+                    result.vectors().size(), dimensions, elapsedMillis(embeddingStartedAt));
+            List<Citation> citations = retrievalService.retrieve(userId, result.vectors().get(0), topK);
+            LOGGER.info(
+                    "AI_RETRIEVAL_SUCCESS userId={} conversationId={} messageId={} topK={} citationCount={} elapsedMs={}",
+                    userId, conversationId, userMessageId, topK, citations.size(), elapsedMillis(embeddingStartedAt));
+            return citations;
+        } catch (DomainException exception) {
+            LOGGER.warn(
+                    "AI_EMBEDDING_FAILED userId={} conversationId={} messageId={} provider={} model={} errorCode={} elapsedMs={}",
+                    userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
+                    exception.code(), elapsedMillis(embeddingStartedAt));
+            throw exception;
+        } catch (Exception exception) {
+            LOGGER.error(
+                    "AI_EMBEDDING_FAILED_UNEXPECTED userId={} conversationId={} messageId={} provider={} model={} exceptionType={} elapsedMs={}",
+                    userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
+                    exception.getClass().getSimpleName(), elapsedMillis(embeddingStartedAt));
+            throw exception;
         }
-        return retrievalService.retrieve(userId, result.vectors().get(0), topK);
     }
 
     private List<AiProviderRequest.Message> promptMessages(String content, List<Citation> citations) {
@@ -235,5 +331,18 @@ public class AiStreamingService {
 
     private String safeDetail(String detail) {
         return detail == null || detail.isBlank() ? "AI provider request failed" : detail;
+    }
+
+    private String safeHost(String baseUrl) {
+        try {
+            String host = URI.create(baseUrl == null ? "" : baseUrl.trim()).getHost();
+            return host == null || host.isBlank() ? "<unknown>" : host;
+        } catch (IllegalArgumentException exception) {
+            return "<invalid>";
+        }
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 }

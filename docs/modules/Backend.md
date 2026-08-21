@@ -1,6 +1,6 @@
 # Spring Boot 后端模块
 
-更新时间：2026-08-20
+更新时间：2026-08-21
 
 文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线已构建，R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；默认 Docker Testcontainers 门禁通过，整体仍待真实 Provider 与外部验收
 
@@ -87,6 +87,8 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 后续生产配置必须从环境变量读取数据库、MinIO、JWT、BYOK、DeepSeek、SiliconFlow 和 CORS 值；生产 profile 对缺失的关键配置执行 fail-fast。所有业务 Repository 必须在查询中带当前 userId；日志过滤 Authorization、Cookie、refresh token、BYOK key、完整 prompt 和模型回复。
 
+AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用户消息保留、Provider 选择、成功/中断/失败与耗时，`AI_EMBEDDING_*`/`AI_RETRIEVAL_SUCCESS` 区分向量化和检索阶段，`AI_PROVIDER_HTTP_*` 记录上游 host/path、解析地址数量、请求/响应字节数、SSE 行数、状态和耗时，`AI_SETTINGS_RESOLVED` 标记 BYOK 或 `ENV_DEFAULT` 来源。日志只输出 UUID、host、模型、数量、长度、状态和稳定错误码，不输出 API Key、Authorization、完整 prompt、模型回复或响应体。
+
 ## 阶段 2B 实际 HTTP 表面
 
 - Asset：`POST /api/assets/upload-intents`、`POST /api/assets/{id}/complete`、`POST /api/assets/{id}/download-url`；AssetStoragePort 提供 test 适配器与配置启用的 MinIO 适配器。
@@ -157,4 +159,4 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 - Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、会话和 USER 消息的 `clientRequestId` 幂等回放及安全错误/断流状态持久化。流式请求先在短事务中锁定会话并保留唯一 USER 消息，Provider I/O 不持有数据库事务；assistant 以 `reply_to_message_id` 精确关联该 USER 消息。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
 
-阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1 定向套件验证 V14、会话重试、并发同请求仅一次保留和流式回放；默认 `mvn -B -ntp clean test` 已实际执行 PostgreSQL 17/pgvector clean/upgrade 与 MinIO 容器，137/137 通过。真实 Provider、性能和前端联调仍未完成。
+阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1 定向套件验证 V14、会话重试、并发同请求仅一次保留和流式回放；默认 `mvn -B -ntp clean test` 已实际执行 PostgreSQL 17/pgvector clean/upgrade 与 MinIO 容器，148/148 通过。AI 日志脱敏与生命周期定向测试 26/26 通过。真实 Provider、性能和前端联调仍未完成。
