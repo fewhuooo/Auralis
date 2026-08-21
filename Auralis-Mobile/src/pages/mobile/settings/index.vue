@@ -48,7 +48,7 @@
                 </view>
                 <view class="user-info">
                   <text class="username">{{ username }}</text>
-                  <text class="user-meta">已加入 {{ joinedDays }} 天 · 跨端同步与账户</text>
+                  <text class="user-meta">{{ userMeta }}</text>
                 </view>
               </view>
               <view class="item-right">
@@ -138,7 +138,7 @@ const syncStore = useSyncStore()
 const { darkMode, language } = storeToRefs(settingsStore)
 
 const username = computed(() => authStore.username || '未登录')
-const joinedDays = ref(12) // Mock
+const userMeta = computed(() => '跨端同步与账户')
 const searchQuery = ref('')
 const remindersEnabled = ref(true)
 const scrollTop = ref(0)

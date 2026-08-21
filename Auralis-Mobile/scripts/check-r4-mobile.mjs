@@ -84,6 +84,11 @@ if (/completedToday\s*=\s*ref\(3\)/.test(mobilePomodoro)) {
   violations.push('src/pages/mobile/pomodoro/index.vue: pomodoro count must come from the task store')
 }
 
+const mobileSettings = sources.get('src/pages/mobile/settings/index.vue') || ''
+if (/joinedDays\s*=\s*ref\(12\)/.test(mobileSettings)) {
+  violations.push('src/pages/mobile/settings/index.vue: joined days must not use a fixed demo value')
+}
+
 if (violations.length > 0) {
   console.error('R4 Mobile static check failed:')
   for (const violation of violations) console.error(`- ${violation}`)

@@ -367,7 +367,7 @@ PC 执行记录（2026-08-20）：R4 PC typed Store/页面迁移、runtime confi
 
 完成条件：H5 和微信主路径只使用新契约。
 
-执行记录：2026-08-21；新增环境驱动 HTTPS/WSS runtime、直接 DTO/Problem Details/单次 refresh、稳定 deviceId、opaque cursor Sync/snapshot、Realtime ticket、AI SSE、Review/Stats 与 Asset intent/PUT/complete；任务选择器和 Pomodoro 计数移除演示数据。H5/原生本地库按 userId/deviceId 新建 namespace，用户明确授权后一次性清除旧全局库；冲突保留 pending mutation。`check:r4-mobile` 扫描 62 个生产文件、协议测试 15/15、type-check、H5 与微信 build 均通过。真实 Server/MinIO/Provider、双设备 reset、微信合法域名及真机仍未验收。
+执行记录：2026-08-21；新增环境驱动 HTTPS/WSS runtime、直接 DTO/Problem Details/单次 refresh、稳定 deviceId、opaque cursor Sync/snapshot、Realtime ticket、AI SSE、Review/Stats 与 Asset intent/PUT/complete；任务选择器、Pomodoro 计数和 Settings 加入天数移除演示数据。H5/原生本地库按 userId/deviceId 新建 namespace，用户明确授权后一次性清除旧全局库；冲突保留 pending mutation。`check:r4-mobile` 扫描 62 个生产文件、协议测试 15/15、type-check、H5 与微信 build 均通过。真实 Server/MinIO/Provider、双设备 reset、微信合法域名及真机仍未验收。
 
 ### R4-06 微信平台配置（P1）
 

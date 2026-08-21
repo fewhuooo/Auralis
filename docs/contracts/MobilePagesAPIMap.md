@@ -28,7 +28,7 @@
 | Timeline | Task Store → Sync | 拖拽保留 sortKey/startTime 映射；真实冲突 UI 待联调 |
 | Review | `GET /api/reviews/due`、`POST /api/reviews/events` | 已移除示例知识块注入；服务端事件不可撤销，右滑不再伪造回滚 |
 | Asset | `POST /api/assets/upload-intents` → 预签名 PUT → `POST /api/assets/{id}/complete` | 已移除模拟上传/失败伪成功；微信 upload 合法域名、MinIO 和大文件仍待验证 |
-| Settings/Profile | Auth/Settings Store | 无独立 profile API；只显示当前会话用户数据 |
+| Settings/Profile | Auth/Settings Store | 无独立 profile API；只显示当前会话用户数据，注册天数未由 User DTO 提供时显示中性元信息，不伪造天数 |
 | Handwriting | 手写引擎与本地输入 | 不自动伪造 OCR；AI 转换失败不得丢失输入 |
 
 ## Tablet 页面
