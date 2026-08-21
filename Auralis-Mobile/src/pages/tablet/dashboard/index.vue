@@ -7,7 +7,7 @@
         <view class="greeting-row">
           <view class="greeting-text-wrap">
             <text class="greeting-title">{{ greeting }}，{{ username }}</text>
-            <text class="greeting-sub">已完成 {{ taskStore.completedCount }} 项任务 · 累计专注 {{ taskStore.totalFocusHours }} 小时</text>
+            <text class="greeting-sub">本周完成 {{ completedTasks }} 项任务 · 专注 {{ totalFocusHours }} 小时</text>
           </view>
           <view class="add-circle-btn" :class="{ 'is-active': showQuickAdd }" @click="showQuickAdd = !showQuickAdd">
             <LineIcon :name="showQuickAdd ? 'close' : 'plus'" size="36rpx" :color="showQuickAdd ? '#FFFFFF' : '#1C1C1A'" />
@@ -184,7 +184,7 @@
               <view class="hero-metrics-right">
                 <view class="hero-metric">
                   <text class="hm-val">{{ totalFocusHours }}</text>
-                  <text class="hm-label">累计专注(h)</text>
+                  <text class="hm-label">本周专注(h)</text>
                 </view>
                 <view class="hm-divider"></view>
                 <view class="hero-metric">
@@ -244,6 +244,7 @@ import { useBlockStore } from '@/store/useBlockStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useAuthStore } from '@/store/useAuthStore'
+import { statsApi } from '@/api/statsApi'
 
 const blockStore = useBlockStore()
 const subjectStore = useSubjectStore()
@@ -333,18 +334,7 @@ const onDurTouchMove = (e: any) => {
 }
 
 const displaySubjects = computed(() => {
-  if (subjects.value && subjects.value.length > 0) {
-    return subjects.value
-  }
-  return [
-    { id: 'sub-1', name: '高等数学', color: '#4A90E2' },
-    { id: 'sub-2', name: '线性代数', color: '#50E3C2' },
-    { id: 'sub-3', name: '概率统计', color: '#5C8550' },
-    { id: 'sub-4', name: '微观经济学', color: '#E67E22' },
-    { id: 'sub-5', name: '宏观经济学', color: '#D35400' },
-    { id: 'sub-6', name: '财务管理', color: '#16A085' },
-    { id: 'sub-7', name: '数据结构', color: '#2980B9' }
-  ]
+  return subjects.value || []
 })
 
 const submitQuickAdd = async () => {
@@ -352,6 +342,10 @@ const submitQuickAdd = async () => {
   if (!name) return
 
   const selectedSub = quickSubject.value || displaySubjects.value[0]
+  if (!selectedSub) {
+    uni.showToast({ title: '请先创建学科', icon: 'none' })
+    return
+  }
   const now = new Date()
   const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
@@ -422,28 +416,22 @@ const handleDeleteTask = async (id?: string) => {
 }
 
 // --- STATS LOGIC ---
-const totalFocusHours = computed(() => taskStore.totalFocusHours)
-const totalBlocks = computed(() => blockStore.recentBlocks.length)
-const completedTasks = computed(() => taskStore.completedCount)
-const streakDays = ref(12) 
+const totalFocusHours = ref(0)
+const totalBlocks = ref(0)
+const completedTasks = ref(0)
+const activeTasks = ref(0)
+const streakDays = ref(0)
 
 const taskCompletionRate = computed(() => {
-  const total = taskStore.pendingCount + completedTasks.value
+  const total = activeTasks.value + completedTasks.value
   if (total === 0) return 0
   return Math.round((completedTasks.value / total) * 100)
 })
 
-const weeklyData = ref([
-  { day: '一', minutes: 120 },
-  { day: '二', minutes: 90 },
-  { day: '三', minutes: 150 },
-  { day: '四', minutes: 60 },
-  { day: '五', minutes: 200 },
-  { day: '六', minutes: 45, isToday: true },
-  { day: '日', minutes: 0 }
-])
+const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
 
 const weeklyAverage = computed(() => {
+  if (weeklyData.value.length === 0) return 0
   const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
   return Math.round(sum / weeklyData.value.length)
 })
@@ -473,41 +461,46 @@ const subjectSegments = computed(() => {
 
 const heatmapData = ref<{ date: string; count: number }[]>([])
 
-const generateHeatmapData = () => {
-  const data = []
+const loadServerStats = async () => {
   const today = new Date()
-  
-  for (let i = 34; i >= 0; i--) {
-    const day = new Date()
-    day.setDate(today.getDate() - i)
-    const dateStr = day.toISOString().split('T')[0]
-    
-    let count = 0
-    if (i === 0) {
-      count = completedTasks.value + (totalBlocks.value > 0 ? 2 : 0)
-    } else {
-      const dayOfWeek = day.getDay()
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        count = Math.floor(Math.random() * 4)
-      } else {
-        count = Math.floor(Math.random() * 11)
-      }
-      if (Math.random() < 0.15) {
-        count = 0
-      }
-    }
-    data.push({ date: dateStr, count })
-  }
-  heatmapData.value = data
+  const fromDate = new Date(today)
+  fromDate.setUTCDate(today.getUTCDate() - 6)
+  const from = fromDate.toISOString().slice(0, 10)
+  const to = today.toISOString().slice(0, 10)
+  const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
+  const days = weekly.days || []
+  const reversed = [...days].reverse()
+  const firstInactiveDay = reversed.findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0)))
+  streakDays.value = firstInactiveDay < 0 ? days.length : firstInactiveDay
+  totalBlocks.value = Number(summary.activeKnowledgeBlocks || 0)
+  activeTasks.value = Number(summary.activeTasks || 0)
+  completedTasks.value = days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0)
+  totalFocusHours.value = Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1))
+  weeklyData.value = days.map(day => ({
+    day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
+    minutes: Math.round(Number(day.studySeconds || 0) / 60),
+    isToday: day.date === to,
+  }))
+  heatmapData.value = days.map(day => ({
+    date: day.date || '',
+    count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
+  }))
 }
 
 onMounted(async () => {
-  await blockStore.fetchBlocks()
-  await subjectStore.loadSubjects()
-  await taskStore.fetchTasks()
-  generateHeatmapData()
-  if (subjects.value.length > 0 && !quickSubject.value) {
-    quickSubject.value = subjects.value[0]
+  try {
+    await Promise.all([
+      blockStore.fetchBlocks(),
+      subjectStore.loadSubjects(),
+      taskStore.fetchTasks(),
+      loadServerStats(),
+    ])
+    if (subjects.value.length > 0 && !quickSubject.value) {
+      quickSubject.value = subjects.value[0]
+    }
+  } catch (error) {
+    console.error('[TabletDashboard] Failed to load server data:', error)
+    uni.showToast({ title: '看板数据加载失败', icon: 'none' })
   }
 })
 </script>

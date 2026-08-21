@@ -33,7 +33,7 @@
 
 2026-08-20：Identity 会话列表已改为每用户/设备一条活动 refresh session 视图；重复登录同一设备会撤销旧 refresh session，避免 Profile 出现重复设备和误撤销旧记录。定向 AuthControllerTests 7/7 与 Docker Testcontainers 全量 `mvn -B -ntp test` 138/138 通过。撤销仍不会令已签发 access JWT 瞬时失效，当前 15 分钟有效期结束前的远端请求阻断属于后续鉴权架构取舍，不写成已完成的即时踢下线。
 
-2026-08-20：Mobile/微信共享主路径已切到当前 Auth、Sync/Realtime、Asset、Review、Stats 与 AI 契约；本地数据使用 userId/deviceId 独立 namespace，旧全局库按用户授权一次性清除。`check:r4-mobile` 扫描 62 个生产文件、协议测试 15/15、Tablet 逻辑测试、type-check、H5 与微信构建通过；真实服务、微信合法域名、开发者工具、双设备和真机仍未验收。
+2026-08-20：Mobile/微信共享主路径已切到当前 Auth、Sync/Realtime、Asset、Review、Stats 与 AI 契约；Tablet Dashboard/Review 也已使用 Stats/Review 服务端契约并移除随机统计和本地结果伪写。本地数据使用 userId/deviceId 独立 namespace，旧全局库按用户授权一次性清除。`check:r4-mobile` 扫描 62 个生产文件、协议测试 15/15、Tablet 逻辑测试、type-check、H5 与微信构建通过；真实服务、微信合法域名、开发者工具、双设备和真机仍未验收。
 
 低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
 
@@ -44,7 +44,7 @@
 | PC Tauri | 已构建待验收 | Tauri 2.11.1、SQL 插件配置存在 | 本轮未执行 GUI | Windows GUI、权限、安装包 | 手工桌面验收 |
 | Mobile H5 | 已构建待验收 | Auth/Sync/Realtime/Asset/Review/Stats/AI 新契约、用户/设备隔离本地库与手机页面存在 | 2026-08-20：`check:r4-mobile` 62 文件、协议测试 15/15、type-check、H5 build 通过；保留 import 与 Sass 警告 | 真实服务、手机浏览器、弱网、输入法 | H5 联调与真机走查 |
 | 微信小程序 | 已构建待验收 | `MP-WEIXIN` 排除 Tablet；环境强制 HTTPS/WSS；手机主路径共享新契约 | 2026-08-20：微信 build 通过 | AppID、开发者工具、真机、合法请求/WSS/upload/download 域名 | 配置平台域名并完成微信走查 |
-| Tablet | 已构建待验收 | 9 个注册页、TabletLayout、多栏 workspace、共享 Auth/Sync/Asset/AI 边界；手写仍默认关闭 | 2026-08-20：`test:tablet`、type-check、H5 build 通过 | 页面级 Subject/Review/Stats 收口、横屏触控、键盘、缩放、前后台 | 继续 R4-07 并做平板真机走查 |
+| Tablet | 已构建待验收 | 9 个注册页、TabletLayout、多栏 workspace、共享 Auth/Sync/Asset/AI 边界；Dashboard/Review 已接 Stats/Review API；手写仍默认关闭 | 2026-08-20：`check:r4-mobile`、`test:tablet`、type-check、H5 build 通过 | 真实服务、横屏触控、键盘、缩放、前后台 | 完成 R4-07 平板真实服务与真机走查 |
 | Tablet 手写笔记 | 已隐藏保留 | `tablet_notes`、NoteDocument、仓库与 feature flag 存在 | 本轮未执行专项脚本 | 笔迹、导入导出、长时间书写 | 核心链路后再开启 |
 | 后端绿地重写 | 已构建待验收 | `Auralis-Server` 已替换为 `com.auralis.app` 的 Java 21 / Boot 4.1 / Modulith 2.1；Identity V1、Subject/KnowledgeBlock/Task V2、Source/Asset/Relation V3、Sync V4/V6、Review/Stats/Realtime V5、Task V7、AI/RAG V8–V14、版本/墓碑/恢复、Auth 与核心 API 存在 | 2026-08-20：R1 AI 专项 12/12、OpenAPI artifact 3/3、默认 `clean test` 137/137 通过、零失败/错误/跳过；Testcontainers 实际启动 PostgreSQL 17/pgvector clean/upgrade 与 MinIO | 真实 Provider chat/embedding、MinIO 异常路径、Source 文件链路、双设备、浏览器 WebSocket、GUI/真机和外部 AI | 完成真实 Provider smoke 与目标客户端业务联调；自动门禁通过不等于人工验收 |
 | Auth | 已构建待验收 | 新 `com.auralis.app` 已有 BCrypt、15 分钟 access JWT、30 天 refresh rotation、会话撤销、owner-scoped sessions 和 Problem Details 安全错误 | 2026-08-12：IdentityService 5 个测试、AuthController 6 个 MockMvc 测试；test profile HTTP smoke 注册 201、登录 200、token pair 存在 | 三端登录/刷新/退出、人工业务验收和生产 JWT/数据库环境 | 接入后续业务模块并完成 PostgreSQL/前端联调 |

@@ -379,11 +379,13 @@ PC 执行记录（2026-08-20）：R4 PC typed Store/页面迁移、runtime confi
 
 ### R4-07 Tablet 主工作区（P1）
 
-- [ ] 接入新 Subject、Asset、Task、Review、Stats 和 AI 契约。
+- [x] 接入新 Subject、Asset、Task、Review、Stats 和 AI 契约。
 - [ ] 验证横屏侧栏、触控、键盘、缩放和前后台切换。
 - [x] 手写能力继续受 feature flag 控制，不纳入云同步。
 
 完成条件：Tablet 主工作区在目标设备完成主流程；隐藏手写不阻塞 G4。
+
+执行记录：2026-08-20；共享 Store/API 已覆盖 Subject、Asset、Task 和 AI，Tablet Dashboard/Review 本轮接入 Stats/Review API 并移除随机/本地伪数据。`check:r4-mobile`、协议测试 15/15、`test:tablet`、type-check、H5 build 与微信 build 退出 0；目标设备横屏、触控、键盘、缩放和前后台切换尚未验收，因此 R4-07 整体仍未关闭。
 
 ### G4 阶段门禁
 

@@ -91,7 +91,7 @@
             <view class="legend-row">
               <text class="legend-item">← 左滑 下一张</text>
               <text class="legend-dot">·</text>
-              <text class="legend-item">右滑 上一张 →</text>
+              <text class="legend-item">右滑 取消手势 →</text>
             </view>
             <view class="legend-row">
               <text class="legend-item">↑ 上滑 掌握</text>
@@ -110,7 +110,7 @@
               <view class="big-stats-row">
                 <view class="big-stat">
                   <view class="big-stat-val">{{ totalFocusHours }}</view>
-                  <view class="big-stat-label">累计专注(h)</view>
+                  <view class="big-stat-label">本周专注(h)</view>
                 </view>
                 <view class="big-stat">
                   <view class="big-stat-val">{{ totalBlocks }}</view>
@@ -185,6 +185,9 @@ import FlashCard from '@/components/FlashCard.vue'
 import WeeklyChart from '@/components/WeeklyChart.vue'
 import SubjectPieChart from '@/components/SubjectPieChart.vue'
 import HeatmapChart from '@/components/HeatmapChart.vue'
+import { reviewApi } from '@/api/reviewApi'
+import { statsApi } from '@/api/statsApi'
+import { uuidv7 } from '@/utils/uuid'
 
 const blockStore = useBlockStore()
 const taskStore = useTaskStore()
@@ -195,14 +198,9 @@ const sessionQueue = ref<any[]>([])
 const currentIndex = ref(0)
 const isFlipped = ref(false)
 const completedCount = ref(0)
-
-interface HistoryAction {
-  blockId: string
-  prevMastery: number
-  actionType: 'mastered' | 'retry' | 'skip'
-  requeued: boolean
-}
-const historyStack = ref<HistoryAction[]>([])
+const dueQueue = ref<any[]>([])
+const reviewVersions = new Map<string, number>()
+let cardStartedAt = Date.now()
 
 const startX = ref(0)
 const startY = ref(0)
@@ -214,11 +212,11 @@ const animateReset = ref(false)
 const animateFly = ref(false)
 
 const resetReview = () => {
-  sessionQueue.value = [...blockStore.recentBlocks]
+  sessionQueue.value = [...dueQueue.value]
   currentIndex.value = 0
   completedCount.value = 0
   isFlipped.value = false
-  historyStack.value = []
+  cardStartedAt = Date.now()
   resetDrag()
 }
 
@@ -338,11 +336,7 @@ const onTouchEnd = () => {
     if (deltaX.value < 0) {
       triggerFlyAnimation('left')
     } else {
-      if (historyStack.value.length > 0) {
-        triggerFlyAnimation('right')
-      } else {
-        triggerResetAnimation()
-      }
+      triggerResetAnimation()
     }
   } else {
     if (deltaY.value < 0) {
@@ -383,89 +377,53 @@ const handleSwipeAction = async (dir: 'left' | 'right' | 'up' | 'down') => {
   const card = activeCard.value
   if (!card) return
 
-  if (dir === 'right') {
-    const lastAction = historyStack.value.pop()
-    if (lastAction) {
-      currentIndex.value = Math.max(0, currentIndex.value - 1)
-      if (lastAction.requeued) {
-        sessionQueue.value.pop()
-      }
-      if (lastAction.actionType === 'mastered') {
-        completedCount.value = Math.max(0, completedCount.value - 1)
-      }
-      await blockStore.updateBlock({
-        ...sessionQueue.value[currentIndex.value],
-        mastery: lastAction.prevMastery
-      })
-    }
-    isFlipped.value = false
+  if (dir === 'right') return
+
+  const rating = dir === 'up' ? 'GOOD' : dir === 'down' ? 'AGAIN' : 'SKIP'
+  try {
+    const result = await reviewApi.record({
+      clientEventId: uuidv7(),
+      knowledgeBlockId: card.id,
+      rating,
+      reviewedAt: new Date().toISOString(),
+      durationSeconds: Math.max(0, Math.round((Date.now() - cardStartedAt) / 1000)),
+      baseVersion: reviewVersions.get(card.id),
+    })
+    if (result.state?.version !== undefined) reviewVersions.set(card.id, result.state.version)
+  } catch (error) {
+    console.error('[TabletReview] Failed to persist event:', error)
+    uni.showToast({ title: '复习结果保存失败', icon: 'none' })
     return
   }
 
-  let actionType: 'mastered' | 'retry' | 'skip' = 'skip'
-  let requeued = false
-  const prevMastery = card.mastery || 50
-
   if (dir === 'up') {
-    actionType = 'mastered'
     completedCount.value++
-    const newMastery = Math.min(prevMastery + 15, 100)
-    await blockStore.updateBlock({
-      ...card,
-      mastery: newMastery,
-      difficulty: 'easy'
-    })
   } else if (dir === 'down') {
-    actionType = 'retry'
-    requeued = true
-    const newMastery = Math.max(prevMastery - 15, 10)
-    await blockStore.updateBlock({
-      ...card,
-      mastery: newMastery,
-      difficulty: 'hard'
-    })
-    sessionQueue.value.push({
-      ...card,
-      mastery: newMastery
-    })
-  } else if (dir === 'left') {
-    actionType = 'skip'
+    sessionQueue.value.push(card)
   }
 
-  historyStack.value.push({
-    blockId: card.id,
-    prevMastery,
-    actionType,
-    requeued
-  })
-
   currentIndex.value++
+  cardStartedAt = Date.now()
   isFlipped.value = false
 }
 
 // --- STATS LOGIC ---
-const totalFocusHours = computed(() => taskStore.totalFocusHours)
-const totalBlocks = computed(() => blockStore.recentBlocks.length)
-const completedTasks = computed(() => taskStore.completedCount)
-const streakDays = ref(12) 
+const totalFocusHours = ref(0)
+const totalBlocks = ref(0)
+const completedTasks = ref(0)
+const activeTasks = ref(0)
+const streakDays = ref(0)
 
 const taskCompletionRate = computed(() => {
-  const total = taskStore.pendingCount + completedTasks.value
+  const total = activeTasks.value + completedTasks.value
   if (total === 0) return 0
   return Math.round((completedTasks.value / total) * 100)
 })
 
-const weeklyData = ref([
-  { day: '一', minutes: 120 },
-  { day: '二', minutes: 90 },
-  { day: '三', minutes: 150 },
-  { day: '四', minutes: 60 },
-  { day: '五', minutes: 200 },
-  { day: '六', minutes: 45, isToday: true },
-  { day: '日', minutes: 0 }
-])
+const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
 
 const weeklyAverage = computed(() => {
+  if (weeklyData.value.length === 0) return 0
   const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
   return Math.round(sum / weeklyData.value.length)
 })
@@ -495,46 +453,60 @@ const subjectSegments = computed(() => {
 
 const heatmapData = ref<{ date: string; count: number }[]>([])
 
-const generateHeatmapData = () => {
-  const data = []
+const loadServerStats = async () => {
   const today = new Date()
-  
-  for (let i = 34; i >= 0; i--) {
-    const day = new Date()
-    day.setDate(today.getDate() - i)
-    const dateStr = day.toISOString().split('T')[0]
-    
-    let count = 0
-    if (i === 0) {
-      count = completedTasks.value + (totalBlocks.value > 0 ? 2 : 0)
-    } else {
-      const dayOfWeek = day.getDay()
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        count = Math.floor(Math.random() * 4)
-      } else {
-        count = Math.floor(Math.random() * 11)
-      }
-      if (Math.random() < 0.15) {
-        count = 0
-      }
-    }
-    
-    data.push({ date: dateStr, count })
+  const fromDate = new Date(today)
+  fromDate.setUTCDate(today.getUTCDate() - 6)
+  const from = fromDate.toISOString().slice(0, 10)
+  const to = today.toISOString().slice(0, 10)
+  const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
+  const days = weekly.days || []
+  const reversed = [...days].reverse()
+  const firstInactiveDay = reversed.findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0)))
+  streakDays.value = firstInactiveDay < 0 ? days.length : firstInactiveDay
+  totalBlocks.value = Number(summary.activeKnowledgeBlocks || 0)
+  activeTasks.value = Number(summary.activeTasks || 0)
+  completedTasks.value = days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0)
+  totalFocusHours.value = Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1))
+  weeklyData.value = days.map(day => ({
+    day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
+    minutes: Math.round(Number(day.studySeconds || 0) / 60),
+    isToday: day.date === to,
+  }))
+  heatmapData.value = days.map(day => ({
+    date: day.date || '',
+    count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
+  }))
+}
+
+const loadReviewQueue = async () => {
+  const states = await reviewApi.due()
+  const blocks = new Map(blockStore.recentBlocks.map(block => [block.id, block]))
+  dueQueue.value = states.flatMap((state) => {
+    if (!state.knowledgeBlockId) return []
+    reviewVersions.set(state.knowledgeBlockId, Number(state.version || 0))
+    const block = blocks.get(state.knowledgeBlockId)
+    return block ? [{ ...block, mastery: Math.round(Math.min(100, Number(state.stability || 0) * 10)) }] : []
+  })
+}
+
+const loadPage = async () => {
+  try {
+    await Promise.all([
+      blockStore.fetchBlocks(),
+      taskStore.fetchTasks(),
+      subjectStore.loadSubjects(),
+    ])
+    await Promise.all([loadReviewQueue(), loadServerStats()])
+    resetReview()
+  } catch (error) {
+    console.error('[TabletReview] Failed to load server data:', error)
+    uni.showToast({ title: '复习数据加载失败', icon: 'none' })
   }
-  
-  heatmapData.value = data
 }
 
 // --- INITIALIZATION ---
-onMounted(async () => {
-  await Promise.all([
-    blockStore.fetchBlocks(),
-    taskStore.fetchTasks(),
-    subjectStore.loadSubjects()
-  ])
-  resetReview()
-  generateHeatmapData()
-})
+onMounted(loadPage)
 </script>
 
 <style scoped>

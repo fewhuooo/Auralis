@@ -39,13 +39,31 @@ for (const scanRoot of scanRoots) {
 }
 
 const violations = []
+const sources = new Map()
 for (const file of files) {
   const displayPath = relative(root, file).replaceAll('\\', '/')
   if (ignored.has(displayPath)) continue
   const source = await readFile(file, 'utf8')
+  sources.set(displayPath, source)
   for (const rule of forbidden) {
     if (rule.pattern.test(source)) violations.push(`${displayPath}: ${rule.label}`)
   }
+}
+
+const tabletReview = sources.get('src/pages/tablet/review/index.vue') || ''
+if (!tabletReview.includes("@/api/reviewApi")) {
+  violations.push('src/pages/tablet/review/index.vue: tablet review must use the review event API')
+}
+if (/Math\.random\s*\(/.test(tabletReview)) {
+  violations.push('src/pages/tablet/review/index.vue: tablet review must not generate random statistics')
+}
+
+const tabletDashboard = sources.get('src/pages/tablet/dashboard/index.vue') || ''
+if (!tabletDashboard.includes("@/api/statsApi")) {
+  violations.push('src/pages/tablet/dashboard/index.vue: tablet dashboard must use the statistics API')
+}
+if (/Math\.random\s*\(/.test(tabletDashboard)) {
+  violations.push('src/pages/tablet/dashboard/index.vue: tablet dashboard must not generate random statistics')
 }
 
 if (violations.length > 0) {

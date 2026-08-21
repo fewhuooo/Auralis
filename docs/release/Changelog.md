@@ -15,6 +15,7 @@
 - Mobile 的 Auth、直接 DTO/Problem Details、共享 refresh、Sync opaque cursor/snapshot、Realtime ticket、AI SSE、Review、Stats 和 Asset upload-intent/PUT/complete 已切换到冻结 OpenAPI；生产代码不再使用固定本机地址、旧 `/ws/sync`、旧数值游标或旧 AI 路由。
 - H5 与原生端按 userId/deviceId 新建独立本地 namespace；用户明确授权后，旧全局 `h5_db_*` 与 `_doc/auralis.db` 业务表在认证会话建立时一次性清除。同步冲突保留 pending mutation，手写笔记继续受 feature flag 控制且不进入云同步。
 - Pinia 固定为 2.1.7 并与 Vue 3.4.21 对齐；三个 Tablet 逻辑脚本进入 `test:tablet`。`check:r4-mobile` 扫描 62 个生产文件、协议测试 15/15、Tablet 测试、type-check、H5 build 和微信 build 通过；真实 Server/MinIO/Provider、微信合法域名、开发者工具、双设备和真机未验收。
+- Tablet Dashboard 改用服务端 overview/weekly 统计并移除随机热力图和虚构学科兜底；Tablet Review 改用 due/event 契约，只有不可变事件保存成功才推进卡片，右滑仅取消手势。静态门禁新增对应回归断言，H5 与微信构建重新通过。
 
 ### R1/R4：AI 可靠性与离线恢复（2026-08-20）
 

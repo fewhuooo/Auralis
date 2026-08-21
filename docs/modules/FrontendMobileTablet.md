@@ -12,7 +12,7 @@
 
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
 
-截至 2026-08-20，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；H5 与微信命令行构建通过。平板首页仍使用 5 周日历网格和 `Primary Gradient`；微信开发者工具、浏览器及真机主流程尚未人工验收。
+截至 2026-08-20，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；Tablet Dashboard/Review 也已移除随机统计和本地复习结果伪写，改用服务端 Stats/Review。H5 与微信命令行构建通过；微信开发者工具、浏览器及真机主流程尚未人工验收。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须额外审查条件编译、弱网/输入法、触控、feature flag、数据同步和真机验收边界。
 
@@ -112,7 +112,7 @@ Auralis-Mobile/src/
 `openapi-typescript@7.13.0`。从仓库根目录执行
 `scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
 `scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
-冻结类型已进入 Mobile 主路径；`check:r4-mobile` 禁止旧 Result、旧 `/ws/sync`、固定本机地址、数值旧游标和旧 AI 路由。Tablet 仍有页面级领域接入与真机验收缺口，不能把类型检查或构建通过写成前后端联调完成。
+冻结类型已进入 Mobile/Tablet 主路径；`check:r4-mobile` 禁止旧 Result、旧 `/ws/sync`、固定本机地址、数值旧游标、旧 AI 路由，以及 Tablet Dashboard/Review 的随机统计或绕过 Stats/Review API。Tablet 仍有真实服务与真机验收缺口，不能把类型检查或构建通过写成前后端联调完成。
 
 ### 端侧服务
 
@@ -144,7 +144,8 @@ Auralis-Mobile/src/
 - 侧栏指示器动画当前目标为 `120ms`，路由切换延迟为 `160ms`，脚本检查至少两帧余量。
 - workspace 默认文件面板，总结栏通过 CSS 折叠联动。
 - AI 浮窗通过 modal 插槽脱离 transform 堆叠上下文。
-- `HeatmapChart.vue` 支持 `weeks` 配置；Tablet Dashboard 当前传入 `weeks=5`，使用 7 列 × 5 行的正方形日历网格，并在 Hero Banner 使用统一的 `Primary Gradient`。
+- `HeatmapChart.vue` 支持 `weeks` 配置；Tablet Dashboard 当前传入 `weeks=5`，使用 7 列 × 5 行的正方形日历网格，并在 Hero Banner 使用统一的 `Primary Gradient`。统计格只渲染服务端 weekly 返回的实际日期，不再生成随机补位数据。
+- Tablet Review 从服务端 due 队列组卡，先成功提交不可变 ReviewEvent 再推进卡片；右滑只取消当前手势，不伪装撤销已提交事件。
 
 设计目标和页面布局见 [前端设计](../design/Frontend.md)。
 
