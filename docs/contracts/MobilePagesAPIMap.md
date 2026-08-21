@@ -37,7 +37,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。Login、AI Searc
 
 | 页面组 | 当前数据边界 | 剩余缺口 |
 | --- | --- | --- |
-| Dashboard / Subject Hall / Workspace | Subject、Block、Task、Asset 与 Sync Store；Dashboard 使用 `GET /api/stats/overview`、`GET /api/stats/weekly`；AI 使用当前 Conversation/SSE | 真实服务、横屏触控与错误态仍需验证 |
+| Dashboard / Stats / Subject Hall / Workspace | Subject、Block、Task、Asset 与 Sync Store；Dashboard/Stats 使用 `GET /api/stats/overview`、`GET /api/stats/weekly`；AI 使用当前 Conversation/SSE | 真实服务、横屏触控与错误态仍需验证 |
 | Pomodoro / Review | Task/Block Store；Review 使用 `GET /api/reviews/due`、`POST /api/reviews/events`，服务端事件成功后才推进卡片 | 前后台计时、弱网重试与真机手势仍需验证；右滑不撤销不可变事件 |
 | Profile / AI Search | Auth、脱敏 AI settings、Conversation/SSE | 会话历史 UI 与服务端列表/删除尚未完整收口 |
 | Handwriting | `tablet_notes`、NoteDocument、repository、handwriting engine | feature flag 默认关闭；不纳入云同步或当前发布阻断条件 |

@@ -16,7 +16,7 @@
               <view class="big-stats-row">
                 <view class="big-stat">
                   <view class="big-stat-val">{{ totalFocusHours }}</view>
-                  <view class="big-stat-label">累计专注</view>
+                  <view class="big-stat-label">本周专注(h)</view>
                 </view>
                 <view class="big-stat">
                   <view class="big-stat-val">{{ totalBlocks }}</view>
@@ -90,42 +90,33 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useBlockStore } from '@/store/useBlockStore'
-import { useTaskStore } from '@/store/useTaskStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import WeeklyChart from '@/components/WeeklyChart.vue'
 import SubjectPieChart from '@/components/SubjectPieChart.vue'
 import HeatmapChart from '@/components/HeatmapChart.vue'
+import { statsApi } from '@/api/statsApi'
 
 const blockStore = useBlockStore()
-const taskStore = useTaskStore()
 const subjectStore = useSubjectStore()
 
-// Computations from stores
-const totalFocusHours = computed(() => taskStore.totalFocusHours)
-const totalBlocks = computed(() => blockStore.recentBlocks.length)
-const completedTasks = computed(() => taskStore.completedCount)
-const streakDays = ref(12) // Static for now as we don't track historical logins locally
+const totalFocusHours = ref(0)
+const totalBlocks = ref(0)
+const completedTasks = ref(0)
+const activeTasks = ref(0)
+const streakDays = ref(0)
 
 const taskCompletionRate = computed(() => {
-  const total = taskStore.pendingCount + completedTasks.value
+  const total = activeTasks.value + completedTasks.value
   if (total === 0) return 0
   return Math.round((completedTasks.value / total) * 100)
 })
 
-// Weekly focus data (mocked for past days, but could use localDb in future)
-const weeklyData = ref([
-  { day: '一', minutes: 120 },
-  { day: '二', minutes: 90 },
-  { day: '三', minutes: 150 },
-  { day: '四', minutes: 60 },
-  { day: '五', minutes: 200 },
-  { day: '六', minutes: 45, isToday: true },
-  { day: '日', minutes: 0 }
-])
+const weeklyData = ref<{ day: string; minutes: number; isToday?: boolean }[]>([])
 
 const weeklyAverage = computed(() => {
+  if (weeklyData.value.length === 0) return 0
   const sum = weeklyData.value.reduce((acc, curr) => acc + curr.minutes, 0)
   return Math.round(sum / weeklyData.value.length)
 })
@@ -158,47 +149,43 @@ const subjectSegments = computed(() => {
 // Heatmap contribution data
 const heatmapData = ref<{ date: string; count: number }[]>([])
 
-const generateHeatmapData = () => {
-  const data = []
+const loadServerStats = async () => {
   const today = new Date()
-  
-  // Create last 180 days of counts (6 months)
-  for (let i = 179; i >= 0; i--) {
-    const day = new Date()
-    day.setDate(today.getDate() - i)
-    const dateStr = day.toISOString().split('T')[0]
-    
-    // For today, use actual block count + task count created today
-    // Since we don't have historical creation dates on local blocks easily, we'll mock the past
-    let count = 0
-    if (i === 0) {
-      // Very basic approximation of today's activity
-      count = completedTasks.value + (totalBlocks.value > 0 ? 2 : 0)
-    } else {
-      const dayOfWeek = day.getDay()
-      if (dayOfWeek === 0 || dayOfWeek === 6) {
-        count = Math.floor(Math.random() * 5)
-      } else {
-        count = Math.floor(Math.random() * 12)
-      }
-      if (Math.random() < 0.15) {
-        count = 0
-      }
-    }
-    
-    data.push({ date: dateStr, count })
-  }
-  
-  heatmapData.value = data
+  const fromDate = new Date(today)
+  fromDate.setUTCDate(today.getUTCDate() - 6)
+  const from = fromDate.toISOString().slice(0, 10)
+  const to = today.toISOString().slice(0, 10)
+  const [summary, weekly] = await Promise.all([statsApi.overview(), statsApi.weekly(from, to)])
+  const days = weekly.days || []
+  const reversed = [...days].reverse()
+  const firstInactiveDay = reversed.findIndex(day => !((day.reviewedCount || 0) + (day.studySeconds || 0)))
+  streakDays.value = firstInactiveDay < 0 ? days.length : firstInactiveDay
+  totalBlocks.value = Number(summary.activeKnowledgeBlocks || 0)
+  activeTasks.value = Number(summary.activeTasks || 0)
+  completedTasks.value = days.reduce((sum, day) => sum + Number(day.completedTaskCount || 0), 0)
+  totalFocusHours.value = Number((days.reduce((sum, day) => sum + Number(day.studySeconds || 0), 0) / 3600).toFixed(1))
+  weeklyData.value = days.map(day => ({
+    day: new Date(`${day.date}T00:00:00Z`).toLocaleDateString('zh-CN', { weekday: 'short' }).slice(-1),
+    minutes: Math.round(Number(day.studySeconds || 0) / 60),
+    isToday: day.date === to,
+  }))
+  heatmapData.value = days.map(day => ({
+    date: day.date || '',
+    count: Number(day.reviewedCount || 0) + Number(day.completedTaskCount || 0) + Number(day.createdKnowledgeCount || 0),
+  }))
 }
 
 onMounted(async () => {
-  await Promise.all([
-    blockStore.fetchBlocks(),
-    taskStore.fetchTasks(),
-    subjectStore.loadSubjects()
-  ])
-  generateHeatmapData()
+  try {
+    await Promise.all([
+      blockStore.fetchBlocks(),
+      subjectStore.loadSubjects(),
+      loadServerStats(),
+    ])
+  } catch (error) {
+    console.error('[TabletStats] Failed to load server statistics:', error)
+    uni.showToast({ title: '统计数据加载失败', icon: 'none' })
+  }
 })
 </script>
 

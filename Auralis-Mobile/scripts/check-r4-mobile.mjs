@@ -66,6 +66,14 @@ if (/Math\.random\s*\(/.test(tabletDashboard)) {
   violations.push('src/pages/tablet/dashboard/index.vue: tablet dashboard must not generate random statistics')
 }
 
+const tabletStats = sources.get('src/pages/tablet/stats/index.vue') || ''
+if (!tabletStats.includes("@/api/statsApi")) {
+  violations.push('src/pages/tablet/stats/index.vue: tablet stats must use the statistics API')
+}
+if (/Math\.random\s*\(/.test(tabletStats)) {
+  violations.push('src/pages/tablet/stats/index.vue: tablet stats must not generate random statistics')
+}
+
 if (violations.length > 0) {
   console.error('R4 Mobile static check failed:')
   for (const violation of violations) console.error(`- ${violation}`)

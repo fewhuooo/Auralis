@@ -209,6 +209,7 @@ Tablet 页面在微信构建中被排除：
 | handwriting | `/pages/tablet/handwriting/index` | 大屏手写；入口可被 feature flag 隐藏 |
 | pomodoro | `/pages/tablet/pomodoro/index` | 横屏专注 |
 | review | `/pages/tablet/review/index` | 大屏复习 |
+| stats | `/pages/tablet/stats/index` | 服务端统计与学习趋势 |
 | profile | `/pages/tablet/profile/index` | 设置与账号 |
 | ai-search | `/pages/tablet/ai-search/index` | 历史会话 + 全屏对话 |
 | login | `/pages/tablet/login/index` | 平板登录 |

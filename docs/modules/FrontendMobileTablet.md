@@ -12,7 +12,7 @@
 
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
 
-截至 2026-08-20，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；Tablet Dashboard/Review 也已移除随机统计和本地复习结果伪写，改用服务端 Stats/Review。H5 与微信命令行构建通过；微信开发者工具、浏览器及真机主流程尚未人工验收。
+截至 2026-08-21，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；Tablet Dashboard/Review/Stats 也已移除随机统计和本地复习结果伪写，改用服务端 Stats/Review。H5 与微信命令行构建通过；微信开发者工具、浏览器及真机主流程尚未人工验收。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须额外审查条件编译、弱网/输入法、触控、feature flag、数据同步和真机验收边界。
 
