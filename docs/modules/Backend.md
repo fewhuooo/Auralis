@@ -21,7 +21,7 @@
 | 模块 | 责任 | 阶段状态 |
 | --- | --- | --- |
 | identity | User、Password、JWT、RefreshSession、Device、Auth HTTP | 阶段 1 已实现，待 PostgreSQL/人工验收 |
-| subject | Subject 和默认未分类学科 | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
+| subject | Subject 及历史默认标记兼容 | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
 | source | Source、Asset、MinIO、解析任务 | 阶段 2B 已实现上传端口、Source CRUD/重摄入，待真实 MinIO/解析验收 |
 | knowledge | KnowledgeBlock | 阶段 2A 已实现，阶段 2B 已接入 Source 关联 |
 | task | Task | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
@@ -53,7 +53,7 @@
 - DELETE /api/auth/sessions/{sessionId}
 - DELETE /api/auth/sessions/others
 
-除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task，阶段 2B 已实现 Source、Asset、Relation，阶段 3 已实现 Sync，阶段 4 已实现 Review、Stats、Realtime，阶段 5 已实现 AI settings、Conversation、SSE message、Suggestions 和 ingestion/retrieval 后端基线；R1 已完成会话并发版本/消息序号、短事务请求保留、离线会话恢复键、核心列表 cursor 与 Sync 清理调度。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
+除 Auth 外，阶段 2A 已实现 Subject、KnowledgeBlock、Task，阶段 2B 已实现 Source、Asset、Relation，阶段 3 已实现 Sync，阶段 4 已实现 Review、Stats、Realtime，阶段 5 已实现 AI settings、Conversation、SSE message、Suggestions 和 ingestion/retrieval 后端基线；R1 已完成会话并发版本/消息序号、短事务请求保留、离线会话恢复键、核心列表 cursor 与 Sync 清理调度。新用户注册不自动创建“未分类”Subject，历史默认标记仅用于兼容读取且允许普通软删除。请求/响应、Problem Details 字段和版本/cursor 规则以 docs/contracts/API.md 为准；数据库目标以 docs/contracts/Database.md 为准；对象差异以 docs/contracts/ObjectModelMatrix.md 为准。
 
 Identity 的登录设备列表以活动 refresh session 为边界：同一用户/设备重复登录会替换旧活动会话，`GET /api/auth/sessions` 仅返回每台设备一条当前或最近活动记录，轮换、撤销和过期记录不作为设备条目展示。
 

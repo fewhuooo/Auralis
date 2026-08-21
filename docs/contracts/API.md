@@ -21,7 +21,7 @@
 | GET | /actuator/health/readiness | 阶段 0 就绪探针 |
 | GET | /v3/api-docs | OpenAPI 文档，骨架完成后可访问 |
 | GET | /swagger-ui/index.html | OpenAPI UI，骨架完成后可访问 |
-| POST | /api/auth/register | 注册用户、设备、refresh session 和受保护的默认 Subject，HTTP 201，并返回 Location |
+| POST | /api/auth/register | 注册用户、设备和 refresh session，不自动创建 Subject，HTTP 201，并返回 Location |
 | POST | /api/auth/login | 校验凭据并签发 token pair，HTTP 200 |
 | POST | /api/auth/refresh | rotation refresh session 并签发新 token pair，HTTP 200 |
 | POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
@@ -115,7 +115,7 @@
 ## 阶段 2A Subject、KnowledgeBlock、Task 已实现契约
 
 - 三类资源均使用 `POST` 创建、`GET` 列表/详情、`PUT` 更新、`DELETE` 软删除和 `POST /{id}/restore` 恢复；创建返回 `201 + Location`，删除返回 `204`。
-- 创建请求必须携带 `baseVersion=0`；更新、删除和恢复请求携带精确的 `baseVersion`。成功更新、删除、恢复均使服务器 `version` 增加 1；默认 Subject 不允许删除。
+- 创建请求必须携带 `baseVersion=0`；更新、删除和恢复请求携带精确的 `baseVersion`。成功更新、删除、恢复均使服务器 `version` 增加 1。注册后的 Subject 列表允许为空；历史遗留的 `defaultSubject=true` 记录也按普通 Subject 软删除，不再设置不可删除特权。
 - `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 和可选 `limit`（默认 100，范围 1–200），默认过滤已删除记录。Subject 按 `sortKey ASC, updatedAt DESC, id ASC` 稳定分页，其余三类按 `updatedAt DESC, id ASC` 稳定分页。
 - Subject 请求字段为 `name`、`description`、`iconKey`、`color`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。
 - KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity。

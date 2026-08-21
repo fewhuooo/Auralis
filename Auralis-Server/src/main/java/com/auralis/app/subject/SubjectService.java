@@ -19,8 +19,6 @@ import java.util.UUID;
 @Service
 public class SubjectService {
 
-    public static final String DEFAULT_SUBJECT_NAME = "未分类";
-
     private final SubjectRepository subjectRepository;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -109,9 +107,6 @@ public class SubjectService {
         SubjectEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        if (entity.isDefaultSubject()) {
-            throw new DomainException("MUTATION_REJECTED", "The default subject cannot be deleted");
-        }
         entity.softDelete();
         subjectRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -132,17 +127,6 @@ public class SubjectService {
         SubjectView result = view(subjectRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");
         return result;
-    }
-
-    @Transactional
-    public SubjectView ensureDefaultSubject(UUID userId) {
-        return subjectRepository.findByUserIdAndDefaultSubjectTrueAndDeletedAtIsNull(userId)
-                .map(this::view)
-                .orElseGet(() -> {
-                    SubjectEntity entity = new SubjectEntity(
-                            UUID.randomUUID(), userId, DEFAULT_SUBJECT_NAME, null, null, null, "0000", true);
-                    return view(subjectRepository.save(entity));
-                });
     }
 
     @Transactional(readOnly = true)

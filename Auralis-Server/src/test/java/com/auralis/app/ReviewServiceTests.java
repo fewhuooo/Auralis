@@ -11,6 +11,7 @@ import com.auralis.app.identity.IdentityService;
 import com.auralis.app.knowledge.KnowledgeBlockCommand;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectCommand;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -88,7 +89,8 @@ class ReviewServiceTests {
     private Fixture fixture(String suffix) {
         AuthResult owner = identityService.register(suffix + "@example.com", "correct horse battery staple",
                 suffix, new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
-        UUID subjectId = subjectService.list(owner.user().id()).getFirst().id();
+        UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Review Subject", null, null, null, "001")).id();
         UUID blockId = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
                 subjectId, null, "Review block", null, "body", java.util.List.of(), null)).id();
         return new Fixture(owner.user().id(), blockId);

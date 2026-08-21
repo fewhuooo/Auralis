@@ -39,6 +39,8 @@
 
 2026-08-21：补强 AI 后端运行日志：请求开始/校验/Provider 选择、env/BYOK 来源、Embedding/检索、Chat 流式、上游 HTTP JSON/SSE、成功/中断/失败均输出安全事件名、模型/host、状态、数量和耗时；不输出 API Key、Authorization、完整 prompt、模型回复或响应体。新增日志脱敏与失败阶段回归，AI 定向 26/26 通过。
 
+2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
+
 低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
 
 | 模块 | 当前状态 | 代码证据 | 命令证据 | 人工验收 | 下一步 |

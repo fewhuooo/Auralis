@@ -40,7 +40,7 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | users | 用户账号 | normalized_username 唯一，status 索引 |
 | refresh_sessions | refresh token rotation 链和设备会话 | token_hash 唯一；user、expiry、revoked 索引 |
 | devices | 离线设备和同步状态 | user_id + device_id 唯一 |
-| subjects | 用户学科和默认未分类学科 | 活跃记录按用户名称唯一（服务校验）；默认学科受保护 |
+| subjects | 用户学科；兼容历史默认标记 | 活跃记录按用户名称唯一（服务校验）；`is_default` 仅保留历史兼容语义，不阻止软删除 |
 | assets | MinIO 物理对象元数据 | user_id + object_key 唯一；status 索引 |
 | sources | 用户可见逻辑来源 | user、subject、status、updated 索引 |
 | knowledge_blocks | 知识正文 | user、subject、source、updated 索引 |
@@ -74,7 +74,7 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 
 Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。
 
-- `subjects` 保存 `name`、`description`、`icon_key`、`color`、`sort_key`、`is_default`；注册事务内创建受保护的“未分类”默认 Subject。名称唯一、默认 Subject 保护和恢复占用冲突由 SubjectService 校验。
+- `subjects` 保存 `name`、`description`、`icon_key`、`color`、`sort_key`、`is_default`；新用户注册不自动创建 Subject，列表可以为空。历史遗留的“未分类”记录仍保留 `is_default=true` 以兼容读取，但可按普通 Subject 软删除。名称唯一和恢复占用冲突由 SubjectService 校验。
 - `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
 - `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`cognitive_load`、`sort_key`、`color_override`；数据库 CHECK 与服务同时约束状态、认知负荷、非负时长和排期顺序。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
@@ -116,7 +116,7 @@ V5 同时将 change log、inbound mutation 的 owner 外键改为级联删除，
 
 ### Subject
 
-保存 name、description、iconKey、color、sortKey 和共同字段。注册用户时同事务创建受保护的未分类学科；Source、KnowledgeBlock、Task 必须归属 Subject。
+保存 name、description、iconKey、color、sortKey 和共同字段。新用户注册不自动创建学科，历史遗留的未分类学科可以软删除；Source、KnowledgeBlock、Task 必须归属 Subject。
 
 ### Asset 与 Source
 

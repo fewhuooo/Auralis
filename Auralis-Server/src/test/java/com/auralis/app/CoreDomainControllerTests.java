@@ -123,11 +123,12 @@ class CoreDomainControllerTests {
     void knowledgeBlocksAndTasksUseSubjectReferencesAndListEnvelopes() throws Exception {
         JsonNode registered = register("owner@example.com", "owner-device");
         String token = bearer(registered.path("tokens").path("accessToken").asText());
-        String subjectId = json(mockMvc.perform(get("/api/subjects")
-                        .header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items.length()", org.hamcrest.Matchers.is(1)))
-                .andReturn()).path("items").get(0).path("id").asText();
+        String subjectId = json(mockMvc.perform(post("/api/subjects")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"name\":\"Vectors\",\"sortKey\":\"001\"}"))
+                .andExpect(status().isCreated())
+                .andReturn()).path("id").asText();
 
         mockMvc.perform(post("/api/knowledge-blocks")
                         .header(HttpHeaders.AUTHORIZATION, token)

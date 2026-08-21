@@ -18,6 +18,8 @@ import com.auralis.app.source.internal.persistence.AssetEntity;
 import com.auralis.app.source.internal.persistence.AssetRepository;
 import com.auralis.app.source.internal.persistence.SourceEntity;
 import com.auralis.app.source.internal.persistence.SourceRepository;
+import com.auralis.app.subject.SubjectCommand;
+import com.auralis.app.subject.SubjectService;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -56,6 +58,9 @@ class SourceAssetRelationRepositoryTests {
     private SubjectRepository subjectRepository;
 
     @Autowired
+    private SubjectService subjectService;
+
+    @Autowired
     private RefreshSessionRepository refreshSessionRepository;
 
     @Autowired
@@ -81,10 +86,8 @@ class SourceAssetRelationRepositoryTests {
     void repositoriesRequireTheOwningUserForAssetSourceAndRelation() {
         var owner = register("owner");
         var other = register("other");
-        UUID subjectId = subjectRepository
-                .findByUserIdAndDefaultSubjectTrueAndDeletedAtIsNull(owner.user().id())
-                .orElseThrow()
-                .getId();
+        UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Owner Subject", null, null, null, "001")).id();
 
         AssetEntity asset = assetRepository.save(new AssetEntity(
                 UUID.randomUUID(), owner.user().id(), "users/" + owner.user().id() + "/assets/object",
@@ -106,10 +109,8 @@ class SourceAssetRelationRepositoryTests {
     @Test
     void activeSourceAndRelationQueriesExcludeTombstones() {
         var owner = register("tombstone");
-        UUID subjectId = subjectRepository
-                .findByUserIdAndDefaultSubjectTrueAndDeletedAtIsNull(owner.user().id())
-                .orElseThrow()
-                .getId();
+        UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Owner Subject", null, null, null, "001")).id();
         SourceEntity source = sourceRepository.save(new SourceEntity(
                 UUID.randomUUID(), owner.user().id(), SourceType.TEXT, subjectId, "Notes", null,
                 null, "text", null, SourceIngestionStatus.PENDING));

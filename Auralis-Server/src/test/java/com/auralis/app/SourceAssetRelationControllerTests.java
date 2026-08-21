@@ -94,10 +94,12 @@ class SourceAssetRelationControllerTests {
     void sourceAssetAndRelationControllersReturnDirectDtosAndListEnvelopes() throws Exception {
         JsonNode registered = register("owner@example.com", "owner-device");
         String token = bearer(registered.path("tokens").path("accessToken").asText());
-        String subjectId = json(mockMvc.perform(get("/api/subjects")
-                        .header(HttpHeaders.AUTHORIZATION, token))
-                .andExpect(status().isOk())
-                .andReturn()).path("items").get(0).path("id").asText();
+        String subjectId = json(mockMvc.perform(post("/api/subjects")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"name\":\"Source Subject\",\"sortKey\":\"001\"}"))
+                .andExpect(status().isCreated())
+                .andReturn()).path("id").asText();
 
         JsonNode intent = json(mockMvc.perform(post("/api/assets/upload-intents")
                         .header(HttpHeaders.AUTHORIZATION, token)

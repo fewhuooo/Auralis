@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 注册默认学科修复（2026-08-21）
+
+- 注册不再自动创建“未分类” Subject，新用户的 Subject 列表可以保持真实空状态。
+- 历史 `defaultSubject=true` 记录不再被删除规则特殊保护，PC SubjectHall 可通过普通删除接口软删除；核心领域与资源归属回归 7/7 通过。
+- 浏览器空状态、确认弹窗和真实服务删除仍需人工验收。
+
 ### AI 后端运行日志补强（2026-08-21）
 
 - 为 AI 请求增加 `AI_STREAM_*`、`AI_SETTINGS_RESOLVED`、`AI_EMBEDDING_*`、`AI_RETRIEVAL_SUCCESS` 和 `AI_PROVIDER_HTTP_*` 事件，覆盖请求保留、Provider/模型与 env/BYOK 来源、Embedding/检索、Chat SSE、上游状态、字节/行数、耗时和失败阶段。

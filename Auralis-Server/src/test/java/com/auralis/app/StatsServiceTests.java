@@ -6,6 +6,7 @@ import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.task.TaskCommand;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.task.TaskStatus;
@@ -57,7 +58,8 @@ class StatsServiceTests {
         AuthResult owner = identityService.register(
                 "stats-task-" + UUID.randomUUID(), "phase-three-password", "Stats Test",
                 new DeviceCommand("stats-device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
-        UUID subjectId = subjectService.list(owner.user().id()).getFirst().id();
+        UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Stats Subject", null, null, null, "001")).id();
         UUID taskId = taskService.create(owner.user().id(), new TaskCommand(
                 subjectId, "Complete me", null, TaskStatus.TODO, null, null, null, null, "001", null)).id();
         taskService.update(owner.user().id(), taskId, 0, new TaskCommand(

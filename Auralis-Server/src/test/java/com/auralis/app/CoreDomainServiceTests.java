@@ -12,6 +12,7 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.subject.SubjectView;
+import com.auralis.app.subject.internal.persistence.SubjectEntity;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.task.internal.persistence.TaskRepository;
@@ -72,15 +73,10 @@ class CoreDomainServiceTests {
     }
 
     @Test
-    void registrationCreatesAProtectedDefaultSubject() {
+    void registrationDoesNotCreateDefaultSubject() {
         var result = register("default");
 
-        var defaultSubject = subjectRepository
-                .findByUserIdAndDefaultSubjectTrueAndDeletedAtIsNull(result.user().id())
-                .orElseThrow();
-
-        assertThat(subjectService.get(result.user().id(), defaultSubject.getId()).defaultSubject()).isTrue();
-        assertThat(subjectService.list(result.user().id())).extracting(SubjectView::name).containsExactly("未分类");
+        assertThat(subjectService.list(result.user().id())).isEmpty();
     }
 
     @Test
@@ -109,26 +105,25 @@ class CoreDomainServiceTests {
     void childResourcesCannotReferenceAnotherUsersSubject() {
         var owner = register("owner");
         var other = register("other");
-        var otherSubject = subjectRepository
-                .findByUserIdAndDefaultSubjectTrueAndDeletedAtIsNull(other.user().id())
-                .orElseThrow();
+        SubjectView otherSubject = subjectService.create(other.user().id(), new SubjectCommand(
+                "Other Subject", null, null, null, "001"));
 
         assertThatThrownBy(() -> knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
-                otherSubject.getId(), null, "Block", null, "Content", List.of("tag"), null)))
+                otherSubject.id(), null, "Block", null, "Content", List.of("tag"), null)))
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("RESOURCE_NOT_FOUND");
     }
 
     @Test
-    void defaultSubjectCannotBeDeleted() {
+    void legacyDefaultSubjectCanBeDeleted() {
         var result = register("protected");
-        SubjectView defaultSubject = subjectService.list(result.user().id()).getFirst();
+        SubjectView defaultSubject = subjectService.get(result.user().id(), subjectRepository.save(new SubjectEntity(
+                java.util.UUID.randomUUID(), result.user().id(), "未分类", null, null, null, "0000", true)).getId());
 
-        assertThatThrownBy(() -> subjectService.delete(result.user().id(), defaultSubject.id(), defaultSubject.version()))
-                .isInstanceOf(DomainException.class)
-                .extracting(error -> ((DomainException) error).code())
-                .isEqualTo("MUTATION_REJECTED");
+        subjectService.delete(result.user().id(), defaultSubject.id(), defaultSubject.version());
+
+        assertThat(subjectService.list(result.user().id())).isEmpty();
     }
 
     @Test

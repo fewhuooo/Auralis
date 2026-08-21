@@ -8,7 +8,6 @@ import com.auralis.app.identity.internal.persistence.UserEntity;
 import com.auralis.app.identity.internal.persistence.UserRepository;
 import com.auralis.app.identity.internal.security.RefreshTokenHasher;
 import com.auralis.app.identity.internal.security.TokenService;
-import com.auralis.app.subject.SubjectService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,8 +34,6 @@ public class IdentityService {
     private final TokenService tokenService;
     private final RefreshTokenHasher refreshTokenHasher;
     private final Clock clock;
-    private final SubjectService subjectService;
-
     public IdentityService(
             UserRepository userRepository,
             DeviceRepository deviceRepository,
@@ -44,8 +41,7 @@ public class IdentityService {
             PasswordEncoder passwordEncoder,
             TokenService tokenService,
             RefreshTokenHasher refreshTokenHasher,
-            Clock clock,
-            SubjectService subjectService) {
+            Clock clock) {
         this.userRepository = userRepository;
         this.deviceRepository = deviceRepository;
         this.refreshSessionRepository = refreshSessionRepository;
@@ -53,7 +49,6 @@ public class IdentityService {
         this.tokenService = tokenService;
         this.refreshTokenHasher = refreshTokenHasher;
         this.clock = clock;
-        this.subjectService = subjectService;
     }
 
     @Transactional
@@ -70,7 +65,6 @@ public class IdentityService {
                 displayName,
                 null,
                 UserStatus.ACTIVE));
-        subjectService.ensureDefaultSubject(user.getId());
         return issueForUser(user, device);
     }
 
