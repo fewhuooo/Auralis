@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.util.List;
 
 public final class PinnedSslSocketFactory extends SSLSocketFactory {
@@ -57,7 +58,10 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
 
     @Override
     public Socket createSocket() throws IOException {
-        throw new IOException("Pinned TLS socket requires a provider hostname");
+        if (addresses.isEmpty()) {
+            throw new IOException("Pinned TLS target has no resolved addresses");
+        }
+        return new PinnedConnectSocket(addresses.get(0), port, timeoutMillis);
     }
 
     @Override
@@ -91,5 +95,34 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
             throw lastException;
         }
         throw new IOException("Pinned TLS target has no resolved addresses");
+    }
+
+    private static final class PinnedConnectSocket extends Socket {
+
+        private final InetAddress address;
+        private final int port;
+        private final int timeoutMillis;
+
+        private PinnedConnectSocket(InetAddress address, int port, int timeoutMillis) {
+            this.address = address;
+            this.port = port;
+            this.timeoutMillis = timeoutMillis;
+        }
+
+        @Override
+        public void connect(SocketAddress endpoint) throws IOException {
+            connect(endpoint, timeoutMillis);
+        }
+
+        @Override
+        public void connect(SocketAddress endpoint, int requestedTimeoutMillis) throws IOException {
+            if (!(endpoint instanceof InetSocketAddress)) {
+                throw new IOException("Pinned TLS target requires an internet socket address");
+            }
+            int effectiveTimeout = requestedTimeoutMillis <= 0
+                    ? timeoutMillis
+                    : Math.min(requestedTimeoutMillis, timeoutMillis);
+            super.connect(new InetSocketAddress(address, port), effectiveTimeout);
+        }
     }
 }
