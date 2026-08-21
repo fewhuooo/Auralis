@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | Login | `POST /api/auth/register`、`login`、`refresh`，`GET /api/auth/me` | 注册密码前置校验至少 12 字符；服务端 fieldErrors 仍只显示通用 toast，尚未逐输入框映射 |
 | Home | Task/Subject/Block Store → Sync push/pull/snapshot | 离线副本优先；服务端统计不由首页本地派生值冒充 |
-| Pomodoro | Task Store → Sync | 后台、锁屏、跨日时间语义仍需真机 |
+| Pomodoro | Task Store → Sync；任务选择器只展示真实 pendingTasks，完成专注写入今日 Store 计数 | 后台、锁屏、跨日时间语义仍需真机 |
 | AI Search | `POST /api/ai/conversations`、`POST /api/ai/messages/stream` | SSE 支持 chunk 边界、401 单次重试和稳定 clientRequestId；真实 Provider/断流未验收 |
 | Stats | `GET /api/stats/overview`、`GET /api/stats/weekly` | 已移除随机演示数据；学科分布无对应统计契约时保持空，不伪造 |
 | Timeline | Task Store → Sync | 拖拽保留 sortKey/startTime 映射；真实冲突 UI 待联调 |
@@ -38,7 +38,7 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。Login、AI Searc
 | 页面组 | 当前数据边界 | 剩余缺口 |
 | --- | --- | --- |
 | Dashboard / Stats / Subject Hall / Workspace | Subject、Block、Task、Asset 与 Sync Store；Dashboard/Stats 使用 `GET /api/stats/overview`、`GET /api/stats/weekly`；AI 使用当前 Conversation/SSE | 真实服务、横屏触控与错误态仍需验证 |
-| Pomodoro / Review | Task/Block Store；Review 使用 `GET /api/reviews/due`、`POST /api/reviews/events`，服务端事件成功后才推进卡片 | 前后台计时、弱网重试与真机手势仍需验证；右滑不撤销不可变事件 |
+| Pomodoro / Review | Task/Block Store；任务选择器无任务时保持空态；Review 使用 `GET /api/reviews/due`、`POST /api/reviews/events`，服务端事件成功后才推进卡片 | 前后台计时、弱网重试与真机手势仍需验证；右滑不撤销不可变事件 |
 | Profile / AI Search | Auth、脱敏 AI settings、Conversation/SSE | 会话历史 UI 与服务端列表/删除尚未完整收口 |
 | Handwriting | `tablet_notes`、NoteDocument、repository、handwriting engine | feature flag 默认关闭；不纳入云同步或当前发布阻断条件 |
 

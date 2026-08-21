@@ -52,54 +52,8 @@ const emit = defineEmits(['update:visible', 'select'])
 
 const taskStore = useTaskStore()
 
-const mockTasks: Task[] = [
-  {
-    id: 'mock-1',
-    name: '高等数学 - 积分计算专项复习',
-    subject: '数学',
-    color: '#7D9372',
-    duration: 45,
-    load: 'medium',
-    loadText: '中等',
-    status: 'pending'
-  },
-  {
-    id: 'mock-2',
-    name: '英语六级 - 真题阅读与听力训练',
-    subject: '英语',
-    color: '#D4B886',
-    duration: 60,
-    load: 'high',
-    loadText: '重度',
-    status: 'pending'
-  },
-  {
-    id: 'mock-3',
-    name: '数据结构与算法 - 图的遍历习题',
-    subject: '计算机',
-    color: '#8CA6BF',
-    duration: 30,
-    load: 'medium',
-    loadText: '中等',
-    status: 'pending'
-  },
-  {
-    id: 'mock-4',
-    name: '编译原理 - 词法分析器代码精读',
-    subject: '软件工程',
-    color: '#C28C8C',
-    duration: 40,
-    load: 'low',
-    loadText: '轻度',
-    status: 'pending'
-  }
-]
-
 const displayTasks = computed(() => {
-  if (taskStore.pendingTasks && taskStore.pendingTasks.length > 0) {
-    return taskStore.pendingTasks
-  }
-  return mockTasks
+  return taskStore.pendingTasks || []
 })
 
 const close = () => {

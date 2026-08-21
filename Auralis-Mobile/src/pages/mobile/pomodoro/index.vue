@@ -149,7 +149,7 @@ const ringColor = computed(() => {
   return isBreakPhase.value ? 'var(--color-pomodoro-break)' : 'var(--color-pomodoro)'
 })
 
-const completedToday = ref(3) // Mock
+const completedToday = computed(() => taskStore.todayPomodoros)
 
 const toggleTimer = () => {
   if (isRunning.value) {
@@ -192,7 +192,7 @@ const handlePhaseComplete = () => {
     // Focus -> Break
     currentPomodoro.value++
     isBreakPhase.value = true
-    completedToday.value++
+    taskStore.incrementPomodoro()
   } else {
     // Break -> Focus
     if (currentPomodoro.value >= 4) {

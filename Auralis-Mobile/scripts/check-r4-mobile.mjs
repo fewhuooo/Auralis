@@ -74,6 +74,16 @@ if (/Math\.random\s*\(/.test(tabletStats)) {
   violations.push('src/pages/tablet/stats/index.vue: tablet stats must not generate random statistics')
 }
 
+const taskSelectSheet = await readFile(join(root, 'src/components/TaskSelectSheet.vue'), 'utf8')
+if (/mockTasks|mock-\d+/.test(taskSelectSheet)) {
+  violations.push('src/components/TaskSelectSheet.vue: task picker must not inject mock tasks')
+}
+
+const mobilePomodoro = sources.get('src/pages/mobile/pomodoro/index.vue') || ''
+if (/completedToday\s*=\s*ref\(3\)/.test(mobilePomodoro)) {
+  violations.push('src/pages/mobile/pomodoro/index.vue: pomodoro count must come from the task store')
+}
+
 if (violations.length > 0) {
   console.error('R4 Mobile static check failed:')
   for (const violation of violations) console.error(`- ${violation}`)
