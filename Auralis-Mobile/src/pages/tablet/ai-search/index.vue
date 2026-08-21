@@ -260,6 +260,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { storeToRefs } from 'pinia'
 import { useBlockStore } from '@/store/useBlockStore'
 import { chatWithAI } from '@/api/aiClient'
+import { aiApi, type ConversationView } from '@/api/aiApi'
 import { uuidv7 } from '@/utils/uuid'
 import LineIcon from '@/components/LineIcon.vue'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
@@ -274,47 +275,45 @@ interface HistorySession {
   id: string
   title: string
   time: string
+  version: number
   messages: { role: 'user' | 'assistant', content: string }[]
 }
 
-const historySessions = ref<HistorySession[]>([
-  {
-    id: '1',
-    title: '矩阵乘法与特征值深度推演',
-    time: '14:20',
-    messages: [
-      { role: 'user', content: '帮我总结今天上的《线性代数》矩阵乘法与特征值核心要点' },
-      { role: 'assistant', content: '好的，为你精炼《线性代数》核心知识要点：\n\n**1. 矩阵乘法的几何意义**\n矩阵乘法本质上是对空间轴的复合线性变换（缩放、旋转、切变）。满足结合律，但不满足交换律 ($AB \\neq BA$)。\n\n**2. 特征值与特征向量 ($Av = \\lambda v$)**\n当矩阵 $A$ 作用在特征向量 $v$ 上时，方向不发生改变，仅进行长度为 $\\lambda$ 倍的拉伸或压缩。\n\n**3. 复习建议**\n重点掌握特征多项式 $\\det(A - \\lambda I) = 0$ 的求解步骤。' }
-    ]
-  },
-  {
-    id: '2',
-    title: 'Transformer 自注意力机制解析',
-    time: '昨天',
-    messages: [
-      { role: 'user', content: '解释一下什么是 Transformer 架构中的自注意力机制 (Self-Attention)' },
-      { role: 'assistant', content: '**自注意力机制 (Self-Attention)** 是 Transformer 的核心灵魂，它的核心思想是：**在处理序列中每一个 Token 时，同时综合计算它与序列中所有其他 Token 的相关度权重。**\n\n**核心计算公式**：\n$$\\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V$$\n\n其中 Q (Query)、K (Key)、V (Value) 均由输入特征乘以不同权重矩阵投影得来。' }
-    ]
-  },
-  {
-    id: '3',
-    title: 'Python 快速排序算法实现',
-    time: '3天前',
-    messages: [
-      { role: 'user', content: '写一段 Python 代码实现快速排序算法，并加详细注释' },
-      { role: 'assistant', content: '以下是采用分治法 (Divide and Conquer) 实现的 Python 快速排序简洁实现：\n\n```python\ndef quick_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    pivot = arr[len(arr) // 2]  # 选择中间元素作为基准\n    left = [x for x in arr if x < pivot]     # 小于基准\n    middle = [x for x in arr if x == pivot]  # 等于基准\n    right = [x for x in arr if x > pivot]    # 大于基准\n    return quick_sort(left) + middle + quick_sort(right)\n```' }
-    ]
-  },
-  {
-    id: '4',
-    title: 'Feynman 学习法复习提纲',
-    time: '上周',
-    messages: [
-      { role: 'user', content: '如何用 Feynman 学习法高效复习期末考试？' },
-      { role: 'assistant', content: '**费曼学习法 (Feynman Technique)** 的核心理念是：**以教代学，用极度通俗的语言向小白解释复杂概念。**\n\n**期末四大执行步骤**：\n1. **确立目标**：在一张白纸顶端写下你要攻克的考点名称。\n2. **模拟教学**：假想你在给一个初学者讲授这个概念，尽量不用专业黑话。\n3. **查漏补缺**：遇到卡壳或解释不清的地方，立即翻开教材和笔记回炉重造。\n4. **简化提炼**：用类比和精简的口语重新组织语言，形成最终记忆卡片！' }
-    ]
+const historySessions = ref<HistorySession[]>([])
+
+const formatConversationTime = (value?: string) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+const toHistorySession = (conversation: ConversationView): HistorySession | null => {
+  if (!conversation.id) return null
+  return {
+    id: conversation.id,
+    title: conversation.title || '未命名对话',
+    time: formatConversationTime(conversation.updatedAt || conversation.createdAt),
+    messages: (conversation.messages || []).flatMap((message) => {
+      const role = message.role === 'USER' ? 'user' : message.role === 'ASSISTANT' ? 'assistant' : null
+      return role && message.content ? [{ role, content: message.content }] : []
+    }),
+    version: Number(conversation.version || 0),
   }
-])
+}
+
+const loadHistory = async () => {
+  try {
+    const conversations = await aiApi.listConversations()
+    historySessions.value = conversations
+      .map(toHistorySession)
+      .filter((session): session is HistorySession => Boolean(session))
+      .sort((a, b) => b.time.localeCompare(a.time))
+  } catch (error) {
+    console.error('[TabletAI] Failed to load conversation history:', error)
+    uni.showToast({ title: '会话历史加载失败', icon: 'none' })
+  }
+}
 
 const currentSessionId = ref<string>('')
 const query = ref('')
@@ -344,6 +343,7 @@ const presetPrompts = [
 ]
 
 onLoad(() => {
+  void loadHistory()
   uni.onKeyboardHeightChange((res) => {
     keyboardHeight.value = res.height
     if (res.height > 0) isActionOpen.value = false
@@ -377,13 +377,20 @@ const deleteSession = (id: string) => {
     title: '删除会话',
     content: '确定要删除该历史会话记录吗？',
     confirmColor: '#E65353',
-    success: (res) => {
+    success: async (res) => {
       if (res.confirm) {
-        historySessions.value = historySessions.value.filter(s => s.id !== id)
-        if (currentSessionId.value === id) {
-          startNewChat()
+        const session = historySessions.value.find(item => item.id === id)
+        try {
+          await aiApi.deleteConversation(id, session?.version || 0)
+          historySessions.value = historySessions.value.filter(s => s.id !== id)
+          if (currentSessionId.value === id) {
+            startNewChat()
+          }
+          uni.showToast({ title: '已删除', icon: 'success' })
+        } catch (error) {
+          console.error('[TabletAI] Failed to delete conversation:', error)
+          uni.showToast({ title: '会话删除失败', icon: 'none' })
         }
-        uni.showToast({ title: '已删除', icon: 'none' })
       }
     }
   })
@@ -401,23 +408,15 @@ const onActionTap = (index: number) => {
     uni.chooseImage({
       count: 1,
       success: (res) => {
-        messages.value.push({ role: 'user', content: `[图片附件: ${res.tempFilePaths[0].slice(-10)}] 请帮我解析这张图片中的题目和知识点。` })
-        scrollToBottom()
-        isAiTyping.value = true
-        setTimeout(() => {
-          isAiTyping.value = false
-          messages.value.push({ role: 'assistant', content: '已成功识别图片！\n\n**核心考点分析**：考察分部积分法。\n\n**解题步骤**：设 $u = \\ln x$, $dv = x dx$, 得 $\\frac{1}{2}x^2\\ln x - \\frac{1}{4}x^2 + C$。' })
-          scrollToBottom()
-        }, 1500)
+        void res
+        uni.showToast({ title: '图片解析需先接入资料上传链路', icon: 'none' })
       }
     })
   } else if (index === 2) {
     if (!recentBlocks.value.length) { uni.showToast({ title: '暂无知识块', icon: 'none' }); return }
     const block = recentBlocks.value[0]
-    messages.value.push({ role: 'user', content: `关于知识块【${block.title}】，请深入解释。` })
-    scrollToBottom()
-    isAiTyping.value = true
-    setTimeout(() => { isAiTyping.value = false; messages.value.push({ role: 'assistant', content: `针对知识块**《${block.title}》**的深度拓展：理论溯源与科研建议...` }); scrollToBottom() }, 1200)
+    query.value = `关于知识块【${block.title}】，请深入解释。`
+    void handleSearch()
   }
 }
 
@@ -452,29 +451,16 @@ const handleSearch = async () => {
   query.value = ''
   scrollToBottom()
 
-  if (!currentSessionId.value) {
-    const newId = uuidv7()
-    currentSessionId.value = newId
-    const newTitle = text.length > 12 ? text.slice(0, 12) + '...' : text
-    historySessions.value.unshift({
-      id: newId,
-      title: newTitle,
-      time: '刚刚',
-      messages: messages.value
-    })
-  } else {
-    const cur = historySessions.value.find(s => s.id === currentSessionId.value)
-    if (cur) {
-      cur.messages = messages.value
-      cur.time = '刚刚'
-    }
-  }
-
   isAiTyping.value = true
   messages.value.push({ role: 'assistant', content: '' })
   const aiMsgIndex = messages.value.length - 1
   try {
-    await chatWithAI(text, [], (delta) => { messages.value[aiMsgIndex].content += delta; scrollToBottom() })
+    await chatWithAI(text, [], (delta) => { messages.value[aiMsgIndex].content += delta; scrollToBottom() }, currentSessionId.value || undefined)
+    await loadHistory()
+    if (!currentSessionId.value) {
+      const latest = historySessions.value[0]
+      if (latest) currentSessionId.value = latest.id
+    }
   } catch (err) { messages.value[aiMsgIndex].content = '网络异常，请重试。' }
   finally { isAiTyping.value = false; scrollToBottom() }
 }

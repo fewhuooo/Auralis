@@ -102,7 +102,7 @@ Auralis-Mobile/src/
 - `api/request.ts`、`requestCore.ts`：环境基址、Bearer、Problem Details 和共享单次 refresh。
 - `api/aiClient.ts`、`aiApi.ts`、`sse.ts`：服务端 BYOK 摘要、Conversation 和 `/api/ai/messages/stream`。
 - `api/sync.ts`、`useSyncApi.ts`、`realtimeApi.ts`：不透明 cursor、snapshot reset 和 `/ws/events` 一次性 ticket。
-- `api/assetApi.ts`、`reviewApi.ts`、`statsApi.ts`：预签名上传、复习事件和强类型统计。
+- `api/assetApi.ts`、`reviewApi.ts`、`statsApi.ts`、`aiApi.ts`：预签名上传、复习事件、强类型统计和 Conversation 列表/详情/删除。
 - `api/device.ts`：设备相关能力。
 - `api/e2ee.ts`：加密辅助。
 - `api/generated/schema.ts`：从冻结 OpenAPI 产物生成的 DTO、路径、参数和响应类型（禁止手改）。

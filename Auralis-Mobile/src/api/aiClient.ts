@@ -169,10 +169,11 @@ export async function chatWithAI(
   text: string,
   _history: unknown[],
   onMessage: (content: string) => void,
+  conversationId?: string,
 ): Promise<void> {
-  const conversationId = await conversationForCurrentUser(text.slice(0, 60))
+  const activeConversationId = conversationId || await conversationForCurrentUser(text.slice(0, 60))
   await streamMessage({
-    conversationId,
+    conversationId: activeConversationId,
     content: text,
     retrievalEnabled: true,
     topK: 8,

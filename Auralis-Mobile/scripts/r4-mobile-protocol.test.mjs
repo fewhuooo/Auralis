@@ -13,6 +13,7 @@ import {
 import { getOrCreateDeviceIdentity, isUuid } from '../src/api/deviceIdentity.ts'
 import { createAuthApi } from '../src/api/useAuthApi.ts'
 import { createRealtimeApi } from '../src/api/realtimeApi.ts'
+import { createAiApi } from '../src/api/aiApi.ts'
 import { createSyncApi } from '../src/api/useSyncApi.ts'
 import { createRequestExecutor } from '../src/api/requestCore.ts'
 import { createLocalDataScope } from '../src/services/localDataScope.ts'
@@ -152,6 +153,27 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
     'post /api/auth/login',
     'post /api/auth/logout',
     'post /api/realtime/ticket',
+  ])
+})
+
+test('AI conversation wrapper uses list/detail/delete routes with versioned deletion', async () => {
+  const calls = []
+  const client = {
+    async request(path, method, options) {
+      calls.push({ path, method, options })
+      return method === 'get' && path === '/api/ai/conversations'
+        ? [{ id: 'conversation-1', version: 2 }]
+        : { id: 'conversation-1', version: 2 }
+    },
+  }
+  const ai = createAiApi(client)
+  await ai.listConversations()
+  await ai.getConversation('conversation-1')
+  await ai.deleteConversation('conversation-1', 2)
+  assert.deepEqual(calls, [
+    { path: '/api/ai/conversations', method: 'get', options: undefined },
+    { path: '/api/ai/conversations/{conversationId}', method: 'get', options: { pathParams: { conversationId: 'conversation-1' } } },
+    { path: '/api/ai/conversations/{conversationId}', method: 'delete', options: { pathParams: { conversationId: 'conversation-1' }, query: { baseVersion: 2 } } },
   ])
 })
 

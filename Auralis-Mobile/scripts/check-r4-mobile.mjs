@@ -89,6 +89,14 @@ if (/joinedDays\s*=\s*ref\(12\)/.test(mobileSettings)) {
   violations.push('src/pages/mobile/settings/index.vue: joined days must not use a fixed demo value')
 }
 
+const tabletAi = sources.get('src/pages/tablet/ai-search/index.vue') || ''
+if (!tabletAi.includes("@/api/aiApi")) {
+  violations.push('src/pages/tablet/ai-search/index.vue: AI history must use the conversation API')
+}
+if (/historySessions\s*=\s*ref<HistorySession\[\]>\(\[\s*\{/.test(tabletAi)) {
+  violations.push('src/pages/tablet/ai-search/index.vue: AI history must not contain hardcoded sessions')
+}
+
 if (violations.length > 0) {
   console.error('R4 Mobile static check failed:')
   for (const violation of violations) console.error(`- ${violation}`)
