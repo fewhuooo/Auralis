@@ -113,6 +113,12 @@ if (/historySessions\s*=\s*ref<HistorySession\[\]>\(\[\s*\{/.test(tabletAi)) {
   violations.push('src/pages/tablet/ai-search/index.vue: AI history must not contain hardcoded sessions')
 }
 
+const tabletWorkspace = sources.get('src/pages/tablet/workspace/index.vue') || ''
+if (!tabletWorkspace.includes('chatWithAI')
+  || /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/.test(tabletWorkspace)) {
+  violations.push('src/pages/tablet/workspace/index.vue: summary must use the AI stream, not fixed demo text')
+}
+
 if (violations.length > 0) {
   console.error('R4 Mobile static check failed:')
   for (const violation of violations) console.error(`- ${violation}`)

@@ -1693,15 +1693,19 @@ const generateAiSummary = async () => {
   const targetName = activeFileId.value ? (selectedFile.value?.name || '当前材料') : (activeSubject.value?.name || '当前学科')
   uni.showLoading({ title: 'AI 智能提炼中...' })
   try {
-    await new Promise(r => setTimeout(r, 1200))
-    if (!activeFileId.value) {
-      aiSummaryMap.value[key] = `《${targetName}》全科知识架构概览与核心体系要点：\n\n1. 基础认知层：深度解析核心概念定义与基础公理，构建完整学科思维脑图架构。\n2. 逻辑进阶层：掌握关键公式定理推导逻辑与典型解错模式，梳理跨章节联动关系。\n3. 重点难点分析：精炼高频易混淆考点与典型真题解构模型，建议配合复习卡片进行巩固。`
-    } else {
-      aiSummaryMap.value[key] = `《${targetName}》重点导读与精炼要点总结：\n\n1. 核心论点与概要：精准提炼本篇资料中心思想、基础定义与关键公式结论。\n2. 重难点考向剖析：针对重点段落与图表深入解析，提炼典型问题解决模型。\n3. 延伸学习建议：建议结合左侧大纲结构精读具体章节，并可通过「AI 伴读」深入解惑。`
-    }
-    uni.hideLoading()
+    let summary = ''
+    const scope = activeFileId.value ? `当前材料《${targetName}》` : `当前学科《${targetName}》`
+    const prompt = `请基于当前用户已授权的资料检索结果，为${scope}生成简洁、可核验的学习提纲。只返回正文，不要声称读取了不存在的内容；如果没有足够资料，请明确说明资料不足。`
+    await chatWithAI(prompt, [], (chunk) => {
+      summary += chunk
+      aiSummaryMap.value[key] = summary
+    })
+    if (!summary.trim()) throw new Error('AI 未返回总结内容')
     uni.showToast({ title: '总结提纲已生成', icon: 'success' })
-  } catch {
+  } catch (error: any) {
+    delete aiSummaryMap.value[key]
+    uni.showToast({ title: error?.message || '总结生成失败', icon: 'none' })
+  } finally {
     uni.hideLoading()
   }
 }

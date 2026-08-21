@@ -244,6 +244,12 @@ test('mobile handwriting does not fabricate OCR or knowledge extraction', async 
   assert.match(source, /识别服务尚未接通/)
 })
 
+test('tablet workspace summary uses the AI stream instead of fixed demo text', async () => {
+  const source = await readFile(new URL('../src/pages/tablet/workspace/index.vue', import.meta.url), 'utf8')
+  assert.match(source, /chatWithAI/)
+  assert.doesNotMatch(source, /new Promise\(r\s*=>\s*setTimeout\(r|全科知识架构概览与核心体系要点|重点导读与精炼要点总结/)
+})
+
 test('SSE decoder preserves event boundaries across transport chunks', () => {
   const events = []
   const decoder = createSseDecoder((event) => events.push(event))

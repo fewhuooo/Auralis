@@ -14,15 +14,16 @@
 
 - Mobile 的 Auth、直接 DTO/Problem Details、共享 refresh、Sync opaque cursor/snapshot、Realtime ticket、AI SSE、Review、Stats 和 Asset upload-intent/PUT/complete 已切换到冻结 OpenAPI；生产代码不再使用固定本机地址、旧 `/ws/sync`、旧数值游标或旧 AI 路由。
 - H5 与原生端按 userId/deviceId 新建独立本地 namespace；用户明确授权后，旧全局 `h5_db_*` 与 `_doc/auralis.db` 业务表在认证会话建立时一次性清除。同步冲突保留 pending mutation，手写笔记继续受 feature flag 控制且不进入云同步。
-- Pinia 固定为 2.1.7 并与 Vue 3.4.21 对齐；三个 Tablet 逻辑脚本进入 `test:tablet`。`check:r4-mobile` 扫描 62 个生产文件、协议测试 19/19、Tablet 测试、type-check、H5 build 和微信 build 通过；真实 Server/MinIO/Provider、微信合法域名、开发者工具、双设备和真机未验收。
+- Pinia 固定为 2.1.7 并与 Vue 3.4.21 对齐；三个 Tablet 逻辑脚本进入 `test:tablet`。`check:r4-mobile` 扫描 62 个生产文件、协议测试 20/20、Tablet 测试、type-check、H5 build 和微信 build 通过；真实 Server/MinIO/Provider、微信合法域名、开发者工具、双设备和真机未验收。
 - Tablet Dashboard 改用服务端 overview/weekly 统计并移除随机热力图和虚构学科兜底；Tablet Review 改用 due/event 契约，只有不可变事件保存成功才推进卡片，右滑仅取消手势。静态门禁新增对应回归断言，H5 与微信构建重新通过。
 - Tablet 独立 Stats 页面同步改用 overview/weekly 统计，移除静态连续学习值、随机周数据和 180 天伪热力图；页面映射、状态和 R4-07 执行记录已同步更新。
 - 共享任务选择器不再注入 mock tasks；Mobile Pomodoro 完成专注时改为调用 Task Store 今日计数，空任务和完成反馈均来自真实端侧状态。
 - Mobile Settings 移除固定“已加入 12 天”演示值；User DTO 未提供注册时间时显示中性跨端同步说明。
 - Mobile Home 移除空任务时注入的 `demo-*` 日程，Profile 统计改用真实 Task/Block Store，并在无注册时间字段时显示中性账户元信息。
 - Mobile 手写页移除 Mock 笔迹覆盖和伪 OCR/知识抽取成功流程；当前保留本地画布并提示识别服务未接通。
+- Tablet Workspace 总结移除固定演示文案和延时伪造，改用 `chatWithAI` 真实 SSE 流；AI 失败时保持空态并提示错误。
 - Tablet AI 历史会话改用 Conversation GET/DELETE，消息从服务端 DTO 恢复，删除携带版本；移除硬编码历史和图片识别伪结果，图片入口在上传链路未接通前明确提示。
-- Mobile Pomodoro 今日计数改用 userId/deviceId 本地 namespace key，不再读取跨账号共享的全局 `pomodoro_counts`；新增协议回归断言，`test:r4-mobile` 通过 19/19。
+- Mobile Pomodoro 今日计数改用 userId/deviceId 本地 namespace key，不再读取跨账号共享的全局 `pomodoro_counts`；新增协议回归断言，`test:r4-mobile` 通过 20/20。
 - Tablet 新对话在首条消息前显式创建服务端 Conversation，并将真实 ID 传入 SSE，避免复用用户级缓存会话。
 
 ### R1/R4：AI 可靠性与离线恢复（2026-08-20）
