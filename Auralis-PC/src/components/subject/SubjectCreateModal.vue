@@ -107,7 +107,8 @@ const form = ref({
   name: '',
   description: '',
   icon: 'book',
-  color: '#7D9372'
+  color: '#7D9372',
+  version: 0
 })
 
 onMounted(() => {
@@ -118,7 +119,8 @@ onMounted(() => {
       name: props.subjectData.name || '',
       description: props.subjectData.description || '',
       icon: props.subjectData.icon || 'book',
-      color: props.subjectData.color || '#7D9372'
+      color: props.subjectData.color || '#7D9372',
+      version: props.subjectData.version || 0
     }
   }
 })

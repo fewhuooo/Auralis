@@ -12,6 +12,20 @@ import {
   mapSubjectView,
   nextPageCursor,
 } from '../src/services/domainMappers.ts'
+import { readFile } from 'node:fs/promises'
+
+test('SubjectCreateModal preserves subject version for edit operations', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const modal = await readFile(new URL('components/subject/SubjectCreateModal.vue', root), 'utf8')
+
+  // The concurrency contract requires that an edit provides the existing baseVersion.
+  // We check that the component maps the version field into its internal form state.
+  assert.match(
+    modal,
+    /version:\s*props\.subjectData\.version/,
+    'SubjectCreateModal must preserve the subject version to satisfy the baseVersion contract',
+  )
+})
 
 test('maps current subject DTO to the PC view model without legacy fields', () => {
   const subject = mapSubjectView({

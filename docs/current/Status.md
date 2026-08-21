@@ -45,12 +45,14 @@
 
 2026-08-21：补齐 PC 个人空间登出入口：个人空间提供确认后的“退出登录”，Auth Store 在本地会话清理后将服务端异常交给 UI，失败仍跳转 `/login`；PC 回归测试 62/62、type-check 和 Web build 通过，浏览器手工点击验收仍待执行。
 
+2026-08-21：修复 PC 学科大厅编辑无法保存：编辑弹层现在保留 Subject `version`，更新请求正确携带 `baseVersion`；新增版本契约回归，PC 回归测试 63/63、静态检查、图标契约、type-check 和 Web build 通过，浏览器真实编辑/刷新验收仍待执行。
+
 低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
 
 | 模块 | 当前状态 | 代码证据 | 命令证据 | 人工验收 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
 | 文档体系 | 已构建待验收 | 新分类体系、Agent 规则、归档快照、旧路径切换已完成 | 2026-08-12：`docs/README.md` 相对链接检查 33 项通过；2026-07-10 的元数据、根目录、旧路径扫描仍保留为历史证据 | 无 | 随后续代码变化持续回写 |
-| PC Web | 已构建待验收 | 8 条正式路由、typed API Store、用户/设备隔离本地 repository、无明文 BYOK 的 AI SSE 控制器和离线会话恢复存在；正式页面已移除静态演示数据主路径，个人空间已有确认登出入口 | 2026-08-21：`check:r4-pc` 扫描 59 个生产文件通过，`test:r4-pc` 62/62、`type-check`、Web build 通过；Vite 仍提示 Asset chunk 约 594 kB 和无效动态 import | 浏览器主流程、真实 API/SSE、登出成功/失败提示、会话撤销、AI 失败态、窄栏/深色主题和 GUI | 完成真实前后端联调、浏览器/Tauri GUI 验收，评估 bundle 拆分 |
+| PC Web | 已构建待验收 | 8 条正式路由、typed API Store、用户/设备隔离本地 repository、无明文 BYOK 的 AI SSE 控制器和离线会话恢复存在；正式页面已移除静态演示数据主路径，个人空间已有确认登出入口，学科编辑保留版本并提交 `baseVersion` | 2026-08-21：`check:r4-pc` 扫描 59 个生产文件通过，`test:r4-pc` 63/63、type-check、Web build 和 Subject icon 契约通过；Vite 仍提示 Asset chunk 约 594 kB 和无效动态 import | 浏览器主流程、真实 API/SSE、学科编辑保存/刷新、登出成功/失败提示、会话撤销、AI 失败态、窄栏/深色主题和 GUI | 完成真实前后端联调、浏览器/Tauri GUI 验收，评估 bundle 拆分 |
 | PC Tauri | 已构建待验收 | Tauri 2.11.1、SQL 插件配置存在 | 本轮未执行 GUI | Windows GUI、权限、安装包 | 手工桌面验收 |
 | Mobile H5 | 已构建待验收 | Auth/Sync/Realtime/Asset/Review/Stats/AI 新契约、用户/设备隔离本地库与手机页面存在 | 2026-08-21：`check:r4-mobile` 62 文件、协议测试 20/20、type-check、H5 build 通过；保留 import 与 Sass 警告 | 真实服务、手机浏览器、弱网、输入法 | H5 联调与真机走查 |
 | 微信小程序 | 已构建待验收 | `MP-WEIXIN` 排除 Tablet；环境强制 HTTPS/WSS；手机主路径共享新契约 | 2026-08-20：微信 build 通过 | AppID、开发者工具、真机、合法请求/WSS/upload/download 域名 | 配置平台域名并完成微信走查 |
