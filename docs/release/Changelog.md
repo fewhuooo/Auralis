@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### Provider DNS 与 SiliconFlow 模型配置修复（2026-08-21）
+
+- Provider DNS 解析返回混合地址时，后端仅固定连接公网地址；解析结果全部为私网/合成地址时仍拒绝，避免误判可用的 embedding endpoint。
+- Compose 显式透传 `AURALIS_AI_SILICONFLOW_BASE_URL`、`AURALIS_AI_SILICONFLOW_CHAT_MODEL` 和 `AURALIS_AI_SILICONFLOW_EMBEDDING_MODEL`，默认 embedding 模型为 `BAAI/bge-m3`。
+- 新增混合 DNS 与全私网解析回归测试。
+
 ### AI env 默认 Provider 与 BYOK 覆盖（2026-08-21）
 
 - 后端新增服务端 env Provider 默认配置：未指定聊天 Provider 时使用 `AURALIS_AI_DEFAULT_PROVIDER`，按 Provider 从 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY` 或 `SILICONFLOW_API_KEY` 解析默认凭据。

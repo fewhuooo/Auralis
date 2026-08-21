@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -18,19 +19,25 @@ import java.util.stream.Collectors;
 public class ProviderEndpointPolicy {
 
     private final Set<String> allowedProviderHosts;
+    private final DnsResolver dnsResolver;
 
     @Autowired
     public ProviderEndpointPolicy(AuralisProperties properties) {
-        this(properties.ai().allowedProviderHosts());
+        this(properties.ai().allowedProviderHosts(), InetAddress::getAllByName);
     }
 
     public ProviderEndpointPolicy(List<String> allowedProviderHosts) {
+        this(allowedProviderHosts, InetAddress::getAllByName);
+    }
+
+    ProviderEndpointPolicy(List<String> allowedProviderHosts, DnsResolver dnsResolver) {
         this.allowedProviderHosts = allowedProviderHosts == null
                 ? Set.of()
                 : allowedProviderHosts.stream()
                 .filter(host -> host != null && !host.isBlank())
                 .map(this::normalizeHost)
                 .collect(Collectors.toUnmodifiableSet());
+        this.dnsResolver = dnsResolver == null ? InetAddress::getAllByName : dnsResolver;
     }
 
     public URI validate(AiProviderType provider, String rawBaseUrl) {
@@ -78,14 +85,17 @@ public class ProviderEndpointPolicy {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider target is unavailable");
         }
         try {
-            InetAddress[] addresses = InetAddress.getAllByName(uri.getHost());
-            if (addresses.length == 0) {
+            InetAddress[] addresses = dnsResolver.resolve(uri.getHost());
+            if (addresses == null || addresses.length == 0) {
                 throw new UnknownHostException(uri.getHost());
             }
-            for (InetAddress address : addresses) {
-                validatePublicAddress(address);
+            List<InetAddress> publicAddresses = Arrays.stream(addresses)
+                    .filter(address -> address != null && isPublicAddress(address))
+                    .toList();
+            if (publicAddresses.isEmpty()) {
+                throw invalidUrl();
             }
-            return List.of(addresses);
+            return publicAddresses;
         } catch (UnknownHostException exception) {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider target is unavailable");
         }
@@ -100,17 +110,24 @@ public class ProviderEndpointPolicy {
     }
 
     private void validatePublicAddress(InetAddress address) {
+        if (!isPublicAddress(address)) {
+            throw new DomainException("VALIDATION_FAILED", "Provider URL is not allowed");
+        }
+    }
+
+    private boolean isPublicAddress(InetAddress address) {
+        if (address == null) {
+            return false;
+        }
         byte[] bytes = address.getAddress();
-        if (address.isAnyLocalAddress()
+        return !(address.isAnyLocalAddress()
                 || address.isLoopbackAddress()
                 || address.isLinkLocalAddress()
                 || address.isSiteLocalAddress()
                 || address.isMulticastAddress()
                 || isPrivateIpv4(bytes)
                 || isPrivateIpv6(bytes)
-                || isIpv4MappedPrivate(bytes)) {
-            throw new DomainException("VALIDATION_FAILED", "Provider URL is not allowed");
-        }
+                || isIpv4MappedPrivate(bytes));
     }
 
     private boolean isPrivateIpv4(byte[] bytes) {
@@ -174,5 +191,10 @@ public class ProviderEndpointPolicy {
 
     private DomainException invalidUrl() {
         return new DomainException("VALIDATION_FAILED", "Provider URL is not allowed");
+    }
+
+    @FunctionalInterface
+    interface DnsResolver {
+        InetAddress[] resolve(String host) throws UnknownHostException;
     }
 }

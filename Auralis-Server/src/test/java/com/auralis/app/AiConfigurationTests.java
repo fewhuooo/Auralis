@@ -41,6 +41,12 @@ class AiConfigurationTests {
                 .isEqualTo("env-chat-key");
         assertThat(environment.getProperty("auralis.ai.defaults.siliconflow.api-key"))
                 .isEqualTo("env-embedding-key");
+        assertThat(properties.ai().defaults().siliconflow().baseUrl())
+                .isEqualTo("https://api.siliconflow.cn/v1");
+        assertThat(properties.ai().defaults().siliconflow().chatModel())
+                .isEqualTo("deepseek-ai/DeepSeek-V3");
+        assertThat(properties.ai().defaults().siliconflow().embeddingModel())
+                .isEqualTo("BAAI/bge-m3");
     }
 
     @Test
