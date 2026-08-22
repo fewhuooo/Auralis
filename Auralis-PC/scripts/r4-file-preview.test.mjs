@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import test from 'node:test'
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
@@ -67,4 +69,22 @@ test('exposes the single upload accept list', () => {
   ])
   assert.equal(SUPPORTED_UPLOAD_EXTENSIONS.includes('.xls'), false)
   assert.equal(SUPPORTED_UPLOAD_EXTENSIONS.includes('.xlsx'), false)
+})
+
+test('FilePreview owns the shared loading and signed-url lifecycle', () => {
+  const filePreviewPath = path.resolve('src/components/FilePreview.vue')
+  const source = fs.readFileSync(filePreviewPath, 'utf8')
+  assert.match(source, /FileViewerRenderer/)
+  assert.match(source, /downloadUrl/)
+  assert.match(source, /isLoading/)
+  assert.match(source, /preview-error/)
+  assert.doesNotMatch(source, /\.xls[x]?\b/)
+})
+
+test('File Viewer adapter is isolated behind a renderer component', () => {
+  const rendererPath = path.resolve('src/components/preview/FileViewerRenderer.vue')
+  const source = fs.readFileSync(rendererPath, 'utf8')
+  assert.match(source, /@file-viewer\/vue3-full/)
+  assert.match(source, /<FileViewer/)
+  assert.match(source, /styleIsolation/)
 })
