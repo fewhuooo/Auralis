@@ -51,7 +51,7 @@
 
 2026-08-22：按最新日期语义，PC Dashboard/Timeline 改为展示当前/所选日期所在的完整自然周（周日至周六），`isToday` 按真实日期匹配；首页日期数字上方增加 `Sun` 至 `Sat` 英文星期缩写，选中日期徽标保持约 36px 圆形绿色背景。自然周边界、日期标签和首页视觉回归需以本轮命令结果为准，浏览器跨周拖拽仍待人工验收。
 
-2026-08-22：统一 PC 全局排版：根字号恢复为 16px，新增 caption/body-sm/label/body/body-lg/title-sm/title/title-lg/display 语义字号令牌并保留旧变量别名；普通控件与 Pomodoro 使用 `--font-family-base`，代码/知识图谱等宽内容使用 `--font-family-mono`，移除页面级 Inter、Outfit、Plus Jakarta Sans、JetBrains Mono 覆盖。`test:r4-pc` 79/79、type-check、静态检查和 Web build 需以本轮命令结果为准；浏览器窄栏和深色主题视觉仍待人工验收。
+2026-08-22：统一 PC 全局排版：根字号恢复为 16px，新增 caption/body-sm/label/body/body-lg/title-sm/title/title-lg/display 语义字号令牌并保留旧变量别名；普通控件与 Pomodoro 使用 `--font-family-base`，代码/知识图谱等宽内容使用 `--font-family-mono`，移除页面级 Inter、Outfit、Plus Jakarta Sans、JetBrains Mono 覆盖。`test:r4-pc` 79/79、type-check、`check:r4-pc` 60 个生产文件和 Web build 均通过；构建保留既有 Asset 大 chunk 与无效动态 import 警告，浏览器窄栏和深色主题视觉仍待人工验收。
 
 2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
 
