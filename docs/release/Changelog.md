@@ -1,8 +1,14 @@
 # Auralis 变更记录
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 文档状态：现行历史记录
+
+### Docker MinIO 下载链路与资料大小修复（2026-08-23）
+
+- MinIO 下载 URL 改为服务端离线 SigV4 签名，避免后端容器错误连接浏览器 public endpoint 的 `localhost:9000`，并增加脱敏失败阶段日志。
+- Source FILE 响应返回可选 `assetSizeBytes`，PC 资料映射器使用真实 Asset 字节数，上传后不再固定显示 `0.0MB`。
+- `MinioAssetStorageIntegrationTests` 3/3、`SourceAssetRelationServiceTests` 5/5、PC mapper tests 8/8 通过；Docker 临时账号真实 PUT/complete/download GET 链路通过。浏览器 GUI 仍待人工验收。
 
 ### PC 学科统一文件预览（2026-08-22）
 

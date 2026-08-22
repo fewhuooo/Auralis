@@ -82,7 +82,7 @@ Auralis-PC/
 | `useBlockStore.ts` | 旧知识块兼容 facade；正式页面使用 `useKnowledgeStore` |
 | `useTaskStore.ts` | Task typed API、user/device repository、排期、状态和 mutation |
 | `useSubjectStore.ts` | 学科列表和当前学科 |
-| `useSourceStore.ts` | Source 分页、资料目录、软删除和 Source mutation |
+| `useSourceStore.ts` | Source 分页、资料目录、关联 Asset 元数据、软删除和 Source mutation |
 | `useKnowledgeStore.ts` | KnowledgeBlock 列表、关联 Source、离线缓存和 mutation |
 | `useAssetStore.ts` | Asset upload-intent、对象存储上传、complete、下载 URL 和失败 pending 状态 |
 | `useSyncStore.ts` | cursor、resetRequired、pull/push 状态、错误和统一同步入口 |
@@ -103,6 +103,8 @@ Auralis-PC/
 | `api/useAuthApi.ts` | 登录、注册、刷新、会话列表与撤销 |
 | `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
 | `api/useStatsApi.ts` | 概览与周统计 |
+
+Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件预览仍通过 Asset download-url 获取短期签名地址。
 | `api/useSyncApi.ts` | push/pull 同步 |
 | `api/e2ee.ts` | 端到端加密辅助 |
 | `api/tauri.ts` | Tauri 环境和本地能力封装 |

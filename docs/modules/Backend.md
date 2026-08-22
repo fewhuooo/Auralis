@@ -146,7 +146,7 @@ AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用
 
 ## R2 真实依赖与对象存储门禁
 
-- `AssetStoragePort` 的 MinIO 实现生成 presigned PUT/GET URL，并在声明 sha256 时把 `X-Amz-Meta-Sha256` 一并交给客户端；完成阶段继续由服务端 HEAD/stat 校验 size、MIME 和 hash。
+- `AssetStoragePort` 的 MinIO 实现使用服务端离线 SigV4 signer 生成 presigned PUT/GET URL：内部 endpoint 只用于容器内 HEAD/stat/open/delete，public endpoint 只写入浏览器 URL，不会被后端 SDK 反向连接；声明 sha256 时把 `X-Amz-Meta-Sha256` 一并交给客户端。完成阶段继续由服务端 HEAD/stat 校验 size、MIME 和 hash，下载签名失败记录脱敏的 `ASSET_DOWNLOAD_URL_FAILED` 事件。
 - 上传校验失败会先持久化 `FAILED`，再尝试幂等删除对象；删除失败仍保留可审计数据库状态，并由 `scripts/audit-minio-assets.ps1` 做数据库/对象对账。
 - `PgVectorIntegrationTests` 改为 Testcontainers PostgreSQL/pgvector，另有升级输入测试覆盖既有 V8 `embedding_json` 经 V9/V11 的 vector/HNSW/回填；`AiProviderResilienceTests` 覆盖 429、5xx、错误 JSON 和错误流事件。
 - R2 真实依赖测试默认随 `mvn -B -ntp clean test` 执行；`postgres-it`/`minio-it` profiles 仍作为兼容别名保留。Docker Engine 不可用时默认测试应失败，而不是跳过容器集成测试。

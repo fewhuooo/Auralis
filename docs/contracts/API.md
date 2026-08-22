@@ -127,7 +127,7 @@
 - `POST /api/assets/upload-intents` 请求字段为 `baseVersion`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt}`。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
 - `POST /api/assets/{id}/complete` 不接受客户端对象元数据；服务端对绑定 object key 执行 HEAD/stat，校验真实大小、MIME 和已声明 sha256，成功返回 `AssetResponse` 并将状态置为 `READY`。校验失败返回 `400 UPLOAD_VALIDATION_FAILED` 并记录 `FAILED`。
 - `POST /api/assets/{id}/download-url` 只对当前用户拥有且 `READY` 的 Asset 返回 `{url,expiresAt}`；Asset 不作为 Relation 节点，也不进入普通同步资源列表。
-- Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。
+- Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。Source 成功响应对 FILE 资料额外返回可选 `assetSizeBytes`（Asset 原始字节数），TEXT/URL 或无法关联 Asset 时为 JSON `null`。
 - Source 创建成功状态为 `PENDING`；更新和 `POST /api/sources/{id}/reingest` 清理安全错误并回到 `PENDING`。Source 其余成功操作沿用直接 DTO、版本冲突、软删除、恢复和列表 envelope 规则。
 - Relation 创建/更新字段为 `baseVersion`、`sourceType`、`sourceId`、`targetType`、`targetId`、`type`、可选 `label`；节点仅允许 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`，关系类型仅允许 `CONTAINS`、`REFERENCES`、`DERIVED_FROM`、`DEPENDS_ON`、`RELATED_TO`。
 - Relation 创建、更新、恢复都会验证两端属于当前用户且未删除，禁止自关联；`RELATED_TO` 对端点排序后去重，其他类型保持方向性。端点软删除会级联软删除相关 Relation，端点恢复不自动恢复关系。
