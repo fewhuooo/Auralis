@@ -179,6 +179,25 @@ class SourceAssetRelationServiceTests {
     }
 
     @Test
+    void fileSourceViewIncludesReadyAssetSize() {
+        var owner = register("source-file-size");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Files", null, null, null, "001"));
+        var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
+                0L, "notes.pdf", 3982329L, "application/pdf", null));
+        String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
+                .orElseThrow()
+                .getObjectKey();
+        assetStorage.put(objectKey, new AssetStoragePort.ObjectMetadata(3982329L, "application/pdf", null));
+        assetService.complete(owner.user().id(), intent.assetId());
+
+        SourceView source = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.FILE, "notes.pdf", intent.assetId(), null, null, null));
+
+        assertThat(source.assetSizeBytes()).isEqualTo(3982329L);
+    }
+
+    @Test
     void relatedToIsUndirectedAndEndpointDeleteSoftDeletesRelations() {
         var owner = register("relation");
         SubjectView first = subjectService.create(owner.user().id(),

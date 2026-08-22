@@ -283,11 +283,16 @@ public class SourceService {
     }
 
     private SourceView view(SourceEntity entity) {
+        Long assetSizeBytes = entity.getAssetId() == null
+                ? null
+                : assetRepository.findByIdAndUserId(entity.getAssetId(), entity.getUserId())
+                        .map(AssetEntity::getSizeBytes)
+                        .orElse(null);
         return new SourceView(
                 entity.getId(), entity.getSubjectId(), entity.getType(), entity.getTitle(), entity.getAssetId(),
                 entity.getOriginUrl(), entity.getRawText(), entity.getOutline(), entity.getIngestionStatus(),
                 entity.getSafeErrorCode(), entity.getSafeErrorDetail(), entity.getVersion(), entity.getCreatedAt(),
-                entity.getUpdatedAt(), entity.getDeletedAt());
+                entity.getUpdatedAt(), entity.getDeletedAt(), assetSizeBytes);
     }
 
     private void publishChange(UUID userId, SourceView view, String mutationType) {

@@ -9,6 +9,7 @@ export type SourceView = Pick<
 > & {
   type?: 'FILE' | 'TEXT' | 'URL'
   assetId?: string
+  assetSizeBytes?: number | null
   originUrl?: string
   rawText?: string
   outline?: string

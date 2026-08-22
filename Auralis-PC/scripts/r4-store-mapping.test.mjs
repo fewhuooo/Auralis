@@ -55,6 +55,7 @@ test('maps source DTO fields and preserves deletedAt/version', () => {
     type: 'FILE',
     title: 'notes.pdf',
     assetId: 'asset-1',
+    assetSizeBytes: 3982329,
     outline: '[{"title":"Chapter 1","sections":[]}]',
     ingestionStatus: 'READY',
     version: 3,
@@ -82,6 +83,7 @@ test('maps source DTO fields and preserves deletedAt/version', () => {
     version: 3,
     deletedAt: '2026-08-20T02:00:00Z',
   })
+  assert.equal(source.fileSize, 3982329)
 })
 
 test('maps knowledge block and asset DTOs to stable UI fields', () => {

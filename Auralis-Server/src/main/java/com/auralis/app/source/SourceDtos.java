@@ -62,6 +62,7 @@ public final class SourceDtos {
             SourceIngestionStatus ingestionStatus,
             String safeErrorCode,
             String safeErrorDetail,
+            Long assetSizeBytes,
             long version,
             Instant createdAt,
             Instant updatedAt,
@@ -69,7 +70,8 @@ public final class SourceDtos {
         static Response from(SourceView view) {
             return new Response(view.id(), view.subjectId(), view.type(), view.title(), view.assetId(),
                     view.originUrl(), view.rawText(), view.outline(), view.ingestionStatus(), view.safeErrorCode(),
-                    view.safeErrorDetail(), view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
+                    view.safeErrorDetail(), view.assetSizeBytes(), view.version(), view.createdAt(),
+                    view.updatedAt(), view.deletedAt());
         }
     }
 }

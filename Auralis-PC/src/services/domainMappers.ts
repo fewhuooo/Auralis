@@ -135,6 +135,7 @@ export interface SourceDtoLike {
   type?: 'FILE' | 'TEXT' | 'URL'
   title?: string
   assetId?: string
+  assetSizeBytes?: number | null
   originUrl?: string
   rawText?: string
   outline?: string
@@ -252,7 +253,7 @@ export function mapSourceView(view: SourceDtoLike): SourceFileModel {
     name,
     filePath: view.assetId || view.originUrl || '',
     fileType: fileTypeForSource(view),
-    fileSize: 0,
+    fileSize: view.assetSizeBytes ?? 0,
     catalogJson: view.outline || '[]',
     blockCount: 0,
     assetId: view.assetId,
