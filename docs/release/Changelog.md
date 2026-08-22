@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 学科文件登记与 Docker MinIO 直传修复（2026-08-22）
+
+- 文件登记确认现在校验文件、名称和归档学科，上传中防重复提交；直传或 Source 创建失败会显示通知并保留弹层重试，成功后刷新当前学科资料列表。
+- MinIO 新增容器内 `AURALIS_MINIO_ENDPOINT` 与浏览器 `AURALIS_MINIO_PUBLIC_ENDPOINT` 分离配置，并使用 `AURALIS_CORS_ALLOWED_ORIGINS` 配置 API CORS，避免向浏览器返回无法解析的 `minio:9000`。
+- `test:r4-pc` 82/82、PC type-check/static check、MinIO public endpoint 集成测试 2/2 和 Compose config 已通过；Docker 运行态及浏览器业务验收仍待执行。
+
 ### PC 全局字体与字号令牌统一（2026-08-22）
 
 - PC 根字号统一为 `16px`，新增 caption/body-sm/label/body/body-lg/title-sm/title/title-lg/display 语义字号令牌，并保留旧基础字号变量别名。

@@ -455,7 +455,7 @@
         </div>
         <div class="modal-footer" style="justify-content: flex-end">
           <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
-          <button class="btn-primary" :disabled="!registerForm.name.trim()" @click="handleRegisterFile">确认登记</button>
+          <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerForm.subjectId || !droppedFile || isUploading" @click="handleRegisterFile">{{ isUploading ? '上传中…' : '确认登记' }}</button>
         </div>
       </div>
     </div>
@@ -791,12 +791,20 @@ const handleFileSelect = (e: Event) => {
 
 const triggerFileInput = () => hiddenFileInput.value?.click()
 
+const isUploading = ref(false)
+
 const handleRegisterFile = async () => {
   const targetSubjectId = registerForm.value.subjectId
-  if (!registerForm.value.name.trim() || !targetSubjectId || !droppedFile.value) return
-  
+  if (!registerForm.value.name.trim() || !targetSubjectId || !droppedFile.value || isUploading.value) {
+    if (!droppedFile.value) ElMessage.warning('请先选择或拖拽文件')
+    else if (!registerForm.value.name.trim()) ElMessage.warning('请输入文件名称')
+    else if (!targetSubjectId) ElMessage.warning('请选择归档学科')
+    return
+  }
+
   const currentFile = droppedFile.value
-  
+  isUploading.value = true
+
   try {
     const asset = await assetStore.upload(currentFile)
     const newId = await sourceStore.createFileSource(targetSubjectId, registerForm.value.name.trim(), asset.id)
@@ -804,12 +812,21 @@ const handleRegisterFile = async () => {
     if (targetSubjectId === subjectId.value && !selectedFileId.value) {
       selectedFileId.value = newId
     }
-    
+
+    if (targetSubjectId === subjectId.value) {
+      await subjectStore.loadSourceFiles(subjectId.value)
+    }
+
     showRegisterModal.value = false
     registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' }
     droppedFile.value = null
     ElNotification({ title: '云端录入成功', message: currentFile.name, type: 'success', position: 'top-right' })
-  } catch (e) { console.error(e) }
+  } catch (e: any) {
+    console.error(e)
+    ElNotification({ title: '录入失败', message: e.message || '文件上传或创建失败，请重试', type: 'error', position: 'top-right' })
+  } finally {
+    isUploading.value = false
+  }
 }
 
 // ===== Task Creation =====

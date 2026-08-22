@@ -1,6 +1,6 @@
 # 基础设施与数据服务模块
 
-更新时间：2026-08-17
+更新时间：2026-08-22
 
 文档状态：现行
 
@@ -48,10 +48,10 @@
 后端当前绑定以下对象存储配置：
 
 - `AURALIS_UPLOAD_STORAGE_PROVIDER`：`unavailable`（默认）或 `minio`；test profile 使用内存适配器。
-- `AURALIS_MINIO_ENDPOINT`、`AURALIS_MINIO_BUCKET`、`AURALIS_MINIO_ACCESS_KEY`、`AURALIS_MINIO_SECRET_KEY`
+- `AURALIS_MINIO_ENDPOINT`、`AURALIS_MINIO_PUBLIC_ENDPOINT`、`AURALIS_MINIO_BUCKET`、`AURALIS_MINIO_ACCESS_KEY`、`AURALIS_MINIO_SECRET_KEY`
 - `AURALIS_MINIO_PRESIGN_TTL_SECONDS`
 
-Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` 映射到 `auralis.upload.storage`，并以 `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` 和 `AURALIS_CORS_ALLOWED_ORIGINS` 作为生产必填项。Provider 的用户 BYOK 仍由应用加密保存；服务端 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY` 只作为运行时默认凭据注入后端，不写入数据库或 API。
+Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` 映射到 `auralis.upload.storage`，并以 `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` 和 `AURALIS_CORS_ALLOWED_ORIGINS` 作为生产必填项。`AURALIS_MINIO_ENDPOINT` 是容器内 Server 访问 MinIO 的地址；`AURALIS_MINIO_PUBLIC_ENDPOINT` 是浏览器访问预签名 PUT/GET 的地址，Docker 本地默认分别为 `http://minio:9000` 与 `http://localhost:9000`。MinIO 使用同一 CORS 白名单允许前端直传，不能把容器 hostname 作为浏览器公网地址。Provider 的用户 BYOK 仍由应用加密保存；服务端 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY` 只作为运行时默认凭据注入后端，不写入数据库或 API。
 
 阶段 5 AI/RAG 配置由 `Auralis-Server` 绑定：
 
@@ -97,6 +97,7 @@ docker compose logs backend
 - 固定镜像版本并建立升级、扫描和回滚流程。
 - 统一生产 LangChain4j 配置键。
 - 限制 CORS、管理端口和公网暴露面。
+- 资产直传必须同时验证预签名 URL 的浏览器可达 host 和 MinIO CORS；发现前端无请求日志时优先检查直传阶段，而不是只检查 Server API 日志。
 
 ## 当前风险
 

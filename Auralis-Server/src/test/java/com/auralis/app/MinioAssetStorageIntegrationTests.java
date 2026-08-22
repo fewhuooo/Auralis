@@ -96,6 +96,20 @@ class MinioAssetStorageIntegrationTests {
         storage.deleteObject("users/integration/assets/object-1");
     }
 
+    @Test
+    void usesPublicEndpointForBrowserUploadIntentWhenConfigured() {
+        String publicEndpoint = endpoint();
+        MinioAssetStorage storage = new MinioAssetStorage(properties("http://minio:9000", publicEndpoint));
+
+        AssetStoragePort.UploadIntent intent = storage.createUploadIntent(
+                "users/integration/assets/public-endpoint", "text/plain", 4, null);
+
+        URI uploadUrl = URI.create(intent.url());
+        URI expected = URI.create(publicEndpoint);
+        assertThat(uploadUrl.getHost()).isEqualTo(expected.getHost());
+        assertThat(uploadUrl.getPort()).isEqualTo(expected.getPort());
+    }
+
     private MinioClient client() {
         return MinioClient.builder()
                 .endpoint(endpoint())
@@ -108,13 +122,17 @@ class MinioAssetStorageIntegrationTests {
     }
 
     private AuralisProperties properties() {
+        return properties(endpoint(), endpoint());
+    }
+
+    private AuralisProperties properties(String internalEndpoint, String publicEndpoint) {
         return new AuralisProperties(
                 "test",
                 new AuralisProperties.Api("http://localhost", "http://localhost"),
                 new AuralisProperties.Upload(
                         1024 * 1024,
                         "minio",
-                        new AuralisProperties.Storage(endpoint(), BUCKET, ACCESS_KEY, SECRET_KEY, 300)),
+                        new AuralisProperties.Storage(internalEndpoint, publicEndpoint, BUCKET, ACCESS_KEY, SECRET_KEY, 300)),
                 new AuralisProperties.Identity("test-secret", 900, 900),
                 new AuralisProperties.Ai(
                         false, "test-encryption-key", "DEEPSEEK",

@@ -35,6 +35,7 @@ auralis:
     storage-provider: ${AURALIS_UPLOAD_STORAGE_PROVIDER:unavailable}
     storage:
       endpoint: ${AURALIS_MINIO_ENDPOINT:}
+      public-endpoint: ${AURALIS_MINIO_PUBLIC_ENDPOINT:}
       bucket: ${AURALIS_MINIO_BUCKET:auralis-assets}
       access-key: ${AURALIS_MINIO_ACCESS_KEY:}
       secret-key: ${AURALIS_MINIO_SECRET_KEY:}

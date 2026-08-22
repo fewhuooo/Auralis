@@ -31,6 +31,7 @@ import java.util.Optional;
 public class MinioAssetStorage implements AssetStoragePort {
 
     private final MinioClient minioClient;
+    private final MinioClient publicMinioClient;
     private final AuralisProperties.Storage storage;
 
     public MinioAssetStorage(AuralisProperties properties) {
@@ -41,6 +42,10 @@ public class MinioAssetStorage implements AssetStoragePort {
         }
         this.minioClient = MinioClient.builder()
                 .endpoint(storage.endpoint())
+                .credentials(storage.accessKey(), storage.secretKey())
+                .build();
+        this.publicMinioClient = MinioClient.builder()
+                .endpoint(storage.presignEndpoint())
                 .credentials(storage.accessKey(), storage.secretKey())
                 .build();
     }
@@ -63,7 +68,7 @@ public class MinioAssetStorage implements AssetStoragePort {
 
     private String presignedPutUrl(String objectKey, String mimeType, long sizeBytes, String sha256)
             throws java.security.InvalidKeyException, java.security.NoSuchAlgorithmException {
-        HttpUrl endpoint = HttpUrl.parse(storage.endpoint());
+        HttpUrl endpoint = HttpUrl.parse(storage.presignEndpoint());
         if (endpoint == null) {
             throw new IllegalStateException("MinIO endpoint is invalid");
         }
@@ -124,7 +129,7 @@ public class MinioAssetStorage implements AssetStoragePort {
     @Override
     public DownloadUrl createDownloadUrl(String objectKey) {
         try {
-            String url = minioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            String url = publicMinioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
                     .bucket(storage.bucket())
                     .object(objectKey)

@@ -1,6 +1,6 @@
 # Auralis 部署指南
 
-更新时间：2026-08-17
+更新时间：2026-08-22
 
 文档状态：现行，生产方案待加固
 
@@ -36,7 +36,7 @@
 ### 开发
 
 1. 复制 `.env.example` 为 `.env`。
-2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单。
+2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单；浏览器访问 Compose 时将 `AURALIS_MINIO_PUBLIC_ENDPOINT` 设为浏览器可达的 MinIO API 地址（本机默认 `http://localhost:9000`）。
 3. 先运行 `docker compose --env-file .env config --quiet`；缺少必填值时应 fail-fast。
 
 ### 生产
@@ -175,6 +175,7 @@ docker compose logs frontend
 - volume 指向持久化且有备份的位置。
 - 管理端口不对公网开放。
 - CORS 仅允许目标前端域名。
+- `AURALIS_MINIO_ENDPOINT` 只用于容器内访问，`AURALIS_MINIO_PUBLIC_ENDPOINT` 必须是浏览器可达地址；MinIO API CORS 白名单与 `AURALIS_CORS_ALLOWED_ORIGINS` 保持一致。
 - AI 与存储配置使用 secret 注入。
 - MinIO 用户资产使用独立 bucket/凭据；当前 Compose 不启动 Milvus/etcd。
 
