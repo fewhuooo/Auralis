@@ -186,7 +186,7 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 ## 本轮验证结论（2026-08-22）
 
 - 修复 PC 学科工作区文件登记的两个断点：前端不再对缺少文件/学科/名称静默 return，确认按钮会反映前置条件与上传中状态，失败通知保留弹层以便重试并刷新当前资料列表；Docker MinIO 将容器内 endpoint 与浏览器 public endpoint 分离，并按 CORS 白名单允许直传。
-- 验证：`Auralis-PC` `npm.cmd run test:r4-pc` 82/82、`type-check`、`check:r4-pc`（60 个生产文件）通过；`Auralis-Server` `MinioAssetStorageIntegrationTests` 2/2 通过，覆盖 public endpoint 预签名 URL；Compose config 校验通过。Docker 重建/运行态与浏览器真实点击验收需在 push 后完成，不能以代码或容器健康替代 GUI 验收。
+- 验证：`Auralis-PC` `npm.cmd run test:r4-pc` 82/82、`type-check`、`check:r4-pc`（60 个生产文件）通过；`Auralis-Server` `mvnw.cmd -B -ntp clean test` 149/149 通过，含 MinIO public endpoint 集成测试 2/2；Compose config 校验通过。push 后 Docker backend/frontend 已重建并健康，frontend HTTP 200、backend readiness HTTP 200/UP，MinIO CORS 预检对 `localhost:5173` 返回 204 和允许源；浏览器真实点击验收仍未自动化，不能以容器健康替代 GUI 验收。
 
 - 修复 PC Dashboard 已排期任务拖拽后时间不变化的问题：`toTaskModel` 在显式提供 legacy `startTime` 时优先按新槽位生成 `scheduledAt`，未提供时继续保留现有 `scheduledAt`。回归测试覆盖原槽位到目标槽位的写回语义。
 - `Auralis-PC`：`npm.cmd run test:r4-pc` 81/81、`npm.cmd run type-check`、`npm.cmd run check:r4-pc`（60 个生产文件）和 `npm.cmd run build` 均通过；新建任务、复习任务和 Store 缺省时长均收敛到 30 分钟倍数。构建仍保留既有 Asset 大 chunk 与无效动态 import 非阻断警告。浏览器/Tauri 拖拽实际走查仍待验收。
