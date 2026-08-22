@@ -98,3 +98,13 @@ test('SubjectWorkspace uses FilePreview and the shared upload accept list', () =
   assert.match(source, /validateUploadFile/)
   assert.match(source, /@click="selectFile\(file\.id\)"/)
 })
+
+test('SubjectWorkspace exposes the summary as a separate Markdown document', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+  assert.match(source, /const workspaceFiles = computed/)
+  assert.match(source, /isSummary/)
+  assert.match(source, /summaryMarkdown/)
+  assert.match(source, /downloadSummary/)
+  assert.match(source, /v-if="selectedFile\.isSummary"/)
+})

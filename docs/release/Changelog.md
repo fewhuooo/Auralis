@@ -10,6 +10,11 @@
 - Source FILE 响应返回可选 `assetSizeBytes`，PC 资料映射器使用真实 Asset 字节数，上传后不再固定显示 `0.0MB`。
 - `MinioAssetStorageIntegrationTests` 3/3、`SourceAssetRelationServiceTests` 5/5、PC mapper tests 8/8 通过；Docker 临时账号真实 PUT/complete/download GET 链路通过。浏览器 GUI 仍待人工验收。
 
+### PC 学科总结拆分为独立 Markdown 文件（2026-08-23）
+
+- SubjectWorkspace 文件列表为每个真实资料增加 `· 总结.md` 独立虚拟项；原文件预览不再嵌套总结，点击总结项进入独立 Markdown 文档视图并可下载 `.md`。
+- 总结由当前关联知识块实时生成，新增知识块仍归属原 Source；本阶段不新增后端 Source/Asset 持久化。`test:r4-pc` 93/93、type-check 和 Web build 通过，浏览器/Tauri GUI 仍待人工验收。
+
 ### PC 学科统一文件预览（2026-08-22）
 
 - 学科页新增统一 `FilePreview`：先通过服务端签名 URL 获取带正确扩展名的 `File`，再由自托管 File Viewer 渲染 PDF、DOC/DOCX、PPT/PPTX、图片和文本，并统一提供加载、失败、重试和下载状态。

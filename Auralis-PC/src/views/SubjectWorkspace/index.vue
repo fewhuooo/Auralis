@@ -54,18 +54,18 @@
           <h3 class="drawer-title">学习文件</h3>
           <button class="drawer-action" @click="openRegisterModal" title="添加文件">+</button>
         </div>
-        <div class="drawer-list" v-if="activeSourceFiles.length > 0">
+        <div class="drawer-list" v-if="workspaceFiles.length > 0">
           <div
-            v-for="file in activeSourceFiles"
+            v-for="file in workspaceFiles"
             :key="file.id"
             class="drawer-item"
-            :class="{ 'is-active': selectedFileId === file.id }"
+            :class="{ 'is-active': selectedFileId === file.id, 'is-summary-file': file.isSummary }"
             @click="selectFile(file.id)"
           >
 <span class="drawer-item-icon">{{ getFileIcon(file.fileType) }}</span>
             <div class="drawer-item-body">
               <span class="drawer-item-name">{{ file.name }}</span>
-<span class="drawer-item-meta">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
+              <span class="drawer-item-meta">{{ workspaceFileMeta(file) }}</span>
             </div>
           </div>
         </div>
@@ -167,7 +167,7 @@
       <header class="center-status-bar">
         <div class="status-left">
           <span v-if="centerView === 'summary' && selectedFile" class="status-file">
-            <FileText :size="14" class="status-icon" /> {{ selectedFile.name }} · 文件总结
+            <FileText :size="14" class="status-icon" /> {{ selectedFile.name }}
           </span>
           <span v-else-if="centerView === 'blocks'" class="status-file">
             <Blocks :size="14" class="status-icon" /> 知识块 · {{ filteredBlocks.length }} 个知识块
@@ -175,7 +175,7 @@
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
-          <span class="status-page" v-if="centerView === 'summary'">总结视图</span>
+          <span class="status-page" v-if="centerView === 'summary'">{{ selectedFile?.isSummary ? 'Markdown 文件' : '文件预览' }}</span>
         </div>
       </header>
 
@@ -186,26 +186,26 @@
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="tier2Open ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
         </button>
 
-        <div v-if="centerView === 'summary' && selectedFile" class="file-summary-workspace">
+        <div v-if="centerView === 'summary' && selectedFile" class="document-workspace">
+          <article v-if="selectedFile.isSummary" class="markdown-document">
+            <header class="markdown-document-header">
+              <div class="markdown-document-heading">
+                <span class="file-summary-icon">📝</span>
+                <div class="file-summary-head-text">
+                  <p>Markdown 文件</p>
+                  <h2>{{ selectedFile.name }}</h2>
+                </div>
+              </div>
+              <button class="markdown-download" type="button" @click="downloadSummary">下载 .md</button>
+            </header>
+            <div class="summary-markdown" v-html="renderMarkdown(selectedFile.summaryMarkdown || '')"></div>
+          </article>
           <FilePreview
+            v-else
             :file="selectedFile"
             :compact="true"
             @preview-error="handlePreviewError"
           />
-          <div class="file-summary-head">
-<span class="file-summary-icon">{{ getFileIcon(selectedFile.fileType) }}</span>
-            <div class="file-summary-head-text">
-              <p>文件学习总结</p>
-              <h2>{{ selectedFile.name }}</h2>
-            </div>
-          </div>
-          <div class="summary-markdown" v-if="selectedFileBlocks.length" v-html="renderMarkdown(fileSummaryMarkdown)"></div>
-          <div class="summary-empty" v-else>
-            <div class="summary-empty-icon-wrap"><FileText :size="28" /></div>
-            <h3>还没有可展示的总结</h3>
-            <p>该材料关联的知识块会集中展示在这里；<br/>也可以直接让 AI 为当前文件整理重点概览。</p>
-            <button class="summary-ask-ai" @click="sendPreset('请总结当前文件的核心内容，并按章节列出重点。')">让 AI 整理总结</button>
-          </div>
         </div>
 
         <!-- Knowledge Blocks Grid -->
@@ -554,6 +554,7 @@ import { useTaskStore } from '@/store/useTaskStore'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useChatStore } from '@/store/useChatStore'
+import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
 
@@ -645,10 +646,58 @@ const startResizeRight = (e: MouseEvent) => {
 }
 
 // ===== File summary =====
+type WorkspaceFile = SourceFileModel & {
+  isSummary?: boolean
+  summarySourceId?: string
+  summaryMarkdown?: string
+}
+
 const selectedFileId = ref<string | null>(null)
-const selectedFile = computed(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
-const selectedFileBlocks = computed(() => recentBlocks.value.filter(block => block.sourceFileId === selectedFileId.value))
-const fileSummaryMarkdown = computed(() => selectedFileBlocks.value.map(block => `## ${block.title}\n\n${block.preview}`).join('\n\n'))
+const summaryMarkdownFor = (file: SourceFileModel): string => {
+  const blocks = recentBlocks.value.filter(block => block.sourceFileId === file.id)
+  const body = blocks.map(block => `## ${block.title}\n\n${block.preview}`).join('\n\n')
+  return body
+    ? `# ${file.name} · 学习总结\n\n${body}`
+    : `# ${file.name} · 学习总结\n\n暂无可展示的知识块。\n\n可以让 AI 为当前文件整理重点概览。`
+}
+
+const workspaceFiles = computed<WorkspaceFile[]>(() => activeSourceFiles.value.flatMap((file) => {
+  const summaryMarkdown = summaryMarkdownFor(file)
+  return [
+    file,
+    {
+      ...file,
+      id: `${file.id}:summary`,
+      name: `${file.name.replace(/\.[^.]+$/, '')} · 总结.md`,
+      filePath: `${file.id}:summary`,
+      fileType: 'text/markdown',
+      fileSize: new Blob([summaryMarkdown]).size,
+      assetId: undefined,
+      isSummary: true,
+      summarySourceId: file.id,
+      summaryMarkdown,
+    },
+  ]
+}))
+
+const workspaceFileMeta = (file: WorkspaceFile): string => (
+  file.isSummary ? 'Markdown 总结' : `${(file.fileSize / (1024 * 1024)).toFixed(1)} MB`
+)
+
+const selectedFile = computed<WorkspaceFile | null>(() => workspaceFiles.value.find(f => f.id === selectedFileId.value) || null)
+const selectedSourceId = computed(() => selectedFile.value?.summarySourceId || selectedFile.value?.id)
+
+const downloadSummary = () => {
+  const markdown = selectedFile.value?.isSummary ? selectedFile.value.summaryMarkdown : ''
+  if (!markdown || !selectedFile.value) return
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = selectedFile.value.name
+  link.click()
+  URL.revokeObjectURL(url)
+}
 
 const selectFile = (id: string) => {
   selectedFileId.value = id
@@ -887,7 +936,7 @@ const closeBlockDialog = () => { blockDialogVisible.value = false; isEditMode.va
 
 const handleSaveBlock = async () => {
   if (!editForm.value.title.trim() || !editForm.value.preview.trim()) { ElNotification({ title: '请填写必填项', type: 'warning', position: 'top-right' }); return }
-  if (isCreateMode.value) { await blockStore.addBlock({ subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, time: new Date().toLocaleString(), source: editForm.value.source, color: editForm.value.color, subjectId: subjectId.value, sourceFileId: selectedFileId.value || undefined }); ElNotification({ title: '已录入', type: 'success', position: 'top-right' }) }
+  if (isCreateMode.value) { await blockStore.addBlock({ subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, time: new Date().toLocaleString(), source: editForm.value.source, color: editForm.value.color, subjectId: subjectId.value, sourceFileId: selectedSourceId.value || undefined }); ElNotification({ title: '已录入', type: 'success', position: 'top-right' }) }
   else { await blockStore.updateBlock({ ...selectedBlock.value, subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, color: editForm.value.color, time: new Date().toLocaleString() }); ElNotification({ title: '已更新', type: 'success', position: 'top-right' }) }
   closeBlockDialog()
 }
@@ -1217,6 +1266,14 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   background: var(--color-primary-accent);
   border-radius: 1.5px;
 }
+
+.drawer-item.is-summary-file {
+  margin-left: 18px;
+  background: rgba(125, 147, 114, 0.045);
+}
+
+.drawer-item.is-summary-file:hover { background: rgba(125, 147, 114, 0.1); }
+.drawer-item.is-summary-file .drawer-item-name { font-weight: 500; }
 
 .drawer-item-icon { font-size: 16px; flex-shrink: 0; }
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -2006,13 +2063,62 @@ html.dark .ai-input-wrapper {
 .outline-file-link:hover { background: rgba(125,147,114,0.08); border-color: rgba(125,147,114,0.15); transform: translateX(2px); color: #7D9372; }
 .outline-file-link-icon { opacity: 0.7; }
 .outline-file-link-file { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
-.file-summary-workspace { width: min(780px, 100%); margin: 0 auto; padding: 56px 64px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
-.file-summary-workspace::-webkit-scrollbar { display: none; }
-.file-summary-head { display: flex; align-items: flex-start; gap: 20px; padding-bottom: 24px; margin-bottom: 32px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.document-workspace {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24px 32px 32px;
+  overflow: auto;
+}
+
+.document-workspace > .file-preview { min-height: 0; }
+
+.markdown-document {
+  width: min(820px, 100%);
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0 auto;
+  padding: 40px 56px 64px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: var(--color-bg-primary);
+}
+
+.markdown-document-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 24px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.markdown-document-heading { display: flex; align-items: flex-start; gap: 20px; min-width: 0; }
 .file-summary-head-text { flex: 1; }
-.file-summary-head p { margin: 0 0 6px; color: var(--text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
-.file-summary-head h2 { margin: 0; font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; line-height: 1.3; }
+.file-summary-head-text p { margin: 0 0 6px; color: var(--text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+.file-summary-head-text h2 { margin: 0; overflow-wrap: anywhere; font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; line-height: 1.3; }
 .file-summary-icon { font-size: 38px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.06)); }
+
+.markdown-download {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.markdown-download:hover {
+  border-color: rgba(125, 147, 114, 0.4);
+  background: var(--color-primary-light);
+  color: var(--color-primary-accent);
+}
 
 .summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
 .summary-markdown :deep(h1), .summary-markdown :deep(h2), .summary-markdown :deep(h3), .summary-markdown :deep(h4) { color: var(--text-primary); font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; }
@@ -2034,16 +2140,7 @@ html.dark .ai-input-wrapper {
 .summary-markdown :deep(th), .summary-markdown :deep(td) { padding: 10px 14px; border: 1px solid var(--border-subtle); text-align: left; }
 .summary-markdown :deep(th) { background: rgba(0,0,0,0.02); font-weight: 600; color: var(--text-primary); }
 
-.summary-empty { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 100px 15%; color: var(--text-secondary); animation: ai-fade-in 0.6s ease-out; }
-.summary-empty-icon-wrap { width: 64px; height: 64px; border-radius: 20px; background: rgba(125,147,114,0.08); display: grid; place-items: center; margin-bottom: 20px; color: #7D9372; font-size: 28px; box-shadow: 0 8px 24px rgba(125,147,114,0.06); }
-.summary-empty h3 { color: var(--text-primary); margin: 0 0 8px; font-size: 18px; font-weight: 700; }
-.summary-empty p { font-size: 14px; line-height: 1.6; color: var(--text-muted); margin-bottom: 24px; max-width: 320px; }
-.summary-ask-ai { padding: 12px 28px; border: 0; border-radius: 999px; background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); color: #ffffff; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 4px 16px rgba(125,147,114,0.2); }
-.summary-ask-ai:hover { background: #6c8062; transform: translateY(-1px); box-shadow: 0 6px 20px rgba(125,147,114,0.3); }
-
-html.dark .file-summary-head { border-color: rgba(255,255,255,0.04); }
 html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
-html.dark .summary-empty-icon-wrap { background: rgba(255,255,255,0.05); color: #9AB08F; }
 
 /* ===== Refined Zen Minimalist AI Visual Language (PC) ===== */
 .ai-header { position: relative; justify-content: space-between; background: transparent; backdrop-filter: blur(12px); border-bottom: none; z-index: 10; padding: 24px 20px 12px; }
