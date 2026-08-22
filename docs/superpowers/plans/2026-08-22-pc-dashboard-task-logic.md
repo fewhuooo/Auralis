@@ -13,7 +13,9 @@
 - 任务 API status 只使用 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`；前端展示状态必须通过现有 domain mapper/Task Store 转换。
 - 排期不自动改变任务 status；完成操作保留 `scheduledAt`，显式移出排期才清除 `scheduledAt`。
 - 首页时间轴只展示当前日期起 7 天以内且有 `scheduledAt` 的任务，已完成排期任务仍展示。
+- 排期区的待安排列表只展示有 `dueAt`、无 `scheduledAt` 且未完成的任务；无截止/无排期任务只在资产库“未分布”处理。
 - 资产库“全部任务”必须并列展示 `未分布`、`未完成`、`已完成`；同时无 `dueAt` 与无 `scheduledAt` 的任务优先进入 `未分布`。
+- Timeline 的“导入任务”跳转 `/asset?focus=unassigned-tasks` 并自动展开/选中“未分布”。
 - 只修改 `Auralis-PC/src/`、`Auralis-PC/scripts/`、现行 `docs/` 和必要的 `package.json` 测试脚本；不修改后端、生成 API 类型、密钥或旧归档。
 - 每个代码步骤先写失败测试，再写最小实现；完成前运行 PC 回归、type-check、静态契约和 Web build，浏览器交互单独记录为人工验收。
 
@@ -32,7 +34,7 @@
   - `type AssetTaskGroup = 'unassigned' | 'pending' | 'completed'`
   - `interface AssetTaskGroups { unassigned: Task[]; pending: Task[]; completed: Task[] }`
   - `isCompletedTask(task: Pick<Task, 'status'>): boolean`
-  - `isSchedulableTask(task: Pick<Task, 'status' | 'scheduledAt'>): boolean`
+  - `isSchedulableTask(task: Pick<Task, 'status' | 'dueAt' | 'scheduledAt'>): boolean`
   - `getTaskDueTimestamp(task: Pick<Task, 'dueAt'>): number`
   - `getTasksForAssetGroups(tasks: Task[]): AssetTaskGroups`
   - `getTimelineRange(now?: Date): { start: Date; end: Date }`
@@ -40,7 +42,7 @@
 
 - [ ] **Step 1: Write the failing tests**
 
-Add Node tests for unassigned precedence, deadline order, missing-deadline placement, seven-day boundaries, and completed scheduled retention:
+Add Node tests for unassigned precedence, deadline-bearing scheduling eligibility, deadline order, missing-deadline placement, seven-day boundaries, and completed scheduled retention:
 
 ```js
 test('groups unassigned tasks before completion groups', () => {
@@ -62,6 +64,12 @@ test('keeps completed scheduled tasks inside the seven-day timeline window', () 
     task({ id: 'outside', status: 'pending', scheduledAt: '2026-08-29T12:00:00+08:00' }),
   ]
   assert.deepEqual(getTasksForTimeline(tasks, now).map((item) => item.id), ['last-day', 'today-done'])
+})
+
+test('only deadline-bearing unscheduled tasks enter the scheduling queue', () => {
+  assert.equal(isSchedulableTask(task({ status: 'pending', dueAt: '2026-08-23T00:00:00Z' })), true)
+  assert.equal(isSchedulableTask(task({ status: 'pending' })), false)
+  assert.equal(isSchedulableTask(task({ status: 'pending', dueAt: '2026-08-23T00:00:00Z', scheduledAt: '2026-08-22T12:00:00Z' })), false)
 })
 ```
 
@@ -220,6 +228,7 @@ Expected: FAIL because Dashboard currently uses percentage widths, duplicated da
 7. Change delete/drop-to-pending calls to `await taskStore.unscheduleTask(taskId)`.
 8. Wrap add, complete, schedule, reschedule and unschedule calls in `try/catch/finally`; on failure call `await taskStore.loadLocalTasks()` and show `ElNotification`. Always clear drag state in `finally`.
 9. Use `isSchedulableTask` for pending lists; scheduled active tasks must not appear twice.
+10. Change `triggerImport` to `router.push({ path: '/asset', query: { focus: 'unassigned-tasks' } })`; the Asset view will consume that query and focus the unassigned task folder.
 
 - [ ] **Step 4: Run the focused contract test and PC type-check**
 
@@ -285,6 +294,8 @@ Add a local `createTaskGroupNodes(tasks, groupId)` helper that calls `getTasksFo
 
 Each leaf retains `originalData: task`, uses `id: `t-${task.id}``, displays `task.name`, and retains due/load/done fields. Build the global `全部任务` folder from all tasks and the subject task folder from the subject-filtered array. Keep `taskStore.fetchTasks()` and `updateTaskStatus` persistence.
 
+Read `route.query.focus` with `useRoute()`. When it equals `unassigned-tasks`, expand the global task folder, expand its `未分布` child, and select that folder after `rootNodes` is assigned. A normal `/asset` visit keeps the existing collapsed behavior.
+
 - [ ] **Step 4: Run the focused Asset test and full PC tests**
 
 ```powershell
@@ -316,7 +327,7 @@ git commit -m "feat: group asset tasks by distribution and completion"
 
 - [ ] **Step 1: Update module and design statements**
 
-Document that Dashboard/Timeline use the seven-day scheduled window, completed scheduled tasks remain visible, explicit unschedule clears scheduling, and Asset has parallel `未分布`/`未完成`/`已完成` groups sorted by deadline.
+Document that Dashboard/Timeline use the seven-day scheduled window, completed scheduled tasks remain visible, the scheduling queue requires a deadline, explicit unschedule clears scheduling, the Timeline import button focuses Asset/未分布, and Asset has parallel `未分布`/`未完成`/`已完成` groups sorted by deadline.
 
 - [ ] **Step 2: Record status, risk, and release evidence**
 
