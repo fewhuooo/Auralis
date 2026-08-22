@@ -34,7 +34,7 @@
         <template v-else>
           <!-- Level 1: Groups (e.g. 全部, 学科A) -->
           <div v-for="group in filteredGroups" :key="group.id" class="tree-group">
-            <div class="tree-group-header" @click="group.open = !group.open">
+            <div class="tree-group-header" @click="toggleTreeNode(group)">
               <span class="group-arrow">{{ group.open ? '▾' : '▸' }}</span>
               <component :is="group.lucideIcon" :size="13" class="group-icon" />
               <span class="group-name">{{ group.name }}</span>
@@ -46,7 +46,7 @@
             <div v-if="group.open" class="tree-children">
               <!-- Level 2: Folders (e.g. 全部文件, 任务) -->
               <div v-for="folder in group.children" :key="folder.id" class="tree-folder-container">
-                <div class="tree-folder-header" :class="{ 'is-focus': focusUnassigned && folder.id === 'all-tasks-unassigned' }" @click="folder.open = !folder.open">
+                <div class="tree-folder-header" :class="{ 'is-focus': focusUnassigned && folder.id === 'all-tasks-unassigned' }" @click="toggleTreeNode(folder)">
                   <span class="folder-arrow">{{ folder.open ? '▾' : '▸' }}</span>
                   <component :is="folder.lucideIcon" :size="13" class="folder-icon" />
                   <span class="folder-name">{{ folder.name }}</span>
@@ -54,23 +54,55 @@
                 </div>
                 
                 <div v-if="folder.open" class="tree-items">
-                  <!-- Level 3: Items (File, Block, Task) -->
-                  <div
-                    v-for="item in folder.children"
-                    :key="item.id"
-                    class="tree-item"
-                    :class="{ 'is-active': selected?.id === item.id }"
-                    @click="selectItem(item)"
-                  >
-                    <component :is="item.lucideIcon" :size="14" class="item-icon" />
-                    <div class="item-info">
-                      <span class="item-name" :class="{'is-done': item.type === 'task' && item.done}">{{ item.name }}</span>
-                      <span v-if="item.type === 'file'" class="item-meta">{{ item.time }}</span>
-                      <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due }}</span>
+                  <!-- Level 3: Items (File, Block, Task) or Task Categories -->
+                  <template v-for="item in folder.children" :key="item.id">
+                    <div v-if="item.type === 'folder'" class="tree-subfolder-container">
+                      <div
+                        class="tree-folder-header"
+                        :class="{ 'is-focus': focusUnassigned && item.id.endsWith('-tasks-unassigned') }"
+                        @click="toggleTreeNode(item)"
+                      >
+                        <span class="folder-arrow">{{ item.open ? '▾' : '▸' }}</span>
+                        <component :is="item.lucideIcon" :size="13" class="folder-icon" />
+                        <span class="folder-name">{{ item.name }}</span>
+                        <span class="folder-count">{{ item.children?.length || 0 }}</span>
+                      </div>
+                      <div v-if="item.open" class="tree-items">
+                        <div
+                          v-for="subitem in item.children"
+                          :key="subitem.id"
+                          class="tree-item tree-subitem"
+                          :class="{ 'is-active': selected?.id === subitem.id }"
+                          @click="selectItem(subitem)"
+                        >
+                          <component :is="subitem.lucideIcon" :size="14" class="item-icon" />
+                          <div class="item-info">
+                            <span class="item-name" :class="{ 'is-done': subitem.type === 'task' && subitem.done }">{{ subitem.name }}</span>
+                            <span v-if="subitem.type === 'file'" class="item-meta">{{ subitem.time }}</span>
+                            <span v-else-if="subitem.type === 'task'" class="item-meta">截止: {{ subitem.due }}</span>
+                          </div>
+                          <span v-if="subitem.type === 'file'" class="status-dot" :class="subitem.status"></span>
+                          <span v-if="subitem.type === 'task' && subitem.done" class="task-done-icon"><Check :size="12" /></span>
+                        </div>
+                        <div v-if="!item.children?.length" class="tree-empty-folder tree-subitem-empty">无内容</div>
+                      </div>
                     </div>
-                    <span v-if="item.type === 'file'" class="status-dot" :class="item.status"></span>
-                    <span v-if="item.type === 'task' && item.done" class="task-done-icon"><Check :size="12" /></span>
-                  </div>
+                    <div
+                      v-else
+                      class="tree-item"
+                      :class="{ 'is-active': selected?.id === item.id }"
+                      @click="selectItem(item)"
+                    >
+                      <component :is="item.lucideIcon" :size="14" class="item-icon" />
+                      <div class="item-info">
+                        <span class="item-name" :class="{ 'is-done': item.type === 'task' && item.done }">{{ item.name }}</span>
+                        <span v-if="item.type === 'file'" class="item-meta">{{ item.time }}</span>
+                        <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due }}</span>
+                      </div>
+                      <span v-if="item.type === 'file'" class="status-dot" :class="item.status"></span>
+                      <span v-if="item.type === 'task' && item.done" class="task-done-icon"><Check :size="12" /></span>
+                    </div>
+                  </template>
                   <div v-if="!folder.children?.length" class="tree-empty-folder">无内容</div>
                 </div>
               </div>
@@ -511,6 +543,22 @@ const filterTree = (nodes: TreeNode[], query: string): TreeNode[] => {
   }).filter(Boolean) as TreeNode[]
 }
 
+function findTreeNode(nodes: TreeNode[], id: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.id === id) return node
+    if (node.children) {
+      const match = findTreeNode(node.children, id)
+      if (match) return match
+    }
+  }
+  return null
+}
+
+function toggleTreeNode(node: TreeNode): void {
+  const sourceNode = findTreeNode(rootNodes.value, node.id)
+  if (sourceNode) sourceNode.open = !sourceNode.open
+}
+
 const filteredGroups = computed(() => filterTree(rootNodes.value, searchQ.value))
 
 // ---- Selection & Inline Editors ----
@@ -847,6 +895,9 @@ html.dark .studio-left {
 .tree-empty-folder { padding: 4px 14px 4px 40px; font-size: 10px; color: var(--text-muted); }
 
 .tree-items { padding: 2px 0; }
+.tree-subfolder-container { padding-left: 6px; }
+.tree-subitem { padding-left: 36px; }
+.tree-subitem-empty { padding-left: 36px; }
 .tree-item {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px 8px 40px; cursor: pointer;
