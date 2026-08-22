@@ -163,8 +163,8 @@ function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
   return timeStringFromMinutes(Math.floor(totalMinutes / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES)
 }
 
-function toTaskModel(input: TaskInput, fallbackDay: DayCode = getTodayDayCode()): TaskModel {
-  const scheduledAt = input.scheduledAt ?? scheduledAtFromLegacy(input.startTime, fallbackDay)
+function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
+  const scheduledAt = input.startTime !== undefined ? scheduledAtFromLegacy(input.startTime, fallbackDay) : input.scheduledAt
   const status = statusFromLegacy(input.status, Boolean(scheduledAt))
   return {
     id: input.id || uuidv7(),

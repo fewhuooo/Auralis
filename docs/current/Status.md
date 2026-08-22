@@ -183,6 +183,12 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - 后端 R2：已新增 Compose 固定镜像/健康检查/secret fail-fast、Java 21 非 root Dockerfile、PostgreSQL Testcontainers clean/upgrade 输入、MinIO presigned 链路、Provider stub 错误矩阵和对象孤儿核对脚本；Compose config/build/up/health、真实 PostgreSQL/MinIO 主链路均通过，异常专项和真实 Provider smoke 仍开放。
 - 后端 R3/G3：`OpenApiArtifactTests` 导出并比较 `docs/contracts/openapi/auralis-openapi.json`；`scripts/check-openapi.ps1` 运行时比较通过（3/3），使用 `openapi-typescript@7.13.0` 对 PC/Mobile schema 重生成比对通过；PC `npm run build`、Mobile `npm run type-check` 和 H5 `npm run build:h5` 均通过。Mobile 通过将 TypeScript 固定为 5.3.3 与现有 `vue-tsc@1.8.27` 对齐；G3 契约迁移前置门禁已通过，但该结果不等于真实 Provider smoke 或前后端业务联调。
 
+## 本轮验证结论（2026-08-22）
+
+- 修复 PC Dashboard 已排期任务拖拽后时间不变化的问题：`toTaskModel` 在显式提供 legacy `startTime` 时优先按新槽位生成 `scheduledAt`，未提供时继续保留现有 `scheduledAt`。回归测试覆盖原槽位到目标槽位的写回语义。
+- `Auralis-PC`：`npm.cmd run test:r4-pc` 80/80、`npm.cmd run type-check`、`npm.cmd run check:r4-pc`（60 个生产文件）和 `npm.cmd run build` 均通过；构建仍保留既有 Asset 大 chunk 与无效动态 import 非阻断警告。浏览器/Tauri 拖拽实际走查仍待验收。
+- Docker 测试账号 `pc-ai-test-20260821-180412@example.com` 的 17 个任务已限定范围校正：预计时长统一到 30 分钟倍数，已有排期统一到整点或半点；校验结果为 `17|0|0`（总数|非半小时用时|非半小时排期）。其他用户数据未修改。
+
 ## 人工验收边界
 
 - Tauri 权限、GUI、插件与安装包。
