@@ -113,7 +113,6 @@
           </div>
         </div>
 
-        <!-- Weekday Selector inside Day View -->
         <div v-if="dashboardViewMode === 'day'" class="db-day-selector">
           <button 
             v-for="day in timelineDays"
@@ -122,7 +121,10 @@
             :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
             @click="selectDay(day.dayCode)"
           >
-            <span class="db-day-date">{{ day.dayLabel }}</span>
+            <span class="db-day-week">{{ day.weekdayShort }}</span>
+            <span class="db-day-date-circle">
+              <span class="db-day-date">{{ day.dayLabel }}</span>
+            </span>
           </button>
         </div>
 
@@ -1323,7 +1325,6 @@ html.dark .dashboard-right {
 
 .db-day-selector {
   display: flex;
-  gap: 5px;
   justify-content: space-between;
   margin-bottom: 14px;
 }
@@ -1332,17 +1333,33 @@ html.dark .dashboard-right {
   background: transparent;
   border: none;
   padding: 0;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
-  border-radius: 50%;
   cursor: pointer;
   color: var(--text-secondary);
-  text-align: center;
   transition: all var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.db-day-week {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.db-day-btn.is-active .db-day-week {
+  color: var(--color-primary-accent);
+}
+
+.db-day-date-circle {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  transition: all var(--transition-fast);
 }
 
 .db-day-date {
@@ -1350,16 +1367,19 @@ html.dark .dashboard-right {
   font-weight: 650;
 }
 
-.db-day-btn:hover {
+.db-day-btn:hover .db-day-date-circle {
   background: rgba(163, 177, 155, 0.12);
   color: var(--text-primary);
 }
 
-.db-day-btn.is-active {
+.db-day-btn.is-active .db-day-date-circle {
   background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: white;
-  font-weight: 850;
   box-shadow: 0 4px 10px rgba(125, 147, 114, 0.3);
+}
+
+.db-day-btn.is-active .db-day-date {
+  font-weight: 850;
 }
 
 .db-weekly-list-gantt {

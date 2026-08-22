@@ -52,23 +52,23 @@ test('only deadline-bearing unscheduled tasks enter the scheduling queue', () =>
   assert.equal(isSchedulableTask(task({ status: 'completed', dueAt: '2026-08-23T00:00:00Z' })), false)
 })
 
-test('creates a seven-day timeline window starting from the current local day', () => {
+test('creates a seven-day timeline window matching the full calendar week', () => {
   const now = new Date('2026-08-22T10:00:00+08:00')
   const range = getTimelineRange(now)
-  assert.equal(range.start.toISOString(), '2026-08-21T16:00:00.000Z')
-  assert.equal(range.end.toISOString(), '2026-08-28T16:00:00.000Z')
+  assert.equal(range.start.toISOString(), '2026-08-15T16:00:00.000Z')
+  assert.equal(range.end.toISOString(), '2026-08-22T16:00:00.000Z')
 
   const days = getTimelineDays(now)
   assert.deepEqual(days.map((day) => day.dateKey), [
+    '2026-08-16',
+    '2026-08-17',
+    '2026-08-18',
+    '2026-08-19',
+    '2026-08-20',
+    '2026-08-21',
     '2026-08-22',
-    '2026-08-23',
-    '2026-08-24',
-    '2026-08-25',
-    '2026-08-26',
-    '2026-08-27',
-    '2026-08-28',
   ])
-  assert.equal(days[0].isToday, true)
+  assert.equal(days[6].isToday, true)
   assert.equal(days.filter((day) => day.isToday).length, 1)
 })
 
@@ -76,15 +76,15 @@ test('keeps completed scheduled tasks within the seven-day timeline window', () 
   const now = new Date('2026-08-22T10:00:00+08:00')
   const tasks = [
     task({ id: 'three-days-before', scheduledAt: '2026-08-19T12:00:00+08:00' }),
-    task({ id: 'outside-before', scheduledAt: '2026-08-21T23:59:00+08:00' }),
+    task({ id: 'outside-before', scheduledAt: '2026-08-15T23:59:00+08:00' }),
     task({ id: 'today-done', status: 'completed', scheduledAt: '2026-08-22T12:00:00+08:00' }),
     task({ id: 'tomorrow', scheduledAt: '2026-08-23T12:00:00+08:00' }),
-    task({ id: 'in-window-late', scheduledAt: '2026-08-28T23:59:00+08:00' }),
-    task({ id: 'outside-after', scheduledAt: '2026-08-29T00:01:00+08:00' }),
-    task({ id: 'cancelled', status: 'cancelled', scheduledAt: '2026-08-23T13:00:00+08:00' }),
+    task({ id: 'in-window-late', scheduledAt: '2026-08-21T23:59:00+08:00' }),
+    task({ id: 'outside-after', scheduledAt: '2026-08-24T00:01:00+08:00' }),
+    task({ id: 'cancelled', status: 'cancelled', scheduledAt: '2026-08-20T13:00:00+08:00' }),
   ]
 
-  assert.deepEqual(getTasksForTimeline(tasks, now).map((item) => item.id), ['today-done', 'tomorrow', 'in-window-late'])
+  assert.deepEqual(getTasksForTimeline(tasks, now).map((item) => item.id), ['three-days-before', 'in-window-late', 'today-done'])
 })
 
 test('uses the full calendar week containing the selected day', () => {
