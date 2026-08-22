@@ -74,10 +74,49 @@ export function getTasksForAssetGroups(tasks: Task[]): AssetTaskGroups {
 export function getTimelineRange(now = new Date()): { start: Date; end: Date } {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - 3)
   const end = new Date(start)
   end.setDate(end.getDate() + 7)
   return { start, end }
 }
+
+export interface VisibleDay {
+  dateKey: string
+  dayCode: string
+  weekdayLabel: string
+  monthDayLabel: string
+  isToday: boolean
+}
+
+const DAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+export function getTimelineDays(now = new Date()): VisibleDay[] {
+  const { start } = getTimelineRange(now)
+  const days: VisibleDay[] = []
+
+  for (let index = 0; index < 7; index += 1) {
+    const date = new Date(start)
+    date.setDate(date.getDate() + index)
+
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const dayOfWeek = date.getDay()
+
+    days.push({
+      dateKey: `${date.getFullYear()}-${month}-${day}`,
+      dayCode: DAY_CODES[dayOfWeek],
+      weekdayLabel: DAY_NAMES[dayOfWeek],
+      monthDayLabel: `${month}/${day}`,
+      isToday: index === 3,
+    })
+  }
+
+  return days
+}
+
+// Kept as a descriptive alias for callers that already use the visible-day name.
+export const getVisibleDays = getTimelineDays
 
 export function getTasksForTimeline(tasks: Task[], now = new Date()): Task[] {
   const { start, end } = getTimelineRange(now)

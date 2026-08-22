@@ -68,27 +68,27 @@
         <h3 class="column-title">本周排期概览</h3>
         <div class="weekly-overview-list">
           <div 
-            v-for="day in DAYS" 
-            :key="day" 
+            v-for="day in timelineDays"
+            :key="day.dateKey"
             class="weekly-overview-row"
-            :class="{ 'is-active': selectedDay === day, 'is-today': day === getTodayDayCode() }"
-            @click="selectDay(day)"
+            :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
+            @click="selectDay(day.dayCode)"
           >
             <div class="weekly-overview-row-header">
-              <span class="day-dot" v-if="day === getTodayDayCode()">今</span>
-              <span class="weekly-overview-day-name" :class="{ 'is-today-text': day === getTodayDayCode() }">{{ DAY_NAMES[day] }}</span>
-              <span class="weekly-overview-task-count">{{ getScheduledTasksForDay(day).length }} 项任务</span>
+              <span class="day-dot" v-if="day.isToday">今</span>
+              <span class="weekly-overview-day-name" :class="{ 'is-today-text': day.isToday }">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
+              <span class="weekly-overview-task-count">{{ getScheduledTasksForDay(day.dayCode).length }} 项任务</span>
             </div>
             <div class="weekly-overview-tasks-timeline">
               <div 
-                v-for="task in getScheduledTasksForDay(day).slice(0, 3)" 
+                v-for="task in getScheduledTasksForDay(day.dayCode).slice(0, 3)"
                 :key="task.id" 
                 class="weekly-overview-task-dot"
                 :style="{ backgroundColor: task.color }"
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
               ></div>
-              <span v-if="getScheduledTasksForDay(day).length > 3" class="weekly-overview-more">+{{ getScheduledTasksForDay(day).length - 3 }}</span>
-              <span v-if="getScheduledTasksForDay(day).length === 0" class="weekly-overview-empty">空闲</span>
+              <span v-if="getScheduledTasksForDay(day.dayCode).length > 3" class="weekly-overview-more">+{{ getScheduledTasksForDay(day.dayCode).length - 3 }}</span>
+              <span v-if="getScheduledTasksForDay(day.dayCode).length === 0" class="weekly-overview-empty">空闲</span>
             </div>
           </div>
         </div>
@@ -96,7 +96,7 @@
 
       <!-- Middle Column: Detailed Day Timeline -->
       <div class="timeline-column">
-        <h3 class="column-title">时间流细节 ({{ DAY_NAMES[selectedDay] }})</h3>
+        <h3 class="column-title">时间流细节 ({{ selectedTimelineDay.weekdayLabel }} {{ selectedTimelineDay.monthDayLabel }})</h3>
         <div class="time-slots">
           <div
             v-for="slot in timeSlots"
@@ -201,26 +201,26 @@
     <div v-else-if="viewMode === 'week'" class="weekly-view-container">
       <div class="weekly-view-body">
         <div 
-          v-for="day in DAYS" 
-          :key="day" 
+          v-for="day in timelineDays"
+          :key="day.dateKey"
           class="weekly-column"
-          :class="{ 'is-today': day === getTodayDayCode(), 'drag-over': dragOverDay === day }"
-          @dragover.prevent="dragOverDay = day"
+          :class="{ 'is-today': day.isToday, 'drag-over': dragOverDay === day.dayCode }"
+          @dragover.prevent="dragOverDay = day.dayCode"
           @dragleave.prevent="dragOverDay = null"
-          @drop.prevent="handleDropOnDay(day)"
-        >
+          @drop.prevent="handleDropOnDay(day.dayCode)"
+          >
           <div class="weekly-column-header">
-            <span class="day-dot" v-if="day === getTodayDayCode()">今</span>
-            <span class="weekly-column-title" :class="{ 'is-today-text': day === getTodayDayCode() }">
-              {{ DAY_NAMES[day] }} · {{ getDayDateStr(day) }}
+            <span class="day-dot" v-if="day.isToday">今</span>
+            <span class="weekly-column-title" :class="{ 'is-today-text': day.isToday }">
+              {{ day.weekdayLabel }} · {{ day.monthDayLabel }}
             </span>
             <span class="weekly-column-count">
-              {{ getScheduledTasksForDay(day).length }}
+              {{ getScheduledTasksForDay(day.dayCode).length }}
             </span>
           </div>
           <div class="weekly-tasks-list">
             <div 
-              v-for="task in getScheduledTasksForDay(day)" 
+              v-for="task in getScheduledTasksForDay(day.dayCode)"
               :key="task.id" 
               class="weekly-task-card"
               :class="{ 'is-past': isPastTask(task) }"
@@ -404,8 +404,8 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ListTodo, CheckCircle, Clock, Inbox, Plus, Sparkles } from 'lucide-vue-next'
 
-import { useTaskStore, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
-import { getTasksForTimeline } from '@/services/taskViewRules'
+import { useTaskStore, DAY_CODES } from '@/store/useTaskStore'
+import { getTasksForTimeline, getTimelineDays } from '@/services/taskViewRules'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
@@ -419,8 +419,8 @@ const { recentBlocks } = storeToRefs(knowledgeStore)
 
 // Core timeline states
 const viewMode = ref<'day' | 'week'>('day')
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const DAY_NAMES: Record<string, string> = { Mon: '周一', Tue: '周二', Wed: '周三', Thu: '周四', Fri: '周五', Sat: '周六', Sun: '周日' }
+const timelineDays = computed(() => getTimelineDays())
+const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[3])
 
 const selectDay = async (day: string) => {
   taskStore.selectedDay = day
@@ -578,19 +578,6 @@ const getCleanDesc = (desc?: string): string => {
 const getBlockTitle = (blockId: string): string => {
   const block = recentBlocks.value.find(b => b.id === blockId)
   return block ? block.title : '已删除知识点'
-}
-
-const getDayDateStr = (dayCode: string) => {
-  const dayMap: Record<string, number> = { 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6, 'Sun': 7 }
-  const today = new Date()
-  const todayIndex = today.getDay() || 7
-  const targetIndex = dayMap[dayCode]
-  const diff = targetIndex - todayIndex
-  const targetDate = new Date(today)
-  targetDate.setDate(today.getDate() + diff)
-  const m = (targetDate.getMonth() + 1).toString().padStart(2, '0')
-  const d = targetDate.getDate().toString().padStart(2, '0')
-  return `${m}/${d}`
 }
 
 // Spaced Repetition Daily reminder checks

@@ -91,7 +91,7 @@
       <!-- Compact Timeline (top 70%) -->
       <section class="compact-timeline">
         <div class="timeline-header">
-          <h3 class="timeline-title">时间轴 ({{ DAY_NAMES[selectedDay] }})</h3>
+          <h3 class="timeline-title">时间轴 ({{ selectedTimelineDay.weekdayLabel }} {{ selectedTimelineDay.monthDayLabel }})</h3>
           <div class="dashboard-time-actions">
             <div class="db-view-toggle">
               <button 
@@ -116,13 +116,13 @@
         <!-- Weekday Selector inside Day View -->
         <div v-if="dashboardViewMode === 'day'" class="db-day-selector">
           <button 
-            v-for="day in DAYS" 
-            :key="day" 
+            v-for="day in timelineDays"
+            :key="day.dateKey"
             class="db-day-btn"
-            :class="{ 'is-active': selectedDay === day }"
-            @click="selectDay(day)"
+            :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
+            @click="selectDay(day.dayCode)"
           >
-            {{ DAY_SHORT_NAMES[day] }}
+            {{ day.weekdayLabel.replace('周', '') }} {{ day.monthDayLabel }}
           </button>
         </div>
 
@@ -169,19 +169,19 @@
         <!-- Weekly Summary List (Gantt-like Rows) -->
         <div v-else class="db-weekly-list-gantt">
           <div 
-            v-for="day in DAYS" 
-            :key="day" 
+            v-for="day in timelineDays"
+            :key="day.dateKey"
             class="db-weekly-day-row"
-            :class="{ 'is-today': day === getTodayDayCode() }"
-            @click="selectDay(day); dashboardViewMode = 'day';"
+            :class="{ 'is-today': day.isToday }"
+            @click="selectDay(day.dayCode); dashboardViewMode = 'day';"
           >
             <div class="db-weekly-row-label">
-              <span class="db-weekly-row-name">{{ DAY_NAMES[day] }}</span>
-              <span class="db-weekly-row-count">{{ getScheduledTasksForDay(day).length }} 项</span>
+              <span class="db-weekly-row-name">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
+              <span class="db-weekly-row-count">{{ getScheduledTasksForDay(day.dayCode).length }} 项</span>
             </div>
             <div class="db-weekly-row-timeline">
               <div 
-                v-for="task in getScheduledTasksForDay(day)" 
+                v-for="task in getScheduledTasksForDay(day.dayCode)"
                 :key="task.id" 
                 class="db-weekly-task-block"
                 :style="{ borderLeftColor: task.color, backgroundColor: task.color + '15' }"
@@ -190,7 +190,7 @@
                 <span class="db-weekly-block-time">{{ getTaskTimeStr(task.startTime) }}</span>
                 <span class="db-weekly-block-name">{{ task.name }}</span>
               </div>
-              <div v-if="getScheduledTasksForDay(day).length === 0" class="db-weekly-row-empty">
+              <div v-if="getScheduledTasksForDay(day.dayCode).length === 0" class="db-weekly-row-empty">
                 空闲
               </div>
             </div>
@@ -388,8 +388,8 @@ import 'element-plus/theme-chalk/el-notification.css'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore, type Task, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
-import { getTasksForTimeline } from '@/services/taskViewRules'
+import { useTaskStore, type Task, DAY_CODES } from '@/store/useTaskStore'
+import { getTasksForTimeline, getTimelineDays } from '@/services/taskViewRules'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -407,9 +407,8 @@ const { pendingTasks, allTasks, timeSlots, selectedDay } = storeToRefs(taskStore
 const authStore = useAuthStore()
 
 const dashboardViewMode = ref<'day' | 'week'>('day')
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const DAY_NAMES: Record<string, string> = { Mon: '周一', Tue: '周二', Wed: '周三', Thu: '周四', Fri: '周五', Sat: '周六', Sun: '周日' }
-const DAY_SHORT_NAMES: Record<string, string> = { Mon: '一', Tue: '二', Wed: '三', Thu: '四', Fri: '五', Sat: '六', Sun: '日' }
+const timelineDays = computed(() => getTimelineDays())
+const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[3])
 
 const selectDay = async (day: string) => {
   taskStore.selectedDay = day

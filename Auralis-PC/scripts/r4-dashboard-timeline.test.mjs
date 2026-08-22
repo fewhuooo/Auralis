@@ -9,12 +9,16 @@ const taskStore = await readFile(new URL('../src/store/useTaskStore.ts', import.
 test('dashboard uses a bounded grid and shared timeline window', () => {
   assert.match(dashboard, /display:\s*grid/)
   assert.match(dashboard, /getTasksForTimeline\(allTasks\.value\)/)
+  assert.match(dashboard, /getTimelineDays/)
+  assert.match(dashboard, /day\.dateKey/)
   assert.doesNotMatch(dashboard, /getTasksForTimeline\(allTasks\.value,\s*selectedDay\.value\)/)
   assert.doesNotMatch(dashboard, /timeline-import-btn|focus=unassigned-tasks/)
 })
 
 test('timeline keeps deadline-only pending queue and imports unassigned tasks', () => {
   assert.match(timeline, /getTasksForTimeline\(allTasks\.value\)/)
+  assert.match(timeline, /getTimelineDays/)
+  assert.match(timeline, /day\.dateKey/)
   assert.match(timeline, /return filteredPendingTasks\.value\s*\n\}/)
   assert.match(timeline, /router\.push\(['"`]\/asset\?focus=unassigned-tasks['"`]\)/)
 })
