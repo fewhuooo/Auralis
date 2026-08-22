@@ -79,7 +79,7 @@
                           <div class="item-info">
                             <span class="item-name" :class="{ 'is-done': subitem.type === 'task' && subitem.done }">{{ subitem.name }}</span>
                             <span v-if="subitem.type === 'file'" class="item-meta">{{ subitem.time }}</span>
-                            <span v-else-if="subitem.type === 'task'" class="item-meta">截止: {{ subitem.due }}</span>
+                            <span v-else-if="subitem.type === 'task'" class="item-meta">截止: {{ subitem.due || '未设置' }}</span>
                           </div>
                           <span v-if="subitem.type === 'file'" class="status-dot" :class="subitem.status"></span>
                           <span v-if="subitem.type === 'task' && subitem.done" class="task-done-icon"><Check :size="12" /></span>
@@ -97,7 +97,7 @@
                       <div class="item-info">
                         <span class="item-name" :class="{ 'is-done': item.type === 'task' && item.done }">{{ item.name }}</span>
                         <span v-if="item.type === 'file'" class="item-meta">{{ item.time }}</span>
-                        <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due }}</span>
+                        <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due || '未设置' }}</span>
                       </div>
                       <span v-if="item.type === 'file'" class="status-dot" :class="item.status"></span>
                       <span v-if="item.type === 'task' && item.done" class="task-done-icon"><Check :size="12" /></span>
@@ -141,10 +141,13 @@
               <h1 class="detail-name" :class="{'is-done': selected.type === 'task' && selected.done}">{{ selected.name }}</h1>
               <p v-if="selected.type === 'file'" class="detail-path">上传于 {{ selected.time }} · {{ selected.pages }} 页 · {{ selected.size }}</p>
               <p v-else-if="selected.type === 'block'" class="detail-path">知识块 · 所属学科: {{ getSubjectName(selected.groupId) }}</p>
-              <p v-else-if="selected.type === 'task'" class="detail-path">生成任务 · 优先级: {{ selected.load }} · 截止: {{ selected.due }}</p>
+              <p v-else-if="selected.type === 'task'" class="detail-path">生成任务 · 预计用时: {{ formatDuration(selected.durationMinutes || 30) }} · 截止: {{ selected.due || '未设置' }}</p>
             </div>
             <span v-if="selected.type === 'file'" class="status-badge" :class="selected.status">{{ selected.statusText }}</span>
-            <button v-if="selected.type === 'task'" class="btn-primary sm-btn" style="margin-left:auto;" @click="toggleTaskDone(selected)">
+            <button v-if="selected.type === 'task'" class="btn-primary sm-btn" style="margin-left:auto;" @click="saveTaskEdit(selected)">
+              保存修改
+            </button>
+            <button v-if="selected.type === 'task'" class="btn-primary sm-btn" @click="toggleTaskDone(selected)">
               {{ selected.done ? '标记为未完成' : '标记为完成' }}
             </button>
             <button v-if="selected.type === 'block'" class="btn-primary sm-btn" style="margin-left:auto;" @click="saveBlockEdit(selected)">
@@ -216,28 +219,16 @@
                 </div>
 
                 <div class="property-row">
-                  <div class="property-label" style="align-self: flex-start; padding-top: 8px;">
-                    <Activity :size="14" />
-                    <span>负荷级别</span>
+                  <div class="property-label">
+                    <Clock :size="14" />
+                    <span>预计用时</span>
                   </div>
                   <div class="property-value">
-                    <div class="view-toggle" style="width: fit-content;">
-                      <button 
-                        class="toggle-btn" 
-                        :class="{ 'is-active': selected.load === '低' }"
-                        @click="selected.load = '低'"
-                      >低负荷</button>
-                      <button 
-                        class="toggle-btn" 
-                        :class="{ 'is-active': selected.load === '中' }"
-                        @click="selected.load = '中'"
-                      >中负荷</button>
-                      <button 
-                        class="toggle-btn" 
-                        :class="{ 'is-active': selected.load === '高' }"
-                        @click="selected.load = '高'"
-                      >高负荷</button>
-                    </div>
+                    <select v-model.number="selected.durationMinutes" class="duration-select" aria-label="预计用时">
+                      <option v-for="minutes in durationOptions" :key="minutes" :value="minutes">
+                        {{ formatDuration(minutes) }}
+                      </option>
+                    </select>
                   </div>
                 </div>
               </div>
@@ -328,7 +319,7 @@ import { useRoute } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
-import { Plus, Archive, FileText, UploadCloud, LayoutDashboard, Network, Check, BookOpen, Blocks, File, PieChart, ImageIcon, Mic, Folder, ListTodo, Calendar, Activity } from 'lucide-vue-next'
+import { Plus, Archive, FileText, UploadCloud, LayoutDashboard, Network, Check, BookOpen, Blocks, File, PieChart, ImageIcon, Mic, Folder, ListTodo, Calendar, Clock } from 'lucide-vue-next'
 import PdfViewer from '@/components/subject/PdfViewer.vue'
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
 import { useAssetStore } from '@/store/useAssetStore'
@@ -371,6 +362,7 @@ interface TreeNode {
   // For tasks
   due?: string
   load?: string
+  durationMinutes?: number
   done?: boolean
   // Meta
   groupId?: string
@@ -404,15 +396,50 @@ function getIconForSource(source: string): any {
   return File
 }
 
+const durationOptions = Array.from({ length: 16 }, (_, index) => (index + 1) * 30)
+
+function normalizeDuration(value: unknown): number {
+  const minutes = Number(value)
+  if (!Number.isFinite(minutes)) return durationOptions[0]
+  const rounded = Math.round(minutes / 30) * 30
+  return Math.min(durationOptions[durationOptions.length - 1], Math.max(durationOptions[0], rounded))
+}
+
+function formatDuration(minutes: number): string {
+  const safeMinutes = normalizeDuration(minutes)
+  const hours = Math.floor(safeMinutes / 60)
+  const remainder = safeMinutes % 60
+  if (hours === 0) return `${remainder}分钟`
+  return `${hours}小时${remainder ? ` ${remainder}分钟` : ''}`
+}
+
+function formatDateInput(value?: string): string {
+  if (!value) return ''
+  const dateOnly = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
+  if (dateOnly) return dateOnly
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function toDueAtValue(value?: string): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T23:59:59.999Z`
+  return trimmed
+}
+
 function taskTreeNode(task: any, groupId: string): TreeNode {
   return {
     id: `t-${task.id}`,
     type: 'task',
     groupId,
-    name: task.name || '未命名任务',
+    name: task.title || task.name || '未命名任务',
     lucideIcon: ListTodo,
-    due: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : (task.scheduledAt?.split('T')[0] || '-'),
+    due: formatDateInput(task.dueAt),
     load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'),
+    durationMinutes: normalizeDuration(task.durationMinutes ?? task.duration),
+    preview: task.description ?? task.desc ?? '',
     done: task.status === 'completed',
     originalData: task,
   }
@@ -579,6 +606,24 @@ const toggleTaskDone = async (task: TreeNode) => {
   if (task.originalData) {
     const newStatus = task.done ? 'completed' : 'pending'
     await taskStore.updateTaskStatus(task.originalData.id, newStatus)
+  }
+}
+
+const saveTaskEdit = async (task: TreeNode) => {
+  if (!task.originalData?.id) return
+  try {
+    await taskStore.updateTaskDetails(task.originalData.id, {
+      title: task.name.trim() || '未命名任务',
+      description: task.preview ?? '',
+      dueAt: toDueAtValue(task.due),
+      durationMinutes: normalizeDuration(task.durationMinutes),
+    })
+    await loadAssetsFromBackend()
+    selected.value = findTreeNode(rootNodes.value, task.id)
+    ElNotification({ title: '✅ 成功', message: '任务已更新', type: 'success' })
+  } catch (err) {
+    console.error('[Asset] Failed to save task:', err)
+    ElNotification({ title: '保存失败', message: '任务更新失败，请稍后重试', type: 'error' })
   }
 }
 
@@ -1106,6 +1151,21 @@ html.dark .studio-middle {
   flex: 1;
   display: flex;
   align-items: center;
+}
+.duration-select {
+  min-width: 150px;
+  padding: 8px 32px 8px 12px;
+  border: 1px solid #7D9372;
+  border-radius: 9999px;
+  background: var(--color-bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.duration-select:focus {
+  outline: none;
+  border-color: #65775c;
+  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.2);
 }
 .prop-input {
   font-size: 13px;

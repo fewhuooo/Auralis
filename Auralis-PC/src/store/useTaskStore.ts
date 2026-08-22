@@ -432,6 +432,24 @@ export const useTaskStore = defineStore('task', () => {
     await loadLocalTasks()
   }
 
+  async function updateTaskDetails(taskId: string, changes: Pick<TaskInput, 'title' | 'description' | 'dueAt' | 'durationMinutes'>): Promise<void> {
+    const current = findTask(taskId)
+    if (!current) return
+    const hasDueAtChange = Object.prototype.hasOwnProperty.call(changes, 'dueAt')
+    const model = toTaskModel({
+      ...current,
+      title: changes.title ?? current.title,
+      description: changes.description ?? current.description,
+      dueAt: hasDueAtChange ? changes.dueAt : current.dueAt,
+      durationMinutes: changes.durationMinutes ?? current.durationMinutes,
+      scheduledAt: current.scheduledAt,
+      status: current.status,
+    })
+    model.version = current.version
+    await updateTaskModel(model)
+    await loadLocalTasks()
+  }
+
   async function scheduleTask(taskId: string, slotTime: string): Promise<void> {
     const task = pendingTasks.value.find((item) => item.id === taskId)
     if (!task) return
@@ -566,6 +584,7 @@ export const useTaskStore = defineStore('task', () => {
     unscheduleTask,
     deleteTask,
     updateTaskStatus,
+    updateTaskDetails,
     aiSuggestions,
     hasOverload,
     analyzeSchedule,
