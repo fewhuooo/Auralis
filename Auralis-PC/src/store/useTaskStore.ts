@@ -13,13 +13,14 @@ import { mapTaskView, type CognitiveLoad, type TaskModel, type TaskStatus } from
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
+import { getTasksForTimeline, isSchedulableTask } from '@/services/taskViewRules'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 export type DayCode = typeof DAY_CODES[number]
 
 export const getTodayDayCode = (): DayCode => DAY_CODES[new Date().getDay()] || 'Mon'
 
-export type TaskPresentationStatus = 'pending' | 'scheduled' | 'completed' | 'learning' | 'to_review'
+export type TaskPresentationStatus = 'pending' | 'scheduled' | 'completed' | 'learning' | 'to_review' | 'cancelled'
 export type TaskLoad = 'low' | 'medium' | 'high'
 
 /**
@@ -113,6 +114,7 @@ function statusFromLegacy(value: TaskInput['status'], hasSchedule: boolean): Tas
 function statusToPresentation(value: TaskStatus, scheduledAt?: string): TaskPresentationStatus {
   if (value === 'DONE') return 'completed'
   if (value === 'IN_PROGRESS') return 'learning'
+  if (value === 'CANCELLED') return 'cancelled'
   if (value === 'TODO' && scheduledAt) return 'scheduled'
   return 'pending'
 }
@@ -296,9 +298,9 @@ export const useTaskStore = defineStore('task', () => {
   function rebuildSchedule(): void {
     updateCurrentSlot()
     const tasks = allTasks.value
-    pendingTasks.value = tasks.filter((task) => task.status === 'pending' || task.status === 'learning' || task.status === 'to_review' || (task.status === 'completed' && !task.scheduledAt))
+    pendingTasks.value = tasks.filter(isSchedulableTask)
     timeSlots.value.forEach((slot) => { slot.task = null })
-    const scheduled = tasks.filter((task) => Boolean(task.scheduledAt) && task.status !== 'completed')
+    const scheduled = getTasksForTimeline(tasks)
     for (const slot of timeSlots.value) {
       slot.task = scheduled.find((task) => dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value && timeForScheduledAt(task.scheduledAt) === slot.time) || null
     }
@@ -424,7 +426,7 @@ export const useTaskStore = defineStore('task', () => {
   async function updateTaskStatus(taskId: string, newStatus: TaskPresentationStatus): Promise<void> {
     const current = findTask(taskId)
     if (!current) return
-    const model = toTaskModel({ ...current, status: newStatus, scheduledAt: newStatus === 'scheduled' ? current.scheduledAt : undefined })
+    const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
     model.version = current.version
     await updateTaskModel(model)
     await loadLocalTasks()
@@ -435,8 +437,8 @@ export const useTaskStore = defineStore('task', () => {
     if (!task) return
     const slot = timeSlots.value.find((item) => item.time === slotTime)
     if (!slot) return
-    if (slot.task) await updateTaskStatus(slot.task.id, 'pending')
-    const model = toTaskModel({ ...task, status: 'scheduled', startTime: `${selectedDay.value} ${slotTime}` })
+    if (slot.task) await unscheduleTask(slotTime)
+    const model = toTaskModel({ ...task, status: task.status, startTime: `${selectedDay.value} ${slotTime}` })
     model.version = task.version
     await updateTaskModel(model)
     await loadLocalTasks()
@@ -450,7 +452,7 @@ export const useTaskStore = defineStore('task', () => {
       .map((item) => timeForScheduledAt(item.scheduledAt))
     let hour = 8
     while (occupied.includes(`${String(hour).padStart(2, '0')}:00`) && hour <= 22) hour += 1
-    const model = toTaskModel({ ...task, status: 'scheduled', startTime: `${day} ${String(hour).padStart(2, '0')}:00` })
+    const model = toTaskModel({ ...task, status: task.status, startTime: `${day} ${String(hour).padStart(2, '0')}:00` })
     model.version = task.version
     await updateTaskModel(model)
     await loadLocalTasks()
@@ -461,11 +463,11 @@ export const useTaskStore = defineStore('task', () => {
     const to = timeSlots.value.find((slot) => slot.time === toSlotTime)?.task
     if (!from) return
     if (to) {
-      const toModel = toTaskModel({ ...to, status: 'scheduled', startTime: `${selectedDay.value} ${fromSlotTime}` })
+      const toModel = toTaskModel({ ...to, status: to.status, startTime: `${selectedDay.value} ${fromSlotTime}` })
       toModel.version = to.version
       await updateTaskModel(toModel)
     }
-    const fromModel = toTaskModel({ ...from, status: 'scheduled', startTime: `${selectedDay.value} ${toSlotTime}` })
+    const fromModel = toTaskModel({ ...from, status: from.status, startTime: `${selectedDay.value} ${toSlotTime}` })
     fromModel.version = from.version
     await updateTaskModel(fromModel)
     await loadLocalTasks()
@@ -474,7 +476,7 @@ export const useTaskStore = defineStore('task', () => {
   async function unscheduleTask(slotTime: string): Promise<void> {
     const task = timeSlots.value.find((slot) => slot.time === slotTime)?.task
     if (!task) return
-    const model = toTaskModel({ ...task, status: 'pending', scheduledAt: undefined, startTime: undefined })
+    const model = toTaskModel({ ...task, status: task.status, scheduledAt: undefined, startTime: undefined })
     model.version = task.version
     await updateTaskModel(model)
     await loadLocalTasks()

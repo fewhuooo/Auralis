@@ -1,7 +1,7 @@
 <template>
-  <div class="dashboard-container" ref="containerRef">
+  <div class="dashboard-container" ref="containerRef" :style="dashboardGridStyle">
     <!-- LEFT: Subject Index Tree (20%) -->
-    <nav class="subject-index" :style="{ width: navWidthPercent + '%' }">
+    <nav class="subject-index">
       <div class="index-header">
         <h1 class="welcome-title">{{ greeting }}，{{ username }}</h1>
         <p class="welcome-sub">已完成 {{ completedCount }} 项 · {{ totalFocusHours }}</p>
@@ -87,7 +87,7 @@
     <div class="splitter splitter-v" @mousedown="startMainResize"></div>
 
     <!-- RIGHT: Compact Timeline + Todo List (30%) -->
-    <div class="dashboard-right" :style="{ width: (100 - navWidthPercent - mainLeftPercent) + '%' }">
+    <div class="dashboard-right">
       <!-- Compact Timeline (top 70%) -->
       <section class="compact-timeline">
         <div class="timeline-header">
@@ -109,6 +109,7 @@
                 周视图
               </button>
             </div>
+            <button class="timeline-import-btn" @click="router.push('/asset?focus=unassigned-tasks')">导入任务</button>
             <button class="todo-fab-add-btn" @click="openCreateTaskDialog" title="新建任务">+</button>
           </div>
         </div>
@@ -388,7 +389,8 @@ import 'element-plus/theme-chalk/el-notification.css'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore, type Task, getTodayDayCode } from '@/store/useTaskStore'
+import { useTaskStore, type Task, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
+import { getTasksForTimeline } from '@/services/taskViewRules'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -416,18 +418,9 @@ const selectDay = async (day: string) => {
 }
 
 const getScheduledTasksForDay = (day: string) => {
-  const sourceTasks = allTasks.value
-  return sourceTasks.filter(t => {
-    if (t.status !== 'scheduled' || !t.startTime) return false
-    const parts = t.startTime.split(' ')
-    if (parts.length === 2) {
-      return parts[0] === day
-    }
-    return day === getTodayDayCode() && t.startTime.includes(':')
-  }).sort((a, b) => {
-    const timeA = a.startTime!.split(' ').pop() || ''
-    const timeB = b.startTime!.split(' ').pop() || ''
-    return timeA.localeCompare(timeB)
+  return getTasksForTimeline(allTasks.value).filter((task) => {
+    if (!task.scheduledAt) return false
+    return DAY_CODES[new Date(task.scheduledAt).getDay()] === day
   })
 }
 
@@ -454,6 +447,9 @@ const containerRef = ref<HTMLElement | null>(null)
 const navWidthPercent = ref(25)      // left nav width as % of container
 const mainLeftPercent = ref(50)      // content stream width as % of container
 // right panel width = 100 - navWidthPercent - mainLeftPercent
+const dashboardGridStyle = computed(() => ({
+  gridTemplateColumns: `${navWidthPercent.value}fr 8px ${mainLeftPercent.value}fr 8px ${Math.max(20, 100 - navWidthPercent.value - mainLeftPercent.value)}fr`,
+}))
 
 let activeResize: 'nav' | 'main' | null = null
 let resizeStartX = 0
@@ -630,15 +626,10 @@ const handleAddTask = async () => {
 }
 
 const filteredPendingTasks = computed(() => {
-  const tasksList = pendingTasks.value
-  return tasksList.filter(t => t.status === 'pending')
+  return pendingTasks.value
 })
 
 const filteredTimeSlots = computed(() => {
-  const hasStoreSlots = timeSlots.value.some(s => s.task !== null)
-  if (hasStoreSlots || allTasks.value.length > 0) {
-    return timeSlots.value
-  }
   return timeSlots.value
 })
 
@@ -741,7 +732,7 @@ onMounted(async () => {
 <style scoped>
 /* ===== Root Layout ===== */
 .dashboard-container {
-  display: flex;
+  display: grid;
   height: 100%;
   width: 100%;
   overflow: hidden;
@@ -767,7 +758,7 @@ html.dark .dashboard-container {
 .splitter {
   width: 8px;
   margin: 0 -4px;
-  flex-shrink: 0;
+  min-width: 0;
   background: transparent;
   position: relative;
   cursor: col-resize;
@@ -796,7 +787,8 @@ html.dark .dashboard-container {
   flex-direction: column;
   padding: 20px 16px;
   overflow-y: auto;
-  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
   background: var(--bg-card, #FFFFFF);
   border-radius: 16px;
   border: 1px solid var(--border-subtle);
@@ -1030,6 +1022,7 @@ html.dark .manage-subjects-btn:hover {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
   padding: 24px 28px;
   background: var(--bg-card, #FFFFFF);
@@ -1222,7 +1215,7 @@ html.dark .row-preview :deep(code) {
   min-width: 0;
   overflow: hidden;
   background: var(--bg-card, #FFFFFF);
-  flex-shrink: 0;
+  min-height: 0;
   border-radius: 16px;
   border: 1px solid var(--border-subtle);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
@@ -1281,6 +1274,24 @@ html.dark .dashboard-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.timeline-import-btn {
+  border: 1px solid var(--border-default);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 5px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.timeline-import-btn:hover {
+  color: var(--color-primary-accent);
+  border-color: var(--color-primary-accent);
+  background: var(--color-primary-light);
 }
 
 .db-view-toggle {

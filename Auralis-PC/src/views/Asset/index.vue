@@ -46,7 +46,7 @@
             <div v-if="group.open" class="tree-children">
               <!-- Level 2: Folders (e.g. 全部文件, 任务) -->
               <div v-for="folder in group.children" :key="folder.id" class="tree-folder-container">
-                <div class="tree-folder-header" @click="folder.open = !folder.open">
+                <div class="tree-folder-header" :class="{ 'is-focus': focusUnassigned && folder.id === 'all-tasks-unassigned' }" @click="folder.open = !folder.open">
                   <span class="folder-arrow">{{ folder.open ? '▾' : '▸' }}</span>
                   <component :is="folder.lucideIcon" :size="13" class="folder-icon" />
                   <span class="folder-name">{{ folder.name }}</span>
@@ -292,6 +292,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
@@ -301,6 +302,7 @@ import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useSourceStore } from '@/store/useSourceStore'
+import { getTasksForAssetGroups, type AssetTaskGroups } from '@/services/taskViewRules'
 
 // ---- Layout States ----
 const showRegisterModal = ref(false)
@@ -356,8 +358,10 @@ const blockStore = useKnowledgeStore()
 const sourceStore = useSourceStore()
 const assetStore = useAssetStore()
 const taskStore = useTaskStore()
+const route = useRoute()
 
 const rootNodes = ref<TreeNode[]>([])
+const focusUnassigned = ref(false)
 
 function getIconForSource(source: string): any {
   const lower = source.toLowerCase()
@@ -366,6 +370,40 @@ function getIconForSource(source: string): any {
   if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return ImageIcon
   if (lower.includes('voice') || lower.includes('语音')) return Mic
   return File
+}
+
+function taskTreeNode(task: any, groupId: string): TreeNode {
+  return {
+    id: `t-${task.id}`,
+    type: 'task',
+    groupId,
+    name: task.name || '未命名任务',
+    lucideIcon: ListTodo,
+    due: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : (task.scheduledAt?.split('T')[0] || '-'),
+    load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'),
+    done: task.status === 'completed',
+    originalData: task,
+  }
+}
+
+function taskGroupFolder(id: string, name: string, tasks: any[], groupId: string, open = false): TreeNode {
+  return {
+    id,
+    name,
+    type: 'folder',
+    lucideIcon: Folder,
+    open,
+    children: tasks.map((task) => taskTreeNode(task, groupId)),
+  }
+}
+
+function taskGroupFolders(tasks: any[], groupId: string, openUnassigned = false): TreeNode[] {
+  const groups: AssetTaskGroups = getTasksForAssetGroups(tasks)
+  return [
+    taskGroupFolder(`${groupId}-tasks-unassigned`, '未分布', groups.unassigned, groupId, openUnassigned),
+    taskGroupFolder(`${groupId}-tasks-pending`, '未完成', groups.pending, groupId),
+    taskGroupFolder(`${groupId}-tasks-completed`, '已完成', groups.completed, groupId),
+  ]
 }
 
 const loadAssetsFromBackend = async () => {
@@ -383,7 +421,15 @@ const loadAssetsFromBackend = async () => {
     
     const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
     const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-    const allTasksFolder: TreeNode = { id: 'all-tasks', name: '全部任务', type: 'folder', lucideIcon: Folder, open: true, children: [] }
+    const shouldFocusUnassigned = route.query.focus === 'unassigned-tasks'
+    const allTasksFolder: TreeNode = {
+      id: 'all-tasks',
+      name: '全部任务',
+      type: 'folder',
+      lucideIcon: Folder,
+      open: true,
+      children: taskGroupFolders(taskStore.allTasks, 'all', shouldFocusUnassigned),
+    }
 
     // Map all files
     allFilesRaw.forEach(file => {
@@ -402,16 +448,8 @@ const loadAssetsFromBackend = async () => {
       })
     })
 
-    // Map all tasks from the current user's typed Task Store.
-    taskStore.allTasks.forEach(task => {
-      allTasksFolder.children!.push({
-        id: `t-${task.id}`, type: 'task', groupId: 'all', name: task.name || '未命名任务', lucideIcon: ListTodo,
-        due: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : (task.scheduledAt?.split('T')[0] || '-'), load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'), done: task.status === 'completed', originalData: task
-      })
-    })
-
     newRoots.push({
-      id: 'all', name: '汇总分类', type: 'group', lucideIcon: Archive, open: false,
+      id: 'all', name: '汇总分类', type: 'group', lucideIcon: Archive, open: shouldFocusUnassigned,
       children: [allFilesFolder, allBlocksFolder, allTasksFolder]
     })
 
@@ -423,7 +461,7 @@ const loadAssetsFromBackend = async () => {
 
       const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
       const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: '知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: '任务', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: '任务', type: 'folder', lucideIcon: Folder, open: false, children: taskGroupFolders(tasks, subj.id) }
 
       files.forEach(file => {
         subjFilesFolder.children!.push({
@@ -440,13 +478,6 @@ const loadAssetsFromBackend = async () => {
         })
       })
 
-      tasks.forEach(task => {
-        subjTasksFolder.children!.push({
-          id: `t-${task.id}`, type: 'task', groupId: subj.id, name: task.name || '未命名任务', lucideIcon: ListTodo,
-          due: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : (task.scheduledAt?.split('T')[0] || '-'), load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'), done: task.status === 'completed', originalData: task
-        })
-      })
-
       newRoots.push({
         id: subj.id, name: subj.name, type: 'group', lucideIcon: BookOpen, open: false,
         children: [subjFilesFolder, subjBlocksFolder, subjTasksFolder]
@@ -454,6 +485,7 @@ const loadAssetsFromBackend = async () => {
     }
     
     rootNodes.value = newRoots
+    focusUnassigned.value = shouldFocusUnassigned
   } catch (e) {
     console.error('[Asset] Failed to load local assets:', e)
   } finally {
@@ -806,6 +838,7 @@ html.dark .studio-left {
   user-select: none; transition: background var(--transition-fast);
 }
 .tree-folder-header:hover { background: rgba(255,255,255,0.03); }
+.tree-folder-header.is-focus { background: rgba(125, 147, 114, 0.16); color: var(--color-primary-accent); }
 .folder-arrow { font-size: 10px; color: var(--text-muted); width: 10px; }
 .folder-icon { font-size: 13px; color: var(--text-secondary); }
 .folder-name { font-size: 12px; font-weight: 500; color: var(--text-secondary); flex: 1; }

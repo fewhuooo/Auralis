@@ -402,7 +402,8 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ListTodo, CheckCircle, Clock, Inbox, Plus, Sparkles } from 'lucide-vue-next'
 
-import { useTaskStore, getTodayDayCode } from '@/store/useTaskStore'
+import { useTaskStore, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
+import { getTasksForTimeline } from '@/services/taskViewRules'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
@@ -425,17 +426,9 @@ const selectDay = async (day: string) => {
 }
 
 const getScheduledTasksForDay = (day: string) => {
-  return allTasks.value.filter(t => {
-    if (t.status !== 'scheduled' || !t.startTime) return false
-    const parts = t.startTime.split(' ')
-    if (parts.length === 2) {
-      return parts[0] === day
-    }
-    return day === getTodayDayCode() && t.startTime.includes(':')
-  }).sort((a, b) => {
-    const timeA = a.startTime!.split(' ').pop() || ''
-    const timeB = b.startTime!.split(' ').pop() || ''
-    return timeA.localeCompare(timeB)
+  return getTasksForTimeline(allTasks.value).filter((task) => {
+    if (!task.scheduledAt) return false
+    return DAY_CODES[new Date(task.scheduledAt).getDay()] === day
   })
 }
 
@@ -487,7 +480,7 @@ const filteredPendingTasks = computed(() => {
 
 // Filter pending tasks displayed on the Timeline right-sidebar (exclude non-pending ones)
 const filteredTimelinePendingTasks = computed(() => {
-  return filteredPendingTasks.value.filter(t => t.status === 'pending')
+  return filteredPendingTasks.value
 })
 
 // Timeline drag/drop logic
@@ -706,7 +699,7 @@ const onDurationBarClick = (e: MouseEvent) => {
 }
 
 const triggerImport = () => {
-  router.push('/asset')
+  router.push('/asset?focus=unassigned-tasks')
 }
 
 const triggerCreate = () => {
