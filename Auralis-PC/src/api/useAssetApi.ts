@@ -1,8 +1,10 @@
 import request from './request.ts'
 import type { components } from './generated/schema.ts'
-
-const MAX_FILE_SIZE_MB = 50
-const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+import {
+  MAX_FILE_SIZE_BYTES,
+  MAX_FILE_SIZE_MB,
+  validateUploadFile,
+} from '@/utils/filePreview'
 
 export type UploadIntentRequest = components['schemas']['UploadIntentRequest']
 export type UploadIntentResponse = components['schemas']['UploadIntentResponse']
@@ -125,7 +127,7 @@ export async function uploadAsset(
   optionsOrSubject?: UploadAssetOptions | string,
   legacyOnProgress?: (percent: number, stage: string) => void
 ): Promise<{ assetId: string; asset: AssetView }> {
-  validateFileSize(file)
+  validateUploadFile(file)
 
   const options: UploadAssetOptions =
     typeof optionsOrSubject === 'object' && optionsOrSubject !== null
@@ -200,6 +202,7 @@ export async function getAssetStatus(assetId: string): Promise<AssetStatusCompat
 
 export const useAssetApi = {
   validateFileSize,
+  validateUploadFile,
   createUploadIntent,
   uploadToObjectStorage,
   completeUpload,

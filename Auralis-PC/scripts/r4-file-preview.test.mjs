@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+  SUPPORTED_UPLOAD_EXTENSIONS,
+  resolveFileCapability,
+  validateUploadFile,
+} from '../src/utils/filePreview.ts'
+
+test('rejects Excel before upload intent', () => {
+  assert.throws(
+    () => validateUploadFile({
+      name: 'grades.xlsx',
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      size: 10,
+    }),
+    /Excel/,
+  )
+})
+
+test('maps DOCX to the File Viewer office renderer', () => {
+  assert.deepEqual(resolveFileCapability({ name: 'lesson.docx', type: '' }), {
+    allowedForUpload: true,
+    kind: 'office',
+    renderer: 'file-viewer',
+    extension: 'docx',
+  })
+})
+
+test('maps direct preview formats to the shared renderer', () => {
+  for (const [name, kind] of [
+    ['lesson.pdf', 'pdf'],
+    ['diagram.png', 'image'],
+    ['notes.md', 'text'],
+    ['records.csv', 'csv'],
+  ]) {
+    const capability = resolveFileCapability({ name, type: '' })
+    assert.equal(capability.allowedForUpload, true)
+    assert.equal(capability.kind, kind)
+    assert.equal(capability.renderer, 'file-viewer')
+  }
+})
+
+test('keeps PowerPoint compatible with the Office renderer', () => {
+  assert.equal(resolveFileCapability({ name: 'slides.pptx', type: '' }).kind, 'office')
+  assert.equal(resolveFileCapability({ name: 'slides.ppt', type: '' }).kind, 'office')
+})
+
+test('rejects unknown extensions before upload intent', () => {
+  assert.throws(
+    () => validateUploadFile({ name: 'payload.bin', type: 'application/octet-stream', size: 10 }),
+    /不支持此文件类型/,
+  )
+})
+
+test('rejects files over the existing 50 MB limit', () => {
+  assert.throws(
+    () => validateUploadFile({ name: 'large.pdf', type: 'application/pdf', size: 50 * 1024 * 1024 + 1 }),
+    /超过上限 50 MB/,
+  )
+})
+
+test('exposes the single upload accept list', () => {
+  assert.deepEqual(SUPPORTED_UPLOAD_EXTENSIONS, [
+    '.pdf', '.doc', '.docx', '.ppt', '.pptx',
+    '.png', '.jpg', '.jpeg', '.webp', '.gif',
+    '.txt', '.md', '.json', '.xml', '.csv',
+  ])
+  assert.equal(SUPPORTED_UPLOAD_EXTENSIONS.includes('.xls'), false)
+  assert.equal(SUPPORTED_UPLOAD_EXTENSIONS.includes('.xlsx'), false)
+})
