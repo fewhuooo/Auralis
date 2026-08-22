@@ -187,6 +187,11 @@
         </button>
 
         <div v-if="centerView === 'summary' && selectedFile" class="file-summary-workspace">
+          <FilePreview
+            :file="selectedFile"
+            :compact="true"
+            @preview-error="handlePreviewError"
+          />
           <div class="file-summary-head">
 <span class="file-summary-icon">{{ getFileIcon(selectedFile.fileType) }}</span>
             <div class="file-summary-head-text">
@@ -437,7 +442,7 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px; color: var(--text-muted);"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <div class="drag-text">拖拽文件到此处自动识别，或点击选择</div>
           </div>
-          <input type="file" ref="hiddenFileInput" style="display: none" @change="handleFileSelect" />
+          <input type="file" ref="hiddenFileInput" style="display: none" :accept="SUPPORTED_UPLOAD_EXTENSIONS.join(',')" @change="handleFileSelect" />
           <div class="form-group"><label>文件名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络.pdf" /></div>
           <div class="form-group"><label>归档至 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
             <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
@@ -541,6 +546,7 @@ import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 
+import FilePreview from '@/components/FilePreview.vue'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -549,6 +555,7 @@ import { useAssetStore } from '@/store/useAssetStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useChatStore } from '@/store/useChatStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
 
 marked.setOptions({ breaks: true, gfm: true })
 const renderMarkdown = (c: string) => c ? DOMPurify.sanitize(marked.parse(c) as string) : ''
@@ -646,6 +653,10 @@ const fileSummaryMarkdown = computed(() => selectedFileBlocks.value.map(block =>
 const selectFile = (id: string) => {
   selectedFileId.value = id
   centerView.value = 'summary'
+}
+
+const handlePreviewError = (message: string) => {
+  ElMessage.warning(message)
 }
 
 const getFileIcon = (t: string) => {
@@ -762,6 +773,13 @@ const openRegisterModal = () => {
 }
 
 const parseFileMetadata = (file: File & { path?: string }) => {
+  try {
+    validateUploadFile(file)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '暂不支持此文件类型')
+    return false
+  }
+
   droppedFile.value = file
   registerForm.value.name = file.name
   if (file.path) registerForm.value.filePath = file.path
@@ -774,6 +792,7 @@ const parseFileMetadata = (file: File & { path?: string }) => {
   else if (['ppt', 'pptx'].includes(ext)) registerForm.value.fileType = 'PPT'
   else if (['doc', 'docx'].includes(ext)) registerForm.value.fileType = 'Word'
   else registerForm.value.fileType = 'Other'
+  return true
 }
 
 const handleFileDrop = (e: DragEvent) => {

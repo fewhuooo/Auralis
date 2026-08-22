@@ -88,3 +88,13 @@ test('File Viewer adapter is isolated behind a renderer component', () => {
   assert.match(source, /<FileViewer/)
   assert.match(source, /styleIsolation/)
 })
+
+test('SubjectWorkspace uses FilePreview and the shared upload accept list', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+  assert.match(source, /FilePreview/)
+  assert.match(source, /SUPPORTED_UPLOAD_EXTENSIONS/)
+  assert.match(source, /:accept="SUPPORTED_UPLOAD_EXTENSIONS\.join\('\,'\)"/)
+  assert.match(source, /validateUploadFile/)
+  assert.match(source, /@click="selectFile\(file\.id\)"/)
+})
