@@ -110,6 +110,19 @@ class MinioAssetStorageIntegrationTests {
         assertThat(uploadUrl.getPort()).isEqualTo(expected.getPort());
     }
 
+    @Test
+    void createsBrowserDownloadUrlWithoutConnectingToPublicEndpoint() {
+        String publicEndpoint = "http://public-endpoint.invalid:9000";
+        MinioAssetStorage storage = new MinioAssetStorage(properties(endpoint(), publicEndpoint));
+
+        URI downloadUrl = URI.create(storage.createDownloadUrl(
+                "users/integration/assets/public-download").url());
+
+        assertThat(downloadUrl.getHost()).isEqualTo("public-endpoint.invalid");
+        assertThat(downloadUrl.getPort()).isEqualTo(9000);
+        assertThat(downloadUrl.getPath()).contains("/" + BUCKET + "/users/integration/assets/public-download");
+    }
+
     private MinioClient client() {
         return MinioClient.builder()
                 .endpoint(endpoint())
