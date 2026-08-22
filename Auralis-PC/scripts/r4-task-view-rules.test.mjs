@@ -86,3 +86,23 @@ test('keeps completed scheduled tasks within the seven-day timeline window', () 
 
   assert.deepEqual(getTasksForTimeline(tasks, now).map((item) => item.id), ['today-done', 'tomorrow', 'in-window-late'])
 })
+
+test('uses the full calendar week containing the selected day', () => {
+  const now = new Date('2026-08-22T10:00:00+08:00')
+  const range = getTimelineRange(now)
+  assert.equal(range.start.toISOString(), '2026-08-15T16:00:00.000Z')
+  assert.equal(range.end.toISOString(), '2026-08-22T16:00:00.000Z')
+
+  const days = getTimelineDays(now)
+  assert.deepEqual(days.map((day) => day.dateKey), [
+    '2026-08-16',
+    '2026-08-17',
+    '2026-08-18',
+    '2026-08-19',
+    '2026-08-20',
+    '2026-08-21',
+    '2026-08-22',
+  ])
+  assert.deepEqual(days.map((day) => day.weekdayShort), ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
+  assert.equal(days[6].isToday, true)
+})
