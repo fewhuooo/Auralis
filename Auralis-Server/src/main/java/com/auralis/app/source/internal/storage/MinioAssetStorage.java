@@ -3,14 +3,12 @@ package com.auralis.app.source.internal.storage;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.AssetStoragePort;
-import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.GetObjectArgs;
 import io.minio.MinioClient;
 import io.minio.RemoveObjectArgs;
 import io.minio.Signer;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
-import io.minio.http.Method;
 import okhttp3.HttpUrl;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -35,7 +33,6 @@ public class MinioAssetStorage implements AssetStoragePort {
     private static final Logger log = LoggerFactory.getLogger(MinioAssetStorage.class);
 
     private final MinioClient minioClient;
-    private final MinioClient publicMinioClient;
     private final AuralisProperties.Storage storage;
 
     public MinioAssetStorage(AuralisProperties properties) {
@@ -46,10 +43,6 @@ public class MinioAssetStorage implements AssetStoragePort {
         }
         this.minioClient = MinioClient.builder()
                 .endpoint(storage.endpoint())
-                .credentials(storage.accessKey(), storage.secretKey())
-                .build();
-        this.publicMinioClient = MinioClient.builder()
-                .endpoint(storage.presignEndpoint())
                 .credentials(storage.accessKey(), storage.secretKey())
                 .build();
     }
@@ -133,18 +126,39 @@ public class MinioAssetStorage implements AssetStoragePort {
     @Override
     public DownloadUrl createDownloadUrl(String objectKey) {
         try {
-            String url = publicMinioClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
-                    .method(Method.GET)
-                    .bucket(storage.bucket())
-                    .object(objectKey)
-                    .expiry(expirySeconds())
-                    .build());
+            String url = presignedGetUrl(objectKey);
             return new DownloadUrl(url, Instant.now().plusSeconds(expirySeconds()));
         } catch (Exception exception) {
             log.warn("ASSET_DOWNLOAD_URL_FAILED objectKey={} endpoint={} errorType={} message={}",
                     objectKey, storage.presignEndpoint(), exception.getClass().getSimpleName(), exception.getMessage());
             throw storageUnavailable();
         }
+    }
+
+    private String presignedGetUrl(String objectKey)
+            throws java.security.InvalidKeyException, java.security.NoSuchAlgorithmException {
+        HttpUrl endpoint = HttpUrl.parse(storage.presignEndpoint());
+        if (endpoint == null) {
+            throw new IllegalStateException("MinIO endpoint is invalid");
+        }
+
+        HttpUrl objectUrl = endpoint.newBuilder()
+                .addPathSegment(storage.bucket())
+                .addPathSegments(objectKey)
+                .build();
+        Request.Builder request = new Request.Builder()
+                .url(objectUrl)
+                .get();
+        request.header("Host", hostHeader(objectUrl));
+        request.header("x-amz-date", io.minio.Time.AMZ_DATE_FORMAT.format(
+                java.time.ZonedDateTime.now(io.minio.Time.UTC)));
+
+        return Signer.presignV4(
+                request.build(),
+                "us-east-1",
+                storage.accessKey(),
+                storage.secretKey(),
+                expirySeconds()).toString();
     }
 
     @Override
