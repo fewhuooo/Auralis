@@ -154,6 +154,15 @@ function timeForScheduledAt(value?: string): string | undefined {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
+function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
+  const scheduledTime = timeForScheduledAt(value)
+  if (!scheduledTime) return undefined
+  const [hours, minutes] = scheduledTime.split(':').map(Number)
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return undefined
+  const totalMinutes = hours * 60 + minutes
+  return timeStringFromMinutes(Math.floor(totalMinutes / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES)
+}
+
 function toTaskModel(input: TaskInput, fallbackDay: DayCode = getTodayDayCode()): TaskModel {
   const scheduledAt = input.scheduledAt ?? scheduledAtFromLegacy(input.startTime, fallbackDay)
   const status = statusFromLegacy(input.status, Boolean(scheduledAt))
@@ -247,11 +256,23 @@ function dtoFromLocal(value: unknown): TaskModel | null {
   return toTaskModel(candidate)
 }
 
+const TIMELINE_START_MINUTES = 8 * 60
+const TIMELINE_END_MINUTES = 22 * 60 + 30
+const TIMELINE_SLOT_MINUTES = 30
+
+function timeStringFromMinutes(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
+}
+
 function generateTimeSlots(): TimeSlot[] {
-  return Array.from({ length: 15 }, (_, index) => {
-    const hour = index + 8
-    return { time: `${String(hour).padStart(2, '0')}:00`, task: null, isCurrent: false }
-  })
+  const slotCount = Math.floor((TIMELINE_END_MINUTES - TIMELINE_START_MINUTES) / TIMELINE_SLOT_MINUTES) + 1
+  return Array.from({ length: slotCount }, (_, index) => ({
+    time: timeStringFromMinutes(TIMELINE_START_MINUTES + index * TIMELINE_SLOT_MINUTES),
+    task: null,
+    isCurrent: false,
+  }))
 }
 
 function clientMutation(resourceId: string, mutationType: 'CREATE' | 'UPDATE' | 'DELETE', baseVersion: number, payload: Record<string, unknown>) {
@@ -280,10 +301,13 @@ export const useTaskStore = defineStore('task', () => {
   const hasOverload = ref(false)
 
   function updateCurrentSlot(): void {
-    const currentHour = new Date().getHours()
-    const currentHourStr = `${String(currentHour).padStart(2, '0')}:00`
+    const now = new Date()
+    const currentMinutes = now.getHours() * 60 + now.getMinutes()
+    const currentSlotTime = timeStringFromMinutes(
+      Math.floor(currentMinutes / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES,
+    )
     timeSlots.value.forEach((slot) => {
-      slot.isCurrent = slot.time === currentHourStr && selectedDay.value === getTodayDayCode()
+      slot.isCurrent = slot.time === currentSlotTime && selectedDay.value === getTodayDayCode()
     })
   }
 
@@ -302,7 +326,7 @@ export const useTaskStore = defineStore('task', () => {
     timeSlots.value.forEach((slot) => { slot.task = null })
     const scheduled = getTasksForTimeline(tasks)
     for (const slot of timeSlots.value) {
-      slot.task = scheduled.find((task) => dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value && timeForScheduledAt(task.scheduledAt) === slot.time) || null
+      slot.task = scheduled.find((task) => dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value && timelineSlotTimeForScheduledAt(task.scheduledAt) === slot.time) || null
     }
     analyzeSchedule()
   }

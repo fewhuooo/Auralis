@@ -113,6 +113,7 @@
               <div 
                 v-if="slot.task" 
                 class="slot-task" 
+                :class="{ 'is-past': isPastTask(slot.task) }"
                 :style="{ 
                   borderLeftColor: slot.task.color,
                   height: getTaskHeight(slot.task.duration)
@@ -222,6 +223,7 @@
               v-for="task in getScheduledTasksForDay(day)" 
               :key="task.id" 
               class="weekly-task-card"
+              :class="{ 'is-past': isPastTask(task) }"
               :style="{ borderLeftColor: task.color }"
               draggable="true"
               @dragstart.stop="handleDragStart($event, 'scheduled', task.id || '')"
@@ -392,7 +394,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { ElNotification, ElMessageBox } from 'element-plus'
@@ -437,6 +439,15 @@ const getTaskTimeStr = (startTime?: string) => {
   return startTime.split(' ').pop() || ''
 }
 
+const nowTimestamp = ref(Date.now())
+let pastTaskRefreshTimer: number | undefined
+
+const isPastTask = (task: { scheduledAt?: string } | null | undefined): boolean => {
+  if (!task?.scheduledAt) return false
+  const scheduledTimestamp = Date.parse(task.scheduledAt)
+  return Number.isFinite(scheduledTimestamp) && scheduledTimestamp < nowTimestamp.value
+}
+
 const HOUR_HEIGHT = 80
 const getTaskHeight = (duration?: number) => {
   const d = duration || 60
@@ -447,12 +458,14 @@ const isSlotCovered = (slotTime: string) => {
   const targetSlot = timeSlots.value.find(s => s.time === slotTime)
   if (targetSlot?.task) return false
 
-  const currentHour = parseInt(slotTime.split(':')[0], 10)
+  const [slotHour, slotMinute] = slotTime.split(':').map(Number)
+  const currentMinutes = slotHour * 60 + slotMinute
   for (const slot of timeSlots.value) {
     if (slot.task && slot.time !== slotTime) {
-      const taskHour = parseInt(slot.time.split(':')[0], 10)
-      const durationHours = slot.task.duration / 60
-      if (currentHour > taskHour && currentHour < taskHour + durationHours) {
+      const [taskHour, taskMinute] = slot.time.split(':').map(Number)
+      const taskStartMinutes = taskHour * 60 + taskMinute
+      const taskEndMinutes = taskStartMinutes + slot.task.duration
+      if (currentMinutes > taskStartMinutes && currentMinutes < taskEndMinutes) {
         return true
       }
     }
@@ -461,10 +474,17 @@ const isSlotCovered = (slotTime: string) => {
 }
 
 onMounted(async () => {
+  pastTaskRefreshTimer = window.setInterval(() => {
+    nowTimestamp.value = Date.now()
+  }, 60_000)
   await taskStore.fetchTasks()
   await subjectStore.loadSubjects()
   await knowledgeStore.fetchBlocks()
   await checkSpacedRepetition()
+})
+
+onUnmounted(() => {
+  if (pastTaskRefreshTimer !== undefined) window.clearInterval(pastTaskRefreshTimer)
 })
 
 const stats = computed(() => [
@@ -1271,6 +1291,14 @@ html.dark .slot-grid-line {
 .slot-task:hover {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+.is-past .task-name,
+.is-past .task-detail,
+.is-past .weekly-task-name,
+.is-past .weekly-task-time {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
 }
 
 .task-header {
