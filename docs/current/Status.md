@@ -192,6 +192,7 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - `Auralis-PC`：`npm.cmd run test:r4-pc` 81/81、`npm.cmd run type-check`、`npm.cmd run check:r4-pc`（60 个生产文件）和 `npm.cmd run build` 均通过；新建任务、复习任务和 Store 缺省时长均收敛到 30 分钟倍数。构建仍保留既有 Asset 大 chunk 与无效动态 import 非阻断警告。浏览器/Tauri 拖拽实际走查仍待验收。
 - Docker 测试账号 `pc-ai-test-20260821-180412@example.com` 的 17 个任务已限定范围校正：预计时长统一到 30 分钟倍数，已有排期统一到整点或半点；校验结果为 `17|0|0`（总数|非半小时用时|非半小时排期）。其他用户数据未修改。
 - Docker backend 已补充安全的资产/登记生命周期日志：`ASSET_UPLOAD_INTENT_*`、`ASSET_UPLOAD_COMPLETE_*`、`ASSET_UPLOAD_READY`、`ASSET_UPLOAD_REJECTED`、`SOURCE_CREATED`；不记录文件内容、Authorization、API Key 或响应体。该日志只证明请求阶段可见，浏览器实际选择文件和业务成功仍需人工验收。
+- 2026-08-22 运行态补充：用户从 `http://127.0.0.1` 访问时，upload-intent 已返回 201 但 MinIO PUT 因 CORS origin 未列入白名单而被浏览器包装为 network error；`.env` 与 `.env.example` 已加入 localhost/127.0.0.1 两组 origin。重启后 127.0.0.1 预检返回 204、frontend/readiness 均为 200；浏览器需刷新后重试。
 
 ## 人工验收边界
 

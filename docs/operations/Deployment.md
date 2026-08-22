@@ -36,7 +36,7 @@
 ### 开发
 
 1. 复制 `.env.example` 为 `.env`。
-2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单；浏览器访问 Compose 时将 `AURALIS_MINIO_PUBLIC_ENDPOINT` 设为浏览器可达的 MinIO API 地址（本机默认 `http://localhost:9000`）。
+2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单；浏览器访问 Compose 时将 `AURALIS_MINIO_PUBLIC_ENDPOINT` 设为浏览器可达的 MinIO API 地址（本机默认 `http://localhost:9000`），并按实际访问地址加入 `http://localhost` 或 `http://127.0.0.1` 的 origin。
 3. 先运行 `docker compose --env-file .env config --quiet`；缺少必填值时应 fail-fast。
 
 ### 生产

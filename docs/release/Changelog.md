@@ -11,6 +11,10 @@
 - `test:r4-pc` 82/82、PC type-check/static check、后端 clean test 149/149、MinIO public endpoint 集成测试 2/2 和 Compose config 已通过；Docker 重建后 frontend/backend 健康、readiness 和 MinIO CORS 预检通过，浏览器业务验收仍待执行。
 - Backend 新增 `ASSET_UPLOAD_*` 与 `SOURCE_CREATED` 安全结构化日志，Docker 中可按阶段定位浏览器直传或 Source 登记失败；不记录文件内容、Token 或密钥。
 
+### Docker 本地 loopback CORS 修复（2026-08-22）
+
+- 本地 PC Web 通过 `http://127.0.0.1` 访问时，MinIO CORS 白名单现在与 `localhost` 一样允许直传；upload-intent 成功后不再因浏览器预检缺失而显示 network error。
+
 ### PC 全局字体与字号令牌统一（2026-08-22）
 
 - PC 根字号统一为 `16px`，新增 caption/body-sm/label/body/body-lg/title-sm/title/title-lg/display 语义字号令牌，并保留旧基础字号变量别名。

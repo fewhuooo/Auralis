@@ -43,7 +43,7 @@
 
 ## 环境变量
 
-`.env.example` 当前列出数据库、JWT、CORS、MinIO、上传限制、AI 超时/Provider allowlist 和可选 Provider smoke key。所有 `replace-*` 值在启动前必须替换，真实 `.env` 不得提交。
+`.env.example` 当前列出数据库、JWT、CORS、MinIO、上传限制、AI 超时/Provider allowlist 和可选 Provider smoke key。开发机若通过 `localhost` 或 `127.0.0.1` 打开 PC Web，CORS 白名单需同时包含对应 origin；所有 `replace-*` 值在启动前必须替换，真实 `.env` 不得提交。
 
 后端当前绑定以下对象存储配置：
 
