@@ -36,14 +36,6 @@ public record AuralisProperties(
             String secretKey,
             @Positive long presignTtlSeconds) {
 
-        public Storage(String endpoint,
-                       String bucket,
-                       String accessKey,
-                       String secretKey,
-                       long presignTtlSeconds) {
-            this(endpoint, null, bucket, accessKey, secretKey, presignTtlSeconds);
-        }
-
         public String presignEndpoint() {
             return publicEndpoint == null || publicEndpoint.isBlank()
                     ? endpoint
