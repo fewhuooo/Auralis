@@ -349,11 +349,13 @@ const inputFileName = ref('')
 const dialogFileInput = ref<HTMLInputElement | null>(null)
 
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { useTaskStore } from '@/store/useTaskStore'
 
 const subjectStore = useSubjectStore()
 const blockStore = useKnowledgeStore()
 const sourceStore = useSourceStore()
 const assetStore = useAssetStore()
+const taskStore = useTaskStore()
 
 const rootNodes = ref<TreeNode[]>([])
 
@@ -372,6 +374,7 @@ const loadAssetsFromBackend = async () => {
     await subjectStore.loadSubjects()
     await sourceStore.loadSources()
     await blockStore.loadLocalBlocks()
+    await taskStore.fetchTasks()
     
     const newRoots: TreeNode[] = []
     
@@ -380,12 +383,7 @@ const loadAssetsFromBackend = async () => {
     
     const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
     const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-    const todayStr = new Date().toISOString().split('T')[0]
-    const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0]
-    const allTasksFolder: TreeNode = { id: 'all-tasks', name: '全部任务', type: 'folder', lucideIcon: Folder, open: true, children: [
-      { id: 't-1', type: 'task', groupId: 'all', name: '复习 Vue 响应式原理', lucideIcon: ListTodo, due: todayStr, load: '中', done: false },
-      { id: 't-2', type: 'task', groupId: 'all', name: '编写 Tauri IPC 示例', lucideIcon: ListTodo, due: tomorrowStr, load: '高', done: true }
-    ] }
+    const allTasksFolder: TreeNode = { id: 'all-tasks', name: '全部任务', type: 'folder', lucideIcon: Folder, open: true, children: [] }
 
     // Map all files
     allFilesRaw.forEach(file => {
@@ -404,11 +402,13 @@ const loadAssetsFromBackend = async () => {
       })
     })
 
-    // Mock Tasks for All
-    allTasksFolder.children = [
-      { id: 't-1', type: 'task', groupId: 'all', name: '复习 Vue 响应式原理', lucideIcon: ListTodo, due: '今天', load: '中', done: false },
-      { id: 't-2', type: 'task', groupId: 'all', name: '编写 Tauri IPC 示例', lucideIcon: ListTodo, due: '明天', load: '高', done: true }
-    ]
+    // Map all tasks from the current user's typed Task Store.
+    taskStore.allTasks.forEach(task => {
+      allTasksFolder.children!.push({
+        id: `t-${task.id}`, type: 'task', groupId: 'all', name: task.name || '未命名任务', lucideIcon: ListTodo,
+        due: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : (task.scheduledAt?.split('T')[0] || '-'), load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'), done: task.status === 'completed', originalData: task
+      })
+    })
 
     newRoots.push({
       id: 'all', name: '汇总分类', type: 'group', lucideIcon: Archive, open: false,
@@ -419,6 +419,7 @@ const loadAssetsFromBackend = async () => {
     for (const subj of subjectStore.subjects) {
       const files = sourceStore.sources.filter((file) => file.subjectId === subj.id)
       const blocks = blockStore.recentBlocks.filter(b => b.subjectId === subj.id)
+      const tasks = taskStore.allTasks.filter(t => t.subjectId === subj.id)
 
       const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
       const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: '知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
@@ -436,6 +437,13 @@ const loadAssetsFromBackend = async () => {
         subjBlocksFolder.children!.push({
           id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || '无标题块', lucideIcon: Blocks,
           preview: b.preview, tags: b.tags || [b.subject], originalData: b
+        })
+      })
+
+      tasks.forEach(task => {
+        subjTasksFolder.children!.push({
+          id: `t-${task.id}`, type: 'task', groupId: subj.id, name: task.name || '未命名任务', lucideIcon: ListTodo,
+          due: task.dueAt ? new Date(task.dueAt).toLocaleDateString() : (task.scheduledAt?.split('T')[0] || '-'), load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'), done: task.status === 'completed', originalData: task
         })
       })
 
@@ -486,8 +494,12 @@ const getSubjectName = (id?: string) => {
   return subjectStore.subjects.find(s => s.id === id)?.name || '未知学科'
 }
 
-const toggleTaskDone = (task: TreeNode) => {
+const toggleTaskDone = async (task: TreeNode) => {
   task.done = !task.done
+  if (task.originalData) {
+    const newStatus = task.done ? 'completed' : 'pending'
+    await taskStore.updateTaskStatus(task.originalData.id, newStatus)
+  }
 }
 
 const saveBlockEdit = async (block: TreeNode) => {
