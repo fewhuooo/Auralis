@@ -110,6 +110,7 @@
 - [R4 PC 全量客户端迁移与 Tauri 重写设计（2026-08-17）](superpowers/specs/2026-08-17-r4-01-pc-auth-realtime-design.md)
 - [AI env 默认 Provider 与 BYOK 覆盖设计（2026-08-21）](superpowers/specs/2026-08-21-ai-env-provider-fallback-design.md)
 - [PC 首页时间轴与任务逻辑设计（2026-08-22）](superpowers/specs/2026-08-22-pc-dashboard-task-logic-design.md)
+- [PC 学科文件上传与预览设计（2026-08-22）](superpowers/specs/2026-08-22-subject-file-upload-preview-design.md)
 
 ### 当前实现与契约
 
