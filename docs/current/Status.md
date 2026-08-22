@@ -64,7 +64,7 @@
 2026-08-22：修复 PC 资产库任务来源：移除“全部任务”中的固定 Vue/Tauri 演示任务，改用 `useTaskStore.fetchTasks()` 加载当前用户任务，并填充全部任务及各学科任务目录；PC 回归测试 64/64、静态检查、图标/工作区契约、type-check 和 Web build 通过，浏览器资产库任务展示与状态切换仍待人工验收。
 2026-08-22：完成 PC 任务视图逻辑收敛：排期队列仅保留有截止时间且未排期的未完成任务；时间轴限定今天起 7 个日历日并保留已完成排期；资产库任务按未分布/未完成/已完成分组并按截止时间排序；时间轴“导入任务”聚焦 `/asset?focus=unassigned-tasks`。`test:r4-pc` 73/73、type-check、`check:r4-pc`、学科图标/工作区契约和 Web build 通过；浏览器拖拽、宽屏布局和真实服务状态切换仍待人工验收。
 
-低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
+低优先级待办：PC 注册/登录页需要补齐与服务端一致的客户端约束提示，并将 RFC Problem Details 的 `fieldErrors[]` 映射到具体输入框；PC 自定义弹窗还需按 P2-PC-Modal-Consistency 统一视觉令牌；后端 HTTP 400 校验仍是最终安全边界，详见 P2-PC-Auth-Validation-UX。
 
 | 模块 | 当前状态 | 代码证据 | 命令证据 | 人工验收 | 下一步 |
 | --- | --- | --- | --- | --- | --- |
