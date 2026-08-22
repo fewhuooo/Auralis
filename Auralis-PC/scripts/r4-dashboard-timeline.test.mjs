@@ -31,3 +31,22 @@ test('timeline renders half-hour scheduled tasks and marks past tasks without re
   assert.match(timeline, /is-past/, 'Timeline must keep past tasks rendered with a dedicated style')
   assert.match(timeline, /text-decoration:\s*line-through/, 'Past task text must be crossed out')
 })
+
+test('timeline drag/drop carries a native payload and uses half-hour geometry', () => {
+  assert.match(timeline, /dataTransfer\.setData\(['"`]text\/plain['"`],\s*idOrTime\)/)
+  assert.match(dashboard, /dataTransfer\.setData\(['"`]text\/plain['"`],\s*idOrTime\)/)
+  assert.match(timeline, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*80/)
+  assert.match(dashboard, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*52/)
+  assert.match(timeline, /slots\s*\*\s*TIMELINE_SLOT_HEIGHT\s*\+\s*\(slots\s*-\s*1\)\s*\*\s*TIMELINE_SLOT_GAP/)
+  assert.match(dashboard, /slots\s*\*\s*TIMELINE_SLOT_HEIGHT/)
+  assert.match(timeline, /min-height:\s*80px/)
+  assert.match(dashboard, /min-height:\s*52px/)
+  assert.match(dashboard, /currentMinutes/)
+  assert.doesNotMatch(dashboard, /const currentHour = parseInt\(slotTime\.split\('\:'\)\[0\], 10\)/)
+})
+
+test('dashboard uses a dedicated two-line date label', () => {
+  assert.match(dashboard, /db-day-week/)
+  assert.match(dashboard, /db-day-date/)
+  assert.match(dashboard, /day\.isToday \? '今天'/)
+})

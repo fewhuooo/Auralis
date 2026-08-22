@@ -448,10 +448,13 @@ const isPastTask = (task: { scheduledAt?: string } | null | undefined): boolean 
   return Number.isFinite(scheduledTimestamp) && scheduledTimestamp < nowTimestamp.value
 }
 
-const HOUR_HEIGHT = 80
+const TIMELINE_SLOT_HEIGHT = 80
+const TIMELINE_SLOT_GAP = 4
+
 const getTaskHeight = (duration?: number) => {
-  const d = duration || 60
-  return `${(d / 60) * HOUR_HEIGHT}px`
+  const d = duration || 30
+  const slots = d / 30
+  return `${slots * TIMELINE_SLOT_HEIGHT + (slots - 1) * TIMELINE_SLOT_GAP}px`
 }
 
 const isSlotCovered = (slotTime: string) => {
@@ -512,6 +515,7 @@ const dragOverDay = ref<string | null>(null)
 const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', idOrTime: string) => {
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', idOrTime)
     draggedItem.value = { type, idOrTime }
   }
 }
@@ -528,39 +532,48 @@ const handleDragLeave = () => {
   dragOverSlot.value = null
 }
 
-const handleDrop = (slotTime: string) => {
-  if (draggedItem.value) {
-    if (draggedItem.value.type === 'pending') {
-      taskStore.scheduleTask(draggedItem.value.idOrTime, slotTime)
-    } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.idOrTime !== slotTime) {
-      taskStore.rescheduleTask(draggedItem.value.idOrTime, slotTime)
+const handleDrop = async (slotTime: string) => {
+  try {
+    if (draggedItem.value) {
+      if (draggedItem.value.type === 'pending') {
+        await taskStore.scheduleTask(draggedItem.value.idOrTime, slotTime)
+      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.idOrTime !== slotTime) {
+        await taskStore.rescheduleTask(draggedItem.value.idOrTime, slotTime)
+      }
     }
+  } finally {
+    draggedItem.value = null
+    dragOverSlot.value = null
+    dragOverPending.value = false
+    dragOverDay.value = null
   }
-  draggedItem.value = null
-  dragOverSlot.value = null
-  dragOverPending.value = false
-  dragOverDay.value = null
 }
 
-const handleDropOnDay = (day: string) => {
-  if (draggedItem.value) {
-    if (draggedItem.value.type === 'pending') {
-      taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
-    } else if (draggedItem.value.type === 'scheduled') {
-      taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
+const handleDropOnDay = async (day: string) => {
+  try {
+    if (draggedItem.value) {
+      if (draggedItem.value.type === 'pending') {
+        await taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
+      } else if (draggedItem.value.type === 'scheduled') {
+        await taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
+      }
     }
+  } finally {
+    draggedItem.value = null
+    dragOverDay.value = null
+    dragOverPending.value = false
   }
-  draggedItem.value = null
-  dragOverDay.value = null
-  dragOverPending.value = false
 }
 
-const handleDropOnPending = () => {
-  if (draggedItem.value?.type === 'scheduled') {
-    taskStore.unscheduleTask(draggedItem.value.idOrTime)
+const handleDropOnPending = async () => {
+  try {
+    if (draggedItem.value?.type === 'scheduled') {
+      await taskStore.unscheduleTask(draggedItem.value.idOrTime)
+    }
+  } finally {
+    draggedItem.value = null
+    dragOverPending.value = false
   }
-  draggedItem.value = null
-  dragOverPending.value = false
 }
 
 // Bidirectional Relation Parsing helpers

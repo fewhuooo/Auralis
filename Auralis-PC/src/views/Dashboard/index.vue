@@ -122,7 +122,8 @@
             :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
             @click="selectDay(day.dayCode)"
           >
-            {{ day.weekdayLabel.replace('周', '') }} {{ day.monthDayLabel }}
+            <span class="db-day-week">{{ day.isToday ? '今天' : day.weekdayLabel }}</span>
+            <span class="db-day-date">{{ day.monthDayLabel.replace('/', '月') + '日' }}</span>
           </button>
         </div>
 
@@ -631,22 +632,26 @@ const filteredTimeSlots = computed(() => {
   return timeSlots.value
 })
 
-const HOUR_HEIGHT = 52
+const TIMELINE_SLOT_HEIGHT = 52
+
 const getTaskHeight = (duration?: number) => {
-  const d = duration || 60
-  return `${(d / 60) * HOUR_HEIGHT}px`
+  const d = duration || 30
+  const slots = d / 30
+  return `${slots * TIMELINE_SLOT_HEIGHT}px`
 }
 
 const isSlotCovered = (slotTime: string) => {
   const targetSlot = filteredTimeSlots.value.find(s => s.time === slotTime)
   if (targetSlot?.task) return false
 
-  const currentHour = parseInt(slotTime.split(':')[0], 10)
+  const [slotHour, slotMinute] = slotTime.split(':').map(Number)
+  const currentMinutes = slotHour * 60 + slotMinute
   for (const slot of filteredTimeSlots.value) {
     if (slot.task && slot.time !== slotTime) {
-      const taskHour = parseInt(slot.time.split(':')[0], 10)
-      const durationHours = slot.task.duration / 60
-      if (currentHour > taskHour && currentHour < taskHour + durationHours) {
+      const [taskHour, taskMinute] = slot.time.split(':').map(Number)
+      const taskStartMinutes = taskHour * 60 + taskMinute
+      const taskEndMinutes = taskStartMinutes + slot.task.duration
+      if (currentMinutes >= taskStartMinutes && currentMinutes < taskEndMinutes) {
         return true
       }
     }
@@ -686,25 +691,31 @@ const handleDragOver = (slotTime: string) => {
 
 const handleDragLeave = () => { dragOverSlot.value = null }
 
-const handleDrop = (slotTime: string) => {
-  if (draggedItem.value) {
-    if (draggedItem.value.type === 'pending') {
-      taskStore.scheduleTask(draggedItem.value.idOrTime, slotTime)
-    } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.idOrTime !== slotTime) {
-      taskStore.rescheduleTask(draggedItem.value.idOrTime, slotTime)
+const handleDrop = async (slotTime: string) => {
+  try {
+    if (draggedItem.value) {
+      if (draggedItem.value.type === 'pending') {
+        await taskStore.scheduleTask(draggedItem.value.idOrTime, slotTime)
+      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.idOrTime !== slotTime) {
+        await taskStore.rescheduleTask(draggedItem.value.idOrTime, slotTime)
+      }
     }
+  } finally {
+    draggedItem.value = null
+    dragOverSlot.value = null
+    dragOverPending.value = false
   }
-  draggedItem.value = null
-  dragOverSlot.value = null
-  dragOverPending.value = false
 }
 
-const handleDropOnPending = () => {
-  if (draggedItem.value?.type === 'scheduled') {
-    taskStore.unscheduleTask(draggedItem.value.idOrTime)
+const handleDropOnPending = async () => {
+  try {
+    if (draggedItem.value?.type === 'scheduled') {
+      await taskStore.unscheduleTask(draggedItem.value.idOrTime)
+    }
+  } finally {
+    draggedItem.value = null
+    dragOverPending.value = false
   }
-  draggedItem.value = null
-  dragOverPending.value = false
 }
 
 const handleDeleteScheduledTask = async (slot: any) => {
@@ -1321,7 +1332,7 @@ html.dark .dashboard-right {
 .db-day-btn {
   background: var(--color-bg-tertiary);
   border: 1px solid var(--border-subtle);
-  padding: 6px 4px;
+  padding: 4px;
   border-radius: 8px;
   font-size: 11px;
   cursor: pointer;
@@ -1330,6 +1341,21 @@ html.dark .dashboard-right {
   text-align: center;
   font-weight: 650;
   transition: all var(--transition-fast);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.db-day-week {
+  font-size: 12px;
+}
+
+.db-day-date {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.85;
 }
 
 .db-day-btn:hover {
