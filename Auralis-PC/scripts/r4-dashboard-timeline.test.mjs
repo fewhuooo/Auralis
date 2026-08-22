@@ -47,7 +47,7 @@ test('timeline drag/drop carries a native payload and uses half-hour geometry', 
 
 test('dashboard keeps grid cells date-only and moves full day information to the header', () => {
   assert.match(dashboard, /db-day-date/)
-  assert.match(dashboard, /selectedTimelineDay\.weekdayLabel/)
+  assert.match(dashboard, /selectedTimelineDay\.monthLabel/)
   assert.doesNotMatch(dashboard, /db-day-week/)
   assert.doesNotMatch(dashboard, /day\.isToday \? '今天'/)
 })

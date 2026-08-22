@@ -74,7 +74,6 @@ export function getTasksForAssetGroups(tasks: Task[]): AssetTaskGroups {
 export function getTimelineRange(now = new Date()): { start: Date; end: Date } {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
-  start.setDate(start.getDate() - 3)
   const end = new Date(start)
   end.setDate(end.getDate() + 7)
   return { start, end }
@@ -85,6 +84,8 @@ export interface VisibleDay {
   dayCode: string
   weekdayLabel: string
   monthDayLabel: string
+  monthLabel: string
+  dayLabel: string
   isToday: boolean
 }
 
@@ -99,7 +100,8 @@ export function getTimelineDays(now = new Date()): VisibleDay[] {
     const date = new Date(start)
     date.setDate(date.getDate() + index)
 
-    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const monthNum = date.getMonth() + 1
+    const month = String(monthNum).padStart(2, '0')
     const day = String(date.getDate()).padStart(2, '0')
     const dayOfWeek = date.getDay()
 
@@ -108,7 +110,9 @@ export function getTimelineDays(now = new Date()): VisibleDay[] {
       dayCode: DAY_CODES[dayOfWeek],
       weekdayLabel: DAY_NAMES[dayOfWeek],
       monthDayLabel: `${month}/${day}`,
-      isToday: index === 3,
+      monthLabel: `${monthNum}月`,
+      dayLabel: String(date.getDate()),
+      isToday: index === 0,
     })
   }
 

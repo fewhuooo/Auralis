@@ -420,7 +420,7 @@ const { recentBlocks } = storeToRefs(knowledgeStore)
 // Core timeline states
 const viewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays())
-const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[3])
+const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
 const selectDay = async (day: string) => {
   taskStore.selectedDay = day

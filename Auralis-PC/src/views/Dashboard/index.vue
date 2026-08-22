@@ -91,7 +91,7 @@
       <!-- Compact Timeline (top 70%) -->
       <section class="compact-timeline">
         <div class="timeline-header">
-          <h3 class="timeline-title">时间轴 ({{ selectedTimelineDay.weekdayLabel }} {{ selectedTimelineDay.monthDayLabel }})</h3>
+          <h3 class="timeline-title">时间轴 · {{ selectedTimelineDay.monthLabel }}</h3>
           <div class="dashboard-time-actions">
             <div class="db-view-toggle">
               <button 
@@ -122,7 +122,7 @@
             :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
             @click="selectDay(day.dayCode)"
           >
-            <span class="db-day-date">{{ day.monthDayLabel.replace('/', '.') }}</span>
+            <span class="db-day-date">{{ day.dayLabel }}</span>
           </button>
         </div>
 
@@ -408,7 +408,7 @@ const authStore = useAuthStore()
 
 const dashboardViewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays())
-const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[3])
+const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
 const selectDay = async (day: string) => {
   taskStore.selectedDay = day
@@ -1329,27 +1329,25 @@ html.dark .dashboard-right {
 }
 
 .db-day-btn {
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  padding: 4px;
-  border-radius: 8px;
-  font-size: 11px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: 50%;
   cursor: pointer;
   color: var(--text-secondary);
-  flex: 1;
   text-align: center;
-  font-weight: 650;
   transition: all var(--transition-fast);
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
 }
 
 .db-day-date {
-  font-size: 12px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 650;
 }
 
 .db-day-btn:hover {
@@ -1360,7 +1358,6 @@ html.dark .dashboard-right {
 .db-day-btn.is-active {
   background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: white;
-  border-color: transparent;
   font-weight: 850;
   box-shadow: 0 4px 10px rgba(125, 147, 114, 0.3);
 }
