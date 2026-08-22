@@ -109,7 +109,6 @@
                 周视图
               </button>
             </div>
-            <button class="timeline-import-btn" @click="router.push('/asset?focus=unassigned-tasks')">导入任务</button>
             <button class="todo-fab-add-btn" @click="openCreateTaskDialog" title="新建任务">+</button>
           </div>
         </div>
@@ -1275,23 +1274,6 @@ html.dark .dashboard-right {
   align-items: center;
   gap: 8px;
   min-width: 0;
-}
-
-.timeline-import-btn {
-  border: 1px solid var(--border-default);
-  border-radius: 9999px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11px;
-  padding: 5px 9px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.timeline-import-btn:hover {
-  color: var(--color-primary-accent);
-  border-color: var(--color-primary-accent);
-  background: var(--color-primary-light);
 }
 
 .db-view-toggle {
