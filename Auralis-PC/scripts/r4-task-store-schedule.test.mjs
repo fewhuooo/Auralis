@@ -20,3 +20,11 @@ test('completed tasks remain schedulable in the timeline model', () => {
   assert.match(source, /statusToPresentation\(value: TaskStatus, scheduledAt\?: string\): TaskPresentationStatus/)
   assert.match(source, /if \(value === 'CANCELLED'\) return 'cancelled'/)
 })
+
+test('rescheduling an existing task lets the target slot override its old scheduledAt', () => {
+  assert.match(
+    source,
+    /const scheduledAt = input\.startTime !== undefined\s*\? scheduledAtFromLegacy\(input\.startTime, fallbackDay\)\s*:\s*input\.scheduledAt/,
+    'A drag to a new slot must derive scheduledAt from the new legacy startTime before preserving the old timestamp',
+  )
+})
