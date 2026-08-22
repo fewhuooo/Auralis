@@ -174,7 +174,7 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     status,
     scheduledAt,
     dueAt: input.dueAt,
-    durationMinutes: input.durationMinutes ?? input.duration ?? 25,
+    durationMinutes: input.durationMinutes ?? input.duration ?? 30,
     cognitiveLoad: input.cognitiveLoad ?? loadFromLegacy(input.load),
     sortKey: input.sortKey ?? input.position,
     colorOverride: input.colorOverride ?? input.color,

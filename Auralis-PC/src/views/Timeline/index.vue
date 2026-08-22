@@ -609,7 +609,7 @@ const checkSpacedRepetition = async () => {
         subject: block.subject,
         desc: `艾宾浩斯复习曲线到期推荐。\n[KB_ID:${block.id}]`,
         color: block.color || 'rgba(181, 196, 177, 0.6)',
-        duration: 25,
+        duration: 30,
         load: 'low',
         loadText: '1.0 🧠',
         status: 'pending',
@@ -760,7 +760,7 @@ const handleCreateTask = async () => {
   const newTask = {
     name: newTaskForm.value.name.trim(),
     subject: selectedSubj.name,
-    duration: newTaskForm.value.duration || 45,
+    duration: newTaskForm.value.duration || 60,
     load: newTaskForm.value.load,
     loadText: loadTextMap[newTaskForm.value.load] || '2.0 🧠',
     desc: finalDesc,

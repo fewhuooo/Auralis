@@ -68,3 +68,9 @@ test('pc typography uses the shared font stack and semantic size tokens', () => 
   assert.doesNotMatch(timerCore, /font-family:\s*['"](?:Outfit|Plus Jakarta Sans)['"]/) 
   assert.doesNotMatch(knowledgeGraph, /font-family:\s*['"]JetBrains Mono['"]/) 
 })
+
+test('production default durations are multiples of 30 minutes', () => {
+  assert.match(taskStore, /durationMinutes:\s*input\.durationMinutes\s*\?\?\s*input\.duration\s*\?\?\s*30/, 'useTaskStore default must be 30')
+  assert.match(timeline, /duration:\s*newTaskForm\.value\.duration\s*\|\|\s*60/, 'Timeline creation fallback must be 60')
+  assert.match(timeline, /duration:\s*30,\s*\n\s*load:\s*['"]low['"]/, 'Timeline spaced-repetition task duration must be 30')
+})
