@@ -17,6 +17,8 @@ import okhttp3.RequestBody;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.io.InputStream;
@@ -29,6 +31,8 @@ import java.util.Optional;
 @Profile("!test")
 @ConditionalOnProperty(prefix = "auralis.upload", name = "storage-provider", havingValue = "minio")
 public class MinioAssetStorage implements AssetStoragePort {
+
+    private static final Logger log = LoggerFactory.getLogger(MinioAssetStorage.class);
 
     private final MinioClient minioClient;
     private final MinioClient publicMinioClient;
@@ -137,6 +141,8 @@ public class MinioAssetStorage implements AssetStoragePort {
                     .build());
             return new DownloadUrl(url, Instant.now().plusSeconds(expirySeconds()));
         } catch (Exception exception) {
+            log.warn("ASSET_DOWNLOAD_URL_FAILED objectKey={} endpoint={} errorType={} message={}",
+                    objectKey, storage.presignEndpoint(), exception.getClass().getSimpleName(), exception.getMessage());
             throw storageUnavailable();
         }
     }
