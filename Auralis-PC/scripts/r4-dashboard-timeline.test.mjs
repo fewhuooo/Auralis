@@ -45,8 +45,9 @@ test('timeline drag/drop carries a native payload and uses half-hour geometry', 
   assert.doesNotMatch(dashboard, /const currentHour = parseInt\(slotTime\.split\('\:'\)\[0\], 10\)/)
 })
 
-test('dashboard uses a dedicated two-line date label', () => {
-  assert.match(dashboard, /db-day-week/)
+test('dashboard keeps grid cells date-only and moves full day information to the header', () => {
   assert.match(dashboard, /db-day-date/)
-  assert.match(dashboard, /day\.isToday \? '今天'/)
+  assert.match(dashboard, /selectedTimelineDay\.weekdayLabel/)
+  assert.doesNotMatch(dashboard, /db-day-week/)
+  assert.doesNotMatch(dashboard, /day\.isToday \? '今天'/)
 })

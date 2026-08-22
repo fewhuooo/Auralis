@@ -133,7 +133,7 @@ R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离�
 - SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。
 - SubjectWorkspace：文件点击后在中栏展示关联知识块汇总的 Markdown 总结；左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。
 - Asset：上传、处理状态和资料组织；资产树的“全部任务”和各学科任务目录均来自 `useTaskStore` 的当前用户任务，不注入静态演示任务。任务按 `未分布`、`未完成`、`已完成` 三个并列分组，截止时间存在时按截止时间排序；任务完成切换回写 Task API/repository。任务编辑器不再提供认知负荷按钮，改为 30 分钟步进的预计用时，并可保存标题、备注、截止日期和时长。`/asset?focus=unassigned-tasks` 会展开并聚焦“未分布”。
-- Dashboard/Timeline：排期和任务时间管理，排期队列只展示有 `dueAt`、无 `scheduledAt` 且未完成/未取消的任务；首页和独立时间轴统一展示以当日为中心、前后三天组成的 7 个日历日，按真实日期标注并将当日置于中间，首页日期选择器使用独立的两行星期/月日卡片，日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记。时间轴“导入任务”进入资产库未分布分组，任务变化通过 `useTaskStore` 写入 API/repository mutation。
+- Dashboard/Timeline：排期和任务时间管理，排期队列只展示有 `dueAt`、无 `scheduledAt` 且未完成/未取消的任务；首页和独立时间轴统一展示以当日为中心、前后三天组成的 7 个日历日，按真实日期标注并将当日置于中间，首页日期格只显示紧凑日期，顶栏显示选中日期的完整星期/月日信息，日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记。时间轴“导入任务”进入资产库未分布分组，任务变化通过 `useTaskStore` 写入 API/repository mutation。
 - Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
 - Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；计时 UI 通过 `usePomodoroStore`，任务同步仍由 `useTaskStore` 负责。
 

@@ -122,8 +122,7 @@
             :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
             @click="selectDay(day.dayCode)"
           >
-            <span class="db-day-week">{{ day.isToday ? '今天' : day.weekdayLabel }}</span>
-            <span class="db-day-date">{{ day.monthDayLabel.replace('/', '月') + '日' }}</span>
+            <span class="db-day-date">{{ day.monthDayLabel.replace('/', '.') }}</span>
           </button>
         </div>
 
@@ -1348,14 +1347,9 @@ html.dark .dashboard-right {
   gap: 2px;
 }
 
-.db-day-week {
-  font-size: 12px;
-}
-
 .db-day-date {
-  font-size: 9px;
-  font-weight: 500;
-  opacity: 0.85;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .db-day-btn:hover {
