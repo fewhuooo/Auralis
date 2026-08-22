@@ -61,6 +61,7 @@ test('pc typography uses the shared font stack and semantic size tokens', () => 
   assert.match(globalStyles, /html\s*\{\s*font-size:\s*16px/)
   assert.match(globalStyles, /--font-family-base:/)
   assert.match(globalStyles, /--font-size-caption:/)
+  assert.match(globalStyles, /--font-size-body-sm:/)
   assert.match(globalStyles, /--font-size-body:/)
   assert.match(globalStyles, /--font-size-title:/)
   assert.doesNotMatch(pomodoroRing, /font-family:\s*['"]Inter['"]/) 

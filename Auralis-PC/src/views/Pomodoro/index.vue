@@ -154,7 +154,7 @@ onMounted(() => {
   font-size: 18px;
   font-weight: 800;
   color: var(--text-primary);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-family-base);
 }
 
 /* Task Selector */
@@ -229,10 +229,10 @@ onMounted(() => {
 }
 
 .stat-val {
-  font-size: 48px;
+  font-size: var(--font-size-display-sm);
   font-weight: 800;
   color: var(--text-primary);
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-family-base);
   line-height: 1;
 }
 

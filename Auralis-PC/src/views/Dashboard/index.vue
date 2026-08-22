@@ -1172,7 +1172,7 @@ html.dark .row-subj-badge {
 .row-preview :deep(code) {
   background: transparent;
   color: #2D3E25;
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--font-family-mono);
   padding: 0;
   border: none;
   font-size: 12px !important;
@@ -2080,7 +2080,7 @@ html.dark .modal-content :deep(b) {
   padding: 0;
   font-size: 13px;
   font-weight: 700;
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--font-family-mono);
 }
 
 html.dark .modal-content :deep(code) {

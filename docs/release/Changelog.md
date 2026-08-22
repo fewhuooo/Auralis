@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 全局字体与字号令牌统一（2026-08-22）
+
+- PC 根字号统一为 `16px`，新增 caption/body-sm/label/body/body-lg/title-sm/title/title-lg/display 语义字号令牌，并保留旧基础字号变量别名。
+- 普通 UI、表单控件和番茄钟统一使用 `--font-family-base`；代码、知识图谱等宽场景统一使用 `--font-family-mono`，移除局部字体族覆盖。
+- 新增 typography contract 回归；浏览器窄栏、深色主题和真实字体加载后的视觉验收仍待执行。
+
 ### PC 时间轴使用自然周并显示英文星期缩写（2026-08-22）
 
 - Dashboard 与 Timeline 改为展示当前/所选日期所在的完整自然周（周日至周六），并按真实日期计算 `isToday`。

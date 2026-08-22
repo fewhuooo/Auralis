@@ -100,9 +100,9 @@ const formattedTime = computed(() => {
   margin-top: -10px;
 }
 .time-text {
-  font-size: 72px;
+  font-size: var(--font-size-display);
   font-weight: 600;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-family-base);
   color: var(--text-primary);
   letter-spacing: -1px;
   line-height: 1;

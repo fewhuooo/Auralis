@@ -14,6 +14,8 @@
 
 截至 2026-08-20，PC 页面与基础视觉重构已基本收敛；R4 在原有 Store、AI SSE、运行时代理和 Tauri 权限边界之上，补齐了 BYOK 浏览器明文清理、离线写入幂等、SSE 401 单次刷新和离线 AI 会话恢复。PC Web 与 Tauri 应用本体构建已通过；MSI bundling、浏览器/Tauri GUI、真实 Provider 和前后端业务联调仍未验收。
 
+PC 全局排版以 `src/styles/index.css` 为唯一入口：普通 UI 文本继承 `--font-family-base`，代码/图表等专用内容使用 `--font-family-mono`；根字号为 `16px`，字号优先使用 `caption`、`body-sm`、`label`、`body`、`body-lg`、`title-sm`、`title`、`title-lg` 与 `display` 语义令牌。页面组件不得新增未纳入令牌的独立字体族；保留旧基础字号变量仅用于兼容已有样式。
+
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须经过当前模块边界、API/鉴权、视觉可访问性、构建和 GUI 验收审查。
 
 ## 当前技术栈

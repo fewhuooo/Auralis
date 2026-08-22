@@ -819,7 +819,7 @@ watch(() => props.subjectId, () => {
   padding: 0;
   border: none;
   font-weight: 700;
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--font-family-mono);
 }
 
 .panel-footer {

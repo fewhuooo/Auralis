@@ -48,8 +48,9 @@
 
 ### 排版
 
-- 主字体：`DM Sans`、`Inter` 和系统无衬线字体栈。
-- 代码或等宽数据：`Fira Code` 或系统等宽字体。
+- PC 普通 UI 文本统一使用 `var(--font-family-base)`（DM Sans 优先，系统无衬线回退），页面组件不得再声明独立的 Inter、Outfit、Plus Jakarta Sans 等字体。
+- 代码、知识图谱节点等确需等宽的内容统一使用 `var(--font-family-mono)`（Fira Code 优先，系统等宽字体回退）。
+- PC 根字号固定为 `16px`；语义字号使用 `caption`（12px）、`body-sm`（13px）、`label`（14px）、`body`（16px）、`body-lg`（18px）、`title-sm`（20px）、`title`（24px）和 `title-lg`（30px），番茄钟等大数字使用 `display-sm`（48px）或 `display`（72px）。
 - 标题字重 `700–800`，字距轻微收紧。
 - 正文行高 `1.5–1.7`；手机正文不得因追求精致而低于可读尺寸。
 - 次要信息只能降低对比，不能依靠过小字号隐藏。

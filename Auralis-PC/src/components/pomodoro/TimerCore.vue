@@ -181,7 +181,7 @@ clockTimer = setInterval(() => {
   font-size: 14px;
   color: var(--text-muted);
   font-weight: 600;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-family-base);
 }
 
 .center-block {
@@ -202,7 +202,7 @@ clockTimer = setInterval(() => {
   font-size: 18px;
   font-weight: 800;
   letter-spacing: 1px;
-  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-family-base);
 }
 
 .progress-dots {
