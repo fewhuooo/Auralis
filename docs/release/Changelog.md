@@ -9,6 +9,7 @@
 - 文件登记确认现在校验文件、名称和归档学科，上传中防重复提交；直传或 Source 创建失败会显示通知并保留弹层重试，成功后刷新当前学科资料列表。
 - MinIO 新增容器内 `AURALIS_MINIO_ENDPOINT` 与浏览器 `AURALIS_MINIO_PUBLIC_ENDPOINT` 分离配置，并使用 `AURALIS_CORS_ALLOWED_ORIGINS` 配置 API CORS，避免向浏览器返回无法解析的 `minio:9000`。
 - `test:r4-pc` 82/82、PC type-check/static check、MinIO public endpoint 集成测试 2/2 和 Compose config 已通过；Docker 运行态及浏览器业务验收仍待执行。
+- Backend 新增 `ASSET_UPLOAD_*` 与 `SOURCE_CREATED` 安全结构化日志，Docker 中可按阶段定位浏览器直传或 Source 登记失败；不记录文件内容、Token 或密钥。
 
 ### PC 全局字体与字号令牌统一（2026-08-22）
 

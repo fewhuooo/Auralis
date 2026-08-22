@@ -93,7 +93,7 @@ docker compose logs minio
 docker compose logs backend
 ```
 
-成功判据：重新获取的预签名 URL 可上传，bind 后查询资产属于当前用户，且对象实际存在。
+成功判据：重新获取的预签名 URL 可上传，bind 后查询资产属于当前用户，且对象实际存在。Docker 后端日志应能看到 `ASSET_UPLOAD_INTENT_CREATED`、`ASSET_UPLOAD_COMPLETE_REQUESTED`、`ASSET_UPLOAD_READY` 和 `SOURCE_CREATED`；若只看到 intent 而没有 complete，优先检查浏览器到 `AURALIS_MINIO_PUBLIC_ENDPOINT` 的 PUT/CORS；若有 complete 但没有 ready，检查 MinIO 对象 HEAD 和 size/MIME/hash 校验。
 
 ### 数据库与对象孤儿核对
 

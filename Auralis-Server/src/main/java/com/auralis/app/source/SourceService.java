@@ -14,6 +14,8 @@ import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +26,8 @@ import java.util.UUID;
 
 @Service
 public class SourceService {
+
+    private static final Logger log = LoggerFactory.getLogger(SourceService.class);
 
     private final SourceRepository sourceRepository;
     private final AssetRepository assetRepository;
@@ -55,6 +59,8 @@ public class SourceService {
                 data.assetId(), data.originUrl(), data.rawText(), command.outline(), SourceIngestionStatus.PENDING)));
         publishChange(userId, result, "CREATE");
         eventPublisher.publishEvent(new SourceIngestionRequestedEvent(userId, result.id(), result.version()));
+        log.info("SOURCE_CREATED userId={} sourceId={} type={} subjectId={} assetId={}",
+                userId, result.id(), result.type(), result.subjectId(), result.assetId());
         return result;
     }
 

@@ -87,7 +87,7 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 后续生产配置必须从环境变量读取数据库、MinIO、JWT、BYOK、DeepSeek、SiliconFlow 和 CORS 值；生产 profile 对缺失的关键配置执行 fail-fast。所有业务 Repository 必须在查询中带当前 userId；日志过滤 Authorization、Cookie、refresh token、BYOK key、完整 prompt 和模型回复。
 
-AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用户消息保留、Provider 选择、成功/中断/失败与耗时，`AI_EMBEDDING_*`/`AI_RETRIEVAL_SUCCESS` 区分向量化和检索阶段，`AI_PROVIDER_HTTP_*` 记录上游 host/path、解析地址数量、请求/响应字节数、SSE 行数、状态和耗时，`AI_SETTINGS_RESOLVED` 标记 BYOK 或 `ENV_DEFAULT` 来源。日志只输出 UUID、host、模型、数量、长度、状态和稳定错误码，不输出 API Key、Authorization、完整 prompt、模型回复或响应体。
+AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用户消息保留、Provider 选择、成功/中断/失败与耗时，`AI_EMBEDDING_*`/`AI_RETRIEVAL_SUCCESS` 区分向量化和检索阶段，`AI_PROVIDER_HTTP_*` 记录上游 host/path、解析地址数量、请求/响应字节数、SSE 行数、状态和耗时，`AI_SETTINGS_RESOLVED` 标记 BYOK 或 `ENV_DEFAULT` 来源。资产直传和 Source 登记分别输出 `ASSET_UPLOAD_INTENT_*`、`ASSET_UPLOAD_COMPLETE_*`、`ASSET_UPLOAD_READY`、`ASSET_UPLOAD_REJECTED` 和 `SOURCE_CREATED`，可区分凭证申请、浏览器直传后的 HEAD 校验和登记阶段。日志只输出 UUID、host、模型、数量、长度、状态和稳定错误码，不输出 API Key、Authorization、完整 prompt、模型回复、文件内容或响应体。
 
 ## 阶段 2B 实际 HTTP 表面
 
