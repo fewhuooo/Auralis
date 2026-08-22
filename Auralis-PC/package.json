@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",
+    "@file-viewer/vite-plugin": "^2.3.2",
+    "@file-viewer/vue3-full": "^2.3.2",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@types/dompurify": "^3.0.5",
