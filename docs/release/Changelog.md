@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 学科统一文件预览（2026-08-22）
+
+- 学科页新增统一 `FilePreview`：先通过服务端签名 URL 获取带正确扩展名的 `File`，再由自托管 File Viewer 渲染 PDF、DOC/DOCX、PPT/PPTX、图片和文本，并统一提供加载、失败、重试和下载状态。
+- 上传选择器与拖拽入口共用文件能力注册表；Excel、未知格式及超过 50 MB 文件在创建 upload intent 前拦截，避免无效对象进入资产链路。
+- `test:r4-pc` 92/92、`check:r4-pc`、SubjectWorkspace 契约、type-check 和 Web build 通过；Vite 已复制 47/47 File Viewer renderer assets。真实 Office 样本、浏览器/Tauri GUI 和窄栏布局仍待人工验收，必要时可在不改工作区契约的前提下切换 PDF renderer。
+
 ### PC 学科文件登记与 Docker MinIO 直传修复（2026-08-22）
 
 - 文件登记确认现在校验文件、名称和归档学科，上传中防重复提交；直传或 Source 创建失败会显示通知并保留弹层重试，成功后刷新当前学科资料列表。

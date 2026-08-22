@@ -22,6 +22,8 @@ declare module 'vue' {
     ElOption: typeof import('element-plus/es')['ElOption']
     ElPopover: typeof import('element-plus/es')['ElPopover']
     ElSelect: typeof import('element-plus/es')['ElSelect']
+    FilePreview: typeof import('./src/components/FilePreview.vue')['default']
+    FileViewerRenderer: typeof import('./src/components/preview/FileViewerRenderer.vue')['default']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     KnowledgeGraph: typeof import('./src/components/subject/KnowledgeGraph.vue')['default']
     PdfViewer: typeof import('./src/components/subject/PdfViewer.vue')['default']
@@ -32,5 +34,6 @@ declare module 'vue' {
     SearchPalette: typeof import('./src/components/SearchPalette.vue')['default']
     SubjectCreateModal: typeof import('./src/components/subject/SubjectCreateModal.vue')['default']
     TimerCore: typeof import('./src/components/pomodoro/TimerCore.vue')['default']
+    UnsupportedPreview: typeof import('./src/components/preview/UnsupportedPreview.vue')['default']
   }
 }
