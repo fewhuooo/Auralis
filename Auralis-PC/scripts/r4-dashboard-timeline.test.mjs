@@ -5,6 +5,10 @@ import test from 'node:test'
 const dashboard = await readFile(new URL('../src/views/Dashboard/index.vue', import.meta.url), 'utf8')
 const timeline = await readFile(new URL('../src/views/Timeline/index.vue', import.meta.url), 'utf8')
 const taskStore = await readFile(new URL('../src/store/useTaskStore.ts', import.meta.url), 'utf8')
+const globalStyles = await readFile(new URL('../src/styles/index.css', import.meta.url), 'utf8')
+const pomodoroRing = await readFile(new URL('../src/components/pomodoro/PomodoroRing.vue', import.meta.url), 'utf8')
+const timerCore = await readFile(new URL('../src/components/pomodoro/TimerCore.vue', import.meta.url), 'utf8')
+const knowledgeGraph = await readFile(new URL('../src/components/subject/KnowledgeGraph.vue', import.meta.url), 'utf8')
 
 test('dashboard uses a bounded grid and shared timeline window', () => {
   assert.match(dashboard, /display:\s*grid/)
@@ -51,4 +55,15 @@ test('dashboard keeps grid cells date-only and moves full day information to the
   assert.match(dashboard, /db-day-week/)
   assert.match(dashboard, /day\.weekdayShort/)
   assert.doesNotMatch(dashboard, /day\.isToday \? '今天'/)
+})
+
+test('pc typography uses the shared font stack and semantic size tokens', () => {
+  assert.match(globalStyles, /html\s*\{\s*font-size:\s*16px/)
+  assert.match(globalStyles, /--font-family-base:/)
+  assert.match(globalStyles, /--font-size-caption:/)
+  assert.match(globalStyles, /--font-size-body:/)
+  assert.match(globalStyles, /--font-size-title:/)
+  assert.doesNotMatch(pomodoroRing, /font-family:\s*['"]Inter['"]/) 
+  assert.doesNotMatch(timerCore, /font-family:\s*['"](?:Outfit|Plus Jakarta Sans)['"]/) 
+  assert.doesNotMatch(knowledgeGraph, /font-family:\s*['"]JetBrains Mono['"]/) 
 })
