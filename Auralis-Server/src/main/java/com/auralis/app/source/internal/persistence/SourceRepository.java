@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
 
@@ -34,4 +35,10 @@ public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
             Pageable pageable);
 
     List<SourceEntity> findAllByUserIdOrderByUpdatedAtDescIdAsc(UUID userId);
+
+    List<SourceEntity> findAllByDeletedAtBefore(Instant cutoff);
+
+    boolean existsByAssetIdAndDeletedAtIsNull(UUID assetId);
+
+    boolean existsByAssetIdAndDeletedAtAfter(UUID assetId, Instant cutoff);
 }

@@ -33,6 +33,9 @@ auralis:
   upload:
     max-file-size-bytes: 52428800
     storage-provider: ${AURALIS_UPLOAD_STORAGE_PROVIDER:unavailable}
+    asset-retention-days: ${AURALIS_UPLOAD_ASSET_RETENTION_DAYS:30}
+    asset-cleanup-delay-millis: ${AURALIS_UPLOAD_ASSET_CLEANUP_DELAY_MILLIS:3600000}
+    asset-cleanup-initial-delay-millis: ${AURALIS_UPLOAD_ASSET_CLEANUP_INITIAL_DELAY_MILLIS:60000}
     storage:
       endpoint: ${AURALIS_MINIO_ENDPOINT:}
       public-endpoint: ${AURALIS_MINIO_PUBLIC_ENDPOINT:}

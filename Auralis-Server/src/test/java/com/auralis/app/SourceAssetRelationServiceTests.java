@@ -17,6 +17,7 @@ import com.auralis.app.relation.internal.persistence.RelationRepository;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.AssetService;
 import com.auralis.app.source.AssetStoragePort;
+import com.auralis.app.source.AssetRetentionCleanupService;
 import com.auralis.app.source.AssetUploadIntentCommand;
 import com.auralis.app.source.AssetUploadStatus;
 import com.auralis.app.source.SourceCommand;
@@ -89,6 +90,9 @@ class SourceAssetRelationServiceTests {
 
     @Autowired
     private AssetRepository assetRepository;
+
+    @Autowired
+    private AssetRetentionCleanupService assetRetentionCleanupService;
 
     @Autowired
     private TaskRepository taskRepository;
@@ -195,6 +199,33 @@ class SourceAssetRelationServiceTests {
                 subject.id(), SourceType.FILE, "notes.pdf", intent.assetId(), null, null, null));
 
         assertThat(source.assetSizeBytes()).isEqualTo(3982329L);
+    }
+
+    @Test
+    void expiredSoftDeletedSourceCleansObjectAndKeepsAuditableAssetRow() {
+        var owner = register("source-cleanup");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Cleanup", null, null, null, "001"));
+        var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
+                0L, "notes.pdf", 20L, "application/pdf", null));
+        String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
+                .orElseThrow()
+                .getObjectKey();
+        assetStorage.put(objectKey, new AssetStoragePort.ObjectMetadata(20L, "application/pdf", null));
+        assetService.complete(owner.user().id(), intent.assetId());
+        SourceView source = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.FILE, "notes.pdf", intent.assetId(), null, null, null));
+
+        sourceService.delete(owner.user().id(), source.id(), source.version());
+        assetRetentionCleanupService.purgeExpired(Instant.now().plusSeconds(1));
+
+        assertThat(assetStorage.headObject(objectKey)).isEmpty();
+        assertThat(assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
+                .orElseThrow()
+                .getUploadStatus()).isEqualTo(AssetUploadStatus.ORPHANED);
+        assertThat(sourceRepository.findByIdAndUserId(source.id(), owner.user().id())
+                .orElseThrow()
+                .getDeletedAt()).isNotNull();
     }
 
     @Test

@@ -10,8 +10,10 @@ import UnsupportedPreview from '@/components/preview/UnsupportedPreview.vue'
 const props = withDefaults(defineProps<{
   file: Pick<SourceFileModel, 'id' | 'name' | 'assetId' | 'fileType'>
   compact?: boolean
+  bare?: boolean
 }>(), {
   compact: false,
+  bare: false,
 })
 
 const emit = defineEmits<{
@@ -92,8 +94,8 @@ watch(
 </script>
 
 <template>
-  <section class="file-preview" :class="{ 'is-compact': compact }" aria-label="文件预览">
-    <header class="file-preview-header">
+  <section class="file-preview" :class="{ 'is-compact': compact, 'is-bare': bare }" aria-label="文件预览">
+    <header v-if="!bare" class="file-preview-header">
       <div class="file-preview-title-wrap">
         <span class="file-preview-eyebrow">文件预览</span>
         <h3 class="file-preview-title" :title="file.name">{{ file.name }}</h3>
@@ -150,6 +152,17 @@ watch(
 
 .file-preview.is-compact {
   min-height: 420px;
+}
+
+.file-preview.is-bare {
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.file-preview.is-bare .file-preview-body {
+  height: 100%;
 }
 
 .file-preview-header {

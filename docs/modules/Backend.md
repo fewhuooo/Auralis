@@ -1,6 +1,6 @@
 # Spring Boot 后端模块
 
-更新时间：2026-08-21
+更新时间：2026-08-23
 
 文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线已构建，R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；默认 Docker Testcontainers 门禁通过，整体仍待真实 Provider 与外部验收
 
@@ -95,6 +95,8 @@ AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用
 - Source：`POST/GET /api/sources`、`GET/PUT/DELETE /api/sources/{id}`、`POST /api/sources/{id}/restore`、`POST /api/sources/{id}/reingest`。
 - Relation：`POST/GET /api/relations`、`GET/PUT/DELETE /api/relations/{id}`、`POST /api/relations/{id}/restore`。
 - Source 的 ingestion worker、Tika 解析和 source_chunks/pgvector 已在阶段 5 后端基线接入；Source/Relation 列表同样使用稳定 keyset cursor；真实 MinIO、完整 PostgreSQL 门禁和生产分页性能仍不在本阶段验收范围。
+
+Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保留 30 天，按小时扫描过期 Source 并物理删除对应 MinIO 对象；Asset 与 Source 元数据不硬删除，Asset 改为 `ORPHANED` 以保留审计和 KnowledgeBlock 外键可追溯性。可通过 `AURALIS_UPLOAD_ASSET_RETENTION_DAYS`、`AURALIS_UPLOAD_ASSET_CLEANUP_DELAY_MILLIS` 和 `AURALIS_UPLOAD_ASSET_CLEANUP_INITIAL_DELAY_MILLIS` 调整保留期与调度频率。
 
 ## 阶段 3/4 实际 HTTP 表面
 

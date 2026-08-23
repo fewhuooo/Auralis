@@ -54,19 +54,29 @@
           <h3 class="drawer-title">学习文件</h3>
           <button class="drawer-action" @click="openRegisterModal" title="添加文件">+</button>
         </div>
-        <div class="drawer-list" v-if="workspaceFiles.length > 0">
+        <div class="drawer-list" v-if="activeSourceFiles.length > 0">
           <div
-            v-for="file in workspaceFiles"
+            v-for="file in activeSourceFiles"
             :key="file.id"
             class="drawer-item"
-            :class="{ 'is-active': selectedFileId === file.id, 'is-summary-file': file.isSummary }"
+            :class="{ 'is-active': selectedFileId === file.id }"
             @click="selectFile(file.id)"
           >
-<span class="drawer-item-icon">{{ getFileIcon(file.fileType) }}</span>
+            <span class="drawer-item-icon">{{ getFileIcon(file.fileType) }}</span>
             <div class="drawer-item-body">
               <span class="drawer-item-name">{{ file.name }}</span>
-              <span class="drawer-item-meta">{{ workspaceFileMeta(file) }}</span>
+              <span class="drawer-item-meta">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
             </div>
+            <button
+              class="drawer-item-delete"
+              type="button"
+              :disabled="deletingFileId === file.id"
+              :aria-label="`删除文件 ${file.name}`"
+              title="删除文件"
+              @click.stop="handleDeleteFile(file)"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
           </div>
         </div>
         <div class="drawer-empty" v-else>
@@ -166,7 +176,7 @@
       <!-- Micro Status Bar -->
       <header class="center-status-bar">
         <div class="status-left">
-          <span v-if="centerView === 'summary' && selectedFile" class="status-file">
+          <span v-if="centerView === 'preview' && selectedFile" class="status-file">
             <FileText :size="14" class="status-icon" /> {{ selectedFile.name }}
           </span>
           <span v-else-if="centerView === 'blocks'" class="status-file">
@@ -175,7 +185,7 @@
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
-          <span class="status-page" v-if="centerView === 'summary'">{{ selectedFile?.isSummary ? 'Markdown 文件' : '文件预览' }}</span>
+          <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
         </div>
       </header>
 
@@ -186,27 +196,12 @@
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="tier2Open ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
         </button>
 
-        <div v-if="centerView === 'summary' && selectedFile" class="document-workspace">
-          <article v-if="selectedFile.isSummary" class="markdown-document">
-            <header class="markdown-document-header">
-              <div class="markdown-document-heading">
-                <span class="file-summary-icon">📝</span>
-                <div class="file-summary-head-text">
-                  <p>Markdown 文件</p>
-                  <h2>{{ selectedFile.name }}</h2>
-                </div>
-              </div>
-              <button class="markdown-download" type="button" @click="downloadSummary">下载 .md</button>
-            </header>
-            <div class="summary-markdown" v-html="renderMarkdown(selectedFile.summaryMarkdown || '')"></div>
-          </article>
-          <FilePreview
-            v-else
-            :file="selectedFile"
-            :compact="true"
-            @preview-error="handlePreviewError"
-          />
-        </div>
+        <FilePreview
+          v-if="centerView === 'preview' && selectedFile"
+          :file="selectedFile"
+          :bare="true"
+          @preview-error="handlePreviewError"
+        />
 
         <!-- Knowledge Blocks Grid -->
         <div v-else-if="centerView === 'blocks'" class="blocks-workspace">
@@ -538,7 +533,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ElIcon, ElNotification, ElMessage } from 'element-plus'
+import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
 import { Blocks, Plus, FileText } from 'lucide-vue-next'
 import 'element-plus/theme-chalk/el-notification.css'
@@ -588,7 +583,7 @@ const timeAgo = (iso: string) => {
 // ===== Tier-1 / Tier-2 State =====
 const tier2Open = ref(true)
 const tier2Mode = ref<'files' | 'outline'>('files')
-const centerView = ref<'blocks' | 'summary' | 'overview'>('overview')
+const centerView = ref<'blocks' | 'preview' | 'overview'>('overview')
 const rightCollapsed = ref(false)
 
 const toggleTier2 = (mode: 'files' | 'outline') => {
@@ -598,7 +593,7 @@ const toggleTier2 = (mode: 'files' | 'outline') => {
     tier2Mode.value = mode
     tier2Open.value = true
     if (centerView.value === 'blocks') {
-      centerView.value = selectedFileId.value ? 'summary' : 'overview'
+      centerView.value = selectedFileId.value ? 'preview' : 'overview'
     }
   }
 }
@@ -646,62 +641,43 @@ const startResizeRight = (e: MouseEvent) => {
 }
 
 // ===== File summary =====
-type WorkspaceFile = SourceFileModel & {
-  isSummary?: boolean
-  summarySourceId?: string
-  summaryMarkdown?: string
-}
-
 const selectedFileId = ref<string | null>(null)
-const summaryMarkdownFor = (file: SourceFileModel): string => {
-  const blocks = recentBlocks.value.filter(block => block.sourceFileId === file.id)
-  const body = blocks.map(block => `## ${block.title}\n\n${block.preview}`).join('\n\n')
-  return body
-    ? `# ${file.name} · 学习总结\n\n${body}`
-    : `# ${file.name} · 学习总结\n\n暂无可展示的知识块。\n\n可以让 AI 为当前文件整理重点概览。`
-}
 
-const workspaceFiles = computed<WorkspaceFile[]>(() => activeSourceFiles.value.flatMap((file) => {
-  const summaryMarkdown = summaryMarkdownFor(file)
-  return [
-    file,
-    {
-      ...file,
-      id: `${file.id}:summary`,
-      name: `${file.name.replace(/\.[^.]+$/, '')} · 总结.md`,
-      filePath: `${file.id}:summary`,
-      fileType: 'text/markdown',
-      fileSize: new Blob([summaryMarkdown]).size,
-      assetId: undefined,
-      isSummary: true,
-      summarySourceId: file.id,
-      summaryMarkdown,
-    },
-  ]
-}))
-
-const workspaceFileMeta = (file: WorkspaceFile): string => (
-  file.isSummary ? 'Markdown 总结' : `${(file.fileSize / (1024 * 1024)).toFixed(1)} MB`
-)
-
-const selectedFile = computed<WorkspaceFile | null>(() => workspaceFiles.value.find(f => f.id === selectedFileId.value) || null)
-const selectedSourceId = computed(() => selectedFile.value?.summarySourceId || selectedFile.value?.id)
-
-const downloadSummary = () => {
-  const markdown = selectedFile.value?.isSummary ? selectedFile.value.summaryMarkdown : ''
-  if (!markdown || !selectedFile.value) return
-  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = selectedFile.value.name
-  link.click()
-  URL.revokeObjectURL(url)
-}
+const selectedFile = computed<SourceFileModel | null>(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
+const selectedSourceId = computed(() => selectedFile.value?.id)
+const deletingFileId = ref<string | null>(null)
 
 const selectFile = (id: string) => {
   selectedFileId.value = id
-  centerView.value = 'summary'
+  centerView.value = 'preview'
+}
+
+const handleDeleteFile = async (file: SourceFileModel) => {
+  if (deletingFileId.value) return
+  try {
+    await ElMessageBox.confirm(`确认删除文件“${file.name}”吗？关联的知识块将会保留。`, '删除文件', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    deletingFileId.value = file.id
+    await sourceStore.deleteSourceFile(file.id)
+    ElMessage.success('已删除文件')
+    if (selectedFileId.value === file.id) {
+      if (activeSourceFiles.value.length > 0) {
+        selectFile(activeSourceFiles.value[0].id)
+      } else {
+        selectedFileId.value = null
+        centerView.value = 'overview'
+      }
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(error instanceof Error ? error.message : '删除失败')
+    }
+  } finally {
+    deletingFileId.value = null
+  }
 }
 
 const handlePreviewError = (message: string) => {
@@ -885,6 +861,7 @@ const handleRegisterFile = async () => {
     
     if (targetSubjectId === subjectId.value && !selectedFileId.value) {
       selectedFileId.value = newId
+      centerView.value = 'preview'
     }
 
     if (targetSubjectId === subjectId.value) {
@@ -1034,7 +1011,7 @@ onMounted(async () => {
     syncOutlineFileLinks()
     if (activeSourceFiles.value.length > 0) {
       selectedFileId.value = activeSourceFiles.value[0].id
-      centerView.value = 'summary'
+      centerView.value = 'preview'
     } else {
       centerView.value = 'overview'
     }
@@ -1054,7 +1031,7 @@ watch(subjectId, async (newId) => {
     syncOutlineFileLinks()
     if (activeSourceFiles.value.length > 0) {
       selectedFileId.value = activeSourceFiles.value[0].id
-      centerView.value = 'summary'
+      centerView.value = 'preview'
     } else {
       selectedFileId.value = null
       centerView.value = 'overview'
@@ -1273,18 +1250,32 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   border-radius: 1.5px;
 }
 
-.drawer-item.is-summary-file {
-  margin-left: 18px;
-  background: rgba(125, 147, 114, 0.045);
-}
-
-.drawer-item.is-summary-file:hover { background: rgba(125, 147, 114, 0.1); }
-.drawer-item.is-summary-file .drawer-item-name { font-weight: 500; }
-
 .drawer-item-icon { font-size: 16px; flex-shrink: 0; }
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .drawer-item-name { font-size: 13.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .drawer-item-meta { font-size: 10.5px; color: var(--text-muted); }
+
+.drawer-item-delete {
+  display: flex;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.drawer-item:hover .drawer-item-delete,
+.drawer-item-delete:focus-visible { opacity: 1; }
+.drawer-item-delete:hover:not(:disabled) { color: var(--error, #b4534b); background: rgba(239, 68, 68, 0.1); }
+.drawer-item-delete:disabled { cursor: wait; opacity: 0.5; }
 
 .drawer-item-actions { display: flex; gap: 4px; opacity: 0; transition: opacity var(--transition-fast); }
 .drawer-item:hover .drawer-item-actions { opacity: 1; }
@@ -2069,63 +2060,6 @@ html.dark .ai-input-wrapper {
 .outline-file-link:hover { background: rgba(125,147,114,0.08); border-color: rgba(125,147,114,0.15); transform: translateX(2px); color: #7D9372; }
 .outline-file-link-icon { opacity: 0.7; }
 .outline-file-link-file { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
-.document-workspace {
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 24px 32px 32px;
-  overflow: auto;
-}
-
-.document-workspace > .file-preview { min-height: 0; }
-
-.markdown-document {
-  width: min(820px, 100%);
-  min-height: 100%;
-  box-sizing: border-box;
-  margin: 0 auto;
-  padding: 40px 56px 64px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 18px;
-  background: var(--color-bg-primary);
-}
-
-.markdown-document-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  padding-bottom: 24px;
-  margin-bottom: 28px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.markdown-document-heading { display: flex; align-items: flex-start; gap: 20px; min-width: 0; }
-.file-summary-head-text { flex: 1; }
-.file-summary-head-text p { margin: 0 0 6px; color: var(--text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
-.file-summary-head-text h2 { margin: 0; overflow-wrap: anywhere; font-size: 28px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.5px; line-height: 1.3; }
-.file-summary-icon { font-size: 38px; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.06)); }
-
-.markdown-download {
-  flex-shrink: 0;
-  padding: 8px 14px;
-  border: 1px solid var(--border-default);
-  border-radius: 8px;
-  background: var(--color-bg-secondary);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.markdown-download:hover {
-  border-color: rgba(125, 147, 114, 0.4);
-  background: var(--color-primary-light);
-  color: var(--color-primary-accent);
-}
-
 .summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
 .summary-markdown :deep(h1), .summary-markdown :deep(h2), .summary-markdown :deep(h3), .summary-markdown :deep(h4) { color: var(--text-primary); font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; }
 .summary-markdown :deep(h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-default); padding-bottom: 0.3em; }

@@ -1,6 +1,6 @@
 # 基础设施与数据服务模块
 
-更新时间：2026-08-22
+更新时间：2026-08-23
 
 文档状态：现行
 
@@ -43,11 +43,12 @@
 
 ## 环境变量
 
-`.env.example` 当前列出数据库、JWT、CORS、MinIO、上传限制、AI 超时/Provider allowlist 和可选 Provider smoke key。开发机若通过 `localhost` 或 `127.0.0.1` 打开 PC Web，CORS 白名单需同时包含对应 origin；所有 `replace-*` 值在启动前必须替换，真实 `.env` 不得提交。
+`.env.example` 当前列出数据库、JWT、CORS、MinIO、上传限制、软删除资产保留/清理调度、AI 超时/Provider allowlist 和可选 Provider smoke key。开发机若通过 `localhost` 或 `127.0.0.1` 打开 PC Web，CORS 白名单需同时包含对应 origin；所有 `replace-*` 值在启动前必须替换，真实 `.env` 不得提交。
 
 后端当前绑定以下对象存储配置：
 
 - `AURALIS_UPLOAD_STORAGE_PROVIDER`：`unavailable`（默认）或 `minio`；test profile 使用内存适配器。
+- `AURALIS_UPLOAD_ASSET_RETENTION_DAYS`、`AURALIS_UPLOAD_ASSET_CLEANUP_DELAY_MILLIS`、`AURALIS_UPLOAD_ASSET_CLEANUP_INITIAL_DELAY_MILLIS`：软删除 Source 的 MinIO 对象保留天数、扫描间隔和首次延迟；默认分别为 30 天、1 小时和 60 秒。清理只删除对象并将 Asset 标记为 `ORPHANED`，不硬删除数据库审计行。
 - `AURALIS_MINIO_ENDPOINT`、`AURALIS_MINIO_PUBLIC_ENDPOINT`、`AURALIS_MINIO_BUCKET`、`AURALIS_MINIO_ACCESS_KEY`、`AURALIS_MINIO_SECRET_KEY`
 - `AURALIS_MINIO_PRESIGN_TTL_SECONDS`
 

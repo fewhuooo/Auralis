@@ -108,4 +108,8 @@ public class AssetEntity {
     public void markFailed() {
         uploadStatus = AssetUploadStatus.FAILED;
     }
+
+    public void markOrphaned() {
+        uploadStatus = AssetUploadStatus.ORPHANED;
+    }
 }

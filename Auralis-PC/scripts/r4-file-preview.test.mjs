@@ -99,12 +99,26 @@ test('SubjectWorkspace uses FilePreview and the shared upload accept list', () =
   assert.match(source, /@click="selectFile\(file\.id\)"/)
 })
 
-test('SubjectWorkspace exposes the summary as a separate Markdown document', () => {
+test('SubjectWorkspace keeps files flat and exposes file deletion', () => {
   const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
   const source = fs.readFileSync(workspacePath, 'utf8')
-  assert.match(source, /const workspaceFiles = computed/)
-  assert.match(source, /isSummary/)
-  assert.match(source, /summaryMarkdown/)
-  assert.match(source, /downloadSummary/)
-  assert.match(source, /v-if="selectedFile\.isSummary"/)
+  assert.doesNotMatch(source, /const workspaceFiles = computed/)
+  assert.doesNotMatch(source, /summaryMarkdownFor/)
+  assert.doesNotMatch(source, /isSummary-file/)
+  assert.match(source, /v-for="file in activeSourceFiles"/)
+  assert.match(source, /handleDeleteFile\(file\)/)
+  assert.match(source, /deleteSourceFile\(file\.id\)/)
+  assert.match(source, /class="drawer-item-delete"/)
+})
+
+test('SubjectWorkspace renders the selected file directly and keeps knowledge blocks as the summary surface', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+  const previewSource = fs.readFileSync(path.resolve('src/components/FilePreview.vue'), 'utf8')
+  assert.match(source, /centerView === 'preview'/)
+  assert.match(source, /:bare="true"/)
+  assert.match(previewSource, /<header v-if="!bare" class="file-preview-header">/)
+  assert.match(source, /centerView = 'blocks'/)
+  assert.doesNotMatch(source, /centerView === 'summary'/)
+  assert.doesNotMatch(source, /Markdown 文件/)
 })

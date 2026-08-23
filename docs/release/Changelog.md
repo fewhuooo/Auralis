@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 学科文件改为知识块总结与软删除清理（2026-08-23）
+
+- Antigravity Gemini 3.1 Pro 参与收敛 SubjectWorkspace：文件栏只显示真实 Source 文件，不再生成独立 `· 总结.md`；知识块入口承载总结，选中文件后直接显示无嵌套标题容器的 `FilePreview`。
+- 文件行新增确认后的软删除入口，调用现有 Source DELETE；后端 `AssetRetentionCleanupService` 默认 30 天后按小时删除 MinIO 对象并将 Asset 标记为 `ORPHANED`，保留 Source/Asset 数据库审计行。
+- 新增前端 flat-file/direct-preview/delete 回归与后端 MinIO retention 回归；完整前后端测试、Docker 重建和浏览器人工验收结果待本轮命令完成后补充。
+
 ### PC 学科文件大小即时显示（2026-08-23）
 
 - 文件上传完成后的 `asset.sizeBytes` 现在会保留在本地优先 Source 副本，避免同步完成前学科文件列表显示 `0.0 MB`；该字段不会进入后端 Source 创建 mutation。
