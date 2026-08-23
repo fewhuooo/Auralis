@@ -214,10 +214,6 @@ watch(
           @rotation-change="handleRotationChange"
           @page-change="handlePageChange"
         />
-        <div v-if="isRendererLoading" class="file-preview-loading-overlay" role="status">
-          <span class="file-preview-spinner" aria-hidden="true"></span>
-          <span>正在渲染文档…</span>
-        </div>
       </div>
     </div>
 
@@ -339,18 +335,6 @@ watch(
 
 .file-preview-state.is-error span {
   color: var(--text-muted, #8a8a84);
-}
-
-.file-preview-loading-overlay {
-  position: absolute;
-  inset: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--text-secondary, #656560);
-  background: rgba(249, 249, 247, 0.78);
-  pointer-events: none;
 }
 
 .file-preview-spinner {

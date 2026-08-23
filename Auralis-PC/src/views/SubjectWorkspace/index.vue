@@ -186,11 +186,13 @@
         </div>
         <div class="status-right">
           <div v-if="centerView === 'preview' && selectedFile" class="preview-status-controls" aria-label="预览控制">
-            <button type="button" class="preview-status-button preview-status-button-icon" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
-            <span class="preview-zoom-value" aria-live="polite">{{ previewZoomLabel }}</span>
-            <button type="button" class="preview-status-button preview-status-button-icon" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
-            <button type="button" class="preview-status-button preview-status-button-wide" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
-            <span class="preview-rotation-controls" aria-label="旋转控制">
+            <div class="preview-control-group preview-zoom-controls" aria-label="缩放控制">
+              <button type="button" class="preview-status-button preview-status-button-icon" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
+              <span class="preview-zoom-value" aria-live="polite">{{ previewZoomLabel }}</span>
+              <button type="button" class="preview-status-button preview-status-button-icon" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
+              <button type="button" class="preview-status-button preview-status-button-wide" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
+            </div>
+            <div class="preview-control-group preview-rotation-controls" aria-label="旋转控制">
               <button type="button" class="preview-status-button preview-status-button-icon" title="向左旋转 90 度" aria-label="向左旋转 90 度" @click="filePreviewRef?.rotateLeft()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 14-5-5 5-5"/><path d="M4 9h9a7 7 0 1 1-7 7"/></svg>
               </button>
@@ -198,7 +200,7 @@
               <button type="button" class="preview-status-button preview-status-button-icon" title="向右旋转 90 度" aria-label="向右旋转 90 度" @click="filePreviewRef?.rotateRight()">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a7 7 0 1 0 7 7"/></svg>
               </button>
-            </span>
+            </div>
           </div>
           <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
         </div>
@@ -1510,11 +1512,21 @@ html.dark .workspace-center {
 .preview-status-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+.preview-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-default);
+  border-radius: 9px;
+  background: var(--color-bg-secondary);
+  box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08);
 }
 .preview-status-button,
 .preview-page-button {
@@ -1531,14 +1543,27 @@ html.dark .workspace-center {
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
-.preview-status-button:hover:not(:disabled),
+.preview-status-button {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.preview-status-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--color-primary-light);
+  color: var(--text-primary);
+  box-shadow: none;
+}
 .preview-page-button:hover:not(:disabled) {
   border-color: var(--color-primary-accent);
   background: var(--color-primary-light);
   color: var(--text-primary);
   box-shadow: 0 2px 5px rgba(24, 32, 28, 0.12);
 }
-.preview-status-button:active:not(:disabled),
+.preview-status-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
 .preview-page-button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08); }
 .preview-status-button:focus-visible,
 .preview-page-button:focus-visible { outline: 2px solid var(--color-primary-accent); outline-offset: 2px; }
@@ -1550,6 +1575,11 @@ html.dark .workspace-center {
   background: var(--color-bg-secondary);
   box-shadow: none;
   opacity: 0.6;
+}
+.preview-status-button:disabled {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
 }
 .preview-status-button-wide { min-width: 42px; }
 .preview-status-button-icon { width: 30px; padding: 0; }

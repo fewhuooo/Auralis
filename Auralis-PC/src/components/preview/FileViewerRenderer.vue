@@ -28,6 +28,10 @@ const viewerOptions = {
   styleIsolation: 'none' as const,
   theme: 'light' as const,
   toolbar: false,
+  fit: {
+    mode: 'width' as const,
+    resize: 'until-interaction' as const,
+  },
   pdf: {
     toolbar: false,
     navigation: false,
@@ -61,8 +65,29 @@ function onViewStateChange(change: FileViewerViewStateChange): void {
   emit('page-change', currentState.value.page, currentState.value.pageCount)
 }
 
-async function applyZoom(action: () => Promise<FileViewerZoomState>): Promise<FileViewerZoomState> {
-  const state = await action()
+const ZOOM_STEP = 0.1
+const MIN_ZOOM = 0.2
+const MAX_ZOOM = 3
+
+async function changeZoom(delta: number): Promise<FileViewerZoomState> {
+  const viewer = viewerRef.value!
+  const current = viewer.getZoomState()
+  const minScale = current.minScale ?? MIN_ZOOM
+  const maxScale = current.maxScale ?? MAX_ZOOM
+  const scale = Number(Math.min(maxScale, Math.max(minScale, current.scale + delta)).toFixed(2))
+  await viewer.applyViewState({ scale }, {
+    action: delta > 0 ? 'zoom-in' : 'zoom-out',
+    source: 'api',
+  })
+  const state = viewer.getZoomState()
+  onZoomChange(state)
+  return state
+}
+
+async function resetZoom(): Promise<FileViewerZoomState> {
+  const viewer = viewerRef.value!
+  await viewer.applyViewState({ scale: 1 }, { action: 'zoom-reset', source: 'api' })
+  const state = viewer.getZoomState()
   onZoomChange(state)
   return state
 }
@@ -75,7 +100,7 @@ function applyPage(page: number): Promise<unknown> | undefined {
 }
 
 function runViewerAction(action: () => Promise<unknown> | unknown): Promise<unknown> {
-  if (!viewerRef.value || !isReady.value) {
+  if (!viewerRef.value) {
     pendingActions.push(action)
     return Promise.resolve(null)
   }
@@ -122,9 +147,9 @@ function rotate(delta: number): Promise<number> {
 }
 
 defineExpose({
-  zoomIn: () => runViewerAction(() => applyZoom(() => viewerRef.value!.zoomIn())),
-  zoomOut: () => runViewerAction(() => applyZoom(() => viewerRef.value!.zoomOut())),
-  resetZoom: () => runViewerAction(() => applyZoom(() => viewerRef.value!.resetZoom())),
+  zoomIn: () => runViewerAction(() => changeZoom(ZOOM_STEP)),
+  zoomOut: () => runViewerAction(() => changeZoom(-ZOOM_STEP)),
+  resetZoom: () => runViewerAction(resetZoom),
   rotateLeft: () => runViewerAction(() => rotate(-90)),
   rotateRight: () => runViewerAction(() => rotate(90)),
   prevPage: () => runViewerAction(() => currentState.value.page > 1
