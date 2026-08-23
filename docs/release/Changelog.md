@@ -8,7 +8,7 @@
 
 - 恢复 `FilePreview` 与 `FileViewerRenderer` 两级 ready 门禁，加载期间点击的缩放、重置、旋转和翻页操作会排队到 renderer 完成后执行。
 - 缩放与 PDF/图片旋转统一通过 File Viewer `applyViewState` 执行；读取缩放状态增加未就绪保护，图片 renderer 自带旋转工具栏隐藏，Office renderer 在不提供旋转视图状态时回退外层旋转。
-- 定向预览回归 16/16、type-check 已通过；完整回归、Web build、Docker 重建和真实 PDF/图片 GUI 点击仍需人工确认。
+- 定向预览回归 16/16、完整 `test:r4-pc` 101/101、type-check、静态检查、Web build 和 Docker 重建已通过，frontend/backend HTTP 200；真实 PDF/图片 GUI 点击仍需人工确认。
 
 ### PC File Viewer 缩放与渲染遮罩修复（2026-08-23）
 
