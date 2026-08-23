@@ -6,6 +6,7 @@ import type { SourceFileModel } from '@/services/domainMappers'
 import { resolveFileCapability, type FileCapability } from '@/utils/filePreview'
 import FileViewerRenderer from '@/components/preview/FileViewerRenderer.vue'
 import UnsupportedPreview from '@/components/preview/UnsupportedPreview.vue'
+import type { FileViewerZoomState } from '@file-viewer/vue3-full'
 
 const props = withDefaults(defineProps<{
   file: Pick<SourceFileModel, 'id' | 'name' | 'assetId' | 'fileType'>
@@ -22,6 +23,8 @@ const emit = defineEmits<{
   (event: 'preview-error', message: string): void
   (event: 'control-ready', ready: boolean): void
   (event: 'page-change', page: number, total: number): void
+  (event: 'zoom-change', state: FileViewerZoomState): void
+  (event: 'rotation-change', rotation: number): void
 }>()
 
 const assetStore = useAssetStore()
@@ -106,8 +109,16 @@ function handlePageChange(page: number, total: number): void {
   emit('page-change', page, total)
 }
 
+function handleZoomChange(state: FileViewerZoomState): void {
+  emit('zoom-change', state)
+}
+
+function handleRotationChange(rotation: number): void {
+  emit('rotation-change', rotation)
+}
+
 function runRendererAction(action: (renderer: InstanceType<typeof FileViewerRenderer>) => Promise<unknown> | unknown): Promise<unknown> {
-  if (!rendererRef.value || !isRendererReady.value) {
+  if (!rendererRef.value) {
     pendingRendererActions.push(action)
     return Promise.resolve(null)
   }
@@ -144,7 +155,8 @@ defineExpose({
   zoomIn: () => runRendererAction(renderer => renderer.zoomIn()),
   zoomOut: () => runRendererAction(renderer => renderer.zoomOut()),
   resetZoom: () => runRendererAction(renderer => renderer.resetZoom()),
-  rotate: () => runRendererAction(renderer => renderer.rotate()),
+  rotateLeft: () => runRendererAction(renderer => renderer.rotateLeft()),
+  rotateRight: () => runRendererAction(renderer => renderer.rotateRight()),
   prevPage: () => runRendererAction(renderer => renderer.prevPage()),
   nextPage: () => runRendererAction(renderer => renderer.nextPage()),
 })
@@ -168,7 +180,8 @@ watch(
           <ElButton text size="small" @click="runRendererAction(renderer => renderer.zoomOut())">缩小</ElButton>
           <ElButton text size="small" @click="runRendererAction(renderer => renderer.zoomIn())">放大</ElButton>
           <ElButton text size="small" @click="runRendererAction(renderer => renderer.resetZoom())">重置</ElButton>
-          <ElButton text size="small" @click="runRendererAction(renderer => renderer.rotate())">旋转</ElButton>
+          <ElButton text size="small" @click="runRendererAction(renderer => renderer.rotateLeft())">左旋</ElButton>
+          <ElButton text size="small" @click="runRendererAction(renderer => renderer.rotateRight())">右旋</ElButton>
         </template>
         <ElButton v-if="signedUrl" text size="small" @click="downloadOriginal">下载原文件</ElButton>
         <ElButton v-if="errorMessage" text size="small" @click="retry">重试</ElButton>
@@ -197,6 +210,8 @@ watch(
           @load-start="handleRendererLoadStart"
           @load-complete="handleRendererLoadComplete"
           @unload-complete="handleRendererUnloadComplete"
+          @zoom-change="handleZoomChange"
+          @rotation-change="handleRotationChange"
           @page-change="handlePageChange"
         />
         <div v-if="isRendererLoading" class="file-preview-loading-overlay" role="status">
@@ -246,7 +261,7 @@ watch(
   display: flex;
   overflow: hidden;
   box-sizing: border-box;
-  padding: 24px 24px 28px;
+  padding: 12px 16px;
   background: var(--color-bg-secondary, #f3f5f4);
 }
 

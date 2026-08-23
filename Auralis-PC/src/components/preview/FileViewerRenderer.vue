@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import { FileViewer } from '@file-viewer/vue3-full'
 import '@file-viewer/vue3/dist/file-viewer3.css'
 import type { FileCapability } from '@/utils/filePreview'
-import type { FileViewerExpose, FileViewerViewStateChange } from '@file-viewer/vue3-full'
+import type { FileViewerExpose, FileViewerViewStateChange, FileViewerZoomState } from '@file-viewer/vue3-full'
 
 defineProps<{
   file: File
@@ -16,6 +16,8 @@ const emit = defineEmits<{
   (event: 'unload-complete'): void
   (event: 'ready-change', ready: boolean): void
   (event: 'page-change', page: number, total: number): void
+  (event: 'zoom-change', state: FileViewerZoomState): void
+  (event: 'rotation-change', rotation: number): void
 }>()
 
 const viewerRef = ref<FileViewerExpose | null>(null)
@@ -37,6 +39,19 @@ const currentState = ref({
   pageCount: 1,
   rotation: 0,
 })
+const defaultZoomState: FileViewerZoomState = {
+  scale: 1,
+  label: '100%',
+  canZoomIn: true,
+  canZoomOut: true,
+  canReset: false,
+}
+const currentZoom = ref<FileViewerZoomState>(defaultZoomState)
+
+function onZoomChange(state: FileViewerZoomState): void {
+  currentZoom.value = state
+  emit('zoom-change', state)
+}
 
 function onViewStateChange(change: FileViewerViewStateChange): void {
   if (change.state.page !== undefined) currentState.value.page = change.state.page
@@ -68,13 +83,16 @@ async function flushPendingActions(): Promise<void> {
 
 function handleLoadStart(): void {
   isReady.value = false
-  pendingActions.splice(0)
+  currentState.value.rotation = 0
+  currentZoom.value = defaultZoomState
   emit('ready-change', false)
   emit('load-start')
 }
 
 async function handleLoadComplete(): Promise<void> {
   isReady.value = true
+  const zoomState = viewerRef.value?.getZoomState()
+  if (zoomState) onZoomChange(zoomState)
   emit('ready-change', true)
   emit('load-complete')
   await flushPendingActions()
@@ -83,22 +101,25 @@ async function handleLoadComplete(): Promise<void> {
 function handleUnloadComplete(): void {
   isReady.value = false
   pendingActions.splice(0)
+  currentState.value.rotation = 0
+  currentZoom.value = defaultZoomState
   emit('ready-change', false)
   emit('unload-complete')
 }
 
-function rotate(): Promise<unknown> | undefined {
-  const nextRotation = (currentState.value.rotation + 90) % 360
-  return viewerRef.value?.applyViewState({
-    rotation: nextRotation,
-  })
+function rotate(delta: number): Promise<number> {
+  const nextRotation = (currentState.value.rotation + delta + 360) % 360
+  currentState.value.rotation = nextRotation
+  emit('rotation-change', nextRotation)
+  return Promise.resolve(nextRotation)
 }
 
 defineExpose({
   zoomIn: () => runViewerAction(() => viewerRef.value?.zoomIn()),
   zoomOut: () => runViewerAction(() => viewerRef.value?.zoomOut()),
   resetZoom: () => runViewerAction(() => viewerRef.value?.resetZoom()),
-  rotate: () => runViewerAction(rotate),
+  rotateLeft: () => runViewerAction(() => rotate(-90)),
+  rotateRight: () => runViewerAction(() => rotate(90)),
   prevPage: () => runViewerAction(() => currentState.value.page > 1
     ? applyPage(currentState.value.page - 1)
     : undefined),
@@ -110,21 +131,36 @@ defineExpose({
 
 <template>
   <div class="file-viewer-renderer" data-testid="file-viewer-renderer">
-    <FileViewer
-      ref="viewerRef"
-      :file="file"
-      :options="viewerOptions"
-      @load-start="handleLoadStart"
-      @load-complete="handleLoadComplete"
-      @unload-complete="handleUnloadComplete"
-      @view-state-change="onViewStateChange"
-    />
+    <div
+      class="file-viewer-rotation-layer"
+      :style="{ transform: `rotate(${currentState.rotation}deg)` }"
+    >
+      <FileViewer
+        ref="viewerRef"
+        :file="file"
+        :options="viewerOptions"
+        @load-start="handleLoadStart"
+        @load-complete="handleLoadComplete"
+        @unload-complete="handleUnloadComplete"
+        @zoom-change="onZoomChange"
+        @view-state-change="onViewStateChange"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .file-viewer-renderer {
+  position: relative;
   width: 100%;
   height: 100%;
+  overflow: auto;
+}
+
+.file-viewer-rotation-layer {
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+  transition: transform 160ms ease;
 }
 </style>

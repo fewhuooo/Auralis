@@ -186,10 +186,19 @@
         </div>
         <div class="status-right">
           <div v-if="centerView === 'preview' && selectedFile" class="preview-status-controls" aria-label="预览控制">
-            <button type="button" class="preview-status-button" :disabled="!previewControlsReady" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
-            <button type="button" class="preview-status-button" :disabled="!previewControlsReady" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
-            <button type="button" class="preview-status-button preview-status-button-wide" :disabled="!previewControlsReady" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
-            <button type="button" class="preview-status-button preview-status-button-wide" :disabled="!previewControlsReady" title="顺时针旋转 90 度" @click="filePreviewRef?.rotate()">旋转</button>
+            <button type="button" class="preview-status-button preview-status-button-icon" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
+            <span class="preview-zoom-value" aria-live="polite">{{ previewZoomLabel }}</span>
+            <button type="button" class="preview-status-button preview-status-button-icon" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
+            <button type="button" class="preview-status-button preview-status-button-wide" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
+            <span class="preview-rotation-controls" aria-label="旋转控制">
+              <button type="button" class="preview-status-button preview-status-button-icon" title="向左旋转 90 度" aria-label="向左旋转 90 度" @click="filePreviewRef?.rotateLeft()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 14-5-5 5-5"/><path d="M4 9h9a7 7 0 1 1-7 7"/></svg>
+              </button>
+              <span class="preview-rotation-value" aria-live="polite">{{ previewRotation }}°</span>
+              <button type="button" class="preview-status-button preview-status-button-icon" title="向右旋转 90 度" aria-label="向右旋转 90 度" @click="filePreviewRef?.rotateRight()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a7 7 0 1 0 7 7"/></svg>
+              </button>
+            </span>
           </div>
           <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
         </div>
@@ -209,6 +218,8 @@
             :bare="true"
             @preview-error="handlePreviewError"
             @control-ready="previewControlsReady = $event"
+            @zoom-change="handlePreviewZoomChange"
+            @rotation-change="previewRotation = $event"
             @page-change="handlePreviewPageChange"
           />
 
@@ -663,12 +674,20 @@ const filePreviewRef = ref<InstanceType<typeof FilePreview> | null>(null)
 const previewPage = ref(1)
 const previewPageCount = ref(1)
 const previewControlsReady = ref(false)
+const previewZoomLabel = ref('100%')
+const previewRotation = ref(0)
 
 watch(selectedFileId, () => {
   previewPage.value = 1
   previewPageCount.value = 1
   previewControlsReady.value = false
+  previewZoomLabel.value = '100%'
+  previewRotation.value = 0
 })
+
+const handlePreviewZoomChange = (state: { label?: string; scale: number }) => {
+  previewZoomLabel.value = state.label || `${Math.round(state.scale * 100)}%`
+}
 
 const selectedFile = computed<SourceFileModel | null>(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
 const selectedSourceId = computed(() => selectedFile.value?.id)
@@ -1491,12 +1510,11 @@ html.dark .workspace-center {
 .preview-status-controls {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--color-bg-secondary) 88%, white);
-  box-shadow: 0 2px 6px rgba(24, 32, 28, 0.08);
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .preview-status-button,
 .preview-page-button {
@@ -1534,6 +1552,19 @@ html.dark .workspace-center {
   opacity: 0.6;
 }
 .preview-status-button-wide { min-width: 42px; }
+.preview-status-button-icon { width: 30px; padding: 0; }
+.preview-zoom-value,
+.preview-rotation-value {
+  min-width: 42px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 28px;
+  text-align: center;
+}
+.preview-rotation-controls { display: inline-flex; align-items: center; gap: 4px; }
+.preview-rotation-value { min-width: 34px; color: var(--text-secondary); }
 .status-btn {
   background: none;
   border: none;

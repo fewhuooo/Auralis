@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC File Viewer 控件交互与留白修复（2026-08-23）
+
+- 顶栏移除预览控件外层容器，缩放改为 `− / 实际倍率 / ＋`，旋转改为线条左旋图标、角度、线条右旋图标，并保留实体按钮的 hover/focus 层次。
+- 预览上下文档留白收窄为 12–16px；按钮不再因 renderer 尚未完成而被直接禁用，点击操作通过 FilePreview/renderer 两级队列在就绪后执行，倍率通过 File Viewer `zoom-change` 回传，DOC/DOCX 左右旋转由 renderer 外层状态驱动。
+- `test:r4-pc` 101/101、`type-check`、`check:r4-pc`（60 个生产文件）和 Web build 通过；真实 DOC/DOCX/PDF 样本的浏览器/Tauri GUI 仍待人工验收。
+
 ### PC 学科文件预览统一面板与拆分工具栏（2026-08-23）
 
 - File Viewer 不再显示通用搜索、下载、打印、HTML、主题和内部重复工具栏；学科页现有文件名顶栏承载缩放/旋转，页码/总页数和前后页在预览主体底部以同级布局显示，renderer 内层边框/圆角移除。
