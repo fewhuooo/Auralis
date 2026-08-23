@@ -107,8 +107,19 @@ export const useSourceStore = defineStore('source', () => {
     return filtered
   }
 
-  async function createFileSource(subjectId: string, title: string, assetId: string, outline = '[]'): Promise<string> {
+  async function createFileSource(
+    subjectId: string,
+    title: string,
+    assetId: string,
+    outline = '[]',
+    assetSizeBytes?: number,
+  ): Promise<string> {
     if (!isUuid(assetId)) throw new Error('创建文件资料前必须先完成 Asset 上传')
+    const normalizedAssetSizeBytes = typeof assetSizeBytes === 'number'
+      && Number.isFinite(assetSizeBytes)
+      && assetSizeBytes >= 0
+      ? Math.trunc(assetSizeBytes)
+      : undefined
     const payload: SourceCreateRequest = {
       baseVersion: 0,
       subjectId,
@@ -126,16 +137,18 @@ export const useSourceStore = defineStore('source', () => {
       updatedAt: new Date().toISOString(),
       deletedAt: undefined,
       ingestionStatus: 'PENDING',
+      assetSizeBytes: normalizedAssetSizeBytes,
     }
     const repo = await repository()
     await repo.upsert('SOURCE', id, localView, { version: 0, syncStatus: 'pending' })
+    const { assetSizeBytes: _assetSizeBytes, ...mutationView } = localView
     await repo.enqueueMutation(createStableMutation({
       clientMutationId: uuidv7(),
       resourceType: 'SOURCE',
       resourceId: id,
       mutationType: 'CREATE',
       baseVersion: 0,
-      payload: localView as unknown as Record<string, unknown>,
+      payload: mutationView as unknown as Record<string, unknown>,
     }))
     scheduleSync()
     await loadSourceFiles(subjectId)

@@ -104,7 +104,7 @@ Auralis-PC/
 | `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
 | `api/useStatsApi.ts` | 概览与周统计 |
 
-Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件预览仍通过 Asset download-url 获取短期签名地址。
+Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件登记的本地优先副本也保留上传完成时的 `asset.sizeBytes`，避免 Source 同步完成前短暂显示 `0.0 MB`。文件预览仍通过 Asset download-url 获取短期签名地址。
 | `api/useSyncApi.ts` | push/pull 同步 |
 | `api/e2ee.ts` | 端到端加密辅助 |
 | `api/tauri.ts` | Tauri 环境和本地能力封装 |

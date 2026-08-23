@@ -57,6 +57,8 @@
 
 2026-08-23：修复 Docker MinIO 下载地址生成：后端不再用 `AURALIS_MINIO_PUBLIC_ENDPOINT` 初始化会主动连接的 SDK，而是使用离线 SigV4 signer 生成 GET URL；`AURALIS_MINIO_ENDPOINT` 继续只负责容器内对象校验和读取。新增 `MinioAssetStorageIntegrationTests` 回归（3/3）和脱敏 `ASSET_DOWNLOAD_URL_FAILED` 日志；Compose 重建后 backend healthy。临时隔离账号真实链路验证 upload PUT 200、Asset READY、download GET 200/26 bytes。Source 响应新增可选 `assetSizeBytes`，PC 映射器不再无条件显示 `0.0MB`；SourceAssetRelationServiceTests 5/5、PC mapper tests 8/8 通过。浏览器 GUI 仍需人工刷新页面验证。
 
+2026-08-23：修复 PC 学科文件登记后的大小丢失：上传完成返回的 `asset.sizeBytes` 现在写入本地优先 Source 副本，并从同步 mutation payload 中排除展示字段；文件在同步完成前也会显示真实大小。新增登记链路回归；`test:r4-pc` 94/94、type-check 和 Web build 通过。浏览器刷新后对既有文件及新登记文件的 GUI 验收仍待执行。
+
 2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
 
 2026-08-21：修复 PC 学科工作区 AI 回溯：进入或切换学科时清空当前消息并创建新的伴读会话，不再加载全局会话列表或恢复旧 `activeSessionId`；PC 回归测试 59/59、type-check 和 SubjectWorkspace 静态契约通过，浏览器真实 SSE 仍需人工验收。

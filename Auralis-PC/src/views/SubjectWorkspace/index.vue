@@ -875,7 +875,13 @@ const handleRegisterFile = async () => {
 
   try {
     const asset = await assetStore.upload(currentFile)
-    const newId = await sourceStore.createFileSource(targetSubjectId, registerForm.value.name.trim(), asset.id)
+    const newId = await sourceStore.createFileSource(
+      targetSubjectId,
+      registerForm.value.name.trim(),
+      asset.id,
+      '[]',
+      asset.sizeBytes,
+    )
     
     if (targetSubjectId === subjectId.value && !selectedFileId.value) {
       selectedFileId.value = newId

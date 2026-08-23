@@ -4,6 +4,11 @@
 
 文档状态：现行历史记录
 
+### PC 学科文件大小即时显示（2026-08-23）
+
+- 文件上传完成后的 `asset.sizeBytes` 现在会保留在本地优先 Source 副本，避免同步完成前学科文件列表显示 `0.0 MB`；该字段不会进入后端 Source 创建 mutation。
+- 新增登记链路回归；`test:r4-pc` 94/94、type-check 和 Web build 通过。既有文件刷新及新文件浏览器 GUI 验收仍待执行。
+
 ### AI 失败日志保留原始异常诊断（2026-08-23）
 
 - `AI_STREAM_FAILED`、`AI_PROVIDER_SELECTION_FAILED`、`AI_STREAM_VALIDATION_FAILED` 以及 embedding 失败事件现在输出异常类名、脱敏/截断后的 message 和 root cause，避免只剩统一 `VALIDATION_FAILED` 业务码。
