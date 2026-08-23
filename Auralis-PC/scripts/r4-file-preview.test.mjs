@@ -99,6 +99,21 @@ test('File Viewer renderer disables internal toolbars and exposes API', () => {
   assert.doesNotMatch(source, /flex-direction:\s*column-reverse/)
   assert.match(source, /zoomIn:/)
   assert.match(source, /rotate/)
+  assert.match(source, /ready-change/)
+})
+
+test('File preview queues controls until the renderer is ready and keeps the paper clear of chrome', () => {
+  const previewPath = path.resolve('src/components/FilePreview.vue')
+  const previewSource = fs.readFileSync(previewPath, 'utf8')
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const workspaceSource = fs.readFileSync(workspacePath, 'utf8')
+
+  assert.match(previewSource, /pendingRendererActions/)
+  assert.match(previewSource, /control-ready/)
+  assert.match(previewSource, /padding: 24px 24px 28px/)
+  assert.match(workspaceSource, /box-shadow: 0 2px 10px/)
+  assert.match(workspaceSource, /box-shadow: 0 -2px 10px/)
+  assert.match(workspaceSource, /previewControlsReady/)
 })
 
 test('SubjectWorkspace uses FilePreview and the shared upload accept list', () => {

@@ -20,6 +20,7 @@ const emit = defineEmits<{
   (event: 'close'): void
   (event: 'download'): void
   (event: 'preview-error', message: string): void
+  (event: 'control-ready', ready: boolean): void
   (event: 'page-change', page: number, total: number): void
 }>()
 
@@ -33,6 +34,8 @@ const errorMessage = ref<string | null>(null)
 const rendererRef = ref<InstanceType<typeof FileViewerRenderer> | null>(null)
 const currentPage = ref(1)
 const totalPages = ref(1)
+const isRendererReady = ref(false)
+const pendingRendererActions: Array<(renderer: InstanceType<typeof FileViewerRenderer>) => Promise<unknown> | unknown> = []
 
 const capability = computed<FileCapability>(() => resolveFileCapability({
   name: props.file.name,
@@ -52,6 +55,9 @@ async function loadPreview(): Promise<void> {
   errorMessage.value = null
   currentPage.value = 1
   totalPages.value = 1
+  isRendererReady.value = false
+  pendingRendererActions.splice(0)
+  emit('control-ready', false)
   emit('page-change', 1, 1)
 
   if (!canPreview.value) return
@@ -100,13 +106,47 @@ function handlePageChange(page: number, total: number): void {
   emit('page-change', page, total)
 }
 
+function runRendererAction(action: (renderer: InstanceType<typeof FileViewerRenderer>) => Promise<unknown> | unknown): Promise<unknown> {
+  if (!rendererRef.value || !isRendererReady.value) {
+    pendingRendererActions.push(action)
+    return Promise.resolve(null)
+  }
+  return Promise.resolve(action(rendererRef.value))
+}
+
+async function flushRendererActions(): Promise<void> {
+  if (!rendererRef.value || !isRendererReady.value || pendingRendererActions.length === 0) return
+  const actions = pendingRendererActions.splice(0)
+  for (const action of actions) await action(rendererRef.value)
+}
+
+function handleRendererLoadStart(): void {
+  isRendererLoading.value = true
+  isRendererReady.value = false
+  emit('control-ready', false)
+}
+
+async function handleRendererLoadComplete(): Promise<void> {
+  isRendererLoading.value = false
+  isRendererReady.value = true
+  emit('control-ready', true)
+  await flushRendererActions()
+}
+
+function handleRendererUnloadComplete(): void {
+  isRendererLoading.value = false
+  isRendererReady.value = false
+  pendingRendererActions.splice(0)
+  emit('control-ready', false)
+}
+
 defineExpose({
-  zoomIn: () => rendererRef.value?.zoomIn(),
-  zoomOut: () => rendererRef.value?.zoomOut(),
-  resetZoom: () => rendererRef.value?.resetZoom(),
-  rotate: () => rendererRef.value?.rotate(),
-  prevPage: () => rendererRef.value?.prevPage(),
-  nextPage: () => rendererRef.value?.nextPage(),
+  zoomIn: () => runRendererAction(renderer => renderer.zoomIn()),
+  zoomOut: () => runRendererAction(renderer => renderer.zoomOut()),
+  resetZoom: () => runRendererAction(renderer => renderer.resetZoom()),
+  rotate: () => runRendererAction(renderer => renderer.rotate()),
+  prevPage: () => runRendererAction(renderer => renderer.prevPage()),
+  nextPage: () => runRendererAction(renderer => renderer.nextPage()),
 })
 
 watch(
@@ -125,10 +165,10 @@ watch(
       </div>
       <div class="file-preview-actions">
         <template v-if="previewFile && canPreview">
-          <ElButton text size="small" @click="rendererRef?.zoomOut()">缩小</ElButton>
-          <ElButton text size="small" @click="rendererRef?.zoomIn()">放大</ElButton>
-          <ElButton text size="small" @click="rendererRef?.resetZoom()">重置</ElButton>
-          <ElButton text size="small" @click="rendererRef?.rotate()">旋转</ElButton>
+          <ElButton text size="small" @click="runRendererAction(renderer => renderer.zoomOut())">缩小</ElButton>
+          <ElButton text size="small" @click="runRendererAction(renderer => renderer.zoomIn())">放大</ElButton>
+          <ElButton text size="small" @click="runRendererAction(renderer => renderer.resetZoom())">重置</ElButton>
+          <ElButton text size="small" @click="runRendererAction(renderer => renderer.rotate())">旋转</ElButton>
         </template>
         <ElButton v-if="signedUrl" text size="small" @click="downloadOriginal">下载原文件</ElButton>
         <ElButton v-if="errorMessage" text size="small" @click="retry">重试</ElButton>
@@ -154,9 +194,9 @@ watch(
           ref="rendererRef"
           :file="previewFile"
           :capability="capability"
-          @load-start="isRendererLoading = true"
-          @load-complete="isRendererLoading = false"
-          @unload-complete="isRendererLoading = false"
+          @load-start="handleRendererLoadStart"
+          @load-complete="handleRendererLoadComplete"
+          @unload-complete="handleRendererUnloadComplete"
           @page-change="handlePageChange"
         />
         <div v-if="isRendererLoading" class="file-preview-loading-overlay" role="status">
@@ -203,10 +243,20 @@ watch(
 .file-preview.is-bare .file-preview-body {
   height: auto;
   flex: 1;
+  display: flex;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 24px 24px 28px;
+  background: var(--color-bg-secondary, #f3f5f4);
 }
 
 .file-preview.is-bare .file-preview-renderer-shell {
+  flex: 1;
+  height: auto;
   min-height: 0;
+  overflow: hidden;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(24, 32, 28, 0.08);
 }
 
 .file-preview-header {

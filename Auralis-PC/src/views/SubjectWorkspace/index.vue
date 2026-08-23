@@ -186,10 +186,10 @@
         </div>
         <div class="status-right">
           <div v-if="centerView === 'preview' && selectedFile" class="preview-status-controls" aria-label="预览控制">
-            <button type="button" class="preview-status-button" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
-            <button type="button" class="preview-status-button" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
-            <button type="button" class="preview-status-button preview-status-button-wide" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
-            <button type="button" class="preview-status-button preview-status-button-wide" title="顺时针旋转 90 度" @click="filePreviewRef?.rotate()">旋转</button>
+            <button type="button" class="preview-status-button" :disabled="!previewControlsReady" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
+            <button type="button" class="preview-status-button" :disabled="!previewControlsReady" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
+            <button type="button" class="preview-status-button preview-status-button-wide" :disabled="!previewControlsReady" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
+            <button type="button" class="preview-status-button preview-status-button-wide" :disabled="!previewControlsReady" title="顺时针旋转 90 度" @click="filePreviewRef?.rotate()">旋转</button>
           </div>
           <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
         </div>
@@ -208,6 +208,7 @@
             :file="selectedFile"
             :bare="true"
             @preview-error="handlePreviewError"
+            @control-ready="previewControlsReady = $event"
             @page-change="handlePreviewPageChange"
           />
 
@@ -661,10 +662,12 @@ const selectedFileId = ref<string | null>(null)
 const filePreviewRef = ref<InstanceType<typeof FilePreview> | null>(null)
 const previewPage = ref(1)
 const previewPageCount = ref(1)
+const previewControlsReady = ref(false)
 
 watch(selectedFileId, () => {
   previewPage.value = 1
   previewPageCount.value = 1
+  previewControlsReady.value = false
 })
 
 const selectedFile = computed<SourceFileModel | null>(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
@@ -1471,8 +1474,11 @@ html.dark .workspace-center {
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  border-bottom: 1px solid var(--border-default);
+  border-bottom: 0;
   background: var(--color-bg-primary);
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .status-left, .status-right { display: flex; align-items: center; gap: 10px; }
@@ -1485,28 +1491,48 @@ html.dark .workspace-center {
 .preview-status-controls {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
-  background: var(--color-bg-secondary);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-bg-secondary) 88%, white);
+  box-shadow: 0 2px 6px rgba(24, 32, 28, 0.08);
 }
 .preview-status-button,
 .preview-page-button {
   min-width: 28px;
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  background: transparent;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  color: var(--text-primary);
+  background: var(--color-bg-primary);
+  box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08);
   font-size: 12px;
+  font-weight: 650;
   cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
 }
 .preview-status-button:hover:not(:disabled),
-.preview-page-button:hover:not(:disabled) { background: var(--color-primary-light); color: var(--text-primary); }
+.preview-page-button:hover:not(:disabled) {
+  border-color: var(--color-primary-accent);
+  background: var(--color-primary-light);
+  color: var(--text-primary);
+  box-shadow: 0 2px 5px rgba(24, 32, 28, 0.12);
+}
+.preview-status-button:active:not(:disabled),
+.preview-page-button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08); }
+.preview-status-button:focus-visible,
+.preview-page-button:focus-visible { outline: 2px solid var(--color-primary-accent); outline-offset: 2px; }
 .preview-status-button:disabled,
-.preview-page-button:disabled { cursor: not-allowed; opacity: 0.4; }
+.preview-page-button:disabled {
+  cursor: not-allowed;
+  border-color: var(--border-subtle, var(--border-default));
+  color: var(--text-muted);
+  background: var(--color-bg-secondary);
+  box-shadow: none;
+  opacity: 0.6;
+}
 .preview-status-button-wide { min-width: 42px; }
 .status-btn {
   background: none;
@@ -1527,6 +1553,7 @@ html.dark .workspace-center {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--color-bg-secondary);
 }
 
 .preview-page-footer {
@@ -1535,9 +1562,13 @@ html.dark .workspace-center {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  min-height: 42px;
-  border-top: 1px solid var(--border-default);
+  min-height: 48px;
+  padding: 6px 0;
+  border-top: 0;
   background: var(--color-bg-primary);
+  position: relative;
+  z-index: 2;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
 }
 .preview-page-count { min-width: 48px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 

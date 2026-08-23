@@ -14,10 +14,13 @@ const emit = defineEmits<{
   (event: 'load-start'): void
   (event: 'load-complete'): void
   (event: 'unload-complete'): void
+  (event: 'ready-change', ready: boolean): void
   (event: 'page-change', page: number, total: number): void
 }>()
 
 const viewerRef = ref<FileViewerExpose | null>(null)
+const isReady = ref(false)
+const pendingActions: Array<() => Promise<unknown> | unknown> = []
 
 const viewerOptions = {
   styleIsolation: 'none' as const,
@@ -49,6 +52,41 @@ function applyPage(page: number): Promise<unknown> | undefined {
   })
 }
 
+function runViewerAction(action: () => Promise<unknown> | unknown): Promise<unknown> {
+  if (!viewerRef.value || !isReady.value) {
+    pendingActions.push(action)
+    return Promise.resolve(null)
+  }
+  return Promise.resolve(action())
+}
+
+async function flushPendingActions(): Promise<void> {
+  if (!viewerRef.value || !isReady.value || pendingActions.length === 0) return
+  const actions = pendingActions.splice(0)
+  for (const action of actions) await action()
+}
+
+function handleLoadStart(): void {
+  isReady.value = false
+  pendingActions.splice(0)
+  emit('ready-change', false)
+  emit('load-start')
+}
+
+async function handleLoadComplete(): Promise<void> {
+  isReady.value = true
+  emit('ready-change', true)
+  emit('load-complete')
+  await flushPendingActions()
+}
+
+function handleUnloadComplete(): void {
+  isReady.value = false
+  pendingActions.splice(0)
+  emit('ready-change', false)
+  emit('unload-complete')
+}
+
 function rotate(): Promise<unknown> | undefined {
   const nextRotation = (currentState.value.rotation + 90) % 360
   return viewerRef.value?.applyViewState({
@@ -57,14 +95,16 @@ function rotate(): Promise<unknown> | undefined {
 }
 
 defineExpose({
-  zoomIn: () => viewerRef.value?.zoomIn(),
-  zoomOut: () => viewerRef.value?.zoomOut(),
-  resetZoom: () => viewerRef.value?.resetZoom(),
-  rotate,
-  prevPage: () => currentState.value.page > 1 ? applyPage(currentState.value.page - 1) : undefined,
-  nextPage: () => currentState.value.page < currentState.value.pageCount
+  zoomIn: () => runViewerAction(() => viewerRef.value?.zoomIn()),
+  zoomOut: () => runViewerAction(() => viewerRef.value?.zoomOut()),
+  resetZoom: () => runViewerAction(() => viewerRef.value?.resetZoom()),
+  rotate: () => runViewerAction(rotate),
+  prevPage: () => runViewerAction(() => currentState.value.page > 1
+    ? applyPage(currentState.value.page - 1)
+    : undefined),
+  nextPage: () => runViewerAction(() => currentState.value.page < currentState.value.pageCount
     ? applyPage(currentState.value.page + 1)
-    : undefined,
+    : undefined),
 })
 </script>
 
@@ -74,9 +114,9 @@ defineExpose({
       ref="viewerRef"
       :file="file"
       :options="viewerOptions"
-      @load-start="emit('load-start')"
-      @load-complete="emit('load-complete')"
-      @unload-complete="emit('unload-complete')"
+      @load-start="handleLoadStart"
+      @load-complete="handleLoadComplete"
+      @unload-complete="handleUnloadComplete"
       @view-state-change="onViewStateChange"
     />
   </div>
