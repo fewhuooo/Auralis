@@ -1476,7 +1476,10 @@ html.dark .workspace-center {
 }
 
 .status-left, .status-right { display: flex; align-items: center; gap: 10px; }
+.status-left { min-width: 0; flex: 1; }
+.status-right { flex: none; }
 .status-file { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.status-left .status-file { min-width: 0; }
 .status-icon { color: var(--text-muted); opacity: 0.7; }
 .status-page { font-size: 12px; color: var(--text-muted); }
 .preview-status-controls {
