@@ -89,22 +89,16 @@ test('File Viewer adapter is isolated behind a renderer component', () => {
   assert.match(source, /styleIsolation/)
 })
 
-test('File Viewer toolbar keeps only bottom document controls', () => {
+test('File Viewer renderer disables internal toolbars and exposes API', () => {
   const rendererPath = path.resolve('src/components/preview/FileViewerRenderer.vue')
   const source = fs.readFileSync(rendererPath, 'utf8')
 
-  assert.match(source, /position:\s*'bottom-right'/)
-  assert.match(source, /zoom:\s*false/)
-  assert.match(source, /search:\s*false/)
-  assert.match(source, /download:\s*false/)
-  assert.match(source, /print:\s*false/)
-  assert.match(source, /exportHtml:\s*false/)
-  assert.match(source, /theme:\s*false/)
-  assert.match(source, /toolbar:\s*true/)
-  assert.match(source, /navigation:\s*false/)
-  assert.match(source, /\.pdf-shell/)
-  assert.match(source, /flex-direction:\s*column-reverse/)
-  assert.match(source, /\.pdf-toolbar/)
+  assert.match(source, /toolbar:\s*false/)
+  assert.match(source, /pdf:\s*\{\s*toolbar:\s*false/)
+  assert.doesNotMatch(source, /\.pdf-shell/)
+  assert.doesNotMatch(source, /flex-direction:\s*column-reverse/)
+  assert.match(source, /zoomIn:/)
+  assert.match(source, /rotate/)
 })
 
 test('SubjectWorkspace uses FilePreview and the shared upload accept list', () => {
@@ -115,6 +109,16 @@ test('SubjectWorkspace uses FilePreview and the shared upload accept list', () =
   assert.match(source, /:accept="SUPPORTED_UPLOAD_EXTENSIONS\.join\('\,'\)"/)
   assert.match(source, /validateUploadFile/)
   assert.match(source, /@click="selectFile\(file\.id\)"/)
+})
+
+test('SubjectWorkspace keeps preview controls outside the bare renderer', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+  assert.match(source, /class="preview-status-controls"/)
+  assert.match(source, /filePreviewRef\?\.zoomIn\(\)/)
+  assert.match(source, /class="preview-page-footer"/)
+  assert.match(source, /filePreviewRef\?\.prevPage\(\)/)
+  assert.match(source, /@page-change="handlePreviewPageChange"/)
 })
 
 test('SubjectWorkspace keeps files flat and exposes file deletion', () => {

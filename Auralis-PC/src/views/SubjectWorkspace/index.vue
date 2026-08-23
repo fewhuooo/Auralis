@@ -185,6 +185,12 @@
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
+          <div v-if="centerView === 'preview' && selectedFile" class="preview-status-controls" aria-label="预览控制">
+            <button type="button" class="preview-status-button" title="缩小" @click="filePreviewRef?.zoomOut()">−</button>
+            <button type="button" class="preview-status-button" title="放大" @click="filePreviewRef?.zoomIn()">＋</button>
+            <button type="button" class="preview-status-button preview-status-button-wide" title="重置缩放" @click="filePreviewRef?.resetZoom()">重置</button>
+            <button type="button" class="preview-status-button preview-status-button-wide" title="顺时针旋转 90 度" @click="filePreviewRef?.rotate()">旋转</button>
+          </div>
           <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
         </div>
       </header>
@@ -196,12 +202,21 @@
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="tier2Open ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
         </button>
 
-        <FilePreview
-          v-if="centerView === 'preview' && selectedFile"
-          :file="selectedFile"
-          :bare="true"
-          @preview-error="handlePreviewError"
-        />
+        <template v-if="centerView === 'preview' && selectedFile">
+          <FilePreview
+            ref="filePreviewRef"
+            :file="selectedFile"
+            :bare="true"
+            @preview-error="handlePreviewError"
+            @page-change="handlePreviewPageChange"
+          />
+
+          <footer class="preview-page-footer" aria-label="文档页码">
+            <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">上一页</button>
+            <span class="preview-page-count">{{ previewPage }} / {{ previewPageCount }}</span>
+            <button type="button" class="preview-page-button" :disabled="previewPage >= previewPageCount" @click="filePreviewRef?.nextPage()">下一页</button>
+          </footer>
+        </template>
 
         <!-- Knowledge Blocks Grid -->
         <div v-else-if="centerView === 'blocks'" class="blocks-workspace">
@@ -643,6 +658,14 @@ const startResizeRight = (e: MouseEvent) => {
 
 // ===== File summary =====
 const selectedFileId = ref<string | null>(null)
+const filePreviewRef = ref<InstanceType<typeof FilePreview> | null>(null)
+const previewPage = ref(1)
+const previewPageCount = ref(1)
+
+watch(selectedFileId, () => {
+  previewPage.value = 1
+  previewPageCount.value = 1
+})
 
 const selectedFile = computed<SourceFileModel | null>(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
 const selectedSourceId = computed(() => selectedFile.value?.id)
@@ -691,6 +714,11 @@ const handleDeleteFile = async (file: SourceFileModel) => {
 
 const handlePreviewError = (message: string) => {
   ElMessage.warning(message)
+}
+
+const handlePreviewPageChange = (page: number, total: number) => {
+  previewPage.value = page
+  previewPageCount.value = Math.max(1, total)
 }
 
 const getFileIcon = (t: string) => {
@@ -1451,6 +1479,32 @@ html.dark .workspace-center {
 .status-file { font-size: 13.5px; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
 .status-icon { color: var(--text-muted); opacity: 0.7; }
 .status-page { font-size: 12px; color: var(--text-muted); }
+.preview-status-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: var(--color-bg-secondary);
+}
+.preview-status-button,
+.preview-page-button {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+}
+.preview-status-button:hover:not(:disabled),
+.preview-page-button:hover:not(:disabled) { background: var(--color-primary-light); color: var(--text-primary); }
+.preview-status-button:disabled,
+.preview-page-button:disabled { cursor: not-allowed; opacity: 0.4; }
+.preview-status-button-wide { min-width: 42px; }
 .status-btn {
   background: none;
   border: none;
@@ -1471,6 +1525,18 @@ html.dark .workspace-center {
   display: flex;
   flex-direction: column;
 }
+
+.preview-page-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 42px;
+  border-top: 1px solid var(--border-default);
+  background: var(--color-bg-primary);
+}
+.preview-page-count { min-width: 48px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 
 /* Edge Collapse Buttons */
 .edge-collapse {

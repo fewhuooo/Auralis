@@ -20,6 +20,7 @@ const emit = defineEmits<{
   (event: 'close'): void
   (event: 'download'): void
   (event: 'preview-error', message: string): void
+  (event: 'page-change', page: number, total: number): void
 }>()
 
 const assetStore = useAssetStore()
@@ -28,6 +29,10 @@ const signedUrl = ref<string | null>(null)
 const isLoading = ref(false)
 const isRendererLoading = ref(false)
 const errorMessage = ref<string | null>(null)
+
+const rendererRef = ref<InstanceType<typeof FileViewerRenderer> | null>(null)
+const currentPage = ref(1)
+const totalPages = ref(1)
 
 const capability = computed<FileCapability>(() => resolveFileCapability({
   name: props.file.name,
@@ -45,6 +50,9 @@ async function loadPreview(): Promise<void> {
   previewFile.value = null
   signedUrl.value = null
   errorMessage.value = null
+  currentPage.value = 1
+  totalPages.value = 1
+  emit('page-change', 1, 1)
 
   if (!canPreview.value) return
   if (!props.file.assetId) {
@@ -86,6 +94,21 @@ function retry(): void {
   void loadPreview()
 }
 
+function handlePageChange(page: number, total: number): void {
+  currentPage.value = page
+  totalPages.value = total
+  emit('page-change', page, total)
+}
+
+defineExpose({
+  zoomIn: () => rendererRef.value?.zoomIn(),
+  zoomOut: () => rendererRef.value?.zoomOut(),
+  resetZoom: () => rendererRef.value?.resetZoom(),
+  rotate: () => rendererRef.value?.rotate(),
+  prevPage: () => rendererRef.value?.prevPage(),
+  nextPage: () => rendererRef.value?.nextPage(),
+})
+
 watch(
   () => [props.file.id, props.file.name, props.file.assetId, props.file.fileType] as const,
   () => { void loadPreview() },
@@ -101,6 +124,12 @@ watch(
         <h3 class="file-preview-title" :title="file.name">{{ file.name }}</h3>
       </div>
       <div class="file-preview-actions">
+        <template v-if="previewFile && canPreview">
+          <ElButton text size="small" @click="rendererRef?.zoomOut()">缩小</ElButton>
+          <ElButton text size="small" @click="rendererRef?.zoomIn()">放大</ElButton>
+          <ElButton text size="small" @click="rendererRef?.resetZoom()">重置</ElButton>
+          <ElButton text size="small" @click="rendererRef?.rotate()">旋转</ElButton>
+        </template>
         <ElButton v-if="signedUrl" text size="small" @click="downloadOriginal">下载原文件</ElButton>
         <ElButton v-if="errorMessage" text size="small" @click="retry">重试</ElButton>
         <ElButton v-if="compact" text size="small" @click="emit('close')">关闭</ElButton>
@@ -122,11 +151,13 @@ watch(
 
       <div v-else-if="previewFile" class="file-preview-renderer-shell">
         <FileViewerRenderer
+          ref="rendererRef"
           :file="previewFile"
           :capability="capability"
           @load-start="isRendererLoading = true"
           @load-complete="isRendererLoading = false"
           @unload-complete="isRendererLoading = false"
+          @page-change="handlePageChange"
         />
         <div v-if="isRendererLoading" class="file-preview-loading-overlay" role="status">
           <span class="file-preview-spinner" aria-hidden="true"></span>
@@ -134,6 +165,12 @@ watch(
         </div>
       </div>
     </div>
+
+    <footer v-if="previewFile && canPreview && !bare" class="file-preview-footer">
+      <ElButton text size="small" :disabled="currentPage <= 1" @click="rendererRef?.prevPage()">上一页</ElButton>
+      <span class="file-preview-page-count">{{ currentPage }} / {{ totalPages }}</span>
+      <ElButton text size="small" :disabled="currentPage >= totalPages" @click="rendererRef?.nextPage()">下一页</ElButton>
+    </footer>
   </section>
 </template>
 
@@ -155,6 +192,8 @@ watch(
 }
 
 .file-preview.is-bare {
+  flex: 1;
+  min-height: 0;
   border: none;
   border-radius: 0;
   padding: 0;
@@ -162,7 +201,12 @@ watch(
 }
 
 .file-preview.is-bare .file-preview-body {
-  height: 100%;
+  height: auto;
+  flex: 1;
+}
+
+.file-preview.is-bare .file-preview-renderer-shell {
+  min-height: 0;
 }
 
 .file-preview-header {
@@ -255,5 +299,18 @@ watch(
 
 @keyframes file-preview-spin {
   to { transform: rotate(360deg); }
+}
+
+.file-preview-footer {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.file-preview-page-count {
+  color: var(--text-secondary, #656560);
+  font-size: 13px;
 }
 </style>
