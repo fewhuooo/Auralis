@@ -57,7 +57,14 @@ function onViewStateChange(change: FileViewerViewStateChange): void {
   if (change.state.page !== undefined) currentState.value.page = change.state.page
   if (change.state.pageCount !== undefined) currentState.value.pageCount = change.state.pageCount
   if (change.state.rotation !== undefined) currentState.value.rotation = change.state.rotation
+  if (change.state.zoom !== undefined) onZoomChange(change.state.zoom)
   emit('page-change', currentState.value.page, currentState.value.pageCount)
+}
+
+async function applyZoom(action: () => Promise<FileViewerZoomState>): Promise<FileViewerZoomState> {
+  const state = await action()
+  onZoomChange(state)
+  return state
 }
 
 function applyPage(page: number): Promise<unknown> | undefined {
@@ -115,9 +122,9 @@ function rotate(delta: number): Promise<number> {
 }
 
 defineExpose({
-  zoomIn: () => runViewerAction(() => viewerRef.value?.zoomIn()),
-  zoomOut: () => runViewerAction(() => viewerRef.value?.zoomOut()),
-  resetZoom: () => runViewerAction(() => viewerRef.value?.resetZoom()),
+  zoomIn: () => runViewerAction(() => applyZoom(() => viewerRef.value!.zoomIn())),
+  zoomOut: () => runViewerAction(() => applyZoom(() => viewerRef.value!.zoomOut())),
+  resetZoom: () => runViewerAction(() => applyZoom(() => viewerRef.value!.resetZoom())),
   rotateLeft: () => runViewerAction(() => rotate(-90)),
   rotateRight: () => runViewerAction(() => rotate(90)),
   prevPage: () => runViewerAction(() => currentState.value.page > 1
