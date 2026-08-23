@@ -89,6 +89,24 @@ test('File Viewer adapter is isolated behind a renderer component', () => {
   assert.match(source, /styleIsolation/)
 })
 
+test('File Viewer toolbar keeps only bottom document controls', () => {
+  const rendererPath = path.resolve('src/components/preview/FileViewerRenderer.vue')
+  const source = fs.readFileSync(rendererPath, 'utf8')
+
+  assert.match(source, /position:\s*'bottom-right'/)
+  assert.match(source, /zoom:\s*false/)
+  assert.match(source, /search:\s*false/)
+  assert.match(source, /download:\s*false/)
+  assert.match(source, /print:\s*false/)
+  assert.match(source, /exportHtml:\s*false/)
+  assert.match(source, /theme:\s*false/)
+  assert.match(source, /toolbar:\s*true/)
+  assert.match(source, /navigation:\s*false/)
+  assert.match(source, /\.pdf-shell/)
+  assert.match(source, /flex-direction:\s*column-reverse/)
+  assert.match(source, /\.pdf-toolbar/)
+})
+
 test('SubjectWorkspace uses FilePreview and the shared upload accept list', () => {
   const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
   const source = fs.readFileSync(workspacePath, 'utf8')

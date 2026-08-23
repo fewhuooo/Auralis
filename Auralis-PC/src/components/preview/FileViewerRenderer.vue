@@ -15,10 +15,22 @@ const emit = defineEmits<{
 }>()
 
 const viewerOptions = {
-  styleIsolation: 'shadow' as const,
+  styleIsolation: 'none' as const,
   theme: 'light' as const,
   toolbar: {
-    position: 'top' as const,
+    // The renderer-specific PDF toolbar owns the page, zoom, and rotation
+    // controls. Keep the generic File Viewer chrome out of the preview.
+    position: 'bottom-right' as const,
+    zoom: false,
+    search: false,
+    download: false,
+    print: false,
+    exportHtml: false,
+    theme: false,
+  },
+  pdf: {
+    toolbar: true,
+    navigation: false,
   },
 }
 </script>
@@ -44,5 +56,14 @@ const viewerOptions = {
   border: 1px solid var(--hairline, #e6e6e4);
   border-radius: 14px;
   background: var(--color-zen-ivory, #f9f9f7);
+}
+
+.file-viewer-renderer :deep(.pdf-shell) {
+  flex-direction: column-reverse;
+}
+
+.file-viewer-renderer :deep(.pdf-toolbar) {
+  border-top: 1px solid var(--hairline, #e6e6e4);
+  border-bottom: none;
 }
 </style>

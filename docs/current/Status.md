@@ -61,6 +61,7 @@
 
 2026-08-23：PC 学科文件栏已由 Antigravity Gemini 3.1 Pro 参与改造：移除独立 `· 总结.md` 虚拟项，文件栏只显示真实 Source，知识块入口作为总结/知识表面；选中文件后由 `FilePreview` 直接承载文档预览，并新增确认后的 Source 软删除按钮。后端新增 `AssetRetentionCleanupService`，默认保留 30 天后按小时物理删除 MinIO 对象并将 Asset 标记为 `ORPHANED`，数据库审计行保留。`test:r4-pc` 95/95、type-check、静态检查、Web build、后端 `mvn -B -ntp test` 155/155 和 Compose config 均通过；Docker 重建后 backend healthy、frontend HTTP 200、readiness `UP`。浏览器文件预览、删除确认、知识块和实际定时清理仍待人工验收。
 2026-08-23：修复 PC 学科文件删除竞态：本地 outbox 中仍有 `SOURCE/CREATE` 时，删除改为写入有序 `DELETE` mutation，不再提前直接请求不存在的远端 Source；已同步文件继续走 Source 软删除。删除入口恢复为悬停显示并保留键盘 focus-visible，404/版本冲突等反馈明确化。同步实时信号改为完整 push→pull，活动同步周期收到新 mutation 会自动再跑一轮，避免 pending Source 停在本地。`test:r4-pc` 98/98；type-check、静态检查、Web build 和浏览器实际删除/刷新验收仍待执行。
+2026-08-23：按预览工具栏反馈，PC File Viewer 隐藏通用搜索、下载、打印、HTML 导出、主题和重复缩放控件；PDF renderer 关闭侧栏导航开关，只保留页码、缩放和旋转，并将该控件栏移到预览底部。`test:r4-pc` 99/99、type-check、`check:r4-pc`（60 个生产文件）和 Web build 通过；真实 DOC/DOCX/PDF 样本的浏览器/Tauri GUI 位置与交互仍待人工验收。
 
 2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
 

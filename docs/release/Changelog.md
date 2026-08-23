@@ -4,6 +4,11 @@
 
 文档状态：现行历史记录
 
+### PC 文件预览工具栏简化（2026-08-23）
+
+- File Viewer 隐藏通用搜索、下载、打印、HTML 导出、主题和重复缩放控件；PDF renderer 关闭导航侧栏，仅保留页码、缩放和旋转，并将控件栏移到预览底部。
+- 新增工具栏配置静态回归；`test:r4-pc` 99/99、type-check、`check:r4-pc`（60 个生产文件）和 Web build 通过。真实 DOC/DOCX/PDF 样本的浏览器/Tauri GUI 仍待人工验收。
+
 ### PC 学科文件删除与同步竞态修复（2026-08-23）
 
 - SubjectWorkspace 文件行的删除按钮恢复为悬停显示，键盘 focus-visible 仍可发现；行点击与删除按钮继续隔离。
