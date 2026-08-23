@@ -32,9 +32,7 @@ async function triggerStoreSync(): Promise<void> {
   try {
     const { useSyncStore } = await import('../store/useSyncStore.ts')
     const syncStore = useSyncStore()
-    if (typeof (syncStore as unknown as { pullChanges?: (opt: { reason: string }) => unknown }).pullChanges === 'function') {
-      await (syncStore as unknown as { pullChanges: (opt: { reason: string }) => unknown }).pullChanges({ reason: 'realtime' })
-    } else if (typeof syncStore.triggerSync === 'function') {
+    if (typeof syncStore.triggerSync === 'function') {
       await syncStore.triggerSync()
     }
   } catch {

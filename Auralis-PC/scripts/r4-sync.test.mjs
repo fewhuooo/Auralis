@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { register } from 'node:module';
 
 const srcRootUrl = new URL('../src/', import.meta.url).href;
@@ -136,4 +137,16 @@ test('sync API rejects a resource outside the current server contract', async ()
   } finally {
     request.post = originalPost;
   }
+});
+
+test('realtime sync signals run a complete sync cycle', () => {
+  const source = fs.readFileSync(new URL('../src/services/realtimeController.ts', import.meta.url), 'utf8');
+  assert.match(source, /syncStore\.triggerSync\(\)/);
+  assert.doesNotMatch(source, /pullChanges\(\{ reason: 'realtime' \}\)/);
+});
+
+test('sync cycle reruns when a mutation is queued during an active cycle', () => {
+  const source = fs.readFileSync(new URL('../src/store/useSyncStore.ts', import.meta.url), 'utf8');
+  assert.match(source, /syncRequested\s*=\s*true/);
+  assert.match(source, /while\s*\(syncRequested\s*&&\s*isOnline\(\)\)/);
 });

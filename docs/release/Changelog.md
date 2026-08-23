@@ -4,11 +4,11 @@
 
 文档状态：现行历史记录
 
-### PC 学科文件删除入口可用性修复（2026-08-23）
+### PC 学科文件删除与同步竞态修复（2026-08-23）
 
-- SubjectWorkspace 文件行的删除按钮改为始终可见，避免仅依赖 hover 导致入口不可发现；行点击与删除按钮继续隔离。
-- 补齐删除确认弹窗样式依赖，并将未登录、版本冲突、后端异常转换为明确的中文反馈；删除仍调用现有 Source DELETE 软删除，不改变 MinIO 延迟清理策略。
-- `test:r4-pc` 95/95、type-check、`check:r4-pc`（60 个生产文件）和 Web build 通过；Docker 重建和浏览器人工点击验收待执行。
+- SubjectWorkspace 文件行的删除按钮恢复为悬停显示，键盘 focus-visible 仍可发现；行点击与删除按钮继续隔离。
+- 本地 Source CREATE 尚未推送时，删除写入有序 DELETE outbox，不再提前直接请求远端 Source；已同步文件仍调用现有 Source DELETE 软删除。404、未登录、版本冲突和后端异常转换为明确反馈。
+- 实时同步信号改为完整 push→pull；同步周期期间加入新 mutation 会在当前周期结束后自动再跑一轮。`test:r4-pc` 98/98；type-check、静态检查、Web build、Docker 重建和浏览器人工点击验收待执行。
 
 ### PC 学科文件改为知识块总结与软删除清理（2026-08-23）
 

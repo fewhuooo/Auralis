@@ -111,9 +111,17 @@ test('SubjectWorkspace keeps files flat and exposes file deletion', () => {
   assert.match(source, /class="drawer-item-delete"/)
   assert.match(source, /ApiProblemError/)
   assert.match(source, /RESOURCE_VERSION_CONFLICT/)
-  assert.match(source, /\.drawer-item-delete \{[^}]*opacity:\s*1;/)
-  assert.doesNotMatch(source, /\.drawer-item-delete \{[^}]*opacity:\s*0;/)
+  assert.match(source, /RESOURCE_NOT_FOUND/)
+  assert.match(source, /\.drawer-item:hover \.drawer-item-delete[\s\S]*opacity:\s*1;/)
+  assert.match(source, /\.drawer-item-delete \{[^}]*opacity:\s*0;/)
   assert.match(source, /el-message-box\.css/)
+})
+
+test('useSourceStore handles pending CREATE when deleting files', () => {
+  const storePath = path.resolve('src/store/useSourceStore.ts')
+  const source = fs.readFileSync(storePath, 'utf8')
+  assert.match(source, /repo\.listPending\('SOURCE'\)/)
+  assert.match(source, /mutationType === 'CREATE'/)
 })
 
 test('SubjectWorkspace renders the selected file directly and keeps knowledge blocks as the summary surface', () => {

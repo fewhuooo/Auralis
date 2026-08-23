@@ -162,13 +162,11 @@ export const useSourceStore = defineStore('source', () => {
   async function deleteSourceFile(id: string): Promise<void> {
     const source = sources.value.find((item) => item.id === id) || activeSourceFiles.value.find((item) => item.id === id)
     if (!source) return
-    try {
-      await useSourceApi.delete(id, { baseVersion: source.version })
-      const repo = await repository()
-      await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'synced' })
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      const repo = await repository()
+    const repo = await repository()
+    const pendingMutations = await repo.listPending('SOURCE')
+    const hasPendingCreate = pendingMutations.some((mutation) => mutation.resourceId === id && mutation.mutationType === 'CREATE')
+
+    if (hasPendingCreate) {
       await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'pending' })
       await repo.enqueueMutation(createStableMutation({
         clientMutationId: uuidv7(),
@@ -179,6 +177,23 @@ export const useSourceStore = defineStore('source', () => {
         payload: { id },
       }))
       scheduleSync()
+    } else {
+      try {
+        await useSourceApi.delete(id, { baseVersion: source.version })
+        await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'synced' })
+      } catch (error) {
+        if (!isOfflineTransportFailure(error)) throw error
+        await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'pending' })
+        await repo.enqueueMutation(createStableMutation({
+          clientMutationId: uuidv7(),
+          resourceType: 'SOURCE',
+          resourceId: id,
+          mutationType: 'DELETE',
+          baseVersion: source.version,
+          payload: { id },
+        }))
+        scheduleSync()
+      }
     }
     sources.value = sources.value.filter((item) => item.id !== id)
     activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)

@@ -269,14 +269,24 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
+  let syncRequested = false
+
   async function triggerSync(): Promise<void> {
-    if (!isOnline() || cyclePromise) return cyclePromise ?? Promise.resolve()
+    if (!isOnline()) return Promise.resolve()
+    if (cyclePromise) {
+      syncRequested = true
+      return cyclePromise
+    }
     cyclePromise = (async () => {
       try {
-        await pushChanges()
-        await pullChanges({ reason: 'cycle' })
+        do {
+          syncRequested = false
+          await pushChanges()
+          await pullChanges({ reason: 'cycle' })
+        } while (syncRequested && isOnline())
       } finally {
         cyclePromise = null
+        syncRequested = false
       }
     })()
     return cyclePromise
