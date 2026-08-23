@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC File Viewer PDF/图片缩放旋转与就绪队列修复（2026-08-23）
+
+- 恢复 `FilePreview` 与 `FileViewerRenderer` 两级 ready 门禁，加载期间点击的缩放、重置、旋转和翻页操作会排队到 renderer 完成后执行。
+- 缩放与 PDF/图片旋转统一通过 File Viewer `applyViewState` 执行；读取缩放状态增加未就绪保护，图片 renderer 自带旋转工具栏隐藏，Office renderer 在不提供旋转视图状态时回退外层旋转。
+- 定向预览回归 16/16、type-check 已通过；完整回归、Web build、Docker 重建和真实 PDF/图片 GUI 点击仍需人工确认。
+
 ### PC File Viewer 缩放与渲染遮罩修复（2026-08-23）
 
 - 移除宿主 `FilePreview` 覆盖正文的“正在渲染文档”遮罩，避免首屏已可见时正文持续发白；加载语义保留在 `aria-busy` 和 File Viewer 内部状态。

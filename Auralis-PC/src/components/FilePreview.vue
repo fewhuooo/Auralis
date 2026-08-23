@@ -118,7 +118,7 @@ function handleRotationChange(rotation: number): void {
 }
 
 function runRendererAction(action: (renderer: InstanceType<typeof FileViewerRenderer>) => Promise<unknown> | unknown): Promise<unknown> {
-  if (!rendererRef.value) {
+  if (!rendererRef.value || !isRendererReady.value) {
     pendingRendererActions.push(action)
     return Promise.resolve(null)
   }

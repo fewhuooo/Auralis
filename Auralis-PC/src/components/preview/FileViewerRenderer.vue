@@ -51,8 +51,10 @@ const defaultZoomState: FileViewerZoomState = {
   canReset: false,
 }
 const currentZoom = ref<FileViewerZoomState>(defaultZoomState)
+const rotationHandledByViewer = ref(true)
 
-function onZoomChange(state: FileViewerZoomState): void {
+function onZoomChange(state: FileViewerZoomState | null | undefined): void {
+  if (!state) return
   currentZoom.value = state
   emit('zoom-change', state)
 }
@@ -60,7 +62,11 @@ function onZoomChange(state: FileViewerZoomState): void {
 function onViewStateChange(change: FileViewerViewStateChange): void {
   if (change.state.page !== undefined) currentState.value.page = change.state.page
   if (change.state.pageCount !== undefined) currentState.value.pageCount = change.state.pageCount
-  if (change.state.rotation !== undefined) currentState.value.rotation = change.state.rotation
+  if (change.state.rotation !== undefined) {
+    rotationHandledByViewer.value = true
+    currentState.value.rotation = change.state.rotation
+    emit('rotation-change', change.state.rotation)
+  }
   if (change.state.zoom !== undefined) onZoomChange(change.state.zoom)
   emit('page-change', currentState.value.page, currentState.value.pageCount)
 }
@@ -71,7 +77,7 @@ const MAX_ZOOM = 3
 
 async function changeZoom(delta: number): Promise<FileViewerZoomState> {
   const viewer = viewerRef.value!
-  const current = viewer.getZoomState()
+  const current = viewer.getZoomState() ?? currentZoom.value
   const minScale = current.minScale ?? MIN_ZOOM
   const maxScale = current.maxScale ?? MAX_ZOOM
   const scale = Number(Math.min(maxScale, Math.max(minScale, current.scale + delta)).toFixed(2))
@@ -79,7 +85,7 @@ async function changeZoom(delta: number): Promise<FileViewerZoomState> {
     action: delta > 0 ? 'zoom-in' : 'zoom-out',
     source: 'api',
   })
-  const state = viewer.getZoomState()
+  const state = viewer.getZoomState() ?? currentZoom.value
   onZoomChange(state)
   return state
 }
@@ -87,7 +93,7 @@ async function changeZoom(delta: number): Promise<FileViewerZoomState> {
 async function resetZoom(): Promise<FileViewerZoomState> {
   const viewer = viewerRef.value!
   await viewer.applyViewState({ scale: 1 }, { action: 'zoom-reset', source: 'api' })
-  const state = viewer.getZoomState()
+  const state = viewer.getZoomState() ?? currentZoom.value
   onZoomChange(state)
   return state
 }
@@ -100,7 +106,7 @@ function applyPage(page: number): Promise<unknown> | undefined {
 }
 
 function runViewerAction(action: () => Promise<unknown> | unknown): Promise<unknown> {
-  if (!viewerRef.value) {
+  if (!viewerRef.value || !isReady.value) {
     pendingActions.push(action)
     return Promise.resolve(null)
   }
@@ -116,6 +122,7 @@ async function flushPendingActions(): Promise<void> {
 function handleLoadStart(): void {
   isReady.value = false
   currentState.value.rotation = 0
+  rotationHandledByViewer.value = true
   currentZoom.value = defaultZoomState
   emit('ready-change', false)
   emit('load-start')
@@ -134,16 +141,29 @@ function handleUnloadComplete(): void {
   isReady.value = false
   pendingActions.splice(0)
   currentState.value.rotation = 0
+  rotationHandledByViewer.value = true
   currentZoom.value = defaultZoomState
   emit('ready-change', false)
   emit('unload-complete')
 }
 
-function rotate(delta: number): Promise<number> {
+async function rotate(delta: number): Promise<number> {
+  const viewer = viewerRef.value!
   const nextRotation = (currentState.value.rotation + delta + 360) % 360
-  currentState.value.rotation = nextRotation
-  emit('rotation-change', nextRotation)
-  return Promise.resolve(nextRotation)
+  const appliedState = await viewer.applyViewState({ rotation: nextRotation }, {
+    action: delta < 0 ? 'rotate-left' : 'rotate-right',
+    source: 'api',
+  })
+  const appliedRotation = appliedState?.rotation ?? viewer.getViewState()?.rotation
+  if (typeof appliedRotation === 'number' && Number.isFinite(appliedRotation)) {
+    rotationHandledByViewer.value = true
+    currentState.value.rotation = appliedRotation
+  } else {
+    rotationHandledByViewer.value = false
+    currentState.value.rotation = nextRotation
+  }
+  emit('rotation-change', currentState.value.rotation)
+  return currentState.value.rotation
 }
 
 defineExpose({
@@ -165,7 +185,7 @@ defineExpose({
   <div class="file-viewer-renderer" data-testid="file-viewer-renderer">
     <div
       class="file-viewer-rotation-layer"
-      :style="{ transform: `rotate(${currentState.rotation}deg)` }"
+      :style="{ transform: `rotate(${rotationHandledByViewer ? 0 : currentState.rotation}deg)` }"
     >
       <FileViewer
         ref="viewerRef"
@@ -194,5 +214,9 @@ defineExpose({
   height: 100%;
   transform-origin: center;
   transition: transform 160ms ease;
+}
+
+.file-viewer-renderer :deep(.image-toolbar) {
+  display: none !important;
 }
 </style>

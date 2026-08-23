@@ -65,6 +65,7 @@
 
 2026-08-23：继续收敛 PC File Viewer 控件：移除顶栏控件外层容器，缩放改为 `− / 实际倍率 / ＋`，旋转改为线条左旋图标、当前角度、线条右旋图标；DOC/DOCX 旋转由 renderer 外层状态驱动，倍率由 File Viewer `zoom-change` 实际事件回传。预览上下留白收窄为 12–16px；顶部控件不再因 `previewControlsReady=false` 直接禁用，点击会先进入队列并在渲染器就绪后执行。`test:r4-pc` 101/101、type-check、`check:r4-pc`（60 个生产文件）和 Web build 通过；真实样本浏览器/Tauri GUI 仍需确认缩放、左右旋转后的页面可视区域、分页和窄栏布局。
 2026-08-23：根据真实 PDF 截图反馈，移除宿主“正在渲染文档”遮罩，避免正文已出现时持续发白；缩放改由 File Viewer 视图状态 API 写入目标倍率，首次宽度适配在用户交互后停止，缩放与旋转分别放入同款圆角控制组。定向预览回归 16/16、完整 `test:r4-pc` 101/101、type-check、静态检查和 Web build 已通过；Docker 重建和真实 GUI 点击验收仍待本轮后续步骤。
+2026-08-23：针对 PDF/图片缩放、旋转无响应反馈，恢复 FilePreview 与 renderer 两级 ready 门禁队列；缩放和 PDF/图片旋转改走 File Viewer `applyViewState`，图片内部旋转工具栏隐藏，Office renderer 保留外层旋转回退。定向预览回归 16/16、type-check 已通过；完整回归、Web build、Docker 重建和真实 GUI 点击验收仍待本轮后续步骤。
 
 2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
 

@@ -100,8 +100,13 @@ test('File Viewer renderer disables internal toolbars and exposes API', () => {
   assert.match(source, /zoomIn:/)
   assert.match(source, /applyViewState/)
   assert.match(source, /changeZoom/)
+  assert.match(source, /if \(!viewerRef\.value \|\| !isReady\.value\)/)
+  assert.match(source, /applyViewState\(\{ scale/)
+  assert.match(source, /applyViewState\(\{ rotation/)
   assert.match(source, /rotate/)
   assert.match(source, /ready-change/)
+  assert.match(source, /image-toolbar/)
+  assert.match(source, /display: none !important/)
 })
 
 test('File preview queues controls until the renderer is ready and keeps the paper clear of chrome', () => {
@@ -115,8 +120,7 @@ test('File preview queues controls until the renderer is ready and keeps the pap
   assert.match(previewSource, /pendingRendererActions/)
   assert.match(previewSource, /control-ready/)
   assert.match(previewSource, /padding: 12px 16px/)
-  assert.match(previewSource, /if \(!rendererRef\.value\)/)
-  assert.doesNotMatch(previewSource, /if \(!rendererRef\.value \|\| !isRendererReady\.value\)/)
+  assert.match(previewSource, /if \(!rendererRef\.value \|\| !isRendererReady\.value\)/)
   assert.doesNotMatch(previewSource, /file-preview-loading-overlay/)
   assert.match(rendererSource, /@zoom-change="onZoomChange"/)
   assert.match(rendererSource, /file-viewer-rotation-layer/)
