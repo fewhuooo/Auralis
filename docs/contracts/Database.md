@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-17
+更新时间：2026-08-23
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -203,3 +203,13 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - PostgreSQL 写入通过 JDBC 将 1024 维 embedding 同时写入 JSON 兼容列和 vector 列；检索通过带 `user_id`、`active`、未删除 Source 过滤的 pgvector cosine SQL，并由 HNSW 索引支持排序。H2 继续使用活动 generation 的 JSON cosine fallback。
 
 阶段 5/R1 schema 验证：H2 PostgreSQL mode 与默认 Testcontainers PostgreSQL 17/pgvector 验证 Flyway V1→V14、JPA `ddl-auto=validate`；R2 clean/upgrade 两类输入验证 V8 历史 `embedding_json` 在 V9/V11 后得到 `vector`、HNSW 索引和回填结果。R1-04/本轮并发测试验证消息幂等键、失败/断流状态、同请求仅一次 USER 保留、会话恢复键和精确 assistant 关联。
+
+## PC Tauri ParsedDocument 目标数据契约（2026-08-23，已批准、未实现）
+
+本节只登记后续迁移目标；当前数据库仍停留在 V1–V14，不得据此声明表或字段已经存在。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+
+- 新增非同步派生表 `parsed_documents`，保存 `id`、`user_id`、`source_id`、当前 Asset SHA-256、schema/parser/OCR model 版本、私有 object key、payload SHA-256、size、status、ingestion generation、创建和接收时间。该表不进入 change log、snapshot 或普通客户端 mutation。
+- `ingestion_jobs` 新增可空 `parsed_document_id` 关联。FILE Source 只有在 ParsedDocument 校验通过后进入该 generation 的 INDEXING；新 generation 完整写入并切换 active 前，旧 READY chunks 保持有效。
+- `sources.ingestion_status` 目标扩展 `AWAITING_PARSED_DOCUMENT` 与 `VALIDATING`；现有 `PENDING/PARSING/INDEXING/READY/FAILED` 继续服务 TEXT/URL 和兼容路径。
+- 最新成功 ParsedDocument 作为重新分块和重新 Embedding 的派生权威保留；成功代切换后异步删除旧对象和旧元数据。Source 删除或 Asset 替换必须使迟到 generation 失效。
+- PC 本地新增按 `userId:deviceId` 隔离的 `document_processing_jobs` 元数据。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文仅以 Windows DPAPI 保护设备密钥的 AES-GCM 文件临时存在，服务端确认接收、退出登录、Source 删除或 Asset 替换后清理。

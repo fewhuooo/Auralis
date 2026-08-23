@@ -1,6 +1,6 @@
 # Auralis API 契约
 
-更新时间：2026-08-17
+更新时间：2026-08-23
 
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
@@ -184,3 +184,14 @@
 - Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443），host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；保存和实际请求前都会校验所有 DNS 地址，实际连接固定到已检查地址，Provider 重定向关闭。
 - Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
 - 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V14、架构测试、出站安全专项，以及默认 `clean test` 的真实 PostgreSQL 17/pgvector 与 MinIO Testcontainers。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04/R1-05 增加了会话恢复键、同一请求并发保留、精确 assistant 关联及流式回放测试。真实 Provider 网络/证书/限流、浏览器前端联调和人工业务验收仍未完成。
+
+## PC Tauri AI 辅助阅读目标契约（2026-08-23，已批准、未实现）
+
+本节是后续实施目标，不改变以上已实现状态，也不代表 OpenAPI、数据库迁移、客户端联调或业务验收已经完成。完整决策见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+
+- FILE Source 完成原 Asset 上传并创建后进入 `AWAITING_PARSED_DOCUMENT`；客户端提交解析结果后经过 `VALIDATING → INDEXING → READY/FAILED`。TEXT/URL Source 保持现有服务端解析状态机。
+- `POST /api/sources/{sourceId}/parsed-documents/upload-intents` 接受 `schemaVersion`、`parserId`、`parserVersion`、可选 `ocrModelVersion`、`sourceAssetSha256`、`payloadSha256` 和 `sizeBytes`，返回 `parsedDocumentId`、私有预签名上传 URL、限定 headers 与过期时间。
+- `POST /api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete` 不信任客户端对象元数据；服务端执行 owner scope、HEAD/stat、Asset 哈希、payload 哈希、压缩与 schema 上限校验。相同结果重放必须幂等，旧 Asset 的结果必须拒绝。
+- FILE Source 的 `POST /api/sources/{id}/reingest` 在存在最新成功 ParsedDocument 时复用该派生对象，不再次要求端侧 OCR；不存在兼容结果时返回稳定安全错误，客户端创建新解析任务。
+- `POST /api/ai/messages/stream` 目标请求在现有字段上新增可选 `readingContext`，其中包含必填 `currentSourceId`、`subjectId`、`retrievalMode=AUTO` 和可选 `selectionText`。PC 当前文件检索必须提交该对象；不启用当前文件检索的普通聊天可省略。服务端验证用户、Source、Subject 关系和 Source READY 状态；默认只检索当前 Source，命中确定性升级规则后只扩大到当前 Subject。
+- AI 会话在当前打开期间组装已完成历史消息；失败、取消或未完成 Assistant 消息不进入后续 Prompt。SSE citation 仍以实际检索结果为权威，PC 只呈现去重来源文件名。
