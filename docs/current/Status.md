@@ -59,7 +59,7 @@
 
 2026-08-23：修复 PC 学科文件登记后的大小丢失：上传完成返回的 `asset.sizeBytes` 现在写入本地优先 Source 副本，并从同步 mutation payload 中排除展示字段；文件在同步完成前也会显示真实大小。新增登记链路回归；`test:r4-pc` 94/94、type-check 和 Web build 通过。浏览器刷新后对既有文件及新登记文件的 GUI 验收仍待执行。
 
-2026-08-23：PC 学科文件栏已由 Antigravity Gemini 3.1 Pro 参与改造：移除独立 `· 总结.md` 虚拟项，文件栏只显示真实 Source，知识块入口作为总结/知识表面；选中文件后由 `FilePreview` 直接承载文档预览，并新增确认后的 Source 软删除按钮。后端新增 `AssetRetentionCleanupService`，默认保留 30 天后按小时物理删除 MinIO 对象并将 Asset 标记为 `ORPHANED`，数据库审计行保留。前端定向回归与后端 Source/Asset 清理测试已补齐，浏览器文件预览、删除确认、知识块和 Docker 调度仍待本轮验证。
+2026-08-23：PC 学科文件栏已由 Antigravity Gemini 3.1 Pro 参与改造：移除独立 `· 总结.md` 虚拟项，文件栏只显示真实 Source，知识块入口作为总结/知识表面；选中文件后由 `FilePreview` 直接承载文档预览，并新增确认后的 Source 软删除按钮。后端新增 `AssetRetentionCleanupService`，默认保留 30 天后按小时物理删除 MinIO 对象并将 Asset 标记为 `ORPHANED`，数据库审计行保留。`test:r4-pc` 95/95、type-check、静态检查、Web build、后端 `mvn -B -ntp test` 155/155 和 Compose config 均通过；Docker 重建后 backend healthy、frontend HTTP 200、readiness `UP`。浏览器文件预览、删除确认、知识块和实际定时清理仍待人工验收。
 
 2026-08-21：修复 PC 注册后的默认学科问题：注册不再自动创建“未分类” Subject，Subject 列表允许为空；历史 `defaultSubject=true` 记录可通过普通删除接口软删除。核心领域与资源归属回归 7/7 通过，PC SubjectHall 空状态和删除路径仍需浏览器人工验收。
 

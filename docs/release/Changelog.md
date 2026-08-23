@@ -8,7 +8,7 @@
 
 - Antigravity Gemini 3.1 Pro 参与收敛 SubjectWorkspace：文件栏只显示真实 Source 文件，不再生成独立 `· 总结.md`；知识块入口承载总结，选中文件后直接显示无嵌套标题容器的 `FilePreview`。
 - 文件行新增确认后的软删除入口，调用现有 Source DELETE；后端 `AssetRetentionCleanupService` 默认 30 天后按小时删除 MinIO 对象并将 Asset 标记为 `ORPHANED`，保留 Source/Asset 数据库审计行。
-- 新增前端 flat-file/direct-preview/delete 回归与后端 MinIO retention 回归；完整前后端测试、Docker 重建和浏览器人工验收结果待本轮命令完成后补充。
+- 新增前端 flat-file/direct-preview/delete 回归与后端 MinIO retention 回归；`test:r4-pc` 95/95、type-check、静态检查、Web build、后端 `mvn -B -ntp test` 155/155 和 Compose config 通过。Docker 重建后 backend healthy、frontend HTTP 200、readiness `UP`；浏览器人工验收仍待执行。
 
 ### PC 学科文件大小即时显示（2026-08-23）
 
