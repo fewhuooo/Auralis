@@ -67,8 +67,10 @@ public class AiStreamingService {
             topK = validateTopK(command.topK());
         } catch (DomainException exception) {
             LOGGER.warn(
-                    "AI_STREAM_VALIDATION_FAILED userId={} conversationId={} errorCode={} elapsedMs={}",
-                    userId, command.conversationId(), exception.code(), elapsedMillis(requestStartedAt));
+                    "AI_STREAM_VALIDATION_FAILED userId={} conversationId={} errorCode={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} elapsedMs={}",
+                    userId, command.conversationId(), exception.code(), exceptionType(exception),
+                    safeExceptionMessage(exception), rootCauseType(exception), rootCauseMessage(exception),
+                    elapsedMillis(requestStartedAt));
             throw exception;
         }
         AiProviderType providerType;
@@ -76,9 +78,10 @@ public class AiStreamingService {
             providerType = command.provider() == null ? defaultProvider() : command.provider();
         } catch (DomainException exception) {
             LOGGER.warn(
-                    "AI_PROVIDER_SELECTION_FAILED userId={} conversationId={} requestedProvider={} errorCode={} elapsedMs={}",
+                    "AI_PROVIDER_SELECTION_FAILED userId={} conversationId={} requestedProvider={} errorCode={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} elapsedMs={}",
                     userId, command.conversationId(), command.provider() == null ? "DEFAULT" : command.provider(),
-                    exception.code(), elapsedMillis(requestStartedAt));
+                    exception.code(), exceptionType(exception), safeExceptionMessage(exception),
+                    rootCauseType(exception), rootCauseMessage(exception), elapsedMillis(requestStartedAt));
             throw exception;
         }
 
@@ -171,9 +174,10 @@ public class AiStreamingService {
             }
         } catch (DomainException exception) {
             LOGGER.warn(
-                    "AI_STREAM_FAILED userId={} conversationId={} userMessageId={} provider={} model={} errorCode={} partialOutputChars={} elapsedMs={}",
-                    userId, conversationId, userMessage.id(), providerType, model, exception.code(), complete.length(),
-                    elapsedMillis(requestStartedAt));
+                    "AI_STREAM_FAILED userId={} conversationId={} userMessageId={} provider={} model={} errorCode={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} partialOutputChars={} elapsedMs={}",
+                    userId, conversationId, userMessage.id(), providerType, model, exception.code(),
+                    exceptionType(exception), safeExceptionMessage(exception), rootCauseType(exception),
+                    rootCauseMessage(exception), complete.length(), elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
                         model, exception.code());
@@ -182,9 +186,10 @@ public class AiStreamingService {
                     Map.of("code", exception.code(), "detail", safeDetail(exception.getMessage()))));
         } catch (Exception exception) {
             LOGGER.error(
-                    "AI_STREAM_FAILED_UNEXPECTED userId={} conversationId={} userMessageId={} provider={} model={} exceptionType={} partialOutputChars={} elapsedMs={}",
+                    "AI_STREAM_FAILED_UNEXPECTED userId={} conversationId={} userMessageId={} provider={} model={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} partialOutputChars={} elapsedMs={}",
                     userId, conversationId, userMessage.id(), providerType, model,
-                    exception.getClass().getSimpleName(), complete.length(), elapsedMillis(requestStartedAt));
+                    exceptionType(exception), safeExceptionMessage(exception), rootCauseType(exception),
+                    rootCauseMessage(exception), complete.length(), elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
                         model, "MODEL_PROVIDER_ERROR");
@@ -246,15 +251,17 @@ public class AiStreamingService {
             return citations;
         } catch (DomainException exception) {
             LOGGER.warn(
-                    "AI_EMBEDDING_FAILED userId={} conversationId={} messageId={} provider={} model={} errorCode={} elapsedMs={}",
+                    "AI_EMBEDDING_FAILED userId={} conversationId={} messageId={} provider={} model={} errorCode={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} elapsedMs={}",
                     userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
-                    exception.code(), elapsedMillis(embeddingStartedAt));
+                    exception.code(), exceptionType(exception), safeExceptionMessage(exception),
+                    rootCauseType(exception), rootCauseMessage(exception), elapsedMillis(embeddingStartedAt));
             throw exception;
         } catch (Exception exception) {
             LOGGER.error(
-                    "AI_EMBEDDING_FAILED_UNEXPECTED userId={} conversationId={} messageId={} provider={} model={} exceptionType={} elapsedMs={}",
+                    "AI_EMBEDDING_FAILED_UNEXPECTED userId={} conversationId={} messageId={} provider={} model={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} elapsedMs={}",
                     userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
-                    exception.getClass().getSimpleName(), elapsedMillis(embeddingStartedAt));
+                    exceptionType(exception), safeExceptionMessage(exception), rootCauseType(exception),
+                    rootCauseMessage(exception), elapsedMillis(embeddingStartedAt));
             throw exception;
         }
     }
@@ -331,6 +338,49 @@ public class AiStreamingService {
 
     private String safeDetail(String detail) {
         return detail == null || detail.isBlank() ? "AI provider request failed" : detail;
+    }
+
+    private String exceptionType(Throwable exception) {
+        return exception == null ? "<none>" : exception.getClass().getName();
+    }
+
+    private String rootCauseType(Throwable exception) {
+        Throwable rootCause = rootCause(exception);
+        return rootCause == null ? "<none>" : exceptionType(rootCause);
+    }
+
+    private String rootCauseMessage(Throwable exception) {
+        Throwable rootCause = rootCause(exception);
+        return rootCause == null ? "<none>" : safeExceptionMessage(rootCause);
+    }
+
+    private Throwable rootCause(Throwable exception) {
+        if (exception == null || exception.getCause() == null) {
+            return null;
+        }
+        Throwable current = exception;
+        Throwable cause = exception.getCause();
+        int depth = 0;
+        while (cause != null && cause != current && depth++ < 16) {
+            current = cause;
+            cause = current.getCause();
+        }
+        return current;
+    }
+
+    private String safeExceptionMessage(Throwable exception) {
+        if (exception == null || exception.getMessage() == null || exception.getMessage().isBlank()) {
+            return "<none>";
+        }
+        String message = exception.getMessage()
+                .replaceAll("[\\r\\n\\t]+", " ")
+                .trim()
+                .replaceAll("(?i)(authorization\\s*:\\s*bearer\\s+)\\S+", "$1<redacted>")
+                .trim()
+                .replaceAll("(?i)(api[-_ ]?key|token|secret|password)\\s*[:=]\\s*\\S+",
+                        "$1=<redacted>")
+                .replaceAll("(?i)(https?://[^\\s?]+)\\?[^\\s]+", "$1?<redacted>");
+        return message.length() > 300 ? message.substring(0, 300) + "..." : message;
     }
 
     private String safeHost(String baseUrl) {

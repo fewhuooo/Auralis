@@ -344,6 +344,45 @@ class AiStreamingTests {
                 .doesNotContain(prompt);
     }
 
+    @Test
+    void logsDomainFailureTypeAndMessage(CapturedOutput output) {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK))
+                .thenThrow(new DomainException("VALIDATION_FAILED", "Provider URL is not allowed"));
+
+        streamingService.stream(userId,
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3,
+                        "request-domain-failure"));
+
+        assertThat(output.getOut())
+                .contains("AI_STREAM_FAILED")
+                .contains("errorCode=VALIDATION_FAILED")
+                .contains("exceptionType=com.auralis.app.shared.error.DomainException")
+                .contains("exceptionMessage=Provider URL is not allowed");
+    }
+
+    @Test
+    void redactsSecretsFromDomainFailureMessage(CapturedOutput output) {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String secret = "sk-secret-value";
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK))
+                .thenThrow(new DomainException("VALIDATION_FAILED", "Authorization: Bearer " + secret));
+
+        streamingService.stream(userId,
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3,
+                        "request-secret-failure"));
+
+        assertThat(output.getOut())
+                .contains("exceptionMessage=Authorization: Bearer <redacted>")
+                .doesNotContain(secret);
+    }
+
     private static final class FakeStreamingProvider implements AiProviderPort {
         @Override
         public AiProviderType type() {

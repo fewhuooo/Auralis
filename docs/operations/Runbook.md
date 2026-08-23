@@ -120,6 +120,7 @@ chat/ingest 超时、401、模型不存在、无效 JSON 或空结果。
 - 默认 Provider 的 `DEEPSEEK_API_KEY`/`OPENAI_API_KEY`/`SILICONFLOW_API_KEY` 是否已注入后端进程；用户 BYOK 是否在 `GET /api/ai/settings` 显示 `hasApiKey=true`。
 - API key、base URL、model 与 `AURALIS_AI_DEFAULT_PROVIDER` 是否匹配。
 - 网络和提供商状态。
+- 失败日志中的 `errorCode` 只是稳定业务码；同时查看同一事件的 `exceptionType`、`exceptionMessage`、`rootCauseType` 和 `rootCauseMessage`。message 已做敏感字段脱敏和 300 字符截断，不能据此推断完整上游响应。
 - 请求是否超过文件/上下文限制。
 - `application-prod.yml` 是否仍使用错误的 `spring.ai.openai` 口径。
 

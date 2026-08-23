@@ -39,6 +39,8 @@
 
 2026-08-21：补强 AI 后端运行日志：请求开始/校验/Provider 选择、env/BYOK 来源、Embedding/检索、Chat 流式、上游 HTTP JSON/SSE、成功/中断/失败均输出安全事件名、模型/host、状态、数量和耗时；不输出 API Key、Authorization、完整 prompt、模型回复或响应体。新增日志脱敏与失败阶段回归，AI 定向 26/26 通过。
 
+2026-08-23：按 `VALIDATION_FAILED` 排障反馈，AI 失败事件新增 `exceptionType`、单行截断并脱敏后的 `exceptionMessage`、`rootCauseType` 与 `rootCauseMessage`，覆盖聊天、Provider 选择、请求校验和 embedding 失败；前端 Problem Details 错误码/安全 detail 契约不变。新增原始异常日志与 Authorization 脱敏回归，`AiStreamingTests` 12/12 通过。
+
 2026-08-22：PC 资产库任务编辑移除认知负荷按钮，改为 30 分钟步进的预计用时控件；保存时通过 Task Store 写回标题、备注、截止日期和 `durationMinutes`。`test:r4-pc` 73/73、type-check 与 Web build 通过；浏览器实际编辑、刷新后持久化仍待人工验收。
 
 2026-08-22：修复 PC 时间轴日视图排期匹配：Task Store 使用半小时槽位承接 `scheduledAt`，时间轴保留已过去排期并对任务名称/详情应用删除线。`test:r4-pc` 74/74、type-check、静态检查和 Web build 通过；浏览器实际跨日、半点排期和拖拽走查仍待人工验收。

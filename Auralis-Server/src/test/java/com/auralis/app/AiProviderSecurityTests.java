@@ -107,6 +107,32 @@ class AiProviderSecurityTests {
     }
 
     @Test
+    void preservesProviderFailureCauseForAiFailureDiagnostics() {
+        ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "provider.test", 443, List.of(), "/v1");
+        when(policy.resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create("https://provider.test/v1")))
+                .thenReturn(endpoint);
+        SocketTimeoutException timeout = new SocketTimeoutException("socket timeout");
+        ProviderHttpTransport transport = (resolved, path, apiKey, body) -> {
+            throw timeout;
+        };
+        OpenAiCompatibleProvider provider = new OpenAiCompatibleProvider(
+                policy, new ProviderHttpClient(new ObjectMapper(), transport, 1024));
+
+        assertThatThrownBy(() -> provider.complete(
+                new AiProviderRequest(
+                        "model",
+                        List.of(new AiProviderRequest.Message(AiMessageRole.USER, "hello")),
+                        null,
+                        null),
+                new AiCredential("https://provider.test/v1", "sk-secret-value")))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("AI provider is unavailable")
+                .hasCause(timeout);
+    }
+
+    @Test
     void mapsStreamingProviderTimeoutToModelUnavailable() {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(

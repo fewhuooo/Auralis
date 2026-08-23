@@ -66,13 +66,15 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         } catch (DomainException exception) {
             throw exception;
         } catch (ProviderHttpException exception) {
-            throw providerError(exception.status());
+            throw providerError(exception.status(), exception);
         } catch (ProviderResponseTooLargeException exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
+                    exception);
         } catch (IOException exception) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable");
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
         } catch (Exception exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
+                    exception);
         }
     }
 
@@ -96,13 +98,15 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         } catch (DomainException exception) {
             throw exception;
         } catch (ProviderHttpException exception) {
-            throw providerError(exception.status());
+            throw providerError(exception.status(), exception);
         } catch (ProviderResponseTooLargeException exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
+                    exception);
         } catch (IOException exception) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable");
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
         } catch (Exception exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
+                    exception);
         }
     }
 
@@ -167,14 +171,14 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
     }
 
-    private DomainException providerError(int status) {
+    private DomainException providerError(int status, Throwable cause) {
         if (status == 429) {
-            return new DomainException("RATE_LIMITED", "AI provider rate limit reached");
+            return new DomainException("RATE_LIMITED", "AI provider rate limit reached", null, cause);
         }
         if (status == 408 || status >= 500) {
-            return new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable");
+            return new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, cause);
         }
-        return new DomainException("MODEL_PROVIDER_ERROR", "AI provider rejected the request");
+        return new DomainException("MODEL_PROVIDER_ERROR", "AI provider rejected the request", null, cause);
     }
 
     private String roleName(AiMessageRole role) {

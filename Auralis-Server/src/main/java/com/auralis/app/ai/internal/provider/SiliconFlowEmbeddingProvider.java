@@ -70,16 +70,18 @@ public class SiliconFlowEmbeddingProvider implements EmbeddingProviderPort {
         } catch (ProviderHttpException exception) {
             int status = exception.status();
             if (status == 429) {
-                throw new DomainException("RATE_LIMITED", "Embedding provider rate limit reached");
+                throw new DomainException("RATE_LIMITED", "Embedding provider rate limit reached", null, exception);
             }
             throw new DomainException(status >= 500 ? "MODEL_UNAVAILABLE" : "MODEL_PROVIDER_ERROR",
-                    "Embedding provider request failed");
+                    "Embedding provider request failed", null, exception);
         } catch (ProviderResponseTooLargeException exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response");
+            throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response", null,
+                    exception);
         } catch (IOException exception) {
-            throw new DomainException("MODEL_UNAVAILABLE", "Embedding provider is unavailable");
+            throw new DomainException("MODEL_UNAVAILABLE", "Embedding provider is unavailable", null, exception);
         } catch (Exception exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response");
+            throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response", null,
+                    exception);
         }
     }
 

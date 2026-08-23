@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### AI 失败日志保留原始异常诊断（2026-08-23）
+
+- `AI_STREAM_FAILED`、`AI_PROVIDER_SELECTION_FAILED`、`AI_STREAM_VALIDATION_FAILED` 以及 embedding 失败事件现在输出异常类名、脱敏/截断后的 message 和 root cause，避免只剩统一 `VALIDATION_FAILED` 业务码。
+- 新增 Authorization 脱敏回归；前端 Problem Details 仍保持安全统一错误码和 detail，不回显异常、密钥或上游响应体。
+- `AiStreamingTests` 12/12 通过；Docker 运行态将在推送后重建并确认新字段出现。
+
 ### Docker MinIO 下载链路与资料大小修复（2026-08-23）
 
 - MinIO 下载 URL 改为服务端离线 SigV4 签名，避免后端容器错误连接浏览器 public endpoint 的 `localhost:9000`，并增加脱敏失败阶段日志。
