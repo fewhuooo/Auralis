@@ -210,6 +210,7 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 
 - PC SubjectWorkspace 已将总结从原文件预览容器拆为独立 `· 总结.md` 虚拟文件项；原文件仍由 `FilePreview` 单独渲染，点击总结项显示独立 Markdown 文档并可下载。总结只由当前知识块实时生成，未新增后端 Source/Asset 持久化。
 - `Auralis-PC` `npm.cmd run test:r4-pc` 93/93、`npm.cmd run type-check` 和 `npm.cmd run build` 通过；构建保留既有 File Viewer/Asset 大 chunk 与无效动态 import 非阻断警告。浏览器文件切换、Markdown 下载、深色和窄栏布局仍需人工验收。
+- PC Dashboard 待办列表已修复窄宽布局：长学科徽标可收缩并省略，任务名称不再被挤到不可见。`npm.cmd run test:r4-pc` 94/94、`npm.cmd run type-check`、`npm.cmd run check:r4-pc`（60 个生产文件）通过；浏览器缩放和真实长名称仍需人工走查。
 
 ## 阅读与回写
 

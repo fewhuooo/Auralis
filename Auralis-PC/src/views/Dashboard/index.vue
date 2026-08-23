@@ -1758,7 +1758,12 @@ html.dark .todo-item:hover {
   border-radius: 10px;
   font-size: 10.5px;
   font-weight: 700;
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 html.dark .todo-subject {
   background: rgba(163, 177, 155, 0.25);

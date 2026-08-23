@@ -132,7 +132,7 @@ R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离�
 
 ## 页面职责
 
-- Dashboard：时间线、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。
+- Dashboard：时间线、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。待办条目在窄宽下优先保留任务名称，过长的学科徽标允许收缩并以省略号显示。
 - SubjectHall：学科卡片、搜索、创建、编辑、删除和进入工作区；编辑表单保留服务端 `version` 并以 `baseVersion` 提交，确保名称、描述和图标修改可以保存；新用户注册后没有自动学科时展示真实空状态，历史遗留“未分类”学科也可正常删除。
 - SubjectWorkspace：文件、知识、任务、总结、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。登记文件必须先选择文件、名称和归档学科，上传期间按钮显示“上传中…”并防重复提交；直传或 Source 创建失败会在弹层保留可重试状态并显示通知，成功后刷新当前学科文件列表。文件选择器与拖拽入口共用 `src/utils/filePreview.ts` 的能力注册表，Excel/未知格式和超过 50 MB 的文件在创建 upload intent 前拦截；选中文件后由 `FilePreview` 统一负责签名 URL、下载、加载/失败状态，当前优先使用自托管 File Viewer 渲染 DOC/DOCX、PPT/PPTX、PDF、图片及文本。
 - SubjectWorkspace 文件列表现在为每个真实资料生成一个 `· 总结.md` 独立虚拟项；点击原文件仅显示 `FilePreview`，点击总结项显示独立 Markdown 文档并提供 `.md` 下载。总结由当前已关联知识块即时生成，创建知识块时仍归属原始 Source；该虚拟文件暂不写入后端 Source/Asset。

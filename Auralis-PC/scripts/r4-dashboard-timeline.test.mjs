@@ -57,6 +57,13 @@ test('dashboard keeps grid cells date-only and moves full day information to the
   assert.doesNotMatch(dashboard, /day\.isToday \? '今天'/)
 })
 
+test('dashboard keeps task names visible when the subject label is long', () => {
+  assert.match(dashboard, /\.todo-name[\s\S]*?min-width:\s*0/)
+  assert.match(dashboard, /\.todo-subject[\s\S]*?flex:\s*0\s+1\s+auto/)
+  assert.match(dashboard, /\.todo-subject[\s\S]*?max-width:/)
+  assert.match(dashboard, /\.todo-subject[\s\S]*?text-overflow:\s*ellipsis/)
+})
+
 test('pc typography uses the shared font stack and semantic size tokens', () => {
   assert.match(globalStyles, /html\s*\{\s*font-size:\s*16px/)
   assert.match(globalStyles, /--font-family-base:/)
