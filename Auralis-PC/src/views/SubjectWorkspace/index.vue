@@ -538,6 +538,7 @@ import { Clock } from '@element-plus/icons-vue'
 import { Blocks, Plus, FileText } from 'lucide-vue-next'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message.css'
+import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 
@@ -671,10 +672,17 @@ const handleDeleteFile = async (file: SourceFileModel) => {
         centerView.value = 'overview'
       }
     }
-  } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error(error instanceof Error ? error.message : '删除失败')
+  } catch (error: any) {
+    if (error === 'cancel') return
+    let message = error?.message || '删除失败'
+    if (error?.name === 'ApiProblemError') {
+      const status = error.status || error.problem?.status
+      const code = error.problem?.code
+      if (status === 401) message = '未登录，请先登录'
+      else if (status === 409 || code === 'RESOURCE_VERSION_CONFLICT') message = '版本冲突，请刷新后重试'
+      else if (status >= 500) message = '后端服务异常，请稍后重试'
     }
+    ElMessage.error(message)
   } finally {
     deletingFileId.value = null
   }
@@ -1268,12 +1276,11 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
-  opacity: 0;
+  opacity: 1;
   transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
-.drawer-item:hover .drawer-item-delete,
-.drawer-item-delete:focus-visible { opacity: 1; }
+.drawer-item-delete:focus-visible { outline: 2px solid var(--color-primary-accent); outline-offset: 2px; }
 .drawer-item-delete:hover:not(:disabled) { color: var(--error, #b4534b); background: rgba(239, 68, 68, 0.1); }
 .drawer-item-delete:disabled { cursor: wait; opacity: 0.5; }
 

@@ -109,6 +109,11 @@ test('SubjectWorkspace keeps files flat and exposes file deletion', () => {
   assert.match(source, /handleDeleteFile\(file\)/)
   assert.match(source, /deleteSourceFile\(file\.id\)/)
   assert.match(source, /class="drawer-item-delete"/)
+  assert.match(source, /ApiProblemError/)
+  assert.match(source, /RESOURCE_VERSION_CONFLICT/)
+  assert.match(source, /\.drawer-item-delete \{[^}]*opacity:\s*1;/)
+  assert.doesNotMatch(source, /\.drawer-item-delete \{[^}]*opacity:\s*0;/)
+  assert.match(source, /el-message-box\.css/)
 })
 
 test('SubjectWorkspace renders the selected file directly and keeps knowledge blocks as the summary surface', () => {

@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 学科文件删除入口可用性修复（2026-08-23）
+
+- SubjectWorkspace 文件行的删除按钮改为始终可见，避免仅依赖 hover 导致入口不可发现；行点击与删除按钮继续隔离。
+- 补齐删除确认弹窗样式依赖，并将未登录、版本冲突、后端异常转换为明确的中文反馈；删除仍调用现有 Source DELETE 软删除，不改变 MinIO 延迟清理策略。
+- `test:r4-pc` 95/95、type-check、`check:r4-pc`（60 个生产文件）和 Web build 通过；Docker 重建和浏览器人工点击验收待执行。
+
 ### PC 学科文件改为知识块总结与软删除清理（2026-08-23）
 
 - Antigravity Gemini 3.1 Pro 参与收敛 SubjectWorkspace：文件栏只显示真实 Source 文件，不再生成独立 `· 总结.md`；知识块入口承载总结，选中文件后直接显示无嵌套标题容器的 `FilePreview`。
