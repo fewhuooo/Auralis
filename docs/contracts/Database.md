@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -204,12 +204,17 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 阶段 5/R1 schema 验证：H2 PostgreSQL mode 与默认 Testcontainers PostgreSQL 17/pgvector 验证 Flyway V1→V14、JPA `ddl-auto=validate`；R2 clean/upgrade 两类输入验证 V8 历史 `embedding_json` 在 V9/V11 后得到 `vector`、HNSW 索引和回填结果。R1-04/本轮并发测试验证消息幂等键、失败/断流状态、同请求仅一次 USER 保留、会话恢复键和精确 assistant 关联。
 
-## PC Tauri ParsedDocument 目标数据契约（2026-08-23，已批准、未实现）
+## PC Tauri ParsedDocument 目标数据契约（2026-08-23，2026-08-24 复核修订，已批准、未实现）
 
 本节只登记后续迁移目标；当前数据库仍停留在 V1–V14，不得据此声明表或字段已经存在。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
-- 新增非同步派生表 `parsed_documents`，保存 `id`、`user_id`、`source_id`、当前 Asset SHA-256、schema/parser/OCR model 版本、私有 object key、payload SHA-256、size、status、ingestion generation、创建和接收时间。该表不进入 change log、snapshot 或普通客户端 mutation。
-- `ingestion_jobs` 新增可空 `parsed_document_id` 关联。FILE Source 只有在 ParsedDocument 校验通过后进入该 generation 的 INDEXING；新 generation 完整写入并切换 active 前，旧 READY chunks 保持有效。
-- `sources.ingestion_status` 目标扩展 `AWAITING_PARSED_DOCUMENT` 与 `VALIDATING`；现有 `PENDING/PARSING/INDEXING/READY/FAILED` 继续服务 TEXT/URL 和兼容路径。
-- 最新成功 ParsedDocument 作为重新分块和重新 Embedding 的派生权威保留；成功代切换后异步删除旧对象和旧元数据。Source 删除或 Asset 替换必须使迟到 generation 失效。
-- PC 本地新增按 `userId:deviceId` 隔离的 `document_processing_jobs` 元数据。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文仅以 Windows DPAPI 保护设备密钥的 AES-GCM 文件临时存在，服务端确认接收、退出登录、Source 删除或 Asset 替换后清理。
+- `sources` 新增服务端生成的 `ingestion_revision UUID`。FILE Source 创建、Asset 替换或需要重新端侧解析时轮换 revision；普通重新分块/Embedding 复用当前 revision 和最新兼容 ParsedDocument。Source DTO/同步快照只读暴露该值，客户端 mutation 不能覆盖。
+- 新增非同步派生表 `parsed_documents`，保存 `id`、`user_id`、`source_id`、`ingestion_revision`、当前 Asset SHA-256、schema/parser/normalization/OCR model 版本、私有 object key、payload SHA-256、size、status、ingestion generation、`object_deleted_at`、创建和接收时间。状态至少为 `UPLOADING`、`VALIDATING`、`ACCEPTED`、`REJECTED`、`SUPERSEDED`；该表不进入 change log、snapshot 或普通客户端 mutation。
+- complete 在 owner-scoped Source 行锁内执行“首个有效结果胜出”。同 revision + payload hash 重放幂等，不同 payload 不能覆盖已接受结果；Source 删除、Asset 替换或 revision 轮换使迟到结果失效。迁移和服务测试必须证明并发 complete 只创建一个 indexing job。
+- `ingestion_jobs` 新增可空 `parsed_document_id` 与 `ingestion_revision`。FILE Source 只有在 ParsedDocument 校验通过后进入该 generation 的 INDEXING；新 generation 完整写入并切换 active 前，旧 READY chunks 保持有效。`ingestion_jobs.status` 继续只使用现有 `PENDING/PARSING/INDEXING/READY/FAILED`。
+- `sources.ingestion_status` 目标扩展 `AWAITING_CLIENT` 与 `VALIDATING`；两者均适配现有 `VARCHAR(16)`，但必须替换数据库 CHECK 和 Java enum。现有 `PENDING/PARSING/INDEXING/READY/FAILED` 继续服务 TEXT/URL 和兼容路径。既有 READY FILE 且有活动 chunks 的记录保持 READY；未 READY FILE 分配 revision 后迁移为 `AWAITING_CLIENT`。
+- `assets.sha256` 为兼容既有上传仍可为空，但 ParsedDocument 接受后必须非空且经过原对象流式校验；并发回填使用锁或条件更新，不能 last-write-wins。
+- 最新成功 ParsedDocument 作为重新分块和重新 Embedding 的派生权威保留；成功代切换后异步删除旧对象，并按下述保留期清理旧元数据。Source 删除或 Asset 替换必须使迟到 generation 失效。
+- 同 revision 重放产生的多余对象、`REJECTED` 和超时 `UPLOADING` 对象必须由清理任务删除；新 revision READY 后旧对象删除并写 `object_deleted_at`，`SUPERSEDED` 元数据至少保留 30 天后再清理。
+- `conversations` 目标新增 `purpose`（`GENERAL`/`READING_SESSION`）和可空 `source_id`；省略 purpose 时为 `GENERAL`，普通列表排除阅读会话，超过 24 小时无活动的阅读会话可由清理任务软删除，普通会话不受影响。
+- PC 本地新增按 `userId:deviceId` 隔离的 `document_processing_jobs` 元数据，并保存 `ingestion_revision`。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文使用现有 OS keyring 主密钥派生的分块 AES-256-GCM envelope 临时保存，AAD 绑定 user/device/source/job/revision/schema。服务端确认接收、退出登录、Source 删除或 Asset 替换后清理；不新增第二套独立 DPAPI 密钥。

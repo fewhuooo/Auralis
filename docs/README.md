@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-08-17
+更新时间：2026-08-24
 
 文档状态：现行
 
@@ -111,7 +111,7 @@
 - [AI env 默认 Provider 与 BYOK 覆盖设计（2026-08-21）](superpowers/specs/2026-08-21-ai-env-provider-fallback-design.md)
 - [PC 首页时间轴与任务逻辑设计（2026-08-22）](superpowers/specs/2026-08-22-pc-dashboard-task-logic-design.md)
 - [PC 学科文件上传与预览设计（2026-08-22）](superpowers/specs/2026-08-22-subject-file-upload-preview-design.md)
-- [PC Tauri AI 辅助阅读全流程设计（2026-08-23）](superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)
+- [PC Tauri AI 辅助阅读全流程设计（2026-08-23，2026-08-24 技术复核修订）](superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)
 
 ### 当前实现与契约
 

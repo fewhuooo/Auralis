@@ -1,6 +1,6 @@
 # Auralis API 契约
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
@@ -185,13 +185,17 @@
 - Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
 - 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V14、架构测试、出站安全专项，以及默认 `clean test` 的真实 PostgreSQL 17/pgvector 与 MinIO Testcontainers。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04/R1-05 增加了会话恢复键、同一请求并发保留、精确 assistant 关联及流式回放测试。真实 Provider 网络/证书/限流、浏览器前端联调和人工业务验收仍未完成。
 
-## PC Tauri AI 辅助阅读目标契约（2026-08-23，已批准、未实现）
+## PC Tauri AI 辅助阅读目标契约（2026-08-23，2026-08-24 复核修订，已批准、未实现）
 
 本节是后续实施目标，不改变以上已实现状态，也不代表 OpenAPI、数据库迁移、客户端联调或业务验收已经完成。完整决策见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
-- FILE Source 完成原 Asset 上传并创建后进入 `AWAITING_PARSED_DOCUMENT`；客户端提交解析结果后经过 `VALIDATING → INDEXING → READY/FAILED`。TEXT/URL Source 保持现有服务端解析状态机。
-- `POST /api/sources/{sourceId}/parsed-documents/upload-intents` 接受 `schemaVersion`、`parserId`、`parserVersion`、可选 `ocrModelVersion`、`sourceAssetSha256`、`payloadSha256` 和 `sizeBytes`，返回 `parsedDocumentId`、私有预签名上传 URL、限定 headers 与过期时间。
-- `POST /api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete` 不信任客户端对象元数据；服务端执行 owner scope、HEAD/stat、Asset 哈希、payload 哈希、压缩与 schema 上限校验。相同结果重放必须幂等，旧 Asset 的结果必须拒绝。
-- FILE Source 的 `POST /api/sources/{id}/reingest` 在存在最新成功 ParsedDocument 时复用该派生对象，不再次要求端侧 OCR；不存在兼容结果时返回稳定安全错误，客户端创建新解析任务。
-- `POST /api/ai/messages/stream` 目标请求在现有字段上新增可选 `readingContext`，其中包含必填 `currentSourceId`、`subjectId`、`retrievalMode=AUTO` 和可选 `selectionText`。PC 当前文件检索必须提交该对象；不启用当前文件检索的普通聊天可省略。服务端验证用户、Source、Subject 关系和 Source READY 状态；默认只检索当前 Source，命中确定性升级规则后只扩大到当前 Subject。
+- FILE Source 完成原 Asset 上传并创建后进入 `AWAITING_CLIENT`；客户端提交解析结果后经过 `VALIDATING → INDEXING → READY/FAILED`。SourceResponse 新增服务端生成、客户端只读的 `ingestionRevision`。TEXT/URL Source 保持现有服务端解析状态机。
+- 任意端可继续上传和预览 FILE Source；只有 PC Tauri 提交 ParsedDocument。Mobile/Tablet 上传的 FILE 在 PC 处理前保持 `AWAITING_CLIENT`，本期不由移动端伪装为 AI READY。
+- PC Tauri 在原 Asset upload-intent 前流式计算并提交 SHA-256。历史 Asset 的 `sha256` 为空时，服务端在首次接受 ParsedDocument 前流式读取原对象并原子回填；不能直接信任客户端声明。
+- `POST /api/sources/{sourceId}/parsed-documents/upload-intents` 接受 `ingestionRevision`、`schemaVersion`、`parserId`、`parserVersion`、`normalizationVersion`、可选 `ocrModelVersion`、`sourceAssetSha256`、`payloadSha256` 和 `sizeBytes`，返回 `parsedDocumentId`、服务端确认的 `ingestionRevision`、私有预签名上传 URL、限定 headers 与过期时间。
+- `POST /api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete` 不信任客户端对象元数据；服务端锁定 owner-scoped Source，执行 HEAD/stat、Asset/payload 哈希、revision、压缩与 schema 上限校验。同一 ParsedDocument 或相同 revision + payload hash 重放必须幂等；同 revision 已接受不同 payload 时返回 `409 PARSED_DOCUMENT_CONFLICT`；旧 revision 返回 `409 INGESTION_REVISION_STALE`。
+- FILE Source 创建、Asset 替换和缺少兼容 ParsedDocument 的 reingest 不发布现有服务端解析事件；只有 complete 接受成功后创建 indexing job。`POST /api/sources/{id}/reingest` 在存在最新兼容 ParsedDocument 时复用该派生对象；原 Asset/schema 变化或显式重新解析时轮换 `ingestionRevision` 并回到 `AWAITING_CLIENT`。
+- `POST /api/ai/messages/stream` 目标请求在现有字段上新增可选 `readingContext`，其中包含必填 `currentSourceId`、`subjectId`、`retrievalMode=AUTO` 和可选 `selectionText`。PC 当前文件检索必须提交该对象；服务端验证用户、Source、Subject 关系和 Source READY 状态，默认只检索当前 Source，命中确定性规则后只扩大到当前 Subject，并记录 `EXPLICIT_CROSS_FILE`、`SUBJECT_SOURCE_TITLE_MATCH` 或 `INSUFFICIENT_CURRENT_RESULTS`。异常时保持当前 Source，不能扩大到用户全库。
+- `readingContext` 省略时保留现有普通聊天契约，不套用阅读工作区范围升级；PC 工作区不得再把文件名拼接进 `content` 代替结构化上下文。`selectionText` 只作为有长度限制的用户 prompt 上下文，不参与检索命中、citation 或证据归属。
+- `POST /api/ai/conversations` 目标新增可选 `purpose` 与 `sourceId`；省略 purpose 时为 `GENERAL`，阅读工作区使用 `purpose=READING_SESSION` 并绑定当前 Source。该会话不进入普通历史列表，切换/离开时客户端 best-effort 删除，服务端清理超过 24 小时无活动的遗留阅读会话。
 - AI 会话在当前打开期间组装已完成历史消息；失败、取消或未完成 Assistant 消息不进入后续 Prompt。SSE citation 仍以实际检索结果为权威，PC 只呈现去重来源文件名。

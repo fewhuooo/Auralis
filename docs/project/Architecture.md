@@ -1,6 +1,6 @@
 # Auralis 系统架构
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 文档状态：现行
 
@@ -44,7 +44,7 @@ PC 和 Mobile/Tablet 是独立客户端工程。PC 的发布目标为 Windows x6
 - Pinia 管理账号、知识块、任务、学科、同步、聊天和设置。
 - API 层封装鉴权、同步、资产、统计和 AI。
 - Tauri 提供桌面容器与 SQL 插件能力。
-- 已批准但尚未实现的 AI 阅读目标使用受控 Rust 命令管理本地解析任务，并调用随安装包发布的 Windows x64 OCR Sidecar；Vue 不获得通用 Shell 权限。
+- 已批准但尚未实现的 AI 阅读目标在 Vue/WebView 内使用单实例离屏 `BackgroundParserHost` 串行承载 Office renderer，在 Rust 中管理任务、分块加密缓存、流式上传和长驻 Windows x64 OCR Sidecar；Vue 不获得通用 Shell 权限。
 
 详细实现见 [PC 模块](../modules/FrontendPC.md)。
 
@@ -73,6 +73,8 @@ PC 和 Mobile/Tablet 是独立客户端工程。PC 的发布目标为 Windows x6
 - MinIO：用户 Asset 对象，以及计划中的私有 ParsedDocument 派生对象。
 - Spring Boot：REST、SSE、Realtime、摄入 worker 与 Provider 编排。
 - PC Tauri：端侧 SQLite、受控本地解析与计划中的 OCR Sidecar。
+
+正式 MSI 中 Sidecar 可执行文件使用 Tauri `bundle.externalBin`，OCR 模型、配置和许可证使用 `bundle.resources`；依赖和模型版本/哈希进入固定清单，运行时不下载。Sidecar 由 Rust 通过版本化 stdin/stdout 协议调用，不暴露本地端口，也不接受 Vue 提供的任意路径。
 
 Redis、Milvus 和 etcd 属于已退役旧 Server 栈，不进入新后端目标拓扑。
 
@@ -137,32 +139,36 @@ sequenceDiagram
 
 ### 文件上传与 AI 摄入
 
-以下流程是 2026-08-23 已批准目标，当前仍处于计划状态；实现与验收状态以 current 文档为准。
+以下流程是 2026-08-23 已批准、2026-08-24 技术复核修订的目标，当前仍处于计划状态；实现与验收状态以 current 文档为准。
 
 ```mermaid
 sequenceDiagram
   participant C as PC Tauri
-  participant P as Local DocumentParser
+  participant P as BackgroundParserHost / DocumentParser
+  participant J as Rust JobController / Sidecar
   participant O as MinIO
   participant A as AssetController
   participant S as Source / ParsedDocument API
   participant R as Ingestion / pgvector
-  C->>A: 创建原文件 upload intent
+  C->>C: 流式计算原文件 SHA-256
+  C->>A: 创建原文件 upload intent（携带 SHA-256）
   A-->>C: 用户私有预签名 URL
   C->>O: PUT 文件
   C->>A: complete 并校验对象
   C->>S: 创建 Source
-  C->>P: 原生提取或逐页 OCR
-  P-->>C: 版本化 ParsedDocument
-  C->>S: 创建派生文档 upload intent
-  C->>O: PUT gzip ParsedDocument
-  C->>S: complete
-  S->>S: 归属、Asset 哈希、结构和大小校验
+  S-->>C: Source + ingestionRevision / AWAITING_CLIENT
+  C->>P: 离屏原生提取或逐页分类
+  P->>J: 有界文字批次或页图字节
+  J->>J: OCR / 分块加密 ParsedDocument
+  J->>S: 创建派生文档 upload intent（revision + hashes）
+  J->>O: 流式解密 PUT gzip ParsedDocument
+  J->>S: complete
+  S->>S: Source 行锁、revision、归属、Asset 哈希、结构和大小校验
   S->>R: chunk / embedding / generation cutover
   R-->>S: READY 或安全失败
 ```
 
-FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执行图片或扫描 PDF OCR。TEXT/URL Source 继续由服务端解析。ParsedDocument 是不进入普通 Sync 的私有派生对象；最新成功代可用于重新分块或重新 Embedding。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执行图片或扫描 PDF OCR。Office 后台解析必须由已挂载的离屏 renderer 完成，不能假设 Rust 能直接调用浏览器 File Viewer。TEXT/URL Source 继续由服务端解析。ParsedDocument 是不进入普通 Sync 的私有派生对象；服务端以 Source `ingestionRevision` 仲裁多设备并发 complete，最新成功代可用于重新分块或重新 Embedding。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
 ### WebSocket 生命周期
 
@@ -192,18 +198,19 @@ FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执�
 | 文件对象 | MinIO | 上传、展示、引用 objectName |
 | 资产元数据 | PostgreSQL asset | 客户端显示状态和学科归属 |
 | RAG chunk 与向量 | PostgreSQL `source_chunks` + pgvector | 不直接持久化到客户端 |
-| ParsedDocument（计划中） | 服务端私有对象 + 元数据；本地仅在接收前加密暂存 | PC 解析、断点恢复，服务端确认后删除本地正文 |
+| ParsedDocument（计划中） | 服务端私有对象 + 元数据；本地仅在接收前以 keyring 主密钥的分块 AES-GCM envelope 暂存 | PC 解析、断点恢复和 Rust 流式上传，服务端确认后删除本地正文 |
 | Tablet 手写笔记 | 端侧 `tablet_notes` | 当前不进入 Server 同步 |
 
 ## 当前架构风险
 
 | 风险 | 证据 | 架构影响 |
 | --- | --- | --- |
-| 本地 OCR 尚未实现 | 2026-08-23 AI 阅读设计仍为计划状态 | 非文本型文件尚不能形成完整 RAG 闭环 |
+| 本地 OCR 尚未实现 | 2026-08-24 复核修订后的 AI 阅读设计仍为计划状态 | 非文本型文件尚不能形成完整 RAG 闭环 |
 | ParsedDocument 契约和表尚未实现 | 当前 API/数据库契约仅覆盖文本型 Source 摄入 | 客户端解析结果不能安全进入 generation cutover |
 | 当前检索范围过宽 | RetrievalService 当前只按 userId 过滤 | 实现 Source 优先和 Subject 上限前不能声称范围隔离完成 |
 | PC AI 上下文仍为字符串拼接 | 当前 chat store 未发送强类型 Source/Subject scope | 可能产生范围含糊或消息正文污染 |
-| Windows 安装包未验证 OCR 资源 | Sidecar、模型、DPAPI 缓存仍未构建 | 不能声称离线 OCR、恢复或准确率达标 |
+| Office 后台解析路径未验证 | File Viewer 文本接口依赖已挂载 renderer，legacy PPT 可能使用 Canvas/WASM | 离屏解析宿主和逐页 OCR fallback 验证前，不能声称所有预览格式均可进入 RAG |
+| Windows 安装包未验证 OCR 资源 | `externalBin/resources`、固定模型清单、长驻 Sidecar 和分块加密缓存仍未构建 | 不能声称离线 OCR、恢复或准确率达标 |
 | 真实 Provider 与客户端联调未完成 | 当前证据以 Stub/受控 HTTP 和后端自动测试为主 | 不能替代网络、SSE、GUI 和业务验收 |
 
 风险的当前优先级和关闭条件见 [问题和审查](../current/IssuesAndReview.md)。

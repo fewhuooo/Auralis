@@ -1,6 +1,6 @@
 # Auralis 当前状态
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 文档状态：现行状态快照
 
@@ -17,11 +17,13 @@
 
 ## 首个候选版本范围基线（R0-01）
 
-目标端已冻结为 PC Web、PC Tauri、Mobile H5、微信小程序和 Tablet 主工作区。候选主流程为注册登录、资料上传、学习工作区、同步、复习、统计和 AI 对话；Tablet 手写笔记云同步、微信之外的其它小程序平台、旧 Server 数据自动迁移、跨实例事件 Broker、AI 自动执行领域写操作不进入本候选版本。
+目标端已冻结为 Windows x64 PC Tauri、Mobile H5、微信小程序和 Tablet 主工作区；PC Web 只保留 Tauri 内部开发用途，不作为发布目标。候选主流程为注册登录、资料上传、学习工作区、同步、复习、统计和 AI 对话；Tablet 手写笔记云同步、微信之外的其它小程序平台、旧 Server 数据自动迁移、跨实例事件 Broker、AI 自动执行领域写操作不进入本候选版本。
 
 验收责任按角色分工：产品/业务验收负责范围和用户结果，后端/基础设施负责 API、数据、安全与真实依赖证据，PC/Tauri 与 Mobile/Tablet 负责人负责端侧主流程，QA/发布负责证据汇总和门禁判断。当前仅完成范围基线写入，未因此把任何模块或风险状态改写为“已验收”。详细验收结果见[产品需求](../project/ProductRequirements.md)和[部署测试前主任务清单](../planning/PreDeploymentReadinessTasks.md)。
 
 ## 状态总览
+
+2026-08-24：PC Tauri AI 辅助阅读规格完成技术复核修订，补齐 Sidecar `externalBin`/模型 `resources`、离屏 Office 解析宿主、`ingestionRevision` 并发仲裁、`AWAITING_CLIENT` 状态、Asset 哈希回填、keyring 主密钥下的分块加密、阅读会话清理和性能/许可证门禁。当前仍为“计划中、尚未实现”，未因此声明 OCR、ParsedDocument、范围检索或 MSI 已构建。
 
 截至 2026-08-20，PC 的 R4 客户端迁移已推进到联调前门禁：正式 PC Store/页面已切换到当前 typed API 和用户/设备隔离 repository，AI SSE、Vite 代理和 Tauri 最小权限边界已有代码与自动检查证据。这里的“联调前门禁”只表示客户端代码和本地检查达到当前阶段，不等同于生产构建、GUI、真机、后端联调或业务验收全部完成。
 

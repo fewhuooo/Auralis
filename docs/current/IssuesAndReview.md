@@ -1,6 +1,6 @@
 # Auralis 当前问题与审查登记
 
-更新时间：2026-08-23
+更新时间：2026-08-24
 
 文档状态：现行风险登记
 
@@ -17,7 +17,7 @@
 
 ## 首个候选版本范围基线（R0-01）
 
-- **目标端**：PC Web、PC Tauri、Mobile H5、微信小程序、Tablet 主工作区。
+- **目标端**：Windows x64 PC Tauri、Mobile H5、微信小程序、Tablet 主工作区；PC Web 仅保留内部开发用途，不进入发布目标。
 - **主流程**：注册登录、资料上传、学习工作区、同步、复习、统计、AI 对话。
 - **范围外**：Tablet 手写笔记云同步、微信之外的其它小程序平台、旧 Server 数据自动迁移、跨实例事件 Broker、AI 自动执行领域写操作。
 - **责任角色**：产品/业务验收、后端/基础设施、PC/Tauri、Mobile/Tablet、QA/发布。
@@ -33,6 +33,7 @@
 | P1-Mobile-Platform-Validation | Mobile 新契约与双构建已完成，但微信平台配置、真实上传/SSE/WebSocket、双设备 reset 和真机未验收 | `check:r4-mobile` 62 文件、协议 20/20、type-check、H5/微信 build 通过；无 AppID/合法域名/开发者工具/真机证据 | 命令行产物可能在域名、证书、对象存储 PUT、前后台或弱网条件下失败 | 配置请求/WSS/upload/download 域名，在 H5、微信工具和真机覆盖登录、上传、同步、复习、统计和 AI | 真实 Server/MinIO/Provider 与目标设备流程通过并保留脱敏证据 | Mobile/WeChat |
 | P1-PC-Local-Repository-Cutover | PC 正式页面和主要 Store 已切换到用户/设备隔离 v2 repository，但 `localDb.ts` 与 `useBlockStore.ts` 仍保留兼容 facade，且真实 Tauri 迁移/GUI 尚未验收 | 2026-08-20 R4-09：Task/Review/Stats/Chat/Pomodoro Store、Dashboard/Timeline/Profile/Home/Workspace/SearchPalette 已完成 typed API 或本地 repository 接入；`check:r4-pc` 57 个生产文件通过；兼容 facade 仅保留未迁移 API 的边界 | 首次登录旧数据迁移、Tauri SQLite 升级、reset/离线恢复和跨账号切换仍缺真实桌面证据 | 保持 facade 只读兼容范围，继续做 Tauri/Web GUI 与真实服务边界验收；若无调用方则在后续清理窗口删除 facade | 正式 PC 业务路径不再读写旧全局 key；Tauri/Web/GUI 证据齐全；真实后端联调确认 user/device 隔离 | PC/Data |
 | P1-PC-AI-Recovery-Validation | 离线 Chat 已持久化稳定会话/消息请求 ID，并在网络恢复后自动顺序重发；但尚未以浏览器连接真实 Server/Provider 验收 | `useChatStore.ts`、`authenticatedSse.ts`、`r4-reliability.test.mjs`；2026-08-20 `test:r4-pc` 58/58、type-check/build 通过 | 浏览器断线、token 刷新与真实 SSE 代理交叠时仍可能暴露时序或 UI 回归 | 在真实 API 上覆盖离线新建会话、断流重试、401 刷新、恢复顺序和重复点击 | 浏览器/Tauri 中真实 Server/SSE 的恢复、无重复消息和失败态证据齐全 | PC/AI |
+| P1-PC-AI-Reading-Flow | PC Tauri AI 辅助阅读已经批准并完成技术复核，但 Sidecar、离屏 Office 解析、ParsedDocument/revision、范围检索和任务中心均尚未实现 | `docs/superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md`；当前 `tauri.conf.json` 无 `externalBin`，File Viewer 文本能力未接后台宿主，Server 仍按用户级检索 | 非文本文件不能稳定进入 RAG；并发迟到结果、范围越界、明文缓存或安装包缺资源会阻断候选主流程 | 先完成规格 Phase 0 两项硬门禁，再按依赖顺序实现客户端/服务端契约和端到端验收 | Windows x64 MSI 离线 OCR、四类 Office 固定样本、revision 并发、加密缓存、当前 Source→Subject 检索和 GUI/业务证据全部通过 | PC/AI/Backend |
 | P1-Backend-Docker-Gate | [已关闭] Docker、PostgreSQL/pgvector、MinIO 和 Compose/Testcontainers 基础门禁 | 2026-08-20 Docker Desktop Linux engine 下默认 `clean test` 137/0/0；Testcontainers 实际启动 PostgreSQL 17/pgvector clean/upgrade 与 MinIO。既有 Compose config/build/up/health 证据仍有效 | 基础设施主链路已具备可重复验证证据；异常专项和真实 Provider 仍由独立风险跟踪 | 保留 Docker 门禁并在 CI/本地复跑；继续完成 R2-03/R2-04 异常专项和 R2-05 真实 Provider smoke | Compose 服务健康、默认容器测试零跳过、PostgreSQL/MinIO 主链路集成证据齐全 | Backend/Infra |
 | P1-Auth-Guard | PC 登录守卫逻辑已恢复，但浏览器/Tauri 的登录、刷新、退出和过期仍未人工验收 | `Auralis-PC/src/router/index.ts`、`src/auth/authGuard.ts`；`r4-pc-protocol.test.mjs` 已覆盖公开/受保护/登录页跳转决策 | 会话持久化、过期和退出后的实际导航行为仍可能与纯函数决策不一致 | 在浏览器和 Tauri GUI 走查登录、刷新、退出、过期和返回地址 | 自动测试与目标 GUI 的登录/刷新/退出/过期证据齐全 | PC/Auth |
 | P1-Test-Coverage | 新后端已覆盖主要模块自动测试；多设备和浏览器客户端仍缺业务回归保护 | 2026-08-20 默认 `clean test` 已执行 PostgreSQL/MinIO 容器测试并通过 137/0/0；真实 PostgreSQL/pgvector clean/upgrade 与 MinIO 主链路均实际启动，但其余业务仍主要依赖 H2/JPA/MockMvc | 主链路通过不等于 PostgreSQL 全量并发行为、双设备断网恢复和真实 WebSocket 可用 | 增加 PostgreSQL/MinIO 异常与并发、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
