@@ -4,6 +4,7 @@ import com.auralis.app.ai.retrieval.Citation;
 import com.auralis.app.ai.retrieval.EmbeddingVectorCodec;
 import com.auralis.app.ai.retrieval.PgVectorRetrievalRepository;
 import com.auralis.app.ai.retrieval.RetrievalService;
+import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.ai.internal.persistence.SourceChunkEntity;
 import com.auralis.app.ai.internal.persistence.SourceChunkRepository;
 import com.auralis.app.source.SourceIngestionStatus;
@@ -97,6 +98,49 @@ class AiRetrievalTests {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> retrievalService.retrieve(UUID.randomUUID(), vector(1.0, 0.0), 0))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void readingContextValidatesReadySourceAndFiltersOnlyCurrentSource() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID otherSourceId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        List<Double> vector = vector(1.0, 0.0);
+        SourceChunkEntity current = new SourceChunkEntity(
+                UUID.randomUUID(), userId, sourceId, 0, "current", "hash-1", 0, 7,
+                new EmbeddingVectorCodec().encode(vector), UUID.randomUUID(), true);
+        SourceChunkEntity other = new SourceChunkEntity(
+                UUID.randomUUID(), userId, otherSourceId, 0, "other", "hash-2", 0, 5,
+                new EmbeddingVectorCodec().encode(vector), UUID.randomUUID(), true);
+        when(pgVectorRepository.search(userId, sourceId, vector, 3)).thenReturn(Optional.empty());
+        when(chunkRepository.findAllByUserIdAndActiveTrue(userId)).thenReturn(List.of(current, other));
+        when(sourceService.get(userId, sourceId)).thenReturn(new SourceView(
+                sourceId, subjectId, SourceType.FILE, "Current", null, null, null, null,
+                SourceIngestionStatus.READY, null, null, 1, Instant.now(), Instant.now(), null));
+
+        List<Citation> citations = retrievalService.retrieve(userId, vector, 3,
+                new ReadingContext(sourceId, subjectId, ReadingContext.RetrievalMode.AUTO, null));
+
+        assertThat(citations).singleElement().satisfies(citation -> {
+            assertThat(citation.sourceId()).isEqualTo(sourceId);
+            assertThat(citation.excerpt()).isEqualTo("current");
+        });
+        verify(pgVectorRepository).search(userId, sourceId, vector, 3);
+    }
+
+    @Test
+    void readingContextRejectsSubjectMismatchAndNonReadySource() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        when(sourceService.get(userId, sourceId)).thenReturn(new SourceView(
+                sourceId, UUID.randomUUID(), SourceType.FILE, "Current", null, null, null, null,
+                SourceIngestionStatus.PENDING, null, null, 1, Instant.now(), Instant.now(), null));
+
+        assertThatThrownBy(() -> retrievalService.retrieve(userId, vector(1.0, 0.0), 3,
+                new ReadingContext(sourceId, UUID.randomUUID(), ReadingContext.RetrievalMode.AUTO, null)))
+                .isInstanceOf(com.auralis.app.shared.error.DomainException.class);
+        verify(pgVectorRepository, never()).search(eq(userId), eq(sourceId), eq(vector(1.0, 0.0)), eq(3));
     }
 
     private static List<Double> vector(double first, double second) {

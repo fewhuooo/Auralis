@@ -14,6 +14,8 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 @Service
 public class AssetService {
@@ -137,6 +139,53 @@ public class AssetService {
         InputStream stream = assetStorage.openObject(asset.getObjectKey());
         return new AssetContent(asset.getId(), asset.getObjectKey(), asset.getOriginalName(),
                 asset.getMimeType(), asset.getSizeBytes(), stream);
+    }
+
+    /**
+     * Computes the hash from the server-side object stream and conditionally
+     * fills the nullable legacy Asset checksum. Client declarations are never
+     * used as the source of truth.
+     */
+    @Transactional
+    public String ensureSha256(UUID userId, UUID assetId) {
+        AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
+        if (asset.getSha256() != null) {
+            return asset.getSha256();
+        }
+        if (asset.getUploadStatus() != AssetUploadStatus.READY) {
+            throw new DomainException("MUTATION_REJECTED", "Asset is not ready for checksum verification");
+        }
+        String computed = hashObject(asset.getObjectKey());
+        int updated = assetRepository.updateSha256IfAbsent(assetId, userId, computed);
+        if (updated > 0) {
+            return computed;
+        }
+        return assetRepository.findByIdAndUserId(assetId, userId)
+                .map(AssetEntity::getSha256)
+                .filter(value -> value != null)
+                .orElse(computed);
+    }
+
+    private String hashObject(String objectKey) {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+        try (InputStream input = assetStorage.openObject(objectKey)) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+        } catch (Exception exception) {
+            throw new DomainException("UPLOAD_VALIDATION_FAILED", "Asset checksum could not be verified", null, exception);
+        }
+        return java.util.HexFormat.of().formatHex(digest.digest());
     }
 
     private DomainException failUpload(UUID userId, AssetEntity asset, String detail) {

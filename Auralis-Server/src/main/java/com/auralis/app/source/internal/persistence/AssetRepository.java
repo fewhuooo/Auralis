@@ -2,6 +2,10 @@ package com.auralis.app.source.internal.persistence;
 
 import com.auralis.app.source.AssetUploadStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -12,4 +16,13 @@ public interface AssetRepository extends JpaRepository<AssetEntity, UUID> {
 
     Optional<AssetEntity> findByIdAndUserIdAndUploadStatus(
             UUID id, UUID userId, AssetUploadStatus uploadStatus);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Transactional
+    @Query("update AssetEntity asset set asset.sha256 = :sha256 "
+            + "where asset.id = :assetId and asset.userId = :userId and asset.sha256 is null")
+    int updateSha256IfAbsent(
+            @Param("assetId") UUID assetId,
+            @Param("userId") UUID userId,
+            @Param("sha256") String sha256);
 }

@@ -28,8 +28,9 @@ public class GlobalExceptionHandler {
         }
         HttpStatus status = switch (code) {
             case RESOURCE_NOT_FOUND, RESOURCE_DELETED -> HttpStatus.NOT_FOUND;
-            case RESOURCE_VERSION_CONFLICT, MUTATION_REJECTED -> HttpStatus.CONFLICT;
-            case VALIDATION_FAILED, UPLOAD_VALIDATION_FAILED -> HttpStatus.BAD_REQUEST;
+            case RESOURCE_VERSION_CONFLICT, MUTATION_REJECTED,
+                    PARSED_DOCUMENT_CONFLICT, INGESTION_REVISION_STALE -> HttpStatus.CONFLICT;
+            case VALIDATION_FAILED, UPLOAD_VALIDATION_FAILED, PARSED_DOCUMENT_INVALID -> HttpStatus.BAD_REQUEST;
             case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
             case MODEL_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;

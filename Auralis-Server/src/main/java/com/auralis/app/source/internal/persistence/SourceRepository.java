@@ -16,6 +16,13 @@ public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
 
     Optional<SourceEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select source from SourceEntity source "
+            + "where source.id = :id and source.userId = :userId and source.deletedAt is null")
+    Optional<SourceEntity> findForUpdateByIdAndUserIdAndDeletedAtIsNull(
+            @org.springframework.data.repository.query.Param("id") UUID id,
+            @org.springframework.data.repository.query.Param("userId") UUID userId);
+
     List<SourceEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     List<SourceEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(

@@ -15,6 +15,7 @@ import com.auralis.app.relation.RelationService;
 import com.auralis.app.relation.RelationType;
 import com.auralis.app.relation.internal.persistence.RelationRepository;
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.shared.domain.SourceIngestionRequestedEvent;
 import com.auralis.app.source.AssetService;
 import com.auralis.app.source.AssetStoragePort;
 import com.auralis.app.source.AssetRetentionCleanupService;
@@ -39,6 +40,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.context.annotation.Import;
 
 import java.time.Instant;
@@ -56,6 +59,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(classes = AuralisApplication.class)
 @ActiveProfiles("test")
 @Import(SourceAssetRelationServiceTests.StorageConfiguration.class)
+@RecordApplicationEvents
 class SourceAssetRelationServiceTests {
 
     @Autowired
@@ -108,6 +112,9 @@ class SourceAssetRelationServiceTests {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ApplicationEvents applicationEvents;
 
     @BeforeEach
     void cleanData() {
@@ -199,6 +206,61 @@ class SourceAssetRelationServiceTests {
                 subject.id(), SourceType.FILE, "notes.pdf", intent.assetId(), null, null, null));
 
         assertThat(source.assetSizeBytes()).isEqualTo(3982329L);
+        assertThat(source.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
+        assertThat(source.ingestionRevision()).isNotNull();
+        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
+    }
+
+    @Test
+    void textAndUrlSourcesStillPublishServerIngestionEvents() {
+        var owner = register("source-events");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Events", null, null, null, "001"));
+
+        SourceView textSource = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.TEXT, "A note", null, null, "raw text", null));
+        SourceView urlSource = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.URL, "A link", null, "https://example.com/read", null, null));
+
+        assertThat(textSource.ingestionStatus().name()).isEqualTo("PENDING");
+        assertThat(urlSource.ingestionStatus().name()).isEqualTo("PENDING");
+        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).hasSize(2);
+    }
+
+    @Test
+    void fileAssetReplacementAndReingestAwaitClientWithoutAllowingRevisionOverwrite() {
+        var owner = register("source-revision");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Revision", null, null, null, "001"));
+        var firstIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
+                0L, "first.pdf", 20L, "application/pdf", null));
+        String firstKey = assetRepository.findByIdAndUserId(firstIntent.assetId(), owner.user().id())
+                .orElseThrow().getObjectKey();
+        assetStorage.put(firstKey, new AssetStoragePort.ObjectMetadata(20L, "application/pdf", null));
+        assetService.complete(owner.user().id(), firstIntent.assetId());
+
+        SourceView created = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.FILE, "first.pdf", firstIntent.assetId(), null, null, null));
+        UUID initialRevision = created.ingestionRevision();
+        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
+
+        var secondIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
+                0L, "second.pdf", 20L, "application/pdf", null));
+        String secondKey = assetRepository.findByIdAndUserId(secondIntent.assetId(), owner.user().id())
+                .orElseThrow().getObjectKey();
+        assetStorage.put(secondKey, new AssetStoragePort.ObjectMetadata(20L, "application/pdf", null));
+        assetService.complete(owner.user().id(), secondIntent.assetId());
+
+        SourceView replaced = sourceService.update(owner.user().id(), created.id(), created.version(), new SourceCommand(
+                subject.id(), SourceType.FILE, "second.pdf", secondIntent.assetId(), null, null, null));
+        assertThat(replaced.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
+        assertThat(replaced.ingestionRevision()).isNotNull().isNotEqualTo(initialRevision);
+        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
+
+        SourceView reingested = sourceService.reingest(owner.user().id(), replaced.id(), replaced.version());
+        assertThat(reingested.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
+        assertThat(reingested.ingestionRevision()).isNotNull().isNotEqualTo(replaced.ingestionRevision());
+        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
     }
 
     @Test

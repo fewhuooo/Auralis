@@ -1,6 +1,5 @@
 <template>
-  <div class="app-shell">
-
+  <div v-if="isAuthenticatedRoute" class="app-shell">
     <AppSidebar />
     <div class="app-body">
       <AppHeader />
@@ -13,39 +12,57 @@
       </main>
     </div>
 
-    <!-- Global Command Palette -->
-    <SearchPalette />
-
     <!-- Subtle background glow effect -->
     <div class="bg-glow bg-glow--1"></div>
     <div class="bg-glow bg-glow--2"></div>
   </div>
+  <div v-else class="public-shell">
+    <router-view />
+  </div>
+
+  <!-- Global Command Palette -->
+  <SearchPalette />
+
+  <!-- Kept mounted across routes for background Office extraction. -->
+  <BackgroundParserHost ref="backgroundParserHost" />
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/layout/AppSidebar.vue'
 import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
+import BackgroundParserHost from '@/components/preview/BackgroundParserHost.vue'
 import { useAuthStore } from '@/store/useAuthStore'
 import { realtimeController } from '@/services/realtimeController'
+import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
+import { setBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
+import type { BackgroundParserHostHandle } from '@/services/documentParser/fileViewerBridge'
 
 let stopWatchingAuth: (() => void) | undefined
+const backgroundParserHost = ref<BackgroundParserHostHandle | null>(null)
+const route = useRoute()
+const authStore = useAuthStore()
+const isAuthenticatedRoute = computed(() => Boolean(route.meta.requiresAuth && authStore.isAuthenticated))
 
 onMounted(() => {
-  const authStore = useAuthStore()
+  setBackgroundParserHost(backgroundParserHost.value)
 
-  if (authStore.token) {
+  if (authStore.isAuthenticated) {
     realtimeController.start()
+    void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
   }
 
   stopWatchingAuth = watch(
-    () => authStore.token,
-    (newToken) => {
-      if (newToken) {
+    () => authStore.isAuthenticated,
+    (isAuthenticated) => {
+      if (isAuthenticated) {
         realtimeController.start()
+        void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
       } else {
         realtimeController.stop()
+        documentProcessingRuntime.stop()
       }
     },
   )
@@ -55,6 +72,8 @@ onUnmounted(() => {
   stopWatchingAuth?.()
   stopWatchingAuth = undefined
   realtimeController.stop()
+  setBackgroundParserHost(null)
+  documentProcessingRuntime.stop()
 })
 </script>
 
@@ -67,6 +86,12 @@ onUnmounted(() => {
   position: relative;
   background: var(--color-bg-primary);
   flex-direction: row;
+}
+
+.public-shell {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
 

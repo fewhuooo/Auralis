@@ -125,7 +125,7 @@ const form = ref({
 })
 
 onMounted(() => {
-  if (authStore.tokens?.accessToken) {
+  if (authStore.isAuthenticated) {
     const redirect = (route.query.redirect as string) || '/'
     router.replace(redirect)
   }

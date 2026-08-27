@@ -142,6 +142,7 @@
 - [R4 PC 全量客户端迁移实施计划（2026-08-17）](superpowers/plans/2026-08-17-r4-pc-full-migration.md)
 - [R4 Mobile / Tablet 客户端迁移实施计划（2026-08-20）](superpowers/plans/2026-08-20-r4-mobile-tablet-migration.md)
 - [AI env 默认 Provider 与 BYOK 覆盖实施计划（2026-08-21）](superpowers/plans/2026-08-21-ai-env-provider-fallback.md)
+- [PC Tauri AI 辅助阅读全流程实施计划（2026-08-24）](superpowers/plans/2026-08-24-pc-tauri-ai-assisted-reading.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)

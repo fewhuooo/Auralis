@@ -227,7 +227,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/Response"
+                  "$ref" : "#/components/schemas/SourceResponse"
                 }
               }
             }
@@ -253,7 +253,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/UpdateRequest"
+                "$ref" : "#/components/schemas/SourceUpdateRequest"
               }
             }
           },
@@ -265,7 +265,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/Response"
+                  "$ref" : "#/components/schemas/SourceResponse"
                 }
               }
             }
@@ -291,7 +291,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VersionRequest"
+                "$ref" : "#/components/schemas/SourceVersionRequest"
               }
             }
           },
@@ -836,7 +836,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ListResponse"
+                  "$ref" : "#/components/schemas/SourceListResponse"
                 }
               }
             }
@@ -853,7 +853,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/CreateRequest"
+                "$ref" : "#/components/schemas/SourceCreateRequest"
               }
             }
           },
@@ -865,7 +865,105 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/Response"
+                  "$ref" : "#/components/schemas/SourceResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete" : {
+      "post" : {
+        "tags" : [ "parsed-document-controller" ],
+        "operationId" : "complete",
+        "parameters" : [ {
+          "name" : "sourceId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "parsedDocumentId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ParsedDocumentCompleteResponse"
+                }
+              }
+            }
+          },
+          "409" : {
+            "description" : "PARSED_DOCUMENT_CONFLICT or INGESTION_REVISION_STALE",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/sources/{sourceId}/parsed-documents/upload-intents" : {
+      "post" : {
+        "tags" : [ "parsed-document-controller" ],
+        "operationId" : "createUploadIntent",
+        "parameters" : [ {
+          "name" : "sourceId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ParsedDocumentUploadIntentRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "409" : {
+            "description" : "INGESTION_REVISION_STALE",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiProblemDetails"
+                }
+              }
+            }
+          },
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ParsedDocumentUploadIntentResponse"
                 }
               }
             }
@@ -893,7 +991,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VersionRequest"
+                "$ref" : "#/components/schemas/SourceVersionRequest"
               }
             }
           },
@@ -905,7 +1003,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/Response"
+                  "$ref" : "#/components/schemas/SourceResponse"
                 }
               }
             }
@@ -933,7 +1031,7 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/VersionRequest"
+                "$ref" : "#/components/schemas/SourceVersionRequest"
               }
             }
           },
@@ -945,7 +1043,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/Response"
+                  "$ref" : "#/components/schemas/SourceResponse"
                 }
               }
             }
@@ -1353,7 +1451,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/DownloadUrlResponse"
+                  "$ref" : "#/components/schemas/AssetDownloadUrlResponse"
                 }
               }
             }
@@ -1367,7 +1465,7 @@
     "/api/assets/{id}/complete" : {
       "post" : {
         "tags" : [ "asset-controller" ],
-        "operationId" : "complete",
+        "operationId" : "complete_1",
         "parameters" : [ {
           "name" : "id",
           "in" : "path",
@@ -1383,7 +1481,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/Response"
+                  "$ref" : "#/components/schemas/AssetResponse"
                 }
               }
             }
@@ -1397,12 +1495,12 @@
     "/api/assets/upload-intents" : {
       "post" : {
         "tags" : [ "asset-controller" ],
-        "operationId" : "createUploadIntent",
+        "operationId" : "createUploadIntent_1",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/UploadIntentRequest"
+                "$ref" : "#/components/schemas/AssetUploadIntentRequest"
               }
             }
           },
@@ -1414,7 +1512,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/UploadIntentResponse"
+                  "$ref" : "#/components/schemas/AssetUploadIntentResponse"
                 }
               }
             }
@@ -2038,6 +2136,112 @@
           }
         }
       },
+      "SourceUpdateRequest" : {
+        "type" : "object",
+        "properties" : {
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "FILE", "TEXT", "URL" ]
+          },
+          "title" : {
+            "type" : "string",
+            "maxLength" : 240,
+            "minLength" : 0
+          },
+          "assetId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "originUrl" : {
+            "type" : "string",
+            "maxLength" : 2048,
+            "minLength" : 0
+          },
+          "rawText" : {
+            "type" : "string"
+          },
+          "outline" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "baseVersion", "subjectId", "title", "type" ]
+      },
+      "SourceResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "FILE", "TEXT", "URL" ]
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "assetId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "originUrl" : {
+            "type" : "string"
+          },
+          "rawText" : {
+            "type" : "string"
+          },
+          "outline" : {
+            "type" : "string"
+          },
+          "ingestionStatus" : {
+            "type" : "string",
+            "enum" : [ "AWAITING_CLIENT", "VALIDATING", "PENDING", "PARSING", "INDEXING", "READY", "FAILED" ]
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid",
+            "readOnly" : true
+          },
+          "safeErrorCode" : {
+            "type" : "string"
+          },
+          "safeErrorDetail" : {
+            "type" : "string"
+          },
+          "assetSizeBytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "deletedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
       "AiSettingsCommand" : {
         "type" : "object",
         "properties" : {
@@ -2259,6 +2463,195 @@
             "type" : "string"
           }
         }
+      },
+      "SourceCreateRequest" : {
+        "type" : "object",
+        "properties" : {
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "FILE", "TEXT", "URL" ]
+          },
+          "title" : {
+            "type" : "string",
+            "maxLength" : 240,
+            "minLength" : 0
+          },
+          "assetId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "originUrl" : {
+            "type" : "string",
+            "maxLength" : 2048,
+            "minLength" : 0
+          },
+          "rawText" : {
+            "type" : "string"
+          },
+          "outline" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "baseVersion", "subjectId", "title", "type" ]
+      },
+      "ParsedDocumentCompleteResponse" : {
+        "type" : "object",
+        "properties" : {
+          "parsedDocumentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string",
+            "enum" : [ "UPLOADING", "VALIDATING", "ACCEPTED", "REJECTED", "SUPERSEDED", "FAILED" ]
+          },
+          "generation" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionJobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }
+      },
+      "ApiProblemDetails" : {
+        "type" : "object",
+        "properties" : {
+          "type" : {
+            "type" : "string",
+            "format" : "uri"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "detail" : {
+            "type" : "string"
+          },
+          "instance" : {
+            "type" : "string"
+          },
+          "code" : {
+            "type" : "string"
+          },
+          "traceId" : {
+            "type" : "string"
+          },
+          "fieldErrors" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/FieldError"
+            }
+          },
+          "current" : { }
+        }
+      },
+      "FieldError" : {
+        "type" : "object",
+        "properties" : {
+          "field" : {
+            "type" : "string"
+          },
+          "message" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ParsedDocumentUploadIntentRequest" : {
+        "type" : "object",
+        "properties" : {
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32",
+            "maximum" : 1
+          },
+          "parserId" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          },
+          "parserVersion" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          },
+          "normalizationVersion" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          },
+          "ocrModelVersion" : {
+            "type" : "string",
+            "maxLength" : 160,
+            "minLength" : 0
+          },
+          "sourceAssetSha256" : {
+            "type" : "string",
+            "pattern" : "[0-9a-fA-F]{64}"
+          },
+          "payloadSha256" : {
+            "type" : "string",
+            "minLength" : 1,
+            "pattern" : "[0-9a-fA-F]{64}"
+          },
+          "sizeBytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "ingestionRevision", "normalizationVersion", "parserId", "parserVersion", "payloadSha256", "schemaVersion", "sizeBytes" ]
+      },
+      "ParsedDocumentUploadIntentResponse" : {
+        "type" : "object",
+        "properties" : {
+          "parsedDocumentId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "uploadUrl" : {
+            "type" : "string"
+          },
+          "headers" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "string"
+            }
+          },
+          "expiresAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "SourceVersionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "baseVersion" ]
       },
       "EventRequest" : {
         "type" : "object",
@@ -2564,7 +2957,7 @@
         },
         "required" : [ "deviceId", "deviceName", "password", "platform", "username" ]
       },
-      "DownloadUrlResponse" : {
+      "AssetDownloadUrlResponse" : {
         "type" : "object",
         "properties" : {
           "url" : {
@@ -2576,7 +2969,45 @@
           }
         }
       },
-      "UploadIntentRequest" : {
+      "AssetResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "originalName" : {
+            "type" : "string"
+          },
+          "sizeBytes" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "mimeType" : {
+            "type" : "string"
+          },
+          "sha256" : {
+            "type" : "string"
+          },
+          "uploadStatus" : {
+            "type" : "string",
+            "enum" : [ "UPLOADING", "READY", "FAILED", "ORPHANED" ]
+          },
+          "completedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
+      "AssetUploadIntentRequest" : {
         "type" : "object",
         "properties" : {
           "baseVersion" : {
@@ -2605,7 +3036,7 @@
         },
         "required" : [ "baseVersion", "mimeType", "originalName" ]
       },
-      "UploadIntentResponse" : {
+      "AssetUploadIntentResponse" : {
         "type" : "object",
         "properties" : {
           "assetId" : {
@@ -2732,9 +3163,35 @@
             "type" : "string",
             "maxLength" : 128,
             "minLength" : 0
+          },
+          "readingContext" : {
+            "$ref" : "#/components/schemas/ReadingContext"
           }
         },
         "required" : [ "content" ]
+      },
+      "ReadingContext" : {
+        "type" : "object",
+        "properties" : {
+          "currentSourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "retrievalMode" : {
+            "type" : "string",
+            "enum" : [ "AUTO" ]
+          },
+          "selectionText" : {
+            "type" : "string",
+            "maxLength" : 4000,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "currentSourceId", "retrievalMode", "subjectId" ]
       },
       "StreamingResponseBody" : { },
       "ConversationCommand" : {
@@ -2753,6 +3210,14 @@
             "type" : "string",
             "maxLength" : 128,
             "minLength" : 0
+          },
+          "purpose" : {
+            "type" : "string",
+            "enum" : [ "GENERAL", "READING_SESSION" ]
+          },
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
           }
         },
         "required" : [ "baseVersion" ]
@@ -2788,6 +3253,14 @@
           "version" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "purpose" : {
+            "type" : "string",
+            "enum" : [ "GENERAL", "READING_SESSION" ]
+          },
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
           }
         }
       },
@@ -2996,6 +3469,23 @@
           "activeSources" : {
             "type" : "integer",
             "format" : "int64"
+          }
+        }
+      },
+      "SourceListResponse" : {
+        "type" : "object",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SourceResponse"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string"
+          },
+          "hasMore" : {
+            "type" : "boolean"
           }
         }
       },

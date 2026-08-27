@@ -11,7 +11,9 @@ public record ConversationView(
         Instant createdAt,
         Instant updatedAt,
         Instant deletedAt,
-        long version) {
+        long version,
+        ConversationPurpose purpose,
+        UUID sourceId) {
 
     public ConversationView(
             UUID id,
@@ -20,7 +22,18 @@ public record ConversationView(
             Instant createdAt,
             Instant updatedAt,
             Instant deletedAt) {
-        this(id, title, messages, createdAt, updatedAt, deletedAt, 0L);
+        this(id, title, messages, createdAt, updatedAt, deletedAt, 0L, ConversationPurpose.GENERAL, null);
+    }
+
+    public ConversationView(
+            UUID id,
+            String title,
+            List<MessageView> messages,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant deletedAt,
+            long version) {
+        this(id, title, messages, createdAt, updatedAt, deletedAt, version, ConversationPurpose.GENERAL, null);
     }
 
     public ConversationView {

@@ -51,6 +51,9 @@ public class SourceEntity {
     @Column(name = "ingestion_status", nullable = false, length = 16)
     private SourceIngestionStatus ingestionStatus;
 
+    @Column(name = "ingestion_revision", nullable = false)
+    private UUID ingestionRevision;
+
     @Column(name = "safe_error_code", length = 64)
     private String safeErrorCode;
 
@@ -94,6 +97,7 @@ public class SourceEntity {
         this.rawText = rawText;
         this.outline = outline;
         this.ingestionStatus = ingestionStatus;
+        this.ingestionRevision = UUID.randomUUID();
     }
 
     @PrePersist
@@ -121,6 +125,7 @@ public class SourceEntity {
     public String getRawText() { return rawText; }
     public String getOutline() { return outline; }
     public SourceIngestionStatus getIngestionStatus() { return ingestionStatus; }
+    public UUID getIngestionRevision() { return ingestionRevision; }
     public String getSafeErrorCode() { return safeErrorCode; }
     public String getSafeErrorDetail() { return safeErrorDetail; }
     public long getVersion() { return version; }
@@ -135,7 +140,9 @@ public class SourceEntity {
             UUID assetId,
             String originUrl,
             String rawText,
-            String outline) {
+            String outline,
+            SourceIngestionStatus nextIngestionStatus,
+            boolean rotateIngestionRevision) {
         this.type = type;
         this.subjectId = subjectId;
         this.title = title;
@@ -143,13 +150,27 @@ public class SourceEntity {
         this.originUrl = originUrl;
         this.rawText = rawText;
         this.outline = outline;
-        this.ingestionStatus = SourceIngestionStatus.PENDING;
+        this.ingestionStatus = nextIngestionStatus;
+        if (rotateIngestionRevision) {
+            this.ingestionRevision = UUID.randomUUID();
+        }
         this.safeErrorCode = null;
         this.safeErrorDetail = null;
     }
 
-    public void requestReingest() {
-        ingestionStatus = SourceIngestionStatus.PENDING;
+    public void requestReingest(boolean requiresClientParsing) {
+        if (requiresClientParsing) {
+            ingestionRevision = UUID.randomUUID();
+            ingestionStatus = SourceIngestionStatus.AWAITING_CLIENT;
+        } else {
+            ingestionStatus = SourceIngestionStatus.PENDING;
+        }
+        safeErrorCode = null;
+        safeErrorDetail = null;
+    }
+
+    public void requestAcceptedReingest() {
+        ingestionStatus = SourceIngestionStatus.INDEXING;
         safeErrorCode = null;
         safeErrorDetail = null;
     }

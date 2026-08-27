@@ -26,6 +26,12 @@ public class IngestionJobEntity {
     @Column(name = "source_id", nullable = false)
     private UUID sourceId;
 
+    @Column(name = "parsed_document_id")
+    private UUID parsedDocumentId;
+
+    @Column(name = "ingestion_revision")
+    private UUID ingestionRevision;
+
     @Column(nullable = false)
     private UUID generation;
 
@@ -91,6 +97,8 @@ public class IngestionJobEntity {
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getSourceId() { return sourceId; }
+    public UUID getParsedDocumentId() { return parsedDocumentId; }
+    public UUID getIngestionRevision() { return ingestionRevision; }
     public UUID getGeneration() { return generation; }
     public IngestionJobStatus getStatus() { return status; }
     public int getAttemptCount() { return attemptCount; }
@@ -105,6 +113,11 @@ public class IngestionJobEntity {
         return status == IngestionJobStatus.PENDING
                 || status == IngestionJobStatus.PARSING
                 || status == IngestionJobStatus.INDEXING;
+    }
+
+    public void attachParsedDocument(UUID parsedDocumentId, UUID ingestionRevision) {
+        this.parsedDocumentId = parsedDocumentId;
+        this.ingestionRevision = ingestionRevision;
     }
 
     public void claim(Instant now, Instant leaseUntil) {
@@ -137,5 +150,17 @@ public class IngestionJobEntity {
         this.errorCode = errorCode;
         this.errorDetail = errorDetail;
         updatedAt = now;
+    }
+
+    public void requeueParsedDocument(UUID parsedDocumentId, UUID ingestionRevision, UUID generation) {
+        attachParsedDocument(parsedDocumentId, ingestionRevision);
+        this.generation = generation;
+        status = IngestionJobStatus.PENDING;
+        attemptCount = 0;
+        leaseUntil = null;
+        startedAt = null;
+        completedAt = null;
+        errorCode = null;
+        errorDetail = null;
     }
 }

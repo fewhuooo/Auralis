@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -67,6 +68,20 @@ class AiSourceChunkTests {
         chunkService.replace(userId, sourceId, generation, chunks, vectors);
 
         verify(pgVectorRepository).replace(eq(userId), eq(sourceId), eq(generation), eq(chunks), eq(vectors));
+        verifyNoInteractions(chunkRepository);
+    }
+
+    @Test
+    void failedGenerationValidationLeavesExistingGenerationUntouched() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID generation = UUID.randomUUID();
+        assertThatThrownBy(() -> chunkService.replace(
+                userId, sourceId, generation,
+                List.of(new TextChunk(0, "new content", 0, 11)),
+                List.of(List.of(0.0))))
+                .isInstanceOf(IllegalArgumentException.class);
+
         verifyNoInteractions(chunkRepository);
     }
 

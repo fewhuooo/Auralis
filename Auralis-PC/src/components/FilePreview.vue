@@ -25,6 +25,7 @@ const emit = defineEmits<{
   (event: 'page-change', page: number, total: number): void
   (event: 'zoom-change', state: FileViewerZoomState): void
   (event: 'rotation-change', rotation: number): void
+  (event: 'text-selected', text: string): void
 }>()
 
 const assetStore = useAssetStore()
@@ -118,7 +119,7 @@ function handleRotationChange(rotation: number): void {
 }
 
 function runRendererAction(action: (renderer: InstanceType<typeof FileViewerRenderer>) => Promise<unknown> | unknown): Promise<unknown> {
-  if (!rendererRef.value || !isRendererReady.value) {
+  if (!rendererRef.value) {
     pendingRendererActions.push(action)
     return Promise.resolve(null)
   }
@@ -126,7 +127,7 @@ function runRendererAction(action: (renderer: InstanceType<typeof FileViewerRend
 }
 
 async function flushRendererActions(): Promise<void> {
-  if (!rendererRef.value || !isRendererReady.value || pendingRendererActions.length === 0) return
+  if (!rendererRef.value || pendingRendererActions.length === 0) return
   const actions = pendingRendererActions.splice(0)
   for (const action of actions) await action(rendererRef.value)
 }
@@ -149,6 +150,11 @@ function handleRendererUnloadComplete(): void {
   isRendererReady.value = false
   pendingRendererActions.splice(0)
   emit('control-ready', false)
+}
+
+function handleSelection(): void {
+  const text = typeof window !== 'undefined' ? window.getSelection()?.toString().trim().slice(0, 4000) || '' : ''
+  if (text) emit('text-selected', text)
 }
 
 defineExpose({
@@ -189,7 +195,7 @@ watch(
       </div>
     </header>
 
-    <div class="file-preview-body" :aria-busy="isLoading || isRendererLoading">
+    <div class="file-preview-body" :aria-busy="isLoading || isRendererLoading" @mouseup="handleSelection" @keyup="handleSelection">
       <div v-if="isLoading" class="file-preview-state" role="status">
         <span class="file-preview-spinner" aria-hidden="true"></span>
         <span>正在准备预览…</span>

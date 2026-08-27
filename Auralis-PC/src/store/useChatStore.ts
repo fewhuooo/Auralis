@@ -19,8 +19,10 @@ import { isOfflineTransportFailure } from '@/services/offlineWritePolicy'
 
 export interface ChatRequestOptions {
   subjectId?: string
+  sourceId?: string
   context?: string
   topK?: number
+  selectionText?: string
 }
 
 export interface ChatSession {
@@ -33,6 +35,9 @@ export interface ChatSession {
   updatedAt?: string
   version: number
   localOnly: boolean
+  purpose: 'GENERAL' | 'READING_SESSION'
+  sourceId?: string
+  subjectId?: string
 }
 
 export interface ChatMessage {
@@ -67,6 +72,8 @@ function mapSession(view: CachedConversation, localOnly = false, localId = view.
     updatedAt: view.updatedAt,
     version: view.version ?? 0,
     localOnly: !remoteId,
+    purpose: view.purpose || 'GENERAL',
+    sourceId: view.sourceId,
   }
 }
 
@@ -81,6 +88,8 @@ function sessionValue(session: ChatSession): CachedConversation {
     updatedAt: session.updatedAt,
     deletedAt: undefined,
     messages: [],
+    purpose: session.purpose,
+    sourceId: session.sourceId,
   }
 }
 
@@ -165,6 +174,8 @@ export const useChatStore = defineStore('chat', () => {
       title: session.title,
       baseVersion: 0,
       clientRequestId: session.creationRequestId,
+      purpose: session.purpose,
+      sourceId: session.sourceId,
     } satisfies ConversationCommand)
     if (!view.id) throw new Error('Conversation response missing id')
     const remote: ChatSession = {
@@ -175,6 +186,9 @@ export const useChatStore = defineStore('chat', () => {
       version: view.version ?? session.version,
       createdAt: view.createdAt || session.createdAt,
       updatedAt: view.updatedAt || session.updatedAt,
+      purpose: view.purpose || session.purpose,
+      sourceId: view.sourceId || session.sourceId,
+      subjectId: session.subjectId,
     }
     await cacheSession(remote)
     replaceSession(remote)
@@ -241,6 +255,28 @@ export const useChatStore = defineStore('chat', () => {
       updatedAt: now,
       version: 0,
       localOnly: true,
+      purpose: 'GENERAL',
+    }
+    await cacheSession(session)
+    replaceSession(session)
+    activeSessionId.value = session.id
+    messages.value = []
+    return session.id
+  }
+
+  async function startReadingSession(sourceId: string, subjectId: string, title = '文件伴读'): Promise<string> {
+    const now = new Date().toISOString()
+    const session: ChatSession = {
+      id: uuidv7(),
+      creationRequestId: uuidv7(),
+      title: title.trim().slice(0, 60) || '文件伴读',
+      createdAt: now,
+      updatedAt: now,
+      version: 0,
+      localOnly: true,
+      purpose: 'READING_SESSION',
+      sourceId,
+      subjectId,
     }
     await cacheSession(session)
     replaceSession(session)
@@ -292,10 +328,18 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const result = await controller.run({
         conversationId: session.remoteId,
-        content: options.context ? `${options.context}\n\n${message.content}` : message.content,
-        retrievalEnabled: Boolean(options.subjectId || options.context),
+        content: message.content,
+        retrievalEnabled: Boolean(options.sourceId || options.selectionText || options.context),
         topK: options.topK ?? 8,
         clientRequestId: message.clientRequestId,
+        readingContext: options.sourceId && options.subjectId
+          ? {
+              currentSourceId: options.sourceId,
+              subjectId: options.subjectId,
+              retrievalMode: 'AUTO',
+              selectionText: options.selectionText?.slice(0, 4000),
+            }
+          : undefined,
       }, {
         onStarted: (data) => {
           const started = data as { messageId?: string } | undefined
@@ -389,6 +433,21 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function endActiveSession(): Promise<void> {
+    const session = activeSession.value
+    abortStream()
+    if (!session) {
+      clearActiveConversation()
+      return
+    }
+    try {
+      await deleteSession(session.id)
+    } finally {
+      activeSessionId.value = null
+      clearActiveConversation()
+    }
+  }
+
   function appendAssistantChunk(chunk: string): void {
     streamingContent.value += chunk
     isStreaming.value = true
@@ -414,6 +473,7 @@ export const useChatStore = defineStore('chat', () => {
     loadSessions,
     loadMessages,
     startNewSession,
+    startReadingSession,
     appendUserMessage,
     sendMessage,
     recoverOfflineSessions,
@@ -422,5 +482,6 @@ export const useChatStore = defineStore('chat', () => {
     appendAssistantChunk,
     finalizeAssistantMessage,
     deleteSession,
+    endActiveSession,
   }
 })

@@ -69,6 +69,48 @@ class OpenApiArtifactTests {
         assertThat(document.at("/paths/~1api~1tasks~1{id}/delete/responses/204").isObject()).isTrue();
     }
 
+    @Test
+    void documentsParsedDocumentContractAndReadOnlySourceRevision() throws Exception {
+        JsonNode document = openApiDocument();
+
+        JsonNode uploadIntent = document.at("/paths/~1api~1sources~1{sourceId}~1parsed-documents~1upload-intents/post");
+        JsonNode complete = document.at("/paths/~1api~1sources~1{sourceId}~1parsed-documents~1{parsedDocumentId}~1complete/post");
+        assertThat(uploadIntent.isObject()).isTrue();
+        assertThat(complete.isObject()).isTrue();
+        assertThat(complete.at("/responses/200").isObject()).isTrue();
+        assertThat(uploadIntent.at("/responses/409/description").asText()).contains("INGESTION_REVISION_STALE");
+        assertThat(complete.at("/responses/409/description").asText())
+                .contains("PARSED_DOCUMENT_CONFLICT")
+                .contains("INGESTION_REVISION_STALE");
+
+        JsonNode intentSchema = document.at("/components/schemas/ParsedDocumentUploadIntentRequest");
+        assertThat(intentSchema.isObject()).isTrue();
+        assertThat(intentSchema.at("/required").toString())
+                .doesNotContain("ocrModelVersion");
+
+        JsonNode sourceSchema = document.at("/components/schemas/SourceResponse");
+        assertThat(sourceSchema.isObject()).isTrue();
+        assertThat(sourceSchema.at("/properties/ingestionRevision/readOnly").asBoolean()).isTrue();
+        assertThat(sourceSchema.at("/properties/ingestionStatus/enum").toString())
+                .contains("AWAITING_CLIENT")
+                .contains("VALIDATING");
+    }
+
+    @Test
+    void documentsReadingContextAndScopedConversationFields() throws Exception {
+        JsonNode document = openApiDocument();
+
+        JsonNode message = document.at("/components/schemas/AiMessageCommand");
+        assertThat(message.at("/properties/readingContext").isObject()).isTrue();
+        assertThat(document.at("/components/schemas/ReadingContext/properties/currentSourceId").isObject()).isTrue();
+        assertThat(document.at("/components/schemas/ReadingContext/properties/selectionText/maxLength").asInt())
+                .isEqualTo(4000);
+        assertThat(document.at("/components/schemas/ConversationCommand/properties/purpose/enum").toString())
+                .contains("READING_SESSION");
+        assertThat(document.at("/components/schemas/ConversationCommand/properties/sourceId").isObject()).isTrue();
+        assertThat(document.at("/components/schemas/ConversationView/properties/purpose").isObject()).isTrue();
+    }
+
     private JsonNode openApiDocument() throws Exception {
         String body = mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

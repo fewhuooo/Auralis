@@ -6,9 +6,9 @@ import {
   validateUploadFile,
 } from '@/utils/filePreview'
 
-export type UploadIntentRequest = components['schemas']['UploadIntentRequest']
-export type UploadIntentResponse = components['schemas']['UploadIntentResponse']
-export type DownloadUrlResponse = components['schemas']['DownloadUrlResponse']
+export type UploadIntentRequest = components['schemas']['AssetUploadIntentRequest']
+export type UploadIntentResponse = components['schemas']['AssetUploadIntentResponse']
+export type DownloadUrlResponse = components['schemas']['AssetDownloadUrlResponse']
 
 export interface AssetView {
   id?: string

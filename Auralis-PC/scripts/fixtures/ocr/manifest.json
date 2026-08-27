@@ -1,0 +1,35 @@
+{
+  "protocolVersion": 1,
+  "fixtures": [
+    {
+      "id": "clear-zh",
+      "input": "clear-zh.png",
+      "language": "zh-CN",
+      "expectedTextSha256": "bfb1897c0a5e8f0c01282ff08d4bb83e639cbf297eca5ce75ef7864c90ef866c"
+    },
+    {
+      "id": "mixed-zh-en",
+      "input": "mixed-zh-en.png",
+      "language": "zh-CN,en",
+      "expectedTextSha256": "4295ba2ff55e32ce5597a11d5ff8e8c1f36dd5f84cce9bfff856719371b5af45"
+    },
+    {
+      "id": "rotated",
+      "input": "rotated.png",
+      "language": "zh-CN",
+      "expectedTextSha256": "bfb1897c0a5e8f0c01282ff08d4bb83e639cbf297eca5ce75ef7864c90ef866c"
+    },
+    {
+      "id": "low-contrast",
+      "input": "low-contrast.png",
+      "language": "zh-CN",
+      "expectedTextSha256": "434c966c064820db770b6d4ca68f92509c3c5ff5463f226453a4cdcf0cd7b3fa"
+    },
+    {
+      "id": "scanned-pdf",
+      "input": "scanned-pdf-page-001.png",
+      "language": "zh-CN",
+      "expectedTextSha256": "6a86c09c5488c68a30d56e1115c5383397c79976a4f302ae7319d1380b576334"
+    }
+  ]
+}

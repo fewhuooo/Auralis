@@ -15,6 +15,9 @@ import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.ai.retrieval.SourceChunkService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.source.SourceIngestionStatus;
+import com.auralis.app.source.ParsedDocumentReadView;
+import com.auralis.app.source.ParsedDocumentService;
+import com.auralis.app.source.ParsedDocumentValidator;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.source.SourceType;
 import com.auralis.app.source.SourceView;
@@ -36,6 +39,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -55,6 +59,8 @@ class AiIngestionWorkerTests {
     private EmbeddingProviderRegistry embeddingProviderRegistry;
     @Mock
     private SourceChunkService chunkService;
+    @Mock
+    private ParsedDocumentService parsedDocumentService;
     @Mock
     private AuralisProperties properties;
     @Mock
@@ -76,7 +82,7 @@ class AiIngestionWorkerTests {
         when(aiProperties.ingestionMaxAttempts()).thenReturn(3);
         worker = new IngestionWorker(
                 jobRepository, jobService, sourceService, List.of(parser), settingsService,
-                embeddingProviderRegistry, chunkService, clock, properties);
+                embeddingProviderRegistry, chunkService, parsedDocumentService, clock, properties);
     }
 
     @Test
@@ -133,6 +139,70 @@ class AiIngestionWorkerTests {
 
         verify(chunkService).replace(eq(userId), eq(sourceId), eq(generation), anyList(), anyList());
         assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.READY);
+    }
+
+    @Test
+    void acceptedParsedDocumentJobBypassesOriginalFileParser() {
+        UUID parsedDocumentId = UUID.randomUUID();
+        UUID revision = UUID.randomUUID();
+        IngestionJobEntity job = new IngestionJobEntity(
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
+        job.attachParsedDocument(parsedDocumentId, revision);
+        job.claim(clock.instant(), clock.instant().plusSeconds(300));
+        SourceView source = new SourceView(
+                sourceId, UUID.randomUUID(), SourceType.FILE, "scan.pdf", UUID.randomUUID(), null, null, null,
+                SourceIngestionStatus.INDEXING, revision, null, null, 0, clock.instant(), clock.instant(), null, null);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(parsedDocumentService.readAccepted(userId, sourceId, parsedDocumentId))
+                .thenReturn(new ParsedDocumentReadView(
+                        parsedDocumentId, sourceId, revision, generation,
+                        List.of(new ParsedDocumentValidator.ValidatedBlock(0, "page", "OCR text"))));
+        configureEmbeddingProvider();
+        when(sourceService.markIndexing(userId, sourceId)).thenReturn(source);
+        when(sourceService.markReady(userId, sourceId)).thenReturn(source);
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(parsedDocumentService).readAccepted(userId, sourceId, parsedDocumentId);
+        verifyNoInteractions(parser);
+        verify(chunkService).replace(eq(userId), eq(sourceId), eq(generation), anyList(), anyList());
+        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.READY);
+    }
+
+    @Test
+    void staleParsedDocumentJobFailsWithoutChangingCurrentSourceState() {
+        UUID parsedDocumentId = UUID.randomUUID();
+        UUID jobRevision = UUID.randomUUID();
+        UUID currentRevision = UUID.randomUUID();
+        IngestionJobEntity job = new IngestionJobEntity(
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
+        job.attachParsedDocument(parsedDocumentId, jobRevision);
+        job.claim(clock.instant(), clock.instant().plusSeconds(300));
+        SourceView source = new SourceView(
+                sourceId, UUID.randomUUID(), SourceType.FILE, "scan.pdf", UUID.randomUUID(), null, null, null,
+                SourceIngestionStatus.AWAITING_CLIENT, currentRevision, null, null, 0,
+                clock.instant(), clock.instant(), null, null);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+
+        assertThat(worker.processNext()).isTrue();
+
+        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
+        assertThat(job.getErrorCode()).isEqualTo("INGESTION_REVISION_STALE");
+        verify(sourceService).requireActiveSource(userId, sourceId);
+        verify(sourceService, org.mockito.Mockito.never()).markFailed(any(), any(), any(), any());
+        verifyNoInteractions(parsedDocumentService, chunkService, parser);
+    }
+
+    private void configureEmbeddingProvider() {
+        EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
+        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW))
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.SILICONFLOW, "embedding-model",
+                        new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of(vector())));
     }
 
     private IngestionJobEntity claimedJob(int attempts) {

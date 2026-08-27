@@ -6,8 +6,10 @@ import type {
 } from '@/types/api'
 import {
   createVersionedLocalSchema,
+  documentProcessingJobFromRow,
   mutationFromRow,
   resourceFromRow,
+  type DocumentProcessingJobRow,
   type LocalMutationRow,
   type LocalResourceRow,
   type LocalSqlDatabase,
@@ -18,6 +20,7 @@ import {
   type LegacyUnassignedBackup,
   type LocalStorageLike,
 } from '@/services/legacyLocalData'
+import { DOCUMENT_JOB_PHASES, type CreateDocumentProcessingJobInput, type DocumentJobPhase, type DocumentJobTransitionOptions, type DocumentProcessingJob } from '@/types/documentProcessing'
 
 export type LocalResourceKey = { resourceType: string; resourceId: string }
 
@@ -512,6 +515,222 @@ export class LocalRepository {
 
   getLegacyBackup(): LegacyUnassignedBackup | null {
     return getLegacyUnassignedBackup(this.storage)
+  }
+}
+
+const DOCUMENT_JOB_TRANSITIONS: Record<DocumentJobPhase, readonly DocumentJobPhase[]> = {
+  QUEUED: ['DOWNLOADING_SOURCE', 'EXTRACTING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
+  DOWNLOADING_SOURCE: ['EXTRACTING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
+  EXTRACTING: ['OCR_RUNNING', 'PACKAGING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
+  OCR_RUNNING: ['PACKAGING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
+  PACKAGING: ['UPLOADING', 'FAILED_LOCAL'],
+  UPLOADING: ['SERVER_VALIDATING', 'PAUSED_NETWORK', 'FAILED_SERVER'],
+  SERVER_VALIDATING: ['SERVER_INDEXING', 'UPLOADING', 'FAILED_SERVER'],
+  SERVER_INDEXING: ['READY', 'UPLOADING', 'FAILED_SERVER'],
+  READY: [],
+  FAILED_LOCAL: ['QUEUED'],
+  FAILED_SERVER: ['QUEUED'],
+  PAUSED_NETWORK: ['QUEUED', 'DOWNLOADING_SOURCE', 'UPLOADING', 'FAILED_LOCAL'],
+}
+
+interface DocumentJobRepositoryOptions {
+  storage?: LocalStorageLike
+  sql?: LocalSqlDatabase
+  now?: () => string
+}
+
+function documentJobClone(job: DocumentProcessingJob): DocumentProcessingJob {
+  return clone(job)
+}
+
+function documentJobStorage(): LocalStorageLike {
+  if (typeof window !== 'undefined' && window.localStorage) return window.localStorage
+  return createMemoryStorage()
+}
+
+function documentJobKey(userId: string, deviceId: string, version = 5): string {
+  return `auralis:v${version}:document-jobs:${encodePart(userId)}:${encodePart(deviceId)}`
+}
+
+export class DocumentProcessingJobRepository {
+  readonly userId: string
+  readonly deviceId: string
+
+  private readonly storage: LocalStorageLike
+  private readonly sql?: LocalSqlDatabase
+  private readonly now: () => string
+  private sqlReady: Promise<void> | null = null
+
+  constructor(userId: string, deviceId: string, options: DocumentJobRepositoryOptions = {}) {
+    if (!userId.trim()) throw new Error('DocumentProcessingJobRepository requires a userId')
+    if (!deviceId.trim()) throw new Error('DocumentProcessingJobRepository requires a deviceId')
+    if (options.sql && options.storage) throw new Error('DocumentProcessingJobRepository accepts either sql or storage, not both')
+    this.userId = userId
+    this.deviceId = deviceId
+    this.sql = options.sql
+    this.storage = options.storage ?? documentJobStorage()
+    this.now = options.now ?? (() => new Date().toISOString())
+  }
+
+  private async ensureSql(): Promise<void> {
+    if (!this.sql) return
+    if (!this.sqlReady) this.sqlReady = createVersionedLocalSchema(this.sql)
+    await this.sqlReady
+  }
+
+  private readBrowserJobs(): DocumentProcessingJob[] {
+    const currentKey = documentJobKey(this.userId, this.deviceId)
+    let raw = this.storage.getItem(currentKey)
+    let migrated = false
+    if (!raw) {
+      raw = this.storage.getItem(documentJobKey(this.userId, this.deviceId, 4))
+      migrated = Boolean(raw)
+    }
+    if (!raw) {
+      raw = this.storage.getItem(documentJobKey(this.userId, this.deviceId, 3))
+      migrated = Boolean(raw)
+    }
+    if (!raw) return []
+    try {
+      const jobs = JSON.parse(raw) as unknown
+      if (!Array.isArray(jobs)) return []
+      const normalized = jobs.map((job) => ({
+        ...(job as Record<string, unknown>),
+        ingestionRevision: String((job as Record<string, unknown>).ingestionRevision ?? ''),
+        payloadReceipt: (job as Record<string, unknown>).payloadReceipt ?? null,
+      })) as DocumentProcessingJob[]
+      if (migrated) this.storage.setItem(currentKey, JSON.stringify(normalized))
+      return normalized
+    } catch {
+      return []
+    }
+  }
+
+  private writeBrowserJobs(jobs: DocumentProcessingJob[]): void {
+    this.storage.setItem(documentJobKey(this.userId, this.deviceId), JSON.stringify(jobs))
+  }
+
+  async create(input: CreateDocumentProcessingJobInput): Promise<DocumentProcessingJob> {
+    if (!input.jobId.trim() || !input.sourceId.trim() || !input.ingestionRevision.trim()) {
+      throw new Error('DOCUMENT_JOB_INPUT_INVALID')
+    }
+    const createdAt = this.now()
+    const job: DocumentProcessingJob = {
+      jobId: input.jobId,
+      userId: this.userId,
+      deviceId: this.deviceId,
+      sourceId: input.sourceId,
+      ingestionRevision: input.ingestionRevision,
+      phase: 'QUEUED',
+      attempt: 0,
+      checkpoint: { pageNumber: 0, blockOrdinal: 0 },
+      payloadCacheId: null,
+      payloadReceipt: null,
+      errorCode: null,
+      errorDetail: null,
+      createdAt,
+      updatedAt: createdAt,
+    }
+    if (this.sql) {
+      await this.ensureSql()
+      const duplicate = await this.sql.select<{ job_id: string }>(
+        `SELECT job_id FROM document_processing_jobs
+         WHERE user_id = $1 AND device_id = $2 AND source_id = $3 AND ingestion_revision = $4`,
+        [this.userId, this.deviceId, input.sourceId, input.ingestionRevision],
+      )
+      if (duplicate[0]) throw new Error('DOCUMENT_JOB_DUPLICATE_REVISION')
+      await this.sql.execute(
+        `INSERT INTO document_processing_jobs
+          (job_id, user_id, device_id, source_id, ingestion_revision, phase, attempt,
+          checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
+           error_code, error_detail, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        [job.jobId, job.userId, job.deviceId, job.sourceId, job.ingestionRevision, job.phase, job.attempt,
+          job.checkpoint.pageNumber, job.checkpoint.blockOrdinal, null, null, null, null, null, job.createdAt, job.updatedAt],
+      )
+      return job
+    }
+    const jobs = this.readBrowserJobs()
+    if (jobs.some((existing) => existing.sourceId === job.sourceId && existing.ingestionRevision === job.ingestionRevision)) {
+      throw new Error('DOCUMENT_JOB_DUPLICATE_REVISION')
+    }
+    jobs.push(job)
+    this.writeBrowserJobs(jobs)
+    return documentJobClone(job)
+  }
+
+  async get(jobId: string): Promise<DocumentProcessingJob | null> {
+    if (this.sql) {
+      await this.ensureSql()
+      const rows = await this.sql.select<DocumentProcessingJobRow>(
+        `SELECT job_id, user_id, device_id, source_id, ingestion_revision, phase, attempt,
+                checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
+                error_code, error_detail, created_at, updated_at
+         FROM document_processing_jobs WHERE job_id = $1 AND user_id = $2 AND device_id = $3`,
+        [jobId, this.userId, this.deviceId],
+      )
+      return rows[0] ? documentProcessingJobFromRow(rows[0]) : null
+    }
+    const found = this.readBrowserJobs().find((job) => job.jobId === jobId)
+    return found ? documentJobClone(found) : null
+  }
+
+  async list(): Promise<DocumentProcessingJob[]> {
+    if (this.sql) {
+      await this.ensureSql()
+      const rows = await this.sql.select<DocumentProcessingJobRow>(
+        `SELECT job_id, user_id, device_id, source_id, ingestion_revision, phase, attempt,
+                checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
+                error_code, error_detail, created_at, updated_at
+         FROM document_processing_jobs WHERE user_id = $1 AND device_id = $2 ORDER BY updated_at ASC, job_id ASC`,
+        [this.userId, this.deviceId],
+      )
+      return rows.map(documentProcessingJobFromRow)
+    }
+    return this.readBrowserJobs().sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.jobId.localeCompare(right.jobId)).map(documentJobClone)
+  }
+
+  async transition(jobId: string, phase: DocumentJobPhase, options: DocumentJobTransitionOptions = {}): Promise<DocumentProcessingJob> {
+    if (!DOCUMENT_JOB_PHASES.includes(phase)) throw new Error('DOCUMENT_JOB_PHASE_INVALID')
+    const current = await this.get(jobId)
+    if (!current) throw new Error('DOCUMENT_JOB_NOT_FOUND')
+    if (!DOCUMENT_JOB_TRANSITIONS[current.phase].includes(phase)) throw new Error('DOCUMENT_JOB_ILLEGAL_TRANSITION')
+    const checkpoint = options.checkpoint ?? current.checkpoint
+    const updatedAt = this.now()
+    const next: DocumentProcessingJob = {
+      ...current,
+      phase,
+      attempt: options.attempt ?? current.attempt,
+      checkpoint,
+      payloadCacheId: options.payloadCacheId === undefined ? current.payloadCacheId : options.payloadCacheId,
+      payloadReceipt: options.payloadReceipt === undefined ? current.payloadReceipt : options.payloadReceipt,
+      errorCode: options.errorCode === undefined ? current.errorCode : options.errorCode,
+      errorDetail: options.errorDetail === undefined ? current.errorDetail : options.errorDetail,
+      updatedAt,
+    }
+    if (this.sql) {
+      await this.ensureSql()
+      await this.sql.execute(
+        `UPDATE document_processing_jobs
+         SET phase = $1, attempt = $2, checkpoint_page = $3, checkpoint_ordinal = $4,
+             checkpoint_json = $5, payload_cache_id = $6, payload_receipt_json = $7, error_code = $8,
+             error_detail = $9, updated_at = $10
+         WHERE job_id = $11 AND user_id = $12 AND device_id = $13 AND phase = $14`,
+        [next.phase, next.attempt, checkpoint.pageNumber, checkpoint.blockOrdinal,
+          checkpoint.parserState ? JSON.stringify(checkpoint) : null, next.payloadCacheId,
+          next.payloadReceipt ? JSON.stringify(next.payloadReceipt) : null,
+          next.errorCode, next.errorDetail, next.updatedAt, jobId, this.userId, this.deviceId, current.phase],
+      )
+      const persisted = await this.get(jobId)
+      if (!persisted || persisted.phase !== phase) throw new Error('DOCUMENT_JOB_CONFLICT')
+      return persisted
+    }
+    const jobs = this.readBrowserJobs()
+    const index = jobs.findIndex((job) => job.jobId === jobId)
+    if (index < 0) throw new Error('DOCUMENT_JOB_NOT_FOUND')
+    jobs[index] = next
+    this.writeBrowserJobs(jobs)
+    return documentJobClone(next)
   }
 }
 

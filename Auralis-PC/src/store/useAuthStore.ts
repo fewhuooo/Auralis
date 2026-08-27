@@ -63,7 +63,7 @@ export const useAuthStore = defineStore(
     })
 
     const username = computed(() => user.value?.displayName || user.value?.username || null)
-    const isAuthenticated = computed(() => Boolean(tokens.value?.accessToken && user.value?.id))
+    const isAuthenticated = computed(() => Boolean(tokens.value?.accessToken && tokens.value?.refreshToken && user.value?.id))
 
     function setSession(result: AuthResult | null | undefined): void {
       if (!result || !result.user || !result.tokens) {

@@ -1,12 +1,12 @@
 # PC 前端模块
 
-更新时间：2026-08-23
+更新时间：2026-08-26
 
 文档状态：现行
 
 权威范围：`Auralis-PC` 的当前依赖、路由、页面、Store、API 边界、Tauri 集成、构建方式与限制
 
-事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-20 当前代码
+事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-24 当前代码
 
 ## 模块定位
 
@@ -66,7 +66,7 @@ Auralis-PC/
 
 ## 登录守卫现状
 
-`src/router/index.ts` 的 `beforeEach` 使用 `useAuthStore` 会话和 `resolveAuthRedirect` 处理公开/受保护路由。当前结论：
+`src/router/index.ts` 的 `beforeEach` 使用 `useAuthStore` 完整会话和 `resolveAuthRedirect` 处理公开/受保护路由。`App.vue` 仅在受保护路由且存在完整 user+access token 会话时挂载侧栏、头部和认证壳；`/login` 使用独立公共布局，`AppSidebar` 的学科加载也有认证判断与异常兜底，避免过期/残留会话的 401 刷新异常造成白屏。当前结论：
 
 - 未登录访问受保护页面会重定向到 `/login`，已有会话访问 `/login` 会回到 `/`。
 - Server 受保护 API 仍必须验证 access token。
@@ -102,6 +102,7 @@ Auralis-PC/
 | `api/aiClient.ts` | AI 设置、会话、带单次 401 刷新且复用同一请求 ID 的 SSE 消息流与建议接口 |
 | `api/useAuthApi.ts` | 登录、注册、刷新、会话列表与撤销 |
 | `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
+| `api/useSourceApi.ts` | Source typed CRUD/reingest，以及 ParsedDocument upload-intent/complete |
 | `api/useStatsApi.ts` | 概览与周统计 |
 
 Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件登记的本地优先副本也保留上传完成时的 `asset.sizeBytes`，避免 Source 同步完成前短暂显示 `0.0 MB`。文件预览仍通过 Asset download-url 获取短期签名地址。
@@ -117,7 +118,7 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 `openapi-typescript@7.13.0`。从仓库根目录执行
 `scripts/generate-openapi-sdk.ps1` 可同步 PC 和 Mobile；执行
 `scripts/check-openapi.ps1` 可校验运行时 OpenAPI 与两端生成文件。当前生成 SDK
-只冻结类型和请求边界，现有页面/API 仍需按 R4 计划逐模块迁移，不能把类型检查通过写成前后端联调完成。
+已冻结 Source `ingestionRevision/ingestionStatus` 与 ParsedDocument upload-intent/complete 类型和请求边界；PC 上传协调器与页面业务联调仍需按本计划继续，不能把类型检查通过写成前后端联调完成。
 
 ## 本地数据边界
 
@@ -128,14 +129,22 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
 | `services/localDb.ts` | 尚未迁移 Store 的兼容 facade；新 Store 不得新增对旧方法、旧字段或全局业务 key 的依赖 |
 
-R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用完整 `triggerSync`（push 后 pull），同步周期期间新 mutation 会触发后续一轮。R4-08/09 已将 Subject、Source、KnowledgeBlock、Asset、Task、Review、Stats、Chat、Pomodoro 主路径切换到 `typed API → repository → view model`。核心资源 CREATE 先以稳定 `resourceId/clientMutationId` 写入 outbox，只有明确离线或传输失败才排队，5xx 不伪装成离线。Chat 的 `CONVERSATION` 和本地专用 `CHAT_MESSAGE` 行保存 `creationRequestId/clientRequestId`，上线后依会话与消息顺序恢复；`CHAT_MESSAGE` 不进入 Sync 推送。`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
+R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`deviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用完整 `triggerSync`（push 后 pull），同步周期期间新 mutation 会触发后续一轮。`DocumentProcessingRuntime` 在挂载 Source 前先执行一次 `triggerSync`，确保上次上传留下的 SOURCE outbox 在解析调度前送达服务端。R4-08/09 已将 Subject、Source、KnowledgeBlock、Asset、Task、Review、Stats、Chat、Pomodoro 主路径切换到 `typed API → repository → view model`。核心资源 CREATE 先以稳定 `resourceId/clientMutationId` 写入 outbox，只有明确离线或传输失败才排队，5xx 不伪装成离线。Chat 的 `CONVERSATION` 和本地专用 `CHAT_MESSAGE` 行保存 `creationRequestId/clientRequestId`，上线后依会话与消息顺序恢复；`CHAT_MESSAGE` 不进入 Sync 推送。`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
+
+## C4/C5 文档处理与上传边界
+
+C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `ParsedDocumentUploadCoordinator`；Rust 通过 `document_upload_put` 对 cache 做解密流式 PUT，PC 只传 phase/receipt，不接触正文或持久化签名 URL。C5 `SourceJobScheduler` 已接入 FILE Source：Source Store 只对服务端 `AWAITING_CLIENT + ingestionRevision` 调度，优先复用当前上传会话的 File，没有本地输入时通过 AssetStore 的 owner-scoped download adapter 获取临时输入；每次处理核对 Asset SHA，旧 revision 的 job 被 supersede，TEXT/URL 不进入该队列。
+
+本地 schema v5 的任务行持久化完整 `DocumentCacheReceipt` 元数据，以便应用重启后从 `PACKAGING/UPLOADING/PAUSED_NETWORK` 续传，不重复 OCR 或 package；签名 URL、headers、原始文件路径不进入 SQLite/localStorage。`services/documentProcessing/runtime.ts` 已由 App 在 Tauri 登录后组装并启动：复用全局隐藏 `BackgroundParserHost`，连接 PDF.js/Office bridge、Tauri OCR、Rust package/cache、ParsedDocument upload coordinator、用户/设备 job repository 和 Source scheduler；启动时先 flush 一次本地同步队列，随后加载 Source；sync/online 事件会重新加载 Source 并恢复 pending jobs，登出时解绑。服务端 complete 接受后删除加密 cache，下载 adapter 的临时输入由 scheduler 清理；实际 Tauri 私有目录、MinIO/Server 联调和 GUI 任务中心仍待人工验收。
 
 ## 页面职责
 
 - Dashboard：时间线、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。待办条目在窄宽下优先保留任务名称，过长的学科徽标允许收缩并以省略号显示。
 - SubjectHall：学科卡片、搜索、创建、编辑、删除和进入工作区；编辑表单保留服务端 `version` 并以 `baseVersion` 提交，确保名称、描述和图标修改可以保存；新用户注册后没有自动学科时展示真实空状态，历史遗留“未分类”学科也可正常删除。
 - SubjectWorkspace：文件、知识、任务、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。登记文件必须先选择文件、名称和归档学科，上传期间按钮显示“上传中…”并防重复提交；直传或 Source 创建失败会在弹层保留可重试状态并显示通知，成功后刷新当前学科文件列表。文件选择器与拖拽入口共用 `src/utils/filePreview.ts` 的能力注册表，Excel/未知格式和超过 50 MB 的文件在创建 upload intent 前拦截；文件栏只显示真实 Source 文件，文件行删除操作默认悬停显示、键盘 focus-visible 保持可见，确认后执行软删除；本地仍有 `SOURCE/CREATE` outbox 时排队有序删除，知识块作为独立的总结/知识表面；删除取消、未登录、版本冲突、资源不存在和服务端异常均给出明确提示；选中文件后由 `FilePreview` 直接承载签名 URL、下载、加载/失败状态，当前优先使用自托管 File Viewer 渲染 DOC/DOCX、PPT/PPTX、PDF、图片及文本。学科页保持一个统一预览面板：现有文件名顶栏承载缩放与旋转，页码/总页数和前后页在预览底部独立占位；搜索、打印、下载、HTML 导出和主题切换不进入预览工具栏。
-- 左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。File Viewer 仅代表代码与构建已接入，DOC/DOCX 真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收；预览顶部/底部栏使用轻微投影和实体按钮，缩放与旋转各自放入同款简单圆角控制组，缩放显示为 `− / 倍率 / ＋`，旋转显示为左旋线条图标、角度、右旋线条图标，文档上下安全留白收窄为约 12–16px。宿主不再叠加会遮挡正文的“正在渲染文档”遮罩，首次宽度适配只持续到用户第一次交互；FilePreview 与 renderer 两级队列都等待 ready 后执行，缩放与 PDF/图片旋转统一走 File Viewer `applyViewState`，图片 renderer 自带旋转栏隐藏，不支持视图旋转的 Office renderer 才使用外层回退。若真实文件兼容性不达标，保持 `FilePreview` 合约不变并替换为服务端转 PDF 渲染器。
+- PC 阅读辅助当前已接入 `READING_SESSION` 生命周期、`readingContext` 当前 Source 检索与同学科确定性升级；未 READY 文件的 AI 操作只提示前往 `/profile` 查看解析进度。文件行通过 `DocumentProcessingDot` 显示所有非 READY 状态（失败保留红色静态点），Profile 的 `DocumentProcessingCenter` 展示阶段、内容块进度、错误、重试和取消。预览原生选中文本最多 4000 字，可执行解释/追问或打开 `KnowledgeBlockEditor`，知识块只有确认后才写入当前 subject/source。
+- 左侧学科大纲为当前静态交互原型，支持内联新增和限定范围拖拽，尚未接入持久化或接口。File Viewer 仅代表代码与构建已接入，DOC/DOCX 真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收；预览顶部/底部栏使用轻微投影和实体按钮，缩放与旋转各自放入同款简单圆角控制组，缩放显示为 `− / 倍率 / ＋`，旋转显示为左旋线条图标、角度、右旋线条图标，文档上下安全留白收窄为约 12–16px。宿主不再叠加会遮挡正文的“正在渲染文档”遮罩，首次宽度适配只持续到用户第一次交互；`FilePreview` 与 renderer 仅在组件 ref 尚未建立时暂存动作，基础 Vue 组件通过 `withFullViewerOptions` 接入 full preset，缩放调用 `zoomIn`/`zoomOut`/`resetZoom`，PDF/图片旋转走 `applyViewState`，图片 renderer 自带旋转栏隐藏，不支持视图旋转的 Office renderer 才使用外层回退。学习文件列表行不显示装饰性文件类型图案，直接从文件名开始布局。若真实文件兼容性不达标，保持 `FilePreview` 合约不变并替换为服务端转 PDF 渲染器。
+- File Viewer 交互补充：不以 `load-complete` 作为执行硬门禁；同时避开 `@file-viewer/vue3-full@2.3.2` 包装组件在 Vue 父级 ref 上丢失公开方法的问题，改由 `@file-viewer/vue3@2.3.0` 基础组件承载相同 full 配置。Chrome 合成图片已验证缩放尺寸和 90° 旋转发生实际变化；真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收。
 - Asset：上传、处理状态和资料组织；资产树的“全部任务”和各学科任务目录均来自 `useTaskStore` 的当前用户任务，不注入静态演示任务。任务按 `未分布`、`未完成`、`已完成` 三个并列分组，截止时间存在时按截止时间排序；任务完成切换回写 Task API/repository。任务编辑器不再提供认知负荷按钮，改为 30 分钟步进的预计用时，并可保存标题、备注、截止日期和时长。`/asset?focus=unassigned-tasks` 会展开并聚焦“未分布”。
 - Dashboard/Timeline：排期和任务时间管理，排期队列只展示有 `dueAt`、无 `scheduledAt` 且未完成/未取消的任务；首页和独立时间轴统一展示当前/所选日期所在的完整自然周（周日至周六），避免只保存 `dayCode` 时跨周解析到下一周。首页日期格在日数字上方显示 `Sun` 至 `Sat` 英文星期缩写，选中日期使用固定约 `36px × 36px` 圆形绿色背景，顶栏以“时间轴 · X月”显示月份。日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记；已排期任务拖动到新槽位时以目标槽位覆盖旧 `scheduledAt`。时间轴“导入任务”进入资产库未分布分组，任务变化通过 `useTaskStore` 写入 API/repository mutation。
 - Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
@@ -147,7 +156,10 @@ R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离�
 
 - JavaScript API、CLI 和 Rust crate 当前统一为 `2.11.1`。
 - 使用 `@tauri-apps/plugin-sql` 提供 SQL 插件能力。
-- 默认 capability 只启用 `core:default`、`log:default` 和 `sql:default`；当前未启用 shell/http/fs。Vite 开发代理只接受 `VITE_DEV_API_TARGET` 与 `VITE_DEV_WS_TARGET`，Tauri 运行时 API/WS base 必须显式配置。
+- 默认 capability 只启用 `core:default`、`log:default` 和 `sql:default`；当前未启用 shell/http/fs。Vite 开发代理只接受 `VITE_DEV_API_TARGET` 与 `VITE_DEV_WS_TARGET`，Tauri 运行时 API/WS base 必须显式配置。Vite 显式注入 `vue/compiler-sfc`，并忽略 `public/file-viewer/**` 生成资源的开发监听，避免 File Viewer 首次复制触发 `@vitejs/plugin-vue` 空 compiler HMR 竞态。SQLite 初始化同时识别 Tauri v2 的 `__TAURI_INTERNALS__` 和旧 `__TAURI__` 全局。Debug Tauri 的日志插件只写 stdout，避免已有日志文件阻止窗口启动。
+- AI 辅助阅读的 OCR 仅随 PC Tauri 打包：`src-tauri` 通过 bounded commands 管理 target-triple `auralis-ocr` externalBin，固定 RapidOCR/ONNX 模型与 manifest 从 `../ocr-sidecar` 作为 resources 进入安装包；前端不接受可执行文件、模型路径或任意 shell/fs/http 参数。
+- G1 protocol、G2 sidecar engine、G3 Rust supervisor 和 G4 MSI bundle 已有自动测试/产物证据；最终 MSI 通过 verifier，五组离线 OCR baseline 已记录。临时 all-users 安装因宿主 Error 1925 未完成，安装后 GUI/OCR 仍属于 R2 验收，不写成已通过。
+- G5 已提供固定尺寸、不可 `display:none` 的 `BackgroundParserHost` 与 `FileViewerParserBridge`，复用 File Viewer 的文本块/锚点 API，并在空结构时提供 bitmap fallback/`OFFICE_TEXT_UNAVAILABLE`。DOC/DOCX/PPT/PPTX fixture matrix 3/3 通过，其中旧式 PPT 由 Apache POI 生成真实 OLE 文件；实际 File Viewer/Tauri 运行时的四种文件提取、回退和稳定失败结论仍需验收。G6 `DocumentParser` 已按页分类 text-layer/扫描 PDF，串行调用 OCR，支持 Office direct/fallback，归一化文本并以 sink 背压输出 bounded block；core 7/7 与真实 PDF 2/2 通过。
 - 目录从 StudyCore 重命名后，旧绝对路径可能残留在 Rust 构建缓存；仅在确认属于缓存时执行 `cargo clean`。
 - `npm.cmd run tauri -- build --no-bundle` 已验证 Rust/桌面应用本体生成；完整 MSI bundling 曾因宿主 `拒绝访问 (os error 5)` 阻断。Web/Tauri 本体构建通过不能证明桌面权限、窗口、插件、安装包和系统集成可用。
 
@@ -184,7 +196,7 @@ npm.cmd run tauri -- build --no-bundle
 - 当前已有 R4 协议、本地 repository、Store mapping、SSE reducer 和运行时配置自动测试，但没有替代真实服务的浏览器 E2E。
 - `tsconfig.app.json` 的 TypeScript 6 `baseUrl` 弃用错误（TS5101）已通过移除配置项解决，`AppHeader.vue` 的未使用 `ElMessage` 导入也已清理；2026-08-12 `npm.cmd run build` 通过，但 Vite 提示部分 chunk 超过 500 kB。
 - Tauri GUI 和 MSI 打包需本地人工验收；当前 MSI bundling 被宿主权限错误阻断。
-- API、同步、资产和 AI 需要真实 Server/基础设施联调。
+- API、同步、资产、AI 和 C4 上传链路需要真实 Server/基础设施联调。
 - AI key 的持久化安全、网络中断后的会话恢复和 token 刷新均有自动测试，但仍需要浏览器连接真实 Server/SSE 的人工业务验收。
 - 用户当前工作树包含页面、Store、样式和 Tauri 依赖改动；在提交前必须按范围复核。
 

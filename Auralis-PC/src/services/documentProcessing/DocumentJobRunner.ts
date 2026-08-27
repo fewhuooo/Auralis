@@ -1,0 +1,201 @@
+import {
+  errorCode,
+  isAppClosed,
+  isAutomaticallyRetryable,
+  isNetworkFailure,
+  MAX_AUTOMATIC_RETRIES,
+} from './checkpointPolicy.ts'
+import type {
+  DocumentJobPhase,
+  DocumentJobTransitionOptions,
+  DocumentProcessingJob,
+} from '@/types/documentProcessing'
+import type { ParsedBlock } from '@/services/documentParser/types'
+import type { DocumentCacheReceipt } from '@/api/tauri'
+
+interface JobRepository {
+  get(jobId: string): Promise<DocumentProcessingJob | null>
+  list(): Promise<DocumentProcessingJob[]>
+  transition(jobId: string, phase: DocumentJobPhase, options?: DocumentJobTransitionOptions): Promise<DocumentProcessingJob>
+}
+
+interface PackageAdapter {
+  begin(header: {
+    schemaVersion: 1
+    userId: string
+    deviceId: string
+    sourceId: string
+    jobId: string
+    ingestionRevision: string
+    parserVersion: string
+  }): Promise<string>
+  append(packageId: string, block: {
+    ordinal: number
+    kind: 'paragraph' | 'page' | 'slide' | 'ocr-page'
+    text: string
+    pageNumber?: number | null
+    anchorIndex?: number | null
+    startLine?: number | null
+  }): Promise<void>
+  finish(packageId: string): Promise<DocumentCacheReceipt>
+  abort?(packageId: string): Promise<void>
+}
+
+type ParserBlock = ParsedBlock
+type Parser = (sink: (block: ParserBlock) => Promise<void>) => Promise<void>
+
+export interface DocumentJobRunnerOptions {
+  repository: JobRepository
+  packager: PackageAdapter
+  parserFactory: (job: DocumentProcessingJob) => Promise<Parser> | Parser
+  maxAutomaticRetries?: number
+}
+
+export class DocumentJobRunner {
+  private readonly repository: JobRepository
+  private readonly packager: PackageAdapter
+  private readonly parserFactory: DocumentJobRunnerOptions['parserFactory']
+  private readonly maxAutomaticRetries: number
+  private readonly active = new Map<string, Promise<void>>()
+
+  constructor(options: DocumentJobRunnerOptions) {
+    this.repository = options.repository
+    this.packager = options.packager
+    this.parserFactory = options.parserFactory
+    this.maxAutomaticRetries = options.maxAutomaticRetries ?? MAX_AUTOMATIC_RETRIES
+  }
+
+  async start(jobId: string): Promise<void> {
+    const running = this.active.get(jobId)
+    if (running) return running
+    const task = this.process(jobId)
+    this.active.set(jobId, task)
+    try {
+      await task
+    } finally {
+      if (this.active.get(jobId) === task) this.active.delete(jobId)
+    }
+  }
+
+  async resumePending(): Promise<void> {
+    const jobs = await this.repository.list()
+    for (const job of jobs) {
+      if (job.phase === 'PAUSED_NETWORK') {
+        await this.repository.transition(job.jobId, 'QUEUED', { attempt: job.attempt })
+      }
+      if (['QUEUED', 'EXTRACTING', 'OCR_RUNNING'].includes(job.phase)) {
+        await this.start(job.jobId)
+      }
+    }
+  }
+
+  async list(): Promise<DocumentProcessingJob[]> {
+    return this.repository.list()
+  }
+
+  async pauseForNetwork(jobId: string): Promise<void> {
+    const job = await this.repository.get(jobId)
+    if (!job || job.phase === 'PAUSED_NETWORK' || job.phase === 'READY') return
+    await this.repository.transition(jobId, 'PAUSED_NETWORK', {
+      errorCode: 'NETWORK_OFFLINE',
+      errorDetail: 'Processing paused until network connectivity returns',
+    })
+  }
+
+  async retry(jobId: string): Promise<void> {
+    const job = await this.repository.get(jobId)
+    if (!job || !['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(job.phase)) return
+    await this.repository.transition(jobId, 'QUEUED', {
+      attempt: 0,
+      errorCode: null,
+      errorDetail: null,
+    })
+    await this.start(jobId)
+  }
+
+  async cancel(jobId: string): Promise<void> {
+    const job = await this.repository.get(jobId)
+    if (!job || job.phase === 'READY') return
+    await this.repository.transition(jobId, 'FAILED_LOCAL', {
+      errorCode: 'DOCUMENT_CANCELLED',
+      errorDetail: 'Cancelled by the user',
+    })
+  }
+
+  private async process(jobId: string): Promise<void> {
+    let job = await this.repository.get(jobId)
+    if (!job || job.phase === 'READY' || job.phase === 'FAILED_SERVER'
+      || ['PACKAGING', 'UPLOADING', 'SERVER_VALIDATING', 'SERVER_INDEXING'].includes(job.phase)) return
+    let retries = job.attempt
+
+    while (true) {
+      let packageId: string | null = null
+      try {
+        job = await this.repository.get(jobId)
+        if (!job || job.phase === 'READY') return
+        if (job.phase === 'PAUSED_NETWORK') return
+        if (job.phase === 'QUEUED') {
+          job = await this.repository.transition(jobId, 'EXTRACTING', { attempt: retries, errorCode: null, errorDetail: null })
+        }
+        packageId = await this.packager.begin({
+          schemaVersion: 1,
+          userId: job.userId,
+          deviceId: job.deviceId,
+          sourceId: job.sourceId,
+          jobId: job.jobId,
+          ingestionRevision: job.ingestionRevision,
+          parserVersion: 'auralis-document-parser/1.0.0',
+        })
+        const parser = await this.parserFactory(job)
+        await parser(async (block) => {
+          const phase: DocumentJobPhase = block.kind === 'ocr-page' ? 'OCR_RUNNING' : 'EXTRACTING'
+          await this.packager.append(packageId!, block)
+          job = await this.repository.transition(jobId, phase, {
+            attempt: retries,
+            checkpoint: {
+              pageNumber: block.pageNumber ?? job?.checkpoint.pageNumber ?? 0,
+              blockOrdinal: block.ordinal,
+            },
+            errorCode: null,
+            errorDetail: null,
+          })
+        })
+        const receipt = await this.packager.finish(packageId)
+        await this.repository.transition(jobId, 'PACKAGING', {
+          attempt: retries,
+          payloadCacheId: receipt.cacheId,
+          payloadReceipt: receipt,
+          errorCode: null,
+          errorDetail: null,
+        })
+        return
+      } catch (error) {
+        if (packageId && this.packager.abort) await this.packager.abort(packageId).catch(() => undefined)
+        if (isAppClosed(error)) return
+        if (isNetworkFailure(error)) {
+          await this.repository.transition(jobId, 'PAUSED_NETWORK', {
+            attempt: retries,
+            errorCode: 'NETWORK_OFFLINE',
+            errorDetail: errorCode(error),
+          })
+          return
+        }
+        if (isAutomaticallyRetryable(error) && retries + 1 < this.maxAutomaticRetries) {
+          retries += 1
+          await this.repository.transition(jobId, 'QUEUED', {
+            attempt: retries,
+            errorCode: errorCode(error),
+            errorDetail: 'Automatic retry scheduled',
+          })
+          continue
+        }
+        await this.repository.transition(jobId, 'FAILED_LOCAL', {
+          attempt: retries,
+          errorCode: isAutomaticallyRetryable(error) ? 'OCR_RETRY_EXHAUSTED' : errorCode(error),
+          errorDetail: error instanceof Error ? error.message : String(error),
+        })
+        return
+      }
+    }
+  }
+}

@@ -13,6 +13,7 @@ public record SourceView(
         String rawText,
         String outline,
         SourceIngestionStatus ingestionStatus,
+        UUID ingestionRevision,
         String safeErrorCode,
         String safeErrorDetail,
         long version,
@@ -41,6 +42,6 @@ public record SourceView(
             Instant updatedAt,
             Instant deletedAt) {
         this(id, subjectId, type, title, assetId, originUrl, rawText, outline, ingestionStatus,
-                safeErrorCode, safeErrorDetail, version, createdAt, updatedAt, deletedAt, null);
+                null, safeErrorCode, safeErrorDetail, version, createdAt, updatedAt, deletedAt, null);
     }
 }

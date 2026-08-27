@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { FileViewer } from '@file-viewer/vue3-full'
+import { computed, ref } from 'vue'
+import { FileViewer as BaseFileViewer } from '@file-viewer/vue3'
+import { withFullViewerOptions } from '@file-viewer/vue3-full'
 import '@file-viewer/vue3/dist/file-viewer3.css'
 import type { FileCapability } from '@/utils/filePreview'
-import type { FileViewerExpose, FileViewerViewStateChange, FileViewerZoomState } from '@file-viewer/vue3-full'
+import { isOfficeFile } from '@/services/documentParser/fileViewerBridge'
+import type { FileViewerExpose, FileViewerViewStateChange, FileViewerZoomState } from '@file-viewer/vue3'
 
-defineProps<{
+const props = defineProps<{
   file: File
   capability: FileCapability
 }>()
+
+const isOfficeParserCapable = computed(() => props.capability.kind === 'office' && isOfficeFile(props.file))
 
 const emit = defineEmits<{
   (event: 'load-start'): void
@@ -24,7 +28,7 @@ const viewerRef = ref<FileViewerExpose | null>(null)
 const isReady = ref(false)
 const pendingActions: Array<() => Promise<unknown> | unknown> = []
 
-const viewerOptions = {
+const viewerOptions = withFullViewerOptions({
   styleIsolation: 'none' as const,
   theme: 'light' as const,
   toolbar: false,
@@ -36,7 +40,7 @@ const viewerOptions = {
     toolbar: false,
     navigation: false,
   },
-}
+})
 
 const currentState = ref({
   page: 1,
@@ -71,29 +75,23 @@ function onViewStateChange(change: FileViewerViewStateChange): void {
   emit('page-change', currentState.value.page, currentState.value.pageCount)
 }
 
-const ZOOM_STEP = 0.1
-const MIN_ZOOM = 0.2
-const MAX_ZOOM = 3
-
-async function changeZoom(delta: number): Promise<FileViewerZoomState> {
+async function zoomIn(): Promise<FileViewerZoomState> {
   const viewer = viewerRef.value!
-  const current = viewer.getZoomState() ?? currentZoom.value
-  const minScale = current.minScale ?? MIN_ZOOM
-  const maxScale = current.maxScale ?? MAX_ZOOM
-  const scale = Number(Math.min(maxScale, Math.max(minScale, current.scale + delta)).toFixed(2))
-  await viewer.applyViewState({ scale }, {
-    action: delta > 0 ? 'zoom-in' : 'zoom-out',
-    source: 'api',
-  })
-  const state = viewer.getZoomState() ?? currentZoom.value
+  const state = await viewer.zoomIn()
+  onZoomChange(state)
+  return state
+}
+
+async function zoomOut(): Promise<FileViewerZoomState> {
+  const viewer = viewerRef.value!
+  const state = await viewer.zoomOut()
   onZoomChange(state)
   return state
 }
 
 async function resetZoom(): Promise<FileViewerZoomState> {
   const viewer = viewerRef.value!
-  await viewer.applyViewState({ scale: 1 }, { action: 'zoom-reset', source: 'api' })
-  const state = viewer.getZoomState() ?? currentZoom.value
+  const state = await viewer.resetZoom()
   onZoomChange(state)
   return state
 }
@@ -106,7 +104,7 @@ function applyPage(page: number): Promise<unknown> | undefined {
 }
 
 function runViewerAction(action: () => Promise<unknown> | unknown): Promise<unknown> {
-  if (!viewerRef.value || !isReady.value) {
+  if (!viewerRef.value) {
     pendingActions.push(action)
     return Promise.resolve(null)
   }
@@ -114,7 +112,7 @@ function runViewerAction(action: () => Promise<unknown> | unknown): Promise<unkn
 }
 
 async function flushPendingActions(): Promise<void> {
-  if (!viewerRef.value || !isReady.value || pendingActions.length === 0) return
+  if (!viewerRef.value || pendingActions.length === 0) return
   const actions = pendingActions.splice(0)
   for (const action of actions) await action()
 }
@@ -167,9 +165,9 @@ async function rotate(delta: number): Promise<number> {
 }
 
 defineExpose({
-  zoomIn: () => runViewerAction(() => changeZoom(ZOOM_STEP)),
-  zoomOut: () => runViewerAction(() => changeZoom(-ZOOM_STEP)),
-  resetZoom: () => runViewerAction(resetZoom),
+  zoomIn: () => runViewerAction(() => zoomIn()),
+  zoomOut: () => runViewerAction(() => zoomOut()),
+  resetZoom: () => runViewerAction(() => resetZoom()),
   rotateLeft: () => runViewerAction(() => rotate(-90)),
   rotateRight: () => runViewerAction(() => rotate(90)),
   prevPage: () => runViewerAction(() => currentState.value.page > 1
@@ -182,12 +180,16 @@ defineExpose({
 </script>
 
 <template>
-  <div class="file-viewer-renderer" data-testid="file-viewer-renderer">
+  <div
+    class="file-viewer-renderer"
+    data-testid="file-viewer-renderer"
+    :data-office-parser-capable="isOfficeParserCapable ? 'true' : 'false'"
+  >
     <div
       class="file-viewer-rotation-layer"
       :style="{ transform: `rotate(${rotationHandledByViewer ? 0 : currentState.rotation}deg)` }"
     >
-      <FileViewer
+      <BaseFileViewer
         ref="viewerRef"
         :file="file"
         :options="viewerOptions"

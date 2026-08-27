@@ -38,7 +38,7 @@
 | Backend | `http://localhost:8080` |
 | PC Vite | `http://localhost:5173`（默认） |
 | PostgreSQL | `localhost:5432` |
-| MinIO API | `http://localhost:9000` |
+| MinIO API | `http://127.0.0.1:9000` |
 | MinIO Console | `http://localhost:9001` |
 
 ## 环境变量
@@ -52,7 +52,7 @@
 - `AURALIS_MINIO_ENDPOINT`、`AURALIS_MINIO_PUBLIC_ENDPOINT`、`AURALIS_MINIO_BUCKET`、`AURALIS_MINIO_ACCESS_KEY`、`AURALIS_MINIO_SECRET_KEY`
 - `AURALIS_MINIO_PRESIGN_TTL_SECONDS`
 
-Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` 映射到 `auralis.upload.storage`，并以 `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` 和 `AURALIS_CORS_ALLOWED_ORIGINS` 作为生产必填项。`AURALIS_MINIO_ENDPOINT` 是容器内 Server 访问 MinIO 的地址；`AURALIS_MINIO_PUBLIC_ENDPOINT` 是浏览器访问预签名 PUT/GET 的地址，Docker 本地默认分别为 `http://minio:9000` 与 `http://localhost:9000`。MinIO 使用同一 CORS 白名单允许前端直传，不能把容器 hostname 作为浏览器公网地址。Provider 的用户 BYOK 仍由应用加密保存；服务端 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY` 只作为运行时默认凭据注入后端，不写入数据库或 API。
+Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` 映射到 `auralis.upload.storage`，并以 `AURALIS_JWT_SECRET`、`AURALIS_AI_ENCRYPTION_KEY` 和 `AURALIS_CORS_ALLOWED_ORIGINS` 作为生产必填项。`AURALIS_MINIO_ENDPOINT` 是容器内 Server 访问 MinIO 的地址；`AURALIS_MINIO_PUBLIC_ENDPOINT` 是 Tauri 客户端访问预签名 PUT/GET 的地址，Docker 本地默认分别为 `http://minio:9000` 与 `http://127.0.0.1:9000`。MinIO 使用同一 CORS 白名单允许客户端直传，不能把容器 hostname 作为客户端公网地址。Provider 的用户 BYOK 仍由应用加密保存；服务端 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY` 只作为运行时默认凭据注入后端，不写入数据库或 API。
 
 阶段 5 AI/RAG 配置由 `Auralis-Server` 绑定：
 
@@ -79,6 +79,12 @@ Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` �
 - R2 真实依赖测试默认随 `mvn -B -ntp clean test` 执行，`postgres-it`/`minio-it` profiles 作为兼容别名保留；2026-08-17 系统 Maven 与 Wrapper 均为 135/0/0，真实 PostgreSQL 两个集成类、MinIO 1/1 和 Compose db/MinIO/backend/frontend 运行态均通过；并发/异常专项和真实 Provider smoke 仍开放。
 
 ## 本地启动
+
+## PC Tauri OCR 构建门禁
+
+PC 端 OCR 运行时不作为 Server/Compose 服务运行。Tauri 配置将 target-triple `auralis-ocr` externalBin、固定模型与 `model_manifest.json` resources、第三方许可证和 CycloneDX SBOM 纳入 MSI；运行时由 Rust supervisor 以固定参数启动，并限制请求路径、超时、并发和重启预算。`scripts/verify-ocr-bundle.mjs` 负责检查 MSI、sidecar、模型哈希、manifest、notices 与 SBOM，`scripts/measure-ocr-baseline.ps1` 负责五组 fixture 的 cold/warm/RSS/包体积基线。
+
+2026-08-24：G1 protocol、G2 sidecar engine、G3 Rust supervisor 与 G4 MSI bundle 自动测试通过；最终 MSI 220,286,976 bytes，verifier 通过 generated WiX 对 sidecar、模型、manifest、license、SBOM 的引用，五组离线 OCR baseline 已固化。G5 fixture matrix 3/3 通过，旧式 PPT 由 Apache POI 生成真实 OLE 文件；实际 File Viewer/Tauri 运行时和安装后 OCR 留给后续验收。临时 all-users 安装因宿主 Error 1925 未完成，安装/升级/卸载留给 R2；用户已授权继续 G5。
 
 ```powershell
 docker compose --env-file .env up -d db minio minio-init

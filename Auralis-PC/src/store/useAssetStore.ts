@@ -19,6 +19,7 @@ export const useAssetStore = defineStore('asset', () => {
   const assets = ref<AssetModel[]>([])
   const pendingUploads = ref<PendingAssetUpload[]>([])
   const lastError = ref<string | null>(null)
+  const localFiles = new Map<string, File>()
 
   async function cache(asset: AssetView): Promise<AssetModel> {
     const authStore = useAuthStore()
@@ -55,6 +56,7 @@ export const useAssetStore = defineStore('asset', () => {
         },
       })
       const model = await cache(result.asset)
+      localFiles.set(model.id, file)
       pendingUploads.value = pendingUploads.value.filter((item) => item.clientUploadId !== clientUploadId)
       return model
     } catch (error) {
@@ -75,11 +77,41 @@ export const useAssetStore = defineStore('asset', () => {
     return response.url
   }
 
+  async function downloadSourceInput(assetId: string, fileName: string, mimeType = 'application/octet-stream'): Promise<{
+    file: File
+    cleanup: () => void
+  }> {
+    const url = await downloadUrl(assetId)
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`ASSET_DOWNLOAD_FAILED_${response.status}`)
+    const blob = await response.blob()
+    return {
+      file: new File([blob], fileName, { type: mimeType }),
+      cleanup: () => undefined,
+    }
+  }
+
+  function getLocalFile(assetId: string): File | null {
+    return localFiles.get(assetId) ?? null
+  }
+
+  function forgetLocalFile(assetId: string): void {
+    localFiles.delete(assetId)
+  }
+
+  function getCachedAsset(assetId: string): AssetModel | null {
+    return assets.value.find((asset) => asset.id === assetId) ?? null
+  }
+
   return {
     assets,
     pendingUploads,
     lastError,
     upload,
     downloadUrl,
+    downloadSourceInput,
+    getLocalFile,
+    forgetLocalFile,
+    getCachedAsset,
   }
 })

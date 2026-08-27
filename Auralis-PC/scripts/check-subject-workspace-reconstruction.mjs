@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 const source = readFileSync(new URL('../src/views/SubjectWorkspace/index.vue', import.meta.url), 'utf8')
 const expectations = [
-  ['summary center view', "centerView === 'summary'"],
+  ['knowledge blocks center view', "centerView === 'blocks'"],
   ['no PDF viewer default', "PdfViewer"],
   ['inline outline composer', 'outline-composer'],
   ['chapter drag handler', 'handleChapterDrop'],

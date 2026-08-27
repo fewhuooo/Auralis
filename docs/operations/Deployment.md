@@ -1,6 +1,6 @@
 # Auralis 部署指南
 
-更新时间：2026-08-22
+更新时间：2026-08-26
 
 文档状态：现行，生产方案待加固
 
@@ -36,7 +36,7 @@
 ### 开发
 
 1. 复制 `.env.example` 为 `.env`。
-2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单；浏览器访问 Compose 时将 `AURALIS_MINIO_PUBLIC_ENDPOINT` 设为浏览器可达的 MinIO API 地址（本机默认 `http://localhost:9000`），并按实际访问地址加入 `http://localhost` 或 `http://127.0.0.1` 的 origin。
+2. 替换所有 `replace-*` 值，至少设置数据库密码、MinIO 密码、JWT、AI 加密 key 和 CORS 白名单；Tauri 客户端访问 Compose 时将 `AURALIS_MINIO_PUBLIC_ENDPOINT` 设为客户端可达的 MinIO API 地址（本机默认 `http://127.0.0.1:9000`），并按实际访问地址加入 `http://tauri.localhost` 以及开发调试用的 `http://localhost` 或 `http://127.0.0.1` origin。
 3. 先运行 `docker compose --env-file .env config --quiet`；缺少必填值时应 fail-fast。
 
 ### 生产
@@ -106,7 +106,7 @@ Windows 环境优先验证 Wrapper：
 
 普通 `mvn -B -ntp clean test` 同时执行 H2、PostgreSQL/pgvector 和 MinIO Testcontainers；Docker Engine 不可用时应直接失败，不允许静默跳过真实依赖测试。`postgres-it`/`minio-it` profiles 仍可用于兼容旧命令和独立定向执行。
 
-## PC Web
+## PC Web（仅内部开发）
 
 ```powershell
 cd Auralis-PC
@@ -123,14 +123,16 @@ npm.cmd run build
 
 冒烟：打开 `/login`、`/`、`/subjects`；检查静态资源、路由刷新、API 和 WebSocket 网络请求。
 
-## PC Tauri
+## PC Tauri（正式桌面目标）
 
 ```powershell
 cd Auralis-PC
+$env:VITE_API_BASE_URL = 'http://localhost:8080'
+$env:VITE_WS_BASE_URL = 'ws://localhost:8080'
 npm run tauri dev
 ```
 
-发布打包命令必须以 Tauri CLI 当前能力为准。人工检查：窗口、权限、SQL 插件、文件访问、更新策略、安装/卸载、签名和系统兼容性。
+Tauri 运行时必须显式提供 `VITE_API_BASE_URL` 与 `VITE_WS_BASE_URL`；PC Web 仅用于内部开发，不作为发布目标。发布打包命令必须以 Tauri CLI 当前能力为准。人工检查：窗口、权限、SQL 插件、文件访问、更新策略、安装/卸载、签名和系统兼容性。
 
 Web 构建通过不代表 Tauri 通过。目录改名后若错误明确指向旧 StudyCore 绝对缓存，可在 `Auralis-PC/src-tauri` 执行 `cargo clean`，但不得把它作为通用修复。
 

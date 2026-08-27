@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,13 +38,59 @@ public class RetrievalService {
     }
 
     public List<Citation> retrieve(UUID userId, List<Double> queryVector, int topK) {
+        return retrieve(userId, queryVector, topK, null);
+    }
+
+    public List<Citation> retrieve(
+            UUID userId,
+            List<Double> queryVector,
+            int topK,
+            ReadingContext readingContext) {
+        return retrieve(userId, queryVector, topK, readingContext, null);
+    }
+
+    public List<Citation> retrieve(
+            UUID userId,
+            List<Double> queryVector,
+            int topK,
+            ReadingContext readingContext,
+            String queryText) {
         vectorCodec.validate(queryVector);
         if (topK <= 0) {
             throw new IllegalArgumentException("topK must be positive");
         }
+        SourceView currentSource = validateReadingContext(userId, readingContext);
+        UUID sourceId = currentSource == null ? null : currentSource.id();
+        List<Citation> currentHits = retrieveForSource(userId, queryVector, topK, sourceId);
+        if (currentSource == null || queryText == null || queryText.isBlank()) return currentHits;
+
+        List<SourceView> subjectSources = sourceService.list(userId);
+        ScopeEscalationPolicy.Decision decision = ScopeEscalationPolicy.decide(
+                queryText, currentSource, subjectSources == null ? List.of() : subjectSources,
+                currentHits.size(), ReadingRetrievalConfig.defaults());
+        if (!decision.escalated()) return currentHits;
+
+        List<Citation> expanded = new ArrayList<>(currentHits);
+        for (UUID targetId : decision.sourceIds()) {
+            expanded.addAll(retrieveForSource(userId, queryVector, topK, targetId));
+        }
+        return expanded.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        citation -> citation.sourceId() + ":" + citation.chunkId(),
+                        citation -> citation,
+                        (first, ignored) -> first,
+                        LinkedHashMap::new))
+                .values().stream()
+                .limit(topK)
+                .toList();
+    }
+
+    private List<Citation> retrieveForSource(UUID userId, List<Double> queryVector, int topK, UUID sourceId) {
         if (pgVectorRepository != null) {
             Optional<List<PgVectorRetrievalRepository.PgVectorChunk>> databaseResults =
-                    pgVectorRepository.search(userId, queryVector, topK);
+                    sourceId == null
+                            ? pgVectorRepository.search(userId, queryVector, topK)
+                            : pgVectorRepository.search(userId, sourceId, queryVector, topK);
             if (databaseResults.isPresent()) {
                 return databaseResults.get().stream()
                         .map(chunk -> citation(userId, chunk))
@@ -51,6 +99,7 @@ public class RetrievalService {
             }
         }
         return chunkRepository.findAllByUserIdAndActiveTrue(userId).stream()
+                .filter(chunk -> sourceId == null || sourceId.equals(chunk.getSourceId()))
                 .map(chunk -> scored(chunk, queryVector))
                 .filter(scored -> scored.similarity() > 0)
                 .sorted(Comparator.comparingDouble(ScoredChunk::similarity).reversed()
@@ -59,6 +108,21 @@ public class RetrievalService {
                 .map(scored -> citation(userId, scored.chunk(), scored.similarity()))
                 .flatMap(Optional::stream)
                 .toList();
+    }
+
+    private SourceView validateReadingContext(UUID userId, ReadingContext readingContext) {
+        if (readingContext == null) return null;
+        if (readingContext.currentSourceId() == null) {
+            throw new DomainException("VALIDATION_FAILED", "readingContext.currentSourceId is required");
+        }
+        SourceView source = sourceService.get(userId, readingContext.currentSourceId());
+        if (readingContext.subjectId() != null && !readingContext.subjectId().equals(source.subjectId())) {
+            throw new DomainException("VALIDATION_FAILED", "readingContext subject does not match the source");
+        }
+        if (source.ingestionStatus() != com.auralis.app.source.SourceIngestionStatus.READY) {
+            throw new DomainException("SOURCE_NOT_READY", "The current source is not ready for AI retrieval");
+        }
+        return source;
     }
 
     private ScoredChunk scored(SourceChunkEntity chunk, List<Double> query) {

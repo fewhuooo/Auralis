@@ -1,8 +1,8 @@
 # Spring Boot 后端模块
 
-更新时间：2026-08-23
+更新时间：2026-08-26
 
-文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线已构建，R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；默认 Docker Testcontainers 门禁通过，整体仍待真实 Provider 与外部验收
+文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；V16 阅读会话 scope、完成历史 Prompt、readingContext 当前 Source 检索和同学科确定性升级已实现；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；本机 Docker 不可用导致本轮 PostgreSQL upgrade 未执行，整体仍待真实 Provider 与外部验收
 
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
@@ -28,7 +28,7 @@
 | relation | 通用跨对象关系 | 阶段 2B 已实现端点校验、去重、软删除级联，待 PostgreSQL/人工验收 |
 | review | ReviewState、ReviewEvent、FSRS-lite | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | sync | Device、mutation、change log、高水位 cursor、snapshot、墓碑 | 阶段 3 已实现，待双设备/过期 cursor/生产验收 |
-| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions | 阶段 5 后端基线已实现；R1-03 pgvector、R1-04 流式、会话/消息幂等保留和精确 reply 关联已通过；待真实 Provider 与业务验收 |
+| ai | 模型配置、BYOK、Provider、Conversation、RAG、Suggestions、阅读 scope | 阶段 5 后端基线及 V16 阅读会话/Prompt/当前 Source 检索/同学科升级已实现；定向测试通过；待真实 Provider 与业务验收 |
 | stats | 强类型统计读取模型 | 阶段 4 已实现，待 PostgreSQL/业务验收 |
 | realtime | WebSocket ticket 和用户级事件 | 阶段 4 已实现，待浏览器/跨实例验收 |
 | shared | 错误模型、时钟、ID、分页、最小公共设施 | 配置/错误/OpenAPI 基础 |
@@ -76,7 +76,7 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 - Spring Modulith 2.1。
 - Maven Wrapper + Maven。
 - Spring MVC、Bean Validation、Actuator、springdoc OpenAPI。
-- 当前持久化使用 Spring Data JPA + Flyway V1–V11；R1-03 的 pgvector 写入/检索通过 JDBC repository 接入，H2 保留 JSON fallback。
+- 当前持久化使用 Spring Data JPA + Flyway V1–V15；R1-03 的 pgvector 写入/检索通过 JDBC repository 接入，H2 保留 JSON fallback。V15 追加 PC Tauri ParsedDocument 派生表、Source ingestion revision、FILE 状态约束和 ingestion job 关联字段；ParsedDocument 不进入同步表。S3 已实现 `/api/sources/{sourceId}/parsed-documents/upload-intents`，仅按 owner/revision 创建 `UPLOADING` 派生记录并向现有 `AssetStoragePort` 请求限定 MIME/checksum/size 的私有签名。
 - 目标数据库使用 PostgreSQL 17 + pgvector；V9 创建 vector(1024)/HNSW，V10 提供 generation cutover，V11 回填历史 JSON embedding。
 - 后续对象存储使用 MinIO。
 - 新工程移除 MyBatis Plus、运行时 DDL、Redis、Milvus、etcd、旧 JJWT 配置、统一 Result 和 encryptedPayload。
@@ -160,5 +160,6 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 - `RetrievalService` 只查询当前 userId 的活动 generation chunks。PostgreSQL 通过 `PgVectorRetrievalRepository` 执行带 user/source/active/deleted 过滤的 pgvector cosine SQL，由 HNSW 索引支持 top-k；非 PostgreSQL 环境使用活动 chunk 的 JSON cosine fallback。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
 - Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、会话和 USER 消息的 `clientRequestId` 幂等回放及安全错误/断流状态持久化。流式请求先在短事务中锁定会话并保留唯一 USER 消息，Provider I/O 不持有数据库事务；assistant 以 `reply_to_message_id` 精确关联该 USER 消息。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
+- S1 已通过 `V15__tauri_parsed_document_schema.sql` 冻结 `parsed_documents` 的 owner/source/revision、parser/normalization/OCR model、Asset/payload/plain-text SHA、私有 object key、status、generation 和生命周期字段；历史非 READY FILE 在迁移时进入 `AWAITING_CLIENT`，已有 READY FILE 与活动 chunks 保持不变。S2 已让 FILE create/Asset 替换/reingest 等待客户端解析并停止发布旧 ingestion event，TEXT/URL 保留服务端 event；S3 已实现 owner-scoped upload intent，S4 已实现有界 gzip/JSON/ordinal/hash validator 与 legacy Asset SHA 条件回填；S5 已在 Source 行锁内完成 complete 首胜、同 payload 幂等、冲突/过期错误和唯一 revision job 关联；S6 已让带 ParsedDocument 的 worker 消费重新验证后的 blocks、隔离旧 revision/generation、兼容 reingest 复用 accepted 结果，并由 cleanup scheduler 删除过期 payload 对象且保留元数据。
 
-阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1 定向套件验证 V14、会话重试、并发同请求仅一次保留和流式回放；默认 `mvn -B -ntp clean test` 已实际执行 PostgreSQL 17/pgvector clean/upgrade 与 MinIO 容器，148/148 通过。AI 日志脱敏与生命周期定向测试 26/26 通过。真实 Provider、性能和前端联调仍未完成。
+阶段 5/R1 自动验证：H2/JPA/MockMvc/Stub Provider/架构及受控网络测试覆盖 AI 基线；R1 定向套件验证 V14、会话重试、并发同请求仅一次保留和流式回放；S1 `ParsedDocumentSchemaTests` H2 clean/upgrade 4/4、S3 `ParsedDocumentControllerTests` 3/3、S4 `ParsedDocumentValidatorTests` 4/4 与 `AssetShaBackfillTests` 2/2、S5 `ParsedDocumentCompleteTests` 3/3、S6 `AiIngestionWorkerTests` 5/5、`AiSourceChunkTests` 3/3、`ParsedDocumentCleanupTests` 2/2 通过，PgVector upgrade 断言已补充但本机 Docker 不可用。此前默认 `mvn -B -ntp clean test` 的 PostgreSQL 17/pgvector 与 MinIO 容器证据仍保留；AI 日志脱敏与生命周期定向测试 26/26 通过。真实 Provider、性能和前端联调仍未完成。

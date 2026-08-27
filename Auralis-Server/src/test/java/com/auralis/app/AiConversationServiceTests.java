@@ -3,8 +3,10 @@ package com.auralis.app;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiMessageStatus;
 import com.auralis.app.ai.ConversationCommand;
+import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
+import com.auralis.app.ai.ReadingConversationCleanupService;
 import com.auralis.app.ai.MessageView;
 import com.auralis.app.ai.internal.persistence.ConversationEntity;
 import com.auralis.app.ai.internal.persistence.ConversationRepository;
@@ -68,5 +70,43 @@ class AiConversationServiceTests {
         assertThatThrownBy(() -> conversationService.appendMessage(
                 userId, conversationId, AiMessageRole.USER, " ", AiMessageStatus.COMPLETED, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void createsReadingSessionWithSourceBindingAndRejectsInvalidScope() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        when(conversationRepository.saveAndFlush(any(ConversationEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        ConversationView view = conversationService.create(userId,
+                new ConversationCommand("Chapter 1", 0L, null, ConversationPurpose.READING_SESSION, sourceId));
+
+        assertThat(view.purpose()).isEqualTo(ConversationPurpose.READING_SESSION);
+        assertThat(view.sourceId()).isEqualTo(sourceId);
+        assertThatThrownBy(() -> conversationService.create(userId,
+                new ConversationCommand("Missing source", 0L, null, ConversationPurpose.READING_SESSION, null)))
+                .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
+                .hasMessageContaining("sourceId");
+        assertThatThrownBy(() -> conversationService.create(userId,
+                new ConversationCommand("General", 0L, null, ConversationPurpose.GENERAL, sourceId)))
+                .isInstanceOf(com.auralis.app.shared.error.DomainException.class);
+    }
+
+    @Test
+    void cleanupSoftDeletesOnlyInactiveReadingSessions() {
+        ConversationEntity session = new ConversationEntity(
+                UUID.randomUUID(), UUID.randomUUID(), "Old", null, ConversationPurpose.READING_SESSION,
+                UUID.randomUUID());
+        when(conversationRepository.findAllByPurposeAndDeletedAtIsNullAndUpdatedAtBefore(
+                any(ConversationPurpose.class), any()))
+                .thenReturn(List.of(session));
+
+        ReadingConversationCleanupService cleanup = new ReadingConversationCleanupService(conversationRepository);
+        int count = cleanup.cleanupInactive(java.time.Instant.parse("2026-08-26T00:00:00Z"));
+
+        assertThat(count).isEqualTo(1);
+        assertThat(session.getDeletedAt()).isNotNull();
+        verify(conversationRepository).saveAllAndFlush(List.of(session));
     }
 }

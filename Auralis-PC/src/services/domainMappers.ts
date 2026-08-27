@@ -20,6 +20,7 @@ export interface SubjectModel {
 export interface SourceFileModel {
   id: string
   subjectId: string
+  type?: 'FILE' | 'TEXT' | 'URL'
   name: string
   filePath: string
   fileType: string
@@ -30,7 +31,8 @@ export interface SourceFileModel {
   originUrl?: string
   rawText?: string
   outline?: string
-  ingestionStatus?: 'PENDING' | 'PARSING' | 'INDEXING' | 'READY' | 'FAILED'
+  ingestionStatus?: 'AWAITING_CLIENT' | 'VALIDATING' | 'PENDING' | 'PARSING' | 'INDEXING' | 'READY' | 'FAILED'
+  ingestionRevision?: string
   safeErrorCode?: string
   safeErrorDetail?: string
   version: number
@@ -140,6 +142,7 @@ export interface SourceDtoLike {
   rawText?: string
   outline?: string
   ingestionStatus?: SourceFileModel['ingestionStatus']
+  ingestionRevision?: string
   safeErrorCode?: string
   safeErrorDetail?: string
   version?: number
@@ -250,6 +253,7 @@ export function mapSourceView(view: SourceDtoLike): SourceFileModel {
   return {
     id: requiredId(view.id, 'Source'),
     subjectId: view.subjectId || '',
+    type: view.type || 'FILE',
     name,
     filePath: view.assetId || view.originUrl || '',
     fileType: fileTypeForSource(view),
@@ -261,6 +265,7 @@ export function mapSourceView(view: SourceDtoLike): SourceFileModel {
     rawText: view.rawText,
     outline: view.outline,
     ingestionStatus: view.ingestionStatus,
+    ingestionRevision: view.ingestionRevision,
     safeErrorCode: view.safeErrorCode,
     safeErrorDetail: view.safeErrorDetail,
     version: view.version ?? 0,
@@ -268,6 +273,10 @@ export function mapSourceView(view: SourceDtoLike): SourceFileModel {
     updatedAt: view.updatedAt,
     deletedAt: view.deletedAt ?? null,
   }
+}
+
+export function isClientFileSource(view: Pick<SourceDtoLike, 'type' | 'assetId' | 'ingestionRevision'>): boolean {
+  return view.type === 'FILE' && Boolean(view.assetId && view.ingestionRevision)
 }
 
 export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike): KnowledgeBlockModel {

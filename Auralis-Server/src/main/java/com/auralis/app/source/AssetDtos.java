@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
 import java.util.Map;
@@ -14,6 +15,7 @@ public final class AssetDtos {
     private AssetDtos() {
     }
 
+    @Schema(name = "AssetUploadIntentRequest")
     public record UploadIntentRequest(
             @NotNull Long baseVersion,
             @NotBlank @Size(max = 255) String originalName,
@@ -25,6 +27,7 @@ public final class AssetDtos {
         }
     }
 
+    @Schema(name = "AssetUploadIntentResponse")
     public record UploadIntentResponse(
             UUID assetId,
             String uploadUrl,
@@ -35,6 +38,7 @@ public final class AssetDtos {
         }
     }
 
+    @Schema(name = "AssetResponse")
     public record Response(
             UUID id,
             String originalName,
@@ -51,6 +55,7 @@ public final class AssetDtos {
         }
     }
 
+    @Schema(name = "AssetDownloadUrlResponse")
     public record DownloadUrlResponse(String url, Instant expiresAt) {
         static DownloadUrlResponse from(AssetDownloadUrlView view) {
             return new DownloadUrlResponse(view.url(), view.expiresAt());

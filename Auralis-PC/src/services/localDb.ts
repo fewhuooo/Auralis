@@ -1,7 +1,11 @@
 import Database from '@tauri-apps/plugin-sql';
 import type { KnowledgeBlock } from '@/store/useBlockStore';
 import type { Task } from '@/store/useTaskStore';
-import { createLocalRepository, type LocalRepository } from '@/services/localRepository';
+import {
+  createLocalRepository,
+  DocumentProcessingJobRepository,
+  type LocalRepository,
+} from '@/services/localRepository';
 import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/localSchema';
 
 let db: any = null;
@@ -9,8 +13,13 @@ let db: any = null;
 export const localDb = {
   async init() {
     try {
-      // Check if Tauri is present. If window.__TAURI__ is not defined, immediately fall back.
-      if (typeof window === 'undefined' || !(window as any).__TAURI__) {
+      // Tauri v2 exposes `__TAURI_INTERNALS__` by default. Keep the legacy
+      // global check as a compatibility fallback for older development shells.
+      const tauriWindow = typeof window === 'undefined' ? null : window as unknown as {
+        __TAURI__?: unknown
+        __TAURI_INTERNALS__?: unknown
+      }
+      if (!tauriWindow || (!tauriWindow.__TAURI__ && !tauriWindow.__TAURI_INTERNALS__)) {
         console.warn('[SQLite PC] Not running in Tauri context, using localStorage fallback.');
         db = 'localstorage';
         return;
@@ -1096,4 +1105,18 @@ export async function getLocalRepository(userId: string, deviceId: string): Prom
     return repository;
   }
   return createLocalRepository(userId, deviceId, { sql: db as LocalSqlDatabase });
+}
+
+/**
+ * Returns the durable, user/device-isolated document job repository used by
+ * the Tauri processing runtime. It intentionally shares the same initialized
+ * SQLite connection as the rest of the local repository layer.
+ */
+export async function getDocumentProcessingJobRepository(
+  userId: string,
+  deviceId: string,
+): Promise<DocumentProcessingJobRepository> {
+  await localDb.init();
+  if (db === 'localstorage') return new DocumentProcessingJobRepository(userId, deviceId);
+  return new DocumentProcessingJobRepository(userId, deviceId, { sql: db as LocalSqlDatabase });
 }

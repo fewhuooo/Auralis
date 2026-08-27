@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "status": "measured-msi-bundle",
+  "baseline": {
+    "p95ColdMs": 5162.02,
+    "p95WarmMs": 5262.23,
+    "rssBytes": 9461760,
+    "packageSizeBytes": 220286976
+  },
+  "regressionCeiling": {
+    "multiplier": 1.15,
+    "p95ColdMs": 5936.323,
+    "p95WarmMs": 6051.5645,
+    "rssBytes": 10881024,
+    "packageSizeBytes": 253330022.4
+  }
+}

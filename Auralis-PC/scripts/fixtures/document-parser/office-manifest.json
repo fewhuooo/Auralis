@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "status": "real-fixtures-complete-runtime-pending",
+  "generation": {
+    ".ppt": "GenerateLegacyPpt.java (Apache POI HSLF 5.3.0)"
+  },
+  "formats": [
+    {
+      "extension": ".doc",
+      "fixture": "docs/test/日本商务签证在职证明样板.doc",
+      "expected": ["extract", "bitmap-fallback", "OFFICE_TEXT_UNAVAILABLE"]
+    },
+    {
+      "extension": ".docx",
+      "fixture": "docs/test/星校园_中国国际大学生创新大赛2026_项目计划书_V24.5.docx",
+      "expected": ["extract", "bitmap-fallback", "OFFICE_TEXT_UNAVAILABLE"]
+    },
+    {
+      "extension": ".ppt",
+      "fixture": "docs/test/auralis-generated-legacy.ppt",
+      "expected": ["extract", "bitmap-fallback", "OFFICE_TEXT_UNAVAILABLE"]
+    },
+    {
+      "extension": ".pptx",
+      "fixture": "docs/test/编译原理课件chap01(陈火旺)-v9.pptx",
+      "expected": ["extract", "bitmap-fallback", "OFFICE_TEXT_UNAVAILABLE"]
+    }
+  ]
+}

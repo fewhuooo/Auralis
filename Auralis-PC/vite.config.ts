@@ -5,6 +5,7 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { fileViewerRenderers } from '@file-viewer/vite-plugin'
 import { fileURLToPath, URL } from 'node:url'
+import * as vueCompiler from 'vue/compiler-sfc'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -18,7 +19,7 @@ export default defineConfig(({ mode }) => {
 
   return {
   plugins: [
-    vue(),
+    vue({ compiler: vueCompiler }),
     AutoImport({
       resolvers: [ElementPlusResolver()],
     }),
@@ -38,6 +39,12 @@ export default defineConfig(({ mode }) => {
   server: {
     port: 5173,
     strictPort: false,
+    // File Viewer copies a large generated asset tree during dev startup. It
+    // is served as static runtime data and must not trigger Vue HMR while the
+    // plugin compiler is still being initialized.
+    watch: {
+      ignored: ['**/public/file-viewer/**'],
+    },
     proxy,
   },
   // to access the Tauri environment variables set by the CLI with information about the current target

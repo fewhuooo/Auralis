@@ -1,6 +1,7 @@
 import type { LocalEntity, LocalMutation, LocalMutationStatus, LocalSyncStatus } from '@/types/api'
+import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob } from '@/types/documentProcessing'
 
-export const LOCAL_SCHEMA_VERSION = 2
+export const LOCAL_SCHEMA_VERSION = 5
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -28,6 +29,25 @@ export interface LocalMutationRow {
   status: LocalMutationStatus
   created_at: string
   error: string | null
+}
+
+export interface DocumentProcessingJobRow {
+  job_id: string
+  user_id: string
+  device_id: string
+  source_id: string
+  ingestion_revision: string
+  phase: DocumentJobPhase
+  attempt: number
+  checkpoint_page: number
+  checkpoint_ordinal: number
+  checkpoint_json: string | null
+  payload_cache_id: string | null
+  payload_receipt_json: string | null
+  error_code: string | null
+  error_detail: string | null
+  created_at: string
+  updated_at: string
 }
 
 /**
@@ -75,6 +95,27 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_local_mutations_user_status
     ON local_mutations (user_id, status, created_at)`,
+  `CREATE TABLE IF NOT EXISTS document_processing_jobs (
+    job_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    ingestion_revision TEXT NOT NULL CHECK (length(trim(ingestion_revision)) > 0),
+    phase TEXT NOT NULL CHECK (phase IN (${DOCUMENT_JOB_PHASES.map((phase) => `'${phase}'`).join(', ')})),
+    attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+    checkpoint_page INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_page >= 0),
+    checkpoint_ordinal INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_ordinal >= 0),
+    checkpoint_json TEXT,
+    payload_cache_id TEXT,
+    payload_receipt_json TEXT,
+    error_code TEXT,
+    error_detail TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (user_id, device_id, source_id, ingestion_revision)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_document_jobs_user_device_phase
+    ON document_processing_jobs (user_id, device_id, phase, updated_at)`,
   `CREATE TABLE IF NOT EXISTS legacy_unassigned_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_table TEXT NOT NULL,
@@ -98,6 +139,38 @@ async function tableExists(db: LocalSqlDatabase, tableName: string): Promise<boo
     ['table', tableName],
   )
   return rows.length > 0
+}
+
+async function migrateDocumentJobRevisionColumn(db: LocalSqlDatabase): Promise<void> {
+  if (!(await tableExists(db, 'document_processing_jobs'))) return
+  const rows = await db.select<TableInfoRow>('PRAGMA table_info(document_processing_jobs)')
+  const revision = rows.find((row) => String(row.name ?? '') === 'ingestion_revision')
+  if (!revision || String(revision.type ?? '').toUpperCase() === 'TEXT') return
+  let legacyTable = 'legacy_document_processing_jobs_v3'
+  let suffix = 2
+  while (await tableExists(db, legacyTable)) {
+    legacyTable = `legacy_document_processing_jobs_v3_${suffix}`
+    suffix += 1
+  }
+  await db.execute(`ALTER TABLE document_processing_jobs RENAME TO ${legacyTable}`)
+  await db.execute(VERSIONED_LOCAL_SCHEMA_SQL.find((statement) => statement.includes('CREATE TABLE IF NOT EXISTS document_processing_jobs'))!)
+  await db.execute(`
+    INSERT OR IGNORE INTO document_processing_jobs
+      (job_id, user_id, device_id, source_id, ingestion_revision, phase, attempt,
+       checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id,
+       error_code, error_detail, created_at, updated_at)
+    SELECT job_id, user_id, device_id, source_id, CAST(ingestion_revision AS TEXT), phase, attempt,
+       checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id,
+       error_code, error_detail, created_at, updated_at
+    FROM ${legacyTable}`)
+}
+
+async function migrateDocumentJobReceiptColumn(db: LocalSqlDatabase): Promise<void> {
+  if (!(await tableExists(db, 'document_processing_jobs'))) return
+  const columns = await tableColumns(db, 'document_processing_jobs')
+  if (!columns.has('payload_receipt_json')) {
+    await db.execute('ALTER TABLE document_processing_jobs ADD COLUMN payload_receipt_json TEXT')
+  }
 }
 
 async function moveLegacyTable(
@@ -144,13 +217,15 @@ async function backupLegacySqlResources(db: LocalSqlDatabase): Promise<void> {
 }
 
 /**
- * Creates the v2 schema and moves the pre-R4 key/value mutation tables out of
+ * Creates the current versioned schema and moves the pre-R4 key/value mutation tables out of
  * the way. The old tables are retained under legacy_* names for recoverable
  * compatibility; no business row is deleted by this migration.
  */
 export async function createVersionedLocalSchema(db: LocalSqlDatabase): Promise<void> {
   await moveLegacyTable(db, 'sync_metadata', 'legacy_sync_metadata', 'user_id')
   await moveLegacyTable(db, 'local_mutations', 'legacy_local_mutations', 'client_mutation_id')
+  await migrateDocumentJobRevisionColumn(db)
+  await migrateDocumentJobReceiptColumn(db)
   for (const statement of VERSIONED_LOCAL_SCHEMA_SQL) {
     await db.execute(statement)
   }
@@ -193,5 +268,40 @@ export function mutationFromRow(row: LocalMutationRow): LocalMutation {
     status: row.status,
     createdAt: row.created_at,
     ...(row.error ? { error: row.error } : {}),
+  }
+}
+
+export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): DocumentProcessingJob {
+  let checkpoint: DocumentProcessingJob['checkpoint'] = {
+    pageNumber: Number(row.checkpoint_page ?? 0),
+    blockOrdinal: Number(row.checkpoint_ordinal ?? 0),
+  }
+  if (row.checkpoint_json) {
+    try {
+      const parsed = JSON.parse(row.checkpoint_json) as Partial<DocumentProcessingJob['checkpoint']>
+      checkpoint = {
+        pageNumber: Number(parsed.pageNumber ?? checkpoint.pageNumber),
+        blockOrdinal: Number(parsed.blockOrdinal ?? checkpoint.blockOrdinal),
+        ...(typeof parsed.parserState === 'string' ? { parserState: parsed.parserState } : {}),
+      }
+    } catch {
+      throw new Error('Invalid document job checkpoint')
+    }
+  }
+  return {
+    jobId: row.job_id,
+    userId: row.user_id,
+    deviceId: row.device_id,
+    sourceId: row.source_id,
+    ingestionRevision: String(row.ingestion_revision),
+    phase: row.phase,
+    attempt: Number(row.attempt ?? 0),
+    checkpoint,
+    payloadCacheId: row.payload_cache_id ?? null,
+    payloadReceipt: row.payload_receipt_json ? parsePayload<DocumentProcessingJob['payloadReceipt']>(row.payload_receipt_json) : null,
+    errorCode: row.error_code ?? null,
+    errorDetail: row.error_detail ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }
 }

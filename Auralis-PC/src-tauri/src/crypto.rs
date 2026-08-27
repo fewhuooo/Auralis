@@ -14,7 +14,7 @@ const PBKDF2_ITERATIONS: u32 = 600_000;
 const NONCE_LEN: usize = 12;
 const SALT_LEN: usize = 32;
 
-fn get_master_key_bytes() -> Result<Vec<u8>, String> {
+pub(crate) fn get_master_key_bytes() -> Result<Vec<u8>, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring access failed: {e}"))?;
     let encoded = entry
@@ -107,7 +107,12 @@ pub fn crypto_export_key_bundle(passphrase: String) -> Result<KeyBundle, String>
     OsRng.fill_bytes(&mut salt);
 
     let mut derived = [0u8; 32];
-    pbkdf2_hmac::<Sha256>(passphrase.as_bytes(), &salt, PBKDF2_ITERATIONS, &mut derived);
+    pbkdf2_hmac::<Sha256>(
+        passphrase.as_bytes(),
+        &salt,
+        PBKDF2_ITERATIONS,
+        &mut derived,
+    );
 
     let wrapping_key = Key::<Aes256Gcm>::from_slice(&derived);
     let wrapping_cipher = Aes256Gcm::new(wrapping_key);
@@ -132,13 +137,22 @@ pub fn crypto_export_key_bundle(passphrase: String) -> Result<KeyBundle, String>
 }
 
 #[tauri::command]
-pub fn crypto_import_key_bundle(encrypted_key: String, salt: String, passphrase: String) -> Result<bool, String> {
+pub fn crypto_import_key_bundle(
+    encrypted_key: String,
+    salt: String,
+    passphrase: String,
+) -> Result<bool, String> {
     let salt_bytes = B64
         .decode(&salt)
         .map_err(|e| format!("Invalid salt encoding: {e}"))?;
 
     let mut derived = [0u8; 32];
-    pbkdf2_hmac::<Sha256>(passphrase.as_bytes(), &salt_bytes, PBKDF2_ITERATIONS, &mut derived);
+    pbkdf2_hmac::<Sha256>(
+        passphrase.as_bytes(),
+        &salt_bytes,
+        PBKDF2_ITERATIONS,
+        &mut derived,
+    );
 
     let wrapping_key = Key::<Aes256Gcm>::from_slice(&derived);
     let wrapping_cipher = Aes256Gcm::new(wrapping_key);

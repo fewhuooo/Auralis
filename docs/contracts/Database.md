@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-24
+更新时间：2026-08-26
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -168,6 +168,23 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 
 该边界已用临时内存 SQLite 与独立 localStorage namespace 覆盖用户隔离、旧 SQLite 行备份、tombstone、版本冲突、snapshot pending 保留和 legacy backup；真实 Tauri plugin、跨版本旧数据库升级和 GUI 迁移选择仍未验收。
 
+### PC R4-07 文档处理任务（本地 schema v5，2026-08-24）
+
+PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_processing_jobs` 表并将 `ingestion_revision` 对齐为服务端 UUID 文本；旧 v3 数字 revision 会先复制到 `legacy_document_processing_jobs_v3*` 再迁移，不删除原行，v4 任务追加 `payload_receipt_json` 列。该表不进入 `local_resource_records`、`local_mutations` 或同步 change log。每个任务按 `(user_id, device_id, source_id, ingestion_revision)` 唯一，查询始终带当前用户和设备边界。
+
+| 字段 | 语义 |
+| --- | --- |
+| `job_id` | 客户端任务稳定 ID，主键 |
+| `user_id` / `device_id` | 本地副本隔离边界 |
+| `source_id` / `ingestion_revision` | Source 版本去重键，revision 为非空服务端 UUID 文本 |
+| `phase` | `QUEUED`、`DOWNLOADING_SOURCE`、`EXTRACTING`、`OCR_RUNNING`、`PACKAGING`、`UPLOADING`、`SERVER_VALIDATING`、`SERVER_INDEXING`、`READY`、`FAILED_LOCAL`、`FAILED_SERVER`、`PAUSED_NETWORK` |
+| `attempt` | 自动/人工重试次数，非负 |
+| `checkpoint_page` / `checkpoint_ordinal` / `checkpoint_json` | 解析与打包断点；状态和断点由同一 UPDATE 原子写入 |
+| `payload_cache_id` / `payload_receipt_json` | 加密 payload cache 标识及可恢复上传所需的非敏感 receipt 元数据；不含正文、签名 URL 或 headers |
+| `error_code` / `error_detail` | 安全失败摘要 |
+
+浏览器 fallback 使用 `auralis:v5:document-jobs:<user>:<device>` 独立 namespace，并从 v4/v3 namespace 复制任务；任务不复用业务资源 JSON。v5 migration、数字 revision 保留迁移、receipt round-trip、状态机和 SQLite/浏览器 repository 已有定向自动测试，真实 Tauri SQLite 升级仍需 R2 验收。
+
 ### Mobile R4 本地副本边界（2026-08-20）
 
 - `localDataScope.ts` 将当前 `userId:deviceId` 映射为稳定 scope；H5 表键为 `auralis:local:<scope>:<table>`，原生 SQLite 使用 `_doc/auralis_<scope>.db`，Pomodoro 今日计数使用同一 scope 前缀，切换账号不会打开另一账号的活动副本。
@@ -183,7 +200,7 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 ## 迁移状态
 
-阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`，阶段 2B 已新增 `V3__source_asset_relation_schema.sql`，阶段 3/4 已新增 `V4__sync_schema.sql`、`V5__review_stats_realtime_schema.sql`、`V6__sync_atomicity_and_cursor_high_water.sql` 和 `V7__task_completion_timestamp.sql`；阶段 5/R1 已新增 `V8`–`V14`。迁移在 H2 PostgreSQL mode 和 PostgreSQL 17/pgvector 容器的空库中验证 Flyway version `1→...→14`、表结构、外键和 JPA `ddl-auto=validate`。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
+阶段 1 已创建 `V1__identity_schema.sql`，阶段 2A 已新增 `V2__core_domain_schema.sql`，阶段 2B 已新增 `V3__source_asset_relation_schema.sql`，阶段 3/4 已新增 `V4__sync_schema.sql`、`V5__review_stats_realtime_schema.sql`、`V6__sync_atomicity_and_cursor_high_water.sql` 和 `V7__task_completion_timestamp.sql`；阶段 5/R1 已新增 `V8`–`V14`，PC Tauri ParsedDocument S1 已新增 `V15`。迁移在 H2 PostgreSQL mode 和 PostgreSQL 17/pgvector 容器的空库中验证 Flyway version `1→...→14` 的既有基线；V15 的 H2 clean/upgrade 验证已通过，PostgreSQL upgrade 仍受本机 Docker 不可用阻断。迁移只针对干净新数据库，不接管旧 schema，也不提供旧数据迁移或回滚到旧 schema 的脚本。
 
 阶段 3/4 审核后验证边界：`Auralis-Server\mvnw.cmd -B -ntp clean test` 通过 69 个自动测试；PostgreSQL 17/pgvector、Testcontainers、Docker、真实 MinIO、双设备和生产迁移演练仍未声称通过。R3 的 OpenAPI/SDK 只冻结 HTTP DTO、字段和游标/版本冲突策略，不改变数据库 schema 或端侧旧表迁移边界。
 
@@ -204,9 +221,9 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 阶段 5/R1 schema 验证：H2 PostgreSQL mode 与默认 Testcontainers PostgreSQL 17/pgvector 验证 Flyway V1→V14、JPA `ddl-auto=validate`；R2 clean/upgrade 两类输入验证 V8 历史 `embedding_json` 在 V9/V11 后得到 `vector`、HNSW 索引和回填结果。R1-04/本轮并发测试验证消息幂等键、失败/断流状态、同请求仅一次 USER 保留、会话恢复键和精确 assistant 关联。
 
-## PC Tauri ParsedDocument 目标数据契约（2026-08-23，2026-08-24 复核修订，已批准、未实现）
+## PC Tauri ParsedDocument 目标数据契约（2026-08-23，2026-08-24 复核修订，V15/S1–S6 已实现，联调与验收待完成）
 
-本节只登记后续迁移目标；当前数据库仍停留在 V1–V14，不得据此声明表或字段已经存在。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+本节登记 V15 迁移及 S1–S6、C4/C5 已落地的数据行为；真实 PostgreSQL 升级复核和人工业务验收仍待完成。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
 - `sources` 新增服务端生成的 `ingestion_revision UUID`。FILE Source 创建、Asset 替换或需要重新端侧解析时轮换 revision；普通重新分块/Embedding 复用当前 revision 和最新兼容 ParsedDocument。Source DTO/同步快照只读暴露该值，客户端 mutation 不能覆盖。
 - 新增非同步派生表 `parsed_documents`，保存 `id`、`user_id`、`source_id`、`ingestion_revision`、当前 Asset SHA-256、schema/parser/normalization/OCR model 版本、私有 object key、payload SHA-256、size、status、ingestion generation、`object_deleted_at`、创建和接收时间。状态至少为 `UPLOADING`、`VALIDATING`、`ACCEPTED`、`REJECTED`、`SUPERSEDED`；该表不进入 change log、snapshot 或普通客户端 mutation。
@@ -217,4 +234,7 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - 最新成功 ParsedDocument 作为重新分块和重新 Embedding 的派生权威保留；成功代切换后异步删除旧对象，并按下述保留期清理旧元数据。Source 删除或 Asset 替换必须使迟到 generation 失效。
 - 同 revision 重放产生的多余对象、`REJECTED` 和超时 `UPLOADING` 对象必须由清理任务删除；新 revision READY 后旧对象删除并写 `object_deleted_at`，`SUPERSEDED` 元数据至少保留 30 天后再清理。
 - `conversations` 目标新增 `purpose`（`GENERAL`/`READING_SESSION`）和可空 `source_id`；省略 purpose 时为 `GENERAL`，普通列表排除阅读会话，超过 24 小时无活动的阅读会话可由清理任务软删除，普通会话不受影响。
+- V16 已落地 `conversations.purpose/source_id`、约束、Source 外键和 owner/source/cleanup 索引；`ConversationService` 校验阅读会话必须绑定当前 Source，普通会话不接受 sourceId，普通列表排除 `READING_SESSION`。`ReadingConversationCleanupService` 对超过 24 小时未活动的阅读会话执行软删除。
 - PC 本地新增按 `userId:deviceId` 隔离的 `document_processing_jobs` 元数据，并保存 `ingestion_revision`。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文使用现有 OS keyring 主密钥派生的分块 AES-256-GCM envelope 临时保存，AAD 绑定 user/device/source/job/revision/schema。服务端确认接收、退出登录、Source 删除或 Asset 替换后清理；不新增第二套独立 DPAPI 密钥。
+
+S1 已通过追加式 `V15__tauri_parsed_document_schema.sql` 落地上述数据库边界：`sources.ingestion_revision` 为服务端只读 UUID（历史行以 Source id 稳定回填，默认零 UUID 仅用于兼容尚未切换的旧写入路径）；`parsed_documents` 保存 schema/parser/normalization/OCR model、Asset/payload/plain-text SHA、对象 key、状态、generation 和生命周期时间；`ingestion_jobs` 增加可空 `parsed_document_id` 与 `ingestion_revision`。`parsed_documents` 没有 change log、snapshot 或 inbound mutation 外键。S2 已让 SourceEntity/SourceView 只读承载该 revision，并按 FILE/TEXT/URL 分流状态和事件；S3 已实现 owner-scoped upload-intent 与 `UPLOADING` 元数据落库，私有 object key 不由客户端提供；S4 已加入服务端有界流式 payload 校验和 legacy Asset 空 SHA 的条件回填；S5 已在 Source 行锁内实现 complete 首胜、同 payload 幂等、冲突/过期拒绝和唯一 revision indexing job 关联；S6 已完成 accepted ParsedDocument block reader、generation/revision 旧任务隔离、兼容 reingest 复用、旧 revision `SUPERSEDED` 标记和过期 payload 对象清理，保留 ParsedDocument 审计行。H2 clean/upgrade schema 4/4、Source/Ai ingestion 定向回归 11/11、`ParsedDocumentControllerTests` 3/3、`ParsedDocumentValidatorTests` 4/4、`AssetShaBackfillTests` 2/2、`ParsedDocumentCompleteTests` 3/3、S6 定向 21/21 通过，覆盖 READY FILE 与活动 chunk 保留、旧非 READY FILE 迁移为 `AWAITING_CLIENT`、owner/stale revision/hash/schema/size 校验、gzip bomb/UTF-8/ordinal/hash、并发 SHA 回填、complete 首胜、worker block 索引/revision fencing、generation 失败保护、兼容 reingest 和 cleanup；PostgreSQL upgrade 测试已补充但本机无 Docker，尚未取得容器执行证据。

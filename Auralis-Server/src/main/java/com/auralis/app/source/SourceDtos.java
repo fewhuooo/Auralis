@@ -3,6 +3,7 @@ package com.auralis.app.source;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
 import java.util.List;
@@ -13,6 +14,7 @@ public final class SourceDtos {
     private SourceDtos() {
     }
 
+    @Schema(name = "SourceCreateRequest")
     public record CreateRequest(
             @NotNull Long baseVersion,
             @NotNull UUID subjectId,
@@ -27,6 +29,7 @@ public final class SourceDtos {
         }
     }
 
+    @Schema(name = "SourceUpdateRequest")
     public record UpdateRequest(
             @NotNull Long baseVersion,
             @NotNull UUID subjectId,
@@ -41,15 +44,18 @@ public final class SourceDtos {
         }
     }
 
+    @Schema(name = "SourceVersionRequest")
     public record VersionRequest(@NotNull Long baseVersion) {
     }
 
+    @Schema(name = "SourceListResponse")
     public record ListResponse(List<Response> items, String nextCursor, boolean hasMore) {
         public ListResponse {
             items = List.copyOf(items);
         }
     }
 
+    @Schema(name = "SourceResponse")
     public record Response(
             UUID id,
             UUID subjectId,
@@ -60,6 +66,7 @@ public final class SourceDtos {
             String rawText,
             String outline,
             SourceIngestionStatus ingestionStatus,
+            @Schema(nullable = true, accessMode = Schema.AccessMode.READ_ONLY) UUID ingestionRevision,
             String safeErrorCode,
             String safeErrorDetail,
             Long assetSizeBytes,
@@ -69,7 +76,7 @@ public final class SourceDtos {
             Instant deletedAt) {
         static Response from(SourceView view) {
             return new Response(view.id(), view.subjectId(), view.type(), view.title(), view.assetId(),
-                    view.originUrl(), view.rawText(), view.outline(), view.ingestionStatus(), view.safeErrorCode(),
+                    view.originUrl(), view.rawText(), view.outline(), view.ingestionStatus(), view.ingestionRevision(), view.safeErrorCode(),
                     view.safeErrorDetail(), view.assetSizeBytes(), view.version(), view.createdAt(),
                     view.updatedAt(), view.deletedAt());
         }

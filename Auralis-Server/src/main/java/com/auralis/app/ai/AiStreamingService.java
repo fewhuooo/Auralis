@@ -3,6 +3,7 @@ package com.auralis.app.ai;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.ai.retrieval.Citation;
+import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
@@ -111,17 +112,31 @@ public class AiStreamingService {
                     "AI_CHAT_PROVIDER_RESOLVED userId={} conversationId={} messageId={} provider={} model={} endpointHost={}",
                     userId, conversationId, userMessage.id(), providerType, settings.chatModel(),
                     safeHost(settings.credential().baseUrl()));
-            List<Citation> citations = command.retrievalEnabled()
-                    ? retrieve(userId, conversationId, userMessage.id(), content, topK)
-                    : List.of();
+            ReadingContext readingContext = command.readingContext();
+            List<Citation> citations;
+            if (command.retrievalEnabled() || readingContext != null) {
+                citations = retrieve(userId, conversationId, userMessage.id(), content, topK, readingContext);
+            } else {
+                citations = List.of();
+            }
             for (Citation citation : citations) {
                 sink.emit(new AiStreamEvent("citation", citation.chunkId().toString(), toView(citation)));
             }
 
             AiProviderPort provider = providerRegistry.require(providerType);
+            ConversationView conversation = conversationService.get(userId, conversationId);
+            int maxPromptChars = properties.ai().maxPromptChars();
+            if (maxPromptChars < 1) maxPromptChars = 12000;
             AiProviderRequest request = new AiProviderRequest(
                     settings.chatModel(),
-                    promptMessages(content, citations),
+                    PromptAssembler.assemble(
+                            "You are a precise study assistant. Answer using the user's conversation and the supplied personal knowledge context when relevant.",
+                            conversation == null ? List.of() : conversation.messages(),
+                            userMessage.id(),
+                            readingContext == null ? null : readingContext.selectionText(),
+                            citations,
+                            content,
+                            maxPromptChars),
                     0.2,
                     null);
             long providerStartedAt = System.nanoTime();
@@ -219,7 +234,13 @@ public class AiStreamingService {
                     Map.of("code", errorCode, "detail", "The previous AI request is still processing or did not complete")));
     }
 
-    private List<Citation> retrieve(UUID userId, UUID conversationId, UUID userMessageId, String content, int topK) {
+    private List<Citation> retrieve(
+            UUID userId,
+            UUID conversationId,
+            UUID userMessageId,
+            String content,
+            int topK,
+            ReadingContext readingContext) {
         long embeddingStartedAt = System.nanoTime();
         LOGGER.info(
                 "AI_EMBEDDING_START userId={} conversationId={} messageId={} provider={} model={} endpointHost={} inputCount=1 inputChars={} topK={}",
@@ -244,7 +265,9 @@ public class AiStreamingService {
                     "AI_EMBEDDING_SUCCESS userId={} conversationId={} messageId={} provider={} model={} vectorCount={} dimensions={} elapsedMs={}",
                     userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
                     result.vectors().size(), dimensions, elapsedMillis(embeddingStartedAt));
-            List<Citation> citations = retrievalService.retrieve(userId, result.vectors().get(0), topK);
+            List<Citation> citations = readingContext == null
+                    ? retrievalService.retrieve(userId, result.vectors().get(0), topK)
+                    : retrievalService.retrieve(userId, result.vectors().get(0), topK, readingContext, content);
             LOGGER.info(
                     "AI_RETRIEVAL_SUCCESS userId={} conversationId={} messageId={} topK={} citationCount={} elapsedMs={}",
                     userId, conversationId, userMessageId, topK, citations.size(), elapsedMillis(embeddingStartedAt));
@@ -264,22 +287,6 @@ public class AiStreamingService {
                     rootCauseMessage(exception), elapsedMillis(embeddingStartedAt));
             throw exception;
         }
-    }
-
-    private List<AiProviderRequest.Message> promptMessages(String content, List<Citation> citations) {
-        List<AiProviderRequest.Message> messages = new ArrayList<>();
-        if (!citations.isEmpty()) {
-            String context = citations.stream()
-                    .map(citation -> "[source=" + citation.sourceId() + ", chunk=" + citation.chunkId() + "] "
-                            + citation.excerpt())
-                    .reduce((left, right) -> left + "\n" + right)
-                    .orElse("");
-            messages.add(new AiProviderRequest.Message(
-                    AiMessageRole.SYSTEM,
-                    "Use the following personal knowledge context when it is relevant:\n" + context));
-        }
-        messages.add(new AiProviderRequest.Message(AiMessageRole.USER, content));
-        return messages;
     }
 
     private CitationView toView(Citation citation) {

@@ -30,3 +30,16 @@ test('Vite proxy targets are environment-driven and Tauri permissions stay minim
   assert.equal(capabilities.includes('fs:default'), false)
   assert.equal(capabilities.includes('sql:default'), true)
 })
+
+test('Vite ignores generated File Viewer assets during development HMR', async () => {
+  const vite = await readFile(new URL('../vite.config.ts', import.meta.url), 'utf8')
+  assert.match(vite, /import \* as vueCompiler from ['"]vue\/compiler-sfc['"]\s/)
+  assert.match(vite, /vue\(\{\s*compiler:\s*vueCompiler\s*\}\)/)
+  assert.match(vite, /watch:\s*\{[\s\S]*ignored:\s*\[[\s\S]*\*\*\/public\/file-viewer\/\*\*/)
+})
+
+test('debug Tauri logging does not fail when the application log file already exists', async () => {
+  const tauriLib = await readFile(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  assert.match(tauriLib, /use tauri_plugin_log::\{Target, TargetKind\}/)
+  assert.match(tauriLib, /\.clear_targets\(\)[\s\S]*\.target\(Target::new\(TargetKind::Stdout\)\)/)
+})

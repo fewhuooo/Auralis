@@ -34,6 +34,33 @@ public class IngestionJobService {
     }
 
     @Transactional
+    public IngestionJobEntity enqueueParsedDocument(
+            UUID userId, UUID sourceId, UUID parsedDocumentId, UUID ingestionRevision, UUID generation) {
+        Optional<IngestionJobEntity> existing = jobRepository
+                .findFirstByUserIdAndSourceIdAndIngestionRevisionOrderByCreatedAtDesc(
+                        userId, sourceId, ingestionRevision);
+        if (existing.isPresent()) {
+            IngestionJobEntity job = existing.get();
+            if (job.isActive()) {
+                return job;
+            }
+            job.requeueParsedDocument(parsedDocumentId, ingestionRevision, generation);
+            return jobRepository.save(job);
+        }
+        IngestionJobEntity job = new IngestionJobEntity(
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
+        job.attachParsedDocument(parsedDocumentId, ingestionRevision);
+        return jobRepository.save(job);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<IngestionJobEntity> findParsedDocumentJob(
+            UUID userId, UUID sourceId, UUID ingestionRevision) {
+        return jobRepository.findFirstByUserIdAndSourceIdAndIngestionRevisionOrderByCreatedAtDesc(
+                userId, sourceId, ingestionRevision);
+    }
+
+    @Transactional
     public Optional<IngestionJobEntity> claimNext(Instant now, Instant leaseUntil, int maxAttempts) {
         if (maxAttempts < 1) {
             throw new IllegalArgumentException("maxAttempts must be positive");

@@ -6,3 +6,133 @@ import { invoke } from '@tauri-apps/api/core'
 export const invokeRustCmd = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
   return invoke<T>(command, args)
 }
+
+export const MAX_OCR_IMAGE_BYTES = 20 * 1024 * 1024
+export const MAX_OCR_TIMEOUT_MS = 120_000
+
+export interface OcrPageCommand {
+  taskId: string
+  pageNumber: number
+  imageBytes: number[]
+  timeoutMs: number
+}
+
+export interface OcrPageResult {
+  protocolVersion: 1
+  ok: boolean
+  taskId: string
+  pageNumber: number
+  lines: Array<{ text: string; score?: number }>
+  timingMs: { det: number; rec: number; total: number }
+  errorCode?: string
+}
+
+export interface OcrWarmupView {
+  ready: boolean
+  restartCount: number
+  errorCode?: string
+}
+
+const validateOcrPageCommand = (command: OcrPageCommand): void => {
+  if (!command.taskId.trim() || command.pageNumber < 1 || command.imageBytes.length > MAX_OCR_IMAGE_BYTES) {
+    throw new Error('OCR_PROTOCOL_INVALID')
+  }
+  if (command.timeoutMs < 1 || command.timeoutMs > MAX_OCR_TIMEOUT_MS) {
+    throw new Error('OCR_PROTOCOL_INVALID')
+  }
+}
+
+export const ocrWarmup = (): Promise<OcrWarmupView> => {
+  return invokeRustCmd<OcrWarmupView>('ocr_warmup')
+}
+
+export const ocrRecognizePage = (command: OcrPageCommand): Promise<OcrPageResult> => {
+  validateOcrPageCommand(command)
+  return invokeRustCmd<OcrPageResult>('ocr_recognize_page', { command })
+}
+
+export const ocrShutdown = (): Promise<void> => {
+  return invokeRustCmd<void>('ocr_shutdown')
+}
+
+export interface DocumentPackageHeader {
+  schemaVersion: 1
+  userId: string
+  deviceId: string
+  sourceId: string
+  jobId: string
+  ingestionRevision: string
+  parserVersion: string
+}
+
+export interface ParsedDocumentBlockCommand {
+  ordinal: number
+  kind: 'paragraph' | 'page' | 'slide' | 'ocr-page'
+  text: string
+  pageNumber?: number | null
+  anchorIndex?: number | null
+  startLine?: number | null
+}
+
+export interface DocumentCacheReceipt {
+  cacheId: string
+  envelopeVersion: 1
+  chunkCount: number
+  encryptedBytes: number
+  plainTextSha256: string
+  payloadSha256: string
+  payloadBytes: number
+}
+
+export interface DocumentUploadPutRequest {
+  uploadUrl: string
+  cacheId: string
+  userId: string
+  deviceId: string
+  sourceId: string
+  jobId: string
+  ingestionRevision: string
+  headers: Record<string, string>
+  expectedSize: number
+  expectedPayloadSha256: string
+}
+
+export interface DocumentUploadPutReceipt {
+  status: number
+  bytesSent: number
+  payloadSha256: string
+}
+
+export const documentPackageBegin = (header: DocumentPackageHeader): Promise<string> => {
+  if (!header.userId.trim() || !header.deviceId.trim() || !header.sourceId.trim() || !header.jobId.trim() || !header.ingestionRevision.trim()) {
+    throw new Error('DOCUMENT_PACKAGE_HEADER_INVALID')
+  }
+  return invokeRustCmd<string>('document_package_begin', { header })
+}
+
+export const documentPackageAppend = (packageId: string, block: ParsedDocumentBlockCommand): Promise<void> => {
+  if (!packageId.trim() || !Number.isInteger(block.ordinal) || block.ordinal < 0 || !block.text.trim() || block.text.length > 100_000) {
+    throw new Error('DOCUMENT_PACKAGE_BLOCK_INVALID')
+  }
+  return invokeRustCmd<void>('document_package_append', { packageId, block })
+}
+
+export const documentPackageFinish = (packageId: string): Promise<DocumentCacheReceipt> => {
+  if (!packageId.trim()) throw new Error('DOCUMENT_PACKAGE_ID_INVALID')
+  return invokeRustCmd<DocumentCacheReceipt>('document_package_finish', { packageId })
+}
+
+export const documentCacheDelete = (cacheId: string): Promise<boolean> => {
+  if (!cacheId.trim()) throw new Error('CACHE_ID_INVALID')
+  return invokeRustCmd<boolean>('document_cache_delete', { cacheId })
+}
+
+export const documentUploadPut = (request: DocumentUploadPutRequest): Promise<DocumentUploadPutReceipt> => {
+  if (!request.uploadUrl.trim() || !request.cacheId.trim() || !request.userId.trim()
+    || !request.deviceId.trim() || !request.sourceId.trim() || !request.jobId.trim()
+    || !request.ingestionRevision.trim() || request.expectedSize <= 0
+    || !/^[a-f0-9]{64}$/i.test(request.expectedPayloadSha256)) {
+    throw new Error('DOCUMENT_UPLOAD_REQUEST_INVALID')
+  }
+  return invokeRustCmd<DocumentUploadPutReceipt>('document_upload_put', { request })
+}

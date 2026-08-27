@@ -268,6 +268,9 @@
         </div>
       </div>
 
+      <!-- Background document processing -->
+      <DocumentProcessingCenter />
+
       <div class="group-items" style="margin-top: 16px; border-top: 1px solid var(--border-subtle); padding-top: 16px;">
         <div class="settings-row">
           <div class="row-info">
@@ -315,6 +318,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
+import DocumentProcessingCenter from '@/components/documentProcessing/DocumentProcessingCenter.vue'
 
 const settingsStore = useSettingsStore()
 const knowledgeStore = useKnowledgeStore()

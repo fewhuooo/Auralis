@@ -127,6 +127,7 @@ class SourceAssetRelationControllerTests {
                 .andExpect(header().string(HttpHeaders.LOCATION,
                         org.hamcrest.Matchers.startsWith("/api/sources/")))
                 .andExpect(jsonPath("$.ingestionStatus").value("PENDING"))
+                .andExpect(jsonPath("$.ingestionRevision").isNotEmpty())
                 .andReturn());
         String sourceId = source.path("id").asText();
 

@@ -130,6 +130,7 @@
 import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LayoutDashboard, Compass, CalendarClock, Database, Timer } from 'lucide-vue-next'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import {
@@ -140,6 +141,7 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 const syncStore = useSyncStore()
 const subjectStore = useSubjectStore()
 
@@ -196,7 +198,12 @@ const syncDotClass = computed(() => {
 })
 
 onMounted(async () => {
-  await subjectStore.loadSubjects()
+  if (!authStore.isAuthenticated) return
+  try {
+    await subjectStore.loadSubjects()
+  } catch (error) {
+    console.warn('[AppSidebar] subjects load failed', error)
+  }
 })
 
 

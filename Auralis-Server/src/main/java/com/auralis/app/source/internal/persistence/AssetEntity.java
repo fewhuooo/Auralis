@@ -112,4 +112,10 @@ public class AssetEntity {
     public void markOrphaned() {
         uploadStatus = AssetUploadStatus.ORPHANED;
     }
+
+    public void setSha256IfAbsent(String sha256) {
+        if (this.sha256 == null) {
+            this.sha256 = sha256;
+        }
+    }
 }

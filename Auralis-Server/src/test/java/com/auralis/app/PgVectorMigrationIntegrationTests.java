@@ -39,18 +39,22 @@ class PgVectorMigrationIntegrationTests {
         UUID userId = UUID.randomUUID();
         UUID subjectId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
+        UUID pendingFileSourceId = UUID.randomUUID();
         jdbc.update("insert into users (id, username, normalized_username, password_hash, status) "
                         + "values (?, ?, ?, ?, 'ACTIVE')",
                 userId, "migration-" + userId, ("migration-" + userId).toUpperCase(), "hash");
         jdbc.update("insert into subjects (id, user_id, name, sort_key, is_default) values (?, ?, ?, '', false)",
                 subjectId, userId, "Migration subject");
         jdbc.update("insert into sources (id, user_id, type, subject_id, title, raw_text, ingestion_status) "
-                        + "values (?, ?, 'TEXT', ?, ?, ?, 'READY')",
+                        + "values (?, ?, 'FILE', ?, ?, ?, 'READY')",
                 sourceId, userId, subjectId, "Legacy source", "Legacy source");
         jdbc.update("insert into source_chunks "
                         + "(id, user_id, source_id, ordinal, content, content_hash, char_start, char_end, embedding_json) "
                         + "values (?, ?, ?, 0, 'legacy', 'legacy-hash', 0, 6, ?)",
                 UUID.randomUUID(), userId, sourceId, vectorJson());
+        jdbc.update("insert into sources (id, user_id, type, subject_id, title, raw_text, ingestion_status) "
+                        + "values (?, ?, 'FILE', ?, ?, ?, 'PARSING')",
+                pendingFileSourceId, userId, subjectId, "Pending file", "Pending file");
 
         assertThat(columnExists(jdbc, "embedding")).isFalse();
 
@@ -71,6 +75,21 @@ class PgVectorMigrationIntegrationTests {
                 "select count(*) from pg_indexes where indexname = 'ix_source_chunks_embedding_user' "
                         + "and indexdef ilike '%using hnsw%'",
                 Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select ingestion_status from sources where id = ?", String.class, sourceId))
+                .isEqualTo("READY");
+        assertThat(jdbc.queryForObject(
+                "select ingestion_revision from sources where id = ?", UUID.class, sourceId))
+                .isEqualTo(sourceId);
+        assertThat(jdbc.queryForObject(
+                "select count(*) from source_chunks where source_id = ? and active",
+                Integer.class, sourceId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "select ingestion_status from sources where id = ?", String.class, pendingFileSourceId))
+                .isEqualTo("AWAITING_CLIENT");
+        assertThat(jdbc.queryForObject(
+                "select ingestion_revision from sources where id = ?", UUID.class, pendingFileSourceId))
+                .isEqualTo(pendingFileSourceId);
     }
 
     private boolean columnExists(JdbcTemplate jdbc, String column) {

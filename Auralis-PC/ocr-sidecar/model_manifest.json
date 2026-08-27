@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "rapidocr": "3.9.0",
+    "onnxruntime": "1.20.1",
+    "pyinstaller": "6.11.1"
+  },
+  "models": [
+    {
+      "name": "det.onnx",
+      "version": "PP-OCRv6-small",
+      "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f"
+    },
+    {
+      "name": "rec.onnx",
+      "version": "PP-OCRv6-small",
+      "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884"
+    },
+    {
+      "name": "cls.onnx",
+      "version": "PP-OCRv6-small",
+      "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+    }
+  ],
+  "dictionary": {
+    "name": "ppocr_keys_v1.txt",
+    "sha256": "a1c84d9bdb9ab29043c58896224d32941783eb821629618416dcb08f12886492"
+  }
+}

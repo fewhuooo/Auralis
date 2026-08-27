@@ -28,6 +28,14 @@ public class ConversationService {
         if (command.baseVersion() != 0) {
             throw new DomainException("VALIDATION_FAILED", "Create baseVersion must be 0");
         }
+        ConversationPurpose purpose = command.purpose() == null
+                ? ConversationPurpose.GENERAL : command.purpose();
+        if (purpose == ConversationPurpose.READING_SESSION && command.sourceId() == null) {
+            throw new DomainException("VALIDATION_FAILED", "Reading sessions require a sourceId");
+        }
+        if (purpose == ConversationPurpose.GENERAL && command.sourceId() != null) {
+            throw new DomainException("VALIDATION_FAILED", "General conversations cannot be bound to a sourceId");
+        }
         String title = command.title() == null || command.title().isBlank() ? null : command.title().trim();
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
         if (clientRequestId != null) {
@@ -38,7 +46,7 @@ public class ConversationService {
             }
         }
         return toView(conversationRepository.saveAndFlush(
-                new ConversationEntity(UUID.randomUUID(), userId, title, clientRequestId)), List.of());
+                new ConversationEntity(UUID.randomUUID(), userId, title, clientRequestId, purpose, command.sourceId())), List.of());
     }
 
     @Transactional(readOnly = true)
@@ -215,7 +223,8 @@ public class ConversationService {
 
     private ConversationView toView(ConversationEntity entity, List<MessageView> messages) {
         return new ConversationView(entity.getId(), entity.getTitle(), messages,
-                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getDeletedAt(), entity.getVersion());
+                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getDeletedAt(), entity.getVersion(),
+                entity.getPurpose(), entity.getSourceId());
     }
 
     private void requireVersion(ConversationEntity entity, long baseVersion) {

@@ -84,12 +84,14 @@ test('FilePreview owns the shared loading and signed-url lifecycle', () => {
 test('File Viewer adapter is isolated behind a renderer component', () => {
   const rendererPath = path.resolve('src/components/preview/FileViewerRenderer.vue')
   const source = fs.readFileSync(rendererPath, 'utf8')
-  assert.match(source, /@file-viewer\/vue3-full/)
-  assert.match(source, /<FileViewer/)
+  assert.match(source, /FileViewer as BaseFileViewer[^\n]*from '@file-viewer\/vue3'/)
+  assert.match(source, /withFullViewerOptions[^\n]*from '@file-viewer\/vue3-full'/)
+  assert.match(source, /<BaseFileViewer/)
+  assert.doesNotMatch(source, /import \{ FileViewer \} from '@file-viewer\/vue3-full'/)
   assert.match(source, /styleIsolation/)
 })
 
-test('File Viewer renderer disables internal toolbars and exposes API', () => {
+test('File Viewer renderer disables internal toolbars and exposes an API that is not gated by load-complete', () => {
   const rendererPath = path.resolve('src/components/preview/FileViewerRenderer.vue')
   const source = fs.readFileSync(rendererPath, 'utf8')
 
@@ -97,11 +99,14 @@ test('File Viewer renderer disables internal toolbars and exposes API', () => {
   assert.match(source, /pdf:\s*\{\s*toolbar:\s*false/)
   assert.doesNotMatch(source, /\.pdf-shell/)
   assert.doesNotMatch(source, /flex-direction:\s*column-reverse/)
-  assert.match(source, /zoomIn:/)
+  assert.match(source, /zoomIn:\s*\(\) => runViewerAction\(\(\) => zoomIn\(\)\)/)
+  assert.match(source, /viewer\.zoomIn\(\)/)
+  assert.match(source, /viewer\.zoomOut\(\)/)
+  assert.match(source, /viewer\.resetZoom\(\)/)
   assert.match(source, /applyViewState/)
-  assert.match(source, /changeZoom/)
-  assert.match(source, /if \(!viewerRef\.value \|\| !isReady\.value\)/)
-  assert.match(source, /applyViewState\(\{ scale/)
+  assert.doesNotMatch(source, /function changeZoom/)
+  assert.match(source, /if \(!viewerRef\.value\)/)
+  assert.doesNotMatch(source, /if \(!viewerRef\.value \|\| !isReady\.value\)/)
   assert.match(source, /applyViewState\(\{ rotation/)
   assert.match(source, /rotate/)
   assert.match(source, /ready-change/)
@@ -109,7 +114,7 @@ test('File Viewer renderer disables internal toolbars and exposes API', () => {
   assert.match(source, /display: none !important/)
 })
 
-test('File preview queues controls until the renderer is ready and keeps the paper clear of chrome', () => {
+test('File preview only queues controls before component refs exist and keeps the paper clear of chrome', () => {
   const previewPath = path.resolve('src/components/FilePreview.vue')
   const previewSource = fs.readFileSync(previewPath, 'utf8')
   const rendererPath = path.resolve('src/components/preview/FileViewerRenderer.vue')
@@ -120,7 +125,8 @@ test('File preview queues controls until the renderer is ready and keeps the pap
   assert.match(previewSource, /pendingRendererActions/)
   assert.match(previewSource, /control-ready/)
   assert.match(previewSource, /padding: 12px 16px/)
-  assert.match(previewSource, /if \(!rendererRef\.value \|\| !isRendererReady\.value\)/)
+  assert.match(previewSource, /if \(!rendererRef\.value\)/)
+  assert.doesNotMatch(previewSource, /if \(!rendererRef\.value \|\| !isRendererReady\.value\)/)
   assert.doesNotMatch(previewSource, /file-preview-loading-overlay/)
   assert.match(rendererSource, /@zoom-change="onZoomChange"/)
   assert.match(rendererSource, /file-viewer-rotation-layer/)
@@ -173,6 +179,14 @@ test('SubjectWorkspace keeps files flat and exposes file deletion', () => {
   assert.match(source, /\.drawer-item:hover \.drawer-item-delete[\s\S]*opacity:\s*1;/)
   assert.match(source, /\.drawer-item-delete \{[^}]*opacity:\s*0;/)
   assert.match(source, /el-message-box\.css/)
+})
+
+test('SubjectWorkspace file rows omit decorative file type icons', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+
+  assert.doesNotMatch(source, /class="drawer-item-icon"/)
+  assert.doesNotMatch(source, /const getFileIcon = \(t: string\)/)
 })
 
 test('useSourceStore handles pending CREATE when deleting files', () => {

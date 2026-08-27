@@ -12,6 +12,9 @@ import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
+import com.auralis.app.ai.ingestion.IngestionJobService;
+import com.auralis.app.source.ParsedDocumentStatus;
+import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageRequest;
 import org.slf4j.Logger;
@@ -22,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -33,16 +37,22 @@ public class SourceService {
     private final AssetRepository assetRepository;
     private final SubjectService subjectService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ParsedDocumentRepository parsedDocumentRepository;
+    private final IngestionJobService ingestionJobService;
 
     public SourceService(
             SourceRepository sourceRepository,
             AssetRepository assetRepository,
             SubjectService subjectService,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            ParsedDocumentRepository parsedDocumentRepository,
+            IngestionJobService ingestionJobService) {
         this.sourceRepository = sourceRepository;
         this.assetRepository = assetRepository;
         this.subjectService = subjectService;
         this.eventPublisher = eventPublisher;
+        this.parsedDocumentRepository = parsedDocumentRepository;
+        this.ingestionJobService = ingestionJobService;
     }
 
     @Transactional
@@ -54,11 +64,14 @@ public class SourceService {
     public SourceView create(UUID userId, UUID sourceId, SourceCommand command) {
         subjectService.requireActiveSubject(userId, command.subjectId());
         ValidatedSource data = validate(userId, command);
+        SourceIngestionStatus initialStatus = data.type() == SourceType.FILE
+                ? SourceIngestionStatus.AWAITING_CLIENT
+                : SourceIngestionStatus.PENDING;
         SourceView result = view(sourceRepository.save(new SourceEntity(
                 sourceId, userId, data.type(), command.subjectId(), requiredTitle(command.title()),
-                data.assetId(), data.originUrl(), data.rawText(), command.outline(), SourceIngestionStatus.PENDING)));
+                data.assetId(), data.originUrl(), data.rawText(), command.outline(), initialStatus)));
         publishChange(userId, result, "CREATE");
-        eventPublisher.publishEvent(new SourceIngestionRequestedEvent(userId, result.id(), result.version()));
+        publishIngestionRequestIfServerOwned(userId, result);
         log.info("SOURCE_CREATED userId={} sourceId={} type={} subjectId={} assetId={}",
                 userId, result.id(), result.type(), result.subjectId(), result.assetId());
         return result;
@@ -112,12 +125,26 @@ public class SourceService {
         requireVersion(entity, baseVersion);
         subjectService.requireActiveSubject(userId, command.subjectId());
         ValidatedSource data = validate(userId, command);
+        SourceType previousType = entity.getType();
+        UUID previousAssetId = entity.getAssetId();
+        boolean typeChanged = previousType != data.type();
+        boolean fileAssetChanged = data.type() == SourceType.FILE
+                && !Objects.equals(previousAssetId, data.assetId());
+        boolean requiresClientParsing = data.type() == SourceType.FILE
+                && (typeChanged || fileAssetChanged);
+        if (requiresClientParsing) {
+            supersedeParsedDocuments(userId, id, entity.getIngestionRevision());
+        }
+        SourceIngestionStatus nextStatus = data.type() == SourceType.FILE
+                ? (requiresClientParsing ? SourceIngestionStatus.AWAITING_CLIENT : entity.getIngestionStatus())
+                : SourceIngestionStatus.PENDING;
         entity.update(
                 data.type(), command.subjectId(), requiredTitle(command.title()), data.assetId(),
-                data.originUrl(), data.rawText(), command.outline());
+                data.originUrl(), data.rawText(), command.outline(), nextStatus,
+                typeChanged || fileAssetChanged);
         SourceView result = view(sourceRepository.saveAndFlush(entity));
         publishChange(userId, result, "UPDATE");
-        eventPublisher.publishEvent(new SourceIngestionRequestedEvent(userId, result.id(), result.version()));
+        publishIngestionRequestIfServerOwned(userId, result);
         return result;
     }
 
@@ -154,10 +181,24 @@ public class SourceService {
         SourceEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        entity.requestReingest();
+        if (entity.getType() == SourceType.FILE) {
+            var accepted = parsedDocumentRepository.findFirstByUserIdAndSourceIdAndIngestionRevisionAndStatus(
+                    userId, id, entity.getIngestionRevision(), ParsedDocumentStatus.ACCEPTED);
+            if (accepted.isPresent()) {
+                entity.requestAcceptedReingest();
+                SourceView result = view(sourceRepository.saveAndFlush(entity));
+                ingestionJobService.enqueueParsedDocument(
+                        userId, id, accepted.get().getId(), entity.getIngestionRevision(), accepted.get().getGeneration());
+                publishChange(userId, result, "UPDATE");
+                return result;
+            }
+            supersedeParsedDocuments(userId, id, entity.getIngestionRevision());
+        }
+        boolean requiresClientParsing = entity.getType() == SourceType.FILE;
+        entity.requestReingest(requiresClientParsing);
         SourceView result = view(sourceRepository.saveAndFlush(entity));
         publishChange(userId, result, "UPDATE");
-        eventPublisher.publishEvent(new SourceIngestionRequestedEvent(userId, result.id(), result.version()));
+        publishIngestionRequestIfServerOwned(userId, result);
         return result;
     }
 
@@ -291,8 +332,27 @@ public class SourceService {
         return new SourceView(
                 entity.getId(), entity.getSubjectId(), entity.getType(), entity.getTitle(), entity.getAssetId(),
                 entity.getOriginUrl(), entity.getRawText(), entity.getOutline(), entity.getIngestionStatus(),
-                entity.getSafeErrorCode(), entity.getSafeErrorDetail(), entity.getVersion(), entity.getCreatedAt(),
+                entity.getIngestionRevision(), entity.getSafeErrorCode(), entity.getSafeErrorDetail(), entity.getVersion(), entity.getCreatedAt(),
                 entity.getUpdatedAt(), entity.getDeletedAt(), assetSizeBytes);
+    }
+
+    private void publishIngestionRequestIfServerOwned(UUID userId, SourceView view) {
+        if (view.type() != SourceType.FILE) {
+            eventPublisher.publishEvent(new SourceIngestionRequestedEvent(userId, view.id(), view.version()));
+        }
+    }
+
+    private void supersedeParsedDocuments(UUID userId, UUID sourceId, UUID ingestionRevision) {
+        var documents = parsedDocumentRepository.findAllByUserIdAndSourceIdAndIngestionRevision(
+                userId, sourceId, ingestionRevision);
+        for (var document : documents) {
+            if (document.getStatus() == ParsedDocumentStatus.ACCEPTED) {
+                document.supersede();
+            }
+        }
+        if (!documents.isEmpty()) {
+            parsedDocumentRepository.saveAll(documents);
+        }
     }
 
     private void publishChange(UUID userId, SourceView view, String mutationType) {

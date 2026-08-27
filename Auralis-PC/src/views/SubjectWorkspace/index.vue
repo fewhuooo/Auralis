@@ -62,9 +62,8 @@
             :class="{ 'is-active': selectedFileId === file.id }"
             @click="selectFile(file.id)"
           >
-            <span class="drawer-item-icon">{{ getFileIcon(file.fileType) }}</span>
             <div class="drawer-item-body">
-              <span class="drawer-item-name">{{ file.name }}</span>
+              <span class="drawer-item-name">{{ file.name }}<DocumentProcessingDot :source-id="file.id" /></span>
               <span class="drawer-item-meta">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
             </div>
             <button
@@ -223,7 +222,16 @@
             @zoom-change="handlePreviewZoomChange"
             @rotation-change="previewRotation = $event"
             @page-change="handlePreviewPageChange"
+            @text-selected="handleTextSelected"
           />
+
+          <div v-if="selectedText" class="selection-actions" role="toolbar" aria-label="选中文本操作">
+            <span class="selection-summary">已选 {{ selectedText.length }} 字</span>
+            <button type="button" @click="explainSelection">解释</button>
+            <button type="button" @click="askSelection">追问</button>
+            <button type="button" @click="saveSelection">保存为知识块</button>
+            <button type="button" class="selection-dismiss" aria-label="清除选区" @click="selectedText = ''">×</button>
+          </div>
 
           <footer class="preview-page-footer" aria-label="文档页码">
             <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">上一页</button>
@@ -449,6 +457,19 @@
       </div>
     </div>
 
+    <DocumentNotReadyDialog
+      v-model="showNotReadyDialog"
+      :file-name="selectedFile?.name || '当前文件'"
+      @cancel="showNotReadyDialog = false"
+      @go-profile="goToProcessingCenter"
+    />
+    <KnowledgeBlockEditor
+      v-model="showKnowledgeEditor"
+      :initial-content="selectedText"
+      @cancel="showKnowledgeEditor = false"
+      @save="saveKnowledgeBlock"
+    />
+
     <!-- Register File Modal -->
     <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
       <div class="modal-container register-modal">
@@ -572,6 +593,9 @@ import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 
 import FilePreview from '@/components/FilePreview.vue'
+import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
+import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
+import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -579,6 +603,7 @@ import { useTaskStore } from '@/store/useTaskStore'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useChatStore } from '@/store/useChatStore'
+import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -595,6 +620,7 @@ const subjectStore = useSubjectStore()
 const assetStore = useAssetStore()
 const sourceStore = useSourceStore()
 const chatStore = useChatStore()
+const documentProcessingStore = useDocumentProcessingStore()
 const { activeSubject, activeSourceFiles } = storeToRefs(subjectStore)
 const { messages: storedChatMessages, isStreaming: storedChatStreaming, streamingContent: storedStreamingContent } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
@@ -672,6 +698,9 @@ const startResizeRight = (e: MouseEvent) => {
 
 // ===== File summary =====
 const selectedFileId = ref<string | null>(null)
+const selectedText = ref('')
+const showNotReadyDialog = ref(false)
+const showKnowledgeEditor = ref(false)
 const filePreviewRef = ref<InstanceType<typeof FilePreview> | null>(null)
 const previewPage = ref(1)
 const previewPageCount = ref(1)
@@ -685,6 +714,7 @@ watch(selectedFileId, () => {
   previewControlsReady.value = false
   previewZoomLabel.value = '100%'
   previewRotation.value = 0
+  selectedText.value = ''
 })
 
 const handlePreviewZoomChange = (state: { label?: string; scale: number }) => {
@@ -695,9 +725,13 @@ const selectedFile = computed<SourceFileModel | null>(() => activeSourceFiles.va
 const selectedSourceId = computed(() => selectedFile.value?.id)
 const deletingFileId = ref<string | null>(null)
 
-const selectFile = (id: string) => {
+const selectFile = async (id: string) => {
+  if (selectedFileId.value === id) return
+  await chatStore.endActiveSession().catch(() => undefined)
   selectedFileId.value = id
   centerView.value = 'preview'
+  const file = activeSourceFiles.value.find((item) => item.id === id)
+  if (file) await chatStore.startReadingSession(id, subjectId.value, file.name).catch(() => undefined)
 }
 
 const handleDeleteFile = async (file: SourceFileModel) => {
@@ -743,15 +777,6 @@ const handlePreviewError = (message: string) => {
 const handlePreviewPageChange = (page: number, total: number) => {
   previewPage.value = page
   previewPageCount.value = Math.max(1, total)
-}
-
-const getFileIcon = (t: string) => {
-  const s = (t || '').toLowerCase()
-  if (s.includes('pdf')) return '📄'
-  if (s.includes('md')) return '📝'
-  if (s.includes('ppt')) return '📊'
-  if (s.includes('doc')) return '📘'
-  return '📄'
 }
 
 // ===== Subject outline (visual prototype; not persisted) =====
@@ -1010,6 +1035,11 @@ const isAiStreaming = computed(() => storedChatStreaming.value)
 const streamingContent = computed(() => storedStreamingContent.value)
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
+const isSelectedFileReady = computed(() => selectedFile.value?.ingestionStatus === 'READY')
+const selectedFileJob = computed(() => selectedFileId.value
+  ? documentProcessingStore.jobs.find((job) => job.sourceId === selectedFileId.value && job.phase !== 'READY')
+  : undefined)
+const showProcessingRequired = computed(() => Boolean(selectedFile.value && (!isSelectedFileReady.value || selectedFileJob.value)))
 const aiModesOptions = [
   { id: 1, icon: '✦', label: '学习伴读', desc: '深度严谨，为你推演难题' },
   { id: 2, icon: '◈', label: '重点梳理', desc: '全科架构概览与核心提炼' },
@@ -1034,12 +1064,18 @@ const scrollChatToBottom = () => {
 const sendChat = async () => {
   const msg = chatInput.value.trim()
   if (!msg || isAiStreaming.value) return
+  if (showProcessingRequired.value) {
+    showNotReadyDialog.value = true
+    return
+  }
   chatInput.value = ''
   autoResizeInput()
   scrollChatToBottom()
   try {
-    const context = selectedFile.value ? `当前文件: ${selectedFile.value.name}` : `学科: ${activeSubject.value?.name || ''}`
-    await chatStore.sendMessage(msg, { subjectId: subjectId.value, context })
+    await chatStore.sendMessage(msg, {
+      subjectId: subjectId.value,
+      sourceId: selectedFileId.value || undefined,
+    })
   } catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
       ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
@@ -1051,12 +1087,53 @@ const sendChat = async () => {
 
 const clearChat = () => { chatStore.clearActiveConversation() }
 
+const handleTextSelected = (text: string) => { selectedText.value = text.slice(0, 4000) }
+const goToProcessingCenter = () => {
+  showNotReadyDialog.value = false
+  router.push('/profile')
+}
+const sendSelectionQuestion = async (prompt: string) => {
+  if (!selectedText.value || isAiStreaming.value) return
+  if (showProcessingRequired.value) {
+    showNotReadyDialog.value = true
+    return
+  }
+  try {
+    await chatStore.sendMessage(prompt, { subjectId: subjectId.value, sourceId: selectedFileId.value || undefined, selectionText: selectedText.value })
+  } catch (error) {
+    ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
+  }
+}
+const explainSelection = () => { void sendSelectionQuestion('请解释我选中的内容，并指出其中的关键概念。') }
+const askSelection = () => {
+  chatInput.value = '请围绕我选中的内容继续讲解：'
+  void sendSelectionQuestion(chatInput.value)
+  chatInput.value = ''
+}
+const saveSelection = () => { showKnowledgeEditor.value = true }
+const saveKnowledgeBlock = async (value: { title: string; content: string; tags: string[] }) => {
+  if (!activeSubject.value) return
+  await blockStore.addBlock({
+    subjectId: subjectId.value,
+    sourceFileId: selectedFileId.value || undefined,
+    subject: activeSubject.value.name,
+    title: value.title,
+    preview: value.content.slice(0, 180),
+    content: value.content,
+    tags: value.tags,
+    source: selectedFile.value?.name || '选中文本',
+    color: activeSubject.value.color,
+  })
+  showKnowledgeEditor.value = false
+  ElNotification({ title: '已保存为知识块', type: 'success', position: 'top-right' })
+}
+
 // ===== Lifecycle =====
 const startFreshChatSession = async () => {
-  chatStore.abortStream()
-  chatStore.clearActiveConversation()
-  await chatStore.startNewSession('学科伴读')
+  await chatStore.endActiveSession()
 }
+
+let processingRefreshTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   try {
@@ -1073,10 +1150,12 @@ onMounted(async () => {
     if (activeSourceFiles.value.length > 0) {
       selectedFileId.value = activeSourceFiles.value[0].id
       centerView.value = 'preview'
+      await chatStore.startReadingSession(activeSourceFiles.value[0].id, subjectId.value, activeSourceFiles.value[0].name)
     } else {
       centerView.value = 'overview'
     }
   }
+  processingRefreshTimer = setInterval(() => { void documentProcessingStore.refresh() }, 1500)
 })
 
 watch(subjectId, async (newId) => {
@@ -1093,6 +1172,7 @@ watch(subjectId, async (newId) => {
     if (activeSourceFiles.value.length > 0) {
       selectedFileId.value = activeSourceFiles.value[0].id
       centerView.value = 'preview'
+      await chatStore.startReadingSession(activeSourceFiles.value[0].id, newId, activeSourceFiles.value[0].name)
     } else {
       selectedFileId.value = null
       centerView.value = 'overview'
@@ -1100,7 +1180,10 @@ watch(subjectId, async (newId) => {
   }
 })
 
-onUnmounted(() => { chatStore.abortStream() })
+onUnmounted(() => {
+  if (processingRefreshTimer) clearInterval(processingRefreshTimer)
+  void chatStore.endActiveSession().catch(() => undefined)
+})
 </script>
 
 <style scoped>
@@ -1311,7 +1394,6 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   border-radius: 1.5px;
 }
 
-.drawer-item-icon { font-size: 16px; flex-shrink: 0; }
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .drawer-item-name { font-size: 13.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .drawer-item-meta { font-size: 10.5px; color: var(--text-muted); }
@@ -1332,6 +1414,25 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   opacity: 0;
   transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
+
+.selection-actions {
+  position: absolute;
+  z-index: 8;
+  left: 24px;
+  bottom: 58px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 48px);
+  padding: 7px 9px;
+  border: 1px solid rgba(125, 147, 114, .28);
+  border-radius: 10px;
+  background: rgba(250, 248, 243, .96);
+  box-shadow: 0 8px 22px rgba(40, 45, 38, .12);
+}
+.selection-actions button { border: 0; border-radius: 7px; padding: 5px 8px; background: rgba(125, 147, 114, .1); color: var(--text-secondary); cursor: pointer; font-size: 11px; white-space: nowrap; }
+.selection-actions .selection-summary { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.selection-actions .selection-dismiss { padding: 3px 6px; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1; }
 
 .drawer-item:hover .drawer-item-delete { opacity: 1; }
 .drawer-item-delete:focus-visible { opacity: 1; outline: 2px solid var(--color-primary-accent); outline-offset: 2px; }

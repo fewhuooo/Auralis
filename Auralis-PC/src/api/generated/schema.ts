@@ -196,6 +196,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["complete"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sources/{sourceId}/parsed-documents/upload-intents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createUploadIntent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sources/{id}/restore": {
         parameters: {
             query?: never;
@@ -413,7 +445,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["complete"];
+        post: operations["complete_1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -429,7 +461,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["createUploadIntent"];
+        post: operations["createUploadIntent_1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -728,6 +760,50 @@ export interface components {
             /** Format: date-time */
             deletedAt?: string;
         };
+        SourceUpdateRequest: {
+            /** Format: int64 */
+            baseVersion: number;
+            /** Format: uuid */
+            subjectId: string;
+            /** @enum {string} */
+            type: "FILE" | "TEXT" | "URL";
+            title: string;
+            /** Format: uuid */
+            assetId?: string;
+            originUrl?: string;
+            rawText?: string;
+            outline?: string;
+        };
+        SourceResponse: {
+            /** Format: uuid */
+            id?: string;
+            /** Format: uuid */
+            subjectId?: string;
+            /** @enum {string} */
+            type?: "FILE" | "TEXT" | "URL";
+            title?: string;
+            /** Format: uuid */
+            assetId?: string;
+            originUrl?: string;
+            rawText?: string;
+            outline?: string;
+            /** @enum {string} */
+            ingestionStatus?: "AWAITING_CLIENT" | "VALIDATING" | "PENDING" | "PARSING" | "INDEXING" | "READY" | "FAILED";
+            /** Format: uuid */
+            readonly ingestionRevision?: string;
+            safeErrorCode?: string;
+            safeErrorDetail?: string;
+            /** Format: int64 */
+            assetSizeBytes?: number;
+            /** Format: int64 */
+            version?: number;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            /** Format: date-time */
+            deletedAt?: string;
+        };
         AiSettingsCommand: {
             /** @enum {string} */
             provider: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
@@ -809,6 +885,77 @@ export interface components {
         PushResponse: {
             results?: components["schemas"]["MutationResponse"][];
             serverCursor?: string;
+        };
+        SourceCreateRequest: {
+            /** Format: int64 */
+            baseVersion: number;
+            /** Format: uuid */
+            subjectId: string;
+            /** @enum {string} */
+            type: "FILE" | "TEXT" | "URL";
+            title: string;
+            /** Format: uuid */
+            assetId?: string;
+            originUrl?: string;
+            rawText?: string;
+            outline?: string;
+        };
+        ParsedDocumentCompleteResponse: {
+            /** Format: uuid */
+            parsedDocumentId?: string;
+            /** @enum {string} */
+            status?: "UPLOADING" | "VALIDATING" | "ACCEPTED" | "REJECTED" | "SUPERSEDED" | "FAILED";
+            /** Format: uuid */
+            generation?: string;
+            /** Format: uuid */
+            ingestionJobId?: string;
+        };
+        ApiProblemDetails: {
+            /** Format: uri */
+            type?: string;
+            title?: string;
+            /** Format: int32 */
+            status?: number;
+            detail?: string;
+            instance?: string;
+            code?: string;
+            traceId?: string;
+            fieldErrors?: components["schemas"]["FieldError"][];
+            current?: unknown;
+        };
+        FieldError: {
+            field?: string;
+            message?: string;
+        };
+        ParsedDocumentUploadIntentRequest: {
+            /** Format: uuid */
+            ingestionRevision: string;
+            /** Format: int32 */
+            schemaVersion: number;
+            parserId: string;
+            parserVersion: string;
+            normalizationVersion: string;
+            ocrModelVersion?: string;
+            sourceAssetSha256?: string;
+            payloadSha256: string;
+            /** Format: int64 */
+            sizeBytes: number;
+        };
+        ParsedDocumentUploadIntentResponse: {
+            /** Format: uuid */
+            parsedDocumentId?: string;
+            /** Format: uuid */
+            ingestionRevision?: string;
+            uploadUrl?: string;
+            headers?: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            expiresAt?: string;
+        };
+        SourceVersionRequest: {
+            /** Format: int64 */
+            baseVersion: number;
         };
         EventRequest: {
             /** Format: uuid */
@@ -933,12 +1080,29 @@ export interface components {
             /** @enum {string} */
             platform: "WEB" | "WINDOWS" | "MACOS" | "IOS" | "ANDROID" | "HARMONY" | "UNKNOWN";
         };
-        DownloadUrlResponse: {
+        AssetDownloadUrlResponse: {
             url?: string;
             /** Format: date-time */
             expiresAt?: string;
         };
-        UploadIntentRequest: {
+        AssetResponse: {
+            /** Format: uuid */
+            id?: string;
+            originalName?: string;
+            /** Format: int64 */
+            sizeBytes?: number;
+            mimeType?: string;
+            sha256?: string;
+            /** @enum {string} */
+            uploadStatus?: "UPLOADING" | "READY" | "FAILED" | "ORPHANED";
+            /** Format: date-time */
+            completedAt?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        AssetUploadIntentRequest: {
             /** Format: int64 */
             baseVersion: number;
             originalName: string;
@@ -947,7 +1111,7 @@ export interface components {
             mimeType: string;
             sha256?: string;
         };
-        UploadIntentResponse: {
+        AssetUploadIntentResponse: {
             /** Format: uuid */
             assetId?: string;
             uploadUrl?: string;
@@ -998,6 +1162,16 @@ export interface components {
             /** Format: int32 */
             topK?: number;
             clientRequestId?: string;
+            readingContext?: components["schemas"]["ReadingContext"];
+        };
+        ReadingContext: {
+            /** Format: uuid */
+            currentSourceId: string;
+            /** Format: uuid */
+            subjectId: string;
+            /** @enum {string} */
+            retrievalMode: "AUTO";
+            selectionText?: string;
         };
         StreamingResponseBody: unknown;
         ConversationCommand: {
@@ -1005,6 +1179,10 @@ export interface components {
             /** Format: int64 */
             baseVersion: number;
             clientRequestId?: string;
+            /** @enum {string} */
+            purpose?: "GENERAL" | "READING_SESSION";
+            /** Format: uuid */
+            sourceId?: string;
         };
         ConversationView: {
             /** Format: uuid */
@@ -1019,6 +1197,10 @@ export interface components {
             deletedAt?: string;
             /** Format: int64 */
             version?: number;
+            /** @enum {string} */
+            purpose?: "GENERAL" | "READING_SESSION";
+            /** Format: uuid */
+            sourceId?: string;
         };
         MessageView: {
             /** Format: uuid */
@@ -1102,6 +1284,11 @@ export interface components {
             completedReviewEvents?: number;
             /** Format: int64 */
             activeSources?: number;
+        };
+        SourceListResponse: {
+            items?: components["schemas"]["SourceResponse"][];
+            nextCursor?: string;
+            hasMore?: boolean;
         };
         SessionListResponse: {
             items?: components["schemas"]["SessionResponse"][];
@@ -1296,7 +1483,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["Response"];
+                    "*/*": components["schemas"]["SourceResponse"];
                 };
             };
         };
@@ -1312,7 +1499,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UpdateRequest"];
+                "application/json": components["schemas"]["SourceUpdateRequest"];
             };
         };
         responses: {
@@ -1322,7 +1509,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["Response"];
+                    "*/*": components["schemas"]["SourceResponse"];
                 };
             };
         };
@@ -1338,7 +1525,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["VersionRequest"];
+                "application/json": components["schemas"]["SourceVersionRequest"];
             };
         };
         responses: {
@@ -1727,7 +1914,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["ListResponse"];
+                    "*/*": components["schemas"]["SourceListResponse"];
                 };
             };
         };
@@ -1741,7 +1928,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateRequest"];
+                "application/json": components["schemas"]["SourceCreateRequest"];
             };
         };
         responses: {
@@ -1751,7 +1938,74 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["Response"];
+                    "*/*": components["schemas"]["SourceResponse"];
+                };
+            };
+        };
+    };
+    complete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+                parsedDocumentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ParsedDocumentCompleteResponse"];
+                };
+            };
+            /** @description PARSED_DOCUMENT_CONFLICT or INGESTION_REVISION_STALE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiProblemDetails"];
+                };
+            };
+        };
+    };
+    createUploadIntent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParsedDocumentUploadIntentRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ParsedDocumentUploadIntentResponse"];
+                };
+            };
+            /** @description INGESTION_REVISION_STALE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ApiProblemDetails"];
                 };
             };
         };
@@ -1767,7 +2021,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["VersionRequest"];
+                "application/json": components["schemas"]["SourceVersionRequest"];
             };
         };
         responses: {
@@ -1777,7 +2031,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["Response"];
+                    "*/*": components["schemas"]["SourceResponse"];
                 };
             };
         };
@@ -1793,7 +2047,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["VersionRequest"];
+                "application/json": components["schemas"]["SourceVersionRequest"];
             };
         };
         responses: {
@@ -1803,7 +2057,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["Response"];
+                    "*/*": components["schemas"]["SourceResponse"];
                 };
             };
         };
@@ -2109,12 +2363,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["DownloadUrlResponse"];
+                    "*/*": components["schemas"]["AssetDownloadUrlResponse"];
                 };
             };
         };
     };
-    complete: {
+    complete_1: {
         parameters: {
             query?: never;
             header?: never;
@@ -2131,12 +2385,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["Response"];
+                    "*/*": components["schemas"]["AssetResponse"];
                 };
             };
         };
     };
-    createUploadIntent: {
+    createUploadIntent_1: {
         parameters: {
             query?: never;
             header?: never;
@@ -2145,7 +2399,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UploadIntentRequest"];
+                "application/json": components["schemas"]["AssetUploadIntentRequest"];
             };
         };
         responses: {
@@ -2155,7 +2409,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["UploadIntentResponse"];
+                    "*/*": components["schemas"]["AssetUploadIntentResponse"];
                 };
             };
         };

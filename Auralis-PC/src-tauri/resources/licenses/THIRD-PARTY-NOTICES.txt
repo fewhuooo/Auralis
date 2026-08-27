@@ -1,0 +1,9 @@
+Auralis OCR sidecar includes the following separately distributed components:
+
+- RapidOCR 3.9.0 (Apache License 2.0)
+- ONNX Runtime 1.20.1 (MIT License)
+- PyInstaller 6.11.1 (GPLv2 with bootloader exception)
+- PP-OCRv6-small model files (Apache-compatible model distribution terms)
+
+The complete dependency versions and hashes are recorded in
+ocr-sidecar/requirements-lock.txt and ocr-components.cdx.json.

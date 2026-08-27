@@ -1,8 +1,125 @@
 # Auralis 变更记录
 
-更新时间：2026-08-23
+更新时间：2026-08-26
 
 文档状态：现行历史记录
+
+### PC Vite 开发 HMR 竞态修复（2026-08-27）
+
+- `@vitejs/plugin-vue` 显式使用 `vue/compiler-sfc`，避免 File Viewer 开发期资源复制触发早期 HMR 时读取空 compiler 并报 `invalidateTypeCache`。
+- Vite watcher 忽略 `public/file-viewer/**` 生成资源，保留资源复制/静态服务但不触发业务热更新。
+- `test:r4-pc` 138/138、type-check、静态检查、Tauri `--no-bundle` 通过；真实 Tauri dev 热更新仍需人工重启确认。
+
+### PC Tauri debug 前端启动修复（2026-08-26）
+
+- 修复 `tauri-plugin-log` 默认文件日志目标在已有日志文件/目录状态下返回 Windows `os error 183`、导致 debug/Tauri dev 在窗口创建前退出的问题。
+- debug 日志改为 stdout 目标；新增静态回归断言，`cargo run` 已能正常越过原崩溃点。真实 Tauri GUI 仍需人工验收。
+
+### PC Tauri 白屏运行时修复（2026-08-26）
+
+- 独立 WebView2 证据确认资源加载成功，白屏由公共登录路由仍挂载 `AppSidebar` 并在无 refresh token 时抛出未处理 401 刷新异常触发。
+- `/login` 现使用独立公共布局；认证壳、实时运行时和侧栏仅在完整 user+token 会话下启用，侧栏学科请求增加异常兜底；路由与登录页统一完整会话判定。
+- `test:r4-pc` 137/137、type-check、Tauri `--no-bundle` 通过；真实 Tauri GUI 重启后的登录/过期验收仍待执行。
+
+### PC Tauri 上传/解析联调修复（2026-08-26）
+
+- `DocumentProcessingRuntime` 在加载 Source 和恢复本地解析任务前先执行一次完整 `triggerSync`，让应用重启后遗留的 SOURCE outbox 能先到达服务端并创建解析任务。
+- 保留既有 localStorage fallback，避免尚未迁移的待同步 outbox 因切换到空 SQLite 而暂时不可见；SQLite capability 迁移另行处理。
+- Docker 本地 `AURALIS_MINIO_PUBLIC_ENDPOINT` 默认改为 `http://127.0.0.1:9000`，避免 Windows `localhost` 解析到不可达 IPv6 `::1` 时预览/直传出现 `Failed to fetch`。
+- 新增 runtime 与 Tauri capability 回归断言；真实 Tauri 上传、任务中心和扫描 PDF 预览仍需人工复测。
+
+### PC Tauri AI 辅助阅读 A1–A4、K2、U1–U3 自动门禁（2026-08-26）
+
+- 服务端新增 V16 阅读会话 scope/清理、已完成历史 Prompt 组装、`readingContext` 当前 Source 检索和同学科确定性升级；OpenAPI artifact 与 PC/Mobile 生成 schema 已同步。
+- PC 学科工作区创建并清理临时 `READING_SESSION`，未 READY 文件提示前往 Profile；文件列表仅显示解析状态点，Profile 提供阶段/进度/失败重试/取消；预览原生选中文本可解释、追问或确认保存为知识块。
+- 文件状态点仅在任务进入 `READY` 后消失；本地/服务端失败保留红色静态点并引导到个人中心重试。
+- 服务端 AI/OpenAPI 定向 31/31、PC `test:r4-pc` 135/135、type-check、Web build 和 Tauri `--no-bundle` 通过。真实 Server/MinIO/Provider、扫描 PDF/Office/Tauri GUI、断网重启、MSI 和业务质量仍待人工验收；按用户授权跳过独立 commit。
+
+### PC Tauri AI 辅助阅读 G1–G4 技术门禁（2026-08-24）
+
+- G1 冻结 OCR stdin/stdout 协议、错误码、路径/大小边界和五组离线 fixture；G2 固定 RapidOCR/PP-OCRv6-small、模型哈希、依赖锁和 PyInstaller sidecar；G3 接入 Tauri Rust supervisor、串行队列、超时和重启预算，相关定向测试通过。
+- G4 已声明 target-triple `externalBin`、`../ocr-sidecar` resources、第三方 notices 与 CycloneDX SBOM；最终 MSI 生成 220,286,976 bytes，verifier 通过 generated WiX 对 sidecar、三个模型、manifest、notices 和 SBOM 的引用，五组 fixture 离线 baseline 已固化到 `budgets.json`。
+- 复核发现 WiX 实际 externalBin 文件名为 `Bin_auralis_ocr.exe`，先补失败测试再修正 supervisor resolver；5 个 Rust OCR supervisor 测试通过。临时 all-users 安装返回 Error 1925/1603，安装后 GUI/OCR 留给 R2；用户已授权继续 G5。
+- G5 已接入固定尺寸、不可 `display:none` 的 `BackgroundParserHost` 和 `FileViewerParserBridge`，复用 File Viewer 文本块/锚点 API，并提供 bitmap fallback/`OFFICE_TEXT_UNAVAILABLE`；type-check 与静态契约 2/2 通过，DOC/DOCX/PPT/PPTX 真样本矩阵仍待补齐。
+- G5 实现后的现有 PC 回归 `test:r4-pc` 通过 102/102；用户已将 DOC、DOCX、PPTX 和 text-layer/扫描型 PDF 放入 `docs/test`，并由 Apache POI 生成真实 OLE 旧式 PPT fixture；Office fixture matrix 3/3 通过，实际 File Viewer/Tauri 运行时结论仍待验收。
+- G6 新增 bounded `DocumentParser`、PDF text-layer/扫描分类、逐页 OCR、Office direct/fallback、Unicode 归一化和 sink 背压；core parser 7/7、真实 PDF 分类 2/2、Office matrix 3/3、PC 回归 102/102 和 type-check 通过。
+- C1 新增本地 schema v3 `document_processing_jobs`，固定用户/设备/source revision 唯一键、合法 phase 状态机、原子 checkpoint 及浏览器 v3 namespace；定向 schema/repository 测试 3/3 通过。
+- C2 新增 4 MiB 分块 gzip/AES-GCM ParsedDocument cache、AAD scope、plain/payload 双 hash、nonce/tamper/atomic replace 校验、内部解密 reader 与 package commands；Rust 全量测试 10/10、JS contract 2/2、type-check 通过。
+- C3 新增单设备串行可恢复 `DocumentJobRunner`、app close/sidecar/network 错误策略、最多三次自动重试、人工 retry/cancel 和 Pinia store；runner 测试 5/5、type-check 通过。
+
+### PC Tauri AI 辅助阅读 K1 OpenAPI/SDK 契约冻结（2026-08-24）
+
+- 为 Source/Asset/ParsedDocument DTO 固定独立 OpenAPI schema 名称，避免同名 `Response`、`CreateRequest` 和 `UploadIntent` 在生成文档中互相覆盖；ParsedDocument 两条 route 明确 `201/200/409` 响应及 `PARSED_DOCUMENT_CONFLICT`、`INGESTION_REVISION_STALE`。
+- Source schema 暴露 `AWAITING_CLIENT`/`VALIDATING`，`ingestionRevision` 为客户端只读；ParsedDocument upload intent 的 `ocrModelVersion` 保持可选；PC `useSourceApi` 已接入 typed upload-intent/complete wrapper，Mobile 仅同步生成类型。
+- `OpenApiArtifactTests` 4/4、`scripts/check-openapi.ps1` 和 PC `npm run type-check` 通过；未创建独立 commit，按用户授权纳入后续统一提交。
+
+### PC Tauri AI 辅助阅读 C4 加密 ParsedDocument 上传闭环（2026-08-24）
+
+- 新增 Rust `document_upload_put`：从本地 AES-GCM cache 内部解密 reader 流式 PUT 到签名 URL，按实际 bytes/SHA-256 校验，网络、过期 intent 和非 2xx 状态映射为稳定错误码；签名 URL、headers 和正文不进入 Vue 或本地任务表。
+- 新增 PC `ParsedDocumentUploadCoordinator`：以任务 phase/receipt 驱动 upload-intent → PUT → complete；过期 URL 重新申请而不重复 OCR/package，网络暂停可恢复，complete 在 coordinator 生命周期内去重并处理 `INGESTION_REVISION_STALE`。
+- 本地文档任务 schema 升级为 v4，`ingestion_revision` 对齐服务端 UUID；旧数字 v3 任务复制到 legacy 表后转为文本。Rust 12/12、C4 JS 6/6、PC 回归 108/108、PC type-check 通过；按用户授权跳过独立 commit。
+
+### PC Tauri AI 辅助阅读 C5 FILE Source 调度与可恢复续传（2026-08-24）
+
+- 新增 `SourceJobScheduler` 与 Source Store 调度接线：FILE Source 在 `AWAITING_CLIENT + ingestionRevision` 时创建本地 job，优先使用当前上传会话 File，移动端创建/重启恢复通过 owner-scoped Asset download adapter 获取临时输入；TEXT/URL 保持服务端 ingestion。
+- 本地 job schema 升级 v5，持久化 `DocumentCacheReceipt` 非敏感元数据；runner 对 `PACKAGING`/上传阶段不重复 OCR/package，scheduler 核对 Asset SHA、supersede 旧 revision、完成后清理 cache 和临时输入，签名 URL 不进入本地存储。
+- C5 定向 21/21、完整 PC 回归 128/128、type-check、R4 静态检查通过；真实 Tauri 私有临时目录、MinIO/Server 联调、跨设备恢复和 GUI/安装验收仍待完成；按用户授权跳过独立 commit。
+
+### PC Tauri AI 辅助阅读 C5 runtime 接线（2026-08-26）
+
+- 新增 `DocumentProcessingRuntime` 与全局 `BackgroundParserHost` registry；Tauri 登录后自动组装 SQLite job repository、PDF.js/Office parser、Tauri OCR、Rust package/cache、ParsedDocument upload coordinator 和 Source scheduler，sync/online 后恢复 pending jobs，登出时解绑。
+- 暂停网络且已有 durable cache receipt 的任务可从 `UPLOADING` 边界恢复；SQLite 初始化兼容 Tauri v2 `__TAURI_INTERNALS__`。新增 runtime 静态契约和暂停恢复覆盖，`test:r4-pc` 131/131、type-check、Web build、`check:r4-pc`（79 文件）通过；真实 Tauri/MinIO/Server/GUI 联调转入人工验收；按用户授权跳过独立 commit。
+
+### PC Tauri AI 辅助阅读 S1 V15 数据结构（2026-08-24）
+
+- 追加式 Flyway V15 新增 `sources.ingestion_revision`、`parsed_documents` 派生表和 `ingestion_jobs.parsed_document_id/ingestion_revision`；ParsedDocument 保留 parser/normalization/OCR model、Asset/payload/plain-text SHA、私有 object key、状态、generation 与对象生命周期字段，不进入同步表或普通 mutation。
+- Source 状态约束加入 `AWAITING_CLIENT`、`VALIDATING`；历史非 READY FILE 迁移为 `AWAITING_CLIENT` 并获得稳定 UUID revision，既有 READY FILE 与活动 chunks 保持 READY。
+- `ParsedDocumentSchemaTests` H2 clean/upgrade 4/4 通过；PostgreSQL upgrade 断言已加入 `PgVectorMigrationIntegrationTests`，本机 Docker 不可用因此保持未验收。
+
+### PC Tauri AI 辅助阅读 S2 Source ingestion 分流（2026-08-24）
+
+- `SourceEntity`/`SourceView`/Source DTO 已承载服务端只读 `ingestionRevision`，新增 `AWAITING_CLIENT` 与 `VALIDATING` 枚举状态；客户端请求模型不接受 revision 写入。
+- FILE create、Asset 替换和 FILE reingest 进入 `AWAITING_CLIENT`、轮换 revision 且不发布旧 `SourceIngestionRequestedEvent`；TEXT/URL 继续使用 `PENDING` 和现有 server ingestion event。FILE 仅标题等不影响解析的更新保留当前状态。
+- Source/Ai ingestion 定向测试 11/11 通过，覆盖 FILE 无事件、TEXT/URL 事件、revision 不可覆盖和 FILE 资产替换/reingest。
+
+### PC Tauri AI 辅助阅读 S3 ParsedDocument upload intent（2026-08-24）
+
+- 新增 `ParsedDocumentStatus`、JPA `ParsedDocumentEntity/Repository` 以及 owner-scoped `POST /api/sources/{sourceId}/parsed-documents/upload-intents`；schemaVersion 当前固定为 1，服务端生成私有 `users/{user}/sources/{source}/revisions/{revision}/parsed-documents/{id}` object key，并将元数据以 `UPLOADING` 状态保存。
+- upload intent 只接受匹配的 FILE Source/revision、payload SHA-256 和正数且受配置上限约束的 gzip payload 大小；不接受客户端 userId/objectKey，签名 headers/expiry 由现有 AssetStoragePort 返回，Source 保持 `AWAITING_CLIENT`。
+- `ParsedDocumentControllerTests` 3/3 通过；S3 未包含 complete、payload 流式验证或首胜 indexing 语义，后续由 S4/S5 实现。
+
+### PC Tauri AI 辅助阅读 S4 payload validator 与 Asset SHA 回填（2026-08-24）
+
+- 新增有界流式 `ParsedDocumentValidator`：服务端按 upload-intent 的 gzip 大小核对压缩 bytes，限制解压字节/比例/block 数/单 block 与总字符数，拒绝未知字段、非法 UTF-8、非连续 ordinal、错误 schema、规范化正文 characterCount/plainTextSha256 和 payloadSha256。
+- `AssetService.ensureSha256` 只从服务端原始对象流计算历史空 SHA，并用条件更新保证并发回填不会 last-write-wins；客户端声明不作为可信哈希。
+- `ParsedDocumentValidatorTests` 4/4、`AssetShaBackfillTests` 2/2 通过；S4 未包含 complete 首胜和 indexing，后续由 S5/S6 实现。
+
+### PC Tauri AI 辅助阅读 S5 complete 首胜与 indexing job（2026-08-24）
+
+- 新增 `POST /api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete`。服务端在 owner-scoped Source 行锁内校验对象 HEAD、Asset SHA、payload SHA、revision 和有界 payload schema；首个有效 ParsedDocument 进入 `ACCEPTED`，Source 进入 `INDEXING`，并创建带 `parsedDocumentId`/`ingestionRevision` 的唯一 PENDING indexing job。
+- 同一 ParsedDocument 重放和同 revision + 同 payload SHA 的重复上传幂等；不同 payload 返回 `PARSED_DOCUMENT_CONFLICT`，旧 revision 返回 `INGESTION_REVISION_STALE`；并发 complete 只允许一个胜出。
+- `ParsedDocumentCompleteTests` 3/3 通过，覆盖相同文档重放、相同 payload 重放、冲突、revision 过期和并发首胜；S6 的实际 ParsedDocument block 索引、generation 切换与对象清理仍待实现。
+
+### PC Tauri AI 辅助阅读 S6 ParsedDocument indexing 与对象清理（2026-08-24）
+
+- FILE indexing job 现在读取并重新验证 accepted ParsedDocument 的 blocks，使用其 generation 写入新 chunks；原始 FILE parser 不再作为该路径的回退，revision/generation 过期 job 只失败自身。
+- FILE 兼容 reingest 复用 accepted ParsedDocument 与 revision；Asset 变更会标记旧 revision 的 accepted 派生记录为 `SUPERSEDED`。新增 cleanup scheduler 删除过期 `UPLOADING`/`REJECTED`/`SUPERSEDED` payload 对象并保留 ParsedDocument 审计行。
+- `AiIngestionWorkerTests` 5/5、`AiSourceChunkTests` 3/3、`ParsedDocumentCleanupTests` 2/2 与 S5 回归通过；PostgreSQL upgrade 和实际 Tauri/Provider 联调仍待环境验收。
+
+### PC File Viewer Vue ref 运行时 API 修复（2026-08-23）
+
+- Chrome 真实运行复现点击缩放时的 `viewer.getZoomState is not a function`，确认 `@file-viewer/vue3-full@2.3.2` 包装组件通过空 `Proxy` expose，TypeScript 声明中的方法没有出现在 Vue 父级 ref 上；前一轮 ready 门禁调整不是最终根因。
+- renderer 改用 `@file-viewer/vue3@2.3.0` 基础组件并通过 `withFullViewerOptions` 保留 full preset；缩放直接调用 `zoomIn`/`zoomOut`/`resetZoom`，旋转继续使用 `applyViewState`，Office renderer 保留外层旋转回退。
+- Chrome 合成图片组件实测宽度由 800px 增至 896px、旋转角由 0° 变为 90°；定向预览回归 16/16、完整 `test:r4-pc` 101/101、type-check、静态检查和 Web build 通过。Docker 已无缓存重建，frontend 容器镜像 ID 与新镜像一致并返回 HTTP 200；真实业务文件和 Tauri GUI 仍待人工复验。
+
+### PC 学科文件列表移除文件类型图案（2026-08-23）
+
+- 移除学习文件行左侧的文件类型 Emoji 图案，文件名、大小、选中态和删除操作保持不变；新增静态回归断言，定向预览回归 17/17、完整 `test:r4-pc` 102/102。
+
+### PC File Viewer 缩放/旋转无响应修复（2026-08-23）
+
+- 移除 `FilePreview` 与 `FileViewerRenderer` 中依赖 `load-complete` 的两级 ready 硬门禁；动作只在组件 ref 尚未建立时暂存，避免正文已显示但生命周期事件未及时到达时点击被永久排队。
+- 保留 File Viewer `applyViewState` 的缩放与 PDF/图片旋转路径，以及 Office 外层旋转回退；定向预览回归 16/16、type-check 和完整 PC 回归通过，真实 GUI 点击仍需复验。
 
 ### PC File Viewer PDF/图片缩放旋转与就绪队列修复（2026-08-23）
 

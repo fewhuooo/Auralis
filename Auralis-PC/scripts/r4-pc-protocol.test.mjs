@@ -1319,7 +1319,8 @@ test('AI Client streams the current message endpoint as parsed SSE events', asyn
 test('subject workspace starts a fresh AI session instead of restoring history', () => {
   const source = readFileSync(new URL('../src/views/SubjectWorkspace/index.vue', import.meta.url), 'utf8');
 
-  assert.match(source, /await chatStore\.startNewSession\('学科伴读'\)/);
+  assert.match(source, /await chatStore\.endActiveSession\(\)/);
+  assert.match(source, /await chatStore\.startReadingSession\(/);
   assert.doesNotMatch(source, /await chatStore\.loadSessions\(\)/);
   assert.doesNotMatch(source, /await chatStore\.loadMessages\(chatStore\.activeSessionId\)/);
 });

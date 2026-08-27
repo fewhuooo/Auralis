@@ -1,8 +1,8 @@
 import type { components } from './generated/schema'
 import { defaultApiCallClient, type ApiCallClient } from './apiCallClient'
 
-type UploadIntentRequest = components['schemas']['UploadIntentRequest']
-type UploadIntentResponse = components['schemas']['UploadIntentResponse']
+type UploadIntentRequest = components['schemas']['AssetUploadIntentRequest']
+type UploadIntentResponse = components['schemas']['AssetUploadIntentResponse']
 
 export function createAssetApi(client: ApiCallClient = defaultApiCallClient) {
   return {

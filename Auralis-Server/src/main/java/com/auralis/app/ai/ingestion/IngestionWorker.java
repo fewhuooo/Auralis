@@ -12,14 +12,19 @@ import com.auralis.app.ai.retrieval.SourceChunkService;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.source.SourceView;
+import com.auralis.app.source.ParsedDocumentReadView;
+import com.auralis.app.source.ParsedDocumentService;
+import com.auralis.app.source.SourceType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class IngestionWorker {
@@ -31,6 +36,7 @@ public class IngestionWorker {
     private final AiSettingsService settingsService;
     private final EmbeddingProviderRegistry embeddingProviderRegistry;
     private final SourceChunkService chunkService;
+    private final ParsedDocumentService parsedDocumentService;
     private final Clock clock;
     private final AuralisProperties properties;
     private final TextChunker chunker = new TextChunker(1200, 120);
@@ -43,6 +49,7 @@ public class IngestionWorker {
             AiSettingsService settingsService,
             EmbeddingProviderRegistry embeddingProviderRegistry,
             SourceChunkService chunkService,
+            ParsedDocumentService parsedDocumentService,
             Clock clock,
             AuralisProperties properties) {
         this.jobRepository = jobRepository;
@@ -52,6 +59,7 @@ public class IngestionWorker {
         this.settingsService = settingsService;
         this.embeddingProviderRegistry = embeddingProviderRegistry;
         this.chunkService = chunkService;
+        this.parsedDocumentService = parsedDocumentService;
         this.clock = clock;
         this.properties = properties;
     }
@@ -95,12 +103,30 @@ public class IngestionWorker {
     private void processClaimed(IngestionJobEntity job) {
         UUID userId = job.getUserId();
         try {
-            SourceView source = sourceService.markParsing(userId, job.getSourceId());
-            SourceParser parser = parsers.stream()
-                    .filter(candidate -> candidate.supports(source.type()))
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalArgumentException("No parser for source type"));
-            String text = parser.parse(userId, source);
+            SourceView source;
+            String text;
+            if (job.getParsedDocumentId() != null) {
+                source = sourceService.requireActiveSource(userId, job.getSourceId());
+                if (source.type() != SourceType.FILE
+                        || !Objects.equals(source.ingestionRevision(), job.getIngestionRevision())) {
+                    throw new DomainException("INGESTION_REVISION_STALE", "Parsed document job revision is no longer current");
+                }
+                ParsedDocumentReadView parsed = parsedDocumentService.readAccepted(
+                        userId, job.getSourceId(), job.getParsedDocumentId());
+                if (!Objects.equals(parsed.generation(), job.getGeneration())) {
+                    throw new DomainException("INGESTION_REVISION_STALE", "Parsed document generation is no longer current");
+                }
+                text = parsed.blocks().stream()
+                        .map(com.auralis.app.source.ParsedDocumentValidator.ValidatedBlock::text)
+                        .collect(Collectors.joining("\n"));
+            } else {
+                source = sourceService.markParsing(userId, job.getSourceId());
+                SourceParser parser = parsers.stream()
+                        .filter(candidate -> candidate.supports(source.type()))
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("No parser for source type"));
+                text = parser.parse(userId, source);
+            }
             if (text == null || text.isBlank()) {
                 throw new IllegalArgumentException("Parsed source is empty");
             }
@@ -124,6 +150,10 @@ public class IngestionWorker {
 
     private void handleFailure(IngestionJobEntity job, String errorCode, String errorDetail) {
         Instant now = clock.instant();
+        if (job.getParsedDocumentId() != null && "INGESTION_REVISION_STALE".equals(errorCode)) {
+            job.markFailed(now, errorCode, errorDetail);
+            return;
+        }
         boolean retryable = job.getAttemptCount() < properties.ai().ingestionMaxAttempts();
         try {
             if (retryable) {

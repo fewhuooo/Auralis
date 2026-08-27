@@ -4,7 +4,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useSourceApi, type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
-import { mapSourceView, nextPageCursor, type SourceFileModel } from '@/services/domainMappers'
+import { isClientFileSource, mapSourceView, nextPageCursor, type SourceFileModel } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
@@ -19,9 +19,19 @@ function asSourceDto(value: unknown): SourceView | null {
   return typeof candidate.id === 'string' ? candidate : null
 }
 
-function scheduleSync(): void {
-  void useSyncStore().triggerSync().catch((error) => console.warn('[SourceStore] pending mutation sync failed', error))
+async function scheduleSync(): Promise<void> {
+  try {
+    await useSyncStore().triggerSync()
+  } catch (error) {
+    console.warn('[SourceStore] pending mutation sync failed', error)
+  }
 }
+
+interface SourceDocumentScheduler {
+  schedule(sourceId: string): Promise<unknown>
+}
+
+let documentScheduler: SourceDocumentScheduler | null = null
 
 export const useSourceStore = defineStore('source', () => {
   const sources = ref<SourceFileModel[]>([])
@@ -42,7 +52,11 @@ export const useSourceStore = defineStore('source', () => {
       deletedAt: view.deletedAt ?? null,
       syncStatus,
     })
-    return mapSourceView(view)
+    const model = mapSourceView(view)
+    if (documentScheduler && isClientFileSource(view) && view.ingestionStatus === 'AWAITING_CLIENT') {
+      void documentScheduler.schedule(model.id).catch((error) => console.warn('[SourceStore] document scheduling failed', error))
+    }
+    return model
   }
 
   async function readLocal(subjectId?: string): Promise<SourceFileModel[]> {
@@ -136,7 +150,7 @@ export const useSourceStore = defineStore('source', () => {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       deletedAt: undefined,
-      ingestionStatus: 'PENDING',
+      ingestionStatus: 'AWAITING_CLIENT',
       assetSizeBytes: normalizedAssetSizeBytes,
     }
     const repo = await repository()
@@ -150,7 +164,7 @@ export const useSourceStore = defineStore('source', () => {
       baseVersion: 0,
       payload: mutationView as unknown as Record<string, unknown>,
     }))
-    scheduleSync()
+    await scheduleSync()
     await loadSourceFiles(subjectId)
     return id
   }
@@ -242,6 +256,10 @@ export const useSourceStore = defineStore('source', () => {
     await loadSourceFiles(file.subjectId)
   }
 
+  function attachDocumentScheduler(scheduler: SourceDocumentScheduler | null): void {
+    documentScheduler = scheduler
+  }
+
   const currentSourceCount = computed(() => sources.value.length)
 
   return {
@@ -256,5 +274,6 @@ export const useSourceStore = defineStore('source', () => {
     addSourceFile,
     deleteSourceFile,
     saveSourceFileCatalog,
+    attachDocumentScheduler,
   }
 })

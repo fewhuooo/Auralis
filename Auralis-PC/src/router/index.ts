@@ -59,7 +59,7 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
-  const hasSession = Boolean(authStore.tokens?.accessToken)
+  const hasSession = authStore.isAuthenticated
   const requiresAuth = Boolean(to.meta?.requiresAuth)
   const redirect = resolveAuthRedirect(to.path, requiresAuth, hasSession)
 

@@ -1,6 +1,6 @@
 # Auralis API 契约
 
-更新时间：2026-08-24
+更新时间：2026-08-26
 
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
@@ -127,8 +127,8 @@
 - `POST /api/assets/upload-intents` 请求字段为 `baseVersion`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt}`。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
 - `POST /api/assets/{id}/complete` 不接受客户端对象元数据；服务端对绑定 object key 执行 HEAD/stat，校验真实大小、MIME 和已声明 sha256，成功返回 `AssetResponse` 并将状态置为 `READY`。校验失败返回 `400 UPLOAD_VALIDATION_FAILED` 并记录 `FAILED`。
 - `POST /api/assets/{id}/download-url` 只对当前用户拥有且 `READY` 的 Asset 返回 `{url,expiresAt}`；Asset 不作为 Relation 节点，也不进入普通同步资源列表。
-- Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。Source 成功响应对 FILE 资料额外返回可选 `assetSizeBytes`（Asset 原始字节数），TEXT/URL 或无法关联 Asset 时为 JSON `null`。
-- Source 创建成功状态为 `PENDING`；更新和 `POST /api/sources/{id}/reingest` 清理安全错误并回到 `PENDING`。Source 其余成功操作沿用直接 DTO、版本冲突、软删除、恢复和列表 envelope 规则。
+- Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。Source 成功响应对 FILE 资料额外返回可选 `assetSizeBytes`（Asset 原始字节数），以及服务端生成、客户端只读的 `ingestionRevision`；TEXT/URL 或无法关联 Asset 时 `assetSizeBytes` 为 JSON `null`。
+- FILE Source 创建进入 `AWAITING_CLIENT`，Asset 替换或 FILE reingest 轮换 revision 并保持该状态，不发布服务端 ingestion event；TEXT/URL 创建、更新和 reingest 清理安全错误并进入 `PENDING`，继续发布 `SourceIngestionRequestedEvent`。FILE 仅标题等不影响解析的更新保留当前状态。Source 其余成功操作沿用直接 DTO、版本冲突、软删除、恢复和列表 envelope 规则。
 - Relation 创建/更新字段为 `baseVersion`、`sourceType`、`sourceId`、`targetType`、`targetId`、`type`、可选 `label`；节点仅允许 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`，关系类型仅允许 `CONTAINS`、`REFERENCES`、`DERIVED_FROM`、`DEPENDS_ON`、`RELATED_TO`。
 - Relation 创建、更新、恢复都会验证两端属于当前用户且未删除，禁止自关联；`RELATED_TO` 对端点排序后去重，其他类型保持方向性。端点软删除会级联软删除相关 Relation，端点恢复不自动恢复关系。
 - `GET /api/sources` 和 `GET /api/relations` 同样返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 与 `limit`（1–200），按 `updatedAt DESC, id ASC` 稳定分页。
@@ -185,15 +185,22 @@
 - Provider 请求使用 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 超时和 `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` 响应体上限；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
 - 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V14、架构测试、出站安全专项，以及默认 `clean test` 的真实 PostgreSQL 17/pgvector 与 MinIO Testcontainers。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04/R1-05 增加了会话恢复键、同一请求并发保留、精确 assistant 关联及流式回放测试。真实 Provider 网络/证书/限流、浏览器前端联调和人工业务验收仍未完成。
 
-## PC Tauri AI 辅助阅读目标契约（2026-08-23，2026-08-24 复核修订，已批准、未实现）
+## PC Tauri AI 辅助阅读契约（2026-08-23，2026-08-26 已实现代码门禁，真实联调与验收待完成）
 
-本节是后续实施目标，不改变以上已实现状态，也不代表 OpenAPI、数据库迁移、客户端联调或业务验收已经完成。完整决策见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+本节登记 S1–S6、K1、C4 和 C5 已落地的接口行为、生成 SDK 与端侧上传边界；真实客户端业务联调和人工业务验收仍未完成。完整决策见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
-- FILE Source 完成原 Asset 上传并创建后进入 `AWAITING_CLIENT`；客户端提交解析结果后经过 `VALIDATING → INDEXING → READY/FAILED`。SourceResponse 新增服务端生成、客户端只读的 `ingestionRevision`。TEXT/URL Source 保持现有服务端解析状态机。
+- FILE Source 完成原 Asset 上传并创建后进入 `AWAITING_CLIENT`；客户端提交解析结果后经过 `VALIDATING → INDEXING → READY/FAILED`。SourceResponse 已新增服务端生成、客户端只读的 `ingestionRevision`。TEXT/URL Source 保持现有服务端解析状态机。
+- S2 已落地 FILE/TEXT/URL 分流：FILE create 不发布 `SourceIngestionRequestedEvent`；Asset 替换或 FILE reingest 轮换 revision 并回到 `AWAITING_CLIENT`，仅标题等不影响解析的 FILE 更新保留当前状态；TEXT/URL create/update/reingest 继续进入 `PENDING` 并发布现有 server ingestion event。请求 DTO 不接受 `ingestionRevision`，客户端不能覆盖该字段。
 - 任意端可继续上传和预览 FILE Source；只有 PC Tauri 提交 ParsedDocument。Mobile/Tablet 上传的 FILE 在 PC 处理前保持 `AWAITING_CLIENT`，本期不由移动端伪装为 AI READY。
 - PC Tauri 在原 Asset upload-intent 前流式计算并提交 SHA-256。历史 Asset 的 `sha256` 为空时，服务端在首次接受 ParsedDocument 前流式读取原对象并原子回填；不能直接信任客户端声明。
 - `POST /api/sources/{sourceId}/parsed-documents/upload-intents` 接受 `ingestionRevision`、`schemaVersion`、`parserId`、`parserVersion`、`normalizationVersion`、可选 `ocrModelVersion`、`sourceAssetSha256`、`payloadSha256` 和 `sizeBytes`，返回 `parsedDocumentId`、服务端确认的 `ingestionRevision`、私有预签名上传 URL、限定 headers 与过期时间。
-- `POST /api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete` 不信任客户端对象元数据；服务端锁定 owner-scoped Source，执行 HEAD/stat、Asset/payload 哈希、revision、压缩与 schema 上限校验。同一 ParsedDocument 或相同 revision + payload hash 重放必须幂等；同 revision 已接受不同 payload 时返回 `409 PARSED_DOCUMENT_CONFLICT`；旧 revision 返回 `409 INGESTION_REVISION_STALE`。
+- S3 已实现上述 upload-intent：仅允许当前用户拥有的 FILE Source 和匹配的只读 revision，schemaVersion 当前固定为 `1`，payload/size 在签名请求前校验；服务端创建 `UPLOADING` ParsedDocument，object key 固定为 `users/{userId}/sources/{sourceId}/revisions/{ingestionRevision}/parsed-documents/{parsedDocumentId}`，不接受客户端 `userId` 或 `objectKey`，Source 仍保持 `AWAITING_CLIENT`。MockMvc 定向测试 `ParsedDocumentControllerTests` 3/3 通过。
+- S4 已加入服务端有界流式 payload validator：限制 gzip 压缩/解压字节、解压比例、UTF-8 JSON schema、parser/block 字段、连续 ordinal、规范化正文 characterCount/plainTextSha256 和 upload-intent payloadSha256；历史 Asset 的空 SHA 只通过服务端原对象流计算并条件回填，客户端声明不作为可信来源。`ParsedDocumentValidatorTests` 4/4、`AssetShaBackfillTests` 2/2 通过。
+- S5 已实现 `POST /api/sources/{sourceId}/parsed-documents/{parsedDocumentId}/complete`：不信任客户端对象元数据，服务端锁定 owner-scoped Source，执行 HEAD/stat、Asset/payload 哈希、revision、压缩与 schema 上限校验；同一 ParsedDocument 或相同 revision + payload hash 重放幂等，同 revision 不同 payload 返回 `409 PARSED_DOCUMENT_CONFLICT`，旧 revision 返回 `409 INGESTION_REVISION_STALE`，成功只创建一个带 ParsedDocument/revision 的 PENDING indexing job 并将 FILE Source 切为 `INDEXING`。`ParsedDocumentCompleteTests` 3/3 通过，覆盖相同 payload、冲突、旧 revision 和并发首胜。
+- S6 已让 indexing worker 对带 `parsedDocumentId` 的 FILE job 读取并重新验证已接受 payload 的 blocks，禁止回退原始文件 parser；job 的 revision/generation 与当前 Source/ParsedDocument 不一致时只失败旧 job，不污染当前 Source。FILE 兼容 reingest 复用当前 accepted ParsedDocument/revision 并重新排队 job；Asset 变更会将旧 revision 的 accepted 派生记录标记 `SUPERSEDED`，定时清理任务删除过期 `UPLOADING/REJECTED/SUPERSEDED` 对象并保留审计行。
+- K1 已冻结两条 ParsedDocument route、`201/200/409` 响应、`PARSED_DOCUMENT_CONFLICT`/`INGESTION_REVISION_STALE` 描述、可选 `ocrModelVersion`、Source 只读 `ingestionRevision` 与 `AWAITING_CLIENT/VALIDATING` 状态；运行时 artifact、PC/Mobile 生成 schema 和 `useSourceApi` typed wrapper 已同步。`OpenApiArtifactTests` 4/4、`scripts/check-openapi.ps1` 和 PC type-check 通过。
+- C4 已将 PC Tauri 的加密 cache receipt 接入 upload coordinator：Rust 只解密流式 PUT 到服务端签名 URL，URL/headers 只保留在内存；PUT 过期可重新申请 intent，网络错误进入 `PAUSED_NETWORK`，随后调用幂等 complete。SQLite 任务 `ingestion_revision` 使用服务端 UUID 文本，旧数字 v3 行迁移到可恢复 legacy 表；正文不穿过 Vue/HTTP coordinator。C5 的 FILE Source scheduler 只在 `AWAITING_CLIENT + ingestionRevision` 下创建本地 job，重启/跨设备通过 owner-scoped Asset download adapter 恢复，签名 URL 不落库。
+- C5 将本地 job 的完整 `DocumentCacheReceipt` 元数据（cache id、大小、hash、chunk/envelope 信息）持久化为任务元数据，正文仍只在加密 Tauri cache；`PACKAGING/UPLOADING/PAUSED_NETWORK` 可恢复上传而不重复 OCR/package。Asset SHA mismatch、旧 revision 和非 FILE Source 在客户端边界拒绝或跳过。2026-08-26 起 `DocumentProcessingRuntime` 在 Tauri 登录后负责组装并绑定这些组件，sync/online 事件触发 Source 重载与 pending job 恢复；带 receipt 的网络暂停会回到 `UPLOADING` 边界。
 - FILE Source 创建、Asset 替换和缺少兼容 ParsedDocument 的 reingest 不发布现有服务端解析事件；只有 complete 接受成功后创建 indexing job。`POST /api/sources/{id}/reingest` 在存在最新兼容 ParsedDocument 时复用该派生对象；原 Asset/schema 变化或显式重新解析时轮换 `ingestionRevision` 并回到 `AWAITING_CLIENT`。
 - `POST /api/ai/messages/stream` 目标请求在现有字段上新增可选 `readingContext`，其中包含必填 `currentSourceId`、`subjectId`、`retrievalMode=AUTO` 和可选 `selectionText`。PC 当前文件检索必须提交该对象；服务端验证用户、Source、Subject 关系和 Source READY 状态，默认只检索当前 Source，命中确定性规则后只扩大到当前 Subject，并记录 `EXPLICIT_CROSS_FILE`、`SUBJECT_SOURCE_TITLE_MATCH` 或 `INSUFFICIENT_CURRENT_RESULTS`。异常时保持当前 Source，不能扩大到用户全库。
 - `readingContext` 省略时保留现有普通聊天契约，不套用阅读工作区范围升级；PC 工作区不得再把文件名拼接进 `content` 代替结构化上下文。`selectionText` 只作为有长度限制的用户 prompt 上下文，不参与检索命中、citation 或证据归属。
