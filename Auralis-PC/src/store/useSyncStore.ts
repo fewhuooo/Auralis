@@ -4,7 +4,9 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncApi } from '@/api/useSyncApi'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
+import { publishProjectionChange } from '@/services/localProjectionEvents'
 import { runSyncCycle } from '@/services/syncCycle'
+import { createSyncScheduler } from '@/services/syncScheduler'
 
 function encodeKeyPart(value: string): string {
   return encodeURIComponent(value).replace(/%/g, '_')
@@ -43,6 +45,7 @@ export const useSyncStore = defineStore('sync', () => {
   let repositoryKey: string | null = null
   let cyclePromise: Promise<void> | null = null
   let syncRequested = false
+  const scheduler = createSyncScheduler({ delayMs: 500, run: async () => flushNow() })
 
   async function getRepository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
@@ -80,7 +83,10 @@ export const useSyncStore = defineStore('sync', () => {
       })
       cursor.value = result.cursor
       resetRequired.value = false
-      if (result.changedResourceTypes.size > 0) publishUpdated()
+      if (result.changedResourceTypes.size > 0) {
+        publishProjectionChange({ resourceTypes: result.changedResourceTypes })
+        publishUpdated()
+      }
     } catch (error) {
       lastSyncError.value = error instanceof Error ? error.message : String(error)
       throw error
@@ -90,7 +96,7 @@ export const useSyncStore = defineStore('sync', () => {
     }
   }
 
-  async function triggerSync(): Promise<void> {
+  async function flushNow(): Promise<void> {
     if (!isOnline()) return
     if (cyclePromise) {
       syncRequested = true
@@ -110,12 +116,20 @@ export const useSyncStore = defineStore('sync', () => {
     return cyclePromise
   }
 
+  function requestBackgroundSync(_reason: 'startup' | 'write' | 'realtime' | 'online' | 'read'): void {
+    scheduler.request()
+  }
+
+  async function triggerSync(): Promise<void> {
+    await flushNow()
+  }
+
   async function pushChanges(): Promise<void> {
-    await triggerSync()
+    await flushNow()
   }
 
   async function pullChanges(): Promise<void> {
-    await triggerSync()
+    await flushNow()
   }
 
   const initE2EE = async (): Promise<void> => {}
@@ -127,6 +141,8 @@ export const useSyncStore = defineStore('sync', () => {
     isPushing,
     isSyncing,
     lastSyncError,
+    requestBackgroundSync,
+    flushNow,
     triggerSync,
     pullChanges,
     pushChanges,

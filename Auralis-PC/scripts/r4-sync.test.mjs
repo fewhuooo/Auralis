@@ -139,9 +139,10 @@ test('sync API rejects a resource outside the current server contract', async ()
   }
 });
 
-test('realtime sync signals run a complete sync cycle', () => {
+test('realtime sync signals request background synchronization', () => {
   const source = fs.readFileSync(new URL('../src/services/realtimeController.ts', import.meta.url), 'utf8');
-  assert.match(source, /syncStore\.triggerSync\(\)/);
+  assert.match(source, /syncStore\.requestBackgroundSync\('realtime'\)/);
+  assert.doesNotMatch(source, /await syncStore\.triggerSync\(\)/);
   assert.doesNotMatch(source, /pullChanges\(\{ reason: 'realtime' \}\)/);
 });
 
@@ -157,6 +158,18 @@ test('Pinia sync store delegates transport and projection reconciliation to the 
   assert.match(source, /await\s+runSyncCycle\(/);
   assert.doesNotMatch(source, /async function applyPushResult/);
   assert.doesNotMatch(source, /async function pullLoop/);
+});
+
+test('background scheduler coalesces several requests into one delayed cycle', async () => {
+  const { createSyncScheduler } = await import('../src/services/syncScheduler.ts');
+  let calls = 0;
+  const scheduler = createSyncScheduler({ delayMs: 1, run: async () => { calls += 1; } });
+  scheduler.request();
+  scheduler.request();
+  scheduler.request();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(calls, 1);
+  scheduler.dispose();
 });
 
 test('sync cycle settles only its claimed mutation and preserves later pending work', async () => {

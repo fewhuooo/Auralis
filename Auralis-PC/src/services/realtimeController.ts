@@ -27,12 +27,12 @@ async function defaultRequestTicket(): Promise<TicketResponseLike> {
   return requestRealtimeTicket()
 }
 
-async function triggerStoreSync(): Promise<void> {
+async function requestStoreSync(): Promise<void> {
   try {
     const { useSyncStore } = await import('../store/useSyncStore.ts')
     const syncStore = useSyncStore()
-    if (typeof syncStore.triggerSync === 'function') {
-      await syncStore.triggerSync()
+    if (typeof syncStore.requestBackgroundSync === 'function') {
+      syncStore.requestBackgroundSync('realtime')
     }
   } catch {
     // Pinia store or syncStore not initialized
@@ -332,7 +332,7 @@ export class RealtimeController {
       }
     }
 
-    void triggerStoreSync()
+    void requestStoreSync()
   }
 }
 

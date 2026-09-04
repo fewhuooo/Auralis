@@ -670,7 +670,7 @@ const handleAction = async (item: SettingItem) => {
     const orig = item.btnText
     item.btnText = '同步中...'
     try {
-      await syncStore.triggerSync()
+      await syncStore.flushNow()
       item.btnText = '✓ 同步成功'
       await loadStats()
       ElNotification({ title: '☁️ 同步成功', message: '所有数据已成功同步至云端', type: 'success', duration: 3000 })

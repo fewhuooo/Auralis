@@ -36,6 +36,7 @@ import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
 import BackgroundParserHost from '@/components/preview/BackgroundParserHost.vue'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useSyncStore } from '@/store/useSyncStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { realtimeController } from '@/services/realtimeController'
 import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
@@ -47,6 +48,7 @@ const backgroundParserHost = ref<BackgroundParserHostHandle | null>(null)
 const route = useRoute()
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
+const syncStore = useSyncStore()
 const isAuthenticatedRoute = computed(() => Boolean(route.meta.requiresAuth && authStore.isAuthenticated))
 
 const fetchTasksOnStartup = async () => {
@@ -57,22 +59,25 @@ const fetchTasksOnStartup = async () => {
   }
 }
 
+const startAuthenticatedRuntime = (): void => {
+  realtimeController.start()
+  void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
+  void fetchTasksOnStartup()
+  syncStore.requestBackgroundSync('startup')
+}
+
 onMounted(() => {
   setBackgroundParserHost(backgroundParserHost.value)
 
   if (authStore.isAuthenticated) {
-    realtimeController.start()
-    void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
-    void fetchTasksOnStartup()
+    startAuthenticatedRuntime()
   }
 
   stopWatchingAuth = watch(
     () => authStore.isAuthenticated,
     (isAuthenticated) => {
       if (isAuthenticated) {
-        realtimeController.start()
-        void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
-        void fetchTasksOnStartup()
+        startAuthenticatedRuntime()
       } else {
         realtimeController.stop()
         documentProcessingRuntime.stop()
