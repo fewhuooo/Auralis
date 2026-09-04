@@ -23,6 +23,8 @@
 
 ## 状态总览
 
+2026-09-04 PC 本地优先同步核心完成代码收口：本地 schema 升至 v6；Subject、Source、KnowledgeBlock、Task 的普通写入先在一个本地提交中保存资源投影和 immutable outbox，随后才更新 UI，并由 500ms 合并的后台 cursor cycle 批量同步。普通 Store 不再调用领域列表 API；服务端响应只结算相同 mutation，同资源存在未解决写入时不会覆盖本地投影，cursor page 只应用每个资源最后一条 change。`r4-local-repository`、`r4-sync`、`r4-register-file` 定向 Node 套件合计 28/28 通过；新增 cursor 合并/墓碑保护回归通过。完整 `test:r4-pc` 为 181/191，10 项失败均在既有 Timeline/排期或 Subject 主题色静态断言；`npm run type-check` 与 build 均被 Timeline 的 3 个 `Subject.color` 类型残留与未使用 `Sparkles` 阻断，未将其写成同步改造错误或通过。Tauri GUI、双设备弱网和冲突可见性尚未验收。
+
 2026-09-04 学科文件删除投影修复：`useSourceStore.deleteSourceFile()` 先持久化 Source tombstone 与 DELETE outbox，再立即从 `sources/activeSourceFiles` 移除；后台同步与 parser/job/cache 清理不再阻塞列表、计数或选中项回退。`r4-file-preview` 删除顺序回归 20/20 通过。真实 Tauri 中 OCR 运行时删除、缓存清理和重新打开学科后的同步仍待 GUI/Server 联调验收；组合运行的 `r4-register-file` 另有两项既有 Task/Subject 静态断言失败，未归因于本次 Source 删除修复。
 
 2026-09-04 文件预览切换性能补充：实际学科页走 `FilePreview`，而非旧 `PdfViewer`；此前每次选择均完整下载 Blob，旧请求只忽略结果而继续占用下载与内存。本轮以 80ms 选择合并和 `AbortController` 中断被替代的 fetch，确保只有最后一次选择进入 Blob/File Viewer 解析。`r4-file-preview` 19/19 通过；真实 Tauri 大 PDF 的首开解析仍需 GUI 验收。

@@ -90,3 +90,11 @@ test('PC list loaders return local data before refreshing from the network', asy
   assert.match(taskLoad, /requestBackgroundSync\('read'\)/)
   assert.doesNotMatch(taskLoad, /await loadFromApi\(\)/)
 })
+
+test('ordinary PC resource stores hydrate projections instead of resource list APIs', async () => {
+  for (const file of ['useSubjectStore.ts', 'useSourceStore.ts', 'useKnowledgeStore.ts', 'useTaskStore.ts']) {
+    const source = await readFile(new URL(`../src/store/${file}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(source, /await use(?:Subject|Source|Knowledge|Task)Api\.list\(/)
+    assert.match(source, /requestBackgroundSync\('read'\)/)
+  }
+})

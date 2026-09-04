@@ -214,7 +214,7 @@ test('SubjectWorkspace file rows omit decorative file type icons', () => {
 test('useSourceStore deletes files locally before background sync', () => {
   const storePath = path.resolve('src/store/useSourceStore.ts')
   const source = fs.readFileSync(storePath, 'utf8')
-  assert.match(source, /repo\.tombstone\('SOURCE', id, \{ version: source\.version, syncStatus: 'pending' \}\)/)
+  assert.match(source, /await repo\.commitMutation\(/)
   assert.match(source, /mutationType: 'DELETE'/)
   assert.match(source, /scheduleSync\(\)/)
   assert.doesNotMatch(source, /await useSourceApi\.delete/)

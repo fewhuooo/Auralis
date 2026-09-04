@@ -107,7 +107,7 @@ Auralis-PC/
 
 Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件登记的本地优先副本也保留上传完成时的 `asset.sizeBytes`，避免 Source 同步完成前短暂显示 `0.0 MB`。文件预览仍通过 Asset download-url 获取短期签名地址。
 
-2026-09-03 起，Subject、Source、KnowledgeBlock 的常规创建、更新、删除以及 Task 的创建、更新均先持久化到用户/服务端设备隔离的本地 repository，再立即更新 Pinia 状态并触发不阻塞 UI 的同步。outbox 对同一资源连续的 CREATE→UPDATE、UPDATE→UPDATE、UPDATE→DELETE 保留首个 `baseVersion` 并合并为一项待同步 mutation，避免离线连续编辑产生过期版本。四类列表加载也先展示本地快照，远端列表刷新改在后台应用；首次无缓存时先呈现空态，响应到达后自动更新。文件登记仍需等待不可离线化的 Asset 二进制直传与 complete，但不再等待其后的 Source push 或远端资料列表刷新；学科弹层展示直传阶段和百分比，成功后显示本地已保存/后台同步。Task 拖放也只等待本地 repository/outbox 写入，随后由后台 push/pull 同步；认证、ReviewEvent、AI/SSE、文件下载、服务端文档处理手动启动确认仍等待网络结果，因为它们需要凭据、权威计算、流内容、签名 URL 或当前服务端 Source。
+2026-09-04 起，Subject、Source、KnowledgeBlock、Task 的常规创建、更新和删除均走 `commitMutation()`：资源投影与 immutable outbox 在同一端侧提交中持久化成功后，才更新 Pinia/UI 并调用 `requestBackgroundSync('write')`。Store 列表只 hydration 本地投影，随后请求 cursor 同步，绝不自行调用领域列表 API 或在 loading 中等待网络。同步器以 `pending → inflight → applied/conflict/error` 结算指定 mutation；同资源有未解决本地写入时，push 回包、pull 和 snapshot 不覆盖其投影。FILE 的 Asset 二进制直传/complete、认证、ReviewEvent、AI/SSE、文件下载仍需要网络；用户点击“立即同步”以及启动 FILE 解析前确认 Source 已同步是仅有的 `flushNow()` 显式等待边界。
 | `api/useSyncApi.ts` | push/pull 同步 |
 | `api/e2ee.ts` | 端到端加密辅助 |
 | `api/tauri.ts` | Tauri 环境和本地能力封装 |
@@ -126,8 +126,8 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 
 | 文件 | 职责 |
 | --- | --- |
-| `services/localSchema.ts` | Tauri SQLite v2 schema、旧 key/value 表的可恢复改名和 snake_case 行转换 |
-| `services/localRepository.ts` | 按 `userId + serverDeviceId` 隔离的资源、tombstone、mutation、cursor 与 snapshot repository |
+| `services/localSchema.ts` | Tauri SQLite v6 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换 |
+| `services/localRepository.ts` | 按 `userId + serverDeviceId` 隔离的资源、tombstone、原子资源+outbox 提交、cursor 与 snapshot repository |
 | `services/localDatabaseRuntime.ts` | 单个应用生命周期内的 SQLite 初始化 Promise 与按用户/设备范围缓存的 repository |
 | `services/localSqlQueue.ts` | 进程内 SQL 命令串行化 adapter，避免 SQL 插件 pool 中的并发写入竞争 |
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |
@@ -135,7 +135,7 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 
 时间轴中的已完成排期任务保留其原 `scheduledAt` 槽位，并处于固定状态：Store 拒绝移动、替换和取消排期，Timeline/Dashboard 不提供相应拖放或取消入口；将任务恢复为未完成后才可再次调整。本地加载仅接受 API 领域状态 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`；弃用的展示态缓存（例如 `completed`）不再转换或兼容，而是忽略并由后续在线刷新按现行契约重建。
 
-R4-06 的 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone 及 reset 保留 pending。Tauri 路径在应用生命周期只加载、建表和迁移一次，所有 SQL 插件命令经单一队列串行执行；同步 snapshot 则通过 Rust `replace_local_resource_snapshot` 在同一 SQLite 连接的显式事务中完成，并启用 WAL 与 5 秒 `busy_timeout`。该命令保留未解决 mutation 对应的资源行，任何无效 snapshot 项都会回滚整批。R4-07 的 `useSyncApi` 只使用 `cursor/changes/nextCursor/hasMore/resetRequired`、`serverDeviceId/mutations/results` 和 snapshot DTO；`useSyncStore` 的 realtime、启动恢复、网络恢复和主动同步共用完整 `triggerSync`（push 后 pull），同步周期期间新 mutation 会触发后续一轮。`DocumentProcessingRuntime` 在挂载 Source 前先执行一次 `triggerSync`，确保上次上传留下的 SOURCE outbox 在解析调度前送达服务端。R4-08/09 已将 Subject、Source、KnowledgeBlock、Asset、Task、Review、Stats、Chat、Pomodoro 主路径切换到 `typed API → repository → view model`。核心资源 CREATE 先以稳定 `resourceId/clientMutationId` 写入 outbox，只有明确离线或传输失败才排队，5xx 不伪装成离线。Chat 的 `CONVERSATION` 和本地专用 `CHAT_MESSAGE` 行保存 `creationRequestId/clientRequestId`，上线后依会话与消息顺序恢复；`CHAT_MESSAGE` 不进入 Sync 推送。`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
+R4 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`version/baseVersion` 冲突、`deletedAt` tombstone、v6 outbox 状态与 reset 保留未解决写入。Tauri 路径在应用生命周期只加载、建表和迁移一次，所有 SQL 插件命令经单一队列串行执行；同步 snapshot 通过 Rust `replace_local_resource_snapshot` 在同一 SQLite 连接的显式事务中完成，并启用 WAL 与 5 秒 `busy_timeout`。同步 Store 以共享 cursor cycle 和 500ms 合并调度处理启动、实时、联网、读写请求；push/pull 完成后只发布本地投影变化，领域 Store 重新 hydration 本地库。`DocumentProcessingRuntime` 仅在启动 FILE 处理前 `flushNow()`，确认本地 SOURCE 已为 `synced`。`localDb.ts` 与 `useBlockStore.ts` 仅保留兼容边界。
 
 ## C4/C5 文档处理与上传边界
 

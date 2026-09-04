@@ -172,6 +172,13 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 
 PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_processing_jobs` 表并将 `ingestion_revision` 对齐为服务端 UUID 文本；旧 v3 数字 revision 会先复制到 `legacy_document_processing_jobs_v3*` 再迁移，不删除原行，v4 任务追加 `payload_receipt_json` 列。该表不进入 `local_resource_records`、`local_mutations` 或同步 change log。每个任务按 `(user_id, device_id, source_id, ingestion_revision)` 唯一，其中 `device_id` 语义为 `serverDeviceId`，查询始终带当前用户和设备边界。
 
+### PC 本地优先同步（本地 schema v6，2026-09-04）
+
+- `local_mutations` 新增 `in_flight_at`、`remote_payload`、`remote_version`；状态为 `pending`、`inflight`、`applied`、`conflict` 或 `error`。`remote_*` 只保存服务端的冲突/拒绝诊断，不替换尚未解决的本地资源投影。
+- Subject、Source、KnowledgeBlock、Task、Relation 的普通 CREATE/UPDATE/DELETE 必须在同一 SQLite 事务（浏览器 fallback 为同一序列化状态提交）内同时写入 `local_resource_records` 和 immutable outbox mutation。调用方只有在该本地提交成功后才更新内存 UI；失败须抛回调用方。
+- 同步器只领取 `pending` mutation 为 `inflight`，push 结果只结算同一 `client_mutation_id`。同资源仍有 `pending`、`inflight`、`conflict` 或 `error` mutation 时，push 回包、cursor pull 与 snapshot 均不得覆盖本地投影。
+- cursor pull 对一个资源在同一 page 的多条记录仅应用最后一条；服务端 tombstone 仅在该资源没有未解决本地 mutation 时写入。普通资源列表 API 不参与 PC Store 的缓存刷新。
+
 | 字段 | 语义 |
 | --- | --- |
 | `job_id` | 客户端任务稳定 ID，主键 |

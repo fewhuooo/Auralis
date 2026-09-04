@@ -126,16 +126,20 @@ sequenceDiagram
   participant S as SyncController
   participant M as MutationLog
   participant D as Domain Tables
-  C->>C: 本地写入并生成 mutation
+  C->>C: 原子写资源投影 + outbox
+  C-->>C: 确认 UI（不等待网络）
+  C->>C: 后台批量领取 pending mutation
   C->>S: POST /api/sync/push
   S->>D: 按当前用户写入实体
   S->>M: 记录 mutation cursor
   S-->>C: decision + serverCursor
+  C->>C: 只结算对应 outbox 项；保留未解决本地投影
   C->>S: GET /api/sync/pull?cursor=opaque
   S-->>C: changes + nextCursor / resetRequired
+  C->>C: 同资源只应用最后记录，刷新本地投影
 ```
 
-删除必须在直接 CRUD、mutation、pull 和冷启动之间保持软删除语义一致。目前该一致性仍是风险项。
+PC 普通 Store 只读取本地投影，启动、实时事件、联网恢复和读操作仅请求后台同步；不再经领域列表 API 全量刷新。服务端仍以 `baseVersion` 处理低频并发，冲突只更新本地同步/诊断状态，不静默覆盖用户最后一次本地编辑。删除必须在 mutation、pull 和冷启动之间保持软删除语义一致；双设备弱网、真实 Tauri 与 GUI 验收仍是风险项。
 
 ### 文件上传与 AI 摄入
 

@@ -8,6 +8,8 @@
 
 **Tech Stack:** Vue 3、Pinia、TypeScript、Tauri SQLite、localStorage fallback、Node `node:test`、既有 Spring `/api/sync` cursor API。
 
+**实施状态（2026-09-04）：** Task 1–5 的代码与定向回归已落地；Task 6 的文档回写已开始。完整 PC 门禁、production build、Tauri GUI、弱网双设备与冲突可见性仍保持未验收，不以定向 Node 测试替代。
+
 ## Global Constraints
 
 - 本计划只改 `Auralis-PC`；Mobile/Tablet、服务端 API 与数据库 schema 不在本计划内。

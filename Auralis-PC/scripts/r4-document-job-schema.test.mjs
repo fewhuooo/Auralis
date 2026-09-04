@@ -38,7 +38,7 @@ class TemporarySqlite {
   }
 }
 
-test('v4 schema upgrades to v5 with durable cache receipt metadata', async () => {
+test('legacy schema upgrades to v6 with durable cache receipt metadata', async () => {
   const sqlite = new TemporarySqlite()
   try {
     await sqlite.execute('CREATE TABLE local_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -49,7 +49,7 @@ test('v4 schema upgrades to v5 with durable cache receipt metadata', async () =>
     const table = sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_processing_jobs'").get()
     assert.ok(table)
     const versions = sqlite.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map((row) => row.version)
-    assert.deepEqual(versions, [2, 5])
+    assert.deepEqual(versions, [2, 6])
     const columns = sqlite.database.prepare('PRAGMA table_info(document_processing_jobs)').all().map((row) => row.name)
     assert.ok(columns.includes('payload_receipt_json'))
   } finally {

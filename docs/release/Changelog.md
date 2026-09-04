@@ -4,6 +4,12 @@
 
 文档状态：现行历史记录
 
+### PC 本地优先同步核心（2026-09-04）
+
+- 本地 schema 升至 v6；普通 Subject、Source、KnowledgeBlock、Task 写入原子保存资源投影和 immutable outbox，UI 在本地成功后立即确认，后台以合并调度执行 push 后 cursor pull。
+- Store 列表仅从本地投影 hydration；远端响应仅结算对应 mutation，并在资源没有未解决本地 mutation 时更新投影。同一 cursor page 对每资源只应用最后一条 change，远端 tombstone 不覆盖本地未解决编辑。
+- `r4-local-repository`、`r4-sync`、`r4-register-file` 定向 Node 套件 28/28 通过。完整 PC 门禁、类型检查、production build、Tauri GUI、弱网双设备与冲突可见性仍未验收。
+
 ### PC 学科文件删除即时投影（2026-09-04）
 
 - `useSourceStore` 在 Source tombstone 和 DELETE outbox 持久化完成后，立即移除文件列表投影；同步与 parser/job/cache 清理继续后台执行，删除不再等待耗时的调度器收尾。

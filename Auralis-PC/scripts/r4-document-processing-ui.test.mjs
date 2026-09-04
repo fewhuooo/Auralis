@@ -28,7 +28,7 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(sourceStore, /async function resumeDocumentProcessing\(sourceId: string\)/)
   assert.match(sourceStore, /DOCUMENT_JOB_RUNNER_UNAVAILABLE/)
   const resumeIndex = sourceStore.indexOf('async function resumeDocumentProcessing(sourceId: string)')
-  const syncIndex = sourceStore.indexOf('await useSyncStore().triggerSync()', resumeIndex)
+  const syncIndex = sourceStore.indexOf('await useSyncStore().flushNow()', resumeIndex)
   const sourceScheduleIndex = sourceStore.indexOf('await documentScheduler.schedule(sourceId)', resumeIndex)
   assert.ok(resumeIndex >= 0, 'Source Store must expose the manual resume action')
   assert.ok(syncIndex > resumeIndex && syncIndex < sourceScheduleIndex,
