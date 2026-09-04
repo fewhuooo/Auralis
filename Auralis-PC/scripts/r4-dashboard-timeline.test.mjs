@@ -112,7 +112,7 @@ test('timeline keeps the local task projection when changing days and refreshing
 
   assert.match(taskStore, /authStore\.serverDeviceId/, 'Task repository scope must use the canonical authenticated device id')
   assert.match(fetchTasksSource, /await loadLocalTasks\(\)/, 'Task loading must hydrate the local projection first')
-  assert.match(fetchTasksSource, /void refreshTasks\(\)/, 'Cloud refresh must continue in the background')
+  assert.match(fetchTasksSource, /requestBackgroundSync\('read'\)/, 'Cloud refresh must continue in the background')
   assert.doesNotMatch(fetchTasksSource, /return await loadFromApi\(\)/, 'Cloud refresh must not block the local task projection')
   assert.doesNotMatch(loadLocalTasksSource, /allTasks\.value\s*=\s*\[\]/, 'A local-read failure must preserve an already visible task projection')
   assert.match(timelineSelectDaySource, /taskStore\.setSelectedDay\(day\)/, 'Timeline day selection must rebuild in-memory slots without reloading the repository')

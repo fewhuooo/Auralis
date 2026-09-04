@@ -88,7 +88,7 @@ test('drag scheduling persists locally before background sync instead of awaitin
 
   assert.match(updateTaskModelSource, /await persistOffline\(model, 'UPDATE', payload as unknown as Record<string, unknown>\)/)
   assert.doesNotMatch(updateTaskModelSource, /useTaskApi\.update/, 'A drag must not wait on a direct remote update')
-  assert.match(persistOfflineSource, /await repo\.upsert\([\s\S]*?await repo\.enqueueMutation\([\s\S]*?scheduleSync\(\)[\s\S]*?replaceInMemory\(task\)/)
+  assert.match(persistOfflineSource, /await repo\.commitMutation\([\s\S]*?replaceInMemory\(task\)[\s\S]*?scheduleSync\(\)/)
   assert.doesNotMatch(rescheduleTaskSource, /await loadLocalTasks\(\)/, 'A drag must not re-read the local repository after the local projection is updated')
 })
 

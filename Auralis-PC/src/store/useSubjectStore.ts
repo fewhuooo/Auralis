@@ -1,14 +1,15 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useSubjectApi, type SubjectCreateRequest, type SubjectView } from '@/api/useSubjectApi'
+import { type SubjectCreateRequest, type SubjectView } from '@/api/useSubjectApi'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
-import { mapSubjectView, nextPageCursor, type SourceFileModel, type SubjectModel } from '@/services/domainMappers'
+import { mapSubjectView, type SourceFileModel, type SubjectModel } from '@/services/domainMappers'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { uuidv7 } from '@/utils/uuid'
-import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
+import { createStableMutation } from '@/services/offlineWritePolicy'
+import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
 export type Subject = SubjectModel
 export type SourceFile = SourceFileModel
@@ -29,7 +30,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 function scheduleSync(): void {
-  void useSyncStore().triggerSync().catch((error) => console.warn('[SubjectStore] pending mutation sync failed', error))
+  useSyncStore().requestBackgroundSync('write')
 }
 
 function parseCatalogText(text: string): CatalogItem[] {
@@ -88,16 +89,6 @@ export const useSubjectStore = defineStore('subject', () => {
     return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
-  async function cache(view: SubjectView, syncStatus: 'synced' | 'pending' | 'conflict' | 'error' = 'synced'): Promise<Subject> {
-    const repo = await repository()
-    await repo.upsert('SUBJECT', String(view.id), view, {
-      version: Number(view.version ?? 0),
-      deletedAt: view.deletedAt ?? null,
-      syncStatus,
-    })
-    return mapSubjectView(view)
-  }
-
   async function localSubjects(): Promise<Subject[]> {
     const repo = await repository()
     const rows = await repo.list<SubjectView>('SUBJECT', { includeDeleted: false })
@@ -113,50 +104,26 @@ export const useSubjectStore = defineStore('subject', () => {
       }))
   }
 
-  async function refreshSubjects(): Promise<void> {
-    try {
-      const loaded: Subject[] = []
-      let cursor: string | undefined
-      let hasMore = true
-      while (hasMore) {
-        const page = await useSubjectApi.list({ cursor, limit: 100 })
-        for (const item of page.items ?? []) {
-          if (item.id && !item.deletedAt) loaded.push(await cache(item))
-        }
-        cursor = nextPageCursor(page)
-        hasMore = Boolean(cursor)
-      }
-      const repo = await repository()
-      const resources = await repo.list<Record<string, unknown>>('', { includeDeleted: false })
-      const blockRows = resources.filter((row) => row.resourceType === 'KNOWLEDGE_BLOCK')
-      const sourceRows = resources.filter((row) => row.resourceType === 'SOURCE')
-      const pending = resources
-        .filter((row) => row.resourceType === 'SUBJECT' && row.syncStatus !== 'synced')
-        .map((row) => asSubjectDto(row.value))
-        .filter((value): value is SubjectView => value !== null)
-        .map((value) => mapSubjectView(value))
-      const merged = [...loaded, ...pending.filter((item) => !loaded.some((loadedItem) => loadedItem.id === item.id))]
-      replaceSubjects(merged.map((subject) => ({
-        ...subject,
-        blockCount: blockRows.filter((row) => asRecord(row.value)?.subjectId === subject.id).length,
-        fileCount: sourceRows.filter((row) => asRecord(row.value)?.subjectId === subject.id).length,
-      })))
-    } catch (error) {
-      lastError.value = error instanceof Error ? error.message : '学科加载失败，当前使用离线缓存'
-      if (!isOfflineTransportFailure(error)) console.warn('[SubjectStore] background subject refresh failed', error)
-    }
+  async function hydrateSubjects(): Promise<void> {
+    replaceSubjects(await localSubjects())
   }
 
   async function loadSubjects(): Promise<void> {
     isLoading.value = true
     lastError.value = null
     try {
-      replaceSubjects(await localSubjects())
+      await hydrateSubjects()
     } finally {
       isLoading.value = false
     }
-    void refreshSubjects()
+    useSyncStore().requestBackgroundSync('read')
   }
+
+  subscribeProjectionChange((change) => {
+    if (change.resourceTypes.has('SUBJECT') || change.resourceTypes.has('SOURCE') || change.resourceTypes.has('KNOWLEDGE_BLOCK')) {
+      void hydrateSubjects()
+    }
+  })
 
   function setActiveSubject(id: string | null): void {
     activeSubjectId.value = id
@@ -177,17 +144,15 @@ export const useSubjectStore = defineStore('subject', () => {
     const now = new Date().toISOString()
     const localView: SubjectView = { ...payload, id, version: 0, createdAt: now, updatedAt: now, deletedAt: undefined }
     const repo = await repository()
-    await repo.upsert('SUBJECT', id, localView, { version: 0, syncStatus: 'pending' })
-    await repo.enqueueMutation(createStableMutation({
-      clientMutationId: uuidv7(),
-      resourceType: 'SUBJECT',
-      resourceId: id,
-      mutationType: 'CREATE',
-      baseVersion: 0,
-      payload: localView as unknown as Record<string, unknown>,
-    }))
-    scheduleSync()
+    await repo.commitMutation({
+      resourceType: 'SUBJECT', resourceId: id, value: localView, version: 0, deletedAt: null,
+      mutation: createStableMutation({
+        clientMutationId: uuidv7(), resourceType: 'SUBJECT', resourceId: id, mutationType: 'CREATE', baseVersion: 0,
+        payload: localView as unknown as Record<string, unknown>,
+      }),
+    })
     replaceSubjects([...subjects.value, mapSubjectView(localView)])
+    scheduleSync()
     return id
   }
 
@@ -200,42 +165,44 @@ export const useSubjectStore = defineStore('subject', () => {
       sortKey: subject.sortKey,
     }
     const repo = await repository()
-    await repo.upsert('SUBJECT', subject.id, {
+    const localView: SubjectView = {
       ...payload,
       id: subject.id,
       version: subject.version,
       createdAt: subject.createdAt,
       updatedAt: new Date().toISOString(),
       deletedAt: undefined,
-    }, { version: subject.version, syncStatus: 'pending' })
-    await repo.enqueueMutation(createStableMutation({
-      clientMutationId: uuidv7(),
-      resourceType: 'SUBJECT',
-      resourceId: subject.id,
-      mutationType: 'UPDATE',
-      baseVersion: subject.version,
-      payload: payload as unknown as Record<string, unknown>,
-    }))
+    }
+    await repo.commitMutation({
+      resourceType: 'SUBJECT', resourceId: subject.id, value: localView, version: subject.version, deletedAt: null,
+      mutation: createStableMutation({
+        clientMutationId: uuidv7(), resourceType: 'SUBJECT', resourceId: subject.id, mutationType: 'UPDATE', baseVersion: subject.version,
+        payload: payload as unknown as Record<string, unknown>,
+      }),
+    })
+    replaceSubjects(subjects.value.map((item) => item.id === subject.id ? mapSubjectView(localView, item) : item))
     scheduleSync()
-    replaceSubjects(subjects.value.map((item) => item.id === subject.id ? { ...subject } : item))
   }
 
   async function deleteSubject(id: string): Promise<void> {
     const subject = subjects.value.find((item) => item.id === id)
     if (!subject) return
     const repo = await repository()
-    await repo.tombstone('SUBJECT', id, { version: subject.version, syncStatus: 'pending' })
-    await repo.enqueueMutation(createStableMutation({
-      clientMutationId: uuidv7(),
-      resourceType: 'SUBJECT',
-      resourceId: id,
-      mutationType: 'DELETE',
-      baseVersion: subject.version,
-      payload: { id },
-    }))
-    scheduleSync()
+    const existing = await repo.read<SubjectView>('SUBJECT', id)
+    const now = new Date().toISOString()
+    const localView: SubjectView = {
+      ...(existing?.value ?? { id, name: subject.name, description: subject.description, iconKey: subject.iconKey }),
+      id, version: subject.version, updatedAt: now, deletedAt: now,
+    }
+    await repo.commitMutation({
+      resourceType: 'SUBJECT', resourceId: id, value: localView, version: subject.version, deletedAt: now,
+      mutation: createStableMutation({
+        clientMutationId: uuidv7(), resourceType: 'SUBJECT', resourceId: id, mutationType: 'DELETE', baseVersion: subject.version, payload: { id },
+      }),
+    })
     if (activeSubjectId.value === id) setActiveSubject(null)
     subjects.value = subjects.value.filter((item) => item.id !== id)
+    scheduleSync()
   }
 
   const loadSourceFiles = (subjectId: string) => sourceStore.loadSourceFiles(subjectId)

@@ -1,7 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  useTaskApi,
   type TaskCreateRequest,
   type TaskUpdateRequest,
   type TaskView,
@@ -12,8 +11,9 @@ import type { LocalRepository } from '@/services/localRepository'
 import { isCanonicalTaskStatus, mapTaskView, type CognitiveLoad, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
-import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
+import { createStableMutation } from '@/services/offlineWritePolicy'
 import { getTasksForTimeline, isCompletedScheduledTask, isSchedulableTask } from '@/services/taskViewRules'
+import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 export type DayCode = typeof DAY_CODES[number]
@@ -294,7 +294,7 @@ function clientMutation(resourceId: string, mutationType: 'CREATE' | 'UPDATE' | 
 }
 
 function scheduleSync(): void {
-  void useSyncStore().triggerSync().catch((error) => console.warn('[TaskStore] pending mutation sync failed', error))
+  useSyncStore().requestBackgroundSync('write')
 }
 
 export const useTaskStore = defineStore('task', () => {
@@ -360,63 +360,21 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  async function cache(view: TaskView, syncStatus: Task['sync_status'] = 'synced'): Promise<Task> {
-    const model = mapTaskView(view)
-    const repo = await repository()
-    await repo.upsert('TASK', model.id, view, {
-      version: model.version,
-      deletedAt: model.deletedAt,
-      syncStatus: syncStatus === 'conflict' ? 'conflict' : syncStatus === 'synced' ? 'synced' : 'pending',
-    })
-    return toPresentationTask(model, syncStatus)
-  }
-
-  async function loadFromApi(): Promise<Task[]> {
-    const loaded: Task[] = []
-    let cursor: string | undefined
-    let hasMore = true
-    while (hasMore) {
-      const page = await useTaskApi.list({ cursor, limit: 100 })
-      for (const view of page.items ?? []) {
-        if (!view.id) continue
-        loaded.push(await cache(view))
-      }
-      cursor = page.hasMore && page.nextCursor ? page.nextCursor : undefined
-      hasMore = Boolean(cursor)
-    }
-    const repo = await repository()
-    const pendingRows = await repo.list<TaskView>('TASK', { includeDeleted: false })
-    const pending = pendingRows
-      .filter((row) => row.syncStatus !== 'synced')
-      .map((row) => dtoFromLocal(row.value))
-      .filter((value): value is TaskModel => value !== null)
-      .map((model) => toPresentationTask(model, 'pending_update'))
-    const merged = [...loaded, ...pending.filter((item) => !loaded.some((loadedItem) => loadedItem.id === item.id))]
-    allTasks.value = merged
-    rebuildSchedule()
-    return merged
-  }
-
   async function fetchTasks(): Promise<Task[]> {
     isLoading.value = true
     lastError.value = null
     try {
       await loadLocalTasks()
-      void refreshTasks()
+      useSyncStore().requestBackgroundSync('read')
       return allTasks.value
     } finally {
       isLoading.value = false
     }
   }
 
-  async function refreshTasks(): Promise<void> {
-    try {
-      await loadFromApi()
-    } catch (error) {
-      lastError.value = error instanceof Error ? error.message : '任务服务不可用，当前使用离线缓存'
-      if (!isOfflineTransportFailure(error)) console.warn('[TaskStore] background task refresh failed', error)
-    }
-  }
+  subscribeProjectionChange((change) => {
+    if (change.resourceTypes.has('TASK')) void loadLocalTasks()
+  })
 
   function replaceInMemory(task: Task): void {
     const index = allTasks.value.findIndex((item) => item.id === task.id)
@@ -427,24 +385,17 @@ export const useTaskStore = defineStore('task', () => {
 
   async function persistOffline(model: TaskModel, mutationType: 'CREATE' | 'UPDATE' | 'DELETE', payload: Record<string, unknown>): Promise<Task> {
     const task = toPresentationTask(model, mutationType === 'CREATE' ? 'pending_create' : mutationType === 'UPDATE' ? 'pending_update' : 'pending_delete')
+    const repo = await repository()
+    await repo.commitMutation({
+      resourceType: 'TASK',
+      resourceId: model.id,
+      value: taskDto(model),
+      version: model.version,
+      deletedAt: model.deletedAt,
+      mutation: clientMutation(model.id, mutationType, model.version, payload),
+    })
     replaceInMemory(task)
-
-    void (async () => {
-      try {
-        const repo = await repository()
-        const view = taskDto(model)
-        await repo.upsert('TASK', model.id, view, {
-          version: model.version,
-          deletedAt: model.deletedAt,
-          syncStatus: 'pending',
-        })
-        await repo.enqueueMutation(clientMutation(model.id, mutationType, model.version, payload))
-        scheduleSync()
-      } catch (error) {
-        console.warn('[TaskStore] Failed to persist task offline:', error)
-      }
-    })()
-
+    scheduleSync()
     return task
   }
 
@@ -550,15 +501,8 @@ export const useTaskStore = defineStore('task', () => {
     if (!task) return
     const model = toTaskModel(task)
     model.version = task.version
-    try {
-      await useTaskApi.delete(id, { baseVersion: model.version })
-      const repo = await repository()
-      await repo.tombstone('TASK', id, { version: model.version + 1, syncStatus: 'synced' })
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      model.deletedAt = new Date().toISOString()
-      await persistOffline(model, 'DELETE', { id })
-    }
+    model.deletedAt = new Date().toISOString()
+    await persistOffline(model, 'DELETE', { id })
     allTasks.value = allTasks.value.filter((item) => item.id !== id)
     rebuildSchedule()
   }
