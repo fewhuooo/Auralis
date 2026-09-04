@@ -150,3 +150,42 @@ test('sync cycle reruns when a mutation is queued during an active cycle', () =>
   assert.match(source, /syncRequested\s*=\s*true/);
   assert.match(source, /while\s*\(syncRequested\s*&&\s*isOnline\(\)\)/);
 });
+
+test('Pinia sync store delegates transport and projection reconciliation to the shared cycle', () => {
+  const source = fs.readFileSync(new URL('../src/store/useSyncStore.ts', import.meta.url), 'utf8');
+  assert.match(source, /import\s*\{\s*runSyncCycle\s*\}\s*from\s*'@\/services\/syncCycle'/);
+  assert.match(source, /await\s+runSyncCycle\(/);
+  assert.doesNotMatch(source, /async function applyPushResult/);
+  assert.doesNotMatch(source, /async function pullLoop/);
+});
+
+test('sync cycle settles only its claimed mutation and preserves later pending work', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const settlements = [];
+  const repository = {
+    resource: { syncStatus: 'pending' },
+    async claimPending() {
+      return [{ clientMutationId: 'm-1', userId: 'user-a', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 1, payload: { title: 'first' }, createdAt: '2026-09-04T00:00:00.000Z', status: 'inflight' }];
+    },
+    async settleMutation(input) { settlements.push(input); },
+    async releaseInflight() { assert.fail('successful push must not release the claimed mutation'); },
+    async getSyncState() { return { cursor: 'c-1', resetRequired: false, schemaVersion: 6 }; },
+    async saveCursor() {},
+    async listUnresolved() { return [{ clientMutationId: 'm-2', resourceType: 'TASK', resourceId: 'task-1', status: 'pending' }]; },
+    async read() { return { id: 'task-1', resourceType: 'TASK', userId: 'user-a', version: 1, deletedAt: null, syncStatus: 'pending', value: { title: 'second' } }; },
+    async upsert() { assert.fail('the older server response must not overwrite the later local projection'); },
+    async replaceSnapshotPreservingPending() { assert.fail('pull did not request a snapshot'); },
+  };
+  const api = {
+    async pushChanges({ mutations }) {
+      assert.deepEqual(mutations.map((mutation) => mutation.clientMutationId), ['m-1']);
+      return { results: [{ clientMutationId: 'm-1', decision: 'APPLIED', resourceType: 'TASK', resourceId: 'task-1', current: { id: 'task-1', title: 'first', version: 2 } }], serverCursor: 'c-2' };
+    },
+    async pullChanges() { return { changes: [], nextCursor: 'c-2', hasMore: false, resetRequired: false }; },
+    async getSnapshot() { assert.fail('pull did not require a snapshot'); },
+  };
+
+  await runSyncCycle({ repository, api, serverDeviceId: 'device-1' });
+  assert.deepEqual(settlements.map((item) => item.clientMutationId), ['m-1']);
+  assert.equal(repository.resource.syncStatus, 'pending');
+});
