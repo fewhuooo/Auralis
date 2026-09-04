@@ -17,5 +17,16 @@ export function serializeLocalSqlDatabase(
   return {
     execute: (sql, bindValues) => queue.enqueue(() => database.execute(sql, bindValues)),
     select: <T>(sql: string, bindValues?: unknown[]) => queue.enqueue(() => database.select<T>(sql, bindValues)),
+    transaction: <T>(operation: (transaction: LocalSqlDatabase) => Promise<T>) => queue.enqueue(async () => {
+      await database.execute('BEGIN IMMEDIATE')
+      try {
+        const result = await operation(database)
+        await database.execute('COMMIT')
+        return result
+      } catch (error) {
+        await database.execute('ROLLBACK')
+        throw error
+      }
+    }),
   }
 }

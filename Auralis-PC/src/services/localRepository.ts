@@ -7,6 +7,7 @@ import type {
 import {
   createVersionedLocalSchema,
   documentProcessingJobFromRow,
+  LOCAL_SCHEMA_VERSION,
   mutationFromRow,
   resourceFromRow,
   type DocumentProcessingJobRow,
@@ -39,6 +40,21 @@ export interface LocalSnapshotItem<T = unknown> extends LocalResourceKey {
   version: number
   deletedAt: string | null
   value: T
+}
+
+export interface LocalCommitInput<T = unknown> extends LocalResourceKey {
+  value: T
+  version: number
+  deletedAt: string | null
+  mutation: LocalMutationInput
+}
+
+export interface LocalMutationSettlement {
+  clientMutationId: string
+  status: Extract<LocalMutationStatus, 'applied' | 'conflict' | 'error'>
+  error?: string
+  remoteValue?: unknown
+  remoteVersion?: number
 }
 
 export interface LocalMutationInput extends LocalResourceKey {
@@ -117,7 +133,7 @@ interface StoredBrowserState {
 const DEFAULT_SYNC_STATE: LocalSyncState = {
   cursor: null,
   resetRequired: false,
-  schemaVersion: 2,
+  schemaVersion: LOCAL_SCHEMA_VERSION,
 }
 
 export class LocalRepository {
@@ -192,6 +208,35 @@ export class LocalRepository {
       [this.userId, resourceType, resourceId],
     )
     return rows[0] ? resourceFromRow<T>(rows[0]) : null
+  }
+
+  private async runSqlTransaction<T>(operation: (transaction: LocalSqlDatabase) => Promise<T>): Promise<T> {
+    await this.ensureSql()
+    const database = this.sql!
+    if (database.transaction) return database.transaction(operation)
+    await database.execute('BEGIN IMMEDIATE')
+    try {
+      const result = await operation(database)
+      await database.execute('COMMIT')
+      return result
+    } catch (error) {
+      await database.execute('ROLLBACK')
+      throw error
+    }
+  }
+
+  private mutationFromInput(input: LocalMutationInput): LocalMutation {
+    return {
+      clientMutationId: input.clientMutationId || this.idFactory(),
+      userId: this.userId,
+      resourceType: input.resourceType,
+      resourceId: input.resourceId,
+      mutationType: input.mutationType,
+      baseVersion: input.baseVersion ?? 0,
+      payload: clone(input.payload),
+      createdAt: input.createdAt ?? this.now(),
+      status: 'pending',
+    }
   }
 
   async read<T>(resourceType: string, resourceId: string): Promise<LocalEntity<T> | null> {
@@ -303,18 +348,95 @@ export class LocalRepository {
     })
   }
 
-  async enqueueMutation(input: LocalMutationInput): Promise<LocalMutation> {
-    const mutation: LocalMutation = {
-      clientMutationId: input.clientMutationId || this.idFactory(),
-      userId: this.userId,
-      resourceType: input.resourceType,
-      resourceId: input.resourceId,
-      mutationType: input.mutationType,
-      baseVersion: input.baseVersion ?? 0,
-      payload: clone(input.payload),
-      createdAt: input.createdAt ?? this.now(),
-      status: 'pending',
+  async commitMutation<T>(input: LocalCommitInput<T>): Promise<LocalEntity<T>> {
+    const mutation = this.mutationFromInput(input.mutation)
+    if (mutation.resourceType !== input.resourceType || mutation.resourceId !== input.resourceId) {
+      throw new Error('Local mutation must target the committed resource')
     }
+
+    if (this.sql) {
+      return this.runSqlTransaction(async (database) => {
+        const entity: LocalEntity<T> = {
+          id: input.resourceId,
+          resourceType: input.resourceType,
+          userId: this.userId,
+          version: input.version,
+          deletedAt: input.deletedAt,
+          syncStatus: 'pending',
+          value: clone(input.value),
+        }
+        await database.execute(
+          `INSERT INTO local_resource_records
+            (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET
+             version = excluded.version, deleted_at = excluded.deleted_at,
+             sync_status = excluded.sync_status, payload = excluded.payload`,
+          [this.userId, entity.resourceType, entity.id, entity.version, entity.deletedAt, entity.syncStatus, JSON.stringify(entity.value)],
+        )
+        const pendingRows = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
+           FROM local_mutations
+           WHERE user_id = $1 AND resource_type = $2 AND resource_id = $3 AND status = 'pending'
+           ORDER BY created_at ASC, client_mutation_id ASC LIMIT 1`,
+          [this.userId, mutation.resourceType, mutation.resourceId],
+        )
+        const existing = pendingRows[0] ? mutationFromRow(pendingRows[0]) : null
+        const coalesced = existing && this.coalescePendingMutation(existing, mutation)
+        if (coalesced) {
+          await database.execute(
+            `UPDATE local_mutations SET mutation_type = $1, base_version = $2, payload = $3
+             WHERE user_id = $4 AND client_mutation_id = $5`,
+            [coalesced.mutationType, coalesced.baseVersion, JSON.stringify(coalesced.payload), this.userId, coalesced.clientMutationId],
+          )
+        } else {
+          await database.execute(
+            `INSERT INTO local_mutations
+              (client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+               payload, status, created_at, error, in_flight_at, remote_payload, remote_version)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8, NULL, NULL, NULL, NULL)
+             ON CONFLICT (user_id, client_mutation_id) DO NOTHING`,
+            [mutation.clientMutationId, this.userId, mutation.resourceType, mutation.resourceId,
+              mutation.mutationType, mutation.baseVersion, JSON.stringify(mutation.payload), mutation.createdAt],
+          )
+        }
+        return clone(entity)
+      })
+    }
+
+    const state = this.readBrowserState()
+    const resourceIndex = state.resources.findIndex(
+      (item) => item.userId === this.userId && item.resourceType === input.resourceType && item.id === input.resourceId,
+    )
+    const entity: LocalEntity<T> = {
+      id: input.resourceId,
+      resourceType: input.resourceType,
+      userId: this.userId,
+      version: input.version,
+      deletedAt: input.deletedAt,
+      syncStatus: 'pending',
+      value: clone(input.value),
+    }
+    if (resourceIndex >= 0) state.resources[resourceIndex] = entity as LocalEntity<unknown>
+    else state.resources.push(entity as LocalEntity<unknown>)
+    const existingMutationIndex = state.mutations.findIndex(
+      (item) => item.userId === this.userId && item.resourceType === mutation.resourceType
+        && item.resourceId === mutation.resourceId && item.status === 'pending',
+    )
+    const coalesced = existingMutationIndex >= 0
+      ? this.coalescePendingMutation(state.mutations[existingMutationIndex], mutation)
+      : null
+    if (coalesced) state.mutations[existingMutationIndex] = coalesced
+    else if (!state.mutations.some((item) => item.userId === this.userId && item.clientMutationId === mutation.clientMutationId)) {
+      state.mutations.push(mutation)
+    }
+    this.writeBrowserState(state)
+    return clone(entity)
+  }
+
+  async enqueueMutation(input: LocalMutationInput): Promise<LocalMutation> {
+    const mutation = this.mutationFromInput(input)
     const existingForResource = (await this.listPending(mutation.resourceType))
       .find((item) => item.resourceId === mutation.resourceId)
     const coalesced = existingForResource && this.coalescePendingMutation(existingForResource, mutation)
@@ -416,7 +538,7 @@ export class LocalRepository {
         `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type,
                 base_version, payload, status, created_at, error
          FROM local_mutations
-         WHERE user_id = $1 AND status IN ('pending', 'conflict', 'error')${typeClause}
+          WHERE user_id = $1 AND status IN ('pending', 'inflight', 'conflict', 'error')${typeClause}
          ORDER BY created_at ASC`,
         params,
       )
@@ -424,7 +546,7 @@ export class LocalRepository {
     }
     const state = this.readBrowserState()
     return state.mutations
-      .filter((item) => item.userId === this.userId && ['pending', 'conflict', 'error'].includes(item.status))
+      .filter((item) => item.userId === this.userId && ['pending', 'inflight', 'conflict', 'error'].includes(item.status))
       .filter((item) => !resourceType || item.resourceType === resourceType)
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
       .map(clone)
@@ -466,6 +588,123 @@ export class LocalRepository {
     return clone(mutation)
   }
 
+  async claimPending(limit: number): Promise<LocalMutation[]> {
+    const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+    if (this.sql) {
+      return this.runSqlTransaction(async (database) => {
+        const rows = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
+           FROM local_mutations WHERE user_id = $1 AND status = 'pending'
+           ORDER BY created_at ASC, client_mutation_id ASC LIMIT $2`,
+          [this.userId, boundedLimit],
+        )
+        const claimed = rows.map(mutationFromRow)
+        const claimedAt = this.now()
+        for (const mutation of claimed) {
+          await database.execute(
+            `UPDATE local_mutations SET status = 'inflight', in_flight_at = $1
+             WHERE user_id = $2 AND client_mutation_id = $3 AND status = 'pending'`,
+            [claimedAt, this.userId, mutation.clientMutationId],
+          )
+        }
+        return claimed.map((mutation) => ({ ...mutation, status: 'inflight' as const }))
+      })
+    }
+    const state = this.readBrowserState()
+    const claimed = state.mutations
+      .filter((item) => item.userId === this.userId && item.status === 'pending')
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.clientMutationId.localeCompare(right.clientMutationId))
+      .slice(0, boundedLimit)
+    for (const mutation of claimed) mutation.status = 'inflight'
+    if (claimed.length > 0) this.writeBrowserState(state)
+    return claimed.map(clone)
+  }
+
+  async releaseInflight(clientMutationIds: string[]): Promise<void> {
+    if (clientMutationIds.length === 0) return
+    if (this.sql) {
+      await this.runSqlTransaction(async (database) => {
+        for (const clientMutationId of clientMutationIds) {
+          await database.execute(
+            `UPDATE local_mutations SET status = 'pending', in_flight_at = NULL
+             WHERE user_id = $1 AND client_mutation_id = $2 AND status = 'inflight'`,
+            [this.userId, clientMutationId],
+          )
+        }
+      })
+      return
+    }
+    const state = this.readBrowserState()
+    const ids = new Set(clientMutationIds)
+    for (const mutation of state.mutations) {
+      if (mutation.userId === this.userId && ids.has(mutation.clientMutationId) && mutation.status === 'inflight') mutation.status = 'pending'
+    }
+    this.writeBrowserState(state)
+  }
+
+  async settleMutation(input: LocalMutationSettlement): Promise<void> {
+    if (this.sql) {
+      await this.runSqlTransaction(async (database) => {
+        const rows = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
+           FROM local_mutations WHERE user_id = $1 AND client_mutation_id = $2`,
+          [this.userId, input.clientMutationId],
+        )
+        const mutation = rows[0] ? mutationFromRow(rows[0]) : null
+        if (!mutation) return
+        await database.execute(
+          `UPDATE local_mutations SET status = $1, error = $2, in_flight_at = NULL,
+             remote_payload = $3, remote_version = $4
+           WHERE user_id = $5 AND client_mutation_id = $6`,
+          [input.status, input.error ?? null,
+            input.remoteValue === undefined ? null : JSON.stringify(input.remoteValue), input.remoteVersion ?? null,
+            this.userId, input.clientMutationId],
+        )
+        const unresolved = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
+           FROM local_mutations
+           WHERE user_id = $1 AND resource_type = $2 AND resource_id = $3
+             AND status IN ('pending', 'inflight', 'conflict', 'error')`,
+          [this.userId, mutation.resourceType, mutation.resourceId],
+        )
+        const statuses = unresolved.map((item) => item.status)
+        const resourceStatus: LocalSyncStatus = statuses.includes('pending') || statuses.includes('inflight')
+          ? 'pending'
+          : statuses.includes('conflict') ? 'conflict'
+            : statuses.includes('error') ? 'error' : 'synced'
+        await database.execute(
+          `UPDATE local_resource_records SET sync_status = $1
+           WHERE user_id = $2 AND resource_type = $3 AND resource_id = $4`,
+          [resourceStatus, this.userId, mutation.resourceType, mutation.resourceId],
+        )
+      })
+      return
+    }
+    const state = this.readBrowserState()
+    const mutation = state.mutations.find((item) => item.userId === this.userId && item.clientMutationId === input.clientMutationId)
+    if (!mutation) return
+    mutation.status = input.status
+    if (input.error) mutation.error = input.error
+    else delete mutation.error
+    if (input.remoteValue === undefined) delete mutation.remoteValue
+    else mutation.remoteValue = clone(input.remoteValue)
+    if (input.remoteVersion === undefined) delete mutation.remoteVersion
+    else mutation.remoteVersion = input.remoteVersion
+    const statuses = state.mutations
+      .filter((item) => item.userId === this.userId && item.resourceType === mutation.resourceType
+        && item.resourceId === mutation.resourceId && ['pending', 'inflight', 'conflict', 'error'].includes(item.status))
+      .map((item) => item.status)
+    const resource = state.resources.find((item) => item.userId === this.userId && item.resourceType === mutation.resourceType && item.id === mutation.resourceId)
+    if (resource) {
+      resource.syncStatus = statuses.includes('pending') || statuses.includes('inflight')
+        ? 'pending' : statuses.includes('conflict') ? 'conflict' : statuses.includes('error') ? 'error' : 'synced'
+    }
+    this.writeBrowserState(state)
+  }
+
   async getSyncState(): Promise<LocalSyncState> {
     if (this.sql) {
       await this.ensureSql()
@@ -483,7 +722,7 @@ export class LocalRepository {
   }
 
   async saveCursor(cursor: string | null, resetRequired = false): Promise<LocalSyncState> {
-    const state: LocalSyncState = { cursor, resetRequired, schemaVersion: 2 }
+    const state: LocalSyncState = { cursor, resetRequired, schemaVersion: LOCAL_SCHEMA_VERSION }
     if (this.sql) {
       await this.ensureSql()
       await this.sql.execute(

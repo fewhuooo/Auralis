@@ -295,6 +295,46 @@ test('coalesces pending local writes per resource without changing their server 
   }]);
 });
 
+test('commitMutation writes the resource projection and outbox row together', async () => {
+  const { first } = createRepositories();
+
+  await first.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 'task-1',
+    value: { id: 'task-1', title: 'Local' },
+    version: 0,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'task-create-1',
+      resourceType: 'TASK',
+      resourceId: 'task-1',
+      mutationType: 'CREATE',
+      baseVersion: 0,
+      payload: { id: 'task-1', title: 'Local' },
+    },
+  });
+
+  assert.equal((await first.read('TASK', 'task-1'))?.syncStatus, 'pending');
+  assert.deepEqual((await first.listPending()).map((item) => item.clientMutationId), ['task-create-1']);
+});
+
+test('a new local edit remains pending when an older claimed mutation is acknowledged', async () => {
+  const { first } = createRepositories();
+  await first.commitMutation({
+    resourceType: 'TASK', resourceId: 'task-1', value: { title: 'first' }, version: 1, deletedAt: null,
+    mutation: { clientMutationId: 'm-1', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 1, payload: { title: 'first' } },
+  });
+  assert.deepEqual((await first.claimPending(200)).map((item) => item.clientMutationId), ['m-1']);
+  await first.commitMutation({
+    resourceType: 'TASK', resourceId: 'task-1', value: { title: 'second' }, version: 1, deletedAt: null,
+    mutation: { clientMutationId: 'm-2', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 1, payload: { title: 'second' } },
+  });
+  await first.settleMutation({ clientMutationId: 'm-1', status: 'applied', remoteVersion: 2 });
+
+  assert.equal((await first.read('TASK', 'task-1'))?.syncStatus, 'pending');
+  assert.deepEqual((await first.listPending()).map((item) => item.clientMutationId), ['m-2']);
+});
+
 test('legacy data is backed up without assignment or deletion and requires an explicit choice', () => {
   const storage = createMemoryStorage();
   storage.setItem('auralis_subjects', JSON.stringify([{ id: 'old-1', name: 'Unassigned' }]));

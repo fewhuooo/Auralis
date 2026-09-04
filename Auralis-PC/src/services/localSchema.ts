@@ -1,11 +1,12 @@
 import type { LocalEntity, LocalMutation, LocalMutationStatus, LocalSyncStatus } from '@/types/api'
 import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob } from '@/types/documentProcessing'
 
-export const LOCAL_SCHEMA_VERSION = 5
+export const LOCAL_SCHEMA_VERSION = 6
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
   select<T>(sql: string, bindValues?: unknown[]): Promise<T[]>
+  transaction?<T>(operation: (transaction: LocalSqlDatabase) => Promise<T>): Promise<T>
 }
 
 export interface LocalResourceRow {
@@ -29,6 +30,9 @@ export interface LocalMutationRow {
   status: LocalMutationStatus
   created_at: string
   error: string | null
+  in_flight_at?: string | null
+  remote_payload?: string | null
+  remote_version?: number | null
 }
 
 export interface DocumentProcessingJobRow {
@@ -91,6 +95,9 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL,
     error TEXT,
+    in_flight_at TEXT,
+    remote_payload TEXT,
+    remote_version INTEGER,
     PRIMARY KEY (user_id, client_mutation_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_local_mutations_user_status
@@ -173,6 +180,14 @@ async function migrateDocumentJobReceiptColumn(db: LocalSqlDatabase): Promise<vo
   }
 }
 
+async function migrateLocalMutationColumns(db: LocalSqlDatabase): Promise<void> {
+  if (!(await tableExists(db, 'local_mutations'))) return
+  const columns = await tableColumns(db, 'local_mutations')
+  if (!columns.has('in_flight_at')) await db.execute('ALTER TABLE local_mutations ADD COLUMN in_flight_at TEXT')
+  if (!columns.has('remote_payload')) await db.execute('ALTER TABLE local_mutations ADD COLUMN remote_payload TEXT')
+  if (!columns.has('remote_version')) await db.execute('ALTER TABLE local_mutations ADD COLUMN remote_version INTEGER')
+}
+
 async function moveLegacyTable(
   db: LocalSqlDatabase,
   tableName: string,
@@ -229,6 +244,7 @@ export async function createVersionedLocalSchema(db: LocalSqlDatabase): Promise<
   for (const statement of VERSIONED_LOCAL_SCHEMA_SQL) {
     await db.execute(statement)
   }
+  await migrateLocalMutationColumns(db)
   await backupLegacySqlResources(db)
   await db.execute(
     `INSERT OR IGNORE INTO local_schema_migrations (version, applied_at) VALUES ($1, $2)`,
@@ -268,6 +284,8 @@ export function mutationFromRow(row: LocalMutationRow): LocalMutation {
     status: row.status,
     createdAt: row.created_at,
     ...(row.error ? { error: row.error } : {}),
+    ...(row.remote_payload ? { remoteValue: parsePayload<unknown>(row.remote_payload) } : {}),
+    ...(row.remote_version == null ? {} : { remoteVersion: Number(row.remote_version) }),
   }
 }
 

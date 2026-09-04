@@ -59,7 +59,7 @@ export type LocalResourceType =
 
 export type LocalSyncStatus = 'synced' | 'pending' | 'conflict' | 'error';
 export type LocalMutationType = 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE';
-export type LocalMutationStatus = 'pending' | 'applied' | 'conflict' | 'error';
+export type LocalMutationStatus = 'pending' | 'inflight' | 'applied' | 'conflict' | 'error';
 
 export interface LocalMutation {
   clientMutationId: string;
@@ -72,4 +72,6 @@ export interface LocalMutation {
   createdAt: string;
   status: LocalMutationStatus;
   error?: string;
+  remoteValue?: unknown;
+  remoteVersion?: number;
 }
