@@ -14,7 +14,7 @@ import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -119,16 +119,15 @@ class SyncServiceTests {
                 .put("name", "Physics")
                 .putNull("description")
                 .putNull("iconKey")
-                .putNull("color")
                 .put("sortKey", "001");
         SyncMutation mutation = new SyncMutation("client-1", SyncResourceType.SUBJECT, resourceId,
                 SyncMutationType.CREATE, 0, payload);
 
-        var first = syncService.push(auth.user().id(), auth.deviceId(), java.util.List.of(mutation)).getFirst();
-        var replay = syncService.push(auth.user().id(), auth.deviceId(), java.util.List.of(mutation)).getFirst();
+        var first = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+        var replay = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
         subjectService.update(auth.user().id(), resourceId, 0,
-                new SubjectCommand("Physics Updated", null, null, null, "001"));
-        var conflict = syncService.push(auth.user().id(), auth.deviceId(), java.util.List.of(
+                new SubjectCommand("Physics Updated", null, null, "001"));
+        var conflict = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(
                 new SyncMutation("client-2", SyncResourceType.SUBJECT, resourceId,
                         SyncMutationType.UPDATE, 0, payload))).getFirst();
 
@@ -153,9 +152,9 @@ class SyncServiceTests {
 
         SyncMutation original = new SyncMutation("same-id", SyncResourceType.SUBJECT, firstId,
                 SyncMutationType.CREATE, 0, firstPayload);
-        syncService.push(auth.user().id(), auth.deviceId(), java.util.List.of(original));
+        syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(original));
 
-        var results = syncService.push(auth.user().id(), auth.deviceId(), java.util.List.of(
+        var results = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(
                 new SyncMutation("same-id", SyncResourceType.SUBJECT, firstId,
                         SyncMutationType.CREATE, 0, secondPayload),
                 new SyncMutation("second-id", SyncResourceType.SUBJECT, secondId,
@@ -179,9 +178,9 @@ class SyncServiceTests {
 
         try (var executor = Executors.newFixedThreadPool(2)) {
             var first = executor.submit(() -> syncService.push(
-                    auth.user().id(), auth.deviceId(), java.util.List.of(mutation)).getFirst());
+                    auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst());
             var second = executor.submit(() -> syncService.push(
-                    auth.user().id(), auth.deviceId(), java.util.List.of(mutation)).getFirst());
+                    auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst());
 
             var firstResult = first.get();
             var secondResult = second.get();
@@ -246,7 +245,7 @@ class SyncServiceTests {
     void snapshotContainsDeletedResourceTombstones() {
         AuthResult auth = register("sync-snapshot");
         UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
-                "To delete", null, null, null, "001")).id();
+                "To delete", null, null, "001")).id();
         subjectService.delete(auth.user().id(), subjectId, 0);
 
         var snapshot = syncService.snapshot(auth.user().id());

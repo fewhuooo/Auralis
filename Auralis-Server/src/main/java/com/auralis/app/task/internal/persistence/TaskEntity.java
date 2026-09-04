@@ -174,6 +174,10 @@ public class TaskEntity {
         this.colorOverride = colorOverride;
     }
 
+    public void reschedule(Instant scheduledAt) {
+        this.scheduledAt = scheduledAt;
+    }
+
     public void softDelete() { deletedAt = Instant.now(); }
     public void restore() { deletedAt = null; }
 }

@@ -22,6 +22,9 @@ const {
   LocalRepository,
   createMemoryStorage,
 } = await import('../src/services/localRepository.ts');
+const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts');
+const { serializeLocalSqlDatabase } = await import('../src/services/localSqlQueue.ts');
+const { LocalDatabaseRuntime } = await import('../src/services/localDatabaseRuntime.ts');
 const {
   backupLegacyUnassignedData,
   getLegacyUnassignedBackup,
@@ -31,9 +34,11 @@ const {
 class TemporarySqlite {
   constructor() {
     this.database = new DatabaseSync(':memory:');
+    this.schemaMigrationWrites = 0;
   }
 
   async execute(sql, bindValues = []) {
+    if (sql.includes('INSERT OR IGNORE INTO local_schema_migrations')) this.schemaMigrationWrites += 1;
     this.database.prepare(sql.replace(/\$\d+/g, '?')).run(...bindValues);
   }
 
@@ -100,6 +105,68 @@ test('SQLite schema and repository keep user predicates and user rows isolated',
   }
 });
 
+test('preinitialized SQLite schema is reused by repositories without repeating DDL', async () => {
+  const sqlite = new TemporarySqlite();
+  try {
+    await createVersionedLocalSchema(sqlite);
+    const schemaReady = Promise.resolve();
+    const first = new LocalRepository('user-a', 'device-1', { sql: sqlite, schemaReady });
+    const second = new LocalRepository('user-b', 'device-1', { sql: sqlite, schemaReady });
+
+    await Promise.all([
+      first.upsert('TASK', 'task-1', { title: 'One' }),
+      second.upsert('TASK', 'task-2', { title: 'Two' }),
+    ]);
+
+    assert.equal(sqlite.schemaMigrationWrites, 1);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('serialized local SQL adapter never executes concurrent commands', async () => {
+  let active = 0;
+  let maxActive = 0;
+  const events = [];
+  const raw = {
+    async execute(sql) {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      events.push(`start:${sql}`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      events.push(`end:${sql}`);
+      active -= 1;
+    },
+    async select() {
+      return [];
+    },
+  };
+
+  const sql = serializeLocalSqlDatabase(raw);
+  await Promise.all([sql.execute('first'), sql.execute('second')]);
+
+  assert.equal(maxActive, 1);
+  assert.deepEqual(events, ['start:first', 'end:first', 'start:second', 'end:second']);
+});
+
+test('local database runtime loads once and returns one repository per scope', async () => {
+  const runtime = new LocalDatabaseRuntime();
+  let loads = 0;
+  const load = async () => {
+    loads += 1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    return { name: 'auralis.db' };
+  };
+
+  const [firstDatabase, secondDatabase] = await Promise.all([runtime.initialize(load), runtime.initialize(load)]);
+  const firstRepository = runtime.getOrCreate('user-a:device-1', () => ({ id: 'first' }));
+  const secondRepository = runtime.getOrCreate('user-a:device-1', () => ({ id: 'second' }));
+
+  assert.equal(loads, 1);
+  assert.equal(firstDatabase, secondDatabase);
+  assert.equal(firstRepository, secondRepository);
+});
+
 test('SQLite legacy account-less rows are copied to unassigned backup without deletion', async () => {
   const sqlite = new TemporarySqlite();
   try {
@@ -158,6 +225,74 @@ test('snapshot reset replaces remote rows while preserving pending payload and m
   assert.equal((await first.read('TASK', 'task-1'))?.value.title, 'Local edit');
   assert.equal((await first.read('SUBJECT', 'subject-1'))?.value.name, 'Physics');
   assert.deepEqual((await first.listPending()).map((item) => item.clientMutationId), ['mutation-1']);
+});
+
+test('SQL snapshot reset delegates to the native transactional replacement boundary', async () => {
+  const sqlite = new TemporarySqlite();
+  try {
+    await createVersionedLocalSchema(sqlite);
+    let received = null;
+    const repository = new LocalRepository('user-a', 'device-1', {
+      sql: sqlite,
+      schemaReady: Promise.resolve(),
+      replaceSnapshot: async (items) => { received = items; },
+    });
+    const snapshot = [
+      { resourceType: 'SUBJECT', resourceId: 'subject-1', version: 1, deletedAt: null, value: { name: 'Physics' } },
+    ];
+
+    await repository.replaceSnapshotPreservingPending(snapshot);
+
+    assert.deepEqual(received, snapshot);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('coalesces pending local writes per resource without changing their server base version', async () => {
+  const { first } = createRepositories();
+
+  await first.enqueueMutation({
+    clientMutationId: 'update-1', resourceType: 'TASK', resourceId: 'task-1',
+    mutationType: 'UPDATE', baseVersion: 4, payload: { title: 'First local edit' },
+  });
+  await first.enqueueMutation({
+    clientMutationId: 'update-2', resourceType: 'TASK', resourceId: 'task-1',
+    mutationType: 'UPDATE', baseVersion: 4, payload: { title: 'Latest local edit' },
+  });
+  await first.enqueueMutation({
+    clientMutationId: 'delete-1', resourceType: 'TASK', resourceId: 'task-1',
+    mutationType: 'DELETE', baseVersion: 4, payload: { id: 'task-1' },
+  });
+
+  const taskMutations = await first.listPending('TASK');
+  assert.deepEqual(taskMutations.map((mutation) => ({
+    clientMutationId: mutation.clientMutationId,
+    mutationType: mutation.mutationType,
+    baseVersion: mutation.baseVersion,
+    payload: mutation.payload,
+  })), [{
+    clientMutationId: 'update-1', mutationType: 'DELETE', baseVersion: 4, payload: { id: 'task-1' },
+  }]);
+
+  await first.enqueueMutation({
+    clientMutationId: 'create-1', resourceType: 'SOURCE', resourceId: 'source-1',
+    mutationType: 'CREATE', baseVersion: 0, payload: { title: 'Original title' },
+  });
+  await first.enqueueMutation({
+    clientMutationId: 'update-3', resourceType: 'SOURCE', resourceId: 'source-1',
+    mutationType: 'UPDATE', baseVersion: 0, payload: { title: 'Latest title' },
+  });
+
+  const sourceMutations = await first.listPending('SOURCE');
+  assert.deepEqual(sourceMutations.map((mutation) => ({
+    clientMutationId: mutation.clientMutationId,
+    mutationType: mutation.mutationType,
+    baseVersion: mutation.baseVersion,
+    payload: mutation.payload,
+  })), [{
+    clientMutationId: 'create-1', mutationType: 'CREATE', baseVersion: 0, payload: { title: 'Latest title' },
+  }]);
 });
 
 test('legacy data is backed up without assignment or deletion and requires an explicit choice', () => {

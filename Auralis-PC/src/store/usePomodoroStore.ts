@@ -9,7 +9,7 @@ interface PomodoroSnapshot {
 
 function storageKey(): string {
   const auth = useAuthStore()
-  return `auralis:v2:${auth.user?.id || 'anonymous'}:${auth.deviceId || 'browser'}:pomodoro`
+  return `auralis:v2:${auth.user?.id || 'anonymous'}:${auth.serverDeviceId || 'browser'}:pomodoro`
 }
 
 function today(): string {

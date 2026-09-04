@@ -15,7 +15,7 @@ import { getRuntimeConfig, resolveWebsocketUrl } from '../src/config/runtime.ts'
 import {
   formatDeviceName,
   getDeviceIdentity,
-  getOrCreateDeviceId,
+  getOrCreateClientDeviceKey,
   isValidUuid,
   resolveDevicePlatform,
 } from '../src/auth/deviceIdentity.ts';
@@ -135,19 +135,19 @@ const {
 const { default: request } = await import('../src/api/request.ts');
 
 
-test('parses RFC 9457 Problem Details without trusting legacy wrappers', () => {
+test('parses RFC 9457 Problem Details with field-level validation details', () => {
   const problem = parseProblemDetails({
     type: 'https://auralis.dev/problems/validation',
     title: 'Validation failed',
     status: 422,
     detail: 'The subject name is required',
     instance: '/api/subjects',
-    errors: { name: ['required'] },
+    fieldErrors: [{ field: 'name', message: 'required' }],
   });
 
   assert.equal(isProblemDetails(problem), true);
   assert.equal(problem.status, 422);
-  assert.deepEqual(problem.errors, { name: ['required'] });
+  assert.deepEqual(problem.fieldErrors, [{ field: 'name', message: 'required' }]);
   assert.equal(isProblemDetails({ code: 200, data: { ok: true } }), false);
 });
 
@@ -236,13 +236,13 @@ test('validates UUID format and stable generation for device identity', () => {
     length: storageMap.size,
   };
 
-  const id1 = getOrCreateDeviceId(mockStorage);
+  const id1 = getOrCreateClientDeviceKey(mockStorage);
   assert.equal(isValidUuid(id1), true);
-  const id2 = getOrCreateDeviceId(mockStorage);
+  const id2 = getOrCreateClientDeviceKey(mockStorage);
   assert.equal(id1, id2);
 
   mockStorage.setItem('auralis_device_id', 'not-a-valid-uuid');
-  const id3 = getOrCreateDeviceId(mockStorage);
+  const id3 = getOrCreateClientDeviceKey(mockStorage);
   assert.notEqual(id3, 'not-a-valid-uuid');
   assert.equal(isValidUuid(id3), true);
 });
@@ -267,7 +267,7 @@ test('constructs complete device identity without touching tokens', () => {
   };
 
   const identity = getDeviceIdentity({ storage: mockStorage, isTauri: false });
-  assert.equal(isValidUuid(identity.deviceId), true);
+  assert.equal(isValidUuid(identity.clientDeviceKey), true);
   assert.equal(identity.platform, 'WEB');
   assert.equal(identity.deviceName, 'Web Browser');
   assert.equal(Object.prototype.hasOwnProperty.call(identity, 'token'), false);
@@ -387,9 +387,9 @@ test('RealtimeController connects with fresh ticket without leaking auth token i
   const ticketCalls = [];
 
   const controller = new RealtimeController({
-    getDeviceId: () => 'dev-uuid-1',
-    requestTicket: async (deviceId) => {
-      ticketCalls.push(deviceId);
+    getServerDeviceId: () => 'server-device-uuid-1',
+    requestTicket: async () => {
+      ticketCalls.push('issued-from-bearer-token');
       return {
         ticket: 'ticket-alpha',
         websocketUrl: `/ws/events?ticket=ticket-alpha`,
@@ -408,7 +408,7 @@ test('RealtimeController connects with fresh ticket without leaking auth token i
   await new Promise((r) => setTimeout(r, 10));
 
   assert.equal(ticketCalls.length, 1);
-  assert.equal(ticketCalls[0], 'dev-uuid-1');
+  assert.equal(ticketCalls[0], 'issued-from-bearer-token');
   assert.equal(MockWebSocket.instances.length, 1);
 
   const ws = MockWebSocket.instances[0];
@@ -429,7 +429,7 @@ test('RealtimeController deduplicates events, advances cursor, and triggers sync
   const syncSignals = [];
 
   const controller = new RealtimeController({
-    getDeviceId: () => 'dev-uuid-2',
+    getServerDeviceId: () => 'dev-uuid-2',
     requestTicket: async () => ({
       ticket: 'ticket-beta',
       websocketUrl: '/ws/events?ticket=ticket-beta',
@@ -514,7 +514,7 @@ test('RealtimeController requests a brand new ticket on reconnection without reu
   let ticketCount = 0;
 
   const controller = new RealtimeController({
-    getDeviceId: () => 'dev-uuid-3',
+    getServerDeviceId: () => 'dev-uuid-3',
     requestTicket: async () => {
       ticketCount++;
       return {
@@ -565,7 +565,7 @@ test('RealtimeController renews the ticket when its expiry is reached', async ()
   let ticketCount = 0;
 
   const controller = new RealtimeController({
-    getDeviceId: () => 'dev-uuid-expiry',
+    getServerDeviceId: () => 'dev-uuid-expiry',
     requestTicket: async () => {
       ticketCount++;
       const ticket = `ticket-expiry-${ticketCount}`;
@@ -599,7 +599,7 @@ test('RealtimeController.stop() cleans up timers, listeners, and WebSocket', asy
   MockWebSocket.reset();
 
   const controller = new RealtimeController({
-    getDeviceId: () => 'dev-uuid-4',
+    getServerDeviceId: () => 'dev-uuid-4',
     requestTicket: async () => ({
       ticket: 'ticket-stop-test',
       websocketUrl: '/ws/events?ticket=ticket-stop-test',

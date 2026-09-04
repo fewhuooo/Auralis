@@ -30,9 +30,6 @@ public class SubjectEntity {
     @Column(name = "icon_key", length = 64)
     private String iconKey;
 
-    @Column(length = 32)
-    private String color;
-
     @Column(name = "sort_key", nullable = false, length = 128)
     private String sortKey;
 
@@ -61,7 +58,6 @@ public class SubjectEntity {
             String name,
             String description,
             String iconKey,
-            String color,
             String sortKey,
             boolean defaultSubject) {
         this.id = id;
@@ -69,7 +65,6 @@ public class SubjectEntity {
         this.name = name;
         this.description = description;
         this.iconKey = iconKey;
-        this.color = color;
         this.sortKey = sortKey;
         this.defaultSubject = defaultSubject;
     }
@@ -97,7 +92,6 @@ public class SubjectEntity {
     public String getName() { return name; }
     public String getDescription() { return description; }
     public String getIconKey() { return iconKey; }
-    public String getColor() { return color; }
     public String getSortKey() { return sortKey; }
     public boolean isDefaultSubject() { return defaultSubject; }
     public long getVersion() { return version; }
@@ -105,11 +99,10 @@ public class SubjectEntity {
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
 
-    public void update(String name, String description, String iconKey, String color, String sortKey) {
+    public void update(String name, String description, String iconKey, String sortKey) {
         this.name = name;
         this.description = description;
         this.iconKey = iconKey;
-        this.color = color;
         this.sortKey = sortKey == null ? "" : sortKey;
     }
 

@@ -11,7 +11,7 @@ import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
 import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
 import com.auralis.app.shared.error.DomainException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.net.SocketTimeoutException;

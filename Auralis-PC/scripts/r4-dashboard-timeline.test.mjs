@@ -37,8 +37,10 @@ test('timeline renders half-hour scheduled tasks and marks past tasks without re
 })
 
 test('timeline drag/drop carries a native payload and uses half-hour geometry', () => {
-  assert.match(timeline, /dataTransfer\.setData\(['"`]text\/plain['"`],\s*idOrTime\)/)
-  assert.match(dashboard, /dataTransfer\.setData\(['"`]text\/plain['"`],\s*idOrTime\)/)
+  assert.match(timeline, /sourceSlotTime/)
+  assert.match(dashboard, /sourceSlotTime/)
+  assert.match(timeline, /sourceSlotTime\s*===\s*slotTime/)
+  assert.match(dashboard, /sourceSlotTime\s*===\s*slotTime/)
   assert.match(timeline, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*80/)
   assert.match(dashboard, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*52/)
   assert.match(timeline, /slots\s*\*\s*TIMELINE_SLOT_HEIGHT\s*\+\s*\(slots\s*-\s*1\)\s*\*\s*TIMELINE_SLOT_GAP/)
@@ -47,6 +49,21 @@ test('timeline drag/drop carries a native payload and uses half-hour geometry', 
   assert.match(dashboard, /min-height:\s*52px/)
   assert.match(dashboard, /currentMinutes/)
   assert.doesNotMatch(dashboard, /const currentHour = parseInt\(slotTime\.split\('\:'\)\[0\], 10\)/)
+})
+
+test('completed scheduled cards are fixed and cannot accept replacement drops', () => {
+  assert.match(timeline, /:draggable="!isCompletedScheduledTask\(slot\.task\)"/)
+  assert.match(timeline, /:draggable="!isCompletedScheduledTask\(task\)"/)
+  assert.match(dashboard, /:draggable="!isCompletedScheduledTask\(slot\.task\)"/)
+  assert.match(timeline, /const targetTask = timeSlots\.value\.find\(\(slot\) => slot\.time === slotTime\)\?\.task[\s\S]*?if \(targetTask && isCompletedScheduledTask\(targetTask\)\) return/)
+  assert.match(dashboard, /const targetTask = timeSlots\.value\.find\(\(slot\) => slot\.time === slotTime\)\?\.task[\s\S]*?if \(targetTask && isCompletedScheduledTask\(targetTask\)\) return/)
+})
+
+test('the desktop shell does not surface an overdue-task notice', async () => {
+  const app = await readFile(new URL('../src/App.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(app, /overdue-modal/)
+  assert.doesNotMatch(app, /overdueNotice/)
+  assert.doesNotMatch(app, /已逾期/)
 })
 
 test('dashboard keeps grid cells date-only and moves full day information to the header', () => {
@@ -80,4 +97,33 @@ test('production default durations are multiples of 30 minutes', () => {
   assert.match(taskStore, /durationMinutes:\s*input\.durationMinutes\s*\?\?\s*input\.duration\s*\?\?\s*30/, 'useTaskStore default must be 30')
   assert.match(timeline, /duration:\s*newTaskForm\.value\.duration\s*\|\|\s*60/, 'Timeline creation fallback must be 60')
   assert.match(timeline, /duration:\s*30,\s*\n\s*load:\s*['"]low['"]/, 'Timeline spaced-repetition task duration must be 30')
+})
+
+test('schedule pages do not expose visible load badges or indicators', () => {
+  assert.doesNotMatch(timeline, /<span[^>]*class="[^"]*load-indicator[^"]*"[^>]*>/, 'Timeline must not render load indicator badges')
+  assert.doesNotMatch(dashboard, /<span[^>]*class="[^"]*load-indicator[^"]*"[^>]*>/, 'Dashboard must not render load indicator badges')
+})
+
+test('timeline keeps the local task projection when changing days and refreshing remotely', () => {
+  const fetchTasksSource = taskStore.slice(taskStore.indexOf('async function fetchTasks()'), taskStore.indexOf('function replaceInMemory('))
+  const loadLocalTasksSource = taskStore.slice(taskStore.indexOf('async function loadLocalTasks()'), taskStore.indexOf('async function cache('))
+  const timelineSelectDaySource = timeline.slice(timeline.indexOf('const selectDay'), timeline.indexOf('const getScheduledTasksForDay'))
+  const dashboardSelectDaySource = dashboard.slice(dashboard.indexOf('const selectDay'), dashboard.indexOf('const getScheduledTasksForDay'))
+
+  assert.match(taskStore, /authStore\.serverDeviceId/, 'Task repository scope must use the canonical authenticated device id')
+  assert.match(fetchTasksSource, /await loadLocalTasks\(\)/, 'Task loading must hydrate the local projection first')
+  assert.match(fetchTasksSource, /void refreshTasks\(\)/, 'Cloud refresh must continue in the background')
+  assert.doesNotMatch(fetchTasksSource, /return await loadFromApi\(\)/, 'Cloud refresh must not block the local task projection')
+  assert.doesNotMatch(loadLocalTasksSource, /allTasks\.value\s*=\s*\[\]/, 'A local-read failure must preserve an already visible task projection')
+  assert.match(timelineSelectDaySource, /taskStore\.setSelectedDay\(day\)/, 'Timeline day selection must rebuild in-memory slots without reloading the repository')
+  assert.match(dashboardSelectDaySource, /taskStore\.setSelectedDay\(day\)/, 'Dashboard must use the same day-selection path')
+  assert.doesNotMatch(timelineSelectDaySource, /loadLocalTasks/, 'Timeline day selection must not clear in-memory tasks after a local read failure')
+  assert.doesNotMatch(dashboardSelectDaySource, /loadLocalTasks/, 'Dashboard day selection must not clear in-memory tasks after a local read failure')
+})
+
+test('schedule drag reports a local persistence failure without leaving the UI stuck', () => {
+  assert.match(timeline, /const reportDragFailure = \(error: unknown\)/)
+  assert.match(dashboard, /const reportDragFailure = \(error: unknown\)/)
+  assert.match(timeline, /catch \(error\) \{\s*reportDragFailure\(error\)/)
+  assert.match(dashboard, /catch \(error\) \{\s*reportDragFailure\(error\)/)
 })

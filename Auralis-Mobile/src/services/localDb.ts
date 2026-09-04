@@ -390,7 +390,6 @@ export const localDb = {
         name TEXT NOT NULL,
         description TEXT,
         icon TEXT,
-        color TEXT,
         created_at INTEGER,
         version INTEGER DEFAULT 0
       )
@@ -467,6 +466,9 @@ export const localDb = {
     } catch (e) {}
     try {
       await sqlite.execute("ALTER TABLE source_files ADD COLUMN version INTEGER DEFAULT 0");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE subjects DROP COLUMN color");
     } catch (e) {}
   },
 
@@ -883,7 +885,7 @@ export const localDb = {
 
   // Subject CRUD
   async getSubjects(): Promise<any[]> {
-    return sqlite.select('SELECT * FROM subjects ORDER BY created_at DESC');
+    return sqlite.select('SELECT id, name, description, icon, created_at, version FROM subjects ORDER BY created_at DESC');
   },
 
   async saveSubject(subject: any): Promise<void> {
@@ -894,20 +896,18 @@ export const localDb = {
         UPDATE subjects SET 
           name = '${esc(subject.name)}', 
           description = '${esc(subject.description || '')}', 
-          icon = '${esc(subject.icon || '')}', 
-          color = '${esc(subject.color || '')}',
+          icon = '${esc(subject.icon || '')}',
           version = ${Number(subject.version || 0)}
         WHERE id = '${esc(subject.id)}'
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO subjects (id, name, description, icon, color, created_at, version)
+        INSERT INTO subjects (id, name, description, icon, created_at, version)
         VALUES (
           '${esc(subject.id)}', 
           '${esc(subject.name)}', 
           '${esc(subject.description || '')}', 
           '${esc(subject.icon || '')}', 
-          '${esc(subject.color || '')}', 
           ${subject.created_at || Date.now()},
           ${Number(subject.version || 0)}
         )

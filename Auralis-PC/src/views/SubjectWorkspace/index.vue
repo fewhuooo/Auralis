@@ -488,6 +488,7 @@
             <div class="drag-text">拖拽文件到此处自动识别，或点击选择</div>
           </div>
           <input type="file" ref="hiddenFileInput" style="display: none" :accept="SUPPORTED_UPLOAD_EXTENSIONS.join(',')" @change="handleFileSelect" />
+          <p v-if="isUploading" class="upload-progress" aria-live="polite">{{ uploadStage || '正在上传文件' }} {{ uploadProgress }}%</p>
           <div class="form-group"><label>文件名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络.pdf" /></div>
           <div class="form-group"><label>归档至 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
             <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
@@ -505,7 +506,7 @@
         </div>
         <div class="modal-footer" style="justify-content: flex-end">
           <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
-          <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerForm.subjectId || !droppedFile || isUploading" @click="handleRegisterFile">{{ isUploading ? '上传中…' : '确认登记' }}</button>
+          <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerForm.subjectId || !droppedFile || isUploading" @click="handleRegisterFile">{{ isUploading ? `${uploadStage || '上传中'} ${uploadProgress}%` : '确认登记' }}</button>
         </div>
       </div>
     </div>
@@ -621,7 +622,8 @@ const assetStore = useAssetStore()
 const sourceStore = useSourceStore()
 const chatStore = useChatStore()
 const documentProcessingStore = useDocumentProcessingStore()
-const { activeSubject, activeSourceFiles } = storeToRefs(subjectStore)
+const { activeSubject } = storeToRefs(subjectStore)
+const { activeSourceFiles } = storeToRefs(sourceStore)
 const { messages: storedChatMessages, isStreaming: storedChatStreaming, streamingContent: storedStreamingContent } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
 
@@ -743,7 +745,7 @@ const handleDeleteFile = async (file: SourceFileModel) => {
       type: 'warning'
     })
     deletingFileId.value = file.id
-    await sourceStore.deleteSourceFile(file.id)
+    await subjectStore.deleteSourceFile(file.id)
     ElMessage.success('已删除文件')
     if (selectedFileId.value === file.id) {
       if (activeSourceFiles.value.length > 0) {
@@ -875,11 +877,15 @@ const registerForm = ref({ name: '', filePath: '', fileType: 'PDF', fileSize: 0,
 const isDraggingFile = ref(false)
 const hiddenFileInput = ref<HTMLInputElement | null>(null)
 const droppedFile = ref<File | null>(null)
+const uploadProgress = ref(0)
+const uploadStage = ref('')
 
 const openRegisterModal = () => {
   registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: subjectId.value || '' }
   droppedFile.value = null
   isDraggingFile.value = false
+  uploadProgress.value = 0
+  uploadStage.value = ''
   showRegisterModal.value = true
 }
 
@@ -892,6 +898,8 @@ const parseFileMetadata = (file: File & { path?: string }) => {
   }
 
   droppedFile.value = file
+  uploadProgress.value = 0
+  uploadStage.value = ''
   registerForm.value.name = file.name
   if (file.path) registerForm.value.filePath = file.path
   else registerForm.value.filePath = file.name
@@ -934,9 +942,14 @@ const handleRegisterFile = async () => {
 
   const currentFile = droppedFile.value
   isUploading.value = true
+  uploadProgress.value = 0
+  uploadStage.value = '准备上传'
 
   try {
-    const asset = await assetStore.upload(currentFile)
+    const asset = await assetStore.upload(currentFile, (percent, stage) => {
+      uploadProgress.value = percent
+      uploadStage.value = stage
+    })
     const newId = await sourceStore.createFileSource(
       targetSubjectId,
       registerForm.value.name.trim(),
@@ -950,14 +963,12 @@ const handleRegisterFile = async () => {
       centerView.value = 'preview'
     }
 
-    if (targetSubjectId === subjectId.value) {
-      await subjectStore.loadSourceFiles(subjectId.value)
-    }
+    if (targetSubjectId === subjectId.value) await sourceStore.loadLocalSourceFiles(subjectId.value)
 
     showRegisterModal.value = false
     registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' }
     droppedFile.value = null
-    ElNotification({ title: '云端录入成功', message: currentFile.name, type: 'success', position: 'top-right' })
+    ElNotification({ title: '已保存到本地', message: `${currentFile.name} 将在后台同步`, type: 'success', position: 'top-right' })
   } catch (e: any) {
     console.error(e)
     ElNotification({ title: '录入失败', message: e.message || '文件上传或创建失败，请重试', type: 'error', position: 'top-right' })
@@ -973,7 +984,7 @@ const taskForm = ref({ name: '', duration: 60, load: 'medium' as 'low' | 'medium
 const handleAddTask = async () => {
   if (!taskForm.value.name.trim() || !activeSubject.value) return
   const s = activeSubject.value
-  await taskStore.addTask({ name: taskForm.value.name.trim(), subject: s.name, desc: '从学科工作区', color: s.color, duration: taskForm.value.duration, load: taskForm.value.load, loadText: taskForm.value.load === 'low' ? '1.0 🧠' : taskForm.value.load === 'medium' ? '2.0 🧠' : '3.0 🧠', status: 'pending', subjectId: s.id })
+  await taskStore.addTask({ name: taskForm.value.name.trim(), subject: s.name, desc: '从学科工作区', duration: taskForm.value.duration, load: taskForm.value.load, loadText: taskForm.value.load === 'low' ? '1.0 🧠' : taskForm.value.load === 'medium' ? '2.0 🧠' : '3.0 🧠', status: 'pending', subjectId: s.id })
   showTaskModal.value = false
   ElNotification({ title: '已生成', type: 'success', position: 'top-right' })
 }
@@ -999,7 +1010,7 @@ const themeColors = [
 
 const handleBlockClick = (b: any) => { selectedBlock.value = b; isEditMode.value = false; blockDialogVisible.value = true }
 const startEdit = () => { isEditMode.value = true; isCreateMode.value = false; if (selectedBlock.value) editForm.value = { id: selectedBlock.value.id, subject: selectedBlock.value.subject, title: selectedBlock.value.title, color: selectedBlock.value.color, preview: selectedBlock.value.preview, source: selectedBlock.value.source } }
-const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; editForm.value = { id: '', subject: activeSubject.value?.name || '', title: '', color: activeSubject.value?.color || 'rgba(181,196,177,0.4)', preview: '', source: '手动创建' }; blockDialogVisible.value = true }
+const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; editForm.value = { id: '', subject: activeSubject.value?.name || '', title: '', color: 'rgba(181,196,177,0.4)', preview: '', source: '手动创建' }; blockDialogVisible.value = true }
 const cancelEdit = () => { isCreateMode.value ? (blockDialogVisible.value = false) : (isEditMode.value = false) }
 const closeBlockDialog = () => { blockDialogVisible.value = false; isEditMode.value = false; isCreateMode.value = false }
 
@@ -1122,7 +1133,6 @@ const saveKnowledgeBlock = async (value: { title: string; content: string; tags:
     content: value.content,
     tags: value.tags,
     source: selectedFile.value?.name || '选中文本',
-    color: activeSubject.value.color,
   })
   showKnowledgeEditor.value = false
   ElNotification({ title: '已保存为知识块', type: 'success', position: 'top-right' })

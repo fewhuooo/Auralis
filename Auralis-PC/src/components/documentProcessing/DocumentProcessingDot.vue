@@ -11,12 +11,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
+import { useSourceStore } from '@/store/useSourceStore'
 
 const props = defineProps<{ sourceId: string }>()
 const store = useDocumentProcessingStore()
+const sourceStore = useSourceStore()
 const job = computed(() => store.jobs.find((item) => item.sourceId === props.sourceId))
-const visible = computed(() => Boolean(job.value && job.value.phase !== 'READY'))
-const failed = computed(() => ['FAILED_LOCAL', 'FAILED_SERVER'].includes(job.value?.phase || ''))
+const source = computed(() => sourceStore.sources.find((item) => item.id === props.sourceId))
+const sourcePhase = computed(() => source.value?.ingestionStatus)
+const visible = computed(() => Boolean(
+  (job.value && job.value.phase !== 'READY')
+  || (sourcePhase.value && sourcePhase.value !== 'READY'),
+))
+const failed = computed(() => ['FAILED_LOCAL', 'FAILED_SERVER'].includes(job.value?.phase || '') || sourcePhase.value === 'FAILED')
 const label = computed(() => {
   const phase = job.value?.phase
   if (phase === 'FAILED_LOCAL') return '本地解析失败，请前往个人中心重试'
@@ -25,6 +32,13 @@ const label = computed(() => {
   if (phase === 'EXTRACTING') return '正在解析文本'
   if (phase === 'UPLOADING' || phase === 'SERVER_INDEXING' || phase === 'SERVER_VALIDATING') return '正在上传并建立索引'
   if (phase === 'PAUSED_NETWORK') return '等待网络恢复'
+  if (phase && phase !== 'READY') return '正在解析文件'
+
+  if (sourcePhase.value === 'AWAITING_CLIENT') return '等待桌面端处理'
+  if (sourcePhase.value === 'VALIDATING') return '服务端正在校验解析结果'
+  if (sourcePhase.value === 'PENDING' || sourcePhase.value === 'PARSING') return '服务端正在处理文件'
+  if (sourcePhase.value === 'INDEXING') return '服务端正在建立索引'
+  if (sourcePhase.value === 'FAILED') return source.value?.safeErrorDetail || '服务端处理失败，请前往个人中心查看'
   return '正在解析文件'
 })
 </script>

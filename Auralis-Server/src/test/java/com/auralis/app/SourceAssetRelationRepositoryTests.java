@@ -87,7 +87,7 @@ class SourceAssetRelationRepositoryTests {
         var owner = register("owner");
         var other = register("other");
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
-                "Owner Subject", null, null, null, "001")).id();
+                "Owner Subject", null, null, "001")).id();
 
         AssetEntity asset = assetRepository.save(new AssetEntity(
                 UUID.randomUUID(), owner.user().id(), "users/" + owner.user().id() + "/assets/object",
@@ -110,7 +110,7 @@ class SourceAssetRelationRepositoryTests {
     void activeSourceAndRelationQueriesExcludeTombstones() {
         var owner = register("tombstone");
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
-                "Owner Subject", null, null, null, "001")).id();
+                "Owner Subject", null, null, "001")).id();
         SourceEntity source = sourceRepository.save(new SourceEntity(
                 UUID.randomUUID(), owner.user().id(), SourceType.TEXT, subjectId, "Notes", null,
                 null, "text", null, SourceIngestionStatus.PENDING));

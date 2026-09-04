@@ -16,7 +16,7 @@ public class RealtimeTicketEntity {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
     @Column(name = "device_id", nullable = false)
-    private UUID deviceId;
+    private UUID serverDeviceId;
     @Column(name = "ticket_hash", nullable = false, length = 128)
     private String ticketHash;
     @Column(name = "expires_at", nullable = false)
@@ -29,10 +29,10 @@ public class RealtimeTicketEntity {
     protected RealtimeTicketEntity() {
     }
 
-    public RealtimeTicketEntity(UUID id, UUID userId, UUID deviceId, String ticketHash, Instant expiresAt) {
+    public RealtimeTicketEntity(UUID id, UUID userId, UUID serverDeviceId, String ticketHash, Instant expiresAt) {
         this.id = id;
         this.userId = userId;
-        this.deviceId = deviceId;
+        this.serverDeviceId = serverDeviceId;
         this.ticketHash = ticketHash;
         this.expiresAt = expiresAt;
         this.createdAt = Instant.now();
@@ -40,7 +40,7 @@ public class RealtimeTicketEntity {
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
-    public UUID getDeviceId() { return deviceId; }
+    public UUID getServerDeviceId() { return serverDeviceId; }
     public String getTicketHash() { return ticketHash; }
     public Instant getExpiresAt() { return expiresAt; }
     public Instant getConsumedAt() { return consumedAt; }

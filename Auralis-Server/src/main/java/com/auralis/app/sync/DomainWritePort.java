@@ -1,9 +1,9 @@
 package com.auralis.app.sync;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.NullNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.NullNode;
 import com.auralis.app.knowledge.KnowledgeBlockCommand;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.relation.RelationCommand;
@@ -103,7 +103,7 @@ public class DomainWritePort {
     private <T> T command(JsonNode payload, Class<T> type) {
         try {
             return objectMapper.treeToValue(payload, type);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DomainException("VALIDATION_FAILED", "Mutation payload is invalid");
         }
     }

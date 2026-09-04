@@ -1,11 +1,12 @@
 package com.auralis.app.source;
 
 import com.auralis.app.shared.error.DomainException;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.json.JsonMapper;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -106,6 +107,11 @@ public final class ParsedDocumentValidator {
             throw exception;
         } catch (BoundExceededException exception) {
             throw invalid(exception.getMessage());
+        } catch (JacksonException exception) {
+            if (exception.getCause() instanceof BoundExceededException boundExceeded) {
+                throw invalid(boundExceeded.getMessage());
+            }
+            throw invalid("payload is not valid gzip UTF-8 JSON");
         } catch (IOException | RuntimeException exception) {
             throw invalid("payload is not valid gzip UTF-8 JSON");
         }
@@ -121,15 +127,15 @@ public final class ParsedDocumentValidator {
         List<ValidatedBlock> blocks = new ArrayList<>();
         MessageDigest plainDigest = sha256Digest();
         long computedCharacters = 0;
-        try (JsonParser parser = objectMapper.getFactory().createParser(input)) {
+        try (JsonParser parser = objectMapper.createParser(input)) {
             requireToken(parser.nextToken(), JsonToken.START_OBJECT, "payload must be an object");
             Set<String> seen = new HashSet<>();
             JsonToken token;
             while ((token = parser.nextToken()) != JsonToken.END_OBJECT) {
-                if (token != JsonToken.FIELD_NAME) {
+                if (token != JsonToken.PROPERTY_NAME) {
                     throw invalid("payload field is malformed");
                 }
-                String field = parser.getCurrentName();
+                String field = parser.currentName();
                 if (!TOP_LEVEL_FIELDS.contains(field) || !seen.add(field)) {
                     throw invalid("unknown or duplicate payload field: " + field);
                 }
@@ -181,10 +187,10 @@ public final class ParsedDocumentValidator {
         boolean version = false;
         boolean normalization = false;
         while ((token = parser.nextToken()) != JsonToken.END_OBJECT) {
-            if (token != JsonToken.FIELD_NAME) {
+            if (token != JsonToken.PROPERTY_NAME) {
                 throw invalid("parser field is malformed");
             }
-            String field = parser.getCurrentName();
+            String field = parser.currentName();
             if (!PARSER_FIELDS.contains(field) || !seen.add(field)) {
                 throw invalid("unknown or duplicate parser field: " + field);
             }
@@ -213,10 +219,10 @@ public final class ParsedDocumentValidator {
         String kind = null;
         String text = null;
         while (parser.nextToken() != JsonToken.END_OBJECT) {
-            if (parser.currentToken() != JsonToken.FIELD_NAME) {
+            if (parser.currentToken() != JsonToken.PROPERTY_NAME) {
                 throw invalid("block field is malformed");
             }
-            String field = parser.getCurrentName();
+            String field = parser.currentName();
             if (!BLOCK_FIELDS.contains(field) || !seen.add(field)) {
                 throw invalid("unknown or duplicate block field: " + field);
             }

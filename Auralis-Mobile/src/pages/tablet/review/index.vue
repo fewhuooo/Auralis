@@ -178,7 +178,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useTaskStore } from '@/store/useTaskStore'
-import { useSubjectStore } from '@/store/useSubjectStore'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import FlashCard from '@/components/FlashCard.vue'
@@ -191,7 +190,7 @@ import { uuidv7 } from '@/utils/uuid'
 
 const blockStore = useBlockStore()
 const taskStore = useTaskStore()
-const subjectStore = useSubjectStore()
+const SUBJECT_CHART_PALETTE = ['#7D9372', '#A3B19B', '#C8A97E', '#8DA9B8', '#B58A9B']
 
 // --- REVIEW LOGIC ---
 const sessionQueue = ref<any[]>([])
@@ -438,13 +437,11 @@ const subjectSegments = computed(() => {
     counts[sName] = (counts[sName] || 0) + 1
   })
   
-  const segments = Object.keys(counts).map(subjectName => {
-    const subjectDef = subjectStore.subjects.find(s => s.name === subjectName)
-    const color = subjectDef ? subjectDef.color : 'var(--text-accent)'
+  const segments = Object.keys(counts).map((subjectName, index) => {
     return {
       subject: subjectName,
       percentage: Math.round((counts[subjectName] / blocks.length) * 100),
-      color
+      color: SUBJECT_CHART_PALETTE[index % SUBJECT_CHART_PALETTE.length]
     }
   })
   
@@ -495,7 +492,6 @@ const loadPage = async () => {
     await Promise.all([
       blockStore.fetchBlocks(),
       taskStore.fetchTasks(),
-      subjectStore.loadSubjects(),
     ])
     await Promise.all([loadReviewQueue(), loadServerStats()])
     resetReview()

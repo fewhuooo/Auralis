@@ -12,8 +12,8 @@ import java.util.UUID;
 public interface InboundMutationRepository extends JpaRepository<InboundMutationEntity, UUID>, InboundMutationRepositoryCustom {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    Optional<InboundMutationEntity> findByUserIdAndDeviceIdAndClientMutationId(
-            UUID userId, UUID deviceId, String clientMutationId);
+    Optional<InboundMutationEntity> findByUserIdAndServerDeviceIdAndClientMutationId(
+            UUID userId, UUID serverDeviceId, String clientMutationId);
 
     long deleteByCreatedAtBefore(Instant cutoff);
 }

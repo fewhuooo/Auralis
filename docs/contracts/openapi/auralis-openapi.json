@@ -667,6 +667,37 @@
         } ]
       }
     },
+    "/api/tasks/schedule-swaps" : {
+      "post" : {
+        "tags" : [ "task-controller" ],
+        "operationId" : "swapSchedules",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ScheduleSwapRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleSwapResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/sync/push" : {
       "post" : {
         "tags" : [ "sync-controller" ],
@@ -1198,16 +1229,6 @@
       "post" : {
         "tags" : [ "realtime-controller" ],
         "operationId" : "issue",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/TicketRequest"
-              }
-            }
-          },
-          "required" : true
-        },
         "responses" : {
           "201" : {
             "description" : "Created",
@@ -1628,42 +1649,6 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ConversationView"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/ws/events" : {
-      "get" : {
-        "tags" : [ "realtime-controller" ],
-        "operationId" : "handshake",
-        "parameters" : [ {
-          "name" : "ticket",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "string"
-          }
-        }, {
-          "name" : "X-Realtime-Ticket",
-          "in" : "header",
-          "required" : false,
-          "schema" : {
-            "type" : "string"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/RealtimeSubscription"
                 }
               }
             }
@@ -2365,7 +2350,118 @@
         },
         "required" : [ "baseVersion" ]
       },
-      "JsonNode" : { },
+      "ScheduleSwapRequest" : {
+        "type" : "object",
+        "properties" : {
+          "sourceTaskId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sourceBaseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "targetTaskId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "targetBaseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "sourceBaseVersion", "sourceTaskId", "targetBaseVersion", "targetTaskId" ]
+      },
+      "ScheduleSwapResponse" : {
+        "type" : "object",
+        "properties" : {
+          "source" : {
+            "$ref" : "#/components/schemas/Response"
+          },
+          "target" : {
+            "$ref" : "#/components/schemas/Response"
+          }
+        }
+      },
+      "JsonNode" : {
+        "type" : "object",
+        "properties" : {
+          "array" : {
+            "type" : "boolean"
+          },
+          "empty" : {
+            "type" : "boolean"
+          },
+          "null" : {
+            "type" : "boolean"
+          },
+          "float" : {
+            "type" : "boolean"
+          },
+          "object" : {
+            "type" : "boolean"
+          },
+          "container" : {
+            "type" : "boolean"
+          },
+          "missingNode" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
+            "type" : "boolean"
+          },
+          "textual" : {
+            "type" : "boolean",
+            "deprecated" : true
+          },
+          "int" : {
+            "type" : "boolean"
+          },
+          "string" : {
+            "type" : "boolean"
+          },
+          "long" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "type" : "boolean"
+          },
+          "boolean" : {
+            "type" : "boolean"
+          },
+          "binary" : {
+            "type" : "boolean"
+          },
+          "short" : {
+            "type" : "boolean"
+          },
+          "double" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
+            "type" : "boolean"
+          },
+          "nodeType" : {
+            "type" : "string",
+            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
+          },
+          "integralNumber" : {
+            "type" : "boolean"
+          },
+          "valueNode" : {
+            "type" : "boolean"
+          },
+          "bigDecimal" : {
+            "type" : "boolean"
+          },
+          "embeddedValue" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "MutationRequest" : {
         "type" : "object",
         "properties" : {
@@ -2400,7 +2496,7 @@
       "PushRequest" : {
         "type" : "object",
         "properties" : {
-          "deviceId" : {
+          "serverDeviceId" : {
             "type" : "string",
             "format" : "uuid"
           },
@@ -2413,7 +2509,7 @@
             "minItems" : 0
           }
         },
-        "required" : [ "deviceId", "mutations" ]
+        "required" : [ "mutations", "serverDeviceId" ]
       },
       "MutationResponse" : {
         "type" : "object",
@@ -2805,16 +2901,6 @@
           }
         }
       },
-      "TicketRequest" : {
-        "type" : "object",
-        "properties" : {
-          "deviceId" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        },
-        "required" : [ "deviceId" ]
-      },
       "TicketResponse" : {
         "type" : "object",
         "properties" : {
@@ -2848,7 +2934,7 @@
             "maxLength" : 120,
             "minLength" : 0
           },
-          "deviceId" : {
+          "clientDeviceKey" : {
             "type" : "string",
             "maxLength" : 128,
             "minLength" : 0
@@ -2863,7 +2949,7 @@
             "enum" : [ "WEB", "WINDOWS", "MACOS", "IOS", "ANDROID", "HARMONY", "UNKNOWN" ]
           }
         },
-        "required" : [ "deviceId", "deviceName", "displayName", "password", "platform", "username" ]
+        "required" : [ "clientDeviceKey", "deviceName", "displayName", "password", "platform", "username" ]
       },
       "AuthResult" : {
         "type" : "object",
@@ -2878,7 +2964,7 @@
             "type" : "string",
             "format" : "uuid"
           },
-          "deviceId" : {
+          "serverDeviceId" : {
             "type" : "string",
             "format" : "uuid"
           }
@@ -2940,7 +3026,7 @@
             "type" : "string",
             "minLength" : 1
           },
-          "deviceId" : {
+          "clientDeviceKey" : {
             "type" : "string",
             "maxLength" : 128,
             "minLength" : 0
@@ -2955,7 +3041,7 @@
             "enum" : [ "WEB", "WINDOWS", "MACOS", "IOS", "ANDROID", "HARMONY", "UNKNOWN" ]
           }
         },
-        "required" : [ "deviceId", "deviceName", "password", "platform", "username" ]
+        "required" : [ "clientDeviceKey", "deviceName", "password", "platform", "username" ]
       },
       "AssetDownloadUrlResponse" : {
         "type" : "object",
@@ -3298,19 +3384,6 @@
           }
         }
       },
-      "RealtimeSubscription" : {
-        "type" : "object",
-        "properties" : {
-          "userId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "deviceId" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        }
-      },
       "ListResponse" : {
         "type" : "object",
         "properties" : {
@@ -3513,7 +3586,7 @@
             "type" : "string",
             "format" : "uuid"
           },
-          "deviceId" : {
+          "serverDeviceId" : {
             "type" : "string",
             "format" : "uuid"
           },

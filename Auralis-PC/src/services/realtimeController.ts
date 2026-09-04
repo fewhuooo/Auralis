@@ -1,4 +1,3 @@
-import { getDeviceIdentity } from '../auth/deviceIdentity.ts'
 import { getClientRuntimeConfig, resolveWebsocketUrl, type RuntimeConfig } from '../config/runtime.ts'
 import { dedupeEventKey, isNewerCursor, normalizeCursor, type RealtimeEventLike } from '../api/protocol.ts'
 import type { RealtimeEvent } from '../types/api.ts'
@@ -12,8 +11,8 @@ export interface TicketResponseLike {
 }
 
 export interface RealtimeControllerOptions {
-  getDeviceId?: () => string
-  requestTicket?: (deviceId: string) => Promise<TicketResponseLike>
+  getServerDeviceId?: () => string
+  requestTicket?: () => Promise<TicketResponseLike>
   getRuntimeConfig?: () => RuntimeConfig
   websocketFactory?: (url: string) => WebSocket
   onEvent?: (event: RealtimeEvent) => void
@@ -23,9 +22,9 @@ export interface RealtimeControllerOptions {
   maxRetryDelayMs?: number
 }
 
-async function defaultRequestTicket(deviceId: string): Promise<TicketResponseLike> {
+async function defaultRequestTicket(): Promise<TicketResponseLike> {
   const { requestRealtimeTicket } = await import('../api/realtime.ts')
-  return requestRealtimeTicket(deviceId)
+  return requestRealtimeTicket()
 }
 
 async function triggerStoreSync(): Promise<void> {
@@ -52,8 +51,8 @@ export class RealtimeController {
   private readonly maxSeenEvents = 1000
   private status: RealtimeStatus = 'disconnected'
 
-  private readonly getDeviceId: () => string
-  private readonly requestTicket: (deviceId: string) => Promise<TicketResponseLike>
+  private readonly getServerDeviceId: () => string
+  private readonly requestTicket: () => Promise<TicketResponseLike>
   private readonly getRuntimeConfig: () => RuntimeConfig
   private readonly websocketFactory: (url: string) => WebSocket
   private readonly onEvent?: (event: RealtimeEvent) => void
@@ -62,7 +61,7 @@ export class RealtimeController {
   private readonly maxRetryDelayMs: number
 
   constructor(options: RealtimeControllerOptions = {}) {
-    this.getDeviceId = options.getDeviceId ?? (() => getDeviceIdentity().deviceId)
+    this.getServerDeviceId = options.getServerDeviceId ?? (() => '')
     this.requestTicket = options.requestTicket ?? defaultRequestTicket
     this.getRuntimeConfig = options.getRuntimeConfig ?? getClientRuntimeConfig
     this.websocketFactory =
@@ -154,8 +153,8 @@ export class RealtimeController {
     this.setStatus(this.retryCount > 0 ? 'reconnecting' : 'connecting')
 
     try {
-      const deviceId = this.getDeviceId()
-      const ticketResponse = await this.requestTicket(deviceId)
+      this.getServerDeviceId()
+      const ticketResponse = await this.requestTicket()
 
       if (this.isStopped) return
 

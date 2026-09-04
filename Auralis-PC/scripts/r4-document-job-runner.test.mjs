@@ -17,7 +17,7 @@ function job(jobId = 'job-1') {
   return {
     jobId,
     userId: 'user-a',
-    deviceId: 'device-1',
+    serverDeviceId: 'device-1',
     sourceId: 'source-1',
     ingestionRevision: 'revision-1',
     phase: phases.QUEUED,
@@ -194,4 +194,42 @@ test('duplicate starts for one revision share a serial in-flight execution', asy
   await Promise.all([runner.start('job-1'), runner.start('job-1')])
   assert.equal(parseCalls, 1)
   assert.equal((await repository.get('job-1')).phase, phases.PACKAGING)
+})
+
+test('cancelling an active job stops later parser blocks and aborts its unfinished encrypted package', async () => {
+  const repository = new FakeRepository()
+  const packager = packageAdapter()
+  let releaseParser
+  const parserPaused = new Promise((resolve) => { releaseParser = resolve })
+  const firstBlockAppended = new Promise((resolve) => {
+    const append = packager.append
+    packager.append = async (...args) => {
+      await append(...args)
+      resolve()
+    }
+  })
+  let abortCalls = 0
+  packager.abort = async () => { abortCalls += 1 }
+  const runner = new DocumentJobRunner({
+    repository,
+    packager,
+    parserFactory: async () => async (sink) => {
+      await sink({ ordinal: 0, kind: 'ocr-page', text: 'first', pageNumber: 1 })
+      await parserPaused
+      await sink({ ordinal: 1, kind: 'ocr-page', text: 'second', pageNumber: 2 })
+    },
+  })
+
+  const running = runner.start('job-1')
+  await firstBlockAppended
+  await runner.cancel('job-1')
+  releaseParser()
+  await running
+
+  const cancelled = await repository.get('job-1')
+  assert.equal(cancelled.phase, phases.FAILED_LOCAL)
+  assert.equal(cancelled.errorCode, 'DOCUMENT_CANCELLED')
+  assert.deepEqual(packager.calls.filter(([name]) => name === 'append').map(([, , ordinal]) => ordinal), [0])
+  assert.equal(packager.calls.some(([name]) => name === 'finish'), false)
+  assert.equal(abortCalls, 1)
 })

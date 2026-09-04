@@ -101,17 +101,57 @@ const pageInput = ref(1)
 const totalPages = ref(0)
 const scale = ref(1.0)
 
+let loadGeneration = 0
+let renderGeneration = 0
 let pdfDoc: any = null
 let currentRenderTask: any = null
+let currentLoadingTask: any = null
+
+const clearCanvas = () => {
+  const canvas = pdfCanvasRef.value
+  if (!canvas) return
+  canvas.width = 0
+  canvas.height = 0
+}
+
+const disposePdf = () => {
+  renderGeneration += 1
+  if (currentRenderTask) {
+    currentRenderTask.cancel()
+    currentRenderTask = null
+  }
+  if (currentLoadingTask) {
+    try {
+      currentLoadingTask.destroy()
+    } catch {}
+    currentLoadingTask = null
+  }
+  if (pdfDoc) {
+    try {
+      pdfDoc.destroy()
+    } catch {}
+    pdfDoc = null
+  }
+  clearCanvas()
+}
+
+const isCancellationError = (err: any) =>
+  err?.name === 'RenderingCancelledException' ||
+  err?.name === 'AbortException' ||
+  err?.message?.includes('Worker was destroyed') ||
+  err?.message?.includes('cancelled')
 
 const retryLoad = () => {
   if (props.filePath) {
-    loadPdf(props.filePath)
+    void loadPdf(props.filePath)
   }
 }
 
-const loadPdf = async (path: string) => {
-  if (!path) {
+const loadPdf = async (filePath: string) => {
+  const myGeneration = ++loadGeneration
+  disposePdf()
+
+  if (!filePath) {
     error.value = '未指定 PDF 文件路径或路径为空。'
     loading.value = false
     return
@@ -123,57 +163,73 @@ const loadPdf = async (path: string) => {
   pageInput.value = 1
   
   try {
-    loadingText.value = '正在读取文件...'
+    loadingText.value = '正在加载 PDF...'
     
-    let pdfData: any = path
+    let pdfData: any
     
     if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
-      try {
-        const fsPluginName = '@tauri-apps/plugin-fs'
-        const { readFile } = await import(/* @vite-ignore */ fsPluginName)
-        loadingText.value = '正在加载本地文件内容...'
-        const binary = await readFile(path)
-        pdfData = { data: new Uint8Array(binary) }
-      } catch (fsErr) {
-        console.warn('Failed to read file via Tauri FS, attempting direct url conversion:', fsErr)
-        const corePluginName = '@tauri-apps/api/core'
-        const { convertFileSrc } = await import(/* @vite-ignore */ corePluginName)
-        pdfData = { url: convertFileSrc(path) }
-      }
+      const corePluginName = '@tauri-apps/api/core'
+      const { convertFileSrc } = await import(/* @vite-ignore */ corePluginName)
+      pdfData = { url: convertFileSrc(filePath) }
     } else {
-      pdfData = { url: path }
+      pdfData = { url: filePath }
     }
+
+    if (myGeneration !== loadGeneration) return
 
     loadingText.value = '正在解析 PDF 结构...'
     const loadingTask = pdfjsLib.getDocument(pdfData)
+    currentLoadingTask = loadingTask
     
-    pdfDoc = await loadingTask.promise
-    totalPages.value = pdfDoc.numPages
+    const doc = await loadingTask.promise
+    if (myGeneration !== loadGeneration) {
+      try {
+        doc.destroy()
+      } catch {}
+      return
+    }
+
+    if (currentLoadingTask === loadingTask) currentLoadingTask = null
+    pdfDoc = doc
+    totalPages.value = doc.numPages
     loading.value = false
     
     emit('loaded', { totalPages: totalPages.value })
-    
-    await fitWidth()
-    await renderPage(1)
+
+    if (viewerBodyRef.value) {
+      const page = await doc.getPage(1)
+      if (myGeneration !== loadGeneration || pdfDoc !== doc) return
+      const defaultViewport = page.getViewport({ scale: 1.0 })
+      const containerWidth = viewerBodyRef.value.clientWidth - 40
+      scale.value = Math.max(0.5, Math.min(2.0, containerWidth / defaultViewport.width))
+    }
+
+    if (myGeneration !== loadGeneration || pdfDoc !== doc) return
+    await renderPage(1, myGeneration)
   } catch (err: any) {
+    if (myGeneration !== loadGeneration || isCancellationError(err)) return
     console.error('Error loading PDF:', err)
     error.value = `文件解析失败: ${err.message || err}。请检查文件是否损坏或不存在。`
     loading.value = false
   }
 }
 
-const renderPage = async (pageNumber: number) => {
-  if (!pdfDoc || !pdfCanvasRef.value) return
+const renderPage = async (pageNumber: number, generation = loadGeneration) => {
+  const doc = pdfDoc
+  const canvas = pdfCanvasRef.value
+  const myRenderGeneration = ++renderGeneration
+  if (!doc || !canvas) return
   
   if (currentRenderTask) {
     currentRenderTask.cancel()
+    currentRenderTask = null
   }
 
   try {
-    const page = await pdfDoc.getPage(pageNumber)
+    const page = await doc.getPage(pageNumber)
+    if (generation !== loadGeneration || myRenderGeneration !== renderGeneration || pdfDoc !== doc) return
     const viewport = page.getViewport({ scale: scale.value })
     
-    const canvas = pdfCanvasRef.value
     const context = canvas.getContext('2d')
     if (!context) return
 
@@ -185,17 +241,17 @@ const renderPage = async (pageNumber: number) => {
       viewport: viewport
     }
     
-    currentRenderTask = page.render(renderContext)
-    await currentRenderTask.promise
-    currentRenderTask = null
+    const renderTask = page.render(renderContext)
+    currentRenderTask = renderTask
+    await renderTask.promise
+    if (currentRenderTask === renderTask) currentRenderTask = null
+    if (generation !== loadGeneration || myRenderGeneration !== renderGeneration || pdfDoc !== doc) return
     
     currentPage.value = pageNumber
     pageInput.value = pageNumber
     emit('page-changed', pageNumber)
   } catch (err: any) {
-    if (err.name === 'RenderingCancelledException' || err.name === 'WorkerDragCancelledException') {
-      return
-    }
+    if (generation !== loadGeneration || myRenderGeneration !== renderGeneration || isCancellationError(err)) return
     console.error('Error rendering page:', err)
     error.value = `页面渲染出错: ${err.message}`
   }
@@ -203,13 +259,13 @@ const renderPage = async (pageNumber: number) => {
 
 const prevPage = () => {
   if (currentPage.value > 1) {
-    renderPage(currentPage.value - 1)
+    void renderPage(currentPage.value - 1)
   }
 }
 
 const nextPage = () => {
   if (currentPage.value < totalPages.value) {
-    renderPage(currentPage.value + 1)
+    void renderPage(currentPage.value + 1)
   }
 }
 
@@ -217,17 +273,17 @@ const goToPage = () => {
   let page = pageInput.value
   if (isNaN(page) || page < 1) page = 1
   if (page > totalPages.value) page = totalPages.value
-  renderPage(page)
+  void renderPage(page)
 }
 
 const zoomIn = () => {
   scale.value = Math.min(3.0, scale.value + 0.1)
-  renderPage(currentPage.value)
+  void renderPage(currentPage.value)
 }
 
 const zoomOut = () => {
   scale.value = Math.max(0.5, scale.value - 0.1)
-  renderPage(currentPage.value)
+  void renderPage(currentPage.value)
 }
 
 const fitWidth = async () => {
@@ -237,7 +293,7 @@ const fitWidth = async () => {
     const defaultViewport = page.getViewport({ scale: 1.0 })
     const containerWidth = viewerBodyRef.value.clientWidth - 40
     scale.value = Math.max(0.5, Math.min(2.0, containerWidth / defaultViewport.width))
-    renderPage(currentPage.value)
+    void renderPage(currentPage.value)
   } catch (err) {
     console.error('Error fitting width:', err)
   }
@@ -245,20 +301,19 @@ const fitWidth = async () => {
 
 watch(() => props.filePath, (newVal) => {
   if (newVal) {
-    loadPdf(newVal)
+    void loadPdf(newVal)
   }
 })
 
 onMounted(() => {
   if (props.filePath) {
-    loadPdf(props.filePath)
+    void loadPdf(props.filePath)
   }
 })
 
 onUnmounted(() => {
-  if (currentRenderTask) {
-    currentRenderTask.cancel()
-  }
+  loadGeneration += 1
+  disposePdf()
 })
 </script>
 

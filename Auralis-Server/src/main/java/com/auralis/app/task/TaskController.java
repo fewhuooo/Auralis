@@ -72,6 +72,17 @@ public class TaskController {
                 principal.userId(), id, request.baseVersion(), request.command()));
     }
 
+    @PostMapping("/schedule-swaps")
+    public TaskDtos.ScheduleSwapResponse swapSchedules(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody TaskDtos.ScheduleSwapRequest request) {
+        TaskService.ScheduleSwapResult result = taskService.swapSchedules(
+                principal.userId(), request.sourceTaskId(), request.sourceBaseVersion(),
+                request.targetTaskId(), request.targetBaseVersion());
+        return new TaskDtos.ScheduleSwapResponse(
+                TaskDtos.Response.from(result.source()), TaskDtos.Response.from(result.target()));
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(NO_CONTENT)
     public ResponseEntity<Void> delete(

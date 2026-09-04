@@ -6,7 +6,7 @@ const MAX_DEVICE_NAME_LENGTH = 64
 export type DevicePlatform = 'WEB' | 'WINDOWS'
 
 export interface DeviceIdentity {
-  deviceId: string
+  clientDeviceKey: string
   deviceName: string
   platform: DevicePlatform
 }
@@ -28,7 +28,7 @@ export function isValidUuid(id: unknown): boolean {
   return typeof id === 'string' && UUID_REGEX.test(id.trim())
 }
 
-export function getOrCreateDeviceId(storage?: Storage | null): string {
+export function getOrCreateClientDeviceKey(storage?: Storage | null): string {
   const store = storage !== undefined ? storage : (typeof window !== 'undefined' ? window.localStorage : null)
   if (store) {
     try {
@@ -77,11 +77,11 @@ export function getDeviceIdentity(options?: {
   isTauri?: boolean
   customName?: string
 }): DeviceIdentity {
-  const deviceId = getOrCreateDeviceId(options?.storage)
+  const clientDeviceKey = getOrCreateClientDeviceKey(options?.storage)
   const platform = resolveDevicePlatform(options?.isTauri)
   const deviceName = formatDeviceName(options?.customName, options?.isTauri)
   return {
-    deviceId,
+    clientDeviceKey,
     deviceName,
     platform,
   }

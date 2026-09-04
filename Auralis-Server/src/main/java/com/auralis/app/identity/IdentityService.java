@@ -93,7 +93,7 @@ public class IdentityService {
             throw invalidCredentials();
         }
         UserEntity user = userRepository.findById(current.getUserId()).orElseThrow(this::invalidCredentials);
-        DeviceEntity device = deviceRepository.findById(current.getDeviceId()).orElseThrow(this::invalidCredentials);
+        DeviceEntity device = deviceRepository.findById(current.getServerDeviceId()).orElseThrow(this::invalidCredentials);
         if (user.getStatus() != UserStatus.ACTIVE || device.getRevokedAt() != null) {
             throw invalidCredentials();
         }
@@ -142,9 +142,9 @@ public class IdentityService {
                 .sorted(Comparator
                         .comparing((RefreshSessionEntity session) -> !session.getId().equals(currentSessionId))
                         .thenComparing(RefreshSessionEntity::getLastUsedAt, Comparator.reverseOrder()))
-                .filter(session -> listedDevices.add(session.getDeviceId()))
+                .filter(session -> listedDevices.add(session.getServerDeviceId()))
                 .map(session -> {
-                    DeviceEntity device = deviceRepository.findByIdAndUserId(session.getDeviceId(), userId)
+                    DeviceEntity device = deviceRepository.findByIdAndUserId(session.getServerDeviceId(), userId)
                             .orElseThrow(this::unauthenticated);
                     return new SessionView(
                             session.getId(),
@@ -176,14 +176,14 @@ public class IdentityService {
     }
 
     @Transactional(readOnly = true)
-    public void requireActiveDevice(UUID userId, UUID deviceId) {
-        deviceRepository.findByIdAndUserId(deviceId, userId)
+    public void requireActiveDevice(UUID userId, UUID serverDeviceId) {
+        deviceRepository.findByIdAndUserId(serverDeviceId, userId)
                 .filter(device -> device.getRevokedAt() == null)
                 .orElseThrow(() -> new IdentityException("FORBIDDEN", "Device is not active for this user"));
     }
 
     private AuthResult issueForUser(UserEntity user, DeviceCommand deviceCommand) {
-        DeviceEntity device = deviceRepository.findByUserIdAndDeviceId(user.getId(), deviceCommand.deviceId())
+        DeviceEntity device = deviceRepository.findByUserIdAndClientDeviceKey(user.getId(), deviceCommand.clientDeviceKey())
                 .map(existing -> {
                     existing.markActive(clock.instant());
                     return existing;
@@ -191,12 +191,12 @@ public class IdentityService {
                 .orElseGet(() -> deviceRepository.save(new DeviceEntity(
                         UUID.randomUUID(),
                         user.getId(),
-                        deviceCommand.deviceId(),
+                        deviceCommand.clientDeviceKey(),
                         deviceCommand.name(),
                         deviceCommand.platform())));
         Instant now = clock.instant();
         refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(user.getId()).stream()
-                .filter(session -> session.getDeviceId().equals(device.getId()))
+                .filter(session -> session.getServerDeviceId().equals(device.getId()))
                 .filter(session -> !session.isRotatedOrRevoked())
                 .forEach(session -> session.revoke(now));
         String refreshToken = tokenService.newRefreshToken();

@@ -17,24 +17,24 @@ public final class AuthDtos {
             @NotBlank @Size(max = 64) String username,
             @NotBlank @Size(min = 12, max = 200) String password,
             @NotBlank @Size(max = 120) String displayName,
-            @NotBlank @Size(max = 128) String deviceId,
+            @NotBlank @Size(max = 128) String clientDeviceKey,
             @NotBlank @Size(max = 120) String deviceName,
             @NotNull DevicePlatform platform
     ) {
         DeviceCommand device() {
-            return new DeviceCommand(deviceId, deviceName, platform);
+            return new DeviceCommand(clientDeviceKey, deviceName, platform);
         }
     }
 
     public record LoginRequest(
             @NotBlank @Size(max = 64) String username,
             @NotBlank String password,
-            @NotBlank @Size(max = 128) String deviceId,
+            @NotBlank @Size(max = 128) String clientDeviceKey,
             @NotBlank @Size(max = 120) String deviceName,
             @NotNull DevicePlatform platform
     ) {
         DeviceCommand device() {
-            return new DeviceCommand(deviceId, deviceName, platform);
+            return new DeviceCommand(clientDeviceKey, deviceName, platform);
         }
     }
 
@@ -49,7 +49,7 @@ public final class AuthDtos {
 
     public record SessionResponse(
             UUID id,
-            UUID deviceId,
+            UUID serverDeviceId,
             String deviceName,
             DevicePlatform platform,
             Instant createdAt,
@@ -61,7 +61,7 @@ public final class AuthDtos {
         static SessionResponse from(SessionView session) {
             return new SessionResponse(
                     session.id(),
-                    session.deviceId(),
+                    session.serverDeviceId(),
                     session.deviceName(),
                     session.platform(),
                     session.createdAt(),

@@ -25,7 +25,7 @@ public class DeviceEntity {
     private UUID userId;
 
     @Column(name = "device_id", nullable = false, length = 128)
-    private String deviceId;
+    private String clientDeviceKey;
 
     @Column(length = 120)
     private String name;
@@ -56,10 +56,10 @@ public class DeviceEntity {
     protected DeviceEntity() {
     }
 
-    public DeviceEntity(UUID id, UUID userId, String deviceId, String name, DevicePlatform platform) {
+    public DeviceEntity(UUID id, UUID userId, String clientDeviceKey, String name, DevicePlatform platform) {
         this.id = id;
         this.userId = userId;
-        this.deviceId = deviceId;
+        this.clientDeviceKey = clientDeviceKey;
         this.name = name;
         this.platform = platform;
     }
@@ -90,8 +90,8 @@ public class DeviceEntity {
         return userId;
     }
 
-    public String getDeviceId() {
-        return deviceId;
+    public String getClientDeviceKey() {
+        return clientDeviceKey;
     }
 
     public String getName() {

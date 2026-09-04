@@ -26,7 +26,7 @@ class SyncControllerTests {
         mockMvc.perform(get("/api/sync/snapshot")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/sync/push")
                         .contentType(APPLICATION_JSON)
-                        .content("{\"deviceId\":\"00000000-0000-0000-0000-000000000001\",\"mutations\":[]}"))
+                        .content("{\"serverDeviceId\":\"00000000-0000-0000-0000-000000000001\",\"mutations\":[]}"))
                 .andExpect(status().isUnauthorized());
     }
 }

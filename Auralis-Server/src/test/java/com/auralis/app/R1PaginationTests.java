@@ -51,11 +51,11 @@ class R1PaginationTests {
     void allCoreCursorListsReturnStablePages() {
         UUID userId = insertUser("r1-page-" + UUID.randomUUID());
         SubjectView firstSubject = subjectService.create(userId,
-                new SubjectCommand("Page A", null, null, null, "001"));
+                new SubjectCommand("Page A", null, null, "001"));
         SubjectView secondSubject = subjectService.create(userId,
-                new SubjectCommand("Page B", null, null, null, "002"));
+                new SubjectCommand("Page B", null, null, "002"));
         SubjectView thirdSubject = subjectService.create(userId,
-                new SubjectCommand("Page C", null, null, null, "003"));
+                new SubjectCommand("Page C", null, null, "003"));
 
         var subjects = subjectService.list(userId, null, 2);
         var subjectsNext = subjectService.list(userId, subjects.nextCursor(), 2);

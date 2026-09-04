@@ -1,6 +1,6 @@
 package com.auralis.app.sync;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -29,7 +29,7 @@ public class SyncController {
     public SyncDtos.PushResponse push(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody SyncDtos.PushRequest request) {
-        var results = syncService.push(principal.userId(), request.deviceId(), request.toMutations())
+        var results = syncService.push(principal.userId(), request.serverDeviceId(), request.toMutations())
                 .stream().map(this::toResponse).toList();
         String cursor = syncService.latestCursor(principal.userId()).encode();
         return new SyncDtos.PushResponse(results, cursor);

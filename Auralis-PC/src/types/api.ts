@@ -4,7 +4,12 @@ export interface ApiProblem {
   status: number;
   detail?: string;
   instance?: string;
-  errors?: Record<string, string[]>;
+  code?: string;
+  traceId?: string;
+  fieldErrors?: Array<{
+    field?: string;
+    message?: string;
+  }>;
 }
 
 export interface AuthSession {
@@ -15,7 +20,7 @@ export interface AuthSession {
     expiresAt?: string;
   };
   sessionId: string;
-  deviceId: string;
+  serverDeviceId: string;
 }
 
 export interface SyncCursorState {

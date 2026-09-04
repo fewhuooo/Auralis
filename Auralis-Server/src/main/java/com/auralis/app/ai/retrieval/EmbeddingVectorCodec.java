@@ -1,8 +1,8 @@
 package com.auralis.app.ai.retrieval;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import java.util.List;
 
@@ -15,7 +15,7 @@ public class EmbeddingVectorCodec {
         validate(vector);
         try {
             return objectMapper.writeValueAsString(vector);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalArgumentException("Embedding vector could not be serialized", exception);
         }
     }

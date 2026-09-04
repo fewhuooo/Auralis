@@ -21,7 +21,7 @@ function createRepository(initial = []) {
     jobs,
     async create(input) {
       const job = {
-        jobId: input.jobId, userId: 'user-1', deviceId: 'device-1', sourceId: input.sourceId,
+        jobId: input.jobId, userId: 'user-1', serverDeviceId: 'device-1', sourceId: input.sourceId,
         ingestionRevision: input.ingestionRevision, phase: 'QUEUED', attempt: 0,
         checkpoint: { pageNumber: 0, blockOrdinal: 0 }, payloadCacheId: null, payloadReceipt: null,
         errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
@@ -34,6 +34,13 @@ function createRepository(initial = []) {
       return job ? structuredClone(job) : null
     },
     async list() { return [...jobs.values()].map((job) => structuredClone(job)) },
+    async removeBySource(sourceId) {
+      const removed = [...jobs.values()]
+        .filter((job) => job.sourceId === sourceId)
+        .map((job) => structuredClone(job))
+      for (const job of removed) jobs.delete(job.jobId)
+      return removed
+    },
     async transition(jobId, phase, options = {}) {
       const job = jobs.get(jobId)
       if (!job) throw new Error('DOCUMENT_JOB_NOT_FOUND')
@@ -51,8 +58,8 @@ function input(name = '讲义.pdf', cleanup = async () => {}) {
   return { file: { name, type: 'application/pdf', size: 12 }, cleanup }
 }
 
-function schedulerHarness({ currentSource = source(), repository = createRepository(), local = input(), expectedSha256, actualSha256 = 'f'.repeat(64), runPhase = 'PACKAGING', onUpload, onPrepare } = {}) {
-  const calls = { run: 0, download: 0, hash: 0, cleanup: 0, prepare: 0 }
+function schedulerHarness({ currentSource = source(), repository = createRepository(), local = input(), expectedSha256, actualSha256 = 'f'.repeat(64), runPhase = 'PACKAGING', onUpload, onPrepare, onJobChanged } = {}) {
+  const calls = { run: 0, download: 0, hash: 0, cleanup: 0, prepare: 0, cancelled: [], deletedCaches: [] }
   const scheduler = new SourceJobScheduler({
     repository,
     sourceApi: { async get() { return currentSource } },
@@ -70,7 +77,12 @@ function schedulerHarness({ currentSource = source(), repository = createReposit
       await repository.transition(jobId, 'READY', { payloadCacheId: receivedReceipt.cacheId, payloadReceipt: receivedReceipt })
       return { parsedDocumentId: 'parsed-1', status: 'ACCEPTED' }
     } },
-    deleteCache: async () => { calls.cacheDeleted = (calls.cacheDeleted ?? 0) + 1 },
+    cancelJob: async (jobId) => { calls.cancelled.push(jobId) },
+    deleteCache: async (cacheId) => {
+      calls.cacheDeleted = (calls.cacheDeleted ?? 0) + 1
+      calls.deletedCaches.push(cacheId)
+    },
+    onJobChanged,
   })
   return { scheduler, repository, calls }
 }
@@ -88,6 +100,55 @@ test('FILE source creates a job immediately, runs local input, and uploads with 
   assert.equal(calls.run, 1)
   assert.equal(calls.download, 0)
   assert.equal(uploadMetadata.sourceAssetSha256, 'f'.repeat(64))
+})
+
+test('scheduler publishes job creation and settled state to the processing UI', async () => {
+  const snapshots = []
+  let repository
+  const harness = schedulerHarness({
+    onJobChanged: async () => {
+      snapshots.push((await repository.list()).map((job) => job.phase))
+    },
+  })
+  repository = harness.repository
+
+  await harness.scheduler.schedule('source-1')
+
+  assert.deepEqual(snapshots[0], ['QUEUED'])
+  assert.deepEqual(snapshots.at(-1), ['READY'])
+})
+
+test('discard removes all local jobs and encrypted caches for a deleted Source before refreshing the UI', async () => {
+  const repository = createRepository([
+    {
+      jobId: 'deleted-current', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
+      phase: 'OCR_RUNNING', attempt: 0, checkpoint: { pageNumber: 1, blockOrdinal: 0 }, payloadCacheId: 'cache-current', payloadReceipt: receipt,
+      errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
+    },
+    {
+      jobId: 'deleted-stale', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-old',
+      phase: 'FAILED_LOCAL', attempt: 0, checkpoint: { pageNumber: 0, blockOrdinal: 0 }, payloadCacheId: 'cache-stale', payloadReceipt: receipt,
+      errorCode: 'OCR_MODEL_FAILED', errorDetail: 'old failure', createdAt: '2026-08-23', updatedAt: '2026-08-23',
+    },
+    {
+      jobId: 'kept-job', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-2', ingestionRevision: 'revision-2',
+      phase: 'QUEUED', attempt: 0, checkpoint: { pageNumber: 0, blockOrdinal: 0 }, payloadCacheId: null, payloadReceipt: null,
+      errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
+    },
+  ])
+  const snapshots = []
+  const { scheduler, calls } = schedulerHarness({
+    repository,
+    onJobChanged: async () => { snapshots.push((await repository.list()).map((job) => job.jobId)) },
+  })
+
+  await scheduler.discard('source-1')
+
+  assert.deepEqual(calls.cancelled, ['deleted-current', 'deleted-stale'])
+  assert.deepEqual(calls.deletedCaches.sort(), ['cache-current', 'cache-stale'])
+  assert.deepEqual((await repository.list()).map((job) => job.jobId), ['kept-job'])
+  assert.deepEqual(snapshots.at(-1), ['kept-job'])
+  assert.deepEqual(await scheduler.schedule('source-1'), { status: 'SKIPPED', reason: 'SOURCE_DELETED' })
 })
 
 test('mobile-created FILE source downloads through an owner-scoped adapter and cleans its temporary input', async () => {
@@ -109,7 +170,7 @@ test('asset SHA mismatch fails before parser execution or upload', async () => {
 
 test('new ingestion revision supersedes stale local jobs before creating the current job', async () => {
   const repository = createRepository([{
-    jobId: 'old-job', userId: 'user-1', deviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-old',
+    jobId: 'old-job', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-old',
     phase: 'QUEUED', attempt: 0, checkpoint: { pageNumber: 0, blockOrdinal: 0 }, payloadCacheId: null, payloadReceipt: null,
     errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }])
@@ -141,7 +202,7 @@ test('TEXT and URL sources stay on the server ingestion path', async () => {
 
 test('PACKAGING job resumes from durable receipt without OCR and cleans cache after READY', async () => {
   const repository = createRepository([{
-    jobId: 'packaging-job', userId: 'user-1', deviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
+    jobId: 'packaging-job', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
     phase: 'PACKAGING', attempt: 0, checkpoint: { pageNumber: 1, blockOrdinal: 1 }, payloadCacheId: receipt.cacheId, payloadReceipt: receipt,
     errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }])
@@ -154,7 +215,7 @@ test('PACKAGING job resumes from durable receipt without OCR and cleans cache af
 
 test('paused extraction requeues before parsing and paused upload resumes from its durable receipt', async () => {
   const extractionRepository = createRepository([{
-    jobId: 'paused-extraction', userId: 'user-1', deviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
+    jobId: 'paused-extraction', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
     phase: 'PAUSED_NETWORK', attempt: 0, checkpoint: { pageNumber: 1, blockOrdinal: 0 }, payloadCacheId: null, payloadReceipt: null,
     errorCode: 'NETWORK_OFFLINE', errorDetail: 'offline', createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }])
@@ -165,7 +226,7 @@ test('paused extraction requeues before parsing and paused upload resumes from i
 
   let uploadPhase
   const uploadRepository = createRepository([{
-    jobId: 'paused-upload', userId: 'user-1', deviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
+    jobId: 'paused-upload', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
     phase: 'PAUSED_NETWORK', attempt: 0, checkpoint: { pageNumber: 1, blockOrdinal: 1 }, payloadCacheId: receipt.cacheId, payloadReceipt: receipt,
     errorCode: 'NETWORK_OFFLINE', errorDetail: 'offline', createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }])
@@ -177,6 +238,44 @@ test('paused extraction requeues before parsing and paused upload resumes from i
   assert.equal(uploadResult.status, 'READY')
   assert.equal(upload.calls.run, 0)
   assert.equal(uploadPhase, 'UPLOADING')
+})
+
+test('resume continues scheduling later awaiting Sources when an earlier Source fails locally', async () => {
+  const repository = createRepository()
+  const sourceById = {
+    'source-1': source({ id: 'source-1', assetId: 'asset-1', ingestionRevision: 'revision-1' }),
+    'source-2': source({ id: 'source-2', assetId: 'asset-2', ingestionRevision: 'revision-2' }),
+  }
+  const scheduler = new SourceJobScheduler({
+    repository,
+    sourceApi: { async get(sourceId) { return sourceById[sourceId] } },
+    resolveLocalInput: async (assetId) => {
+      if (assetId === 'asset-1') throw new Error('SOURCE_INPUT_UNAVAILABLE')
+      return input('second.pdf')
+    },
+    downloadAsset: async () => { throw new Error('DOWNLOAD_SHOULD_NOT_RUN') },
+    hashFile: async () => 'f'.repeat(64),
+    prepareInput: async () => {},
+    runJob: async (jobId) => {
+      await repository.transition(jobId, 'PACKAGING', { payloadCacheId: receipt.cacheId, payloadReceipt: receipt })
+    },
+    upload: {
+      async upload(jobId, receivedReceipt) {
+        await repository.transition(jobId, 'READY', {
+          payloadCacheId: receivedReceipt.cacheId,
+          payloadReceipt: receivedReceipt,
+        })
+        return { status: 'ACCEPTED' }
+      },
+    },
+  })
+
+  const results = await scheduler.resume(['source-1', 'source-2'])
+  const jobs = await repository.list()
+
+  assert.deepEqual(results.map((result) => result.status), ['FAILED_LOCAL', 'READY'])
+  assert.equal(jobs.find((job) => job.sourceId === 'source-1')?.phase, 'FAILED_LOCAL')
+  assert.equal(jobs.find((job) => job.sourceId === 'source-2')?.phase, 'READY')
 })
 
 test('scheduler does not persist signed URLs', async () => {

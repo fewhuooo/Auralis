@@ -99,7 +99,7 @@ test('normalizes opaque cursors and deduplicates realtime signals', () => {
   assert.equal(dedupeEventKey({ type: 'SYNC_CHANGED', cursor: 'c-1' }), 'SYNC_CHANGED:c-1')
 })
 
-test('creates and reuses a stable server-compatible device identity', () => {
+test('creates and reuses a stable client device key', () => {
   const values = new Map()
   const storage = {
     get: (key) => values.get(key),
@@ -113,8 +113,8 @@ test('creates and reuses a stable server-compatible device identity', () => {
     platform: 'ios',
     model: 'Different display name',
   })
-  assert.equal(isUuid(first.deviceId), true)
-  assert.equal(second.deviceId, first.deviceId)
+  assert.equal(isUuid(first.clientDeviceKey), true)
+  assert.equal(second.clientDeviceKey, first.clientDeviceKey)
   assert.equal(first.platform, 'IOS')
   assert.equal(first.deviceName, 'iPad Pro')
 })
@@ -128,7 +128,7 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
         user: { id: 'user-1', username: 'alice', displayName: 'Alice' },
         tokens: { accessToken: 'access', refreshToken: 'refresh' },
         sessionId: 'session-1',
-        deviceId: 'device-1',
+        serverDeviceId: 'device-1',
       }
       if (path === '/api/realtime/ticket') return {
         ticket: 'ticket-1',
@@ -143,12 +143,12 @@ test('auth and realtime wrappers call only the frozen OpenAPI routes', async () 
   await auth.login({
     username: 'alice',
     password: 'very-long-password',
-    deviceId: 'device-1',
+    clientDeviceKey: 'device-key-1',
     deviceName: 'iPad',
     platform: 'IOS',
   })
   await auth.logout()
-  await realtime.issueTicket('device-1')
+  await realtime.issueTicket()
 
   assert.deepEqual(calls.map(({ path, method }) => `${method} ${path}`), [
     'post /api/auth/login',
@@ -190,7 +190,7 @@ test('sync wrapper uses device batches, opaque cursors, and snapshot recovery ro
       return { snapshotCursor: 'c-4', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] }
     },
   })
-  await sync.push({ deviceId: 'device-1', mutations: [] })
+  await sync.push({ serverDeviceId: 'device-1', mutations: [] })
   await sync.pull('opaque-cursor', 100)
   await sync.snapshot()
   assert.deepEqual(calls.map(({ path, method }) => `${method} ${path}`), [

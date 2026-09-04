@@ -10,6 +10,7 @@ use sha2::Sha256;
 
 const KEYRING_SERVICE: &str = "auralis";
 const KEYRING_USER: &str = "master_key";
+const MASTER_KEY_NOT_FOUND: &str = "Master key not found. Please initialize encryption first.";
 const PBKDF2_ITERATIONS: u32 = 600_000;
 const NONCE_LEN: usize = 12;
 const SALT_LEN: usize = 32;
@@ -17,19 +18,37 @@ const SALT_LEN: usize = 32;
 pub(crate) fn get_master_key_bytes() -> Result<Vec<u8>, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring access failed: {e}"))?;
-    let encoded = entry
-        .get_password()
-        .map_err(|_| "Master key not found. Please initialize encryption first.".to_string())?;
+    let encoded = match entry.get_password() {
+        Ok(encoded) => encoded,
+        Err(keyring::Error::NoEntry) => return Err(MASTER_KEY_NOT_FOUND.to_string()),
+        Err(error) => return Err(format!("Keyring read failed: {error}")),
+    };
     B64.decode(encoded)
         .map_err(|e| format!("Invalid master key encoding: {e}"))
+}
+
+/// Establishes the first-use key at the native package boundary. Existing
+/// encrypted caches continue to use `get_master_key_bytes` so a missing key
+/// cannot be silently replaced while attempting recovery.
+pub(crate) fn ensure_master_key_bytes() -> Result<Vec<u8>, String> {
+    match get_master_key_bytes() {
+        Ok(key_bytes) => Ok(key_bytes),
+        Err(error) if error == MASTER_KEY_NOT_FOUND => {
+            crypto_generate_master_key()?;
+            get_master_key_bytes()
+        }
+        Err(error) => Err(error),
+    }
 }
 
 #[tauri::command]
 pub fn crypto_generate_master_key() -> Result<bool, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring access failed: {e}"))?;
-    if entry.get_password().is_ok() {
-        return Ok(false);
+    match entry.get_password() {
+        Ok(_) => return Ok(false),
+        Err(keyring::Error::NoEntry) => {}
+        Err(error) => return Err(format!("Keyring read failed: {error}")),
     }
     let mut key_bytes = [0u8; 32];
     OsRng.fill_bytes(&mut key_bytes);
@@ -44,7 +63,11 @@ pub fn crypto_generate_master_key() -> Result<bool, String> {
 pub fn crypto_has_master_key() -> Result<bool, String> {
     let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| format!("Keyring access failed: {e}"))?;
-    Ok(entry.get_password().is_ok())
+    match entry.get_password() {
+        Ok(_) => Ok(true),
+        Err(keyring::Error::NoEntry) => Ok(false),
+        Err(error) => Err(format!("Keyring read failed: {error}")),
+    }
 }
 
 #[tauri::command]

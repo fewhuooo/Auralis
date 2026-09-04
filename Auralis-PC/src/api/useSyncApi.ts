@@ -80,9 +80,9 @@ export const useSyncApi = {
     return normalizePullResponse(response)
   },
 
-  async pushChanges(input: { deviceId: string; mutations: LocalMutation[] }): Promise<SyncPushResponse> {
+  async pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }): Promise<SyncPushResponse> {
     const response = await request.post('/api/sync/push', {
-      deviceId: input.deviceId,
+      serverDeviceId: input.serverDeviceId,
       mutations: input.mutations.map(toMutationRequest),
     }) as unknown as Partial<SyncPushResponse>
     return normalizePushResponse(response)

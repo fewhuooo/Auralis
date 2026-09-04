@@ -58,6 +58,10 @@ export interface LocalSyncState {
 export interface LocalRepositoryOptions {
   storage?: LocalStorageLike
   sql?: LocalSqlDatabase
+  /** Resolves when the owning database facade has already created the current schema. */
+  schemaReady?: Promise<void>
+  /** Replaces a server snapshot in one native SQLite transaction when available. */
+  replaceSnapshot?: (snapshot: LocalSnapshotItem[]) => Promise<void>
   now?: () => string
   idFactory?: () => string
 }
@@ -118,34 +122,38 @@ const DEFAULT_SYNC_STATE: LocalSyncState = {
 
 export class LocalRepository {
   readonly userId: string
-  readonly deviceId: string
+  readonly serverDeviceId: string
 
   private readonly storage: LocalStorageLike
   private readonly sql?: LocalSqlDatabase
+  private readonly schemaReady?: Promise<void>
+  private readonly replaceSnapshot?: (snapshot: LocalSnapshotItem[]) => Promise<void>
   private readonly now: () => string
   private readonly idFactory: () => string
   private readonly namespace: string
   private sqlReady: Promise<void> | null = null
 
-  constructor(userId: string, deviceId: string, options: LocalRepositoryOptions = {}) {
+  constructor(userId: string, serverDeviceId: string, options: LocalRepositoryOptions = {}) {
     if (!userId.trim()) throw new Error('LocalRepository requires a userId')
-    if (!deviceId.trim()) throw new Error('LocalRepository requires a deviceId')
+    if (!serverDeviceId.trim()) throw new Error('LocalRepository requires a serverDeviceId')
     if (options.sql && options.storage) {
       throw new Error('LocalRepository accepts either sql or storage, not both')
     }
     this.userId = userId
-    this.deviceId = deviceId
+    this.serverDeviceId = serverDeviceId
     this.sql = options.sql
+    this.schemaReady = options.schemaReady
+    this.replaceSnapshot = options.replaceSnapshot
     this.storage = options.storage ?? browserStorage() ?? createMemoryStorage()
     this.now = options.now ?? (() => new Date().toISOString())
     this.idFactory = options.idFactory ?? (() => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
-    this.namespace = `auralis:v2:${encodePart(userId)}:${encodePart(deviceId)}`
+    this.namespace = `auralis:v2:${encodePart(userId)}:${encodePart(serverDeviceId)}`
   }
 
   private async ensureSql(): Promise<void> {
     if (!this.sql) return
     if (!this.sqlReady) {
-      this.sqlReady = createVersionedLocalSchema(this.sql)
+      this.sqlReady = this.schemaReady ?? createVersionedLocalSchema(this.sql)
     }
     await this.sqlReady
   }
@@ -307,6 +315,29 @@ export class LocalRepository {
       createdAt: input.createdAt ?? this.now(),
       status: 'pending',
     }
+    const existingForResource = (await this.listPending(mutation.resourceType))
+      .find((item) => item.resourceId === mutation.resourceId)
+    const coalesced = existingForResource && this.coalescePendingMutation(existingForResource, mutation)
+    if (coalesced) {
+      if (this.sql) {
+        await this.ensureSql()
+        await this.sql.execute(
+          `UPDATE local_mutations
+             SET mutation_type = $1, base_version = $2, payload = $3
+           WHERE client_mutation_id = $4 AND user_id = $5`,
+          [coalesced.mutationType, coalesced.baseVersion, JSON.stringify(coalesced.payload),
+            coalesced.clientMutationId, this.userId],
+        )
+        return clone(coalesced)
+      }
+      const state = this.readBrowserState()
+      const index = state.mutations.findIndex(
+        (item) => item.clientMutationId === coalesced.clientMutationId && item.userId === this.userId,
+      )
+      if (index >= 0) state.mutations[index] = coalesced
+      this.writeBrowserState(state)
+      return clone(coalesced)
+    }
     if (this.sql) {
       await this.ensureSql()
       const existing = await this.sql.select<LocalMutationRow>(
@@ -335,6 +366,20 @@ export class LocalRepository {
     state.mutations.push(mutation)
     this.writeBrowserState(state)
     return clone(mutation)
+  }
+
+  private coalescePendingMutation(existing: LocalMutation, incoming: LocalMutation): LocalMutation | null {
+    if (existing.mutationType === 'CREATE' && incoming.mutationType === 'UPDATE') {
+      return { ...existing, payload: clone(incoming.payload) }
+    }
+    if (existing.mutationType === 'UPDATE' && ['UPDATE', 'DELETE'].includes(incoming.mutationType)) {
+      return {
+        ...existing,
+        mutationType: incoming.mutationType,
+        payload: clone(incoming.payload),
+      }
+    }
+    return null
   }
 
   async listPending(resourceType?: string): Promise<LocalMutation[]> {
@@ -427,7 +472,7 @@ export class LocalRepository {
       const rows = await this.sql.select<Record<string, unknown>>(
         `SELECT cursor, reset_required, schema_version FROM sync_metadata
          WHERE user_id = $1 AND device_id = $2`,
-        [this.userId, this.deviceId],
+        [this.userId, this.serverDeviceId],
       )
       const row = rows[0]
       return row
@@ -448,7 +493,7 @@ export class LocalRepository {
            cursor = excluded.cursor,
            reset_required = excluded.reset_required,
            schema_version = excluded.schema_version`,
-        [this.userId, this.deviceId, cursor, resetRequired ? 1 : 0, 2],
+        [this.userId, this.serverDeviceId, cursor, resetRequired ? 1 : 0, 2],
       )
       return state
     }
@@ -459,6 +504,11 @@ export class LocalRepository {
   }
 
   async replaceSnapshotPreservingPending(snapshot: LocalSnapshotItem[]): Promise<void> {
+    if (this.sql && this.replaceSnapshot) {
+      await this.ensureSql()
+      await this.replaceSnapshot(snapshot)
+      return
+    }
     const pending = await this.listUnresolved()
     const pendingKeys = new Set(pending.map((item) => resourceKey(item.resourceType, item.resourceId)))
     const current = await this.list(undefined, { includeDeleted: true })
@@ -536,6 +586,7 @@ const DOCUMENT_JOB_TRANSITIONS: Record<DocumentJobPhase, readonly DocumentJobPha
 interface DocumentJobRepositoryOptions {
   storage?: LocalStorageLike
   sql?: LocalSqlDatabase
+  schemaReady?: Promise<void>
   now?: () => string
 }
 
@@ -548,46 +599,48 @@ function documentJobStorage(): LocalStorageLike {
   return createMemoryStorage()
 }
 
-function documentJobKey(userId: string, deviceId: string, version = 5): string {
-  return `auralis:v${version}:document-jobs:${encodePart(userId)}:${encodePart(deviceId)}`
+function documentJobKey(userId: string, serverDeviceId: string, version = 5): string {
+  return `auralis:v${version}:document-jobs:${encodePart(userId)}:${encodePart(serverDeviceId)}`
 }
 
 export class DocumentProcessingJobRepository {
   readonly userId: string
-  readonly deviceId: string
+  readonly serverDeviceId: string
 
   private readonly storage: LocalStorageLike
   private readonly sql?: LocalSqlDatabase
+  private readonly schemaReady?: Promise<void>
   private readonly now: () => string
   private sqlReady: Promise<void> | null = null
 
-  constructor(userId: string, deviceId: string, options: DocumentJobRepositoryOptions = {}) {
+  constructor(userId: string, serverDeviceId: string, options: DocumentJobRepositoryOptions = {}) {
     if (!userId.trim()) throw new Error('DocumentProcessingJobRepository requires a userId')
-    if (!deviceId.trim()) throw new Error('DocumentProcessingJobRepository requires a deviceId')
+    if (!serverDeviceId.trim()) throw new Error('DocumentProcessingJobRepository requires a serverDeviceId')
     if (options.sql && options.storage) throw new Error('DocumentProcessingJobRepository accepts either sql or storage, not both')
     this.userId = userId
-    this.deviceId = deviceId
+    this.serverDeviceId = serverDeviceId
     this.sql = options.sql
+    this.schemaReady = options.schemaReady
     this.storage = options.storage ?? documentJobStorage()
     this.now = options.now ?? (() => new Date().toISOString())
   }
 
   private async ensureSql(): Promise<void> {
     if (!this.sql) return
-    if (!this.sqlReady) this.sqlReady = createVersionedLocalSchema(this.sql)
+    if (!this.sqlReady) this.sqlReady = this.schemaReady ?? createVersionedLocalSchema(this.sql)
     await this.sqlReady
   }
 
   private readBrowserJobs(): DocumentProcessingJob[] {
-    const currentKey = documentJobKey(this.userId, this.deviceId)
+    const currentKey = documentJobKey(this.userId, this.serverDeviceId)
     let raw = this.storage.getItem(currentKey)
     let migrated = false
     if (!raw) {
-      raw = this.storage.getItem(documentJobKey(this.userId, this.deviceId, 4))
+      raw = this.storage.getItem(documentJobKey(this.userId, this.serverDeviceId, 4))
       migrated = Boolean(raw)
     }
     if (!raw) {
-      raw = this.storage.getItem(documentJobKey(this.userId, this.deviceId, 3))
+      raw = this.storage.getItem(documentJobKey(this.userId, this.serverDeviceId, 3))
       migrated = Boolean(raw)
     }
     if (!raw) return []
@@ -607,7 +660,7 @@ export class DocumentProcessingJobRepository {
   }
 
   private writeBrowserJobs(jobs: DocumentProcessingJob[]): void {
-    this.storage.setItem(documentJobKey(this.userId, this.deviceId), JSON.stringify(jobs))
+    this.storage.setItem(documentJobKey(this.userId, this.serverDeviceId), JSON.stringify(jobs))
   }
 
   async create(input: CreateDocumentProcessingJobInput): Promise<DocumentProcessingJob> {
@@ -618,7 +671,7 @@ export class DocumentProcessingJobRepository {
     const job: DocumentProcessingJob = {
       jobId: input.jobId,
       userId: this.userId,
-      deviceId: this.deviceId,
+      serverDeviceId: this.serverDeviceId,
       sourceId: input.sourceId,
       ingestionRevision: input.ingestionRevision,
       phase: 'QUEUED',
@@ -636,7 +689,7 @@ export class DocumentProcessingJobRepository {
       const duplicate = await this.sql.select<{ job_id: string }>(
         `SELECT job_id FROM document_processing_jobs
          WHERE user_id = $1 AND device_id = $2 AND source_id = $3 AND ingestion_revision = $4`,
-        [this.userId, this.deviceId, input.sourceId, input.ingestionRevision],
+        [this.userId, this.serverDeviceId, input.sourceId, input.ingestionRevision],
       )
       if (duplicate[0]) throw new Error('DOCUMENT_JOB_DUPLICATE_REVISION')
       await this.sql.execute(
@@ -645,7 +698,7 @@ export class DocumentProcessingJobRepository {
           checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
            error_code, error_detail, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
-        [job.jobId, job.userId, job.deviceId, job.sourceId, job.ingestionRevision, job.phase, job.attempt,
+        [job.jobId, job.userId, job.serverDeviceId, job.sourceId, job.ingestionRevision, job.phase, job.attempt,
           job.checkpoint.pageNumber, job.checkpoint.blockOrdinal, null, null, null, null, null, job.createdAt, job.updatedAt],
       )
       return job
@@ -667,7 +720,7 @@ export class DocumentProcessingJobRepository {
                 checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
                 error_code, error_detail, created_at, updated_at
          FROM document_processing_jobs WHERE job_id = $1 AND user_id = $2 AND device_id = $3`,
-        [jobId, this.userId, this.deviceId],
+        [jobId, this.userId, this.serverDeviceId],
       )
       return rows[0] ? documentProcessingJobFromRow(rows[0]) : null
     }
@@ -683,11 +736,38 @@ export class DocumentProcessingJobRepository {
                 checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
                 error_code, error_detail, created_at, updated_at
          FROM document_processing_jobs WHERE user_id = $1 AND device_id = $2 ORDER BY updated_at ASC, job_id ASC`,
-        [this.userId, this.deviceId],
+        [this.userId, this.serverDeviceId],
       )
       return rows.map(documentProcessingJobFromRow)
     }
     return this.readBrowserJobs().sort((left, right) => left.updatedAt.localeCompare(right.updatedAt) || left.jobId.localeCompare(right.jobId)).map(documentJobClone)
+  }
+
+  async removeBySource(sourceId: string): Promise<DocumentProcessingJob[]> {
+    if (!sourceId.trim()) throw new Error('DOCUMENT_JOB_SOURCE_INVALID')
+    if (this.sql) {
+      await this.ensureSql()
+      const rows = await this.sql.select<DocumentProcessingJobRow>(
+        `SELECT job_id, user_id, device_id, source_id, ingestion_revision, phase, attempt,
+                checkpoint_page, checkpoint_ordinal, checkpoint_json, payload_cache_id, payload_receipt_json,
+                error_code, error_detail, created_at, updated_at
+         FROM document_processing_jobs
+         WHERE user_id = $1 AND device_id = $2 AND source_id = $3
+         ORDER BY updated_at ASC, job_id ASC`,
+        [this.userId, this.serverDeviceId, sourceId],
+      )
+      if (!rows.length) return []
+      await this.sql.execute(
+        `DELETE FROM document_processing_jobs
+         WHERE user_id = $1 AND device_id = $2 AND source_id = $3`,
+        [this.userId, this.serverDeviceId, sourceId],
+      )
+      return rows.map(documentProcessingJobFromRow)
+    }
+    const jobs = this.readBrowserJobs()
+    const removed = jobs.filter((job) => job.sourceId === sourceId)
+    if (removed.length) this.writeBrowserJobs(jobs.filter((job) => job.sourceId !== sourceId))
+    return removed.map(documentJobClone)
   }
 
   async transition(jobId: string, phase: DocumentJobPhase, options: DocumentJobTransitionOptions = {}): Promise<DocumentProcessingJob> {
@@ -719,7 +799,7 @@ export class DocumentProcessingJobRepository {
         [next.phase, next.attempt, checkpoint.pageNumber, checkpoint.blockOrdinal,
           checkpoint.parserState ? JSON.stringify(checkpoint) : null, next.payloadCacheId,
           next.payloadReceipt ? JSON.stringify(next.payloadReceipt) : null,
-          next.errorCode, next.errorDetail, next.updatedAt, jobId, this.userId, this.deviceId, current.phase],
+          next.errorCode, next.errorDetail, next.updatedAt, jobId, this.userId, this.serverDeviceId, current.phase],
       )
       const persisted = await this.get(jobId)
       if (!persisted || persisted.phase !== phase) throw new Error('DOCUMENT_JOB_CONFLICT')
@@ -736,8 +816,8 @@ export class DocumentProcessingJobRepository {
 
 export function createLocalRepository(
   userId: string,
-  deviceId: string,
+  serverDeviceId: string,
   options: LocalRepositoryOptions = {},
 ): LocalRepository {
-  return new LocalRepository(userId, deviceId, options)
+  return new LocalRepository(userId, serverDeviceId, options)
 }

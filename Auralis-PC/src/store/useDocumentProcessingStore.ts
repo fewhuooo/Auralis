@@ -10,6 +10,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     lastError: null as string | null,
   }),
   getters: {
+    isRuntimeAvailable: (state) => Boolean(state.runner),
     activeJobs: (state) => state.jobs.filter((job) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(job.phase)),
     hasPendingJobs: (state) => state.jobs.some((job) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(job.phase)),
   },

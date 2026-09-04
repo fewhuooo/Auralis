@@ -5,8 +5,8 @@ type TicketResponse = components['schemas']['TicketResponse']
 
 export function createRealtimeApi(client: ApiCallClient = defaultApiCallClient) {
   return {
-    issueTicket: (deviceId: string) => client.request(
-      '/api/realtime/ticket', 'post', { body: { deviceId } },
+    issueTicket: () => client.request(
+      '/api/realtime/ticket', 'post',
     ) as Promise<TicketResponse>,
   }
 }

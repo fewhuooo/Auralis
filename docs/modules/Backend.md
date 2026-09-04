@@ -2,7 +2,7 @@
 
 更新时间：2026-08-26
 
-文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；V16 阅读会话 scope、完成历史 Prompt、readingContext 当前 Source 检索和同学科确定性升级已实现；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；本机 Docker 不可用导致本轮 PostgreSQL upgrade 未执行，整体仍待真实 Provider 与外部验收
+文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；V16 阅读会话 scope、完成历史 Prompt、readingContext 当前 Source 检索和同学科确定性升级已实现；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；Subject 专属颜色已由 V19 移除并在本地 PostgreSQL 升级验证，整体仍待真实 Provider 与外部验收
 
 权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
@@ -21,7 +21,7 @@
 | 模块 | 责任 | 阶段状态 |
 | --- | --- | --- |
 | identity | User、Password、JWT、RefreshSession、Device、Auth HTTP | 阶段 1 已实现，待 PostgreSQL/人工验收 |
-| subject | Subject 及历史默认标记兼容 | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
+| subject | Subject 及历史默认标记兼容；不保存专属颜色 | 阶段 2A 已实现，V19 已移除历史颜色列；本地 PostgreSQL 已升级验证，待真实业务验收 |
 | source | Source、Asset、MinIO、解析任务 | 阶段 2B 已实现上传端口、Source CRUD/重摄入，待真实 MinIO/解析验收 |
 | knowledge | KnowledgeBlock | 阶段 2A 已实现，阶段 2B 已接入 Source 关联 |
 | task | Task | 阶段 2A 已实现，待 PostgreSQL/人工验收 |
@@ -63,9 +63,9 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 - Subject：`POST/GET /api/subjects`、`GET/PUT/DELETE /api/subjects/{id}`、`POST /api/subjects/{id}/restore`。
 - KnowledgeBlock：`POST/GET /api/knowledge-blocks`、`GET/PUT/DELETE /api/knowledge-blocks/{id}`、`POST /api/knowledge-blocks/{id}/restore`。
-- Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`。
+- Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`、`POST /api/tasks/schedule-swaps`。
 
-创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
+创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 换位端点以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本、截止时间及新排期；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
 
 阶段 2B 验证证据：2026-08-13 `Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，阶段2B基线执行 42 个真实测试；包含 V1/V2/V3 schema、Source/Asset/Relation Repository/Service/Controller、KnowledgeBlock Source 关联、RELATED_TO 反向去重、端点删除级联、Auth/阶段 2A 回归和 Modulith 边界。阶段 3/4 审核修复后在全量 clean test 中验证 Sync、Review、Stats、Realtime、V6/V7 迁移和并发回归，最终合计 69 个测试。证据范围为 H2、JPA、MockMvc 和测试存储适配器，不包含 PostgreSQL、Docker、真实 MinIO、解析 worker、双设备、浏览器 WebSocket、三端联调或人工业务验收。
 
@@ -76,6 +76,7 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 - Spring Modulith 2.1。
 - Maven Wrapper + Maven。
 - Spring MVC、Bean Validation、Actuator、springdoc OpenAPI。
+- Spring MVC converter 与所有 Auralis 自有生产/测试源码统一使用 Jackson 3 的 `tools.jackson` 命名空间；JSON object payload、流式 ParsedDocument 校验、WebSocket、Review 持久化和 Provider HTTP 均不混入 Jackson 2 类型。`JacksonNamespaceGuardTests` 会阻止重新导入 `com.fasterxml.jackson.*`。
 - 当前持久化使用 Spring Data JPA + Flyway V1–V15；R1-03 的 pgvector 写入/检索通过 JDBC repository 接入，H2 保留 JSON fallback。V15 追加 PC Tauri ParsedDocument 派生表、Source ingestion revision、FILE 状态约束和 ingestion job 关联字段；ParsedDocument 不进入同步表。S3 已实现 `/api/sources/{sourceId}/parsed-documents/upload-intents`，仅按 owner/revision 创建 `UPLOADING` 派生记录并向现有 `AssetStoragePort` 请求限定 MIME/checksum/size 的私有签名。
 - 目标数据库使用 PostgreSQL 17 + pgvector；V9 创建 vector(1024)/HNSW，V10 提供 generation cutover，V11 回填历史 JSON embedding。
 - 后续对象存储使用 MinIO。
@@ -87,7 +88,7 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 后续生产配置必须从环境变量读取数据库、MinIO、JWT、BYOK、DeepSeek、SiliconFlow 和 CORS 值；生产 profile 对缺失的关键配置执行 fail-fast。所有业务 Repository 必须在查询中带当前 userId；日志过滤 Authorization、Cookie、refresh token、BYOK key、完整 prompt 和模型回复。
 
-AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用户消息保留、Provider 选择、成功/中断/失败与耗时，`AI_EMBEDDING_*`/`AI_RETRIEVAL_SUCCESS` 区分向量化和检索阶段，`AI_PROVIDER_HTTP_*` 记录上游 host/path、解析地址数量、请求/响应字节数、SSE 行数、状态和耗时，`AI_SETTINGS_RESOLVED` 标记 BYOK 或 `ENV_DEFAULT` 来源。失败事件额外记录原始异常类名、单行截断后的 message 及 root cause 类名/message；Authorization、API key、token、secret、password 和 URL query 会脱敏。资产直传和 Source 登记分别输出 `ASSET_UPLOAD_INTENT_*`、`ASSET_UPLOAD_COMPLETE_*`、`ASSET_UPLOAD_READY`、`ASSET_UPLOAD_REJECTED` 和 `SOURCE_CREATED`，可区分凭证申请、浏览器直传后的 HEAD 校验和登记阶段。日志只输出 UUID、host、模型、数量、长度、状态和稳定错误码，不输出完整 prompt、模型回复、文件内容或响应体。
+AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用户消息保留、Provider 选择、成功/中断/失败与耗时，`AI_EMBEDDING_*`/`AI_RETRIEVAL_SUCCESS` 区分向量化和检索阶段，`AI_PROVIDER_HTTP_*` 记录上游 host/path、解析地址数量、请求/响应字节数、SSE 行数、状态和耗时，`AI_SETTINGS_RESOLVED` 标记 BYOK 或 `ENV_DEFAULT` 来源。失败事件额外记录原始异常类名、单行截断后的 message 及 root cause 类名/message；Authorization、API key、token、secret、password 和 URL query 会脱敏。资产直传和 Source 登记分别输出 `ASSET_UPLOAD_INTENT_*`、`ASSET_UPLOAD_COMPLETE_*`、`ASSET_UPLOAD_READY`、`ASSET_UPLOAD_REJECTED` 和 `SOURCE_CREATED`，可区分凭证申请、浏览器直传后的 HEAD 校验和登记阶段。未预期 HTTP 异常固定输出 `UNEXPECTED_API_ERROR`，携带 trace ID、HTTP 方法、无 query 的路径、异常类型和堆栈，响应仍保持脱敏的 Problem Details。日志只输出 UUID、host、模型、数量、长度、状态和稳定错误码，不输出完整 prompt、模型回复、文件内容或响应体。
 
 ## 阶段 2B 实际 HTTP 表面
 
@@ -103,7 +104,7 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 - Sync：`POST /api/sync/push`、`GET /api/sync/pull`、`GET /api/sync/snapshot`；SyncService 校验活动设备，SyncMutationProcessor 在独立事务内原子完成幂等占位、领域命令、change log 和最终结果，并提供高水位不回退的不透明 cursor；snapshot 包含必要墓碑。`SyncRetentionService` 按配置定时清理 30 天外日志/幂等记录，保留高水位并记录清理与 reset 指标。
 - Review：`GET /api/reviews/due`、`POST /api/reviews/events`、`GET /api/reviews/history`；ReviewService 使用版本化 FSRS-lite 参数集，SKIP 只写事件。
 - Stats：`GET /api/stats/overview`、`GET /api/stats/weekly`；StatsQueryRepository 对所有聚合带 userId 条件，weekly 固定连续 7 天。
-- Realtime：`POST /api/realtime/ticket` 和 `/ws/events`；RealtimeService 对短期 ticket 做 hash-only 存储、一次性消费和设备归属校验，提交后事件监听器向用户级订阅者转发 Sync/Review 通知。
+- Realtime：`POST /api/realtime/ticket` 使用 Bearer access JWT 签发短期 ticket；`/ws/events` 仅由 `RealtimeWebSocketConfiguration` 的 WebSocket handler 承接，握手从 query `ticket` 或 `X-Realtime-Ticket` 消费 ticket，不设 MVC `GET` 回退路由。RealtimeService 对 ticket 做 hash-only 存储、一次性消费和设备归属校验，提交后事件监听器向用户级订阅者转发 Sync/Review 通知。
 
 ## 验证边界
 
@@ -119,7 +120,7 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 - Flyway V3、Source/Asset/Relation Entity/Repository/Service/Controller、Asset HEAD/stat 元数据校验、Source 类型/Asset 归属、Relation 端点存在性/去重/级联删除测试。
 - 配置启用 MinIO 的 presigned PUT/GET 与 stat 适配器代码；真实对象存储调用仍未联调。
 - V4/V6 change log/inbound mutation schema、Sync 原子 push/pull/snapshot、高水位 cursor、墓碑、cursor round-trip、幂等和版本冲突测试。
-- V5/V7 Review schema、FSRS-lite 调度、完整状态快照/SKIP/复习事件幂等、Stats completed_at 用户隔离聚合、Realtime ticket hash/过期/一次性消费和提交后事件桥测试。
+- V5/V7 Review schema、FSRS-lite 调度、完整状态快照/SKIP/复习事件幂等、Stats completed_at 用户隔离聚合、Realtime ticket hash/过期/一次性消费和提交后事件桥测试；`RealtimeWebSocketIntegrationTests` 以真实 HTTP upgrade 验证已签发 ticket 可在不携带 Bearer header 的 `/ws/events` 握手。
 - 旧包、旧依赖和生成目录静态检查。
 
 阶段 2A/2B/3/4 不证明：

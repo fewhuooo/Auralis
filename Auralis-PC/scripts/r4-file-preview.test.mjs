@@ -7,6 +7,7 @@ import {
   resolveFileCapability,
   validateUploadFile,
 } from '../src/utils/filePreview.ts'
+import { PreviewRequestGate } from '../src/components/preview/PreviewRequestGate.ts'
 
 test('rejects Excel before upload intent', () => {
   assert.throws(
@@ -78,7 +79,28 @@ test('FilePreview owns the shared loading and signed-url lifecycle', () => {
   assert.match(source, /downloadUrl/)
   assert.match(source, /isLoading/)
   assert.match(source, /preview-error/)
+  assert.match(source, /PreviewRequestGate/)
+  assert.match(source, /previewRequests\.isCurrent\(requestId\)/)
   assert.doesNotMatch(source, /\.xls[x]?\b/)
+})
+
+test('preview request gate rejects a late signed-url response for a previously selected file', () => {
+  const gate = new PreviewRequestGate()
+  const first = gate.begin()
+  const second = gate.begin()
+
+  assert.equal(gate.isCurrent(first), false)
+  assert.equal(gate.isCurrent(second), true)
+})
+
+test('FilePreview aborts superseded binary downloads before starting another renderer load', () => {
+  const filePreviewPath = path.resolve('src/components/FilePreview.vue')
+  const source = fs.readFileSync(filePreviewPath, 'utf8')
+
+  assert.match(source, /AbortController/)
+  assert.match(source, /\.abort\(\)/)
+  assert.match(source, /fetch\(url, \{ signal:/)
+  assert.match(source, /setTimeout/)
 })
 
 test('File Viewer adapter is isolated behind a renderer component', () => {
@@ -171,7 +193,7 @@ test('SubjectWorkspace keeps files flat and exposes file deletion', () => {
   assert.doesNotMatch(source, /isSummary-file/)
   assert.match(source, /v-for="file in activeSourceFiles"/)
   assert.match(source, /handleDeleteFile\(file\)/)
-  assert.match(source, /deleteSourceFile\(file\.id\)/)
+  assert.match(source, /subjectStore\.deleteSourceFile\(file\.id\)/)
   assert.match(source, /class="drawer-item-delete"/)
   assert.match(source, /ApiProblemError/)
   assert.match(source, /RESOURCE_VERSION_CONFLICT/)
@@ -189,11 +211,26 @@ test('SubjectWorkspace file rows omit decorative file type icons', () => {
   assert.doesNotMatch(source, /const getFileIcon = \(t: string\)/)
 })
 
-test('useSourceStore handles pending CREATE when deleting files', () => {
+test('useSourceStore deletes files locally before background sync', () => {
   const storePath = path.resolve('src/store/useSourceStore.ts')
   const source = fs.readFileSync(storePath, 'utf8')
-  assert.match(source, /repo\.listPending\('SOURCE'\)/)
-  assert.match(source, /mutationType === 'CREATE'/)
+  assert.match(source, /repo\.tombstone\('SOURCE', id, \{ version: source\.version, syncStatus: 'pending' \}\)/)
+  assert.match(source, /mutationType: 'DELETE'/)
+  assert.match(source, /scheduleSync\(\)/)
+  assert.doesNotMatch(source, /await useSourceApi\.delete/)
+  assert.match(source, /documentScheduler\?\.discard\(id\)/)
+})
+
+test('useSourceStore removes a deleted file from the projection before slow document cleanup', () => {
+  const storePath = path.resolve('src/store/useSourceStore.ts')
+  const source = fs.readFileSync(storePath, 'utf8')
+  const deleteStart = source.indexOf('async function deleteSourceFile')
+  const projectionRemove = source.indexOf('sources.value = sources.value.filter', deleteStart)
+  const schedulerCleanup = source.indexOf('documentScheduler?.discard(id)', deleteStart)
+
+  assert.ok(projectionRemove > deleteStart, 'deletion must remove the file from the current projection')
+  assert.ok(schedulerCleanup > projectionRemove, 'slow parser/cache cleanup must not delay the deleted file leaving the UI')
+  assert.doesNotMatch(source.slice(projectionRemove, schedulerCleanup), /await\s+documentScheduler\?\.discard/)
 })
 
 test('SubjectWorkspace renders the selected file directly and keeps knowledge blocks as the summary surface', () => {

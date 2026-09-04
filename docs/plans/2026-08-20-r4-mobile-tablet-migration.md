@@ -1,7 +1,5 @@
 # R4 Mobile / Tablet Client Migration Implementation Plan
 
-> **For agentic workers:** Execute this plan inline in dependency order. Every task ends with a fresh command result; GUI, developer-tool and real-device acceptance remain separate evidence.
-
 **Goal:** 将 `Auralis-Mobile` 的 H5、微信和 Tablet 主工作区迁移到 R3 冻结契约、用户/设备隔离端侧副本和 realtime ticket 协议，完成 R4-04～R4-07 的代码与自动门禁。
 
 **Architecture:** 页面保留现有 Mobile/Tablet 视觉与 view model，网络层统一为 `runtime config → direct DTO transport → typed API wrapper`，Store 负责 DTO/view-model 映射和离线 mutation，端侧 repository 只按 `userId + deviceId` 保存资源、墓碑、cursor 与 pending mutation。Realtime 只携带一次性 ticket，事件只触发同一 cursor sync；Tablet NoteDocument 继续走既有专用仓库和 feature flag。

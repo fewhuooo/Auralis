@@ -1,7 +1,5 @@
 # PC 首页时间轴与任务逻辑 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 修复 PC 首页时间轴裁切，并让 Dashboard、Timeline、Asset 共享“未分布/未完成/已完成”、7 天排期窗口和一致的任务状态写入语义。
 
 **Architecture:** 新增不依赖 Vue 的 `taskViewRules` 纯函数模块，集中处理任务状态、资产库分组、截止时间排序和首页 7 天时间窗口。`useTaskStore` 保留 API/repository 写入边界，只负责把这些规则应用到本地排期和 mutation；三个页面只负责渲染、拖拽和通知，不再各自复制任务过滤算法。Dashboard 使用 CSS Grid 的可用宽度轨道，分隔条不再挤出百分比宽度。

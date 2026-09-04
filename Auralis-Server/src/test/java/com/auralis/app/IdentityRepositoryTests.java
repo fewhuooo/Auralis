@@ -70,11 +70,11 @@ class IdentityRepositoryTests {
                 .isPresent();
         assertThat(refreshSessionRepository.findByIdAndUserId(session.getId(), secondUser.getId()))
                 .isEmpty();
-        assertThat(deviceRepository.findByUserIdAndDeviceId(firstUser.getId(), "shared-device"))
+        assertThat(deviceRepository.findByUserIdAndClientDeviceKey(firstUser.getId(), "shared-device"))
                 .get()
                 .extracting(DeviceEntity::getId)
                 .isEqualTo(firstDevice.getId());
-        assertThat(deviceRepository.findByUserIdAndDeviceId(secondUser.getId(), "shared-device"))
+        assertThat(deviceRepository.findByUserIdAndClientDeviceKey(secondUser.getId(), "shared-device"))
                 .get()
                 .extracting(DeviceEntity::getId)
                 .isEqualTo(secondDevice.getId());
@@ -110,9 +110,9 @@ class IdentityRepositoryTests {
                 UUID.randomUUID(), username, username, "{bcrypt}hash", username, null, UserStatus.ACTIVE));
     }
 
-    private DeviceEntity saveDevice(UserEntity user, String deviceId) {
+    private DeviceEntity saveDevice(UserEntity user, String clientDeviceKey) {
         return deviceRepository.save(new DeviceEntity(
-                UUID.randomUUID(), user.getId(), deviceId, "Test device", DevicePlatform.WEB));
+                UUID.randomUUID(), user.getId(), clientDeviceKey, "Test device", DevicePlatform.WEB));
     }
 
     private RefreshSessionEntity saveSession(

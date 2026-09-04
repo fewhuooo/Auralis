@@ -89,7 +89,7 @@ class CoreDomainRepositoryTests {
 
     private SubjectEntity subject(UUID userId, boolean deleted) {
         SubjectEntity entity = new SubjectEntity(
-                UUID.randomUUID(), userId, "Mathematics", "Description", "book", "#123456", "001", false);
+                UUID.randomUUID(), userId, "Mathematics", "Description", "book", "001", false);
         if (deleted) {
             entity.softDelete();
         }

@@ -1,7 +1,7 @@
 package com.auralis.app.sync;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
 import io.micrometer.core.instrument.Counter;
 import com.auralis.app.sync.internal.persistence.ChangeLogEntity;
@@ -137,7 +137,7 @@ public class ChangeLogService {
     private String serialize(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DomainException("INTERNAL_ERROR", "Change payload could not be serialized");
         }
     }

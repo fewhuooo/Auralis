@@ -85,6 +85,16 @@ test('classifies a scanned PDF page and sends only its bitmap to OCR', async () 
   assert.deepEqual(ocrAdapter.calls, [{ pageNumber: 1, imageBytes: [9, 8, 7] }])
 })
 
+test('releases the PDF.js document after parsing so OCR does not retain a competing renderer worker', async () => {
+  let destroyCalls = 0
+  const { input } = pdfInput('release-after-ocr.pdf', [textPage('text layer')])
+  input.pdf.destroy = async () => { destroyCalls += 1 }
+
+  await parseDocument(input, async () => {})
+
+  assert.equal(destroyCalls, 1)
+})
+
 test('supports mixed PDF pages with continuous ordinals', async () => {
   const ocrAdapter = ocr([[], ['OCR page']])
   const { input } = pdfInput('mixed.pdf', [

@@ -260,7 +260,6 @@
               :subjectId="selectedGroupForGraph.id"
               :blocks="graphBlocks"
               :subjectName="selectedGroupForGraph.name"
-              :subjectColor="selectedGroupForGraph.id === 'all' ? 'rgba(59,130,246,0.2)' : (selectedGroupForGraph.color || 'rgba(99,102,241,0.2)')"
             />
           </div>
         </div>
@@ -314,7 +313,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
@@ -459,21 +458,30 @@ function taskGroupFolder(id: string, name: string, tasks: any[], groupId: string
 function taskGroupFolders(tasks: any[], groupId: string, openUnassigned = false): TreeNode[] {
   const groups: AssetTaskGroups = getTasksForAssetGroups(tasks)
   return [
-    taskGroupFolder(`${groupId}-tasks-unassigned`, '未分布', groups.unassigned, groupId, openUnassigned),
+    taskGroupFolder(`${groupId}-tasks-unassigned`, '未排期', groups.unassigned, groupId, openUnassigned),
     taskGroupFolder(`${groupId}-tasks-pending`, '未完成', groups.pending, groupId),
     taskGroupFolder(`${groupId}-tasks-completed`, '已完成', groups.completed, groupId),
   ]
 }
 
-const loadAssetsFromBackend = async () => {
-  isLoadingAssets.value = true
+function rebuildAssetTree(): void {
+  const openStates = new Set<string>()
   try {
-    await subjectStore.loadSubjects()
-    await sourceStore.loadSources()
-    await blockStore.loadLocalBlocks()
-    await taskStore.fetchTasks()
-    
-    const newRoots: TreeNode[] = []
+    const collectOpenStates = (nodes: TreeNode[] | undefined) => {
+      if (!nodes || !Array.isArray(nodes)) return
+      for (const node of nodes) {
+        if (!node) continue
+        if (node.open && node.id) openStates.add(node.id)
+        if (node.children) collectOpenStates(node.children)
+      }
+    }
+    collectOpenStates(rootNodes.value)
+  } catch (err) {
+    console.error('[Asset] Failed to collect open states:', err)
+  }
+  const hasExistingNodes = rootNodes.value && rootNodes.value.length > 0
+
+  const newRoots: TreeNode[] = []
     
     // --- 1. 汇总 (All) Group ---
     const allFilesRaw = sourceStore.sources
@@ -543,14 +551,62 @@ const loadAssetsFromBackend = async () => {
       })
     }
     
-    rootNodes.value = newRoots
-    focusUnassigned.value = shouldFocusUnassigned
-  } catch (e) {
-    console.error('[Asset] Failed to load local assets:', e)
+  if (hasExistingNodes) {
+    try {
+      const restoreOpenStates = (nodes: TreeNode[] | undefined) => {
+        if (!nodes || !Array.isArray(nodes)) return
+        for (const node of nodes) {
+          if (!node) continue
+          // Only restore state for folders and groups, items don't have open state
+          if (node.type === 'group' || node.type === 'folder') {
+            if (node.id && openStates.has(node.id)) {
+              node.open = true
+            } else {
+              node.open = false
+            }
+          }
+          if (node.children) restoreOpenStates(node.children)
+        }
+      }
+      restoreOpenStates(newRoots)
+    } catch (err) {
+      console.error('[Asset] Failed to restore open states:', err)
+    }
+  }
+
+  rootNodes.value = newRoots
+  focusUnassigned.value = shouldFocusUnassigned
+}
+
+const loadAssetsFromBackend = async () => {
+  isLoadingAssets.value = true
+  try {
+    const results = await Promise.allSettled([
+      subjectStore.loadSubjects(),
+      sourceStore.loadSources(),
+      blockStore.fetchBlocks(),
+      taskStore.fetchTasks(),
+    ])
+    for (const result of results) {
+      if (result.status === 'rejected') console.warn('[Asset] local asset hydration failed', result.reason)
+    }
+    rebuildAssetTree()
   } finally {
     isLoadingAssets.value = false
   }
 }
+
+watch(
+  [
+    () => subjectStore.subjects,
+    () => sourceStore.sources,
+    () => blockStore.recentBlocks,
+    () => taskStore.allTasks,
+  ],
+  () => {
+    if (!isLoadingAssets.value) rebuildAssetTree()
+  },
+)
 
 // ---- Search Filter (Recursive) ----
 const filterTree = (nodes: TreeNode[], query: string): TreeNode[] => {

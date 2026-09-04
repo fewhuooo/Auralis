@@ -49,16 +49,20 @@ export async function parseDocument(
     if (!input.pdf) throw new Error('PDF_SOURCE_REQUIRED')
     const pdf = new PdfTextAdapter(input.pdf)
     const ocr = input.ocr
-    for (let pageNumber = 1; pageNumber <= pdf.pageCount; pageNumber += 1) {
-      const page = await pdf.readPage(pageNumber)
-      if (page.classification === 'text') {
-        await emit({ kind: 'page', pageNumber, text: page.text })
-        continue
+    try {
+      for (let pageNumber = 1; pageNumber <= pdf.pageCount; pageNumber += 1) {
+        const page = await pdf.readPage(pageNumber)
+        if (page.classification === 'text') {
+          await emit({ kind: 'page', pageNumber, text: page.text })
+          continue
+        }
+        const result = await requireOcr(ocr).recognizePage({ taskId, pageNumber, imageBytes: page.bitmap! })
+        const text = normalizeOcrLines(result.lines)
+        if (!text) throw new Error('OCR_TEXT_EMPTY')
+        await emit({ kind: 'ocr-page', pageNumber, text })
       }
-      const result = await requireOcr(ocr).recognizePage({ taskId, pageNumber, imageBytes: page.bitmap! })
-      const text = normalizeOcrLines(result.lines)
-      if (!text) throw new Error('OCR_TEXT_EMPTY')
-      await emit({ kind: 'ocr-page', pageNumber, text })
+    } finally {
+      await input.pdf.destroy?.()
     }
     return {
       parser: DOCUMENT_PARSER_NAME,

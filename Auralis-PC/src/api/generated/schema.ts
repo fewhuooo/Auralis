@@ -132,6 +132,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/schedule-swaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["swapSchedules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sync/push": {
         parameters: {
             query?: never;
@@ -848,6 +864,20 @@ export interface components {
             /** Format: int64 */
             baseVersion: number;
         };
+        ScheduleSwapRequest: {
+            /** Format: uuid */
+            sourceTaskId: string;
+            /** Format: int64 */
+            sourceBaseVersion: number;
+            /** Format: uuid */
+            targetTaskId: string;
+            /** Format: int64 */
+            targetBaseVersion: number;
+        };
+        ScheduleSwapResponse: {
+            source?: components["schemas"]["Response"];
+            target?: components["schemas"]["Response"];
+        };
         JsonNode: unknown;
         MutationRequest: {
             clientMutationId: string;
@@ -863,7 +893,7 @@ export interface components {
         };
         PushRequest: {
             /** Format: uuid */
-            deviceId: string;
+            serverDeviceId: string;
             mutations: components["schemas"]["MutationRequest"][];
         };
         MutationResponse: {
@@ -1028,10 +1058,6 @@ export interface components {
             /** Format: date-time */
             updatedAt?: string;
         };
-        TicketRequest: {
-            /** Format: uuid */
-            deviceId: string;
-        };
         TicketResponse: {
             ticket?: string;
             /** Format: date-time */
@@ -1042,7 +1068,7 @@ export interface components {
             username: string;
             password: string;
             displayName: string;
-            deviceId: string;
+            clientDeviceKey: string;
             deviceName: string;
             /** @enum {string} */
             platform: "WEB" | "WINDOWS" | "MACOS" | "IOS" | "ANDROID" | "HARMONY" | "UNKNOWN";
@@ -1053,7 +1079,7 @@ export interface components {
             /** Format: uuid */
             sessionId?: string;
             /** Format: uuid */
-            deviceId?: string;
+            serverDeviceId?: string;
         };
         TokenPair: {
             accessToken?: string;
@@ -1075,7 +1101,7 @@ export interface components {
         LoginRequest: {
             username: string;
             password: string;
-            deviceId: string;
+            clientDeviceKey: string;
             deviceName: string;
             /** @enum {string} */
             platform: "WEB" | "WINDOWS" | "MACOS" | "IOS" | "ANDROID" | "HARMONY" | "UNKNOWN";
@@ -1221,7 +1247,7 @@ export interface components {
             /** Format: uuid */
             userId?: string;
             /** Format: uuid */
-            deviceId?: string;
+            serverDeviceId?: string;
         };
         ListResponse: {
             items?: components["schemas"]["Response"][];
@@ -1299,7 +1325,7 @@ export interface components {
             /** Format: uuid */
             id?: string;
             /** Format: uuid */
-            deviceId?: string;
+            serverDeviceId?: string;
             deviceName?: string;
             /** @enum {string} */
             platform?: "WEB" | "WINDOWS" | "MACOS" | "IOS" | "ANDROID" | "HARMONY" | "UNKNOWN";
@@ -1799,6 +1825,30 @@ export interface operations {
             };
         };
     };
+    swapSchedules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleSwapRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ScheduleSwapResponse"];
+                };
+            };
+        };
+    };
     push: {
         parameters: {
             query?: never;
@@ -2166,11 +2216,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TicketRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Created */
             201: {

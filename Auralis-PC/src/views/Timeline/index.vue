@@ -44,21 +44,6 @@
         </div>
       </div>
 
-      <!-- AI Suggestion Bubble -->
-      <div v-if="aiSuggestions && aiSuggestions.length > 0" class="ai-suggestion-bubble">
-        <div class="ai-bubble-header">
-          <div class="ai-title">
-            <Sparkles class="ai-icon" :size="16" :stroke-width="2.5" />
-            <span>AI 智能排期建议</span>
-          </div>
-          <button v-if="hasOverload" class="btn-auto-delay" @click="taskStore.applyAutoDelay()">
-            自动延后减负
-          </button>
-        </div>
-        <ul class="suggestion-list">
-          <li v-for="(sug, index) in aiSuggestions" :key="index">{{ sug }}</li>
-        </ul>
-      </div>
     </div>
 
     <!-- VIEW: Day Mode (Timeline) -->
@@ -411,7 +396,7 @@ import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from 
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 
 const taskStore = useTaskStore()
-const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours, aiSuggestions, hasOverload } = storeToRefs(taskStore)
+const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
 
 const subjectStore = useSubjectStore()
 const knowledgeStore = useKnowledgeStore()

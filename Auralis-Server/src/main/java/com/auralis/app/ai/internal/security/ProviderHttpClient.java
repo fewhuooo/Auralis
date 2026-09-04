@@ -1,7 +1,7 @@
 package com.auralis.app.ai.internal.security;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.config.AuralisProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +58,7 @@ public class ProviderHttpClient {
         byte[] requestBody;
         try {
             requestBody = objectMapper.writeValueAsBytes(body);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IOException("Could not serialize provider request", exception);
         }
         long startedAt = System.nanoTime();
@@ -77,7 +77,7 @@ public class ProviderHttpClient {
                         "AI_PROVIDER_HTTP_SUCCESS kind=json host={} port={} path={} status=2xx responseBytes={} elapsedMs={}",
                         endpoint.host(), endpoint.port(), path, responseBody.length, elapsedMillis(startedAt));
                 return response;
-            } catch (JsonProcessingException exception) {
+            } catch (JacksonException exception) {
                 throw new IOException("Could not parse provider response", exception);
             }
         } catch (ProviderHttpException exception) {
@@ -112,7 +112,7 @@ public class ProviderHttpClient {
         byte[] requestBody;
         try {
             requestBody = objectMapper.writeValueAsBytes(body);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IOException("Could not serialize provider request", exception);
         }
         long startedAt = System.nanoTime();

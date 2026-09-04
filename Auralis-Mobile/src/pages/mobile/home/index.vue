@@ -39,7 +39,7 @@
             <view class="quick-select-row">
               <text class="quick-label">学科：</text>
               <view class="subject-dropdown-btn" @click="showSubjectList = !showSubjectList">
-                <view class="sub-dot" :style="{ backgroundColor: quickSubject?.color || '#4A90E2' }"></view>
+                <view class="sub-dot"></view>
                 <text class="dropdown-text">{{ quickSubject?.name || '选择学科...' }}</text>
                 <LineIcon :name="showSubjectList ? 'chevron-up' : 'chevron-down'" size="32rpx" color="var(--color-zen-stone)" />
               </view>
@@ -56,7 +56,7 @@
                     :class="{ active: quickSubject?.name === sub.name }"
                     @click="selectSubject(sub)"
                   >
-                    <view class="sub-dot" :style="{ backgroundColor: sub.color || '#4A90E2' }"></view>
+                    <view class="sub-dot"></view>
                     <text class="sub-item-name">{{ sub.name }}</text>
                     <LineIcon v-if="quickSubject?.name === sub.name" name="check" size="32rpx" color="#7D9372" />
                   </view>
@@ -391,7 +391,7 @@ const submitQuickAdd = async () => {
     name,
     subject: selectedSub.name,
     subjectId: selectedSub.id,
-    color: selectedSub.color || '#4A90E2',
+    color: '#7D9372',
     duration: quickDuration.value,
     load: 'medium',
     loadText: '中负荷',

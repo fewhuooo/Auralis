@@ -1,7 +1,5 @@
 # 后端绿地重写阶段 0 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. All phase 0 steps below were executed on `agent/backend-phase-0`.
-
 **Goal:** 在不丢失当前工作树的前提下备份并替换旧 `Auralis-Server`，建立一个无旧实现依赖、可编译、可启动、可查看 OpenAPI 的 `com.auralis.app` Spring Boot 4.1 / Spring Modulith 2.1 骨架，并固化阶段 0 的对象、API 和数据库设计。
 
 **Architecture:** 新 Server 是模块化单体的空骨架。根包固定为 `com.auralis.app`；阶段 0 只建立共享基础设施和业务模块边界，业务 Entity、Repository、Flyway V1、认证和业务 Controller 留到后续阶段。共享层只承载配置、traceId、Problem Details 和 OpenAPI 元数据，不包含业务 Entity 或 Repository。
@@ -161,7 +159,7 @@ GET /swagger-ui/index.html
 在 `docs/README.md` 的后端绿地重写入口增加：
 
 ```markdown
-- [阶段 0 实施计划](plans/backend-greenfield-phase-0-plan.md)
+- [阶段 0 实施计划](backend-greenfield-phase-0-plan.md)
 ```
 
 执行：

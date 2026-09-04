@@ -14,6 +14,7 @@ import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -101,6 +102,48 @@ public class TaskService {
         return result;
     }
 
+    /**
+     * Exchanges two occupied time slots in one transaction. Both entity locks are
+     * acquired in a stable order, so a competing exchange cannot expose a
+     * half-completed schedule to callers.
+     */
+    @Transactional
+    public ScheduleSwapResult swapSchedules(
+            UUID userId,
+            UUID sourceTaskId,
+            long sourceBaseVersion,
+            UUID targetTaskId,
+            long targetBaseVersion) {
+        if (sourceTaskId.equals(targetTaskId)) {
+            throw new DomainException("VALIDATION_FAILED", "A task cannot be swapped with itself");
+        }
+
+        TaskEntity[] locked = lockActivePair(userId, sourceTaskId, targetTaskId);
+        TaskEntity source = locked[0];
+        TaskEntity target = locked[1];
+        requireVersion(source, sourceBaseVersion);
+        requireVersion(target, targetBaseVersion);
+
+        Instant sourceSchedule = source.getScheduledAt();
+        Instant targetSchedule = target.getScheduledAt();
+        if (sourceSchedule == null || targetSchedule == null) {
+            throw new DomainException("VALIDATION_FAILED", "Both tasks must be scheduled before they can be swapped");
+        }
+        validateSchedule(targetSchedule, source.getDueAt());
+        validateSchedule(sourceSchedule, target.getDueAt());
+
+        source.reschedule(targetSchedule);
+        target.reschedule(sourceSchedule);
+        taskRepository.saveAndFlush(source);
+        taskRepository.saveAndFlush(target);
+
+        TaskView sourceView = view(source);
+        TaskView targetView = view(target);
+        publishChange(userId, sourceView, "UPDATE");
+        publishChange(userId, targetView, "UPDATE");
+        return new ScheduleSwapResult(sourceView, targetView);
+    }
+
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
         TaskEntity entity = mutable(userId, id);
@@ -136,6 +179,18 @@ public class TaskService {
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
     }
 
+    private TaskEntity[] lockActivePair(UUID userId, UUID sourceTaskId, UUID targetTaskId) {
+        boolean sourceFirst = sourceTaskId.toString().compareTo(targetTaskId.toString()) < 0;
+        TaskEntity first = activeForUpdate(userId, sourceFirst ? sourceTaskId : targetTaskId);
+        TaskEntity second = activeForUpdate(userId, sourceFirst ? targetTaskId : sourceTaskId);
+        return sourceFirst ? new TaskEntity[] { first, second } : new TaskEntity[] { second, first };
+    }
+
+    private TaskEntity activeForUpdate(UUID userId, UUID id) {
+        return taskRepository.findActiveForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
+    }
+
     private void requireActive(TaskEntity entity) {
         if (entity.getDeletedAt() != null) {
             throw new DomainException("RESOURCE_DELETED", "Task has been deleted");
@@ -167,8 +222,11 @@ public class TaskService {
         if (command.durationMinutes() != null && command.durationMinutes() < 0) {
             throw new DomainException("VALIDATION_FAILED", "durationMinutes cannot be negative");
         }
-        if (command.scheduledAt() != null && command.dueAt() != null
-                && command.dueAt().isBefore(command.scheduledAt())) {
+        validateSchedule(command.scheduledAt(), command.dueAt());
+    }
+
+    private void validateSchedule(Instant scheduledAt, Instant dueAt) {
+        if (scheduledAt != null && dueAt != null && dueAt.isBefore(scheduledAt)) {
             throw new DomainException("VALIDATION_FAILED", "dueAt cannot be before scheduledAt");
         }
     }
@@ -191,5 +249,8 @@ public class TaskService {
             throw new DomainException("VALIDATION_FAILED", "limit must be between 1 and 200");
         }
         return requestedLimit;
+    }
+
+    public record ScheduleSwapResult(TaskView source, TaskView target) {
     }
 }

@@ -74,7 +74,7 @@ test('pushChanges sends only the server mutation DTO and preserves partial decis
     };
 
     const response = await useSyncApi.pushChanges({
-      deviceId: 'device-1',
+    serverDeviceId: 'device-1',
       mutations: [
         {
           clientMutationId: 'm-applied', userId: 'user-a', resourceType: 'TASK', resourceId: 'task-1',
@@ -89,7 +89,7 @@ test('pushChanges sends only the server mutation DTO and preserves partial decis
 
     assert.equal(calls[0].url, '/api/sync/push');
     assert.deepEqual(calls[0].data, {
-      deviceId: 'device-1',
+      serverDeviceId: 'device-1',
       mutations: [
         { clientMutationId: 'm-applied', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 2, payload: { title: 'Done' } },
         { clientMutationId: 'm-conflict', resourceType: 'TASK', resourceId: 'task-2', mutationType: 'UPDATE', baseVersion: 1, payload: { title: 'Conflict' } },
@@ -126,7 +126,7 @@ test('sync API rejects a resource outside the current server contract', async ()
     request.post = async () => ({ results: [], serverCursor: null });
     await assert.rejects(
       useSyncApi.pushChanges({
-        deviceId: 'device-1',
+        serverDeviceId: 'device-1',
         mutations: [{
           clientMutationId: 'bad', userId: 'user-a', resourceType: 'ASSET', resourceId: 'asset-1',
           mutationType: 'CREATE', baseVersion: 0, payload: {}, createdAt: 'now', status: 'pending',

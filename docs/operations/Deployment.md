@@ -8,6 +8,11 @@
 
 事实来源：三个项目的构建清单、Server profiles、`docker-compose.yml` 与基础设施模块文档
 
+测试账号：登录信息：
+- 用户名：pc-ai-test-20260821-180412@example.com
+- 密码：AuralisPcTest#2026
+- 显示名：PC AI 测试账号
+
 ## 部署模式
 
 | 模式 | 用途 | 组成 |

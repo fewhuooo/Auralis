@@ -35,7 +35,7 @@
           :class="{ 'is-active': selectedSubjectId === subj.id }"
           @click="selectSubject(subj.id)"
         >
-          <span v-if="selectedSubjectId === subj.id" class="active-dot" :style="{ background: subj.color }"></span>
+          <span v-if="selectedSubjectId === subj.id" class="active-dot" :style="{ background: SUBJECT_THEME_COLOR }"></span>
           <span class="subject-icon">
             <component
               v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
@@ -154,11 +154,11 @@
                 borderLeftColor: slot.task.color,
                 height: getTaskHeight(slot.task.duration)
               }"
-              draggable="true"
-              @dragstart.stop="handleDragStart($event, 'scheduled', slot.time)"
+              :draggable="!isCompletedScheduledTask(slot.task)"
+              @dragstart.stop="handleDragStart($event, 'scheduled', slot.task.id || '', slot.time)"
             >
               <span class="tl-task-name">{{ slot.task.name }}</span>
-              <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)">✕</button>
+              <button v-if="!isCompletedScheduledTask(slot.task)" class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)">✕</button>
             </div>
             <div v-else class="tl-empty"></div>
             <div v-if="slot.isCurrent" class="current-indicator">
@@ -305,7 +305,7 @@
               :key="subj.id"
               class="subject-capsule-item"
               :class="{ active: taskForm.subjectId === subj.id }"
-              :style="taskForm.subjectId === subj.id ? { borderColor: subj.color, background: subj.color + '22' } : {}"
+              :style="taskForm.subjectId === subj.id ? { borderColor: SUBJECT_THEME_COLOR, background: SUBJECT_THEME_COLOR + '22' } : {}"
               @click="taskForm.subjectId = subj.id"
             >
               <span class="subj-capsule-icon">
@@ -391,10 +391,11 @@ import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task, DAY_CODES } from '@/store/useTaskStore'
-import { getTasksForTimeline, getTimelineDays } from '@/services/taskViewRules'
+import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask } from '@/services/taskViewRules'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
+const SUBJECT_THEME_COLOR = '#7D9372'
 const renderMarkdown = (content: string) => {
   if (!content) return ''
   return DOMPurify.sanitize(marked.parse(content) as string)
@@ -412,9 +413,8 @@ const dashboardViewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays())
 const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
-const selectDay = async (day: string) => {
-  taskStore.selectedDay = day
-  await taskStore.loadLocalTasks()
+const selectDay = (day: string) => {
+  taskStore.setSelectedDay(day)
 }
 
 const getScheduledTasksForDay = (day: string) => {
@@ -606,7 +606,7 @@ const handleAddTask = async () => {
       name: taskForm.value.name.trim(),
       subject: subjObj.name,
       desc: '从看板创建',
-      color: subjObj.color,
+      color: SUBJECT_THEME_COLOR,
       duration: taskForm.value.duration,
       load: taskForm.value.load,
       loadText: taskForm.value.loadText,
@@ -670,20 +670,26 @@ const openBlockDetail = (block: any) => {
 }
 
 // ===== Drag & Drop =====
-const draggedItem = ref<{ type: 'pending' | 'scheduled', idOrTime: string } | null>(null)
+const draggedItem = ref<{ type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string } | null>(null)
 const dragOverSlot = ref<string | null>(null)
 const dragOverPending = ref(false)
 
-const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', idOrTime: string) => {
+const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string) => {
+  const dragPayload = { type, taskId, sourceSlotTime }
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', idOrTime)
+    e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload))
   }
-  draggedItem.value = { type, idOrTime }
+  draggedItem.value = dragPayload
 }
 
 const handleDragOver = (slotTime: string) => {
-  if (!(draggedItem.value?.type === 'scheduled' && draggedItem.value.idOrTime === slotTime)) {
+  const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
+  if (targetTask && isCompletedScheduledTask(targetTask)) {
+    dragOverSlot.value = null
+    return
+  }
+  if (!(draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime === slotTime)) {
     dragOverSlot.value = slotTime
   } else {
     dragOverSlot.value = null
@@ -692,15 +698,28 @@ const handleDragOver = (slotTime: string) => {
 
 const handleDragLeave = () => { dragOverSlot.value = null }
 
+const reportDragFailure = (error: unknown) => {
+  ElNotification({
+    title: '排期未保存',
+    message: error instanceof Error ? error.message : '本地保存失败，请重试。',
+    type: 'error',
+    position: 'top-right',
+  })
+}
+
 const handleDrop = async (slotTime: string) => {
   try {
+    const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
+    if (targetTask && isCompletedScheduledTask(targetTask)) return
     if (draggedItem.value) {
       if (draggedItem.value.type === 'pending') {
-        await taskStore.scheduleTask(draggedItem.value.idOrTime, slotTime)
-      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.idOrTime !== slotTime) {
-        await taskStore.rescheduleTask(draggedItem.value.idOrTime, slotTime)
+        await taskStore.scheduleTask(draggedItem.value.taskId, slotTime)
+      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.sourceSlotTime && draggedItem.value.sourceSlotTime !== slotTime) {
+        await taskStore.rescheduleTask(draggedItem.value.sourceSlotTime, slotTime)
       }
     }
+  } catch (error) {
+    reportDragFailure(error)
   } finally {
     draggedItem.value = null
     dragOverSlot.value = null
@@ -710,9 +729,11 @@ const handleDrop = async (slotTime: string) => {
 
 const handleDropOnPending = async () => {
   try {
-    if (draggedItem.value?.type === 'scheduled') {
-      await taskStore.unscheduleTask(draggedItem.value.idOrTime)
+    if (draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime) {
+      await taskStore.unscheduleTask(draggedItem.value.sourceSlotTime)
     }
+  } catch (error) {
+    reportDragFailure(error)
   } finally {
     draggedItem.value = null
     dragOverPending.value = false

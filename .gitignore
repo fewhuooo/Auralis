@@ -36,4 +36,18 @@ Auralis-Server/target/
 # Local database / run data
 data/
 
+# Local development caches and generated artifacts
+.pnpm-store/
+.ocr-runtime/
+.tmp-edge-profile*/
+.claude/settings.local.json
+__pycache__/
+build/
+
+# PC/Tauri generated assets and build outputs
+Auralis-PC/public/file-viewer/
+Auralis-PC/src-tauri/target-*/
+Auralis-PC/src-tauri/binaries/*
+!Auralis-PC/src-tauri/binaries/README.md
+
 

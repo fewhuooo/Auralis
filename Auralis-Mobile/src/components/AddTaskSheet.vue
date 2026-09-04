@@ -45,7 +45,7 @@ import { ref, computed, watch } from 'vue'
 
 const props = defineProps<{
   visible: boolean
-  subjects: { id: string, name: string, color: string }[]
+  subjects: { id: string, name: string }[]
 }>()
 
 const emit = defineEmits(['update:visible', 'submit'])
@@ -54,7 +54,6 @@ const form = ref({
   name: '',
   subjectId: '',
   subjectName: '',
-  subjectColor: '',
   duration: 30,
   load: 'medium' as 'low' | 'medium' | 'high'
 })
@@ -68,7 +67,6 @@ watch(() => props.visible, (val) => {
     if (props.subjects.length > 0 && !form.value.subjectId) {
       form.value.subjectId = props.subjects[0].id
       form.value.subjectName = props.subjects[0].name
-      form.value.subjectColor = props.subjects[0].color
     }
   }
 })
@@ -83,7 +81,6 @@ const onSubjectChange = (e: any) => {
   if (subj) {
     form.value.subjectId = subj.id
     form.value.subjectName = subj.name
-    form.value.subjectColor = subj.color
   }
 }
 
@@ -100,7 +97,6 @@ const submit = () => {
     name: form.value.name,
     subjectId: form.value.subjectId,
     subject: form.value.subjectName,
-    color: form.value.subjectColor,
     duration: form.value.duration,
     load: form.value.load,
     loadText: loadTextMap[form.value.load]

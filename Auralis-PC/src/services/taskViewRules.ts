@@ -14,6 +14,39 @@ export function isCompletedTask(task: Pick<Task, 'status'>): boolean {
   return task.status === 'completed'
 }
 
+export function isCompletedScheduledTask(task: TaskStatusFields): boolean {
+  return task.status === 'completed' && Boolean(task.scheduledAt)
+}
+
+function isActionableTask(task: TaskStatusFields): boolean {
+  return task.status !== 'completed' && task.status !== 'cancelled'
+}
+
+export function isScheduledTaskPast(task: TaskStatusFields, now = new Date()): boolean {
+  const scheduledTimestamp = task.scheduledAt ? Date.parse(task.scheduledAt) : Number.NaN
+  return isActionableTask(task)
+    && Boolean(task.scheduledAt)
+    && Number.isFinite(scheduledTimestamp)
+    && scheduledTimestamp < now.getTime()
+}
+
+export function isUnscheduledTaskPastDue(task: TaskStatusFields, now = new Date()): boolean {
+  const dueTimestamp = task.dueAt ? Date.parse(task.dueAt) : Number.NaN
+  return isActionableTask(task)
+    && !task.scheduledAt
+    && Number.isFinite(dueTimestamp)
+    && dueTimestamp < now.getTime()
+}
+
+export function isScheduledAtInPast(value: string | undefined, now = new Date()): boolean {
+  const scheduledTimestamp = value ? Date.parse(value) : Number.NaN
+  return Number.isFinite(scheduledTimestamp) && scheduledTimestamp < now.getTime()
+}
+
+export function isOverdueTask(task: TaskStatusFields, now = new Date()): boolean {
+  return isScheduledTaskPast(task, now) || isUnscheduledTaskPastDue(task, now)
+}
+
 export function isSchedulableTask(task: TaskStatusFields): boolean {
   const dueTimestamp = task.dueAt ? Date.parse(task.dueAt) : Number.NaN
   return task.status !== 'completed'

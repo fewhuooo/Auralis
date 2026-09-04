@@ -7,9 +7,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.UUID;
-
-import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -23,9 +20,7 @@ class RealtimeControllerTests {
 
     @Test
     void ticketRouteRequiresAuthentication() throws Exception {
-        mockMvc.perform(post("/api/realtime/ticket")
-                        .contentType(APPLICATION_JSON)
-                        .content("{\"deviceId\":\"" + UUID.randomUUID() + "\"}"))
+        mockMvc.perform(post("/api/realtime/ticket"))
                 .andExpect(status().isUnauthorized());
     }
 }

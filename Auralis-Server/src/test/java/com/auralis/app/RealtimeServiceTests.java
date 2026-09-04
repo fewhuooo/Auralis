@@ -44,7 +44,7 @@ class RealtimeServiceTests {
                 "Realtime owner", new DeviceCommand("realtime-device", "Test", DevicePlatform.WEB));
         UUID userId = owner.user().id();
         UUID otherUserId = UUID.randomUUID();
-        String rawTicket = realtimeService.issue(userId, owner.deviceId()).ticket();
+        String rawTicket = realtimeService.issue(userId, owner.serverDeviceId()).ticket();
 
         assertThatThrownBy(() -> realtimeService.consume(otherUserId, rawTicket))
                 .isInstanceOf(RuntimeException.class);
@@ -83,7 +83,7 @@ class RealtimeServiceTests {
 
         try {
             var subject = subjectService.create(owner.user().id(), new SubjectCommand(
-                    "Realtime subject", null, null, null, "001"));
+                    "Realtime subject", null, null, "001"));
 
             assertThat(events).anySatisfy(event -> {
                 assertThat(event.type()).isEqualTo(RealtimeEventType.SYNC_CHANGED);

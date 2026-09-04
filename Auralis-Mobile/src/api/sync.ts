@@ -39,7 +39,7 @@ export async function connectRealtimeSync() {
   explicitlyDisconnected = false
   try {
     const auth = useAuthStore()
-    const ticket = await realtimeApi.issueTicket(auth.deviceId)
+    const ticket = await realtimeApi.issueTicket()
     if (!ticket.ticket && !ticket.websocketUrl) throw new Error('Realtime ticket response is incomplete')
     const path = ticket.websocketUrl || `/ws/events?ticket=${encodeURIComponent(ticket.ticket!)}`
     const url = resolveWebsocketUrl(path, getRuntimeConfig())

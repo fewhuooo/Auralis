@@ -32,13 +32,13 @@ public class RealtimeService {
     }
 
     @Transactional
-    public RealtimeTicket issue(UUID userId, UUID deviceId) {
-        identityService.requireActiveDevice(userId, deviceId);
+    public RealtimeTicket issue(UUID userId, UUID serverDeviceId) {
+        identityService.requireActiveDevice(userId, serverDeviceId);
         byte[] rawBytes = new byte[32];
         secureRandom.nextBytes(rawBytes);
         String raw = Base64.getUrlEncoder().withoutPadding().encodeToString(rawBytes);
         Instant expiresAt = clock.instant().plus(TICKET_TTL);
-        ticketRepository.save(new RealtimeTicketEntity(UUID.randomUUID(), userId, deviceId, hash(raw), expiresAt));
+        ticketRepository.save(new RealtimeTicketEntity(UUID.randomUUID(), userId, serverDeviceId, hash(raw), expiresAt));
         return new RealtimeTicket(raw, expiresAt, "/ws/events?ticket=" + raw);
     }
 
@@ -55,7 +55,7 @@ public class RealtimeService {
         }
         ticket.consume(now);
         ticketRepository.saveAndFlush(ticket);
-        return new RealtimeSubscription(ticket.getUserId(), ticket.getDeviceId());
+        return new RealtimeSubscription(ticket.getUserId(), ticket.getServerDeviceId());
     }
 
     @Transactional

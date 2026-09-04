@@ -1,7 +1,7 @@
 package com.auralis.app.review;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.review.internal.persistence.ReviewEventEntity;
 import com.auralis.app.review.internal.persistence.ReviewEventRepository;
@@ -191,7 +191,7 @@ public class ReviewService {
         }
         try {
             return objectMapper.writeValueAsString(state);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DomainException("INTERNAL_ERROR", "Review state snapshot could not be serialized");
         }
     }
@@ -202,7 +202,7 @@ public class ReviewService {
         }
         try {
             return objectMapper.readValue(event.getAfterState(), ReviewStateView.class);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             return stateRepository.findByUserIdAndKnowledgeBlockId(userId, event.getKnowledgeBlockId())
                     .map(this::view)
                     .orElse(null);

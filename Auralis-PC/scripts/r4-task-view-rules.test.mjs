@@ -7,6 +7,10 @@ const {
   getTimelineRange,
   getTasksForTimeline,
   isSchedulableTask,
+  isOverdueTask,
+  isScheduledAtInPast,
+  isScheduledTaskPast,
+  isUnscheduledTaskPastDue,
 } = await import('../src/services/taskViewRules.ts')
 
 const task = (overrides = {}) => ({
@@ -45,11 +49,72 @@ test('sorts deadline-bearing groups by dueAt and keeps missing deadlines last', 
   assert.deepEqual(groups.unassigned.map((item) => item.id), ['unassigned'])
 })
 
-test('only deadline-bearing unscheduled tasks enter the scheduling queue', () => {
-  assert.equal(isSchedulableTask(task({ dueAt: '2026-08-23T00:00:00Z' })), true)
+test('only deadline-bearing unscheduled tasks enter the scheduling queue, including overdue unscheduled tasks', () => {
+  assert.equal(isSchedulableTask(task({ dueAt: '2026-09-23T00:00:00Z' })), true)
+  assert.equal(isSchedulableTask(task({ dueAt: '2026-08-01T00:00:00Z' })), true)
   assert.equal(isSchedulableTask(task()), false)
-  assert.equal(isSchedulableTask(task({ dueAt: '2026-08-23T00:00:00Z', scheduledAt: '2026-08-22T12:00:00Z' })), false)
-  assert.equal(isSchedulableTask(task({ status: 'completed', dueAt: '2026-08-23T00:00:00Z' })), false)
+  assert.equal(isSchedulableTask(task({ dueAt: '2026-09-23T00:00:00Z', scheduledAt: '2026-09-22T12:00:00Z' })), false)
+  assert.equal(isSchedulableTask(task({ dueAt: '2026-08-01T00:00:00Z', scheduledAt: '2026-08-01T09:00:00Z' })), false)
+  assert.equal(isSchedulableTask(task({ status: 'completed', dueAt: '2026-09-23T00:00:00Z' })), false)
+  assert.equal(isSchedulableTask(task({ status: 'completed', dueAt: '2026-08-01T00:00:00Z' })), false)
+  assert.equal(isSchedulableTask(task({ status: 'cancelled', dueAt: '2026-08-01T00:00:00Z' })), false)
+})
+
+test('separates elapsed timeline tasks from overdue unscheduled tasks', () => {
+  const now = new Date('2026-08-22T10:00:00+08:00')
+  const elapsedTimelineTask = task({ id: 'elapsed-timeline', dueAt: '2026-08-23T00:00:00Z', scheduledAt: '2026-08-22T09:00:00+08:00' })
+  const futureTimelineTaskWithPastDeadline = task({ id: 'future-timeline', dueAt: '2026-08-21T00:00:00Z', scheduledAt: '2026-08-22T12:00:00+08:00' })
+  const overdueUnscheduledTask = task({ id: 'overdue-unassigned', dueAt: '2026-08-21T00:00:00Z' })
+
+  assert.equal(typeof isScheduledTaskPast, 'function')
+  assert.equal(typeof isUnscheduledTaskPastDue, 'function')
+  assert.equal(isScheduledTaskPast(elapsedTimelineTask, now), true)
+  assert.equal(isScheduledTaskPast(futureTimelineTaskWithPastDeadline, now), false)
+  assert.equal(isUnscheduledTaskPastDue(overdueUnscheduledTask, now), true)
+  assert.equal(isUnscheduledTaskPastDue(elapsedTimelineTask, now), false)
+})
+
+test('marks an unfinished scheduled task overdue after its scheduled time passes', () => {
+  const now = new Date('2026-08-22T10:00:00+08:00')
+
+  assert.equal(isOverdueTask(task({
+    id: 'past-start-future-deadline',
+    scheduledAt: '2026-08-22T09:00:00+08:00',
+    dueAt: '2026-08-23T00:00:00Z',
+  }), now), true)
+  assert.equal(isOverdueTask(task({
+    id: 'past-start-no-deadline',
+    scheduledAt: '2026-08-22T09:00:00+08:00',
+  }), now), true)
+  assert.equal(isOverdueTask(task({
+    id: 'unassigned-past-deadline',
+    dueAt: '2026-08-21T00:00:00Z',
+  }), now), true)
+  assert.equal(isOverdueTask(task({
+    id: 'future-start-past-deadline',
+    scheduledAt: '2026-08-22T12:00:00+08:00',
+    dueAt: '2026-08-21T00:00:00Z',
+  }), now), false)
+  assert.equal(isOverdueTask(task({
+    id: 'completed-past-start',
+    status: 'completed',
+    scheduledAt: '2026-08-22T09:00:00+08:00',
+  }), now), false)
+  assert.equal(isOverdueTask(task({
+    id: 'cancelled-past-start',
+    status: 'cancelled',
+    scheduledAt: '2026-08-22T09:00:00+08:00',
+  }), now), false)
+})
+
+test('identifies only valid scheduled instants strictly before the supplied clock as past', () => {
+  const now = new Date('2026-08-31T10:15:00.000Z')
+
+  assert.equal(isScheduledAtInPast('2026-08-31T10:14:59.999Z', now), true)
+  assert.equal(isScheduledAtInPast('2026-08-31T10:15:00.000Z', now), false)
+  assert.equal(isScheduledAtInPast('2026-08-31T10:30:00.000Z', now), false)
+  assert.equal(isScheduledAtInPast(undefined, now), false)
+  assert.equal(isScheduledAtInPast('not-a-date', now), false)
 })
 
 test('creates a seven-day timeline window matching the full calendar week', () => {

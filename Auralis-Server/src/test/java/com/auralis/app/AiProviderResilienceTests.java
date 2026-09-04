@@ -1,6 +1,6 @@
 package com.auralis.app;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderType;

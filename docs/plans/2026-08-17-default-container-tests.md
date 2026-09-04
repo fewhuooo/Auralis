@@ -1,7 +1,5 @@
 # Default Container Tests Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Make ordinary `mvn -B -ntp clean test` execute the PostgreSQL/pgvector and MinIO Testcontainers instead of silently skipping them.
 
 **Architecture:** Keep the existing `@EnabledIfSystemProperty` guards and profile names for backward compatibility, but set both guard properties in the base Surefire configuration. Docker availability therefore becomes a required prerequisite for the ordinary test command, and a missing Docker engine fails the build instead of producing skipped integration tests.

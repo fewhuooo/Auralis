@@ -9,7 +9,6 @@ export type SubjectView = Pick<
 > & {
   name?: string
   iconKey?: string
-  color?: string
   sortKey?: string
   defaultSubject?: boolean
 }
@@ -19,7 +18,6 @@ export interface SubjectCreateRequest {
   name: string
   description?: string
   iconKey?: string
-  color?: string
   sortKey?: string
 }
 

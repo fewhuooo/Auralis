@@ -161,7 +161,7 @@ class IdentityServiceTests {
 
         assertThat(jwt.getSubject()).isEqualTo(result.user().id().toString());
         assertThat(jwt.getClaimAsString("sid")).isEqualTo(result.sessionId().toString());
-        assertThat(jwt.getClaimAsString("did")).isEqualTo(result.deviceId().toString());
+        assertThat(jwt.getClaimAsString("serverDeviceId")).isEqualTo(result.serverDeviceId().toString());
         assertThat(jwt.getClaimAsString("typ")).isEqualTo("access");
         assertThat(jwt.getClaims()).doesNotContainKeys("passwordHash", "refreshToken", "tokenHash");
     }

@@ -1,10 +1,17 @@
+export interface ApiFieldError {
+  field?: string;
+  message?: string;
+}
+
 export interface ApiProblemDetails {
   type?: string;
   title: string;
   status: number;
   detail?: string;
   instance?: string;
-  errors?: Record<string, string[]>;
+  code?: string;
+  traceId?: string;
+  fieldErrors?: ApiFieldError[];
   [key: string]: unknown;
 }
 

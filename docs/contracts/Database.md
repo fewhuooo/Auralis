@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-26
+更新时间：2026-08-29
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -14,7 +14,7 @@
 | --- | --- | --- |
 | PostgreSQL 17 + pgvector | 用户、业务资源、同步日志、任务、事件、RAG chunk 和向量 | V1–V14 已创建；默认容器集成已验证 |
 | MinIO | Asset 物理对象内容 | 设计已确定，阶段 2/5 接入 |
-| PC/Mobile 本地数据库 | 用户按 userId 分区的离线副本 | PC 使用 v2 repository/schema；Mobile 按 userId/deviceId 使用独立 H5/SQLite namespace |
+| PC/Mobile 本地数据库 | 用户按 userId 分区的离线副本 | PC 使用 v2 repository/schema；Mobile 按 userId/serverDeviceId 使用独立 H5/SQLite namespace |
 | Tablet 本地笔记存储 | NoteDocument、stroke、snapshot、viewport 等端侧专有内容 | 不进入阶段 0 Server |
 | Redis、Milvus、etcd | 旧栈组件 | 不属于新后端目标拓扑 |
 
@@ -39,7 +39,7 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | --- | --- | --- |
 | users | 用户账号 | normalized_username 唯一，status 索引 |
 | refresh_sessions | refresh token rotation 链和设备会话 | token_hash 唯一；user、expiry、revoked 索引 |
-| devices | 离线设备和同步状态 | user_id + device_id 唯一 |
+| devices | 离线设备和同步状态 | user_id + device_id（语义为 clientDeviceKey）唯一 |
 | subjects | 用户学科；兼容历史默认标记 | 活跃记录按用户名称唯一（服务校验）；`is_default` 仅保留历史兼容语义，不阻止软删除 |
 | assets | MinIO 物理对象元数据 | user_id + object_key 唯一；status 索引 |
 | sources | 用户可见逻辑来源 | user、subject、status、updated 索引 |
@@ -50,7 +50,7 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | review_states | 每个知识块当前复习状态 | knowledge_block_id 唯一；user/due 索引 |
 | review_events | 不可变复习历史 | user_id + client_event_id 唯一 |
 | change_log | 用户增量同步日志 | 用户域内递增 BIGINT cursor；user_id + cursor 索引 |
-| inbound_mutations | push 幂等结果 | user_id + device_id + client_mutation_id 唯一 |
+| inbound_mutations | push 幂等结果 | user_id + device_id（语义为 serverDeviceId）+ client_mutation_id 唯一 |
 | domain_event_outbox | 数据库事件 | status/available_at 索引；幂等消费 |
 | ingestion_jobs | 文档解析与索引任务 | status/available_at/lease 索引 |
 | source_chunks | RAG 文本块和向量 | user/source/generation/ordinal 唯一；active generation 查询索引；PostgreSQL vector(1024) HNSW 索引 |
@@ -65,8 +65,8 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 | 表 | 已实现字段和约束 |
 | --- | --- |
 | `users` | `id UUID` 主键、`username`、唯一 `normalized_username`、`password_hash`、`display_name`、`avatar_url`、`status`（ACTIVE/DISABLED CHECK）、`version BIGINT`、`created_at/updated_at TIMESTAMPTZ` |
-| `devices` | `id UUID` 主键、`user_id UUID` 引用 `users`、`device_id`、`name`、`platform`、`last_active_at`、`last_pull_cursor`、`revoked_at`、`version`、审计时间；`(user_id, device_id)` 唯一 |
-| `refresh_sessions` | `id UUID` 主键、`user_id`/`device_id` 外键、`rotation_family_id`、唯一 `token_hash`、`created_at`、`expires_at`、`last_used_at`、`rotated_at`、`revoked_at`、自引用 `replaced_by_session_id` |
+| `devices` | `id UUID` 主键、`user_id UUID` 引用 `users`、`device_id`（clientDeviceKey）、`name`、`platform`、`last_active_at`、`last_pull_cursor`、`revoked_at`、`version`、审计时间；`(user_id, device_id)` 唯一 |
+| `refresh_sessions` | `id UUID` 主键、`user_id`/`device_id`（serverDeviceId）外键、`rotation_family_id`、唯一 `token_hash`、`created_at`、`expires_at`、`last_used_at`、`rotated_at`、`revoked_at`、自引用 `replaced_by_session_id` |
 
 三张表均使用 `ON DELETE RESTRICT` 的归属外键；V1 为 owner、expiry、revocation、rotation family 和 token hash 建立查询索引。JPA Entity 使用 `Instant`、UUID、字符串枚举和 `@Version` 映射，Repository 查询包含当前 `userId` 的方法不省略归属条件。
 
@@ -74,9 +74,9 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 
 Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。
 
-- `subjects` 保存 `name`、`description`、`icon_key`、`color`、`sort_key`、`is_default`；新用户注册不自动创建 Subject，列表可以为空。历史遗留的“未分类”记录仍保留 `is_default=true` 以兼容读取，但可按普通 Subject 软删除。名称唯一和恢复占用冲突由 SubjectService 校验。
+- `subjects` 保存 `name`、`description`、`icon_key`、`sort_key`、`is_default`；新用户注册不自动创建 Subject，列表可以为空。历史遗留的“未分类”记录仍保留 `is_default=true` 以兼容读取，但可按普通 Subject 软删除。名称唯一和恢复占用冲突由 SubjectService 校验。Flyway `V19__remove_subject_color.sql` 删除历史遗留的 `color` 列，仅丢弃该列值，不影响 Subject 行或其他资源。
 - `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
-- `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`cognitive_load`、`sort_key`、`color_override`；数据库 CHECK 与服务同时约束状态、认知负荷、非负时长和排期顺序。
+- `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`cognitive_load`、`sort_key`、`color_override`；数据库 CHECK 与服务同时约束状态、认知负荷、非负时长和排期顺序。`V18__restore_task_schedule_order.sql` 会先把历史 `due_at < scheduled_at` 行的 `scheduled_at` 清空，再恢复该 CHECK；客户端按当前时间将 `due_at` 或 `scheduled_at` 已过且未完成/取消的任务回归未排期，不能以放宽字段顺序约束替代。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
 
 ## 阶段 2B Source、Asset、Relation V3 已实现 schema
@@ -116,7 +116,7 @@ V5 同时将 change log、inbound mutation 的 owner 外键改为级联删除，
 
 ### Subject
 
-保存 name、description、iconKey、color、sortKey 和共同字段。新用户注册不自动创建学科，历史遗留的未分类学科可以软删除；Source、KnowledgeBlock、Task 必须归属 Subject。
+保存 name、description、iconKey、sortKey 和共同字段。Subject 不保存专属颜色；新用户注册不自动创建学科，历史遗留的未分类学科可以软删除；Source、KnowledgeBlock、Task 必须归属 Subject。
 
 ### Asset 与 Source
 
@@ -161,8 +161,8 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 
 `Auralis-PC/src/services/localSchema.ts` 与 `localRepository.ts` 定义了新的端侧 v2 边界：
 
-- Tauri SQLite 使用 `sync_metadata(user_id, device_id, cursor, reset_required, schema_version)`、`local_resource_records(user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)` 和 `local_mutations(client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version, payload, status, created_at, error)`；资源主键、mutation 主键 `(user_id, client_mutation_id)` 和查询均包含当前用户域。
-- 浏览器 fallback 使用 `auralis:v2:<userId>:<deviceId>:state` namespace，业务记录、tombstone、mutation 和 cursor 不再写入新的全局未命名业务 key。`localDb.ts` 中的旧全局 key/字段仅作为尚未迁移 Store 的兼容 facade，Task 7/8 完成后应移除。
+- Tauri SQLite 使用 `sync_metadata(user_id, device_id, cursor, reset_required, schema_version)`、`local_resource_records(user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)` 和 `local_mutations(client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version, payload, status, created_at, error)`；其中本地 `device_id` 列语义为 `serverDeviceId`，资源主键、mutation 主键 `(user_id, client_mutation_id)` 和查询均包含当前用户域。
+- 浏览器 fallback 使用 `auralis:v2:<userId>:<serverDeviceId>:state` namespace，业务记录、tombstone、mutation 和 cursor 不再写入新的全局未命名业务 key。
 - repository 对外返回 camelCase `LocalEntity`/`LocalMutation` DTO；snake_case 只存在于 SQLite adapter。`baseVersion` 不匹配返回 `LocalConflictError`，删除保留 `deletedAt` tombstone，snapshot reset 会保留当前用户所有 pending mutation 及其本地 payload。
 - 旧 account-less localStorage 数据仅复制到 `auralis:legacy_unassigned:v1` 备份空间；Tauri 旧 SQLite 资源行复制到 `legacy_unassigned_records`，均保留原值。首次登录必须由用户明确选择“导入当前账号”或“保留未归属备份”，不得静默归属或删除。
 
@@ -170,12 +170,12 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 
 ### PC R4-07 文档处理任务（本地 schema v5，2026-08-24）
 
-PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_processing_jobs` 表并将 `ingestion_revision` 对齐为服务端 UUID 文本；旧 v3 数字 revision 会先复制到 `legacy_document_processing_jobs_v3*` 再迁移，不删除原行，v4 任务追加 `payload_receipt_json` 列。该表不进入 `local_resource_records`、`local_mutations` 或同步 change log。每个任务按 `(user_id, device_id, source_id, ingestion_revision)` 唯一，查询始终带当前用户和设备边界。
+PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_processing_jobs` 表并将 `ingestion_revision` 对齐为服务端 UUID 文本；旧 v3 数字 revision 会先复制到 `legacy_document_processing_jobs_v3*` 再迁移，不删除原行，v4 任务追加 `payload_receipt_json` 列。该表不进入 `local_resource_records`、`local_mutations` 或同步 change log。每个任务按 `(user_id, device_id, source_id, ingestion_revision)` 唯一，其中 `device_id` 语义为 `serverDeviceId`，查询始终带当前用户和设备边界。
 
 | 字段 | 语义 |
 | --- | --- |
 | `job_id` | 客户端任务稳定 ID，主键 |
-| `user_id` / `device_id` | 本地副本隔离边界 |
+| `user_id` / `device_id`（serverDeviceId） | 本地副本隔离边界 |
 | `source_id` / `ingestion_revision` | Source 版本去重键，revision 为非空服务端 UUID 文本 |
 | `phase` | `QUEUED`、`DOWNLOADING_SOURCE`、`EXTRACTING`、`OCR_RUNNING`、`PACKAGING`、`UPLOADING`、`SERVER_VALIDATING`、`SERVER_INDEXING`、`READY`、`FAILED_LOCAL`、`FAILED_SERVER`、`PAUSED_NETWORK` |
 | `attempt` | 自动/人工重试次数，非负 |
@@ -183,12 +183,12 @@ PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_proce
 | `payload_cache_id` / `payload_receipt_json` | 加密 payload cache 标识及可恢复上传所需的非敏感 receipt 元数据；不含正文、签名 URL 或 headers |
 | `error_code` / `error_detail` | 安全失败摘要 |
 
-浏览器 fallback 使用 `auralis:v5:document-jobs:<user>:<device>` 独立 namespace，并从 v4/v3 namespace 复制任务；任务不复用业务资源 JSON。v5 migration、数字 revision 保留迁移、receipt round-trip、状态机和 SQLite/浏览器 repository 已有定向自动测试，真实 Tauri SQLite 升级仍需 R2 验收。
+浏览器 fallback 使用 `auralis:v5:document-jobs:<user>:<serverDeviceId>` 独立 namespace，并从 v4/v3 namespace 复制任务；任务不复用业务资源 JSON。v5 migration、数字 revision 迁移、receipt round-trip、状态机和 SQLite/浏览器 repository 已有定向自动测试，真实 Tauri SQLite 升级仍需 R2 验收。
 
 ### Mobile R4 本地副本边界（2026-08-20）
 
-- `localDataScope.ts` 将当前 `userId:deviceId` 映射为稳定 scope；H5 表键为 `auralis:local:<scope>:<table>`，原生 SQLite 使用 `_doc/auralis_<scope>.db`，Pomodoro 今日计数使用同一 scope 前缀，切换账号不会打开另一账号的活动副本。
-- 本地 mutation 使用独立 `clientMutationId`，push 映射到冻结的 `resourceType/mutationType/baseVersion/payload`；cursor 元数据带 userId/deviceId，冲突或拒绝结果保留 pending mutation。`resetRequired` 先取得完整 snapshot，再为同一用户/设备切换到新的 reset generation scope 并重建，旧一代不在中途删除。
+- `localDataScope.ts` 将当前 `userId:serverDeviceId` 映射为稳定 scope；H5 表键为 `auralis:local:<scope>:<table>`，原生 SQLite 使用 `_doc/auralis_<scope>.db`，Pomodoro 今日计数使用同一 scope 前缀，切换账号不会打开另一账号的活动副本。
+- 本地 mutation 使用独立 `clientMutationId`，push 映射到冻结的 `resourceType/mutationType/baseVersion/payload`；cursor 元数据带 userId/serverDeviceId，冲突或拒绝结果保留 pending mutation。`resetRequired` 先取得完整 snapshot，再为同一用户/设备切换到新的 reset generation scope 并重建，旧一代不在中途删除。
 - 用户已明确授权删除旧库；`legacyDataPurge.ts` 在认证会话建立后一次性移除旧 H5 `h5_db_*` 业务键，或删除旧 `_doc/auralis.db` 内的业务表，并写入完成标记。新隔离库和 Tablet feature-flag 本地笔记边界不因该清理扩大到云同步。
 - 自动证据覆盖 scope 隔离、协议映射、静态旧协议扫描与双构建；真实原生 SQLite 升级、双账号/双设备、冲突选择和 snapshot reset 仍需设备联调。
 
@@ -223,7 +223,7 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 ## PC Tauri ParsedDocument 目标数据契约（2026-08-23，2026-08-24 复核修订，V15/S1–S6 已实现，联调与验收待完成）
 
-本节登记 V15 迁移及 S1–S6、C4/C5 已落地的数据行为；真实 PostgreSQL 升级复核和人工业务验收仍待完成。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+本节登记 V15 迁移及 S1–S6、C4/C5 已落地的数据行为；真实 PostgreSQL 升级复核和人工业务验收仍待完成。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../design/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
 - `sources` 新增服务端生成的 `ingestion_revision UUID`。FILE Source 创建、Asset 替换或需要重新端侧解析时轮换 revision；普通重新分块/Embedding 复用当前 revision 和最新兼容 ParsedDocument。Source DTO/同步快照只读暴露该值，客户端 mutation 不能覆盖。
 - 新增非同步派生表 `parsed_documents`，保存 `id`、`user_id`、`source_id`、`ingestion_revision`、当前 Asset SHA-256、schema/parser/normalization/OCR model 版本、私有 object key、payload SHA-256、size、status、ingestion generation、`object_deleted_at`、创建和接收时间。状态至少为 `UPLOADING`、`VALIDATING`、`ACCEPTED`、`REJECTED`、`SUPERSEDED`；该表不进入 change log、snapshot 或普通客户端 mutation。
@@ -235,6 +235,6 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - 同 revision 重放产生的多余对象、`REJECTED` 和超时 `UPLOADING` 对象必须由清理任务删除；新 revision READY 后旧对象删除并写 `object_deleted_at`，`SUPERSEDED` 元数据至少保留 30 天后再清理。
 - `conversations` 目标新增 `purpose`（`GENERAL`/`READING_SESSION`）和可空 `source_id`；省略 purpose 时为 `GENERAL`，普通列表排除阅读会话，超过 24 小时无活动的阅读会话可由清理任务软删除，普通会话不受影响。
 - V16 已落地 `conversations.purpose/source_id`、约束、Source 外键和 owner/source/cleanup 索引；`ConversationService` 校验阅读会话必须绑定当前 Source，普通会话不接受 sourceId，普通列表排除 `READING_SESSION`。`ReadingConversationCleanupService` 对超过 24 小时未活动的阅读会话执行软删除。
-- PC 本地新增按 `userId:deviceId` 隔离的 `document_processing_jobs` 元数据，并保存 `ingestion_revision`。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文使用现有 OS keyring 主密钥派生的分块 AES-256-GCM envelope 临时保存，AAD 绑定 user/device/source/job/revision/schema。服务端确认接收、退出登录、Source 删除或 Asset 替换后清理；不新增第二套独立 DPAPI 密钥。
+- PC 本地新增按 `userId:serverDeviceId` 隔离的 `document_processing_jobs` 元数据，并保存 `ingestion_revision`。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文使用现有 OS keyring 主密钥派生的分块 AES-256-GCM envelope 临时保存，AAD 绑定 user/serverDevice/source/job/revision/schema。服务端确认接收、退出登录、Source 删除或 Asset 替换后清理；不新增第二套独立 DPAPI 密钥。
 
 S1 已通过追加式 `V15__tauri_parsed_document_schema.sql` 落地上述数据库边界：`sources.ingestion_revision` 为服务端只读 UUID（历史行以 Source id 稳定回填，默认零 UUID 仅用于兼容尚未切换的旧写入路径）；`parsed_documents` 保存 schema/parser/normalization/OCR model、Asset/payload/plain-text SHA、对象 key、状态、generation 和生命周期时间；`ingestion_jobs` 增加可空 `parsed_document_id` 与 `ingestion_revision`。`parsed_documents` 没有 change log、snapshot 或 inbound mutation 外键。S2 已让 SourceEntity/SourceView 只读承载该 revision，并按 FILE/TEXT/URL 分流状态和事件；S3 已实现 owner-scoped upload-intent 与 `UPLOADING` 元数据落库，私有 object key 不由客户端提供；S4 已加入服务端有界流式 payload 校验和 legacy Asset 空 SHA 的条件回填；S5 已在 Source 行锁内实现 complete 首胜、同 payload 幂等、冲突/过期拒绝和唯一 revision indexing job 关联；S6 已完成 accepted ParsedDocument block reader、generation/revision 旧任务隔离、兼容 reingest 复用、旧 revision `SUPERSEDED` 标记和过期 payload 对象清理，保留 ParsedDocument 审计行。H2 clean/upgrade schema 4/4、Source/Ai ingestion 定向回归 11/11、`ParsedDocumentControllerTests` 3/3、`ParsedDocumentValidatorTests` 4/4、`AssetShaBackfillTests` 2/2、`ParsedDocumentCompleteTests` 3/3、S6 定向 21/21 通过，覆盖 READY FILE 与活动 chunk 保留、旧非 READY FILE 迁移为 `AWAITING_CLIENT`、owner/stale revision/hash/schema/size 校验、gzip bomb/UTF-8/ordinal/hash、并发 SHA 回填、complete 首胜、worker block 索引/revision fencing、generation 失败保护、兼容 reingest 和 cleanup；PostgreSQL upgrade 测试已补充但本机无 Docker，尚未取得容器执行证据。

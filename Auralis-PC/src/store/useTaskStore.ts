@@ -9,11 +9,11 @@ import {
 import { useAuthStore } from '@/store/useAuthStore'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
-import { mapTaskView, type CognitiveLoad, type TaskModel, type TaskStatus } from '@/services/domainMappers'
+import { isCanonicalTaskStatus, mapTaskView, type CognitiveLoad, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
-import { getTasksForTimeline, isSchedulableTask } from '@/services/taskViewRules'
+import { getTasksForTimeline, isCompletedScheduledTask, isSchedulableTask } from '@/services/taskViewRules'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 export type DayCode = typeof DAY_CODES[number]
@@ -131,14 +131,19 @@ function dateForDay(day: DayCode, time: string): Date {
   return date
 }
 
-function scheduledAtFromLegacy(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
+function normalizeScheduledAtForApi(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
   if (!value?.trim()) return undefined
   const trimmed = value.trim()
-  if (trimmed.includes('T')) return trimmed
+  const timestamp = Date.parse(trimmed)
+  if (Number.isFinite(timestamp)) return new Date(timestamp).toISOString()
   const parts = trimmed.split(/\s+/)
   const day = (DAY_CODES as readonly string[]).includes(parts[0]) ? parts[0] as DayCode : fallbackDay
   const time = parts.length > 1 ? parts[1] : parts[0]
   return dateForDay(day, time).toISOString()
+}
+
+function scheduledAtFromLegacy(value: string | undefined, fallbackDay: DayCode = getTodayDayCode()): string | undefined {
+  return normalizeScheduledAtForApi(value, fallbackDay)
 }
 
 function dayCodeForScheduledAt(value?: string): DayCode | undefined {
@@ -164,7 +169,9 @@ function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
 }
 
 function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
-  const scheduledAt = input.startTime !== undefined ? scheduledAtFromLegacy(input.startTime, fallbackDay) : input.scheduledAt
+  const scheduledAt = input.startTime !== undefined
+    ? scheduledAtFromLegacy(input.startTime, fallbackDay)
+    : normalizeScheduledAtForApi(input.scheduledAt, fallbackDay)
   const status = statusFromLegacy(input.status, Boolean(scheduledAt))
   return {
     id: input.id || uuidv7(),
@@ -230,7 +237,7 @@ function createPayload(model: TaskModel): TaskCreateRequest {
     title: model.title,
     description: model.description || undefined,
     status: model.status,
-    scheduledAt: model.scheduledAt,
+    scheduledAt: normalizeScheduledAtForApi(model.scheduledAt),
     dueAt: model.dueAt,
     durationMinutes: model.durationMinutes,
     cognitiveLoad: model.cognitiveLoad,
@@ -243,6 +250,8 @@ function updatePayload(model: TaskModel): TaskUpdateRequest {
   return {
     ...createPayload(model),
     baseVersion: model.version,
+    scheduledAt: normalizeScheduledAtForApi(model.scheduledAt) ?? null,
+    dueAt: model.dueAt ?? null,
   }
 }
 
@@ -250,10 +259,8 @@ function dtoFromLocal(value: unknown): TaskModel | null {
   if (!value || typeof value !== 'object') return null
   const candidate = value as TaskView & TaskInput
   if (typeof candidate.id !== 'string') return null
-  if (typeof candidate.title === 'string' || typeof candidate.status === 'string' && String(candidate.status).toUpperCase() === candidate.status) {
-    return mapTaskView(candidate)
-  }
-  return toTaskModel(candidate)
+  if (!isCanonicalTaskStatus(candidate.status)) return null
+  return mapTaskView(candidate)
 }
 
 const TIMELINE_START_MINUTES = 8 * 60
@@ -297,8 +304,6 @@ export const useTaskStore = defineStore('task', () => {
   const lastError = ref<string | null>(null)
   const selectedDay = ref<string>(getTodayDayCode())
   const timeSlots = ref<TimeSlot[]>(generateTimeSlots())
-  const aiSuggestions = ref<string[]>([])
-  const hasOverload = ref(false)
 
   function updateCurrentSlot(): void {
     const now = new Date()
@@ -315,20 +320,26 @@ export const useTaskStore = defineStore('task', () => {
 
   async function repository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.deviceId) throw new Error('Tasks require an authenticated user and device')
-    return getLocalRepository(authStore.user.id, authStore.deviceId)
+    if (!authStore.user?.id || !authStore.serverDeviceId) throw new Error('Tasks require an authenticated user and device')
+    return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
   function rebuildSchedule(): void {
     updateCurrentSlot()
     const tasks = allTasks.value
-    pendingTasks.value = tasks.filter(isSchedulableTask)
-    timeSlots.value.forEach((slot) => { slot.task = null })
+    // Array.prototype.filter passes an index as its second argument; keep the
+    // view-rule clock parameter explicit so it can never receive that index.
+    pendingTasks.value = tasks.filter((task) => isSchedulableTask(task))
     const scheduled = getTasksForTimeline(tasks)
-    for (const slot of timeSlots.value) {
-      slot.task = scheduled.find((task) => dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value && timelineSlotTimeForScheduledAt(task.scheduledAt) === slot.time) || null
-    }
-    analyzeSchedule()
+    timeSlots.value = timeSlots.value.map((slot) => ({
+      ...slot,
+      task: scheduled.find((task) => dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value && timelineSlotTimeForScheduledAt(task.scheduledAt) === slot.time) || null
+    }))
+  }
+
+  function setSelectedDay(day: string): void {
+    selectedDay.value = day
+    rebuildSchedule()
   }
 
   async function loadLocalTasks(): Promise<Task[]> {
@@ -344,9 +355,8 @@ export const useTaskStore = defineStore('task', () => {
       return local
     } catch (error) {
       lastError.value = error instanceof Error ? error.message : '任务本地缓存加载失败'
-      allTasks.value = []
       rebuildSchedule()
-      return []
+      return allTasks.value
     }
   }
 
@@ -390,15 +400,21 @@ export const useTaskStore = defineStore('task', () => {
   async function fetchTasks(): Promise<Task[]> {
     isLoading.value = true
     lastError.value = null
-    await loadLocalTasks()
     try {
-      return await loadFromApi()
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      lastError.value = error instanceof Error ? error.message : '任务服务不可用，当前使用离线缓存'
+      await loadLocalTasks()
+      void refreshTasks()
       return allTasks.value
     } finally {
       isLoading.value = false
+    }
+  }
+
+  async function refreshTasks(): Promise<void> {
+    try {
+      await loadFromApi()
+    } catch (error) {
+      lastError.value = error instanceof Error ? error.message : '任务服务不可用，当前使用离线缓存'
+      if (!isOfflineTransportFailure(error)) console.warn('[TaskStore] background task refresh failed', error)
     }
   }
 
@@ -410,17 +426,25 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function persistOffline(model: TaskModel, mutationType: 'CREATE' | 'UPDATE' | 'DELETE', payload: Record<string, unknown>): Promise<Task> {
-    const repo = await repository()
-    const view = taskDto(model)
-    await repo.upsert('TASK', model.id, view, {
-      version: model.version,
-      deletedAt: model.deletedAt,
-      syncStatus: 'pending',
-    })
-    await repo.enqueueMutation(clientMutation(model.id, mutationType, model.version, payload))
-    scheduleSync()
     const task = toPresentationTask(model, mutationType === 'CREATE' ? 'pending_create' : mutationType === 'UPDATE' ? 'pending_update' : 'pending_delete')
     replaceInMemory(task)
+
+    void (async () => {
+      try {
+        const repo = await repository()
+        const view = taskDto(model)
+        await repo.upsert('TASK', model.id, view, {
+          version: model.version,
+          deletedAt: model.deletedAt,
+          syncStatus: 'pending',
+        })
+        await repo.enqueueMutation(clientMutation(model.id, mutationType, model.version, payload))
+        scheduleSync()
+      } catch (error) {
+        console.warn('[TaskStore] Failed to persist task offline:', error)
+      }
+    })()
+
     return task
   }
 
@@ -435,11 +459,10 @@ export const useTaskStore = defineStore('task', () => {
   async function updateTaskModel(model: TaskModel): Promise<void> {
     const payload = updatePayload(model)
     try {
-      const view = await useTaskApi.update(model.id, payload)
-      replaceInMemory(await cache(view))
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
       await persistOffline(model, 'UPDATE', payload as unknown as Record<string, unknown>)
+    } catch (error) {
+      lastError.value = error instanceof Error ? error.message : '任务本地保存失败'
+      throw error
     }
   }
 
@@ -453,7 +476,6 @@ export const useTaskStore = defineStore('task', () => {
     const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
     model.version = current.version
     await updateTaskModel(model)
-    await loadLocalTasks()
   }
 
   async function updateTaskDetails(taskId: string, changes: Pick<TaskInput, 'title' | 'description' | 'dueAt' | 'durationMinutes'>): Promise<void> {
@@ -471,7 +493,6 @@ export const useTaskStore = defineStore('task', () => {
     })
     model.version = current.version
     await updateTaskModel(model)
-    await loadLocalTasks()
   }
 
   async function scheduleTask(taskId: string, slotTime: string): Promise<void> {
@@ -479,16 +500,17 @@ export const useTaskStore = defineStore('task', () => {
     if (!task) return
     const slot = timeSlots.value.find((item) => item.time === slotTime)
     if (!slot) return
+    if (slot.task && isCompletedScheduledTask(slot.task)) throw new Error('已完成的排期任务已固定')
     if (slot.task) await unscheduleTask(slotTime)
     const model = toTaskModel({ ...task, status: task.status, startTime: `${selectedDay.value} ${slotTime}` })
     model.version = task.version
     await updateTaskModel(model)
-    await loadLocalTasks()
   }
 
   async function scheduleTaskToDay(taskId: string, day: string): Promise<void> {
     const task = findTask(taskId)
     if (!task) return
+    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
     const occupied = allTasks.value
       .filter((item) => item.id !== taskId && dayCodeForScheduledAt(item.scheduledAt) === day)
       .map((item) => timeForScheduledAt(item.scheduledAt))
@@ -497,13 +519,13 @@ export const useTaskStore = defineStore('task', () => {
     const model = toTaskModel({ ...task, status: task.status, startTime: `${day} ${String(hour).padStart(2, '0')}:00` })
     model.version = task.version
     await updateTaskModel(model)
-    await loadLocalTasks()
   }
 
   async function rescheduleTask(fromSlotTime: string, toSlotTime: string): Promise<void> {
     const from = timeSlots.value.find((slot) => slot.time === fromSlotTime)?.task
     const to = timeSlots.value.find((slot) => slot.time === toSlotTime)?.task
     if (!from) return
+    if (isCompletedScheduledTask(from) || (to && isCompletedScheduledTask(to))) throw new Error('已完成的排期任务已固定')
     if (to) {
       const toModel = toTaskModel({ ...to, status: to.status, startTime: `${selectedDay.value} ${fromSlotTime}` })
       toModel.version = to.version
@@ -512,16 +534,15 @@ export const useTaskStore = defineStore('task', () => {
     const fromModel = toTaskModel({ ...from, status: from.status, startTime: `${selectedDay.value} ${toSlotTime}` })
     fromModel.version = from.version
     await updateTaskModel(fromModel)
-    await loadLocalTasks()
   }
 
   async function unscheduleTask(slotTime: string): Promise<void> {
     const task = timeSlots.value.find((slot) => slot.time === slotTime)?.task
     if (!task) return
+    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
     const model = toTaskModel({ ...task, status: task.status, scheduledAt: undefined, startTime: undefined })
     model.version = task.version
     await updateTaskModel(model)
-    await loadLocalTasks()
   }
 
   async function deleteTask(id: string): Promise<void> {
@@ -542,43 +563,7 @@ export const useTaskStore = defineStore('task', () => {
     rebuildSchedule()
   }
 
-  function analyzeSchedule(): void {
-    aiSuggestions.value = []
-    hasOverload.value = false
-    let continuousHighLoad = 0
-    let totalLoadScore = 0
-    for (const slot of timeSlots.value) {
-      if (!slot.task) {
-        continuousHighLoad = 0
-        continue
-      }
-      if (slot.task.load === 'high') {
-        continuousHighLoad += 1
-        totalLoadScore += 3
-      } else if (slot.task.load === 'medium') {
-        continuousHighLoad = 0
-        totalLoadScore += 2
-      } else {
-        continuousHighLoad = 0
-        totalLoadScore += 1
-      }
-      if (continuousHighLoad >= 2) {
-        aiSuggestions.value.push(`⚠️ 连续的高负荷任务会导致疲劳，建议在【${slot.time}】前后插入休息或低负荷任务。`)
-        continuousHighLoad = 0
-      }
-    }
-    if (totalLoadScore > 12) {
-      hasOverload.value = true
-      const lastScheduled = [...timeSlots.value].reverse().find((slot) => slot.task)
-      if (lastScheduled?.task) aiSuggestions.value.push(`🚨 今日认知负荷 (${totalLoadScore}) 已超出您的历史最佳承受力。建议将【${lastScheduled.task.name}】自动延后。`)
-    }
-    if (aiSuggestions.value.length === 0 && timeSlots.value.some((slot) => slot.task)) aiSuggestions.value.push('✨ 当前排期科学合理，符合您的心流节奏！')
-  }
 
-  async function applyAutoDelay(): Promise<void> {
-    const lastScheduled = [...timeSlots.value].reverse().find((slot) => slot.task)
-    if (lastScheduled) await unscheduleTask(lastScheduled.time)
-  }
 
   const completedCount = computed(() => allTasks.value.filter((task) => task.status === 'completed').length)
   const pendingCount = computed(() => pendingTasks.value.length)
@@ -601,6 +586,7 @@ export const useTaskStore = defineStore('task', () => {
     totalFocusHours,
     loadLocalTasks,
     fetchTasks,
+    setSelectedDay,
     addTask,
     scheduleTask,
     scheduleTaskToDay,
@@ -609,9 +595,5 @@ export const useTaskStore = defineStore('task', () => {
     deleteTask,
     updateTaskStatus,
     updateTaskDetails,
-    aiSuggestions,
-    hasOverload,
-    analyzeSchedule,
-    applyAutoDelay,
   }
 })

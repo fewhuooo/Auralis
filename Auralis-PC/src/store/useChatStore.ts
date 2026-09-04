@@ -110,8 +110,8 @@ function mapMessage(view: MessageView, conversationId: string): ChatMessage | nu
 
 async function currentRepository(): Promise<LocalRepository> {
   const auth = useAuthStore()
-  if (!auth.user?.id || !auth.deviceId) throw new Error('Chat requires an authenticated user and device')
-  return getLocalRepository(auth.user.id, auth.deviceId)
+  if (!auth.user?.id || !auth.serverDeviceId) throw new Error('Chat requires an authenticated user and device')
+  return getLocalRepository(auth.user.id, auth.serverDeviceId)
 }
 
 export const useChatStore = defineStore('chat', () => {

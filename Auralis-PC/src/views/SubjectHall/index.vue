@@ -22,7 +22,6 @@
           v-for="subj in filteredSubjects"
           :key="subj.id"
           class="subject-card"
-          :style="{ '--subj-theme-color': subj.color || '#7D9372' }"
           @click="router.push(`/subject/${subj.id}`)"
         >
           <div class="subject-card-header">
@@ -129,7 +128,7 @@ const handleSaveSubject = async (formData: any) => {
     if (formData.id) {
       await subjectStore.updateSubject(formData)
     } else {
-      const newId = await subjectStore.addSubject(formData.name, formData.description, formData.icon, formData.color)
+      const newId = await subjectStore.addSubject(formData.name, formData.description, formData.icon)
       closeCreateSubject()
       router.push(`/subject/${newId}`)
       return
@@ -263,8 +262,8 @@ html.dark .hall-content {
 }
 
 .subject-card {
-  background: color-mix(in srgb, var(--subj-theme-color) 8%, var(--color-bg-primary));
-  border: 1px solid color-mix(in srgb, var(--subj-theme-color) 15%, var(--border-default));
+  background: color-mix(in srgb, #7D9372 8%, var(--color-bg-primary));
+  border: 1px solid color-mix(in srgb, #7D9372 15%, var(--border-default));
   border-radius: var(--radius-lg);
   padding: 24px;
   cursor: pointer;
@@ -278,13 +277,13 @@ html.dark .hall-content {
 }
 
 html.dark .subject-card {
-  background: color-mix(in srgb, var(--subj-theme-color) 12%, var(--color-bg-secondary));
-  border-color: color-mix(in srgb, var(--subj-theme-color) 20%, var(--border-subtle));
+  background: color-mix(in srgb, #7D9372 12%, var(--color-bg-secondary));
+  border-color: color-mix(in srgb, #7D9372 20%, var(--border-subtle));
 }
 
 .subject-card:hover {
   transform: translateY(-4px);
-  border-color: var(--subj-theme-color);
+  border-color: #7D9372;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
 }
 
@@ -303,11 +302,11 @@ html.dark .subject-card {
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  background: color-mix(in srgb, var(--subj-theme-color) 20%, var(--color-bg-primary));
+  background: color-mix(in srgb, #7D9372 20%, var(--color-bg-primary));
 }
 
 html.dark .subject-card-icon {
-  background: color-mix(in srgb, var(--subj-theme-color) 25%, var(--color-bg-secondary));
+  background: color-mix(in srgb, #7D9372 25%, var(--color-bg-secondary));
 }
 
 .subject-card-actions {

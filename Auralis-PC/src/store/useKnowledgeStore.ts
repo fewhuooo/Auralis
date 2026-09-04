@@ -26,8 +26,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function repository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.deviceId) throw new Error('Knowledge blocks require an authenticated user and device')
-    return getLocalRepository(authStore.user.id, authStore.deviceId)
+    if (!authStore.user?.id || !authStore.serverDeviceId) throw new Error('Knowledge blocks require an authenticated user and device')
+    return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
   async function cache(view: KnowledgeBlockView, syncStatus: 'synced' | 'pending' | 'conflict' | 'error' = 'synced'): Promise<KnowledgeBlockModel> {
@@ -49,9 +49,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       .map(mapKnowledgeBlockView)
   }
 
-  async function fetchBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {
-    isLoading.value = true
-    lastError.value = null
+  async function refreshBlocks(subjectId?: string): Promise<void> {
     try {
       const loaded: KnowledgeBlockModel[] = []
       let cursor: string | undefined
@@ -73,12 +71,19 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         .map(mapKnowledgeBlockView)
       const merged = [...loaded, ...pending.filter((item) => !loaded.some((loadedItem) => loadedItem.id === item.id))]
       recentBlocks.value = merged
-      return merged
     } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '知识块加载失败，当前使用离线缓存'
+      if (!isOfflineTransportFailure(error)) console.warn('[KnowledgeStore] background block refresh failed', error)
+    }
+  }
+
+  async function fetchBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {
+    isLoading.value = true
+    lastError.value = null
+    try {
       const local = await localBlocks(subjectId)
       recentBlocks.value = local
+      void refreshBlocks(subjectId)
       return local
     } finally {
       isLoading.value = false
@@ -138,48 +143,41 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
       tags: block.tags,
       colorOverride: block.color,
     }
-    try {
-      const view = await useKnowledgeApi.update(block.id, payload)
-      const model = await cache(view)
-      recentBlocks.value = recentBlocks.value.map((item) => item.id === model.id ? model : item)
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      const repo = await repository()
-      await repo.upsert('KNOWLEDGE_BLOCK', block.id, payload, { version: block.version, syncStatus: 'pending' })
-      await repo.enqueueMutation(createStableMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'KNOWLEDGE_BLOCK',
-        resourceId: block.id,
-        mutationType: 'UPDATE',
-        baseVersion: block.version,
-        payload: payload as unknown as Record<string, unknown>,
-      }))
-      scheduleSync()
-      recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? { ...block } : item)
-    }
+    const repo = await repository()
+    await repo.upsert('KNOWLEDGE_BLOCK', block.id, {
+      ...payload,
+      id: block.id,
+      version: block.version,
+      createdAt: block.createdAt,
+      updatedAt: new Date().toISOString(),
+      deletedAt: block.deletedAt,
+    }, { version: block.version, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'KNOWLEDGE_BLOCK',
+      resourceId: block.id,
+      mutationType: 'UPDATE',
+      baseVersion: block.version,
+      payload: payload as unknown as Record<string, unknown>,
+    }))
+    scheduleSync()
+    recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? { ...block } : item)
   }
 
   async function removeBlock(id: string): Promise<void> {
     const block = recentBlocks.value.find((item) => item.id === id)
     if (!block) return
-    try {
-      await useKnowledgeApi.delete(id, { baseVersion: block.version })
-      const repo = await repository()
-      await repo.tombstone('KNOWLEDGE_BLOCK', id, { version: block.version, syncStatus: 'synced' })
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      const repo = await repository()
-      await repo.tombstone('KNOWLEDGE_BLOCK', id, { version: block.version, syncStatus: 'pending' })
-      await repo.enqueueMutation(createStableMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'KNOWLEDGE_BLOCK',
-        resourceId: id,
-        mutationType: 'DELETE',
-        baseVersion: block.version,
-        payload: { id },
-      }))
-      scheduleSync()
-    }
+    const repo = await repository()
+    await repo.tombstone('KNOWLEDGE_BLOCK', id, { version: block.version, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'KNOWLEDGE_BLOCK',
+      resourceId: id,
+      mutationType: 'DELETE',
+      baseVersion: block.version,
+      payload: { id },
+    }))
+    scheduleSync()
     recentBlocks.value = recentBlocks.value.filter((item) => item.id !== id)
   }
 

@@ -1,7 +1,5 @@
 # R1-01 BYOK 与出站网络安全 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 为 Provider 和 URL 资料摄取建立 HTTPS、白名单、DNS 固定解析、重定向、超时、响应大小和密钥脱敏门禁。
 
 **Architecture:** `ProviderEndpointPolicy` 负责 Provider URI、白名单和 DNS 地址集合；`ProviderHttpClient` 使用 JDK HttpClient 的固定地址解析器、禁用重定向和受限响应读取；聊天/embedding 适配器只保留协议解析。`UrlSecurityPolicy` 与 `UrlSourceFetcher` 复用公共地址解析逻辑但保留资料 URL 的 HTTP/HTTPS 能力和独立跳转限制。

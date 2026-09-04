@@ -1,7 +1,7 @@
 package com.auralis.app;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
 import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;

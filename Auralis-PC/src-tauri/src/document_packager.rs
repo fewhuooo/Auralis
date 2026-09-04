@@ -19,7 +19,7 @@ const MAX_BLOCK_CHARS: usize = 100_000;
 pub struct PackageHeader {
     pub schema_version: u32,
     pub user_id: String,
-    pub device_id: String,
+    pub server_device_id: String,
     pub source_id: String,
     pub job_id: String,
     pub ingestion_revision: String,
@@ -31,7 +31,7 @@ impl PackageHeader {
         CacheHeader {
             schema_version: self.schema_version,
             user_id: self.user_id,
-            device_id: self.device_id,
+            server_device_id: self.server_device_id,
             source_id: self.source_id,
             job_id: self.job_id,
             ingestion_revision: self.ingestion_revision,
@@ -67,7 +67,7 @@ impl PackageBuilder {
             return Err("DOCUMENT_PACKAGE_SCHEMA_UNSUPPORTED".to_string());
         }
         if header.user_id.trim().is_empty()
-            || header.device_id.trim().is_empty()
+            || header.server_device_id.trim().is_empty()
             || header.source_id.trim().is_empty()
             || header.job_id.trim().is_empty()
             || header.ingestion_revision.trim().is_empty()
@@ -142,6 +142,13 @@ impl DocumentPackagerState {
         DocumentCacheStore::new(self.root.clone(), key)
     }
 
+    fn store_for_new_package(&self) -> Result<DocumentCacheStore, String> {
+        let key = crypto::ensure_master_key_bytes()?
+            .try_into()
+            .map_err(|_| "MASTER_KEY_INVALID_LENGTH".to_string())?;
+        DocumentCacheStore::new(self.root.clone(), key)
+    }
+
     pub fn open_decrypted_reader(&self, cache_id: &str, scope: &CacheScope) -> Result<DecryptedCacheReader, String> {
         self.store()?.open_decrypted_reader(cache_id, scope)
     }
@@ -163,7 +170,7 @@ pub fn document_package_begin(
     state: State<'_, DocumentPackagerState>,
 ) -> Result<String, String> {
     let package_id = next_package_id();
-    let builder = PackageBuilder::begin(state.store()?, package_id.clone(), header)?;
+    let builder = PackageBuilder::begin(state.store_for_new_package()?, package_id.clone(), header)?;
     state.packages.lock().map_err(|_| "DOCUMENT_PACKAGE_LOCK_FAILED".to_string())?.insert(package_id.clone(), builder);
     Ok(package_id)
 }
@@ -214,7 +221,7 @@ mod tests {
         PackageHeader {
             schema_version: CACHE_SCHEMA_VERSION,
             user_id: "user-a".to_string(),
-            device_id: "device-1".to_string(),
+            server_device_id: "device-1".to_string(),
             source_id: "source-1".to_string(),
             job_id: "job-1".to_string(),
             ingestion_revision: "revision-1".to_string(),
@@ -253,7 +260,7 @@ mod tests {
         assert_ne!(receipt.plain_text_sha256, receipt.payload_sha256);
         let text = read_gzip(store.open_decrypted_reader("pkg-1", &CacheScope {
             user_id: "user-a".to_string(),
-            device_id: "device-1".to_string(),
+            server_device_id: "device-1".to_string(),
             source_id: "source-1".to_string(),
             job_id: "job-1".to_string(),
             ingestion_revision: "revision-1".to_string(),

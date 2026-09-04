@@ -83,13 +83,13 @@ class CoreDomainServiceTests {
     void updateRequiresTheExactVersionAndDeleteRestoreAdvancesIt() {
         var result = register("version");
         SubjectView created = subjectService.create(result.user().id(), new SubjectCommand(
-                "Physics", null, null, null, "001"));
+                "Physics", null, null, "001"));
 
         SubjectView updated = subjectService.update(result.user().id(), created.id(), created.version(),
-                new SubjectCommand("Physics 2", null, null, null, "001"));
+                new SubjectCommand("Physics 2", null, null, "001"));
         assertThat(updated.version()).isEqualTo(created.version() + 1);
         assertThatThrownBy(() -> subjectService.update(result.user().id(), created.id(), created.version(),
-                new SubjectCommand("Physics 3", null, null, null, "002")))
+                new SubjectCommand("Physics 3", null, null, "002")))
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("RESOURCE_VERSION_CONFLICT");
@@ -106,7 +106,7 @@ class CoreDomainServiceTests {
         var owner = register("owner");
         var other = register("other");
         SubjectView otherSubject = subjectService.create(other.user().id(), new SubjectCommand(
-                "Other Subject", null, null, null, "001"));
+                "Other Subject", null, null, "001"));
 
         assertThatThrownBy(() -> knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
                 otherSubject.id(), null, "Block", null, "Content", List.of("tag"), null)))
@@ -119,7 +119,7 @@ class CoreDomainServiceTests {
     void legacyDefaultSubjectCanBeDeleted() {
         var result = register("protected");
         SubjectView defaultSubject = subjectService.get(result.user().id(), subjectRepository.save(new SubjectEntity(
-                java.util.UUID.randomUUID(), result.user().id(), "未分类", null, null, null, "0000", true)).getId());
+                java.util.UUID.randomUUID(), result.user().id(), "未分类", null, null, "0000", true)).getId());
 
         subjectService.delete(result.user().id(), defaultSubject.id(), defaultSubject.version());
 
@@ -129,10 +129,10 @@ class CoreDomainServiceTests {
     @Test
     void activeSubjectNamesAreUniqueWithinAUser() {
         var result = register("unique");
-        subjectService.create(result.user().id(), new SubjectCommand("Physics", null, null, null, "001"));
+        subjectService.create(result.user().id(), new SubjectCommand("Physics", null, null, "001"));
 
         assertThatThrownBy(() -> subjectService.create(result.user().id(),
-                new SubjectCommand(" physics ", null, null, null, "002")))
+                new SubjectCommand(" physics ", null, null, "002")))
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("MUTATION_REJECTED");

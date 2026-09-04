@@ -1,8 +1,102 @@
 # Auralis 变更记录
 
-更新时间：2026-08-26
+更新时间：2026-09-04
 
 文档状态：现行历史记录
+
+### PC 学科文件删除即时投影（2026-09-04）
+
+- `useSourceStore` 在 Source tombstone 和 DELETE outbox 持久化完成后，立即移除文件列表投影；同步与 parser/job/cache 清理继续后台执行，删除不再等待耗时的调度器收尾。
+- `r4-file-preview` 删除顺序回归 20/20 通过；真实 Tauri 的 OCR 运行中删除、缓存清理及服务端同步仍待人工联调。
+
+### PC 文件预览快速选择合并（2026-09-04）
+
+- `FilePreview` 在启动二进制下载前合并 80ms 内的选择，并以 `AbortController` 中止被替代的 fetch，避免多份大文件同时转为 Blob 并进入 File Viewer。
+- `r4-file-preview` 19/19 通过；真实 Tauri 大 PDF 首次解析仍待 GUI 验收。
+
+### PC PDF 快速切换稳定性（2026-09-04）
+
+- `PdfViewer` 以 `convertFileSrc` URL 交给 PDF.js 加载，切换时取消旧任务、销毁 document、清空 Canvas，并用加载/渲染代际阻止旧请求回写。
+- 首屏适配宽度后只渲染一次；新增 `r4-pdf-viewer-switch` 回归 3/3。真实 Tauri 大 PDF 连续切换仍待 GUI 验收。
+
+### PC Subject 全局主题色清理（2026-09-04）
+
+- Dashboard、Timeline 与 Home 不再读取已删除的 `Subject.color`；学科相关视觉和新建知识块/任务默认统一为 `#7D9372`，Task 与 KnowledgeBlock 的 `colorOverride` 保持不变。
+- Home 新建学科调用恢复为现行的 `addSubject(name, description, icon)` 签名。
+- `r4-store-mapping` 10/10、`npm run type-check` 和目标差异检查通过；真实 GUI 仍待验收。
+
+### PC 已完成排期任务固定（2026-09-04）
+
+- 已完成且仍有 `scheduledAt` 的任务继续显示在原时间轴槽位；Store 拒绝其移动、替换和取消排期，Timeline/Dashboard 同时移除拖放与取消排期入口。
+- 历史本地展示态任务记录不再兼容；`completed` 等弃用格式在本地加载时忽略，在线刷新以现行领域 DTO 重建。
+- 新增固定任务的 Store 与页面回归。完整 PC 回归最新结果为 173/181，现有 8 项时间轴/本地优先契约失败仍待其他工作收敛；Tauri GUI 拖放未验收。
+
+### PC SQLite 并发写入修复（2026-09-03）
+
+- Tauri SQLite 改为应用生命周期单次加载、建表和迁移；按用户/服务端设备范围复用 repository，所有 SQL 插件命令走单一串行队列，并在初始连接设置 WAL 与 5 秒 `busy_timeout`。
+- 同步 snapshot reset 改由 Rust `replace_local_resource_snapshot` 在同一连接事务内执行：未解决 mutation 的资源行保持不变，任何非法 snapshot 项都会回滚本批。
+- `r4-local-repository` 11/11 与 Rust lib 13/13 已通过；真实 Tauri GUI、数据库升级和多写入压力验收仍待执行。当前 PC 全量回归与类型检查受其他未收敛工作树改动阻断，未将其记作本项通过。
+
+### PC 时间轴本地任务投影修复（2026-09-03）
+
+- Task Store 改用认证态 `serverDeviceId` 访问本地 repository，修复设备标识契约迁移后本地读取失败并清空时间轴任务的问题。
+- 列表加载现在先返回本地任务投影、后台刷新云端；本地读取或云端刷新失败均保留已有任务。Timeline 与 Dashboard 切换日期只重建内存槽位，不再重新读取本地库。
+- 旧本地排期字符串会统一为 UTC ISO instant，确保可参与自然周过滤、半小时槽位渲染与更新请求。展示回归和静态检查通过；完整排期回归、类型检查、构建和 Tauri GUI 验收仍见当前问题登记。
+- 拖放更新不再等待远端 `PUT`：任务先写入当前用户/`serverDeviceId` 范围内的本地 repository 与 outbox，再更新 Timeline/Dashboard 内存槽位；后台 push/pull 失败不回退本地结果，本地写入失败通过页面通知反馈。原生 payload 现同时携带 `taskId` 与已排期任务的 `sourceSlotTime`，原槽放置为 no-op。双任务换位持久化原子组仍未完成，保留在 P1 风险。
+
+### Subject 专属颜色移除（2026-09-03）
+
+- 服务端 Subject API/Entity 不再暴露 `color`，新增 Flyway V19 删除 `subjects.color`；已有 Subject 行与 KnowledgeBlock/Task 的 `color_override` 保留。
+- PC/Mobile 前端清理 Subject 颜色状态、同步和主题化残留，统一使用全局语义色；两端构建/回归与本地 Docker PostgreSQL V19 升级均已验证，真实三端 GUI/业务联调仍待人工验收。
+
+### PC 扫描 PDF Runtime 统一与文档处理状态修复（2026-09-01）
+
+- 根 `pdfjs-dist` 精确固定为 `5.4.624`，与 `@file-viewer/renderer-pdf@2.3.0` 一致；npm lockfile 已收敛为同一根级副本，PDF 本地适配器不再传递无效 `disableWorker`。
+- FILE scheduler 在创建和结束时刷新 Pinia 处理状态及 Source；文件行和 Profile 同时反映本地解析与服务端 `VALIDATING/PARSING/INDEXING`，直至 Source `READY` 才开放提问；未挂载 Tauri runner 时 Profile 明确提示桌面端限制，不再显示为“暂无文件解析任务”。
+- 恢复批次现在隔离单个 Source 失败，避免历史失败文件阻塞后续 `AWAITING_CLIENT` 文件；Profile 对无本地 job 的等待文件提供“开始本机处理”并显示触发失败。手动入口先同步并确认本地 Source 为 `synced`，否则显示可理解的同步状态，只调度已由服务端确认的资料。
+- `useSourceStore` 接入 Pinia HMR 更新，开发页新增处理 action 时会更新既有 Store 实例，不再出现方法不存在。
+- Tauri SQL capability 显式允许持久化任务写入；后端对未预期 API 异常输出带 trace ID、路径和异常类型的诊断日志，客户端仍只收到脱敏的错误响应。
+- 文档 runtime 保留前置检查，Rust `document_package_begin` 同时成为新建加密 package/cache 的最终密钥边界：只有 keyring 明确返回 `NoEntry` 时才创建原生 `auralis/master_key`，其他 credential-manager 错误会以 keyring 访问失败报告；已有 cache/receipt 仍只读取既有密钥，密钥丢失时停止并提示恢复，不会新建密钥覆盖旧密文。
+- 服务端自有 JSON 类型统一到 Jackson 3 `tools.jackson`；`/api/sync/push` 的 object payload 已通过 MockMvc 回归，ParsedDocument 的有界解压异常语义保持有效，并以源码守卫防止重新引入 Jackson 2。OpenAPI artifact 已与运行时文档同步。
+- `/ws/events` 移除会抢占 WebSocket upgrade 的 MVC `GET` 回退；实时认证只通过一次性 ticket 在 WebSocket handshake 中消费，不再因缺失 MVC principal 产生 500。真实 Java WebSocket client 已验证已签发 ticket 在不携带 Bearer header 时可成功 upgrade。
+- 删除 FILE Source 现在会停止运行中的本地 parser，按当前用户/设备清理全部文档任务、关联加密 cache 和内存输入，并刷新 Profile；学科页经 Subject Store 重算文件计数。调度竞争只会安全跳过已删除 Source，不会重建任务。
+- OCR 完成释放其 PDF.js document；预览签名 URL 下载加入最新选择门禁，旧响应不会覆盖当前 File Viewer 输入，降低扫描 PDF 在切换或 OCR 结束时反复重载的风险。
+- 新增 PDF runtime、状态通知、删除清理与扫描型 FILE 组合链路回归；文档删除/预览定向 52/52、Rust 12/12、PC 全量 165/165、type-check、静态检查（80 个生产文件）、production build，以及 Realtime service/controller/HTTP upgrade 5/5 均已通过。扫描样本用 PDF.js `5.4.624` 实测加载 50 页、首屏无文本层且位图绘制成功；真实 Tauri/Server/MinIO GUI 联调仍待验收。
+
+### 文档设计稿与实施计划目录归类整理（2026-09-01）
+
+- 设计稿统一归入 `docs/design/`，已批准的详细实施计划统一归入 `docs/plans/`；文档入口与交叉链接已同步更新。
+- 清理计划文档中的外部工作流指令，保留项目设计、实施步骤和验证内容。
+
+### PC/Mobile 设备标识契约切换（2026-08-29）
+
+- 客户端生成并持久化的设备注册标识统一为 `clientDeviceKey`；服务端设备主键、AuthResult/Session、Sync、本地隔离 scope 和 JWT claim 统一为 `serverDeviceId`。
+- `POST /api/realtime/ticket` 改为无请求体，服务端从 Bearer JWT 解析并校验 `serverDeviceId`；旧 `deviceId` 字段不保留，也未增加兼容测试。OpenAPI artifact 与 PC/Mobile 生成 schema 已更新。
+- PC `test:r4-pc` 150/150、Mobile `test:r4-mobile` 21/21、两端 type-check 通过；真实 Server、Realtime/WebSocket、移动端真机和 Tauri GUI 联调仍待验收。
+
+### PC 时间轴过去时段保护（2026-08-31）
+
+- 目标 `scheduledAt` 严格早于当前时刻时，PC Store 拒绝拖放排期、按天排期与已排期任务换位，保留原任务数据并使用既有错误反馈；换位校验两个任务的目标时段后才调用原子换位接口。
+- 新增可注入时钟的纯判定与三条入口回归，确保被拒绝的操作不会调用 Task API、离线 mutation 或排期换位接口。
+- PC 定向测试 28/28、`test:r4-pc` 154/154、`type-check`、`check:r4-pc`（80 个生产文件）和生产 build 通过；真实 Tauri GUI 拖放和服务端联调仍待人工验收。
+
+### PC 任务到期自动转换（2026-08-31）
+
+- Store 在启动 fetch 和每分钟检查中，把已过 `scheduledAt` 且未完成/未取消的任务更新为 `DONE`，同时保留排期；无排期且已过 `dueAt` 的任务显式提交 `dueAt: null`，进入未排期分组。
+- Task 更新请求支持显式 `dueAt: null`；全局页面不再维护任务到期提醒。
+- PC 任务/视图定向回归 26/26、`test:r4-pc` 152/152、`type-check`、`check:r4-pc`（80 个生产文件）和生产 build 通过；真实 Tauri GUI、服务版本和冲突/断网路径仍待人工验收。
+
+### PC/Backend 任务排期原子性与逾期回归（2026-08-27）
+
+- PC 在 API 边界统一将 `scheduledAt` 归一化为 UTC ISO instant；后端把时间反序列化失败转换为字段级 `400 VALIDATION_FAILED`，避免展示字符串 `Thu 08:30` 被当作 `Instant` 提交时返回未处理 500。
+- 新增 `POST /api/tasks/schedule-swaps`：服务端以稳定顺序悲观锁定两项任务，在单事务内交换排期并校验版本/截止时间，任一失败均回滚。Dashboard、Timeline、Home 的拖拽 payload 改为任务 ID 与原槽位，原槽 no-op，拖回待办按任务 ID 取消排期。
+- 登录后会将逾期可行动任务自动回归未排期并从任务视图隐藏，App 以一次可关闭提示列出受影响任务。`CoreDomainControllerTests` 5/5、PC `test:r4-pc` 142/142、type-check、生产 build 和 `git diff --check` 通过。真实 Tauri 原生拖放、冲突/断网和逾期提示仍待人工验收；Mobile generated schema 因外部文件锁尚未同步，详见当前问题登记。
+
+### PC 任务未排期与排期视图显示修复（2026-08-28）
+
+- 资产库任务分组的用户可见文案统一为“未排期”，保留原有 focus query 兼容。
+- 逾期任务由 Store 自动取消排期后重新进入待排期队列；时间轴不再额外隐藏仍带排期的逾期任务，取消排期失败时保留原排期以暴露失败状态，完成/取消规则不变。
+- 排期页移除高中低负荷的可见标签，内部负荷字段和分析逻辑保留；逾期清单提示按认证会话去重，同一会话内子页面刷新不再重复弹出，登出后新会话可重新提示。PC `test:r4-pc` 145/145、type-check、静态检查通过；真实 Tauri GUI 仍需人工验收。
 
 ### PC Vite 开发 HMR 竞态修复（2026-08-27）
 

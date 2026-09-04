@@ -20,11 +20,11 @@
               v-for="subj in subjectStore.subjects" 
               :key="subj.id" 
               class="subject-card"
-              :style="{ '--subj-theme-color': subj.color || 'rgba(99, 102, 241, 0.15)' }"
+              :style="{ '--subj-theme-color': SUBJECT_THEME_COLOR }"
               @click="selectSubject(subj.id)"
             >
               <div class="subject-card-header">
-                <div class="subject-card-icon" :style="{ backgroundColor: subj.color }">
+                <div class="subject-card-icon" :style="{ backgroundColor: SUBJECT_THEME_COLOR }">
                   <ElIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :size="28">
                     <component :is="getSubjectIconComponent(subj.icon)" />
                   </ElIcon>
@@ -57,7 +57,7 @@
             <div class="header-left">
               <button class="back-btn" @click="selectSubject(null)">🏛️ 返回大厅</button>
               <div class="subject-title-area">
-                <span class="subject-emoji" :style="{ backgroundColor: activeSubject?.color }">
+                <span class="subject-emoji" :style="{ backgroundColor: SUBJECT_THEME_COLOR }">
                   <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="24">
                     <component :is="getSubjectIconComponent(activeSubject?.icon)" />
                   </ElIcon>
@@ -220,7 +220,7 @@
                   :subjectId="activeSubjectId" 
                   :blocks="subjectBlocks" 
                   :subjectName="activeSubject?.name || '学科图谱'" 
-                  :subjectColor="activeSubject?.color || 'rgba(99, 102, 241, 0.2)'"
+                  :subjectColor="SUBJECT_THEME_COLOR"
                   @open-block-detail="handleBlockClick"
                 />
               </div>
@@ -613,6 +613,8 @@ marked.setOptions({
   gfm: true
 })
 
+const SUBJECT_THEME_COLOR = '#7D9372'
+
 const renderMarkdown = (content: string) => {
   if (!content) return ''
   return DOMPurify.sanitize(marked.parse(content) as string)
@@ -912,7 +914,7 @@ const handleSaveSubject = async (formData: any) => {
     if (formData.id) {
       await subjectStore.updateSubject(formData)
     } else {
-      await subjectStore.addSubject(formData.name, formData.description, formData.icon, formData.color)
+      await subjectStore.addSubject(formData.name, formData.description, formData.icon)
     }
     closeCreateSubject()
   } catch (e) {
@@ -979,7 +981,7 @@ const openCreateDialog = () => {
     id: '',
     subject: activeSubject.value ? activeSubject.value.name : '',
     title: '',
-    color: activeSubject.value ? activeSubject.value.color : 'rgba(181, 196, 177, 0.4)',
+    color: SUBJECT_THEME_COLOR,
     preview: '',
     source: '手动创建'
   }
@@ -995,7 +997,7 @@ const openCreateDialogWithContent = (title: string, content: string) => {
     id: '',
     subject: activeSubject.value ? activeSubject.value.name : '学科要点',
     title: title,
-    color: activeSubject.value ? activeSubject.value.color : 'rgba(181, 196, 177, 0.4)',
+    color: SUBJECT_THEME_COLOR,
     preview: content,
     source: 'AI 提炼生成'
   }
@@ -1186,7 +1188,7 @@ const handleAddTask = async () => {
       name: taskForm.value.name.trim(),
       subject: subjObj.name,
       desc: `新建任务。`,
-      color: subjObj.color,
+      color: SUBJECT_THEME_COLOR,
       duration: taskForm.value.duration,
       load: taskForm.value.load,
       loadText: taskForm.value.loadText,

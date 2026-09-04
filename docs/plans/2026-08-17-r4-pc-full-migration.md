@@ -1,7 +1,5 @@
 # R4 PC Full Client Migration Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 将 Auralis-PC 的正式 Web/Tauri 客户端一次性迁移到当前 OpenAPI 直 DTO、短期 ticket 实时事件、用户隔离本地数据和完整 Tauri 运行时边界，完成 R4-01、R4-02、R4-03 的可验证实现。
 
 **Architecture:** 保留现有正式 PC 路由和视觉页面边界，以 `runtime -> request -> typed API -> Store -> local repository/view` 为数据流；云端接口只消费 `src/api/generated/schema.ts` 的 DTO 类型，浏览器和 Tauri 共用业务代码，只有运行时地址、SQLite/浏览器本地存储和 Tauri invoke 有平台分支。实时层先申请一次性 ticket，再连接 `/ws/events`；同步层以服务端 cursor、快照 reset 和带 `baseVersion` 的本地 mutation 为唯一增量边界。

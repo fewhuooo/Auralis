@@ -1,7 +1,7 @@
 package com.auralis.app;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
@@ -190,7 +190,7 @@ class AuthControllerTests {
         int currentDeviceEntries = 0;
         JsonNode currentDeviceEntry = null;
         for (JsonNode session : listed.path("items")) {
-            if (session.path("deviceId").asText().equals(current.path("deviceId").asText())) {
+            if (session.path("serverDeviceId").asText().equals(current.path("serverDeviceId").asText())) {
                 currentDeviceEntries++;
                 if (session.path("current").asBoolean()) {
                     currentDeviceEntry = session;
@@ -232,22 +232,22 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'username')]").exists())
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'password')]").exists())
-                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'deviceId')]").exists());
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'clientDeviceKey')]").exists());
     }
 
-    private JsonNode register(String username, String deviceId, String deviceName) throws Exception {
+    private JsonNode register(String username, String clientDeviceKey, String deviceName) throws Exception {
         return json(mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(registerJson(username, "correct horse battery staple", deviceId, "Alice")))
+                        .content(registerJson(username, "correct horse battery staple", clientDeviceKey, "Alice")))
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION, org.hamcrest.Matchers.startsWith("/api/auth/sessions/")))
                 .andReturn());
     }
 
-    private JsonNode login(String username, String deviceId) throws Exception {
+    private JsonNode login(String username, String clientDeviceKey) throws Exception {
         return json(mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(loginJson(username, "correct horse battery staple", deviceId)))
+                        .content(loginJson(username, "correct horse battery staple", clientDeviceKey)))
                 .andExpect(status().isOk())
                 .andReturn());
     }
@@ -256,15 +256,15 @@ class AuthControllerTests {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private String registerJson(String username, String password, String deviceId, String displayName) {
+    private String registerJson(String username, String password, String clientDeviceKey, String displayName) {
         return "{\"username\":\"" + username + "\",\"password\":\"" + password
-                + "\",\"displayName\":\"" + displayName + "\",\"deviceId\":\"" + deviceId
+                + "\",\"displayName\":\"" + displayName + "\",\"clientDeviceKey\":\"" + clientDeviceKey
                 + "\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}";
     }
 
-    private String loginJson(String username, String password, String deviceId) {
+    private String loginJson(String username, String password, String clientDeviceKey) {
         return "{\"username\":\"" + username + "\",\"password\":\"" + password
-                + "\",\"deviceId\":\"" + deviceId
+                + "\",\"clientDeviceKey\":\"" + clientDeviceKey
                 + "\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}";
     }
 

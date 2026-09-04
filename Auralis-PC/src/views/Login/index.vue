@@ -107,6 +107,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/useAuthStore'
 import { ApiProblemError } from '@/api/httpError'
+import { normalizeFieldErrors, summarizeFieldErrors } from '@/api/problemFieldErrors'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -181,18 +182,14 @@ const handleAction = async () => {
   } catch (error: unknown) {
     if (error instanceof ApiProblemError) {
       const problem = error.problem
-      if (problem.errors && typeof problem.errors === 'object') {
-        fieldErrors.value = problem.errors
-      }
-      const msg = problem.detail || problem.title || '操作失败'
+      fieldErrors.value = normalizeFieldErrors(problem.fieldErrors)
+      const msg = summarizeFieldErrors(problem.fieldErrors) || problem.detail || problem.title || '操作失败'
       generalError.value = msg
       ElMessage.error(msg)
     } else if (error && typeof error === 'object' && 'problem' in error) {
-      const problem = (error as { problem: { detail?: string; title?: string; errors?: Record<string, string[]> } }).problem
-      if (problem.errors) {
-        fieldErrors.value = problem.errors
-      }
-      const msg = problem.detail || problem.title || '操作失败'
+      const problem = (error as { problem: { detail?: string; title?: string; fieldErrors?: unknown } }).problem
+      fieldErrors.value = normalizeFieldErrors(problem.fieldErrors)
+      const msg = summarizeFieldErrors(problem.fieldErrors) || problem.detail || problem.title || '操作失败'
       generalError.value = msg
       ElMessage.error(msg)
     } else if (error instanceof Error) {

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElButton } from 'element-plus'
 import { useAssetStore } from '@/store/useAssetStore'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { resolveFileCapability, type FileCapability } from '@/utils/filePreview'
 import FileViewerRenderer from '@/components/preview/FileViewerRenderer.vue'
 import UnsupportedPreview from '@/components/preview/UnsupportedPreview.vue'
+import { PreviewRequestGate } from '@/components/preview/PreviewRequestGate'
 import type { FileViewerZoomState } from '@file-viewer/vue3-full'
 
 const props = withDefaults(defineProps<{
@@ -34,6 +35,8 @@ const signedUrl = ref<string | null>(null)
 const isLoading = ref(false)
 const isRendererLoading = ref(false)
 const errorMessage = ref<string | null>(null)
+const previewRequests = new PreviewRequestGate()
+let activePreviewAbort: AbortController | null = null
 
 const rendererRef = ref<InstanceType<typeof FileViewerRenderer> | null>(null)
 const currentPage = ref(1)
@@ -54,6 +57,11 @@ function readableError(error: unknown): string {
 }
 
 async function loadPreview(): Promise<void> {
+  const requestId = previewRequests.begin()
+  activePreviewAbort?.abort()
+  activePreviewAbort = null
+  const file = { ...props.file }
+  const shouldPreview = canPreview.value
   previewFile.value = null
   signedUrl.value = null
   errorMessage.value = null
@@ -64,30 +72,46 @@ async function loadPreview(): Promise<void> {
   emit('control-ready', false)
   emit('page-change', 1, 1)
 
-  if (!canPreview.value) return
-  if (!props.file.assetId) {
+  if (!shouldPreview) return
+  if (!file.assetId) {
     errorMessage.value = '该资料没有可用的文件资产'
     emit('preview-error', errorMessage.value)
     return
   }
 
+  const localFile = assetStore.getLocalFile(file.assetId)
+  if (localFile) {
+    previewFile.value = localFile
+    return
+  }
+
   isLoading.value = true
   try {
-    const url = await assetStore.downloadUrl(props.file.assetId)
-    const response = await fetch(url)
+    await new Promise<void>(resolve => window.setTimeout(resolve, 80))
+    if (!previewRequests.isCurrent(requestId)) return
+    const url = await assetStore.downloadUrl(file.assetId)
+    if (!previewRequests.isCurrent(requestId)) return
+    signedUrl.value = url
+    const abort = new AbortController()
+    activePreviewAbort = abort
+    const response = await fetch(url, { signal: abort.signal })
     if (!response.ok) throw new Error(`文件下载失败（${response.status}）`)
     const blob = await response.blob()
-    signedUrl.value = url
-    previewFile.value = new File([blob], props.file.name, {
-      type: blob.type || props.file.fileType || 'application/octet-stream',
+    if (!previewRequests.isCurrent(requestId)) return
+    previewFile.value = new File([blob], file.name, {
+      type: blob.type || file.fileType || 'application/octet-stream',
     })
   } catch (error) {
+    if (!previewRequests.isCurrent(requestId)) return
+    if (error instanceof DOMException && error.name === 'AbortError') return
     errorMessage.value = readableError(error)
     emit('preview-error', errorMessage.value)
   } finally {
-    isLoading.value = false
+    if (previewRequests.isCurrent(requestId)) isLoading.value = false
   }
 }
+
+onUnmounted(() => activePreviewAbort?.abort())
 
 function downloadOriginal(): void {
   if (!signedUrl.value) return
@@ -168,7 +192,7 @@ defineExpose({
 })
 
 watch(
-  () => [props.file.id, props.file.name, props.file.assetId, props.file.fileType] as const,
+  [() => props.file.id, () => props.file.name, () => props.file.assetId, () => props.file.fileType],
   () => { void loadPreview() },
   { immediate: true },
 )

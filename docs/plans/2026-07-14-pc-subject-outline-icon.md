@@ -1,7 +1,5 @@
 # PC 学科线条图标 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 新建 PC 学科使用简约线条图标，既有 Emoji 学科不迁移且保持原样显示。
 
 **Architecture:** `Subject.icon` 保持字符串字段。`src/utils/subjectIcon.ts` 仅把受控的语义键解析为 Element Plus 图标组件；其他非空字符串作为历史显示值原样保留。创建弹层只写入语义键，所有可渲染组件的位置复用同一解析器。

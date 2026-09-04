@@ -23,8 +23,8 @@ export const useAssetStore = defineStore('asset', () => {
 
   async function cache(asset: AssetView): Promise<AssetModel> {
     const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.deviceId || !asset.id) throw new Error('Asset cache requires an authenticated user and asset id')
-    const repo = await getLocalRepository(authStore.user.id, authStore.deviceId)
+    if (!authStore.user?.id || !authStore.serverDeviceId || !asset.id) throw new Error('Asset cache requires an authenticated user and asset id')
+    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
     await repo.upsert('ASSET', String(asset.id), asset, {
       version: 0,
       deletedAt: null,

@@ -35,6 +35,8 @@ export interface PdfPageSource {
 export interface PdfDocumentSource {
   pageCount: number
   getPage(pageNumber: number): Promise<PdfPageSource>
+  /** Releases PDF.js worker resources after the parser has consumed the file. */
+  destroy?(): Promise<void>
 }
 
 export interface OcrPageRequest {

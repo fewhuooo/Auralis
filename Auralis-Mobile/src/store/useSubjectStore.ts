@@ -9,7 +9,6 @@ export interface Subject {
   name: string
   description: string
   icon: string
-  color: string
   created_at?: number
   blockCount?: number
   fileCount?: number
@@ -71,13 +70,12 @@ export const useSubjectStore = defineStore('subject', () => {
     }
   }
 
-  const addSubject = async (name: string, description: string, icon: string, color: string) => {
+  const addSubject = async (name: string, description: string, icon: string) => {
     const newSubject: Subject = {
       id: uuidv7(),
       name,
       description,
       icon,
-      color,
       created_at: Date.now()
     }
     await localDb.saveSubject(newSubject)

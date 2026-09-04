@@ -27,7 +27,7 @@ public class InboundMutationEntity {
     private UUID userId;
 
     @Column(name = "device_id", nullable = false)
-    private UUID deviceId;
+    private UUID serverDeviceId;
 
     @Column(name = "client_mutation_id", nullable = false, length = 128)
     private String clientMutationId;
@@ -71,7 +71,7 @@ public class InboundMutationEntity {
     public InboundMutationEntity(
             UUID id,
             UUID userId,
-            UUID deviceId,
+            UUID serverDeviceId,
             String clientMutationId,
             String requestHash,
             MutationDecision decision,
@@ -83,7 +83,7 @@ public class InboundMutationEntity {
             String errorCode) {
         this.id = id;
         this.userId = userId;
-        this.deviceId = deviceId;
+        this.serverDeviceId = serverDeviceId;
         this.clientMutationId = clientMutationId;
         this.requestHash = requestHash;
         this.decision = decision;
@@ -110,7 +110,7 @@ public class InboundMutationEntity {
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
-    public UUID getDeviceId() { return deviceId; }
+    public UUID getServerDeviceId() { return serverDeviceId; }
     public String getClientMutationId() { return clientMutationId; }
     public String getRequestHash() { return requestHash; }
     public MutationDecision getDecision() { return decision; }

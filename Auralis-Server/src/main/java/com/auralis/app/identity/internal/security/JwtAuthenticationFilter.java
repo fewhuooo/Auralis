@@ -23,7 +23,7 @@ public class JwtAuthenticationFilter implements Converter<Jwt, AbstractAuthentic
             AuthenticatedUser principal = new AuthenticatedUser(
                     UUID.fromString(jwt.getSubject()),
                     UUID.fromString(requiredClaim(jwt, "sid")),
-                    UUID.fromString(requiredClaim(jwt, "did")));
+                    UUID.fromString(requiredClaim(jwt, "serverDeviceId")));
             return new UsernamePasswordAuthenticationToken(
                     principal,
                     jwt,

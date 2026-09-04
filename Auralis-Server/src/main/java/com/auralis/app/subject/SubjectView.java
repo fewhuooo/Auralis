@@ -8,7 +8,6 @@ public record SubjectView(
         String name,
         String description,
         String iconKey,
-        String color,
         String sortKey,
         boolean defaultSubject,
         long version,

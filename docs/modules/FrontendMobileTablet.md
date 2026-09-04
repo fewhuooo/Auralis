@@ -1,6 +1,6 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-08-20
+更新时间：2026-08-29
 
 文档状态：现行
 
@@ -119,7 +119,7 @@ Auralis-Mobile/src/
 | 服务 | 职责 |
 | --- | --- |
 | `localDb.ts` | 端侧 SQLite 表与访问入口 |
-| `localDataScope.ts` | 按 userId/deviceId 选择独立 H5/SQLite namespace |
+| `localDataScope.ts` | 按 userId/serverDeviceId 选择独立 H5/SQLite namespace |
 | `legacyDataPurge.ts` | 用户授权后一次性删除旧全局 `h5_db_*`/`auralis.db` 业务表 |
 | `assetUpload.ts` | upload-intent、预签名 PUT、complete |
 | `notebookStorage.ts` | 笔记存储兼容层 |
@@ -148,6 +148,10 @@ Auralis-Mobile/src/
 - Tablet Review 从服务端 due 队列组卡，先成功提交不可变 ReviewEvent 再推进卡片；右滑只取消当前手势，不伪装撤销已提交事件。
 
 设计目标和页面布局见 [前端设计](../design/Frontend.md)。
+
+## 移动端测试契约变更（2026-08-29）
+
+本轮设备标识是破坏性字段重命名：不保留旧 `deviceId` 字段，也不执行兼容测试。Mobile/Tablet 的登录与注册请求必须使用 `clientDeviceKey`；服务端返回、Sync push、本地数据 scope 和 Realtime 关联必须使用 `serverDeviceId`。Realtime ticket 不带请求体，测试请求必须携带有效 Bearer access token，让服务端从 JWT 解析设备身份。
 
 ## 构建与检查命令
 

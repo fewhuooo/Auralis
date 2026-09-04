@@ -5,7 +5,7 @@ import java.util.UUID;
 
 public record SessionView(
         UUID id,
-        UUID deviceId,
+        UUID serverDeviceId,
         String deviceName,
         DevicePlatform platform,
         Instant createdAt,

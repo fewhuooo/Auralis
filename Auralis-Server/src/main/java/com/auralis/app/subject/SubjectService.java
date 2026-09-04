@@ -40,7 +40,7 @@ public class SubjectService {
         }
         SubjectView result = view(subjectRepository.save(new SubjectEntity(
                 subjectId, userId, name, command.description(), command.iconKey(),
-                command.color(), defaultSortKey(command.sortKey()), false)));
+                defaultSortKey(command.sortKey()), false)));
         publishChange(userId, result, "CREATE");
         return result;
     }
@@ -96,7 +96,7 @@ public class SubjectService {
                 && subjectRepository.existsByUserIdAndNameIgnoreCaseAndDeletedAtIsNull(userId, name)) {
             throw new DomainException("MUTATION_REJECTED", "Subject name is already used");
         }
-        entity.update(name, command.description(), command.iconKey(), command.color(), command.sortKey());
+        entity.update(name, command.description(), command.iconKey(), command.sortKey());
         SubjectView result = view(subjectRepository.saveAndFlush(entity));
         publishChange(userId, result, "UPDATE");
         return result;
@@ -169,7 +169,7 @@ public class SubjectService {
 
     private SubjectView view(SubjectEntity entity) {
         return new SubjectView(
-                entity.getId(), entity.getName(), entity.getDescription(), entity.getIconKey(), entity.getColor(),
+                entity.getId(), entity.getName(), entity.getDescription(), entity.getIconKey(),
                 entity.getSortKey(), entity.isDefaultSubject(), entity.getVersion(), entity.getCreatedAt(),
                 entity.getUpdatedAt(), entity.getDeletedAt());
     }

@@ -5,6 +5,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -13,8 +16,12 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.net.URI;
 import java.util.List;
 
+import tools.jackson.databind.exc.InvalidFormatException;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(DomainException.class)
     ResponseEntity<ApiProblemDetails> handleDomain(
             DomainException exception,
@@ -63,6 +70,28 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    ResponseEntity<ApiProblemDetails> handleUnreadableBody(
+            HttpMessageNotReadableException exception,
+            HttpServletRequest request
+    ) {
+        String field = fieldFrom(exception);
+        String message = field == null
+                ? "Request body could not be read"
+                : "Invalid value for " + field;
+        List<ApiProblemDetails.FieldError> fieldErrors = field == null
+                ? List.of()
+                : List.of(new ApiProblemDetails.FieldError(field, message));
+        return response(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorCode.VALIDATION_FAILED,
+                message,
+                fieldErrors,
+                null,
+                request
+        );
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     ResponseEntity<ApiProblemDetails> handleNotFound(
             NoResourceFoundException exception,
@@ -83,6 +112,13 @@ public class GlobalExceptionHandler {
             Exception exception,
             HttpServletRequest request
     ) {
+        String traceId = (String) request.getAttribute(TraceIdFilter.ATTRIBUTE);
+        log.error("UNEXPECTED_API_ERROR traceId={} method={} path={} exceptionType={}",
+                traceId == null ? "missing-trace-id" : traceId,
+                request.getMethod(),
+                request.getRequestURI(),
+                exception.getClass().getSimpleName(),
+                exception);
         return response(
                 HttpStatus.INTERNAL_SERVER_ERROR,
                 ApiErrorCode.INTERNAL_ERROR,
@@ -118,6 +154,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status)
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(body);
+    }
+
+    private String fieldFrom(HttpMessageNotReadableException exception) {
+        Throwable cause = exception.getCause();
+        if (!(cause instanceof InvalidFormatException invalidFormatException)) {
+            return null;
+        }
+        var path = invalidFormatException.getPath();
+        if (path.isEmpty()) {
+            return null;
+        }
+        return path.getLast().getPropertyName();
     }
 
 }

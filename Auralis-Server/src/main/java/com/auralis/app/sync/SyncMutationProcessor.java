@@ -1,7 +1,7 @@
 package com.auralis.app.sync;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.sync.internal.persistence.InboundMutationEntity;
 import com.auralis.app.sync.internal.persistence.InboundMutationRepository;
@@ -36,14 +36,14 @@ public class SyncMutationProcessor {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public SyncDtos.MutationResponse process(UUID userId, UUID deviceId, SyncMutation mutation) {
+    public SyncDtos.MutationResponse process(UUID userId, UUID serverDeviceId, SyncMutation mutation) {
         String hash = fingerprint(mutation);
         int reserved = inboundMutationRepository.reserve(
-                UUID.randomUUID(), userId, deviceId, mutation.clientMutationId(), hash,
+                UUID.randomUUID(), userId, serverDeviceId, mutation.clientMutationId(), hash,
                 mutation.resourceType().name(), mutation.resourceId(), mutation.mutationType().name());
         if (reserved == 0) {
             InboundMutationEntity existing = inboundMutationRepository
-                    .findByUserIdAndDeviceIdAndClientMutationId(userId, deviceId, mutation.clientMutationId())
+                    .findByUserIdAndServerDeviceIdAndClientMutationId(userId, serverDeviceId, mutation.clientMutationId())
                     .orElseThrow(() -> new DomainException("INTERNAL_ERROR", "Reserved mutation could not be loaded"));
             if (!existing.getRequestHash().equals(hash)) {
                 return hashMismatchResponse(existing, mutation);
@@ -52,7 +52,7 @@ public class SyncMutationProcessor {
         }
 
         InboundMutationEntity entity = inboundMutationRepository
-                .findByUserIdAndDeviceIdAndClientMutationId(userId, deviceId, mutation.clientMutationId())
+                .findByUserIdAndServerDeviceIdAndClientMutationId(userId, serverDeviceId, mutation.clientMutationId())
                 .orElseThrow(() -> new DomainException("INTERNAL_ERROR", "Reserved mutation could not be loaded"));
         changeLogCapture.begin();
         try {
@@ -109,7 +109,7 @@ public class SyncMutationProcessor {
         try {
             byte[] bytes = objectMapper.writeValueAsBytes(mutation);
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (JsonProcessingException | NoSuchAlgorithmException exception) {
+        } catch (JacksonException | NoSuchAlgorithmException exception) {
             throw new DomainException("INTERNAL_ERROR", "Mutation fingerprint could not be generated");
         }
     }
@@ -117,7 +117,7 @@ public class SyncMutationProcessor {
     private String serialize(Object value) {
         try {
             return value == null ? null : objectMapper.writeValueAsString(value);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DomainException("INTERNAL_ERROR", "Mutation result could not be serialized");
         }
     }
@@ -128,7 +128,7 @@ public class SyncMutationProcessor {
         }
         try {
             return objectMapper.readTree(payload);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             return payload;
         }
     }

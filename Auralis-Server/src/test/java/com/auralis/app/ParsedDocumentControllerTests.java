@@ -171,7 +171,7 @@ class ParsedDocumentControllerTests {
     private Fixture createReadyFile(String suffix) {
         AuthResult owner = register(suffix);
         var subject = subjectService.create(owner.user().id(),
-                new SubjectCommand("Parsed documents", null, null, null, "001"));
+                new SubjectCommand("Parsed documents", null, null, "001"));
         var assetIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
                 0L, "source.pdf", 20L, "application/pdf", SHA256));
         String objectKey = assetRepository.findByIdAndUserId(assetIntent.assetId(), owner.user().id())

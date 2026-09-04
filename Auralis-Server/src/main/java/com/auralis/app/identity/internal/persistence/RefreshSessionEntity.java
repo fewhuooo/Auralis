@@ -20,7 +20,7 @@ public class RefreshSessionEntity {
     private UUID userId;
 
     @Column(name = "device_id", nullable = false)
-    private UUID deviceId;
+    private UUID serverDeviceId;
 
     @Column(name = "rotation_family_id", nullable = false)
     private UUID rotationFamilyId;
@@ -52,14 +52,14 @@ public class RefreshSessionEntity {
     public RefreshSessionEntity(
             UUID id,
             UUID userId,
-            UUID deviceId,
+            UUID serverDeviceId,
             UUID rotationFamilyId,
             String tokenHash,
             Instant createdAt,
             Instant expiresAt) {
         this.id = id;
         this.userId = userId;
-        this.deviceId = deviceId;
+        this.serverDeviceId = serverDeviceId;
         this.rotationFamilyId = rotationFamilyId;
         this.tokenHash = tokenHash;
         this.createdAt = createdAt;
@@ -88,8 +88,8 @@ public class RefreshSessionEntity {
         return userId;
     }
 
-    public UUID getDeviceId() {
-        return deviceId;
+    public UUID getServerDeviceId() {
+        return serverDeviceId;
     }
 
     public UUID getRotationFamilyId() {

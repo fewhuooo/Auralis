@@ -58,7 +58,7 @@ export const ocrShutdown = (): Promise<void> => {
 export interface DocumentPackageHeader {
   schemaVersion: 1
   userId: string
-  deviceId: string
+  serverDeviceId: string
   sourceId: string
   jobId: string
   ingestionRevision: string
@@ -88,7 +88,7 @@ export interface DocumentUploadPutRequest {
   uploadUrl: string
   cacheId: string
   userId: string
-  deviceId: string
+  serverDeviceId: string
   sourceId: string
   jobId: string
   ingestionRevision: string
@@ -104,7 +104,7 @@ export interface DocumentUploadPutReceipt {
 }
 
 export const documentPackageBegin = (header: DocumentPackageHeader): Promise<string> => {
-  if (!header.userId.trim() || !header.deviceId.trim() || !header.sourceId.trim() || !header.jobId.trim() || !header.ingestionRevision.trim()) {
+  if (!header.userId.trim() || !header.serverDeviceId.trim() || !header.sourceId.trim() || !header.jobId.trim() || !header.ingestionRevision.trim()) {
     throw new Error('DOCUMENT_PACKAGE_HEADER_INVALID')
   }
   return invokeRustCmd<string>('document_package_begin', { header })
@@ -129,10 +129,31 @@ export const documentCacheDelete = (cacheId: string): Promise<boolean> => {
 
 export const documentUploadPut = (request: DocumentUploadPutRequest): Promise<DocumentUploadPutReceipt> => {
   if (!request.uploadUrl.trim() || !request.cacheId.trim() || !request.userId.trim()
-    || !request.deviceId.trim() || !request.sourceId.trim() || !request.jobId.trim()
+    || !request.serverDeviceId.trim() || !request.sourceId.trim() || !request.jobId.trim()
     || !request.ingestionRevision.trim() || request.expectedSize <= 0
     || !/^[a-f0-9]{64}$/i.test(request.expectedPayloadSha256)) {
     throw new Error('DOCUMENT_UPLOAD_REQUEST_INVALID')
   }
   return invokeRustCmd<DocumentUploadPutReceipt>('document_upload_put', { request })
+}
+
+export interface LocalResourceSnapshotItem {
+  resourceType: string
+  resourceId: string
+  version: number
+  deletedAt: string | null
+  value: unknown
+}
+
+export const replaceLocalResourceSnapshot = (
+  userId: string,
+  items: LocalResourceSnapshotItem[],
+): Promise<void> => {
+  if (!userId.trim() || items.some((item) => !item.resourceType.trim() || !item.resourceId.trim()
+    || !Number.isInteger(item.version) || item.version < 0)) {
+    throw new Error('LOCAL_SNAPSHOT_INVALID')
+  }
+  return invokeRustCmd<void>('replace_local_resource_snapshot', {
+    command: { userId, items },
+  })
 }

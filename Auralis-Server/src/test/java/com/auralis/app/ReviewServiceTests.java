@@ -90,7 +90,7 @@ class ReviewServiceTests {
         AuthResult owner = identityService.register(suffix + "@example.com", "correct horse battery staple",
                 suffix, new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
-                "Review Subject", null, null, null, "001")).id();
+                "Review Subject", null, null, "001")).id();
         UUID blockId = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
                 subjectId, null, "Review block", null, "body", java.util.List.of(), null)).id();
         return new Fixture(owner.user().id(), blockId);

@@ -1,7 +1,5 @@
 # Backend Phase 1 Identity Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 在阶段 0 的 `com.auralis.app` 骨架上建立 User、Device、RefreshSession、Flyway V1 和可测试的认证会话链路。
 
 **Architecture:** Identity 作为 Spring Modulith 模块，持久化实体和 Repository 放在 `identity.internal.persistence`，公开的认证 DTO、服务接口和安全主体放在 `identity` 根包或其明确子包。数据库 schema 由 Flyway V1 唯一管理；JPA 只负责实体映射和查询。认证使用 Spring Security、DelegatingPasswordEncoder、Nimbus HMAC JWT、不可逆 refresh token hash 和 rotation family 撤销。

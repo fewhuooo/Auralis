@@ -23,7 +23,7 @@ interface PackageAdapter {
   begin(header: {
     schemaVersion: 1
     userId: string
-    deviceId: string
+    serverDeviceId: string
     sourceId: string
     jobId: string
     ingestionRevision: string
@@ -57,6 +57,7 @@ export class DocumentJobRunner {
   private readonly parserFactory: DocumentJobRunnerOptions['parserFactory']
   private readonly maxAutomaticRetries: number
   private readonly active = new Map<string, Promise<void>>()
+  private readonly cancelled = new Set<string>()
 
   constructor(options: DocumentJobRunnerOptions) {
     this.repository = options.repository
@@ -74,6 +75,7 @@ export class DocumentJobRunner {
       await task
     } finally {
       if (this.active.get(jobId) === task) this.active.delete(jobId)
+      this.cancelled.delete(jobId)
     }
   }
 
@@ -105,6 +107,7 @@ export class DocumentJobRunner {
   async retry(jobId: string): Promise<void> {
     const job = await this.repository.get(jobId)
     if (!job || !['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(job.phase)) return
+    this.cancelled.delete(jobId)
     await this.repository.transition(jobId, 'QUEUED', {
       attempt: 0,
       errorCode: null,
@@ -115,7 +118,8 @@ export class DocumentJobRunner {
 
   async cancel(jobId: string): Promise<void> {
     const job = await this.repository.get(jobId)
-    if (!job || job.phase === 'READY') return
+    if (!job || ['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(job.phase)) return
+    this.cancelled.add(jobId)
     await this.repository.transition(jobId, 'FAILED_LOCAL', {
       errorCode: 'DOCUMENT_CANCELLED',
       errorDetail: 'Cancelled by the user',
@@ -131,25 +135,30 @@ export class DocumentJobRunner {
     while (true) {
       let packageId: string | null = null
       try {
+        this.assertNotCancelled(jobId)
         job = await this.repository.get(jobId)
         if (!job || job.phase === 'READY') return
         if (job.phase === 'PAUSED_NETWORK') return
         if (job.phase === 'QUEUED') {
           job = await this.repository.transition(jobId, 'EXTRACTING', { attempt: retries, errorCode: null, errorDetail: null })
         }
+        this.assertNotCancelled(jobId)
         packageId = await this.packager.begin({
           schemaVersion: 1,
           userId: job.userId,
-          deviceId: job.deviceId,
+          serverDeviceId: job.serverDeviceId,
           sourceId: job.sourceId,
           jobId: job.jobId,
           ingestionRevision: job.ingestionRevision,
           parserVersion: 'auralis-document-parser/1.0.0',
         })
         const parser = await this.parserFactory(job)
+        this.assertNotCancelled(jobId)
         await parser(async (block) => {
+          this.assertNotCancelled(jobId)
           const phase: DocumentJobPhase = block.kind === 'ocr-page' ? 'OCR_RUNNING' : 'EXTRACTING'
           await this.packager.append(packageId!, block)
+          this.assertNotCancelled(jobId)
           job = await this.repository.transition(jobId, phase, {
             attempt: retries,
             checkpoint: {
@@ -160,7 +169,9 @@ export class DocumentJobRunner {
             errorDetail: null,
           })
         })
+        this.assertNotCancelled(jobId)
         const receipt = await this.packager.finish(packageId)
+        this.assertNotCancelled(jobId)
         await this.repository.transition(jobId, 'PACKAGING', {
           attempt: retries,
           payloadCacheId: receipt.cacheId,
@@ -171,6 +182,7 @@ export class DocumentJobRunner {
         return
       } catch (error) {
         if (packageId && this.packager.abort) await this.packager.abort(packageId).catch(() => undefined)
+        if (this.isCancelled(jobId, error)) return
         if (isAppClosed(error)) return
         if (isNetworkFailure(error)) {
           await this.repository.transition(jobId, 'PAUSED_NETWORK', {
@@ -197,5 +209,13 @@ export class DocumentJobRunner {
         return
       }
     }
+  }
+
+  private assertNotCancelled(jobId: string): void {
+    if (this.cancelled.has(jobId)) throw new Error('DOCUMENT_CANCELLED')
+  }
+
+  private isCancelled(jobId: string, error: unknown): boolean {
+    return this.cancelled.has(jobId) || error instanceof Error && error.message === 'DOCUMENT_CANCELLED'
   }
 }

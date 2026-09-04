@@ -59,7 +59,7 @@ class StatsServiceTests {
                 "stats-task-" + UUID.randomUUID(), "phase-three-password", "Stats Test",
                 new DeviceCommand("stats-device-" + UUID.randomUUID(), "Test Device", DevicePlatform.WEB));
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
-                "Stats Subject", null, null, null, "001")).id();
+                "Stats Subject", null, null, "001")).id();
         UUID taskId = taskService.create(owner.user().id(), new TaskCommand(
                 subjectId, "Complete me", null, TaskStatus.TODO, null, null, null, null, "001", null)).id();
         taskService.update(owner.user().id(), taskId, 0, new TaskCommand(

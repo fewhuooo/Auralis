@@ -1,7 +1,5 @@
 # Auralis 后端阶段 3/4 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:test-driven-development for every production behavior, and execute the tasks in dependency order with verification checkpoints. This plan is executed in the existing checkout because the repository already contains protected, uncommitted phase 2B work.
-
 **Goal:** 在不覆盖阶段 2B 未提交改动的前提下，实现离线同步、版本化复习、统计读取和用户隔离实时提示，并为每项能力建立可重复的 H2/JPA/MockMvc 自动证据。
 
 **Architecture:** 阶段 3 使用数据库 `change_log` 作为按用户递增的同步事实源，`inbound_mutations` 作为设备 mutation 幂等表；REST 领域服务和 Sync push 通过同一组领域服务/变更记录器写入。同步资源快照采用统一 JSON payload，push 返回每个 mutation 的 APPLIED/CONFLICT/REJECTED 结果，pull 使用不透明的 Base64URL cursor，过期 cursor 返回 resetRequired。阶段 4 使用 `review_parameter_sets`、`review_states`、`review_events` 保存可重现的 FSRS-lite 调度状态和不可变历史；Stats 只从当前用户的 review/task/knowledge 数据聚合；Realtime 使用带过期时间、一次性消费和 userId 绑定的数据库 ticket，业务事件只在进程内发布给同用户订阅者。

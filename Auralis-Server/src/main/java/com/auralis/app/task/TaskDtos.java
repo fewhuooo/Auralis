@@ -53,6 +53,16 @@ public final class TaskDtos {
     public record VersionRequest(@NotNull Long baseVersion) {
     }
 
+    public record ScheduleSwapRequest(
+            @NotNull UUID sourceTaskId,
+            @NotNull Long sourceBaseVersion,
+            @NotNull UUID targetTaskId,
+            @NotNull Long targetBaseVersion) {
+    }
+
+    public record ScheduleSwapResponse(Response source, Response target) {
+    }
+
     public record ListResponse(List<Response> items, String nextCursor, boolean hasMore) {
         public ListResponse {
             items = List.copyOf(items);

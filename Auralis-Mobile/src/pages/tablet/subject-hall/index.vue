@@ -35,7 +35,7 @@
             class="subject-card"
             @click="enterWorkspace(subj.id)"
           >
-            <view class="card-color-stripe" :style="{ background: subj.color || '#7D9372' }" />
+            <view class="card-accent-stripe" />
             <view class="card-header">
               <view class="s-icon">
                 <LineIcon v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)" :name="`subj-${subj.icon || 'book'}`" size="56rpx" />
@@ -60,7 +60,7 @@
             <view class="progress-bar">
               <view
                 class="progress-fill"
-                :style="{ width: getMasteryPercent(subj) + '%', background: subj.color }"
+                :style="{ width: getMasteryPercent(subj) + '%' }"
               ></view>
             </view>
             <text class="mastery-label">掌握度 {{ getMasteryPercent(subj) }}%</text>
@@ -161,8 +161,7 @@ const editingId = ref<string | null>(null)
 const formData = ref({
   name: '',
   description: '',
-  icon: 'book',
-  color: '#7D9372'
+  icon: 'book'
 })
 
 // Computed
@@ -186,7 +185,7 @@ const getMasteryPercent = (subj: Subject): number => {
 const openCreateModal = () => {
   isEditing.value = false
   editingId.value = null
-  formData.value = { name: '', description: '', icon: 'book', color: '#7D9372' }
+  formData.value = { name: '', description: '', icon: 'book' }
   showModal.value = true
 }
 
@@ -196,8 +195,7 @@ const openEditModal = (subj: Subject) => {
   formData.value = {
     name: subj.name,
     description: subj.description || '',
-    icon: subj.icon,
-    color: subj.color
+    icon: subj.icon
   }
   showModal.value = true
 }
@@ -215,8 +213,7 @@ const handleSave = async () => {
         ...existing,
         name: formData.value.name,
         description: formData.value.description,
-        icon: formData.value.icon,
-        color: formData.value.color
+        icon: formData.value.icon
       })
       uni.showToast({ title: '学科已更新', icon: 'success' })
     }
@@ -224,8 +221,7 @@ const handleSave = async () => {
     const newId = await subjectStore.addSubject(
       formData.value.name,
       formData.value.description,
-      formData.value.icon,
-      formData.value.color
+      formData.value.icon
     )
     uni.showToast({ title: '学科已创建', icon: 'success' })
     // Auto-navigate to workspace
@@ -395,7 +391,7 @@ onMounted(async () => {
   transform: translateY(-4rpx);
   box-shadow: 0 16rpx 40rpx rgba(0, 0, 0, 0.06);
 }
-.card-color-stripe {
+.card-accent-stripe {
   position: absolute;
   top: 0;
   left: 0;
@@ -403,7 +399,7 @@ onMounted(async () => {
   height: 12rpx;
   transition: height 0.25s;
 }
-.subject-card:hover .card-color-stripe {
+.subject-card:hover .card-accent-stripe {
   height: 16rpx;
 }
 

@@ -24,7 +24,7 @@ import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -183,7 +183,7 @@ class ParsedDocumentCompleteTests {
     private Fixture fixture(String suffix) {
         AuthResult owner = identityService.register(suffix + "@example.com", "correct horse battery staple", suffix,
                 new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
-        var subject = subjectService.create(owner.user().id(), new SubjectCommand("Parsed", null, null, null, "001"));
+        var subject = subjectService.create(owner.user().id(), new SubjectCommand("Parsed", null, null, "001"));
         var assetIntent = assetService.createUploadIntent(owner.user().id(),
                 new AssetUploadIntentCommand(0, "source.pdf", 12, "application/pdf", ASSET_SHA));
         String assetKey = assetRepository.findById(assetIntent.assetId()).orElseThrow().getObjectKey();

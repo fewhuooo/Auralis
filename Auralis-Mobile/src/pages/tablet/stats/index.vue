@@ -90,7 +90,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useBlockStore } from '@/store/useBlockStore'
-import { useSubjectStore } from '@/store/useSubjectStore'
 import TabletLayout from '@/components/tablet/TabletLayout.vue'
 import LineIcon from '@/components/LineIcon.vue'
 import WeeklyChart from '@/components/WeeklyChart.vue'
@@ -99,7 +98,7 @@ import HeatmapChart from '@/components/HeatmapChart.vue'
 import { statsApi } from '@/api/statsApi'
 
 const blockStore = useBlockStore()
-const subjectStore = useSubjectStore()
+const SUBJECT_CHART_PALETTE = ['#7D9372', '#A3B19B', '#C8A97E', '#8DA9B8', '#B58A9B']
 
 const totalFocusHours = ref(0)
 const totalBlocks = ref(0)
@@ -132,14 +131,11 @@ const subjectSegments = computed(() => {
     counts[sName] = (counts[sName] || 0) + 1
   })
   
-  // Try to match colors from subjectStore
-  const segments = Object.keys(counts).map(subjectName => {
-    const subjectDef = subjectStore.subjects.find(s => s.name === subjectName)
-    const color = subjectDef ? subjectDef.color : 'var(--text-accent)'
+  const segments = Object.keys(counts).map((subjectName, index) => {
     return {
       subject: subjectName,
       percentage: Math.round((counts[subjectName] / blocks.length) * 100),
-      color
+      color: SUBJECT_CHART_PALETTE[index % SUBJECT_CHART_PALETTE.length]
     }
   })
   
@@ -179,7 +175,6 @@ onMounted(async () => {
   try {
     await Promise.all([
       blockStore.fetchBlocks(),
-      subjectStore.loadSubjects(),
       loadServerStats(),
     ])
   } catch (error) {

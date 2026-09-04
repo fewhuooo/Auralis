@@ -65,7 +65,7 @@
                   <text class="dist-count">{{ subj.count }}</text>
                 </view>
                 <view class="dist-bar">
-                  <view class="dist-fill" :style="{ width: subj.percent + '%', background: subj.color }"></view>
+                  <view class="dist-fill" :style="{ width: subj.percent + '%' }"></view>
                 </view>
               </view>
             </view>
@@ -334,7 +334,7 @@ const weeklyData = computed(() => {
 const subjectDistribution = computed(() => {
   const total = recentBlocks.value.length || 1
   return subjects.value.map(s => ({
-    name: s.name, icon: s.icon, color: s.color,
+    name: s.name, icon: s.icon,
     count: recentBlocks.value.filter(b => b.subjectId === s.id).length,
     percent: Math.round((recentBlocks.value.filter(b => b.subjectId === s.id).length / total) * 100)
   })).sort((a, b) => b.count - a.count)
@@ -430,7 +430,7 @@ onMounted(async () => {
 .dist-name { flex: 1; font-size: 24rpx; font-weight: 600; color: var(--color-zen-graphite, #1C1C1A); }
 .dist-count { font-size: 20rpx; color: var(--color-zen-stone, #A8A8A5); font-weight: 600; }
 .dist-bar { height: 8rpx; background: var(--color-zen-ivory, #F9F9F7); border-radius: 4rpx; overflow: hidden; }
-.dist-fill { height: 100%; border-radius: 4rpx; transition: width 0.3s; }
+.dist-fill { height: 100%; border-radius: 4rpx; transition: width 0.3s; background: #7D9372; }
 
 .insight-card { background: var(--color-zen-white, #FFFFFF); border: 1px solid var(--color-zen-hairline, #E6E6E4); border-radius: 32rpx; padding: 24rpx; display: flex; gap: 12rpx; align-items: flex-start; box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.02); }
 .insight-icon { font-size: 24rpx; color: #7D9372; font-weight: 800; }

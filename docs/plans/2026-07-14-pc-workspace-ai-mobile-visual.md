@@ -1,7 +1,5 @@
 # PC 学习页 AI 伴读移动端视觉复刻 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 让 PC 学习页右侧 AI 伴读完整采用手机端的欢迎态、消息与胶囊输入视觉语言，同时保持现有聊天流程和上下文。
 
 **Architecture:** 仅在 `SubjectWorkspace.vue` 的右侧 AI 区替换展示标记与样式，不改变 `sendChat`、`streamFetch`、模型选择或学科/文件上下文。现有静态检查脚本扩展为 PC AI 视觉契约，防止文字星号、附件或麦克风入口回归。

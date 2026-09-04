@@ -23,7 +23,7 @@ const MAX_HEADER_BYTES: usize = 64 * 1024;
 pub struct CacheHeader {
     pub schema_version: u32,
     pub user_id: String,
-    pub device_id: String,
+    pub server_device_id: String,
     pub source_id: String,
     pub job_id: String,
     pub ingestion_revision: String,
@@ -37,7 +37,7 @@ impl CacheHeader {
             CACHE_ENVELOPE_VERSION,
             self.schema_version,
             self.user_id,
-            self.device_id,
+            self.server_device_id,
             self.source_id,
             self.job_id,
             self.ingestion_revision,
@@ -47,7 +47,7 @@ impl CacheHeader {
 
     fn matches_scope(&self, scope: &CacheScope) -> bool {
         self.user_id == scope.user_id
-            && self.device_id == scope.device_id
+            && self.server_device_id == scope.server_device_id
             && self.source_id == scope.source_id
             && self.job_id == scope.job_id
             && self.ingestion_revision == scope.ingestion_revision
@@ -57,7 +57,7 @@ impl CacheHeader {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CacheScope {
     pub user_id: String,
-    pub device_id: String,
+    pub server_device_id: String,
     pub source_id: String,
     pub job_id: String,
     pub ingestion_revision: String,
@@ -351,7 +351,7 @@ mod tests {
         CacheHeader {
             schema_version: CACHE_SCHEMA_VERSION,
             user_id: "user-a".to_string(),
-            device_id: "device-1".to_string(),
+            server_device_id: "device-1".to_string(),
             source_id: "source-1".to_string(),
             job_id: "job-1".to_string(),
             ingestion_revision: "revision-4".to_string(),
@@ -362,7 +362,7 @@ mod tests {
     fn scope() -> CacheScope {
         CacheScope {
             user_id: "user-a".to_string(),
-            device_id: "device-1".to_string(),
+            server_device_id: "device-1".to_string(),
             source_id: "source-1".to_string(),
             job_id: "job-1".to_string(),
             ingestion_revision: "revision-4".to_string(),

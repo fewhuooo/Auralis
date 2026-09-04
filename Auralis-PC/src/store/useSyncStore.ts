@@ -151,8 +151,8 @@ async function applyPushResult(repository: LocalRepository, result: SyncMutation
 export const getClientId = (): string => {
   const authStore = useAuthStore()
   const userId = authStore.user?.id ?? 'anonymous'
-  const deviceId = authStore.deviceId ?? 'browser'
-  const key = `auralis:v2:${encodeKeyPart(userId)}:${encodeKeyPart(deviceId)}:client-id`
+  const serverDeviceId = authStore.serverDeviceId ?? 'browser'
+  const key = `auralis:v2:${encodeKeyPart(userId)}:${encodeKeyPart(serverDeviceId)}:client-id`
   const local = storage()
   const existing = local?.getItem(key)
   if (existing) return existing
@@ -177,11 +177,11 @@ export const useSyncStore = defineStore('sync', () => {
   async function getRepository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
     const userId = authStore.user?.id
-    const deviceId = authStore.deviceId
-    if (!userId || !deviceId) throw new Error('Sync requires an authenticated user and device')
-    const key = `${userId}:${deviceId}`
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) throw new Error('Sync requires an authenticated user and device')
+    const key = `${userId}:${serverDeviceId}`
     if (!repository || repositoryKey !== key) {
-      repository = await getLocalRepository(userId, deviceId)
+      repository = await getLocalRepository(userId, serverDeviceId)
       repositoryKey = key
       const state = await repository.getSyncState()
       cursor.value = state.cursor
@@ -254,11 +254,11 @@ export const useSyncStore = defineStore('sync', () => {
     lastSyncError.value = null
     try {
       const authStore = useAuthStore()
-      if (!authStore.deviceId) throw new Error('Sync push requires an authenticated device')
+      if (!authStore.serverDeviceId) throw new Error('Sync push requires an authenticated device')
       const repositoryForSync = await getRepository()
       const pending = await repositoryForSync.listPending()
       if (pending.length === 0) return
-      const response = await useSyncApi.pushChanges({ deviceId: authStore.deviceId, mutations: pending })
+      const response = await useSyncApi.pushChanges({ serverDeviceId: authStore.serverDeviceId, mutations: pending })
       for (const result of response.results) await applyPushResult(repositoryForSync, result)
       publishUpdated()
     } catch (error) {

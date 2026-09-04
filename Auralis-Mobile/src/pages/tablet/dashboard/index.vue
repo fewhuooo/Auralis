@@ -37,7 +37,7 @@
           <view class="quick-select-row">
             <text class="quick-label">学科：</text>
             <view class="subject-dropdown-btn" @click="showSubjectList = !showSubjectList">
-              <view class="sub-dot" :style="{ backgroundColor: quickSubject?.color || '#4A90E2' }"></view>
+              <view class="sub-dot"></view>
               <text class="dropdown-text">{{ quickSubject?.name || '选择学科...' }}</text>
               <LineIcon :name="showSubjectList ? 'chevron-up' : 'chevron-down'" size="32rpx" color="var(--color-zen-stone)" />
             </view>
@@ -54,7 +54,7 @@
                   :class="{ active: quickSubject?.name === sub.name }"
                   @click="selectSubject(sub)"
                 >
-                  <view class="sub-dot" :style="{ backgroundColor: sub.color || '#4A90E2' }"></view>
+                  <view class="sub-dot"></view>
                   <text class="sub-item-name">{{ sub.name }}</text>
                   <LineIcon v-if="quickSubject?.name === sub.name" name="check" size="32rpx" color="#7D9372" />
                 </view>
@@ -152,7 +152,7 @@
               <view class="task-info">
                 <text class="task-name" :class="{ done: task.status === 'completed' }">{{ task.name }}</text>
                 <view class="task-meta">
-                  <text class="task-subject" :style="{ color: task.color || '#7D9372' }">{{ task.subject }}</text>
+                <text class="task-subject">{{ task.subject }}</text>
                   <text class="task-duration">· {{ task.duration }} 分钟</text>
                   <view class="task-load-dot" :class="task.load"></view>
                 </view>
@@ -250,6 +250,7 @@ const blockStore = useBlockStore()
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
 const authStore = useAuthStore()
+const SUBJECT_CHART_PALETTE = ['#7D9372', '#A3B19B', '#C8A97E', '#8DA9B8', '#B58A9B']
 
 const { recentBlocks } = storeToRefs(blockStore)
 const { subjects } = storeToRefs(subjectStore)
@@ -352,7 +353,7 @@ const submitQuickAdd = async () => {
   await taskStore.addTask({
     name,
     subject: selectedSub.name,
-    color: selectedSub.color || '#4A90E2',
+    color: '#7D9372',
     duration: quickDuration.value,
     load: 'medium',
     loadText: '中负荷',
@@ -446,13 +447,11 @@ const subjectSegments = computed(() => {
     counts[sName] = (counts[sName] || 0) + 1
   })
   
-  const segments = Object.keys(counts).map(subjectName => {
-    const subjectDef = subjectStore.subjects.find(s => s.name === subjectName)
-    const color = subjectDef ? subjectDef.color : '#7D9372'
+  const segments = Object.keys(counts).map((subjectName, index) => {
     return {
       subject: subjectName,
       percentage: Math.round((counts[subjectName] / blocks.length) * 100),
-      color
+      color: SUBJECT_CHART_PALETTE[index % SUBJECT_CHART_PALETTE.length]
     }
   })
   

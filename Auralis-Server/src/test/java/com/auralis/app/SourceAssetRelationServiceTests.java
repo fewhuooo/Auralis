@@ -167,7 +167,7 @@ class SourceAssetRelationServiceTests {
         var owner = register("source-owner");
         var other = register("source-other");
         SubjectView subject = subjectService.create(owner.user().id(),
-                new SubjectCommand("Reading", null, null, null, "001"));
+                new SubjectCommand("Reading", null, null, "001"));
 
         SourceView textSource = sourceService.create(owner.user().id(), new SourceCommand(
                 subject.id(), SourceType.TEXT, "A note", null, null, "raw text", "{}"));
@@ -193,7 +193,7 @@ class SourceAssetRelationServiceTests {
     void fileSourceViewIncludesReadyAssetSize() {
         var owner = register("source-file-size");
         SubjectView subject = subjectService.create(owner.user().id(),
-                new SubjectCommand("Files", null, null, null, "001"));
+                new SubjectCommand("Files", null, null, "001"));
         var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
                 0L, "notes.pdf", 3982329L, "application/pdf", null));
         String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
@@ -215,7 +215,7 @@ class SourceAssetRelationServiceTests {
     void textAndUrlSourcesStillPublishServerIngestionEvents() {
         var owner = register("source-events");
         SubjectView subject = subjectService.create(owner.user().id(),
-                new SubjectCommand("Events", null, null, null, "001"));
+                new SubjectCommand("Events", null, null, "001"));
 
         SourceView textSource = sourceService.create(owner.user().id(), new SourceCommand(
                 subject.id(), SourceType.TEXT, "A note", null, null, "raw text", null));
@@ -231,7 +231,7 @@ class SourceAssetRelationServiceTests {
     void fileAssetReplacementAndReingestAwaitClientWithoutAllowingRevisionOverwrite() {
         var owner = register("source-revision");
         SubjectView subject = subjectService.create(owner.user().id(),
-                new SubjectCommand("Revision", null, null, null, "001"));
+                new SubjectCommand("Revision", null, null, "001"));
         var firstIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
                 0L, "first.pdf", 20L, "application/pdf", null));
         String firstKey = assetRepository.findByIdAndUserId(firstIntent.assetId(), owner.user().id())
@@ -267,7 +267,7 @@ class SourceAssetRelationServiceTests {
     void expiredSoftDeletedSourceCleansObjectAndKeepsAuditableAssetRow() {
         var owner = register("source-cleanup");
         SubjectView subject = subjectService.create(owner.user().id(),
-                new SubjectCommand("Cleanup", null, null, null, "001"));
+                new SubjectCommand("Cleanup", null, null, "001"));
         var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
                 0L, "notes.pdf", 20L, "application/pdf", null));
         String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
@@ -294,9 +294,9 @@ class SourceAssetRelationServiceTests {
     void relatedToIsUndirectedAndEndpointDeleteSoftDeletesRelations() {
         var owner = register("relation");
         SubjectView first = subjectService.create(owner.user().id(),
-                new SubjectCommand("First", null, null, null, "001"));
+                new SubjectCommand("First", null, null, "001"));
         SubjectView second = subjectService.create(owner.user().id(),
-                new SubjectCommand("Second", null, null, null, "002"));
+                new SubjectCommand("Second", null, null, "002"));
 
         relationService.create(owner.user().id(), new RelationCommand(
                 RelationNodeType.SUBJECT, first.id(), RelationNodeType.SUBJECT, second.id(),

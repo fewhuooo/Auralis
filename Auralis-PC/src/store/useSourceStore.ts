@@ -1,10 +1,10 @@
 import { computed, ref } from 'vue'
-import { defineStore } from 'pinia'
+import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSourceApi, type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
-import { isClientFileSource, mapSourceView, nextPageCursor, type SourceFileModel } from '@/services/domainMappers'
+import { isClientFileSource, mapSourceView, nextPageCursor, sortSources, type SourceFileModel } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
@@ -19,16 +19,15 @@ function asSourceDto(value: unknown): SourceView | null {
   return typeof candidate.id === 'string' ? candidate : null
 }
 
-async function scheduleSync(): Promise<void> {
-  try {
-    await useSyncStore().triggerSync()
-  } catch (error) {
+function scheduleSync(): void {
+  void useSyncStore().triggerSync().catch((error) => {
     console.warn('[SourceStore] pending mutation sync failed', error)
-  }
+  })
 }
 
 interface SourceDocumentScheduler {
   schedule(sourceId: string): Promise<unknown>
+  discard(sourceId: string): Promise<void>
 }
 
 let documentScheduler: SourceDocumentScheduler | null = null
@@ -41,8 +40,8 @@ export const useSourceStore = defineStore('source', () => {
 
   async function repository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.deviceId) throw new Error('Sources require an authenticated user and device')
-    return getLocalRepository(authStore.user.id, authStore.deviceId)
+    if (!authStore.user?.id || !authStore.serverDeviceId) throw new Error('Sources require an authenticated user and device')
+    return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
   async function cache(view: SourceView, syncStatus: 'synced' | 'pending' | 'conflict' | 'error' = 'synced'): Promise<SourceFileModel> {
@@ -62,15 +61,24 @@ export const useSourceStore = defineStore('source', () => {
   async function readLocal(subjectId?: string): Promise<SourceFileModel[]> {
     const repo = await repository()
     const rows = await repo.list<SourceView>('SOURCE', { includeDeleted: false })
-    return rows
+    return sortSources(rows
       .map((row) => asSourceDto(row.value))
       .filter((value): value is SourceView => value !== null && (!subjectId || value.subjectId === subjectId))
-      .map(mapSourceView)
+      .map(mapSourceView))
   }
 
-  async function loadSources(): Promise<SourceFileModel[]> {
-    isLoading.value = true
-    lastError.value = null
+  function replaceSources(models: SourceFileModel[], subjectIdToFocus?: string): void {
+    const sorted = sortSources(models)
+    sources.value = sorted
+    const focusId = subjectIdToFocus ?? activeSourceFiles.value[0]?.subjectId
+    if (focusId) {
+      activeSourceFiles.value = sorted.filter((source) => source.subjectId === focusId)
+    } else {
+      activeSourceFiles.value = sorted
+    }
+  }
+
+  async function refreshSources(): Promise<void> {
     try {
       const loaded: SourceFileModel[] = []
       let cursor: string | undefined
@@ -90,19 +98,20 @@ export const useSourceStore = defineStore('source', () => {
         .filter((value): value is SourceView => value !== null)
         .map(mapSourceView)
       const merged = [...loaded, ...pending.filter((item) => !loaded.some((loadedItem) => loadedItem.id === item.id))]
-      sources.value = merged
-      activeSourceFiles.value = activeSourceFiles.value.length
-        ? merged.filter((source) => source.subjectId === activeSourceFiles.value[0]?.subjectId)
-        : merged
-      return merged
+      replaceSources(merged)
     } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '资料加载失败，当前使用离线缓存'
+      if (!isOfflineTransportFailure(error)) console.warn('[SourceStore] background source refresh failed', error)
+    }
+  }
+
+  async function loadSources(): Promise<SourceFileModel[]> {
+    isLoading.value = true
+    lastError.value = null
+    try {
       const local = await readLocal()
-      sources.value = local
-      activeSourceFiles.value = activeSourceFiles.value.length
-        ? local.filter((source) => source.subjectId === activeSourceFiles.value[0]?.subjectId)
-        : local
+      replaceSources(local)
+      void refreshSources()
       return local
     } finally {
       isLoading.value = false
@@ -110,15 +119,18 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   async function loadSourceFiles(subjectId: string): Promise<SourceFileModel[]> {
-    activeSourceFiles.value = activeSourceFiles.value.filter((source) => source.subjectId === subjectId)
-    try {
-      await loadSources()
-    } catch (error) {
-      lastError.value = error instanceof Error ? error.message : '资料加载失败'
-    }
-    const filtered = sources.value.filter((source) => source.subjectId === subjectId)
-    activeSourceFiles.value = filtered
-    return filtered
+    const local = await loadLocalSourceFiles(subjectId)
+    void refreshSources()
+    return local
+  }
+
+  async function loadLocalSourceFiles(subjectId: string): Promise<SourceFileModel[]> {
+    const local = await readLocal(subjectId)
+    replaceSources([
+      ...sources.value.filter((source) => source.subjectId !== subjectId),
+      ...local,
+    ], subjectId)
+    return activeSourceFiles.value
   }
 
   async function createFileSource(
@@ -164,8 +176,9 @@ export const useSourceStore = defineStore('source', () => {
       baseVersion: 0,
       payload: mutationView as unknown as Record<string, unknown>,
     }))
-    await scheduleSync()
-    await loadSourceFiles(subjectId)
+    const model = mapSourceView(localView)
+    replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)])
+    scheduleSync()
     return id
   }
 
@@ -177,40 +190,21 @@ export const useSourceStore = defineStore('source', () => {
     const source = sources.value.find((item) => item.id === id) || activeSourceFiles.value.find((item) => item.id === id)
     if (!source) return
     const repo = await repository()
-    const pendingMutations = await repo.listPending('SOURCE')
-    const hasPendingCreate = pendingMutations.some((mutation) => mutation.resourceId === id && mutation.mutationType === 'CREATE')
-
-    if (hasPendingCreate) {
-      await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'pending' })
-      await repo.enqueueMutation(createStableMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'SOURCE',
-        resourceId: id,
-        mutationType: 'DELETE',
-        baseVersion: source.version,
-        payload: { id },
-      }))
-      scheduleSync()
-    } else {
-      try {
-        await useSourceApi.delete(id, { baseVersion: source.version })
-        await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'synced' })
-      } catch (error) {
-        if (!isOfflineTransportFailure(error)) throw error
-        await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'pending' })
-        await repo.enqueueMutation(createStableMutation({
-          clientMutationId: uuidv7(),
-          resourceType: 'SOURCE',
-          resourceId: id,
-          mutationType: 'DELETE',
-          baseVersion: source.version,
-          payload: { id },
-        }))
-        scheduleSync()
-      }
-    }
+    await repo.tombstone('SOURCE', id, { version: source.version, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'SOURCE',
+      resourceId: id,
+      mutationType: 'DELETE',
+      baseVersion: source.version,
+      payload: { id },
+    }))
     sources.value = sources.value.filter((item) => item.id !== id)
     activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
+    scheduleSync()
+    void documentScheduler?.discard(id).catch((error) => {
+      console.warn('[SourceStore] deleted Source document cleanup failed', error)
+    })
   }
 
   async function saveSourceFileCatalog(file: SourceFileModel): Promise<void> {
@@ -223,41 +217,54 @@ export const useSourceStore = defineStore('source', () => {
       assetId: file.assetId,
       outline: file.catalogJson,
     }
-    try {
-      const view = await useSourceApi.update(file.id, payload)
-      await cache(view)
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      const repo = await repository()
-      const localView: SourceView = {
-        id: file.id,
-        subjectId: file.subjectId,
-        type: 'FILE',
-        title: file.name,
-        assetId: file.assetId,
-        outline: file.catalogJson,
-        version: file.version,
-        createdAt: file.createdAt,
-        updatedAt: new Date().toISOString(),
-        deletedAt: file.deletedAt ?? undefined,
-        ingestionStatus: file.ingestionStatus,
-      }
-      await repo.upsert('SOURCE', file.id, localView, { version: file.version, syncStatus: 'pending' })
-      await repo.enqueueMutation(createStableMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'SOURCE',
-        resourceId: file.id,
-        mutationType: 'UPDATE',
-        baseVersion: file.version,
-        payload: { outline: file.catalogJson },
-      }))
-      scheduleSync()
+    const repo = await repository()
+    const localView: SourceView = {
+      id: file.id,
+      subjectId: file.subjectId,
+      type: 'FILE',
+      title: file.name,
+      assetId: file.assetId,
+      outline: file.catalogJson,
+      version: file.version,
+      createdAt: file.createdAt,
+      updatedAt: new Date().toISOString(),
+      deletedAt: file.deletedAt ?? undefined,
+      ingestionStatus: file.ingestionStatus,
     }
-    await loadSourceFiles(file.subjectId)
+    await repo.upsert('SOURCE', file.id, localView, { version: file.version, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'SOURCE',
+      resourceId: file.id,
+      mutationType: 'UPDATE',
+      baseVersion: file.version,
+      payload: payload as unknown as Record<string, unknown>,
+    }))
+    scheduleSync()
+    const model = mapSourceView(localView)
+    replaceSources(sources.value.map((source) => source.id === file.id ? model : source))
   }
 
   function attachDocumentScheduler(scheduler: SourceDocumentScheduler | null): void {
     documentScheduler = scheduler
+  }
+
+  async function resumeDocumentProcessing(sourceId: string): Promise<void> {
+    if (!documentScheduler) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
+    await useSyncStore().triggerSync()
+
+    const localSource = await (await repository()).read<SourceView>('SOURCE', sourceId)
+    if (!localSource || localSource.syncStatus !== 'synced') {
+      if (localSource?.syncStatus === 'conflict') {
+        throw new Error('资料登记发生版本冲突，请刷新后重试')
+      }
+      if (localSource?.syncStatus === 'error') {
+        throw new Error('资料登记同步失败，请检查网络或资料所属学科后重试')
+      }
+      throw new Error('资料尚未同步到服务端，请稍后再试')
+    }
+
+    await documentScheduler.schedule(sourceId)
   }
 
   const currentSourceCount = computed(() => sources.value.length)
@@ -270,10 +277,16 @@ export const useSourceStore = defineStore('source', () => {
     lastError,
     loadSources,
     loadSourceFiles,
+    loadLocalSourceFiles,
     createFileSource,
     addSourceFile,
     deleteSourceFile,
     saveSourceFileCatalog,
     attachDocumentScheduler,
+    resumeDocumentProcessing,
   }
 })
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useSourceStore, import.meta.hot))
+}

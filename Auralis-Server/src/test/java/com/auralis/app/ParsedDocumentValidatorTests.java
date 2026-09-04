@@ -2,7 +2,7 @@ package com.auralis.app;
 
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.ParsedDocumentValidator;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

@@ -1,7 +1,8 @@
 package com.auralis.app.sync;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.core.JsonProcessingException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -19,7 +20,7 @@ public final class SyncDtos {
     }
 
     public record PushRequest(
-            @NotNull UUID deviceId,
+            @NotNull UUID serverDeviceId,
             @NotNull @Size(max = 200) List<@Valid MutationRequest> mutations) {
         public List<SyncMutation> toMutations() {
             return mutations.stream().map(MutationRequest::toMutation).toList();
@@ -75,13 +76,13 @@ public final class SyncDtos {
             Instant deletedAt,
             JsonNode payload,
             Instant createdAt) {
-        static ChangeResponse from(ChangeLogEntry entry, com.fasterxml.jackson.databind.ObjectMapper objectMapper) {
+        static ChangeResponse from(ChangeLogEntry entry, ObjectMapper objectMapper) {
             JsonNode payload;
             try {
                 payload = entry.payload() == null
                         ? objectMapper.getNodeFactory().nullNode()
                         : objectMapper.readTree(entry.payload());
-            } catch (JsonProcessingException exception) {
+            } catch (JacksonException exception) {
                 payload = objectMapper.getNodeFactory().textNode(entry.payload());
             }
             return new ChangeResponse(entry.cursor() == 0 ? null : new SyncCursor(entry.cursor()).encode(),

@@ -32,7 +32,7 @@ const receipt = {
 
 function job(phase = 'PACKAGING') {
   return {
-    jobId: 'job-1', userId: 'user-1', deviceId: 'device-1', sourceId: 'source-1',
+    jobId: 'job-1', userId: 'user-1', serverDeviceId: 'device-1', sourceId: 'source-1',
     ingestionRevision: '11111111-1111-1111-1111-111111111111', phase, attempt: 0,
     checkpoint: { pageNumber: 1, blockOrdinal: 2 }, payloadCacheId: 'cache-1',
     errorCode: null, errorDetail: null, createdAt: '2026-08-24T00:00:00Z', updatedAt: '2026-08-24T00:00:00Z',

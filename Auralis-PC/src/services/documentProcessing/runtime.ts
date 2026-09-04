@@ -4,6 +4,7 @@ import {
   documentPackageBegin,
   documentPackageFinish,
 } from '@/api/tauri'
+import { e2ee } from '@/api/e2ee'
 import { useSourceApi, type SourceView } from '@/api/useSourceApi'
 import { getDocumentProcessingJobRepository } from '@/services/localDb'
 import {
@@ -94,7 +95,7 @@ function isOfficeExtension(fileName: string): boolean {
 
 export interface DocumentProcessingRuntimeSnapshot {
   userId: string
-  deviceId: string
+  serverDeviceId: string
   repository: DocumentProcessingJobRepository
   runner: DocumentJobRunner
   scheduler: SourceJobScheduler
@@ -165,16 +166,17 @@ export class DocumentProcessingRuntime {
     if (!isTauriContext()) return
     const authStore = useAuthStore()
     const userId = authStore.user?.id
-    const deviceId = authStore.deviceId
-    if (!userId || !deviceId) {
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) {
       this.stop()
       return
     }
-    const key = `${userId}:${deviceId}`
+    const key = `${userId}:${serverDeviceId}`
     if (this.key === key && this.snapshot) return
     this.stop()
 
-    const repository = await getDocumentProcessingJobRepository(userId, deviceId)
+    const repository = await getDocumentProcessingJobRepository(userId, serverDeviceId)
+    await this.ensureEncryptionReady(repository)
     const assetStore = useAssetStore()
     const sourceStore = useSourceStore()
     const processingStore = useDocumentProcessingStore()
@@ -214,11 +216,17 @@ export class DocumentProcessingRuntime {
         this.parserInputs.set(job.jobId, asRuntimeFile(file))
       },
       runJob: (jobId) => runner.start(jobId),
+      cancelJob: (jobId) => runner.cancel(jobId),
+      discardPreparedInput: (jobId) => { this.parserInputs.delete(jobId) },
       deleteCache: async (cacheId) => { await documentCacheDelete(cacheId) },
+      onJobChanged: async () => {
+        await processingStore.refresh()
+        await sourceStore.loadSources()
+      },
     })
 
     this.key = key
-    this.snapshot = { userId, deviceId, repository, runner, scheduler }
+    this.snapshot = { userId, serverDeviceId, repository, runner, scheduler }
     sourceStore.attachDocumentScheduler(scheduler)
     processingStore.attachRunner(runner)
 
@@ -233,6 +241,22 @@ export class DocumentProcessingRuntime {
 
     if (typeof window !== 'undefined') window.addEventListener('online', this.onlineHandler)
     if (typeof window !== 'undefined') window.addEventListener('auralis-sync-updated', this.syncHandler)
+  }
+
+  private async ensureEncryptionReady(repository: DocumentProcessingJobRepository): Promise<void> {
+    const hasMasterKey = await e2ee.isEnabled()
+    if (!hasMasterKey) {
+      const jobs = await repository.list()
+      const hasRecoverableCache = jobs.some((job) => job.payloadCacheId !== null || job.payloadReceipt !== null)
+      if (hasRecoverableCache) {
+        throw new Error('DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED')
+      }
+    }
+
+    const initialized = await e2ee.initialize()
+    if (!initialized) {
+      throw new Error('DOCUMENT_ENCRYPTION_INITIALIZATION_FAILED')
+    }
   }
 
   private async createParser(job: DocumentProcessingJob): Promise<(sink: Parameters<typeof parseDocument>[1]) => Promise<void>> {

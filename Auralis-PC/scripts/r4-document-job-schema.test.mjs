@@ -101,7 +101,7 @@ test('v3 numeric revisions are preserved as text in the v5 migration', async () 
 test('browser v3 jobs are copied into the v5 namespace with text revisions', async () => {
   const storage = createMemoryStorage()
   storage.setItem('auralis:v3:document-jobs:user-a:device-1', JSON.stringify([{
-    jobId: 'legacy-job', userId: 'user-a', deviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 4,
+    jobId: 'legacy-job', userId: 'user-a', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 4,
     phase: 'PACKAGING', attempt: 0, checkpoint: { pageNumber: 0, blockOrdinal: 0 }, payloadCacheId: 'cache-1',
     errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
   }]))
@@ -124,6 +124,32 @@ test('cache receipt metadata survives a SQL repository round trip', async () => 
     await repository.transition('job-receipt', 'PACKAGING', { payloadCacheId: receipt.cacheId, payloadReceipt: receipt })
     const persisted = await repository.get('job-receipt')
     assert.deepEqual(persisted.payloadReceipt, receipt)
+  } finally {
+    sqlite.close()
+  }
+})
+
+test('removing a deleted Source job clears only its owner-scoped job rows and returns their cache metadata', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    const first = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: sqlite })
+    const second = new DocumentProcessingJobRepository('user-b', 'device-1', { sql: sqlite })
+    const receipt = {
+      cacheId: 'cache-1', envelopeVersion: 1, chunkCount: 1, encryptedBytes: 64,
+      plainTextSha256: 'a'.repeat(64), payloadSha256: 'b'.repeat(64), payloadBytes: 48,
+    }
+    await first.create({ jobId: 'delete-me', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+    await first.transition('delete-me', 'EXTRACTING')
+    await first.transition('delete-me', 'PACKAGING', { payloadCacheId: receipt.cacheId, payloadReceipt: receipt })
+    await first.create({ jobId: 'keep-me', sourceId: 'source-2', ingestionRevision: 'revision-1' })
+    await second.create({ jobId: 'other-user', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+
+    const removed = await first.removeBySource('source-1')
+
+    assert.deepEqual(removed.map((job) => job.jobId), ['delete-me'])
+    assert.equal(removed[0].payloadReceipt.cacheId, 'cache-1')
+    assert.deepEqual((await first.list()).map((job) => job.jobId), ['keep-me'])
+    assert.deepEqual((await second.list()).map((job) => job.jobId), ['other-user'])
   } finally {
     sqlite.close()
   }

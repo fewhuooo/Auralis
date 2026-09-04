@@ -25,6 +25,7 @@
 
   <!-- Kept mounted across routes for background Office extraction. -->
   <BackgroundParserHost ref="backgroundParserHost" />
+
 </template>
 
 <script setup lang="ts">
@@ -35,6 +36,7 @@ import AppHeader from '@/components/layout/AppHeader.vue'
 import SearchPalette from '@/components/SearchPalette.vue'
 import BackgroundParserHost from '@/components/preview/BackgroundParserHost.vue'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useTaskStore } from '@/store/useTaskStore'
 import { realtimeController } from '@/services/realtimeController'
 import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
 import { setBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
@@ -44,7 +46,16 @@ let stopWatchingAuth: (() => void) | undefined
 const backgroundParserHost = ref<BackgroundParserHostHandle | null>(null)
 const route = useRoute()
 const authStore = useAuthStore()
+const taskStore = useTaskStore()
 const isAuthenticatedRoute = computed(() => Boolean(route.meta.requiresAuth && authStore.isAuthenticated))
+
+const fetchTasksOnStartup = async () => {
+  try {
+    await taskStore.fetchTasks()
+  } catch (error) {
+    console.warn('[App] task startup fetch failed', error)
+  }
+}
 
 onMounted(() => {
   setBackgroundParserHost(backgroundParserHost.value)
@@ -52,6 +63,7 @@ onMounted(() => {
   if (authStore.isAuthenticated) {
     realtimeController.start()
     void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
+    void fetchTasksOnStartup()
   }
 
   stopWatchingAuth = watch(
@@ -60,6 +72,7 @@ onMounted(() => {
       if (isAuthenticated) {
         realtimeController.start()
         void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
+        void fetchTasksOnStartup()
       } else {
         realtimeController.stop()
         documentProcessingRuntime.stop()
@@ -93,8 +106,6 @@ onUnmounted(() => {
   height: 100vh;
   overflow: hidden;
 }
-
-
 
 .app-body {
   flex: 1;
@@ -151,4 +162,5 @@ onUnmounted(() => {
   opacity: 0;
   transform: translateY(-4px);
 }
+
 </style>

@@ -21,7 +21,7 @@ public class InboundMutationRepositoryImpl implements InboundMutationRepositoryC
     public int reserve(
             UUID id,
             UUID userId,
-            UUID deviceId,
+            UUID serverDeviceId,
             String clientMutationId,
             String requestHash,
             String resourceType,
@@ -39,7 +39,7 @@ public class InboundMutationRepositoryImpl implements InboundMutationRepositoryC
             sql += " ON CONFLICT (user_id, device_id, client_mutation_id) DO NOTHING";
         }
         try {
-            return jdbcTemplate.update(sql, id, userId, deviceId, clientMutationId, requestHash,
+            return jdbcTemplate.update(sql, id, userId, serverDeviceId, clientMutationId, requestHash,
                     resourceType, resourceId, mutationType);
         } catch (DuplicateKeyException exception) {
             if (postgres) {
@@ -48,7 +48,7 @@ public class InboundMutationRepositoryImpl implements InboundMutationRepositoryC
             Integer existing = jdbcTemplate.queryForObject("""
                     select count(*) from inbound_mutations
                     where user_id = ? and device_id = ? and client_mutation_id = ?
-                    """, Integer.class, userId, deviceId, clientMutationId);
+                    """, Integer.class, userId, serverDeviceId, clientMutationId);
             if (existing != null && existing > 0) {
                 return 0;
             }

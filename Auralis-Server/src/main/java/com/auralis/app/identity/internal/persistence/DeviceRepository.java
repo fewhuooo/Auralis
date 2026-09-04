@@ -8,7 +8,7 @@ import java.util.UUID;
 
 public interface DeviceRepository extends JpaRepository<DeviceEntity, UUID> {
 
-    Optional<DeviceEntity> findByUserIdAndDeviceId(UUID userId, String deviceId);
+    Optional<DeviceEntity> findByUserIdAndClientDeviceKey(UUID userId, String clientDeviceKey);
 
     Optional<DeviceEntity> findByIdAndUserId(UUID id, UUID userId);
 

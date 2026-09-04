@@ -13,6 +13,7 @@ interface JobRepository {
   create(input: CreateDocumentProcessingJobInput): Promise<DocumentProcessingJob>
   get(jobId: string): Promise<DocumentProcessingJob | null>
   list(): Promise<DocumentProcessingJob[]>
+  removeBySource(sourceId: string): Promise<DocumentProcessingJob[]>
   transition(jobId: string, phase: DocumentProcessingJob['phase'], options?: {
     payloadCacheId?: string | null
     payloadReceipt?: DocumentCacheReceipt | null
@@ -44,7 +45,13 @@ export interface SourceJobSchedulerOptions {
   prepareInput: (job: DocumentProcessingJob, source: SourceView, input: SourceInput['file']) => Promise<void>
   /** Usually DocumentJobRunner.start. The runner persists the full cache receipt. */
   runJob: (jobId: string) => Promise<void>
+  /** Stops a running parser before its durable job row is discarded. */
+  cancelJob?: (jobId: string) => Promise<void>
+  /** Releases a runtime-only parser input which must not outlive its job. */
+  discardPreparedInput?: (jobId: string) => Promise<void> | void
   deleteCache?: (cacheId: string) => Promise<void>
+  /** Keeps UI state in sync without letting observation failures interrupt processing. */
+  onJobChanged?: () => Promise<void> | void
   idFactory?: () => string
 }
 
@@ -92,9 +99,13 @@ export class SourceJobScheduler {
   private readonly expectedAssetSha256?: SourceJobSchedulerOptions['expectedAssetSha256']
   private readonly prepareInput: SourceJobSchedulerOptions['prepareInput']
   private readonly runJob: SourceJobSchedulerOptions['runJob']
+  private readonly cancelJob?: SourceJobSchedulerOptions['cancelJob']
+  private readonly discardPreparedInput?: SourceJobSchedulerOptions['discardPreparedInput']
   private readonly deleteCache?: SourceJobSchedulerOptions['deleteCache']
+  private readonly onJobChanged?: SourceJobSchedulerOptions['onJobChanged']
   private readonly idFactory: () => string
   private readonly active = new Map<string, Promise<SourceScheduleResult>>()
+  private readonly discardedSources = new Set<string>()
 
   constructor(options: SourceJobSchedulerOptions) {
     this.repository = options.repository
@@ -106,11 +117,15 @@ export class SourceJobScheduler {
     this.expectedAssetSha256 = options.expectedAssetSha256
     this.prepareInput = options.prepareInput
     this.runJob = options.runJob
+    this.cancelJob = options.cancelJob
+    this.discardPreparedInput = options.discardPreparedInput
     this.deleteCache = options.deleteCache
+    this.onJobChanged = options.onJobChanged
     this.idFactory = options.idFactory ?? randomJobId
   }
 
   async schedule(sourceId: string): Promise<SourceScheduleResult> {
+    if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     const running = this.active.get(sourceId)
     if (running) return running
     const task = this.process(sourceId)
@@ -119,17 +134,58 @@ export class SourceJobScheduler {
       return await task
     } finally {
       if (this.active.get(sourceId) === task) this.active.delete(sourceId)
+      await this.notifyJobChanged()
     }
   }
 
   async resume(sourceIds: string[]): Promise<SourceScheduleResult[]> {
     const results: SourceScheduleResult[] = []
-    for (const sourceId of sourceIds) results.push(await this.schedule(sourceId))
+    for (const sourceId of sourceIds) {
+      try {
+        results.push(await this.schedule(sourceId))
+      } catch (error) {
+        // A stale or unreadable Source must not prevent later AWAITING_CLIENT
+        // Sources from reaching the native runner. process() records a local
+        // job failure when a job already exists; this result preserves the
+        // failure for callers when the error happened before job creation.
+        results.push({
+          status: 'FAILED_LOCAL',
+          reason: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
     return results
   }
 
+  /**
+   * Removes all local processing state when its Source is deleted. Cancelling
+   * first prevents an already running OCR parser from recreating a package
+   * after the persistent job rows are gone.
+   */
+  async discard(sourceId: string): Promise<void> {
+    if (!sourceId.trim()) return
+    this.discardedSources.add(sourceId)
+    const jobs = (await this.repository.list()).filter((job) => job.sourceId === sourceId)
+    for (const job of jobs) {
+      await this.cancelJob?.(job.jobId)
+      await this.discardPreparedInput?.(job.jobId)
+    }
+    const removed = await this.repository.removeBySource(sourceId)
+    const cacheIds = new Set(removed.map((job) => job.payloadCacheId).filter((cacheId): cacheId is string => Boolean(cacheId)))
+    for (const cacheId of cacheIds) {
+      try {
+        await this.deleteCache?.(cacheId)
+      } catch (error) {
+        console.warn('[SourceJobScheduler] deleted Source cache cleanup failed', error)
+      }
+    }
+    await this.notifyJobChanged()
+  }
+
   private async process(sourceId: string): Promise<SourceScheduleResult> {
+    if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     const source = await this.sourceApi.get(sourceId)
+    if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     if (source.type !== 'FILE') return { status: 'SKIPPED', reason: 'NON_FILE_SOURCE' }
     if (!source.assetId || !source.ingestionRevision) return { status: 'SKIPPED', reason: 'FILE_SOURCE_NOT_READY_FOR_CLIENT' }
 
@@ -138,8 +194,10 @@ export class SourceJobScheduler {
     let job = jobs.find((candidate) => candidate.sourceId === sourceId && candidate.ingestionRevision === source.ingestionRevision)
 
     if (!job) {
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
       if (source.ingestionStatus !== 'AWAITING_CLIENT') return { status: 'SKIPPED', reason: 'SOURCE_NOT_AWAITING_CLIENT' }
       job = await this.repository.create({ jobId: this.idFactory(), sourceId, ingestionRevision: source.ingestionRevision })
+      await this.notifyJobChanged()
     }
     if (job.phase === 'READY') return { status: 'SKIPPED', jobId: job.jobId, reason: 'ALREADY_READY' }
     if (job.phase === 'FAILED_LOCAL' || job.phase === 'FAILED_SERVER') return { status: job.phase, jobId: job.jobId }
@@ -157,7 +215,9 @@ export class SourceJobScheduler {
     let input: SourceInput | null = null
     try {
       input = await this.resolveInput(source.assetId, source)
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
       const assetSha256 = await this.hashFile(input.file)
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
       if (!/^[a-f0-9]{64}$/i.test(assetSha256)) {
         await this.failJob(job, 'SOURCE_ASSET_SHA_INVALID', 'The local Asset SHA-256 is invalid')
         return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_INVALID' }
@@ -176,10 +236,18 @@ export class SourceJobScheduler {
         }
         await this.upload.upload(job.jobId, job.payloadReceipt, { sourceAssetSha256: assetSha256 })
       } else {
+        if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
         await this.prepareInput(job, source, input.file)
+        if (this.discardedSources.has(sourceId)) {
+          await this.discardPreparedInput?.(job.jobId)
+          return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+        }
         await this.runJob(job.jobId)
         const packaged = await this.repository.get(job.jobId)
-        if (!packaged) throw new Error('DOCUMENT_JOB_NOT_FOUND')
+        if (!packaged) {
+          if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+          throw new Error('DOCUMENT_JOB_NOT_FOUND')
+        }
         if (packaged.phase === 'PAUSED_NETWORK') return { status: 'PAUSED_NETWORK', jobId: job.jobId }
         if (packaged.phase === 'FAILED_LOCAL') return { status: 'FAILED_LOCAL', jobId: job.jobId }
         if (packaged.phase !== 'PACKAGING' || !packaged.payloadReceipt) {
@@ -196,6 +264,7 @@ export class SourceJobScheduler {
       if (completed?.phase === 'PAUSED_NETWORK') return { status: 'PAUSED_NETWORK', jobId: job.jobId }
       return { status: completed?.phase === 'FAILED_SERVER' ? 'FAILED_SERVER' : 'FAILED_LOCAL', jobId: job.jobId }
     } catch (error) {
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
       const current = await this.repository.get(job.jobId)
       if (current?.phase === 'PAUSED_NETWORK') return { status: 'PAUSED_NETWORK', jobId: job.jobId }
       if (current && isNetworkFailure(error) && current.phase === 'QUEUED') {
@@ -239,5 +308,13 @@ export class SourceJobScheduler {
       errorCode: code,
       errorDetail: detail,
     })
+  }
+
+  private async notifyJobChanged(): Promise<void> {
+    try {
+      await this.onJobChanged?.()
+    } catch (error) {
+      console.warn('[SourceJobScheduler] document job state notification failed', error)
+    }
   }
 }

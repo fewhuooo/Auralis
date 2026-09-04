@@ -1,7 +1,5 @@
 # Backend Phase 5 AI and RAG Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use executing-plans to implement this plan task-by-task with verification checkpoints. Steps use checkbox syntax for tracking. Do not commit changes in this workspace unless the user explicitly requests it.
-
 **Goal:** 在现有 com.auralis.app 模块化单体后端中完成用户级 BYOK、模型适配、Source ingestion、pgvector 检索、Conversation、citation、SSE 和强类型建议接口，并建立可重复的 H2/JPA/MockMvc/Stub provider 自动证据。
 
 **Architecture:** AI 模块只依赖公开的 Source/Asset 端口和共享领域事件，不访问其他模块的 Entity 或 internal Repository。聊天、embedding、解析和检索分别通过 AiProviderPort、EmbeddingProviderPort、SourceParser 和 RetrievalPort 解耦；真实供应商使用 Spring RestClient 适配器，测试使用 Stub provider。V8 提供可移植核心表，V9 Java Flyway migration 仅在 PostgreSQL 中启用 vector(1024) 与向量索引，在 H2 中安全跳过。

@@ -20,10 +20,9 @@ public final class SubjectDtos {
             @NotBlank @Size(max = 120) String name,
             @Size(max = 2000) String description,
             @Size(max = 64) String iconKey,
-            @Size(max = 32) String color,
             @Size(max = 128) String sortKey) {
         SubjectCommand command() {
-            return new SubjectCommand(name, description, iconKey, color, sortKey);
+            return new SubjectCommand(name, description, iconKey, sortKey);
         }
     }
 
@@ -32,10 +31,9 @@ public final class SubjectDtos {
             @NotBlank @Size(max = 120) String name,
             @Size(max = 2000) String description,
             @Size(max = 64) String iconKey,
-            @Size(max = 32) String color,
             @Size(max = 128) String sortKey) {
         SubjectCommand command() {
-            return new SubjectCommand(name, description, iconKey, color, sortKey);
+            return new SubjectCommand(name, description, iconKey, sortKey);
         }
     }
 
@@ -53,7 +51,6 @@ public final class SubjectDtos {
             String name,
             String description,
             String iconKey,
-            String color,
             String sortKey,
             boolean defaultSubject,
             long version,
@@ -61,7 +58,7 @@ public final class SubjectDtos {
             Instant updatedAt,
             Instant deletedAt) {
         static Response from(SubjectView view) {
-            return new Response(view.id(), view.name(), view.description(), view.iconKey(), view.color(), view.sortKey(),
+            return new Response(view.id(), view.name(), view.description(), view.iconKey(), view.sortKey(),
                     view.defaultSubject(), view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
         }
     }

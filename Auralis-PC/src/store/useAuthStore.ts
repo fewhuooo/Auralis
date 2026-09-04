@@ -16,7 +16,7 @@ export { isValidSession }
 export interface LoginPayload {
   username: string
   password: string
-  deviceId?: string
+  clientDeviceKey?: string
   deviceName?: string
   platform?: 'WEB' | 'WINDOWS' | 'MACOS' | 'IOS' | 'ANDROID' | 'HARMONY' | 'UNKNOWN'
 }
@@ -25,7 +25,7 @@ export interface RegisterPayload {
   username: string
   password: string
   displayName?: string
-  deviceId?: string
+  clientDeviceKey?: string
   deviceName?: string
   platform?: 'WEB' | 'WINDOWS' | 'MACOS' | 'IOS' | 'ANDROID' | 'HARMONY' | 'UNKNOWN'
 }
@@ -36,7 +36,7 @@ export const useAuthStore = defineStore(
     const user = ref<UserView | null>(null)
     const tokens = ref<TokenPair | null>(null)
     const sessionId = ref<string | null>(null)
-    const deviceId = ref<string | null>(null)
+    const serverDeviceId = ref<string | null>(null)
     const isHydrated = ref<boolean>(true)
     const showAuthModal = ref(false)
 
@@ -63,17 +63,22 @@ export const useAuthStore = defineStore(
     })
 
     const username = computed(() => user.value?.displayName || user.value?.username || null)
-    const isAuthenticated = computed(() => Boolean(tokens.value?.accessToken && tokens.value?.refreshToken && user.value?.id))
+    const isAuthenticated = computed(() => Boolean(
+      tokens.value?.accessToken
+      && tokens.value?.refreshToken
+      && user.value?.id
+      && serverDeviceId.value,
+    ))
 
     function setSession(result: AuthResult | null | undefined): void {
-      if (!result || !result.user || !result.tokens) {
+      if (!result || !result.user || !result.tokens || !result.sessionId || !result.serverDeviceId) {
         clearSession()
         return
       }
       user.value = result.user ?? null
       tokens.value = result.tokens ?? null
       sessionId.value = result.sessionId ?? null
-      deviceId.value = result.deviceId ?? null
+      serverDeviceId.value = result.serverDeviceId ?? null
     }
 
     function setTokens(tokenPair: TokenPair | null | undefined): void {
@@ -84,7 +89,7 @@ export const useAuthStore = defineStore(
       user.value = null
       tokens.value = null
       sessionId.value = null
-      deviceId.value = null
+      serverDeviceId.value = null
     }
 
     async function login(payload: LoginPayload): Promise<AuthResult> {
@@ -92,7 +97,7 @@ export const useAuthStore = defineStore(
       const req: LoginRequest = {
         username: payload.username.trim(),
         password: payload.password,
-        deviceId: payload.deviceId || identity.deviceId,
+        clientDeviceKey: payload.clientDeviceKey || identity.clientDeviceKey,
         deviceName: payload.deviceName?.trim() || identity.deviceName,
         platform: payload.platform || identity.platform,
       }
@@ -107,7 +112,7 @@ export const useAuthStore = defineStore(
         username: payload.username.trim(),
         password: payload.password,
         displayName: payload.displayName?.trim() || payload.username.trim(),
-        deviceId: payload.deviceId || identity.deviceId,
+        clientDeviceKey: payload.clientDeviceKey || identity.clientDeviceKey,
         deviceName: payload.deviceName?.trim() || identity.deviceName,
         platform: payload.platform || identity.platform,
       }
@@ -140,7 +145,7 @@ export const useAuthStore = defineStore(
       user,
       tokens,
       sessionId,
-      deviceId,
+      serverDeviceId,
       isHydrated,
       token,
       refreshToken,
@@ -159,20 +164,20 @@ export const useAuthStore = defineStore(
   {
     persist: {
       key: 'auralis_auth_session',
-      pick: ['user', 'tokens', 'sessionId', 'deviceId'],
+      pick: ['user', 'tokens', 'sessionId', 'serverDeviceId'],
       afterHydrate: (ctx: PiniaPluginContext) => {
         const store = ctx.store as unknown as {
           user: UserView | null
           tokens: TokenPair | null
           sessionId: string | null
-          deviceId: string | null
+          serverDeviceId: string | null
           isHydrated: boolean
         }
-        if (!isValidSession(store.user, store.tokens)) {
+        if (!isValidSession(store.user, store.tokens) || !store.sessionId || !store.serverDeviceId) {
           store.user = null
           store.tokens = null
           store.sessionId = null
-          store.deviceId = null
+          store.serverDeviceId = null
         }
         store.isHydrated = true
       },

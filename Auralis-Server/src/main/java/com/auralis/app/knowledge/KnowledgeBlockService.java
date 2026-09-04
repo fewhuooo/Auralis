@@ -1,8 +1,8 @@
 package com.auralis.app.knowledge;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
@@ -170,7 +170,7 @@ public class KnowledgeBlockService {
     private String encodeTags(List<String> tags) {
         try {
             return objectMapper.writeValueAsString(tags == null ? List.of() : tags);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DomainException("VALIDATION_FAILED", "Tags could not be encoded");
         }
     }
@@ -185,7 +185,7 @@ public class KnowledgeBlockService {
     private List<String> decodeTags(String tags) {
         try {
             return objectMapper.readValue(tags, new TypeReference<>() { });
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new DomainException("INTERNAL_ERROR", "Stored tags could not be decoded");
         }
     }

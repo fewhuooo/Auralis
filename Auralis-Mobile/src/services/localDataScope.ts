@@ -7,8 +7,8 @@ export interface ScopeStorage {
   set(key: string, value: string): void
 }
 
-function stableScopeId(userId: string, deviceId: string): string {
-  const input = `${userId}:${deviceId}`
+function stableScopeId(userId: string, serverDeviceId: string): string {
+  const input = `${userId}:${serverDeviceId}`
   let hash = 2166136261
   for (let index = 0; index < input.length; index += 1) {
     hash ^= input.charCodeAt(index)
@@ -23,16 +23,16 @@ export function createLocalDataScope(storage: ScopeStorage) {
       const value = storage.get(SCOPE_STORAGE_KEY)
       return typeof value === 'string' && value ? value : LEGACY_SCOPE
     },
-    activate(userId: string, deviceId: string): string {
-      const baseScope = stableScopeId(userId, deviceId)
+    activate(userId: string, serverDeviceId: string): string {
+      const baseScope = stableScopeId(userId, serverDeviceId)
       const saved = storage.get(`${SCOPE_STORAGE_KEY}:${baseScope}`)
       const scope = typeof saved === 'string' && saved ? saved : baseScope
       storage.set(SCOPE_STORAGE_KEY, scope)
       storage.set(`${SCOPE_STORAGE_KEY}:${baseScope}`, scope)
       return scope
     },
-    reset(userId: string, deviceId: string): string {
-      const baseScope = stableScopeId(userId, deviceId)
+    reset(userId: string, serverDeviceId: string): string {
+      const baseScope = stableScopeId(userId, serverDeviceId)
       resetSequence += 1
       const scope = `${baseScope}-reset-${Date.now().toString(36)}-${resetSequence}`
       storage.set(SCOPE_STORAGE_KEY, scope)

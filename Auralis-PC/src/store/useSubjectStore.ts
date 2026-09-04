@@ -60,13 +60,32 @@ export const useSubjectStore = defineStore('subject', () => {
   const lastError = ref<string | null>(null)
   const sourceStore = useSourceStore()
 
+  function replaceSubjects(models: Subject[]): void {
+    const sorted = [...models].sort((a, b) => {
+      if (a.defaultSubject && !b.defaultSubject) return -1
+      if (!a.defaultSubject && b.defaultSubject) return 1
+      if (a.sortKey && b.sortKey) {
+        if (a.sortKey < b.sortKey) return -1
+        if (a.sortKey > b.sortKey) return 1
+      } else if (a.sortKey) {
+        return -1
+      } else if (b.sortKey) {
+        return 1
+      }
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0
+      return ta - tb
+    })
+    subjects.value = sorted
+  }
+
   const activeSubject = computed(() => subjects.value.find((subject) => subject.id === activeSubjectId.value) || null)
   const activeSourceFiles = computed(() => sourceStore.activeSourceFiles)
 
   async function repository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.deviceId) throw new Error('Subjects require an authenticated user and device')
-    return getLocalRepository(authStore.user.id, authStore.deviceId)
+    if (!authStore.user?.id || !authStore.serverDeviceId) throw new Error('Subjects require an authenticated user and device')
+    return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
   async function cache(view: SubjectView, syncStatus: 'synced' | 'pending' | 'conflict' | 'error' = 'synced'): Promise<Subject> {
@@ -94,9 +113,7 @@ export const useSubjectStore = defineStore('subject', () => {
       }))
   }
 
-  async function loadSubjects(): Promise<void> {
-    isLoading.value = true
-    lastError.value = null
+  async function refreshSubjects(): Promise<void> {
     try {
       const loaded: Subject[] = []
       let cursor: string | undefined
@@ -119,18 +136,26 @@ export const useSubjectStore = defineStore('subject', () => {
         .filter((value): value is SubjectView => value !== null)
         .map((value) => mapSubjectView(value))
       const merged = [...loaded, ...pending.filter((item) => !loaded.some((loadedItem) => loadedItem.id === item.id))]
-      subjects.value = merged.map((subject) => ({
+      replaceSubjects(merged.map((subject) => ({
         ...subject,
         blockCount: blockRows.filter((row) => asRecord(row.value)?.subjectId === subject.id).length,
         fileCount: sourceRows.filter((row) => asRecord(row.value)?.subjectId === subject.id).length,
-      }))
+      })))
     } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
       lastError.value = error instanceof Error ? error.message : '学科加载失败，当前使用离线缓存'
-      subjects.value = await localSubjects()
+      if (!isOfflineTransportFailure(error)) console.warn('[SubjectStore] background subject refresh failed', error)
+    }
+  }
+
+  async function loadSubjects(): Promise<void> {
+    isLoading.value = true
+    lastError.value = null
+    try {
+      replaceSubjects(await localSubjects())
     } finally {
       isLoading.value = false
     }
+    void refreshSubjects()
   }
 
   function setActiveSubject(id: string | null): void {
@@ -139,13 +164,12 @@ export const useSubjectStore = defineStore('subject', () => {
     else sourceStore.activeSourceFiles = []
   }
 
-  async function addSubject(name: string, description: string, icon: string, color: string): Promise<string> {
+  async function addSubject(name: string, description: string, icon: string): Promise<string> {
     const payload: SubjectCreateRequest = {
       baseVersion: 0,
       name: name.trim(),
       description: description.trim(),
       iconKey: icon,
-      color,
     }
     // CREATE is local-first even while online. The durable outbox keeps the
     // resource ID and clientMutationId intact if the HTTP response is lost.
@@ -163,7 +187,7 @@ export const useSubjectStore = defineStore('subject', () => {
       payload: localView as unknown as Record<string, unknown>,
     }))
     scheduleSync()
-    subjects.value = [...subjects.value, mapSubjectView(localView)]
+    replaceSubjects([...subjects.value, mapSubjectView(localView)])
     return id
   }
 
@@ -173,51 +197,43 @@ export const useSubjectStore = defineStore('subject', () => {
       name: subject.name,
       description: subject.description,
       iconKey: subject.iconKey || subject.icon,
-      color: subject.color,
       sortKey: subject.sortKey,
     }
-    try {
-      const view = await useSubjectApi.update(subject.id, payload)
-      const model = await cache(view)
-      subjects.value = subjects.value.map((item) => item.id === model.id ? model : item)
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      const repo = await repository()
-      await repo.upsert('SUBJECT', subject.id, { ...payload, id: subject.id }, { version: subject.version, syncStatus: 'pending' })
-      await repo.enqueueMutation(createStableMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'SUBJECT',
-        resourceId: subject.id,
-        mutationType: 'UPDATE',
-        baseVersion: subject.version,
-        payload: payload as unknown as Record<string, unknown>,
-      }))
-      scheduleSync()
-      subjects.value = subjects.value.map((item) => item.id === subject.id ? { ...subject } : item)
-    }
+    const repo = await repository()
+    await repo.upsert('SUBJECT', subject.id, {
+      ...payload,
+      id: subject.id,
+      version: subject.version,
+      createdAt: subject.createdAt,
+      updatedAt: new Date().toISOString(),
+      deletedAt: undefined,
+    }, { version: subject.version, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'SUBJECT',
+      resourceId: subject.id,
+      mutationType: 'UPDATE',
+      baseVersion: subject.version,
+      payload: payload as unknown as Record<string, unknown>,
+    }))
+    scheduleSync()
+    replaceSubjects(subjects.value.map((item) => item.id === subject.id ? { ...subject } : item))
   }
 
   async function deleteSubject(id: string): Promise<void> {
     const subject = subjects.value.find((item) => item.id === id)
     if (!subject) return
-    try {
-      await useSubjectApi.delete(id, { baseVersion: subject.version })
-      const repo = await repository()
-      await repo.tombstone('SUBJECT', id, { version: subject.version, syncStatus: 'synced' })
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      const repo = await repository()
-      await repo.tombstone('SUBJECT', id, { version: subject.version, syncStatus: 'pending' })
-      await repo.enqueueMutation(createStableMutation({
-        clientMutationId: uuidv7(),
-        resourceType: 'SUBJECT',
-        resourceId: id,
-        mutationType: 'DELETE',
-        baseVersion: subject.version,
-        payload: { id },
-      }))
-      scheduleSync()
-    }
+    const repo = await repository()
+    await repo.tombstone('SUBJECT', id, { version: subject.version, syncStatus: 'pending' })
+    await repo.enqueueMutation(createStableMutation({
+      clientMutationId: uuidv7(),
+      resourceType: 'SUBJECT',
+      resourceId: id,
+      mutationType: 'DELETE',
+      baseVersion: subject.version,
+      payload: { id },
+    }))
+    scheduleSync()
     if (activeSubjectId.value === id) setActiveSubject(null)
     subjects.value = subjects.value.filter((item) => item.id !== id)
   }
@@ -225,7 +241,10 @@ export const useSubjectStore = defineStore('subject', () => {
   const loadSourceFiles = (subjectId: string) => sourceStore.loadSourceFiles(subjectId)
   const addSourceFile = (subjectId: string, name: string, filePath: string, fileType: string, fileSize: number, catalogJson?: string) =>
     sourceStore.addSourceFile(subjectId, name, filePath, fileType, fileSize, catalogJson)
-  const deleteSourceFile = (id: string) => sourceStore.deleteSourceFile(id)
+  async function deleteSourceFile(id: string): Promise<void> {
+    await sourceStore.deleteSourceFile(id)
+    void loadSubjects().catch((error) => console.warn('[SubjectStore] background subject refresh failed', error))
+  }
   const saveSourceFileCatalog = (file: SourceFile) => sourceStore.saveSourceFileCatalog(file)
 
   async function analyzeCatalogViaAi(sourceFileId: string, catalogText: string): Promise<void> {

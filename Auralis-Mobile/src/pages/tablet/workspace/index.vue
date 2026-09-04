@@ -183,7 +183,7 @@
                     :front="activeCard.title"
                     :back="activeCard.preview"
                     :subject="activeCard.subject || activeSubject?.name"
-                    :color="activeCard.color || activeSubject?.color"
+                    :color="activeCard.color"
                     v-model:flipped="isFlipped"
                   />
 
@@ -1359,7 +1359,7 @@ const extractFileToBlock = (file: any) => {
           title: `材料提炼：${file.name}`,
           preview: `来源文件：${file.name} (${file.file_type || '通用材料'})。\n\n核心要点记录：\n1. 已建立材料关联，可直接点击左侧材料面板查看完整构架。\n2. 建议通过 AI 深度伴读提炼具体章节要点并补充至此卡片。`,
           source: file.name,
-          color: subject?.color || '#7D9372',
+          color: 'rgba(181,196,177,0.4)',
           subjectId: subjectId.value,
           difficulty: 'medium',
           mastery: 0
@@ -1433,7 +1433,7 @@ const handleCreateBlock = async () => {
     title: newBlock.value.title,
     preview: newBlock.value.preview,
     source: newBlock.value.source,
-    color: subject?.color || '#6d635b',
+    color: 'rgba(181,196,177,0.4)',
     subjectId: subjectId.value,
     difficulty: newBlock.value.difficulty,
     mastery: 0
@@ -1596,7 +1596,7 @@ const extractToBlock = (content: string) => {
           title: 'AI 重点考点提炼',
           preview: content,
           source: 'AI 伴读浮窗',
-          color: subject?.color || '#7D9372',
+          color: 'rgba(181,196,177,0.4)',
           subjectId: subjectId.value,
           difficulty: 'medium',
           mastery: 0
@@ -1726,7 +1726,7 @@ const extractSummaryToBlock = async () => {
     title,
     preview: currentAiSummary.value,
     source: activeFileId.value ? selectedFile.value?.name || '当前材料' : '全科总结',
-    color: activeSubject.value?.color || '#7D9372',
+    color: 'rgba(181,196,177,0.4)',
     subjectId: activeSubject.value.id,
     tags: ['AI总结', '提纲'],
     difficulty: 'medium'

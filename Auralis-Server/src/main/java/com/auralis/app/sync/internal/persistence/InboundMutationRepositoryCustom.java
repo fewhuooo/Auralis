@@ -7,7 +7,7 @@ public interface InboundMutationRepositoryCustom {
     int reserve(
             UUID id,
             UUID userId,
-            UUID deviceId,
+            UUID serverDeviceId,
             String clientMutationId,
             String requestHash,
             String resourceType,

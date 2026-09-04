@@ -215,7 +215,7 @@ export class ParsedDocumentUploadCoordinator {
       uploadUrl: intent.uploadUrl,
       cacheId: receipt.cacheId,
       userId: job.userId,
-      deviceId: job.deviceId,
+      serverDeviceId: job.serverDeviceId,
       sourceId: job.sourceId,
       jobId: job.jobId,
       ingestionRevision: job.ingestionRevision,

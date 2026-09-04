@@ -5,15 +5,16 @@ import type { PdfDocumentSource } from './types.ts'
 export async function openPdfDocument(bytes: Uint8Array): Promise<PdfDocumentSource> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   // The Tauri bundle is intentionally offline-capable and does not depend on
-  // a CDN-hosted pdf.worker.js. PDF.js runs this bounded ingestion path in its
-  // main thread; the visible File Viewer remains free to use its own renderer.
-  const loadingTask = pdfjs.getDocument(
-    { data: bytes, disableWorker: true } as unknown as Parameters<typeof pdfjs.getDocument>[0],
-  )
+  // a CDN-hosted worker. This import resolves to the same pinned PDF.js
+  // runtime used by the visible File Viewer renderer.
+  const loadingTask = pdfjs.getDocument({ data: bytes })
   const documentProxy = await loadingTask.promise
 
   return {
     pageCount: documentProxy.numPages,
+    async destroy() {
+      await documentProxy.destroy()
+    },
     async getPage(pageNumber) {
       const page = await documentProxy.getPage(pageNumber)
       return {

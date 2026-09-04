@@ -44,9 +44,9 @@ public class SyncService {
         this.relationService = relationService;
     }
 
-    public List<SyncDtos.MutationResponse> push(UUID userId, UUID deviceId, List<SyncMutation> mutations) {
-        requireDevice(userId, deviceId);
-        return mutations.stream().map(mutation -> mutationProcessor.process(userId, deviceId, mutation)).toList();
+    public List<SyncDtos.MutationResponse> push(UUID userId, UUID serverDeviceId, List<SyncMutation> mutations) {
+        requireDevice(userId, serverDeviceId);
+        return mutations.stream().map(mutation -> mutationProcessor.process(userId, serverDeviceId, mutation)).toList();
     }
 
     @Transactional(readOnly = true)
@@ -73,8 +73,8 @@ public class SyncService {
         return changeLogService.latestCursor(userId);
     }
 
-    private void requireDevice(UUID userId, UUID deviceId) {
-        identityService.requireActiveDevice(userId, deviceId);
+    private void requireDevice(UUID userId, UUID serverDeviceId) {
+        identityService.requireActiveDevice(userId, serverDeviceId);
     }
 
 }

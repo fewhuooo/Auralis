@@ -1,7 +1,5 @@
 # AI env 默认 Provider 与 BYOK 覆盖实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task with verification checkpoints.
-
 **Goal:** 让 Auralis Server 在无用户 BYOK 时使用 env 默认 Provider 凭据，在存在 BYOK 时按 Provider 覆盖 env，并让未指定 Provider 的 AI 请求使用配置默认值。
 
 **Architecture:** 在 `AuralisProperties.Ai` 中绑定按 Provider 的服务端默认凭据；`AiSettingsService` 统一执行“用户密钥优先、env fallback”。`AiStreamingService` 使用 `defaultProvider`，embedding 继续独立使用 SiliconFlow 解析。密钥只停留在服务端运行时对象中。

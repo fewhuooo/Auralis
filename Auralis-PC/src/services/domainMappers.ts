@@ -6,7 +6,6 @@ export interface SubjectModel {
   description: string
   icon: string
   iconKey: string
-  color: string
   sortKey?: string
   defaultSubject?: boolean
   version: number
@@ -78,6 +77,10 @@ export interface AssetModel {
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'
 export type CognitiveLoad = 'LOW' | 'MEDIUM' | 'HIGH'
 
+export function isCanonicalTaskStatus(value: unknown): value is TaskStatus {
+  return value === 'TODO' || value === 'IN_PROGRESS' || value === 'DONE' || value === 'CANCELLED'
+}
+
 export interface TaskModel {
   id: string
   subjectId: string
@@ -122,7 +125,6 @@ export interface SubjectDtoLike {
   name?: string
   description?: string
   iconKey?: string
-  color?: string
   sortKey?: string
   defaultSubject?: boolean
   version?: number
@@ -231,7 +233,6 @@ export function mapSubjectView(view: SubjectDtoLike, counts: Pick<SubjectModel, 
     description: view.description || '',
     icon: iconKey,
     iconKey,
-    color: view.color || '#7D9372',
     sortKey: view.sortKey,
     defaultSubject: view.defaultSubject,
     version: view.version ?? 0,
@@ -379,4 +380,14 @@ export function createOptimisticMutation(input: OptimisticMutationInput): Optimi
 
 export function nextPageCursor(page: { hasMore?: boolean; nextCursor?: string }): string | undefined {
   return page.hasMore && page.nextCursor ? page.nextCursor : undefined
+}
+
+export function sortSources(items: SourceFileModel[]): SourceFileModel[] {
+  return [...items].sort((a, b) => {
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0
+    const timeDifference = (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0)
+    if (timeDifference !== 0) return timeDifference
+    return b.id.localeCompare(a.id)
+  })
 }

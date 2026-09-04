@@ -1,6 +1,6 @@
 # Auralis API 契约
 
-更新时间：2026-08-26
+更新时间：2026-08-31
 
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
@@ -84,7 +84,7 @@
 | Asset | /api/assets/upload-intents、/api/assets/{id}/complete、/api/assets/{id}/download-url | implemented-phase-2b |
 | Source | /api/sources、/api/sources/{id}、/api/sources/{id}/restore、/api/sources/{id}/reingest | implemented-phase-2b |
 | Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | implemented-phase-2a |
-| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore | implemented-phase-2a |
+| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore、/api/tasks/schedule-swaps | implemented-phase-2a |
 | Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore | implemented-phase-2b |
 | Review | /api/reviews/due、/api/reviews/events、/api/reviews/history | implemented-phase-4 |
 | Stats | /api/stats/overview、/api/stats/weekly | implemented-phase-4 |
@@ -96,18 +96,18 @@
 
 ### 请求与成功响应
 
-- `POST /api/auth/register` 请求字段为 `username`、`password`、`displayName`、`deviceId`、`deviceName`、`platform`；成功返回 HTTP 201、`Location: /api/auth/sessions/{sessionId}` 和 AuthResult。
-- `POST /api/auth/login` 请求字段为 `username`、`password`、`deviceId`、`deviceName`、`platform`；成功返回 HTTP 200 和 AuthResult。
+- `POST /api/auth/register` 请求字段为 `username`、`password`、`displayName`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 201、`Location: /api/auth/sessions/{sessionId}` 和 AuthResult。
+- `POST /api/auth/login` 请求字段为 `username`、`password`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 200 和 AuthResult。
 - `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult。旧 refresh token 立即失效。
-- AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`deviceId`。
+- AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`serverDeviceId`。
 - `GET /api/auth/me` 返回 `UserView { id, username, displayName }`。
-- `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`deviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。列表只展示未轮换、未撤销、未过期的活动会话，并按 `deviceId` 归并为一条；同一用户在同一设备再次登录会先撤销该设备的旧活动 refresh session，再签发新的会话。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。
+- `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`serverDeviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。列表只展示未轮换、未撤销、未过期的活动会话，并按 `serverDeviceId` 归并为一条；同一用户在同一设备再次登录会先撤销该设备的旧活动 refresh session，再签发新的会话。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。
 - 登出和会话撤销成功返回 HTTP 204；会话查询和撤销始终从 SecurityContext 的 userId 推导归属，不接受客户端 userId。撤销会阻止 refresh token 续期；已签发的 access JWT 仍在其 15 分钟有效期内自然过期，不承诺瞬时断开。
 
 ### 鉴权和安全错误
 
 - 注册、登录、刷新为公开路径；登出、当前用户和会话路径使用 `Authorization: Bearer <accessToken>`。
-- access JWT 有效期配置默认 900 秒；refresh session 默认 2,592,000 秒（30 天）。JWT 只含 `sub`、`sid`、`did`、`typ=access`、`iat`、`exp`；refresh token 只保存 SHA-256 hash。
+- access JWT 有效期配置默认 900 秒；refresh session 默认 2,592,000 秒（30 天）。JWT 只含 `sub`、`sid`、`serverDeviceId`、`typ=access`、`iat`、`exp`；refresh token 只保存 SHA-256 hash。
 - 未登录、无效、过期、撤销或重放 refresh token 返回 HTTP 401、错误码 `UNAUTHENTICATED` 和安全 detail，不返回 token 内容。refresh token 不能作为 access token 使用。
 - 重复使用已轮换的 refresh token 会撤销整个 rotation family；跨用户撤销不存在的 owner-scoped session 返回 HTTP 404、`RESOURCE_NOT_FOUND`，不泄漏归属。
 - 参数校验返回 HTTP 400、`VALIDATION_FAILED` 和 `fieldErrors`；重复用户名返回 HTTP 409、`MUTATION_REJECTED`。安全过滤器错误也返回 `application/problem+json` 和 `X-Trace-Id`。
@@ -117,9 +117,10 @@
 - 三类资源均使用 `POST` 创建、`GET` 列表/详情、`PUT` 更新、`DELETE` 软删除和 `POST /{id}/restore` 恢复；创建返回 `201 + Location`，删除返回 `204`。
 - 创建请求必须携带 `baseVersion=0`；更新、删除和恢复请求携带精确的 `baseVersion`。成功更新、删除、恢复均使服务器 `version` 增加 1。注册后的 Subject 列表允许为空；历史遗留的 `defaultSubject=true` 记录也按普通 Subject 软删除，不再设置不可删除特权。
 - `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 和可选 `limit`（默认 100，范围 1–200），默认过滤已删除记录。Subject 按 `sortKey ASC, updatedAt DESC, id ASC` 稳定分页，其余三类按 `updatedAt DESC, id ASC` 稳定分页。
-- Subject 请求字段为 `name`、`description`、`iconKey`、`color`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。
+- Subject 请求字段为 `name`、`description`、`iconKey`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。Subject 不提供专属颜色字段，客户端使用全局语义设计色。
 - KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity。
-- Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`cognitiveLoad`、`sortKey`、`colorOverride`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`，cognitiveLoad 仅接受 `LOW`、`MEDIUM`、`HIGH`。
+- Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`cognitiveLoad`、`sortKey`、`colorOverride`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`，cognitiveLoad 仅接受 `LOW`、`MEDIUM`、`HIGH`。更新任务时 `scheduledAt: null` 或 `dueAt: null` 分别明确清除排期或截止时间；PC 客户端把仍未完成/取消且 `scheduledAt` 已过的排期任务更新为 `DONE` 并保留排期，把无 `scheduledAt` 且 `dueAt` 已过的任务更新为 `dueAt: null`，以进入未排期。
+- `POST /api/tasks/schedule-swaps` 用于两个已排期 Task 的原子时段交换。请求为 `{sourceTaskId,sourceBaseVersion,targetTaskId,targetBaseVersion}`，四项均必填；服务端按稳定顺序加锁并一次事务内校验两个版本、截止时间与换位结果，成功返回 `{source,target}` 两个更新后的 Task。任一版本、校验或持久化失败均回滚整个交换，不产生半交换状态。`scheduledAt`/`dueAt` 均为 RFC 3339 UTC/带时区 instant；无法反序列化的字段返回 `400 VALIDATION_FAILED` 与 `fieldErrors`。
 - 所有资源的用户归属均从 Bearer access token 推导；跨用户 ID 统一按未找到处理。版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`，删除后的普通详情/列表不返回墓碑。
 
 ## 阶段 2B Source、Asset、Relation 已构建契约
@@ -136,7 +137,7 @@
 
 ## 阶段 3 离线同步已实现契约
 
-- `POST /api/sync/push` 接受 `deviceId` 和 `mutations[]`；每条 mutation 包含 `clientMutationId`、`resourceType`、`resourceId`、`mutationType`、`baseVersion` 和可选 `payload`。首批资源为 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`、`RELATION`，操作为 `CREATE`、`UPDATE`、`DELETE`、`RESTORE`。
+- `POST /api/sync/push` 接受 `serverDeviceId` 和 `mutations[]`；每条 mutation 包含 `clientMutationId`、`resourceType`、`resourceId`、`mutationType`、`baseVersion` 和可选 `payload`。首批资源为 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`、`RELATION`，操作为 `CREATE`、`UPDATE`、`DELETE`、`RESTORE`。
 - Push 返回 `results` 和 `serverCursor`。结果 decision 为 `APPLIED`、`CONFLICT` 或 `REJECTED`，包含资源、mutation、change cursor、当前 DTO/快照、稳定 code 和 `recordedAt`。同一用户/设备/`clientMutationId` 重放时返回首次结果；同键不同内容只拒绝该条 mutation，并返回 `MUTATION_REJECTED`，不会中止同批其他 mutation。
 - `GET /api/sync/pull?cursor=<opaque>&limit=<1..200>` 返回 `changes`、`nextCursor`、`hasMore`、`resetRequired`；省略 cursor 从 0 开始。cursor 为 Base64URL 不透明值，资源变更由 REST 直接写入和 push 共同记录。
 - `GET /api/sync/snapshot` 返回 `snapshotCursor` 以及当前用户 subjects、sources、knowledgeBlocks、tasks、relations 的完整视图，包含 `deletedAt` 非空的墓碑记录；快照 cursor 与这些列表在同一可重复读事务中确定。快照与同步数据不暴露 JPA Entity，Asset 不进入普通 mutation。
@@ -147,7 +148,7 @@
 - `GET /api/reviews/due?at=<RFC3339>&limit=<1..200>` 返回当前用户活动知识块的到期 ReviewState；`POST /api/reviews/events` 接受 `clientEventId`、`knowledgeBlockId`、`rating`、`reviewedAt`、`durationSeconds`、`baseVersion`，rating 为 `AGAIN`、`HARD`、`GOOD`、`EASY`、`SKIP`。SKIP 只写不可变事件，不更新状态；重复 clientEventId 返回首次结果。
 - `GET /api/reviews/history?knowledgeBlockId=...` 返回当前用户的不可变复习历史。默认 `FSRS_LITE` 参数集为版本 1，调度结果由状态、评分、时间和参数版本确定。
 - `GET /api/stats/overview?at=<RFC3339>` 返回活动知识块、活动任务、到期复习、已完成复习和活动来源的强类型统计；`GET /api/stats/weekly?from=<date>&to=<date>` 只接受连续 7 天，并按 UTC 日期返回复习、学习秒数、完成任务和新增知识块计数。
-- `POST /api/realtime/ticket` 接受 `deviceId`，返回一次性短期 `{ticket,expiresAt,websocketUrl}`；WebSocket `/ws/events` 通过 query `ticket` 或 `X-Realtime-Ticket` 握手，领域写入提交后才发布 `SYNC_CHANGED`/`REVIEW_UPDATED` 事件，同用户的进程内订阅者接收通知。ticket 只持久化 hash，不能跨用户、重用或过期使用。
+- `POST /api/realtime/ticket` 不接受请求体，服务端从 Bearer access JWT 的 `serverDeviceId` 解析并校验当前设备，返回一次性短期 `{ticket,expiresAt,websocketUrl}`；`/ws/events` 仅接受 WebSocket upgrade，不提供 HTTP `GET` 订阅回退。握手通过 query `ticket` 或 `X-Realtime-Ticket` 认证，不能把 Bearer access token 放入 WebSocket URL；领域写入提交后才发布 `SYNC_CHANGED`/`REVIEW_UPDATED` 事件，同用户的进程内订阅者接收通知。ticket 只持久化 hash，不能跨用户、重用或过期使用。
 - 阶段 4 自动测试证明 H2/JPA/MockMvc、参数调度、幂等、用户隔离和进程内事件桥；浏览器 WebSocket、跨实例 broker、真实设备和前端消费仍未执行。
 
 ## 目标认证规则
@@ -187,7 +188,7 @@
 
 ## PC Tauri AI 辅助阅读契约（2026-08-23，2026-08-26 已实现代码门禁，真实联调与验收待完成）
 
-本节登记 S1–S6、K1、C4 和 C5 已落地的接口行为、生成 SDK 与端侧上传边界；真实客户端业务联调和人工业务验收仍未完成。完整决策见 [PC Tauri AI 辅助阅读全流程设计](../superpowers/specs/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+本节登记 S1–S6、K1、C4 和 C5 已落地的接口行为、生成 SDK 与端侧上传边界；真实客户端业务联调和人工业务验收仍未完成。完整决策见 [PC Tauri AI 辅助阅读全流程设计](../design/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
 - FILE Source 完成原 Asset 上传并创建后进入 `AWAITING_CLIENT`；客户端提交解析结果后经过 `VALIDATING → INDEXING → READY/FAILED`。SourceResponse 已新增服务端生成、客户端只读的 `ingestionRevision`。TEXT/URL Source 保持现有服务端解析状态机。
 - S2 已落地 FILE/TEXT/URL 分流：FILE create 不发布 `SourceIngestionRequestedEvent`；Asset 替换或 FILE reingest 轮换 revision 并回到 `AWAITING_CLIENT`，仅标题等不影响解析的 FILE 更新保留当前状态；TEXT/URL create/update/reingest 继续进入 `PENDING` 并发布现有 server ingestion event。请求 DTO 不接受 `ingestionRevision`，客户端不能覆盖该字段。

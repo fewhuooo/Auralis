@@ -1,7 +1,5 @@
 # PC Tauri AI 辅助阅读 Implementation Plan（任务拆分优化版）
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 在 Windows 10/11 x64 的 Tauri PC 客户端完成“本地文件解析/OCR → ParsedDocument 安全上传 → 服务端校验、索引与 RAG → 当前文件优先的 AI 阅读会话 → 选中文本解释和知识块保存”全链路；不发布 PC Web，不在 Mobile/Tablet 实现本地 OCR 或深度阅读。
 
 **Architecture:** Vue 只负责任务编排和阅读 UI；`BackgroundParserHost`、PDF.js 与文档适配器生成统一 ParsedDocument；Tauri Rust 负责 sidecar 生命周期、加密缓存、断点恢复和流式上传；固定 RapidOCR/ONNX 模型的 `auralis-ocr.exe` 长驻运行。服务端使用 `ingestionRevision`、Asset SHA、payload SHA 和 Source 行锁完成首个有效 ParsedDocument 仲裁，再复用现有 generation/pgvector/RAG；`readingContext` 默认只检索当前 Source，只有确定性规则才扩大到当前 Subject。

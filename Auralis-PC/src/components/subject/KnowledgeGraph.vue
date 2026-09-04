@@ -63,10 +63,6 @@ const props = defineProps({
   subjectName: {
     type: String,
     default: '当前学科'
-  },
-  subjectColor: {
-    type: String,
-    default: 'rgba(99, 102, 241, 0.2)'
   }
 })
 

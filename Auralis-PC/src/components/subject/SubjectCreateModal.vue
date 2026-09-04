@@ -7,7 +7,7 @@
       </div>
 
       <div class="modal-body">
-        <!-- Subject Icon & Color Preview -->
+        <!-- Subject Icon Preview -->
         <div class="subject-preview-section">
           <div 
             class="preview-card"
@@ -107,7 +107,6 @@ const form = ref({
   name: '',
   description: '',
   icon: 'book',
-  color: '#7D9372',
   version: 0
 })
 
@@ -119,7 +118,6 @@ onMounted(() => {
       name: props.subjectData.name || '',
       description: props.subjectData.description || '',
       icon: props.subjectData.icon || 'book',
-      color: props.subjectData.color || '#7D9372',
       version: props.subjectData.version || 0
     }
   }

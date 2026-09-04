@@ -1,6 +1,6 @@
 package com.auralis.app.ai.internal.provider;
 
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.EmbeddingProviderPort;

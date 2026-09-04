@@ -13,7 +13,7 @@ export const getClientId = () => uuidv7()
 
 function cursorKey(): string {
   const auth = useAuthStore()
-  return `cursor:${auth.user?.id || 'anonymous'}:${auth.deviceId}`
+  return `cursor:${auth.user?.id || 'anonymous'}:${auth.serverDeviceId}`
 }
 
 function toServerMutation(row: any): SyncMutation {
@@ -26,7 +26,6 @@ function toServerMutation(row: any): SyncMutation {
     name: payload?.name,
     description: payload?.description,
     iconKey: payload?.icon,
-    color: payload?.color,
     sortKey: payload?.sortKey || payload?.id,
   } : resourceType === 'SOURCE' ? {
     subjectId: payload?.subject_id || payload?.subjectId,
@@ -171,7 +170,7 @@ export const useSyncStore = defineStore('sync', () => {
       const pending = await localDb.getUnsyncedMutations()
       if (pending.length > 0) {
         const pushed = await useSyncApi.push({
-          deviceId: auth.deviceId,
+          serverDeviceId: auth.serverDeviceId,
           mutations: pending.map(toServerMutation),
         })
         const results = new Map((pushed.results || []).map(result => [result.clientMutationId, result]))
@@ -198,7 +197,7 @@ export const useSyncStore = defineStore('sync', () => {
         const pulled = await useSyncApi.pull(cursor, 200)
         if (pulled.resetRequired) {
           const snapshot = await useSyncApi.snapshot()
-          localDataScope.reset(auth.user!.id!, auth.deviceId)
+          localDataScope.reset(auth.user!.id!, auth.serverDeviceId)
           await localDb.init()
           await applySnapshot(snapshot)
           changed = true

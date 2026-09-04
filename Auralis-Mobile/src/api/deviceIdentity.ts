@@ -1,7 +1,7 @@
 export type ServerDevicePlatform = 'WEB' | 'WINDOWS' | 'MACOS' | 'IOS' | 'ANDROID' | 'HARMONY' | 'UNKNOWN'
 
 export interface DeviceIdentity {
-  deviceId: string
+  clientDeviceKey: string
   deviceName: string
   platform: ServerDevicePlatform
 }
@@ -56,11 +56,11 @@ export function getOrCreateDeviceIdentity(
   systemInfo: DeviceSystemInfo,
 ): DeviceIdentity {
   const stored = storage.get(DEVICE_ID_KEY)
-  const deviceId = isUuid(stored) ? stored : createUuid()
-  if (stored !== deviceId) storage.set(DEVICE_ID_KEY, deviceId)
+  const clientDeviceKey = isUuid(stored) ? stored : createUuid()
+  if (stored !== clientDeviceKey) storage.set(DEVICE_ID_KEY, clientDeviceKey)
   const platform = resolvePlatform(systemInfo.platform || systemInfo.system)
   return {
-    deviceId,
+    clientDeviceKey,
     platform,
     deviceName: resolveDeviceName(systemInfo, platform),
   }

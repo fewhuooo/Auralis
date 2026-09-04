@@ -7,31 +7,43 @@ import {
   type LocalRepository,
 } from '@/services/localRepository';
 import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/localSchema';
+import { LocalDatabaseRuntime } from '@/services/localDatabaseRuntime';
+import { LocalSqlQueue, serializeLocalSqlDatabase } from '@/services/localSqlQueue';
+import { replaceLocalResourceSnapshot } from '@/api/tauri';
 
+// The legacy methods below still map many historical row shapes dynamically.
+// Keep their boundary dynamic while new R4 repositories use LocalSqlDatabase.
 let db: any = null;
+const localDatabaseRuntime = new LocalDatabaseRuntime<LocalSqlDatabase | 'localstorage'>();
+const localSqlQueue = new LocalSqlQueue();
 
 export const localDb = {
   async init() {
-    try {
-      // Tauri v2 exposes `__TAURI_INTERNALS__` by default. Keep the legacy
-      // global check as a compatibility fallback for older development shells.
-      const tauriWindow = typeof window === 'undefined' ? null : window as unknown as {
-        __TAURI__?: unknown
-        __TAURI_INTERNALS__?: unknown
+    db = await localDatabaseRuntime.initialize(async () => {
+      try {
+        // Tauri v2 exposes `__TAURI_INTERNALS__` by default. Keep the legacy
+        // global check as a compatibility fallback for older development shells.
+        const tauriWindow = typeof window === 'undefined' ? null : window as unknown as {
+          __TAURI__?: unknown
+          __TAURI_INTERNALS__?: unknown
+        }
+        if (!tauriWindow || (!tauriWindow.__TAURI__ && !tauriWindow.__TAURI_INTERNALS__)) {
+          console.warn('[SQLite PC] Not running in Tauri context, using localStorage fallback.');
+          return 'localstorage';
+        }
+        const loaded = serializeLocalSqlDatabase(await Database.load('sqlite:auralis.db') as LocalSqlDatabase, localSqlQueue);
+        db = loaded;
+        await loaded.execute('PRAGMA journal_mode = WAL');
+        await loaded.execute('PRAGMA busy_timeout = 5000');
+        await this.createTables();
+        await this.runMigrations();
+        console.log('[SQLite PC] Database initialized and tables verified.');
+        return loaded;
+      } catch (err) {
+        console.error('[SQLite PC] Failed to initialize SQLite database, switching to localStorage fallback:', err);
+        return 'localstorage';
       }
-      if (!tauriWindow || (!tauriWindow.__TAURI__ && !tauriWindow.__TAURI_INTERNALS__)) {
-        console.warn('[SQLite PC] Not running in Tauri context, using localStorage fallback.');
-        db = 'localstorage';
-        return;
-      }
-      db = await Database.load('sqlite:auralis.db');
-      await this.createTables();
-      await this.runMigrations();
-      console.log('[SQLite PC] Database initialized and tables verified.');
-    } catch (err) {
-      console.error('[SQLite PC] Failed to initialize SQLite database, switching to localStorage fallback:', err);
-      db = 'localstorage';
-    }
+    });
   },
 
   async createTables() {
@@ -119,7 +131,6 @@ export const localDb = {
         name TEXT NOT NULL,
         description TEXT,
         icon TEXT,
-        color TEXT,
         created_at INTEGER
       )
     `);
@@ -179,6 +190,9 @@ export const localDb = {
     } catch (e) {}
     try {
       await db.execute("ALTER TABLE task_blocks ADD COLUMN subject_id TEXT");
+    } catch (e) {}
+    try {
+      await db.execute("ALTER TABLE subjects DROP COLUMN color");
     } catch (e) {}
   },
 
@@ -999,31 +1013,35 @@ export const localDb = {
   async getSubjects(): Promise<any[]> {
     if (!db) await this.init();
     if (db === 'localstorage') {
-      return JSON.parse(localStorage.getItem('auralis_subjects') || '[]');
+      return JSON.parse(localStorage.getItem('auralis_subjects') || '[]').map((subject: any) => {
+        const { color: _legacyColor, ...withoutColor } = subject;
+        return withoutColor;
+      });
     }
-    return db.select('SELECT * FROM subjects ORDER BY created_at DESC');
+    return db.select('SELECT id, name, description, icon, created_at FROM subjects ORDER BY created_at DESC');
   },
 
   async saveSubject(subject: any): Promise<void> {
     if (!db) await this.init();
     if (db === 'localstorage') {
       const list = JSON.parse(localStorage.getItem('auralis_subjects') || '[]');
+      const { color: _legacyColor, ...withoutColor } = subject;
       const idx = list.findIndex((s: any) => s.id === subject.id);
-      if (idx !== -1) list[idx] = subject;
-      else list.push(subject);
+      if (idx !== -1) list[idx] = withoutColor;
+      else list.push(withoutColor);
       localStorage.setItem('auralis_subjects', JSON.stringify(list));
       return;
     }
     const exists = await db.select('SELECT id FROM subjects WHERE id = $1', [subject.id]);
     if (exists && exists.length > 0) {
       await db.execute(
-        'UPDATE subjects SET name = $1, description = $2, icon = $3, color = $4 WHERE id = $5',
-        [subject.name, subject.description || '', subject.icon || '', subject.color || '', subject.id]
+        'UPDATE subjects SET name = $1, description = $2, icon = $3 WHERE id = $4',
+        [subject.name, subject.description || '', subject.icon || '', subject.id]
       );
     } else {
       await db.execute(
-        'INSERT INTO subjects (id, name, description, icon, color, created_at) VALUES ($1, $2, $3, $4, $5, $6)',
-        [subject.id, subject.name, subject.description || '', subject.icon || '', subject.color || '', subject.created_at || Date.now()]
+        'INSERT INTO subjects (id, name, description, icon, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [subject.id, subject.name, subject.description || '', subject.icon || '', subject.created_at || Date.now()]
       );
     }
   },
@@ -1097,14 +1115,21 @@ export const localDb = {
  * New R4 callers obtain a user/device-scoped repository. The legacy methods
  * above remain available only while the remaining stores are migrated.
  */
-export async function getLocalRepository(userId: string, deviceId: string): Promise<LocalRepository> {
+export async function getLocalRepository(userId: string, serverDeviceId: string): Promise<LocalRepository> {
   await localDb.init();
   if (db === 'localstorage') {
-    const repository = createLocalRepository(userId, deviceId);
+    const repository = createLocalRepository(userId, serverDeviceId);
     await repository.backupLegacyData();
     return repository;
   }
-  return createLocalRepository(userId, deviceId, { sql: db as LocalSqlDatabase });
+  return localDatabaseRuntime.getOrCreate(
+    `repository:${userId}:${serverDeviceId}`,
+    () => createLocalRepository(userId, serverDeviceId, {
+      sql: db as LocalSqlDatabase,
+      schemaReady: Promise.resolve(),
+      replaceSnapshot: (snapshot) => localSqlQueue.enqueue(() => replaceLocalResourceSnapshot(userId, snapshot)),
+    }),
+  );
 }
 
 /**
@@ -1114,9 +1139,17 @@ export async function getLocalRepository(userId: string, deviceId: string): Prom
  */
 export async function getDocumentProcessingJobRepository(
   userId: string,
-  deviceId: string,
+  serverDeviceId: string,
 ): Promise<DocumentProcessingJobRepository> {
   await localDb.init();
-  if (db === 'localstorage') return new DocumentProcessingJobRepository(userId, deviceId);
-  return new DocumentProcessingJobRepository(userId, deviceId, { sql: db as LocalSqlDatabase });
+  if (db === 'localstorage') {
+    return localDatabaseRuntime.getOrCreate(
+      `document-jobs:${userId}:${serverDeviceId}`,
+      () => new DocumentProcessingJobRepository(userId, serverDeviceId),
+    );
+  }
+  return localDatabaseRuntime.getOrCreate(
+    `document-jobs:${userId}:${serverDeviceId}`,
+    () => new DocumentProcessingJobRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() }),
+  );
 }

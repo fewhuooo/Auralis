@@ -1,7 +1,7 @@
 package com.auralis.app;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
@@ -153,12 +153,12 @@ class SourceAssetRelationControllerTests {
         assertThat(sourceId).isNotBlank();
     }
 
-    private JsonNode register(String username, String deviceId) throws Exception {
+    private JsonNode register(String username, String clientDeviceKey) throws Exception {
         return json(mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"" + username
                                 + "\",\"password\":\"correct horse battery staple\","
-                                + "\"displayName\":\"Owner\",\"deviceId\":\"" + deviceId
+                                + "\"displayName\":\"Owner\",\"clientDeviceKey\":\"" + clientDeviceKey
                                 + "\",\"deviceName\":\"Browser\",\"platform\":\"WEB\"}"))
                 .andExpect(status().isCreated())
                 .andReturn());

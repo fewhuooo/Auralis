@@ -26,7 +26,7 @@ export interface DocumentJobCheckpoint {
 export interface DocumentProcessingJob {
   jobId: string
   userId: string
-  deviceId: string
+  serverDeviceId: string
   sourceId: string
   ingestionRevision: string
   phase: DocumentJobPhase

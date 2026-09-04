@@ -9,7 +9,7 @@ test('Asset view removes demo tasks and uses real tasks', async () => {
   assert.doesNotMatch(assetSource, /id:\s*['"`]t-2['"`]/, 'Must not contain hardcoded task t-2')
   assert.match(assetSource, /taskStore\.fetchTasks\(\)/, 'Must call taskStore.fetchTasks() to get latest tasks')
   assert.match(assetSource, /getTasksForAssetGroups/, 'Must partition tasks into unassigned, pending, and completed groups')
-  assert.match(assetSource, /未分布/, 'Must expose an unassigned task group')
+  assert.match(assetSource, /未排期/, 'Must expose an unassigned task group')
   assert.match(assetSource, /未完成/, 'Must expose an incomplete task group')
   assert.match(assetSource, /已完成/, 'Must expose a completed task group')
   assert.match(assetSource, /useRoute\(\)/, 'Must inspect the focus query when opened from timeline import')
@@ -26,4 +26,19 @@ test('Asset view removes demo tasks and uses real tasks', async () => {
   assert.match(assetSource, /30/, 'Task duration options must use half-hour increments')
   assert.match(assetSource, /toDueAtValue/, 'Task editor must serialize date-only deadlines for the Task API')
   assert.match(assetSource, /taskStore\.updateTaskDetails/, 'Task editor must persist title, due date, notes, and duration')
+})
+
+test('Asset loads local projections without blocking on background refresh', async () => {
+  const assetSource = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
+  const assetLoader = assetSource.slice(assetSource.indexOf('const loadAssetsFromBackend'), assetSource.indexOf('// ---- Search Filter'))
+
+  assert.match(assetSource, /import \{ ref, computed, onMounted, onUnmounted, watch \} from 'vue'/)
+  assert.match(assetSource, /function rebuildAssetTree\(\): void/)
+  assert.match(assetLoader, /Promise\.allSettled\(/)
+  assert.match(assetLoader, /blockStore\.fetchBlocks\(\)/)
+  assert.doesNotMatch(assetLoader, /blockStore\.loadLocalBlocks\(\)/)
+  assert.match(assetLoader, /isLoadingAssets\.value = false/)
+  assert.doesNotMatch(assetLoader, /await subjectStore\.loadSubjects\(\)[\s\S]*await sourceStore\.loadSources\(\)/)
+  assert.match(assetSource, /watch\(\s*\[\s*\(\) => subjectStore\.subjects/)
+  assert.match(assetSource, /if \(!isLoadingAssets\.value\) rebuildAssetTree\(\)/)
 })

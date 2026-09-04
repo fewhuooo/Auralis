@@ -5,9 +5,10 @@
         <h3 id="processing-center-title">文件解析进度</h3>
         <p>解析完成后，文件会自动进入 AI 检索。</p>
       </div>
-      <button type="button" class="processing-refresh" :disabled="store.loading" @click="refresh">刷新</button>
+      <button type="button" class="processing-refresh" :disabled="store.loading || !store.isRuntimeAvailable" @click="refresh">刷新</button>
     </div>
-    <div v-if="!jobs.length" class="processing-empty">暂无文件解析任务</div>
+    <div v-if="!store.isRuntimeAvailable" class="processing-empty">文件解析仅可在 Auralis 桌面端运行。请在桌面端打开本文件，解析完成后即可提问。</div>
+    <div v-else-if="!jobs.length && !serverProcessingSources.length" class="processing-empty">暂无文件解析任务</div>
     <div v-else class="processing-list">
       <article v-for="job in jobs" :key="job.jobId" class="processing-item">
         <div class="processing-item-main">
@@ -23,19 +24,37 @@
           </div>
         </div>
       </article>
+      <article v-for="source in serverProcessingSources" :key="source.id" class="processing-item">
+        <div class="processing-item-main">
+          <strong>{{ source.name }}</strong>
+          <span class="processing-phase">{{ sourcePhaseLabel(source.ingestionStatus) }}</span>
+        </div>
+        <div class="processing-item-meta">
+          <span v-if="source.safeErrorDetail || sourceActionErrors[source.id]" class="processing-error">{{ source.safeErrorDetail || sourceActionErrors[source.id] }}</span>
+          <span v-else>服务端处理完成前，暂不可提问</span>
+          <div class="processing-actions">
+            <button v-if="source.ingestionStatus === 'AWAITING_CLIENT'" type="button" @click="resumeSource(source.id)">开始本机处理</button>
+          </div>
+        </div>
+      </article>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 
 const store = useDocumentProcessingStore()
 const sourceStore = useSourceStore()
 const jobs = computed(() => store.jobs.filter((job) => job.phase !== 'READY'))
+const serverProcessingSources = computed(() => sourceStore.sources
+  .filter((source) => source.type === 'FILE' && source.ingestionStatus && source.ingestionStatus !== 'READY')
+  .filter((source) => !jobs.value.some((job) => job.sourceId === source.id)))
+const sourceActionErrors = ref<Record<string, string>>({})
 let timer: ReturnType<typeof setInterval> | null = null
+let sourcePollTicks = 0
 
 const sourceName = (sourceId: string) => sourceStore.sources.find((source) => source.id === sourceId)?.name || '未命名文件'
 const phaseLabel = (phase: string) => ({
@@ -45,13 +64,37 @@ const phaseLabel = (phase: string) => ({
 }[phase] || phase)
 const isActive = (phase: string) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(phase)
 const isRetryable = (phase: string) => ['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(phase)
-const refresh = async () => { await store.refresh().catch(() => undefined) }
+const sourcePhaseLabel = (phase: string | undefined) => ({
+  AWAITING_CLIENT: '等待桌面端处理', VALIDATING: '服务端校验', PENDING: '服务端排队',
+  PARSING: '服务端解析', INDEXING: '服务端建立索引', FAILED: '服务端失败',
+}[phase || ''] || '服务端处理中')
+const refreshSources = async () => { await sourceStore.loadSources().catch(() => undefined) }
+const refresh = async () => {
+  await Promise.all([store.refresh().catch(() => undefined), refreshSources()])
+}
 const retry = async (jobId: string) => { await store.retry(jobId).catch(() => undefined); await refresh() }
 const cancel = async (jobId: string) => { await store.cancel(jobId).catch(() => undefined); await refresh() }
+const resumeSource = async (sourceId: string) => {
+  const { [sourceId]: _ignored, ...remaining } = sourceActionErrors.value
+  sourceActionErrors.value = remaining
+  try {
+    await sourceStore.resumeDocumentProcessing(sourceId)
+  } catch (error) {
+    sourceActionErrors.value = {
+      ...sourceActionErrors.value,
+      [sourceId]: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    await refresh()
+  }
+}
 
 onMounted(() => {
   void refresh()
-  timer = setInterval(() => { void refresh() }, 1500)
+  timer = setInterval(() => {
+    void store.refresh().catch(() => undefined)
+    if (serverProcessingSources.value.length && ++sourcePollTicks % 4 === 0) void refreshSources()
+  }, 1500)
 })
 onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>

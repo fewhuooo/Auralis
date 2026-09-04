@@ -291,7 +291,7 @@ export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): Doc
   return {
     jobId: row.job_id,
     userId: row.user_id,
-    deviceId: row.device_id,
+    serverDeviceId: row.device_id,
     sourceId: row.source_id,
     ingestionRevision: String(row.ingestion_revision),
     phase: row.phase,

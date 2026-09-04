@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   createOptimisticMutation,
+  isCanonicalTaskStatus,
   mapAssetView,
   mapKnowledgeBlockView,
   mapReviewStateView,
@@ -27,13 +28,28 @@ test('SubjectCreateModal preserves subject version for edit operations', async (
   )
 })
 
+test('PC subject views use the global theme instead of removed Subject.color', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const [dashboard, home, timeline] = await Promise.all([
+    readFile(new URL('views/Dashboard/index.vue', root), 'utf8'),
+    readFile(new URL('views/Home/index.vue', root), 'utf8'),
+    readFile(new URL('views/Timeline/index.vue', root), 'utf8'),
+  ])
+
+  for (const page of [dashboard, home, timeline]) {
+    assert.doesNotMatch(page, /\b(?:subj|selectedSubj|subjObj|activeSubject)\??\.color\b/)
+    assert.doesNotMatch(page, /\bactiveSubject\.value\.color\b/)
+  }
+  assert.match(home, /subjectStore\.addSubject\(formData\.name, formData\.description, formData\.icon\)/)
+  assert.doesNotMatch(home, /formData\.color/)
+})
+
 test('maps current subject DTO to the PC view model without legacy fields', () => {
   const subject = mapSubjectView({
     id: 'subject-1',
     name: 'Algorithms',
     description: 'Core algorithms',
     iconKey: 'book',
-    color: '#7D9372',
     version: 4,
     createdAt: '2026-08-20T00:00:00Z',
     updatedAt: '2026-08-20T01:00:00Z',
@@ -46,6 +62,7 @@ test('maps current subject DTO to the PC view model without legacy fields', () =
   assert.equal(subject.blockCount, 2)
   assert.equal(subject.fileCount, 1)
   assert.equal('created_at' in subject, false)
+  assert.equal('color' in subject, false, 'Subject model must not expose color')
 })
 
 test('maps source DTO fields and preserves deletedAt/version', () => {
@@ -140,6 +157,15 @@ test('advances only with a declared next page cursor', () => {
   assert.equal(nextPageCursor({ hasMore: true, nextCursor: 'cursor-2' }), 'cursor-2')
   assert.equal(nextPageCursor({ hasMore: false, nextCursor: 'cursor-ignored' }), undefined)
   assert.equal(nextPageCursor({ hasMore: true }), undefined)
+})
+
+test('recognizes only API task statuses as canonical DTO statuses', () => {
+  assert.equal(isCanonicalTaskStatus('TODO'), true)
+  assert.equal(isCanonicalTaskStatus('IN_PROGRESS'), true)
+  assert.equal(isCanonicalTaskStatus('DONE'), true)
+  assert.equal(isCanonicalTaskStatus('CANCELLED'), true)
+  assert.equal(isCanonicalTaskStatus('completed'), false)
+  assert.equal(isCanonicalTaskStatus('pending'), false)
 })
 
 test('maps task DTO fields without reusing legacy UI field names', () => {

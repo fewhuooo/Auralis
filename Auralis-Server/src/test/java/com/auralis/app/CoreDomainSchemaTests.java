@@ -36,6 +36,16 @@ class CoreDomainSchemaTests {
         assertThat(columnExists("tasks", "deleted_at")).isTrue();
     }
 
+    @Test
+    void removesSubjectColorButPreservesResourceColorOverrides() {
+        assertThat(jdbcTemplate.queryForObject(
+                "select version from flyway_schema_history where version = '19'", String.class))
+                .isEqualTo("19");
+        assertThat(columnExists("subjects", "color")).isFalse();
+        assertThat(columnExists("knowledge_blocks", "color_override")).isTrue();
+        assertThat(columnExists("tasks", "color_override")).isTrue();
+    }
+
     private boolean tableExists(String tableName) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "select count(*) > 0 from information_schema.tables "

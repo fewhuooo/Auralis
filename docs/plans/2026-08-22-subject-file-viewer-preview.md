@@ -1,7 +1,5 @@
 # PC 学科统一 File Viewer 预览实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** 在 PC 学科工作区用一个统一的 `FilePreview` 组件试用浏览器端 File Viewer，先覆盖 DOC/DOCX、PDF、图片和文本预览，并在上传入口直接拒绝 Excel 与未知格式。
 
 **Architecture:** `FilePreview.vue` 负责加载态、错误态、下载和关闭等公共行为，通过 `filePreview.ts` 能力注册表选择 `FileViewerRenderer` 或后续可替换的 PDF fallback。学科页只传入 `SourceFileModel`，资产下载地址仍由现有 `useAssetStore.downloadUrl` 获取；不新增后端接口。

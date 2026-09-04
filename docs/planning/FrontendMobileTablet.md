@@ -1,6 +1,6 @@
 # Mobile / Tablet 前端计划
 
-更新时间：2026-08-12
+更新时间：2026-08-29
 
 文档状态：现行计划
 
@@ -30,6 +30,10 @@
 6. 验收 TabletLayout 导航、AI modal、Dashboard 多栏和 workspace 总结栏。
 7. 运行并维护侧栏切换脚本；必要时为 feature flags/note core 接入可执行测试。
 8. 在微信开发者工具、手机和横屏平板完成真实交互记录。
+
+## 验证前置备注（2026-08-29）
+
+本轮设备标识采用破坏性字段重命名：不保留旧 `deviceId` 字段，也不执行兼容测试。登录/注册请求使用 `clientDeviceKey`；服务端返回、Sync、本地数据 scope 和 Realtime 关联使用 `serverDeviceId`。Realtime ticket 不带请求体，测试必须使用有效 Bearer access token。
 
 ## 验证
 

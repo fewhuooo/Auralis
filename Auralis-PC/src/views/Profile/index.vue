@@ -55,10 +55,10 @@
         <p class="pivot-label">学科分布</p>
         <div class="subject-list">
           <div v-for="sub in subjects" :key="sub.name" class="subject-row">
-            <span class="subject-dot" :style="{ background: sub.color }"></span>
+            <span class="subject-dot"></span>
             <span class="subject-name">{{ sub.name }}</span>
             <div class="subject-bar-bg">
-              <div class="subject-bar-fill" :style="{ width: sub.pct + '%', background: sub.color }"></div>
+              <div class="subject-bar-fill" :style="{ width: sub.pct + '%' }"></div>
             </div>
             <span class="subject-pct">{{ sub.pct }}%</span>
           </div>
@@ -243,7 +243,7 @@
         <div v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</div>
         <div v-else-if="sessions.length === 0" class="session-empty">暂无可展示的登录会话</div>
         <div v-else class="group-items">
-          <div v-for="session in sessions" :key="session.id || session.deviceId" class="settings-row">
+          <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="settings-row">
             <div class="row-info">
               <span class="row-label">
                 {{ session.deviceName || session.platform || '未知设备' }}
@@ -333,7 +333,7 @@ const revokingSessionId = ref<string | null>(null)
 
 const displayName = computed(() => authStore.user?.displayName || authStore.user?.username || 'Auralis 同学')
 const accountName = computed(() => authStore.user?.username || '未登录')
-const deviceName = computed(() => authStore.deviceId ? `设备 ${authStore.deviceId.slice(0, 8)}` : '未绑定设备')
+const deviceName = computed(() => authStore.serverDeviceId ? `设备 ${authStore.serverDeviceId.slice(0, 8)}` : '未绑定设备')
 
 const continuousStudyDays = ref(1)
 
