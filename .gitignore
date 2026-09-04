@@ -37,6 +37,7 @@ Auralis-Server/target/
 data/
 
 # Local development caches and generated artifacts
+.worktrees/
 .pnpm-store/
 .ocr-runtime/
 .tmp-edge-profile*/
