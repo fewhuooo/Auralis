@@ -202,3 +202,45 @@ test('sync cycle settles only its claimed mutation and preserves later pending w
   assert.deepEqual(settlements.map((item) => item.clientMutationId), ['m-1']);
   assert.equal(repository.resource.syncStatus, 'pending');
 });
+
+test('pull writes only the last cursor record for a resource', async () => {
+  const { applyPullPage } = await import('../src/services/syncCycle.ts');
+  const writes = [];
+  const records = new Map();
+  const repository = {
+    async listUnresolved() { return []; },
+    async read(resourceType, resourceId) { return records.get(`${resourceType}:${resourceId}`) ?? null; },
+    async upsert(resourceType, resourceId, value, options) {
+      writes.push({ resourceType, resourceId, value, options });
+      records.set(`${resourceType}:${resourceId}`, { value, ...options });
+    },
+  };
+
+  await applyPullPage(repository, [
+    { cursor: 'c-10', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', version: 2, payload: { id: 'task-1', title: 'old', version: 2 } },
+    { cursor: 'c-11', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', version: 3, payload: { id: 'task-1', title: 'latest', version: 3 } },
+  ]);
+
+  assert.equal(writes.length, 1);
+  assert.equal(records.get('TASK:task-1').value.title, 'latest');
+  assert.equal(records.get('TASK:task-1').version, 3);
+});
+
+test('remote tombstone removes a settled projection but not a locally unresolved one', async () => {
+  const { applyPullPage } = await import('../src/services/syncCycle.ts');
+  const record = { value: { id: 'task-1', title: 'local' }, version: 1, deletedAt: null, syncStatus: 'synced' };
+  const repository = {
+    unresolved: [],
+    async listUnresolved() { return this.unresolved; },
+    async read() { return record; },
+    async upsert(_resourceType, _resourceId, value, options) { Object.assign(record, { value, ...options }); },
+  };
+  const tombstone = [{ cursor: 'c-4', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'DELETE', version: 4, deletedAt: '2026-09-04T10:00:00Z', payload: null }];
+
+  await applyPullPage(repository, tombstone);
+  assert.equal(record.deletedAt, '2026-09-04T10:00:00Z');
+  repository.unresolved = [{ resourceType: 'TASK', resourceId: 'task-1', status: 'pending' }];
+  record.deletedAt = null;
+  await applyPullPage(repository, tombstone);
+  assert.equal(record.deletedAt, null);
+});
