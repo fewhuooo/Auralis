@@ -159,12 +159,7 @@
         <div class="middle-content-scroll">
           <!-- View: FILE -->
           <div v-if="selected.type === 'file'" class="full-height-viewer">
-            <div v-if="selected.markdown" class="markdown-preview">
-              <pre class="markdown-content">{{ selected.markdown }}</pre>
-            </div>
-            <div v-else class="pdf-viewer-container">
-              <PdfViewer :filePath="selected.filePath || selected.name" :fileName="selected.name" />
-            </div>
+            <FilePreview v-if="selectedPreviewFile" :file="selectedPreviewFile" :bare="true" />
           </div>
 
           <!-- View: BLOCK -->
@@ -319,7 +314,8 @@ import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
 import { Plus, Archive, FileText, UploadCloud, LayoutDashboard, Network, Check, BookOpen, Blocks, File, PieChart, ImageIcon, Mic, Folder, ListTodo, Calendar, Clock } from 'lucide-vue-next'
-import PdfViewer from '@/components/subject/PdfViewer.vue'
+import FilePreview from '@/components/FilePreview.vue'
+import type { SourceFileModel } from '@/services/domainMappers'
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
@@ -348,13 +344,14 @@ interface TreeNode {
   open?: boolean
   children?: TreeNode[]
   // For files
+  sourceId?: string
+  assetId?: string
+  fileType?: string
   status?: string
   statusText?: string
   time?: string
   size?: string
   pages?: number
-  filePath?: string
-  markdown?: string
   // For blocks
   preview?: string
   tags?: string[]
@@ -501,9 +498,10 @@ function rebuildAssetTree(): void {
     // Map all files
     allFilesRaw.forEach(file => {
       allFilesFolder.children!.push({
-        id: `f-${file.id}`, type: 'file', groupId: 'all', name: file.name, lucideIcon: getIconForSource(file.name),
+        id: `f-${file.id}`, sourceId: file.id, type: 'file', groupId: 'all', name: file.name,
+        assetId: file.assetId, fileType: file.fileType, lucideIcon: getIconForSource(file.name),
         status: 'success', statusText: '正常', time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
-        size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.filePath, originalData: file
+        size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, originalData: file
       })
     })
 
@@ -532,9 +530,10 @@ function rebuildAssetTree(): void {
 
       files.forEach(file => {
         subjFilesFolder.children!.push({
-          id: `f-${file.id}`, type: 'file', groupId: subj.id, name: file.name, lucideIcon: getIconForSource(file.name),
+          id: `f-${file.id}`, sourceId: file.id, type: 'file', groupId: subj.id, name: file.name,
+          assetId: file.assetId, fileType: file.fileType, lucideIcon: getIconForSource(file.name),
           status: 'success', statusText: '正常', time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
-          size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, filePath: file.filePath, originalData: file
+          size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, originalData: file
         })
       })
 
@@ -646,6 +645,18 @@ const filteredGroups = computed(() => filterTree(rootNodes.value, searchQ.value)
 
 // ---- Selection & Inline Editors ----
 const selected = ref<TreeNode | null>(null)
+
+type PreviewFile = Pick<SourceFileModel, 'id' | 'name' | 'assetId' | 'fileType'>
+
+const selectedPreviewFile = computed<PreviewFile | null>(() => {
+  if (!selected.value || selected.value.type !== 'file') return null
+  return {
+    id: selected.value.sourceId || selected.value.id.replace(/^f-/, ''),
+    name: selected.value.name,
+    assetId: selected.value.assetId,
+    fileType: selected.value.fileType || '',
+  }
+})
 const selectItem = (item: TreeNode) => {
   if (item.type !== 'file' && item.type !== 'block' && item.type !== 'task') return
   selected.value = item
@@ -1076,22 +1087,6 @@ html.dark .studio-middle {
 }
 .status-badge.success { background: rgba(34,197,94,0.12); color: #22c55e; }
 .status-badge.processing { background: var(--border-subtle); color: var(--text-accent); }
-
-/* Markdown & PDF Viewer inside Middle */
-.markdown-preview {
-  padding: 24px;
-}
-.markdown-content {
-  font-family: inherit;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--text-primary);
-  white-space: pre-wrap;
-  word-wrap: break-word;
-}
-.pdf-viewer-container {
-  height: 100%;
-}
 
 .full-height-viewer { height: 100%; display: flex; flex-direction: column; }
 .block-editor-view, .task-editor-view { padding: 40px 60px; max-width: 900px; margin: 0 auto; }

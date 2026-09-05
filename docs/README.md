@@ -113,6 +113,8 @@
 - [PC PDF Runtime 一致性与文档处理可观测性设计（2026-09-01）](design/2026-09-01-pc-pdf-runtime-and-processing-observability-design.md)
 - [Subject 专属颜色移除设计（2026-09-02）](superpowers/specs/2026-09-02-remove-subject-color-design.md)
 - [资产库本地优先加载设计（2026-09-03）](superpowers/specs/2026-09-03-asset-local-first-loading-design.md)
+- [PC 单一文件预览设计（2026-09-04）](superpowers/specs/2026-09-04-single-file-preview-design.md)
+- [PC 文档处理密钥恢复边界设计（2026-09-04）](superpowers/specs/2026-09-04-pc-document-encryption-recovery-design.md)
 
 ### 当前实现与契约
 
@@ -162,6 +164,8 @@
 - [Subject 专属颜色移除后端实施计划（2026-09-03）](superpowers/plans/2026-09-03-remove-subject-color-backend.md)
 - [Subject 专属颜色移除前端实施计划（2026-09-03）](superpowers/plans/2026-09-03-remove-subject-color-frontend.md)
 - [资产库本地优先加载实施计划（2026-09-03）](superpowers/plans/2026-09-03-asset-local-first-loading.md)
+- [PC 单一文件预览实施计划（2026-09-04）](superpowers/plans/2026-09-04-single-file-preview.md)
+- [PC 文档处理密钥恢复边界实施计划（2026-09-04）](superpowers/plans/2026-09-04-pc-document-encryption-recovery.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)

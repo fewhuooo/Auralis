@@ -27,9 +27,9 @@
 
 ## P1 风险
 
-### P1-PC-PDF-Preview-GUI-Validation
+### P1-PC-FilePreview-GUI-Validation
 
-`PdfViewer` 已取消旧 loading/render、销毁旧 document、清空 Canvas，并以代际标记拒绝旧异步结果；`r4-pdf-viewer-switch` 3/3 通过。自动测试无法证明 Tauri asset protocol 在大 PDF、连续快速切换和实际 GPU/worker 压力下的帧率与内存回收，需在桌面端以真实大 PDF 人工验收。
+PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home PDF 伴读入口和 Asset 的 `filePath`/不可达 Markdown 预览分支已删除，资产库以 Source `id`、`assetId`、`name`、`fileType` 驱动同一组件。`r4-file-preview` 24/24 通过；自动测试仍无法证明 Tauri/浏览器在大文件、多格式与连续快速切换时的资源加载、排版与内存表现，需人工 GUI 验收。
 
 ### P1-Subject-Color-Contract-Cutover
 

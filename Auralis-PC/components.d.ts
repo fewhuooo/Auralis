@@ -31,7 +31,6 @@ declare module 'vue' {
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     KnowledgeBlockEditor: typeof import('./src/components/knowledge/KnowledgeBlockEditor.vue')['default']
     KnowledgeGraph: typeof import('./src/components/subject/KnowledgeGraph.vue')['default']
-    PdfViewer: typeof import('./src/components/subject/PdfViewer.vue')['default']
     PomodoroRing: typeof import('./src/components/pomodoro/PomodoroRing.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

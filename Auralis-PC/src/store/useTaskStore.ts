@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
+  useTaskApi,
   type TaskCreateRequest,
   type TaskUpdateRequest,
   type TaskView,
@@ -12,7 +13,7 @@ import { isCanonicalTaskStatus, mapTaskView, type CognitiveLoad, type TaskModel,
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
-import { getTasksForTimeline, isCompletedScheduledTask, isSchedulableTask } from '@/services/taskViewRules'
+import { getTasksForTimeline, isCompletedScheduledTask, isSchedulableTask, isScheduledAtInPast, isScheduledTaskPast, isUnscheduledTaskPastDue } from '@/services/taskViewRules'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -171,7 +172,7 @@ function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
 function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
   const scheduledAt = input.startTime !== undefined
     ? scheduledAtFromLegacy(input.startTime, fallbackDay)
-    : normalizeScheduledAtForApi(input.scheduledAt, fallbackDay)
+    : input.scheduledAt
   const status = statusFromLegacy(input.status, Boolean(scheduledAt))
   return {
     id: input.id || uuidv7(),
@@ -305,6 +306,29 @@ export const useTaskStore = defineStore('task', () => {
   const selectedDay = ref<string>(getTodayDayCode())
   const timeSlots = ref<TimeSlot[]>(generateTimeSlots())
 
+  function assertScheduledAtIsNotPast(scheduledAt: string | undefined): void {
+    if (isScheduledAtInPast(scheduledAt)) {
+      throw new Error('不能排期到过去的时间')
+    }
+  }
+
+  async function recoverOverdueTasks(): Promise<void> {
+    if (!isLoading.value && useAuthStore().isAuthenticated) {
+      for (const task of allTasks.value) {
+        if (isScheduledTaskPast(task)) {
+          const model = toTaskModel({ ...task, status: 'completed', scheduledAt: task.scheduledAt })
+          model.version = task.version
+          await updateTaskModel(model)
+        } else if (isUnscheduledTaskPastDue(task)) {
+          const model = toTaskModel({ ...task, dueAt: undefined, scheduledAt: undefined, startTime: undefined })
+          model.version = task.version
+          model.dueAt = model.dueAt ?? null
+          await updateTaskModel(model)
+        }
+      }
+    }
+  }
+
   function updateCurrentSlot(): void {
     const now = new Date()
     const currentMinutes = now.getHours() * 60 + now.getMinutes()
@@ -316,7 +340,12 @@ export const useTaskStore = defineStore('task', () => {
     })
   }
 
-  if (typeof window !== 'undefined') window.setInterval(updateCurrentSlot, 60_000)
+  if (typeof window !== 'undefined') {
+    window.setInterval(() => {
+      updateCurrentSlot()
+      void recoverOverdueTasks()
+    }, 60_000)
+  }
 
   async function repository(): Promise<LocalRepository> {
     const authStore = useAuthStore()
@@ -346,10 +375,14 @@ export const useTaskStore = defineStore('task', () => {
     try {
       const repo = await repository()
       const rows = await repo.list<TaskView>('TASK', { includeDeleted: false })
-      const local = rows
-        .map((row) => dtoFromLocal(row.value))
-        .filter((value): value is TaskModel => value !== null)
-      .map((model) => toPresentationTask(model, rows.find((row) => row.id === model.id)?.syncStatus === 'conflict' ? 'conflict' : 'synced'))
+      const local = rows.flatMap((row) => {
+        const model = dtoFromLocal(row.value)
+        if (!model) return []
+        const status = row.syncStatus === 'conflict' ? 'conflict'
+          : row.syncStatus === 'pending' || row.syncStatus === 'error' ? 'pending_update'
+          : 'synced'
+        return [toPresentationTask(model, status)]
+      })
       allTasks.value = local
       rebuildSchedule()
       return local
@@ -454,6 +487,7 @@ export const useTaskStore = defineStore('task', () => {
     if (slot.task && isCompletedScheduledTask(slot.task)) throw new Error('已完成的排期任务已固定')
     if (slot.task) await unscheduleTask(slotTime)
     const model = toTaskModel({ ...task, status: task.status, startTime: `${selectedDay.value} ${slotTime}` })
+    assertScheduledAtIsNotPast(model.scheduledAt)
     model.version = task.version
     await updateTaskModel(model)
   }
@@ -468,6 +502,7 @@ export const useTaskStore = defineStore('task', () => {
     let hour = 8
     while (occupied.includes(`${String(hour).padStart(2, '0')}:00`) && hour <= 22) hour += 1
     const model = toTaskModel({ ...task, status: task.status, startTime: `${day} ${String(hour).padStart(2, '0')}:00` })
+    assertScheduledAtIsNotPast(model.scheduledAt)
     model.version = task.version
     await updateTaskModel(model)
   }
@@ -477,14 +512,35 @@ export const useTaskStore = defineStore('task', () => {
     const to = timeSlots.value.find((slot) => slot.time === toSlotTime)?.task
     if (!from) return
     if (isCompletedScheduledTask(from) || (to && isCompletedScheduledTask(to))) throw new Error('已完成的排期任务已固定')
+
+    const fromModel = toTaskModel({ ...from, status: from.status, startTime: `${selectedDay.value} ${toSlotTime}` })
+    assertScheduledAtIsNotPast(fromModel.scheduledAt)
+
     if (to) {
       const toModel = toTaskModel({ ...to, status: to.status, startTime: `${selectedDay.value} ${fromSlotTime}` })
-      toModel.version = to.version
-      await updateTaskModel(toModel)
+      assertScheduledAtIsNotPast(toModel.scheduledAt)
+      await useTaskApi.swapSchedules({
+        fromId: fromModel.id,
+        fromVersion: from.version,
+        fromTargetTime: fromModel.scheduledAt!,
+        toId: toModel.id,
+        toVersion: to.version,
+        toTargetTime: toModel.scheduledAt!
+      })
+      toModel.version = to.version + 1
+      fromModel.version = from.version + 1
+      replaceInMemory(toPresentationTask(toModel, 'synced'))
+      replaceInMemory(toPresentationTask(fromModel, 'synced'))
+    } else {
+      await useTaskApi.swapSchedules({
+        fromId: fromModel.id,
+        fromVersion: from.version,
+        fromTargetTime: fromModel.scheduledAt!
+      })
+      fromModel.version = from.version + 1
+      replaceInMemory(toPresentationTask(fromModel, 'synced'))
     }
-    const fromModel = toTaskModel({ ...from, status: from.status, startTime: `${selectedDay.value} ${toSlotTime}` })
-    fromModel.version = from.version
-    await updateTaskModel(fromModel)
+    useSyncStore().requestBackgroundSync('read')
   }
 
   async function unscheduleTask(slotTime: string): Promise<void> {

@@ -244,3 +244,39 @@ test('SubjectWorkspace renders the selected file directly and keeps knowledge bl
   assert.doesNotMatch(source, /centerView === 'summary'/)
   assert.doesNotMatch(source, /Markdown 文件/)
 })
+
+test('PdfViewer component does not exist', () => {
+  const pdfViewerPath = path.resolve('src/components/subject/PdfViewer.vue')
+  assert.equal(fs.existsSync(pdfViewerPath), false, 'PdfViewer.vue must be deleted')
+})
+
+test('Home view has no PdfViewer or pdf companion references', () => {
+  const homePath = path.resolve('src/views/Home/index.vue')
+  const homeSource = fs.readFileSync(homePath, 'utf8')
+  assert.doesNotMatch(homeSource, /PdfViewer/)
+  assert.doesNotMatch(homeSource, /activeTab\s*===\s*['"]pdf['"]/)
+  assert.doesNotMatch(homeSource, /openPdfCompanion/)
+  assert.doesNotMatch(homeSource, /PDF伴读/)
+  assert.doesNotMatch(homeSource, /pdf-tab/)
+})
+
+test('Asset view uses FilePreview with assetId and fileType and removes legacy preview branches', () => {
+  const assetPath = path.resolve('src/views/Asset/index.vue')
+  const assetSource = fs.readFileSync(assetPath, 'utf8')
+  assert.doesNotMatch(assetSource, /PdfViewer/)
+  assert.doesNotMatch(assetSource, /selected\.filePath/)
+  assert.doesNotMatch(assetSource, /filePath:/)
+  assert.doesNotMatch(assetSource, /selected\.markdown/)
+  assert.doesNotMatch(assetSource, /markdown-preview/)
+  assert.match(assetSource, /import FilePreview from ['"]@\/components\/FilePreview\.vue['"]/)
+  assert.match(assetSource, /selectedPreviewFile/)
+  assert.match(assetSource, /<FilePreview[^>]*:file="selectedPreviewFile"[^>]*:bare="true"/)
+  assert.match(assetSource, /assetId/)
+  assert.match(assetSource, /fileType/)
+})
+
+test('components declaration has no PdfViewer entry', () => {
+  const dtsPath = path.resolve('components.d.ts')
+  const dtsSource = fs.readFileSync(dtsPath, 'utf8')
+  assert.doesNotMatch(dtsSource, /PdfViewer/)
+})

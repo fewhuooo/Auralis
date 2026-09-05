@@ -27,9 +27,7 @@
 
 2026-09-04 学科文件删除投影修复：`useSourceStore.deleteSourceFile()` 先持久化 Source tombstone 与 DELETE outbox，再立即从 `sources/activeSourceFiles` 移除；后台同步与 parser/job/cache 清理不再阻塞列表、计数或选中项回退。`r4-file-preview` 删除顺序回归 20/20 通过。真实 Tauri 中 OCR 运行时删除、缓存清理和重新打开学科后的同步仍待 GUI/Server 联调验收；组合运行的 `r4-register-file` 另有两项既有 Task/Subject 静态断言失败，未归因于本次 Source 删除修复。
 
-2026-09-04 文件预览切换性能补充：实际学科页走 `FilePreview`，而非旧 `PdfViewer`；此前每次选择均完整下载 Blob，旧请求只忽略结果而继续占用下载与内存。本轮以 80ms 选择合并和 `AbortController` 中断被替代的 fetch，确保只有最后一次选择进入 Blob/File Viewer 解析。`r4-file-preview` 19/19 通过；真实 Tauri 大 PDF 的首开解析仍需 GUI 验收。
-
-2026-09-04 PDF 快速切换稳定性修复：`PdfViewer` 保持 `convertFileSrc` URL 加载，不经 Tauri command IPC 传递整份二进制；每次切换递增加载代际、取消旧 loading/render 任务、销毁旧 PDF.js document 并将旧 Canvas 清零。旧异步结果不会覆盖当前文件，首屏仅按适配宽度渲染一次。`r4-pdf-viewer-switch` 3/3 通过。`npm run type-check` 本轮被当前工作树 Timeline 残留的 `Subject.color`（3 处）及未使用 `Sparkles` 导入阻断，未将其记为 PDF 修复失败；真实 Tauri 大 PDF 连续切换 GUI 仍待人工验收。
+2026-09-04 PC 单一文件预览收敛：删除旧 `PdfViewer.vue`、首页 PDF 伴读标签及入口、组件声明和专用回归；资产库真实 Source 文件改由 `FilePreview` 统一预览，并从 TreeNode 保留 `id`、`assetId`、`name` 与 `fileType`。资产库不可达的 `selected.markdown` 与 `filePath` 预览分支已删除，知识块与任务编辑保持不变。新增预览回归先失败后通过，`r4-file-preview` 24/24 通过，生产路径的 `PdfViewer`/`convertFileSrc` 扫描为空且 `git diff --check` 通过。`npm.cmd run type-check` 与 `npm.cmd run build` 均被既有 `useTaskStore.ts`（3 项）和 Timeline（4 项 `Subject.color`/未使用 `Sparkles`）错误在 `vue-tsc` 阶段阻断，未归因于本次预览迁移；真实 Tauri/浏览器中的大 PDF 与多格式连续切换仍待 GUI 验收。
 
 2026-09-04 PC 已完成排期任务固定：Task 完成后保留原 `scheduledAt` 与时间轴位置，并同时在 Store、Timeline、Dashboard 拦截拖动、替换与取消排期；恢复为未完成后才重新允许调整。新增两项 Node 回归已先失败后通过。后续发现历史本地缓存可能保存展示态 `completed`：按当前工程弃用策略，加载时仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED` 领域 DTO，旧展示态记录不再转换或兼容、会在本地加载时忽略，并由在线刷新按现行契约重建；对应映射与 Store 定向回归通过。`npm run test:r4-pc` 最新结果为 173/181，8 项失败仍是可见负荷、旧拖放/本地优先、到期转换及过去时段契约；本轮已清除 Subject `color` 页面残留，`r4-store-mapping` 10/10 与 `npm run type-check` 通过。真实 Tauri 拖放 GUI 仍待人工验收。
 

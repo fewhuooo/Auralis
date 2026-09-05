@@ -20,10 +20,10 @@
 - `FilePreview` 在启动二进制下载前合并 80ms 内的选择，并以 `AbortController` 中止被替代的 fetch，避免多份大文件同时转为 Blob 并进入 File Viewer。
 - `r4-file-preview` 19/19 通过；真实 Tauri 大 PDF 首次解析仍待 GUI 验收。
 
-### PC PDF 快速切换稳定性（2026-09-04）
+### PC 单一文件预览（2026-09-04）
 
-- `PdfViewer` 以 `convertFileSrc` URL 交给 PDF.js 加载，切换时取消旧任务、销毁 document、清空 Canvas，并用加载/渲染代际阻止旧请求回写。
-- 首屏适配宽度后只渲染一次；新增 `r4-pdf-viewer-switch` 回归 3/3。真实 Tauri 大 PDF 连续切换仍待 GUI 验收。
+- 删除旧 `PdfViewer`、首页 PDF 伴读入口及其专项回归；资产库真实 Source 文件改用 `FilePreview`，保留既有签名下载、失败重试与 File Viewer 渲染路径。
+- 资产树传递 Source `id`、`assetId`、`name`、`fileType`；删除 Asset 的 `filePath` 和不可达 Markdown 预览分支。`r4-file-preview` 24/24 通过；真实 Tauri/浏览器 GUI 验收仍待完成。
 
 ### PC Subject 全局主题色清理（2026-09-04）
 

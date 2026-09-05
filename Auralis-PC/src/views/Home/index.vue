@@ -94,14 +94,6 @@
               >
                 ⬡ 关联图谱
               </button>
-              <button 
-                class="tab-btn" 
-                :class="{ 'is-active': activeTab === 'pdf' }"
-                @click="activeTab = 'pdf'"
-                :disabled="!selectedFileId"
-              >
-                📖 PDF伴读
-              </button>
             </div>
 
             <div class="tab-body">
@@ -126,7 +118,6 @@
 <span class="file-blocks" v-if="file.blockCount !== undefined && file.blockCount > 0">{{ file.blockCount }} 知识块</span>
                     </div>
                     <div class="file-actions">
-                      <button class="file-action-btn" title="PDF伴读" @click="openPdfCompanion(file.id)">📖 伴读</button>
                       <button class="file-action-btn" title="查看大纲" @click="viewFileOutline(file.id)">📋 大纲</button>
                       <button class="file-action-btn delete" title="删除记录" @click="deleteSourceFile(file.id)">✕</button>
                     </div>
@@ -225,18 +216,6 @@
                 />
               </div>
 
-              <!-- TAB 4: PDF Companion -->
-              <div v-if="activeTab === 'pdf'" class="tab-content pdf-tab">
-                <PdfViewer 
-                  v-if="selectedFile"
-:filePath="selectedFile.filePath"
-                  :fileName="selectedFile.name"
-                />
-                <div class="empty-state" v-else>
-                  <div class="empty-icon">📕</div>
-                  <p>请在左侧“学习材料”列表点击“伴读”以载入 PDF 阅读器。</p>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -601,12 +580,6 @@ import { useSourceStore } from '@/store/useSourceStore'
 // Import components
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
 import SubjectCreateModal from '@/components/subject/SubjectCreateModal.vue'
-import PdfViewer from '@/components/subject/PdfViewer.vue'
-
-const openPdfCompanion = (fileId: string) => {
-  selectedFileId.value = fileId
-  activeTab.value = 'pdf'
-}
 
 marked.setOptions({
   breaks: true,
@@ -658,7 +631,7 @@ const startResize = (e: MouseEvent) => {
 }
 
 // Local UI states
-const activeTab = ref<'materials' | 'outlines' | 'graph' | 'pdf'>('materials')
+const activeTab = ref<'materials' | 'outlines' | 'graph'>('materials')
 const viewMode = ref<'timeline' | 'weekly' | 'checklist'>('timeline')
 const selectedFileId = ref<string | null>(null)
 const pasteCatalogText = ref('')
