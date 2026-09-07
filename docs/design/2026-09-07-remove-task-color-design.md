@@ -67,6 +67,121 @@ Mobile Timeline、Tablet Dashboard、TaskSelectSheet、Home 及其它任务卡�
 
 旧 Task 自定义颜色值在 Server 和端侧迁移后不可恢复。迁移保留任务本身、关联、排期、版本、墓碑和待同步操作；禁止以清空整表、删除整个 mutation 或重置 cursor 的方式实施。
 
+## 契约变化对照
+
+| 边界 | 切换前 | 切换后 | 不受影响 |
+| --- | --- | --- | --- |
+| Task Create/Update | 可选 `colorOverride` | 无颜色字段 | `subjectId`、时长、排期、截止时间、排序 |
+| Task View/List | 响应可含 `colorOverride` | 响应不存在该字段 | 版本、时间戳、墓碑 |
+| Sync TASK payload | 可含 `colorOverride` 或端侧旧 `color` | 新 payload 不产生，历史 payload 由迁移剔除 | 非 TASK payload 中同名键 |
+| Server DB | `tasks.color_override VARCHAR(32)` | V21 后无该列 | `knowledge_blocks.color_override` |
+| PC Task 投影 | `TaskModel.colorOverride` + `Task.color` | 两者均删除 | KnowledgeBlock 展示 `color` |
+| Mobile Task 投影 | `Task.color` | 删除 | Block/Chart 颜色 |
+| UI | 任务数据决定卡片色 | CSS 主题/语义令牌 | 状态色与可访问性信号 |
+
+Task 请求中出现未声明的 `colorOverride` 时，行为遵循当前 Jackson/Spring 对未知字段的全局策略；本次不为旧颜色字段新增特殊兼容或拒绝分支。OpenAPI 是客户端唯一契约依据。
+
+## 预期修改清单
+
+### Server、迁移与契约
+
+| 文件/区域 | 精确操作 |
+| --- | --- |
+| `Auralis-Server/src/main/java/com/auralis/app/task/TaskCommand.java` | 从 command record 删除 `colorOverride` |
+| `TaskDtos.java` | 删除 create/update 请求、response 字段与转换参数 |
+| `TaskView.java` | 删除 Task view 颜色字段 |
+| `TaskService.java` | 更新 Entity 构造/更新调用，不传颜色 |
+| `task/internal/persistence/TaskEntity.java` | 删除 JPA 列、字段、参数、getter 和更新赋值 |
+| `db/migration/V21__remove_task_color.java` | 先清理 TASK JSON，后删除 `tasks.color_override` |
+| `docs/contracts/openapi/auralis-openapi.json` | 仅删除 TaskCreateRequest/TaskUpdateRequest/TaskView 的颜色属性 |
+| PC/Mobile `src/api/generated/schema.ts` | 从冻结 artifact 机械生成；拒绝无关 WebSocket/JsonNode 漂移 |
+| `docs/contracts/API.md` / `Database.md` / `ObjectModelMatrix.md` | 更新现行 Task 字段、V21 和端侧边界 |
+
+Server 测试中所有 `new TaskEntity(...)`、Task request JSON、Task response 断言和 repository fixture 都需按新参数顺序更新；禁止为了快速编译而传 `null` 占位。
+
+### PC
+
+| 文件/区域 | 精确操作 |
+| --- | --- |
+| `src/services/domainMappers.ts` | 只从 TaskModel/TaskDtoLike/mapTaskView 删除 `colorOverride`；保留 KnowledgeBlock 的同名字段 |
+| `src/store/useTaskStore.ts` | 删除 Task 领域/展示/写入类型中的 `colorOverride`/`color`，并移除默认 `#7D9372` 数据值 |
+| `src/services/localSchema.ts` / `localRepository.ts` | 清理规范 TASK JSON 中的两个颜色键，保留 KnowledgeBlock payload |
+| `src/services/localDb.ts` | 旧 Task facade 不再读写 `task_blocks.color`；其它资源颜色不变 |
+| `src/views/Timeline/index.vue` | 移除周概览点、日/周卡片边框、标签、待办色条、时长文字对 `task.color` 的依赖 |
+| `src/views/Dashboard/index.vue` | 移除日/周时间轴、待办色条及创建 payload 的任务颜色 |
+| `src/views/Home/index.vue` | 移除时间轴卡片、标签、待办色条和创建 payload 颜色 |
+| `src/components/schedule/ScheduleWeekView.vue` | 移除任务左边框的数据颜色绑定 |
+| Asset/SubjectWorkspace/其它 `addTask` 调用 | 逐个检查并删除 Task `color`，不动 Block 创建颜色 |
+| `scripts/r4-store-mapping.test.mjs` / `r4-dashboard-timeline.test.mjs` 及新定向测试 | 断言 Task 模型/页面不存在颜色，KnowledgeBlock 仍保留颜色 |
+
+PC 页面中的 `SUBJECT_THEME_COLOR` 若只用于视觉样式可保留；若被写入 Task payload 必须删除。知识块创建使用的 `color` 是不同模型，必须保留。
+
+### Mobile/Tablet
+
+| 文件/区域 | 精确操作 |
+| --- | --- |
+| `src/store/useTaskStore.ts` | 删除 Task interface 的 `color` 及 add/update 传透 |
+| `src/store/useSyncStore.ts` | TASK 分支不再映射 `payload.color ↔ colorOverride`；KnowledgeBlock 分支保留 |
+| `src/services/localDb.ts` | 新表定义、读取、更新、插入、远端应用均移除 Task `color`；实施原生/H5 迁移 |
+| `src/pages/mobile/home/index.vue` | 快速创建任务不再写入固定颜色 |
+| `src/pages/mobile/timeline/index.vue` | 删除待排期/已排期卡片的 `task.color` 边框绑定 |
+| `src/pages/tablet/dashboard/index.vue` | 删除任务边框、完成勾选框与快速创建的数据颜色 |
+| `src/components/TaskSelectSheet.vue` | 删除任务颜色条的数据绑定，改用主题 class |
+| Mobile 脚本与新本地迁移测试 | 阻止 Task 颜色重新进入 schema、Store、Sync 或页面 |
+
+## V21 迁移算法与失败语义
+
+V21 在 Flyway 单个迁移事务中执行。伪代码如下：
+
+```text
+for each change_log row where resource_type = 'TASK':
+  parse payload as JSON object, otherwise fail migration with row id
+  remove colorOverride and color
+  update only when at least one key existed
+
+for each inbound_mutations row where resource_type = 'TASK' and current_payload is not null:
+  parse current_payload as JSON object, otherwise fail migration with row id
+  remove colorOverride and color
+  update only when at least one key existed
+
+drop tasks.color_override if it exists
+```
+
+更新 JSON 时使用原记录 UUID 作精确条件，不用 `resource_id` 作唯一键。空 payload 按现有 V20 语义不改写；非空但非法/非 object JSON 使迁移失败并包含记录 ID，便于修复数据后重试。删列前完成 JSON 清理，保证新服务不会再向旧字段回流。
+
+## 端侧迁移不变量
+
+PC 和 Mobile 本地迁移都必须通过“迁移前总数 = 迁移后总数”与关键字段逐条断言。最少保留：
+
+- Task ID、user/device scope、subjectId、title/name、description/desc、status、duration、scheduledAt/startTime、dueAt、sortKey/position、version/sync_version、sync_status、is_deleted。
+- local mutation ID/client mutation ID、resource type、resource ID、mutation type/action、base version、重试/冲突状态、created time 与非颜色 payload 字段。
+- 其它用户、其它资源、非 TASK mutation 与 KnowledgeBlock 颜色。
+
+浏览器 fallback 与原生 SQLite 必须对同一 fixture 产生等价结果。遇到无法解析的本地 mutation payload 时不删除整条 mutation；保留原记录并记录有边界的警告，避免启动迁移造成额外数据损失。
+
+## UI 统一规则
+
+- 任务卡片的普通边框/强调线：使用已有 Sage accent 或 border token，不从 Task 数据计算。
+- Subject 标签：使用中性 surface + text token，不用 Subject 或 Task 颜色。
+- 完成任务：保留 check icon、文字/透明度或删除线；完成色是语义样式，不写入 Task。
+- 过去任务：保留现有 `is-past` 形状/文字信号，不用颜色作唯一区分。
+- 当前时间线、拖放目标、错误通知和选中状态保留现有语义色。
+- 页面不得用 `:style="...task.color..."` 或拼接透明度的方式恢复动态颜色。
+
+## Antigravity 分阶段交付点
+
+Antigravity 的详细执行计划必须按以下顺序实施，每阶段先测试后代码，并在阶段结束提供 diff/命令证据：
+
+1. 建立隔离 worktree 基线，记录 base commit、当前残留与工作树保护约束。
+2. 先补 Server/OpenAPI/V21 失败测试，证明旧字段、列与 JSON 键尚存在。
+3. 实施 Server Task 契约与 V21，运行迁移和 OpenAPI 定向测试。
+4. 从 artifact 生成 PC/Mobile schema，对生成 diff 做白名单审查，不携带已知 WebSocket/JsonNode 漂移。
+5. 先补 PC Store/本地迁移/页面失败测试，再移除 PC Task 颜色数据流与 UI 绑定。
+6. 先补 Mobile Store/同步/原生/H5/页面失败测试，再实施 Mobile/Tablet 迁移和 UI 替换。
+7. 运行全局残留扫描，对每个保留的 `colorOverride`/`color` 给出资源类型归因，修复 Task 漏网点。
+8. 更新文档矩阵，运行定向与完整门禁，区分新回归、已有失败和未执行人工验收。
+9. 交付按文件分类的补丁、测试结果、未解决风险和“禁止整包合并”提醒，等待主工作树人工回收。
+
 ## 验证设计
 
 - Server clean schema 和 V20 → V21 upgrade 后均不存在 `tasks.color_override`。
@@ -77,6 +192,29 @@ Mobile Timeline、Tablet Dashboard、TaskSelectSheet、Home 及其它任务卡�
 - 定向扫描必须按 Task 语义分类 `colorOverride`、`task.color`、Task 表 `color`；KnowledgeBlock 与语义样式中的颜色不得误删。
 - 运行 Server 定向/完整测试、OpenAPI 漂移门禁、PC type-check/R4、Mobile type-check/静态/协议测试和 `git diff --check`。现有无关失败与本轮回归分开报告。
 - 自动测试不替代真实 PostgreSQL 升级、PC/Tauri GUI、Mobile H5、微信开发者工具和 Tablet 真机验收。
+
+计划中必须列出以下可直接执行的证据命令：
+
+```powershell
+cd Auralis-Server
+.\mvnw.cmd "-Dtest=TaskColorRemovalMigrationTests,OpenApiArtifactTests,CoreDomainControllerTests,CoreDomainRepositoryTests" test
+.\mvnw.cmd test
+
+cd ..\Auralis-PC
+npm.cmd run type-check
+npm.cmd run test:r4-pc
+npm.cmd run check:r4-pc
+
+cd ..\Auralis-Mobile
+npm.cmd run type-check
+npm.cmd run check:r4-mobile
+npm.cmd run test:r4-mobile
+
+cd ..
+.\scripts\check-openapi.ps1
+git diff --check
+```
+
 
 ## Antigravity 执行与工作树保护
 
