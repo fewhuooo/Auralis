@@ -110,6 +110,42 @@
 - [ ] If the desktop app can be launched without expanding scope, manually process `1.pdf` and record page progress, empty-page continuation, copy action and transition to packaging/upload. Otherwise explicitly leave GUI acceptance pending.
 - [ ] Commit documentation as `docs: record OCR diagnostics behavior`.
 
+## Task 6: Repair resumable upload state transitions
+
+**Files:**
+- Modify: `Auralis-PC/src/services/localRepository.ts`
+- Modify: `Auralis-PC/src/services/documentProcessing/sourceJobScheduler.ts` only if the minimal transition fix requires it
+- Modify: `Auralis-PC/scripts/r4-source-processing-schedule.test.mjs`
+- Modify: `Auralis-PC/scripts/r4-document-job-schema.test.mjs` only if a focused repository assertion cannot live in the scheduler suite
+
+- [ ] Add a failing regression test that starts from a persisted `PAUSED_NETWORK` upload job with `payloadReceipt`, invokes the same `retry()` path used by the UI, and uses the real `DocumentProcessingJobRepository` transition validation rather than the permissive fake repository.
+- [ ] Assert the retry path legally reaches `UPLOADING` and invokes the parsed-document upload coordinator without re-running parsing or discarding the receipt.
+- [ ] Add a paired assertion that a queued job without a receipt still enters the source parsing path, so broadening the transition does not bypass extraction/OCR.
+- [ ] Run the focused scheduler/repository tests and confirm the first test fails specifically on `DOCUMENT_JOB_ILLEGAL_TRANSITION` before changing production code.
+- [ ] Make the smallest state-machine correction: permit `QUEUED -> UPLOADING` because `retry()` intentionally normalizes a paused job to `QUEUED` before `schedule()` selects the receipt-backed upload path. Do not add unrelated transitions or special-case arbitrary failed jobs.
+- [ ] Re-run the focused tests and `npm run type-check`; confirm green.
+- [ ] Do not stage or commit implementation files in this task: the working tree contains protected, overlapping OCR work that must remain intact for the user to review as one set.
+
+## Task 7: Preserve bounded upload failure reasons in diagnostics
+
+**Files:**
+- Modify: `Auralis-PC/src/services/documentProcessing/checkpointPolicy.ts`
+- Modify: `Auralis-PC/src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts`
+- Modify: `Auralis-PC/src/utils/ocrDiagnostics.ts`
+- Modify: `Auralis-PC/scripts/r4-parsed-document-upload.test.mjs`
+- Modify: `Auralis-PC/scripts/r4-document-processing-ui.test.mjs`
+
+- [ ] Add table-driven failing coordinator tests for the existing Tauri transport suffixes `connect`, `timeout`, `body`, `request`, `client`, plus `DOCUMENT_UPLOAD_RETRYABLE`. Assert the job pauses with stable `errorCode = NETWORK_OFFLINE`, retains its payload receipt, and stores only a bounded allowlisted reason token.
+- [ ] Add negative assertions proving `errorDetail` never contains arbitrary exception text, object-storage URLs, query strings, headers, local paths or response bodies.
+- [ ] Add failing formatter/UI tests for each allowlisted token. Map them to concise Chinese explanations (connection failed, timed out, request/body/client failure, retryable server response) while unknown or malformed detail falls back to the existing generic retry message and is not echoed.
+- [ ] Run the two focused test files and confirm expected failures before production edits.
+- [ ] Introduce one pure sanitizer that extracts only the six approved reasons from exact error shapes. Keep stage limited to `upload` or `complete`; serialize a deterministic token such as `PARSED_DOCUMENT_UPLOAD_PAUSED:connect`, with no raw exception concatenation.
+- [ ] Update the upload coordinator to persist the token while keeping `NETWORK_OFFLINE` as the stable retry category. Do not change endpoint configuration, MinIO credentials, signed URL handling or Tauri upload transport in this task.
+- [ ] Update the OCR diagnostics formatter to decode only exact allowlisted tokens for on-screen and clipboard output. Unknown detail must produce a generic safe message.
+- [ ] Re-run the focused tests, the complete PC R4 suite and `npm run type-check`.
+- [ ] Run `git diff --check` and scan changed upload/diagnostic code for leaked URLs, Authorization/header names, query strings, paths and raw exception interpolation.
+- [ ] Do not stage or commit implementation files; preserve the user's existing uncommitted Antigravity/OCR changes and report automated evidence separately from real GUI verification.
+
 ## Final Review Gate
 
 - [ ] Review the complete diff from baseline `9563a49` to branch HEAD for plan compliance, privacy, retry behavior, checkpoint compatibility and unrelated regressions.
