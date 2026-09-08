@@ -262,6 +262,51 @@ test('falls back from Office text extraction to bitmap OCR', async () => {
   assert.deepEqual(ocrAdapter.calls, [{ pageNumber: 1, imageBytes: [6, 6, 6] }])
 })
 
+test('continues across empty and valid pages in multi-page Office bitmap OCR fallback', async () => {
+  const renderedPages = []
+  const recognizedPages = []
+  const progress = []
+  const { input } = pdfInput('unused.pdf', [], {
+    file: file('scanned.ppt'),
+    office: {
+      pageCount: 2,
+      bridge: {
+        async prepare() {},
+        async extractOrFallback() {
+          return { outcome: 'bitmap-fallback', chunks: [], anchors: [] }
+        },
+        async renderPageBitmap(pageNumber) {
+          renderedPages.push(pageNumber)
+          return new Uint8Array([pageNumber, pageNumber + 1])
+        },
+        dispose() {},
+      },
+    },
+    ocr: {
+      async recognizePage({ pageNumber, imageBytes }) {
+        recognizedPages.push({ pageNumber, imageBytes: [...imageBytes] })
+        return { lines: pageNumber === 1 ? [] : ['valid office OCR'], timingMs: { det: 1, rec: 2, total: 3 } }
+      },
+    },
+  })
+  const blocks = []
+
+  await parseDocument(input, async (block) => blocks.push(block), { onProgress: (event) => progress.push(event) })
+
+  assert.deepEqual(renderedPages, [1, 2])
+  assert.deepEqual(recognizedPages, [
+    { pageNumber: 1, imageBytes: [1, 2] },
+    { pageNumber: 2, imageBytes: [2, 3] },
+  ])
+  assert.deepEqual(progress.filter(({ type }) => type === 'before-recognize').map(({ pageNumber, totalPages }) => ({ pageNumber, totalPages })), [
+    { pageNumber: 1, totalPages: 2 },
+    { pageNumber: 2, totalPages: 2 },
+  ])
+  assert.deepEqual(blocks.map(({ ordinal, pageNumber, text }) => ({ ordinal, pageNumber, text })), [
+    { ordinal: 0, pageNumber: 2, text: 'valid office OCR' },
+  ])
+})
+
 test('waits for sink backpressure before requesting the next page', async () => {
   let releaseFirstSink
   const firstSink = new Promise((resolve) => {

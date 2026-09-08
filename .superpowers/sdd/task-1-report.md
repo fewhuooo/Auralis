@@ -29,3 +29,10 @@ Commit: `e16c69aa6045219240735e6e75e2c9a28ffae3d1`
 ## Concerns
 
 - Real Tauri GUI/sidecar behavior and runner/UI consumption of progress events remain outside this task and require the later integration tasks plus manual acceptance.
+
+## Review follow-up
+
+- Added `Auralis-PC/scripts/document-parser-core.test.mjs` coverage for a two-page Office bitmap fallback: both pages render and invoke OCR, both progress events report `totalPages: 2`, and only page 2 emits ordinal `0`.
+- `node --experimental-strip-types --test scripts/document-parser-core.test.mjs` (from `Auralis-PC`): exit code 0; 17 passed, 0 failed.
+- `npm.cmd run type-check` (from `Auralis-PC`): exit code 0; `vue-tsc -b` passed.
+- Follow-up commit: `8b7e07d3f25f05d7113b0957b7405eaa852d6e2f`.
