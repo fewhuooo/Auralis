@@ -281,6 +281,13 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - Tablet 触控、手写、双指缩放、文件批注和长时间书写。
 - 真实 PostgreSQL、Redis、MinIO、Milvus 和外部 AI 提供商全链路。
 
+## 2026-09-08 Task 5 OCR 文档同步
+
+- OCR parser、页级 continuation、全空文档 `OCR_DOCUMENT_EMPTY`、bounded/copyable diagnostics 与隐私边界已在代码实现，并有 focused Node/Rust 自动测试覆盖；本条不等同于业务验收。
+- 本轮计划的 focused Node suite、PC `type-check`、`test:r4-pc` 与 OCR Rust 单元测试/`cargo check` 将分别记录实际命令结果；`cargo check` 若受本机依赖或网络环境阻断，保留精确错误，不改写为通过。
+- `1.pdf` 尚未在真实 Tauri GUI 中完成打开、OCR、任务中心状态和失败态验收；真实剪贴板写入、Windows accessibility/窗口可见性以及 sidecar/日志现场观察仍待人工执行。
+- 当前实现和自动化证据不能证明真实文件质量、GUI 交互或生产日志脱敏已验收；这些边界继续列为开放项。
+
 ## 本轮验证结论（2026-08-23）
 
 - PC SubjectWorkspace 已将总结从原文件预览容器拆为独立 `· 总结.md` 虚拟文件项；原文件仍由 `FilePreview` 单独渲染，点击总结项显示独立 Markdown 文档并可下载。总结只由当前知识块实时生成，未新增后端 Source/Asset 持久化。

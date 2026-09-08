@@ -4,6 +4,11 @@
 
 文档状态：现行历史记录
 
+### PC OCR 诊断文档同步（2026-09-08）
+
+- 记录 OCR 页级 continuation、全空文档 `OCR_DOCUMENT_EMPTY`、有界可复制诊断及本机隐私边界；focused 自动测试与 Rust 检查结果按本轮报告登记。
+- 未宣称 `1.pdf` 真实 Tauri GUI、剪贴板/accessibility、sidecar 日志或 OCR 质量验收通过；这些仍需人工验证。
+
 ### PC/Server/Mobile 全端认知负荷移除复核（2026-09-07）
 
 - 后端移除 `TaskEntity` 及其相关 DTOs 和视图中的 `cognitiveLoad` 字段，完成 V20 Flyway 数据库迁移：丢弃旧负荷值，保留 Task 同步 JSON 中的其余字段、cursor 和版本。
