@@ -9,6 +9,7 @@ import {
   documentProcessingJobFromRow,
   LOCAL_SCHEMA_VERSION,
   mutationFromRow,
+  normalizeDocumentJobCheckpoint,
   resourceFromRow,
   type DocumentProcessingJobRow,
   type LocalMutationRow,
@@ -889,6 +890,7 @@ export class DocumentProcessingJobRepository {
       const normalized = jobs.map((job) => ({
         ...(job as Record<string, unknown>),
         ingestionRevision: String((job as Record<string, unknown>).ingestionRevision ?? ''),
+        checkpoint: normalizeDocumentJobCheckpoint((job as Record<string, unknown>).checkpoint),
         payloadReceipt: (job as Record<string, unknown>).payloadReceipt ?? null,
       })) as DocumentProcessingJob[]
       if (migrated) this.storage.setItem(currentKey, JSON.stringify(normalized))

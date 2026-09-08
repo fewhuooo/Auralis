@@ -248,6 +248,33 @@ test('malformed OCR diagnostic values are omitted at the persistence boundary', 
   }
 })
 
+test('browser hydration strips invalid OCR diagnostics while retaining valid bounded fields', async () => {
+  const storage = createMemoryStorage()
+  storage.setItem('auralis:v5:document-jobs:user-a:device-1', JSON.stringify([{
+    jobId: 'job-browser-diagnostic', userId: 'user-a', serverDeviceId: 'device-1', sourceId: 'source-1', ingestionRevision: 'revision-1',
+    phase: 'OCR_RUNNING', attempt: 0,
+    checkpoint: {
+      pageNumber: 3, blockOrdinal: 2,
+      diagnostic: {
+        pageNumber: 3, totalPages: 4, imageBytes: 4096, rawLineCount: 2, normalizedLineCount: 1, totalMs: 8, outcome: 'text',
+        secret: 'must-not-survive', invalid: Number.POSITIVE_INFINITY,
+      },
+    },
+    payloadCacheId: null, payloadReceipt: null, errorCode: null, errorDetail: null,
+    createdAt: '2026-08-24', updatedAt: '2026-08-24',
+  }, {
+    jobId: 'job-browser-invalid', userId: 'user-a', serverDeviceId: 'device-1', sourceId: 'source-2', ingestionRevision: 'revision-1',
+    phase: 'OCR_RUNNING', attempt: 0,
+    checkpoint: { pageNumber: 1, blockOrdinal: 0, diagnostic: { pageNumber: -1, totalPages: 999999999, imageBytes: 999999999999, outcome: 'unexpected', rawLineCount: 'secret' } },
+    payloadCacheId: null, payloadReceipt: null, errorCode: null, errorDetail: null,
+    createdAt: '2026-08-24', updatedAt: '2026-08-24',
+  }]))
+  const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { storage })
+  const jobs = await repository.list()
+  assert.deepEqual(jobs[0].checkpoint.diagnostic, { pageNumber: 3, totalPages: 4, imageBytes: 4096, rawLineCount: 2, normalizedLineCount: 1, totalMs: 8, outcome: 'text' })
+  assert.deepEqual(jobs[1].checkpoint, { pageNumber: 1, blockOrdinal: 0 })
+})
+
 test('UPLOADING can persist a local terminal failure without masking its cause', async () => {
   const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: null })
   await repository.create({ jobId: 'job-upload-local', sourceId: 'source-1', ingestionRevision: 'revision-1' })

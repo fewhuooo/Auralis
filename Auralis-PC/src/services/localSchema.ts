@@ -405,6 +405,20 @@ function sanitizeOcrDiagnostic(value: unknown): OcrCheckpointDiagnostic | undefi
   return diagnostic
 }
 
+export function normalizeDocumentJobCheckpoint(value: unknown, fallback: DocumentProcessingJob['checkpoint'] = { pageNumber: 0, blockOrdinal: 0 }): DocumentProcessingJob['checkpoint'] {
+  if (!value || typeof value !== 'object') return fallback
+  const candidate = value as Record<string, unknown>
+  const pageNumber = typeof candidate.pageNumber === 'number' && Number.isInteger(candidate.pageNumber) && candidate.pageNumber >= 0 ? candidate.pageNumber : fallback.pageNumber
+  const blockOrdinal = typeof candidate.blockOrdinal === 'number' && Number.isInteger(candidate.blockOrdinal) && candidate.blockOrdinal >= 0 ? candidate.blockOrdinal : fallback.blockOrdinal
+  const diagnostic = sanitizeOcrDiagnostic(candidate.diagnostic)
+  return {
+    pageNumber,
+    blockOrdinal,
+    ...(typeof candidate.parserState === 'string' ? { parserState: candidate.parserState.slice(0, 200) } : {}),
+    ...(diagnostic ? { diagnostic } : {}),
+  }
+}
+
 export function resourceFromRow<T>(row: LocalResourceRow): LocalEntity<T> {
   return {
     id: row.resource_id,
@@ -442,12 +456,7 @@ export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): Doc
   if (row.checkpoint_json) {
     try {
       const parsed = JSON.parse(row.checkpoint_json) as Partial<DocumentProcessingJob['checkpoint']>
-      checkpoint = {
-        pageNumber: Number(parsed.pageNumber ?? checkpoint.pageNumber),
-        blockOrdinal: Number(parsed.blockOrdinal ?? checkpoint.blockOrdinal),
-        ...(typeof parsed.parserState === 'string' ? { parserState: parsed.parserState } : {}),
-        ...(sanitizeOcrDiagnostic(parsed.diagnostic) ? { diagnostic: sanitizeOcrDiagnostic(parsed.diagnostic) } : {}),
-      }
+      checkpoint = normalizeDocumentJobCheckpoint(parsed, checkpoint)
     } catch {
       throw new Error('Invalid document job checkpoint')
     }
