@@ -16,13 +16,23 @@
           <span class="processing-phase">{{ phaseLabel(job.phase) }}</span>
         </div>
         <div class="processing-item-meta">
-          <span v-if="job.errorDetail" class="processing-error">{{ job.errorDetail }}</span>
-          <span v-else>{{ job.checkpoint.blockOrdinal > 0 ? `已处理 ${job.checkpoint.blockOrdinal} 个内容块` : '准备中' }}</span>
+          <span v-if="diagnosticError(job)" class="processing-error">{{ diagnosticError(job) }}</span>
+          <span v-else>{{ diagnosticsFor(job).progressLabel || (job.checkpoint.blockOrdinal > 0 ? `已处理 ${job.checkpoint.blockOrdinal} 个内容块` : '准备中') }}</span>
           <div class="processing-actions">
             <button v-if="isRetryable(job.phase)" type="button" @click="retry(job.jobId)">{{ job.phase === 'PAUSED_NETWORK' ? '继续' : '重试' }}</button>
             <button v-if="isActive(job.phase)" type="button" class="danger" @click="cancel(job.jobId)">取消</button>
           </div>
         </div>
+        <div v-if="diagnosticsFor(job).warning" class="processing-warning">{{ diagnosticsFor(job).warning }}</div>
+        <details v-if="diagnosticsFor(job).rows.length" class="processing-diagnostics">
+          <summary>查看诊断</summary>
+          <dl>
+            <template v-for="row in diagnosticsFor(job).rows" :key="`${job.jobId}-${row.label}`">
+              <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
+            </template>
+          </dl>
+          <button type="button" @click="copyDiagnostics(job.jobId, diagnosticsFor(job).clipboardText)">{{ copyFeedback[job.jobId] || '复制诊断' }}</button>
+        </details>
       </article>
       <article v-for="source in serverProcessingSources" :key="source.id" class="processing-item">
         <div class="processing-item-main">
@@ -46,6 +56,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { sourceDetailLabel, sourcePhaseLabel } from '@/utils/documentProcessingStatus'
+import { formatOcrDiagnostics, type OcrDiagnosticsView } from '@/utils/ocrDiagnostics'
 
 const store = useDocumentProcessingStore()
 const sourceStore = useSourceStore()
@@ -54,6 +65,7 @@ const serverProcessingSources = computed(() => sourceStore.sources
   .filter((source) => source.type === 'FILE' && source.ingestionStatus && source.ingestionStatus !== 'READY')
   .filter((source) => !jobs.value.some((job) => job.sourceId === source.id)))
 const sourceActionErrors = ref<Record<string, string>>({})
+const copyFeedback = ref<Record<string, string>>({})
 let timer: ReturnType<typeof setInterval> | null = null
 let sourcePollTicks = 0
 
@@ -65,6 +77,17 @@ const phaseLabel = (phase: string) => ({
 }[phase] || phase)
 const isActive = (phase: string) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(phase)
 const isRetryable = (phase: string) => ['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(phase)
+const diagnosticsFor = (job: typeof jobs.value[number]): OcrDiagnosticsView => formatOcrDiagnostics(job)
+const diagnosticError = (job: typeof jobs.value[number]) => diagnosticsFor(job).rows.find((row) => row.label === '错误说明')?.value || ''
+const copyDiagnostics = async (jobId: string, text: string) => {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('CLIPBOARD_UNAVAILABLE')
+    await navigator.clipboard.writeText(text)
+    copyFeedback.value = { ...copyFeedback.value, [jobId]: '已复制' }
+  } catch {
+    copyFeedback.value = { ...copyFeedback.value, [jobId]: '复制失败' }
+  }
+}
 const refreshSources = async () => { await sourceStore.loadSources().catch(() => undefined) }
 const refresh = async () => {
   await Promise.all([store.refresh().catch(() => undefined), refreshSources()])
@@ -112,4 +135,11 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .processing-error { color: #b4534d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .processing-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .processing-actions button.danger { color: #b4534d; }
+.processing-warning { margin-top: 8px; color: #9b742e; font-size: 11px; }
+.processing-diagnostics { margin-top: 10px; color: var(--text-secondary); font-size: 11px; }
+.processing-diagnostics summary { cursor: pointer; color: var(--text-secondary); }
+.processing-diagnostics dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 8px 0; }
+.processing-diagnostics dt { color: var(--text-muted); }
+.processing-diagnostics dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+.processing-diagnostics > button { border: 1px solid var(--border-subtle); border-radius: 8px; padding: 4px 8px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 11px; }
 </style>

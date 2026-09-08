@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import path from 'node:path'
 import { sourceDetailLabel, sourcePhaseLabel } from '../src/utils/documentProcessingStatus.ts'
+import { formatOcrDiagnostics } from '../src/utils/ocrDiagnostics.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
 const source = (file) => readFile(path.join(root, file), 'utf8')
@@ -70,4 +71,61 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(workspace, /DocumentProcessingDot/)
   assert.match(workspace, /DocumentNotReadyDialog/)
   assert.match(workspace, /showProcessingRequired/)
+})
+
+test('OCR diagnostics formatter exposes safe progress and empty-page warning', () => {
+  const formatted = formatOcrDiagnostics({
+    phase: 'OCR_RUNNING',
+    checkpoint: {
+      pageNumber: 2,
+      blockOrdinal: 1,
+      diagnostic: {
+        pageNumber: 2,
+        totalPages: 5,
+        imageBytes: 2048,
+        rawLineCount: 0,
+        normalizedLineCount: 0,
+        totalMs: 120,
+        outcome: 'empty',
+      },
+    },
+    errorCode: null,
+    errorDetail: null,
+  })
+  assert.equal(formatted.progressLabel, '正在识别第 2/5 页')
+  assert.equal(formatted.warning, '第 2/5 页未识别到文字')
+  assert.match(formatted.clipboardText, /结果：未识别到文字/)
+  assert.match(formatted.clipboardText, /图片大小：2048 bytes/)
+})
+
+test('OCR diagnostics formatter ignores unknown raw keys', () => {
+  const formatted = formatOcrDiagnostics({
+    phase: 'FAILED_LOCAL',
+    checkpoint: {
+      pageNumber: 1,
+      blockOrdinal: 0,
+      diagnostic: {
+        pageNumber: 1,
+        totalPages: 1,
+        imageBytes: 12,
+        outcome: 'failed',
+        secret: 'do-not-render',
+        rawJson: '{"token":"do-not-render"}',
+      },
+    },
+    errorCode: 'OCR_SIDECAR_UNAVAILABLE',
+    errorDetail: '模型启动失败',
+    raw: { token: 'do-not-render' },
+  })
+  assert.doesNotMatch(formatted.clipboardText, /do-not-render|rawJson|secret|token/)
+  assert.match(formatted.clipboardText, /错误代码：OCR_SIDECAR_UNAVAILABLE/)
+})
+
+test('processing center has accessible disclosure and guarded copy action', async () => {
+  const center = await source('src/components/documentProcessing/DocumentProcessingCenter.vue')
+  assert.match(center, /<details/)
+  assert.match(center, /复制诊断/)
+  assert.match(center, /navigator\.clipboard\.writeText/)
+  assert.match(center, /catch/)
+  assert.match(center, /aria-expanded|summary/)
 })
