@@ -172,12 +172,50 @@ test('document job transitions reject illegal phases and checkpoint atomically',
     assert.equal(updated.phase, 'EXTRACTING')
     assert.deepEqual(updated.checkpoint, { pageNumber: 2, blockOrdinal: 3, parserState: 'pdf-page-2' })
 
+    const samePhase = await repository.transition('job-1', 'EXTRACTING', {
+      checkpoint: { pageNumber: 2, blockOrdinal: 4, parserState: 'pdf-page-2' },
+    })
+    assert.deepEqual(samePhase.checkpoint, { pageNumber: 2, blockOrdinal: 4, parserState: 'pdf-page-2' })
+
     const row = sqlite.database.prepare('SELECT phase, checkpoint_page, checkpoint_ordinal, checkpoint_json FROM document_processing_jobs WHERE job_id = ?').get('job-1')
     assert.equal(row.phase, 'EXTRACTING')
     assert.equal(row.checkpoint_page, 2)
-    assert.equal(row.checkpoint_ordinal, 3)
-    assert.equal(row.checkpoint_json, JSON.stringify({ pageNumber: 2, blockOrdinal: 3, parserState: 'pdf-page-2' }))
+    assert.equal(row.checkpoint_ordinal, 4)
+    assert.equal(row.checkpoint_json, JSON.stringify({ pageNumber: 2, blockOrdinal: 4, parserState: 'pdf-page-2' }))
   } finally {
     sqlite.close()
   }
+})
+
+test('UPLOADING can persist a local terminal failure without masking its cause', async () => {
+  const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: null })
+  await repository.create({ jobId: 'job-upload-local', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+  await repository.transition('job-upload-local', 'EXTRACTING')
+  await repository.transition('job-upload-local', 'PACKAGING')
+  await repository.transition('job-upload-local', 'UPLOADING')
+  const failed = await repository.transition('job-upload-local', 'FAILED_LOCAL', {
+    errorCode: 'DOCUMENT_CACHE_READ_FAILED',
+    errorDetail: 'cache unavailable',
+  })
+  assert.equal(failed.phase, 'FAILED_LOCAL')
+  assert.equal(failed.errorCode, 'DOCUMENT_CACHE_READ_FAILED')
+})
+
+test('network failures during server validation remain resumable through PAUSED_NETWORK', async () => {
+  const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: null })
+  await repository.create({ jobId: 'job-server-network', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+  await repository.transition('job-server-network', 'EXTRACTING')
+  await repository.transition('job-server-network', 'PACKAGING')
+  await repository.transition('job-server-network', 'UPLOADING')
+  await repository.transition('job-server-network', 'SERVER_VALIDATING')
+  const paused = await repository.transition('job-server-network', 'PAUSED_NETWORK', {
+    errorCode: 'NETWORK_OFFLINE',
+    errorDetail: 'NETWORK_OFFLINE:connect',
+  })
+  assert.equal(paused.phase, 'PAUSED_NETWORK')
+  const resumed = await repository.transition('job-server-network', 'UPLOADING', {
+    errorCode: null,
+    errorDetail: null,
+  })
+  assert.equal(resumed.phase, 'UPLOADING')
 })

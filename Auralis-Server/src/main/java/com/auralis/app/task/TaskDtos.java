@@ -23,12 +23,10 @@ public final class TaskDtos {
             Instant scheduledAt,
             Instant dueAt,
             @PositiveOrZero Integer durationMinutes,
-            CognitiveLoad cognitiveLoad,
-            @Size(max = 128) String sortKey,
-            @Size(max = 32) String colorOverride) {
+            @Size(max = 128) String sortKey) {
         TaskCommand command() {
             return new TaskCommand(subjectId, title, description, status, scheduledAt, dueAt, durationMinutes,
-                    cognitiveLoad, sortKey, colorOverride);
+                    sortKey);
         }
     }
 
@@ -41,12 +39,10 @@ public final class TaskDtos {
             Instant scheduledAt,
             Instant dueAt,
             @PositiveOrZero Integer durationMinutes,
-            CognitiveLoad cognitiveLoad,
-            @Size(max = 128) String sortKey,
-            @Size(max = 32) String colorOverride) {
+            @Size(max = 128) String sortKey) {
         TaskCommand command() {
             return new TaskCommand(subjectId, title, description, status, scheduledAt, dueAt, durationMinutes,
-                    cognitiveLoad, sortKey, colorOverride);
+                    sortKey);
         }
     }
 
@@ -78,17 +74,15 @@ public final class TaskDtos {
             Instant scheduledAt,
             Instant dueAt,
             Integer durationMinutes,
-            CognitiveLoad cognitiveLoad,
             String sortKey,
-            String colorOverride,
             long version,
             Instant createdAt,
             Instant updatedAt,
             Instant deletedAt) {
         static Response from(TaskView view) {
             return new Response(view.id(), view.subjectId(), view.title(), view.description(), view.status(),
-                    view.scheduledAt(), view.dueAt(), view.durationMinutes(), view.cognitiveLoad(), view.sortKey(),
-                    view.colorOverride(), view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
+                    view.scheduledAt(), view.dueAt(), view.durationMinutes(), view.sortKey(),
+                    view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
         }
     }
 }

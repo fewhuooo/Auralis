@@ -1,6 +1,6 @@
 # 资产库本地优先加载 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 PC 资产库先展示本地树，在云端读取失败时保持本地数据，并在云端缓存写回后自动重建树。
 

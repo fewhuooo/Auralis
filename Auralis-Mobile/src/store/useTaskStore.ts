@@ -10,10 +10,7 @@ export interface Task {
   name: string
   subject: string
   desc?: string
-  color: string
   duration: number
-  load: 'low' | 'medium' | 'high'
-  loadText: string
   status: 'pending' | 'scheduled' | 'completed'
   startTime?: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete'
@@ -129,10 +126,7 @@ export const useTaskStore = defineStore('task', () => {
       name: task.name,
       subject: task.subject,
       desc: task.desc || '',
-      color: task.color,
       duration: task.duration,
-      load: task.load,
-      loadText: task.loadText,
       status: task.status || 'pending',
       startTime: task.startTime || '',
       sync_status: 'pending_create',

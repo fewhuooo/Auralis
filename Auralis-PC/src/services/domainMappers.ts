@@ -75,7 +75,6 @@ export interface AssetModel {
 }
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED'
-export type CognitiveLoad = 'LOW' | 'MEDIUM' | 'HIGH'
 
 export function isCanonicalTaskStatus(value: unknown): value is TaskStatus {
   return value === 'TODO' || value === 'IN_PROGRESS' || value === 'DONE' || value === 'CANCELLED'
@@ -90,9 +89,7 @@ export interface TaskModel {
   scheduledAt?: string
   dueAt?: string
   durationMinutes: number
-  cognitiveLoad: CognitiveLoad
   sortKey?: string
-  colorOverride?: string
   version: number
   createdAt?: string
   updatedAt?: string
@@ -190,9 +187,7 @@ export interface TaskDtoLike {
   scheduledAt?: string
   dueAt?: string
   durationMinutes?: number
-  cognitiveLoad?: CognitiveLoad
   sortKey?: string
-  colorOverride?: string
   version?: number
   createdAt?: string
   updatedAt?: string
@@ -327,9 +322,7 @@ export function mapTaskView(view: TaskDtoLike): TaskModel {
     scheduledAt: view.scheduledAt,
     dueAt: view.dueAt,
     durationMinutes: view.durationMinutes ?? 25,
-    cognitiveLoad: view.cognitiveLoad || 'MEDIUM',
     sortKey: view.sortKey,
-    colorOverride: view.colorOverride,
     version: view.version ?? 0,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,

@@ -348,3 +348,26 @@ test('legacy data is backed up without assignment or deletion and requires an ex
   assert.equal(chosen?.migrationChoice, 'import_current_account');
   assert.equal(chosen?.importedIntoUserId, 'user-a');
 });
+
+test('localSchema sanitizer processes TASK color removal correctly and preserves KnowledgeBlock and metadata', async () => {
+  const sqlite = new TemporarySqlite();
+  const db = { execute: async (s, b) => sqlite.execute(s, b), select: async (s, b) => sqlite.select(s, b) };
+  await createVersionedLocalSchema(db);
+
+  sqlite.database.prepare("INSERT INTO local_resource_records (user_id, resource_type, resource_id, payload, version, sync_status) VALUES ('u1', 'TASK', 't1', '{\"id\":\"t1\",\"color\":\"#123\",\"colorOverride\":\"#456\",\"title\":\"T\"}', 1, 'synced')").run();
+  sqlite.database.prepare("INSERT INTO local_resource_records (user_id, resource_type, resource_id, payload, version, sync_status) VALUES ('u1', 'KNOWLEDGE_BLOCK', 'b1', '{\"id\":\"b1\",\"colorOverride\":\"#789\",\"title\":\"B\"}', 1, 'synced')").run();
+  sqlite.database.prepare("INSERT INTO local_mutations (user_id, client_mutation_id, resource_type, resource_id, mutation_type, base_version, payload, remote_payload, created_at, status) VALUES ('u1', 'm1', 'TASK', 't1', 'UPDATE', 1, '{\"color\":\"#123\"}', '{\"colorOverride\":\"#456\"}', '2026-09-08', 'pending')").run();
+
+  await createVersionedLocalSchema(db);
+
+  const tasks = sqlite.database.prepare("SELECT payload FROM local_resource_records WHERE resource_id = 't1'").all();
+  assert.equal(tasks[0].payload, '{"id":"t1","title":"T"}');
+
+  const blocks = sqlite.database.prepare("SELECT payload FROM local_resource_records WHERE resource_id = 'b1'").all();
+  assert.equal(blocks[0].payload, '{"id":"b1","colorOverride":"#789","title":"B"}');
+
+  const muts = sqlite.database.prepare("SELECT payload, remote_payload FROM local_mutations WHERE client_mutation_id = 'm1'").all();
+  assert.equal(muts[0].payload, '{}');
+  assert.equal(muts[0].remote_payload, '{}');
+  sqlite.close();
+});

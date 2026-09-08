@@ -28,9 +28,15 @@ test('Tauri document runtime composes the durable repository, parser, package, u
     assert.match(runtime, new RegExp(dependency))
   }
   assert.match(runtime, /sourceStore\.attachDocumentScheduler\(scheduler\)/)
+  assert.match(runtime, /processingStore\.attachScheduler\(scheduler\)/)
   assert.match(runtime, /processingStore\.attachRunner\(runner\)/)
-  assert.match(runtime, /onJobChanged:\s*async \(\) => \{[\s\S]*processingStore\.refresh\(\)[\s\S]*sourceStore\.loadSources\(\)/)
+  const jobChanged = runtime.match(/onJobChanged:\s*async \(\) => \{([\s\S]*?)\n\s*\},/)
+  assert.ok(jobChanged)
+  assert.match(jobChanged[1], /processingStore\.refresh\(\)/)
+  assert.doesNotMatch(jobChanged[1], /sourceStore\.loadSources\(\)/)
   assert.match(runtime, /parserInputs\.clear\(\)/)
+  assert.match(runtime, /await ocrWarmup\(\)/)
+  assert.match(runtime, /OCR warmup deferred/)
   assert.doesNotMatch(runtime, /localStorage\.setItem|uploadUrl\s*:/)
 })
 
@@ -67,6 +73,23 @@ test('native package creation guarantees a master key at the Rust security bound
   assert.match(packager, /document_package_begin[\s\S]*PackageBuilder::begin\(state\.store_for_new_package\(\)\?/)
 })
 
+test('Cargo enables the Windows-native keyring backend without changing the master-key identity', async () => {
+  const cargo = await source('src-tauri/Cargo.toml')
+  assert.match(cargo, /keyring\s*=\s*\{\s*version\s*=\s*"3"\s*,\s*features\s*=\s*\[\s*"windows-native"\s*\]\s*\}/)
+  const crypto = await source('src-tauri/src/crypto.rs')
+  assert.match(crypto, /const KEYRING_SERVICE:\s*&str\s*=\s*"auralis"/)
+  assert.match(crypto, /const KEYRING_USER:\s*&str\s*=\s*"master_key"/)
+})
+
+test('Rust runtime test verifies native keyring persistence across fresh entries', async () => {
+  const crypto = await source('src-tauri/src/crypto.rs')
+  assert.match(crypto, /#\[cfg\(windows\)\][\s\S]*#\[test\][\s\S]*keyring_persists_across_fresh_entries/)
+  assert.match(crypto, /Entry::new\(&service,\s*&user\)/)
+  assert.match(crypto, /first[\s\S]*set_password\(&secret\)/)
+  assert.match(crypto, /second[\s\S]*get_password\(\)/)
+  assert.match(crypto, /delete_credential\(\)/)
+})
+
 test('Tauri SQL capability permits durable document job writes', async () => {
   const capability = JSON.parse(await source('src-tauri/capabilities/default.json'))
   assert.ok(capability.permissions.includes('sql:allow-execute'))
@@ -99,4 +122,10 @@ test('public auth routes do not mount the authenticated shell or trigger sidebar
   assert.match(router, /const hasSession = authStore\.isAuthenticated/)
   assert.match(login, /if \(authStore\.isAuthenticated\)/)
   assert.match(authStore, /isAuthenticated = computed\(\(\) => Boolean\([\s\S]*serverDeviceId\.value[\s\S]*\)\)/)
+})
+
+test('Office bitmap fallback reports unsupported input when the renderer has no page count', async () => {
+  const runtime = await source('src/services/documentProcessing/runtime.ts')
+  assert.doesNotMatch(runtime, /OFFICE_PAGE_COUNT_UNAVAILABLE/)
+  assert.match(runtime, /throw new Error\('DOCUMENT_FILE_TYPE_UNSUPPORTED'\)/)
 })

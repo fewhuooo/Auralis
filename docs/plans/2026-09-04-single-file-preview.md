@@ -1,6 +1,6 @@
 # PC 单一文件预览 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 移除旧 PDF 专用预览器，使首页不再暴露冗余 PDF 伴读入口，并让资产库真实文件只通过 `FilePreview` 预览。
 

@@ -1,12 +1,20 @@
 # Auralis 当前状态
 
-更新时间：2026-09-04
+更新时间：2026-09-08
 
 文档状态：现行状态快照
 
 权威范围：当前代码存在情况、本轮命令证据、人工验收边界与下一步
 
 事实来源：模块/契约文档、当前代码盘点、部署测试前主任务清单与本轮验证命令
+
+2026-09-08 Task 颜色破坏性契约切换已应用：Server Task API/Entity、V21 迁移、OpenAPI artifact/生成类型、PC/Mobile/Tablet Task 投影、同步和页面不再产生或渲染 Task `colorOverride`/`color`；KnowledgeBlock 颜色保留。PC/Mobile 本地迁移清洗有效 Task JSON 颜色键，非法 JSON 原样保留并限次告警。Server/PC/Mobile 本轮门禁结果仍待本轮命令完成，真实数据库升级、端侧旧库和 GUI 仍需人工验收。
+
+2026-09-07 Task 认知负荷破坏性契约切换：Server Task 领域模型、请求/响应、OpenAPI 和同步载荷已移除该字段；V20 删除数据库列并仅从 Task 历史 JSON 中清理废弃键。PC/Mobile/Tablet 的生成类型、Store、本地存储、同步转换和可见页面已移除 `cognitiveLoad`/`load`/`loadText` 依赖。本轮 Server 定向测试 8/8、PC type-check 与 R4 211/211、Mobile type-check/静态检查/协议测试 21/21 通过。Server 全量测试实际运行为 198 项、0 失败、28 错误，错误仍是已记录的 Docker 不可用、模块暴露边界和共享 H2 `assets → users` 清理外键。OpenAPI 定向测试通过，但两端生成 schema 与 artifact 之间仍有本任务之前存在的 WebSocket/JsonNode 漂移，`check-openapi.ps1` 仍不通过；该漂移未在本轮扩大修改。
+
+2026-09-07 MinIO 恢复复核：宿主/容器磁盘与 inode、volume 挂载和权限检查未发现容量或权限耗尽；MinIO 曾周期性报告 `/data offline` 和 read/write quorum 失败。已在不删除 volume 的前提下安全重启并重新加载真实对象读写 healthcheck；最终随机对象 PUT/HEAD/GET/DELETE 通过，MinIO ready 与 backend readiness 均返回 HTTP 200。Tauri 三条任务未重试，仍保留此前只读快照中的 PDF `FAILED_LOCAL/OCR_SIDECAR_UNAVAILABLE`、PPTX `FAILED_LOCAL/DOCUMENT_FILE_TYPE_UNSUPPORTED`、DOCX `FAILED_LOCAL/NETWORK_OFFLINE`，SQLite 未修改；GUI 重试验收仍开放。
+
+2026-09-07 PC 认证与浏览器依赖收口：后端重建导致持久 refresh session 失效时，PC 会清除 access/refresh token、进入 `reauthentication-required`，停止受保护 Axios、sync 和 Source document background scheduling，且不再通过受保护 logout 递归制造 401；登录/注册保留恢复路径，refresh 单飞和一次重放契约保留。PPTX parser 与 Vite resolver 均固定到 JSZip 浏览器 bundle；24/24 聚焦 Node 回归通过。本轮未运行完整 Vite build，stream 是否已从最终 Tauri bundle 消失及真实 Tauri GUI 仍待验收。
 
 ## 证据规则
 
@@ -22,6 +30,18 @@
 验收责任按角色分工：产品/业务验收负责范围和用户结果，后端/基础设施负责 API、数据、安全与真实依赖证据，PC/Tauri 与 Mobile/Tablet 负责人负责端侧主流程，QA/发布负责证据汇总和门禁判断。当前仅完成范围基线写入，未因此把任何模块或风险状态改写为“已验收”。详细验收结果见[产品需求](../project/ProductRequirements.md)和[部署测试前主任务清单](../planning/PreDeploymentReadinessTasks.md)。
 
 ## 状态总览
+
+2026-09-07 PC 文档处理复核：OCR sidecar 的 PyInstaller 临时目录统一位于应用 cache 下，启动前创建；仅在受管 sidecar 已确认停止时清理该目录直属 `_MEI*` 子目录，并将 TEMP/TMP 注入 sidecar 环境。bounded stderr 继续保留，PyInstaller extraction failure 对外保留稳定 `OCR_SIDECAR_UNAVAILABLE:pyinstaller-extraction-failed` 后缀。PPTX 已使用 OOXML presentation relationships 读取实际 slide 顺序、页数和文本；49 页真实 fixture 与 legacy OLE `.ppt` 拒绝测试通过。Tauri invoke 归一化保留字符串、Error 和结构化 `{message/error/code}` 诊断；Rust PUT 的网络分类补充 client 诊断，`SERVER_VALIDATING/SERVER_INDEXING` 网络失败可进入 `PAUSED_NETWORK`，已有加密 receipt 时恢复不会重新下载/哈希源文件。Docker Desktop 当前 unable to start，真实 Server/MinIO 复验仍阻塞；本轮自动证据与既有失败分开记录。
+
+2026-09-06 PC 文档处理稳定性修复：任务变化通知只刷新本地处理 Store，不再调用 `sourceStore.loadSources()` 形成 `loadSources -> schedule -> onJobChanged` 递归；`UPLOADING -> FAILED_LOCAL` 与 stale `PACKAGING -> FAILED_LOCAL` 已按实际本地失败语义补齐，避免 `DOCUMENT_JOB_ILLEGAL_TRANSITION` 掩盖原始错误。Office bridge 改为先收集锚点再读取 chunks，带文本的 DOCX/PPTX 不再因首次 chunks 为空误入位图 OCR；无可靠 renderer 页数的纯图片 Office 文件明确返回 `DOCUMENT_FILE_TYPE_UNSUPPORTED`，不伪造页数。OCR warmup 使用受控 1×1 PNG 走现有 sidecar 协议，实际初始化模型后才返回 ready；Rust 保留公开 `OCR_SIDECAR_UNAVAILABLE`，并记录受限的启动路径、进程状态及最多 20 行 stderr 诊断。focused Node 42/42、Python sidecar 11/11、Rust OCR 7/7 与 `cargo check --lib` 通过；真实 Tauri + 文件样本 + Server/MinIO GUI 仍待重启验收。
+
+2026-09-06 PC 文档处理竞态修复：PDF.js 本地适配器已通过 Vite `?url` 配置同版本 `pdf.worker.min.mjs`，扫描 PDF 不再因缺少 `GlobalWorkerOptions.workerSrc` 在解析入口失败；`useSourceStore` 自动调度仅接受带非空 `assetId` 和 `ingestionRevision` 的 `AWAITING_CLIENT` Source，避免本地 Source 尚未 push 时请求服务端并被 404 孤儿清理。PDF runtime、Source 注册及相邻文档处理 focused 测试共 70/70 通过；`npm.cmd exec vite build` 通过并实际产出本地 worker。`npm.cmd run type-check` 仍有工作树既有 7 项错误（`useTaskStore.ts` 3 项、`Timeline/index.vue` 4 项），未归因于本轮修复。认证、MinIO 和 API/数据库契约未修改；真实 Tauri/Server/MinIO 处理与 GUI 仍待验收。
+
+ 2026-09-05 PC 上传与处理恢复：Tauri `keyring` 3 已显式启用 `windows-native`，继续使用 `auralis/master_key`，不引入明文或环境变量回退；Stats JDBC repository 在参数边界将所有 `Instant` 转为 `java.sql.Timestamp`，不改 SQL/API/schema；PC 上传白名单收敛为 PDF、DOC、DOCX、PPT、PPTX，图片和文本仍保留 File Viewer 预览但 `allowedForUpload=false`，`canPreviewFile()` 与上传能力解耦，并在 upload intent 前给出支持格式提示；Profile 文档处理中心将无本地 job 的 `AWAITING_CLIENT` 显示为等待桌面端开始处理，并分别标注服务端 `VALIDATING/PARSING/INDEXING`，状态映射由纯工具函数承载；`DocumentProcessingDot` 的 Source 文案复用共享映射，未知/undefined phase 使用“等待状态同步”和“处理状态尚未同步，请稍后刷新”，`READY` 显示“处理完成”。新增 Windows-only Rust keyring 跨新 Entry 写入/读取/清理测试；本机 `cargo test` 的真实 Credential Manager 写入因 `NoStorageAccess(Error(1312))` 失败，不能视为持久化已验收。Stats focused 测试覆盖六个查询的全部 `Instant` 参数、UUID 与顺序保留；file-preview 27/27、processing UI 1/1、runtime static 9/9、Stats 3/3、`check:r4-pc`（87 个生产文件）、Cargo check、keyring feature tree 通过。完整 `test:r4-pc` 为 202 项中 196 通过、6 项失败，仍为既有 Timeline 拖放/本地投影/可见负荷和 `Subject.color` 静态契约；`npm.cmd run type-check` 仍为既有 7 项错误。真实 Server/GUI 仍需联调。
+
+2026-09-05 PC 孤儿 Source 调度清理：`SourceJobScheduler` 仅在 `sourceApi.get(sourceId)` 边界识别结构化 `ApiProblemError` 的 HTTP 404 或 `RESOURCE_NOT_FOUND`，命中后复用 owner-scoped `discard(sourceId)` 清理文档任务/加密 cache，并返回稳定的 `SKIPPED/SOURCE_NOT_FOUND`；503/`INTERNAL_ERROR` 等非 404 异常仍原样拒绝并保留任务，后续 parser/upload 异常不使用该分类。TDD focused scheduler 14/14、相邻文档处理套件 35/35 通过，`check:r4-pc` 扫描 87 个生产文件通过，`git diff --check` 通过；`npm run type-check` 退出 1，7 项错误仍位于既有 `useTaskStore.ts`（3 项）和 `Timeline/index.vue`（4 项），未归因于本次 scheduler 改动。开发环境已确认运行进程为仓库 `src-tauri/target/debug/app.exe`，停止对应 Tauri 进程树后，精确删除 `%APPDATA%\com.auralis.app` 下的 `auralis.db`、`auralis.db-wal`、`auralis.db-shm`；未删除目录内其他内容。重启后数据库及完整表集已重新建立，远端同步恢复 48 条资源投影且旧 Source ID 可再次由服务端返回；3 个本地文档任务均因 `Master key not found. Please initialize encryption first.` 进入 `FAILED_LOCAL`。这证明本地数据代际已重建，但重新上传与密钥恢复仍需 GUI/Server 联调。
+
+2026-09-05 PC 文档处理状态机修复：解析器连续产出同一阶段的多个 block/page 时，允许同阶段 transition 用于原子推进 checkpoint；原先第二个 `EXTRACTING`/`OCR_RUNNING` block 会触发 `DOCUMENT_JOB_ILLEGAL_TRANSITION`。新增本地 repository 回归覆盖同阶段 checkpoint 更新。统计接口在当前工作树尚未取得运行中服务的异常堆栈，真实数据库迁移状态仍待核对。
 
 2026-09-04 PC 本地优先同步核心完成代码收口：本地 schema 升至 v6；Subject、Source、KnowledgeBlock、Task 的普通写入先在一个本地提交中保存资源投影和 immutable outbox，随后才更新 UI，并由 500ms 合并的后台 cursor cycle 批量同步。普通 Store 不再调用领域列表 API；服务端响应只结算相同 mutation，同资源存在未解决写入时不会覆盖本地投影，cursor page 只应用每个资源最后一条 change。`r4-local-repository`、`r4-sync`、`r4-register-file` 定向 Node 套件合计 28/28 通过；新增 cursor 合并/墓碑保护回归通过。完整 `test:r4-pc` 为 181/191，10 项失败均在既有 Timeline/排期或 Subject 主题色静态断言；`npm run type-check` 与 build 均被 Timeline 的 3 个 `Subject.color` 类型残留与未使用 `Sparkles` 阻断，未将其写成同步改造错误或通过。Tauri GUI、双设备弱网和冲突可见性尚未验收。
 

@@ -144,10 +144,11 @@ class CoreDomainControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
-                                + "\",\"title\":\"Review vectors\",\"durationMinutes\":30,\"cognitiveLoad\":\"MEDIUM\"}"))
+                                + "\",\"title\":\"Review vectors\",\"durationMinutes\":30}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("TODO"))
-                .andExpect(jsonPath("$.durationMinutes").value(30));
+                .andExpect(jsonPath("$.durationMinutes").value(30))
+                .andExpect(jsonPath("$.cognitiveLoad").doesNotExist());
 
         mockMvc.perform(get("/api/knowledge-blocks")
                         .header(HttpHeaders.AUTHORIZATION, token))

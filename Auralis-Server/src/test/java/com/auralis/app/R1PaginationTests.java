@@ -71,9 +71,9 @@ class R1PaginationTests {
         assertThat(knowledgeBlockService.list(userId, blocks.nextCursor(), 1).items()).hasSize(1);
 
         taskService.create(userId, new TaskCommand(
-                firstSubject.id(), "Task A", null, null, null, null, null, null, "001", null));
+                firstSubject.id(), "Task A", null, null, null, null, null, "001"));
         taskService.create(userId, new TaskCommand(
-                secondSubject.id(), "Task B", null, null, null, null, null, null, "002", null));
+                secondSubject.id(), "Task B", null, null, null, null, null, "002"));
         var tasks = taskService.list(userId, null, 1);
         assertThat(tasks.items()).hasSize(1);
         assertThat(tasks.nextCursor()).isNotBlank();

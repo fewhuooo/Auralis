@@ -136,15 +136,15 @@
             :key="task.id" 
             class="zen-pill-task" 
             :class="{ completed: task.status === 'completed' }" 
-            :style="{ borderLeftColor: task.color || '#7D9372' }"
+            :style="{ borderLeftColor: 'var(--color-primary)' }"
           >
             <view class="task-left" @click="handleToggleTask(task)">
               <view 
                 class="task-checkbox" 
                 :class="{ checked: task.status === 'completed' }" 
                 :style="{ 
-                  borderColor: task.color || '#7D9372', 
-                  backgroundColor: task.status === 'completed' ? (task.color || '#7D9372') : 'transparent' 
+                  borderColor: 'var(--color-primary)',
+                  backgroundColor: task.status === 'completed' ? 'var(--color-primary)' : 'transparent'
                 }"
               >
                 <LineIcon v-if="task.status === 'completed'" name="check" size="20rpx" color="#FFFFFF" />
@@ -154,7 +154,7 @@
                 <view class="task-meta">
                 <text class="task-subject">{{ task.subject }}</text>
                   <text class="task-duration">· {{ task.duration }} 分钟</text>
-                  <view class="task-load-dot" :class="task.load"></view>
+
                 </view>
               </view>
             </view>
@@ -353,10 +353,8 @@ const submitQuickAdd = async () => {
   await taskStore.addTask({
     name,
     subject: selectedSub.name,
-    color: '#7D9372',
     duration: quickDuration.value,
-    load: 'medium',
-    loadText: '中负荷',
+
     status: 'scheduled',
     startTime: timeStr,
     subjectId: selectedSub.id
@@ -966,14 +964,7 @@ onMounted(async () => {
 .task-subject {
   font-weight: 700;
 }
-.task-load-dot {
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 50%;
-}
-.task-load-dot.low { background: #6b8a65; }
-.task-load-dot.medium { background: #a0845e; }
-.task-load-dot.high { background: #b05555; }
+
 .task-actions {
   display: flex;
   align-items: center;

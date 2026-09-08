@@ -1,4 +1,5 @@
 import type { DocumentCacheReceipt } from '@/api/tauri'
+import { ApiProblemError } from '../../api/httpError.ts'
 import type { SourceView } from '@/api/useSourceApi'
 import type { DocumentProcessingJob, CreateDocumentProcessingJobInput } from '@/types/documentProcessing'
 
@@ -15,6 +16,7 @@ interface JobRepository {
   list(): Promise<DocumentProcessingJob[]>
   removeBySource(sourceId: string): Promise<DocumentProcessingJob[]>
   transition(jobId: string, phase: DocumentProcessingJob['phase'], options?: {
+    attempt?: number
     payloadCacheId?: string | null
     payloadReceipt?: DocumentCacheReceipt | null
     errorCode?: string | null
@@ -85,7 +87,13 @@ function isNetworkFailure(error: unknown): boolean {
   return /NETWORK|OFFLINE|TIMEOUT|Failed to fetch|fetch failed/i.test(message)
 }
 
+function isSourceNotFound(error: unknown): boolean {
+  return error instanceof ApiProblemError
+    && (error.status === 404 || error.problem.code === 'RESOURCE_NOT_FOUND')
+}
+
 function staleFailurePhase(phase: DocumentProcessingJob['phase']): 'FAILED_LOCAL' | 'FAILED_SERVER' {
+  if (phase === 'PACKAGING') return 'FAILED_LOCAL'
   return isUploadPhase(phase) ? 'FAILED_SERVER' : 'FAILED_LOCAL'
 }
 
@@ -106,6 +114,7 @@ export class SourceJobScheduler {
   private readonly idFactory: () => string
   private readonly active = new Map<string, Promise<SourceScheduleResult>>()
   private readonly discardedSources = new Set<string>()
+  private readonly sourceNotFoundSources = new Set<string>()
 
   constructor(options: SourceJobSchedulerOptions) {
     this.repository = options.repository
@@ -125,6 +134,7 @@ export class SourceJobScheduler {
   }
 
   async schedule(sourceId: string): Promise<SourceScheduleResult> {
+    if (this.sourceNotFoundSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     const running = this.active.get(sourceId)
     if (running) return running
@@ -136,6 +146,24 @@ export class SourceJobScheduler {
       if (this.active.get(sourceId) === task) this.active.delete(sourceId)
       await this.notifyJobChanged()
     }
+  }
+
+  /**
+   * Retries through the source boundary so a fresh runtime can reacquire the
+   * Asset. A completed encrypted package keeps its receipt and is resumed by
+   * the upload branch after the queued marker is observed.
+   */
+  async retry(jobId: string): Promise<SourceScheduleResult> {
+    const job = await this.repository.get(jobId)
+    if (!job || !['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(job.phase)) {
+      return { status: job?.phase === 'READY' ? 'READY' : 'SKIPPED', jobId, reason: 'JOB_NOT_RETRYABLE' }
+    }
+    await this.repository.transition(jobId, 'QUEUED', {
+      attempt: 0,
+      errorCode: null,
+      errorDetail: null,
+    })
+    return this.schedule(job.sourceId)
   }
 
   async resume(sourceIds: string[]): Promise<SourceScheduleResult[]> {
@@ -183,8 +211,17 @@ export class SourceJobScheduler {
   }
 
   private async process(sourceId: string): Promise<SourceScheduleResult> {
+    if (this.sourceNotFoundSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
-    const source = await this.sourceApi.get(sourceId)
+    let source: SourceView
+    try {
+      source = await this.sourceApi.get(sourceId)
+    } catch (error) {
+      if (!isSourceNotFound(error)) throw error
+      this.sourceNotFoundSources.add(sourceId)
+      await this.discard(sourceId)
+      return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
+    }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     if (source.type !== 'FILE') return { status: 'SKIPPED', reason: 'NON_FILE_SOURCE' }
     if (!source.assetId || !source.ingestionRevision) return { status: 'SKIPPED', reason: 'FILE_SOURCE_NOT_READY_FOR_CLIENT' }
@@ -214,28 +251,37 @@ export class SourceJobScheduler {
 
     let input: SourceInput | null = null
     try {
-      input = await this.resolveInput(source.assetId, source)
-      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
-      const assetSha256 = await this.hashFile(input.file)
-      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
-      if (!/^[a-f0-9]{64}$/i.test(assetSha256)) {
-        await this.failJob(job, 'SOURCE_ASSET_SHA_INVALID', 'The local Asset SHA-256 is invalid')
-        return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_INVALID' }
-      }
-      const expectedSha256 = await this.expectedAssetSha256?.(source.assetId)
-      if (expectedSha256 && !sameSha(assetSha256, expectedSha256)) {
-        await this.failJob(job, 'SOURCE_ASSET_SHA_MISMATCH', 'The local Asset bytes do not match the expected Asset SHA-256')
-        return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_MISMATCH' }
-      }
-
       job = await this.repository.get(job.jobId) ?? job
+      if (job.phase === 'QUEUED' && job.payloadReceipt) {
+        job = await this.repository.transition(job.jobId, 'UPLOADING', {
+          attempt: 0,
+          errorCode: null,
+          errorDetail: null,
+        })
+      }
       if (isUploadPhase(job.phase)) {
         if (!job.payloadReceipt) {
           await this.failJob(job, 'DOCUMENT_CACHE_RECEIPT_UNAVAILABLE', 'Encrypted payload receipt is unavailable for resumable upload')
           return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'DOCUMENT_CACHE_RECEIPT_UNAVAILABLE' }
         }
-        await this.upload.upload(job.jobId, job.payloadReceipt, { sourceAssetSha256: assetSha256 })
+        // A paused upload is already backed by the encrypted payload receipt.
+        // Do not redownload or rehash the original Asset just to resume the
+        // storage PUT boundary.
+        await this.upload.upload(job.jobId, job.payloadReceipt, {})
       } else {
+        input = await this.resolveInput(source.assetId, source)
+        if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+        const assetSha256 = await this.hashFile(input.file)
+        if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+        if (!/^[a-f0-9]{64}$/i.test(assetSha256)) {
+          await this.failJob(job, 'SOURCE_ASSET_SHA_INVALID', 'The local Asset SHA-256 is invalid')
+          return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_INVALID' }
+        }
+        const expectedSha256 = await this.expectedAssetSha256?.(source.assetId)
+        if (expectedSha256 && !sameSha(assetSha256, expectedSha256)) {
+          await this.failJob(job, 'SOURCE_ASSET_SHA_MISMATCH', 'The local Asset bytes do not match the expected Asset SHA-256')
+          return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_MISMATCH' }
+        }
         if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
         await this.prepareInput(job, source, input.file)
         if (this.discardedSources.has(sourceId)) {

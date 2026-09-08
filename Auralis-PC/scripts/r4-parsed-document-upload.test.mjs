@@ -18,6 +18,7 @@ export async function resolve(specifier, context, nextResolve) {
 `
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 const { ParsedDocumentUploadCoordinator } = await import('../src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts')
+const { normalizeInvokeError } = await import('../src/api/tauri.ts')
 const root = path.resolve(import.meta.dirname, '..')
 
 const receipt = {
@@ -116,6 +117,18 @@ test('network pause leaves the job resumable and does not call complete', async 
   await assert.rejects(() => coordinator.upload('job-1', receipt), /NETWORK_OFFLINE/)
   assert.equal(repository.value.phase, 'PAUSED_NETWORK')
   assert.equal(api.calls.completes.length, 0)
+})
+
+test('normalizes string Tauri command rejections into Error instances', () => {
+  const error = normalizeInvokeError('NETWORK_OFFLINE:connect')
+  assert.ok(error instanceof Error)
+  assert.equal(error.message, 'NETWORK_OFFLINE:connect')
+})
+
+test('normalizes structured Tauri command rejections without discarding the Rust diagnostic', () => {
+  assert.equal(normalizeInvokeError({ message: 'OCR_SIDECAR_UNAVAILABLE:pyinstaller-extraction-failed' }).message,
+    'OCR_SIDECAR_UNAVAILABLE:pyinstaller-extraction-failed')
+  assert.equal(normalizeInvokeError({ error: 'NETWORK_OFFLINE:connect' }).message, 'NETWORK_OFFLINE:connect')
 })
 
 test('completion is idempotent within one coordinator lifetime', async () => {

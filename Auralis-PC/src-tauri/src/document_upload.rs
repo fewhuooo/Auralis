@@ -126,6 +126,29 @@ fn build_headers(request: &DocumentUploadPutRequest) -> Result<HeaderMap, String
     Ok(headers)
 }
 
+fn upload_transport_error_code(
+    cache_read_failed: bool,
+    timed_out: bool,
+    connect_failed: bool,
+    body_failed: bool,
+) -> &'static str {
+    if cache_read_failed {
+        "CACHE_READ_FAILED"
+    } else if timed_out {
+        "NETWORK_OFFLINE:timeout"
+    } else if connect_failed {
+        "NETWORK_OFFLINE:connect"
+    } else if body_failed {
+        "NETWORK_OFFLINE:body"
+    } else {
+        "NETWORK_OFFLINE:request"
+    }
+}
+
+fn upload_client_error_code() -> &'static str {
+    "NETWORK_OFFLINE:client"
+}
+
 #[tauri::command]
 pub fn document_upload_put(
     request: DocumentUploadPutRequest,
@@ -148,21 +171,28 @@ pub fn document_upload_put(
     let response = Client::builder()
         .timeout(Duration::from_secs(300))
         .build()
-        .map_err(|_| "NETWORK_OFFLINE".to_string())?
+        .map_err(|error| {
+            let code = upload_client_error_code();
+            eprintln!("[Document Upload] HTTP client setup failed: {code} ({error})");
+            code.to_string()
+        })?
         .put(&request.upload_url)
         .headers(build_headers(&request)?)
         .body(body)
         .send()
-        .map_err(|_| {
-            if metrics
+        .map_err(|error| {
+            let cache_read_failed = metrics
                 .lock()
                 .map(|metrics| metrics.error.is_some())
-                .unwrap_or(false)
-            {
-                "CACHE_READ_FAILED".to_string()
-            } else {
-                "NETWORK_OFFLINE".to_string()
-            }
+                .unwrap_or(false);
+            let code = upload_transport_error_code(
+                cache_read_failed,
+                error.is_timeout(),
+                error.is_connect(),
+                error.is_body(),
+            );
+            eprintln!("[Document Upload] PUT failed: {code}");
+            code.to_string()
         })?;
     let status = response.status().as_u16();
     if status == 401 || status == 403 {
@@ -244,5 +274,19 @@ mod tests {
             hex::encode(metrics.hash.clone().finalize()),
             hex::encode(Sha256::digest(b"test"))
         );
+    }
+
+    #[test]
+    fn upload_transport_diagnostics_keep_a_stable_public_error_prefix() {
+        assert_eq!(upload_transport_error_code(false, false, true, false), "NETWORK_OFFLINE:connect");
+        assert_eq!(upload_transport_error_code(false, true, false, false), "NETWORK_OFFLINE:timeout");
+        assert_eq!(upload_transport_error_code(false, false, false, true), "NETWORK_OFFLINE:body");
+        assert_eq!(upload_transport_error_code(false, false, false, false), "NETWORK_OFFLINE:request");
+        assert_eq!(upload_transport_error_code(true, false, true, false), "CACHE_READ_FAILED");
+    }
+
+    #[test]
+    fn upload_client_setup_failure_keeps_a_network_diagnostic_suffix() {
+        assert_eq!(upload_client_error_code(), "NETWORK_OFFLINE:client");
     }
 }

@@ -76,7 +76,7 @@ Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_
 
 - `subjects` 保存 `name`、`description`、`icon_key`、`sort_key`、`is_default`；新用户注册不自动创建 Subject，列表可以为空。历史遗留的“未分类”记录仍保留 `is_default=true` 以兼容读取，但可按普通 Subject 软删除。名称唯一和恢复占用冲突由 SubjectService 校验。Flyway `V19__remove_subject_color.sql` 删除历史遗留的 `color` 列，仅丢弃该列值，不影响 Subject 行或其他资源。
 - `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
-- `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`cognitive_load`、`sort_key`、`color_override`；数据库 CHECK 与服务同时约束状态、认知负荷、非负时长和排期顺序。`V18__restore_task_schedule_order.sql` 会先把历史 `due_at < scheduled_at` 行的 `scheduled_at` 清空，再恢复该 CHECK；客户端按当前时间将 `due_at` 或 `scheduled_at` 已过且未完成/取消的任务回归未排期，不能以放宽字段顺序约束替代。
+- `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`sort_key`；数据库 CHECK 与服务同时约束状态、非负时长和排期顺序。`V18__restore_task_schedule_order.sql` 会先把历史 `due_at < scheduled_at` 行的 `scheduled_at` 清空，再恢复该 CHECK；`V20__remove_task_cognitive_load` 删除已废弃的认知负荷列及 Task 同步 JSON 字段，V21 删除 Task 颜色列及历史颜色键。客户端按当前时间将 `due_at` 或 `scheduled_at` 已过且未完成/取消的任务回归未排期，不能以放宽字段顺序约束替代。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
 
 ## 阶段 2B Source、Asset、Relation V3 已实现 schema
@@ -132,7 +132,7 @@ Asset 不作为 Relation 节点，也不进入普通离线 mutation；Source 才
 
 ### Task
 
-保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、cognitiveLoad、sortKey、colorOverride、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间。排期不自动改变状态；cognitiveLoad 使用 LOW、MEDIUM、HIGH 稳定代码。
+保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、sortKey、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间。排期不自动改变状态。V21 删除 Task `colorOverride` 并清理相关 JSON。
 
 ### Relation
 
@@ -155,7 +155,7 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 
 ## 端侧现状与迁移边界
 
-替换前 PC/Mobile localDb 仍有 sync_version、is_deleted、sync_status、position、loadText、related_block_ids、source_file_id 等旧字段；Mobile 的类型和数据库字段并不完全一致。新 API 稳定后，端侧数据库必须按 userId 分区并逐步迁移为 version/createdAt/updatedAt/deletedAt/baseVersion 语义。
+替换前 PC/Mobile localDb 仍有 sync_version、is_deleted、sync_status、position、related_block_ids、source_file_id 等旧字段；Mobile 的类型和数据库字段并不完全一致。新 API 稳定后，端侧数据库必须按 userId 分区并逐步迁移为 version/createdAt/updatedAt/deletedAt/baseVersion 语义。
 
 ### PC R4-06 本地副本边界（2026-08-20）
 

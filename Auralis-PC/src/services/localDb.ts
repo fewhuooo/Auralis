@@ -94,10 +94,8 @@ export const localDb = {
         name TEXT,
         subject TEXT,
         desc TEXT,
-        color TEXT,
         duration INTEGER,
-        load TEXT,
-        loadText TEXT,
+
         status TEXT,
         startTime TEXT,
         sync_status TEXT DEFAULT 'synced',
@@ -249,7 +247,6 @@ export const localDb = {
         preview: r.preview,
         time: r.time,
         source: r.source,
-        color: r.color,
         sync_status: r.sync_status,
         sync_version: r.sync_version,
         is_deleted: r.is_deleted === true || r.is_deleted === 1,
@@ -259,7 +256,8 @@ export const localDb = {
         difficulty: r.difficulty || undefined,
         mastery: r.mastery || 0,
         reviewAt: r.review_at || undefined,
-        relatedBlockIds: r.related_block_ids ? JSON.parse(r.related_block_ids) : []
+        relatedBlockIds: r.related_block_ids ? JSON.parse(r.related_block_ids) : [],
+        color: r.color || ''
       }));
     }
 
@@ -281,7 +279,7 @@ export const localDb = {
       preview: r.preview,
       time: r.time,
       source: r.source,
-      color: r.color,
+      color: r.color || '',
       sync_status: r.sync_status,
       sync_version: r.sync_version,
       is_deleted: r.is_deleted === 1,
@@ -335,7 +333,7 @@ export const localDb = {
     const exists = await db.select('SELECT id FROM knowledge_blocks WHERE id = $1', [block.id]);
     const isDeletedVal = block.is_deleted ? 1 : 0;
     const versionVal = block.sync_version || syncVersion || 0;
-    
+
     const subjectIdVal = block.subjectId || null;
     const sourceFileIdVal = block.sourceFileId || null;
     const tagsVal = block.tags ? JSON.stringify(block.tags) : '[]';
@@ -346,7 +344,7 @@ export const localDb = {
 
     if (exists && exists.length > 0) {
       await db.execute(
-        `UPDATE knowledge_blocks SET 
+        `UPDATE knowledge_blocks SET
           subject = $1, title = $2, preview = $3, time = $4, source = $5, color = $6, sync_status = $7, is_deleted = $8, sync_version = $9,
           subject_id = $10, source_file_id = $11, tags = $12, difficulty = $13, mastery = $14, review_at = $15, related_block_ids = $16
          WHERE id = $17`,
@@ -436,10 +434,10 @@ export const localDb = {
       const blocks: any[] = JSON.parse(localStorage.getItem('auralis_knowledge_blocks') || '[]');
       for (const block of serverBlocks) {
         if (!block.id) continue;
-        
+
         const local = blocks.find((b: any) => b.id === block.id);
         const serverVer = block.syncVersion || block.sync_version || 0;
-        
+
         if (block.isDeleted || block.is_deleted) {
           if (local) {
             if (local.sync_status !== 'synced') {
@@ -452,7 +450,7 @@ export const localDb = {
           }
           continue;
         }
-        
+
         if (local) {
           if (local.sync_status !== 'synced') {
             const localVer = local.sync_version || 0;
@@ -461,7 +459,7 @@ export const localDb = {
             }
           }
         }
-        
+
         const mappedBlock: KnowledgeBlock = {
           id: block.id,
           subject: block.subject,
@@ -487,9 +485,9 @@ export const localDb = {
 
     for (const block of serverBlocks) {
       if (!block.id) continue;
-      
+
       const local = await db.select('SELECT sync_status, sync_version FROM knowledge_blocks WHERE id = $1', [block.id]);
-      
+
       if (block.isDeleted || block.is_deleted) {
         if (local && local.length > 0) {
           if (local[0].sync_status !== 'synced') {
@@ -503,7 +501,7 @@ export const localDb = {
         }
         continue;
       }
-      
+
       if (local && local.length > 0) {
         if (local[0].sync_status !== 'synced') {
           const serverVer = block.syncVersion || block.sync_version || 0;
@@ -513,7 +511,7 @@ export const localDb = {
           }
         }
       }
-      
+
       const mappedBlock: KnowledgeBlock = {
         id: block.id,
         subject: block.subject,
@@ -554,8 +552,7 @@ export const localDb = {
         desc: r.desc || '',
         color: r.color,
         duration: r.duration,
-        load: r.load,
-        loadText: r.loadText,
+
         status: r.status,
         startTime: r.startTime || undefined,
         sync_status: r.sync_status,
@@ -572,10 +569,8 @@ export const localDb = {
       name: r.name,
       subject: r.subject,
       desc: r.desc || '',
-      color: r.color,
       duration: r.duration,
-      load: r.load,
-      loadText: r.loadText,
+
       status: r.status,
       startTime: r.startTime || undefined,
       sync_status: r.sync_status,
@@ -600,10 +595,8 @@ export const localDb = {
         name: task.name,
         subject: task.subject,
         desc: task.desc || '',
-        color: task.color,
         duration: task.duration,
-        load: task.load,
-        loadText: task.loadText,
+
         status: task.status,
         startTime: task.startTime || null,
         sync_status: syncStatus,
@@ -629,16 +622,16 @@ export const localDb = {
     const subjectIdVal = task.subjectId || null;
     if (exists && exists.length > 0) {
       await db.execute(
-        `UPDATE task_blocks SET 
-          name = $1, subject = $2, desc = $3, color = $4, duration = $5, load = $6, loadText = $7, status = $8, startTime = $9, sync_status = $10, is_deleted = $11, sync_version = $12, position = $13, subject_id = $14
-         WHERE id = $15`,
-        [task.name, task.subject, task.desc || '', task.color, task.duration, task.load, task.loadText, task.status, task.startTime || null, syncStatus, isDeletedVal, versionVal, positionVal, subjectIdVal, task.id]
+        `UPDATE task_blocks SET
+          name = $1, subject = $2, desc = $3, duration = $4, status = $5, startTime = $6, sync_status = $7, is_deleted = $8, sync_version = $9, position = $10, subject_id = $11
+         WHERE id = $12`,
+        [task.name, task.subject, task.desc || '', task.duration, task.status, task.startTime || null, syncStatus, isDeletedVal, versionVal, positionVal, subjectIdVal, task.id]
       );
     } else {
       await db.execute(
-        `INSERT INTO task_blocks (id, name, subject, desc, color, duration, load, loadText, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-        [task.id, task.name, task.subject, task.desc || '', task.color, task.duration, task.load, task.loadText, task.status, task.startTime || null, syncStatus, isDeletedVal, versionVal, positionVal, subjectIdVal]
+        `INSERT INTO task_blocks (id, name, subject, desc, duration, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [task.id, task.name, task.subject, task.desc || '', task.duration, task.status, task.startTime || null, syncStatus, isDeletedVal, versionVal, positionVal, subjectIdVal]
       );
     }
   },
@@ -712,10 +705,10 @@ export const localDb = {
       const tasks: any[] = JSON.parse(localStorage.getItem('auralis_task_blocks') || '[]');
       for (const task of serverTasks) {
         if (!task.id) continue;
-        
+
         const local = tasks.find((t: any) => t.id === task.id);
         const serverVer = task.syncVersion || task.sync_version || 0;
-        
+
         if (task.isDeleted || task.is_deleted) {
           if (local) {
             if (local.sync_status !== 'synced') {
@@ -728,7 +721,7 @@ export const localDb = {
           }
           continue;
         }
-        
+
         if (local) {
           if (local.sync_status !== 'synced') {
             const localVer = local.sync_version || 0;
@@ -737,16 +730,13 @@ export const localDb = {
             }
           }
         }
-        
+
         const mappedTask = {
           id: task.id,
           name: task.name,
           subject: task.subject,
           desc: task.desc || '',
-          color: task.color,
           duration: task.duration,
-          load: task.load,
-          loadText: task.loadText,
           status: task.status,
           startTime: task.startTime || undefined,
           sync_version: serverVer,
@@ -761,9 +751,9 @@ export const localDb = {
 
     for (const task of serverTasks) {
       if (!task.id) continue;
-      
+
       const local = await db.select('SELECT sync_status, sync_version FROM task_blocks WHERE id = $1', [task.id]);
-      
+
       if (task.isDeleted || task.is_deleted) {
         if (local && local.length > 0) {
           if (local[0].sync_status !== 'synced') {
@@ -777,7 +767,7 @@ export const localDb = {
         }
         continue;
       }
-      
+
       if (local && local.length > 0) {
         if (local[0].sync_status !== 'synced') {
           const serverVer = task.syncVersion || task.sync_version || 0;
@@ -787,16 +777,13 @@ export const localDb = {
           }
         }
       }
-      
+
       const mappedTask = {
         id: task.id,
         name: task.name,
         subject: task.subject,
         desc: task.desc || '',
-        color: task.color,
         duration: task.duration,
-        load: task.load,
-        loadText: task.loadText,
         status: task.status,
         startTime: task.startTime || undefined,
         sync_version: task.syncVersion || task.sync_version || 0,
@@ -878,7 +865,6 @@ export const localDb = {
           preview: payload.preview,
           time: payload.time,
           source: payload.source,
-          color: payload.color,
           sync_status: 'synced',
           subjectId: payload.subjectId || payload.subject_id || undefined,
           sourceFileId: payload.sourceFileId || payload.source_file_id || undefined,
@@ -886,7 +872,8 @@ export const localDb = {
           difficulty: payload.difficulty || undefined,
           mastery: payload.mastery || 0,
           reviewAt: payload.reviewAt || payload.review_at || undefined,
-          relatedBlockIds: payload.relatedBlockIds ? (typeof payload.relatedBlockIds === 'string' ? JSON.parse(payload.relatedBlockIds) : payload.relatedBlockIds) : []
+          relatedBlockIds: payload.relatedBlockIds ? (typeof payload.relatedBlockIds === 'string' ? JSON.parse(payload.relatedBlockIds) : payload.relatedBlockIds) : [],
+          color: payload.color || ''
         };
         await this.saveBlock(block, 'synced', mutation.createdAt);
       } else if (action === 'delete') {
@@ -899,10 +886,7 @@ export const localDb = {
           name: payload.name,
           subject: payload.subject,
           desc: payload.desc || '',
-          color: payload.color,
           duration: payload.duration,
-          load: payload.load,
-          loadText: payload.loadText,
           status: payload.status,
           startTime: payload.startTime || undefined,
           sync_status: 'synced',

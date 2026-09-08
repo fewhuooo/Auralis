@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import path from 'node:path'
 import { test } from 'node:test'
 import { parseDocument } from '../src/services/documentParser/DocumentParser.ts'
+import { FileViewerParserBridge } from '../src/services/documentParser/fileViewerBridge.ts'
+import { openPptxDocument } from '../src/services/documentParser/PptxTextAdapter.ts'
 
 function file(name) {
   return { name, type: name.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream' }
@@ -151,6 +155,33 @@ test('extracts Office chunks directly and keeps chunk order deterministic', asyn
   ])
 })
 
+test('Office bridge refreshes anchors before reading text chunks', async () => {
+  const calls = []
+  let anchorsCollected = false
+  const bridge = new FileViewerParserBridge({
+    value: {
+      async prepare() { calls.push('prepare') },
+      async extractAnchors() {
+        calls.push('anchors')
+        anchorsCollected = true
+        return [{ id: 'page-1', index: 0, line: 1, text: 'Slide title' }]
+      },
+      extractChunks() {
+        calls.push('chunks')
+        return anchorsCollected
+          ? [{ id: 'chunk-1', text: 'Slide title', anchor: { index: 0 }, startLine: 1 }]
+          : []
+      },
+      async renderPageBitmap() { throw new Error('bitmap fallback must not run') },
+      dispose() {},
+    },
+  })
+  await bridge.prepare(file('slides.pptx'))
+  const result = await bridge.extractOrFallback()
+  assert.equal(result.outcome, 'extract')
+  assert.deepEqual(calls, ['prepare', 'anchors', 'chunks'])
+})
+
 test('falls back from Office text extraction to bitmap OCR', async () => {
   const ocrAdapter = ocr([['fallback slide']])
   const { input } = pdfInput('unused.pdf', [], {
@@ -209,5 +240,41 @@ test('rejects a block that exceeds the bounded parser limit', async () => {
   await assert.rejects(
     () => parseDocument(input, async () => {}, { maxBlockChars: 4 }),
     /PARSED_BLOCK_TOO_LARGE/,
+  )
+})
+
+test('reads the real PPTX fixture in presentation slide order', async () => {
+  const fixture = path.resolve(import.meta.dirname, '..', '..', 'docs', 'test', '编译原理课件chap01(陈火旺)-v9.pptx')
+  const pptx = await openPptxDocument(new Uint8Array(await fs.readFile(fixture)))
+  assert.equal(pptx.slideCount, 49)
+  assert.match(await (await pptx.getSlide(1)).getText(), /编译原理/)
+  assert.match(await (await pptx.getSlide(2)).getText(), /Self Introduction/)
+})
+
+test('PPTX parser imports the browser-safe JSZip bundle instead of the Node stream entry', async () => {
+  const adapter = await fs.readFile(path.resolve(import.meta.dirname, '..', 'src', 'services', 'documentParser', 'PptxTextAdapter.ts'), 'utf8')
+  assert.match(adapter, /from ['"]jszip\/dist\/jszip\.min\.js['"]/)
+  assert.doesNotMatch(adapter, /from ['"]jszip['"];/)
+})
+
+test('streams PPTX OOXML text as deterministic slide blocks', async () => {
+  const fixture = path.resolve(import.meta.dirname, '..', '..', 'docs', 'test', '编译原理课件chap01(陈火旺)-v9.pptx')
+  const pptx = await openPptxDocument(new Uint8Array(await fs.readFile(fixture)))
+  const blocks = []
+  const result = await parseDocument({ file: file('lecture.pptx'), pptx }, async (block) => blocks.push(block))
+  assert.equal(result.blockCount, blocks.length)
+  assert.ok(blocks.length > 1)
+  assert.deepEqual(blocks.slice(0, 2).map(({ ordinal, kind, pageNumber }) => ({ ordinal, kind, pageNumber })), [
+    { ordinal: 0, kind: 'slide', pageNumber: 1 },
+    { ordinal: 1, kind: 'slide', pageNumber: 2 },
+  ])
+})
+
+test('rejects legacy PPT bytes instead of treating them as PPTX', async () => {
+  const fixture = path.resolve(import.meta.dirname, '..', '..', 'docs', 'test', 'auralis-generated-legacy.ppt')
+  const bytes = new Uint8Array(await fs.readFile(fixture))
+  await assert.rejects(
+    () => openPptxDocument(bytes),
+    /PPTX_LEGACY_UNSUPPORTED/,
   )
 })

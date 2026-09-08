@@ -43,10 +43,11 @@ public class TaskService {
     public TaskView create(UUID userId, UUID taskId, TaskCommand command) {
         subjectService.requireActiveSubject(userId, command.subjectId());
         validateSchedule(command);
-        TaskView result = view(taskRepository.save(new TaskEntity(
+        TaskEntity entity = new TaskEntity(
                 taskId, userId, command.subjectId(), required(command.title()), command.description(),
                 status(command.status()), command.scheduledAt(), command.dueAt(), command.durationMinutes(),
-                command.cognitiveLoad(), defaultSortKey(command.sortKey()), command.colorOverride())));
+                defaultSortKey(command.sortKey()));
+        TaskView result = view(taskRepository.save(entity));
         publishChange(userId, result, "CREATE");
         return result;
     }
@@ -95,8 +96,8 @@ public class TaskService {
         subjectService.requireActiveSubject(userId, command.subjectId());
         validateSchedule(command);
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
-                command.scheduledAt(), command.dueAt(), command.durationMinutes(), command.cognitiveLoad(),
-                defaultSortKey(command.sortKey()), command.colorOverride());
+                command.scheduledAt(), command.dueAt(), command.durationMinutes(),
+                defaultSortKey(command.sortKey()));
         TaskView result = view(taskRepository.saveAndFlush(entity));
         publishChange(userId, result, "UPDATE");
         return result;
@@ -234,8 +235,8 @@ public class TaskService {
     private TaskView view(TaskEntity entity) {
         return new TaskView(
                 entity.getId(), entity.getSubjectId(), entity.getTitle(), entity.getDescription(), entity.getStatus(),
-                entity.getScheduledAt(), entity.getDueAt(), entity.getDurationMinutes(), entity.getCognitiveLoad(),
-                entity.getSortKey(), entity.getColorOverride(), entity.getVersion(), entity.getCreatedAt(),
+                entity.getScheduledAt(), entity.getDueAt(), entity.getDurationMinutes(),
+                entity.getSortKey(), entity.getVersion(), entity.getCreatedAt(),
                 entity.getUpdatedAt(), entity.getDeletedAt());
     }
 

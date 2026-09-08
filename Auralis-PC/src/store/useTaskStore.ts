@@ -9,7 +9,7 @@ import {
 import { useAuthStore } from '@/store/useAuthStore'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
-import { isCanonicalTaskStatus, mapTaskView, type CognitiveLoad, type TaskModel, type TaskStatus } from '@/services/domainMappers'
+import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
@@ -22,7 +22,6 @@ export type DayCode = typeof DAY_CODES[number]
 export const getTodayDayCode = (): DayCode => DAY_CODES[new Date().getDay()] || 'Mon'
 
 export type TaskPresentationStatus = 'pending' | 'scheduled' | 'completed' | 'learning' | 'to_review' | 'cancelled'
-export type TaskLoad = 'low' | 'medium' | 'high'
 
 /**
  * The old-looking fields in this interface are presentation aliases only.
@@ -37,9 +36,7 @@ export interface Task {
   scheduledAt?: string
   dueAt?: string
   durationMinutes: number
-  cognitiveLoad: CognitiveLoad
   sortKey?: string
-  colorOverride?: string
   version: number
   createdAt?: string
   updatedAt?: string
@@ -47,10 +44,7 @@ export interface Task {
   name: string
   subject: string
   desc: string
-  color: string
   duration: number
-  load: TaskLoad
-  loadText: string
   startTime?: string
   position?: string
   sync_status?: 'synced' | 'pending_create' | 'pending_update' | 'pending_delete' | 'conflict'
@@ -67,17 +61,12 @@ export interface TaskInput {
   scheduledAt?: string
   dueAt?: string
   durationMinutes?: number
-  cognitiveLoad?: CognitiveLoad
   sortKey?: string
-  colorOverride?: string
   version?: number
   name?: string
   subject?: string
   desc?: string
-  color?: string
   duration?: number
-  load?: TaskLoad
-  loadText?: string
   startTime?: string
   position?: string
 }
@@ -86,22 +75,6 @@ export interface TimeSlot {
   time: string
   task: Task | null
   isCurrent: boolean
-}
-
-function loadFromLegacy(value: TaskInput['load']): CognitiveLoad {
-  if (value === 'low') return 'LOW'
-  if (value === 'high') return 'HIGH'
-  return 'MEDIUM'
-}
-
-function loadToPresentation(value: CognitiveLoad): TaskLoad {
-  return value.toLowerCase() as TaskLoad
-}
-
-function loadLabel(value: CognitiveLoad): string {
-  if (value === 'LOW') return '低负荷'
-  if (value === 'HIGH') return '高负荷'
-  return '中负荷'
 }
 
 function statusFromLegacy(value: TaskInput['status'], hasSchedule: boolean): TaskStatus {
@@ -182,28 +155,19 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     status,
     scheduledAt,
     dueAt: input.dueAt,
-    durationMinutes: input.durationMinutes ?? input.duration ?? 30,
-    cognitiveLoad: input.cognitiveLoad ?? loadFromLegacy(input.load),
-    sortKey: input.sortKey ?? input.position,
-    colorOverride: input.colorOverride ?? input.color,
+    durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
     version: input.version ?? 0,
     deletedAt: null,
   }
 }
 
-function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 'synced', subjectName?: string): Task {
-  const load = loadToPresentation(model.cognitiveLoad)
-  return {
+function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 'synced', subjectName?: string): Task {  return {
     ...model,
     status: statusToPresentation(model.status, model.scheduledAt),
     name: model.title,
     subject: subjectName || model.subjectId,
     desc: model.description,
-    color: model.colorOverride || '#7D9372',
-    duration: model.durationMinutes,
-    load,
-    loadText: loadLabel(model.cognitiveLoad),
-    startTime: timeForScheduledAt(model.scheduledAt),
+    duration: model.durationMinutes,    startTime: timeForScheduledAt(model.scheduledAt),
     position: model.sortKey,
     sync_status: syncStatus,
     sync_version: model.version,
@@ -220,10 +184,7 @@ function taskDto(model: TaskModel): TaskView {
     status: model.status,
     scheduledAt: model.scheduledAt,
     dueAt: model.dueAt,
-    durationMinutes: model.durationMinutes,
-    cognitiveLoad: model.cognitiveLoad,
-    sortKey: model.sortKey,
-    colorOverride: model.colorOverride,
+    durationMinutes: model.durationMinutes,    sortKey: model.sortKey,
     version: model.version,
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
@@ -240,10 +201,7 @@ function createPayload(model: TaskModel): TaskCreateRequest {
     status: model.status,
     scheduledAt: normalizeScheduledAtForApi(model.scheduledAt),
     dueAt: model.dueAt,
-    durationMinutes: model.durationMinutes,
-    cognitiveLoad: model.cognitiveLoad,
-    sortKey: model.sortKey,
-    colorOverride: model.colorOverride,
+    durationMinutes: model.durationMinutes,    sortKey: model.sortKey,
   }
 }
 
@@ -322,7 +280,7 @@ export const useTaskStore = defineStore('task', () => {
         } else if (isUnscheduledTaskPastDue(task)) {
           const model = toTaskModel({ ...task, dueAt: undefined, scheduledAt: undefined, startTime: undefined })
           model.version = task.version
-          model.dueAt = model.dueAt ?? null
+          model.dueAt = model.dueAt ?? undefined
           await updateTaskModel(model)
         }
       }
@@ -520,12 +478,8 @@ export const useTaskStore = defineStore('task', () => {
       const toModel = toTaskModel({ ...to, status: to.status, startTime: `${selectedDay.value} ${fromSlotTime}` })
       assertScheduledAtIsNotPast(toModel.scheduledAt)
       await useTaskApi.swapSchedules({
-        fromId: fromModel.id,
-        fromVersion: from.version,
-        fromTargetTime: fromModel.scheduledAt!,
-        toId: toModel.id,
-        toVersion: to.version,
-        toTargetTime: toModel.scheduledAt!
+        sourceTaskId: fromModel.id,
+        sourceBaseVersion: from.version, targetTaskId: toModel.id, targetBaseVersion: to.version
       })
       toModel.version = to.version + 1
       fromModel.version = from.version + 1
@@ -533,10 +487,8 @@ export const useTaskStore = defineStore('task', () => {
       replaceInMemory(toPresentationTask(fromModel, 'synced'))
     } else {
       await useTaskApi.swapSchedules({
-        fromId: fromModel.id,
-        fromVersion: from.version,
-        fromTargetTime: fromModel.scheduledAt!
-      })
+        sourceTaskId: fromModel.id,
+        sourceBaseVersion: from.version, targetTaskId: '', targetBaseVersion: 0 })
       fromModel.version = from.version + 1
       replaceInMemory(toPresentationTask(fromModel, 'synced'))
     }

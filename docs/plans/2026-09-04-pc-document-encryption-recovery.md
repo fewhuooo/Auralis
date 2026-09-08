@@ -1,6 +1,6 @@
 # PC 文档处理密钥恢复边界 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让终态历史任务的残留加密 receipt 不再阻止新主密钥初始化，同时继续保护可续传缓存不被错误密钥覆盖。
 
@@ -108,7 +108,7 @@ git commit -m "fix: unblock document encryption initialization"
 - Modify: `docs/current/Status.md`
 - Modify: `docs/current/IssuesAndReview.md`
 - Modify: `docs/release/Changelog.md`
-- Modify: `docs/superpowers/plans/2026-09-04-pc-document-encryption-recovery.md`
+- Modify: `docs/plans/2026-09-04-pc-document-encryption-recovery.md`
 
 **Interfaces:**
 - Consumes: Task 1 的 `requiresDocumentEncryptionKeyRecovery()` 和实际命令输出。
@@ -137,6 +137,6 @@ Expected: 退出码 0。
 - [ ] **Step 4: 提交文档与验证证据**
 
 ```bash
-git add docs/modules/FrontendPC.md docs/current/Status.md docs/current/IssuesAndReview.md docs/release/Changelog.md docs/superpowers/plans/2026-09-04-pc-document-encryption-recovery.md
+git add docs/modules/FrontendPC.md docs/current/Status.md docs/current/IssuesAndReview.md docs/release/Changelog.md docs/plans/2026-09-04-pc-document-encryption-recovery.md
 git commit -m "docs: record document encryption recovery fix"
 ```

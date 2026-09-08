@@ -51,14 +51,14 @@
           <text class="sec-count">{{ pendingTasks.length }} 项</text>
         </view>
         <view class="pend-list">
-          <view v-for="t in pendingTasks" :key="t.id" class="pend-card" :style="{ borderLeftColor: t.color || 'var(--text-accent)' }">
+          <view v-for="t in pendingTasks" :key="t.id" class="pend-card" :style="{ borderLeftColor: 'var(--color-primary)' }">
             <view class="pend-main">
               <text class="pend-name">{{ t.name }}</text>
               <text class="pend-sub">{{ t.subject }}</text>
             </view>
             <view class="pend-meta">
               <text class="pend-dur">{{ t.duration }}h</text>
-              <view class="load-b" :class="'load-'+t.load"><text class="load-t">{{ t.loadText }}</text></view>
+
             </view>
           </view>
         </view>
@@ -116,14 +116,14 @@
         <view class="section">
           <view class="sec-head"><text class="sec-title">待同步任务</text><text class="sec-count">{{ pendingTasks.length }} 项</text></view>
           <view class="pend-list">
-            <view v-for="t in pendingTasks" :key="t.id" class="pend-card" :style="{ borderLeftColor: t.color || 'var(--text-accent)' }">
+            <view v-for="t in pendingTasks" :key="t.id" class="pend-card" :style="{ borderLeftColor: 'var(--text-accent)' }">
               <view class="pend-main">
                 <text class="pend-name">{{ t.name }}</text>
                 <text class="pend-sub">{{ t.subject }}</text>
               </view>
               <view class="pend-meta">
                 <text class="pend-dur">{{ t.duration }}h</text>
-                <view class="load-b" :class="'load-'+t.load"><text class="load-t">{{ t.loadText }}</text></view>
+
               </view>
             </view>
           </view>
@@ -135,7 +135,7 @@
         <view class="timeline">
           <view v-for="slot in timeSlots" :key="slot.time" class="time-slot">
             <text class="slot-time">{{ slot.time }}</text>
-            <view v-if="slot.task" class="slot-task" :style="{ borderLeftColor: slot.task.color || 'var(--text-accent)' }">
+            <view v-if="slot.task" class="slot-task" :style="{ borderLeftColor: 'var(--color-primary)' }">
               <view class="task-header">
                 <text class="task-name">{{ slot.task.name }}</text>
                 <text class="task-dur">{{ slot.task.duration }}h</text>
@@ -218,7 +218,6 @@ const stats = computed(() => [
   { icon: '▤', value: String(pendingCount.value), label: '待完成' },
   { icon: '✦', value: String(completedCount.value), label: '已完成' },
   { icon: '◷', value: totalFocusHours.value, label: '已专注' },
-  { icon: '☍', value: '中', label: '脑力负荷' },
 ])
 
 const weekDays = [
@@ -392,14 +391,7 @@ const deferTask = (slot: any) => {
 .pend-sub { display: block; font-size: 24rpx; color: var(--text-secondary); }
 .pend-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 8rpx; }
 .pend-dur { font-size: 26rpx; font-weight: 600; color: var(--text-muted); }
-.load-b { padding: 4rpx 14rpx; border-radius: var(--radius-full); }
-.load-low { background: var(--color-bg-tertiary); border: 1px solid var(--border-subtle); }
-.load-low .load-t { color: var(--text-secondary); }
-.load-medium { background: var(--color-bg-tertiary); border: 1px solid var(--border-subtle); }
-.load-medium .load-t { color: var(--text-secondary); }
-.load-high { background: var(--color-bg-tertiary); border: 1px solid var(--border-subtle); }
-.load-high .load-t { color: var(--text-secondary); }
-.load-t { font-size: 20rpx; font-weight: 600; }
+
 
 /* Block list */
 .block-list { display: flex; flex-direction: column; gap: 20rpx; }

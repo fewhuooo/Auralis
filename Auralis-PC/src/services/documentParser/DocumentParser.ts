@@ -3,6 +3,7 @@ import { normalizeOcrLines } from './normalization.ts'
 import { DEFAULT_MAX_BLOCK_CHARS, assertBoundedText, normalizationVersion, normalizeText } from './normalization.ts'
 import { OfficeTextAdapter } from './OfficeTextAdapter.ts'
 import { PdfTextAdapter } from './PdfTextAdapter.ts'
+import type { PptxDocumentSource } from './types.ts'
 import {
   DOCUMENT_PARSER_NAME,
   DOCUMENT_PARSER_VERSION,
@@ -69,6 +70,25 @@ export async function parseDocument(
       version: DOCUMENT_PARSER_VERSION,
       normalization: normalizationVersion(),
       ocrModel: ocr?.model || null,
+      blockCount,
+    }
+  }
+
+  if (extension === 'pptx' && input.pptx) {
+    const pptx: PptxDocumentSource = input.pptx
+    try {
+      for (let slideNumber = 1; slideNumber <= pptx.slideCount; slideNumber += 1) {
+        const slide = await pptx.getSlide(slideNumber)
+        await emit({ kind: 'slide', pageNumber: slideNumber, text: await slide.getText() })
+      }
+    } finally {
+      await pptx.destroy?.()
+    }
+    return {
+      parser: DOCUMENT_PARSER_NAME,
+      version: DOCUMENT_PARSER_VERSION,
+      normalization: normalizationVersion(),
+      ocrModel: null,
       blockCount,
     }
   }

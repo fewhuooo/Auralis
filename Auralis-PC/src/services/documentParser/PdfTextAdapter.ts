@@ -2,11 +2,18 @@ import { normalizeText } from './normalization.ts'
 import { PdfPageClassifier } from './PdfPageClassifier.ts'
 import type { PdfDocumentSource } from './types.ts'
 
+async function resolvePdfWorkerSrc(): Promise<string> {
+  if (typeof window === 'undefined') {
+    return new URL('../../../node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs', import.meta.url).toString()
+  }
+  return (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default
+}
+
 export async function openPdfDocument(bytes: Uint8Array): Promise<PdfDocumentSource> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
-  // The Tauri bundle is intentionally offline-capable and does not depend on
-  // a CDN-hosted worker. This import resolves to the same pinned PDF.js
-  // runtime used by the visible File Viewer renderer.
+  // Keep the worker in the Vite bundle so Tauri never depends on a CDN-hosted
+  // runtime. The worker is imported from the same pinned PDF.js package.
+  pdfjs.GlobalWorkerOptions.workerSrc = await resolvePdfWorkerSrc()
   const loadingTask = pdfjs.getDocument({ data: bytes })
   const documentProxy = await loadingTask.promise
 

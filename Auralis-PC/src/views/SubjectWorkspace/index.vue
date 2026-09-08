@@ -486,6 +486,7 @@
           <div class="drag-drop-zone" :class="{ 'is-active': isDraggingFile }" @click="triggerFileInput">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px; color: var(--text-muted);"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <div class="drag-text">拖拽文件到此处自动识别，或点击选择</div>
+            <div class="drag-hint">支持 PDF、DOC、DOCX、PPT、PPTX；图片和文本仅可预览</div>
           </div>
           <input type="file" ref="hiddenFileInput" style="display: none" :accept="SUPPORTED_UPLOAD_EXTENSIONS.join(',')" @change="handleFileSelect" />
           <p v-if="isUploading" class="upload-progress" aria-live="polite">{{ uploadStage || '正在上传文件' }} {{ uploadProgress }}%</p>
@@ -893,7 +894,7 @@ const parseFileMetadata = (file: File & { path?: string }) => {
   try {
     validateUploadFile(file)
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '暂不支持此文件类型')
+    ElMessage.error(error instanceof Error ? error.message : '仅支持上传 PDF、DOC、DOCX、PPT、PPTX 文件')
     return false
   }
 
@@ -979,12 +980,12 @@ const handleRegisterFile = async () => {
 
 // ===== Task Creation =====
 const showTaskModal = ref(false)
-const taskForm = ref({ name: '', duration: 60, load: 'medium' as 'low' | 'medium' | 'high' })
+const taskForm = ref({ name: '', duration: 60 })
 
 const handleAddTask = async () => {
   if (!taskForm.value.name.trim() || !activeSubject.value) return
   const s = activeSubject.value
-  await taskStore.addTask({ name: taskForm.value.name.trim(), subject: s.name, desc: '从学科工作区', duration: taskForm.value.duration, load: taskForm.value.load, loadText: taskForm.value.load === 'low' ? '1.0 🧠' : taskForm.value.load === 'medium' ? '2.0 🧠' : '3.0 🧠', status: 'pending', subjectId: s.id })
+  await taskStore.addTask({ name: taskForm.value.name.trim(), subject: s.name, desc: '从学科工作区', duration: taskForm.value.duration, status: 'pending', subjectId: s.id })
   showTaskModal.value = false
   ElNotification({ title: '已生成', type: 'success', position: 'top-right' })
 }
@@ -2487,6 +2488,7 @@ html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15
 .drag-drop-zone:hover { border-color: rgba(0,0,0,0.2); background: rgba(255,255,255,0.8); }
 .drag-drop-zone.is-active { border-color: #7D9372; background: rgba(125, 147, 114, 0.05); }
 .drag-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
+.drag-hint { margin-top: 6px; color: var(--text-muted); font-size: 11px; }
 html.dark .drag-drop-zone { border-color: rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
 html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); }
 html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }

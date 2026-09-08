@@ -61,9 +61,9 @@ class StatsServiceTests {
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
                 "Stats Subject", null, null, "001")).id();
         UUID taskId = taskService.create(owner.user().id(), new TaskCommand(
-                subjectId, "Complete me", null, TaskStatus.TODO, null, null, null, null, "001", null)).id();
+                subjectId, "Complete me", null, TaskStatus.TODO, null, null, null, "001")).id();
         taskService.update(owner.user().id(), taskId, 0, new TaskCommand(
-                subjectId, "Complete me", null, TaskStatus.DONE, null, null, null, null, "001", null));
+                subjectId, "Complete me", null, TaskStatus.DONE, null, null, null, "001"));
 
         Instant completedAt = jdbcTemplate.queryForObject(
                 "select completed_at from tasks where id = ?", Instant.class, taskId);

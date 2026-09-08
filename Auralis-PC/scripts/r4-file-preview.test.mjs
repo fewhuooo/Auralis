@@ -4,6 +4,7 @@ import path from 'node:path'
 import test from 'node:test'
 import {
   SUPPORTED_UPLOAD_EXTENSIONS,
+  canPreviewFile,
   resolveFileCapability,
   validateUploadFile,
 } from '../src/utils/filePreview.ts'
@@ -29,6 +30,13 @@ test('maps DOCX to the File Viewer office renderer', () => {
   })
 })
 
+test('accepts every parser-supported document format for upload', () => {
+  for (const name of ['lesson.pdf', 'lesson.doc', 'lesson.docx', 'slides.ppt', 'slides.pptx']) {
+    const capability = validateUploadFile({ name, type: '', size: 10 })
+    assert.equal(capability.allowedForUpload, true, `${name} must be uploadable`)
+  }
+})
+
 test('maps direct preview formats to the shared renderer', () => {
   for (const [name, kind] of [
     ['lesson.pdf', 'pdf'],
@@ -37,9 +45,28 @@ test('maps direct preview formats to the shared renderer', () => {
     ['records.csv', 'csv'],
   ]) {
     const capability = resolveFileCapability({ name, type: '' })
-    assert.equal(capability.allowedForUpload, true)
+    assert.equal(capability.allowedForUpload, name.endsWith('.pdf'))
     assert.equal(capability.kind, kind)
     assert.equal(capability.renderer, 'file-viewer')
+  }
+})
+
+test('rejects preview-only image and text formats before creating an upload intent', () => {
+  for (const name of ['diagram.png', 'notes.md', 'records.csv']) {
+    assert.throws(
+      () => validateUploadFile({ name, type: '', size: 10 }),
+      /仅支持上传 PDF、DOC、DOCX、PPT、PPTX/,
+    )
+  }
+})
+
+test('FilePreview can render preview-only image, text, and CSV sources', () => {
+  for (const [name, type] of [
+    ['diagram.png', 'image/png'],
+    ['notes.md', 'text/markdown'],
+    ['records.csv', 'text/csv'],
+  ]) {
+    assert.equal(canPreviewFile({ name, type }), true)
   }
 })
 
@@ -51,7 +78,7 @@ test('keeps PowerPoint compatible with the Office renderer', () => {
 test('rejects unknown extensions before upload intent', () => {
   assert.throws(
     () => validateUploadFile({ name: 'payload.bin', type: 'application/octet-stream', size: 10 }),
-    /不支持此文件类型/,
+    /仅支持上传 PDF、DOC、DOCX、PPT、PPTX/,
   )
 })
 
@@ -65,8 +92,6 @@ test('rejects files over the existing 50 MB limit', () => {
 test('exposes the single upload accept list', () => {
   assert.deepEqual(SUPPORTED_UPLOAD_EXTENSIONS, [
     '.pdf', '.doc', '.docx', '.ppt', '.pptx',
-    '.png', '.jpg', '.jpeg', '.webp', '.gif',
-    '.txt', '.md', '.json', '.xml', '.csv',
   ])
   assert.equal(SUPPORTED_UPLOAD_EXTENSIONS.includes('.xls'), false)
   assert.equal(SUPPORTED_UPLOAD_EXTENSIONS.includes('.xlsx'), false)

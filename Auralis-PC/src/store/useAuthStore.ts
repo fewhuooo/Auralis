@@ -10,6 +10,7 @@ import {
 } from '@/api/useAuthApi'
 import { getDeviceIdentity } from '@/auth/deviceIdentity'
 import { isValidSession } from '@/auth/sessionValidation'
+import type { AuthSessionStatus } from '@/auth/authSessionState'
 
 export { isValidSession }
 
@@ -39,6 +40,8 @@ export const useAuthStore = defineStore(
     const serverDeviceId = ref<string | null>(null)
     const isHydrated = ref<boolean>(true)
     const showAuthModal = ref(false)
+    const authStatus = ref<AuthSessionStatus>('anonymous')
+    const reauthenticationReason = ref<string | null>(null)
 
     const token = computed({
       get: () => tokens.value?.accessToken ?? null,
@@ -64,11 +67,13 @@ export const useAuthStore = defineStore(
 
     const username = computed(() => user.value?.displayName || user.value?.username || null)
     const isAuthenticated = computed(() => Boolean(
-      tokens.value?.accessToken
+      authStatus.value === 'authenticated'
+      && tokens.value?.accessToken
       && tokens.value?.refreshToken
       && user.value?.id
       && serverDeviceId.value,
     ))
+    const requiresReauthentication = computed(() => authStatus.value === 'reauthentication-required')
 
     function setSession(result: AuthResult | null | undefined): void {
       if (!result || !result.user || !result.tokens || !result.sessionId || !result.serverDeviceId) {
@@ -79,6 +84,9 @@ export const useAuthStore = defineStore(
       tokens.value = result.tokens ?? null
       sessionId.value = result.sessionId ?? null
       serverDeviceId.value = result.serverDeviceId ?? null
+      authStatus.value = 'authenticated'
+      reauthenticationReason.value = null
+      showAuthModal.value = false
     }
 
     function setTokens(tokenPair: TokenPair | null | undefined): void {
@@ -90,6 +98,19 @@ export const useAuthStore = defineStore(
       tokens.value = null
       sessionId.value = null
       serverDeviceId.value = null
+      authStatus.value = 'anonymous'
+      reauthenticationReason.value = null
+      showAuthModal.value = false
+    }
+
+    function requireReauthentication(reason = '登录会话已失效，请重新登录。'): void {
+      user.value = null
+      tokens.value = null
+      sessionId.value = null
+      serverDeviceId.value = null
+      authStatus.value = 'reauthentication-required'
+      reauthenticationReason.value = reason
+      showAuthModal.value = true
     }
 
     async function login(payload: LoginPayload): Promise<AuthResult> {
@@ -152,9 +173,13 @@ export const useAuthStore = defineStore(
       username,
       isAuthenticated,
       showAuthModal,
+      authStatus,
+      requiresReauthentication,
+      reauthenticationReason,
       setSession,
       setTokens,
       clearSession,
+      requireReauthentication,
       login,
       register,
       logout,
@@ -171,13 +196,23 @@ export const useAuthStore = defineStore(
           tokens: TokenPair | null
           sessionId: string | null
           serverDeviceId: string | null
+          authStatus: AuthSessionStatus
+          reauthenticationReason: string | null
           isHydrated: boolean
         }
+        const wasReauthenticationRequired = store.authStatus === 'reauthentication-required'
         if (!isValidSession(store.user, store.tokens) || !store.sessionId || !store.serverDeviceId) {
           store.user = null
           store.tokens = null
           store.sessionId = null
           store.serverDeviceId = null
+          store.authStatus = wasReauthenticationRequired ? 'reauthentication-required' : 'anonymous'
+          store.reauthenticationReason = wasReauthenticationRequired
+            ? (store.reauthenticationReason || '登录会话已失效，请重新登录。')
+            : null
+        } else {
+          store.authStatus = 'authenticated'
+          store.reauthenticationReason = null
         }
         store.isHydrated = true
       },

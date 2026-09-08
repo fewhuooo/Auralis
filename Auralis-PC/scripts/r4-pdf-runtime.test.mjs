@@ -22,5 +22,8 @@ test('File Viewer and the local PDF parser resolve one exact PDF.js runtime', as
 
   const adapter = await readFile(path.join(root, 'src/services/documentParser/PdfTextAdapter.ts'), 'utf8')
   assert.match(adapter, /import\('pdfjs-dist\/legacy\/build\/pdf\.mjs'\)/)
+  assert.match(adapter, /pdf\.worker\.min\.mjs\?url/)
+  assert.match(adapter, /GlobalWorkerOptions\.workerSrc\s*=\s*await resolvePdfWorkerSrc\(\)/)
+  assert.doesNotMatch(adapter, /https?:\/\//)
   assert.doesNotMatch(adapter, /disableWorker/)
 })

@@ -27,7 +27,7 @@
             class="task-item"
             @click="selectTask(task)"
           >
-            <view class="t-color-bar" :style="{ background: task.color || 'var(--text-primary)' }"></view>
+            <view class="t-color-bar" :style="{ background: 'var(--color-primary)' }"></view>
             <view class="t-info">
               <text class="t-name">{{ task.name }}</text>
               <text class="t-subject">{{ task.subject }} · {{ task.duration }} 分钟</text>

@@ -7,7 +7,6 @@ import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
 import com.auralis.app.subject.internal.persistence.SubjectEntity;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
-import com.auralis.app.task.CognitiveLoad;
 import com.auralis.app.task.TaskStatus;
 import com.auralis.app.task.internal.persistence.TaskEntity;
 import com.auralis.app.task.internal.persistence.TaskRepository;
@@ -108,7 +107,7 @@ class CoreDomainRepositoryTests {
     private TaskEntity task(UUID userId, UUID subjectId, boolean deleted) {
         TaskEntity entity = new TaskEntity(
                 UUID.randomUUID(), userId, subjectId, "Read chapter", "Description", TaskStatus.TODO,
-                null, null, 30, CognitiveLoad.MEDIUM, "001", null);
+                null, null, 30, "001");
         if (deleted) {
             entity.softDelete();
         }

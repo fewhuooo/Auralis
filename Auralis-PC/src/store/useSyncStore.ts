@@ -98,6 +98,7 @@ export const useSyncStore = defineStore('sync', () => {
 
   async function flushNow(): Promise<void> {
     if (!isOnline()) return
+    if (!useAuthStore().isAuthenticated) return
     if (cyclePromise) {
       syncRequested = true
       return cyclePromise
@@ -117,6 +118,7 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   function requestBackgroundSync(_reason: 'startup' | 'write' | 'realtime' | 'online' | 'read'): void {
+    if (!useAuthStore().isAuthenticated) return
     scheduler.request()
   }
 

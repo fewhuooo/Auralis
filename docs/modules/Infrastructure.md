@@ -1,12 +1,14 @@
 # 基础设施与数据服务模块
 
-更新时间：2026-08-23
+更新时间：2026-09-07
 
 文档状态：现行
 
 权威范围：当前 Compose 服务、容器、端口、持久化目录、环境变量、生产边界与基础设施风险
 
 事实来源：`docker-compose.yml`、`.env.example`、`.gitignore` 与 Server 配置
+
+2026-09-07：MinIO healthcheck 已从仅检查 `mc ready` 改为在配置 bucket 的 `.healthcheck/` 前缀使用随机键执行 PUT、HEAD、GET、DELETE，并在退出时清理测试对象；该检查只验证对象存储能力，不删除或覆盖业务对象。MinIO 仍使用 `auralis_auralis-minio-data:/data` 持久化 volume。
 
 ## 模块定位
 

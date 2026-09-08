@@ -236,6 +236,129 @@ async function backupLegacySqlResources(db: LocalSqlDatabase): Promise<void> {
  * the way. The old tables are retained under legacy_* names for recoverable
  * compatibility; no business row is deleted by this migration.
  */
+
+const LEGACY_TASK_LOAD_KEYS = ['cognitiveLoad', 'load', 'loadText'] as const
+
+function sanitizeTaskPayload(payload: string | null | undefined): { payload: string | null | undefined, changed: boolean } {
+  if (!payload || !LEGACY_TASK_LOAD_KEYS.some(key => payload.includes(key))) {
+    return { payload, changed: false }
+  }
+
+  try {
+    const parsed = JSON.parse(payload)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { payload, changed: false }
+    }
+
+    let changed = false
+    for (const key of LEGACY_TASK_LOAD_KEYS) {
+      if (key in parsed) {
+        delete parsed[key]
+        changed = true
+      }
+    }
+    return { payload: changed ? JSON.stringify(parsed) : payload, changed }
+  } catch {
+    return { payload, changed: false }
+  }
+}
+
+async function sanitizeTaskCognitiveLoad(db: LocalSqlDatabase): Promise<void> {
+  if (await tableExists(db, 'local_resource_records')) {
+    const records = await db.select<LocalResourceRow>('SELECT * FROM local_resource_records WHERE resource_type = $1', ['TASK']);
+    for (const record of records) {
+      const sanitized = sanitizeTaskPayload(record.payload)
+      if (sanitized.changed) {
+        await db.execute(
+          'UPDATE local_resource_records SET payload = $1 WHERE user_id = $2 AND resource_type = $3 AND resource_id = $4',
+          [sanitized.payload, record.user_id, record.resource_type, record.resource_id]
+        )
+      }
+    }
+  }
+
+  if (await tableExists(db, 'local_mutations')) {
+    const mutations = await db.select<LocalMutationRow>('SELECT * FROM local_mutations WHERE resource_type = $1', ['TASK']);
+    for (const mut of mutations) {
+      const payload = sanitizeTaskPayload(mut.payload)
+      const remotePayload = sanitizeTaskPayload(mut.remote_payload)
+      if (payload.changed || remotePayload.changed) {
+        await db.execute(
+          'UPDATE local_mutations SET payload = $1, remote_payload = $2 WHERE client_mutation_id = $3',
+          [payload.payload, remotePayload.payload ?? null, mut.client_mutation_id]
+        )
+      }
+    }
+  }
+}
+
+let taskColorInvalidWarningEmitted = false
+
+export type TaskColorPayloadCleanupResult = {
+  payload: string | null | undefined
+  changed: boolean
+  invalid: boolean
+}
+
+export function sanitizeTaskColorPayload(payload: string | null | undefined): TaskColorPayloadCleanupResult {
+  if (payload == null || payload === '') return { payload, changed: false, invalid: false }
+  try {
+    const parsed = JSON.parse(payload) as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { payload, changed: false, invalid: true }
+    }
+    const changed = Object.prototype.hasOwnProperty.call(parsed, 'color')
+      || Object.prototype.hasOwnProperty.call(parsed, 'colorOverride')
+    if (!changed) return { payload, changed: false, invalid: false }
+    delete parsed.color
+    delete parsed.colorOverride
+    return { payload: JSON.stringify(parsed), changed: true, invalid: false }
+  } catch {
+    return { payload, changed: false, invalid: true }
+  }
+}
+
+function warnInvalidTaskColorPayload(): void {
+  if (taskColorInvalidWarningEmitted) return
+  taskColorInvalidWarningEmitted = true
+  console.warn('[SQLite PC] Preserving invalid TASK color payload during migration')
+}
+
+async function sanitizeTaskColors(db: LocalSqlDatabase): Promise<void> {
+  if (await tableExists(db, 'local_resource_records')) {
+    const records = await db.select<LocalResourceRow>(
+      "SELECT * FROM local_resource_records WHERE resource_type = 'TASK'",
+    )
+    for (const record of records) {
+      const result = sanitizeTaskColorPayload(record.payload)
+      if (result.invalid) warnInvalidTaskColorPayload()
+      if (result.changed) {
+        await db.execute(
+          'UPDATE local_resource_records SET payload = $1 WHERE user_id = $2 AND resource_type = $3 AND resource_id = $4',
+          [result.payload, record.user_id, record.resource_type, record.resource_id],
+        )
+      }
+    }
+  }
+
+  if (await tableExists(db, 'local_mutations')) {
+    const mutations = await db.select<LocalMutationRow>(
+      "SELECT * FROM local_mutations WHERE resource_type = 'TASK'",
+    )
+    for (const mutation of mutations) {
+      const payload = sanitizeTaskColorPayload(mutation.payload)
+      const remotePayload = sanitizeTaskColorPayload(mutation.remote_payload)
+      if (payload.invalid || remotePayload.invalid) warnInvalidTaskColorPayload()
+      if (payload.changed || remotePayload.changed) {
+        await db.execute(
+          'UPDATE local_mutations SET payload = $1, remote_payload = $2 WHERE user_id = $3 AND client_mutation_id = $4',
+          [payload.payload, remotePayload.payload ?? null, mutation.user_id, mutation.client_mutation_id],
+        )
+      }
+    }
+  }
+}
+
 export async function createVersionedLocalSchema(db: LocalSqlDatabase): Promise<void> {
   await moveLegacyTable(db, 'sync_metadata', 'legacy_sync_metadata', 'user_id')
   await moveLegacyTable(db, 'local_mutations', 'legacy_local_mutations', 'client_mutation_id')
@@ -245,6 +368,8 @@ export async function createVersionedLocalSchema(db: LocalSqlDatabase): Promise<
     await db.execute(statement)
   }
   await migrateLocalMutationColumns(db)
+  await sanitizeTaskCognitiveLoad(db)
+  await sanitizeTaskColors(db)
   await backupLegacySqlResources(db)
   await db.execute(
     `INSERT OR IGNORE INTO local_schema_migrations (version, applied_at) VALUES ($1, $2)`,

@@ -1,6 +1,6 @@
 # PC 本地优先同步核心实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 PC 端 Subject、Source、KnowledgeBlock、Task 与 Relation 在本地持久化成功后立即可用，并由单一后台同步器按服务端 cursor 收敛跨端状态，不再让普通页面或操作等待远端请求。
 

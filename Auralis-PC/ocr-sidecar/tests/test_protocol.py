@@ -1,12 +1,15 @@
 import json
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from protocol import ProtocolError, validate_request, validate_response
+import main
 
 
 class ProtocolValidationTests(unittest.TestCase):
@@ -86,6 +89,44 @@ class ProtocolValidationTests(unittest.TestCase):
             "timingMs": {"det": 5, "rec": 7, "total": 12},
         }
         self.assertEqual(validate_response(response), response)
+
+    def test_sidecar_stdout_is_utf8_jsonl_only_and_empty_ocr_is_valid(self):
+        request = {
+            "protocolVersion": 1,
+            "taskId": "task-empty",
+            "pageNumber": 1,
+            "imagePath": str(self.image),
+            "timeoutMs": 30_000,
+        }
+
+        class NoisyEngine:
+            def process_request(self, _request):
+                print("third-party diagnostic")
+                return {
+                    "protocolVersion": 1,
+                    "ok": True,
+                    "taskId": "task-empty",
+                    "pageNumber": 1,
+                    "lines": [{"text": "中文识别结果", "score": 0.98}],
+                    "timingMs": {"det": 0, "rec": 0, "total": 0},
+                }
+
+        stdout_bytes = io.BytesIO()
+        stdout = io.TextIOWrapper(stdout_bytes, encoding="cp1252", write_through=True)
+        stderr = io.StringIO()
+        with patch.object(main.sys, "stdin", io.StringIO(json.dumps(request) + "\n")):
+            with patch.object(main.sys, "stdout", stdout):
+                with patch.object(main.sys, "stderr", stderr):
+                    with patch.object(main, "OcrEngine", lambda **_kwargs: NoisyEngine()):
+                        self.assertEqual(main.run(self.root, self.root / "manifest.json", self.root), 0)
+
+        stdout.flush()
+        payload = stdout_bytes.getvalue()
+        decoded = json.loads(payload.decode("utf-8"))
+        self.assertEqual(decoded["lines"][0]["text"], "中文识别结果")
+        self.assertEqual(payload, payload.decode("utf-8").encode("utf-8"))
+        self.assertEqual(payload.count(b"\n"), 1)
+        self.assertIn("third-party diagnostic", stderr.getvalue())
 
 
 if __name__ == "__main__":

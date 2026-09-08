@@ -40,9 +40,7 @@ function toServerMutation(row: any): SyncMutation {
     status: payload?.status === 'completed' ? 'DONE' : payload?.status === 'scheduled' ? 'IN_PROGRESS' : 'TODO',
     scheduledAt: payload?.startTime ? new Date(`${new Date().toISOString().slice(0, 10)}T${payload.startTime}:00`).toISOString() : undefined,
     durationMinutes: payload?.duration,
-    cognitiveLoad: String(payload?.load || 'medium').toUpperCase(),
     sortKey: payload?.position,
-    colorOverride: payload?.color,
   } : {
     subjectId: payload?.subjectId,
     sourceId: payload?.sourceFileId,
@@ -94,10 +92,7 @@ async function applyResource(resourceType: string, resourceId: string, mutationT
       name: payload?.title,
       desc: payload?.description || '',
       subject: payload?.subject || '',
-      color: payload?.colorOverride || '',
       duration: payload?.durationMinutes || 0,
-      load: String(payload?.cognitiveLoad || 'MEDIUM').toLowerCase(),
-      loadText: payload?.cognitiveLoad || 'MEDIUM',
       status: payload?.status === 'DONE' ? 'completed' : payload?.status === 'IN_PROGRESS' ? 'scheduled' : 'pending',
       startTime: payload?.scheduledAt ? new Date(payload.scheduledAt).toTimeString().slice(0, 5) : '',
       position: payload?.sortKey || '0',
@@ -105,10 +100,10 @@ async function applyResource(resourceType: string, resourceId: string, mutationT
     } : {
       ...payload,
       subject: payload?.subject || '',
-      preview: payload?.summary || payload?.content || '',
-      source: payload?.source || '',
-      color: payload?.colorOverride || '',
-      sourceFileId: payload?.sourceId,
+       preview: payload?.summary || payload?.content || '',
+       source: payload?.source || '',
+       color: payload?.colorOverride || '',
+       sourceFileId: payload?.sourceId,
       sync_version: payload?.version || version,
     }
     await localDb.applyRemoteMutation({

@@ -3,7 +3,7 @@ import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElButton } from 'element-plus'
 import { useAssetStore } from '@/store/useAssetStore'
 import type { SourceFileModel } from '@/services/domainMappers'
-import { resolveFileCapability, type FileCapability } from '@/utils/filePreview'
+import { canPreviewFile, resolveFileCapability, type FileCapability } from '@/utils/filePreview'
 import FileViewerRenderer from '@/components/preview/FileViewerRenderer.vue'
 import UnsupportedPreview from '@/components/preview/UnsupportedPreview.vue'
 import { PreviewRequestGate } from '@/components/preview/PreviewRequestGate'
@@ -49,7 +49,10 @@ const capability = computed<FileCapability>(() => resolveFileCapability({
   type: props.file.fileType,
 }))
 
-const canPreview = computed(() => capability.value.allowedForUpload && capability.value.renderer === 'file-viewer')
+const canPreview = computed(() => canPreviewFile({
+  name: props.file.name,
+  type: props.file.fileType,
+}))
 
 function readableError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) return error.message

@@ -3,6 +3,11 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { createRefreshCoordinator } from '@/api/authRefresh'
 import { ApiProblemError, assertDirectDto, createApiProblemError } from '@/api/httpError'
 import { getClientRuntimeConfig } from '@/config/runtime'
+import {
+  AuthenticationRequiredError,
+  isPublicAuthPath,
+  shouldBlockProtectedRequest,
+} from '@/auth/authSessionState'
 
 interface AuthTokensResponse {
   tokens?: {
@@ -38,6 +43,9 @@ const refreshClient = axios.create({
 
 function attachToken(config: InternalAxiosRequestConfig): InternalAxiosRequestConfig {
   const authStore = useAuthStore()
+  if (shouldBlockProtectedRequest(config.url ?? '', authStore.requiresReauthentication)) {
+    throw new AuthenticationRequiredError()
+  }
   if (authStore.token) config.headers.Authorization = `Bearer ${authStore.token}`
   return config
 }
@@ -53,17 +61,27 @@ function accessTokenFromResponse(response: unknown): string {
 
 async function performRefresh(): Promise<string> {
   const authStore = useAuthStore()
-  if (!authStore.refreshToken) throw new Error('No refresh token')
+  if (!authStore.refreshToken) {
+    authStore.requireReauthentication('登录会话已失效，请重新登录。')
+    throw new AuthenticationRequiredError()
+  }
 
-  const response = await refreshClient.post<AuthTokensResponse>('/api/auth/refresh', {
-    refreshToken: authStore.refreshToken,
-  })
-  const directResponse = assertDirectDto(response.data)
-  const accessToken = accessTokenFromResponse(directResponse)
-  const tokens = (directResponse as AuthTokensResponse).tokens
-  authStore.token = accessToken
-  authStore.refreshToken = tokens?.refreshToken as string
-  return accessToken
+  try {
+    const response = await refreshClient.post<AuthTokensResponse>('/api/auth/refresh', {
+      refreshToken: authStore.refreshToken,
+    })
+    const directResponse = assertDirectDto(response.data)
+    const accessToken = accessTokenFromResponse(directResponse)
+    const tokens = (directResponse as AuthTokensResponse).tokens
+    authStore.token = accessToken
+    authStore.refreshToken = tokens?.refreshToken as string
+    return accessToken
+  } catch (error) {
+    authStore.requireReauthentication('登录会话已失效，请重新登录。')
+    throw new AuthenticationRequiredError(
+      error instanceof Error ? `登录会话已失效：${error.message}` : '登录会话已失效，请重新登录。',
+    )
+  }
 }
 
 const refreshCoordinator = createRefreshCoordinator(performRefresh)
@@ -74,7 +92,7 @@ export function refreshAccessToken(): Promise<string> {
 }
 
 function redirectToLogin(): void {
-  void useAuthStore().logout().catch(() => undefined)
+  useAuthStore().requireReauthentication('登录会话已失效，请重新登录。')
   if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
     window.location.assign('/login')
   }
@@ -100,7 +118,8 @@ function createResponseInterceptor(instance: AxiosInstance): void {
         error.response?.status === 401 &&
         originalRequest &&
         !originalRequest._r4Retried &&
-        !originalRequest._skipAuthRefresh
+        !originalRequest._skipAuthRefresh &&
+        !isPublicAuthPath(originalRequest.url ?? '')
       ) {
         originalRequest._r4Retried = true
         try {
@@ -110,6 +129,10 @@ function createResponseInterceptor(instance: AxiosInstance): void {
           redirectToLogin()
           return Promise.reject(refreshError)
         }
+      }
+
+      if (error.response?.status === 401 && originalRequest && !isPublicAuthPath(originalRequest.url ?? '')) {
+        redirectToLogin()
       }
 
       const problem = createApiProblemError(error)

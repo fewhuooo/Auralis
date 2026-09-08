@@ -1,6 +1,5 @@
 package com.auralis.app.task.internal.persistence;
 
-import com.auralis.app.task.CognitiveLoad;
 import com.auralis.app.task.TaskStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -47,15 +46,8 @@ public class TaskEntity {
     @Column(name = "duration_minutes")
     private Integer durationMinutes;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "cognitive_load", length = 16)
-    private CognitiveLoad cognitiveLoad;
-
     @Column(name = "sort_key", nullable = false, length = 128)
     private String sortKey;
-
-    @Column(name = "color_override", length = 32)
-    private String colorOverride;
 
     @Version
     @Column(nullable = false)
@@ -86,9 +78,7 @@ public class TaskEntity {
             Instant scheduledAt,
             Instant dueAt,
             Integer durationMinutes,
-            CognitiveLoad cognitiveLoad,
-            String sortKey,
-            String colorOverride) {
+            String sortKey) {
         this.id = id;
         this.userId = userId;
         this.subjectId = subjectId;
@@ -98,9 +88,7 @@ public class TaskEntity {
         this.scheduledAt = scheduledAt;
         this.dueAt = dueAt;
         this.durationMinutes = durationMinutes;
-        this.cognitiveLoad = cognitiveLoad;
         this.sortKey = sortKey;
-        this.colorOverride = colorOverride;
     }
 
     @PrePersist
@@ -136,9 +124,7 @@ public class TaskEntity {
     public Instant getScheduledAt() { return scheduledAt; }
     public Instant getDueAt() { return dueAt; }
     public Integer getDurationMinutes() { return durationMinutes; }
-    public CognitiveLoad getCognitiveLoad() { return cognitiveLoad; }
     public String getSortKey() { return sortKey; }
-    public String getColorOverride() { return colorOverride; }
     public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
@@ -153,9 +139,7 @@ public class TaskEntity {
             Instant scheduledAt,
             Instant dueAt,
             Integer durationMinutes,
-            CognitiveLoad cognitiveLoad,
-            String sortKey,
-            String colorOverride) {
+            String sortKey) {
         this.subjectId = subjectId;
         this.title = title;
         this.description = description;
@@ -169,9 +153,7 @@ public class TaskEntity {
         this.scheduledAt = scheduledAt;
         this.dueAt = dueAt;
         this.durationMinutes = durationMinutes;
-        this.cognitiveLoad = cognitiveLoad;
         this.sortKey = sortKey == null ? "" : sortKey;
-        this.colorOverride = colorOverride;
     }
 
     public void reschedule(Instant scheduledAt) {

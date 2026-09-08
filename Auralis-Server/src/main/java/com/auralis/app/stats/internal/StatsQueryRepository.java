@@ -3,7 +3,9 @@ package com.auralis.app.stats.internal;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.UUID;
 
 @Repository
@@ -56,7 +58,13 @@ public class StatsQueryRepository {
     }
 
     private long count(String sql, Object... args) {
-        Number value = jdbcTemplate.queryForObject(sql, Number.class, args);
+        Number value = jdbcTemplate.queryForObject(sql, Number.class, normalizeJdbcArguments(args));
         return value == null ? 0L : value.longValue();
+    }
+
+    private Object[] normalizeJdbcArguments(Object... args) {
+        return Arrays.stream(args)
+                .map(argument -> argument instanceof Instant instant ? Timestamp.from(instant) : argument)
+                .toArray();
     }
 }

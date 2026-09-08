@@ -3,6 +3,7 @@ import {
   documentPackageAppend,
   documentPackageBegin,
   documentPackageFinish,
+  ocrWarmup,
 } from '@/api/tauri'
 import { e2ee } from '@/api/e2ee'
 import { useSourceApi, type SourceView } from '@/api/useSourceApi'
@@ -13,6 +14,7 @@ import {
 import { parseDocument } from '@/services/documentParser/DocumentParser'
 import { TauriOcrAdapter } from '@/services/documentParser/OcrAdapter'
 import { openPdfDocument } from '@/services/documentParser/PdfTextAdapter'
+import { openPptxDocument } from '@/services/documentParser/PptxTextAdapter'
 import { FileViewerParserBridge } from '@/services/documentParser/fileViewerBridge'
 import { getBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
 import { ParsedDocumentUploadCoordinator } from './ParsedDocumentUploadCoordinator'
@@ -139,6 +141,7 @@ export class DocumentProcessingRuntime {
     if (this.snapshot) {
       useSourceStore().attachDocumentScheduler(null)
       useDocumentProcessingStore().attachRunner(null)
+      useDocumentProcessingStore().attachScheduler(null)
     }
     this.snapshot = null
     this.key = null
@@ -221,7 +224,6 @@ export class DocumentProcessingRuntime {
       deleteCache: async (cacheId) => { await documentCacheDelete(cacheId) },
       onJobChanged: async () => {
         await processingStore.refresh()
-        await sourceStore.loadSources()
       },
     })
 
@@ -229,6 +231,15 @@ export class DocumentProcessingRuntime {
     this.snapshot = { userId, serverDeviceId, repository, runner, scheduler }
     sourceStore.attachDocumentScheduler(scheduler)
     processingStore.attachRunner(runner)
+    processingStore.attachScheduler(scheduler)
+
+    const warmup = await ocrWarmup().catch((error) => {
+      console.warn('[DocumentRuntime] OCR warmup deferred', error)
+      return null
+    })
+    if (warmup && !warmup.ready) {
+      console.warn('[DocumentRuntime] OCR warmup deferred', warmup.errorCode)
+    }
 
     await useSyncStore().triggerSync().catch((error) => {
       console.warn('[DocumentRuntime] pending sync bootstrap deferred', error)
@@ -272,12 +283,14 @@ export class DocumentProcessingRuntime {
       }
       if (extension === 'pdf') {
         input.pdf = await openPdfDocument(new Uint8Array(await file.arrayBuffer()))
+      } else if (extension === 'pptx') {
+        input.pptx = await openPptxDocument(new Uint8Array(await file.arrayBuffer()))
       } else if (isOfficeExtension(file.name)) {
         const bridge = new FileViewerParserBridge(getBackgroundParserHost)
         input.office = {
           get pageCount() {
             const pageCount = getBackgroundParserHost()?.getPageCount?.() ?? 0
-            if (!Number.isInteger(pageCount) || pageCount < 1) throw new Error('OFFICE_PAGE_COUNT_UNAVAILABLE')
+            if (!Number.isInteger(pageCount) || pageCount < 1) throw new Error('DOCUMENT_FILE_TYPE_UNSUPPORTED')
             return pageCount
           },
           bridge,

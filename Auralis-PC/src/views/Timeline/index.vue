@@ -69,7 +69,7 @@
                 v-for="task in getScheduledTasksForDay(day.dayCode).slice(0, 3)"
                 :key="task.id" 
                 class="weekly-overview-task-dot"
-                :style="{ backgroundColor: task.color }"
+                :style="{ backgroundColor: 'var(--color-primary-accent)' }"
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
               ></div>
               <span v-if="getScheduledTasksForDay(day.dayCode).length > 3" class="weekly-overview-more">+{{ getScheduledTasksForDay(day.dayCode).length - 3 }}</span>
@@ -100,15 +100,15 @@
                 class="slot-task" 
                 :class="{ 'is-past': isPastTask(slot.task) }"
                 :style="{ 
-                  borderLeftColor: slot.task.color,
+                  borderLeftColor: 'var(--color-primary-accent)',
                   height: getTaskHeight(slot.task.duration)
                 }"
-                draggable="true"
-                @dragstart.stop="handleDragStart($event, 'scheduled', slot.time)"
+                :draggable="!isCompletedScheduledTask(slot.task)"
+                @dragstart.stop="handleDragStart($event, 'scheduled', slot.task.id || '', slot.time)"
               >
                 <div class="task-header">
                   <span class="task-name">{{ slot.task.name }}</span>
-                  <span class="task-tag" :style="{ backgroundColor: slot.task.color || 'rgba(255,255,255,0.08)' }">
+                  <span class="task-tag" :style="{ backgroundColor: 'var(--color-primary-accent)' }">
                     {{ slot.task.subject }}
                   </span>
                   <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)" title="删除任务">✕</button>
@@ -153,11 +153,11 @@
             v-for="task in filteredTimelinePendingTasks"
             :key="task.id"
             class="pending-card"
-            :class="{ 'is-dragging': draggedItem?.idOrTime === task.id }"
+            :class="{ 'is-dragging': draggedItem?.taskId === task.id }"
             draggable="true"
             @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
           >
-            <div class="pending-color" :style="{ background: task.color }"></div>
+            <div class="pending-color" :style="{ background: 'var(--color-primary-accent)' }"></div>
             <div class="pending-body">
               <span class="pending-name">{{ task.name }}</span>
               <span class="pending-subject">{{ task.subject }}</span>
@@ -173,7 +173,6 @@
 
               <div class="pending-meta">
                 <span>预计 {{ task.duration }}min</span>
-                <span class="load-indicator" :class="task.load">{{ task.loadText }}</span>
               </div>
             </div>
             <span class="drag-handle">⠿</span>
@@ -209,9 +208,9 @@
               :key="task.id" 
               class="weekly-task-card"
               :class="{ 'is-past': isPastTask(task) }"
-              :style="{ borderLeftColor: task.color }"
-              draggable="true"
-              @dragstart.stop="handleDragStart($event, 'scheduled', task.id || '')"
+              :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
+              :draggable="!isCompletedScheduledTask(task)"
+              @dragstart.stop="handleDragStart($event, 'scheduled', task.id || '', task.startTime)"
             >
               <div class="weekly-task-header">
                 <span class="weekly-task-name">{{ task.name }}</span>
@@ -219,7 +218,7 @@
               </div>
               <div class="weekly-task-meta">
                 <span class="weekly-task-time">⏰ {{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
-                <span class="weekly-task-tag" :style="{ backgroundColor: task.color || 'rgba(255,255,255,0.08)' }">
+                <span class="weekly-task-tag" :style="{ backgroundColor: 'var(--color-primary-accent)' }">
                   {{ task.subject }}
                 </span>
               </div>
@@ -244,12 +243,12 @@
             v-for="task in filteredTimelinePendingTasks"
             :key="task.id"
             class="pending-pill"
-            :class="{ 'is-dragging': draggedItem?.idOrTime === task.id }"
+            :class="{ 'is-dragging': draggedItem?.taskId === task.id }"
             draggable="true"
             @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
           >
             <span class="pill-name">{{ task.name }}</span>
-            <span class="pill-duration" :style="{ color: task.color }">{{ task.duration }}m</span>
+            <span class="pill-duration" :style="{ color: 'var(--color-primary-accent)' }">{{ task.duration }}m</span>
           </div>
         </div>
       </div>
@@ -278,7 +277,7 @@
               :key="subj.id"
               class="subject-capsule-item"
               :class="{ active: newTaskForm.subjectId === subj.id }"
-              :style="newTaskForm.subjectId === subj.id ? { borderColor: subj.color, background: subj.color + '22' } : {}"
+              :style="newTaskForm.subjectId === subj.id ? { borderColor: SUBJECT_THEME_COLOR, background: SUBJECT_THEME_COLOR + '22' } : {}"
               @click="newTaskForm.subjectId = subj.id"
             >
               <span class="subj-capsule-icon">
@@ -387,13 +386,15 @@ import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ListTodo, CheckCircle, Clock, Inbox, Plus, Sparkles } from 'lucide-vue-next'
+import { ListTodo, CheckCircle, Clock, Inbox, Plus } from 'lucide-vue-next'
 
 import { useTaskStore, DAY_CODES } from '@/store/useTaskStore'
-import { getTasksForTimeline, getTimelineDays } from '@/services/taskViewRules'
+import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask } from '@/services/taskViewRules'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
+
+const SUBJECT_THEME_COLOR = '#7D9372'
 
 const taskStore = useTaskStore()
 const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
@@ -492,21 +493,27 @@ const filteredTimelinePendingTasks = computed(() => {
 })
 
 // Timeline drag/drop logic
-const draggedItem = ref<{ type: 'pending' | 'scheduled', idOrTime: string } | null>(null)
+const draggedItem = ref<{ type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string } | null>(null)
 const dragOverSlot = ref<string | null>(null)
 const dragOverPending = ref(false)
 const dragOverDay = ref<string | null>(null)
 
-const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', idOrTime: string) => {
+const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string) => {
+  const dragPayload = { type, taskId, sourceSlotTime }
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', idOrTime)
-    draggedItem.value = { type, idOrTime }
+    e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload))
   }
+  draggedItem.value = dragPayload
 }
 
 const handleDragOver = (slotTime: string) => {
-  if (!(draggedItem.value?.type === 'scheduled' && draggedItem.value.idOrTime === slotTime)) {
+  const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
+  if (targetTask && isCompletedScheduledTask(targetTask)) {
+    dragOverSlot.value = null
+    return
+  }
+  if (!(draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime === slotTime)) {
     dragOverSlot.value = slotTime
   } else {
     dragOverSlot.value = null
@@ -517,15 +524,28 @@ const handleDragLeave = () => {
   dragOverSlot.value = null
 }
 
+const reportDragFailure = (error: unknown) => {
+  ElNotification({
+    title: '排期未保存',
+    message: error instanceof Error ? error.message : '本地保存失败，请重试。',
+    type: 'error',
+    position: 'top-right',
+  })
+}
+
 const handleDrop = async (slotTime: string) => {
   try {
+    const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
+    if (targetTask && isCompletedScheduledTask(targetTask)) return
     if (draggedItem.value) {
       if (draggedItem.value.type === 'pending') {
-        await taskStore.scheduleTask(draggedItem.value.idOrTime, slotTime)
-      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.idOrTime !== slotTime) {
-        await taskStore.rescheduleTask(draggedItem.value.idOrTime, slotTime)
+        await taskStore.scheduleTask(draggedItem.value.taskId, slotTime)
+      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.sourceSlotTime && draggedItem.value.sourceSlotTime !== slotTime) {
+        await taskStore.rescheduleTask(draggedItem.value.sourceSlotTime, slotTime)
       }
     }
+  } catch (error) {
+    reportDragFailure(error)
   } finally {
     draggedItem.value = null
     dragOverSlot.value = null
@@ -537,12 +557,10 @@ const handleDrop = async (slotTime: string) => {
 const handleDropOnDay = async (day: string) => {
   try {
     if (draggedItem.value) {
-      if (draggedItem.value.type === 'pending') {
-        await taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
-      } else if (draggedItem.value.type === 'scheduled') {
-        await taskStore.scheduleTaskToDay(draggedItem.value.idOrTime, day)
-      }
+      await taskStore.scheduleTaskToDay(draggedItem.value.taskId, day)
     }
+  } catch (error) {
+    reportDragFailure(error)
   } finally {
     draggedItem.value = null
     dragOverDay.value = null
@@ -552,9 +570,11 @@ const handleDropOnDay = async (day: string) => {
 
 const handleDropOnPending = async () => {
   try {
-    if (draggedItem.value?.type === 'scheduled') {
-      await taskStore.unscheduleTask(draggedItem.value.idOrTime)
+    if (draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime) {
+      await taskStore.unscheduleTask(draggedItem.value.sourceSlotTime)
     }
+  } catch (error) {
+    reportDragFailure(error)
   } finally {
     draggedItem.value = null
     dragOverPending.value = false
@@ -593,10 +613,7 @@ const checkSpacedRepetition = async () => {
         name: taskName,
         subject: block.subject,
         desc: `艾宾浩斯复习曲线到期推荐。\n[KB_ID:${block.id}]`,
-        color: block.color || 'rgba(181, 196, 177, 0.6)',
         duration: 30,
-        load: 'low',
-        loadText: '1.0 🧠',
         status: 'pending',
         subjectId: block.subjectId
       })
@@ -665,7 +682,6 @@ const newTaskForm = ref({
   name: '',
   subjectId: '',
   duration: 60,
-  load: 'medium' as 'low' | 'medium' | 'high',
   desc: '',
   relatedBlockId: ''
 })
@@ -712,7 +728,6 @@ const triggerCreate = () => {
     name: '',
     subjectId: subjectStore.subjects.length > 0 ? subjectStore.subjects[0].id : '',
     duration: 60,
-    load: 'medium',
     desc: '',
     relatedBlockId: ''
   }
@@ -733,10 +748,6 @@ const handleCreateTask = async () => {
   const selectedSubj = subjectStore.subjects.find(s => s.id === newTaskForm.value.subjectId)
   if (!selectedSubj) return
 
-  const loadTextMap: Record<string, string> = {
-    low: '1.0 🧠', medium: '2.0 🧠', high: '3.0 🧠'
-  }
-
   let finalDesc = newTaskForm.value.desc.trim()
   if (newTaskForm.value.relatedBlockId) {
     finalDesc += `\n[KB_ID:${newTaskForm.value.relatedBlockId}]`
@@ -746,10 +757,7 @@ const handleCreateTask = async () => {
     name: newTaskForm.value.name.trim(),
     subject: selectedSubj.name,
     duration: newTaskForm.value.duration || 60,
-    load: newTaskForm.value.load,
-    loadText: loadTextMap[newTaskForm.value.load] || '2.0 🧠',
     desc: finalDesc,
-    color: selectedSubj.color || 'rgba(181, 196, 177, 0.6)',
     status: 'pending' as const,
     subjectId: selectedSubj.id
   }
@@ -1100,6 +1108,7 @@ html.dark .timeline-header-card {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-column {
@@ -1117,6 +1126,7 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 }
 
 .weekly-overview-row {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1395,7 +1405,8 @@ html.dark .slot-grid-line {
   transition: background var(--transition-normal);
   border-radius: var(--radius-md);
   position: relative;
-  flex: 1;
+  flex: 1 1 0%;
+  height: 0;
   overflow-y: auto;
   min-height: 0;
   padding-right: 4px;
@@ -1422,7 +1433,10 @@ html.dark .slot-grid-line {
 }
 
 .pending-card {
+  flex: 0 0 auto;
+  min-height: max-content;
   display: flex;
+  gap: 12px;
   align-items: center;
   padding: 12px;
   background: var(--surface-1);
@@ -1483,28 +1497,6 @@ html.dark .slot-grid-line {
   margin-top: 6px;
   font-size: 10px;
   color: var(--text-muted);
-}
-
-.load-indicator {
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-weight: 600;
-  font-size: 9px;
-}
-
-.load-indicator.low {
-  background: rgba(34, 197, 94, 0.12);
-  color: #22c55e;
-}
-
-.load-indicator.medium {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-}
-
-.load-indicator.high {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
 }
 
 .drag-handle {
@@ -1778,12 +1770,6 @@ html.dark .weekly-bottom-dock {
   color: var(--text-muted);
 }
 
-.load-indicator.inline {
-  padding: 0px 4px;
-  border-radius: 3px;
-  font-size: 8px;
-}
-
 .empty-column-placeholder {
   border: 1.5px dashed rgba(255, 255, 255, 0.05);
   border-radius: 12px;
@@ -2047,6 +2033,7 @@ html.dark .weekly-column.is-today {
 }
 
 .weekly-task-card {
+  flex-shrink: 0;
   background: var(--color-bg-tertiary, rgba(255, 255, 255, 0.01));
   border: 1px solid var(--border-subtle);
   border-left: 3px solid;

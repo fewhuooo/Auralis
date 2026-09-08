@@ -391,10 +391,8 @@ const submitQuickAdd = async () => {
     name,
     subject: selectedSub.name,
     subjectId: selectedSub.id,
-    color: '#7D9372',
     duration: quickDuration.value,
-    load: 'medium',
-    loadText: '中负荷',
+
     status: 'scheduled',
     startTime: timeStr
   })

@@ -26,6 +26,7 @@ services:
       MINIO_ROOT_USER: ${AURALIS_MINIO_ROOT_USER:?AURALIS_MINIO_ROOT_USER must be set}
       MINIO_ROOT_PASSWORD: ${AURALIS_MINIO_ROOT_PASSWORD:?AURALIS_MINIO_ROOT_PASSWORD must be set}
       MINIO_API_CORS_ALLOW_ORIGIN: ${AURALIS_CORS_ALLOWED_ORIGINS:?AURALIS_CORS_ALLOWED_ORIGINS must be set}
+      MINIO_HEALTHCHECK_BUCKET: ${AURALIS_MINIO_BUCKET:?AURALIS_MINIO_BUCKET must be set}
     ports:
       - "${AURALIS_MINIO_API_PORT:-9000}:9000"
       - "${AURALIS_MINIO_CONSOLE_PORT:-9001}:9001"
@@ -33,11 +34,23 @@ services:
       - auralis-minio-data:/data
     command: server /data --console-address ":9001"
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test:
+        - CMD-SHELL
+        - >-
+          set -eu;
+          mc alias set --quiet local http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}";
+          mc mb --ignore-existing "local/$${MINIO_HEALTHCHECK_BUCKET}";
+          key=".healthcheck/$$(date +%s%N)";
+          payload="auralis-minio-healthcheck";
+          trap 'mc rm --force "local/$${MINIO_HEALTHCHECK_BUCKET}/$$key" >/dev/null 2>&1 || true' EXIT;
+          printf '%s' "$$payload" | mc pipe "local/$${MINIO_HEALTHCHECK_BUCKET}/$$key" >/dev/null;
+          mc stat "local/$${MINIO_HEALTHCHECK_BUCKET}/$$key" >/dev/null;
+          test "$$(mc cat "local/$${MINIO_HEALTHCHECK_BUCKET}/$$key")" = "$$payload";
+          mc rm --force "local/$${MINIO_HEALTHCHECK_BUCKET}/$$key" >/dev/null
       interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
+      timeout: 15s
+      retries: 3
+      start_period: 15s
 
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z

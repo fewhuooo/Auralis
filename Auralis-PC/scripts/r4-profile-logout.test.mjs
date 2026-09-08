@@ -23,8 +23,9 @@ test('authStore.logout rethrows errors for the UI to handle', async () => {
   )
 })
 
-test('auth refresh failure handles redirect logout rejection', async () => {
+test('auth refresh failure enters re-authentication without recursively calling protected logout', async () => {
   const requestSource = await readFile(new URL('../src/api/request.ts', import.meta.url), 'utf8')
 
-  assert.match(requestSource, /void useAuthStore\(\)\.logout\(\)\.catch\(/)
+  assert.match(requestSource, /useAuthStore\(\)\.requireReauthentication\(/)
+  assert.doesNotMatch(requestSource, /void useAuthStore\(\)\.logout\(\)\.catch\(/)
 })

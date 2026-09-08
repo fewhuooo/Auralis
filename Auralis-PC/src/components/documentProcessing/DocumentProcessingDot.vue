@@ -12,6 +12,7 @@
 import { computed } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
+import { sourceDetailLabel } from '@/utils/documentProcessingStatus'
 
 const props = defineProps<{ sourceId: string }>()
 const store = useDocumentProcessingStore()
@@ -34,11 +35,11 @@ const label = computed(() => {
   if (phase === 'PAUSED_NETWORK') return '等待网络恢复'
   if (phase && phase !== 'READY') return '正在解析文件'
 
-  if (sourcePhase.value === 'AWAITING_CLIENT') return '等待桌面端处理'
-  if (sourcePhase.value === 'VALIDATING') return '服务端正在校验解析结果'
-  if (sourcePhase.value === 'PENDING' || sourcePhase.value === 'PARSING') return '服务端正在处理文件'
-  if (sourcePhase.value === 'INDEXING') return '服务端正在建立索引'
-  if (sourcePhase.value === 'FAILED') return source.value?.safeErrorDetail || '服务端处理失败，请前往个人中心查看'
+  if (sourcePhase.value) {
+    const sharedLabel = sourceDetailLabel(sourcePhase.value)
+    if (sourcePhase.value === 'FAILED' && source.value?.safeErrorDetail) return source.value.safeErrorDetail
+    return sharedLabel
+  }
   return '正在解析文件'
 })
 </script>

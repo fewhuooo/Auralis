@@ -204,3 +204,59 @@ pub fn crypto_import_key_bundle(
 
     Ok(true)
 }
+
+#[cfg(test)]
+mod tests {
+    #[cfg(windows)]
+    struct TestCredentialCleanup {
+        service: String,
+        user: String,
+    }
+
+    #[cfg(windows)]
+    impl Drop for TestCredentialCleanup {
+        fn drop(&mut self) {
+            if let Ok(entry) = keyring::Entry::new(&self.service, &self.user) {
+                let _ = entry.delete_credential();
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn keyring_persists_across_fresh_entries() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let suffix = format!(
+            "{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock must be after UNIX_EPOCH")
+                .as_nanos()
+        );
+        let service = format!("auralis-runtime-test-{suffix}");
+        let user = format!("entry-{suffix}");
+        let cleanup = TestCredentialCleanup {
+            service: service.clone(),
+            user: user.clone(),
+        };
+        let secret = format!("secret-{suffix}");
+
+        let first = keyring::Entry::new(&service, &user).expect("first keyring entry must open");
+        let _ = first.delete_credential();
+        first
+            .set_password(&secret)
+            .expect("first keyring entry must write");
+
+        let second = keyring::Entry::new(&service, &user).expect("second keyring entry must open");
+        assert_eq!(
+            second
+                .get_password()
+                .expect("second keyring entry must read"),
+            secret
+        );
+
+        drop(cleanup);
+    }
+}

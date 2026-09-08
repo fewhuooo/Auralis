@@ -151,7 +151,7 @@
               v-if="slot.task"
               class="tl-task"
               :style="{ 
-                borderLeftColor: slot.task.color,
+                borderLeftColor: 'var(--color-primary-accent)',
                 height: getTaskHeight(slot.task.duration)
               }"
               :draggable="!isCompletedScheduledTask(slot.task)"
@@ -186,7 +186,7 @@
                 v-for="task in getScheduledTasksForDay(day.dayCode)"
                 :key="task.id" 
                 class="db-weekly-task-block"
-                :style="{ borderLeftColor: task.color, backgroundColor: task.color + '15' }"
+                :style="{ borderLeftColor: 'var(--color-primary-accent)', backgroundColor: 'var(--color-primary-accent)' }"
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name} (${task.duration}m)`"
               >
                 <span class="db-weekly-block-time">{{ getTaskTimeStr(task.startTime) }}</span>
@@ -229,7 +229,7 @@
               class="task-checkbox"
               @click.stop
             />
-            <div class="todo-color" :style="{ background: task.color }"></div>
+            <div class="todo-color" :style="{ background: 'var(--color-primary-accent)' }"></div>
             <span class="todo-name">{{ task.name }}</span>
             <span class="todo-subject">{{ task.subject }}</span>
             <span class="drag-handle" title="拖拽至时间轴">⠿</span>
@@ -546,8 +546,8 @@ const taskForm = ref({
   name: '',
   subjectId: '',
   duration: 60,
-  load: 'medium' as 'low' | 'medium' | 'high',
-  loadText: '2.0 🧠'
+
+
 })
 
 const availableSubjectsForTask = computed(() => {
@@ -590,8 +590,8 @@ const openCreateTaskDialog = () => {
     name: '',
     subjectId: availableSubjectsForTask.value[0]?.id || '',
     duration: 60,
-    load: 'medium' as 'low' | 'medium' | 'high',
-    loadText: '常规专注'
+
+
   }
   showTaskModal.value = true
 }
@@ -606,10 +606,9 @@ const handleAddTask = async () => {
       name: taskForm.value.name.trim(),
       subject: subjObj.name,
       desc: '从看板创建',
-      color: SUBJECT_THEME_COLOR,
       duration: taskForm.value.duration,
-      load: taskForm.value.load,
-      loadText: taskForm.value.loadText,
+
+
       status: 'pending',
       subjectId: subjObj.id
     })

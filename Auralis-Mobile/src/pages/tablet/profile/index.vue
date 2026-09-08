@@ -310,7 +310,7 @@ const aiInsight = computed(() => {
   const tasks = totalTasks.value
   if (blocks === 0 && tasks === 0) return '开始创建知识块和任务，AI 会为你生成学习洞察。'
   if (blocks > 10 && taskStore.completedCount > 5) return '你的学习节奏很好！建议适当增加复习频率以巩固记忆。'
-  if (tasks > 10 && taskStore.pendingCount > 8) return '待办任务较多，建议优先处理高负荷任务，适当延后低优先级任务。'
+  if (tasks > 10 && taskStore.pendingCount > 8) return '待办任务较多，建议优先处理临近截止时间的任务，适当延后低优先级任务。'
   return `已积累 ${blocks} 个知识块，完成 ${taskStore.completedCount} 个任务。继续保持！`
 })
 

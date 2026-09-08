@@ -329,3 +329,46 @@ test('HTTP transport never refreshes recursively while refreshing the session', 
   }), (error) => error instanceof ApiProblemError && error.status === 401)
   assert.equal(refreshCalls, 0)
 })
+
+test('Task color removal assertions (Mobile)', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const taskStore = await readFile(new URL('store/useTaskStore.ts', root), 'utf8')
+  const syncStore = await readFile(new URL('store/useSyncStore.ts', root), 'utf8')
+  const syncStoreTaskBranch = syncStore.slice(syncStore.indexOf("case 'TASK':"), syncStore.indexOf("case 'RELATION':"))
+
+  assert.doesNotMatch(taskStore, /\bcolorOverride\b/)
+  assert.doesNotMatch(taskStore, /\bcolor\??:\s*string/)
+  assert.doesNotMatch(syncStoreTaskBranch, /colorOverride\s*:/)
+
+  const mobileHome = await readFile(new URL('pages/mobile/home/index.vue', root), 'utf8')
+  const mobileTimeline = await readFile(new URL('pages/mobile/timeline/index.vue', root), 'utf8')
+  const tabletDashboard = await readFile(new URL('pages/tablet/dashboard/index.vue', root), 'utf8')
+  const taskSelectSheet = await readFile(new URL('components/TaskSelectSheet.vue', root), 'utf8')
+
+  for (const page of [mobileHome, mobileTimeline, tabletDashboard, taskSelectSheet]) {
+    assert.doesNotMatch(page, /task\.color\b/)
+  }
+})
+
+test('task payload cleanup exposes three states and preserves invalid raw payloads', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const source = await readFile(new URL('services/localDb.ts', root), 'utf8')
+  assert.match(source, /export type TaskMutationPayloadCleanupResult\s*=\s*[\s\S]*status: 'changed'/)
+  assert.match(source, /status: 'unchanged'/)
+  assert.match(source, /status: 'invalid'/)
+  assert.match(source, /const rawPayload = typeof payload === 'string' \? payload : \(JSON\.stringify\(payload\) \?\? ''\)/)
+  assert.match(source, /Object\.prototype\.hasOwnProperty\.call\(parsed, 'color'\)/)
+  assert.match(source, /Object\.prototype\.hasOwnProperty\.call\(parsed, 'colorOverride'\)/)
+  assert.match(source, /return \{ status: 'invalid', payload: rawPayload \}/)
+})
+
+test('task color migration quotes native string ids and bounds invalid warnings per platform', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const source = await readFile(new URL('services/localDb.ts', root), 'utf8')
+  assert.match(source, /UPDATE local_mutations SET payload = '\$\{sanitized\}' WHERE id = '\$\{esc\(String\(mutation\.id\)\)\}'/)
+  assert.match(source, /let nativeInvalidTaskPayloadWarningEmitted = false/)
+  assert.match(source, /let h5InvalidTaskPayloadWarningEmitted = false/)
+  assert.match(source, /if \(nativeInvalidTaskPayloadWarningEmitted\) return/)
+  assert.match(source, /if \(h5InvalidTaskPayloadWarningEmitted\) return/)
+  assert.match(source, /if \(result\.status === 'changed'\)/)
+})

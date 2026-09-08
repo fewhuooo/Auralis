@@ -3,8 +3,6 @@ export const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
 export const SUPPORTED_UPLOAD_EXTENSIONS = [
   '.pdf', '.doc', '.docx', '.ppt', '.pptx',
-  '.png', '.jpg', '.jpeg', '.webp', '.gif',
-  '.txt', '.md', '.json', '.xml', '.csv',
 ] as const
 
 export type PreviewKind = 'pdf' | 'office' | 'image' | 'text' | 'csv' | 'unsupported'
@@ -29,16 +27,16 @@ const CAPABILITIES: Record<string, FileCapability> = {
   docx: { allowedForUpload: true, kind: 'office', renderer: 'file-viewer', extension: 'docx' },
   ppt: { allowedForUpload: true, kind: 'office', renderer: 'file-viewer', extension: 'ppt' },
   pptx: { allowedForUpload: true, kind: 'office', renderer: 'file-viewer', extension: 'pptx' },
-  png: { allowedForUpload: true, kind: 'image', renderer: 'file-viewer', extension: 'png' },
-  jpg: { allowedForUpload: true, kind: 'image', renderer: 'file-viewer', extension: 'jpg' },
-  jpeg: { allowedForUpload: true, kind: 'image', renderer: 'file-viewer', extension: 'jpeg' },
-  webp: { allowedForUpload: true, kind: 'image', renderer: 'file-viewer', extension: 'webp' },
-  gif: { allowedForUpload: true, kind: 'image', renderer: 'file-viewer', extension: 'gif' },
-  txt: { allowedForUpload: true, kind: 'text', renderer: 'file-viewer', extension: 'txt' },
-  md: { allowedForUpload: true, kind: 'text', renderer: 'file-viewer', extension: 'md' },
-  json: { allowedForUpload: true, kind: 'text', renderer: 'file-viewer', extension: 'json' },
-  xml: { allowedForUpload: true, kind: 'text', renderer: 'file-viewer', extension: 'xml' },
-  csv: { allowedForUpload: true, kind: 'csv', renderer: 'file-viewer', extension: 'csv' },
+  png: { allowedForUpload: false, kind: 'image', renderer: 'file-viewer', extension: 'png' },
+  jpg: { allowedForUpload: false, kind: 'image', renderer: 'file-viewer', extension: 'jpg' },
+  jpeg: { allowedForUpload: false, kind: 'image', renderer: 'file-viewer', extension: 'jpeg' },
+  webp: { allowedForUpload: false, kind: 'image', renderer: 'file-viewer', extension: 'webp' },
+  gif: { allowedForUpload: false, kind: 'image', renderer: 'file-viewer', extension: 'gif' },
+  txt: { allowedForUpload: false, kind: 'text', renderer: 'file-viewer', extension: 'txt' },
+  md: { allowedForUpload: false, kind: 'text', renderer: 'file-viewer', extension: 'md' },
+  json: { allowedForUpload: false, kind: 'text', renderer: 'file-viewer', extension: 'json' },
+  xml: { allowedForUpload: false, kind: 'text', renderer: 'file-viewer', extension: 'xml' },
+  csv: { allowedForUpload: false, kind: 'csv', renderer: 'file-viewer', extension: 'csv' },
 }
 
 function cloneCapability(capability: FileCapability): FileCapability {
@@ -62,6 +60,10 @@ export function resolveFileCapability(file: Pick<FileLike, 'name' | 'type'>): Fi
   })
 }
 
+export function canPreviewFile(file: Pick<FileLike, 'name' | 'type'>): boolean {
+  return resolveFileCapability(file).renderer === 'file-viewer'
+}
+
 export function validateUploadFile(file: FileLike): FileCapability {
   if (typeof file.size === 'number' && file.size > MAX_FILE_SIZE_BYTES) {
     const sizeMb = (file.size / (1024 * 1024)).toFixed(1)
@@ -73,7 +75,7 @@ export function validateUploadFile(file: FileLike): FileCapability {
     throw new Error('暂不支持 Excel 文件')
   }
   if (!capability.allowedForUpload) {
-    throw new Error('暂不支持此文件类型')
+    throw new Error('仅支持上传 PDF、DOC、DOCX、PPT、PPTX 文件；图片和文本仅可预览')
   }
   return capability
 }

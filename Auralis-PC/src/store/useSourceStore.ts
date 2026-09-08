@@ -9,6 +9,7 @@ import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
+import { shouldScheduleAwaitingClientDocument } from '@/utils/sourceSchedulingPolicy'
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -53,8 +54,9 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   function scheduleAwaitingClientDocuments(models: SourceFileModel[]): void {
+    if (!useAuthStore().isAuthenticated) return
     for (const model of models) {
-      if (documentScheduler && model.ingestionStatus === 'AWAITING_CLIENT' && model.assetId) {
+      if (documentScheduler && shouldScheduleAwaitingClientDocument(model)) {
         void documentScheduler.schedule(model.id).catch((error) => console.warn('[SourceStore] document scheduling failed', error))
       }
     }
@@ -225,6 +227,7 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   async function resumeDocumentProcessing(sourceId: string): Promise<void> {
+    if (!useAuthStore().isAuthenticated) throw new Error('AUTHENTICATION_REQUIRED')
     if (!documentScheduler) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
     await useSyncStore().flushNow()
 

@@ -14,9 +14,17 @@ pub fn run() {
         .setup(|app| {
             let resource_dir = app.path().resource_dir()?;
             let image_root = app.path().app_data_dir()?.join("ocr-images");
+            let runtime_temp = ocr_sidecar::runtime_temp_dir(&app.path().app_cache_dir()?);
+            let removed = ocr_sidecar::prepare_runtime_temp(&runtime_temp, false)?;
+            if removed > 0 {
+                eprintln!(
+                    "[OCR Sidecar] removed {removed} stale private _MEI directories during startup"
+                );
+            }
             app.manage(ocr_sidecar::OcrSupervisorState::new(
                 resource_dir,
                 image_root,
+                runtime_temp,
             ));
             app.manage(document_packager::DocumentPackagerState::new(
                 app.path().app_data_dir()?.join("document-cache"),

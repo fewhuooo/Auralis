@@ -357,7 +357,6 @@ interface TreeNode {
   tags?: string[]
   // For tasks
   due?: string
-  load?: string
   durationMinutes?: number
   done?: boolean
   // Meta
@@ -433,7 +432,6 @@ function taskTreeNode(task: any, groupId: string): TreeNode {
     name: task.title || task.name || '未命名任务',
     lucideIcon: ListTodo,
     due: formatDateInput(task.dueAt),
-    load: task.load === 'low' ? '低' : (task.load === 'high' ? '高' : '中'),
     durationMinutes: normalizeDuration(task.durationMinutes ?? task.duration),
     preview: task.description ?? task.desc ?? '',
     done: task.status === 'completed',
@@ -1457,10 +1455,10 @@ html.dark .studio-right-context {
 .task-title { font-size: 12px; font-weight: 500; color: var(--text-primary); }
 .task-title.done { text-decoration: line-through; color: var(--text-muted); }
 .task-due { font-size: 10px; color: var(--text-muted); }
-.task-load { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: var(--radius-full); }
-.task-load.high { background: rgba(239,68,68,0.12); color: #ef4444; }
-.task-load.medium { background: rgba(245,158,11,0.12); color: #f59e0b; }
-.task-load.low { background: rgba(34,197,94,0.12); color: #22c55e; }
+
+
+
+
 .ctx-empty { padding: 32px 0; text-align: center; font-size: 12px; color: var(--text-muted); }
 
 /* Graph Tab */

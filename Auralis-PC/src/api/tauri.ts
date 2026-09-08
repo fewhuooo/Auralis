@@ -1,10 +1,27 @@
 import { invoke } from '@tauri-apps/api/core'
 
+export function normalizeInvokeError(error: unknown): Error {
+  if (error instanceof Error) return error
+  if (typeof error === 'string' && error.trim()) return new Error(error.trim())
+  if (error && typeof error === 'object') {
+    const candidate = error as Record<string, unknown>
+    for (const key of ['message', 'error', 'code']) {
+      const value = candidate[key]
+      if (typeof value === 'string' && value.trim()) return new Error(value.trim())
+    }
+  }
+  return new Error('TAURI_COMMAND_FAILED')
+}
+
 /**
  * 通用 Rust 命令调用封装
  */
 export const invokeRustCmd = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
-  return invoke<T>(command, args)
+  try {
+    return await invoke<T>(command, args)
+  } catch (error) {
+    throw normalizeInvokeError(error)
+  }
 }
 
 export const MAX_OCR_IMAGE_BYTES = 20 * 1024 * 1024

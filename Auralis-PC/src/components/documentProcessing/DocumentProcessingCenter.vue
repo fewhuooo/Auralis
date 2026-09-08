@@ -31,7 +31,7 @@
         </div>
         <div class="processing-item-meta">
           <span v-if="source.safeErrorDetail || sourceActionErrors[source.id]" class="processing-error">{{ source.safeErrorDetail || sourceActionErrors[source.id] }}</span>
-          <span v-else>服务端处理完成前，暂不可提问</span>
+          <span v-else>{{ sourceDetailLabel(source.ingestionStatus) }}</span>
           <div class="processing-actions">
             <button v-if="source.ingestionStatus === 'AWAITING_CLIENT'" type="button" @click="resumeSource(source.id)">开始本机处理</button>
           </div>
@@ -45,6 +45,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
+import { sourceDetailLabel, sourcePhaseLabel } from '@/utils/documentProcessingStatus'
 
 const store = useDocumentProcessingStore()
 const sourceStore = useSourceStore()
@@ -64,10 +65,6 @@ const phaseLabel = (phase: string) => ({
 }[phase] || phase)
 const isActive = (phase: string) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(phase)
 const isRetryable = (phase: string) => ['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(phase)
-const sourcePhaseLabel = (phase: string | undefined) => ({
-  AWAITING_CLIENT: '等待桌面端处理', VALIDATING: '服务端校验', PENDING: '服务端排队',
-  PARSING: '服务端解析', INDEXING: '服务端建立索引', FAILED: '服务端失败',
-}[phase || ''] || '服务端处理中')
 const refreshSources = async () => { await sourceStore.loadSources().catch(() => undefined) }
 const refresh = async () => {
   await Promise.all([store.refresh().catch(() => undefined), refreshSources()])

@@ -2,10 +2,15 @@ import { defineStore } from 'pinia'
 import type { DocumentProcessingJob } from '@/types/documentProcessing'
 import type { DocumentJobRunner } from '@/services/documentProcessing/DocumentJobRunner'
 
+interface DocumentSourceScheduler {
+  retry(jobId: string): Promise<unknown>
+}
+
 export const useDocumentProcessingStore = defineStore('document-processing', {
   state: () => ({
     jobs: [] as DocumentProcessingJob[],
     runner: null as DocumentJobRunner | null,
+    scheduler: null as DocumentSourceScheduler | null,
     loading: false,
     lastError: null as string | null,
   }),
@@ -17,6 +22,9 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
   actions: {
     attachRunner(runner: DocumentJobRunner | null): void {
       this.runner = runner
+    },
+    attachScheduler(scheduler: DocumentSourceScheduler | null): void {
+      this.scheduler = scheduler
     },
     setJobs(jobs: DocumentProcessingJob[]): void {
       this.jobs = jobs
@@ -47,8 +55,8 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
       await this.runner.pauseForNetwork(jobId)
     },
     async retry(jobId: string): Promise<void> {
-      if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
-      await this.runner.retry(jobId)
+      if (!this.scheduler) throw new Error('DOCUMENT_JOB_SCHEDULER_UNAVAILABLE')
+      await this.scheduler.retry(jobId)
     },
     async cancel(jobId: string): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')

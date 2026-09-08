@@ -31,6 +31,9 @@ base64 = "0.22"
 pbkdf2 = "0.12"
 sha2 = "0.10"
 flate2 = "1"
-keyring = "3"
+keyring = { version = "3", features = ["windows-native"] }
 reqwest = { version = "0.13.3", default-features = false, features = ["blocking", "rustls"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio-rustls", "sqlite"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }

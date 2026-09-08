@@ -317,7 +317,7 @@
             <div
               v-if="slot.task"
               class="slot-task"
-              :style="{ borderLeftColor: slot.task.color }"
+              :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
               draggable="true"
               @dragstart.stop="handleDragStart($event, 'scheduled', slot.time)"
             >
@@ -325,7 +325,7 @@
                 <span class="task-name" :title="slot.task.name">{{ slot.task.name }}</span>
                 <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)" title="移出排期">✕</button>
               </div>
-              <span class="task-tag" :style="{ backgroundColor: slot.task.color || 'rgba(255,255,255,0.08)' }">
+              <span class="task-tag" :style="{ backgroundColor: 'var(--color-primary-accent)' }">
                 {{ slot.task.subject }}
               </span>
             </div>
@@ -376,7 +376,7 @@
                 class="task-checkbox"
                 @click.stop
               />
-              <div class="pending-color" :style="{ background: task.color }"></div>
+              <div class="pending-color" :style="{ background: 'var(--color-primary-accent)' }"></div>
               <div class="pending-body">
                 <span class="pending-name" :title="task.name">{{ task.name }}</span>
                 <span class="pending-subject">{{ task.subject }}</span>
@@ -665,8 +665,8 @@ const taskForm = ref({
   name: '',
   subjectId: '',
   duration: 60,
-  load: 'medium' as 'low' | 'medium' | 'high',
-  loadText: '2.0 🧠'
+
+
 })
 
 // AI refinement states
@@ -953,9 +953,9 @@ const openCreateDialog = () => {
   editForm.value = {
     id: '',
     subject: activeSubject.value ? activeSubject.value.name : '',
-    title: '',
-    color: SUBJECT_THEME_COLOR,
-    preview: '',
+     title: '',
+     color: 'rgba(230, 223, 216, 0.5)',
+     preview: '',
     source: '手动创建'
   }
   blockDialogVisible.value = true
@@ -969,9 +969,9 @@ const openCreateDialogWithContent = (title: string, content: string) => {
   editForm.value = {
     id: '',
     subject: activeSubject.value ? activeSubject.value.name : '学科要点',
-    title: title,
-    color: SUBJECT_THEME_COLOR,
-    preview: content,
+     title: title,
+     color: 'rgba(230, 223, 216, 0.5)',
+     preview: content,
     source: 'AI 提炼生成'
   }
   blockDialogVisible.value = true
@@ -1135,8 +1135,8 @@ const openCreateTaskDialog = () => {
     name: '',
     subjectId: activeSubjectId.value || '',
     duration: 60,
-    load: 'medium' as 'low' | 'medium' | 'high',
-    loadText: '2.0 🧠'
+
+
   }
   showTaskModal.value = true
 }
@@ -1145,8 +1145,8 @@ const triggerAddTask = (sectionName: string) => {
   taskForm.value.name = `学习 ${sectionName}`
   taskForm.value.subjectId = activeSubjectId.value || ''
   taskForm.value.duration = 60
-  taskForm.value.load = 'medium'
-  taskForm.value.loadText = '2.0 🧠'
+
+
   showTaskModal.value = true
 }
 
@@ -1160,11 +1160,10 @@ const handleAddTask = async () => {
     await taskStore.addTask({
       name: taskForm.value.name.trim(),
       subject: subjObj.name,
-      desc: `新建任务。`,
-      color: SUBJECT_THEME_COLOR,
+       desc: `新建任务。`,
       duration: taskForm.value.duration,
-      load: taskForm.value.load,
-      loadText: taskForm.value.loadText,
+
+
       status: 'pending',
       subjectId: subjObj.id
     })

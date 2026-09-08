@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
+const sourceSchedulingPolicy = import('../src/utils/sourceSchedulingPolicy.ts')
+
 test('subject file registration validates prerequisites and exposes upload state', async () => {
   const source = await readFile(new URL('../src/views/SubjectWorkspace/index.vue', import.meta.url), 'utf8')
   const sourceStore = await readFile(new URL('../src/store/useSourceStore.ts', import.meta.url), 'utf8')
@@ -24,8 +26,18 @@ test('subject file registration validates prerequisites and exposes upload state
   assert.match(createFileSource, /scheduleSync\(\)/)
   assert.match(sourceStore, /attachDocumentScheduler/)
   assert.match(sourceStore, /documentScheduler\.schedule\(model\.id\)/)
-  assert.match(sourceStore, /ingestionStatus === 'AWAITING_CLIENT'/)
+  assert.match(sourceStore, /shouldScheduleAwaitingClientDocument\(model\)/)
   assert.match(source, /ElNotification\(\{ title: '录入失败'/)
+})
+
+test('automatic document scheduling waits for the server ingestion revision', async () => {
+  const { shouldScheduleAwaitingClientDocument } = await sourceSchedulingPolicy
+  const sourceStore = await readFile(new URL('../src/store/useSourceStore.ts', import.meta.url), 'utf8')
+  const base = { ingestionStatus: 'AWAITING_CLIENT', assetId: 'asset-1' }
+
+  assert.equal(shouldScheduleAwaitingClientDocument(base), false)
+  assert.equal(shouldScheduleAwaitingClientDocument({ ...base, ingestionRevision: 'revision-1' }), true)
+  assert.match(sourceStore, /shouldScheduleAwaitingClientDocument\(model\)/)
 })
 
 test('PC domain writes use the durable outbox before background sync', async () => {

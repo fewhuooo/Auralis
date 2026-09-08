@@ -80,10 +80,21 @@ export interface OfficeDocumentSource {
   bridge: OfficeParserBridgeSource
 }
 
+export interface PptxSlideSource {
+  getText(): Promise<string>
+}
+
+export interface PptxDocumentSource {
+  slideCount: number
+  getSlide(slideNumber: number): Promise<PptxSlideSource>
+  destroy?(): Promise<void>
+}
+
 export interface DocumentParserInput {
   file: ParserFile
   pdf?: PdfDocumentSource
   office?: OfficeDocumentSource
+  pptx?: PptxDocumentSource
   ocr?: OcrAdapter
   taskId?: string
 }

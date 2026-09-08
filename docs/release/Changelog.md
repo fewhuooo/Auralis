@@ -1,8 +1,61 @@
 # Auralis 变更记录
 
-更新时间：2026-09-04
+更新时间：2026-09-07
 
 文档状态：现行历史记录
+
+### PC/Server/Mobile 全端认知负荷移除复核（2026-09-07）
+
+- 后端移除 `TaskEntity` 及其相关 DTOs 和视图中的 `cognitiveLoad` 字段，完成 V20 Flyway 数据库迁移：丢弃旧负荷值，保留 Task 同步 JSON 中的其余字段、cursor 和版本。
+- PC/Mobile 前端移除所有的 `load` 和 `loadText` 参数，并更新了 `Timeline`、`SubjectWorkspace` 及双端本地存储的 JSON 同步解析逻辑，不再回传并清理旧废弃数据。
+- 本轮自动证据：Server OpenAPI/V20 定向 8/8；PC type-check 及 R4 211/211；Mobile type-check、R4 静态检查及协议测试 21/21。Server 全量 198 项仍有 28 个已知环境/共享数据错误，OpenAPI 整体门禁仍受既有 WebSocket/JsonNode 漂移阻断；真实 PostgreSQL 和 GUI/真机验收尚未执行。
+- 确认全仓无残留，并保护了 PC 端独立增加的文件上传验证以及其它近期的 2026-09-07 修复成果。
+
+### PC 失效会话与浏览器 JSZip 入口收口（2026-09-07）
+
+- refresh session 因后端重建失效时，PC 清除本地 access/refresh token 并进入 `reauthentication-required`；受保护 Axios、sync 和 Source document background scheduling 停止，避免 realtime ticket 与 Asset download-url 的 401 无限扩散，也不再调用受保护 logout 进行递归清理。
+- 登录、注册、refresh 和 health 保留恢复路径；现有 refresh 单飞与单次请求重放行为保留。
+- PPTX parser 使用自包含 JSZip 浏览器 bundle，Vite 对包根入口增加精确 alias，不使用空 stream polyfill。
+- 本轮聚焦 Node 回归 24/24 通过；完整 Vite build、真实 Tauri bundle 产物扫描和 GUI 验收仍未完成。
+
+### MinIO 真实读写健康检查与非破坏性恢复（2026-09-07）
+
+- 保留 `auralis_auralis-minio-data` volume，诊断宿主/容器容量、inode、挂载和权限后，仅安全重启并安全重建 MinIO 容器以加载配置；未删除 volume、数据库或对象。
+- Compose MinIO healthcheck 现在用随机 `.healthcheck/` 对象执行 PUT、HEAD、GET、DELETE，并清理测试对象；回归断言 `scripts/minio-healthcheck.test.mjs` 通过。
+- 复核证据：最终独立 PUT/HEAD/GET/DELETE 通过，MinIO ready 和 backend readiness HTTP 200；Tauri 三任务未执行 GUI 重试，仍待人工验收。
+
+### PC OCR sidecar 临时目录与文档处理恢复复核（2026-09-07）
+
+- OCR sidecar 启动前创建应用 cache 专属临时目录，将 TEMP/TMP 指向该目录；只有受管 sidecar 已停止时才清理该目录直属 `_MEI*` 文件夹，不触碰系统 TEMP 其它目录。
+- 保留最多 20 行、每行最多 1024 字符的 stderr tail，并将 PyInstaller extraction failure 保留为稳定的 `OCR_SIDECAR_UNAVAILABLE:pyinstaller-extraction-failed` 诊断后缀。
+- PPTX 使用 OOXML presentation relationships 读取实际 slide 顺序/页数/文本；49 页真实 fixture 和 legacy OLE `.ppt` 拒绝回归通过。Tauri invoke 归一化补充结构化错误对象，Rust PUT 补充 client 网络诊断。
+- `SERVER_VALIDATING/SERVER_INDEXING` 的网络失败现在可进入 `PAUSED_NETWORK`；带持久化加密 receipt 的暂停上传恢复时不重新下载或哈希原始 Asset。Docker Desktop unable to start，真实 Server/MinIO/Tauri GUI 验收仍待外部依赖恢复。
+
+### PC 文档调度、Office 提取与 OCR 可诊断性（2026-09-06）
+
+- 切断 job 变化通知重新加载 Source 所形成的递归调度；任务通知现在只刷新处理 Store。
+- 允许 `UPLOADING -> FAILED_LOCAL`，并将 stale `PACKAGING` 归类为本地失败，保留真实错误而不是二次抛出 `DOCUMENT_JOB_ILLEGAL_TRANSITION`。
+- Office bridge 先收集锚点再读取文本 chunks；无可靠页数的纯图片 Office 文件返回 `DOCUMENT_FILE_TYPE_UNSUPPORTED`，不再使用误导性的 `OFFICE_PAGE_COUNT_UNAVAILABLE` 或锚点数量伪造页数。
+- OCR warmup 使用受控 1×1 PNG 走现有 sidecar 协议并实际初始化模型；Rust 侧捕获最多 20 行、每行最多 1024 字符的 stderr，记录启动/读写/退出诊断，同时保持面向 UI 的安全错误码不变。
+- focused Node 42/42、Python sidecar 11/11、Rust OCR 7/7 与 `cargo check --lib` 通过；真实 Tauri/Server/MinIO GUI 联调仍待验收。
+
+### PC PDF 解析与 Source 调度竞态修复（2026-09-06）
+
+- `PdfTextAdapter` 通过 Vite `?url` 将同版本 `pdf.worker.min.mjs` 绑定到 `pdfjs.GlobalWorkerOptions.workerSrc`，PDF.js 不再依赖 CDN 或缺省 worker 配置。
+- `useSourceStore` 的自动文档调度现在要求 `AWAITING_CLIENT` Source 已有非空 `assetId` 与 `ingestionRevision`；本地 Source CREATE 尚未同步时不再提前请求服务端并触发 404 孤儿清理，待同步投影带 revision 后再创建本地 job。
+- 新增 Source 调度策略回归；PDF runtime、Source 注册及相邻文档处理 focused 测试 70/70 通过，Vite production build 通过。PC type-check 仍受既有 `useTaskStore`/Timeline 共 7 项错误阻断；认证、MinIO、API 与数据库契约未修改，真实 Tauri/Server/MinIO GUI 联调仍待验收。
+
+### PC 上传与处理恢复（2026-09-05）
+
+- Tauri keyring 3 显式启用 `windows-native`，继续使用 `auralis/master_key`，不增加明文或环境变量回退；新增 Windows-only 跨新 Entry 写入/读取/精确清理测试，但本机 `cargo test` 因 Credential Manager `NoStorageAccess(Error(1312))` 未通过，真实持久化仍未验收。
+- StatsQueryRepository 在 JDBC 参数边界统一将 `Instant` 转为 `Timestamp`，保持 SQL、API 和 schema 不变；测试覆盖六个统计查询的全部时间参数、UUID 和顺序，`StatsQueryRepositoryTests` 与 `StatsServiceTests` 共 3/3 通过。
+- 上传入口仅接受 PDF、DOC、DOCX、PPT、PPTX；图片/文本保留预览能力但在 upload intent 前拒绝，`canPreviewFile()` 与 upload allowlist 解耦，SubjectWorkspace 给出支持格式提示。
+- DocumentProcessingCenter 区分本机等待 `AWAITING_CLIENT` 与服务端 `VALIDATING/PARSING/INDEXING`，`DocumentProcessingDot` 复用共享 Source 状态映射，未知/undefined phase 使用中性同步提示并将 `READY` 显示为“处理完成”，保留本地任务 retry/cancel/start 行为；本轮 file-preview 27/27、processing UI 1/1、runtime static 9/9 通过。真实 Tauri/Server/GUI 验收仍开放。
+
+### PC 孤儿 Source 调度清理（2026-09-05）
+
+- `SourceJobScheduler` 仅在 `sourceApi.get(sourceId)` 边界识别结构化 `ApiProblemError` 的 HTTP 404 或 `problem.code === 'RESOURCE_NOT_FOUND'`；命中后复用 owner-scoped `discard(sourceId)` 清理文档任务和加密 cache，并返回稳定的 `{ status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }`。非 404 异常继续原样拒绝并保留任务，后续 parser/upload 异常不使用该分类。
+- TDD focused scheduler suite 14/14、相邻文档处理套件 35/35、`check:r4-pc`（87 个生产文件）和 `git diff --check` 通过；`npm run type-check` 退出 1，7 项既有错误位于 `useTaskStore.ts`（3 项）和 `Timeline/index.vue`（4 项），未归因于 scheduler。开发环境在停止当前仓库 Tauri 进程树后，已精确删除应用配置目录中的 `auralis.db`、`auralis.db-wal`、`auralis.db-shm`；未删除同目录其它内容。重启后数据库与完整表集重新建立，远端投影恢复；文档任务随后暴露 master key 缺失并进入 `FAILED_LOCAL`，密钥恢复与重新上传另行验收。
 
 ### PC 本地优先同步核心（2026-09-04）
 
@@ -655,6 +708,10 @@
 ### 已确认
 
 - `7384215`：重设计复习、统计、设置和个人资料页面为极简线性风格。
+
+## [Unreleased]
+
+- Removed Task `colorOverride`/legacy `color` from Server, V21 schema, OpenAPI, PC, and Mobile/Tablet projections; Task visuals now use semantic CSS tokens while KnowledgeBlock colors remain unchanged.
 
 ## 维护规则
 

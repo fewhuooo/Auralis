@@ -743,10 +743,7 @@ export interface components {
             dueAt?: string;
             /** Format: int32 */
             durationMinutes?: number;
-            /** @enum {string} */
-            cognitiveLoad?: "LOW" | "MEDIUM" | "HIGH";
             sortKey?: string;
-            colorOverride?: string;
         };
         Response: {
             /** Format: uuid */
@@ -763,10 +760,7 @@ export interface components {
             dueAt?: string;
             /** Format: int32 */
             durationMinutes?: number;
-            /** @enum {string} */
-            cognitiveLoad?: "LOW" | "MEDIUM" | "HIGH";
             sortKey?: string;
-            colorOverride?: string;
             /** Format: int64 */
             version?: number;
             /** Format: date-time */
@@ -855,10 +849,7 @@ export interface components {
             dueAt?: string;
             /** Format: int32 */
             durationMinutes?: number;
-            /** @enum {string} */
-            cognitiveLoad?: "LOW" | "MEDIUM" | "HIGH";
             sortKey?: string;
-            colorOverride?: string;
         };
         VersionRequest: {
             /** Format: int64 */

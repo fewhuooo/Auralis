@@ -54,8 +54,7 @@ const form = ref({
   name: '',
   subjectId: '',
   subjectName: '',
-  duration: 30,
-  load: 'medium' as 'low' | 'medium' | 'high'
+  duration: 30
 })
 
 const isValid = computed(() => form.value.name.trim() && form.value.subjectId)
@@ -91,15 +90,11 @@ const onDurationChange = (e: any) => {
 const submit = () => {
   if (!isValid.value) return
   
-  const loadTextMap = { low: '1.0 🧠', medium: '2.0 🧠', high: '3.0 🧠' }
-  
   emit('submit', {
     name: form.value.name,
     subjectId: form.value.subjectId,
     subject: form.value.subjectName,
-    duration: form.value.duration,
-    load: form.value.load,
-    loadText: loadTextMap[form.value.load]
+    duration: form.value.duration
   })
   
   close()
@@ -180,27 +175,6 @@ const submit = () => {
 }
 .placeholder {
   color: var(--text-muted);
-}
-
-.load-options {
-  display: flex;
-  gap: 20rpx;
-}
-.load-opt {
-  flex: 1;
-  text-align: center;
-  padding: 16rpx 0;
-  background: var(--color-bg-secondary);
-  border: 2rpx solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  font-size: 28rpx;
-  color: var(--text-secondary);
-  transition: all 0.2s;
-}
-.load-opt.active {
-  background: var(--text-primary);
-  color: var(--color-bg-primary);
-  border-color: var(--text-primary);
 }
 
 .sheet-footer {

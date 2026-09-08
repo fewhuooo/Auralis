@@ -14,6 +14,43 @@ declare const plus: any;
 
 const isH5 = typeof plus === 'undefined' || !plus.sqlite;
 
+export type TaskMutationPayloadCleanupResult =
+  | { status: 'changed'; payload: string }
+  | { status: 'unchanged'; payload: string }
+  | { status: 'invalid'; payload: string }
+
+let nativeInvalidTaskPayloadWarningEmitted = false
+let h5InvalidTaskPayloadWarningEmitted = false
+
+export function cleanTaskMutationPayload(payload: unknown): TaskMutationPayloadCleanupResult {
+  const rawPayload = typeof payload === 'string' ? payload : (JSON.stringify(payload) ?? '')
+  try {
+    const parsed = JSON.parse(rawPayload)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { status: 'invalid', payload: rawPayload }
+    }
+    const hasColor = Object.prototype.hasOwnProperty.call(parsed, 'color')
+    const hasColorOverride = Object.prototype.hasOwnProperty.call(parsed, 'colorOverride')
+    if (!hasColor && !hasColorOverride) return { status: 'unchanged', payload: rawPayload }
+    if (hasColor) delete parsed.color
+    if (hasColorOverride) delete parsed.colorOverride
+    return { status: 'changed', payload: JSON.stringify(parsed) }
+  } catch {
+    return { status: 'invalid', payload: rawPayload }
+  }
+}
+
+function warnInvalidTaskPayload(native: boolean): void {
+  if (native) {
+    if (nativeInvalidTaskPayloadWarningEmitted) return
+    nativeInvalidTaskPayloadWarningEmitted = true
+  } else {
+    if (h5InvalidTaskPayloadWarningEmitted) return
+    h5InvalidTaskPayloadWarningEmitted = true
+  }
+  console.warn(`[SQLite Mobile] Preserving invalid TASK color payload during ${native ? 'native' : 'H5'} migration`)
+}
+
 // H5 模式下使用 localStorage 模拟 SQLite 数据表结构
 const h5Db = {
   getTable(name: string): any[] {
@@ -371,10 +408,8 @@ export const localDb = {
         name TEXT,
         subject TEXT,
         desc TEXT,
-        color TEXT,
         duration INTEGER,
-        load TEXT,
-        loadText TEXT,
+
         status TEXT,
         startTime TEXT,
         sync_status TEXT DEFAULT 'synced',
@@ -422,6 +457,28 @@ export const localDb = {
   },
 
   async runMigrations() {
+    if (isH5) {
+      const tasks = h5Db.getTable('task_blocks').map((task: any) => {
+        const currentTask = { ...task };
+        delete currentTask.load;
+        delete currentTask.loadtext;
+        delete currentTask.loadText;
+        delete currentTask.cognitiveLoad;
+        delete currentTask.color;
+        delete currentTask.colorOverride;
+        return currentTask;
+      });
+      h5Db.saveTable('task_blocks', tasks);
+      const mutations = h5Db.getTable('local_mutations').map((mutation: any) => {
+        if (mutation.entity_type !== 'task') return mutation
+        const result = cleanTaskMutationPayload(mutation.payload)
+        if (result.status === 'invalid') warnInvalidTaskPayload(false)
+        if (result.status === 'changed') return { ...mutation, payload: result.payload }
+        return mutation
+      });
+      h5Db.saveTable('local_mutations', mutations);
+    }
+
     try {
       await sqlite.execute("ALTER TABLE knowledge_blocks ADD COLUMN sync_version INTEGER DEFAULT 0");
     } catch (e) {
@@ -470,6 +527,28 @@ export const localDb = {
     try {
       await sqlite.execute("ALTER TABLE subjects DROP COLUMN color");
     } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN load");
+    } catch (e) {}
+    try {
+      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN loadText");
+    } catch (e) {}
+
+    try {
+      await sqlite.execute("ALTER TABLE task_blocks DROP COLUMN color");
+    } catch (e) {}
+
+    const taskMutations = await sqlite.select("SELECT id, payload FROM local_mutations WHERE entity_type = 'task'");
+    for (const mutation of taskMutations) {
+      if (!mutation.payload) continue;
+      const result = cleanTaskMutationPayload(mutation.payload);
+      if (result.status === 'invalid') warnInvalidTaskPayload(true)
+      if (result.status === 'changed') {
+        const sanitized = result.payload.replace(/'/g, "''");
+        const esc = (value: string) => value.replace(/'/g, "''");
+        await sqlite.execute(`UPDATE local_mutations SET payload = '${sanitized}' WHERE id = '${esc(String(mutation.id))}'`);
+      }
+    }
   },
 
   // Sync Metadata Key-Value helpers
@@ -671,8 +750,7 @@ export const localDb = {
       desc: r.desc || '',
       color: r.color,
       duration: r.duration,
-      load: r.load,
-      loadText: r.loadText,
+
       status: r.status,
       startTime: r.startTime || undefined,
       sync_status: r.sync_status,
@@ -700,10 +778,8 @@ export const localDb = {
           name = '${esc(task.name)}',
           subject = '${esc(task.subject)}',
           desc = '${esc(task.desc || '')}',
-          color = '${esc(task.color)}',
           duration = ${task.duration},
-          load = '${esc(task.load)}',
-          loadText = '${esc(task.loadText)}',
+
           status = '${esc(task.status)}',
           startTime = ${task.startTime ? `'${esc(task.startTime)}'` : 'NULL'},
           sync_status = '${syncStatus}',
@@ -715,16 +791,14 @@ export const localDb = {
       `);
     } else {
       await sqlite.execute(`
-        INSERT INTO task_blocks (id, name, subject, desc, color, duration, load, loadText, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
+        INSERT INTO task_blocks (id, name, subject, desc, duration, status, startTime, sync_status, is_deleted, sync_version, position, subject_id)
         VALUES (
           '${esc(taskId)}',
           '${esc(task.name)}',
           '${esc(task.subject)}',
           '${esc(task.desc || '')}',
-          '${esc(task.color)}',
           ${task.duration},
-          '${esc(task.load)}',
-          '${esc(task.loadText)}',
+
           '${esc(task.status)}',
           ${task.startTime ? `'${esc(task.startTime)}'` : 'NULL'},
           '${syncStatus}',
@@ -797,10 +871,7 @@ export const localDb = {
         name: task.name,
         subject: task.subject,
         desc: task.desc || '',
-        color: task.color,
         duration: task.duration,
-        load: task.load,
-        loadText: task.loadText,
         status: task.status,
         startTime: task.startTime || undefined,
         sync_version: task.syncVersion || task.sync_version || 0,
@@ -866,10 +937,8 @@ export const localDb = {
           name: payload.name,
           subject: payload.subject,
           desc: payload.desc || '',
-          color: payload.color,
           duration: payload.duration,
-          load: payload.load,
-          loadText: payload.loadText,
+
           status: payload.status,
           startTime: payload.startTime || undefined,
           sync_status: 'synced',

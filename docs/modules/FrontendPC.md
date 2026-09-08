@@ -1,6 +1,6 @@
 # PC 前端模块
 
-更新时间：2026-09-04
+更新时间：2026-09-07
 
 文档状态：现行
 
@@ -15,6 +15,8 @@
 截至 2026-08-20，PC 页面与基础视觉重构已基本收敛；R4 在原有 Store、AI SSE、运行时代理和 Tauri 权限边界之上，补齐了 BYOK 浏览器明文清理、离线写入幂等、SSE 401 单次刷新和离线 AI 会话恢复。PC Web 与 Tauri 应用本体构建已通过；MSI bundling、浏览器/Tauri GUI、真实 Provider 和前后端业务联调仍未验收。
 
 PC 全局排版以 `src/styles/index.css` 为唯一入口：普通 UI 文本继承 `--font-family-base`，代码/图表等专用内容使用 `--font-family-mono`；根字号为 `16px`，字号优先使用 `caption`、`body-sm`、`label`、`body`、`body-lg`、`title-sm`、`title`、`title-lg` 与 `display` 语义令牌。页面组件不得新增未纳入令牌的独立字体族；保留旧基础字号变量仅用于兼容已有样式。
+
+2026-09-07 认证边界收口：refresh session 无效时清除本地会话并进入明确的 `reauthentication-required` 状态；受保护 Axios、同步和本地资料调度停止启动，登录/注册/refresh/health 保留恢复入口，refresh 仍由单飞协调器执行且每个请求最多重放一次。PPTX/Office 的 JSZip 根入口通过 Vite alias 固定到自包含浏览器 bundle，不使用 stream polyfill。自动回归已通过，真实 Tauri GUI 与新鲜 Vite bundle 仍待验收。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须经过当前模块边界、API/鉴权、视觉可访问性、构建和 GUI 验收审查。
 
@@ -126,7 +128,7 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 
 | 文件 | 职责 |
 | --- | --- |
-| `services/localSchema.ts` | Tauri SQLite v6 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换 |
+| `services/localSchema.ts` | Tauri SQLite v6 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换；迁移时清洗 TASK 负载颜色键并保留无效 JSON 原文 |
 | `services/localRepository.ts` | 按 `userId + serverDeviceId` 隔离的资源、tombstone、原子资源+outbox 提交、cursor 与 snapshot repository |
 | `services/localDatabaseRuntime.ts` | 单个应用生命周期内的 SQLite 初始化 Promise 与按用户/设备范围缓存的 repository |
 | `services/localSqlQueue.ts` | 进程内 SQL 命令串行化 adapter，避免 SQL 插件 pool 中的并发写入竞争 |
@@ -139,13 +141,21 @@ R4 repository 已覆盖 Web fallback 和 SQLite adapter 的用户隔离、`versi
 
 ## C4/C5 文档处理与上传边界
 
-C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `ParsedDocumentUploadCoordinator`；Rust 通过 `document_upload_put` 对 cache 做解密流式 PUT，PC 只传 phase/receipt，不接触正文或持久化签名 URL。C5 `SourceJobScheduler` 已接入 FILE Source：Source Store 只对服务端 `AWAITING_CLIENT + ingestionRevision` 调度，优先复用当前上传会话的 File，没有本地输入时通过 AssetStore 的 owner-scoped download adapter 获取临时输入；每次处理核对 Asset SHA，旧 revision 的 job 被 supersede，TEXT/URL 不进入该队列。恢复批次隔离每个 Source 的失败，单个读取/调度异常只返回该项 `FAILED_LOCAL`，不会阻断后续 `AWAITING_CLIENT` 文件。Profile 的手动开始入口会先触发同步，并确认本地 `SOURCE` 为 `synced` 后才调用 scheduler；仍在同步、冲突或失败时显示相应提示，避免把服务端不存在的 Source 交给解析器。删除 FILE Source 时 Store 先完成 Source tombstone 与 DELETE outbox，再同步移除当前 `sources/activeSourceFiles` 投影；同步 push/pull 与 scheduler 对运行中 parser、当前用户/设备任务行、内存输入和加密 cache 的清理均转为不阻塞界面的 best-effort 操作。删除竞争只会使调度返回 `SOURCE_DELETED`，不会重建任务。Subject Store 随后重算其本地 Source 投影，因此学科文件计数与 Profile 进度中心同步消失。Tauri `default` capability 显式授予 `sql:allow-execute`，使用户/设备隔离的 SQLite job repository 可以创建与更新可恢复任务，而非退回浏览器 localStorage。PDF 本地适配器与 File Viewer PDF renderer 统一从根级精确 `pdfjs-dist@5.4.624` 解析，lockfile 不保留 renderer 的嵌套 PDF.js 副本，避免同一 Tauri WebView 的 worker API 混用；OCR 结束在 `finally` 释放其 PDF.js document，预览签名 URL 下载以最新请求标记提交，过期请求不能覆盖当前选中文件。scheduler 在本地 job 创建和调度结束后刷新 `useDocumentProcessingStore` 与 Source 列表；通知失败只记录，不能中断解析或上传。前端 runtime 仍提前检查加密状态，但 Rust `document_package_begin` 是新 cache 的最终安全边界：仅在 OS keyring 明确返回 `NoEntry` 时创建 `auralis/master_key`，其他 credential-manager 错误会原样报告为 keyring 访问失败；已有 cache 的读取、上传与清理只读取既有密钥，绝不以新密钥覆盖历史密文。
+C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `ParsedDocumentUploadCoordinator`；Rust 通过 `document_upload_put` 对 cache 做解密流式 PUT，PC 只传 phase/receipt，不接触正文或持久化签名 URL。C5 `SourceJobScheduler` 已接入 FILE Source：Source Store 只对服务端 `AWAITING_CLIENT + ingestionRevision` 调度，优先复用当前上传会话的 File，没有本地输入时通过 AssetStore 的 owner-scoped download adapter 获取临时输入；每次处理核对 Asset SHA，旧 revision 的 job 被 supersede，TEXT/URL 不进入该队列。恢复批次隔离每个 Source 的失败，单个读取/调度异常只返回该项 `FAILED_LOCAL`，不会阻断后续 `AWAITING_CLIENT` 文件。Profile 的手动开始入口会先触发同步，并确认本地 `SOURCE` 为 `synced` 后才调用 scheduler；仍在同步、冲突或失败时显示相应提示，避免把服务端不存在的 Source 交给解析器。删除 FILE Source 时 Store 先完成 Source tombstone 与 DELETE outbox，再同步移除当前 `sources/activeSourceFiles` 投影；同步 push/pull 与 scheduler 对运行中 parser、当前用户/设备任务行、内存输入和加密 cache 的清理均转为不阻塞界面的 best-effort 操作。删除竞争只会使调度返回 `SOURCE_DELETED`，不会重建任务。Subject Store 随后重算其本地 Source 投影，因此学科文件计数与 Profile 进度中心同步消失。Tauri `default` capability 显式授予 `sql:allow-execute`，使用户/设备隔离的 SQLite job repository 可以创建与更新可恢复任务，而非退回浏览器 localStorage。PDF 本地适配器与 File Viewer PDF renderer 统一从根级精确 `pdfjs-dist@5.4.624` 解析，lockfile 不保留 renderer 的嵌套 PDF.js 副本，避免同一 Tauri WebView 的 worker API 混用；OCR 结束在 `finally` 释放其 PDF.js document，预览签名 URL 下载以最新请求标记提交，过期请求不能覆盖当前选中文件。scheduler 在本地 job 创建和调度结束后只刷新 `useDocumentProcessingStore`，Source 投影继续由既有同步事件刷新，避免 `loadSources -> schedule -> onJobChanged` 递归。Office bridge 先收集锚点再读取 chunks；纯图片 Office 若 renderer 没有可靠页数会明确返回 `DOCUMENT_FILE_TYPE_UNSUPPORTED`。OCR warmup 通过 sidecar 协议实际初始化模型，Rust 仅在诊断日志记录有界 stderr/进程状态，公开错误码保持不变。前端 runtime 仍提前检查加密状态，但 Rust `document_package_begin` 是新 cache 的最终安全边界：仅在 OS keyring 明确返回 `NoEntry` 时创建 `auralis/master_key`，其他 credential-manager 错误会原样报告为 keyring 访问失败；已有 cache 的读取、上传与清理只读取既有密钥，绝不以新密钥覆盖历史密文。
+
+2026-09-07 复核补充：PPTX `runtime.ts` 在 parser 创建阶段直接读取 OOXML 的 `presentation.xml`/relationships，使用真实 slide 数量和文本块，不再依赖 File Viewer 的空 `pageCount`，legacy OLE `.ppt` 不作为 `.pptx` 兼容输入。Tauri invoke wrapper 保留 Rust 返回的字符串及结构化 message/error/code 诊断。Rust sidecar 在应用 cache 下维护专属 PyInstaller TEMP/TMP 目录，启动前只清理确认已停止的受管 sidecar 遗留直属 `_MEI*`；parsed-document PUT 的 `NETWORK_OFFLINE:*` 诊断会被归一化并进入可恢复 `PAUSED_NETWORK`，已完成加密 package 的续传不重新读取原始 Asset。
+
+2026-09-05 起，`SourceJobScheduler` 只在 `sourceApi.get(sourceId)` 边界识别结构化 `ApiProblemError` 的 HTTP 404 或 `problem.code === 'RESOURCE_NOT_FOUND'`；命中后复用 `discard(sourceId)` 清理当前用户/`serverDeviceId` 范围内的文档任务、准备中的输入和加密 cache，并稳定返回 `{ status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }`。其它 Source lookup 异常（包括 503/`INTERNAL_ERROR`）原样拒绝并保留任务；parser、hash、upload 等后续边界的异常不使用该分类。该规则由 `r4-source-processing-schedule.test.mjs` 与相邻文档处理套件覆盖。开发 Tauri SQLite 已在停止运行进程后从当前应用配置目录精确重置；重启后完整表集已建立，远端投影已重新同步。恢复出的文档任务当前暴露 master key 缺失，密钥初始化/恢复和重新上传的 GUI/Server 联调仍需单独验收。
+
+2026-09-06 补充：PDF 本地适配器通过 Vite `?url` 绑定同版本 `pdf.worker.min.mjs` 到 `GlobalWorkerOptions.workerSrc`，不依赖 CDN；Source Store 的自动入口要求 `AWAITING_CLIENT` Source 同时拥有非空 `assetId` 与 `ingestionRevision`，避免本地 CREATE 尚未 push 时触发服务端 404 孤儿清理。该行为由 `sourceSchedulingPolicy.ts` 和 PDF/Source focused 回归覆盖；认证、MinIO 和 API/数据库契约未变化。
+
+2026-09-05 上传与解析入口恢复：`src-tauri/Cargo.toml` 的 keyring 3 显式启用 `windows-native`，保留 `auralis/master_key`；`filePreview.ts` 的 upload accept list 仅为 PDF、DOC、DOCX、PPT、PPTX，图片/文本能力仍可预览但拒绝 upload intent，`canPreviewFile()` 与上传能力解耦，SubjectWorkspace 弹层显示支持格式；Profile `DocumentProcessingCenter` 将 `AWAITING_CLIENT` 详情写成等待桌面端开始处理，服务端 `VALIDATING/PARSING/INDEXING` 分别显示真实阶段，状态映射集中在 `documentProcessingStatus.ts` 并由纯函数直接测试；`DocumentProcessingDot` 复用共享 Source detail 映射，未知/undefined phase 不虚构服务端处理中状态，`READY` 显示“处理完成”。新增 Windows-only Rust keyring 跨新 Entry 写入/读取/清理测试；本机 `cargo test` 的真实 Credential Manager 写入因 `NoStorageAccess(Error(1312))` 失败，不能视为持久化已验收。Stats focused 测试覆盖六个 `Instant` 查询参数及 UUID/order 保留。PC focused file-preview 27/27、processing UI 1/1、runtime static 9/9、Stats 3/3 通过；真实 Tauri Credential Manager、File Viewer/上传、Server complete/indexing 与 GUI 状态仍需验收。
 
 本地 schema v5 的任务行持久化完整 `DocumentCacheReceipt` 元数据，以便应用重启后从 `PACKAGING/UPLOADING/PAUSED_NETWORK` 续传，不重复 OCR 或 package；签名 URL、headers、原始文件路径不进入 SQLite/localStorage。`services/documentProcessing/runtime.ts` 已由 App 在 Tauri 登录后组装并启动：复用全局隐藏 `BackgroundParserHost`，连接 PDF.js/Office bridge、Tauri OCR、Rust package/cache、ParsedDocument upload coordinator、用户/设备 job repository 和 Source scheduler；启动时先 flush 一次本地同步队列，随后加载 Source；sync/online 事件会重新加载 Source 并恢复 pending jobs，登出时解绑。服务端 complete 接受后删除加密 cache，下载 adapter 的临时输入由 scheduler 清理；实际 Tauri 私有目录、MinIO/Server 联调和 GUI 任务中心仍待人工验收。
 
 ## 页面职责
 
-- Dashboard：时间线、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。待办条目在窄宽下优先保留任务名称，过长的学科徽标允许收缩并以省略号显示。Dashboard、Timeline 与 Home 的原生拖拽 payload 固定传递 `taskId`，已排期任务额外传递 `sourceSlotTime`；原槽放置为 no-op，拖放只等待本地投影/outbox 写入，云端 push/pull 在后台执行；双任务换位的持久化原子组仍由 P1 排期风险跟踪。
+- Dashboard：时间线、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。待办条目在窄宽下优先保留任务名称，过长的学科徽标允许收缩并以省略号显示。Dashboard、Timeline 与 Home 的原生拖拽 payload 固定传递 `taskId`，已排期任务额外传递 `sourceSlotTime`；原槽放置为 no-op，拖放只等待本地投影/outbox 写入，云端 push/pull 在后台执行；Task 卡片外观统一由 Sage/design 语义 CSS 令牌派生，不依赖 Task 数据颜色；双任务换位的持久化原子组仍由 P1 排期风险跟踪。
 - SubjectHall：学科卡片、搜索、创建、编辑、删除和进入工作区；编辑表单保留服务端 `version` 并以 `baseVersion` 提交，确保名称、描述和图标修改可以保存；Subject 没有持久化颜色字段，Dashboard、Timeline 与 Home 统一使用 `#7D9372` 全局主题色；新用户注册后没有自动学科时展示真实空状态，历史遗留“未分类”学科也可正常删除。
 - SubjectWorkspace：文件、知识、任务、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。登记文件必须先选择文件、名称和归档学科，上传期间显示当前阶段/百分比并防重复提交；直传或 Source 创建失败会在弹层保留可重试状态并显示通知，成功后立即保存到本地并更新当前学科文件列表，后续同步不阻塞操作。文件选择器与拖拽入口共用 `src/utils/filePreview.ts` 的能力注册表，Excel/未知格式和超过 50 MB 的文件在创建 upload intent 前拦截；文件栏只显示真实 Source 文件，文件行删除操作默认悬停显示、键盘 focus-visible 保持可见，确认后通过 Subject Store 执行 Source 软删除并重算文件计数；本地仍有 `SOURCE/CREATE` outbox 时排队有序删除，知识块作为独立的总结/知识表面；删除取消、未登录、版本冲突、资源不存在和服务端异常均给出明确提示；选中文件后由 `FilePreview` 直接承载签名 URL、下载、加载/失败状态，当前优先使用自托管 File Viewer 渲染 DOC/DOCX、PPT/PPTX、PDF、图片及文本；较早的下载响应不得覆盖新选文件。学科页保持一个统一预览面板：现有文件名顶栏承载缩放与旋转，页码/总页数和前后页在预览底部独立占位；搜索、打印、下载、HTML 导出和主题切换不进入预览工具栏。
 - PC 阅读辅助当前已接入 `READING_SESSION` 生命周期、`readingContext` 当前 Source 检索与同学科确定性升级；未 READY 文件的 AI 操作只提示前往 `/profile` 查看解析进度。文件行通过 `DocumentProcessingDot` 显示所有非 READY 状态（失败保留红色静态点）；Profile 的 `DocumentProcessingCenter` 同时展示本地任务阶段和本地任务已经完成、但服务端仍为 `VALIDATING/PARSING/INDEXING` 的 Source 阶段，后者会低频刷新 Source 至 `READY`。未挂载 Tauri runner 时该中心明确说明“仅可在 Auralis 桌面端运行”，不把不可用误显示为暂无任务。Tauri runtime 的前置检查会在无可恢复加密 cache 时初始化原生 `auralis/master_key`；若 job 仍有 cache 或 receipt 而密钥缺失，则停止并报告恢复需要。无论前端生命周期是否已完成，Rust `document_package_begin` 都会在新建 package 时再次确保密钥存在；读取既有 cache 不会生成新密钥。预览原生选中文本最多 4000 字，可执行解释/追问或打开 `KnowledgeBlockEditor`，知识块只有确认后才写入当前 subject/source。
@@ -167,6 +177,7 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 - G1 protocol、G2 sidecar engine、G3 Rust supervisor 和 G4 MSI bundle 已有自动测试/产物证据；最终 MSI 通过 verifier，五组离线 OCR baseline 已记录。临时 all-users 安装因宿主 Error 1925 未完成，安装后 GUI/OCR 仍属于 R2 验收，不写成已通过。
 - G5 已提供固定尺寸、不可 `display:none` 的 `BackgroundParserHost` 与 `FileViewerParserBridge`，复用 File Viewer 的文本块/锚点 API，并在空结构时提供 bitmap fallback/`OFFICE_TEXT_UNAVAILABLE`。DOC/DOCX/PPT/PPTX fixture matrix 3/3 通过，其中旧式 PPT 由 Apache POI 生成真实 OLE 文件；实际 File Viewer/Tauri 运行时的四种文件提取、回退和稳定失败结论仍需验收。G6 `DocumentParser` 已按页分类 text-layer/扫描 PDF，串行调用 OCR，支持 Office direct/fallback，归一化文本并以 sink 背压输出 bounded block；core 7/7 与真实 PDF 2/2 通过。
 - 目录从 StudyCore 重命名后，旧绝对路径可能残留在 Rust 构建缓存；仅在确认属于缓存时执行 `cargo clean`。
+- 2026-09-05 已停止当前仓库的 Tauri 开发进程并精确删除应用配置目录中的 `auralis.db`、`auralis.db-wal`、`auralis.db-shm`；重启后数据库和完整表集已重新建立。远端同步恢复的 3 个文档任务均因 master key 缺失进入 `FAILED_LOCAL`，该密钥边界仍待修复或人工恢复验证。
 - `npm.cmd run tauri -- build --no-bundle` 已验证 Rust/桌面应用本体生成；完整 MSI bundling 曾因宿主 `拒绝访问 (os error 5)` 阻断。Web/Tauri 本体构建通过不能证明桌面权限、窗口、插件、安装包和系统集成可用。
 
 ## 开发与验证命令

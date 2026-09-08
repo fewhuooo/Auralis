@@ -32,7 +32,11 @@ export default defineConfig(({ mode }) => {
   ],
   resolve: {
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // File Viewer renderers import the package root. Resolve that edge to
+      // JSZip's self-contained browser bundle so Vite never follows the
+      // Node/readable-stream branch. This is an alias, not a stream polyfill.
+      'jszip$': fileURLToPath(new URL('./node_modules/jszip/dist/jszip.min.js', import.meta.url)),
     }
   },
   // Tauri expect a fixed port, fail if that port is not available

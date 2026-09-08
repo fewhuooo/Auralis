@@ -178,9 +178,8 @@ test('maps task DTO fields without reusing legacy UI field names', () => {
     scheduledAt: '2026-08-20T09:30:00Z',
     dueAt: '2026-08-21T00:00:00Z',
     durationMinutes: 45,
-    cognitiveLoad: 'MEDIUM',
+
     sortKey: 'a',
-    colorOverride: '#7D9372',
     version: 7,
     deletedAt: null,
   })
@@ -194,9 +193,8 @@ test('maps task DTO fields without reusing legacy UI field names', () => {
     scheduledAt: '2026-08-20T09:30:00Z',
     dueAt: '2026-08-21T00:00:00Z',
     durationMinutes: 45,
-    cognitiveLoad: 'MEDIUM',
+
     sortKey: 'a',
-    colorOverride: '#7D9372',
     version: 7,
     createdAt: undefined,
     updatedAt: undefined,

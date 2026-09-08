@@ -111,6 +111,22 @@ class OpenApiArtifactTests {
         assertThat(document.at("/components/schemas/ConversationView/properties/purpose").isObject()).isTrue();
     }
 
+    @Test
+    void documentsTaskSchemasWithoutCognitiveLoad() throws Exception {
+        JsonNode document = openApiDocument();
+        assertThat(document.at("/components/schemas/TaskView/properties/cognitiveLoad").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/TaskCreateRequest/properties/cognitiveLoad").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/TaskUpdateRequest/properties/cognitiveLoad").isMissingNode()).isTrue();
+    }
+
+    @Test
+    void documentsTaskColorRemoval() throws Exception {
+        JsonNode document = openApiDocument();
+        assertThat(document.at("/components/schemas/Response/properties/colorOverride").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/CreateRequest/properties/colorOverride").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/UpdateRequest/properties/colorOverride").isMissingNode()).isTrue();
+    }
+
     private JsonNode openApiDocument() throws Exception {
         String body = mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk())

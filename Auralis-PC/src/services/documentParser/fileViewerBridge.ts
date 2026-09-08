@@ -110,8 +110,8 @@ export class FileViewerParserBridge {
     anchors: FileViewerDocumentAnchor[]
   }> {
     try {
-      const chunks = this.extractChunks()
       const anchors = await this.extractAnchors()
+      const chunks = this.extractChunks()
       return { outcome: 'extract', chunks, anchors }
     } catch (error) {
       if (!(error instanceof OfficeParserError) || error.code !== OFFICE_TEXT_UNAVAILABLE) throw error

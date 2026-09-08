@@ -2043,18 +2043,9 @@
             "type" : "integer",
             "format" : "int32"
           },
-          "cognitiveLoad" : {
-            "type" : "string",
-            "enum" : [ "LOW", "MEDIUM", "HIGH" ]
-          },
           "sortKey" : {
             "type" : "string",
             "maxLength" : 128,
-            "minLength" : 0
-          },
-          "colorOverride" : {
-            "type" : "string",
-            "maxLength" : 32,
             "minLength" : 0
           }
         },
@@ -2093,14 +2084,7 @@
             "type" : "integer",
             "format" : "int32"
           },
-          "cognitiveLoad" : {
-            "type" : "string",
-            "enum" : [ "LOW", "MEDIUM", "HIGH" ]
-          },
           "sortKey" : {
-            "type" : "string"
-          },
-          "colorOverride" : {
             "type" : "string"
           },
           "version" : {
@@ -2323,18 +2307,9 @@
             "type" : "integer",
             "format" : "int32"
           },
-          "cognitiveLoad" : {
-            "type" : "string",
-            "enum" : [ "LOW", "MEDIUM", "HIGH" ]
-          },
           "sortKey" : {
             "type" : "string",
             "maxLength" : 128,
-            "minLength" : 0
-          },
-          "colorOverride" : {
-            "type" : "string",
-            "maxLength" : 32,
             "minLength" : 0
           }
         },

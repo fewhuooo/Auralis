@@ -1,6 +1,6 @@
 # Remove Subject Color Backend Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** Implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Remove the Subject-specific `color` field from the server contract and PostgreSQL schema while preserving all KnowledgeBlock/Task color overrides.
 

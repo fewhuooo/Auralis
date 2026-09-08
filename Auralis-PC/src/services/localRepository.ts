@@ -813,9 +813,9 @@ const DOCUMENT_JOB_TRANSITIONS: Record<DocumentJobPhase, readonly DocumentJobPha
   EXTRACTING: ['OCR_RUNNING', 'PACKAGING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
   OCR_RUNNING: ['PACKAGING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
   PACKAGING: ['UPLOADING', 'FAILED_LOCAL'],
-  UPLOADING: ['SERVER_VALIDATING', 'PAUSED_NETWORK', 'FAILED_SERVER'],
-  SERVER_VALIDATING: ['SERVER_INDEXING', 'UPLOADING', 'FAILED_SERVER'],
-  SERVER_INDEXING: ['READY', 'UPLOADING', 'FAILED_SERVER'],
+  UPLOADING: ['SERVER_VALIDATING', 'PAUSED_NETWORK', 'FAILED_SERVER', 'FAILED_LOCAL'],
+  SERVER_VALIDATING: ['SERVER_INDEXING', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_SERVER'],
+  SERVER_INDEXING: ['READY', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_SERVER'],
   READY: [],
   FAILED_LOCAL: ['QUEUED'],
   FAILED_SERVER: ['QUEUED'],
@@ -1013,7 +1013,12 @@ export class DocumentProcessingJobRepository {
     if (!DOCUMENT_JOB_PHASES.includes(phase)) throw new Error('DOCUMENT_JOB_PHASE_INVALID')
     const current = await this.get(jobId)
     if (!current) throw new Error('DOCUMENT_JOB_NOT_FOUND')
-    if (!DOCUMENT_JOB_TRANSITIONS[current.phase].includes(phase)) throw new Error('DOCUMENT_JOB_ILLEGAL_TRANSITION')
+    // Parser checkpoints are persisted for every emitted block. Consecutive
+    // blocks can therefore legitimately keep the same phase while advancing
+    // the checkpoint; this is an update, not a state-machine transition.
+    if (current.phase !== phase && !DOCUMENT_JOB_TRANSITIONS[current.phase].includes(phase)) {
+      throw new Error('DOCUMENT_JOB_ILLEGAL_TRANSITION')
+    }
     const checkpoint = options.checkpoint ?? current.checkpoint
     const updatedAt = this.now()
     const next: DocumentProcessingJob = {

@@ -22,7 +22,7 @@
             v-for="task in getTasksForDay(day)"
             :key="task.id"
             class="day-task-card"
-            :style="{ borderLeftColor: task.color }"
+            :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
           >
             <span class="day-task-time">{{ task.startTime }}</span>
             <span class="day-task-name">{{ task.name }}</span>

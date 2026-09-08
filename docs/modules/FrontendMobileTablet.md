@@ -1,6 +1,6 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-08-29
+更新时间：2026-09-07
 
 文档状态：现行
 
@@ -13,6 +13,8 @@
 `Auralis-Mobile` 是 Uni-app 工程，同时承载手机与平板体验。两端共享基础状态、API 和服务，但页面路径、导航布局和交互密度独立。微信小程序只发布手机体验。
 
 截至 2026-08-21，Mobile/Tablet 共享的鉴权、请求、Sync/Realtime、AI、Asset、Review 和 Stats 边界已迁移到冻结 OpenAPI；Tablet Dashboard/Review/Stats 也已移除随机统计和本地复习结果伪写，改用服务端 Stats/Review。H5 与微信命令行构建通过；微信开发者工具、浏览器及真机主流程尚未人工验收。
+
+2026-09-07 起 Task 契约不再包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Store、同步映射、本地存储、新建任务入口和页面展示不再读写 `cognitiveLoad`、`load` 或 `loadText`。
 
 前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须额外审查条件编译、弱网/输入法、触控、feature flag、数据同步和真机验收边界。
 
@@ -118,7 +120,7 @@ Auralis-Mobile/src/
 
 | 服务 | 职责 |
 | --- | --- |
-| `localDb.ts` | 端侧 SQLite 表与访问入口 |
+| `localDb.ts` | 端侧 SQLite 表与访问入口；原生/H5 迁移清洗 TASK 颜色键，保留 KnowledgeBlock 颜色和无效 JSON 原文 |
 | `localDataScope.ts` | 按 userId/serverDeviceId 选择独立 H5/SQLite namespace |
 | `legacyDataPurge.ts` | 用户授权后一次性删除旧全局 `h5_db_*`/`auralis.db` 业务表 |
 | `assetUpload.ts` | upload-intent、预签名 PUT、complete |

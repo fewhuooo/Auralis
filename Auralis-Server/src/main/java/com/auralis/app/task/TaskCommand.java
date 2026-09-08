@@ -11,7 +11,5 @@ public record TaskCommand(
         Instant scheduledAt,
         Instant dueAt,
         Integer durationMinutes,
-        CognitiveLoad cognitiveLoad,
-        String sortKey,
-        String colorOverride) {
+        String sortKey) {
 }
