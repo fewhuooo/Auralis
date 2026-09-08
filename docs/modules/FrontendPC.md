@@ -168,6 +168,13 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。
 
+## OCR 页级行为与诊断边界
+
+- `DocumentParser`/runner 按真实页码逐页推进；OCR 前持久化 `OCR_RUNNING` 检查点，空页只产生页级诊断并继续请求后续页，非空结果按页码和 block ordinal 保持顺序。
+- 当所有页归一化后均为空时，runner 以 `OCR_DOCUMENT_EMPTY` 进入 `FAILED_LOCAL`；UI 显示页码、总页数和“未识别到文字”，不伪造成功 block 或页数。
+- Profile 处理中心展示 bounded diagnostics，并提供复制入口。复制文本只允许页码、总页数、图片字节数、行数、耗时、结果和安全错误码/说明；不包含 OCR 正文、完整图片路径、`Authorization`、签名 URL 或未知原始字段。复制 API 不可用或失败时仍保留可见诊断。
+- Rust sidecar page summary、stderr tail 和 invoke 错误保持有界；OCR 正文仅流经本机 parser/package 加密边界，不写入日志。上述内容有 Node/Rust focused 自动测试，但真实 Tauri `1.pdf`、剪贴板/accessibility 和现场日志仍未验收。
+
 ## Tauri 边界
 
 - JavaScript API、CLI 和 Rust crate 当前统一为 `2.11.1`。
