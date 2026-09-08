@@ -175,6 +175,7 @@
 - [PC 文件上传后处理与统计接口恢复实施计划（2026-09-05）](plans/2026-09-05-upload-processing-recovery.md)
 - [Task 认知负荷全栈移除实施计划（2026-09-07）](plans/2026-09-07-remove-task-cognitive-load.md)
 - [Task 颜色能力全栈移除实施计划（2026-09-07）](plans/2026-09-07-remove-task-color.md)
+- [PC OCR 诊断与空白页容错实施计划（2026-09-08）](plans/2026-09-08-pc-ocr-diagnostics-and-empty-page.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
