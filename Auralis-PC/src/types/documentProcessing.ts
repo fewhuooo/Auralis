@@ -17,10 +17,21 @@ export const DOCUMENT_JOB_PHASES = [
 
 export type DocumentJobPhase = typeof DOCUMENT_JOB_PHASES[number]
 
+export interface OcrCheckpointDiagnostic {
+  pageNumber: number
+  totalPages: number
+  imageBytes: number
+  rawLineCount?: number
+  normalizedLineCount?: number
+  totalMs?: number
+  outcome: 'running' | 'text' | 'empty' | 'failed'
+}
+
 export interface DocumentJobCheckpoint {
   pageNumber: number
   blockOrdinal: number
   parserState?: string
+  diagnostic?: OcrCheckpointDiagnostic
 }
 
 export interface DocumentProcessingJob {

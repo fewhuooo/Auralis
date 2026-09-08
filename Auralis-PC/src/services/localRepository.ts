@@ -1041,7 +1041,7 @@ export class DocumentProcessingJobRepository {
              error_detail = $9, updated_at = $10
          WHERE job_id = $11 AND user_id = $12 AND device_id = $13 AND phase = $14`,
         [next.phase, next.attempt, checkpoint.pageNumber, checkpoint.blockOrdinal,
-          checkpoint.parserState ? JSON.stringify(checkpoint) : null, next.payloadCacheId,
+           (checkpoint.parserState || checkpoint.diagnostic) ? JSON.stringify(checkpoint) : null, next.payloadCacheId,
           next.payloadReceipt ? JSON.stringify(next.payloadReceipt) : null,
           next.errorCode, next.errorDetail, next.updatedAt, jobId, this.userId, this.serverDeviceId, current.phase],
       )

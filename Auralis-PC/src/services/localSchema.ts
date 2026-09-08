@@ -426,6 +426,7 @@ export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): Doc
         pageNumber: Number(parsed.pageNumber ?? checkpoint.pageNumber),
         blockOrdinal: Number(parsed.blockOrdinal ?? checkpoint.blockOrdinal),
         ...(typeof parsed.parserState === 'string' ? { parserState: parsed.parserState } : {}),
+        ...(parsed.diagnostic && typeof parsed.diagnostic === 'object' ? { diagnostic: parsed.diagnostic as DocumentProcessingJob['checkpoint']['diagnostic'] } : {}),
       }
     } catch {
       throw new Error('Invalid document job checkpoint')

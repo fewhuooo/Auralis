@@ -26,7 +26,7 @@ import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import type { DocumentProcessingJob } from '@/types/documentProcessing'
-import type { DocumentParserInput } from '@/services/documentParser/types'
+import type { DocumentParserInput, DocumentParserProgress } from '@/services/documentParser/types'
 
 type RuntimeFile = File & {
   arrayBuffer(): Promise<ArrayBuffer>
@@ -270,10 +270,10 @@ export class DocumentProcessingRuntime {
     }
   }
 
-  private async createParser(job: DocumentProcessingJob): Promise<(sink: Parameters<typeof parseDocument>[1]) => Promise<void>> {
+  private async createParser(job: DocumentProcessingJob): Promise<(sink: Parameters<typeof parseDocument>[1], onProgress: (event: DocumentParserProgress) => Promise<void>) => Promise<void>> {
     const file = this.parserInputs.get(job.jobId)
     if (!file) throw new Error('DOCUMENT_INPUT_UNAVAILABLE')
-    return (sink) => serialized(async () => {
+    return (sink, onProgress) => serialized(async () => {
       const extension = extensionOf(file.name)
       const ocr = new TauriOcrAdapter()
       const input: DocumentParserInput = {
@@ -299,7 +299,7 @@ export class DocumentProcessingRuntime {
         throw new Error('DOCUMENT_FILE_TYPE_UNSUPPORTED')
       }
       try {
-        await parseDocument(input, sink)
+        await parseDocument(input, sink, { onProgress })
       } finally {
         this.parserInputs.delete(job.jobId)
       }

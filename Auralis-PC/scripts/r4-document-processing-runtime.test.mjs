@@ -40,6 +40,11 @@ test('Tauri document runtime composes the durable repository, parser, package, u
   assert.doesNotMatch(runtime, /localStorage\.setItem|uploadUrl\s*:/)
 })
 
+test('runtime passes parser progress into the durable document runner', async () => {
+  const runtime = await source('src/services/documentProcessing/runtime.ts')
+  assert.match(runtime, /parseDocument\(input, sink, \{\s*onProgress\s*\}\)/)
+})
+
 test('Tauri document runtime flushes pending sync mutations before bootstrapping sources', async () => {
   const runtime = await source('src/services/documentProcessing/runtime.ts')
   assert.match(runtime, /import\s+\{\s*useSyncStore\s*\}\s+from\s+'@\/store\/useSyncStore'/)

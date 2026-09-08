@@ -129,6 +129,42 @@ test('cache receipt metadata survives a SQL repository round trip', async () => 
   }
 })
 
+test('OCR checkpoint diagnostics survive SQL and browser round trips without new columns', async () => {
+  const diagnostic = { pageNumber: 2, totalPages: 4, imageBytes: 1234, rawLineCount: 3, normalizedLineCount: 2, totalMs: 19, outcome: 'running' }
+  const checkpoint = { pageNumber: 2, blockOrdinal: 1, diagnostic }
+  const sqlite = new TemporarySqlite()
+  try {
+    const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: sqlite })
+    await repository.create({ jobId: 'job-diagnostic-sql', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+    await repository.transition('job-diagnostic-sql', 'EXTRACTING')
+    await repository.transition('job-diagnostic-sql', 'OCR_RUNNING', { checkpoint })
+    assert.deepEqual((await repository.get('job-diagnostic-sql')).checkpoint, checkpoint)
+    const columns = sqlite.database.prepare('PRAGMA table_info(document_processing_jobs)').all().map((row) => row.name)
+    assert.equal(columns.includes('ocr_diagnostic'), false)
+  } finally {
+    sqlite.close()
+  }
+
+  const storage = createMemoryStorage()
+  const browser = new DocumentProcessingJobRepository('user-a', 'device-1', { storage })
+  await browser.create({ jobId: 'job-diagnostic-browser', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+  await browser.transition('job-diagnostic-browser', 'EXTRACTING')
+  await browser.transition('job-diagnostic-browser', 'OCR_RUNNING', { checkpoint })
+  assert.deepEqual((await browser.get('job-diagnostic-browser')).checkpoint, checkpoint)
+})
+
+test('malformed checkpoint JSON still fails safely', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: sqlite })
+    await repository.create({ jobId: 'job-malformed-diagnostic', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+    await sqlite.execute('UPDATE document_processing_jobs SET checkpoint_json = $1 WHERE job_id = $2', ['{bad', 'job-malformed-diagnostic'])
+    await assert.rejects(() => repository.get('job-malformed-diagnostic'), /Invalid document job checkpoint/)
+  } finally {
+    sqlite.close()
+  }
+})
+
 test('removing a deleted Source job clears only its owner-scoped job rows and returns their cache metadata', async () => {
   const sqlite = new TemporarySqlite()
   try {

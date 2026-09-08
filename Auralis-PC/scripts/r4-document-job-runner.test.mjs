@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { DocumentJobRunner } from '../src/services/documentProcessing/DocumentJobRunner.ts'
+import { OcrDocumentEmptyError } from '../src/services/documentParser/types.ts'
 
 const phases = {
   QUEUED: 'QUEUED',
@@ -232,4 +233,49 @@ test('cancelling an active job stops later parser blocks and aborts its unfinish
   assert.deepEqual(packager.calls.filter(([name]) => name === 'append').map(([, , ordinal]) => ordinal), [0])
   assert.equal(packager.calls.some(([name]) => name === 'finish'), false)
   assert.equal(abortCalls, 1)
+})
+
+test('persists OCR_RUNNING and page diagnostic before the first OCR block', async () => {
+  const repository = new FakeRepository()
+  const packager = packageAdapter()
+  let observed
+  const runner = new DocumentJobRunner({
+    repository,
+    packager,
+    parserFactory: async () => async (_sink, onProgress) => {
+      await onProgress({ type: 'before-recognize', pageNumber: 2, totalPages: 4, imageBytes: 2048 })
+      observed = await repository.get('job-1')
+      await new Promise(() => {})
+    },
+  })
+  const running = runner.start('job-1')
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  assert.equal(observed.phase, phases.OCR_RUNNING)
+  assert.deepEqual(observed.checkpoint, {
+    pageNumber: 2,
+    blockOrdinal: 0,
+    diagnostic: { pageNumber: 2, totalPages: 4, imageBytes: 2048, outcome: 'running' },
+  })
+  assert.equal(packager.calls.some(([name]) => name === 'append'), false)
+  await runner.cancel('job-1')
+  await Promise.race([running, new Promise((resolve) => setTimeout(resolve, 20))])
+})
+
+test('empty OCR document persists stable code and bounded safe diagnostic detail', async () => {
+  const repository = new FakeRepository()
+  const runner = new DocumentJobRunner({
+    repository,
+    packager: packageAdapter(),
+    parserFactory: async () => async (_sink, onProgress) => {
+      await onProgress({ type: 'before-recognize', pageNumber: 1, totalPages: 1, imageBytes: 128 })
+      throw new OcrDocumentEmptyError({ pageNumber: 1, totalPages: 1, imageBytes: 128, rawLineCount: 2, normalizedLineCount: 0, timingMs: { det: 4, rec: 5, total: 9 } })
+    },
+  })
+  await runner.start('job-1')
+  const failed = await repository.get('job-1')
+  assert.equal(failed.errorCode, 'OCR_DOCUMENT_EMPTY')
+  assert.match(failed.errorDetail, /page=1\/1/)
+  assert.match(failed.errorDetail, /attempt=0/)
+  assert.doesNotMatch(failed.errorDetail, /OcrDocumentEmptyError|recognize|path|text|det/)
+  assert.ok(failed.errorDetail.length <= 240)
 })

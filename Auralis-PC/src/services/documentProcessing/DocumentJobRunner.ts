@@ -10,7 +10,9 @@ import type {
   DocumentJobTransitionOptions,
   DocumentProcessingJob,
 } from '@/types/documentProcessing'
-import type { ParsedBlock } from '@/services/documentParser/types'
+import type { ParsedBlock, DocumentParserProgress } from '@/services/documentParser/types'
+import { OcrDocumentEmptyError } from '../documentParser/types.ts'
+import type { OcrCheckpointDiagnostic } from '@/types/documentProcessing'
 import type { DocumentCacheReceipt } from '@/api/tauri'
 
 interface JobRepository {
@@ -42,7 +44,29 @@ interface PackageAdapter {
 }
 
 type ParserBlock = ParsedBlock
-type Parser = (sink: (block: ParserBlock) => Promise<void>) => Promise<void>
+type Parser = (sink: (block: ParserBlock) => Promise<void>, onProgress: (event: DocumentParserProgress) => Promise<void>) => Promise<void>
+
+function diagnosticFromProgress(event: DocumentParserProgress): OcrCheckpointDiagnostic {
+  const base = {
+    pageNumber: event.pageNumber,
+    totalPages: event.totalPages,
+    imageBytes: event.imageBytes,
+  }
+  if (event.type === 'before-recognize') return { ...base, outcome: 'running' }
+  return {
+    ...base,
+    ...(Number.isFinite(event.rawLineCount) ? { rawLineCount: event.rawLineCount } : {}),
+    ...('normalizedLineCount' in event && Number.isFinite(event.normalizedLineCount) ? { normalizedLineCount: event.normalizedLineCount } : {}),
+    ...(Number.isFinite(event.timingMs.total) ? { totalMs: event.timingMs.total } : {}),
+    outcome: event.type === 'empty-page' ? 'empty' : event.type === 'page-result' ? 'text' : 'running',
+  }
+}
+
+function safeOcrDetail(error: OcrDocumentEmptyError, attempt: number): string {
+  const diagnostic = error.diagnostic
+  const detail = `OCR_DOCUMENT_EMPTY page=${diagnostic.pageNumber}/${diagnostic.totalPages} imageBytes=${diagnostic.imageBytes} rawLines=${diagnostic.rawLineCount} normalizedLines=${diagnostic.normalizedLineCount} totalMs=${diagnostic.timingMs.total} attempt=${attempt}`
+  return detail.slice(0, 240)
+}
 
 export interface DocumentJobRunnerOptions {
   repository: JobRepository
@@ -168,6 +192,19 @@ export class DocumentJobRunner {
             errorCode: null,
             errorDetail: null,
           })
+        }, async (event) => {
+          this.assertNotCancelled(jobId)
+          const current = await this.repository.get(jobId)
+          if (!current) throw new Error('DOCUMENT_JOB_NOT_FOUND')
+          const diagnostic = diagnosticFromProgress(event)
+          const phase: DocumentJobPhase = event.type === 'before-recognize' || current.phase === 'OCR_RUNNING'
+            ? 'OCR_RUNNING' : current.phase
+          job = await this.repository.transition(jobId, phase, {
+            attempt: retries,
+            checkpoint: { ...current.checkpoint, pageNumber: event.pageNumber, diagnostic },
+            errorCode: null,
+            errorDetail: null,
+          })
         })
         this.assertNotCancelled(jobId)
         const receipt = await this.packager.finish(packageId)
@@ -201,10 +238,28 @@ export class DocumentJobRunner {
           })
           continue
         }
+        const empty = error instanceof OcrDocumentEmptyError
+        const current = await this.repository.get(jobId)
+        const failureCheckpoint = empty && current ? {
+          ...current.checkpoint,
+          diagnostic: {
+            ...diagnosticFromProgress({
+              type: 'after-normalize',
+              pageNumber: error.diagnostic.pageNumber,
+              totalPages: error.diagnostic.totalPages,
+              imageBytes: error.diagnostic.imageBytes,
+              rawLineCount: error.diagnostic.rawLineCount,
+              normalizedLineCount: error.diagnostic.normalizedLineCount,
+              timingMs: error.diagnostic.timingMs,
+            }),
+            outcome: 'failed' as const,
+          },
+        } : current?.checkpoint
         await this.repository.transition(jobId, 'FAILED_LOCAL', {
           attempt: retries,
-          errorCode: isAutomaticallyRetryable(error) ? 'OCR_RETRY_EXHAUSTED' : errorCode(error),
-          errorDetail: error instanceof Error ? error.message : String(error),
+          checkpoint: failureCheckpoint,
+          errorCode: empty ? 'OCR_DOCUMENT_EMPTY' : isAutomaticallyRetryable(error) ? 'OCR_RETRY_EXHAUSTED' : errorCode(error),
+          errorDetail: empty ? safeOcrDetail(error, retries) : error instanceof Error ? error.message : String(error),
         })
         return
       }
