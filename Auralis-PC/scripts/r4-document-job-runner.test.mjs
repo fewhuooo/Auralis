@@ -279,3 +279,20 @@ test('empty OCR document persists stable code and bounded safe diagnostic detail
   assert.doesNotMatch(failed.errorDetail, /OcrDocumentEmptyError|recognize|path|text|det/)
   assert.ok(failed.errorDetail.length <= 240)
 })
+
+test('successful OCR block keeps the final text diagnostic when ordinal advances', async () => {
+  const repository = new FakeRepository()
+  const runner = new DocumentJobRunner({
+    repository,
+    packager: packageAdapter(),
+    parserFactory: async () => async (sink, onProgress) => {
+      await onProgress({ type: 'before-recognize', pageNumber: 1, totalPages: 1, imageBytes: 128 })
+      await onProgress({ type: 'page-result', pageNumber: 1, totalPages: 1, imageBytes: 128, rawLineCount: 2, normalizedLineCount: 1, timingMs: { det: 2, rec: 3, total: 5 } })
+      await sink({ ordinal: 0, kind: 'ocr-page', text: 'recognized', pageNumber: 1 })
+    },
+  })
+  await runner.start('job-1')
+  const completed = await repository.get('job-1')
+  assert.equal(completed.checkpoint.blockOrdinal, 0)
+  assert.deepEqual(completed.checkpoint.diagnostic, { pageNumber: 1, totalPages: 1, imageBytes: 128, rawLineCount: 2, normalizedLineCount: 1, totalMs: 5, outcome: 'text' })
+})

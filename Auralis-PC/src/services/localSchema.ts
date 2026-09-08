@@ -1,5 +1,5 @@
 import type { LocalEntity, LocalMutation, LocalMutationStatus, LocalSyncStatus } from '@/types/api'
-import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob } from '@/types/documentProcessing'
+import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob, type OcrCheckpointDiagnostic } from '@/types/documentProcessing'
 
 export const LOCAL_SCHEMA_VERSION = 6
 
@@ -385,6 +385,26 @@ function parsePayload<T>(payload: string): T {
   }
 }
 
+function sanitizeOcrDiagnostic(value: unknown): OcrCheckpointDiagnostic | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Record<string, unknown>
+  const integerInRange = (item: unknown, max: number): item is number => typeof item === 'number' && Number.isInteger(item) && item >= 0 && item <= max
+  if (!integerInRange(candidate.pageNumber, 1_000_000)
+    || !integerInRange(candidate.totalPages, 1_000_000)
+    || !integerInRange(candidate.imageBytes, 100_000_000)
+    || !['running', 'text', 'empty', 'failed'].includes(String(candidate.outcome))) return undefined
+  const diagnostic: OcrCheckpointDiagnostic = {
+    pageNumber: candidate.pageNumber,
+    totalPages: candidate.totalPages,
+    imageBytes: candidate.imageBytes,
+    outcome: candidate.outcome as OcrCheckpointDiagnostic['outcome'],
+  }
+  if (integerInRange(candidate.rawLineCount, 1_000_000)) diagnostic.rawLineCount = candidate.rawLineCount
+  if (integerInRange(candidate.normalizedLineCount, 1_000_000)) diagnostic.normalizedLineCount = candidate.normalizedLineCount
+  if (integerInRange(candidate.totalMs, 86_400_000)) diagnostic.totalMs = candidate.totalMs
+  return diagnostic
+}
+
 export function resourceFromRow<T>(row: LocalResourceRow): LocalEntity<T> {
   return {
     id: row.resource_id,
@@ -426,7 +446,7 @@ export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): Doc
         pageNumber: Number(parsed.pageNumber ?? checkpoint.pageNumber),
         blockOrdinal: Number(parsed.blockOrdinal ?? checkpoint.blockOrdinal),
         ...(typeof parsed.parserState === 'string' ? { parserState: parsed.parserState } : {}),
-        ...(parsed.diagnostic && typeof parsed.diagnostic === 'object' ? { diagnostic: parsed.diagnostic as DocumentProcessingJob['checkpoint']['diagnostic'] } : {}),
+        ...(sanitizeOcrDiagnostic(parsed.diagnostic) ? { diagnostic: sanitizeOcrDiagnostic(parsed.diagnostic) } : {}),
       }
     } catch {
       throw new Error('Invalid document job checkpoint')

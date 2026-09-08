@@ -223,6 +223,31 @@ test('document job transitions reject illegal phases and checkpoint atomically',
   }
 })
 
+test('retryable OCR phases can be requeued by the production transition policy', async () => {
+  const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: null })
+  await repository.create({ jobId: 'job-retry-extracting', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+  await repository.transition('job-retry-extracting', 'EXTRACTING')
+  await repository.transition('job-retry-extracting', 'QUEUED', { attempt: 1 })
+  await repository.transition('job-retry-extracting', 'EXTRACTING')
+  await repository.transition('job-retry-extracting', 'OCR_RUNNING')
+  const requeued = await repository.transition('job-retry-extracting', 'QUEUED', { attempt: 2 })
+  assert.equal(requeued.phase, 'QUEUED')
+  assert.equal(requeued.attempt, 2)
+})
+
+test('malformed OCR diagnostic values are omitted at the persistence boundary', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: sqlite })
+    await repository.create({ jobId: 'job-invalid-diagnostic', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+    await sqlite.execute('UPDATE document_processing_jobs SET checkpoint_json = $1 WHERE job_id = $2', [JSON.stringify({ pageNumber: 1, blockOrdinal: 0, diagnostic: { pageNumber: -1, totalPages: 999999999, imageBytes: 999999999999, rawLineCount: 'secret', outcome: 'unexpected' } }), 'job-invalid-diagnostic'])
+    const persisted = await repository.get('job-invalid-diagnostic')
+    assert.deepEqual(persisted.checkpoint, { pageNumber: 1, blockOrdinal: 0 })
+  } finally {
+    sqlite.close()
+  }
+})
+
 test('UPLOADING can persist a local terminal failure without masking its cause', async () => {
   const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: null })
   await repository.create({ jobId: 'job-upload-local', sourceId: 'source-1', ingestionRevision: 'revision-1' })

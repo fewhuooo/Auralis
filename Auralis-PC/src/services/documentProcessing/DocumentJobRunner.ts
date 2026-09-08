@@ -186,6 +186,7 @@ export class DocumentJobRunner {
           job = await this.repository.transition(jobId, phase, {
             attempt: retries,
             checkpoint: {
+              ...job?.checkpoint,
               pageNumber: block.pageNumber ?? job?.checkpoint.pageNumber ?? 0,
               blockOrdinal: block.ordinal,
             },
