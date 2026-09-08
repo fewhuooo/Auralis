@@ -2,7 +2,7 @@
 
 更新时间：2026-09-08
 
-文档状态：已批准设计（含累计统计增量）
+文档状态：已批准设计（含累计统计、上传恢复与 schema v1 打包增量）
 
 ## 背景
 
@@ -93,6 +93,75 @@
 - upload coordinator 测试分别覆盖 `NETWORK_OFFLINE:connect`、`NETWORK_OFFLINE:timeout`、`NETWORK_OFFLINE:body` 和 `DOCUMENT_UPLOAD_RETRYABLE`，断言稳定 code 与安全 detail，且不包含 URL/header。
 - UI formatter 测试覆盖传输原因本地化及未知后缀降级，不渲染原始异常。
 - 自动测试通过后，真实 Tauri 再点击“继续”，确认不再出现 `DOCUMENT_JOB_ILLEGAL_TRANSITION`；若 PUT 仍失败，以新详情确定 MinIO 传输原因。该验证不等同于最终上传成功验收。
+
+## ParsedDocument schema v1 打包增量
+
+真实重试已证明 MinIO PUT 成功、对象大小与 `payloadSha256` 和数据库完全一致，但 Server `complete` 返回 `400 PARSED_DOCUMENT_INVALID`。根因不是对象存储或 revision：PC Rust packager 当前把每个 block 直接写为 gzip NDJSON，而 Server `ParsedDocumentValidator` 的现行契约要求 gzip 内只有一个 schema v1 JSON object。Validator 读取 NDJSON 的首个 `ordinal` 字段时会以 `unknown or duplicate payload field: ordinal` 拒绝，因此不能通过放宽 Server 校验、重复 complete 或重新 PUT 解决。
+
+### 方案选择
+
+- 选择修正 PC 打包格式：Rust 流式产生 Server 已冻结的 schema v1 envelope，Server validator 保持严格、不增加 NDJSON 兼容分支。
+- 不选择 Server 同时接受 NDJSON；这会把已确认错误的临时格式变成长期协议，并扩大未受顶层 metadata 约束的输入面。
+- 不选择 Server 收到后转换 NDJSON；旧 payload 缺少可信的顶层 Asset hash、parser metadata、字符数和正文 hash，无法在不伪造数据的前提下补全。
+
+### 上传 JSON 契约
+
+解密 cache 后的 gzip 内容必须是且只能是一个 JSON object：
+
+```json
+{
+  "schemaVersion": 1,
+  "sourceId": "<uuid>",
+  "ingestionRevision": "<uuid>",
+  "sourceAssetSha256": "<64 lowercase hex>",
+  "parser": {
+    "id": "<non-empty parser id>",
+    "version": "<non-empty parser version>",
+    "normalizationVersion": "<non-empty normalization version>",
+    "ocrModelVersion": null
+  },
+  "blocks": [
+    {
+      "ordinal": 0,
+      "kind": "page",
+      "text": "示例",
+      "pageNumber": 1,
+      "anchorIndex": null,
+      "startLine": null
+    }
+  ],
+  "characterCount": 2,
+  "plainTextSha256": "<64 lowercase hex>"
+}
+```
+
+- `blocks` 按连续零基 `ordinal` 流式写入，不在内存聚合整份正文；每个 block 只允许 `ordinal/kind/text/pageNumber/anchorIndex/startLine`。
+- `characterCount` 是所有规范化 block 文本的 Unicode code point 数之和，不包含 block 间分隔换行。
+- `plainTextSha256` 按 block 顺序对每个规范化 UTF-8 `text` 后追加一个字节 `\n` 计算，与 Server validator 完全一致。
+- `userId/serverDeviceId/jobId/cacheId` 只用于本地加密 cache 的 owner/AAD 作用域，不进入上传 JSON。
+- `sourceAssetSha256` 来自 scheduler 对真实 Asset bytes 的 SHA-256；不得为空、伪造或从 ParsedDocument payload 自身推导。
+
+### 流式打包与 receipt 语义
+
+- `document_package_begin` 接收本地 cache scope 与上传 envelope metadata。Gzip encoder 在 begin 写入 object prefix 和 `blocks` 数组开头；append 在 block 间写逗号并更新 code-point count/plain digest；finish 写入数组结尾、`characterCount/plainTextSha256` suffix，再完成 gzip 和本地 envelope 加密。
+- `DocumentCacheReceipt` 增加明确的 `payloadFormat = parsed-document-v1` 以及恢复上传所需的 `sourceAssetSha256` 和 parser metadata。字段经 SQLite/browser sanitizer 持久化；不包含正文、路径、签名 URL、headers 或密钥。
+- `payloadBytes/payloadSha256` 继续只描述解密 reader 输出的 gzip payload；`encryptedBytes` 只描述本地加密 envelope。Server intent `sizeBytes`、PUT `Content-Length`、reader 输出和发送后校验必须使用同一 payload 口径。
+- 新 receipt 在首次 upload 和应用重启后的 resume 都从 receipt 自身恢复 Asset/parser metadata，不再以空对象调用 coordinator。
+
+### 旧 NDJSON cache 处理
+
+- 缺少 `payloadFormat` 或格式不是 `parsed-document-v1` 的 receipt 视为旧 NDJSON 派生缓存，禁止再次创建 intent、PUT 或 complete。
+- 用户已批准方案 1；scheduler 可删除该任务对应的旧派生 cache，原子清空 `payloadCacheId/payloadReceipt`，回到 `QUEUED` 后重新下载/读取原始 Asset、校验 Asset hash、解析和打包。原始文件、Source、Asset 和服务端 REJECTED 审计行不删除。
+- 旧格式失效属于一次性本地重建，不提供 NDJSON 转换器或双格式 reader。重建失败保留稳定本地错误与可重试任务，不伪装为上传失败。
+- 已是 `parsed-document-v1` 的 receipt 继续直接续传，不重新 OCR、download、hash 或 package。
+
+### 契约与恢复测试
+
+- 新增共享 schema v1 JSON fixture。Rust 测试对实际 packager 的解密、解压结果做结构等价比较；Java validator 测试 gzip 同一 fixture 后必须接受，形成跨语言契约闭环。
+- Rust 测试覆盖零/多 block（生产任务仍拒绝空文档）、Unicode code-point 计数、逐 block `text + \n` hash、可选位置字段、payload/encrypted bytes 分离以及临时文件清理。
+- PC runner/scheduler/repository 测试覆盖 metadata 传入、receipt round-trip、重启续传不丢 Asset SHA、旧格式在任何 intent 前失效并只重建一次、新格式 receipt 不重复解析。
+- Server validator 保留 unknown/duplicate field、hash/count/revision/Asset SHA 和大小边界测试；不得为通过 PC 产物而降低限制。
+- 最终自动门禁包含 Rust packager/cache/upload、PC R4/type-check、Server validator/complete 定向测试和 `git diff --check`。真实验收必须重新启动 Tauri，用 `1.pdf` 观察旧 cache 触发一次重建、PUT、complete、indexing 和 Source `READY`；自动测试不等同该 GUI/外部服务结果。
 
 ## 测试与验收
 
