@@ -15,9 +15,12 @@ export interface OcrDiagnosticRow {
 export interface OcrDiagnosticsView {
   progressLabel: string | null
   warning: string | null
+  errorDetail: string | null
   rows: OcrDiagnosticRow[]
   clipboardText: string
 }
+
+export type ClipboardWriter = (text: string) => Promise<void>
 
 const outcomeLabel: Record<string, string> = {
   running: '识别中',
@@ -51,5 +54,26 @@ export function formatOcrDiagnostics(input: OcrDiagnosticInput): OcrDiagnosticsV
   const progressLabel = input.phase === 'OCR_RUNNING' && pageLabel ? `正在识别第 ${pageLabel} 页` : null
   const warning = diagnostic?.outcome === 'empty' && pageLabel ? `第 ${pageLabel} 页未识别到文字` : null
   const clipboardText = rows.map((row) => `${row.label}：${row.value}`).join('\n')
-  return { progressLabel, warning, rows, clipboardText }
+  return { progressLabel, warning, errorDetail: errorDetail || null, rows, clipboardText }
+}
+
+export async function copyOcrDiagnostics(text: string, writer?: ClipboardWriter): Promise<'copied' | 'failed'> {
+  const clipboardWriter = writer || (globalThis.navigator?.clipboard?.writeText
+    ? globalThis.navigator.clipboard.writeText.bind(globalThis.navigator.clipboard)
+    : undefined)
+  if (!clipboardWriter) return 'failed'
+  try {
+    await clipboardWriter(text)
+    return 'copied'
+  } catch {
+    return 'failed'
+  }
+}
+
+export function updateCopyFeedback(
+  current: Record<string, string>,
+  jobId: string,
+  status: 'copied' | 'failed',
+): Record<string, string> {
+  return { ...current, [jobId]: status === 'copied' ? '已复制' : '复制失败' }
 }

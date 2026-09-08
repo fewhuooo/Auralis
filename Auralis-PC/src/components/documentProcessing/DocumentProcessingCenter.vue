@@ -16,22 +16,22 @@
           <span class="processing-phase">{{ phaseLabel(job.phase) }}</span>
         </div>
         <div class="processing-item-meta">
-          <span v-if="diagnosticError(job)" class="processing-error">{{ diagnosticError(job) }}</span>
-          <span v-else>{{ diagnosticsFor(job).progressLabel || (job.checkpoint.blockOrdinal > 0 ? `已处理 ${job.checkpoint.blockOrdinal} 个内容块` : '准备中') }}</span>
+          <span v-if="viewFor(job).errorDetail" class="processing-error">{{ viewFor(job).errorDetail }}</span>
+          <span v-else>{{ viewFor(job).progressLabel || (job.checkpoint.blockOrdinal > 0 ? `已处理 ${job.checkpoint.blockOrdinal} 个内容块` : '准备中') }}</span>
           <div class="processing-actions">
             <button v-if="isRetryable(job.phase)" type="button" @click="retry(job.jobId)">{{ job.phase === 'PAUSED_NETWORK' ? '继续' : '重试' }}</button>
             <button v-if="isActive(job.phase)" type="button" class="danger" @click="cancel(job.jobId)">取消</button>
           </div>
         </div>
-        <div v-if="diagnosticsFor(job).warning" class="processing-warning">{{ diagnosticsFor(job).warning }}</div>
-        <details v-if="diagnosticsFor(job).rows.length" class="processing-diagnostics">
+        <div v-if="viewFor(job).warning" class="processing-warning">{{ viewFor(job).warning }}</div>
+        <details v-if="viewFor(job).rows.length" class="processing-diagnostics">
           <summary>查看诊断</summary>
           <dl>
-            <template v-for="row in diagnosticsFor(job).rows" :key="`${job.jobId}-${row.label}`">
+            <template v-for="row in viewFor(job).rows" :key="`${job.jobId}-${row.label}`">
               <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
             </template>
           </dl>
-          <button type="button" @click="copyDiagnostics(job.jobId, diagnosticsFor(job).clipboardText)">{{ copyFeedback[job.jobId] || '复制诊断' }}</button>
+          <button type="button" @click="copyDiagnostics(job.jobId, viewFor(job).clipboardText)">{{ copyFeedback[job.jobId] || '复制诊断' }}</button>
         </details>
       </article>
       <article v-for="source in serverProcessingSources" :key="source.id" class="processing-item">
@@ -56,7 +56,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { sourceDetailLabel, sourcePhaseLabel } from '@/utils/documentProcessingStatus'
-import { formatOcrDiagnostics, type OcrDiagnosticsView } from '@/utils/ocrDiagnostics'
+import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback, type OcrDiagnosticsView } from '@/utils/ocrDiagnostics'
 
 const store = useDocumentProcessingStore()
 const sourceStore = useSourceStore()
@@ -66,6 +66,7 @@ const serverProcessingSources = computed(() => sourceStore.sources
   .filter((source) => !jobs.value.some((job) => job.sourceId === source.id)))
 const sourceActionErrors = ref<Record<string, string>>({})
 const copyFeedback = ref<Record<string, string>>({})
+const jobViews = computed(() => new Map(store.jobs.map((job) => [job.jobId, formatOcrDiagnostics(job)])))
 let timer: ReturnType<typeof setInterval> | null = null
 let sourcePollTicks = 0
 
@@ -77,16 +78,9 @@ const phaseLabel = (phase: string) => ({
 }[phase] || phase)
 const isActive = (phase: string) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(phase)
 const isRetryable = (phase: string) => ['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(phase)
-const diagnosticsFor = (job: typeof jobs.value[number]): OcrDiagnosticsView => formatOcrDiagnostics(job)
-const diagnosticError = (job: typeof jobs.value[number]) => diagnosticsFor(job).rows.find((row) => row.label === '错误说明')?.value || ''
+const viewFor = (job: typeof jobs.value[number]): OcrDiagnosticsView => jobViews.value.get(job.jobId) || formatOcrDiagnostics(job)
 const copyDiagnostics = async (jobId: string, text: string) => {
-  try {
-    if (!navigator.clipboard?.writeText) throw new Error('CLIPBOARD_UNAVAILABLE')
-    await navigator.clipboard.writeText(text)
-    copyFeedback.value = { ...copyFeedback.value, [jobId]: '已复制' }
-  } catch {
-    copyFeedback.value = { ...copyFeedback.value, [jobId]: '复制失败' }
-  }
+  copyFeedback.value = updateCopyFeedback(copyFeedback.value, jobId, await copyOcrDiagnostics(text))
 }
 const refreshSources = async () => { await sourceStore.loadSources().catch(() => undefined) }
 const refresh = async () => {

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import path from 'node:path'
 import { sourceDetailLabel, sourcePhaseLabel } from '../src/utils/documentProcessingStatus.ts'
-import { formatOcrDiagnostics } from '../src/utils/ocrDiagnostics.ts'
+import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback } from '../src/utils/ocrDiagnostics.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
 const source = (file) => readFile(path.join(root, file), 'utf8')
@@ -98,6 +98,40 @@ test('OCR diagnostics formatter exposes safe progress and empty-page warning', (
   assert.match(formatted.clipboardText, /图片大小：2048 bytes/)
 })
 
+test('OCR diagnostics formatter exposes running page details', () => {
+  const formatted = formatOcrDiagnostics({
+    phase: 'OCR_RUNNING',
+    checkpoint: { pageNumber: 3, blockOrdinal: 0, diagnostic: { pageNumber: 3, totalPages: 8, imageBytes: 99, outcome: 'running' } },
+  })
+  assert.equal(formatted.progressLabel, '正在识别第 3/8 页')
+  assert.equal(formatted.warning, null)
+  assert.equal(formatted.rows.find((row) => row.label === '结果')?.value, '识别中')
+})
+
+test('OCR diagnostics formatter exposes allowlisted failure detail', () => {
+  const formatted = formatOcrDiagnostics({
+    phase: 'FAILED_LOCAL', checkpoint: { pageNumber: 1, blockOrdinal: 0 },
+    errorCode: 'OCR_TIMEOUT', errorDetail: 'sidecar timeout',
+  })
+  assert.equal(formatted.errorDetail, 'sidecar timeout')
+  assert.match(formatted.clipboardText, /错误代码：OCR_TIMEOUT/)
+  assert.match(formatted.clipboardText, /错误说明：sidecar timeout/)
+})
+
+test('clipboard boundary handles resolve, reject, and unsupported writers', async () => {
+  let copied = ''
+  assert.equal(await copyOcrDiagnostics('safe', async (text) => { copied = text }), 'copied')
+  assert.equal(copied, 'safe')
+  assert.equal(await copyOcrDiagnostics('safe', async () => { throw new Error('denied') }), 'failed')
+  assert.equal(await copyOcrDiagnostics('safe', undefined), 'failed')
+})
+
+test('copy feedback stays isolated by job id', () => {
+  const first = updateCopyFeedback({}, 'job-a', 'copied')
+  const second = updateCopyFeedback(first, 'job-b', 'failed')
+  assert.deepEqual(second, { 'job-a': '已复制', 'job-b': '复制失败' })
+})
+
 test('OCR diagnostics formatter ignores unknown raw keys', () => {
   const formatted = formatOcrDiagnostics({
     phase: 'FAILED_LOCAL',
@@ -125,7 +159,7 @@ test('processing center has accessible disclosure and guarded copy action', asyn
   const center = await source('src/components/documentProcessing/DocumentProcessingCenter.vue')
   assert.match(center, /<details/)
   assert.match(center, /复制诊断/)
-  assert.match(center, /navigator\.clipboard\.writeText/)
+  assert.match(center, /copyOcrDiagnostics/)
   assert.match(center, /catch/)
   assert.match(center, /aria-expanded|summary/)
 })
