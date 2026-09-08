@@ -45,10 +45,59 @@ function ocr(linesByPage) {
     calls,
     async recognizePage({ pageNumber, imageBytes }) {
       calls.push({ pageNumber, imageBytes: [...imageBytes] })
-      return { lines: linesByPage[pageNumber - 1] || [] }
+      return { lines: linesByPage[pageNumber - 1] || [], timingMs: { det: 2, rec: 3, total: 5 } }
     },
   }
 }
+
+test('continues after an empty OCR page and emits safe page diagnostics', async () => {
+  const ocrAdapter = ocr([[], ['valid OCR']])
+  const { input } = pdfInput('scanned.pdf', [textPage('', [1, 2, 3]), textPage('', [4, 5, 6])], { ocr: ocrAdapter })
+  const blocks = []
+  const progress = []
+
+  await parseDocument(input, async (block) => blocks.push(block), { onProgress: (event) => progress.push(event) })
+
+  assert.deepEqual(blocks.map(({ ordinal, pageNumber, text }) => ({ ordinal, pageNumber, text })), [
+    { ordinal: 0, pageNumber: 2, text: 'valid OCR' },
+  ])
+  const empty = progress.find((event) => event.type === 'empty-page')
+  assert.deepEqual(empty, {
+    type: 'empty-page', pageNumber: 1, totalPages: 2, imageBytes: 3,
+    rawLineCount: 0, normalizedLineCount: 0, timingMs: { det: 2, rec: 3, total: 5 },
+  })
+})
+
+test('rejects only when every attempted OCR page is empty', async () => {
+  const { input } = pdfInput('empty.pdf', [textPage('', [8, 9]), textPage('', [7])], { ocr: ocr([[], []]) })
+
+  await assert.rejects(
+    () => parseDocument(input, async () => {}),
+    (error) => {
+      assert.equal(error.message, 'OCR_DOCUMENT_EMPTY')
+      assert.deepEqual(error.diagnostic, {
+        pageNumber: 2, totalPages: 2, imageBytes: 1, rawLineCount: 0, normalizedLineCount: 0,
+        timingMs: { det: 2, rec: 3, total: 5 },
+      })
+      assert.doesNotMatch(JSON.stringify(error.diagnostic), /empty|path|text/i)
+      return true
+    },
+  )
+})
+
+test('emits before-recognize before invoking the OCR adapter', async () => {
+  const events = []
+  const { input } = pdfInput('ordered.pdf', [textPage('', [1, 2])])
+  input.ocr = {
+    model: 'fake',
+    async recognizePage() {
+      assert.equal(events[0].type, 'before-recognize')
+      return { lines: ['ok'], timingMs: { det: 0, rec: 1, total: 1 } }
+    },
+  }
+  await parseDocument(input, async () => {}, { onProgress: (event) => events.push(event) })
+  assert.deepEqual(events[0], { type: 'before-recognize', pageNumber: 1, totalPages: 1, imageBytes: 2 })
+})
 
 test('streams text-layer PDF pages as normalized bounded page blocks', async () => {
   const { input } = pdfInput('lesson.pdf', [

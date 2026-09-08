@@ -47,7 +47,31 @@ export interface OcrPageRequest {
 
 export interface OcrPageResult {
   lines: Array<string | { text?: string }>
+  timingMs?: { det: number; rec: number; total: number }
   model?: string
+}
+
+export interface OcrTimingMs {
+  det: number
+  rec: number
+  total: number
+}
+
+export type DocumentParserProgress =
+  | { type: 'before-recognize'; pageNumber: number; totalPages: number; imageBytes: number }
+  | { type: 'after-recognize'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; timingMs: OcrTimingMs }
+  | { type: 'after-normalize'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
+  | { type: 'page-result'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
+  | { type: 'empty-page'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
+
+export class OcrDocumentEmptyError extends Error {
+  readonly code = 'OCR_DOCUMENT_EMPTY'
+  readonly diagnostic: { pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
+  constructor(diagnostic: { pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }) {
+    super('OCR_DOCUMENT_EMPTY')
+    this.name = 'OcrDocumentEmptyError'
+    this.diagnostic = diagnostic
+  }
 }
 
 export interface OcrAdapter {
@@ -102,4 +126,5 @@ export interface DocumentParserInput {
 export interface DocumentParserOptions {
   textLayerMinChars?: number
   maxBlockChars?: number
+  onProgress?: (event: DocumentParserProgress) => void | Promise<void>
 }

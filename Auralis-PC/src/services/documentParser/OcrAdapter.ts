@@ -20,6 +20,18 @@ export class TauriOcrAdapter implements OcrAdapterContract {
       timeoutMs: this.timeoutMs,
     })
     if (!result.ok) throw new Error(result.errorCode || 'OCR_MODEL_FAILED')
-    return { lines: result.lines, model: this.model }
+    const safeTiming = (value: unknown): number => {
+      const number = typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
+      return number
+    }
+    return {
+      lines: result.lines,
+      timingMs: {
+        det: safeTiming(result.timingMs?.det),
+        rec: safeTiming(result.timingMs?.rec),
+        total: safeTiming(result.timingMs?.total),
+      },
+      model: this.model,
+    }
   }
 }
