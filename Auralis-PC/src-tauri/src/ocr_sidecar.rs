@@ -23,6 +23,8 @@ pub const MAX_RESTARTS: u8 = 2;
 const MAX_QUEUE_DEPTH: usize = 1;
 const MAX_STDERR_LINES: usize = 20;
 const MAX_STDERR_LINE_CHARS: usize = 1_024;
+const MAX_PAGE_SUMMARY_CHARS: usize = 512;
+const MAX_PAGE_SUMMARY_TOKEN_CHARS: usize = 64;
 const CHILD_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
 const READER_JOIN_TIMEOUT: Duration = Duration::from_millis(250);
 const WARMUP_PNG: &[u8] = &[
@@ -141,6 +143,55 @@ pub struct OcrPageResult {
     pub lines: Vec<OcrLine>,
     pub timing_ms: OcrTimingMs,
     pub error_code: Option<String>,
+}
+
+fn bounded_summary_task_id(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.'))
+        .take(MAX_PAGE_SUMMARY_TOKEN_CHARS)
+        .collect()
+}
+
+fn bounded_summary_error_code(value: &str) -> String {
+    value
+        .chars()
+        .take_while(|character| {
+            !character.is_whitespace() && *character != '/' && *character != '\\' && *character != ':'
+        })
+        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+        .take(MAX_PAGE_SUMMARY_TOKEN_CHARS)
+        .collect()
+}
+
+fn bounded_summary_total_ms(value: f64) -> String {
+    if value.is_finite() && value >= 0.0 {
+        value.to_string()
+    } else {
+        "0".to_owned()
+    }
+}
+
+fn format_page_summary(
+    task_id: &str,
+    page_number: u32,
+    image_bytes: usize,
+    ok: bool,
+    line_count: usize,
+    total_ms: f64,
+    restart_count: u8,
+    error_code: Option<&str>,
+) -> String {
+    let task_id = bounded_summary_task_id(task_id);
+    let error_code = error_code
+        .map(bounded_summary_error_code)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "none".to_owned());
+    let summary = format!(
+        "[OCR Page] task_id={task_id} page={page_number} image_bytes={image_bytes} ok={ok} line_count={line_count} total_ms={} restart_count={restart_count} error_code={error_code}",
+        bounded_summary_total_ms(total_ms),
+    );
+    summary.chars().take(MAX_PAGE_SUMMARY_CHARS).collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -977,43 +1028,74 @@ impl OcrSupervisor {
     }
 
     fn recognize(&mut self, command: OcrPageCommand) -> Result<OcrPageResult, OcrError> {
-        validate_page_command(&command)?;
-        std::fs::create_dir_all(&self.image_root).map_err(|_| OcrError::SidecarUnavailable)?;
-        let image_path = self
-            .image_root
-            .join(unique_image_name(&command.task_id, command.page_number));
-        std::fs::write(&image_path, &command.image_bytes)
-            .map_err(|_| OcrError::SidecarUnavailable)?;
-        let request = SidecarRequest::recognize(&command, &image_path);
+        let task_id = command.task_id.clone();
+        let page_number = command.page_number;
+        let image_bytes = command.image_bytes.len();
+        let result = (|| {
+            validate_page_command(&command)?;
+            std::fs::create_dir_all(&self.image_root).map_err(|_| OcrError::SidecarUnavailable)?;
+            let image_path = self
+                .image_root
+                .join(unique_image_name(&command.task_id, command.page_number));
+            std::fs::write(&image_path, &command.image_bytes)
+                .map_err(|_| OcrError::SidecarUnavailable)?;
+            let request = SidecarRequest::recognize(&command, &image_path);
 
-        let result = loop {
-            self.ensure_session()?;
-            let response = self
-                .session
-                .as_mut()
-                .ok_or(OcrError::SidecarUnavailable)?
-                .request(&request);
-            match response {
-                Ok(result) => break Ok(result),
-                Err(error)
-                    if matches!(
-                        error,
-                        OcrError::Timeout
-                            | OcrError::SidecarUnavailable
-                            | OcrError::SidecarUnavailableDiagnostic(_)
-                            | OcrError::SidecarProtocolDiagnostic(_)
-                    ) =>
-                {
-                    self.session = None;
-                    if self.restart_budget.try_restart() {
-                        continue;
+            let result = loop {
+                self.ensure_session()?;
+                let response = self
+                    .session
+                    .as_mut()
+                    .ok_or(OcrError::SidecarUnavailable)?
+                    .request(&request);
+                match response {
+                    Ok(result) => break Ok(result),
+                    Err(error)
+                        if matches!(
+                            error,
+                            OcrError::Timeout
+                                | OcrError::SidecarUnavailable
+                                | OcrError::SidecarUnavailableDiagnostic(_)
+                                | OcrError::SidecarProtocolDiagnostic(_)
+                        ) =>
+                    {
+                        self.session = None;
+                        if self.restart_budget.try_restart() {
+                            continue;
+                        }
+                        break Err(error);
                     }
-                    break Err(error);
+                    Err(error) => break Err(error),
                 }
-                Err(error) => break Err(error),
-            }
+            };
+            let _ = std::fs::remove_file(&image_path);
+            result
+        })();
+
+        let (ok, line_count, total_ms, error_code) = match &result {
+            Ok(response) => (
+                response.ok,
+                response.lines.len(),
+                response.timing_ms.total,
+                response.error_code.as_deref().or_else(|| {
+                    (!response.ok).then_some("OCR_MODEL_FAILED")
+                }),
+            ),
+            Err(error) => (false, 0, 0.0, Some(error.code())),
         };
-        let _ = std::fs::remove_file(&image_path);
+        eprintln!(
+            "{}",
+            format_page_summary(
+                &task_id,
+                page_number,
+                image_bytes,
+                ok,
+                line_count,
+                total_ms,
+                self.restart_budget.count(),
+                error_code,
+            )
+        );
         result
     }
 
@@ -1218,6 +1300,34 @@ mod tests {
         assert!(WARMUP_PNG.starts_with(b"\x89PNG\r\n\x1a\n"));
         let command = OcrPageCommand::new("warmup", 1, WARMUP_PNG.to_vec(), 30_000);
         assert_eq!(validate_page_command(&command), Ok(()));
+    }
+
+    #[test]
+    fn page_summary_is_bounded_and_excludes_ocr_content_and_paths() {
+        let summary = format_page_summary(
+            "task\nwith\runsafe-identifier-that-is-deliberately-long",
+            7,
+            4096,
+            false,
+            3,
+            f64::NAN,
+            2,
+            Some("MODEL_FAILED\nC:\\private\\ocr\\page.png"),
+        );
+
+        assert!(summary.len() <= MAX_PAGE_SUMMARY_CHARS);
+        assert!(summary.contains("task_id=taskwithunsafe-identifier-that-is-deliberately-long"));
+        assert!(summary.contains("page=7"));
+        assert!(summary.contains("image_bytes=4096"));
+        assert!(summary.contains("ok=false"));
+        assert!(summary.contains("line_count=3"));
+        assert!(summary.contains("total_ms=0"));
+        assert!(summary.contains("restart_count=2"));
+        assert!(summary.contains("error_code=MODEL_FAILED"));
+        assert!(!summary.contains("recognized OCR text"));
+        assert!(!summary.contains("C:\\private\\ocr\\page.png"));
+        assert!(!summary.contains('\n'));
+        assert!(!summary.contains('\r'));
     }
 
     #[test]
