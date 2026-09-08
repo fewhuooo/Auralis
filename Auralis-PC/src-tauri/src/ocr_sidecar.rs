@@ -165,10 +165,14 @@ fn bounded_summary_error_code(value: &str) -> String {
 }
 
 fn bounded_summary_total_ms(value: f64) -> String {
-    if value.is_finite() && value >= 0.0 {
-        value.to_string()
+    if !value.is_finite() || value <= 0.0 {
+        return "0".to_owned();
+    }
+    let rendered = value.to_string();
+    if rendered.len() <= 24 {
+        rendered
     } else {
-        "0".to_owned()
+        format!("{value:.6e}")
     }
 }
 
@@ -1328,6 +1332,37 @@ mod tests {
         assert!(!summary.contains("C:\\private\\ocr\\page.png"));
         assert!(!summary.contains('\n'));
         assert!(!summary.contains('\r'));
+    }
+
+    #[test]
+    fn page_summary_keeps_all_fields_for_extreme_and_negative_zero_timing() {
+        let summary = format_page_summary(
+            "task",
+            1,
+            2,
+            true,
+            usize::MAX,
+            f64::MAX,
+            u8::MAX,
+            Some("OCR_OK"),
+        );
+
+        assert!(summary.len() <= MAX_PAGE_SUMMARY_CHARS);
+        for field in [
+            "task_id=",
+            "page=",
+            "image_bytes=",
+            "ok=",
+            "line_count=",
+            "total_ms=",
+            "restart_count=",
+            "error_code=",
+        ] {
+            assert!(summary.contains(field), "missing {field}: {summary}");
+        }
+        let negative_zero = format_page_summary("task", 1, 2, true, 0, -0.0, 0, None);
+        assert!(negative_zero.contains("total_ms=0"));
+        assert!(!negative_zero.contains("total_ms=-0"));
     }
 
     #[test]
