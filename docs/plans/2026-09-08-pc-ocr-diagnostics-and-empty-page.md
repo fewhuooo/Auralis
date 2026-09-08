@@ -146,6 +146,171 @@
 - [ ] Run `git diff --check` and scan changed upload/diagnostic code for leaked URLs, Authorization/header names, query strings, paths and raw exception interpolation.
 - [ ] Do not stage or commit implementation files; preserve the user's existing uncommitted Antigravity/OCR changes and report automated evidence separately from real GUI verification.
 
+## Task 8: Freeze a shared ParsedDocument v1 contract fixture
+
+**Files:**
+- Create: `docs/contracts/fixtures/parsed-document-v1.json`
+- Modify: `Auralis-Server/src/test/java/com/auralis/app/source/ParsedDocumentValidatorTests.java`
+- Modify: `Auralis-PC/src-tauri/src/document_packager.rs`
+
+**Interfaces:**
+- Produces: one canonical schema v1 JSON object whose parser metadata, ordered blocks, Unicode character count and `SHA-256(text + "\\n")` digest are consumed by both Rust and Java tests.
+- Consumes: the exact top-level/parser/block allowlists in `ParsedDocumentValidator` and the approved design section “ParsedDocument schema v1 打包增量”.
+
+- [ ] Create a fixture with two blocks, including non-ASCII and supplementary-plane Unicode, continuous ordinals, nullable position fields, `characterCount` measured in Unicode code points, and the lowercase SHA-256 of each UTF-8 block text followed by one byte `0x0a`.
+- [ ] Add a Java test that loads the fixture, gzips it in memory, calculates compressed size/hash, and calls the real validator with matching source/revision/Asset metadata. Assert the returned blocks, count and hashes; do not weaken any existing rejection test.
+- [ ] Add a Rust test placeholder that decrypts/decompresses a package produced from the fixture metadata and compares `serde_json::Value` equality with the same fixture. Confirm it fails because current output is NDJSON rather than a top-level object.
+- [ ] Run:
+
+```powershell
+cd Auralis-Server
+.\mvnw.cmd -Dtest=ParsedDocumentValidatorTests test
+cd ..\Auralis-PC\src-tauri
+cargo test --lib document_packager::tests::package_matches_shared_schema_v1_fixture
+```
+
+Expected red state: Java accepts the canonical fixture; Rust fails while parsing or comparing the current NDJSON output.
+
+- [ ] Do not stage or commit: implementation will overlap the protected OCR working tree and is reviewed as one atomic fix.
+
+## Task 9: Stream the schema v1 envelope from the Rust packager
+
+**Files:**
+- Modify: `Auralis-PC/src-tauri/src/document_packager.rs`
+- Modify: `Auralis-PC/src-tauri/src/document_cache.rs`
+- Modify: `Auralis-PC/src-tauri/src/lib.rs` only if command wiring changes
+
+**Interfaces:**
+- Consumes: `PackageHeader` containing cache scope plus `source_asset_sha256`, `parser_id`, `parser_version`, `normalization_version`, and optional `ocr_model_version`.
+- Produces: `CacheReceipt` with `payload_format: "parsed-document-v1"`, the same safe metadata, and payload byte/hash values describing the decrypted gzip bytes.
+
+- [ ] Extend the failing packager tests to reject an empty/invalid Asset hash or parser metadata and to assert that cache-only owner fields never appear in decompressed JSON.
+- [ ] Implement a serializable upload-only header and write the prefix before the first block. The behavior must be equivalent to:
+
+```rust
+write!(encoder,
+    "{{\\\"schemaVersion\\\":1,\\\"sourceId\\\":{},\\\"ingestionRevision\\\":{},\\\"sourceAssetSha256\\\":{},\\\"parser\\\":{},\\\"blocks\\\":[",
+    json(source_id), json(ingestion_revision), json(asset_sha), json(parser_metadata))?;
+```
+
+Use `serde_json::to_writer` or serialized byte fragments for every string/object value; never interpolate unescaped user-controlled text.
+
+- [ ] In `append`, write a comma only when `next_ordinal > 0`, serialize the block once, update the plain digest with `block.text.as_bytes()` plus `b"\n"`, and increment `character_count` using `block.text.chars().count()` after the same normalization contract used by the parser.
+- [ ] In `finish`, reject zero blocks, finalize a clone/replacement of the digest, and write this suffix before finishing gzip:
+
+```rust
+write!(encoder,
+    "],\\\"characterCount\\\":{},\\\"plainTextSha256\\\":{}}}",
+    character_count,
+    json(hex::encode(plain_hash)))?;
+```
+
+- [ ] Extend `CacheHeader/CacheReceipt` with bounded format and upload metadata. Old encrypted headers must remain readable through `#[serde(default)]` optional fields, but absence must not be interpreted as v1 compatibility.
+- [ ] Re-run the shared fixture test and existing packager/cache tests. Expected green: actual decrypted/decompressed Rust output is structurally equal to the shared fixture, `payloadBytes < encryptedBytes`, and its payload hash matches the gzip bytes.
+- [ ] Run `cargo fmt --check`, `cargo test --lib document_packager::tests`, `cargo test --lib document_cache::tests`, and `cargo check --lib`; record any pre-existing Windows keyring/build-script permission failure separately.
+- [ ] Do not stage or commit.
+
+## Task 10: Carry envelope metadata through TypeScript and durable receipts
+
+**Files:**
+- Modify: `Auralis-PC/src/api/tauri.ts`
+- Modify: `Auralis-PC/src/services/documentProcessing/DocumentJobRunner.ts`
+- Modify: `Auralis-PC/src/services/documentProcessing/runtime.ts`
+- Modify: `Auralis-PC/src/types/documentProcessing.ts`
+- Modify: `Auralis-PC/src/services/localSchema.ts`
+- Modify: `Auralis-PC/scripts/r4-document-job-runner.test.mjs`
+- Modify: `Auralis-PC/scripts/r4-document-job-schema.test.mjs`
+
+**Interfaces:**
+- Consumes: scheduler-provided `sourceAssetSha256` and current parser constants.
+- Produces: a validated `DocumentCacheReceipt` whose `payloadFormat/sourceAssetSha256/parser*` fields round-trip through SQLite and browser storage and are available after restart.
+
+- [ ] Add failing runner tests that require `packager.begin` to receive this shape:
+
+```ts
+{
+  schemaVersion: 1,
+  payloadFormat: 'parsed-document-v1',
+  userId, serverDeviceId, sourceId, jobId, ingestionRevision,
+  sourceAssetSha256,
+  parserId,
+  parserVersion,
+  normalizationVersion,
+  ocrModelVersion: string | null,
+}
+```
+
+and reject packaging when `sourceAssetSha256` is absent or not 64 hex characters.
+
+- [ ] Change `DocumentJobRunner.start`/internal process input so the scheduler passes immutable package metadata for the current Asset; do not put the Asset hash in OCR progress or UI diagnostics.
+- [ ] Update `documentPackageBegin` validation and Rust invoke typing to require the exact v1 format and bounded non-empty parser metadata.
+- [ ] Add SQLite and browser round-trip tests for all new receipt fields. Sanitization rules: exact payload format literal, 64-hex lowercase Asset hash, bounded non-empty parser strings, optional bounded OCR model string; if the group is incomplete, treat the receipt as legacy/incompatible instead of filling defaults.
+- [ ] Update runtime adapters without changing the Tauri command names already exposed to the application.
+- [ ] Run the focused runner/schema/runtime tests and `npm.cmd run type-check`; expected green with no generated OpenAPI change.
+- [ ] Do not stage or commit.
+
+## Task 11: Rebuild legacy NDJSON caches before any upload intent
+
+**Files:**
+- Modify: `Auralis-PC/src/services/documentProcessing/sourceJobScheduler.ts`
+- Modify: `Auralis-PC/src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts`
+- Modify: `Auralis-PC/src/services/localRepository.ts` only for the minimal legal reset transition/options
+- Modify: `Auralis-PC/scripts/r4-source-processing-schedule.test.mjs`
+- Modify: `Auralis-PC/scripts/r4-parsed-document-upload.test.mjs`
+
+**Interfaces:**
+- Consumes: durable receipt compatibility predicate `receipt.payloadFormat === 'parsed-document-v1'` plus complete upload metadata.
+- Produces: either a direct resume using a compatible receipt, or one deterministic reset to `QUEUED` that deletes only the obsolete derived cache and re-enters Asset resolution/parsing/packaging.
+
+- [ ] Add a failing scheduler test starting from `PAUSED_NETWORK`/`UPLOADING` with a legacy receipt lacking `payloadFormat`. Assert cache deletion and receipt clearing occur before any `createParsedDocumentUploadIntent`/PUT/complete call, then the original Asset is resolved, hashed, parsed and repackaged exactly once.
+- [ ] Add a paired test proving a v1 receipt resumes without download/hash/parser/package and that its persisted `sourceAssetSha256` is passed to the upload coordinator instead of `{}`.
+- [ ] Add failure tests: obsolete cache deletion failure produces a stable local failure without clearing the only receipt; Asset reacquisition/network failure follows the existing paused-download behavior; Source deletion does not recreate the job.
+- [ ] Implement one exact compatibility predicate; do not infer compatibility from `payloadBytes != encryptedBytes` because both NDJSON and v1 caches can satisfy that after the earlier payload-length repair.
+- [ ] Perform reset in a recoverable order: validate job/source ownership, delete the obsolete derived cache, atomically clear `payloadCacheId/payloadReceipt` while transitioning to `QUEUED`, then follow the existing input/hash/prepare/run path. Do not delete Source, Asset, original file, or Server REJECTED audit rows.
+- [ ] Remove the `{}` resume metadata call. For a compatible v1 receipt invoke:
+
+```ts
+await upload.upload(job.jobId, receipt, {
+  sourceAssetSha256: receipt.sourceAssetSha256,
+})
+```
+
+The coordinator must reject a v1 receipt whose metadata is incomplete before creating an intent.
+
+- [ ] Run scheduler/coordinator/repository focused tests, full `npm.cmd run test:r4-pc`, and `npm.cmd run type-check`.
+- [ ] Do not stage or commit.
+
+## Task 12: Verify both contract sides and synchronize current documentation
+
+**Files:**
+- Modify: `docs/contracts/Database.md`
+- Modify: `docs/modules/FrontendPC.md`
+- Modify: `docs/modules/Infrastructure.md`
+- Modify: `docs/current/Status.md`
+- Modify: `docs/current/IssuesAndReview.md`
+- Modify: `docs/release/Changelog.md`
+
+**Interfaces:**
+- Consumes: completed Tasks 8–11 and their exact command evidence.
+- Produces: a reviewed, documented implementation ready for one real Tauri retry.
+
+- [ ] Verify the shared fixture from both sides:
+
+```powershell
+cd Auralis-PC\src-tauri
+cargo test --lib document_packager::tests
+cd ..\..\Auralis-Server
+.\mvnw.cmd -Dtest=ParsedDocumentValidatorTests,ParsedDocumentCompleteTests test
+```
+
+- [ ] Run PC focused suites for cache, runner, schema, scheduler and upload, then `npm.cmd run test:r4-pc` and `npm.cmd run type-check`.
+- [ ] Run Rust cache/packager/upload tests and `cargo check --lib`; keep the known Windows Credential Manager `NoStorageAccess(Error 1312)` and build-script permission state distinct from failures introduced by this change.
+- [ ] Run `git diff --check`, inspect the complete diff for deleted/generated/dependency files, and scan for NDJSON fallback, raw OCR text logs, signed URLs, Authorization, cache paths and owner fields inside upload JSON.
+- [ ] Update the listed current documents with actual results only. Database docs must distinguish local receipt/cache metadata from the Server database contract; no Server API schema or database migration is introduced.
+- [ ] Use one read-only reviewer for requirement compliance, regression, privacy, cache invalidation and cross-language contract coverage. Resolve every Critical/Important finding and rerun directly covering tests.
+- [ ] Rebuild/restart Tauri and retry `1.pdf`. Expected real sequence: legacy receipt detected → one local reparse/package → MinIO PUT → complete accepted → indexing → Source `READY`. Record the actual last reached phase; do not claim GUI/external-service acceptance unless observed.
+- [ ] Do not stage or commit the implementation set unless the user separately authorizes how to combine it with the protected pre-existing OCR changes.
+
 ## Final Review Gate
 
 - [ ] Review the complete diff from baseline `9563a49` to branch HEAD for plan compliance, privacy, retry behavior, checkpoint compatibility and unrelated regressions.
