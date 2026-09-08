@@ -65,6 +65,35 @@
 3. 调整 formatter/Profile 处理中心，把单页字段改为“本页”口径，将 OCR 摘要与上传/网络状态分组，并覆盖可执行 formatter/clipboard 测试。
 4. 运行 PC 聚焦测试、R4、type-check 和 diff 检查；真实 Tauri 使用 `1.pdf` 核对累计数值、网络暂停文案和复制内容。Rust sidecar 协议与页级日志无需因此修改。
 
+## 上传恢复与传输诊断增量
+
+真实运行证据表明 Backend 与 MinIO 容器均为 healthy，宿主机 `127.0.0.1:8080` 和 `127.0.0.1:9000` 返回 200；Server 已为当前 Source 创建 `parsed_documents` 的 `UPLOADING` 记录，但对应 MinIO 对象尚不存在。因此首次暂停发生在 Tauri 使用预签名 URL 执行对象 PUT 的阶段，不是 OCR、上传意图或服务未启动。
+
+点击“继续”后，`SourceJobScheduler.retry()` 先把 `PAUSED_NETWORK` 改成 `QUEUED`；检测到已有加密 payload receipt 后再进入 `UPLOADING`。该恢复路径是既有代码的明确意图，但生产状态表缺少 `QUEUED -> UPLOADING`，导致真正重试 PUT 之前被 `DOCUMENT_JOB_ILLEGAL_TRANSITION` 阻断。
+
+### 状态机修复
+
+- 对拥有有效 `payloadReceipt` 的任务，允许 `QUEUED -> UPLOADING`；无 receipt 的普通 `QUEUED` 任务仍进入下载/解析路径。
+- `PAUSED_NETWORK -> QUEUED -> UPLOADING` 用于用户显式重试，`PAUSED_NETWORK -> UPLOADING` 继续用于自动恢复；两条路径都不得重新 OCR、重新下载或重新哈希原始文件。
+- 使用真实 `DocumentProcessingJobRepository` 状态规则补回归，不能只依赖不校验 transition 的 fake repository。
+- 重试成功后沿现有 `UPLOADING -> SERVER_VALIDATING -> READY` 推进；失败仍保留 receipt 和 cache，以便再次恢复。
+
+### 安全传输诊断
+
+- 对外稳定错误码继续使用 `NETWORK_OFFLINE`，但 `errorDetail` 必须保留阶段和经过 allowlist 的传输原因：`connect`、`timeout`、`body`、`request`、`client` 或 `retryable-response`。
+- Rust/Tauri 返回的 `NETWORK_OFFLINE:<reason>` 不得在 `errorCode()` 截断后彻底丢失；协调器只提取已知后缀，不展示任意异常文本、预签名 URL、headers、Authorization 或对象路径。
+- HTTP 408/425/429/5xx 继续作为可重试响应处理，但详情应标为 `retryable-response`，不能误称为设备断网。
+- Profile 的“当前处理状态”根据安全原因区分“连接失败”“请求超时”“传输中断”和“存储服务暂时拒绝”，同时明确本地 OCR 已完成。
+- Tauri 开发终端继续保留现有 `[Document Upload] PUT failed: <stable diagnostic>`，不增加 URL 或敏感 header 日志。
+
+### 修复验收
+
+- repository 测试证明 `QUEUED -> UPLOADING` 合法，且其它未授权 transition 仍被拒绝。
+- scheduler 测试使用真实 transition 规则证明：带 receipt 的暂停任务点击继续后直接调用 upload，OCR/download/hash 调用均为零。
+- upload coordinator 测试分别覆盖 `NETWORK_OFFLINE:connect`、`NETWORK_OFFLINE:timeout`、`NETWORK_OFFLINE:body` 和 `DOCUMENT_UPLOAD_RETRYABLE`，断言稳定 code 与安全 detail，且不包含 URL/header。
+- UI formatter 测试覆盖传输原因本地化及未知后缀降级，不渲染原始异常。
+- 自动测试通过后，真实 Tauri 再点击“继续”，确认不再出现 `DOCUMENT_JOB_ILLEGAL_TRANSITION`；若 PUT 仍失败，以新详情确定 MinIO 传输原因。该验证不等同于最终上传成功验收。
+
 ## 测试与验收
 
 - Node 单元测试先证明：含一个空白扫描页和一个有效页的文档继续完成；全部 OCR 页为空时才失败为 `OCR_DOCUMENT_EMPTY`；诊断包含页码/总页数/耗时/行数但不含正文和完整路径。
