@@ -192,3 +192,33 @@
 - 自动测试捕获 console 输出，覆盖 PUT 成功、PUT 失败、complete 失败、complete 接受和过期 intent 后第二次 PUT，并断言事件顺序与 errorCode。
 - 安全断言检查日志不含 upload URL、headers、Authorization、cache/path、receipt、OCR 正文或任意服务端响应 body。
 - 运行 ParsedDocument upload 聚焦测试、完整 PC R4、type-check 和 `git diff --check`。真实 Tauri 以最后出现的事件定位当前停点；该日志不改变 `SERVER_INDEXING → READY` 业务状态机。
+
+## ParsedDocument complete 后的 Source 状态收敛
+
+现场已经观察到 `PUT_STARTED → PUT_SUCCEEDED → COMPLETE_ACCEPTED`，因此上传、MinIO 和 Server complete 校验均已越过；剩余问题限定为 Server ingestion 状态推进及其回传到 PC 本地 Source 投影。修复采用“Server 权威事件 + PC 一次 read-sync 兜底 + 部署启用 worker”的组合，不新增 API、数据库字段或第二套状态机。
+
+### Server 权威同步事件
+
+- `SourceService` 的内部 ingestion 状态入口在实际持久化状态变化后统一发布 `ResourceChangedEvent(ResourceType.SOURCE, UPDATE)`，覆盖 `PARSING`、`PENDING`、`INDEXING`、`READY` 与 `FAILED`。事件 payload 使用保存后的 `SourceView` 和 version。
+- `ParsedDocumentService.complete()` 保持 Source 行锁、ParsedDocument 接受、Source `INDEXING` 和 ingestion job 入队处于同一事务；其 `INDEXING` 更新必须复用上述统一入口，禁止继续直接修改 Source 而绕过同步事件。
+- 同步事件继续走既有 `ResourceChangedEvent → change_log → ResourceChangeRecordedEvent → AFTER_COMMIT realtime SYNC_CHANGED` 链路，不额外直接发送 WebSocket 消息。事务回滚时不得留下 change-log 或 realtime 成功通知。
+- 重复设置相同 ingestion 状态不制造无意义的 Source version/change-log；错误码或安全错误说明发生实际变化时仍视为 Source 变化。
+
+### PC complete 后 read-sync 兜底
+
+- `ParsedDocumentUploadCoordinator` 在收到明确的 `status: ACCEPTED`、记录 `COMPLETE_ACCEPTED` 后，通过可注入回调请求一次 `useSyncStore().requestBackgroundSync('read')`。
+- 该请求只唤醒现有合并调度器，不直接改写 Source Store、不直接用 GET 响应覆盖 SQLite，也不等待 Server worker 完成；realtime 正常时允许与 realtime 请求合并。
+- read-sync 调度失败或 realtime 暂时不可用不得把已经成功的 complete 改判为上传失败，本地文档 job 仍按既有合法迁移进入 `SERVER_INDEXING → READY`。
+
+### 部署配置
+
+- 当前根目录 `.env` 的 `AURALIS_AI_INGESTION_WORKER_ENABLED=false` 会使 compose Server 不创建 `IngestionWorkerScheduler`；本机联调配置改为 `true`，重新创建 Server 容器后使用有效配置或启动日志确认 worker bean 已启用。
+- `application-test.yml` 与 PostgreSQL 集成测试配置继续保持 worker disabled，保证测试由用例显式驱动；不修改生产密钥、MinIO 凭证或网络拓扑。
+- 验收时直接读取 Source：先应看到 `INDEXING`，worker 成功后应为 `READY`；随后 sync pull 应包含对应 `SOURCE/UPDATE`，PC SQLite 与 UI 最终显示处理完成。
+
+### 测试与验收
+
+- Server 测试先证明 complete/worker 状态改变当前不会产生匹配的 Source change-log，再实现统一事件发布并验证 `INDEXING`、`READY`、`PENDING`、`FAILED` payload、version 和 cursor。
+- 事务测试证明失败或回滚不发送 realtime 成功事件；相同状态重复调用不产生重复 change-log。
+- PC 测试先证明 `COMPLETE_ACCEPTED` 后没有 read-sync 请求，再验证只请求一次 `read`，并证明回调异常不会改变 complete 的成功结果和本地 job 状态。
+- 自动测试通过只证明事件与调度契约；真实 compose Server/MinIO、embedding provider、sync pull、Tauri SQLite 和 GUI 状态仍需现场验收。
