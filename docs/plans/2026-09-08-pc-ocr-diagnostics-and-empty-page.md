@@ -316,3 +316,140 @@ cd ..\..\Auralis-Server
 - [ ] Review the complete diff from baseline `9563a49` to branch HEAD for plan compliance, privacy, retry behavior, checkpoint compatibility and unrelated regressions.
 - [ ] Resolve all Critical/Important findings and re-run the directly covering tests.
 - [ ] Report commit list and exact verification outcomes; keep real GUI acceptance separate from automated evidence.
+
+## Task 13: Add bounded MinIO PUT and Server complete trace events
+
+**Files:**
+- Modify: `Auralis-PC/src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts`
+- Modify: `Auralis-PC/scripts/r4-parsed-document-upload.test.mjs`
+- Modify after verification: `docs/modules/FrontendPC.md`
+- Modify after verification: `docs/current/Status.md`
+- Modify after verification: `docs/current/IssuesAndReview.md`
+- Modify after verification: `docs/release/Changelog.md`
+
+**Interfaces:**
+- Consumes: existing `errorCode(error: unknown): string`, `DocumentUploadPutReceipt`, and `ParsedDocumentCompleteResponse`.
+- Produces: console events with prefix `[Document Upload Trace]` and allowlisted payload `{ event, jobId, stage?, errorCode?, durationMs? }`.
+- Event literals: `PUT_STARTED | PUT_SUCCEEDED | COMPLETE_ACCEPTED | FAILED`.
+- Stage literals: `put | complete`.
+
+- [ ] **Step 1: Add failing tests for exact successful event order**
+
+Capture `console.info`/`console.warn` around a successful coordinator upload. Assert the structured events are exactly:
+
+```js
+[
+  { event: 'PUT_STARTED', jobId: 'job-1', stage: 'put' },
+  { event: 'PUT_SUCCEEDED', jobId: 'job-1', stage: 'put' },
+  { event: 'COMPLETE_ACCEPTED', jobId: 'job-1', stage: 'complete' },
+]
+```
+
+The assertion may ignore `durationMs` except to require a finite non-negative number where present. Run:
+
+```powershell
+cd Auralis-PC
+node --experimental-strip-types --test scripts/r4-parsed-document-upload.test.mjs
+```
+
+Expected red: no `[Document Upload Trace]` entries are captured.
+
+- [ ] **Step 2: Add failing tests for PUT/complete failure and retry sequences**
+
+Cover these exact sequences:
+
+```text
+PUT failure:      PUT_STARTED -> FAILED(stage=put,errorCode=<stable code>)
+complete failure: PUT_STARTED -> PUT_SUCCEEDED -> FAILED(stage=complete,errorCode=<stable code>)
+expired intent:   PUT_STARTED -> FAILED(put,DOCUMENT_UPLOAD_INTENT_EXPIRED)
+                  -> PUT_STARTED -> PUT_SUCCEEDED -> COMPLETE_ACCEPTED
+server rejection: PUT_STARTED -> PUT_SUCCEEDED -> FAILED(complete,PARSED_DOCUMENT_SERVER_REJECTED)
+```
+
+Capture the complete console arguments and assert their serialized form excludes `https://`, `Authorization`, `Bearer`, `cacheId`, `payloadReceipt`, file paths, OCR text, arbitrary response bodies and test secrets. Verify the tests fail because trace events are absent.
+
+- [ ] **Step 3: Implement one allowlisted trace helper**
+
+In `ParsedDocumentUploadCoordinator.ts`, define narrow local types and a helper equivalent to:
+
+```ts
+type UploadTraceEvent = 'PUT_STARTED' | 'PUT_SUCCEEDED' | 'COMPLETE_ACCEPTED' | 'FAILED'
+type UploadTraceStage = 'put' | 'complete'
+
+function traceUpload(input: {
+  event: UploadTraceEvent
+  jobId: string
+  stage?: UploadTraceStage
+  errorCode?: string
+  durationMs?: number
+}): void {
+  const entry = {
+    event: input.event,
+    jobId: input.jobId,
+    ...(input.stage ? { stage: input.stage } : {}),
+    ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+    ...(Number.isFinite(input.durationMs) ? { durationMs: Math.max(0, Math.round(input.durationMs!)) } : {}),
+  }
+  const method = input.event === 'FAILED' ? console.warn : console.info
+  method('[Document Upload Trace]', entry)
+}
+```
+
+Do not pass exception objects, URLs, headers, receipts, response DTOs, cache IDs or paths to the helper.
+
+- [ ] **Step 4: Instrument every actual PUT attempt**
+
+Wrap the existing `this.put.put(...)` call in `putCache`:
+
+```ts
+const startedAt = Date.now()
+traceUpload({ event: 'PUT_STARTED', jobId: job.jobId, stage: 'put' })
+try {
+  const result = await this.put.put(request)
+  if (result.bytesSent !== receipt.payloadBytes
+    || result.payloadSha256.toLowerCase() !== receipt.payloadSha256.toLowerCase()) {
+    throw new Error('DOCUMENT_UPLOAD_PAYLOAD_MISMATCH')
+  }
+  traceUpload({ event: 'PUT_SUCCEEDED', jobId: job.jobId, stage: 'put', durationMs: Date.now() - startedAt })
+  return result
+} catch (error) {
+  traceUpload({ event: 'FAILED', jobId: job.jobId, stage: 'put', errorCode: errorCode(error), durationMs: Date.now() - startedAt })
+  throw error
+}
+```
+
+Remove the now-duplicate post-PUT validation from `process`. Preserve the existing retry-on-expired-intent behavior and map `DOCUMENT_UPLOAD_PAYLOAD_MISMATCH` to its existing stable local failure code/detail rather than a generic message.
+
+- [ ] **Step 5: Instrument complete acceptance and failure**
+
+Around `completeParsedDocument`, emit `FAILED(stage=complete,errorCode=...)` in the catch before the existing `pauseOrFail`. If the response status is not `ACCEPTED`, emit `FAILED(stage=complete,errorCode=PARSED_DOCUMENT_SERVER_REJECTED)` before persisting the stable server failure. Emit `COMPLETE_ACCEPTED` only after the accepted-status check and before the existing legal `SERVER_VALIDATING -> SERVER_INDEXING -> READY` local transitions.
+
+- [ ] **Step 6: Run focused red-to-green verification**
+
+```powershell
+cd Auralis-PC
+node --experimental-strip-types --test scripts/r4-parsed-document-upload.test.mjs
+node --experimental-strip-types --test scripts/r4-source-processing-schedule.test.mjs scripts/r4-document-processing-flow.test.mjs scripts/r4-document-job-schema.test.mjs
+npm.cmd run type-check
+```
+
+Expected: all commands exit 0; upload traces satisfy order/privacy assertions and existing state-machine tests remain green.
+
+- [ ] **Step 7: Run full PC regression and inspect the diff**
+
+```powershell
+npm.cmd run test:r4-pc
+cd ..
+git diff --check
+git diff -- Auralis-PC/src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts Auralis-PC/scripts/r4-parsed-document-upload.test.mjs
+```
+
+Expected: full R4 and diff check exit 0; production diff contains no logging of URL, headers, receipt, cache/path, OCR content or raw exception.
+
+- [ ] **Step 8: Synchronize current documentation**
+
+Record only actual command results and the four trace events in the listed current documents. Keep real Tauri/MinIO/Server/GUI observation explicitly unverified until the user supplies the runtime event sequence.
+
+- [ ] **Step 9: Read-only review**
+
+Use one reviewer to inspect event ordering, retry duplication, stable error-code mapping, privacy allowlist, state-machine preservation and directly covering tests. Resolve all Critical/Important findings and rerun their covering tests. Do not stage or commit the implementation set in the protected dirty worktree.
