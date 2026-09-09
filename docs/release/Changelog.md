@@ -1,13 +1,87 @@
 # Auralis 变更记录
 
-更新时间：2026-09-07
+### PC 时间轴空槽拖动 400 修复（2026-09-09）
+
+- 修复排期任务拖到空槽时仍调用 `POST /api/tasks/schedule-swaps` 并发送空 `targetTaskId` 导致 400 的问题。空槽现按单 Task 写入本地 repository/outbox，只有两个占用槽之间才使用原子 swap API。
+- TDD 回归修复前实际命中 `targetTaskId: ''`；修复后时间轴相关 35/35、完整 PC 272/272、type-check 与静态检查通过。真实 Tauri GUI 拖动与后台同步仍待人工验收。
+
+### PC 知识块来源名称修复（2026-09-09）
+
+- 修正 KnowledgeBlock UI 投影把 `sourceId` 直接显示为来源名的问题；现从同一本地 Source 投影取得 `title`，并在 Source 变化时刷新。缺失关联投影时显示“来源资料”，不再泄露 UUID。
+- TDD 回归使用 `编译原理课件chap01(陈火旺)-v9.ppt` 复现并锁定中英文/括号文件名；聚焦 11/11、完整 PC 270/270、type-check 与静态检查通过。真实 Tauri GUI 仍需人工走查。
+
+### PC 知识块学科名称映射修复（2026-09-09）
+
+- 修正 KnowledgeBlock UI 投影把 `subjectId` 直接显示为学科名称的问题；现从同一本地 Subject 投影取得 `name`，缺失关联时使用“未分类学科”，并继续保留 `subjectId` 作为关联标识。
+- 新增 TDD 回归覆盖 UUID 不得成为可见学科标签；映射聚焦 12/12、完整 PC 271/271、type-check、静态检查、生产构建与 diff-check 通过。真实 Tauri GUI 仍需人工验收。
+
+### PC PDF 混合页面阶段修复（2026-09-09）
+
+- `DocumentJobRunner` 在 OCR 已启动后保持 `OCR_RUNNING` 处理后续普通文字 block，直到进入 `PACKAGING`，消除文字→OCR→文字 PDF 的非法阶段回退；未改变 PDF 分类、API、schema 或 PPT 行为。
+- 修复前回归实际触发 `DOCUMENT_JOB_ILLEGAL_TRANSITION` 并最终 `FAILED_LOCAL`；修复后 runner 12/12。真实 51 页 PDF/Tauri GUI 仍待验收。
+
+### Server Sync retention 定时事务修复（2026-09-09）
+
+- `SyncRetentionService.scheduledPurgeExpired()` 现在从 Spring 调度代理入口即建立事务，真实 JPA delete query 不再因同 Bean 自调用绕过 `purgeExpired()` 的事务代理而抛出 `TransactionRequiredException`。
+- 新增 Spring 代理入口回归测试；测试先复现异常，修复后聚焦用例 1/1、`SyncServiceTests` 11/11 通过。未修改 API、数据库 schema 或 retention 语义；重建 backend 后的实际 scheduled run 仍待运行日志复核。
+
+### PC ParsedDocument upload trace（2026-09-09）
+
+- 新增有界 `[Document Upload Trace]` 开发日志，记录 PUT/complete 边界与稳定失败阶段，保持现有重试、缓存安全和状态机不变；真实 Tauri/MinIO/Server/GUI 仍待验收。
+
+### PC ParsedDocument stale/current revision preflight correction（2026-09-09）
+
+- scheduler 先执行一次权威 Source GET 取得当前 revision，再处理 stale jobs，并只在 current revision 选定后校验 cache ownership；stale corrupt row 不再阻塞 valid current row。
+- current mismatch 仍阻止后续 hash、runner、上传网络和 cache deletion。scheduler 33/33、完整 PC R4 259/259、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+### PC ParsedDocument recoverable server-phase mismatch（2026-09-09）
+
+- `SERVER_VALIDATING`/`SERVER_INDEXING` 的本地 cache ownership mismatch 现在合法进入 `FAILED_LOCAL` 并支持 retry；READY/FAILED_SERVER 保留原 phase。scheduler 在一次权威 Source read 后对选中的 current revision 完成本地关系预检，异常时不执行后续网络、OCR 或 cache deletion。
+- schema 17/17、scheduler 32/32、完整 PC R4 258/258、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+### PC ParsedDocument phase-safe cache mismatch closure（2026-09-09）
+
+- scheduler schema-v1 cache ownership mismatch 统一走 phase-safe cleanup failure preservation；READY、SERVER_VALIDATING、SERVER_INDEXING、FAILED_SERVER 不再非法迁移到 FAILED_LOCAL，recoverable phases 仍按既有规则失败。两侧 cache ID/receipt 保留，且不会删除 mismatch cache 或触发网络/OCR。
+- Real repository table regression 31/31，完整 PC R4 256/256、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+### PC ParsedDocument cache-safety follow-up（2026-09-09）
+
+- READY 派生 cache 现在删除成功后才清除本地 receipt/ID；删除失败保留证据并允许后续 READY scheduling 重试，不重新执行 upload/parser/backend 请求。
+- schema-v1 cache ID ownership mismatch 在 scheduler 和 coordinator 的网络边界前统一拒绝。Focused upload 16/16、scheduler 30/30、schema 16/16，完整 PC R4 255/255、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+### PC ParsedDocument upload 状态迁移修复（2026-09-09）
+
+- complete 返回 `ACCEPTED` 后，PC coordinator 现在按现行本地状态机依次持久化 `SERVER_INDEXING`、`READY`，不再直接跨越中间阶段；未修改迁移表或 scheduler 的 READY 后 cache cleanup 责任。
+- TDD 回归先用真实 `DocumentProcessingJobRepository` 复现 `DOCUMENT_JOB_ILLEGAL_TRANSITION`，修复后 ParsedDocument upload 15/15、processing flow 1/1、job schema 16/16、source scheduler 27/27、完整 `npm.cmd run test:r4-pc` 251/251、`npm.cmd run type-check` 与 `git diff --check` 通过。真实 Tauri/Server/MinIO 与 GUI 仍待验收。
+
+更新时间：2026-09-09
 
 文档状态：现行历史记录
+
+### PC ParsedDocument schema-v1 打包与兼容恢复（2026-09-08）
+
+- Rust packager 现在生成单个 gzip JSON schema-v1 envelope，Java validator/complete 与共享 fixture 对齐；不提供 NDJSON fallback。
+- 本地加密 cache/receipt 保存 `parsed-document-v1`、Source Asset SHA 和 parser metadata；兼容 receipt 直接续传，旧或不完整 receipt 在 upload intent 前只清理派生 cache 并重建一次。未新增 Server migration 或 OpenAPI shape。
+- 自动验证：Rust packager 5/5、cache 5/5、upload 8/8，Java 定向 8/8，最终 scheduler 27/27、完整 PC R4 250/250、type-check 和 `git diff --check` 通过。Final reviewer 的所有 Critical/Important findings 已关闭；真实 Tauri/Server/MinIO 与 `1.pdf` GUI retry 仍待人工验收。
+
+### PC ParsedDocument PUT 安全诊断增强（2026-09-08）
+
+- Tauri 上传失败日志在 `reqwest::Error::without_url()` 后增加 request/builder/redirect/status/decode 等 flags，并最多保留三层 source cause；对 URL、预签名 query、Authorization、header value、路径和控制字符执行脱敏，最终诊断总长限制为 256 字节。
+- 保持现有 `NETWORK_OFFLINE:*` 错误码、前端诊断和 SQLite 持久化契约不变；真实 Tauri/MinIO 上传根因仍待人工复现。
+
+### PC ParsedDocument cache payload 长度修复（2026-09-08）
+
+- 修复加密 cache receipt 把 envelope 总大小误记为 `payloadBytes/payloadSha256` 的问题；receipt、服务端 upload intent、Rust `Body::sized`/`Content-Length` 和发送后校验现在都对应解密 reader 实际 gzip payload。
+- 历史 receipt 若 `payloadBytes === encryptedBytes`，恢复上传前通过 owner-scoped native cache reader 重新计算 payload size/hash，不要求重新 OCR 或重新打包。
 
 ### PC OCR 诊断文档同步（2026-09-08）
 
 - 记录 OCR 页级 continuation、全空文档 `OCR_DOCUMENT_EMPTY`、有界可复制诊断及本机隐私边界；focused 自动测试与 Rust 检查结果按本轮报告登记。
 - 未宣称 `1.pdf` 真实 Tauri GUI、剪贴板/accessibility、sidecar 日志或 OCR 质量验收通过；这些仍需人工验证。
+
+### PC 断网上传恢复状态机（2026-09-08）
+
+- 带持久化 payload receipt 的 `PAUSED_NETWORK` 任务继续时经 `QUEUED -> UPLOADING` 直接续传，不重跑 OCR、download 或 hash；`NETWORK_OFFLINE` 保持稳定错误码，详情仅保留 allowlist reason。真实 Tauri/MinIO PUT 与 GUI 成功仍待验收。
 
 ### PC/Server/Mobile 全端认知负荷移除复核（2026-09-07）
 
@@ -716,7 +790,11 @@
 
 ## [Unreleased]
 
+- Task 16 runtime verification (2026-09-09): backend-only Docker rebuild/recreate passed Compose config, health/readiness, and ingestion worker flag checks; PostgreSQL/MinIO volumes were preserved. Read-only inspection found existing READY data without historical SOURCE UPDATE events (expected for pre-fix rows). The scheduled Sync retention `TransactionRequiredException` is fixed in code with focused H2 regression evidence; rebuilt-backend scheduled logs and end-to-end authenticated reingest/upload plus PC GUI retry remain pending.
+
+- Server Task 14: Source ingestion state and safe failure diagnostic changes now emit existing `SOURCE/UPDATE` sync events exactly once per actual persisted change; identical repeated calls are no-ops, and ParsedDocument complete routes locked `INDEXING` through the same transactional service path.
 - Removed Task `colorOverride`/legacy `color` from Server, V21 schema, OpenAPI, PC, and Mobile/Tablet projections; Task visuals now use semantic CSS tokens while KnowledgeBlock colors remain unchanged.
+- PC Task 15: after an explicit ParsedDocument `ACCEPTED` complete, request one coalesced background `read` sync; callback failures are best-effort and cannot alter accepted upload or local readiness transitions.
 
 ## 维护规则
 

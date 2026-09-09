@@ -119,14 +119,34 @@ test('cache receipt metadata survives a SQL repository round trip', async () => 
     const receipt = {
       cacheId: 'cache-1', envelopeVersion: 1, chunkCount: 2, encryptedBytes: 128,
       plainTextSha256: 'a'.repeat(64), payloadSha256: 'b'.repeat(64), payloadBytes: 96,
+      payloadFormat: 'parsed-document-v1', sourceAssetSha256: 'C'.repeat(64),
+      parserId: 'auralis-document-parser', parserVersion: '1.0.0', normalizationVersion: 'nfkc-lf-trim', ocrModelVersion: null,
     }
     await repository.transition('job-receipt', 'EXTRACTING')
     await repository.transition('job-receipt', 'PACKAGING', { payloadCacheId: receipt.cacheId, payloadReceipt: receipt })
     const persisted = await repository.get('job-receipt')
-    assert.deepEqual(persisted.payloadReceipt, receipt)
+    assert.deepEqual(persisted.payloadReceipt, { ...receipt, sourceAssetSha256: receipt.sourceAssetSha256.toLowerCase() })
   } finally {
     sqlite.close()
   }
+})
+
+test('incomplete receipts remain legacy on browser round trip', async () => {
+  const storage = createMemoryStorage()
+  const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { storage })
+  await repository.create({ jobId: 'job-legacy-receipt', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+  await repository.transition('job-legacy-receipt', 'EXTRACTING')
+  await repository.transition('job-legacy-receipt', 'PACKAGING', {
+    payloadCacheId: 'cache-legacy',
+    payloadReceipt: {
+      cacheId: 'cache-legacy', envelopeVersion: 1, chunkCount: 1, encryptedBytes: 64,
+      plainTextSha256: 'a'.repeat(64), payloadSha256: 'b'.repeat(64), payloadBytes: 32,
+      payloadFormat: 'parsed-document-v1', sourceAssetSha256: 'not-a-hash', parserId: 'parser',
+    },
+  })
+  const persisted = await repository.get('job-legacy-receipt')
+  assert.equal(persisted.payloadReceipt.payloadFormat, undefined)
+  assert.equal(persisted.payloadReceipt.sourceAssetSha256, undefined)
 })
 
 test('OCR checkpoint diagnostics survive SQL and browser round trips without new columns', async () => {
@@ -223,6 +243,33 @@ test('document job transitions reject illegal phases and checkpoint atomically',
   }
 })
 
+test('server validation and indexing phases can retry local cache corruption', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: sqlite })
+    for (const phase of ['SERVER_VALIDATING', 'SERVER_INDEXING']) {
+      const jobId = `job-${phase}`
+      await repository.create({ jobId, sourceId: `source-${phase}`, ingestionRevision: `revision-${phase}` })
+      await repository.transition(jobId, 'EXTRACTING')
+      await repository.transition(jobId, 'PACKAGING')
+      await repository.transition(jobId, 'UPLOADING')
+      await repository.transition(jobId, 'SERVER_VALIDATING')
+      if (phase === 'SERVER_INDEXING') await repository.transition(jobId, 'SERVER_INDEXING')
+      const failed = await repository.transition(jobId, 'FAILED_LOCAL', {
+        payloadCacheId: 'column-cache',
+        payloadReceipt: { cacheId: 'receipt-cache' },
+        errorCode: 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH',
+        errorDetail: 'Derived document cache ownership mismatch; receipt preserved',
+      })
+      assert.equal(failed.phase, 'FAILED_LOCAL')
+      assert.equal(failed.payloadCacheId, 'column-cache')
+      assert.equal(failed.payloadReceipt.cacheId, 'receipt-cache')
+    }
+  } finally {
+    sqlite.close()
+  }
+})
+
 test('retryable OCR phases can be requeued by the production transition policy', async () => {
   const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: null })
   await repository.create({ jobId: 'job-retry-extracting', sourceId: 'source-1', ingestionRevision: 'revision-1' })
@@ -273,6 +320,28 @@ test('browser hydration strips invalid OCR diagnostics while retaining valid bou
   const jobs = await repository.list()
   assert.deepEqual(jobs[0].checkpoint.diagnostic, { pageNumber: 3, totalPages: 4, imageBytes: 4096, rawLineCount: 2, normalizedLineCount: 1, totalMs: 8, outcome: 'text' })
   assert.deepEqual(jobs[1].checkpoint, { pageNumber: 1, blockOrdinal: 0 })
+})
+
+test('inconsistent cumulative OCR page counts are removed as one group in SQL and browser checkpoints', async () => {
+  const invalid = { pageNumber: 3, totalPages: 4, imageBytes: 4096, outcome: 'running', ocrProcessedPages: 2, ocrTextPages: 2, ocrEmptyPages: 1, totalRawLineCount: 4, totalNormalizedLineCount: 3 }
+  const valid = { ...invalid, ocrProcessedPages: 3, ocrTextPages: 2, ocrEmptyPages: 1 }
+  const sqlite = new TemporarySqlite()
+  try {
+    const repository = new DocumentProcessingJobRepository('user-a', 'device-1', { sql: sqlite })
+    await repository.create({ jobId: 'job-invalid-group', sourceId: 'source-1', ingestionRevision: 'revision-1' })
+    await sqlite.execute('UPDATE document_processing_jobs SET checkpoint_json = $1 WHERE job_id = $2', [JSON.stringify({ pageNumber: 3, blockOrdinal: 0, diagnostic: invalid }), 'job-invalid-group'])
+    assert.deepEqual((await repository.get('job-invalid-group')).checkpoint.diagnostic, { pageNumber: 3, totalPages: 4, imageBytes: 4096, outcome: 'running', totalRawLineCount: 4, totalNormalizedLineCount: 3 })
+  } finally {
+    sqlite.close()
+  }
+
+  const storage = createMemoryStorage()
+  storage.setItem('auralis:v5:document-jobs:user-a:device-1', JSON.stringify([{
+    jobId: 'job-valid-group', userId: 'user-a', serverDeviceId: 'device-1', sourceId: 'source-2', ingestionRevision: 'revision-1', phase: 'OCR_RUNNING', attempt: 0,
+    checkpoint: { pageNumber: 3, blockOrdinal: 0, diagnostic: valid }, payloadCacheId: null, payloadReceipt: null, errorCode: null, errorDetail: null, createdAt: '2026-08-24', updatedAt: '2026-08-24',
+  }]))
+  const browser = new DocumentProcessingJobRepository('user-a', 'device-1', { storage })
+  assert.deepEqual((await browser.get('job-valid-group')).checkpoint.diagnostic, valid)
 })
 
 test('UPLOADING can persist a local terminal failure without masking its cause', async () => {

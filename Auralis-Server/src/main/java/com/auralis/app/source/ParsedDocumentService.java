@@ -10,6 +10,7 @@ import com.auralis.app.source.internal.persistence.SourceEntity;
 import com.auralis.app.source.internal.persistence.SourceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.util.Locale;
 import java.util.Objects;
@@ -27,6 +28,7 @@ public class ParsedDocumentService {
     private final AssetService assetService;
     private final ParsedDocumentValidator validator;
     private final IngestionJobService ingestionJobService;
+    private final SourceService sourceService;
 
     public ParsedDocumentService(
             SourceRepository sourceRepository,
@@ -35,7 +37,8 @@ public class ParsedDocumentService {
             AuralisProperties properties,
             AssetService assetService,
             ParsedDocumentValidator validator,
-            IngestionJobService ingestionJobService) {
+            IngestionJobService ingestionJobService,
+            SourceService sourceService) {
         this.sourceRepository = sourceRepository;
         this.parsedDocumentRepository = parsedDocumentRepository;
         this.assetStorage = assetStorage;
@@ -43,6 +46,7 @@ public class ParsedDocumentService {
         this.assetService = assetService;
         this.validator = validator;
         this.ingestionJobService = ingestionJobService;
+        this.sourceService = sourceService;
     }
 
     @Transactional
@@ -117,6 +121,7 @@ public class ParsedDocumentService {
             throw new DomainException("MUTATION_REJECTED", "Parsed document is not awaiting completion");
         }
 
+        boolean accepted = false;
         try {
             document.markValidating();
             parsedDocumentRepository.saveAndFlush(document);
@@ -140,17 +145,25 @@ public class ParsedDocumentService {
                             2_000_000, 100));
             UUID generation = UUID.randomUUID();
             document.accept(validated.plainTextSha256(), generation);
-            source.markIndexing();
-            sourceRepository.saveAndFlush(source);
+            accepted = true;
+            sourceService.markIndexing(userId, sourceId);
             IngestionJobEntity job = ingestionJobService.enqueueParsedDocument(
                     userId, sourceId, document.getId(), source.getIngestionRevision(), document.getGeneration());
             parsedDocumentRepository.saveAndFlush(document);
             return view(document, job);
         } catch (DomainException exception) {
+            if (accepted) {
+                TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+                throw exception;
+            }
             document.reject();
             parsedDocumentRepository.saveAndFlush(document);
             throw exception;
         } catch (RuntimeException exception) {
+            if (accepted) {
+                TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+                throw exception;
+            }
             document.reject();
             parsedDocumentRepository.saveAndFlush(document);
             throw exception;

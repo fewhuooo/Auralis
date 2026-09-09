@@ -27,6 +27,7 @@ import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 @Service
 public class SourceService {
@@ -204,42 +205,46 @@ public class SourceService {
 
     @Transactional
     public SourceView markParsing(UUID userId, UUID id) {
-        SourceEntity entity = mutable(userId, id);
-        requireActive(entity);
-        entity.markParsing();
-        return view(sourceRepository.saveAndFlush(entity));
+        return transitionIngestion(userId, id, SourceEntity::markParsing);
     }
 
     @Transactional
     public SourceView markPending(UUID userId, UUID id) {
-        SourceEntity entity = mutable(userId, id);
-        requireActive(entity);
-        entity.markPending();
-        return view(sourceRepository.saveAndFlush(entity));
+        return transitionIngestion(userId, id, SourceEntity::markPending);
     }
 
     @Transactional
     public SourceView markIndexing(UUID userId, UUID id) {
-        SourceEntity entity = mutable(userId, id);
-        requireActive(entity);
-        entity.markIndexing();
-        return view(sourceRepository.saveAndFlush(entity));
+        return transitionIngestion(userId, id, SourceEntity::markIndexing);
     }
 
     @Transactional
     public SourceView markReady(UUID userId, UUID id) {
-        SourceEntity entity = mutable(userId, id);
-        requireActive(entity);
-        entity.markReady();
-        return view(sourceRepository.saveAndFlush(entity));
+        return transitionIngestion(userId, id, SourceEntity::markReady);
     }
 
     @Transactional
     public SourceView markFailed(UUID userId, UUID id, String safeErrorCode, String safeErrorDetail) {
+        return transitionIngestion(userId, id, entity -> entity.markFailed(safeErrorCode, safeErrorDetail));
+    }
+
+    private SourceView transitionIngestion(UUID userId, UUID id, Consumer<SourceEntity> transition) {
         SourceEntity entity = mutable(userId, id);
         requireActive(entity);
-        entity.markFailed(safeErrorCode, safeErrorDetail);
-        return view(sourceRepository.saveAndFlush(entity));
+        SourceIngestionStatus previousStatus = entity.getIngestionStatus();
+        String previousErrorCode = entity.getSafeErrorCode();
+        String previousErrorDetail = entity.getSafeErrorDetail();
+
+        transition.accept(entity);
+
+        if (previousStatus == entity.getIngestionStatus()
+                && Objects.equals(previousErrorCode, entity.getSafeErrorCode())
+                && Objects.equals(previousErrorDetail, entity.getSafeErrorDetail())) {
+            return view(entity);
+        }
+        SourceView result = view(sourceRepository.saveAndFlush(entity));
+        publishChange(userId, result, "UPDATE");
+        return result;
     }
 
     private ValidatedSource validate(UUID userId, SourceCommand command) {

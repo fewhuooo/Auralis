@@ -40,9 +40,26 @@ test('Tauri document runtime composes the durable repository, parser, package, u
   assert.doesNotMatch(runtime, /localStorage\.setItem|uploadUrl\s*:/)
 })
 
+test('runtime wires accepted document completion to one background read sync request', async () => {
+  const runtime = await source('src/services/documentProcessing/runtime.ts')
+  const upload = runtime.match(/const upload = new ParsedDocumentUploadCoordinator\(\{([\s\S]*?)\n\s*\}\)/)
+  assert.ok(upload)
+  assert.match(upload[1], /onCompleteAccepted\s*:/)
+  assert.match(upload[1], /useSyncStore\(\)\.requestBackgroundSync\(['"]read['"]\)/)
+  assert.doesNotMatch(upload[1], /triggerSync|loadSources|sourceApi|repository\.transition/)
+})
+
 test('runtime passes parser progress into the durable document runner', async () => {
   const runtime = await source('src/services/documentProcessing/runtime.ts')
   assert.match(runtime, /parseDocument\(input, sink, \{\s*onProgress\s*\}\)/)
+})
+
+test('runtime forwards the scheduler-owned Asset SHA without hashing the parser input again', async () => {
+  const runtime = await source('src/services/documentProcessing/runtime.ts')
+  const runJob = runtime.match(/runJob:\s*async \(jobId, metadata\) => \{([\s\S]*?)\n\s*\},\n\s*cancelJob/)
+  assert.ok(runJob)
+  assert.match(runJob[1], /sourceAssetSha256:\s*metadata\.sourceAssetSha256/)
+  assert.doesNotMatch(runJob[1], /sha256File\(/)
 })
 
 test('Tauri document runtime flushes pending sync mutations before bootstrapping sources', async () => {

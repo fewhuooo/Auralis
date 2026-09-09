@@ -74,12 +74,17 @@ export const ocrShutdown = (): Promise<void> => {
 
 export interface DocumentPackageHeader {
   schemaVersion: 1
+  payloadFormat: 'parsed-document-v1'
   userId: string
   serverDeviceId: string
   sourceId: string
   jobId: string
   ingestionRevision: string
+  sourceAssetSha256: string
+  parserId: string
   parserVersion: string
+  normalizationVersion: string
+  ocrModelVersion: string | null
 }
 
 export interface ParsedDocumentBlockCommand {
@@ -97,6 +102,31 @@ export interface DocumentCacheReceipt {
   chunkCount: number
   encryptedBytes: number
   plainTextSha256: string
+  payloadSha256: string
+  payloadBytes: number
+  payloadFormat?: 'parsed-document-v1'
+  sourceAssetSha256?: string
+  parserId?: string
+  parserVersion?: string
+  normalizationVersion?: string
+  ocrModelVersion?: string | null
+}
+
+export const DOCUMENT_PAYLOAD_FORMAT = 'parsed-document-v1' as const
+export const MAX_PACKAGE_METADATA_CHARS = 200
+
+const boundedMetadata = (value: string, optional = false): boolean =>
+  (optional && value === '') || (value.trim().length > 0 && value.length <= MAX_PACKAGE_METADATA_CHARS)
+
+export const isDocumentCacheReceiptV1 = (receipt: DocumentCacheReceipt): boolean =>
+  receipt.payloadFormat === DOCUMENT_PAYLOAD_FORMAT
+  && typeof receipt.sourceAssetSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.sourceAssetSha256)
+  && typeof receipt.parserId === 'string' && boundedMetadata(receipt.parserId)
+  && typeof receipt.parserVersion === 'string' && boundedMetadata(receipt.parserVersion)
+  && typeof receipt.normalizationVersion === 'string' && boundedMetadata(receipt.normalizationVersion)
+  && (receipt.ocrModelVersion === null || (typeof receipt.ocrModelVersion === 'string' && boundedMetadata(receipt.ocrModelVersion)))
+
+export interface DocumentCachePayloadInfo {
   payloadSha256: string
   payloadBytes: number
 }
@@ -121,7 +151,12 @@ export interface DocumentUploadPutReceipt {
 }
 
 export const documentPackageBegin = (header: DocumentPackageHeader): Promise<string> => {
-  if (!header.userId.trim() || !header.serverDeviceId.trim() || !header.sourceId.trim() || !header.jobId.trim() || !header.ingestionRevision.trim()) {
+  if (header.schemaVersion !== 1 || header.payloadFormat !== DOCUMENT_PAYLOAD_FORMAT
+    || !header.userId.trim() || !header.serverDeviceId.trim() || !header.sourceId.trim() || !header.jobId.trim() || !header.ingestionRevision.trim()
+    || !/^[a-f0-9]{64}$/.test(header.sourceAssetSha256)
+    || !boundedMetadata(header.parserId) || !boundedMetadata(header.parserVersion)
+    || !boundedMetadata(header.normalizationVersion)
+    || (header.ocrModelVersion !== null && !boundedMetadata(header.ocrModelVersion))) {
     throw new Error('DOCUMENT_PACKAGE_HEADER_INVALID')
   }
   return invokeRustCmd<string>('document_package_begin', { header })
@@ -142,6 +177,21 @@ export const documentPackageFinish = (packageId: string): Promise<DocumentCacheR
 export const documentCacheDelete = (cacheId: string): Promise<boolean> => {
   if (!cacheId.trim()) throw new Error('CACHE_ID_INVALID')
   return invokeRustCmd<boolean>('document_cache_delete', { cacheId })
+}
+
+export const documentCachePayloadInfo = (scope: {
+  cacheId: string
+  userId: string
+  serverDeviceId: string
+  sourceId: string
+  jobId: string
+  ingestionRevision: string
+}): Promise<DocumentCachePayloadInfo> => {
+  if (!scope.cacheId.trim() || !scope.userId.trim() || !scope.serverDeviceId.trim()
+    || !scope.sourceId.trim() || !scope.jobId.trim() || !scope.ingestionRevision.trim()) {
+    throw new Error('CACHE_SCOPE_INVALID')
+  }
+  return invokeRustCmd<DocumentCachePayloadInfo>('document_cache_payload_info', scope)
 }
 
 export const documentUploadPut = (request: DocumentUploadPutRequest): Promise<DocumentUploadPutReceipt> => {

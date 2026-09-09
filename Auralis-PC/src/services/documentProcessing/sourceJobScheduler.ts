@@ -1,7 +1,8 @@
-import type { DocumentCacheReceipt } from '@/api/tauri'
+import { isDocumentCacheReceiptV1, type DocumentCacheReceipt } from '@/api/tauri'
 import { ApiProblemError } from '../../api/httpError.ts'
 import type { SourceView } from '@/api/useSourceApi'
 import type { DocumentProcessingJob, CreateDocumentProcessingJobInput } from '@/types/documentProcessing'
+import { validatedDocumentCacheId } from './cacheSafety.ts'
 
 export interface SourceInput {
   /** The parser-facing file. It is never written to a job row or sent over HTTP. */
@@ -15,6 +16,7 @@ interface JobRepository {
   get(jobId: string): Promise<DocumentProcessingJob | null>
   list(): Promise<DocumentProcessingJob[]>
   removeBySource(sourceId: string): Promise<DocumentProcessingJob[]>
+  remove(jobId: string): Promise<DocumentProcessingJob | null>
   transition(jobId: string, phase: DocumentProcessingJob['phase'], options?: {
     attempt?: number
     payloadCacheId?: string | null
@@ -46,7 +48,7 @@ export interface SourceJobSchedulerOptions {
   /** Binds the input to the parser/runner without persisting the original path. */
   prepareInput: (job: DocumentProcessingJob, source: SourceView, input: SourceInput['file']) => Promise<void>
   /** Usually DocumentJobRunner.start. The runner persists the full cache receipt. */
-  runJob: (jobId: string) => Promise<void>
+  runJob: (jobId: string, metadata?: { sourceAssetSha256: string }) => Promise<void>
   /** Stops a running parser before its durable job row is discarded. */
   cancelJob?: (jobId: string) => Promise<void>
   /** Releases a runtime-only parser input which must not outlive its job. */
@@ -67,6 +69,9 @@ export interface SourceScheduleResult {
 
 const TERMINAL_PHASES = new Set<DocumentProcessingJob['phase']>(['READY', 'FAILED_LOCAL', 'FAILED_SERVER'])
 const UPLOAD_PHASES = new Set<DocumentProcessingJob['phase']>(['PACKAGING', 'UPLOADING', 'SERVER_VALIDATING', 'SERVER_INDEXING'])
+const DOCUMENT_JOB_TRANSITIONS_LOCAL_FAILURES = new Set<DocumentProcessingJob['phase']>([
+  'QUEUED', 'DOWNLOADING_SOURCE', 'EXTRACTING', 'OCR_RUNNING', 'PACKAGING', 'UPLOADING', 'SERVER_VALIDATING', 'SERVER_INDEXING', 'PAUSED_NETWORK',
+])
 
 function randomJobId(): string {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID()
@@ -95,6 +100,10 @@ function isSourceNotFound(error: unknown): boolean {
 function staleFailurePhase(phase: DocumentProcessingJob['phase']): 'FAILED_LOCAL' | 'FAILED_SERVER' {
   if (phase === 'PACKAGING') return 'FAILED_LOCAL'
   return isUploadPhase(phase) ? 'FAILED_SERVER' : 'FAILED_LOCAL'
+}
+
+function legacyCacheId(job: DocumentProcessingJob): string | null {
+  return validatedDocumentCacheId(job.payloadCacheId, job.payloadReceipt?.cacheId)
 }
 
 export class SourceJobScheduler {
@@ -198,12 +207,15 @@ export class SourceJobScheduler {
       await this.cancelJob?.(job.jobId)
       await this.discardPreparedInput?.(job.jobId)
     }
-    const removed = await this.repository.removeBySource(sourceId)
-    const cacheIds = new Set(removed.map((job) => job.payloadCacheId).filter((cacheId): cacheId is string => Boolean(cacheId)))
-    for (const cacheId of cacheIds) {
+    const remainingJobs = (await this.repository.list()).filter((job) => job.sourceId === sourceId)
+    for (const job of remainingJobs) {
       try {
-        await this.deleteCache?.(cacheId)
+        const cacheId = legacyCacheId(job)
+        if (cacheId) await this.deleteCache?.(cacheId)
+        await this.repository.remove(job.jobId)
       } catch (error) {
+        const current = await this.repository.get(job.jobId)
+        if (current) await this.markCleanupFailure(current, error)
         console.warn('[SourceJobScheduler] deleted Source cache cleanup failed', error)
       }
     }
@@ -236,8 +248,61 @@ export class SourceJobScheduler {
       job = await this.repository.create({ jobId: this.idFactory(), sourceId, ingestionRevision: source.ingestionRevision })
       await this.notifyJobChanged()
     }
-    if (job.phase === 'READY') return { status: 'SKIPPED', jobId: job.jobId, reason: 'ALREADY_READY' }
+    try {
+      legacyCacheId(job)
+    } catch (error) {
+      const reason = error instanceof Error && error.message === 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+        ? 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+        : 'DOCUMENT_CACHE_CLEANUP_FAILED'
+      await this.markCleanupFailure(job, error)
+      const status = job.phase === 'READY'
+        ? 'READY'
+        : job.phase === 'FAILED_SERVER' ? 'FAILED_SERVER' : 'FAILED_LOCAL'
+      return { status, jobId: job.jobId, reason }
+    }
+    if (job.phase === 'READY') {
+      try {
+        await this.cleanupDerivedCache(job)
+      } catch (error) {
+        const current = await this.repository.get(job.jobId)
+        if (current) await this.markCleanupFailure(current, error)
+      }
+      return { status: 'SKIPPED', jobId: job.jobId, reason: 'ALREADY_READY' }
+    }
     if (job.phase === 'FAILED_LOCAL' || job.phase === 'FAILED_SERVER') return { status: job.phase, jobId: job.jobId }
+
+    // Receipts produced before schema v1 are not uploadable. Rebuild exactly
+    // once, after deleting only the derived encrypted cache and before any
+    // server intent is created.
+    if (job.payloadReceipt && !isDocumentCacheReceiptV1(job.payloadReceipt)) {
+      try {
+        const cacheId = legacyCacheId(job)
+        if (cacheId) await this.deleteCache?.(cacheId)
+        job = await this.repository.transition(job.jobId, 'QUEUED', {
+          attempt: 0,
+          payloadCacheId: null,
+          payloadReceipt: null,
+          errorCode: null,
+          errorDetail: null,
+        })
+      } catch (error) {
+        const current = await this.repository.get(job.jobId)
+        if (current && !TERMINAL_PHASES.has(current.phase)) {
+          await this.repository.transition(job.jobId, 'FAILED_LOCAL', {
+            payloadCacheId: current.payloadCacheId,
+            payloadReceipt: current.payloadReceipt,
+            errorCode: error instanceof Error && error.message === 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+              ? 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+              : 'DOCUMENT_LEGACY_CACHE_REBUILD_FAILED',
+            errorDetail: 'Legacy document cache could not be safely rebuilt',
+          })
+        }
+        const reason = error instanceof Error && error.message === 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+          ? 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+          : 'DOCUMENT_LEGACY_CACHE_REBUILD_FAILED'
+        return { status: 'FAILED_LOCAL', jobId: job.jobId, reason }
+      }
+    }
 
     // A paused extraction job needs a fresh input and a queued transition. A
     // paused upload keeps its encrypted receipt, so resume directly at the
@@ -267,7 +332,9 @@ export class SourceJobScheduler {
         // A paused upload is already backed by the encrypted payload receipt.
         // Do not redownload or rehash the original Asset just to resume the
         // storage PUT boundary.
-        await this.upload.upload(job.jobId, job.payloadReceipt, {})
+        await this.upload.upload(job.jobId, job.payloadReceipt, {
+          sourceAssetSha256: job.payloadReceipt.sourceAssetSha256,
+        })
       } else {
         input = await this.resolveInput(source.assetId, source)
         if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
@@ -288,7 +355,7 @@ export class SourceJobScheduler {
           await this.discardPreparedInput?.(job.jobId)
           return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
         }
-        await this.runJob(job.jobId)
+        await this.runJob(job.jobId, { sourceAssetSha256: assetSha256 })
         const packaged = await this.repository.get(job.jobId)
         if (!packaged) {
           if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
@@ -304,7 +371,12 @@ export class SourceJobScheduler {
 
       const completed = await this.repository.get(job.jobId)
       if (completed?.phase === 'READY') {
-        if (completed.payloadCacheId) await this.deleteCache?.(completed.payloadCacheId)
+        try {
+          await this.cleanupDerivedCache(completed)
+        } catch (error) {
+          const current = await this.repository.get(job.jobId)
+          if (current) await this.markCleanupFailure(current, error)
+        }
         return { status: 'READY', jobId: job.jobId }
       }
       if (completed?.phase === 'PAUSED_NETWORK') return { status: 'PAUSED_NETWORK', jobId: job.jobId }
@@ -335,15 +407,52 @@ export class SourceJobScheduler {
 
   private async supersedeStaleJobs(jobs: DocumentProcessingJob[], sourceId: string, revision: string): Promise<void> {
     for (const job of jobs.filter((candidate) => candidate.sourceId === sourceId && candidate.ingestionRevision !== revision)) {
-      if (job.payloadCacheId) await this.deleteCache?.(job.payloadCacheId)
-      if (TERMINAL_PHASES.has(job.phase)) continue
-      await this.repository.transition(job.jobId, staleFailurePhase(job.phase), {
-        payloadCacheId: null,
-        payloadReceipt: null,
-        errorCode: 'INGESTION_REVISION_STALE',
-        errorDetail: 'A newer Source ingestion revision superseded this local job',
-      })
+      try {
+        const cacheId = legacyCacheId(job)
+        if (cacheId) await this.deleteCache?.(cacheId)
+        if (TERMINAL_PHASES.has(job.phase)) {
+          await this.repository.transition(job.jobId, job.phase, {
+            payloadCacheId: null,
+            payloadReceipt: null,
+          })
+        } else {
+          await this.repository.transition(job.jobId, staleFailurePhase(job.phase), {
+            payloadCacheId: null,
+            payloadReceipt: null,
+            errorCode: 'INGESTION_REVISION_STALE',
+            errorDetail: 'A newer Source ingestion revision superseded this local job',
+          })
+        }
+      } catch (error) {
+        const current = await this.repository.get(job.jobId)
+        if (current) await this.markCleanupFailure(current, error)
+      }
     }
+  }
+
+  private async markCleanupFailure(job: DocumentProcessingJob, error: unknown): Promise<void> {
+    const code = error instanceof Error && error.message === 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+      ? 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH'
+      : 'DOCUMENT_CACHE_CLEANUP_FAILED'
+    const phase = DOCUMENT_JOB_TRANSITIONS_LOCAL_FAILURES.has(job.phase) ? 'FAILED_LOCAL' : job.phase
+    await this.repository.transition(job.jobId, phase, {
+      payloadCacheId: job.payloadCacheId,
+      payloadReceipt: job.payloadReceipt,
+      errorCode: code,
+      errorDetail: 'Derived document cache cleanup failed; receipt preserved',
+    })
+  }
+
+  private async cleanupDerivedCache(job: DocumentProcessingJob): Promise<void> {
+    const cacheId = legacyCacheId(job)
+    if (!cacheId || !this.deleteCache) return
+    await this.deleteCache(cacheId)
+    await this.repository.transition(job.jobId, job.phase, {
+      payloadCacheId: null,
+      payloadReceipt: null,
+      errorCode: null,
+      errorDetail: null,
+    })
   }
 
   private async failJob(job: DocumentProcessingJob, code: string, detail: string): Promise<void> {

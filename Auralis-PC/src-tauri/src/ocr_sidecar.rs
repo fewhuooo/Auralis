@@ -148,7 +148,9 @@ pub struct OcrPageResult {
 fn bounded_summary_task_id(value: &str) -> String {
     value
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.'))
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')
+        })
         .take(MAX_PAGE_SUMMARY_TOKEN_CHARS)
         .collect()
 }
@@ -157,7 +159,10 @@ fn bounded_summary_error_code(value: &str) -> String {
     value
         .chars()
         .take_while(|character| {
-            !character.is_whitespace() && *character != '/' && *character != '\\' && *character != ':'
+            !character.is_whitespace()
+                && *character != '/'
+                && *character != '\\'
+                && *character != ':'
         })
         .filter(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
         .take(MAX_PAGE_SUMMARY_TOKEN_CHARS)
@@ -265,9 +270,7 @@ fn format_sidecar_diagnostic(
     let exit = exit_code
         .map(|code| code.to_string())
         .unwrap_or_else(|| "running-or-unavailable".to_owned());
-    format!(
-        "OCR_SIDECAR_UNAVAILABLE:{reason}:exit-code={exit}:stderr={stderr}:context={context}"
-    )
+    format!("OCR_SIDECAR_UNAVAILABLE:{reason}:exit-code={exit}:stderr={stderr}:context={context}")
 }
 
 fn format_protocol_diagnostic(
@@ -367,9 +370,9 @@ unsafe impl Sync for ChildJob {}
 impl ChildJob {
     fn attach(child: &Child) -> io::Result<Self> {
         use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JobObjectExtendedLimitInformation,
+            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
         };
 
         let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
@@ -391,14 +394,19 @@ impl ChildJob {
             return Err(io::Error::last_os_error());
         }
         let assigned = unsafe {
-            AssignProcessToJobObject(handle, child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE)
+            AssignProcessToJobObject(
+                handle,
+                child.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE,
+            )
         } != 0;
         if !assigned {
             let error = io::Error::last_os_error();
             unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
             return Err(error);
         }
-        Ok(Self { handle: handle as isize })
+        Ok(Self {
+            handle: handle as isize,
+        })
     }
 
     fn terminate(&self) -> bool {
@@ -679,9 +687,7 @@ impl SidecarSession {
             runtime_temp.display(),
             resource_dir.display(),
         );
-        eprintln!(
-            "[OCR Sidecar] starting {launch_context}"
-        );
+        eprintln!("[OCR Sidecar] starting {launch_context}");
         let mut command = Command::new(&executable);
         command
             .arg("--resources")
@@ -698,19 +704,19 @@ impl SidecarSession {
         command.env("AURALIS_OCR_DEBUG", "1");
         command.env("PYTHONIOENCODING", "utf-8");
         command.env("PYTHONUTF8", "1");
-        let mut child = command
-            .spawn()
-            .map_err(|error| {
-                eprintln!("[OCR Sidecar] spawn failed: {error}; {launch_context}");
-                OcrError::SidecarUnavailableDiagnostic(format!(
-                    "OCR_SIDECAR_UNAVAILABLE:spawn-failed:error={error}:context={launch_context}"
-                ))
-            })?;
+        let mut child = command.spawn().map_err(|error| {
+            eprintln!("[OCR Sidecar] spawn failed: {error}; {launch_context}");
+            OcrError::SidecarUnavailableDiagnostic(format!(
+                "OCR_SIDECAR_UNAVAILABLE:spawn-failed:error={error}:context={launch_context}"
+            ))
+        })?;
 
         let job = ChildJob::attach(&child).map_err(|error| {
             let _ = child.kill();
             let _ = child.wait();
-            eprintln!("[OCR Sidecar] failed to attach child to private job: {error}; {launch_context}");
+            eprintln!(
+                "[OCR Sidecar] failed to attach child to private job: {error}; {launch_context}"
+            );
             OcrError::SidecarUnavailableDiagnostic(format!(
                 "OCR_SIDECAR_UNAVAILABLE:job-object-failed:error={error}:context={launch_context}"
             ))
@@ -988,11 +994,7 @@ impl OcrSupervisor {
             );
             OcrError::SidecarUnavailableDiagnostic("runtime-temp-unavailable".to_owned())
         })?;
-        let session = SidecarSession::spawn(
-            &self.resource_dir,
-            &self.image_root,
-            &launch_temp,
-        );
+        let session = SidecarSession::spawn(&self.resource_dir, &self.image_root, &launch_temp);
         self.session = match session {
             Ok(session) => Some(session),
             Err(error) => {
@@ -1081,9 +1083,10 @@ impl OcrSupervisor {
                 response.ok,
                 response.lines.len(),
                 response.timing_ms.total,
-                response.error_code.as_deref().or_else(|| {
-                    (!response.ok).then_some("OCR_MODEL_FAILED")
-                }),
+                response
+                    .error_code
+                    .as_deref()
+                    .or_else(|| (!response.ok).then_some("OCR_MODEL_FAILED")),
             ),
             Err(error) => (false, 0, 0.0, Some(error.code())),
         };
@@ -1159,10 +1162,7 @@ fn lock_state<'a>(
         return Err(OcrError::QueueFull.to_string());
     }
     match supervisor.try_lock() {
-        Ok(supervisor) => Ok(SupervisorGuard {
-            supervisor,
-            gate,
-        }),
+        Ok(supervisor) => Ok(SupervisorGuard { supervisor, gate }),
         Err(TryLockError::WouldBlock) => {
             gate.release();
             Err(OcrError::QueueFull.to_string())
@@ -1398,7 +1398,8 @@ mod tests {
 
     #[test]
     fn dedicated_runtime_temp_cleanup_only_removes_mei_directories_when_sidecar_is_stopped() {
-        let root = std::env::temp_dir().join(format!("auralis-ocr-temp-test-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("auralis-ocr-temp-test-{}", std::process::id()));
         let stale = root.join("_MEI12345");
         let retained = root.join("keep-me");
         std::fs::create_dir_all(&stale).expect("create stale directory");
@@ -1418,20 +1419,17 @@ mod tests {
     fn runtime_temp_cleanup_skips_sharing_violation_and_keeps_startup_available() {
         let root = PathBuf::from(r"C:\auralis-ocr-runtime-temp");
         let entries = vec![root.join("launch-old")];
-        let (removed, skipped) = cleanup_runtime_entries(&entries, |_path| {
-            Err(io::Error::from_raw_os_error(32))
-        })
-        .expect("sharing violations are recoverable cleanup results");
+        let (removed, skipped) =
+            cleanup_runtime_entries(&entries, |_path| Err(io::Error::from_raw_os_error(32)))
+                .expect("sharing violations are recoverable cleanup results");
 
         assert_eq!((removed, skipped), (0, 1));
     }
 
     #[test]
     fn each_sidecar_launch_gets_a_distinct_private_runtime_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "auralis-ocr-launch-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("auralis-ocr-launch-test-{}", std::process::id()));
         let first = create_launch_runtime_temp(&root).expect("create first launch directory");
         let second = create_launch_runtime_temp(&root).expect("create second launch directory");
 
@@ -1505,7 +1503,10 @@ mod tests {
         let status = terminate_child_bounded(&mut child, Duration::from_millis(250))
             .expect("child termination attempt");
 
-        assert!(status.is_some(), "child should be reaped when termination succeeds");
+        assert!(
+            status.is_some(),
+            "child should be reaped when termination succeeds"
+        );
     }
 
     #[test]
@@ -1516,7 +1517,10 @@ mod tests {
             .expect("bounded child termination attempt");
 
         assert!(started.elapsed() < Duration::from_millis(500));
-        assert!(status.is_some(), "the test child should be killed and reaped");
+        assert!(
+            status.is_some(),
+            "the test child should be killed and reaped"
+        );
     }
 
     #[test]
@@ -1562,8 +1566,7 @@ mod tests {
 
         assert_eq!(result, 7);
         release.store(true, Ordering::Release);
-        tauri::async_runtime::block_on(blocking_work)
-            .expect("blocking OCR work should not fail");
+        tauri::async_runtime::block_on(blocking_work).expect("blocking OCR work should not fail");
     }
 
     #[test]

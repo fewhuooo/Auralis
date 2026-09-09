@@ -1,12 +1,18 @@
 # 基础设施与数据服务模块
 
-更新时间：2026-09-07
+更新时间：2026-09-09
 
 文档状态：现行
 
 权威范围：当前 Compose 服务、容器、端口、持久化目录、环境变量、生产边界与基础设施风险
 
 事实来源：`docker-compose.yml`、`.env.example`、`.gitignore` 与 Server 配置
+
+2026-09-08：PC ParsedDocument 上传失败时，Tauri 只在本机 stderr 输出 reqwest 分类 flags、顶层摘要和最多三层 `Error::source()` cause；最终 `flags + summary + causes` 总体限制在 256 字节，并不输出预签名 URL、query/signature、Authorization、header value 或本机路径。加密 cache 的上传长度/哈希契约由解密 reader payload 定义，`encryptedBytes` 只表示本地 envelope 文件大小；历史 receipt 在恢复边界按 owner scope 重新计算。该日志和长度修复不能替代 MinIO 真实 PUT 验收。
+
+2026-09-09 Task 16 运行验证：`docker compose --env-file .env config --quiet` 通过；仅重建/recreate `backend` 后容器 healthy，backend liveness/readiness 均 HTTP 200，`AURALIS_AI_INGESTION_WORKER_ENABLED=true`。启动日志显示 PostgreSQL 17.11、21 个 Flyway migration 已验证且 schema up to date。定时 Sync retention 首次调度报 `TransactionRequiredException`（`deleteByCreatedAtBefore` 缺少实际事务），不影响健康检查但属于待修复运行期风险。PostgreSQL 只读摘要见 `.superpowers/sdd/task-16-report.md`；未修改 PostgreSQL/MinIO 数据或 volume。
+
+2026-09-09 schema-v1 final review closure：PC Rust 生成单个 gzip JSON schema-v1 envelope，Java validator/complete 与共享 fixture 对齐；本地 receipt/cache 额外保存 `parsed-document-v1`、Asset SHA 和 parser metadata，但未引入 Server migration 或 OpenAPI 变化。scheduler focused 27/27、PC full R4 250/250、type-check 和 diff-check 通过，所有 Critical/Important reviewer findings 已关闭；真实重启 Tauri 后经 MinIO PUT/complete/indexing 到 `READY` 的 `1.pdf` GUI 验收仍未执行。
 
 2026-09-07：MinIO healthcheck 已从仅检查 `mc ready` 改为在配置 bucket 的 `.healthcheck/` 前缀使用随机键执行 PUT、HEAD、GET、DELETE，并在退出时清理测试对象；该检查只验证对象存储能力，不删除或覆盖业务对象。MinIO 仍使用 `auralis_auralis-minio-data:/data` 持久化 volume。
 

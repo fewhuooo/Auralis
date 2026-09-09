@@ -28,6 +28,16 @@ pub struct CacheHeader {
     pub job_id: String,
     pub ingestion_revision: String,
     pub parser_version: String,
+    #[serde(default)]
+    pub payload_format: Option<String>,
+    #[serde(default)]
+    pub source_asset_sha256: Option<String>,
+    #[serde(default)]
+    pub parser_id: Option<String>,
+    #[serde(default)]
+    pub normalization_version: Option<String>,
+    #[serde(default)]
+    pub ocr_model_version: Option<String>,
 }
 
 impl CacheHeader {
@@ -73,6 +83,25 @@ pub struct CacheReceipt {
     pub plain_text_sha256: String,
     pub payload_sha256: String,
     pub payload_bytes: u64,
+    #[serde(default)]
+    pub payload_format: Option<String>,
+    #[serde(default)]
+    pub source_asset_sha256: Option<String>,
+    #[serde(default)]
+    pub parser_id: Option<String>,
+    #[serde(default)]
+    pub parser_version: Option<String>,
+    #[serde(default)]
+    pub normalization_version: Option<String>,
+    #[serde(default)]
+    pub ocr_model_version: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CachePayloadInfo {
+    pub payload_sha256: String,
+    pub payload_bytes: u64,
 }
 
 #[derive(Clone)]
@@ -105,7 +134,13 @@ impl DocumentCacheStore {
             return Err("CACHE_ALREADY_EXISTS".to_string());
         }
         let temp_path = self.root.join(format!(".{cache_id}.tmp"));
-        let receipt = match self.encrypt_to_path(cache_id, &temp_path, header, gzip_path, plain_text_sha256) {
+        let receipt = match self.encrypt_to_path(
+            cache_id,
+            &temp_path,
+            header,
+            gzip_path,
+            plain_text_sha256,
+        ) {
             Ok(receipt) => receipt,
             Err(error) => {
                 let _ = fs::remove_file(&temp_path);
@@ -127,11 +162,13 @@ impl DocumentCacheStore {
         gzip_path: &Path,
         plain_text_sha256: [u8; 32],
     ) -> Result<CacheReceipt, String> {
-        let header_bytes = serde_json::to_vec(header).map_err(|e| format!("CACHE_HEADER_SERIALIZE_FAILED: {e}"))?;
+        let header_bytes = serde_json::to_vec(header)
+            .map_err(|e| format!("CACHE_HEADER_SERIALIZE_FAILED: {e}"))?;
         if header_bytes.len() > MAX_HEADER_BYTES {
             return Err("CACHE_HEADER_TOO_LARGE".to_string());
         }
-        let mut input = File::open(gzip_path).map_err(|e| format!("CACHE_GZIP_OPEN_FAILED: {e}"))?;
+        let mut input =
+            File::open(gzip_path).map_err(|e| format!("CACHE_GZIP_OPEN_FAILED: {e}"))?;
         let mut output = OpenOptions::new()
             .create_new(true)
             .write(true)
@@ -139,20 +176,23 @@ impl DocumentCacheStore {
             .map_err(|e| format!("CACHE_TEMP_OPEN_FAILED: {e}"))?;
         let mut payload_hash = Sha256::new();
         let mut payload_bytes = 0u64;
-        let mut write_payload = |bytes: &[u8]| -> Result<(), String> {
-            payload_bytes = payload_bytes.saturating_add(bytes.len() as u64);
-            write_hashed(&mut output, &mut payload_hash, bytes).map_err(|e| e.to_string())
+        let mut write_cache_bytes = |bytes: &[u8]| -> Result<(), String> {
+            output
+                .write_all(bytes)
+                .map_err(|e| format!("CACHE_WRITE_FAILED: {e}"))
         };
-        write_payload(CACHE_MAGIC)?;
-        write_payload(&(header_bytes.len() as u32).to_le_bytes())?;
-        write_payload(&header_bytes)?;
+        write_cache_bytes(CACHE_MAGIC)?;
+        write_cache_bytes(&(header_bytes.len() as u32).to_le_bytes())?;
+        write_cache_bytes(&header_bytes)?;
 
         let aad = header.aad();
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.key));
         let mut buffer = vec![0u8; CACHE_CHUNK_BYTES];
         let mut chunk_count = 0u32;
         loop {
-            let read = input.read(&mut buffer).map_err(|e| format!("CACHE_GZIP_READ_FAILED: {e}"))?;
+            let read = input
+                .read(&mut buffer)
+                .map_err(|e| format!("CACHE_GZIP_READ_FAILED: {e}"))?;
             if read == 0 {
                 break;
             }
@@ -170,13 +210,19 @@ impl DocumentCacheStore {
             if ciphertext.len() > u32::MAX as usize {
                 return Err("CACHE_CHUNK_TOO_LARGE".to_string());
             }
-            write_payload(&nonce_bytes)?;
-            write_payload(&(ciphertext.len() as u32).to_le_bytes())?;
-            write_payload(&ciphertext)?;
+            payload_bytes = payload_bytes.saturating_add(read as u64);
+            payload_hash.update(&buffer[..read]);
+            write_cache_bytes(&nonce_bytes)?;
+            write_cache_bytes(&(ciphertext.len() as u32).to_le_bytes())?;
+            write_cache_bytes(&ciphertext)?;
             chunk_count += 1;
         }
-        output.flush().map_err(|e| format!("CACHE_FLUSH_FAILED: {e}"))?;
-        output.sync_all().map_err(|e| format!("CACHE_SYNC_FAILED: {e}"))?;
+        output
+            .flush()
+            .map_err(|e| format!("CACHE_FLUSH_FAILED: {e}"))?;
+        output
+            .sync_all()
+            .map_err(|e| format!("CACHE_SYNC_FAILED: {e}"))?;
         let encrypted_bytes = output
             .metadata()
             .map_err(|e| format!("CACHE_METADATA_FAILED: {e}"))?
@@ -189,10 +235,20 @@ impl DocumentCacheStore {
             plain_text_sha256: hex::encode(plain_text_sha256),
             payload_sha256: hex::encode(payload_hash.finalize()),
             payload_bytes,
+            payload_format: header.payload_format.clone(),
+            source_asset_sha256: header.source_asset_sha256.clone(),
+            parser_id: header.parser_id.clone(),
+            parser_version: Some(header.parser_version.clone()),
+            normalization_version: header.normalization_version.clone(),
+            ocr_model_version: header.ocr_model_version.clone(),
         })
     }
 
-    pub fn open_decrypted_reader(&self, cache_id: &str, scope: &CacheScope) -> Result<DecryptedCacheReader, String> {
+    pub fn open_decrypted_reader(
+        &self,
+        cache_id: &str,
+        scope: &CacheScope,
+    ) -> Result<DecryptedCacheReader, String> {
         let path = self.cache_path(cache_id)?;
         let mut file = File::open(&path).map_err(|e| format!("CACHE_OPEN_FAILED: {e}"))?;
         let (header, aad) = read_header(&mut file)?;
@@ -206,6 +262,31 @@ impl DocumentCacheStore {
             buffer: Vec::new(),
             offset: 0,
             finished: false,
+        })
+    }
+
+    pub fn payload_info(
+        &self,
+        cache_id: &str,
+        scope: &CacheScope,
+    ) -> Result<CachePayloadInfo, String> {
+        let mut reader = self.open_decrypted_reader(cache_id, scope)?;
+        let mut hash = Sha256::new();
+        let mut payload_bytes = 0u64;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = reader
+                .read(&mut buffer)
+                .map_err(|error| format!("CACHE_PAYLOAD_READ_FAILED: {error}"))?;
+            if count == 0 {
+                break;
+            }
+            payload_bytes = payload_bytes.saturating_add(count as u64);
+            hash.update(&buffer[..count]);
+        }
+        Ok(CachePayloadInfo {
+            payload_sha256: hex::encode(hash.finalize()),
+            payload_bytes,
         })
     }
 
@@ -267,7 +348,10 @@ impl DecryptedCacheReader {
         self.file.read_exact(&mut length_bytes)?;
         let length = u32::from_le_bytes(length_bytes) as usize;
         if length < 16 || length > CACHE_CHUNK_BYTES + 16 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "CACHE_CHUNK_LENGTH_INVALID"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "CACHE_CHUNK_LENGTH_INVALID",
+            ));
         }
         let mut ciphertext = vec![0u8; length];
         self.file.read_exact(&mut ciphertext)?;
@@ -298,27 +382,32 @@ fn validate_cache_id(cache_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn write_hashed<W: Write>(writer: &mut W, hash: &mut Sha256, bytes: &[u8]) -> Result<(), String> {
-    writer.write_all(bytes).map_err(|e| format!("CACHE_WRITE_FAILED: {e}"))?;
-    hash.update(bytes);
-    Ok(())
+pub(crate) fn is_lowercase_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn read_header(file: &mut File) -> Result<(CacheHeader, Vec<u8>), String> {
     let mut magic = [0u8; 5];
-    file.read_exact(&mut magic).map_err(|e| format!("CACHE_HEADER_READ_FAILED: {e}"))?;
+    file.read_exact(&mut magic)
+        .map_err(|e| format!("CACHE_HEADER_READ_FAILED: {e}"))?;
     if &magic != CACHE_MAGIC {
         return Err("CACHE_MAGIC_INVALID".to_string());
     }
     let mut length_bytes = [0u8; 4];
-    file.read_exact(&mut length_bytes).map_err(|e| format!("CACHE_HEADER_READ_FAILED: {e}"))?;
+    file.read_exact(&mut length_bytes)
+        .map_err(|e| format!("CACHE_HEADER_READ_FAILED: {e}"))?;
     let length = u32::from_le_bytes(length_bytes) as usize;
     if length == 0 || length > MAX_HEADER_BYTES {
         return Err("CACHE_HEADER_LENGTH_INVALID".to_string());
     }
     let mut bytes = vec![0u8; length];
-    file.read_exact(&mut bytes).map_err(|e| format!("CACHE_HEADER_READ_FAILED: {e}"))?;
-    let header: CacheHeader = serde_json::from_slice(&bytes).map_err(|e| format!("CACHE_HEADER_INVALID: {e}"))?;
+    file.read_exact(&mut bytes)
+        .map_err(|e| format!("CACHE_HEADER_READ_FAILED: {e}"))?;
+    let header: CacheHeader =
+        serde_json::from_slice(&bytes).map_err(|e| format!("CACHE_HEADER_INVALID: {e}"))?;
     if header.schema_version != CACHE_SCHEMA_VERSION {
         return Err("CACHE_SCHEMA_VERSION_UNSUPPORTED".to_string());
     }
@@ -356,6 +445,11 @@ mod tests {
             job_id: "job-1".to_string(),
             ingestion_revision: "revision-4".to_string(),
             parser_version: "parser-v1".to_string(),
+            payload_format: None,
+            source_asset_sha256: None,
+            parser_id: None,
+            normalization_version: None,
+            ocr_model_version: None,
         }
     }
 
@@ -380,7 +474,9 @@ mod tests {
         assert_eq!(receipt.envelope_version, 1);
         assert_ne!(receipt.plain_text_sha256, receipt.payload_sha256);
         let stored_bytes = fs::read(store.cache_path("cache-1").unwrap()).unwrap();
-        assert!(!stored_bytes.windows(b"plain text".len()).any(|window| window == b"plain text"));
+        assert!(!stored_bytes
+            .windows(b"plain text".len())
+            .any(|window| window == b"plain text"));
         let mut reader = store.open_decrypted_reader("cache-1", &scope()).unwrap();
         let mut encrypted_gzip = Vec::new();
         reader.read_to_end(&mut encrypted_gzip).unwrap();
@@ -389,12 +485,45 @@ mod tests {
     }
 
     #[test]
+    fn receipt_upload_payload_matches_decrypted_reader_size_and_hash() {
+        let root = temp_root("cache-upload-payload");
+        let gzip = gzip_file(&root, b"small upload payload");
+        let store = DocumentCacheStore::new(root.join("cache"), [7u8; 32]).unwrap();
+        let receipt = store
+            .encrypt_gzip_file("cache-1", &header(), &gzip, [9u8; 32])
+            .unwrap();
+        let mut reader = store.open_decrypted_reader("cache-1", &scope()).unwrap();
+        let mut decrypted_payload = Vec::new();
+        reader.read_to_end(&mut decrypted_payload).unwrap();
+
+        assert_eq!(receipt.payload_bytes, decrypted_payload.len() as u64);
+        assert_eq!(
+            receipt.payload_sha256,
+            hex::encode(Sha256::digest(&decrypted_payload))
+        );
+        assert_eq!(
+            store.payload_info("cache-1", &scope()).unwrap(),
+            CachePayloadInfo {
+                payload_sha256: receipt.payload_sha256.clone(),
+                payload_bytes: receipt.payload_bytes,
+            }
+        );
+        assert!(receipt.encrypted_bytes > receipt.payload_bytes);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn cache_rejects_tamper_and_cross_user_access() {
         let root = temp_root("cache-tamper");
         let gzip = gzip_file(&root, b"payload");
         let store = DocumentCacheStore::new(root.join("cache"), [3u8; 32]).unwrap();
-        store.encrypt_gzip_file("cache-1", &header(), &gzip, [1u8; 32]).unwrap();
-        let foreign = CacheScope { user_id: "user-b".to_string(), ..scope() };
+        store
+            .encrypt_gzip_file("cache-1", &header(), &gzip, [1u8; 32])
+            .unwrap();
+        let foreign = CacheScope {
+            user_id: "user-b".to_string(),
+            ..scope()
+        };
         assert!(matches!(
             store.open_decrypted_reader("cache-1", &foreign),
             Err(error) if error == "CACHE_SCOPE_MISMATCH"
@@ -416,7 +545,9 @@ mod tests {
         rand::rngs::StdRng::seed_from_u64(42).fill_bytes(&mut payload);
         let gzip = gzip_file(&root, &payload);
         let store = DocumentCacheStore::new(root.join("cache"), [5u8; 32]).unwrap();
-        let receipt = store.encrypt_gzip_file("cache-1", &header(), &gzip, [2u8; 32]).unwrap();
+        let receipt = store
+            .encrypt_gzip_file("cache-1", &header(), &gzip, [2u8; 32])
+            .unwrap();
         assert!(receipt.chunk_count >= 2);
         let bytes = fs::read(store.cache_path("cache-1").unwrap()).unwrap();
         let header_len = u32::from_le_bytes(bytes[5..9].try_into().unwrap()) as usize;
@@ -431,5 +562,15 @@ mod tests {
         assert_ne!(nonces[0], nonces[1]);
         assert!(!root.join("cache").join(".cache-1.tmp").exists());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn legacy_headers_and_receipts_deserialize_without_v1_compatibility() {
+        let legacy_header = r#"{"schemaVersion":1,"userId":"u","serverDeviceId":"d","sourceId":"s","jobId":"j","ingestionRevision":"r","parserVersion":"legacy"}"#;
+        let header: CacheHeader = serde_json::from_str(legacy_header).unwrap();
+        assert!(header.payload_format.is_none());
+        let legacy_receipt = r#"{"cacheId":"c","envelopeVersion":1,"chunkCount":1,"encryptedBytes":42,"plainTextSha256":"00","payloadSha256":"11","payloadBytes":10}"#;
+        let receipt: CacheReceipt = serde_json::from_str(legacy_receipt).unwrap();
+        assert!(receipt.payload_format.is_none());
     }
 }

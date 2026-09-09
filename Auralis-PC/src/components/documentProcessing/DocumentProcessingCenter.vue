@@ -17,7 +17,7 @@
         </div>
         <div class="processing-item-meta">
           <span v-if="viewFor(job).errorDetail" class="processing-error">{{ viewFor(job).errorDetail }}</span>
-          <span v-else>{{ viewFor(job).progressLabel || (job.checkpoint.blockOrdinal > 0 ? `已处理 ${job.checkpoint.blockOrdinal} 个内容块` : '准备中') }}</span>
+          <span v-else>{{ viewFor(job).progressLabel || (job.phase === 'QUEUED' ? '准备中' : '正在处理') }}</span>
           <div class="processing-actions">
             <button v-if="isRetryable(job.phase)" type="button" @click="retry(job.jobId)">{{ job.phase === 'PAUSED_NETWORK' ? '继续' : '重试' }}</button>
             <button v-if="isActive(job.phase)" type="button" class="danger" @click="cancel(job.jobId)">取消</button>
@@ -26,11 +26,14 @@
         <div v-if="viewFor(job).warning" class="processing-warning">{{ viewFor(job).warning }}</div>
         <details v-if="viewFor(job).rows.length" class="processing-diagnostics">
           <summary>查看诊断</summary>
-          <dl>
-            <template v-for="row in viewFor(job).rows" :key="`${job.jobId}-${row.label}`">
-              <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
-            </template>
-          </dl>
+          <div v-for="group in groupedRows(viewFor(job).rows)" :key="`${job.jobId}-${group.name}`" class="diagnostic-group">
+            <h4 v-if="group.name !== '其他'">{{ group.name }}</h4>
+            <dl>
+              <template v-for="row in group.rows" :key="`${job.jobId}-${row.label}`">
+                <dt>{{ row.label }}</dt><dd>{{ row.value }}</dd>
+              </template>
+            </dl>
+          </div>
           <button type="button" @click="copyDiagnostics(job.jobId, viewFor(job).clipboardText)">{{ copyFeedback[job.jobId] || '复制诊断' }}</button>
         </details>
       </article>
@@ -79,6 +82,20 @@ const phaseLabel = (phase: string) => ({
 const isActive = (phase: string) => !['READY', 'FAILED_LOCAL', 'FAILED_SERVER'].includes(phase)
 const isRetryable = (phase: string) => ['FAILED_LOCAL', 'FAILED_SERVER', 'PAUSED_NETWORK'].includes(phase)
 const viewFor = (job: typeof jobs.value[number]): OcrDiagnosticsView => jobViews.value.get(job.jobId) || formatOcrDiagnostics(job)
+const groupedRows = (rows: OcrDiagnosticsView['rows']) => {
+  const groups: { name: string; rows: OcrDiagnosticsView['rows'] }[] = []
+  const groupMap = new Map<string, OcrDiagnosticsView['rows']>()
+  for (const row of rows) {
+    const groupName = row.group || '其他'
+    if (!groupMap.has(groupName)) {
+      const arr: OcrDiagnosticsView['rows'] = []
+      groupMap.set(groupName, arr)
+      groups.push({ name: groupName, rows: arr })
+    }
+    groupMap.get(groupName)!.push(row)
+  }
+  return groups
+}
 const copyDiagnostics = async (jobId: string, text: string) => {
   copyFeedback.value = updateCopyFeedback(copyFeedback.value, jobId, await copyOcrDiagnostics(text))
 }
@@ -131,9 +148,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .processing-actions button.danger { color: #b4534d; }
 .processing-warning { margin-top: 8px; color: #9b742e; font-size: 11px; }
 .processing-diagnostics { margin-top: 10px; color: var(--text-secondary); font-size: 11px; }
-.processing-diagnostics summary { cursor: pointer; color: var(--text-secondary); }
-.processing-diagnostics dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 8px 0; }
-.processing-diagnostics dt { color: var(--text-muted); }
-.processing-diagnostics dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
-.processing-diagnostics > button { border: 1px solid var(--border-subtle); border-radius: 8px; padding: 4px 8px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 11px; }
+.processing-diagnostics summary { cursor: pointer; color: var(--text-secondary); margin-bottom: 4px; }
+.diagnostic-group h4 { margin: 8px 0 4px 0; color: #9b742e; font-size: 11px; font-weight: 500; }
+.diagnostic-group dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 4px 0 8px 0; }
+.diagnostic-group dt { color: var(--text-muted); }
+.diagnostic-group dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+.processing-diagnostics > button { margin-top: 4px; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 4px 8px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 11px; }
 </style>

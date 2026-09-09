@@ -92,6 +92,15 @@ test('drag scheduling persists locally before background sync instead of awaitin
   assert.doesNotMatch(rescheduleTaskSource, /await loadLocalTasks\(\)/, 'A drag must not re-read the local repository after the local projection is updated')
 })
 
+test('dragging to an empty slot updates one task without sending an invalid schedule swap', () => {
+  const rescheduleTaskSource = source.slice(source.indexOf('async function rescheduleTask('), source.indexOf('async function unscheduleTask('))
+  const emptySlotBranch = rescheduleTaskSource.slice(rescheduleTaskSource.indexOf('} else {'))
+
+  assert.match(emptySlotBranch, /await updateTaskModel\(fromModel\)/)
+  assert.doesNotMatch(emptySlotBranch, /useTaskApi\.swapSchedules/)
+  assert.doesNotMatch(emptySlotBranch, /targetTaskId:\s*''/)
+})
+
 test('an open app periodically applies the elapsed-task transitions without any notification state', () => {
   assert.match(source, /function recoverOverdueTasks\(\)/)
   assert.match(source, /recoverOverdueTasks\(\)/)

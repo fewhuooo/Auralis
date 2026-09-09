@@ -7,6 +7,10 @@ import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.sync.ChangeLogService;
+import com.auralis.app.sync.SyncCursor;
+import com.auralis.app.sync.SyncMutationType;
+import com.auralis.app.sync.SyncResourceType;
 import com.auralis.app.source.AssetService;
 import com.auralis.app.source.AssetStoragePort;
 import com.auralis.app.source.AssetUploadIntentCommand;
@@ -24,6 +28,9 @@ import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.realtime.RealtimeEventPublisher;
+import com.auralis.app.realtime.RealtimeEventType;
+import com.auralis.app.realtime.RealtimeEventView;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,6 +41,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -41,6 +51,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -71,6 +83,9 @@ class ParsedDocumentCompleteTests {
     @Autowired private AssetRepository assetRepository;
     @Autowired private TestAssetStorage storage;
     @Autowired private ObjectMapper objectMapper;
+    @Autowired private ChangeLogService changeLogService;
+    @Autowired private RealtimeEventPublisher realtimeEventPublisher;
+    @MockitoSpyBean private com.auralis.app.ai.ingestion.IngestionJobService ingestionJobService;
 
     @BeforeEach
     void cleanData() {
@@ -86,7 +101,26 @@ class ParsedDocumentCompleteTests {
         Fixture fixture = fixture("complete-replay");
         Upload upload = upload(fixture, "hello");
 
+        long baselineCursor = changeLogService.latestCursor(fixture.owner().user().id()).value();
         var first = parsedDocumentService.complete(fixture.owner().user().id(), fixture.source().id(), upload.document().getId());
+        SourceView persisted = sourceService.get(fixture.owner().user().id(), fixture.source().id());
+        var completeChanges = changeLogService.pull(
+                fixture.owner().user().id(), new SyncCursor(baselineCursor), 10).changes();
+
+        assertThat(completeChanges).singleElement().satisfies(change -> {
+            assertThat(change.resourceType()).isEqualTo(SyncResourceType.SOURCE);
+            assertThat(change.resourceId()).isEqualTo(fixture.source().id());
+            assertThat(change.mutationType()).isEqualTo(SyncMutationType.UPDATE);
+            assertThat(change.version()).isEqualTo(persisted.version());
+            try {
+                var payload = objectMapper.readTree(change.payload());
+                assertThat(payload.get("id").asText()).isEqualTo(fixture.source().id().toString());
+                assertThat(payload.get("ingestionStatus").asText()).isEqualTo("INDEXING");
+                assertThat(payload.get("version").asLong()).isEqualTo(persisted.version());
+            } catch (Exception exception) {
+                throw new AssertionError("Source change payload must be valid JSON", exception);
+            }
+        });
         var second = parsedDocumentService.complete(fixture.owner().user().id(), fixture.source().id(), upload.document().getId());
         Upload duplicate = upload(fixture, "hello");
         var samePayload = parsedDocumentService.complete(
@@ -158,6 +192,35 @@ class ParsedDocumentCompleteTests {
             executor.shutdownNow();
         }
         assertThat(ingestionJobRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void rollsBackAcceptedDocumentSourceIndexingAndSyncEventWhenEnqueueFails() throws Exception {
+        Fixture fixture = fixture("complete-atomic-failure");
+        Upload upload = upload(fixture, "enqueue failure");
+        long baselineCursor = changeLogService.latestCursor(fixture.owner().user().id()).value();
+        doThrow(new RuntimeException("injected enqueue failure")).when(ingestionJobService)
+                .enqueueParsedDocument(any(), any(), any(), any(), any());
+
+        List<RealtimeEventView> realtimeEvents = new ArrayList<>();
+        try (AutoCloseable ignored = realtimeEventPublisher.subscribe(
+                fixture.owner().user().id(), realtimeEvents::add)) {
+            assertThatThrownBy(() -> parsedDocumentService.complete(
+                    fixture.owner().user().id(), fixture.source().id(), upload.document().getId()))
+                    .isInstanceOf(RuntimeException.class)
+                    .hasMessage("injected enqueue failure");
+        }
+
+        assertThat(sourceService.get(fixture.owner().user().id(), fixture.source().id()).ingestionStatus())
+                .isEqualTo(com.auralis.app.source.SourceIngestionStatus.AWAITING_CLIENT);
+        assertThat(parsedDocumentRepository.findById(upload.document().getId()).orElseThrow().getStatus())
+                .isEqualTo(ParsedDocumentStatus.UPLOADING);
+        assertThat(ingestionJobRepository.findAll()).isEmpty();
+        assertThat(changeLogService.pull(fixture.owner().user().id(), new SyncCursor(baselineCursor), 10).changes())
+                .isEmpty();
+        assertThat(realtimeEvents).noneMatch(event -> event.type() == RealtimeEventType.SYNC_CHANGED
+                && "SOURCE".equals(event.resourceType())
+                && fixture.source().id().equals(event.resourceId()));
     }
 
     private String completeCode(Fixture fixture, Upload upload) {

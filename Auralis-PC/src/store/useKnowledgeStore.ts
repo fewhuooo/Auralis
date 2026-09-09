@@ -2,6 +2,8 @@ import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { type KnowledgeBlockCreateRequest, type KnowledgeBlockView } from '@/api/useKnowledgeApi'
+import type { SourceView } from '@/api/useSourceApi'
+import type { SubjectView } from '@/api/useSubjectApi'
 import { getLocalRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
 import { mapKnowledgeBlockView, type KnowledgeBlockModel } from '@/services/domainMappers'
@@ -34,11 +36,27 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
 
   async function localBlocks(subjectId?: string): Promise<KnowledgeBlockModel[]> {
     const repo = await repository()
-    const rows = await repo.list<KnowledgeBlockView>('KNOWLEDGE_BLOCK', { includeDeleted: false })
+    const [rows, sourceRows, subjectRows] = await Promise.all([
+      repo.list<KnowledgeBlockView>('KNOWLEDGE_BLOCK', { includeDeleted: false }),
+      repo.list<SourceView>('SOURCE', { includeDeleted: false }),
+      repo.list<SubjectView>('SUBJECT', { includeDeleted: false }),
+    ])
+    const sourceTitles = new Map(sourceRows.flatMap((row) => {
+      const source = row.value
+      return source?.id && source.title ? [[source.id, source.title] as const] : []
+    }))
+    const subjectNames = new Map(subjectRows.flatMap((row) => {
+      const subject = row.value
+      return subject?.id && subject.name ? [[subject.id, subject.name] as const] : []
+    }))
     return rows
       .map((row) => asBlockDto(row.value))
       .filter((value): value is KnowledgeBlockView => value !== null && (!subjectId || value.subjectId === subjectId))
-      .map(mapKnowledgeBlockView)
+      .map((value) => mapKnowledgeBlockView(
+        value,
+        value.sourceId ? sourceTitles.get(value.sourceId) : undefined,
+        value.subjectId ? subjectNames.get(value.subjectId) : undefined,
+      ))
   }
 
   async function fetchBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {
@@ -63,7 +81,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   subscribeProjectionChange((change) => {
-    if (change.resourceTypes.has('KNOWLEDGE_BLOCK')) {
+    if (change.resourceTypes.has('KNOWLEDGE_BLOCK') || change.resourceTypes.has('SOURCE') || change.resourceTypes.has('SUBJECT')) {
       void localBlocks(visibleSubjectId).then((blocks) => { recentBlocks.value = blocks })
     }
   })
@@ -96,7 +114,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         payload: localView as unknown as Record<string, unknown>,
       }),
     })
-    const model = mapKnowledgeBlockView(localView)
+    const model = mapKnowledgeBlockView(localView, block.source, block.subject)
     recentBlocks.value = [model, ...recentBlocks.value]
     scheduleSync()
     return id
@@ -129,7 +147,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         payload: payload as unknown as Record<string, unknown>,
       }),
     })
-    recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? mapKnowledgeBlockView(localView) : item)
+    recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? mapKnowledgeBlockView(localView, block.source, block.subject) : item)
     scheduleSync()
   }
 

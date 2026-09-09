@@ -66,6 +66,9 @@ function packager() {
       return {
         cacheId: 'cache-1', envelopeVersion: 1, chunkCount: 1, encryptedBytes: 96,
         plainTextSha256: 'b'.repeat(64), payloadSha256: 'c'.repeat(64), payloadBytes: 48,
+        payloadFormat: 'parsed-document-v1', sourceAssetSha256: assetSha256,
+        parserId: 'auralis-local-parser', parserVersion: 'auralis-document-parser/1.0.0',
+        normalizationVersion: 'auralis-normalization/1.0.0', ocrModelVersion: null,
       }
     },
   }
@@ -115,7 +118,7 @@ test('scan-style FILE processing flows from local OCR block through encrypted up
     hashFile: async () => assetSha256,
     expectedAssetSha256: async () => assetSha256,
     prepareInput: async () => {},
-    runJob: (jobId) => runner.start(jobId),
+    runJob: (jobId, metadata) => runner.start(jobId, metadata),
     upload,
     onJobChanged: async () => { updates.push((await repository.list()).map((job) => job.phase)) },
   })

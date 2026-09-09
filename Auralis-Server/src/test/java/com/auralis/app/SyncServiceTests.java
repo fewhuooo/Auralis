@@ -242,6 +242,32 @@ class SyncServiceTests {
     }
 
     @Test
+    void scheduledRetentionCleanupRunsDeleteQueriesInsideTransaction() {
+        AuthResult auth = register("sync-scheduled-retention");
+        UUID userId = auth.user().id();
+        UUID resourceId = UUID.randomUUID();
+        var payload = objectMapper.createObjectNode()
+                .put("name", "Expired sync subject")
+                .put("sortKey", "001");
+        syncService.push(userId, auth.serverDeviceId(), java.util.List.of(
+                new SyncMutation("expired-mutation", SyncResourceType.SUBJECT, resourceId,
+                        SyncMutationType.CREATE, 0, payload)));
+        jdbcTemplate.update("update change_log set created_at = ? where user_id = ?",
+                java.time.Instant.parse("2020-01-01T00:00:00Z"), userId);
+        jdbcTemplate.update("update inbound_mutations set created_at = ? where user_id = ?",
+                java.time.Instant.parse("2020-01-01T00:00:00Z"), userId);
+
+        syncRetentionService.scheduledPurgeExpired();
+
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from change_log where user_id = ?", Long.class, userId))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from inbound_mutations where user_id = ?", Long.class, userId))
+                .isZero();
+    }
+
+    @Test
     void snapshotContainsDeletedResourceTombstones() {
         AuthResult auth = register("sync-snapshot");
         UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(

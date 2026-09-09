@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-08-29
+更新时间：2026-09-08
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -172,6 +172,12 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 
 PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_processing_jobs` 表并将 `ingestion_revision` 对齐为服务端 UUID 文本；旧 v3 数字 revision 会先复制到 `legacy_document_processing_jobs_v3*` 再迁移，不删除原行，v4 任务追加 `payload_receipt_json` 列。该表不进入 `local_resource_records`、`local_mutations` 或同步 change log。每个任务按 `(user_id, device_id, source_id, ingestion_revision)` 唯一，其中 `device_id` 语义为 `serverDeviceId`，查询始终带当前用户和设备边界。
 
+### PC ParsedDocument schema-v1 本地派生缓存（2026-09-08）
+
+PC 加密 cache/header 与 `payload_receipt_json` 现在记录本地派生格式 `parsed-document-v1`、Source Asset SHA-256、parser id/version、normalization version 和可选 OCR model version；这些是 cache/receipt 恢复元数据，不是 Server 数据库 schema 字段。解密后上传的 gzip 内容是一个 schema-v1 JSON envelope（不是 NDJSON），只含 Server 接受的文档元数据、顺序 blocks、Unicode code-point `characterCount` 和 `plainTextSha256`。`payloadBytes/payloadSha256` 指解密 gzip payload，`encryptedBytes` 指本地加密 envelope。
+
+缺少或不完整 v1 元数据的历史派生 cache 在创建 upload intent 前失效：只删除对应 owner-scoped 派生 cache，原子清理 receipt 并回到 `QUEUED`，再按现行 Asset 校验、解析和打包流程重建一次；兼容 receipt 直接续传，不重复 OCR/download/hash/package。没有新增 Server migration 或 OpenAPI shape；真实 Tauri 重启、Server/MinIO PUT/complete/indexing 和 `1.pdf` GUI retry 仍是待完成的业务验收步骤。
+
 ### PC 本地优先同步（本地 schema v6，2026-09-04）
 
 - `local_mutations` 新增 `in_flight_at`、`remote_payload`、`remote_version`；状态为 `pending`、`inflight`、`applied`、`conflict` 或 `error`。`remote_*` 只保存服务端的冲突/拒绝诊断，不替换尚未解决的本地资源投影。
@@ -189,6 +195,8 @@ PC 本地 SQLite schema 从 v2/v3/v4 升级到 v5，新增专用 `document_proce
 | `checkpoint_page` / `checkpoint_ordinal` / `checkpoint_json` | 解析与打包断点；状态和断点由同一 UPDATE 原子写入 |
 | `payload_cache_id` / `payload_receipt_json` | 加密 payload cache 标识及可恢复上传所需的非敏感 receipt 元数据；不含正文、签名 URL 或 headers |
 | `error_code` / `error_detail` | 安全失败摘要 |
+
+`payload_receipt_json` 中的 `payloadBytes` 与 `payloadSha256` 以 `open_decrypted_reader` 实际输出的 gzip payload 为准；`encryptedBytes` 仅表示本地加密 envelope 文件大小，不可用于服务端 upload intent 的 `sizeBytes` 或 PUT `Content-Length`。历史 receipt 若 `payloadBytes == encryptedBytes`，PC 恢复上传前通过 owner/device/source/job/revision 作用域的 native cache reader 重新计算 payload size/hash，不改变 schema 版本，也不重新执行 OCR 或打包。
 
 浏览器 fallback 使用 `auralis:v5:document-jobs:<user>:<serverDeviceId>` 独立 namespace，并从 v4/v3 namespace 复制任务；任务不复用业务资源 JSON。v5 migration、数字 revision 迁移、receipt round-trip、状态机和 SQLite/浏览器 repository 已有定向自动测试，真实 Tauri SQLite 升级仍需 R2 验收。
 
@@ -238,6 +246,8 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - `ingestion_jobs` 新增可空 `parsed_document_id` 与 `ingestion_revision`。FILE Source 只有在 ParsedDocument 校验通过后进入该 generation 的 INDEXING；新 generation 完整写入并切换 active 前，旧 READY chunks 保持有效。`ingestion_jobs.status` 继续只使用现有 `PENDING/PARSING/INDEXING/READY/FAILED`。
 - `sources.ingestion_status` 目标扩展 `AWAITING_CLIENT` 与 `VALIDATING`；两者均适配现有 `VARCHAR(16)`，但必须替换数据库 CHECK 和 Java enum。现有 `PENDING/PARSING/INDEXING/READY/FAILED` 继续服务 TEXT/URL 和兼容路径。既有 READY FILE 且有活动 chunks 的记录保持 READY；未 READY FILE 分配 revision 后迁移为 `AWAITING_CLIENT`。
 - `assets.sha256` 为兼容既有上传仍可为空，但 ParsedDocument 接受后必须非空且经过原对象流式校验；并发回填使用锁或条件更新，不能 last-write-wins。
+- Task 14（2026-09-09）：Source ingestion 状态及安全失败诊断的实际变化由既有 `ResourceChangedEvent(SOURCE, UPDATE)` 链路写入 change log；相同三元组重复调用不增加 Source version 或同步记录。该变化不新增字段、迁移或 schema。
+- ParsedDocument complete 接受阶段与 Source `INDEXING`、ingestion job enqueue 和同步事件保持单事务原子性；接受后异常不会留下部分成功状态，只有校验尚未接受时的失败才持久化 `REJECTED`。
 - 最新成功 ParsedDocument 作为重新分块和重新 Embedding 的派生权威保留；成功代切换后异步删除旧对象，并按下述保留期清理旧元数据。Source 删除或 Asset 替换必须使迟到 generation 失效。
 - 同 revision 重放产生的多余对象、`REJECTED` 和超时 `UPLOADING` 对象必须由清理任务删除；新 revision READY 后旧对象删除并写 `object_deleted_at`，`SUPERSEDED` 元数据至少保留 30 天后再清理。
 - `conversations` 目标新增 `purpose`（`GENERAL`/`READING_SESSION`）和可空 `source_id`；省略 purpose 时为 `GENERAL`，普通列表排除阅读会话，超过 24 小时无活动的阅读会话可由清理任务软删除，普通会话不受影响。

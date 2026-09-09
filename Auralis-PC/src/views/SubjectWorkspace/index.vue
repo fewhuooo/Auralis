@@ -2404,8 +2404,8 @@ html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
 .chat-msg-row.assistant .chat-bubble { background: #ffffff; border: 1px solid rgba(0,0,0,0.06); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 4px 16px rgba(0,0,0,0.02); }
 
 .ai-input-area { padding: 16px 20px 24px; background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
-.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 4px 16px rgba(0,0,0,0.03); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.ai-chat-capsule:focus-within { border-color: rgba(125,147,114,0.3); box-shadow: 0 6px 24px rgba(125,147,114,0.08); transform: translateY(-1px); }
+.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-chat-capsule:focus-within { border-color: rgba(125,147,114,0.3); box-shadow: 0 12px 36px rgba(125,147,114,0.12), 0 4px 12px rgba(125,147,114,0.06); transform: translateY(-2px); }
 .ai-input { flex: 1; background: transparent; font-size: 14.5px; line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
 .ai-input::placeholder { color: var(--text-muted); }
 .ai-send-btn { width: 38px; height: 38px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: transparent; color: var(--text-muted); }

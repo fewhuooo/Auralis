@@ -1,6 +1,6 @@
 # Auralis 部署指南
 
-更新时间：2026-08-26
+更新时间：2026-09-09
 
 文档状态：现行，生产方案待加固
 
@@ -25,6 +25,10 @@
 | Compose 组合 | 本地/受控环境 | PostgreSQL/pgvector、MinIO、Server、PC Web |
 
 当前 Compose 含开发默认凭据，禁止未经加固直接作为公网生产方案。
+
+### 2026-09-09 Task 16 运行验证
+
+本轮仅执行 backend 镜像重建和 `up -d --no-deps --force-recreate backend`；PostgreSQL/MinIO 容器及 volume 未重建、删除或写入。Compose config 退出码 0，backend healthy，liveness/readiness 为 HTTP 200，worker flag 为 `true`。启动日志确认 PostgreSQL 17.11、Flyway 21 migrations 已验证且无需迁移。只读数据库摘要与定时任务异常见 `.superpowers/sdd/task-16-report.md`。现有 READY Source 早于事件修复，需新的认证 reingest/upload 才能取得完整 READY change-log 与 PC GUI/sync 证据。
 
 ## 前置条件
 

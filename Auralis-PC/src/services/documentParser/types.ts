@@ -57,17 +57,25 @@ export interface OcrTimingMs {
   total: number
 }
 
+export interface DocumentParserCumulativeStats {
+  ocrProcessedPages: number
+  ocrTextPages: number
+  ocrEmptyPages: number
+  totalRawLineCount: number
+  totalNormalizedLineCount: number
+}
+
 export type DocumentParserProgress =
   | { type: 'before-recognize'; pageNumber: number; totalPages: number; imageBytes: number }
   | { type: 'after-recognize'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; timingMs: OcrTimingMs }
-  | { type: 'after-normalize'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
-  | { type: 'page-result'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
-  | { type: 'empty-page'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
+  | ({ type: 'after-normalize'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs } & DocumentParserCumulativeStats)
+  | ({ type: 'page-result'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs } & DocumentParserCumulativeStats)
+  | ({ type: 'empty-page'; pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs } & DocumentParserCumulativeStats)
 
 export class OcrDocumentEmptyError extends Error {
   readonly code = 'OCR_DOCUMENT_EMPTY'
-  readonly diagnostic: { pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }
-  constructor(diagnostic: { pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs }) {
+  readonly diagnostic: { pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs } & DocumentParserCumulativeStats
+  constructor(diagnostic: { pageNumber: number; totalPages: number; imageBytes: number; rawLineCount: number; normalizedLineCount: number; timingMs: OcrTimingMs } & DocumentParserCumulativeStats) {
     super('OCR_DOCUMENT_EMPTY')
     this.name = 'OcrDocumentEmptyError'
     this.diagnostic = diagnostic

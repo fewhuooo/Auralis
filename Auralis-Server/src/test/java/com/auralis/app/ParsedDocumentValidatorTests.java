@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.UUID;
 import java.util.zip.GZIPOutputStream;
@@ -43,6 +45,33 @@ class ParsedDocumentValidatorTests {
         assertThat(result.blocks()).hasSize(2);
         assertThat(result.characterCount()).isEqualTo(10);
         assertThat(result.plainTextSha256()).isEqualTo(sha256("hello\nworld\n"));
+        assertThat(result.payloadSha256()).isEqualTo(sha256(gzip));
+    }
+
+    @Test
+    void acceptsSharedSchemaV1Fixture() throws Exception {
+        String fixture = Files.readString(Path.of("..", "docs", "contracts", "fixtures", "parsed-document-v1.json"));
+        var fixtureJson = new ObjectMapper().readTree(fixture);
+        byte[] gzip = gzip(fixture);
+        ParsedDocumentValidator.Metadata metadata = new ParsedDocumentValidator.Metadata(
+                UUID.fromString(fixtureJson.get("sourceId").asText()),
+                UUID.fromString(fixtureJson.get("ingestionRevision").asText()),
+                fixtureJson.get("sourceAssetSha256").asText(),
+                sha256(gzip), gzip.length,
+                64_000, 16, 100, 10_000, 100);
+
+        ParsedDocumentValidator.ValidatedParsedDocument result = validator.validate(
+                new ByteArrayInputStream(gzip), metadata);
+
+        assertThat(result.blocks()).extracting(
+                ParsedDocumentValidator.ValidatedBlock::ordinal,
+                ParsedDocumentValidator.ValidatedBlock::kind,
+                ParsedDocumentValidator.ValidatedBlock::text)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(0L, "page", "你好𠮷"),
+                        org.assertj.core.groups.Tuple.tuple(1L, "paragraph", "Résumé 🎓"));
+        assertThat(result.characterCount()).isEqualTo(fixtureJson.get("characterCount").asLong());
+        assertThat(result.plainTextSha256()).isEqualTo(fixtureJson.get("plainTextSha256").asText());
         assertThat(result.payloadSha256()).isEqualTo(sha256(gzip));
     }
 

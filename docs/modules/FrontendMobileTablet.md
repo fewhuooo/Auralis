@@ -16,8 +16,6 @@
 
 2026-09-07 起 Task 契约不再包含认知负荷。Mobile/Tablet 的生成 API 类型、Task Store、同步映射、本地存储、新建任务入口和页面展示不再读写 `cognitiveLoad`、`load` 或 `loadText`。
 
-前端实现可按[前端 AI 辅助开发约定](../agent/FrontendAIAssistedDevelopment.md)优先使用 AGY/Antigravity 中的 Gemini；生成代码必须额外审查条件编译、弱网/输入法、触控、feature flag、数据同步和真机验收边界。
-
 ## 当前技术栈
 
 - Uni-app `3.0.0-4080420251103001`

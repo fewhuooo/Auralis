@@ -1,12 +1,16 @@
 # Auralis 运维与应急 Runbook
 
-更新时间：2026-08-17
+更新时间：2026-09-09
 
 文档状态：现行，部分流程待生产演练
 
 权威范围：运行期诊断、恢复、备份与升级条件
 
 事实来源：当前 Compose 服务、Server 配置、客户端请求/同步实现与已知风险
+
+## 2026-09-09 Task 16 运行观察
+
+backend 重建后 health/readiness 正常且 ingestion worker flag 为 `true`。首次 scheduled Sync retention 执行报 `InvalidDataAccessApiUsageException` / `TransactionRequiredException`，根因为 `SyncRetentionService.purgeExpired` 调用 `deleteByCreatedAtBefore` 时无实际事务；应由后端修复并重新部署后复核。该观察不授权手工清理或数据库写入。当前 READY Source 的历史 `change_log` 仅有 CREATE/DELETE，无 SOURCE UPDATE；需认证用户执行一次新的 reingest/upload，再核对 Source、job、change-log、PC sync 与 GUI。
 
 ## 使用原则
 

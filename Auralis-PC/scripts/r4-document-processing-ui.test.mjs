@@ -47,6 +47,8 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /sourceStore\.resumeDocumentProcessing/)
   assert.match(center, /store\.retry/)
   assert.match(center, /store\.cancel/)
+  assert.doesNotMatch(center, /blockOrdinal > 0|已处理 .*内容块/)
+  assert.match(center, /准备中|正在处理/)
   const processingStore = await source('src/store/useDocumentProcessingStore.ts')
   assert.match(processingStore, /attachScheduler\(/)
   assert.match(processingStore, /scheduler\.retry\(jobId\)/)
@@ -94,7 +96,7 @@ test('OCR diagnostics formatter exposes safe progress and empty-page warning', (
   })
   assert.equal(formatted.progressLabel, '正在识别第 2/5 页')
   assert.equal(formatted.warning, '第 2/5 页未识别到文字')
-  assert.match(formatted.clipboardText, /结果：未识别到文字/)
+  assert.match(formatted.clipboardText, /本页结果：未识别到文字/)
   assert.match(formatted.clipboardText, /图片大小：2048 bytes/)
 })
 
@@ -105,7 +107,7 @@ test('OCR diagnostics formatter exposes running page details', () => {
   })
   assert.equal(formatted.progressLabel, '正在识别第 3/8 页')
   assert.equal(formatted.warning, null)
-  assert.equal(formatted.rows.find((row) => row.label === '结果')?.value, '识别中')
+  assert.equal(formatted.rows.find((row) => row.label === '本页结果')?.value, '识别中')
 })
 
 test('OCR diagnostics formatter exposes allowlisted failure detail', () => {
@@ -116,6 +118,37 @@ test('OCR diagnostics formatter exposes allowlisted failure detail', () => {
   assert.equal(formatted.errorDetail, 'sidecar timeout')
   assert.match(formatted.clipboardText, /错误代码：OCR_TIMEOUT/)
   assert.match(formatted.clipboardText, /错误说明：sidecar timeout/)
+})
+
+test('OCR diagnostics localizes exact parsed-document upload failure tokens', () => {
+  const labels = {
+    connect: '连接失败',
+    timeout: '请求超时',
+    body: '响应体传输失败',
+    request: '请求失败',
+    client: '客户端传输失败',
+    'retryable-response': '服务暂时不可用',
+  }
+  for (const [reason, label] of Object.entries(labels)) {
+    const formatted = formatOcrDiagnostics({
+      phase: 'PAUSED_NETWORK', checkpoint: null,
+      errorCode: 'NETWORK_OFFLINE',
+      errorDetail: `PARSED_DOCUMENT_UPLOAD_PAUSED:upload:${reason}`,
+    })
+    assert.equal(formatted.errorDetail, label)
+    assert.match(formatted.clipboardText, new RegExp(`错误说明：${label}`))
+    assert.doesNotMatch(formatted.clipboardText, /PARSED_DOCUMENT_UPLOAD_PAUSED/)
+  }
+})
+
+test('OCR diagnostics rejects malformed upload details without echoing them', () => {
+  const formatted = formatOcrDiagnostics({
+    phase: 'PAUSED_NETWORK', checkpoint: null,
+    errorCode: 'NETWORK_OFFLINE',
+    errorDetail: 'PARSED_DOCUMENT_UPLOAD_PAUSED:upload:connect https://storage.example/upload?sig=secret Authorization:Bearer token',
+  })
+  assert.equal(formatted.errorDetail, '上传暂时无法继续，请稍后重试')
+  assert.doesNotMatch(formatted.clipboardText, /storage\.example|sig=secret|Authorization|Bearer|PARSED_DOCUMENT_UPLOAD_PAUSED/)
 })
 
 test('clipboard boundary handles resolve, reject, and unsupported writers', async () => {

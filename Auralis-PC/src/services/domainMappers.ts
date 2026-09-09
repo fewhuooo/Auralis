@@ -275,17 +275,19 @@ export function isClientFileSource(view: Pick<SourceDtoLike, 'type' | 'assetId' 
   return view.type === 'FILE' && Boolean(view.assetId && view.ingestionRevision)
 }
 
-export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike): KnowledgeBlockModel {
+export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike, sourceTitle?: string, subjectName?: string): KnowledgeBlockModel {
   const summary = view.summary || view.description || view.content || ''
+  const source = sourceTitle?.trim() || (view.sourceId ? '来源资料' : '未分类材料')
+  const subject = subjectName?.trim() || '未分类学科'
   return {
     id: requiredId(view.id, 'Knowledge block'),
-    subject: view.subjectId || '',
+    subject,
     subjectId: view.subjectId || '',
     title: view.title || '无标题块',
     preview: summary,
     content: view.content || summary,
     time: view.updatedAt || view.createdAt || '',
-    source: view.sourceId || '未分类材料',
+    source,
     color: view.colorOverride || 'rgba(181,196,177,0.4)',
     version: view.version ?? 0,
     createdAt: view.createdAt,

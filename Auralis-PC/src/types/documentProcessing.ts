@@ -25,6 +25,11 @@ export interface OcrCheckpointDiagnostic {
   normalizedLineCount?: number
   totalMs?: number
   outcome: 'running' | 'text' | 'empty' | 'failed'
+  ocrProcessedPages?: number
+  ocrTextPages?: number
+  ocrEmptyPages?: number
+  totalRawLineCount?: number
+  totalNormalizedLineCount?: number
 }
 
 export interface DocumentJobCheckpoint {

@@ -15,6 +15,14 @@ import { OcrDocumentEmptyError } from '../documentParser/types.ts'
 import type { OcrCheckpointDiagnostic } from '@/types/documentProcessing'
 import type { DocumentCacheReceipt } from '@/api/tauri'
 
+export interface DocumentPackageMetadata {
+  sourceAssetSha256: string
+  parserId?: string
+  parserVersion?: string
+  normalizationVersion?: string
+  ocrModelVersion?: string | null
+}
+
 interface JobRepository {
   get(jobId: string): Promise<DocumentProcessingJob | null>
   list(): Promise<DocumentProcessingJob[]>
@@ -24,12 +32,17 @@ interface JobRepository {
 interface PackageAdapter {
   begin(header: {
     schemaVersion: 1
+    payloadFormat: 'parsed-document-v1'
     userId: string
     serverDeviceId: string
     sourceId: string
     jobId: string
     ingestionRevision: string
+    sourceAssetSha256: string
+    parserId: string
     parserVersion: string
+    normalizationVersion: string
+    ocrModelVersion: string | null
   }): Promise<string>
   append(packageId: string, block: {
     ordinal: number
@@ -58,13 +71,25 @@ function diagnosticFromProgress(event: DocumentParserProgress): OcrCheckpointDia
     ...(Number.isFinite(event.rawLineCount) ? { rawLineCount: event.rawLineCount } : {}),
     ...('normalizedLineCount' in event && Number.isFinite(event.normalizedLineCount) ? { normalizedLineCount: event.normalizedLineCount } : {}),
     ...(Number.isFinite(event.timingMs.total) ? { totalMs: event.timingMs.total } : {}),
+    ...('ocrProcessedPages' in event && Number.isFinite(event.ocrProcessedPages) ? { ocrProcessedPages: event.ocrProcessedPages } : {}),
+    ...('ocrTextPages' in event && Number.isFinite(event.ocrTextPages) ? { ocrTextPages: event.ocrTextPages } : {}),
+    ...('ocrEmptyPages' in event && Number.isFinite(event.ocrEmptyPages) ? { ocrEmptyPages: event.ocrEmptyPages } : {}),
+    ...('totalRawLineCount' in event && Number.isFinite(event.totalRawLineCount) ? { totalRawLineCount: event.totalRawLineCount } : {}),
+    ...('totalNormalizedLineCount' in event && Number.isFinite(event.totalNormalizedLineCount) ? { totalNormalizedLineCount: event.totalNormalizedLineCount } : {}),
     outcome: event.type === 'empty-page' ? 'empty' : event.type === 'page-result' ? 'text' : 'running',
   }
 }
 
+const cumulativeDiagnosticKeys = ['ocrProcessedPages', 'ocrTextPages', 'ocrEmptyPages', 'totalRawLineCount', 'totalNormalizedLineCount'] as const
+
+function cumulativeDiagnosticFields(diagnostic: OcrCheckpointDiagnostic | undefined): Partial<OcrCheckpointDiagnostic> {
+  if (!diagnostic) return {}
+  return Object.fromEntries(cumulativeDiagnosticKeys.flatMap((key) => diagnostic[key] === undefined ? [] : [[key, diagnostic[key]]])) as Partial<OcrCheckpointDiagnostic>
+}
+
 function safeOcrDetail(error: OcrDocumentEmptyError, attempt: number): string {
   const diagnostic = error.diagnostic
-  const detail = `OCR_DOCUMENT_EMPTY page=${diagnostic.pageNumber}/${diagnostic.totalPages} imageBytes=${diagnostic.imageBytes} rawLines=${diagnostic.rawLineCount} normalizedLines=${diagnostic.normalizedLineCount} totalMs=${diagnostic.timingMs.total} attempt=${attempt}`
+  const detail = `OCR_DOCUMENT_EMPTY page=${diagnostic.pageNumber}/${diagnostic.totalPages} imageBytes=${diagnostic.imageBytes} rawLines=${diagnostic.rawLineCount} normalizedLines=${diagnostic.normalizedLineCount} totalMs=${diagnostic.timingMs.total} attempt=${attempt} processed=${diagnostic.ocrProcessedPages} empty=${diagnostic.ocrEmptyPages}`
   return detail.slice(0, 240)
 }
 
@@ -90,10 +115,10 @@ export class DocumentJobRunner {
     this.maxAutomaticRetries = options.maxAutomaticRetries ?? MAX_AUTOMATIC_RETRIES
   }
 
-  async start(jobId: string): Promise<void> {
+  async start(jobId: string, metadata?: DocumentPackageMetadata): Promise<void> {
     const running = this.active.get(jobId)
     if (running) return running
-    const task = this.process(jobId)
+    const task = this.process(jobId, metadata)
     this.active.set(jobId, task)
     try {
       await task
@@ -150,7 +175,7 @@ export class DocumentJobRunner {
     })
   }
 
-  private async process(jobId: string): Promise<void> {
+  private async process(jobId: string, metadata?: DocumentPackageMetadata): Promise<void> {
     let job = await this.repository.get(jobId)
     if (!job || job.phase === 'READY' || job.phase === 'FAILED_SERVER'
       || ['PACKAGING', 'UPLOADING', 'SERVER_VALIDATING', 'SERVER_INDEXING'].includes(job.phase)) return
@@ -160,6 +185,7 @@ export class DocumentJobRunner {
       let packageId: string | null = null
       try {
         this.assertNotCancelled(jobId)
+        if (!metadata) throw new Error('DOCUMENT_PACKAGE_METADATA_REQUIRED')
         job = await this.repository.get(jobId)
         if (!job || job.phase === 'READY') return
         if (job.phase === 'PAUSED_NETWORK') return
@@ -169,18 +195,24 @@ export class DocumentJobRunner {
         this.assertNotCancelled(jobId)
         packageId = await this.packager.begin({
           schemaVersion: 1,
+          payloadFormat: 'parsed-document-v1',
           userId: job.userId,
           serverDeviceId: job.serverDeviceId,
           sourceId: job.sourceId,
           jobId: job.jobId,
           ingestionRevision: job.ingestionRevision,
-          parserVersion: 'auralis-document-parser/1.0.0',
+          sourceAssetSha256: metadata.sourceAssetSha256,
+          parserId: metadata.parserId ?? 'auralis-document-parser',
+          parserVersion: metadata.parserVersion ?? '1.0.0',
+          normalizationVersion: metadata.normalizationVersion ?? 'nfkc-lf-trim',
+          ocrModelVersion: metadata.ocrModelVersion ?? null,
         })
         const parser = await this.parserFactory(job)
         this.assertNotCancelled(jobId)
         await parser(async (block) => {
           this.assertNotCancelled(jobId)
-          const phase: DocumentJobPhase = block.kind === 'ocr-page' ? 'OCR_RUNNING' : 'EXTRACTING'
+          const phase: DocumentJobPhase = block.kind === 'ocr-page' || job?.phase === 'OCR_RUNNING'
+            ? 'OCR_RUNNING' : 'EXTRACTING'
           await this.packager.append(packageId!, block)
           this.assertNotCancelled(jobId)
           job = await this.repository.transition(jobId, phase, {
@@ -197,7 +229,12 @@ export class DocumentJobRunner {
           this.assertNotCancelled(jobId)
           const current = await this.repository.get(jobId)
           if (!current) throw new Error('DOCUMENT_JOB_NOT_FOUND')
-          const diagnostic = diagnosticFromProgress(event)
+          const diagnostic = {
+            ...diagnosticFromProgress(event),
+            ...(['before-recognize', 'after-recognize'].includes(event.type)
+              ? cumulativeDiagnosticFields(current.checkpoint.diagnostic)
+              : {}),
+          }
           const phase: DocumentJobPhase = event.type === 'before-recognize' || current.phase === 'OCR_RUNNING'
             ? 'OCR_RUNNING' : current.phase
           job = await this.repository.transition(jobId, phase, {
@@ -252,6 +289,11 @@ export class DocumentJobRunner {
               rawLineCount: error.diagnostic.rawLineCount,
               normalizedLineCount: error.diagnostic.normalizedLineCount,
               timingMs: error.diagnostic.timingMs,
+              ocrProcessedPages: error.diagnostic.ocrProcessedPages,
+              ocrTextPages: error.diagnostic.ocrTextPages,
+              ocrEmptyPages: error.diagnostic.ocrEmptyPages,
+              totalRawLineCount: error.diagnostic.totalRawLineCount,
+              totalNormalizedLineCount: error.diagnostic.totalNormalizedLineCount,
             }),
             outcome: 'failed' as const,
           },

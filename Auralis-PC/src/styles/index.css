@@ -336,6 +336,7 @@ select:focus {
 
 .el-notification.auralis-notification .el-notification__content {
   color: var(--text-secondary) !important;
+  color: var(--text-secondary) !important;
   font-size: var(--font-size-caption) !important;
   line-height: 1.6 !important;
   margin: 0 !important;
@@ -351,3 +352,6 @@ select:focus {
   color: var(--text-primary) !important;
 }
 
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}

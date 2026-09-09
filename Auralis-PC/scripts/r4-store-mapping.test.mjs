@@ -115,7 +115,7 @@ test('maps knowledge block and asset DTOs to stable UI fields', () => {
     colorOverride: '#abc',
     version: 2,
     deletedAt: null,
-  })
+  }, '编译原理课件chap01(陈火旺)-v9.ppt')
   const asset = mapAssetView({
     id: 'asset-1',
     originalName: 'notes.pdf',
@@ -126,11 +126,37 @@ test('maps knowledge block and asset DTOs to stable UI fields', () => {
   })
 
   assert.equal(block.preview, 'Complexity summary')
+  assert.equal(block.source, '编译原理课件chap01(陈火旺)-v9.ppt')
   assert.equal(block.sourceFileId, 'source-1')
   assert.equal(block.version, 2)
   assert.equal(asset.name, 'notes.pdf')
   assert.equal(asset.sizeBytes, 1024)
   assert.equal(asset.status, 'READY')
+})
+
+test('does not expose a source id as the knowledge block source name', () => {
+  const block = mapKnowledgeBlockView({
+    id: 'block-1',
+    subjectId: 'subject-1',
+    sourceId: '01993a68-72ec-7ec8-a457-f0bcecd55e12',
+    title: 'Parsing',
+    content: 'Content',
+  })
+
+  assert.equal(block.source, '来源资料')
+  assert.equal(block.sourceFileId, '01993a68-72ec-7ec8-a457-f0bcecd55e12')
+})
+
+test('does not expose a subject id as the knowledge block subject name', () => {
+  const block = mapKnowledgeBlockView({
+    id: 'block-1',
+    subjectId: '01993a68-72ec-7ec8-a457-f0bcecd55e12',
+    title: 'Parsing',
+    content: 'Content',
+  }, undefined, '编译原理')
+
+  assert.equal(block.subject, '编译原理')
+  assert.equal(block.subjectId, '01993a68-72ec-7ec8-a457-f0bcecd55e12')
 })
 
 test('records optimistic mutations with baseVersion and clientMutationId', () => {

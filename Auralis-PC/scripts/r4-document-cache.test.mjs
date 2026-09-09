@@ -9,11 +9,14 @@ const rustSource = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'document
 const libSource = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'lib.rs'), 'utf8')
 
 test('document cache API exposes only bounded package commands', () => {
-  for (const name of ['documentPackageBegin', 'documentPackageAppend', 'documentPackageFinish', 'documentCacheDelete']) {
+  for (const name of ['documentPackageBegin', 'documentPackageAppend', 'documentPackageFinish', 'documentCacheDelete', 'documentCachePayloadInfo']) {
     assert.match(apiSource, new RegExp(`export const ${name}`))
   }
   assert.match(apiSource, /text\.length > 100_000/)
   assert.doesNotMatch(apiSource, /documentCacheOpen|openDecryptedReader/)
+  assert.match(apiSource, /payloadFormat: 'parsed-document-v1'/)
+  assert.match(apiSource, /!\/\^\[a-f0-9\]\{64\}\$\//)
+  assert.match(apiSource, /MAX_PACKAGE_METADATA_CHARS/)
 })
 
 test('Rust cache reader stays internal and commands do not accept arbitrary paths', () => {
@@ -22,5 +25,6 @@ test('Rust cache reader stays internal and commands do not accept arbitrary path
   assert.doesNotMatch(rustSource, /path:\s*String.*document_package_begin/s)
   assert.match(libSource, /document_packager::document_package_begin/)
   assert.match(libSource, /document_packager::document_cache_delete/)
+  assert.match(libSource, /document_packager::document_cache_payload_info/)
   assert.doesNotMatch(libSource, /document_packager::open_decrypted_reader/)
 })

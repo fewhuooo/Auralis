@@ -52,6 +52,11 @@ export async function parseDocument(
   let ordinal = 0
   let blockCount = 0
   let attemptedOcr = false
+  let ocrProcessedPages = 0
+  let ocrTextPages = 0
+  let ocrEmptyPages = 0
+  let totalRawLineCount = 0
+  let totalNormalizedLineCount = 0
   let lastEmptyDiagnostic: ConstructorParameters<typeof OcrDocumentEmptyError>[0] | undefined
   const progress = async (event: DocumentParserProgress): Promise<void> => { await options.onProgress?.(event) }
 
@@ -73,8 +78,19 @@ export async function parseDocument(
     await progress({ type: 'after-recognize', pageNumber, totalPages, imageBytes, rawLineCount, timingMs })
     const text = normalizeOcrLines(result.lines)
     const normalizedLineCount = text ? text.split('\n').length : 0
-    await progress({ type: 'after-normalize', pageNumber, totalPages, imageBytes, rawLineCount, normalizedLineCount, timingMs })
-    const diagnostic = { pageNumber, totalPages, imageBytes, rawLineCount, normalizedLineCount, timingMs }
+
+    ocrProcessedPages += 1
+    totalRawLineCount += rawLineCount
+    totalNormalizedLineCount += normalizedLineCount
+    if (!text) {
+      ocrEmptyPages += 1
+    } else {
+      ocrTextPages += 1
+    }
+    const cumulativeStats = { ocrProcessedPages, ocrTextPages, ocrEmptyPages, totalRawLineCount, totalNormalizedLineCount }
+
+    await progress({ type: 'after-normalize', pageNumber, totalPages, imageBytes, rawLineCount, normalizedLineCount, timingMs, ...cumulativeStats })
+    const diagnostic = { pageNumber, totalPages, imageBytes, rawLineCount, normalizedLineCount, timingMs, ...cumulativeStats }
     if (!text) {
       lastEmptyDiagnostic = diagnostic
       await progress({ type: 'empty-page', ...diagnostic })

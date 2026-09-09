@@ -193,7 +193,12 @@ export class DocumentProcessingRuntime {
       packager,
       parserFactory: async (job) => this.createParser(job),
     })
-    const upload = new ParsedDocumentUploadCoordinator({ repository })
+    const upload = new ParsedDocumentUploadCoordinator({
+      repository,
+      onCompleteAccepted: () => {
+        useSyncStore().requestBackgroundSync('read')
+      },
+    })
     const scheduler = new SourceJobScheduler({
       repository,
       sourceApi: useSourceApi,
@@ -218,7 +223,17 @@ export class DocumentProcessingRuntime {
       prepareInput: async (job, _source, file) => {
         this.parserInputs.set(job.jobId, asRuntimeFile(file))
       },
-      runJob: (jobId) => runner.start(jobId),
+      runJob: async (jobId, metadata) => {
+        const input = this.parserInputs.get(jobId)
+        if (!input) throw new Error('DOCUMENT_INPUT_UNAVAILABLE')
+        if (!metadata || !/^[a-f0-9]{64}$/.test(metadata.sourceAssetSha256)) {
+          throw new Error('SOURCE_ASSET_SHA_INVALID')
+        }
+        await runner.start(jobId, {
+          sourceAssetSha256: metadata.sourceAssetSha256,
+          ocrModelVersion: 'PP-OCRv6-small',
+        })
+      },
       cancelJob: (jobId) => runner.cancel(jobId),
       discardPreparedInput: (jobId) => { this.parserInputs.delete(jobId) },
       deleteCache: async (cacheId) => { await documentCacheDelete(cacheId) },

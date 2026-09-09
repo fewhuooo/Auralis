@@ -35,8 +35,8 @@
 
 | 任务 | 必读 | 变化后必须回写 |
 | --- | --- | --- |
-| PC 页面、路由、Store、Tauri | [PC 模块](modules/FrontendPC.md)、[前端设计](design/Frontend.md)；使用 AGY/Gemini 时阅读[前端 AI 辅助开发约定](agent/FrontendAIAssistedDevelopment.md) | 两份文档；状态/风险变化时更新 `current/`；发布变化更新 Changelog |
-| Mobile / Tablet 页面、路由、端侧数据 | [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)、[前端设计](design/Frontend.md)、[页面 API 映射](contracts/MobilePagesAPIMap.md)；使用 AGY/Gemini 时阅读[前端 AI 辅助开发约定](agent/FrontendAIAssistedDevelopment.md) | 所有受影响文档及状态、风险、Changelog |
+| PC 页面、路由、Store、Tauri | [PC 模块](modules/FrontendPC.md)、[前端设计](design/Frontend.md)；前端 Agent 编排与 Antigravity MCP 规则见仓库根目录 `AGENTS.md` | 两份文档；状态/风险变化时更新 `current/`；发布变化更新 Changelog |
+| Mobile / Tablet 页面、路由、端侧数据 | [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)、[前端设计](design/Frontend.md)、[页面 API 映射](contracts/MobilePagesAPIMap.md)；前端 Agent 编排与 Antigravity MCP 规则见仓库根目录 `AGENTS.md` | 所有受影响文档及状态、风险、Changelog |
 | 后端 Controller、Service、鉴权 | [后端模块](modules/Backend.md)、[API 契约](contracts/API.md) | 两份文档及状态、风险、Changelog |
 | Entity、DDL、同步字段、本地表 | [数据库契约](contracts/Database.md)、[后端模块](modules/Backend.md) | 两份文档；接口变化时同步 API |
 | Docker、环境变量、部署、运维 | [基础设施模块](modules/Infrastructure.md)、[部署指南](operations/Deployment.md)、[Runbook](operations/Runbook.md) | 所有受影响文档及状态、风险、Changelog |
@@ -89,7 +89,6 @@
 
 - [编码前协议](agent/BeforeCoding.md)
 - [编码与 Git 规范](agent/CodingAndGitStandards.md)
-- [前端 AI 辅助开发约定](agent/FrontendAIAssistedDevelopment.md)
 
 ### 项目与设计
 
@@ -120,6 +119,7 @@
 - [Task 认知负荷全栈移除设计（2026-09-07）](design/2026-09-07-remove-task-cognitive-load-design.md)
 - [Task 颜色能力全栈移除设计（2026-09-07）](design/2026-09-07-remove-task-color-design.md)
 - [PC OCR 诊断与空白页容错设计（2026-09-08）](design/2026-09-08-pc-ocr-diagnostics-and-empty-page-design.md)
+- [PC PDF 混合页面处理阶段修复设计（2026-09-09）](design/2026-09-09-pc-pdf-mixed-page-phase-design.md)
 
 ### 当前实现与契约
 
@@ -176,6 +176,7 @@
 - [Task 认知负荷全栈移除实施计划（2026-09-07）](plans/2026-09-07-remove-task-cognitive-load.md)
 - [Task 颜色能力全栈移除实施计划（2026-09-07）](plans/2026-09-07-remove-task-color.md)
 - [PC OCR 诊断与空白页容错实施计划（2026-09-08）](plans/2026-09-08-pc-ocr-diagnostics-and-empty-page.md)
+- [PC PDF 混合页面处理阶段修复实施计划（2026-09-09）](plans/2026-09-09-pc-pdf-mixed-page-phase-fix.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)

@@ -486,11 +486,7 @@ export const useTaskStore = defineStore('task', () => {
       replaceInMemory(toPresentationTask(toModel, 'synced'))
       replaceInMemory(toPresentationTask(fromModel, 'synced'))
     } else {
-      await useTaskApi.swapSchedules({
-        sourceTaskId: fromModel.id,
-        sourceBaseVersion: from.version, targetTaskId: '', targetBaseVersion: 0 })
-      fromModel.version = from.version + 1
-      replaceInMemory(toPresentationTask(fromModel, 'synced'))
+      await updateTaskModel(fromModel)
     }
     useSyncStore().requestBackgroundSync('read')
   }

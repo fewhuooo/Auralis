@@ -15,9 +15,15 @@
       </div>
 
       <!-- Upload Progress -->
-      <div v-if="isUploading" class="upload-banner">
-        <span class="upload-status-txt">{{ uploadStatusText }} {{ uploadProgress }}%</span>
-        <div class="mini-bar-bg"><div class="mini-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
+      <div v-if="isUploading" class="upload-progress-wrapper" style="margin: 0 20px 16px; padding: 12px; background: var(--bg-modifier-hover); border-radius: var(--radius-md);">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+          <span aria-live="polite" style="font-weight: 500;">{{ uploadStatusText || '正在上传文件' }}</span>
+          <span style="font-weight: 600; color: var(--color-zen-sage);">{{ uploadProgress }}%</span>
+        </div>
+        <div style="height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; position: relative;">
+          <div :style="{ width: uploadProgress + '%', height: '100%', background: 'var(--accent-gradient)', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)', borderRadius: '2px' }"></div>
+          <div v-if="uploadProgress < 100" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 1.5s infinite; transform: translateX(-100%);"></div>
+        </div>
       </div>
 
 

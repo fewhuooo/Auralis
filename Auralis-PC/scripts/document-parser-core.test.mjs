@@ -65,6 +65,7 @@ test('continues after an empty OCR page and emits safe page diagnostics', async 
   assert.deepEqual(empty, {
     type: 'empty-page', pageNumber: 1, totalPages: 2, imageBytes: 3,
     rawLineCount: 0, normalizedLineCount: 0, timingMs: { det: 2, rec: 3, total: 5 },
+    ocrProcessedPages: 1, ocrTextPages: 0, ocrEmptyPages: 1, totalRawLineCount: 0, totalNormalizedLineCount: 0,
   })
 })
 
@@ -78,8 +79,9 @@ test('rejects only when every attempted OCR page is empty', async () => {
       assert.deepEqual(error.diagnostic, {
         pageNumber: 2, totalPages: 2, imageBytes: 1, rawLineCount: 0, normalizedLineCount: 0,
         timingMs: { det: 2, rec: 3, total: 5 },
+        ocrProcessedPages: 2, ocrTextPages: 0, ocrEmptyPages: 2, totalRawLineCount: 0, totalNormalizedLineCount: 0,
       })
-      assert.doesNotMatch(JSON.stringify(error.diagnostic), /empty|path|text/i)
+      assert.doesNotMatch(JSON.stringify(error.diagnostic), /path/i)
       return true
     },
   )

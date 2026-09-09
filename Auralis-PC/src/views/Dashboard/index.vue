@@ -72,7 +72,13 @@
             <!-- 采用统一的浅鼠尾草绿背景+深色文字微标签 (Badge) -->
             <span class="row-subj-badge">{{ block.subject }}</span>
             <span class="row-source-badge">来源: {{ block.source }}</span>
-            <span class="row-time-badge">🕒 {{ timeAgo(block.time) }}</span>
+            <span class="row-time-badge" style="display: inline-flex; align-items: center; gap: 4px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              {{ timeAgo(block.time) }}
+            </span>
           </div>
           <div class="row-preview" v-if="block.preview" v-html="renderMarkdown(block.preview || '')"></div>
         </div>

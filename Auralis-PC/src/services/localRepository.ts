@@ -11,6 +11,7 @@ import {
   mutationFromRow,
   normalizeDocumentJobCheckpoint,
   resourceFromRow,
+  sanitizeDocumentCacheReceipt,
   type DocumentProcessingJobRow,
   type LocalMutationRow,
   type LocalResourceRow,
@@ -809,14 +810,14 @@ export class LocalRepository {
 }
 
 const DOCUMENT_JOB_TRANSITIONS: Record<DocumentJobPhase, readonly DocumentJobPhase[]> = {
-  QUEUED: ['DOWNLOADING_SOURCE', 'EXTRACTING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
+  QUEUED: ['DOWNLOADING_SOURCE', 'EXTRACTING', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
   DOWNLOADING_SOURCE: ['EXTRACTING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
   EXTRACTING: ['OCR_RUNNING', 'QUEUED', 'PACKAGING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
   OCR_RUNNING: ['QUEUED', 'PACKAGING', 'PAUSED_NETWORK', 'FAILED_LOCAL'],
   PACKAGING: ['UPLOADING', 'FAILED_LOCAL'],
-  UPLOADING: ['SERVER_VALIDATING', 'PAUSED_NETWORK', 'FAILED_SERVER', 'FAILED_LOCAL'],
-  SERVER_VALIDATING: ['SERVER_INDEXING', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_SERVER'],
-  SERVER_INDEXING: ['READY', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_SERVER'],
+  UPLOADING: ['SERVER_VALIDATING', 'QUEUED', 'PAUSED_NETWORK', 'FAILED_SERVER', 'FAILED_LOCAL'],
+  SERVER_VALIDATING: ['SERVER_INDEXING', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_SERVER', 'FAILED_LOCAL'],
+  SERVER_INDEXING: ['READY', 'UPLOADING', 'PAUSED_NETWORK', 'FAILED_SERVER', 'FAILED_LOCAL'],
   READY: [],
   FAILED_LOCAL: ['QUEUED'],
   FAILED_SERVER: ['QUEUED'],
@@ -891,7 +892,7 @@ export class DocumentProcessingJobRepository {
         ...(job as Record<string, unknown>),
         ingestionRevision: String((job as Record<string, unknown>).ingestionRevision ?? ''),
         checkpoint: normalizeDocumentJobCheckpoint((job as Record<string, unknown>).checkpoint),
-        payloadReceipt: (job as Record<string, unknown>).payloadReceipt ?? null,
+        payloadReceipt: sanitizeDocumentCacheReceipt((job as Record<string, unknown>).payloadReceipt) ?? null,
       })) as DocumentProcessingJob[]
       if (migrated) this.storage.setItem(currentKey, JSON.stringify(normalized))
       return normalized
@@ -1011,6 +1012,22 @@ export class DocumentProcessingJobRepository {
     return removed.map(documentJobClone)
   }
 
+  async remove(jobId: string): Promise<DocumentProcessingJob | null> {
+    const current = await this.get(jobId)
+    if (!current) return null
+    if (this.sql) {
+      await this.ensureSql()
+      await this.sql.execute(
+        `DELETE FROM document_processing_jobs WHERE job_id = $1 AND user_id = $2 AND device_id = $3`,
+        [jobId, this.userId, this.serverDeviceId],
+      )
+      return current
+    }
+    const jobs = this.readBrowserJobs()
+    this.writeBrowserJobs(jobs.filter((job) => job.jobId !== jobId))
+    return current
+  }
+
   async transition(jobId: string, phase: DocumentJobPhase, options: DocumentJobTransitionOptions = {}): Promise<DocumentProcessingJob> {
     if (!DOCUMENT_JOB_PHASES.includes(phase)) throw new Error('DOCUMENT_JOB_PHASE_INVALID')
     const current = await this.get(jobId)
@@ -1029,7 +1046,9 @@ export class DocumentProcessingJobRepository {
       attempt: options.attempt ?? current.attempt,
       checkpoint,
       payloadCacheId: options.payloadCacheId === undefined ? current.payloadCacheId : options.payloadCacheId,
-      payloadReceipt: options.payloadReceipt === undefined ? current.payloadReceipt : options.payloadReceipt,
+      payloadReceipt: options.payloadReceipt === undefined
+        ? current.payloadReceipt
+        : (options.payloadReceipt ? sanitizeDocumentCacheReceipt(options.payloadReceipt) : null),
       errorCode: options.errorCode === undefined ? current.errorCode : options.errorCode,
       errorDetail: options.errorDetail === undefined ? current.errorDetail : options.errorDetail,
       updatedAt,

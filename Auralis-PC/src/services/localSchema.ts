@@ -1,5 +1,7 @@
 import type { LocalEntity, LocalMutation, LocalMutationStatus, LocalSyncStatus } from '@/types/api'
 import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob, type OcrCheckpointDiagnostic } from '@/types/documentProcessing'
+import type { DocumentCacheReceipt } from '@/api/tauri'
+import { DOCUMENT_PAYLOAD_FORMAT, isDocumentCacheReceiptV1, MAX_PACKAGE_METADATA_CHARS } from '@/api/tauri'
 
 export const LOCAL_SCHEMA_VERSION = 6
 
@@ -385,6 +387,45 @@ function parsePayload<T>(payload: string): T {
   }
 }
 
+/** Keep legacy receipts readable, but never promote partial metadata to v1. */
+export function sanitizeDocumentCacheReceipt(value: unknown): DocumentCacheReceipt | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  const base: DocumentCacheReceipt = {
+    cacheId: typeof candidate.cacheId === 'string' ? candidate.cacheId : '',
+    envelopeVersion: 1,
+    chunkCount: Number(candidate.chunkCount ?? 0),
+    encryptedBytes: Number(candidate.encryptedBytes ?? 0),
+    plainTextSha256: typeof candidate.plainTextSha256 === 'string' ? candidate.plainTextSha256 : '',
+    payloadSha256: typeof candidate.payloadSha256 === 'string' ? candidate.payloadSha256 : '',
+    payloadBytes: Number(candidate.payloadBytes ?? 0),
+  }
+  const metadata = {
+    payloadFormat: candidate.payloadFormat,
+    sourceAssetSha256: candidate.sourceAssetSha256,
+    parserId: candidate.parserId,
+    parserVersion: candidate.parserVersion,
+    normalizationVersion: candidate.normalizationVersion,
+    ocrModelVersion: candidate.ocrModelVersion,
+  }
+  const bounded = (item: unknown): item is string => typeof item === 'string' && item.trim().length > 0 && item.length <= MAX_PACKAGE_METADATA_CHARS
+  const validGroup = metadata.payloadFormat === DOCUMENT_PAYLOAD_FORMAT
+    && typeof metadata.sourceAssetSha256 === 'string' && /^[a-f0-9]{64}$/i.test(metadata.sourceAssetSha256)
+    && bounded(metadata.parserId) && bounded(metadata.parserVersion) && bounded(metadata.normalizationVersion)
+    && (metadata.ocrModelVersion === null || bounded(metadata.ocrModelVersion))
+  if (!validGroup) return base
+  const normalized: DocumentCacheReceipt = {
+    ...base,
+    payloadFormat: DOCUMENT_PAYLOAD_FORMAT,
+    sourceAssetSha256: (metadata.sourceAssetSha256 as string).toLowerCase(),
+    parserId: metadata.parserId as string,
+    parserVersion: metadata.parserVersion as string,
+    normalizationVersion: metadata.normalizationVersion as string,
+    ocrModelVersion: metadata.ocrModelVersion as string | null,
+  }
+  return isDocumentCacheReceiptV1(normalized) ? normalized : base
+}
+
 function sanitizeOcrDiagnostic(value: unknown): OcrCheckpointDiagnostic | undefined {
   if (!value || typeof value !== 'object') return undefined
   const candidate = value as Record<string, unknown>
@@ -402,6 +443,17 @@ function sanitizeOcrDiagnostic(value: unknown): OcrCheckpointDiagnostic | undefi
   if (integerInRange(candidate.rawLineCount, 1_000_000)) diagnostic.rawLineCount = candidate.rawLineCount
   if (integerInRange(candidate.normalizedLineCount, 1_000_000)) diagnostic.normalizedLineCount = candidate.normalizedLineCount
   if (integerInRange(candidate.totalMs, 86_400_000)) diagnostic.totalMs = candidate.totalMs
+  const hasValidPageCounts = integerInRange(candidate.ocrProcessedPages, 1_000_000)
+    && integerInRange(candidate.ocrTextPages, 1_000_000)
+    && integerInRange(candidate.ocrEmptyPages, 1_000_000)
+    && candidate.ocrProcessedPages === candidate.ocrTextPages + candidate.ocrEmptyPages
+  if (hasValidPageCounts) {
+    diagnostic.ocrProcessedPages = candidate.ocrProcessedPages as number
+    diagnostic.ocrTextPages = candidate.ocrTextPages as number
+    diagnostic.ocrEmptyPages = candidate.ocrEmptyPages as number
+  }
+  if (integerInRange(candidate.totalRawLineCount, 10_000_000)) diagnostic.totalRawLineCount = candidate.totalRawLineCount
+  if (integerInRange(candidate.totalNormalizedLineCount, 10_000_000)) diagnostic.totalNormalizedLineCount = candidate.totalNormalizedLineCount
   return diagnostic
 }
 
@@ -471,7 +523,7 @@ export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): Doc
     attempt: Number(row.attempt ?? 0),
     checkpoint,
     payloadCacheId: row.payload_cache_id ?? null,
-    payloadReceipt: row.payload_receipt_json ? parsePayload<DocumentProcessingJob['payloadReceipt']>(row.payload_receipt_json) : null,
+    payloadReceipt: row.payload_receipt_json ? sanitizeDocumentCacheReceipt(parsePayload<unknown>(row.payload_receipt_json)) : null,
     errorCode: row.error_code ?? null,
     errorDetail: row.error_detail ?? null,
     createdAt: row.created_at,

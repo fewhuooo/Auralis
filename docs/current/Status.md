@@ -1,12 +1,42 @@
 # Auralis 当前状态
 
-更新时间：2026-09-08
+2026-09-09 PC 时间轴空槽拖动 400 修复：`rescheduleTask` 不再对空目标槽调用双任务 `POST /api/tasks/schedule-swaps` 并伪造空 `targetTaskId`；空槽调度现通过单 Task 的本地 repository/outbox 更新，仅已占用槽之间继续使用原子 swap API。TDD 修复前聚焦 12/13，确认空槽分支发送 `targetTaskId: ''`；修复后时间轴相关 35/35、完整 PC 272/272、type-check 和静态检查通过。真实 Tauri GUI 拖动与后台同步待人工验收。
+
+2026-09-09 PC 知识块来源与学科名称映射修复：`KnowledgeBlock.sourceId/subjectId` 仅作为关联标识，`useKnowledgeStore` 现从同一用户/设备的本地 Source/Subject 投影解析可读 `title/name`，不再把 UUID 直接显示为来源或学科名称。新建/更新知识块即时保留当前可读名称，关联投影缺失时使用中性占位而不泄露 ID。TDD 回归先复现学科 UUID 被展示为标签，修复后知识块映射聚焦 12/12、完整 PC 271/271、type-check、静态检查与生产构建通过；真实 Tauri GUI 仍待人工验收。
+
+2026-09-09 PC PDF 混合页面阶段修复：新增严格状态转换回归覆盖“文字页→OCR页→文字页”；`DocumentJobRunner` 现保持 `OCR_RUNNING` 到 `PACKAGING`，避免第三页普通文字 block 触发 `DOCUMENT_JOB_ILLEGAL_TRANSITION` 并落入 `FAILED_LOCAL`。runner 聚焦测试 12/12，完整 PC 269/269，type-check 与 diff-check 通过。自动测试未替代真实 51 页 PDF 的 Tauri GUI 重试、上传与服务端验收。
+
+2026-09-09 Task 16 部署运行验证：仅重建/recreate backend；Compose config、backend health/readiness 和 `AURALIS_AI_INGESTION_WORKER_ENABLED=true` 通过，PostgreSQL/MinIO volume 未触碰。只读库有 18 READY Source/Job，但既有 READY 数据的 SOURCE change-log 只有 CREATE/DELETE、无 UPDATE（符合事件修复前数据预期）；未执行认证 reingest/upload，PC/Tauri/MinIO/GUI 端到端仍待验收。scheduled Sync retention 的事务入口已修复，Spring 代理入口真实 delete query 回归与 `SyncServiceTests` 11/11 通过；重建 backend 后的实际 scheduled run 日志仍待复核。
+
+2026-09-09 Task 14：Server Source ingestion 状态与安全失败诊断的实际变化统一写入既有 `SOURCE/UPDATE` change-log/realtime 事件链；重复相同状态/诊断保持版本和 cursor 不变。Task 14 聚焦 4/4、worker/controller 8/8 通过；Server 全量 207 项中 0 失败、28 错误，错误为既有架构循环、Docker 不可用及 H2 清理外键问题。真实 Server/MinIO/Tauri/GUI 仍未验收。
+
+2026-09-09 Task 13：ParsedDocument 上传增加有界 `[Document Upload Trace]` 事件，覆盖 PUT/complete 成功、失败和过期 intent 重试，保持缓存安全与状态机不变。upload 19/19、scheduler/flow/schema 51/51、完整 PC 262/262、type-check 和 diff-check 通过；真实 Tauri/MinIO/Server/GUI 仍待验收。
+
+2026-09-09 PC stale/current revision preflight correction：scheduler 先进行一次权威 Source GET，取得当前 `ingestionRevision` 后再处理 stale jobs，并只对选中的 current-revision job 做 cache ID 关系校验。stale corrupt row 保留 evidence 但不阻塞 valid current row；current mismatch 在 Source GET 之后、hash/prepare/runner/upload/complete/delete 之前停止。scheduler 33/33、schema 17/17、upload 16/16，完整 PC 259/259、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+2026-09-09 PC recoverable server-phase cache mismatch：`SERVER_VALIDATING`/`SERVER_INDEXING` 的本地 cache ownership corruption 现在合法转入 `FAILED_LOCAL`，保留两侧 ID/receipt 并可由 `retry()` 重新入队；READY/FAILED_SERVER 保持原 phase。scheduler 先加载并预检当前 Source 的本地 jobs，再读取 Source backend，mismatch 时 sourceGet/hash/prepare/runner/upload/delete 均为零。schema 17/17、scheduler 32/32、upload 16/16，完整 PC 258/258、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+2026-09-09 PC phase-safe mismatch follow-up：scheduler 的 schema-v1 cache ownership mismatch 现在统一经过 phase-safe cleanup failure helper；READY、SERVER_VALIDATING、SERVER_INDEXING、FAILED_SERVER 使用合法同阶段 preservation，recoverable phases 才转 FAILED_LOCAL。table-driven real repository regression 31/31，upload 16/16、schema 16/16，完整 PC 256/256、type-check、diff-check 通过；零 upload/OCR/backend/deletion，真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+2026-09-09 PC cache-safety follow-up：READY 任务现在先按已验证的 payload column/receipt cache ID 关系删除派生 cache，成功后同阶段清除 `payloadCacheId` 与 `payloadReceipt`；删除或 ownership 校验失败保留证据并写入 bounded cleanup error，后续 `schedule()` 会在 `ALREADY_READY` 边界重试。schema-v1 cache ID mismatch 在 scheduler 和 coordinator 的 intent 前均被拒绝。Focused upload 16/16、scheduler 30/30、schema 16/16，完整 PC 255/255、type-check、diff-check 通过；真实 Tauri/Server/MinIO/GUI 仍待验收。
+
+2026-09-09 PC ParsedDocument upload 状态机修复：`ParsedDocumentUploadCoordinator` 在 complete 返回 `ACCEPTED` 后先持久化 `SERVER_INDEXING`，再持久化 `READY`，与 `DocumentProcessingJobRepository` 的合法迁移表一致。真实 transition-validating repository 回归先复现 `DOCUMENT_JOB_ILLEGAL_TRANSITION`，修复后 ParsedDocument upload 15/15、processing flow 1/1、job schema 16/16、source scheduler 27/27 通过；完整 `npm.cmd run test:r4-pc` 251/251、`npm.cmd run type-check` 和 `git diff --check` 也通过。scheduler 仍在 READY 之后负责返回结果与 cache cleanup；真实 Tauri/Server/MinIO PUT、complete、indexing 和 GUI retry 尚未验收。
+
+2026-09-09 Task 12 final review closure：Rust `document_packager` 5/5、`document_cache` 5/5、`document_upload` 8/8，Java `ParsedDocumentValidatorTests,ParsedDocumentCompleteTests` 8/8；最终 PC scheduler focused 27/27、完整 `test:r4-pc` 250/250、`npm.cmd run type-check` 和 `git diff --check` 通过。最终 reviewer 的所有 Critical/Important findings 已关闭：scheduler SHA 透传、receipt/cache ID 安全清理（含 discard/stale/terminal 任务）和 legacy/incomplete receipt 的网络前拒绝。上传内容仍是单个 gzip JSON schema-v1 envelope，不是 NDJSON；未改变 Server migration/OpenAPI。真实重建 Tauri、Server/MinIO PUT/complete/indexing 和 `1.pdf` GUI retry 尚未观察，仍是业务验收边界。
+
+更新时间：2026-09-09
+
+2026-09-09 Task 15：PC ParsedDocument complete 在明确 `ACCEPTED` 后通过可注入回调请求一次 background `read` sync；回调异常不会改变 accepted 结果或阻止本地 `SERVER_INDEXING → READY`，非 accepted/异常路径不请求。Task 15 upload focused 24/24、runtime/scheduler/flow/schema 组合 64/64；完整 PC、type-check 和 diff-check 结果见任务报告。真实 Tauri/Server/MinIO/sync pull/GUI 仍待验收。
 
 文档状态：现行状态快照
 
 权威范围：当前代码存在情况、本轮命令证据、人工验收边界与下一步
 
 事实来源：模块/契约文档、当前代码盘点、部署测试前主任务清单与本轮验证命令
+
+2026-09-08 PC ParsedDocument 上传诊断与长度修复：Tauri reqwest PUT 失败日志现在在 `without_url()` 后输出 allowlist 风险范围内的 flags、顶层摘要和最多三层 source cause；最终诊断总长限制为 256 字节，保持 `NETWORK_OFFLINE:*` 对外错误契约不变，不向前端或 SQLite 返回摘要。根因已由真实日志定位为旧 receipt 声明了比解密 reader 多出的 encrypted envelope 字节；新 receipt 的 payload size/hash 与解密 reader 对齐，历史 receipt 恢复前按 owner scope 重算。真实 Tauri/MinIO PUT/complete/indexing 仍待重启后人工验收。
+
+2026-09-08 PC 断网续传状态机已补齐：真实 `DocumentProcessingJobRepository` 回归证明带 payload receipt 的 `PAUSED_NETWORK` 用户继续经 `QUEUED -> UPLOADING` 直接上传，不重跑 OCR/download/hash；无 receipt 的 `QUEUED` 仍进入解析。PC 自动证据最终已知为 237/237，`npm.cmd run type-check` 通过，聚焦复审 40/40 通过。真实 Tauri 点击继续、MinIO PUT/complete/indexing 与 GUI 结果仍未由本轮自动证据证明。
 
 2026-09-08 Task 颜色破坏性契约切换已应用：Server Task API/Entity、V21 迁移、OpenAPI artifact/生成类型、PC/Mobile/Tablet Task 投影、同步和页面不再产生或渲染 Task `colorOverride`/`color`；KnowledgeBlock 颜色保留。PC/Mobile 本地迁移清洗有效 Task JSON 颜色键，非法 JSON 原样保留并限次告警。Server/PC/Mobile 本轮门禁结果仍待本轮命令完成，真实数据库升级、端侧旧库和 GUI 仍需人工验收。
 

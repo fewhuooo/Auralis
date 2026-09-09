@@ -50,6 +50,7 @@ public class SyncRetentionService {
     @Scheduled(
             fixedDelayString = "${auralis.sync.retention-cleanup-delay-millis:3600000}",
             initialDelayString = "${auralis.sync.retention-cleanup-initial-delay-millis:60000}")
+    @Transactional
     public void scheduledPurgeExpired() {
         try {
             purgeExpired();
