@@ -212,9 +212,11 @@
 
 ### 部署配置
 
-- 当前根目录 `.env` 的 `AURALIS_AI_INGESTION_WORKER_ENABLED=false` 会使 compose Server 不创建 `IngestionWorkerScheduler`；本机联调配置改为 `true`，重新创建 Server 容器后使用有效配置或启动日志确认 worker bean 已启用。
+- 初次排查时根目录 `.env` 的 `AURALIS_AI_INGESTION_WORKER_ENABLED=false` 会使 compose Server 不创建 `IngestionWorkerScheduler`；现场随后已改为 `true` 并重新创建 Server。容器有效环境为 `true`，最新 ParsedDocument ingestion jobs 与对应 Sources 均已推进到 `READY`，因此 worker 开关不再是当前阻塞点。
 - `application-test.yml` 与 PostgreSQL 集成测试配置继续保持 worker disabled，保证测试由用例显式驱动；不修改生产密钥、MinIO 凭证或网络拓扑。
 - 验收时直接读取 Source：先应看到 `INDEXING`，worker 成功后应为 `READY`；随后 sync pull 应包含对应 `SOURCE/UPDATE`，PC SQLite 与 UI 最终显示处理完成。
+
+现场数据库证据进一步确认：三个最新 READY Source 的 `change_log` 都只有最初的 `CREATE/AWAITING_CLIENT`，没有 `INDEXING` 或 `READY` 的 `SOURCE/UPDATE`。因此本轮代码根因已经确定为 Server ingestion 状态写入绕过统一同步事件；PC 的 read-sync 只能在 Server 先补齐 change-log 后发挥兜底作用。
 
 ### 测试与验收
 
