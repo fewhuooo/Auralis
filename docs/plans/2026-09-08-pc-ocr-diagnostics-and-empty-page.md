@@ -453,3 +453,162 @@ Record only actual command results and the four trace events in the listed curre
 - [ ] **Step 9: Read-only review**
 
 Use one reviewer to inspect event ordering, retry duplication, stable error-code mapping, privacy allowlist, state-machine preservation and directly covering tests. Resolve all Critical/Important findings and rerun their covering tests. Do not stage or commit the implementation set in the protected dirty worktree.
+
+## Task 14: Publish every persisted Source ingestion state change
+
+**Files:**
+- Modify: `Auralis-Server/src/main/java/com/auralis/app/source/SourceService.java`
+- Modify: `Auralis-Server/src/main/java/com/auralis/app/source/ParsedDocumentService.java`
+- Test: `Auralis-Server/src/test/java/com/auralis/app/ParsedDocumentCompleteTests.java`
+- Create: `Auralis-Server/src/test/java/com/auralis/app/SourceIngestionSyncEventTests.java`
+- Modify after verification: `docs/modules/Backend.md`
+- Modify after verification: `docs/contracts/Database.md`
+- Modify after verification: `docs/current/Status.md`
+- Modify after verification: `docs/current/IssuesAndReview.md`
+- Modify after verification: `docs/release/Changelog.md`
+
+**Interfaces:**
+- Consumes: `SourceService.publishChange(UUID, SourceView, String)`, `ResourceChangedEvent`, `ChangeLogEventListener` and `RealtimeDomainEventListener`.
+- Produces: one `SOURCE/UPDATE` change-log entry containing the saved `SourceView` whenever ingestion status or safe failure diagnostics actually change.
+- Preserves: ParsedDocument complete Source row lock, one complete transaction, existing Source versioning, ingestion job enqueue semantics and AFTER_COMMIT realtime publication.
+
+- [ ] **Step 1: Write a failing complete integration assertion**
+
+Extend the real ParsedDocument complete fixture so its baseline cursor is captured immediately before `parsedDocumentService.complete(...)`. Query or pull changes after completion and assert exactly one new Source update for the fixture Source with:
+
+```text
+resourceType = SOURCE
+mutationType = UPDATE
+payload.ingestionStatus = INDEXING
+payload.id = sourceId
+version = persisted Source version
+```
+
+Run `Auralis-Server\mvnw.cmd -Dtest=ParsedDocumentCompleteTests test`. Expected red: the Source row is `INDEXING`, but no matching change-log record exists.
+
+- [ ] **Step 2: Write failing state-transition event tests**
+
+Using a real `SourceService` integration fixture, cover `markParsing`, `markPending`, `markIndexing`, `markReady` and `markFailed`. For each actual status/diagnostic change, assert the last Source change-log payload matches the persisted Source view and version. Add a no-op case proving a repeated identical transition produces neither a new version nor a new change-log cursor. For `markFailed`, changing `safeErrorCode` or `safeErrorDetail` while status remains `FAILED` must still emit an update.
+
+Run only the containing test class. Expected red: current internal mark methods save the Source but do not append change-log entries.
+
+- [ ] **Step 3: Centralize event-aware internal transitions**
+
+Refactor the five `SourceService` mark methods through one private helper that:
+
+```java
+1. loads and validates the active owner-scoped Source;
+2. snapshots ingestionStatus, safeErrorCode and safeErrorDetail;
+3. applies exactly one requested entity transition;
+4. returns without save/event if all three observable values are unchanged;
+5. otherwise saveAndFlushes, maps the saved entity to SourceView, and calls publishChange(userId, view, "UPDATE").
+```
+
+Do not publish directly to realtime and do not create change-log rows manually. The existing synchronous `ChangeLogEventListener` must remain the only writer, and `RealtimeDomainEventListener(AFTER_COMMIT)` must remain the realtime boundary.
+
+- [ ] **Step 4: Route ParsedDocument complete through the unified transition**
+
+Keep `findForUpdateByIdAndUserIdAndDeletedAtIsNull` and all validation in `ParsedDocumentService.complete()`. Replace the direct `source.markIndexing()` / `sourceRepository.saveAndFlush(source)` pair with the event-aware `SourceService.markIndexing(userId, sourceId)` call while the outer complete transaction still holds the row lock. Do not split document acceptance, Source INDEXING and ingestion-job enqueue into separate transactions.
+
+- [ ] **Step 5: Verify red-to-green and transaction behavior**
+
+Run:
+
+```powershell
+cd Auralis-Server
+.\mvnw.cmd -Dtest=ParsedDocumentCompleteTests,SourceIngestionSyncEventTests test
+.\mvnw.cmd -Dtest=AiIngestionWorkerTests,ParsedDocumentControllerTests test
+```
+
+Expected green: `INDEXING`, `READY`, retry `PENDING`, terminal `FAILED` and safe diagnostic changes are sync-visible; repeated identical states are no-ops; complete rejection/rollback produces neither accepted state nor realtime success notification.
+
+- [ ] **Step 6: Run Server regression and update documentation**
+
+Run `Auralis-Server\mvnw.cmd test` and `git diff --check`. Record exact totals and any environment-only failures. Update Backend/Database/current/changelog documents to state that Source ingestion status is synchronized through the existing change-log/realtime chain; do not claim GUI acceptance.
+
+- [ ] **Step 7: Do not commit implementation**
+
+The branch contains protected uncommitted work. Leave Task 14 implementation unstaged and report every modified file, command, exit code and uncovered external boundary in `.superpowers/sdd/task-14-report.md`.
+
+## Task 15: Request one PC background read sync after complete acceptance
+
+**Files:**
+- Modify: `Auralis-PC/src/services/documentProcessing/ParsedDocumentUploadCoordinator.ts`
+- Modify: `Auralis-PC/src/services/documentProcessing/runtime.ts`
+- Test: `Auralis-PC/scripts/r4-parsed-document-upload.test.mjs`
+- Test: `Auralis-PC/scripts/r4-document-processing-runtime.test.mjs`
+- Modify after verification: `docs/modules/FrontendPC.md`
+- Modify after verification: `docs/current/Status.md`
+- Modify after verification: `docs/current/IssuesAndReview.md`
+- Modify after verification: `docs/release/Changelog.md`
+
+**Interfaces:**
+- Consumes: the accepted Server response, existing `useSyncStore().requestBackgroundSync('read')`, and the scheduler's coalescing behavior.
+- Produces: optional coordinator callback `onCompleteAccepted?: () => Promise<void> | void`, invoked once per accepted complete response.
+- Preserves: strict `status === 'ACCEPTED'`, upload trace ordering, local `SERVER_VALIDATING → SERVER_INDEXING → READY`, and successful complete semantics even if the best-effort callback fails.
+
+- [ ] **Step 1: Add failing coordinator callback tests**
+
+In the upload focused suite, inject a counter callback and assert:
+
+```text
+accepted complete: callback count = 1
+rejected/missing/invalid complete status: callback count = 0
+complete request exception: callback count = 0
+expired PUT intent followed by accepted complete: callback count = 1
+```
+
+Add a callback that rejects or throws and assert `upload()` still returns the accepted server receipt and the real local repository reaches `READY`. Run the upload suite and observe red because the option does not exist or is never invoked.
+
+- [ ] **Step 2: Implement the best-effort accepted callback**
+
+Add the optional option and store it in the coordinator. After emitting `COMPLETE_ACCEPTED`, invoke it exactly once. Catch callback failure locally so it cannot emit upload `FAILED`, call `pauseOrFail`, or prevent the legal local transitions. Any diagnostic must use a fixed message and must not include raw exception data.
+
+- [ ] **Step 3: Wire runtime to the existing sync scheduler**
+
+Construct the coordinator with:
+
+```ts
+onCompleteAccepted: () => {
+  useSyncStore().requestBackgroundSync('read')
+}
+```
+
+Do not call `triggerSync`, direct Source GET, `sourceStore.loadSources`, or local repository writes. Add/update the runtime static test to assert this exact `read` request is present and the old recursive Source hydration path is absent.
+
+- [ ] **Step 4: Run PC focused and full verification**
+
+Run:
+
+```powershell
+cd Auralis-PC
+node --experimental-strip-types --test scripts/r4-parsed-document-upload.test.mjs
+node --experimental-strip-types --test scripts/r4-document-processing-runtime.test.mjs scripts/r4-source-processing-schedule.test.mjs scripts/r4-document-processing-flow.test.mjs scripts/r4-document-job-schema.test.mjs
+npm.cmd run type-check
+npm.cmd run test:r4-pc
+cd ..
+git diff --check
+```
+
+Update PC/current/changelog documents with actual results only.
+
+- [ ] **Step 5: Do not commit implementation**
+
+Leave Task 15 implementation unstaged and write `.superpowers/sdd/task-15-report.md` with red/green evidence, modified files, exact commands, exit codes and unverified GUI/external boundaries.
+
+## Task 16: Verify effective deployment and end-to-end state propagation
+
+**Files:**
+- Verify only: `.env`, `docker-compose.yml`, running `backend` container, PostgreSQL `sources`, `ingestion_jobs` and `change_log`
+- Modify documentation only if verified facts change: `docs/modules/Infrastructure.md`, `docs/operations/Deployment.md`, `docs/operations/Runbook.md`
+
+**Interfaces:**
+- Consumes: Task 14 Server events and Task 15 PC read-sync request.
+- Produces: runtime evidence that worker is enabled and a newly processed Source reaches Server READY, change-log READY, sync pull/local projection READY and completed UI.
+
+- [ ] Confirm `docker compose config` and `docker compose exec -T backend printenv AURALIS_AI_INGESTION_WORKER_ENABLED` both resolve to `true`; never print unrelated environment values.
+- [ ] Rebuild/recreate only the `backend` service after Server code changes; do not delete PostgreSQL or MinIO volumes.
+- [ ] Process or retry one FILE Source and query its exact Source/job/change-log rows. Expected: Server Source `READY`, ingestion job `READY`, and change-log contains ordered Source updates ending in `READY`.
+- [ ] Confirm PC issues a sync pull after `COMPLETE_ACCEPTED` and its local Source projection/UI reaches `READY`. Keep this as manual GUI acceptance if it cannot be safely automated.
+- [ ] Record real evidence and remaining boundaries in current/infrastructure/runbook/changelog documents. Do not expose credentials, provider keys, signed URLs, OCR text or document content.
+- [ ] Use one read-only reviewer across Tasks 14–16. Resolve all Critical/Important findings with the original implementer and rerun directly covering tests.
