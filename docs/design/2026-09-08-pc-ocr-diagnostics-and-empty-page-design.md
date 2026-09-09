@@ -172,3 +172,28 @@
 - Rust 测试证明每页摘要有界且不包含识别正文或完整图片路径。
 - 运行 PC type-check、相关 Node 套件、Rust OCR 定向测试、`cargo check --lib` 与 `git diff --check`。
 - 自动测试不代替真实 Tauri GUI：最终仍需用 `1.pdf` 确认逐页进度、空白页继续、复制诊断以及最终进入打包/上传阶段。
+
+## “开始本机处理”启动观测增量
+
+真实 GUI 在重新登录后仍可能停留于“等待桌面端处理”：点击按钮时没有行内错误、按钮状态变化或 Source API 请求，Network 只出现本地 SQLite 与同步 pull。当前组件只在 Promise 抛错时显示错误，并忽略 scheduler 的成功或 `SKIPPED` 返回值，因此无法区分点击未进入处理函数、同步尚未结束、本地 Source 未同步、scheduler 未挂载，以及服务端 Source 已离开 `AWAITING_CLIENT` 等静默路径。
+
+### 范围与状态
+
+- 本增量只增加 PC 手动启动入口的有界观测，不改变 Server、同步协议、OCR、打包或上传状态机。
+- 每个 Source 保存一个仅内存启动状态：`IDLE`、`CLICKED`、`SYNCING`、`LOCAL_SOURCE_CHECK`、`SCHEDULING`、`COMPLETED`、`SKIPPED`、`FAILED`。离开页面或重新加载后可丢弃，不写 SQLite/localStorage。
+- 点击处理函数的第一条同步语句必须写入 `CLICKED`，按钮立即禁用并显示“正在检查…”。后续每个异步边界前更新阶段，最终在 `finally` 恢复按钮可用，但保留最终摘要供用户查看。
+- `resumeDocumentProcessing` 返回结构化启动结果，而不是丢弃 `SourceJobScheduler.schedule()` 的结果；组件显示 `READY/PAUSED_NETWORK/FAILED_LOCAL/FAILED_SERVER/SKIPPED` 及稳定 reason。`ALREADY_READY` 和 `SOURCE_NOT_AWAITING_CLIENT` 必须明确提示“服务端状态已变化，正在等待本地状态同步”，不能继续伪装为未点击。
+
+### 安全日志与错误处理
+
+- 开发控制台使用固定前缀 `[Document Start]`，只记录 Source ID、阶段、结果 status/reason 和耗时；禁止记录 token、Authorization、签名 URL、文件路径、OCR 正文、receipt 或任意服务端异常 body。
+- 认证失效、scheduler 未挂载、本地 Source 不存在/未同步及同步失败使用稳定可操作中文提示；未知错误仍通过现有安全错误归一化，不能直接展开任意对象。
+- 同一 Source 启动期间忽略重复点击；不同 Source 状态相互隔离。页面现有轮询不得清除启动结果或制造第二次启动。
+- 本增量不把 `reportAllChanges/startTime` 注入脚本异常归因于 Auralis；仓库不存在该函数，仍作为外部 DevTools/扩展噪声单独排查。
+
+### 测试与人工判定
+
+- 组件/Store 测试使用可控 Promise 证明点击后立即进入 `CLICKED/SYNCING`，完成前按钮禁用，且每个边界按顺序可见。
+- 测试覆盖认证失败、scheduler 缺失、本地 Source 未同步、scheduler `SKIPPED`、正常创建/恢复 job 和重复点击；断言安全日志不含 token、URL、路径、OCR 或 receipt。
+- PC type-check、相关 UI/Store/runtime 套件、完整 R4 与 `git diff --check` 必须通过。
+- 真实 Tauri 再点击一次：若连 `CLICKED` 都不可见，则事件被 WebView/注入脚本阻断；若停在某个阶段，则以该阶段定位下一层。该观测结果本身不等于文档已完成 OCR、上传或索引。
