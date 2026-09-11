@@ -99,6 +99,7 @@
 - [前端设计](design/Frontend.md)
 - [PC 文件 Overview 触发链诊断设计（2026-09-10）](design/2026-09-10-pc-overview-trigger-diagnostics-design.md)
 - [Overview Source 删除屏障设计（2026-09-10）](design/2026-09-10-overview-source-deletion-fence-design.md)
+- [Server 全量测试前三类失败修复设计（2026-09-11）](design/2026-09-11-server-full-test-gates-remediation-design.md)
 - [PC 学习页 AI 伴读移动端视觉复刻设计（2026-07-14）](design/2026-07-14-pc-workspace-ai-mobile-visual-design.md)
 - [PC 学科线条图标设计（2026-07-14）](design/2026-07-14-pc-subject-outline-icon-design.md)
 - [PC 学科工作区重建设计（2026-07-13）](design/2026-07-13-pc-subject-workspace-reconstruction-design.md)
