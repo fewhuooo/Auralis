@@ -182,6 +182,7 @@
 - [PC PDF 混合页面处理阶段修复实施计划（2026-09-09）](plans/2026-09-09-pc-pdf-mixed-page-phase-fix.md)
 - [PC 文件 Overview 触发链诊断实施计划（2026-09-10）](plans/2026-09-10-pc-overview-trigger-diagnostics.md)
 - [Overview Source 删除屏障实施计划（2026-09-11）](plans/2026-09-11-overview-source-deletion-fence.md)
+- [Server 全量测试前三类失败修复实施计划（2026-09-11）](plans/2026-09-11-server-full-test-gates-remediation.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
