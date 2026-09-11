@@ -179,6 +179,8 @@
 - [Task 颜色能力全栈移除实施计划（2026-09-07）](plans/2026-09-07-remove-task-color.md)
 - [PC OCR 诊断与空白页容错实施计划（2026-09-08）](plans/2026-09-08-pc-ocr-diagnostics-and-empty-page.md)
 - [PC PDF 混合页面处理阶段修复实施计划（2026-09-09）](plans/2026-09-09-pc-pdf-mixed-page-phase-fix.md)
+- [PC 文件 Overview 触发链诊断实施计划（2026-09-10）](plans/2026-09-10-pc-overview-trigger-diagnostics.md)
+- [Overview Source 删除屏障实施计划（2026-09-11）](plans/2026-09-11-overview-source-deletion-fence.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
