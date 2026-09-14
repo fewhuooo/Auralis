@@ -186,6 +186,7 @@
 - [Overview Source 删除屏障实施计划（2026-09-11）](plans/2026-09-11-overview-source-deletion-fence.md)
 - [Server 全量测试前三类失败修复实施计划（2026-09-11）](plans/2026-09-11-server-full-test-gates-remediation.md)
 - [Build 与 OpenAPI 客户端门禁修复实施计划（2026-09-12）](plans/2026-09-12-build-and-openapi-client-gates-remediation.md)
+- [Overview 手动重试、收敛预算与错误码实施计划（2026-09-14）](plans/2026-09-14-overview-retry-and-convergence.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
