@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-09-03
+更新时间：2026-09-15
 
 文档状态：现行
 
@@ -97,6 +97,7 @@
 - [系统架构](project/Architecture.md)
 - [文档架构设计](design/DocumentationArchitecture.md)
 - [前端设计](design/Frontend.md)
+- [PC Local Asset Store 本地优先文件资料库设计（2026-09-15）](design/2026-09-15-pc-local-asset-store-design.md)
 - [PC 文件 Overview 触发链诊断设计（2026-09-10）](design/2026-09-10-pc-overview-trigger-diagnostics-design.md)
 - [Overview Source 删除屏障设计（2026-09-10）](design/2026-09-10-overview-source-deletion-fence-design.md)
 - [Server 全量测试前三类失败修复设计（2026-09-11）](design/2026-09-11-server-full-test-gates-remediation-design.md)

@@ -1,5 +1,13 @@
 # Auralis 当前问题与审查登记
 
+### 2026-09-15 PC Local Asset Store 已批准设计，实施与验收开放
+
+- 优先级：P1。
+- 证据：`docs/design/2026-09-15-pc-local-asset-store-design.md` 已确认本地持久文件、断网导入、最终云端同步、身份映射、统一消费方和最后引用删除语义；当前 `useAssetStore` 仍只有进程内 `Map<string, File>`，`FilePreview` 与文档调度仍存在独立 signed URL 下载路径，PC SQLite schema v7 没有原始文件表。
+- 影响：应用重启、跨设备、断网和多消费方场景仍无法获得正式持久的本地原文件语义；不得把已批准设计写成代码能力。
+- 处理：按四阶段实施 Local Asset Store、幂等 Asset 同步、Preview/OCR/Parser 统一读取以及删除传播和安全收口，并同步 PC、Server、API、Database、Architecture 与发布文档。
+- 关闭条件：schema/API migration、PC/Rust/Server 自动门禁通过，并取得真实 Windows Tauri、MinIO、断网重启、双账号和双设备删除传播证据；自动测试、外部联调、GUI 与业务验收分别记录。
+
 ### 2026-09-09 PC 时间轴空槽拖动 400 修复
 
 - 根因：`useTaskStore.rescheduleTask` 的空槽分支仍调用只适用于两个已排期任务的 `schedule-swaps`，请求体中传入 `targetTaskId: ''`。Server `ScheduleSwapRequest.targetTaskId` 要求 UUID，因此在业务服务之前返回 `400 VALIDATION_FAILED / Request validation failed`。

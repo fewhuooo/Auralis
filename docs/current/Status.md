@@ -1,5 +1,7 @@
 # Auralis 当前状态
 
+2026-09-15 PC Local Asset Store 已完成产品与架构设计确认，当前状态为“已批准设计，尚未实施”：PC Tauri 将把导入原文件作为当前设备的正式持久资料，支持断网导入、立即本地预览与解析、联网后幂等同步 MinIO，并在用户删除最后一个 Source 引用后通过同步删除各设备副本。设计采用本地 Asset/Source/revision 身份到 Server 权威身份的映射，保持 `Source.ingestionRevision` 的服务端仲裁语义；计划分为本地仓库基础、离线同步队列、Preview/OCR/Parser 统一接入和删除/安全收口四阶段。当前代码、SQLite schema、Server API 和运行行为均未改变，自动测试与真实 Tauri/MinIO/多设备验收尚未开始。
+
 2026-09-09 PC 时间轴空槽拖动 400 修复：`rescheduleTask` 不再对空目标槽调用双任务 `POST /api/tasks/schedule-swaps` 并伪造空 `targetTaskId`；空槽调度现通过单 Task 的本地 repository/outbox 更新，仅已占用槽之间继续使用原子 swap API。TDD 修复前聚焦 12/13，确认空槽分支发送 `targetTaskId: ''`；修复后时间轴相关 35/35、完整 PC 272/272、type-check 和静态检查通过。真实 Tauri GUI 拖动与后台同步待人工验收。
 
 2026-09-09 PC 知识块来源与学科名称映射修复：`KnowledgeBlock.sourceId/subjectId` 仅作为关联标识，`useKnowledgeStore` 现从同一用户/设备的本地 Source/Subject 投影解析可读 `title/name`，不再把 UUID 直接显示为来源或学科名称。新建/更新知识块即时保留当前可读名称，关联投影缺失时使用中性占位而不泄露 ID。TDD 回归先复现学科 UUID 被展示为标签，修复后知识块映射聚焦 12/12、完整 PC 271/271、type-check、静态检查与生产构建通过；真实 Tauri GUI 仍待人工验收。

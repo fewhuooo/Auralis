@@ -1,6 +1,6 @@
 # Auralis 系统架构
 
-更新时间：2026-08-24
+更新时间：2026-09-15
 
 文档状态：现行
 
@@ -200,6 +200,7 @@ FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执�
 | 知识块、任务块 | PostgreSQL + 本地副本 | 离线操作、mutation、增量同步 |
 | mutation cursor | Server mutation_log | 客户端保存 last cursor |
 | 文件对象 | MinIO | 上传、展示、引用 objectName |
+| PC 原始文件本地副本 | PC Tauri Local Asset Store | 当前设备持有的完整原始 Asset；本地稳定身份映射到 Server Asset，断网导入后最终同步，只有最后 Source 引用被用户删除时移除 |
 | 资产元数据 | PostgreSQL asset | 客户端显示状态和学科归属 |
 | RAG chunk 与向量 | PostgreSQL `source_chunks` + pgvector | 不直接持久化到客户端 |
 | ParsedDocument（计划中） | 服务端私有对象 + 元数据；本地仅在接收前以 keyring 主密钥的分块 AES-GCM envelope 暂存 | PC 解析、断点恢复和 Rust 流式上传，服务端确认后删除本地正文 |
