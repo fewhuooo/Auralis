@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.Map;
 
@@ -77,6 +78,8 @@ public class SiliconFlowEmbeddingProvider implements EmbeddingProviderPort {
         } catch (ProviderResponseTooLargeException exception) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response", null,
                     exception);
+        } catch (SocketTimeoutException exception) {
+            throw new DomainException("MODEL_TIMEOUT", "Embedding provider response timed out", null, exception);
         } catch (IOException exception) {
             throw new DomainException("MODEL_UNAVAILABLE", "Embedding provider is unavailable", null, exception);
         } catch (Exception exception) {

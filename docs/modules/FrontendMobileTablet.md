@@ -1,6 +1,8 @@
 # Mobile / Tablet 前端模块
 
-更新时间：2026-09-07
+2026-09-12 Build/OpenAPI Task 3 最终回归：Mobile `npm.cmd run type-check` 退出 0，`node scripts/r4-mobile-protocol.test.mjs` 实际 23/23 通过；`check-openapi.ps1` 退出 0，生成 `schema.ts` 与 PC 及 OpenAPI artifact 一致，`subjectOverview`/`sourceOverview` 的 header 暴露可选 `X-Overview-Request-Id`。`useSyncStore` 的一行 `payload as SyncMutation['payload']` 只解决生成 `JsonNode` 结构窄类型的编译期边界，运行时序列化未改变；未来 contract-cleanup 风险仍开放，不代表已完成真实 API/设备验收。真实 Server、Provider、微信/H5、Tablet、GUI、设备和业务验收仍待完成。
+
+更新时间：2026-09-12
 
 文档状态：现行
 

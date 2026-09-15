@@ -23,7 +23,7 @@ public class WebConfiguration implements WebMvcConfigurer {
                         .filter(origin -> !origin.isBlank())
                         .toArray(String[]::new))
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-                .allowedHeaders("Authorization", "Content-Type", "X-Trace-Id", "X-Realtime-Ticket")
+                .allowedHeaders("Authorization", "Content-Type", "X-Trace-Id", "X-Realtime-Ticket", "X-Overview-Request-Id")
                 .allowCredentials(true)
                 .maxAge(3600);
     }

@@ -2,6 +2,8 @@ package com.auralis.app.shared.config;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
@@ -54,7 +56,9 @@ public record AuralisProperties(
             String encryptionKey,
             String defaultProvider,
             @Valid Defaults defaults,
+            @Positive long providerConnectTimeoutMillis,
             @Positive long requestTimeoutMillis,
+            @Min(60_000) @Max(120_000) long overviewResponseTimeoutMillis,
             @Positive int maxPromptChars,
             @Positive int maxRetrievedChunks,
             @Positive long ingestionMaxBytes,

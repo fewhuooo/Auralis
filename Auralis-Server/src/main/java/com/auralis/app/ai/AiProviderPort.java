@@ -9,6 +9,17 @@ public interface AiProviderPort {
 
     AiProviderResponse complete(AiProviderRequest request, AiCredential credential);
 
+    /**
+     * Completes a non-streaming request with an explicit provider response/read timeout.
+     * Providers that do not need a separate timeout retain the compatibility behavior.
+     */
+    default AiProviderResponse complete(
+            AiProviderRequest request,
+            AiCredential credential,
+            long responseTimeoutMillis) {
+        return complete(request, credential);
+    }
+
     default List<AiProviderChunk> stream(AiProviderRequest request, AiCredential credential) {
         AiProviderResponse response = complete(request, credential);
         return List.of(new AiProviderChunk(response.content(), true));

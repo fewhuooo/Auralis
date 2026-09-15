@@ -67,7 +67,9 @@ auralis:
         chat-model: ${AURALIS_AI_SILICONFLOW_CHAT_MODEL:deepseek-ai/DeepSeek-V3}
         embedding-model: ${AURALIS_AI_SILICONFLOW_EMBEDDING_MODEL:BAAI/bge-m3}
         api-key: ${SILICONFLOW_API_KEY:}
+    provider-connect-timeout-millis: ${AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS:3000}
     request-timeout-millis: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:10000}
+    overview-response-timeout-millis: ${AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS:120000}
     max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}
     max-retrieved-chunks: ${AURALIS_AI_MAX_RETRIEVED_CHUNKS:8}
     ingestion-max-bytes: ${AURALIS_AI_INGESTION_MAX_BYTES:5242880}

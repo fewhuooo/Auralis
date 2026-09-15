@@ -10,6 +10,7 @@ import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 import { shouldScheduleAwaitingClientDocument } from '@/utils/sourceSchedulingPolicy'
+import type { FileOverviewTrigger } from '@/types/overview'
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -30,7 +31,13 @@ interface SourceDocumentScheduler {
   discard(sourceId: string): Promise<void>
 }
 
+interface FileOverviewGenerator {
+  generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<void>
+  discardFileOverview(sourceId: string): Promise<void>
+}
+
 let documentScheduler: SourceDocumentScheduler | null = null
+let fileOverviewGenerator: FileOverviewGenerator | null = null
 
 export const useSourceStore = defineStore('source', () => {
   const sources = ref<SourceFileModel[]>([])
@@ -57,7 +64,15 @@ export const useSourceStore = defineStore('source', () => {
     if (!useAuthStore().isAuthenticated) return
     for (const model of models) {
       if (documentScheduler && shouldScheduleAwaitingClientDocument(model)) {
-        void documentScheduler.schedule(model.id).catch((error) => console.warn('[SourceStore] document scheduling failed', error))
+        void documentScheduler.schedule(model.id)
+          .then((result) => {
+            const status = result && typeof result === 'object' ? (result as { status?: unknown }).status : undefined
+            if (status === 'READY' && model.ingestionRevision && fileOverviewGenerator) {
+              void fileOverviewGenerator.generateReadyFileOverview(model.id, model.ingestionRevision, 'SOURCE_READY')
+                .catch(() => console.warn('[SourceStore] file overview generation failed'))
+            }
+          })
+          .catch((error) => console.warn('[SourceStore] document scheduling failed', error))
       }
     }
   }
@@ -94,6 +109,7 @@ export const useSourceStore = defineStore('source', () => {
 
   subscribeProjectionChange((change) => {
     if (change.resourceTypes.has('SOURCE')) void hydrateSources()
+      .catch((error) => console.warn('[SourceStore] projection hydration failed', error))
   })
 
   async function loadSourceFiles(subjectId: string): Promise<SourceFileModel[]> {
@@ -180,9 +196,12 @@ export const useSourceStore = defineStore('source', () => {
     })
     sources.value = sources.value.filter((item) => item.id !== id)
     activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
+    void fileOverviewGenerator?.discardFileOverview(id).catch(() => {
+      console.warn('[SourceStore] deleted Source overview cleanup failed')
+    })
     scheduleSync()
-    void documentScheduler?.discard(id).catch((error) => {
-      console.warn('[SourceStore] deleted Source document cleanup failed', error)
+    void documentScheduler?.discard(id).catch(() => {
+      console.warn('[SourceStore] deleted Source document cleanup failed')
     })
   }
 
@@ -209,6 +228,7 @@ export const useSourceStore = defineStore('source', () => {
       updatedAt: new Date().toISOString(),
       deletedAt: file.deletedAt ?? undefined,
       ingestionStatus: file.ingestionStatus,
+      ingestionRevision: file.ingestionRevision,
     }
     await repo.commitMutation({
       resourceType: 'SOURCE', resourceId: file.id, value: localView, version: file.version, deletedAt: file.deletedAt,
@@ -224,6 +244,10 @@ export const useSourceStore = defineStore('source', () => {
 
   function attachDocumentScheduler(scheduler: SourceDocumentScheduler | null): void {
     documentScheduler = scheduler
+  }
+
+  function attachFileOverviewGenerator(generator: FileOverviewGenerator | null): void {
+    fileOverviewGenerator = generator
   }
 
   async function resumeDocumentProcessing(sourceId: string): Promise<void> {
@@ -242,7 +266,13 @@ export const useSourceStore = defineStore('source', () => {
       throw new Error('资料尚未同步到服务端，请稍后再试')
     }
 
-    await documentScheduler.schedule(sourceId)
+    const result = await documentScheduler.schedule(sourceId)
+    const status = result && typeof result === 'object' ? (result as { status?: unknown }).status : undefined
+    const current = sources.value.find((source) => source.id === sourceId)
+    if (status === 'READY' && current?.ingestionRevision && fileOverviewGenerator) {
+      void fileOverviewGenerator.generateReadyFileOverview(sourceId, current.ingestionRevision, 'MANUAL_RETRY')
+        .catch(() => console.warn('[SourceStore] file overview generation failed'))
+    }
   }
 
   const currentSourceCount = computed(() => sources.value.length)
@@ -261,6 +291,7 @@ export const useSourceStore = defineStore('source', () => {
     deleteSourceFile,
     saveSourceFileCatalog,
     attachDocumentScheduler,
+    attachFileOverviewGenerator,
     resumeDocumentProcessing,
   }
 })

@@ -185,6 +185,15 @@ PC 加密 cache/header 与 `payload_receipt_json` 现在记录本地派生格式
 - 同步器只领取 `pending` mutation 为 `inflight`，push 结果只结算同一 `client_mutation_id`。同资源仍有 `pending`、`inflight`、`conflict` 或 `error` mutation 时，push 回包、cursor pull 与 snapshot 均不得覆盖本地投影。
 - cursor pull 对一个资源在同一 page 的多条记录仅应用最后一条；服务端 tombstone 仅在该资源没有未解决本地 mutation 时写入。普通资源列表 API 不参与 PC Store 的缓存刷新。
 
+### PC AI 总览派生缓存（本地 schema v7，2026-09-10）
+
+- PC 本地 SQLite 新增 `ai_overview_cache`，主键为 `(user_id, device_id, scope_type, scope_id, revision_key)`；`device_id` 仍表示 `serverDeviceId`。该表只保存 AI 生成的大纲、总结、生成时间、输入指纹和安全失败摘要，不进入 `local_resource_records`、`local_mutations`、Sync 或 Server 数据库。
+- `scope_type=FILE` 时 `revision_key` 是非空 Source `ingestionRevision`；`scope_type=SUBJECT` 时固定为 `subject-v1`。数据库 CHECK 与 repository 共同约束该关系，避免把旧文件 revision 误读为当前学科结果。
+- `OUTLINE` 与 `SUMMARY` 分项成功时只替换对应 JSON 和时间；失败只更新 `status/error_code/error_detail`，已有成功内容继续保留。浏览器 fallback 使用 `auralis:v1:overviews:<userId>:<serverDeviceId>`，并对缓存记录和嵌套 JSON 做结构校验，损坏数据统一报告 `OVERVIEW_CACHE_CORRUPT`。
+- 学科总览的 `input_fingerprint` 由参与文件的 Source ID、ingestion revision、大纲和总结规范化排序后计算 SHA-256，用于识别本地资料变化；它不是同步版本或 Server 权威字段。
+
+内存 SQLite 与浏览器 fallback 已覆盖 owner/device/revision 隔离、分项替换、失败保留、并发保存/删除、损坏 JSON 和 fingerprint 稳定性。真实 Tauri SQLite v6→v7 重启升级与双账号 GUI 仍待人工验收。
+
 | 字段 | 语义 |
 | --- | --- |
 | `job_id` | 客户端任务稳定 ID，主键 |

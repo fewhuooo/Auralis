@@ -1,12 +1,16 @@
 # Auralis 运维与应急 Runbook
 
-更新时间：2026-09-09
+更新时间：2026-09-10
 
 文档状态：现行，部分流程待生产演练
 
 权威范围：运行期诊断、恢复、备份与升级条件
 
 事实来源：当前 Compose 服务、Server 配置、客户端请求/同步实现与已知风险
+
+## AI Provider 超时诊断
+
+`MODEL_TIMEOUT`（HTTP 504）表示 Provider socket response/read 超时；`MODEL_UNAVAILABLE`（HTTP 503）保留给其它不可用/IOException。检查 backend 的 `AI_PROVIDER_HTTP_FAILED` 中 `errorType=SocketTimeoutException`、host/path 和 elapsedMs，不记录 key 或 prompt。默认连接超时为 3000ms，普通聊天/流式/embedding response-read 为 10000ms，Overview map/reduce 非流式窗口为 120000ms（允许 60000–120000ms）；仅在确认上游生成耗时确实较长时调整 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`，不要把普通请求窗口改成 Overview 窗口。
 
 ## 2026-09-09 Task 16 运行观察
 

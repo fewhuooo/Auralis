@@ -1,5 +1,69 @@
 # Auralis 变更记录
 
+### Overview 非 JSON 失败体验收口（2026-09-15）
+
+- 真实第二次 Overview 全链路已成功，证明永久预算链路可运行；生成内容质量仍需用户判断。
+- PC Overview 对现有 `MODEL_PROVIDER_ERROR` 显示“遇到意外情况，请重试”，不新增 Server/API 错误码；FAILED 终态继续禁止自动重试，只有手动“重新生成”会发起新请求。
+- 文案仅调整 Overview 专用 failure policy，普通 AI 聊天与流式行为不变。
+
+### Overview 最小 JSON 诊断（2026-09-15）
+
+- 为定位真实 DeepSeek FINAL `JSON_PARSE` 失败，Provider 发送前从最终序列化 request body 记录 allowlisted `AI_JSON_MODE`（`structuredJson`、`responseFormat=json_object`、`maxTokens`、stage）；Overview FINAL 在既有 validator 前用同一 Jackson `ObjectMapper.readTree` 记录 `FINAL_JSON_CHECK` 的 valid、字符数、行列号和异常类型。
+- 诊断不记录 request body、prompt、响应正文、原始异常 message、URL 或凭据；`FINAL_JSON_CHECK` 对原始 `message.content` 直接 `readTree`，不做 fence stripping，因此 fenced JSON 会记录 `valid=false`，但不改变后续 validator 行为。普通聊天/流式行为不变。聚焦测试通过；尚未部署，真实请求和业务验收待重跑。
+
+### Overview 永久阶段预算（2026-09-15）
+
+- Overview 多批 MAP/非最终 REDUCE 使用 `max_tokens=3072`，最终 completion 使用 `4096`；规范化 intermediate JSON 上限为 `5200` 字符，self-pair 仍为 `12000`。
+- 保留覆盖率优先的紧凑 prompt 与现有错误边界，不自动压缩重试；普通聊天、流式和 embedding 不变。Overview 38/38、兼容集合 63/63 通过，backend 已重建且 healthy。
+- 部署后真实 42-chunk 请求通过全部 6 个 MAP 和第一轮 2 个 REDUCE；最终 REDUCE 收到 DeepSeek 2xx、自然 `stop`、`2992 outputTokens`、`6556 responseChars` 后在 JSON 解析失败。中间预算已实通，但完整链路和业务验收未通过。
+
+### DeepSeek Overview 无 max_tokens 诊断实验（2026-09-15）
+
+- 现场请求已返回非空 `content`，但首个 MAP 在 `responseChars=2553` 后 JSON 解析失败；为验证 1024 token 截断假设，Overview completion 暂时不发送 `max_tokens`，并移除 intermediate 1024 output token 前置拒绝。普通聊天/流式不变。
+- `AiProviderResponse` 现在携带 allowlisted `finishReason`；未知、超长或含换行值归一为 `other`。`JSON_PARSE_START` 记录实际字符数、output tokens 和停止原因，不输出模型正文。
+- 新增安全的 `INTERMEDIATE_BUDGET_CHECK`，以同一次实际判定记录规范化 JSON 字符数、self-pair prompt 字符数、各自上限与 overflow 布尔值；不输出正文或 prompt，错误行为不变。相关兼容集合 58/58 通过，待第二轮真实生成采样。
+- 第二轮 42-chunk 真实生成在 MAP2 得到 `2612 outputTokens`、`5105 normalizedChars`、`11450 selfPairPromptChars` 和自然 `finishReason=stop`；仅 4000 字符边界超限，12000 self-pair 边界未超限。MAP3–6/REDUCE 未执行，永久策略未在本轮实施。
+- Task 4C 用真实 42-chunk 生成验证覆盖率保留的压缩 prompt：六个 MAP 均通过且为 1447–3680 字符，此前 5105 字符的 MAP2 降至 2027；REDUCE round 1 第一组 2446 字符通过，第二组仍以 4678 字符触发 4000 字符边界，但 self-pair 10899/12000 未超限。Prompt 有效但不能代替硬边界；永久参数未实施。
+- 4000 字符 intermediate 上限、self-pair、schema、Source fence、Reduce no-progress、HTTP response-size 和 120 秒 timeout 仍保留。本轮 fresh test compilation 与相关 58/58 通过。真实 42-chunk 请求已观测 MAP 1–5 为 991–2071 output tokens、2500–4091 response chars，全部 `stop` 且 JSON/schema 成功；第 5 个 MAP 随后命中 intermediate convergence guard，MAP 6/REDUCE 未运行。当前行为仍是临时测量手段而非永久成本策略。
+
+### Overview 手动重试与生成收敛修复（2026-09-14）
+
+- PC 当前 revision 的 FILE Overview `FAILED` 与部分 `READY` 记录现在是自动触发终态；`SOURCE_READY`、启动/联网/同步恢复和 `JOB_CHANGED` 不再自动 POST，只有 `MANUAL_RETRY` 可发起新请求并继续使用 in-flight coalescing。失败或部分结果保留旧大纲/总结，失败区域只显示一个可见“重新生成”，生成中 disabled；状态不确定与确定性失败使用不同文案。
+- Server 为 Overview Provider 调用明确区分 intermediate/final：多 batch Source MAP 与非最终 multi-group REDUCE 使用 1024 `maxTokens`，single-batch Source MAP、Subject direct 与最终单 group REDUCE 使用 4096；中间输出校验 token、规范化 JSON 4000 字符和 self-pair prompt fit，Reduce no-progress 严格要求结果数量下降。
+- Overview completion 新增内部 structured JSON 契约：OpenAI-compatible 请求发送 `response_format={type:json_object}`，DeepSeek 额外发送 `thinking={type:disabled}`；普通聊天/流式请求保持原有 body。响应适配器不回退 `reasoning_content`，无有效 content 时新增只含清洗/限长模型标识及 envelope 数量元数据的安全诊断，不记录 prompt、正文、URL 或凭据。
+- 新增稳定错误语义：`OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE` 与 `OVERVIEW_REDUCE_NO_PROGRESS` 返回 HTTP 502，parse/schema 等其它 Provider 输出错误统一为 `MODEL_PROVIDER_ERROR`/502；API route、DTO、OpenAPI schema 和数据库未变。原持续自动补发与 Reduce `VALIDATION_FAILED` 问题已完成代码修复及自动验证。
+- 自动证据：PC Overview focused 54/54，最新 `test:r4-pc` 331/331、type-check、94 文件静态检查、workspace check 与 build 通过；Server 本轮 fresh `clean test-compile` 通过，Overview/Controller/Provider/Streaming 聚焦 56/56，OpenAPI gate green。Server 既有全量证据为 255 项中 252 pass、3 项 Docker/Testcontainers errors；真实 DeepSeek/Provider、Tauri、网络、GUI、设备和业务验收仍待完成，Server 持久 generation 幂等仍是开放风险。
+
+### Build/OpenAPI Task 3：最终回归与门禁同步（2026-09-12）
+
+- Server fresh 聚焦命令实际 57/57、0 failures、0 errors、0 skipped；测试 double 补齐 `ProviderHttpTransport.post(..., byte[])` 后 fresh test compilation 通过，生产 Provider transport 未改变。
+- Server 全量 `mvnw -B -ntp test` 实际 239 项，0 failures、3 errors；错误仅为 MinIO/PgVector/Testcontainers 无法连接 Docker。`check-openapi.ps1` 退出 0，Server OpenAPI artifact 8/8，PC/Mobile generated schema 与 artifact 一致；`subjectOverview`/`sourceOverview` 均暴露可选 `X-Overview-Request-Id`。
+- PC/Mobile type-check 退出 0，Mobile protocol test 23/23。Mobile 的一行 payload boundary cast 只为适配生成 `JsonNode` 的结构窄类型，运行时序列化不变；未来 contract-cleanup 风险仍开放。API/Database 语义未新增变化；真实 Provider、Docker、PostgreSQL/MinIO、Tauri/GUI、设备和业务验收仍待完成。
+
+### Server Test Gates Task 4：全量回归与契约门禁记录（2026-09-11）
+
+- `source` 现在通过 source-owned `ParsedDocumentIngestionPort`/`IngestionJobReference` 调用 `ai.ingestion`，消除 source 对 ai 内部服务/实体的依赖并保持 `ai → source` 单向边界；H2 fixture 清理顺序已固定为逆外键顺序。
+- Server 当前增量编译产物下标准聚焦 Maven 40/40；架构隔离命令（含 `ArchitectureTests`）7 类合计 20/20，其中 `ArchitectureTests` 1/1；H2 隔离连续两次 24/24、OpenAPI artifact 8/8。标准全量 `test` 实际执行 239 项，0 failures、3 errors，错误仅来自 Docker 不可用的 MinIO/PgVector/Testcontainers；fresh `clean test-compile` 仍受 `AiProviderSecurityTests.java:182` blocker 阻断。
+- `check-openapi.ps1` 的 artifact 比对通过，但 PC generated schema stale；未在本轮运行 SDK 生成。上述自动证据不替代真实 PostgreSQL/MinIO、Provider、Tauri/GUI 或业务验收；无语义 API 或数据库契约变化，仅同步 OpenAPI artifact。
+
+### Overview Source 删除 fence 与回归门禁（2026-09-11）
+
+- PC 文件总览生成现在要求活动 FILE Source 的精确 `ingestionRevision` 与本地文档任务 `READY`；Source 删除在 tombstone/投影移除后同步阻断、abort 匹配请求并清理文件总览缓存，晚到响应不写入或标记失败，且 fence 先于同步与后台文档清理。
+- Server 在每个共享 Map/Reduce Provider 调用前后复核活动 `READY`/精确 revision；进行中的 Provider 调用可完成但其结果被拒绝，不再启动后续调用。Subject 总览及 API、数据库、同步契约未改变。
+- 本轮门禁：PC R4 322/322、type-check 通过、静态检查扫描 93 个生产文件并通过；Server `AiOverviewServiceTests` 19/19 通过；Overview 失败日志使用 allowlist，`requestId` 规范为 UUID（非法或含敏感内容时替换为服务端新 UUID），不记录原始 exception/cause 文本或 throwable stack；Server 全量 239 项实际为 0 failures、3 Docker/Testcontainers errors，fresh testCompile 仍有独立 `AiProviderSecurityTests` blocker，OpenAPI/PC schema 仍需处理。真实 Tauri、Axios、Provider、PostgreSQL/MinIO、GUI 和业务验收不由自动回归替代。
+
+### Provider Overview 超时与错误映射修复（2026-09-10）
+
+- ProviderHttpClient 分离连接超时与 response/read 超时：连接默认 3000ms，普通非流式 completion、流式请求和 embedding 默认保持 10000ms；Overview map/reduce 非流式 completion 新增独立可配置的 120000ms 窗口。
+- `SocketTimeoutException` 现在稳定映射为 `MODEL_TIMEOUT`/HTTP 504，并保留 cause；其它 IOException 继续为 `MODEL_UNAVAILABLE`/503，429/5xx/400 映射及普通聊天/流式行为保持不变。同步更新 Server 配置、Compose、环境样例与 API/部署文档。
+- TDD RED 先复现 timeout overload/配置缺失、旧 `MODEL_UNAVAILABLE` 及配置越界未拒绝；最终 Provider、Overview、普通 streaming、embedding、错误映射及 OpenAPI 聚焦回归 60/60 通过。真实 Provider 网络、生产代理和业务端到端仍待人工验收。
+
+### PC 学科总览与本地 AI 大纲/总结（2026-09-10）
+
+- 将工作区原“大纲”入口升级为“总览”，保持现有 `AI 梳理` 按钮位置和三栏宽度。顶部学科总览默认折叠且按用户请求生成；下方直接展开全部文件大纲，每个文件可在中间预览区查看总结并分项重新生成。
+- 文件解析 READY 后自动请求结构化大纲与总结；Server 生成保持无状态，PC 结果按 user/device/source revision 存入本地 schema v7，不进入 Server 数据库或 Sync。失败保留旧内容，损坏缓存和异常 Provider 响应在持久化边界拒绝。
+- 当前自动证据包括 Server 聚焦 23/23、PC 完整 R4 306/306、overview/UI 聚焦 18/18、type-check、静态检查、工作区契约、生产构建和 diff-check。终审补齐了零可用输入的 stale 判断、空内容过滤和学科大纲独立重生成。OpenAPI artifact 8/8 且 PC 生成类型一致；仓库级契约门禁仍被既有 Mobile schema 过期/文件占用问题阻断。Server 全量仍有 28 个既有环境/共享测试错误，真实 Provider/Tauri/GUI 尚未验收。
+
 ### PC 时间轴空槽拖动 400 修复（2026-09-09）
 
 - 修复排期任务拖到空槽时仍调用 `POST /api/tasks/schedule-swaps` 并发送空 `targetTaskId` 导致 400 的问题。空槽现按单 Task 写入本地 repository/outbox，只有两个占用槽之间才使用原子 swap API。
@@ -795,6 +859,7 @@
 - Server Task 14: Source ingestion state and safe failure diagnostic changes now emit existing `SOURCE/UPDATE` sync events exactly once per actual persisted change; identical repeated calls are no-ops, and ParsedDocument complete routes locked `INDEXING` through the same transactional service path.
 - Removed Task `colorOverride`/legacy `color` from Server, V21 schema, OpenAPI, PC, and Mobile/Tablet projections; Task visuals now use semantic CSS tokens while KnowledgeBlock colors remain unchanged.
 - PC Task 15: after an explicit ParsedDocument `ACCEPTED` complete, request one coalesced background `read` sync; callback failures are best-effort and cannot alter accepted upload or local readiness transitions.
+- PC Overview trigger diagnostics (2026-09-10): added allowlisted `[FILE_OVERVIEW_TRIGGER]` lifecycle events with trigger values supplied by the TypeScript closed type and known call sites (`SOURCE_READY`, `RESUME_BOOTSTRAP`, `RESUME_ONLINE`, `RESUME_SYNC`, `JOB_CHANGED`, `MANUAL_RETRY`), without claiming runtime validation. A service-owned request ID is created only for a generation attempt that reaches `runFile` and reused in `X-Overview-Request-Id`; preflight/skip events may omit it. Existing in-memory coalescing and generation behavior are unchanged; no retry, cache, Provider, Server, or timeout behavior changed. Automated PC checks passed (focused 16/16, full 310/310, type-check and static check), while real Tauri/provider attribution and business acceptance remain pending; Server same-key in-progress idempotency and the PC/Server timeout mismatch remain open.
 
 ## 维护规则
 

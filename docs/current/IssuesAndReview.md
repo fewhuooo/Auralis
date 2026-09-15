@@ -8,6 +8,66 @@
 - 处理：按四阶段实施 Local Asset Store、幂等 Asset 同步、Preview/OCR/Parser 统一读取以及删除传播和安全收口，并同步 PC、Server、API、Database、Architecture 与发布文档。
 - 关闭条件：schema/API migration、PC/Rust/Server 自动门禁通过，并取得真实 Windows Tauri、MinIO、断网重启、双账号和双设备删除传播证据；自动测试、外部联调、GUI 与业务验收分别记录。
 
+### 2026-09-15 Overview 非 JSON 失败体验已收口，真实第二次全链路成功
+
+- 用户复跑同一真实 Overview 后第二次全链路成功；该运行证据证明当前永久预算链路可完成，但不替代用户对生成内容质量的判断。
+- Overview 的 `MODEL_PROVIDER_ERROR` 继续使用现有 HTTP 502/API code，由 PC failure policy 显示“遇到意外情况，请重试”；不新增公开错误码，也不影响普通 AI 聊天/流式错误处理。
+- FAILED 记录仍是自动触发终态；刷新、启动、联网、同步和 `JOB_CHANGED` 不会自动补发，手动“重新生成”才绕过终态并继续使用 in-flight coalescing。自动测试、部署状态与真实业务验收仍分别记录，不能合并表述。
+
+### 2026-09-15 Overview 永久预算策略已部署，最终 JSON 解析仍阻塞
+
+- Server 已按阶段发送明确预算：多批 MAP/非最终 REDUCE 为 `max_tokens=3072`，最终调用为 `4096`；规范化 intermediate JSON 上限为 `5200`，self-pair 上限仍为 `12000`。紧凑 prompt、schema、Source fence 与 Reduce no-progress 保留，不做自动压缩重试，不恢复 output token 后置拒绝。
+- TDD 已覆盖 5200 接受、5201 拒绝、self-pair 12000/12001、stage request maxTokens、非最终 REDUCE 与 Provider wire body；普通 chat/stream 兼容边界保持。backend 已重建且 healthy。真实 42-chunk 手动请求通过全部 6 个 MAP 和第一轮 2 个 REDUCE；最终 REDUCE 返回 2xx、自然 `stop`、`2992 outputTokens` 和 `6556 responseChars` 后在 `JSON_PARSE` 失败。该结果证明中间预算与收敛边界有效，但完整 DeepSeek 链路和业务内容覆盖尚未验收；下一步需为最终 JSON 非法增加安全的解析失败分类证据，再决定 prompt/schema 或有界修复策略。
+
+### 2026-09-15 DeepSeek MAP JSON 截断假设：真实自然输出已取得，下一收敛边界已定位
+
+- 现场证据：DeepSeek `/chat/completions` 返回 2xx 和非空 `content`，Server 记录 `responseChars=2553` 后在首个 MAP 的 `JSON_PARSE` 失败；旧请求携带 `max_tokens=1024`，但适配器未保留 `finish_reason`，因此尚不能把截断写成最终结论。
+- 临时诊断行为：所有 Overview completion 不发送 `max_tokens`，不再以 `outputTokens>1024` 预先拒绝 intermediate；普通聊天/流式不变。日志新增 allowlisted `finishReason`、实际 output token 和响应字符数，未知/超长/换行停止原因统一为 `other`，不记录正文。
+- 保留边界：Provider 响应体上限、Overview 120 秒 timeout、JSON/schema、规范化 intermediate 4000 字符、self-pair、Source revision fence、Reduce no-progress 均继续生效。Provider 默认输出上限可能增加单次 token、延迟和费用，因此该行为只能作为获取一轮真实数据的临时实验。
+- 自动证据：fresh `clean test-compile` 退出 0；Overview/Controller/Provider contract/Provider resilience/Streaming 聚焦 58/58；`git diff --check` 通过。真实 DeepSeek 新构建已运行：MAP 1–5 分别为 `991/2500`、`1367/2688`、`1731/3669`、`1613/3460`、`2071/4091`（tokens/chars），全部 `stop` 且 JSON/schema 成功；MAP 5 随后以 `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE` 结束，MAP 6/REDUCE 未执行。
+- 当前判断：覆盖率保留的 intermediate prompt 已把同一资料的 MAP 输出压到 1447–3680 字符，六个 MAP 全部通过，但 REDUCE round 1 第二组仍自然生成 4678 字符并单独触发 4000 字符边界；其 self-pair 为 10899/12000。Prompt 控制有效但不是硬保证。永久关闭条件是保留该 prompt，同时选择可覆盖已观测 2612 tokens 的明确 token ceiling，并调整 4000 字符边界或增加有界压缩重试；之后完成同一真实生成到最终成功及内容覆盖人工检查。
+
+### 2026-09-14 Overview retry/convergence：代码修复与自动验证完成，外部验收仍开放
+
+- 已关闭本轮代码问题：当前 revision 的 FILE Overview `FAILED`/部分 `READY` 对自动恢复触发均为终态，只有 `MANUAL_RETRY` 可绕过并继续受 in-flight coalescing 保护；失败或部分结果保留旧内容，界面只有一个可见“重新生成”且生成中 disabled；网络/状态不确定文案与确定性失败分开。原持续自动补发问题已由 PC 自动回归覆盖。
+- 已关闭本轮 Server 收敛问题：中间 MAP/非最终 REDUCE 使用 1024 tokens，最终调用使用 4096；中间结果在下一轮前校验 `outputTokens<=1024`、规范化 JSON `<=4000` 字符和 self-pair prompt fit，Reduce no-progress 保持严格单调；`OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE` 与 `OVERVIEW_REDUCE_NO_PROGRESS` 映射 HTTP 502，parse/schema 统一 `MODEL_PROVIDER_ERROR`，不再以 `VALIDATION_FAILED` 表示 Provider 输出问题。
+- 已关闭本轮 DeepSeek 代码级适配问题：Overview 请求携带内部 `structuredJson=true`，OpenAI-compatible body 使用 JSON object response format，DeepSeek 同时显式关闭 thinking；普通聊天/流式保持 `structuredJson=false`。适配器继续要求有效 `message.content`，不回退到 `reasoning_content`；无有效 content 的诊断只输出 allowlisted envelope 元数据，模型标识清洗并限制为 64 字符，不输出 prompt、响应体、URL 或凭据。
+- 自动证据：PC Overview focused 54/54、最新 `test:r4-pc` 331/331、type-check、`check:r4-pc`（94 个生产文件）、`check:subject-workspace`、build 均退出 0；Server 本轮 fresh `clean test-compile` 退出 0，Overview/Controller/Provider/Streaming 聚焦 56/56；OpenAPI gate green。Server 既有全量证据为 255 项中 252 pass、3 项 Docker/Testcontainers errors，错误为 `MinioAssetStorageIntegrationTests`、`PgVectorIntegrationTests`、`PgVectorMigrationIntegrationTests`；本轮未重跑全量，不得写成全量全绿。
+- 仍开放：Server 未实现持久 generation 幂等/状态查询；真实 DeepSeek 是否按该组合稳定返回可解析 content、真实 Provider/Tauri/网络/GUI/设备和业务验收均未执行。自动证据不证明这些边界。
+
+### 2026-09-12 Build/OpenAPI Task 3：fresh 编译与 schema gate 已关闭，全量受 Docker 限制
+
+- 已验证：Server fresh 聚焦命令实际 57/57、0 failures、0 errors、0 skipped，缺失的四参数 `ProviderHttpTransport.post(..., byte[])` 仅在测试 double 中补齐；生产 Provider transport 未改变。全量 `mvnw -B -ntp test` 实际 239 项，0 failures、3 errors，错误精确为 `MinioAssetStorageIntegrationTests`、`PgVectorIntegrationTests`、`PgVectorMigrationIntegrationTests` 的 Docker/Testcontainers 环境不可用。
+- 已验证：`check-openapi.ps1` 退出 0（artifact comparison、Server OpenAPI 8/8、PC/Mobile 生成 schema 均通过）；PC/Mobile type-check 退出 0，Mobile protocol test 23/23。两端 schema 字节相同且 `subjectOverview`/`sourceOverview` header 均含可选 `X-Overview-Request-Id`。
+- Mobile 为适配生成 `JsonNode` 的结构窄类型，仅增加一行编译期 `SyncMutation['payload']` boundary cast，运行时 JSON 序列化不变；未来应清理生成契约类型风险，当前不声称已关闭。API/Database 契约文件仅核对，未发现本轮新的语义变化且未编辑。
+- P1 外部验收仍开放：真实 Provider、Docker 后的 PostgreSQL/pgvector/MinIO、Tauri/GUI/设备、微信/H5/Tablet 和业务验收。上述自动证据不能写成真实依赖或产品验收通过。
+
+### 2026-09-11 Server Test Gates Task 4：聚焦通过，全量受限
+
+- 已验证：`source` 通过 source-owned `ParsedDocumentIngestionPort`/`IngestionJobReference` 使用 `ai.ingestion` 公开契约，架构隔离命令（含 `ArchitectureTests`）7 类合计 20/20，其中 `ArchitectureTests` 1/1；Task 2 的 H2 清理连续两次隔离 24/24；Task 3 的 Server OpenAPI artifact 测试 8/8。
+- 本轮当前增量编译产物下标准聚焦命令实际 40/40、0 failures、0 errors。标准全量 `mvnw -B -ntp test` 实际执行 239 项，0 failures、3 errors，三项均为 MinIO/PgVector/Testcontainers 无法连接 Docker；不得写成全量通过。fresh `clean test-compile` 仍在 `AiProviderSecurityTests.java:182` 因匿名 `ProviderHttpTransport` 未实现当前 `post(..., byte[])` 抽象方法而失败，未修改该并行 blocker。
+- `check-openapi.ps1` 的 runtime artifact comparison 与 Server 8/8 已通过，但 `Auralis-PC/src/api/generated/schema.ts` stale，未运行 SDK 生成。标准生命周期、隔离测试、契约脚本与外部依赖结果必须继续分开记录。
+- P1 处理：补齐并行测试的当前 `ProviderHttpTransport` 实现后，重新运行 fresh Maven 聚焦/全量门禁；关闭 Docker 后复跑三项 Testcontainers；在授权窗口更新 PC generated schema 并复跑 `check-openapi.ps1`。真实 Provider、PostgreSQL/MinIO、Tauri/GUI 和业务验收仍未完成。
+
+### 2026-09-11 Overview Source deletion fence：自动门禁通过，外部边界开放
+
+- 已验证：PC 文件总览要求活动 FILE Source 的精确 `ingestionRevision` 与本地文档任务 `READY`；删除在 tombstone/投影移除后同步阻断 Source、abort 匹配请求、清理文件总览缓存，晚到响应不保存或标记失败，且先于同步/后台文档清理。Server 在每个共享 Map/Reduce Provider 调用前后复核活动 `READY`/精确 revision；进行中的调用可能完成，但结果被拒绝且后续调用不开始。Subject 总览及 API/数据库/同步契约不变。
+- 本轮证据：PC `npm.cmd run test:r4-pc` 322/322、`npm.cmd run type-check` 退出 0、`npm.cmd run check:r4-pc` 退出 0（93 个生产文件）；Server `AiOverviewServiceTests` 19/19、退出 0，Overview 失败日志仅记录规范化 UUID `requestId`、allowlisted 关联字段、阶段、稳定 `errorCode`（或 `OVERVIEW_GENERATION_FAILED` 回退）及 exception/cause 类型；非法或含敏感内容的请求 ID 会替换为服务端新 UUID，不含原始 exception/cause 文本或 throwable stack；Task 4 Server 全量 `test` 退出 1，239 项中 0 failures、3 Docker/Testcontainers errors、0 skipped。artifact comparison、Server OpenAPI 8/8 已通过；fresh testCompile 的 `AiProviderSecurityTests.java:182` blocker 与 PC schema stale 仍开放，不得写成全量或契约总门禁通过。根目录 `git diff --check` 退出 0。
+- P1 外部验收：Provider 调用中的服务端取消不可由 fence 强制中断；需在真实 Provider/HTTP 环境验证删除或 revision 变化时的断连与不再继续生成。P2 外部验收：真实 Tauri 删除/重传顺序、Axios disconnect、PostgreSQL/MinIO、GUI 和业务结果仍未执行。关闭条件是取得对应现场/端到端证据并复核上述全量门禁既有错误。
+
+### 2026-09-10 Provider Overview response timeout
+
+- 根因：ProviderHttpClient 将 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS=10000` 同时用于连接、读取和请求；DeepSeek completion 在约 10.2 秒触发 `SocketTimeoutException`，OpenAi-compatible provider 又把它按普通 IOException 映射为 `MODEL_UNAVAILABLE`/503。
+- 修复与自动证据：Provider connect/read 分离（默认 3000/10000ms），Overview map/reduce 使用默认 120000ms（配置限制 60000–120000ms）；`SocketTimeoutException` 映射为 `MODEL_TIMEOUT`/504，普通 IOException、429/5xx/400 和普通聊天/流式路径保持既有行为。TDD RED 捕获缺少 timeout overload/配置、旧错误码及配置越界未拒绝；最终 Provider、Overview、普通 streaming、embedding、错误映射及 OpenAPI 聚焦回归 60/60 通过。真实 DeepSeek、SiliconFlow、生产反向代理仍未验收。
+- P1 外部验收：在受控环境验证 Overview 生成超过 10 秒但小于 120 秒时不再 503，确认普通 chat/stream/embedding 仍按 10 秒 response 窗口运行，并检查日志无 key/prompt 泄露。
+
+### 2026-09-10 PC 学科总览：自动证据已接入，真实边界开放
+
+- 文件/学科总览结果只保存在 owner/device 隔离的本地 schema v7；Server 两个端点无新增表、Conversation、Message 或 Sync 资源。客户端在入缓存前校验 schema/mode/嵌套结构，分项生成失败只更新安全诊断并保留旧内容。
+- 页面沿用原 `AI 梳理` 按钮位置与三栏宽度；学科总览默认折叠且用户主动生成，文件大纲直接展开，文件总结复用中栏。前端展示组件样式由 Antigravity 在隔离工作树产出方案后由 Codex 审查并以受限补丁集成。
+- 自动证据：Server 聚焦 23/23、PC 完整 R4 306/306、overview/UI 聚焦 18/18、type-check、`check:r4-pc`、SubjectWorkspace 契约、生产构建和 diff-check 通过。Luna 终审发现的“零可用输入未标 stale”“空大纲进入 subject 请求”和“缺少学科 OUTLINE 独立入口”均已用回归关闭。OpenAPI artifact 8/8 且 PC schema 已更新；仓库级 `check-openapi` 仍因既有 `P1-OpenAPI-Mobile-Schema-Lock`（Mobile schema 过期/文件占用）退出 1，不能写成契约总门禁通过。Server 全量 223 项中 0 失败、28 错误，仍由既有 Modulith 边界、共享 H2 外键清理及 Docker 不可用导致，不视为本功能回归通过。
+- P2 人工验收：真实 Tauri v6→v7 重启升级、上传完成到自动生成、真实 Provider、Source revision 更新、文件/学科重新生成、locator 回退、双账号隔离及深浅色/窄屏 GUI 尚未执行。关闭条件是取得上述实际运行证据；自动测试和构建不替代业务验收。
+
 ### 2026-09-09 PC 时间轴空槽拖动 400 修复
 
 - 根因：`useTaskStore.rescheduleTask` 的空槽分支仍调用只适用于两个已排期任务的 `schedule-swaps`，请求体中传入 `targetTaskId: ''`。Server `ScheduleSwapRequest.targetTaskId` 要求 UUID，因此在业务服务之前返回 `400 VALIDATION_FAILED / Request validation failed`。
@@ -132,17 +192,17 @@ PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home
 | P1-PC-Local-Repository-Cutover | PC 普通同步资源已收口为本地 v6 projection/outbox，但 `localDb.ts` 与 `useBlockStore.ts` 仍保留兼容 facade，且真实 Tauri 迁移/GUI 尚未验收 | 2026-09-04：Subject/Source/KnowledgeBlock/Task 均先 `commitMutation()` 原子保存本地资源+outbox，之后才更新 Pinia；后台 cursor cycle 合并启动、实时、读写请求，远端只结算对应 mutation 或更新无未解决写入的资源。cursor page 仅写每资源最后 change，墓碑不会删除 pending 本地编辑。`r4-local-repository`、`r4-sync`、`r4-register-file` 合计 28/28 通过；`npm run type-check` 仅报 Timeline 的 3 个 `Subject.color` 与未使用 `Sparkles`，完整 PC 门禁未通过 | 首次登录旧数据迁移、Tauri SQLite 升级、reset/离线恢复、连续离线编辑、双设备冲突及跨账号切换仍缺真实桌面证据；当前类型检查和完整 PC 回归不能作为整体绿灯 | 保持 facade 只读兼容范围，补 Tauri/Web GUI、真实服务、弱网连续编辑、三次连续编辑旧回包保护与双设备冲突验收；修复 Timeline 类型残留后复跑完整 PC 门禁 | 正式 PC 业务路径不再读写旧全局 key；Tauri/Web/GUI 证据齐全；真实后端联调确认 user/device 隔离、合并 mutation 回放、cursor 保护和冲突状态可见 | PC/Data |
 | P1-PC-AI-Recovery-Validation | 离线 Chat 已持久化稳定会话/消息请求 ID，并在网络恢复后自动顺序重发；但尚未以浏览器连接真实 Server/Provider 验收 | `useChatStore.ts`、`authenticatedSse.ts`、`r4-reliability.test.mjs`；2026-08-20 `test:r4-pc` 58/58、type-check/build 通过 | 浏览器断线、token 刷新与真实 SSE 代理交叠时仍可能暴露时序或 UI 回归 | 在真实 API 上覆盖离线新建会话、断流重试、401 刷新、恢复顺序和重复点击 | 浏览器/Tauri 中真实 Server/SSE 的恢复、无重复消息和失败态证据齐全 | PC/AI |
 | P1-PC-AI-Reading-Flow | PC Tauri AI 辅助阅读 G1–G4、G5/G6、C1–C5、S1–S6、A1–A4、K1/K2、U1–U3 的代码与自动门禁已完成；真实联调和 GUI 仍未完成 | `DocumentProcessingRuntime`、阅读会话/PromptAssembler/ScopeEscalationPolicy、状态点/Profile 解析中心、选中文本编辑器；启动前同步修复、MinIO IPv4 public endpoint 和 debug log stdout 修复已补齐；`test:r4-pc` 需以本轮完整命令结果为准；`docs/test` 含 DOC/DOCX/PPTX、真实 OLE PPT、text-layer/扫描型 PDF | 临时 all-users MSI 安装因宿主 Error 1925 未完成，安装后 sidecar/OCR、升级卸载和 GUI 仍缺真实证据；实际 File Viewer/Tauri extract/fallback/failure、扫描 PDF 真实渲染/OCR、Tauri SQLite/cache/upload/restart、跨设备接手、MinIO/Server 业务联调、阅读会话/current Source→Subject 升级/选中文本仍待验收 | 在具备安装权限的 Windows x64 宿主补齐真实 Server/MinIO/Provider、文件样本、断网重启/跨设备和阅读 GUI 验收；自动门禁只作为代码证据，不替代人工验收 | Windows x64 MSI 安装后离线 OCR、四类 Office 固定样本、revision 并发、加密缓存上传、当前 Source→Subject 检索升级、选中文本知识块和 GUI/业务证据全部通过 | PC/AI/Backend |
-| P1-Backend-Docker-Gate | [已关闭] Docker、PostgreSQL/pgvector、MinIO 和 Compose/Testcontainers 基础门禁 | 2026-08-20 Docker Desktop Linux engine 下默认 `clean test` 137/0/0；Testcontainers 实际启动 PostgreSQL 17/pgvector clean/upgrade 与 MinIO。既有 Compose config/build/up/health 证据仍有效 | 基础设施主链路已具备可重复验证证据；异常专项和真实 Provider 仍由独立风险跟踪 | 保留 Docker 门禁并在 CI/本地复跑；继续完成 R2-03/R2-04 异常专项和 R2-05 真实 Provider smoke | Compose 服务健康、默认容器测试零跳过、PostgreSQL/MinIO 主链路集成证据齐全 | Backend/Infra |
+| P1-Backend-Docker-Gate | [当前复核受限] Docker、PostgreSQL/pgvector、MinIO 和 Compose/Testcontainers 基础门禁 | 历史 2026-08-20 Docker Desktop Linux engine 下默认 `clean test` 137/0/0 证据仍有效；2026-09-11 Task 4 全量 239 项出现 3 个 Docker/Testcontainers errors，当前 Engine named pipe 不可用；既有 Compose config/build/up/health 证据仍有效 | 本机当前不能重现真实 PostgreSQL/pgvector/MinIO 全量门禁；异常专项和真实 Provider 仍由独立风险跟踪 | 恢复 Docker 后复跑全量及三项容器集成测试；继续完成 R2-03/R2-04 异常专项和 R2-05 真实 Provider smoke | Compose 服务健康、默认容器测试零错误、PostgreSQL/MinIO 主链路集成证据齐全 | Backend/Infra |
 | P1-Auth-Guard | PC 登录守卫逻辑已恢复，公共登录页已与认证壳隔离，但浏览器/Tauri 的登录、刷新、退出和过期仍未人工验收 | `Auralis-PC/src/router/index.ts`、`src/auth/authGuard.ts`、`src/App.vue`、`src/components/layout/AppSidebar.vue`；`r4-pc-protocol.test.mjs` 与 runtime 回归已覆盖公开/受保护/登录页决策及白屏回归 | 会话持久化、过期和退出后的实际导航行为仍可能与纯函数决策不一致 | 在浏览器和 Tauri GUI 走查登录、刷新、退出、过期和返回地址，并确认无 token/refresh token 时不出现空白页 | 自动测试与目标 GUI 的登录/刷新/退出/过期证据齐全 | PC/Auth |
-| P1-Test-Coverage | 新后端已覆盖主要模块自动测试；多设备和浏览器客户端仍缺业务回归保护，且当前宿主无法完成全量 Testcontainers 门禁 | 2026-08-20 默认 `clean test` 已执行 PostgreSQL/MinIO 容器测试并通过 137/0/0；2026-09-01 本机复跑时，68 个测试类共 192 个测试出现 2 个失败、28 个错误：模块依赖环、Testcontainers 初始化失败及共享 H2 的 `assets → users` 清理外键错误。与本次 Jackson 迁移直接相关的 Sync HTTP、namespace guard、Sync、ParsedDocument、Provider 和 AI 定向套件 32/32 通过 | 主链路通过不等于 PostgreSQL 全量并发行为、双设备断网恢复和真实 WebSocket 可用；当前环境也无法复现全量容器证据 | 恢复 Docker 后复跑并分离共享 H2 测试数据清理；增加 PostgreSQL/MinIO 异常与并发、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
+| P1-Test-Coverage | 新后端已覆盖主要模块自动测试；多设备和浏览器客户端仍缺业务回归保护，当前宿主无法完成全量 Testcontainers 门禁 | 2026-09-12 Task 3 fresh 聚焦 57/57、0 failures/errors/skipped；全量 239 项、0 failures、3 Docker/Testcontainers errors，错误仅为 Docker 不可用 | 主链路通过不等于 PostgreSQL 全量并发行为、双设备断网恢复和真实 WebSocket 可用；当前环境无法完成容器证据 | 恢复 Docker 后复跑全量及三项容器集成测试；继续增加 PostgreSQL/MinIO 异常与并发、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
 | P1-Asset-Verification | Asset 上传完成的服务端对象实体验证已构建，异常分支仍未闭环 | R2 已补充 sha256 metadata header、失败对象清理、MinIO integration test 和 `scripts/audit-minio-assets.ps1`；2026-08-23 新增离线 GET signer 回归 3/3，Docker 临时账号真实 upload PUT 200、READY、download GET 200/26 bytes | 对象不存在、大小/hash 不符、超时和重复完成仍可能在部署差异下产生未覆盖行为；真实生产凭据与 bucket policy 仍未验收 | 补充真实 MinIO 异常路径、完成回调和生产凭据验证 | 真实 MinIO 主链路与异常路径、凭据、bucket policy 和部署配置测试通过 | Asset/Infrastructure |
 | P1-PC-Task-Scheduling-Atomicity | 时间轴拖放已改为本地 outbox 优先，但双任务换位的持久化原子组、到期转换与过去时段保护仍与现行回归契约不一致 | 2026-09-03：Task Store 已用 `serverDeviceId` 读取本地 repository，加载先呈现本地任务、后台刷新云端，日期切换只重建内存槽位；单任务拖放不再等待远端 `PUT`，本地 repository/outbox 成功后立即更新内存，云端 push/pull 在后台执行且失败不回退本地结果。本地写入失败由 Timeline/Dashboard 通知反馈；原生 payload 现含 `taskId` 与 `sourceSlotTime`。时间轴相关 Node 套件 31 项中 26 项通过、5 项失败：负荷标签、排期换位、到期自动转换与过去时段保护；`check:r4-pc`（80 文件）通过，本机 `vue-tsc` 缺失 | 双任务本地写入仍不是持久化原子组；WebView 原生拖放、离线/409、两类转换失败、过去时段错误反馈与真实服务版本仍可能产生半交换或错误状态；无法用历史通过记录覆盖当前失败 | 先为双任务换位补齐本地原子组/服务端 swap 协调和剩余 5 个静态/行为回归，再运行 type-check、完整 PC 回归与 production build；随后在 Tauri 以过去/当前/未来槽位、已排期双向换位、未排期逾期、完成/取消、原槽、拖回待办、断网/冲突和重启后转换走查 | 当前 Node 套件、type-check、完整 PC 回归和生产 build 均通过；Tauri 上述路径可用且失败不留半交换；过去时段操作不产生写入；已过排期任务完成且保留排期，未排期逾期任务清除截止时间进入未排期 | PC/Backend |
-| P1-OpenAPI-Mobile-Schema-Lock | 新 Task 换位端点已写入 OpenAPI 和 PC generated schema，但 Mobile `schema.ts` 当前被外部进程占用，无法重新生成 | 2026-08-27 `scripts/check-openapi.ps1` 成功比较后端 artifact 与 PC schema，但报 Mobile schema stale；`scripts/generate-openapi-sdk.ps1 -SkipExport` 对 `Auralis-Mobile/src/api/generated/schema.ts` 返回 Windows `EPERM` | 契约漂移门禁不能通过，Mobile 生成类型暂未反映新端点 | 关闭占用该文件的编辑器/进程后重新运行生成与 `scripts/check-openapi.ps1`；不强制结束用户进程 | 两端 schema 与 artifact 一致，`scripts/check-openapi.ps1` 退出 0 | Contract/Mobile |
+| P1-OpenAPI-PC-Schema-Stale | **已关闭（2026-09-12）**：OpenAPI artifact 与 Server runtime 及 PC `schema.ts` 一致 | Task 3 `check-openapi.ps1` 退出 0；PC/Mobile generated schema SHA-256 均为 `2152390C192BCBE34B7618D11B71F28DF72AC9262C39625594B5EF3CC7D219C7`，包含 `subjectOverview`/`sourceOverview` 可选 `X-Overview-Request-Id` header | 无；真实 Provider/客户端联调仍由独立风险跟踪 | 保持生成器驱动并在 API 变化后重跑 artifact/schema gate | `check-openapi.ps1` 持续退出 0 | Contract/PC |
 
 ### 2026-09-07 Task 认知负荷切换复核
 
 - Task 字段删除的 Server 定向测试 8/8、PC type-check 与 R4 211/211、Mobile type-check/静态检查/协议测试 21/21 通过；V20 clean/upgrade 覆盖数据库列、约束、Task 同步 JSON 以及非 Task 载荷保留。
-- Server 全量测试仍有 28 个已知环境/共享数据错误，不视为全量通过。`P1-OpenAPI-Mobile-Schema-Lock` 仍开放：两端 schema 已一致删除目标字段，但 Mobile 文件占用使生成器无法写入，且 artifact 与客户端仍有既有 WebSocket/JsonNode 漂移，OpenAPI 整体门禁未关闭。
+- Server 全量测试仍受 Docker/Testcontainers 三项错误限制，不视为全量通过。历史 `P1-OpenAPI-Mobile-Schema-Lock` 的文件占用/漂移阻断已由 Task 3 生成器运行关闭；当前 `check-openapi.ps1` 退出 0，PC/Mobile schema 与 artifact 一致。真实 API/设备联调仍开放。
 - 未执行真实 PostgreSQL 升级和 PC/Mobile/Tablet GUI/真机验收；在这些证据补齐前，只能记为代码与自动验证完成。
 
 ### 2026-09-04 PC 排期固定补充
@@ -188,7 +248,7 @@ PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home
 
 | P1-Phase5-External-Infra | 阶段 5 的 PostgreSQL/pgvector、MinIO 主链路、默认容器门禁和 SiliconFlow embedding 单次 smoke 已通过，但真实聊天服务与异常路径未验收 | 2026-08-21 `mvn -B -ntp test` 148/0/0：PostgreSQL 17.11 + pgvector V1→V14 clean/upgrade 与 MinIO 主链路均实际运行；真实 Java Provider 链路调用 SiliconFlow `BAAI/bge-m3` 返回 1 条 embedding | 真实聊天响应、限流/断流网络、对象异常和完整部署拓扑仍可能与基线不同 | 增加 chat smoke、MinIO 异常路径和生产 Compose 验证 | migration、JPA validate、embedding 检索、对象链路、异常路径和真实 Provider 在真实依赖上通过 |
 | P1-Phase5-Ingestion-Fencing | ingestion 已具备数据库锁 claim-next、lease 过期恢复、自动轮询、有限重试和 generation 原子切换，但仍没有 lease fencing | `IngestionJobService`、`IngestionWorkerScheduler`、`IngestionWorker`、`SourceChunkService`；2026-08-17 R1-03 定向 11/11 和真实 PostgreSQL 1/1，失败 generation 不会替换旧 active generation | lease 过期后的 stale worker 仍可能在极端并发/恢复场景写入较新的任务边界之外 | 为 worker 写入增加 lease token/version fencing，并补数据库崩溃/并发/重复执行测试 | stale worker 无法提交旧任务结果，重复执行、崩溃恢复和读路径均有真实数据库证据 |
-| P1-Phase5-Provider-Security | BYOK/URL 已具备 HTTPS allowlist、IPv4/IPv6 SSRF、DNS 公网地址过滤与固定连接、重定向关闭/复核、超时和响应体上限；AI 失败日志现保留脱敏后的异常类名/message/root cause；真实网络、限流、审计和密钥轮换仍未验收 | `ProviderEndpointPolicy`、`ProviderHttpClient`、`PinnedSslSocketFactory`、`UrlSourceFetcher`、`AiStreamingService`；2026-08-23 原始异常日志/Authorization 脱敏回归与 `AiStreamingTests` 12/12 通过，真实 SiliconFlow embedding smoke 通过 | 真实 DNS/证书/代理环境仍可能暴露网络策略或 provider 异常映射问题；截断日志不替代完整上游诊断 | 补受控 DNS rebinding、redirect、超时、429/5xx、日志采集/轮转、审计和密钥轮换专项 | 安全专项测试和生产 secret/网络策略、日志采集记录通过 |
+| P1-Phase5-Provider-Security | BYOK/URL 已具备 HTTPS allowlist、IPv4/IPv6 SSRF、DNS 公网地址过滤与固定连接、重定向关闭/复核、超时和响应体上限；除 Overview 失败事件外，既有 AI 失败日志保留脱敏后的异常类名/message/root cause，Overview 现改为 allowlisted errorCode、关联字段、阶段和 exception/cause 类型；真实网络、限流、审计和密钥轮换仍未验收 | `ProviderEndpointPolicy`、`ProviderHttpClient`、`PinnedSslSocketFactory`、`UrlSourceFetcher`、`AiStreamingService`；2026-08-23 原始异常日志/Authorization 脱敏回归与 `AiStreamingTests` 12/12 通过，真实 SiliconFlow embedding smoke 通过；Task 2 Overview 日志/requestId 安全回归 19/19 | 真实 DNS/证书/代理环境仍可能暴露网络策略或 provider 异常映射问题；截断日志不替代完整上游诊断 | 补受控 DNS rebinding、redirect、超时、429/5xx、日志采集/轮转、审计和密钥轮换专项 | 安全专项测试和生产 secret/网络策略、日志采集记录通过 |
 | P1-Phase5-Suggestion-Quality | Suggestions 是确定性基线，未接入真实 LLM、RAG citation 或质量评估 | `SuggestionService` owner check 与 controller 测试通过，返回 citations 当前为空 | 产品可能误认为已具备 AI 总结/提问质量 | 接入受控模型与 RetrievalService，增加 schema、引用正确性、提示注入和人工质量验收 | 质量指标、引用回链和人工样例验收记录完成 |
 | P2-Phase5-Stream-Granularity | SSE 回调链和 OpenAI-compatible 上游增量解析已构建，但真实 Provider 网络/证书/背压和前端消费仍未验收 | `AiStreamingService`、`AiController`、`OpenAiCompatibleProvider`、`AiProviderSecurityTests`；2026-08-17 受控 SSE/超时/断流/错误测试通过 | 真实网络断线、代理缓冲、Provider 特有 SSE 变体或客户端背压仍可能影响 UI 流式体验 | 在 R2 受控真实 Provider 环境验证首包、增量、取消、断流、429/5xx、超时和前端消费 | 真实 Provider 的增量、断线、取消、超时、错误事件和前端消费契约通过 |
 
@@ -296,3 +356,31 @@ R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动
 
 - **P1-PC-OCR-GUI-Validation**：代码已实现逐页进度、跨空页继续、全空文档 `OCR_DOCUMENT_EMPTY` 和安全诊断复制，focused 自动测试覆盖；但 `1.pdf` 尚未在真实 Tauri GUI 中运行，无法证明 File Viewer、任务中心、重试/失败反馈和真实 OCR 质量。处理：使用真实 Tauri 打开 `1.pdf`，观察页级进度、全空失败和后续页继续。关闭条件：GUI 证据与结果记录完成。
 - **P1-PC-OCR-Privacy-Observation**：诊断 formatter、持久化边界和 Rust bounded log 有自动测试，未完成真实剪贴板/accessibility 及日志观察。处理：在 Windows Tauri 会话复制诊断并检查剪贴板、应用日志和 sidecar stderr。关闭条件：确认无 OCR 正文、完整图片路径、`Authorization` 或签名 URL 泄漏，并记录现场证据。
+
+### P1-PC-Overview-Server-Deduplication（2026-09-10）
+
+- 优先级：P1。
+- 证据：PC 通过 `[FILE_OVERVIEW_TRIGGER]` 记录结构化 allowlist 生命周期；服务为进入 `runFile` 的生成尝试创建 request ID，并由 API 复用到 `X-Overview-Request-Id`。Server 当前没有同一 `(user, source, revision, mode)` 的进行中去重/idempotency。
+- 影响：相同文件/修订/模式的并发请求仍可能在 Server 同时生成，造成重复 Provider 工作或结果竞态。
+- 处理动作：为 Server 增加同键进行中请求协调与幂等策略，并补并发生成回归。
+- 关闭条件：同键并发只产生一个有效进行中生成/稳定幂等结果，并取得真实 Server/Provider 证据。
+
+### P1-PC-Overview-Timeout-Mismatch（2026-09-10）
+
+- 优先级：P1。
+- 证据：当前 PC Axios 总体 timeout 仍短于 Server 可能包含多次 Provider 调用的 Overview 生成窗口；本任务未改变 timeout 行为。自动 Overview focused 16/16、PC R4 310/310 通过，但不覆盖真实长耗时网络。
+- 影响：Server 仍在生成时，PC 可能先超时并将一次可完成的请求表现为失败，且服务端工作可能继续。
+- 处理动作：在受控真实 Provider/反向代理环境对齐端到端 timeout、取消和失败语义；确认普通 chat/stream/embedding 的既有 timeout 不回归。
+- 关闭条件：长耗时 Overview 在 PC、Server、Provider 和代理链路取得一致成功/超时证据，且普通 AI 路径回归通过。
+
+### P1-PC-Overview-Tauri-Provider-Attribution（2026-09-10）
+
+- 优先级：P1。
+- 证据：自动测试验证 TypeScript 封闭类型/已知调用点触发值、request ID header 传递和 coalescing；真实 Tauri 日志、Provider 运行和 Server 关联尚未观察，preflight/skip 事件可能没有 `requestId`。
+- 影响：无法确认真实桌面启动、联网恢复、任务变化和手动重试是否按预期归因，也无法确认 Provider 日志能否端到端关联而不泄露敏感信息。
+- 处理动作：在 fresh Tauri 运行中覆盖 bootstrap/online/sync/job-change/READY/manual retry，采集脱敏 PC、Server 和 Provider 事件并核对 request ID。
+- 关闭条件：真实 Tauri 各触发路径均有正确归因，Provider/Server 日志可关联且无敏感字段，并完成业务验收记录。
+### 2026-09-15 最小 JSON 诊断待真实重跑
+
+- 已增加两处临时、非改变行为的证据：Provider 发送前从已序列化 body 记录 `AI_JSON_MODE`（只含 structured JSON、`json_object`、maxTokens/stage）；Overview FINAL 在既有 validator 前对原始 `message.content` 直接执行 `readTree`，记录 `FINAL_JSON_CHECK`（valid、字符数、Jackson 行列和异常类型），不做 fence stripping，因此 fenced JSON 会 valid=false。不记录 body、prompt、正文、原始 exception message、URL 或凭据，普通聊天/流式不变。
+- 自动聚焦测试已通过；尚未部署或重跑真实 DeepSeek。若重跑仍失败，应结合 `FINAL_JSON_CHECK valid` 与 `JSON_PARSE`/schema 阶段判断是 JSON 文本非法还是 schema 校验失败；在此之前不引入修复性重试或放宽 validator。

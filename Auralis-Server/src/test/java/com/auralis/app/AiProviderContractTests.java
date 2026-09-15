@@ -27,6 +27,19 @@ class AiProviderContractTests {
 
         assertThat(response.content()).isEqualTo("hello");
         assertThat(response.inputTokens()).isEqualTo(1);
+        assertThat(response.finishReason()).isNull();
+        for (String allowed : List.of("stop", "length", "tool_calls", "content_filter",
+                "insufficient_system_resource", "aborted")) {
+            assertThat(new AiProviderResponse("content", 1, 1, allowed).finishReason())
+                    .isEqualTo(allowed);
+        }
+        assertThat(new AiProviderResponse("content", 1, 1, "provider-specific").finishReason())
+                .isEqualTo("other");
+        assertThat(new AiProviderResponse("content", 1, 1, "x".repeat(65)).finishReason())
+                .isEqualTo("other");
+        assertThat(new AiProviderResponse("content", 1, 1, "length\ninjected").finishReason())
+                .isEqualTo("other");
+        assertThat(new AiProviderResponse("content", 1, 1, null).finishReason()).isNull();
     }
 
     private static final class FakeProvider implements AiProviderPort {

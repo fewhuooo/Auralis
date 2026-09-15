@@ -15,9 +15,15 @@
 - Run the PC and Server implementation tasks serially because both operate on the shared working tree.
 - Do not modify `Auralis-PC/src/services/localSchema.ts`, the SQLite schema version, `docs/contracts/Database.md`, authentication, Provider credentials, deployment topology, or Mobile runtime code.
 - Do not add automatic retry, cooldown, backoff, a generation table, Server single-flight, status polling, or cross-instance idempotency.
-- Intermediate calls use `maxTokens = 1024`; final calls use `maxTokens = 4096`; normalized intermediate JSON is at most `4000` Java characters and must fit in a Reduce prompt when paired with itself.
+- Intermediate calls use `maxTokens = 3072`; final calls use `maxTokens = 4096`; normalized intermediate JSON is at most `5200` Java characters and must fit in a Reduce prompt when paired with itself (`12000` characters).
 - Implementation follows TDD: add one failing behavior test, run it and record the expected failure, then write only enough production code to pass.
 - Do not create implementation commits while the working tree contains overlapping user changes unless the user separately authorizes the exact staged paths. Preserve changes unstaged and report them by file.
+
+### Task 4E: Temporary final JSON diagnosis
+
+- [x] Add TDD coverage for the serialized DeepSeek FINAL JSON-mode envelope and safe FINAL valid/invalid JSON check logs.
+- [x] Log only allowlisted `AI_JSON_MODE` fields from the serialized body; before the existing validator, run `FINAL_JSON_CHECK` directly on raw `message.content` and log only scale/location/type metadata. No fence stripping is performed for this diagnostic, so fenced JSON is intentionally `valid=false` even though the existing validator may normalize it later.
+- [ ] Deploy and rerun the real DeepSeek Overview request; automated green does not close the external validation or business acceptance boundary.
 
 ---
 
@@ -305,7 +311,7 @@ void usesExplicitStageSpecificOutputTokenBudgets() {
 
     assertThat(requests).extracting(AiProviderRequest::maxTokens)
             .doesNotContainNull()
-            .contains(1024, 4096);
+            .contains(3072, 4096);
 }
 ```
 
@@ -324,7 +330,7 @@ Expected: fail because every Overview request currently has `maxTokens == null`.
 
 - [ ] **Step 3: Add failing intermediate-size tests**
 
-Extend the Provider stub so queued responses can specify `content` and `outputTokens`. Add cases for `outputTokens = 1025`, normalized JSON longer than 4000 characters, and a result whose self-pair prompt exceeds `maximumPromptChars`. Assert `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE` and that no Reduce request follows the rejected MAP.
+Extend the Provider stub so queued responses can specify `content` and `outputTokens`. Add cases for normalized JSON at `5200` (accepted), `5201` (rejected), and a result whose self-pair prompt exceeds `maximumPromptChars`. Assert `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE` and that no Reduce request follows the rejected MAP; do not reject solely on output token usage.
 
 ```java
 assertThatThrownBy(() -> service.generateSource(userId, request))
@@ -345,27 +351,26 @@ Run the same focused Maven command. Expected: the oversize cases proceed under c
 Add constants and stage type:
 
 ```java
-private static final int INTERMEDIATE_MAX_TOKENS = 1_024;
-private static final int FINAL_MAX_TOKENS = 4_096;
-private static final int MAX_INTERMEDIATE_JSON_CHARS = 4_000;
+ private static final int INTERMEDIATE_MAX_TOKENS = 3_072;
+ private static final int FINAL_MAX_TOKENS = 4_096;
+ private static final int MAX_INTERMEDIATE_JSON_CHARS = 5_200;
 private enum OutputStage { INTERMEDIATE, FINAL }
 ```
 
-Make the system prompt explicitly state that an `INTERMEDIATE` response is a compact machine-consumed result bounded to 4000 serialized characters. Pass `OutputStage` to `invoke(...)`, select `maxTokens`, and use the exact stage-specific system message in both the prompt-length check and `AiProviderRequest`.
+Make the system prompt explicitly state that an `INTERMEDIATE` response is a compact machine-consumed result bounded to 5200 serialized characters. Pass `OutputStage` to `invoke(...)`, select `maxTokens`, and use the exact stage-specific system message in both the prompt-length check and `AiProviderRequest`.
 
 Classify Source MAP as `FINAL` only when `batches.size() == 1`; otherwise classify every MAP output as `INTERMEDIATE`. Classify Subject generation as `FINAL`. In Reduce, classify group calls as `FINAL` only when `groups.size() == 1`; otherwise use `INTERMEDIATE`.
 
-After parsing an intermediate response, validate all three limits:
+After parsing an intermediate response, validate the normalized-character and self-pair limits:
 
 ```java
 private void validateIntermediateOutput(OverviewMode mode, String instruction,
                                         OverviewResponse parsed, AiProviderResponse response) {
     String normalized = write(parsed);
-    boolean tokenOverflow = response.outputTokens() > INTERMEDIATE_MAX_TOKENS;
     boolean characterOverflow = normalized.length() > MAX_INTERMEDIATE_JSON_CHARS;
     boolean cannotPair = !fits(mode, instruction,
             userData(mode, instruction, "mapJson", List.of(parsed, parsed)));
-    if (tokenOverflow || characterOverflow || cannotPair) {
+    if (characterOverflow || cannotPair) {
         throw new DomainException("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE",
                 "AI provider overview output exceeded the intermediate budget");
     }
@@ -468,7 +473,7 @@ Add assertions to the existing output-capture tests that phase and final logs co
 
 - [ ] **Step 5: Verify Provider body behavior**
 
-Extend `AiProviderResilienceTests` with a captured request body and assert `max_tokens == 1024`. The production Provider already conditionally serializes this field; this test prevents the Overview service/provider boundary from regressing.
+Extend `AiProviderResilienceTests` with a captured request body and assert the permanent Overview stage values `max_tokens == 3072` and `max_tokens == 4096`. The production Provider already conditionally serializes this field; this test prevents the Overview service/provider boundary from regressing.
 
 - [ ] **Step 6: Run Task 4 GREEN tests**
 
@@ -479,6 +484,210 @@ Run:
 ```
 
 Expected: every test passes with the new 502 mappings and consistent safe logs.
+
+---
+
+### Task 4A: DeepSeek structured Overview response contract
+
+**Files:**
+- Modify: `Auralis-Server/src/main/java/com/auralis/app/ai/AiProviderRequest.java`
+- Modify: `Auralis-Server/src/main/java/com/auralis/app/ai/OverviewGenerationService.java`
+- Modify: `Auralis-Server/src/main/java/com/auralis/app/ai/internal/provider/OpenAiCompatibleProvider.java`
+- Test: `Auralis-Server/src/test/java/com/auralis/app/AiOverviewServiceTests.java`
+- Test: `Auralis-Server/src/test/java/com/auralis/app/AiProviderResilienceTests.java`
+- Test: `Auralis-Server/src/test/java/com/auralis/app/AiStreamingTests.java`
+
+**Interfaces:**
+- Consumes: the existing four-argument `AiProviderRequest` construction used by chat, streaming, tests, and
+  compatibility providers.
+- Produces: `AiProviderRequest.structuredJson()`; Overview requests set it to `true`, while the existing
+  four-argument constructor delegates with `false` so non-Overview behavior is unchanged.
+
+- [ ] **Step 1: Add the failing request-semantics tests**
+
+In `AiOverviewServiceTests`, assert every request captured from Source MAP/REDUCE and Subject direct
+generation has `structuredJson() == true`. In `AiProviderResilienceTests`, construct a structured request and
+capture the serialized DeepSeek body:
+
+```java
+AiProviderRequest request = new AiProviderRequest(
+        "deepseek-v4-flash",
+        List.of(new AiProviderRequest.Message(AiMessageRole.USER, "return json")),
+        0.1,
+        1_024,
+        true);
+
+JsonNode body = new ObjectMapper().readTree(capturedBody.get());
+assertThat(body.path("response_format").path("type").asText()).isEqualTo("json_object");
+assertThat(body.path("thinking").path("type").asText()).isEqualTo("disabled");
+```
+
+Add a second request using the existing four-argument constructor and assert both fields are absent. Instantiate
+`DeepSeekAiProvider` for the DeepSeek case so the test exercises the actual provider type.
+
+- [ ] **Step 2: Run the request-semantics RED tests**
+
+Run:
+
+```powershell
+cd D:\CodeBase\Active\Auralis\Auralis-Server
+.\mvnw.cmd -B -ntp '-Dtest=AiOverviewServiceTests,AiProviderResilienceTests' test
+```
+
+Expected: test compilation fails because `structuredJson` and the five-argument constructor do not exist.
+
+- [ ] **Step 3: Extend the internal request without breaking ordinary callsites**
+
+Change the record to:
+
+```java
+public record AiProviderRequest(
+        String model,
+        List<Message> messages,
+        Double temperature,
+        Integer maxTokens,
+        boolean structuredJson) {
+
+    public AiProviderRequest(String model, List<Message> messages,
+                             Double temperature, Integer maxTokens) {
+        this(model, messages, temperature, maxTokens, false);
+    }
+
+    public AiProviderRequest {
+        messages = List.copyOf(messages);
+    }
+}
+```
+
+Set the final argument to `true` only in `OverviewGenerationService.invoke`.
+
+- [ ] **Step 4: Serialize structured request controls at the provider boundary**
+
+In `OpenAiCompatibleProvider.requestBody`, add:
+
+```java
+if (request.structuredJson()) {
+    body.put("response_format", Map.of("type", "json_object"));
+    if (providerType == AiProviderType.DEEPSEEK) {
+        body.put("thinking", Map.of("type", "disabled"));
+    }
+}
+```
+
+Do not infer structured mode from `maxTokens`, model names, prompt text, or whether the call is streaming.
+
+- [ ] **Step 5: Run the request-semantics GREEN tests**
+
+Run the Step 2 command. Expected: all selected tests pass, ordinary requests omit both new JSON members, and
+all Overview requests remain structured.
+
+- [ ] **Step 6: Add the failing safe-envelope diagnostic test**
+
+Return this controlled 2xx body from the fake transport:
+
+```json
+{
+  "choices": [{
+    "finish_reason": "length",
+    "message": {"content": null, "reasoning_content": "sensitive-reasoning-marker"}
+  }],
+  "usage": {"prompt_tokens": 100, "completion_tokens": 1024}
+}
+```
+
+Using Spring Boot's `OutputCaptureExtension`, assert the call still throws `MODEL_PROVIDER_ERROR`; the warning
+contains `provider=DEEPSEEK`, an allowlisted model identifier, `finishReason=length`,
+`hasReasoningContent=true`, bounded `reasoningChars`/`contentChars`, and token/count metadata; and
+it does not contain `sensitive-reasoning-marker`, request content, endpoint URL, or API key.
+
+- [ ] **Step 7: Run the diagnostic RED test**
+
+Run:
+
+```powershell
+.\mvnw.cmd -B -ntp '-Dtest=AiProviderResilienceTests' test
+```
+
+Expected: the controlled response already fails safely, but the new allowlisted diagnostic assertion fails
+because `parseResponse` currently logs no response-envelope metadata.
+
+- [ ] **Step 8: Add bounded envelope diagnostics without content fallback**
+
+Pass the request into `parseResponse`. Before throwing for missing, non-textual, or blank content, log a single
+warning containing only bounded metadata derived from node types, counts, `finish_reason`, and `usage`. Never
+serialize the response node and never log `content` or `reasoning_content`. Keep the thrown public code and
+message as `MODEL_PROVIDER_ERROR` / `AI provider returned an invalid response`.
+
+- [ ] **Step 9: Run Task 4A GREEN and compatibility tests**
+
+Before the final command, add compatibility assertions that captured ordinary streaming requests have
+`structuredJson=false`; ordinary OpenAI-compatible requests omit both structured members; and structured
+OpenAI-compatible requests include `response_format=json_object` but omit the DeepSeek-only `thinking` member.
+
+Run:
+
+```powershell
+.\mvnw.cmd -B -ntp '-Dtest=AiOverviewServiceTests,AiOverviewControllerTests,AiProviderResilienceTests,AiStreamingTests,AiStreamingControllerTests' test
+```
+
+Expected: all selected tests pass. This proves request serialization and safe adapter behavior, not a real
+DeepSeek response or production deployment.
+
+---
+
+### Task 4B: Measure natural DeepSeek Overview output
+
+This temporary diagnostic task supersedes the Task 4 token ceilings only for current Overview completion
+requests. Source/Subject API contracts, ordinary chat/stream behavior, schema validation and convergence
+guards remain unchanged.
+
+- [x] Set Overview `AiProviderRequest.maxTokens` to `null` for MAP, REDUCE and direct calls, and assert the
+  serialized structured DeepSeek body omits `max_tokens`.
+- [x] Remove the intermediate `outputTokens>1024` pre-parse rejection while retaining normalized JSON
+  `<=4000` characters and self-pair prompt fit.
+- [x] Carry allowlisted `finish_reason` in `AiProviderResponse`, retaining the three-argument compatibility
+  constructor; normalize unknown, overlong and newline-bearing values to `other`.
+- [x] Record `responseChars`, `outputTokens` and safe `finishReason` at `JSON_PARSE_START` without logging
+  response content.
+- [x] Run fresh test compilation and the Overview/Provider/Streaming compatibility suite.
+- [x] Rebuild the local backend and trigger one real Overview attempt. MAP 1–5 returned complete JSON with
+  `finishReason=stop`; observed output tokens were 991, 1367, 1731, 1613 and 2071. MAP 5 then hit the retained
+  intermediate convergence guard, so MAP 6/REDUCE did not run.
+- [x] Add allowlisted `INTERMEDIATE_BUDGET_CHECK` diagnostics distinguishing normalized-character overflow
+  from self-pair overflow without logging content or prompts.
+- [x] Rebuild the local backend with the budget diagnostics and confirm the container is healthy.
+- [x] Trigger another real Overview attempt: MAP2 measured `normalizedChars=5105>4000` and
+  `selfPairPromptChars=11450<=12000`, proving character-only overflow after a natural `stop`.
+- [x] Choose and verify the permanent compact-output/batching/ceiling policy from both real runs: intermediate `3072`, final `4096`, normalized intermediate JSON `5200`, self-pair `12000`.
+
+### Task 4C: Test coverage-preserving intermediate prompt compression
+
+- [x] Add a failing service test asserting that only intermediate requests instruct the model to preserve every
+  distinct topic, merge only duplicate/equivalent nodes, shorten descriptive fields, and target `<=3600`
+  serialized characters without adding chapter/section count caps.
+- [x] Run `AiOverviewServiceTests` and confirm the new assertion fails because the existing prompt only says
+  `compact <=4000 chars`.
+- [x] Replace the one-line intermediate suffix with the approved coverage-preserving compression directive;
+  leave the final prompt, validators, batching and Provider request parameters unchanged.
+- [x] Re-run `AiOverviewServiceTests`, then the 58-test Overview/Provider/Streaming compatibility set.
+- [x] Review the exact diff and safe prompt boundaries, rebuild only backend, and run the same 42-chunk real
+  generation. All six MAP outputs fit; REDUCE group 2 returned 4678 chars with self-pair 10899/12000, so
+  prompt compression alone is insufficient as a hard guarantee.
+
+---
+
+### Task 4D: Permanent bounded completion policy (2026-09-15)
+
+- [x] Record the approved permanent policy: intermediate MAP/non-final REDUCE `3072`, final completion
+  `4096`, normalized intermediate JSON `5200`, self-pair prompt `12000`; retain the compact prompt and
+  do not add automatic compression retry or output-token post-rejection.
+- [x] Add RED tests for stage-specific request budgets and normalized `5200`/`5201` boundaries, then
+  implement only stage selection and the normalized limit.
+- [x] Verify focused Overview `38/38` and Overview/Provider/Controller/Streaming compatibility `63/63`.
+- [x] Deploy the tested backend image and verify the container is healthy.
+- [ ] Complete real DeepSeek end-to-end and business content-coverage acceptance. The first deployed
+  42-chunk run passed all MAP and first-round REDUCE calls, then failed final JSON parsing after a 2xx,
+  natural `stop`, `2992` output tokens and `6556` response characters.
 
 ---
 
@@ -504,8 +713,8 @@ Record exactly these facts after code tests pass:
 PC: FAILED and partial READY file Overview caches are terminal for automatic triggers;
 only a visible user retry action creates a new request.
 
-Server: intermediate calls use 1024 max tokens, final calls use 4096;
-accepted intermediate normalized JSON is <= 4000 characters and self-pair fits.
+Server: intermediate calls use 3072 max tokens, final calls use 4096;
+accepted intermediate normalized JSON is <= 5200 characters and self-pair fits within 12000.
 
 API: OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE and OVERVIEW_REDUCE_NO_PROGRESS
 return application/problem+json with HTTP 502.

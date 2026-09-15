@@ -3,7 +3,7 @@ import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob,
 import type { DocumentCacheReceipt } from '@/api/tauri'
 import { DOCUMENT_PAYLOAD_FORMAT, isDocumentCacheReceiptV1, MAX_PACKAGE_METADATA_CHARS } from '@/api/tauri'
 
-export const LOCAL_SCHEMA_VERSION = 6
+export const LOCAL_SCHEMA_VERSION = 7
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -125,6 +125,19 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_document_jobs_user_device_phase
     ON document_processing_jobs (user_id, device_id, phase, updated_at)`,
+  `CREATE TABLE IF NOT EXISTS ai_overview_cache (
+    user_id TEXT NOT NULL, device_id TEXT NOT NULL,
+    scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')),
+    scope_id TEXT NOT NULL, revision_key TEXT NOT NULL CHECK (length(trim(revision_key)) > 0),
+    schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version = 1), title TEXT NOT NULL,
+    outline_json TEXT, summary_json TEXT, outline_generated_at TEXT, summary_generated_at TEXT,
+    input_fingerprint TEXT, status TEXT NOT NULL CHECK (status IN ('READY', 'FAILED')),
+    error_code TEXT, error_detail TEXT, updated_at TEXT NOT NULL,
+    CHECK ((scope_type = 'SUBJECT' AND revision_key = 'subject-v1') OR (scope_type = 'FILE' AND revision_key <> 'subject-v1')),
+    PRIMARY KEY (user_id, device_id, scope_type, scope_id, revision_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_ai_overview_cache_scope
+    ON ai_overview_cache (user_id, device_id, scope_type, scope_id, updated_at)`,
   `CREATE TABLE IF NOT EXISTS legacy_unassigned_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_table TEXT NOT NULL,

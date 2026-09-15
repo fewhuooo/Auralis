@@ -10,6 +10,7 @@ import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/lo
 import { LocalDatabaseRuntime } from '@/services/localDatabaseRuntime';
 import { LocalSqlQueue, serializeLocalSqlDatabase } from '@/services/localSqlQueue';
 import { replaceLocalResourceSnapshot } from '@/api/tauri';
+import { OverviewRepository } from '@/services/overviewRepository';
 
 // The legacy methods below still map many historical row shapes dynamically.
 // Keep their boundary dynamic while new R4 repositories use LocalSqlDatabase.
@@ -1136,4 +1137,11 @@ export async function getDocumentProcessingJobRepository(
     `document-jobs:${userId}:${serverDeviceId}`,
     () => new DocumentProcessingJobRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() }),
   );
+}
+
+/** Returns the owner/device-scoped derived overview cache on the shared DB. */
+export async function getOverviewRepository(userId: string, serverDeviceId: string): Promise<OverviewRepository> {
+  await localDb.init();
+  if (db === 'localstorage') return new OverviewRepository(userId, serverDeviceId);
+  return new OverviewRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() });
 }

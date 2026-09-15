@@ -1,6 +1,7 @@
 package com.auralis.app.ai.internal.security;
 
 import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.config.AuralisProperties;
 import org.slf4j.Logger;
@@ -30,19 +31,35 @@ public class ProviderHttpClient {
     private final ObjectMapper objectMapper;
     private final ProviderHttpTransport transport;
     private final long maxResponseBytes;
+    private final long connectTimeoutMillis;
+    private final long responseTimeoutMillis;
 
     @Autowired
     public ProviderHttpClient(ObjectMapper objectMapper, AuralisProperties properties) {
         this(objectMapper,
                 new HttpsUrlConnectionTransport(
+                        properties.ai().providerConnectTimeoutMillis(),
                         properties.ai().requestTimeoutMillis(), properties.ai().providerMaxResponseBytes()),
-                properties.ai().providerMaxResponseBytes());
+                properties.ai().providerMaxResponseBytes(),
+                properties.ai().providerConnectTimeoutMillis(),
+                properties.ai().requestTimeoutMillis());
     }
 
     public ProviderHttpClient(ObjectMapper objectMapper, ProviderHttpTransport transport, long maxResponseBytes) {
+        this(objectMapper, transport, maxResponseBytes, 3_000, 10_000);
+    }
+
+    public ProviderHttpClient(
+            ObjectMapper objectMapper,
+            ProviderHttpTransport transport,
+            long maxResponseBytes,
+            long connectTimeoutMillis,
+            long responseTimeoutMillis) {
         this.objectMapper = objectMapper;
         this.transport = transport;
         this.maxResponseBytes = maxResponseBytes;
+        this.connectTimeoutMillis = requirePositiveTimeout(connectTimeoutMillis);
+        this.responseTimeoutMillis = requirePositiveTimeout(responseTimeoutMillis);
     }
 
     public <T> T postJson(
@@ -51,6 +68,16 @@ public class ProviderHttpClient {
             String apiKey,
             Object body,
             Class<T> responseType) throws IOException {
+        return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            long responseTimeoutMillis) throws IOException {
         if (endpoint == null || path == null || !path.startsWith("/")
                 || apiKey == null || apiKey.isBlank() || responseType == null) {
             throw new IllegalArgumentException("Provider request is invalid");
@@ -61,13 +88,15 @@ public class ProviderHttpClient {
         } catch (JacksonException exception) {
             throw new IOException("Could not serialize provider request", exception);
         }
+        logStructuredJsonMode(requestBody);
         long startedAt = System.nanoTime();
         LOGGER.info(
                 "AI_PROVIDER_HTTP_START kind=json host={} port={} path={} resolvedAddressCount={} requestBytes={} responseType={}",
                 endpoint.host(), endpoint.port(), path, endpoint.addresses().size(), requestBody.length,
                 responseType.getSimpleName());
         try {
-            byte[] responseBody = transport.post(endpoint, path, apiKey, requestBody);
+            byte[] responseBody = transport.post(endpoint, path, apiKey, requestBody,
+                    connectTimeoutMillis, requirePositiveTimeout(responseTimeoutMillis));
             if (responseBody == null || responseBody.length > maxResponseBytes) {
                 throw new ProviderResponseTooLargeException();
             }
@@ -99,6 +128,31 @@ public class ProviderHttpClient {
         }
     }
 
+    private void logStructuredJsonMode(byte[] requestBody) {
+        try {
+            JsonNode body = objectMapper.readTree(requestBody);
+            JsonNode responseFormat = body == null ? null : body.path("response_format");
+            JsonNode type = responseFormat == null ? null : responseFormat.path("type");
+            JsonNode maxTokens = body == null ? null : body.path("max_tokens");
+            if (type == null || !type.isTextual() || !"json_object".equals(type.asText())
+                    || maxTokens == null || !maxTokens.isNumber()) {
+                return;
+            }
+            int tokenBudget = maxTokens.asInt(-1);
+            String stage = switch (tokenBudget) {
+                case 3_072 -> "INTERMEDIATE";
+                case 4_096 -> "FINAL";
+                default -> null;
+            };
+            if (stage != null) {
+                LOGGER.info("AI_JSON_MODE structuredJson=true responseFormat=json_object maxTokens={} stage={}",
+                        tokenBudget, stage);
+            }
+        } catch (JacksonException ignored) {
+            // The body was already serialized successfully; diagnostics must not alter provider behavior.
+        }
+    }
+
     public void postStream(
             ResolvedProviderEndpoint endpoint,
             String path,
@@ -126,7 +180,7 @@ public class ProviderHttpClient {
                 lineCount.incrementAndGet();
                 responseBytes.addAndGet(line == null ? 0 : line.getBytes(StandardCharsets.UTF_8).length + 1L);
                 lineConsumer.accept(line);
-            });
+            }, connectTimeoutMillis, responseTimeoutMillis);
             LOGGER.info(
                     "AI_PROVIDER_HTTP_SUCCESS kind=stream host={} port={} path={} status=2xx lineCount={} responseBytes={} elapsedMs={}",
                     endpoint.host(), endpoint.port(), path, lineCount.get(), responseBytes.get(),
@@ -154,12 +208,15 @@ public class ProviderHttpClient {
 
     private static final class HttpsUrlConnectionTransport implements ProviderHttpTransport {
 
-        private final int timeoutMillis;
+        private final int connectTimeoutMillis;
+        private final int responseTimeoutMillis;
         private final long maxResponseBytes;
         private final SSLSocketFactory defaultSocketFactory;
 
-        private HttpsUrlConnectionTransport(long timeoutMillis, long maxResponseBytes) {
-            this.timeoutMillis = Math.toIntExact(Math.min(Integer.MAX_VALUE, Math.max(1, timeoutMillis)));
+        private HttpsUrlConnectionTransport(long connectTimeoutMillis, long responseTimeoutMillis,
+                                            long maxResponseBytes) {
+            this.connectTimeoutMillis = toIntTimeout(connectTimeoutMillis);
+            this.responseTimeoutMillis = toIntTimeout(responseTimeoutMillis);
             this.maxResponseBytes = maxResponseBytes;
             this.defaultSocketFactory = defaultSocketFactory();
         }
@@ -167,10 +224,18 @@ public class ProviderHttpClient {
         @Override
         public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody)
                 throws IOException {
+            return post(endpoint, path, apiKey, requestBody, connectTimeoutMillis, responseTimeoutMillis);
+        }
+
+        @Override
+        public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody,
+                           long connectTimeoutMillis, long responseTimeoutMillis) throws IOException {
             URI target = buildTargetUri(endpoint, path);
             HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
-            connection.setConnectTimeout(timeoutMillis);
-            connection.setReadTimeout(timeoutMillis);
+            int connectTimeout = toIntTimeout(connectTimeoutMillis);
+            int responseTimeout = toIntTimeout(responseTimeoutMillis);
+            connection.setConnectTimeout(connectTimeout);
+            connection.setReadTimeout(responseTimeout);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
@@ -179,7 +244,7 @@ public class ProviderHttpClient {
             connection.setRequestProperty("Authorization", "Bearer " + apiKey);
             connection.setFixedLengthStreamingMode(requestBody.length);
             connection.setSSLSocketFactory(new PinnedSslSocketFactory(
-                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), timeoutMillis));
+                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout));
             connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
             try {
                 connection.getOutputStream().write(requestBody);
@@ -202,10 +267,25 @@ public class ProviderHttpClient {
                 String apiKey,
                 byte[] requestBody,
                 java.util.function.Consumer<String> lineConsumer) throws IOException {
+            postStream(endpoint, path, apiKey, requestBody, lineConsumer,
+                    connectTimeoutMillis, responseTimeoutMillis);
+        }
+
+        @Override
+        public void postStream(
+                ResolvedProviderEndpoint endpoint,
+                String path,
+                String apiKey,
+                byte[] requestBody,
+                java.util.function.Consumer<String> lineConsumer,
+                long connectTimeoutMillis,
+                long responseTimeoutMillis) throws IOException {
             URI target = buildTargetUri(endpoint, path);
             HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
-            connection.setConnectTimeout(timeoutMillis);
-            connection.setReadTimeout(timeoutMillis);
+            int connectTimeout = toIntTimeout(connectTimeoutMillis);
+            int responseTimeout = toIntTimeout(responseTimeoutMillis);
+            connection.setConnectTimeout(connectTimeout);
+            connection.setReadTimeout(responseTimeout);
             connection.setInstanceFollowRedirects(false);
             connection.setRequestMethod("POST");
             connection.setDoOutput(true);
@@ -214,7 +294,7 @@ public class ProviderHttpClient {
             connection.setRequestProperty("Authorization", "Bearer " + apiKey);
             connection.setFixedLengthStreamingMode(requestBody.length);
             connection.setSSLSocketFactory(new PinnedSslSocketFactory(
-                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), timeoutMillis));
+                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout));
             connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
             try {
                 connection.getOutputStream().write(requestBody);
@@ -281,6 +361,17 @@ public class ProviderHttpClient {
 
     private long elapsedMillis(long startedAt) {
         return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
+    private static long requirePositiveTimeout(long timeoutMillis) {
+        if (timeoutMillis <= 0) {
+            throw new IllegalArgumentException("Provider timeout must be positive");
+        }
+        return timeoutMillis;
+    }
+
+    private static int toIntTimeout(long timeoutMillis) {
+        return Math.toIntExact(Math.min(Integer.MAX_VALUE, requirePositiveTimeout(timeoutMillis)));
     }
 
 }

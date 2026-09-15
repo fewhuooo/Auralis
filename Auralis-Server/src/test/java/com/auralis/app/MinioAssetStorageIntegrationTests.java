@@ -150,7 +150,7 @@ class MinioAssetStorageIntegrationTests {
                 new AuralisProperties.Ai(
                         false, "test-encryption-key", "DEEPSEEK",
                         new AuralisProperties.Defaults(null, null, null),
-                        1000, 12000, 8, 1024,
+                        3000, 1000, 120000, 12000, 8, 1024,
                         1000, 1000, 1, 1024 * 1024, List.of(), false, 1000, 1000, 1));
     }
 

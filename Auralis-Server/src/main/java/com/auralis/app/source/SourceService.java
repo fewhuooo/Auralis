@@ -12,7 +12,6 @@ import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
-import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.source.ParsedDocumentStatus;
 import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,7 +38,7 @@ public class SourceService {
     private final SubjectService subjectService;
     private final ApplicationEventPublisher eventPublisher;
     private final ParsedDocumentRepository parsedDocumentRepository;
-    private final IngestionJobService ingestionJobService;
+    private final ParsedDocumentIngestionPort ingestionJobService;
 
     public SourceService(
             SourceRepository sourceRepository,
@@ -47,7 +46,7 @@ public class SourceService {
             SubjectService subjectService,
             ApplicationEventPublisher eventPublisher,
             ParsedDocumentRepository parsedDocumentRepository,
-            IngestionJobService ingestionJobService) {
+            ParsedDocumentIngestionPort ingestionJobService) {
         this.sourceRepository = sourceRepository;
         this.assetRepository = assetRepository;
         this.subjectService = subjectService;

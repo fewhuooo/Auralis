@@ -6,7 +6,13 @@ public record AiProviderRequest(
         String model,
         List<Message> messages,
         Double temperature,
-        Integer maxTokens) {
+        Integer maxTokens,
+        boolean structuredJson) {
+
+    public AiProviderRequest(String model, List<Message> messages,
+                             Double temperature, Integer maxTokens) {
+        this(model, messages, temperature, maxTokens, false);
+    }
 
     public AiProviderRequest {
         messages = List.copyOf(messages);

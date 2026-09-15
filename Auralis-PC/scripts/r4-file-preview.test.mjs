@@ -258,7 +258,41 @@ test('useSourceStore removes a deleted file from the projection before slow docu
   assert.doesNotMatch(source.slice(projectionRemove, schedulerCleanup), /await\s+documentScheduler\?\.discard/)
 })
 
-test('SubjectWorkspace renders the selected file directly and keeps knowledge blocks as the summary surface', () => {
+test('useSourceStore fences file Overviews before sync and document cleanup', () => {
+  const storePath = path.resolve('src/store/useSourceStore.ts')
+  const source = fs.readFileSync(storePath, 'utf8')
+  const deleteStart = source.indexOf('async function deleteSourceFile')
+  const projectionRemove = source.indexOf('sources.value = sources.value.filter', deleteStart)
+  const overviewFence = source.indexOf('fileOverviewGenerator?.discardFileOverview(id)', deleteStart)
+  const sync = source.indexOf('scheduleSync()', deleteStart)
+  const schedulerCleanup = source.indexOf('documentScheduler?.discard(id)', deleteStart)
+  const deleteEnd = source.indexOf('\n  async function saveSourceFileCatalog', deleteStart)
+
+  assert.ok(overviewFence > projectionRemove, 'Overview fence must follow local projection removal')
+  assert.ok(sync > overviewFence, 'sync must be scheduled after the Overview fence is invoked')
+  assert.ok(schedulerCleanup > sync, 'document cleanup must be invoked after sync scheduling')
+  assert.doesNotMatch(source.slice(deleteStart, deleteEnd), /console\.warn\([^\n]*,\s*error\)/)
+})
+
+test('SubjectWorkspace fallback cannot generate file Overviews without the runtime gate', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+  const fallback = source.slice(source.indexOf('new OverviewGenerationService({'))
+  assert.match(fallback, /isFileGenerationEligible:\s*async\s*\(\)\s*=>\s*false/)
+  assert.match(fallback, /getLocalFileGenerationRevision:\s*async\s*\(\)\s*=>\s*null/)
+})
+
+test('SubjectWorkspace promotes a subject-only fallback when the matching runtime starts later', () => {
+  const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
+  const source = fs.readFileSync(workspacePath, 'utf8')
+  const ensureStart = source.indexOf('const ensureOverviewRuntime')
+  const ensureSource = source.slice(ensureStart, ensureStart + 1800)
+  assert.match(ensureSource, /runtime\?\.userId === userId && runtime\.serverDeviceId === serverDeviceId/)
+  assert.match(ensureSource, /const matchingRuntime = runtime\?\.userId === userId && runtime\.serverDeviceId === serverDeviceId/)
+  assert.match(ensureSource, /if \(overviewGeneration !== matchingRuntime\.overviewGeneration\) overviewGeneration = matchingRuntime\.overviewGeneration/)
+})
+
+test('SubjectWorkspace renders files directly and can replace the middle preview with a local AI summary', () => {
   const workspacePath = path.resolve('src/views/SubjectWorkspace/index.vue')
   const source = fs.readFileSync(workspacePath, 'utf8')
   const previewSource = fs.readFileSync(path.resolve('src/components/FilePreview.vue'), 'utf8')
@@ -266,7 +300,8 @@ test('SubjectWorkspace renders the selected file directly and keeps knowledge bl
   assert.match(source, /:bare="true"/)
   assert.match(previewSource, /<header v-if="!bare" class="file-preview-header">/)
   assert.match(source, /centerView = 'blocks'/)
-  assert.doesNotMatch(source, /centerView === 'summary'/)
+  assert.match(source, /centerView === 'summary'/)
+  assert.match(source, /OverviewSummaryView/)
   assert.doesNotMatch(source, /Markdown 文件/)
 })
 

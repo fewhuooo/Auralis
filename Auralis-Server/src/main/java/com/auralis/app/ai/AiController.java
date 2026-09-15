@@ -6,6 +6,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -32,6 +33,7 @@ public class AiController {
     private final ConversationService conversationService;
     private final AiStreamingService streamingService;
     private final SuggestionService suggestionService;
+    private final OverviewGenerationService overviewGenerationService;
     private final ObjectMapper objectMapper;
 
     public AiController(
@@ -39,11 +41,13 @@ public class AiController {
             ConversationService conversationService,
             AiStreamingService streamingService,
             SuggestionService suggestionService,
+            OverviewGenerationService overviewGenerationService,
             ObjectMapper objectMapper) {
         this.settingsService = settingsService;
         this.conversationService = conversationService;
         this.streamingService = streamingService;
         this.suggestionService = suggestionService;
+        this.overviewGenerationService = overviewGenerationService;
         this.objectMapper = objectMapper;
     }
 
@@ -117,5 +121,21 @@ public class AiController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody SuggestionCommand command) {
         return suggestionService.generate(principal.userId(), command);
+    }
+
+    @PostMapping("/source-overviews")
+    public OverviewDtos.OverviewResponse sourceOverview(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody OverviewDtos.SourceOverviewRequest request,
+            @RequestHeader(value = "X-Overview-Request-Id", required = false) String requestId) {
+        return overviewGenerationService.generateSource(principal.userId(), request, requestId);
+    }
+
+    @PostMapping("/subject-overviews")
+    public OverviewDtos.OverviewResponse subjectOverview(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody OverviewDtos.SubjectOverviewRequest request,
+            @RequestHeader(value = "X-Overview-Request-Id", required = false) String requestId) {
+        return overviewGenerationService.generateSubject(principal.userId(), request, requestId);
     }
 }

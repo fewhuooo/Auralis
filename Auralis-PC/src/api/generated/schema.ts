@@ -500,6 +500,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/subject-overviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["subjectOverview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/source-overviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["sourceOverview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/messages/stream": {
         parameters: {
             query?: never;
@@ -526,22 +558,6 @@ export interface paths {
         get: operations["conversations"];
         put?: never;
         post: operations["createConversation"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/ws/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["handshake"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -869,7 +885,34 @@ export interface components {
             source?: components["schemas"]["Response"];
             target?: components["schemas"]["Response"];
         };
-        JsonNode: unknown;
+        JsonNode: {
+            array?: boolean;
+            empty?: boolean;
+            null?: boolean;
+            float?: boolean;
+            object?: boolean;
+            container?: boolean;
+            missingNode?: boolean;
+            floatingPointNumber?: boolean;
+            /** @deprecated */
+            textual?: boolean;
+            int?: boolean;
+            string?: boolean;
+            long?: boolean;
+            pojo?: boolean;
+            number?: boolean;
+            boolean?: boolean;
+            binary?: boolean;
+            short?: boolean;
+            double?: boolean;
+            bigInteger?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            integralNumber?: boolean;
+            valueNode?: boolean;
+            bigDecimal?: boolean;
+            embeddedValue?: boolean;
+        };
         MutationRequest: {
             clientMutationId: string;
             /** @enum {string} */
@@ -1169,6 +1212,55 @@ export interface components {
             /** Format: date-time */
             generatedAt?: string;
         };
+        OverviewChapter: {
+            title?: string;
+            sections: components["schemas"]["OverviewSection"][];
+        };
+        OverviewLocator: {
+            /** Format: int32 */
+            page?: number;
+            blockId?: string;
+        };
+        OverviewSection: {
+            title?: string;
+            summary?: string;
+            sourceIds: string[];
+            locator?: components["schemas"]["OverviewLocator"];
+        };
+        OverviewSummary: {
+            overview?: string;
+            keyPoints: string[];
+            learningPath: string[];
+        };
+        SubjectOverviewRequest: {
+            /** Format: uuid */
+            subjectId: string;
+            /** @enum {string} */
+            mode: "ALL" | "OUTLINE" | "SUMMARY";
+            instruction?: string;
+            sources: components["schemas"]["SubjectOverviewSourceInput"][];
+        };
+        SubjectOverviewSourceInput: {
+            /** Format: uuid */
+            sourceId: string;
+            title?: string;
+            outline?: components["schemas"]["OverviewChapter"][] | null;
+            summary?: components["schemas"]["OverviewSummary"];
+        };
+        OverviewResponse: {
+            /** Format: int32 */
+            schemaVersion: number;
+            title: string;
+            outline: components["schemas"]["OverviewChapter"][] | null;
+            summary: components["schemas"]["OverviewSummary"];
+        };
+        SourceOverviewRequest: {
+            /** Format: uuid */
+            sourceId: string;
+            /** @enum {string} */
+            mode: "ALL" | "OUTLINE" | "SUMMARY";
+            instruction?: string;
+        };
         AiMessageCommand: {
             /** Format: uuid */
             conversationId?: string;
@@ -1233,12 +1325,6 @@ export interface components {
             errorCode?: string;
             /** Format: date-time */
             createdAt?: string;
-        };
-        RealtimeSubscription: {
-            /** Format: uuid */
-            userId?: string;
-            /** Format: uuid */
-            serverDeviceId?: string;
         };
         ListResponse: {
             items?: components["schemas"]["Response"][];
@@ -2475,6 +2561,58 @@ export interface operations {
             };
         };
     };
+    subjectOverview: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Overview-Request-Id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubjectOverviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewResponse"];
+                };
+            };
+        };
+    };
+    sourceOverview: {
+        parameters: {
+            query?: never;
+            header?: {
+                "X-Overview-Request-Id"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceOverviewRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewResponse"];
+                };
+            };
+        };
+    };
     streamMessage: {
         parameters: {
             query?: never;
@@ -2539,30 +2677,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ConversationView"];
-                };
-            };
-        };
-    };
-    handshake: {
-        parameters: {
-            query?: {
-                ticket?: string;
-            };
-            header?: {
-                "X-Realtime-Ticket"?: string;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["RealtimeSubscription"];
                 };
             };
         };

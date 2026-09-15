@@ -16,6 +16,7 @@ import com.auralis.app.source.AssetStoragePort;
 import com.auralis.app.source.AssetUploadIntentCommand;
 import com.auralis.app.source.ParsedDocumentService;
 import com.auralis.app.source.ParsedDocumentStatus;
+import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.source.ParsedDocumentUploadCommand;
 import com.auralis.app.source.ParsedDocumentUploadIntentView;
 import com.auralis.app.source.SourceCommand;
@@ -85,7 +86,7 @@ class ParsedDocumentCompleteTests {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private ChangeLogService changeLogService;
     @Autowired private RealtimeEventPublisher realtimeEventPublisher;
-    @MockitoSpyBean private com.auralis.app.ai.ingestion.IngestionJobService ingestionJobService;
+    @MockitoSpyBean private IngestionJobService ingestionJobService;
 
     @BeforeEach
     void cleanData() {

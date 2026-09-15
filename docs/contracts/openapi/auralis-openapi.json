@@ -1575,6 +1575,84 @@
         } ]
       }
     },
+    "/api/ai/subject-overviews" : {
+      "post" : {
+        "tags" : [ "ai-controller" ],
+        "operationId" : "subjectOverview",
+        "parameters" : [ {
+          "name" : "X-Overview-Request-Id",
+          "in" : "header",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SubjectOverviewRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/source-overviews" : {
+      "post" : {
+        "tags" : [ "ai-controller" ],
+        "operationId" : "sourceOverview",
+        "parameters" : [ {
+          "name" : "X-Overview-Request-Id",
+          "in" : "header",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SourceOverviewRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/ai/messages/stream" : {
       "post" : {
         "tags" : [ "ai-controller" ],
@@ -3194,6 +3272,199 @@
             "format" : "date-time"
           }
         }
+      },
+      "OverviewChapter" : {
+        "type" : "object",
+        "properties" : {
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "sections" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSection"
+            },
+            "maxItems" : 500,
+            "minItems" : 0
+          }
+        },
+        "required" : [ "sections" ]
+      },
+      "OverviewLocator" : {
+        "type" : "object",
+        "properties" : {
+          "page" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "blockId" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          }
+        }
+      },
+      "OverviewSection" : {
+        "type" : "object",
+        "properties" : {
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "summary" : {
+            "type" : "string",
+            "maxLength" : 4000,
+            "minLength" : 0
+          },
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 300,
+              "minLength" : 0
+            },
+            "maxItems" : 100,
+            "minItems" : 1
+          },
+          "locator" : {
+            "$ref" : "#/components/schemas/OverviewLocator"
+          }
+        },
+        "required" : [ "sourceIds" ]
+      },
+      "OverviewSummary" : {
+        "type" : "object",
+        "properties" : {
+          "overview" : {
+            "type" : "string",
+            "maxLength" : 4000,
+            "minLength" : 0
+          },
+          "keyPoints" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 4000,
+              "minLength" : 0
+            },
+            "maxItems" : 100,
+            "minItems" : 0
+          },
+          "learningPath" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 4000,
+              "minLength" : 0
+            },
+            "maxItems" : 100,
+            "minItems" : 0
+          }
+        },
+        "required" : [ "keyPoints", "learningPath" ]
+      },
+      "SubjectOverviewRequest" : {
+        "type" : "object",
+        "properties" : {
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "ALL", "OUTLINE", "SUMMARY" ]
+          },
+          "instruction" : {
+            "type" : "string",
+            "maxLength" : 2000,
+            "minLength" : 0
+          },
+          "sources" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SubjectOverviewSourceInput"
+            },
+            "maxItems" : 100,
+            "minItems" : 1
+          }
+        },
+        "required" : [ "mode", "sources", "subjectId" ]
+      },
+      "SubjectOverviewSourceInput" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "outline" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewChapter"
+            },
+            "maxItems" : 60,
+            "minItems" : 0
+          },
+          "summary" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/OverviewSummary"
+          }
+        },
+        "required" : [ "sourceId" ]
+      },
+      "OverviewResponse" : {
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "outline" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewChapter"
+            },
+            "maxItems" : 60,
+            "minItems" : 0
+          },
+          "summary" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/OverviewSummary"
+          }
+        },
+        "required" : [ "outline", "schemaVersion", "summary", "title" ]
+      },
+      "SourceOverviewRequest" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "ALL", "OUTLINE", "SUMMARY" ]
+          },
+          "instruction" : {
+            "type" : "string",
+            "maxLength" : 2000,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "mode", "sourceId" ]
       },
       "AiMessageCommand" : {
         "type" : "object",

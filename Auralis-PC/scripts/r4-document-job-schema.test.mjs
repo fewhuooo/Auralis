@@ -38,7 +38,7 @@ class TemporarySqlite {
   }
 }
 
-test('legacy schema upgrades to v6 with durable cache receipt metadata', async () => {
+test('legacy schema upgrades to v7 with durable cache receipt and overview metadata', async () => {
   const sqlite = new TemporarySqlite()
   try {
     await sqlite.execute('CREATE TABLE local_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -49,12 +49,27 @@ test('legacy schema upgrades to v6 with durable cache receipt metadata', async (
     const table = sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_processing_jobs'").get()
     assert.ok(table)
     const versions = sqlite.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map((row) => row.version)
-    assert.deepEqual(versions, [2, 6])
+    assert.deepEqual(versions, [2, 7])
     const columns = sqlite.database.prepare('PRAGMA table_info(document_processing_jobs)').all().map((row) => row.name)
     assert.ok(columns.includes('payload_receipt_json'))
+    assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ai_overview_cache'").get())
   } finally {
     sqlite.close()
   }
+})
+
+test('overview cache enforces subject revision-key semantics', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    await assert.rejects(
+      () => sqlite.execute(`INSERT INTO ai_overview_cache
+        (user_id,device_id,scope_type,scope_id,revision_key,schema_version,title,status,updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      ['user-a','device-a','SUBJECT','subject-1','rev-1',1,'Subject','FAILED','2026-09-10T00:00:00.000Z']),
+      /CHECK constraint failed/,
+    )
+  } finally { sqlite.close() }
 })
 
 test('document jobs isolate user/device and enforce source revision uniqueness', async () => {

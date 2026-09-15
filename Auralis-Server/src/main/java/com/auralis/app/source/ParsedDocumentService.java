@@ -1,7 +1,5 @@
 package com.auralis.app.source;
 
-import com.auralis.app.ai.ingestion.IngestionJobService;
-import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.internal.persistence.ParsedDocumentEntity;
@@ -27,7 +25,7 @@ public class ParsedDocumentService {
     private final AuralisProperties properties;
     private final AssetService assetService;
     private final ParsedDocumentValidator validator;
-    private final IngestionJobService ingestionJobService;
+    private final ParsedDocumentIngestionPort ingestionJobService;
     private final SourceService sourceService;
 
     public ParsedDocumentService(
@@ -37,7 +35,7 @@ public class ParsedDocumentService {
             AuralisProperties properties,
             AssetService assetService,
             ParsedDocumentValidator validator,
-            IngestionJobService ingestionJobService,
+            ParsedDocumentIngestionPort ingestionJobService,
             SourceService sourceService) {
         this.sourceRepository = sourceRepository;
         this.parsedDocumentRepository = parsedDocumentRepository;
@@ -103,14 +101,14 @@ public class ParsedDocumentService {
                 .orElse(null);
         if (winner != null) {
             if (winner.getId().equals(document.getId())) {
-                IngestionJobEntity job = ingestionJobService.findParsedDocumentJob(
+                IngestionJobReference job = ingestionJobService.findParsedDocumentJob(
                         userId, sourceId, source.getIngestionRevision()).orElse(null);
                 return view(winner, job);
             }
             if (winner.getPayloadSha256().equalsIgnoreCase(document.getPayloadSha256())) {
                 document.supersede();
                 parsedDocumentRepository.saveAndFlush(document);
-                IngestionJobEntity job = ingestionJobService.findParsedDocumentJob(
+                IngestionJobReference job = ingestionJobService.findParsedDocumentJob(
                         userId, sourceId, source.getIngestionRevision()).orElse(null);
                 return view(winner, job);
             }
@@ -147,7 +145,7 @@ public class ParsedDocumentService {
             document.accept(validated.plainTextSha256(), generation);
             accepted = true;
             sourceService.markIndexing(userId, sourceId);
-            IngestionJobEntity job = ingestionJobService.enqueueParsedDocument(
+            IngestionJobReference job = ingestionJobService.enqueueParsedDocument(
                     userId, sourceId, document.getId(), source.getIngestionRevision(), document.getGeneration());
             parsedDocumentRepository.saveAndFlush(document);
             return view(document, job);
@@ -208,9 +206,9 @@ public class ParsedDocumentService {
         }
     }
 
-    private ParsedDocumentCompleteView view(ParsedDocumentEntity document, IngestionJobEntity job) {
+    private ParsedDocumentCompleteView view(ParsedDocumentEntity document, IngestionJobReference job) {
         return new ParsedDocumentCompleteView(
-                document.getId(), document.getStatus(), document.getGeneration(), job == null ? null : job.getId());
+                document.getId(), document.getStatus(), document.getGeneration(), job == null ? null : job.id());
     }
 
     private String normalizeRequired(String value) {

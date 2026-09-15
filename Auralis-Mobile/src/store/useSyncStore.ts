@@ -56,7 +56,7 @@ function toServerMutation(row: any): SyncMutation {
     resourceId: String(row.entity_id),
     mutationType: String(row.action).toUpperCase() as SyncMutation['mutationType'],
     baseVersion: Number(payload?.version || payload?.sync_version || 0),
-    payload: command,
+    payload: command as SyncMutation['payload'],
   }
 }
 

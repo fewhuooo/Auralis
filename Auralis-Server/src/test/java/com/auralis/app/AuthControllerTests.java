@@ -6,6 +6,9 @@ import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
+import com.auralis.app.relation.internal.persistence.RelationRepository;
+import com.auralis.app.source.internal.persistence.AssetRepository;
+import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.internal.persistence.TaskRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +54,15 @@ class AuthControllerTests {
     private KnowledgeBlockRepository knowledgeBlockRepository;
 
     @Autowired
+    private RelationRepository relationRepository;
+
+    @Autowired
+    private SourceRepository sourceRepository;
+
+    @Autowired
+    private AssetRepository assetRepository;
+
+    @Autowired
     private TaskRepository taskRepository;
 
     @Autowired
@@ -58,7 +70,10 @@ class AuthControllerTests {
 
     @BeforeEach
     void cleanIdentityData() {
+        relationRepository.deleteAll();
         knowledgeBlockRepository.deleteAll();
+        sourceRepository.deleteAll();
+        assetRepository.deleteAll();
         taskRepository.deleteAll();
         subjectRepository.deleteAll();
         refreshSessionRepository.deleteAll();

@@ -167,6 +167,21 @@ test('local database runtime loads once and returns one repository per scope', a
   assert.equal(firstRepository, secondRepository);
 });
 
+test('saveCursor persists the current local schema version', async () => {
+  const sqlite = new TemporarySqlite();
+  try {
+    const repository = new LocalRepository('user-a', 'device-1', { sql: sqlite });
+    await repository.saveCursor('cursor-1');
+
+    const row = sqlite.database
+      .prepare('SELECT schema_version FROM sync_metadata WHERE user_id = ? AND device_id = ?')
+      .get('user-a', 'device-1');
+    assert.equal(row.schema_version, 7);
+  } finally {
+    sqlite.close();
+  }
+});
+
 test('SQLite legacy account-less rows are copied to unassigned backup without deletion', async () => {
   const sqlite = new TemporarySqlite();
   try {

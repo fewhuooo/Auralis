@@ -36,6 +36,12 @@ flowchart LR
 
 PC 和 Mobile/Tablet 是独立客户端工程。PC 的发布目标为 Windows x64 Tauri，PC Web 只保留内部开发用途；Mobile 与 Tablet 共用 Uni-app 工程和部分 Store/API/服务，但使用不同页面集合和布局。Server 是业务与 AI 中枢；客户端不得直接连接 PostgreSQL、pgvector、MinIO 或读取服务端 AI 密钥。PC 本地 OCR 只生成计划中的 ParsedDocument，不改变服务端对用户归属、索引和检索范围的权威。
 
+### 2026-09-11 Server 门禁证据
+
+`source` 模块现在拥有公开的 `ParsedDocumentIngestionPort` 与最小 `IngestionJobReference`；`ai.ingestion` 提供同步实现，source 不再依赖 ai 的内部服务或实体，保持 `ai → source` 的单向模块边界。架构隔离命令（含 `ArchitectureTests`）7 类合计 20/20，其中 `ArchitectureTests` 1/1。
+
+Task 4 当前增量编译产物下的标准聚焦 Maven 命令实际为 40/40、0 failures、0 errors；全量 `mvnw -B -ntp test` 实际执行 239 项，0 failures、3 errors，错误仅为 MinIO、PgVector 与 PgVector migration 的 Docker/Testcontainers 环境不可用。一次 fresh `clean test-compile` 仍在 `AiProviderSecurityTests.java:182` 因匿名 `ProviderHttpTransport` 未实现当前 `post(..., byte[])` 而失败；该并行测试源码未在本任务修复。OpenAPI artifact 测试为 8/8，`check-openapi.ps1` 的 artifact 比对通过但报告 `Auralis-PC/src/api/generated/schema.ts` stale。
+
 ## 组件边界
 
 ### PC
@@ -203,6 +209,7 @@ FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执�
 | PC 原始文件本地副本 | PC Tauri Local Asset Store | 当前设备持有的完整原始 Asset；本地稳定身份映射到 Server Asset，断网导入后最终同步，只有最后 Source 引用被用户删除时移除 |
 | 资产元数据 | PostgreSQL asset | 客户端显示状态和学科归属 |
 | RAG chunk 与向量 | PostgreSQL `source_chunks` + pgvector | 不直接持久化到客户端 |
+| 文件/学科 AI 总览 | PC owner/device-scoped `ai_overview_cache` | Server 只执行无状态结构化生成；大纲、总结、输入指纹和安全失败摘要不进入 Sync 或 Server 数据库 |
 | ParsedDocument（计划中） | 服务端私有对象 + 元数据；本地仅在接收前以 keyring 主密钥的分块 AES-GCM envelope 暂存 | PC 解析、断点恢复和 Rust 流式上传，服务端确认后删除本地正文 |
 | Tablet 手写笔记 | 端侧 `tablet_notes` | 当前不进入 Server 同步 |
 
@@ -210,9 +217,11 @@ FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执�
 
 | 风险 | 证据 | 架构影响 |
 | --- | --- | --- |
-| 本地 OCR 尚未实现 | 2026-08-24 复核修订后的 AI 阅读设计仍为计划状态 | 非文本型文件尚不能形成完整 RAG 闭环 |
-| ParsedDocument 契约和表尚未实现 | 当前 API/数据库契约仅覆盖文本型 Source 摄入 | 客户端解析结果不能安全进入 generation cutover |
-| 当前检索范围过宽 | RetrievalService 当前只按 userId 过滤 | 实现 Source 优先和 Subject 上限前不能声称范围隔离完成 |
+| 本地 OCR 与安装包尚未完成人工验收 | 当前代码与自动测试已覆盖 OCR/ParsedDocument 路径，但尚无真实 Tauri/安装包证据 | 非文本型文件的实际 RAG 闭环仍不能视为业务验收完成 |
+| ParsedDocument ingestion 边界已实现但真实依赖未验收 | `ParsedDocumentIngestionPort`、V15 派生表和 complete/indexing 流程已有代码与 H2 证据；PostgreSQL/MinIO 仍受外部环境限制 | 客户端解析结果的真实对象存储、索引与 generation cutover 仍需端到端证据 |
+| 标准 Maven fresh testCompile 仍被并行测试 blocker 阻断 | `AiProviderSecurityTests.java:182` 的匿名 `ProviderHttpTransport` 缺少 `post(..., byte[])` 实现；架构隔离命令（含 `ArchitectureTests`）7 类合计 20/20，其中 `ArchitectureTests` 1/1 | 不能把隔离聚焦结果写成新鲜标准生命周期全绿 |
+| OpenAPI 客户端生成类型过期 | artifact runtime comparison 与 Server `OpenApiArtifactTests` 8/8 通过，但 `check-openapi.ps1` 报 PC generated schema stale | PC 请求类型可能未反映最新 artifact，契约总门禁仍未关闭 |
+| Docker/Testcontainers 不可用 | 全量 239 项仅 3 个容器集成 errors，Docker Engine named pipe 不可用 | PostgreSQL/pgvector/MinIO 真实依赖行为仍未由本机全量测试证明 |
 | PC AI 上下文仍为字符串拼接 | 当前 chat store 未发送强类型 Source/Subject scope | 可能产生范围含糊或消息正文污染 |
 | Office 后台解析路径未验证 | File Viewer 文本接口依赖已挂载 renderer，legacy PPT 可能使用 Canvas/WASM | 离屏解析宿主和逐页 OCR fallback 验证前，不能声称所有预览格式均可进入 RAG |
 | Windows 安装包未验证 OCR 资源 | `externalBin/resources`、固定模型清单、长驻 Sidecar 和分块加密缓存仍未构建 | 不能声称离线 OCR、恢复或准确率达标 |

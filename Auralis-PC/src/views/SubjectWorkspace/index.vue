@@ -20,11 +20,11 @@
         <button
           class="tier1-btn"
           :class="{ 'is-active': tier2Open && tier2Mode === 'outline' }"
-          title="目录大纲"
+          title="总览"
           @click="toggleTier2('outline')"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          <span class="tier1-btn-text">大纲</span>
+          <span class="tier1-btn-text">总览</span>
         </button>
         <button
           class="tier1-btn"
@@ -86,7 +86,7 @@
       <!-- Outline Mode -->
       <div v-else-if="tier2Mode === 'outline'" class="drawer-content">
         <div class="drawer-header outline-header">
-          <h3 class="drawer-title">学科大纲</h3>
+          <h3 class="drawer-title">总览</h3>
           <div class="outline-header-actions">
             <button class="outline-ai-button" @click="handleOutlineAi">AI 梳理</button>
             <button class="outline-add-button" title="编排大纲" aria-label="编排大纲" @click="isOutlineComposer = !isOutlineComposer">+</button>
@@ -153,16 +153,25 @@
           <input v-model="chapterDraft" class="outline-inline-input chapter-input" placeholder="输入新章节后按 Enter" @keyup.enter="addChapter" />
         </div>
         <div v-else class="outline-overview-list">
-          <div v-for="chapter in subjectOutline" :key="chapter.id" class="outline-overview-chapter">
-            <strong>{{ chapter.title }}</strong>
-            <div v-for="section in chapter.sections" :key="section.id" class="outline-section-container">
-              <div class="outline-section-title">{{ section.title }}</div>
-              <button class="outline-file-link" v-if="section.fileId" @click="openOutlineFile(section.fileId)">
-                <svg class="outline-file-link-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                <span class="outline-file-link-file">{{ fileById(section.fileId)?.name || '未知文件' }}</span>
-              </button>
-            </div>
-          </div>
+          <SubjectOverviewSection
+            v-model:collapsed="subjectOverviewCollapsed"
+            :overview="subjectOverviewRecord"
+            :source-count="activeSourceFiles.length"
+            :is-stale="isSubjectOverviewStale"
+            :is-generating="subjectOverviewGenerating"
+            :error="subjectOverviewError"
+            @generate="handleOutlineAi"
+            @generate-outline="handleSubjectOutlineRegenerate"
+            @open-summary="openSubjectSummary"
+          />
+          <FileOutlineList
+            :files="fileOverviewItems"
+            :selected-file-id="selectedFileId"
+            @select-file="selectFile"
+            @select-summary="openFileSummary"
+            @select-outline-node="openOverviewLocator"
+            @regenerate="regenerateFileOverview"
+          />
         </div>
       </div>
     </aside>
@@ -175,7 +184,10 @@
       <!-- Micro Status Bar -->
       <header class="center-status-bar">
         <div class="status-left">
-          <span v-if="centerView === 'preview' && selectedFile" class="status-file">
+          <span v-if="centerView === 'summary' && summaryTarget" class="status-file">
+            <Sparkles :size="14" class="status-icon" /> {{ summaryTarget.title }} · 总结
+          </span>
+          <span v-else-if="centerView === 'preview' && selectedFile" class="status-file">
             <FileText :size="14" class="status-icon" /> {{ selectedFile.name }}
           </span>
           <span v-else-if="centerView === 'blocks'" class="status-file">
@@ -202,6 +214,7 @@
             </div>
           </div>
           <span class="status-page" v-if="centerView === 'preview'">文件预览</span>
+          <span class="status-page" v-else-if="centerView === 'summary'">AI 总结</span>
         </div>
       </header>
 
@@ -212,7 +225,19 @@
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="tier2Open ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
         </button>
 
-        <template v-if="centerView === 'preview' && selectedFile">
+        <OverviewSummaryView
+          v-if="centerView === 'summary' && summaryTarget"
+          :title="summaryTarget.title"
+          :kind="summaryTarget.kind"
+          :summary="summaryTarget.record?.summary || null"
+          :is-generating="summaryTarget.isGenerating"
+          :is-stale="summaryTarget.isStale"
+          :error="summaryTarget.error"
+          @close="closeSummary"
+          @regenerate="regenerateSelectedSummary"
+        />
+
+        <template v-else-if="centerView === 'preview' && selectedFile">
           <FilePreview
             ref="filePreviewRef"
             :file="selectedFile"
@@ -587,7 +612,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
-import { Blocks, Plus, FileText } from 'lucide-vue-next'
+import { Blocks, Plus, FileText, Sparkles } from 'lucide-vue-next'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-message-box.css'
@@ -598,6 +623,9 @@ import FilePreview from '@/components/FilePreview.vue'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
+import SubjectOverviewSection from '@/components/subject/SubjectOverviewSection.vue'
+import FileOutlineList, { type FileOverviewItem } from '@/components/subject/FileOutlineList.vue'
+import OverviewSummaryView from '@/components/subject/OverviewSummaryView.vue'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -606,6 +634,14 @@ import { useAssetStore } from '@/store/useAssetStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
+import { getOverviewRepository } from '@/services/localDb'
+import { OverviewGenerationService, hasUsableOverview } from '@/services/overviewGenerationService'
+import { overviewFailureMessage } from '@/services/overviewFailurePolicy'
+import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
+import { useOverviewApi } from '@/api/useOverviewApi'
+import { useSourceApi } from '@/api/useSourceApi'
+import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
+import type { FileOverviewRecord, SubjectOverviewRecord } from '@/types/overview'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -642,7 +678,7 @@ const timeAgo = (iso: string) => {
 // ===== Tier-1 / Tier-2 State =====
 const tier2Open = ref(true)
 const tier2Mode = ref<'files' | 'outline'>('files')
-const centerView = ref<'blocks' | 'preview' | 'overview'>('overview')
+const centerView = ref<'blocks' | 'preview' | 'overview' | 'summary'>('overview')
 const rightCollapsed = ref(false)
 
 const toggleTier2 = (mode: 'files' | 'outline') => {
@@ -727,11 +763,156 @@ const handlePreviewZoomChange = (state: { label?: string; scale: number }) => {
 const selectedFile = computed<SourceFileModel | null>(() => activeSourceFiles.value.find(f => f.id === selectedFileId.value) || null)
 const selectedSourceId = computed(() => selectedFile.value?.id)
 const deletingFileId = ref<string | null>(null)
+const subjectOverviewCollapsed = ref(true)
+const subjectOverviewRecord = ref<SubjectOverviewRecord | null>(null)
+const fileOverviewRecords = ref<Record<string, FileOverviewRecord>>({})
+const subjectOverviewGenerating = ref(false)
+const generatingFileIds = ref<Set<string>>(new Set())
+const isSubjectOverviewStale = ref(false)
+const selectedSummaryScope = ref<{ kind: 'file' | 'subject'; id: string } | null>(null)
+let overviewRepository: OverviewRepository | null = null
+let overviewGeneration: OverviewGenerationService | null = null
+
+const subjectOverviewError = computed(() => subjectOverviewRecord.value?.status === 'FAILED'
+  ? overviewFailureMessage(subjectOverviewRecord.value.errorCode)
+  : null)
+
+const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.value.map((file) => {
+  const record = fileOverviewRecords.value[file.id]
+  return {
+    id: file.id,
+    name: file.name,
+    outline: record?.outline ?? null,
+    summary: record?.summary ?? null,
+    status: record?.status ?? (file.ingestionStatus === 'READY' ? 'PENDING' : undefined),
+    error: record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null,
+    isGenerating: generatingFileIds.value.has(file.id),
+  }
+}))
+
+const summaryTarget = computed(() => {
+  const scope = selectedSummaryScope.value
+  if (!scope) return null
+  if (scope.kind === 'subject') return {
+    kind: 'subject' as const,
+    title: activeSubject.value?.name || '学科',
+    record: subjectOverviewRecord.value,
+    isGenerating: subjectOverviewGenerating.value,
+    isStale: isSubjectOverviewStale.value,
+    error: subjectOverviewError.value,
+  }
+  const file = activeSourceFiles.value.find(item => item.id === scope.id)
+  const record = fileOverviewRecords.value[scope.id] ?? null
+  return file ? {
+    kind: 'file' as const,
+    title: file.name,
+    record,
+    isGenerating: generatingFileIds.value.has(scope.id),
+    isStale: Boolean(record && file.ingestionRevision && record.ingestionRevision !== file.ingestionRevision),
+    error: record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null,
+  } : null
+})
+
+const setFileGenerating = (fileId: string, generating: boolean) => {
+  const next = new Set(generatingFileIds.value)
+  if (generating) next.add(fileId); else next.delete(fileId)
+  generatingFileIds.value = next
+}
+
+const refreshOverviewCache = async () => {
+  if (!overviewRepository) return
+  const records = await Promise.all(activeSourceFiles.value.map(async (file) => file.ingestionRevision
+    ? overviewRepository!.getFileOverview(file.id, file.ingestionRevision)
+    : null))
+  fileOverviewRecords.value = Object.fromEntries(records.filter((record): record is FileOverviewRecord => record !== null).map(record => [record.sourceId, record]))
+  subjectOverviewRecord.value = await overviewRepository.getSubjectOverview(subjectId.value)
+  const usable = records.filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
+  isSubjectOverviewStale.value = Boolean(subjectOverviewRecord.value?.inputFingerprint
+    && await computeSubjectInputFingerprint(usable) !== subjectOverviewRecord.value.inputFingerprint)
+}
+
+const ensureOverviewRuntime = async () => {
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  if (!userId || !serverDeviceId) return false
+  if (!overviewRepository) overviewRepository = await getOverviewRepository(userId, serverDeviceId)
+  const runtime = documentProcessingRuntime.getSnapshot()
+  const matchingRuntime = runtime?.userId === userId && runtime.serverDeviceId === serverDeviceId
+    ? runtime
+    : null
+  if (matchingRuntime) {
+    if (overviewGeneration !== matchingRuntime.overviewGeneration) overviewGeneration = matchingRuntime.overviewGeneration
+  } else if (!overviewGeneration) {
+    overviewGeneration = new OverviewGenerationService({
+      api: useOverviewApi,
+      repository: overviewRepository,
+      sourceApi: useSourceApi,
+      isFileGenerationEligible: async () => false,
+      getLocalFileGenerationRevision: async () => null,
+      listLocalFileOverviews: async () => {
+        await refreshOverviewCache()
+        return Object.values(fileOverviewRecords.value)
+      },
+    })
+  }
+  await refreshOverviewCache()
+  return true
+}
+
+const openFileSummary = (fileId: string) => {
+  selectedFileId.value = fileId
+  selectedSummaryScope.value = { kind: 'file', id: fileId }
+  centerView.value = 'summary'
+}
+
+const openSubjectSummary = () => {
+  selectedSummaryScope.value = { kind: 'subject', id: subjectId.value }
+  centerView.value = 'summary'
+}
+
+const closeSummary = () => {
+  selectedSummaryScope.value = null
+  centerView.value = selectedFileId.value ? 'preview' : 'overview'
+}
+
+const openOverviewLocator = async ({ fileId }: { fileId: string }) => {
+  await selectFile(fileId)
+}
+
+const regenerateFileOverview = async ({ fileId, mode }: { fileId: string; mode: 'OUTLINE' | 'ALL' }) => {
+  if (!await ensureOverviewRuntime() || !overviewGeneration) return
+  setFileGenerating(fileId, true)
+  try {
+    await overviewGeneration.regenerateFileOverview(fileId, mode)
+    await refreshOverviewCache()
+  } finally {
+    setFileGenerating(fileId, false)
+  }
+}
+
+const regenerateSelectedSummary = async (instruction?: string) => {
+  const scope = selectedSummaryScope.value
+  if (!scope || !await ensureOverviewRuntime() || !overviewGeneration) return
+  if (scope.kind === 'subject') {
+    subjectOverviewGenerating.value = true
+    try { await overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction); await refreshOverviewCache() }
+    finally { subjectOverviewGenerating.value = false }
+  } else {
+    setFileGenerating(scope.id, true)
+    try { await overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction); await refreshOverviewCache() }
+    finally { setFileGenerating(scope.id, false) }
+  }
+}
 
 const selectFile = async (id: string) => {
-  if (selectedFileId.value === id) return
+  if (selectedFileId.value === id) {
+    selectedSummaryScope.value = null
+    centerView.value = 'preview'
+    return
+  }
   await chatStore.endActiveSession().catch(() => undefined)
   selectedFileId.value = id
+  selectedSummaryScope.value = null
   centerView.value = 'preview'
   const file = activeSourceFiles.value.find((item) => item.id === id)
   if (file) await chatStore.startReadingSession(id, subjectId.value, file.name).catch(() => undefined)
@@ -747,6 +928,7 @@ const handleDeleteFile = async (file: SourceFileModel) => {
     })
     deletingFileId.value = file.id
     await subjectStore.deleteSourceFile(file.id)
+    await refreshOverviewCache().catch(() => undefined)
     ElMessage.success('已删除文件')
     if (selectedFileId.value === file.id) {
       if (activeSourceFiles.value.length > 0) {
@@ -795,7 +977,6 @@ const subjectOutline = ref<OutlineChapter[]>([
   { id: 'chapter-practice', title: '第二章 · 重点与练习', sections: [{ id: 'section-application', title: '典型应用与易错点' }] }
 ])
 const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id === id)
-const openOutlineFile = (id?: string) => { if (id) selectFile(id) }
 const syncOutlineFileLinks = () => {
   const files = activeSourceFiles.value
   if (!files.length) return
@@ -857,10 +1038,30 @@ const unlinkFile = (chapterIndex: number, sectionIndex: number) => {
   ElMessage.success('已解除关联')
 }
 
-const handleOutlineAi = () => {
+const handleOutlineAi = async () => {
   tier2Open.value = true
-  rightCollapsed.value = false
-  sendPreset('请为当前学科梳理章节结构与学习重点。')
+  subjectOverviewCollapsed.value = false
+  if (!await ensureOverviewRuntime() || !overviewGeneration) return
+  subjectOverviewGenerating.value = true
+  try {
+    await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'ALL')
+    await refreshOverviewCache()
+  } finally {
+    subjectOverviewGenerating.value = false
+  }
+}
+
+const handleSubjectOutlineRegenerate = async () => {
+  tier2Open.value = true
+  subjectOverviewCollapsed.value = false
+  if (!await ensureOverviewRuntime() || !overviewGeneration) return
+  subjectOverviewGenerating.value = true
+  try {
+    await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'OUTLINE')
+    await refreshOverviewCache()
+  } finally {
+    subjectOverviewGenerating.value = false
+  }
 }
 
 // ===== Knowledge Blocks =====
@@ -1156,6 +1357,7 @@ onMounted(async () => {
   if (id) {
     subjectStore.setActiveSubject(id)
     await subjectStore.loadSourceFiles(id)
+    await ensureOverviewRuntime()
     await blockStore.fetchBlocks(undefined, id)
     syncOutlineFileLinks()
     if (activeSourceFiles.value.length > 0) {
@@ -1177,7 +1379,11 @@ watch(subjectId, async (newId) => {
       // Keep the workspace usable when a fresh chat session cannot be created.
     }
     subjectStore.setActiveSubject(newId)
+    selectedSummaryScope.value = null
+    subjectOverviewRecord.value = null
+    fileOverviewRecords.value = {}
     await subjectStore.loadSourceFiles(newId)
+    await ensureOverviewRuntime()
     await blockStore.fetchBlocks(undefined, newId)
     syncOutlineFileLinks()
     if (activeSourceFiles.value.length > 0) {

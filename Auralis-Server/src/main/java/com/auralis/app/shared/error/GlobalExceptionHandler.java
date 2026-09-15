@@ -41,7 +41,9 @@ public class GlobalExceptionHandler {
             case UNAUTHENTICATED -> HttpStatus.UNAUTHORIZED;
             case FORBIDDEN -> HttpStatus.FORBIDDEN;
             case MODEL_UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
-            case MODEL_PROVIDER_ERROR -> HttpStatus.BAD_GATEWAY;
+            case MODEL_TIMEOUT -> HttpStatus.GATEWAY_TIMEOUT;
+            case MODEL_PROVIDER_ERROR, OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE,
+                    OVERVIEW_REDUCE_NO_PROGRESS -> HttpStatus.BAD_GATEWAY;
             case RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             case INGESTION_FAILED -> HttpStatus.UNPROCESSABLE_ENTITY;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;

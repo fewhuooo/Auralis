@@ -68,6 +68,7 @@ class AiStreamingControllerTests {
                 mock(ConversationService.class),
                 streamingService,
                 mock(SuggestionService.class),
+                mock(com.auralis.app.ai.OverviewGenerationService.class),
                 new ObjectMapper());
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();

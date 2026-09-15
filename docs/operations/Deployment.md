@@ -1,6 +1,6 @@
 # Auralis 部署指南
 
-更新时间：2026-09-09
+更新时间：2026-09-10
 
 文档状态：现行，生产方案待加固
 
@@ -25,6 +25,10 @@
 | Compose 组合 | 本地/受控环境 | PostgreSQL/pgvector、MinIO、Server、PC Web |
 
 当前 Compose 含开发默认凭据，禁止未经加固直接作为公网生产方案。
+
+### 2026-09-10 Provider Overview timeout 修复
+
+Provider 连接窗口与响应窗口已分离：Compose 默认透传 `AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS=3000`、普通请求 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS=10000` 和 Overview 非流式生成 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS=120000`。Overview 变量由服务端限制在 60000–120000ms；部署后若上游生成较慢，只调高该变量，不要用普通请求变量放大聊天/embedding/stream 窗口；`MODEL_TIMEOUT` 对外为 HTTP 504。
 
 ### 2026-09-09 Task 16 运行验证
 

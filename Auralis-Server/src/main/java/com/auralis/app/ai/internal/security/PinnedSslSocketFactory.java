@@ -13,17 +13,17 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
     private final SSLSocketFactory delegate;
     private final List<InetAddress> addresses;
     private final int port;
-    private final int timeoutMillis;
+    private final int connectTimeoutMillis;
 
     public PinnedSslSocketFactory(
             SSLSocketFactory delegate,
             List<InetAddress> addresses,
             int port,
-            int timeoutMillis) {
+            int connectTimeoutMillis) {
         this.delegate = delegate;
         this.addresses = List.copyOf(addresses);
         this.port = port;
-        this.timeoutMillis = timeoutMillis;
+        this.connectTimeoutMillis = connectTimeoutMillis;
     }
 
     @Override
@@ -61,7 +61,7 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
         if (addresses.isEmpty()) {
             throw new IOException("Pinned TLS target has no resolved addresses");
         }
-        return new PinnedConnectSocket(addresses.get(0), port, timeoutMillis);
+        return new PinnedConnectSocket(addresses.get(0), port, connectTimeoutMillis);
     }
 
     @Override
@@ -80,7 +80,7 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
         for (InetAddress address : addresses) {
             Socket plain = new Socket();
             try {
-                plain.connect(new InetSocketAddress(address, targetPort), timeoutMillis);
+                plain.connect(new InetSocketAddress(address, targetPort), connectTimeoutMillis);
                 return delegate.createSocket(plain, host, targetPort, true);
             } catch (IOException exception) {
                 lastException = exception;
@@ -101,17 +101,17 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
 
         private final InetAddress address;
         private final int port;
-        private final int timeoutMillis;
+        private final int connectTimeoutMillis;
 
-        private PinnedConnectSocket(InetAddress address, int port, int timeoutMillis) {
+        private PinnedConnectSocket(InetAddress address, int port, int connectTimeoutMillis) {
             this.address = address;
             this.port = port;
-            this.timeoutMillis = timeoutMillis;
+            this.connectTimeoutMillis = connectTimeoutMillis;
         }
 
         @Override
         public void connect(SocketAddress endpoint) throws IOException {
-            connect(endpoint, timeoutMillis);
+            connect(endpoint, connectTimeoutMillis);
         }
 
         @Override
@@ -120,8 +120,8 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
                 throw new IOException("Pinned TLS target requires an internet socket address");
             }
             int effectiveTimeout = requestedTimeoutMillis <= 0
-                    ? timeoutMillis
-                    : Math.min(requestedTimeoutMillis, timeoutMillis);
+                    ? connectTimeoutMillis
+                    : Math.min(requestedTimeoutMillis, connectTimeoutMillis);
             super.connect(new InetSocketAddress(address, port), effectiveTimeout);
         }
     }

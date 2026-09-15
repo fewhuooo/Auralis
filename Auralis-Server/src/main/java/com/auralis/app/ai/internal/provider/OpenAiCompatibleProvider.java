@@ -17,10 +17,13 @@ import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;
 import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.SocketTimeoutException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -30,6 +33,8 @@ import java.util.function.Consumer;
 public class OpenAiCompatibleProvider implements AiProviderPort {
 
     private static final ObjectMapper STREAM_OBJECT_MAPPER = new ObjectMapper();
+    private static final Logger LOGGER = LoggerFactory.getLogger(OpenAiCompatibleProvider.class);
+    private static final int MAX_LOGGED_MODEL_IDENTIFIER_CHARS = 64;
 
     private final AiProviderType providerType;
     private final ProviderEndpointPolicy endpointPolicy;
@@ -56,13 +61,30 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
 
     @Override
     public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+        return complete(request, credential, null);
+    }
+
+    @Override
+    public AiProviderResponse complete(
+            AiProviderRequest request,
+            AiCredential credential,
+            long responseTimeoutMillis) {
+        return complete(request, credential, Long.valueOf(responseTimeoutMillis));
+    }
+
+    private AiProviderResponse complete(
+            AiProviderRequest request,
+            AiCredential credential,
+            Long responseTimeoutMillis) {
         validateCredential(credential);
         try {
             ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
                     providerType, URI.create(credential.baseUrl().trim()));
-            JsonNode body = httpClient.postJson(
-                    endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class);
-            return parseResponse(body);
+            JsonNode body = responseTimeoutMillis == null
+                    ? httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class)
+                    : httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class,
+                    responseTimeoutMillis);
+            return parseResponse(body, request);
         } catch (DomainException exception) {
             throw exception;
         } catch (ProviderHttpException exception) {
@@ -70,6 +92,8 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         } catch (ProviderResponseTooLargeException exception) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
                     exception);
+        } catch (SocketTimeoutException exception) {
+            throw new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
         } catch (IOException exception) {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
         } catch (Exception exception) {
@@ -102,6 +126,8 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         } catch (ProviderResponseTooLargeException exception) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
                     exception);
+        } catch (SocketTimeoutException exception) {
+            throw new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
         } catch (IOException exception) {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
         } catch (Exception exception) {
@@ -129,19 +155,102 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         if (request.maxTokens() != null) {
             body.put("max_tokens", request.maxTokens());
         }
+        if (request.structuredJson()) {
+            body.put("response_format", Map.of("type", "json_object"));
+            if (providerType == AiProviderType.DEEPSEEK) {
+                body.put("thinking", Map.of("type", "disabled"));
+            }
+        }
         return body;
     }
 
-    protected AiProviderResponse parseResponse(JsonNode body) {
+    protected AiProviderResponse parseResponse(JsonNode body, AiProviderRequest request) {
         JsonNode content = body == null ? null : body.path("choices").path(0).path("message").path("content");
         if (content == null || content.isMissingNode() || !content.isTextual() || content.asText().isBlank()) {
+            logInvalidResponseEnvelope(body, request);
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
         }
         JsonNode usage = body.path("usage");
         return new AiProviderResponse(
                 content.asText(),
                 usage.path("prompt_tokens").asLong(0),
-                usage.path("completion_tokens").asLong(0));
+                usage.path("completion_tokens").asLong(0),
+                normalizedFinishReason(body));
+    }
+
+    private String normalizedFinishReason(JsonNode body) {
+        JsonNode choice = body == null ? null : body.path("choices").path(0);
+        JsonNode value = choice == null ? null : choice.path("finish_reason");
+        if (value == null || value.isMissingNode() || value.isNull()) return null;
+        if (!value.isTextual()) return "other";
+        return switch (value.asText()) {
+            case "stop", "length", "tool_calls", "content_filter" -> value.asText();
+            default -> "other";
+        };
+    }
+
+    private void logInvalidResponseEnvelope(JsonNode body, AiProviderRequest request) {
+        JsonNode choices = body == null ? null : body.path("choices");
+        int choiceCount = choices != null && choices.isArray() ? choices.size() : 0;
+        JsonNode choice = choiceCount > 0 ? choices.get(0) : null;
+        JsonNode message = choice == null ? null : choice.path("message");
+        JsonNode content = message == null ? null : message.path("content");
+        JsonNode reasoning = message == null ? null : message.path("reasoning_content");
+        JsonNode usage = body == null ? null : body.path("usage");
+        LOGGER.warn("AI_PROVIDER_RESPONSE_INVALID provider={} modelId={} choiceCount={} finishReason={} "
+                        + "hasReasoningContent={} reasoningChars={} contentType={} contentChars={} hasContent={} hasUsage={} promptTokens={} completionTokens={}",
+                providerType, safeModelIdentifier(request), choiceCount, safeFinishReason(choice),
+                message != null && message.has("reasoning_content"), textLength(reasoning), nodeType(content),
+                textLength(content),
+                content != null && content.isTextual() && !content.asText().isBlank(),
+                usage != null && usage.isObject(), safeTokenCount(usage, "prompt_tokens"),
+                safeTokenCount(usage, "completion_tokens"));
+    }
+
+    private String safeModelIdentifier(AiProviderRequest request) {
+        String model = request == null ? null : request.model();
+        if (model == null || model.isBlank()) return "<none>";
+        StringBuilder sanitized = new StringBuilder(Math.min(model.length(), MAX_LOGGED_MODEL_IDENTIFIER_CHARS));
+        for (int index = 0; index < model.length() && sanitized.length() < MAX_LOGGED_MODEL_IDENTIFIER_CHARS; index++) {
+            char character = model.charAt(index);
+            sanitized.append((character >= 'a' && character <= 'z')
+                    || (character >= 'A' && character <= 'Z')
+                    || (character >= '0' && character <= '9')
+                    || character == '.' || character == '_' || character == '-' || character == '/'
+                    ? character : '_');
+        }
+        return sanitized.toString();
+    }
+
+    private int textLength(JsonNode node) {
+        return node != null && node.isTextual() ? node.asText().length() : 0;
+    }
+
+    private String safeFinishReason(JsonNode choice) {
+        if (choice == null) return "missing";
+        JsonNode value = choice.path("finish_reason");
+        if (!value.isTextual()) return value.isMissingNode() ? "missing" : "non_text";
+        return switch (value.asText()) {
+            case "stop", "length", "tool_calls", "content_filter" -> value.asText();
+            default -> "other";
+        };
+    }
+
+    private String nodeType(JsonNode node) {
+        if (node == null || node.isMissingNode()) return "missing";
+        if (node.isNull()) return "null";
+        if (node.isTextual()) return "text";
+        if (node.isObject()) return "object";
+        if (node.isArray()) return "array";
+        if (node.isBoolean()) return "boolean";
+        if (node.isNumber()) return "number";
+        return "other";
+    }
+
+    private long safeTokenCount(JsonNode usage, String field) {
+        if (usage == null || !usage.isObject() || !usage.path(field).isNumber()) return 0;
+        long value = usage.path(field).asLong(0);
+        return Math.max(0, value);
     }
 
     private void parseStreamLine(String line, Consumer<AiProviderChunk> sink) {

@@ -172,6 +172,7 @@ class AiStreamingTests {
                 .containsExactly("message.started", "citation", "message.delta", "message.completed");
         assertThat(request.get().messages()).anySatisfy(message ->
                 assertThat(message.content()).contains("linear context"));
+        assertThat(request.get().structuredJson()).isFalse();
         verify(embeddingProvider).embed(List.of("hello"), new AiCredential("https://embedding.test", "secret"));
         verify(retrievalService).retrieve(userId, vector, 2);
     }

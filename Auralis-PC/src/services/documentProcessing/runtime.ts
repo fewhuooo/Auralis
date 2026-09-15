@@ -7,7 +7,7 @@ import {
 } from '@/api/tauri'
 import { e2ee } from '@/api/e2ee'
 import { useSourceApi, type SourceView } from '@/api/useSourceApi'
-import { getDocumentProcessingJobRepository } from '@/services/localDb'
+import { getDocumentProcessingJobRepository, getOverviewRepository } from '@/services/localDb'
 import {
   DocumentProcessingJobRepository,
 } from '@/services/localRepository'
@@ -25,6 +25,10 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useSyncStore } from '@/store/useSyncStore'
+import { useOverviewApi } from '@/api/useOverviewApi'
+import { OverviewGenerationService } from '@/services/overviewGenerationService'
+import type { FileOverviewRecord } from '@/types/overview'
+import type { FileOverviewTrigger } from '@/types/overview'
 import type { DocumentProcessingJob } from '@/types/documentProcessing'
 import type { DocumentParserInput, DocumentParserProgress } from '@/services/documentParser/types'
 
@@ -101,6 +105,7 @@ export interface DocumentProcessingRuntimeSnapshot {
   repository: DocumentProcessingJobRepository
   runner: DocumentJobRunner
   scheduler: SourceJobScheduler
+  overviewGeneration: OverviewGenerationService
 }
 
 /**
@@ -113,20 +118,22 @@ export class DocumentProcessingRuntime {
   private key: string | null = null
   private snapshot: DocumentProcessingRuntimeSnapshot | null = null
   private starting: Promise<void> | null = null
+  private lifecycleGeneration = 0
   private readonly parserInputs = new Map<string, RuntimeFile>()
   private readonly onlineHandler = (): void => {
-    void this.resumePending().catch((error) => console.warn('[DocumentRuntime] online resume failed', error))
+    void this.resumePending('RESUME_ONLINE').catch(() => console.warn('[DocumentRuntime] online resume failed'))
   }
   private readonly syncHandler = (): void => {
     const sourceStore = useSourceStore()
     void sourceStore.loadSources()
-      .then(() => this.resumePending())
-      .catch((error) => console.warn('[DocumentRuntime] sync resume failed', error))
+      .then(() => this.resumePending('RESUME_SYNC'))
+      .catch(() => console.warn('[DocumentRuntime] sync resume failed'))
   }
 
   async start(): Promise<void> {
     if (this.starting) return this.starting
-    const task = this.startInternal()
+    const generation = ++this.lifecycleGeneration
+    const task = this.startInternal(generation)
     this.starting = task
     try {
       await task
@@ -136,10 +143,17 @@ export class DocumentProcessingRuntime {
   }
 
   stop(): void {
+    this.lifecycleGeneration += 1
+    this.starting = null
+    this.clearRuntimeState()
+  }
+
+  private clearRuntimeState(): void {
     if (typeof window !== 'undefined') window.removeEventListener('online', this.onlineHandler)
     if (typeof window !== 'undefined') window.removeEventListener('auralis-sync-updated', this.syncHandler)
     if (this.snapshot) {
       useSourceStore().attachDocumentScheduler(null)
+      useSourceStore().attachFileOverviewGenerator(null)
       useDocumentProcessingStore().attachRunner(null)
       useDocumentProcessingStore().attachScheduler(null)
     }
@@ -148,7 +162,7 @@ export class DocumentProcessingRuntime {
     this.parserInputs.clear()
   }
 
-  async resumePending(): Promise<void> {
+  async resumePending(trigger: FileOverviewTrigger = 'RESUME_ONLINE'): Promise<void> {
     const snapshot = this.snapshot
     if (!snapshot) return
     const jobs = await snapshot.repository.list()
@@ -158,6 +172,8 @@ export class DocumentProcessingRuntime {
       ...sourceStore.sources.map((source) => source.id),
     ])
     await snapshot.scheduler.resume([...sourceIds])
+    void snapshot.overviewGeneration.resumePending(trigger)
+      .catch(() => console.warn('[DocumentRuntime] overview resume failed'))
     useDocumentProcessingStore().setJobs(await snapshot.repository.list())
   }
 
@@ -165,7 +181,12 @@ export class DocumentProcessingRuntime {
     return this.snapshot
   }
 
-  private async startInternal(): Promise<void> {
+  private isCurrentStart(generation: number, userId: string, serverDeviceId: string): boolean {
+    const auth = useAuthStore()
+    return this.lifecycleGeneration === generation && auth.user?.id === userId && auth.serverDeviceId === serverDeviceId
+  }
+
+  private async startInternal(generation: number): Promise<void> {
     if (!isTauriContext()) return
     const authStore = useAuthStore()
     const userId = authStore.user?.id
@@ -176,13 +197,43 @@ export class DocumentProcessingRuntime {
     }
     const key = `${userId}:${serverDeviceId}`
     if (this.key === key && this.snapshot) return
-    this.stop()
+    this.clearRuntimeState()
 
     const repository = await getDocumentProcessingJobRepository(userId, serverDeviceId)
+    const overviewRepository = await getOverviewRepository(userId, serverDeviceId)
     await this.ensureEncryptionReady(repository)
+    if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
     const assetStore = useAssetStore()
     const sourceStore = useSourceStore()
     const processingStore = useDocumentProcessingStore()
+    const overviewGeneration = new OverviewGenerationService({
+      api: useOverviewApi,
+      repository: overviewRepository,
+      sourceApi: useSourceApi,
+      listReadyFiles: async () => (await repository.list())
+        .filter((job) => job.phase === 'READY')
+        .map((job) => ({ sourceId: job.sourceId, ingestionRevision: job.ingestionRevision })),
+      isFileGenerationEligible: async (sourceId, ingestionRevision) => {
+        const source = sourceStore.sources.find((item) => item.id === sourceId)
+        if (!source || source.type !== 'FILE' || source.ingestionRevision !== ingestionRevision) return false
+        const jobs = await repository.list()
+        return jobs.some((job) => job.sourceId === sourceId && job.ingestionRevision === ingestionRevision && job.phase === 'READY')
+      },
+      getLocalFileGenerationRevision: async (sourceId) => {
+        const source = sourceStore.sources.find((item) => item.id === sourceId)
+        if (!source || source.type !== 'FILE' || !source.ingestionRevision) return null
+        const jobs = await repository.list()
+        return jobs.some((job) => job.sourceId === sourceId && job.ingestionRevision === source.ingestionRevision && job.phase === 'READY')
+          ? source.ingestionRevision
+          : null
+      },
+      listLocalFileOverviews: async (subjectId) => {
+        const records = await Promise.all(sourceStore.sources
+          .filter((source) => source.subjectId === subjectId && source.type === 'FILE' && source.ingestionRevision)
+          .map((source) => overviewRepository.getFileOverview(source.id, source.ingestionRevision!)))
+        return records.filter((record): record is FileOverviewRecord => record !== null)
+      },
+    })
     const packager = {
       begin: documentPackageBegin,
       append: documentPackageAppend,
@@ -239,12 +290,16 @@ export class DocumentProcessingRuntime {
       deleteCache: async (cacheId) => { await documentCacheDelete(cacheId) },
       onJobChanged: async () => {
         await processingStore.refresh()
+        void overviewGeneration.resumePending('JOB_CHANGED')
+          .catch(() => console.warn('[DocumentRuntime] overview generation enqueue failed'))
       },
     })
 
+    if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
     this.key = key
-    this.snapshot = { userId, serverDeviceId, repository, runner, scheduler }
+    this.snapshot = { userId, serverDeviceId, repository, runner, scheduler, overviewGeneration }
     sourceStore.attachDocumentScheduler(scheduler)
+    sourceStore.attachFileOverviewGenerator(overviewGeneration)
     processingStore.attachRunner(runner)
     processingStore.attachScheduler(scheduler)
 
@@ -255,15 +310,19 @@ export class DocumentProcessingRuntime {
     if (warmup && !warmup.ready) {
       console.warn('[DocumentRuntime] OCR warmup deferred', warmup.errorCode)
     }
+    if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
 
     await useSyncStore().triggerSync().catch((error) => {
       console.warn('[DocumentRuntime] pending sync bootstrap deferred', error)
     })
+    if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
 
     await sourceStore.loadSources().catch((error) => {
       console.warn('[DocumentRuntime] source bootstrap deferred', error)
     })
-    await this.resumePending()
+    if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
+    await this.resumePending('RESUME_BOOTSTRAP')
+    if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
 
     if (typeof window !== 'undefined') window.addEventListener('online', this.onlineHandler)
     if (typeof window !== 'undefined') window.addEventListener('auralis-sync-updated', this.syncHandler)

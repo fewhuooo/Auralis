@@ -112,6 +112,24 @@ class OpenApiArtifactTests {
     }
 
     @Test
+    void documentsOverviewRequiredFieldsAndExplicitNullableParts() throws Exception {
+        JsonNode document = openApiDocument();
+        JsonNode response = document.at("/components/schemas/OverviewResponse");
+        assertThat(response.at("/required").toString())
+                .contains("schemaVersion", "title", "outline", "summary");
+        assertThat(allowsNull(response.at("/properties/outline"))).isTrue();
+        assertThat(allowsNull(response.at("/properties/summary"))).isTrue();
+
+        JsonNode input = document.at("/components/schemas/SubjectOverviewSourceInput");
+        assertThat(allowsNull(input.at("/properties/outline"))).isTrue();
+        assertThat(allowsNull(input.at("/properties/summary"))).isTrue();
+        assertThat(input.at("/properties/outline/items/$ref").asText())
+                .isEqualTo("#/components/schemas/OverviewChapter");
+        assertThat(input.at("/properties/summary/$ref").asText())
+                .isEqualTo("#/components/schemas/OverviewSummary");
+    }
+
+    @Test
     void documentsTaskSchemasWithoutCognitiveLoad() throws Exception {
         JsonNode document = openApiDocument();
         assertThat(document.at("/components/schemas/TaskView/properties/cognitiveLoad").isMissingNode()).isTrue();
@@ -134,5 +152,18 @@ class OpenApiArtifactTests {
                 .getResponse()
                 .getContentAsString();
         return objectMapper.readTree(body);
+    }
+
+    private boolean allowsNull(JsonNode schema) {
+        if (schema.at("/nullable").asBoolean(false)) return true;
+        JsonNode type = schema.at("/type");
+        if (type.isArray()) {
+            for (JsonNode value : type) if ("null".equals(value.asText())) return true;
+        }
+        JsonNode anyOf = schema.at("/anyOf");
+        if (anyOf.isArray()) {
+            for (JsonNode value : anyOf) if ("null".equals(value.at("/type").asText())) return true;
+        }
+        return false;
     }
 }

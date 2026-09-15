@@ -734,7 +734,7 @@ export class LocalRepository {
            cursor = excluded.cursor,
            reset_required = excluded.reset_required,
            schema_version = excluded.schema_version`,
-        [this.userId, this.serverDeviceId, cursor, resetRequired ? 1 : 0, 2],
+        [this.userId, this.serverDeviceId, cursor, resetRequired ? 1 : 0, LOCAL_SCHEMA_VERSION],
       )
       return state
     }

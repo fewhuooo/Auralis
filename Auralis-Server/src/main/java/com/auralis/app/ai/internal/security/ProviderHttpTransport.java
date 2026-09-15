@@ -10,6 +10,16 @@ public interface ProviderHttpTransport {
     byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody)
             throws IOException;
 
+    default byte[] post(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            byte[] requestBody,
+            long connectTimeoutMillis,
+            long responseTimeoutMillis) throws IOException {
+        return post(endpoint, path, apiKey, requestBody);
+    }
+
     default void postStream(
             ResolvedProviderEndpoint endpoint,
             String path,
@@ -24,5 +34,16 @@ public interface ProviderHttpTransport {
         for (String line : text.split("\\R", -1)) {
             lineConsumer.accept(line);
         }
+    }
+
+    default void postStream(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            byte[] requestBody,
+            Consumer<String> lineConsumer,
+            long connectTimeoutMillis,
+            long responseTimeoutMillis) throws IOException {
+        postStream(endpoint, path, apiKey, requestBody, lineConsumer);
     }
 }

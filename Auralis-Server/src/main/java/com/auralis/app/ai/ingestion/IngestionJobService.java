@@ -4,6 +4,8 @@ import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.shared.domain.SourceIngestionRequestedEvent;
+import com.auralis.app.source.IngestionJobReference;
+import com.auralis.app.source.ParsedDocumentIngestionPort;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.stereotype.Service;
@@ -17,7 +19,7 @@ import java.util.UUID;
 import org.springframework.data.domain.PageRequest;
 
 @Service
-public class IngestionJobService {
+public class IngestionJobService implements ParsedDocumentIngestionPort {
 
     private final IngestionJobRepository jobRepository;
 
@@ -34,7 +36,8 @@ public class IngestionJobService {
     }
 
     @Transactional
-    public IngestionJobEntity enqueueParsedDocument(
+    @Override
+    public IngestionJobReference enqueueParsedDocument(
             UUID userId, UUID sourceId, UUID parsedDocumentId, UUID ingestionRevision, UUID generation) {
         Optional<IngestionJobEntity> existing = jobRepository
                 .findFirstByUserIdAndSourceIdAndIngestionRevisionOrderByCreatedAtDesc(
@@ -42,22 +45,23 @@ public class IngestionJobService {
         if (existing.isPresent()) {
             IngestionJobEntity job = existing.get();
             if (job.isActive()) {
-                return job;
+                return reference(job);
             }
             job.requeueParsedDocument(parsedDocumentId, ingestionRevision, generation);
-            return jobRepository.save(job);
+            return reference(jobRepository.save(job));
         }
         IngestionJobEntity job = new IngestionJobEntity(
                 UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
         job.attachParsedDocument(parsedDocumentId, ingestionRevision);
-        return jobRepository.save(job);
+        return reference(jobRepository.save(job));
     }
 
     @Transactional(readOnly = true)
-    public Optional<IngestionJobEntity> findParsedDocumentJob(
+    @Override
+    public Optional<IngestionJobReference> findParsedDocumentJob(
             UUID userId, UUID sourceId, UUID ingestionRevision) {
         return jobRepository.findFirstByUserIdAndSourceIdAndIngestionRevisionOrderByCreatedAtDesc(
-                userId, sourceId, ingestionRevision);
+                userId, sourceId, ingestionRevision).map(this::reference);
     }
 
     @Transactional
@@ -86,5 +90,9 @@ public class IngestionJobService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onSourceIngestionRequested(SourceIngestionRequestedEvent event) {
         enqueue(event.userId(), event.sourceId());
+    }
+
+    private IngestionJobReference reference(IngestionJobEntity job) {
+        return new IngestionJobReference(job.getId());
     }
 }

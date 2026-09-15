@@ -6,6 +6,7 @@ import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.internal.provider.OpenAiCompatibleProvider;
+import com.auralis.app.ai.internal.provider.SiliconFlowEmbeddingProvider;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
@@ -15,9 +16,11 @@ import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.net.SocketTimeoutException;
+import java.io.IOException;
 import java.net.URI;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -102,7 +105,7 @@ class AiProviderSecurityTests {
                 .isInstanceOf(DomainException.class)
                 .hasMessageNotContaining("sk-secret-value")
                 .extracting(exception -> ((DomainException) exception).code())
-                .isEqualTo("MODEL_UNAVAILABLE");
+                .isEqualTo("MODEL_TIMEOUT");
         verify(policy).resolve(AiProviderType.OPENAI_COMPATIBLE, URI.create("https://provider.test/v1"));
     }
 
@@ -128,12 +131,12 @@ class AiProviderSecurityTests {
                         null),
                 new AiCredential("https://provider.test/v1", "sk-secret-value")))
                 .isInstanceOf(DomainException.class)
-                .hasMessage("AI provider is unavailable")
+                .hasMessage("AI provider response timed out")
                 .hasCause(timeout);
     }
 
     @Test
-    void mapsStreamingProviderTimeoutToModelUnavailable() {
+    void mapsStreamingProviderTimeoutToModelTimeout() {
         ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "provider.test", 443, List.of(), "/v1");
@@ -164,6 +167,82 @@ class AiProviderSecurityTests {
                 chunk -> { }))
                 .isInstanceOf(DomainException.class)
                 .extracting(exception -> ((DomainException) exception).code())
+                .isEqualTo("MODEL_TIMEOUT");
+    }
+
+    @Test
+    void passesCompatibilityDefaultTimeoutsToSiliconFlowEmbeddingTransport() {
+        ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "embedding.test", 443, List.of(), "/v1");
+        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+                .thenReturn(endpoint);
+        AtomicLong connectTimeout = new AtomicLong();
+        AtomicLong responseTimeout = new AtomicLong();
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override
+            public byte[] post(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] body) {
+                throw new AssertionError("timeout-aware overload must be used");
+            }
+
+            @Override
+            public byte[] post(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] body,
+                               long connectTimeoutMillis, long responseTimeoutMillis) {
+                connectTimeout.set(connectTimeoutMillis);
+                responseTimeout.set(responseTimeoutMillis);
+                String vector = String.join(",", java.util.Collections.nCopies(1024, "0.1"));
+                return ("{\"data\":[{\"embedding\":[" + vector + "]}]}")
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
+        };
+        SiliconFlowEmbeddingProvider provider = new SiliconFlowEmbeddingProvider(
+                policy, new ProviderHttpClient(new ObjectMapper(), transport, 100_000));
+
+        provider.embed(List.of("hello"), new AiCredential("https://embedding.test/v1", "sk-secret-value", "embed"));
+
+        assertThat(connectTimeout).hasValue(3_000L);
+        assertThat(responseTimeout).hasValue(10_000L);
+    }
+
+    @Test
+    void mapsSiliconFlowEmbeddingSocketTimeoutToModelTimeoutWithCause() {
+        ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "embedding.test", 443, List.of(), "/v1");
+        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+                .thenReturn(endpoint);
+        SocketTimeoutException timeout = new SocketTimeoutException("embedding timeout");
+        ProviderHttpTransport transport = (resolved, path, apiKey, body) -> { throw timeout; };
+        SiliconFlowEmbeddingProvider provider = new SiliconFlowEmbeddingProvider(
+                policy, new ProviderHttpClient(new ObjectMapper(), transport, 1024));
+
+        assertThatThrownBy(() -> provider.embed(List.of("hello"),
+                new AiCredential("https://embedding.test/v1", "sk-secret-value", "embed")))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Embedding provider response timed out")
+                .hasCause(timeout)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_TIMEOUT");
+    }
+
+    @Test
+    void mapsSiliconFlowEmbeddingGenericIoFailureToModelUnavailableWithCause() {
+        ProviderEndpointPolicy policy = mock(ProviderEndpointPolicy.class);
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "embedding.test", 443, List.of(), "/v1");
+        when(policy.resolve(AiProviderType.SILICONFLOW, URI.create("https://embedding.test/v1")))
+                .thenReturn(endpoint);
+        IOException failure = new IOException("embedding transport failed");
+        ProviderHttpTransport transport = (resolved, path, apiKey, body) -> { throw failure; };
+        SiliconFlowEmbeddingProvider provider = new SiliconFlowEmbeddingProvider(
+                policy, new ProviderHttpClient(new ObjectMapper(), transport, 1024));
+
+        assertThatThrownBy(() -> provider.embed(List.of("hello"),
+                new AiCredential("https://embedding.test/v1", "sk-secret-value", "embed")))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Embedding provider is unavailable")
+                .hasCause(failure)
+                .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("MODEL_UNAVAILABLE");
     }
 

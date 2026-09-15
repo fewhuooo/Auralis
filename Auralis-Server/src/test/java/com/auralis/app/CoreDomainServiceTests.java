@@ -17,6 +17,9 @@ import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.task.internal.persistence.TaskRepository;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
+import com.auralis.app.relation.internal.persistence.RelationRepository;
+import com.auralis.app.source.internal.persistence.AssetRepository;
+import com.auralis.app.source.internal.persistence.SourceRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +57,15 @@ class CoreDomainServiceTests {
     private KnowledgeBlockRepository knowledgeBlockRepository;
 
     @Autowired
+    private RelationRepository relationRepository;
+
+    @Autowired
+    private SourceRepository sourceRepository;
+
+    @Autowired
+    private AssetRepository assetRepository;
+
+    @Autowired
     private TaskRepository taskRepository;
 
     @Autowired
@@ -64,7 +76,10 @@ class CoreDomainServiceTests {
 
     @BeforeEach
     void cleanData() {
+        relationRepository.deleteAll();
         knowledgeBlockRepository.deleteAll();
+        sourceRepository.deleteAll();
+        assetRepository.deleteAll();
         taskRepository.deleteAll();
         subjectRepository.deleteAll();
         refreshSessionRepository.deleteAll();
