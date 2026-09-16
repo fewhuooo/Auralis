@@ -9,6 +9,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 pub const CACHE_ENVELOPE_VERSION: u32 = 1;
@@ -97,22 +98,26 @@ pub struct LocalCacheHeader {
 
 impl LocalCacheHeader {
     fn aad(&self) -> Vec<u8> {
-        format!(
-            "auralis-local-cache|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            LOCAL_CACHE_ENVELOPE_VERSION,
-            self.schema_version,
-            self.user_id,
-            self.device_id,
-            self.local_source_id,
-            self.local_content_revision,
-            self.source_asset_sha256,
-            self.parser_id,
-            self.parser_version,
-            self.normalization_version,
-            self.ocr_model_version.as_deref().unwrap_or_default(),
-            "parsed-document-v1",
+        canonical_aad(
+            b"auralis-local-cache",
+            &[
+                LOCAL_CACHE_ENVELOPE_VERSION.to_le_bytes().as_slice(),
+                self.schema_version.to_le_bytes().as_slice(),
+                self.user_id.as_bytes(),
+                self.device_id.as_bytes(),
+                self.local_source_id.as_bytes(),
+                self.local_content_revision.as_bytes(),
+                self.source_asset_sha256.as_bytes(),
+                self.parser_id.as_bytes(),
+                self.parser_version.as_bytes(),
+                self.normalization_version.as_bytes(),
+                self.ocr_model_version
+                    .as_deref()
+                    .unwrap_or_default()
+                    .as_bytes(),
+                b"parsed-document-v1",
+            ],
         )
-        .into_bytes()
     }
 
     fn matches_scope(&self, scope: &LocalCacheScope) -> bool {
@@ -195,7 +200,38 @@ impl DocumentCacheStore {
     pub fn new(root: impl Into<PathBuf>, key: [u8; 32]) -> Result<Self, String> {
         let root = root.into();
         fs::create_dir_all(&root).map_err(|e| format!("CACHE_ROOT_CREATE_FAILED: {e}"))?;
+        cleanup_staging_files(&root, Duration::from_secs(60 * 60))?;
         Ok(Self { root, key })
+    }
+
+    pub fn create_plaintext_staging_file(
+        &self,
+        kind: &str,
+        cache_id: &str,
+    ) -> Result<(PathBuf, File), String> {
+        validate_cache_id(cache_id)?;
+        if !matches!(kind, "local" | "rebind") {
+            return Err("CACHE_STAGING_KIND_INVALID".to_string());
+        }
+        for _ in 0..8 {
+            let mut nonce = [0u8; 16];
+            rand::rngs::OsRng.fill_bytes(&mut nonce);
+            let path = self.root.join(format!(
+                ".document-staging-{kind}-{cache_id}-{}.gzip.tmp",
+                hex::encode(nonce)
+            ));
+            match OpenOptions::new().create_new(true).write(true).open(&path) {
+                Ok(file) => return Ok((path, file)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(format!("CACHE_STAGING_CREATE_FAILED: {error}")),
+            }
+        }
+        Err("CACHE_STAGING_CREATE_FAILED".to_string())
+    }
+
+    #[cfg(test)]
+    pub fn cleanup_staging_files_for_test(&self) -> Result<usize, String> {
+        cleanup_staging_files(&self.root, Duration::ZERO)
     }
 
     pub fn cache_path(&self, cache_id: &str) -> Result<PathBuf, String> {
@@ -238,6 +274,45 @@ impl DocumentCacheStore {
             return Err(format!("CACHE_ATOMIC_RENAME_FAILED: {error}"));
         }
         Ok(receipt)
+    }
+
+    pub fn encrypt_gzip_file_unique(
+        &self,
+        cache_id: &str,
+        header: &CacheHeader,
+        gzip_path: &Path,
+        plain_text_sha256: [u8; 32],
+    ) -> Result<CacheReceipt, String> {
+        let final_path = self.cache_path(cache_id)?;
+        if final_path.exists() {
+            return Err("CACHE_ALREADY_EXISTS".to_string());
+        }
+        for _ in 0..8 {
+            let mut nonce = [0u8; 16];
+            rand::rngs::OsRng.fill_bytes(&mut nonce);
+            let temp_path = self.root.join(format!(
+                ".document-encrypted-{cache_id}-{}.tmp",
+                hex::encode(nonce)
+            ));
+            match self.encrypt_to_path(cache_id, &temp_path, header, gzip_path, plain_text_sha256) {
+                Ok(receipt) => match fs::rename(&temp_path, &final_path) {
+                    Ok(()) => return Ok(receipt),
+                    Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                        let _ = fs::remove_file(&temp_path);
+                        return Err("CACHE_ALREADY_EXISTS".to_string());
+                    }
+                    Err(error) => {
+                        let _ = fs::remove_file(&temp_path);
+                        return Err(format!("CACHE_ATOMIC_RENAME_FAILED: {error}"));
+                    }
+                },
+                Err(error) => {
+                    let _ = fs::remove_file(&temp_path);
+                    return Err(error);
+                }
+            }
+        }
+        Err("CACHE_TEMP_CREATE_FAILED".to_string())
     }
 
     pub fn encrypt_local_gzip_file(
@@ -707,6 +782,57 @@ fn validate_cache_id(cache_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn canonical_aad(domain: &[u8], fields: &[&[u8]]) -> Vec<u8> {
+    let mut output = Vec::with_capacity(
+        domain.len() + fields.iter().map(|field| field.len() + 8).sum::<usize>() + 8,
+    );
+    write_length_prefixed(&mut output, domain);
+    for field in fields {
+        write_length_prefixed(&mut output, field);
+    }
+    output
+}
+
+fn write_length_prefixed(output: &mut Vec<u8>, value: &[u8]) {
+    output.extend_from_slice(&(value.len() as u64).to_le_bytes());
+    output.extend_from_slice(value);
+}
+
+fn cleanup_staging_files(root: &Path, stale_after: Duration) -> Result<usize, String> {
+    let entries = fs::read_dir(root).map_err(|e| format!("CACHE_STAGING_SCAN_FAILED: {e}"))?;
+    let mut removed = 0usize;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("CACHE_STAGING_SCAN_FAILED: {e}"))?;
+        let file_name = entry.file_name();
+        let Some(file_name) = file_name.to_str() else {
+            continue;
+        };
+        if !(file_name.starts_with(".document-staging-local-")
+            || file_name.starts_with(".document-staging-rebind-"))
+            || !file_name.ends_with(".gzip.tmp")
+        {
+            continue;
+        }
+        let metadata = entry
+            .metadata()
+            .map_err(|e| format!("CACHE_STAGING_SCAN_FAILED: {e}"))?;
+        if !metadata.is_file() {
+            continue;
+        }
+        let stale = metadata
+            .modified()
+            .ok()
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= stale_after);
+        if stale {
+            fs::remove_file(entry.path())
+                .map_err(|e| format!("CACHE_STAGING_CLEANUP_FAILED: {e}"))?;
+            removed = removed.saturating_add(1);
+        }
+    }
+    Ok(removed)
+}
+
 pub(crate) fn is_lowercase_sha256(value: &str) -> bool {
     value.len() == 64
         && value
@@ -854,6 +980,48 @@ mod tests {
             .read_to_end(&mut decoded)
             .unwrap();
         assert_eq!(decoded, b"local derived payload");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_aad_uses_unambiguous_length_prefixed_fields() {
+        let mut first = LocalCacheHeader {
+            schema_version: CACHE_SCHEMA_VERSION,
+            user_id: "ab".to_string(),
+            device_id: "c".to_string(),
+            local_source_id: "source".to_string(),
+            local_content_revision: "revision".to_string(),
+            source_asset_sha256: "a".repeat(64),
+            parser_id: "parser".to_string(),
+            parser_version: "v1".to_string(),
+            normalization_version: "n1".to_string(),
+            ocr_model_version: None,
+        };
+        let mut second = first.clone();
+        second.user_id = "a".to_string();
+        second.device_id = "bc".to_string();
+        assert_ne!(first.aad(), second.aad());
+        first.local_content_revision = "revision-a".to_string();
+        second.local_content_revision = "revision".to_string();
+        assert_ne!(first.aad(), second.aad());
+    }
+
+    #[test]
+    fn staging_cleanup_only_removes_owned_plaintext_staging_files() {
+        let root = temp_root("staging-cleanup");
+        let store = DocumentCacheStore::new(root.join("cache"), [6u8; 32]).unwrap();
+        let (staging_path, file) = store
+            .create_plaintext_staging_file("local", "cache-1")
+            .unwrap();
+        drop(file);
+        let formal_cache = store.cache_path("cache-1").unwrap();
+        fs::write(&formal_cache, b"must stay").unwrap();
+        let unrelated = store.local_cache_path("unrelated").unwrap();
+        fs::write(&unrelated, b"must stay").unwrap();
+        assert_eq!(store.cleanup_staging_files_for_test().unwrap(), 1);
+        assert!(!staging_path.exists());
+        assert!(formal_cache.exists());
+        assert!(unrelated.exists());
         let _ = fs::remove_dir_all(root);
     }
 

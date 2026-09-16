@@ -292,6 +292,7 @@ struct LocalPackageBuilder {
     plain_text_hash: Sha256,
     character_count: u64,
     next_ordinal: u64,
+    payload_bytes: u64,
 }
 
 impl LocalPackageBuilder {
@@ -317,11 +318,9 @@ impl LocalPackageBuilder {
             return Err("DOCUMENT_LOCAL_PACKAGE_HEADER_INVALID".to_string());
         }
         let cache_header = header.into_cache_header();
-        let temp_path = store
-            .local_cache_path(&cache_id)?
-            .with_extension("gzip.tmp");
-        let file = File::create(&temp_path)
-            .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_TEMP_FAILED: {e}"))?;
+        let (temp_path, file) = store
+            .create_plaintext_staging_file("local", &cache_id)
+            .map_err(|_| "DOCUMENT_LOCAL_PACKAGE_TEMP_FAILED".to_string())?;
         let mut builder = Self {
             cache_id,
             store,
@@ -331,6 +330,7 @@ impl LocalPackageBuilder {
             plain_text_hash: Sha256::new(),
             character_count: 0,
             next_ordinal: 0,
+            payload_bytes: 0,
         };
         builder.write_prefix()?;
         Ok(builder)
@@ -355,23 +355,32 @@ impl LocalPackageBuilder {
             .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_HEADER_SERIALIZE_FAILED: {e}"))?;
         let parser = serde_json::to_vec(&parser)
             .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_HEADER_SERIALIZE_FAILED: {e}"))?;
+        let mut prefix = Vec::new();
+        prefix.extend_from_slice(b"{\"schemaVersion\":1,\"localSourceId\":");
+        prefix.extend_from_slice(&local_source_id);
+        prefix.extend_from_slice(b",\"localContentRevision\":");
+        prefix.extend_from_slice(&local_revision);
+        prefix.extend_from_slice(b",\"sourceAssetSha256\":");
+        prefix.extend_from_slice(&asset_sha);
+        prefix.extend_from_slice(b",\"parser\":");
+        prefix.extend_from_slice(&parser);
+        prefix.extend_from_slice(b",\"blocks\":[");
         encoder
-            .write_all(b"{\"schemaVersion\":1,\"localSourceId\":")
-            .and_then(|_| encoder.write_all(&local_source_id))
-            .and_then(|_| encoder.write_all(b",\"localContentRevision\":"))
-            .and_then(|_| encoder.write_all(&local_revision))
-            .and_then(|_| encoder.write_all(b",\"sourceAssetSha256\":"))
-            .and_then(|_| encoder.write_all(&asset_sha))
-            .and_then(|_| encoder.write_all(b",\"parser\":"))
-            .and_then(|_| encoder.write_all(&parser))
-            .and_then(|_| encoder.write_all(b",\"blocks\":["))
-            .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_WRITE_FAILED: {e}"))
+            .write_all(&prefix)
+            .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_WRITE_FAILED: {e}"))?;
+        self.payload_bytes = prefix.len() as u64;
+        Ok(())
     }
 
     fn append(&mut self, block: ParsedDocumentBlock) -> Result<(), String> {
         validate_block(&block, self.next_ordinal, "DOCUMENT_LOCAL_PACKAGE")?;
         let json = serde_json::to_vec(&block)
             .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_BLOCK_SERIALIZE_FAILED: {e}"))?;
+        let separator_bytes = u64::from(self.next_ordinal > 0);
+        let added_bytes = separator_bytes.saturating_add(json.len() as u64);
+        if self.payload_bytes.saturating_add(added_bytes) > MAX_LOCAL_DERIVED_BYTES {
+            return Err("DOCUMENT_LOCAL_PACKAGE_PAYLOAD_TOO_LARGE".to_string());
+        }
         let encoder = self
             .encoder
             .as_mut()
@@ -390,6 +399,7 @@ impl LocalPackageBuilder {
             .character_count
             .saturating_add(block.text.chars().count() as u64);
         self.next_ordinal = self.next_ordinal.saturating_add(1);
+        self.payload_bytes = self.payload_bytes.saturating_add(added_bytes);
         Ok(())
     }
 
@@ -400,16 +410,21 @@ impl LocalPackageBuilder {
         let plain_hash: [u8; 32] = self.plain_text_hash.clone().finalize().into();
         let hash_json = serde_json::to_vec(&hex::encode(plain_hash))
             .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_HASH_SERIALIZE_FAILED: {e}"))?;
+        let mut suffix = Vec::new();
+        suffix.extend_from_slice(b"],\"characterCount\":");
+        suffix.extend_from_slice(self.character_count.to_string().as_bytes());
+        suffix.extend_from_slice(b",\"plainTextSha256\":");
+        suffix.extend_from_slice(&hash_json);
+        suffix.extend_from_slice(b"}");
+        if self.payload_bytes.saturating_add(suffix.len() as u64) > MAX_LOCAL_DERIVED_BYTES {
+            return Err("DOCUMENT_LOCAL_PACKAGE_PAYLOAD_TOO_LARGE".to_string());
+        }
         let encoder = self
             .encoder
             .as_mut()
             .ok_or_else(|| "DOCUMENT_LOCAL_PACKAGE_FINISHED".to_string())?;
         encoder
-            .write_all(b"],\"characterCount\":")
-            .and_then(|_| encoder.write_all(self.character_count.to_string().as_bytes()))
-            .and_then(|_| encoder.write_all(b",\"plainTextSha256\":"))
-            .and_then(|_| encoder.write_all(&hash_json))
-            .and_then(|_| encoder.write_all(b"}"))
+            .write_all(&suffix)
             .map_err(|e| format!("DOCUMENT_LOCAL_PACKAGE_WRITE_FAILED: {e}"))?;
         let encoder = self
             .encoder
@@ -452,6 +467,16 @@ fn validate_block(
         return Err(format!("{prefix}_BLOCK_TOO_LARGE"));
     }
     Ok(())
+}
+
+fn append_pending_package(
+    package: &mut PendingPackage,
+    block: ParsedDocumentBlock,
+) -> Result<(), String> {
+    match package {
+        PendingPackage::Server(builder) => builder.append(block),
+        PendingPackage::Local(_) => Err("DOCUMENT_PACKAGE_KIND_MISMATCH".to_string()),
+    }
 }
 
 pub struct DocumentPackagerState {
@@ -689,6 +714,48 @@ fn write_server_payload_prefix(
         .map_err(|_| "LOCAL_CACHE_REBIND_WRITE_FAILED".to_string())
 }
 
+fn staged_payload_info(path: &std::path::Path) -> Result<CachePayloadInfo, String> {
+    let mut file =
+        File::open(path).map_err(|_| "LOCAL_CACHE_REBIND_TEMP_READ_FAILED".to_string())?;
+    let mut hash = Sha256::new();
+    let mut bytes = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = file
+            .read(&mut buffer)
+            .map_err(|_| "LOCAL_CACHE_REBIND_TEMP_READ_FAILED".to_string())?;
+        if count == 0 {
+            break;
+        }
+        bytes = bytes.saturating_add(count as u64);
+        if bytes > MAX_LOCAL_DERIVED_BYTES {
+            return Err("LOCAL_CACHE_REBIND_PAYLOAD_TOO_LARGE".to_string());
+        }
+        hash.update(&buffer[..count]);
+    }
+    Ok(CachePayloadInfo {
+        payload_sha256: hex::encode(hash.finalize()),
+        payload_bytes: bytes,
+    })
+}
+
+fn rebind_receipt_matches(
+    receipt: &CacheReceipt,
+    header: &CacheHeader,
+    payload_info: &CachePayloadInfo,
+) -> bool {
+    receipt.envelope_version == crate::document_cache::CACHE_ENVELOPE_VERSION
+        && receipt.payload_sha256 == payload_info.payload_sha256
+        && receipt.payload_bytes == payload_info.payload_bytes
+        && receipt.payload_format == header.payload_format
+        && receipt.source_asset_sha256 == header.source_asset_sha256
+        && receipt.parser_id == header.parser_id
+        && receipt.parser_version.as_ref() == Some(&header.parser_version)
+        && receipt.normalization_version == header.normalization_version
+        && receipt.ocr_model_version == header.ocr_model_version
+        && receipt.plain_text_sha256 == header.plain_text_sha256.as_deref().unwrap_or_default()
+}
+
 fn bind_local_cache(
     store: DocumentCacheStore,
     request: LocalCacheBindRequest,
@@ -724,13 +791,10 @@ fn bind_local_cache(
         job_id: request.job_id.clone(),
         ingestion_revision: request.ingestion_revision.clone(),
     };
-    if final_path.exists() {
-        return store.existing_receipt(&request.server_cache_id, &server_scope);
-    }
-    let temp_path = final_path.with_extension("gzip.tmp");
+    let (temp_path, file) = store
+        .create_plaintext_staging_file("rebind", &request.server_cache_id)
+        .map_err(|_| "LOCAL_CACHE_REBIND_TEMP_FAILED".to_string())?;
     let result = (|| {
-        let file =
-            File::create(&temp_path).map_err(|_| "LOCAL_CACHE_REBIND_TEMP_FAILED".to_string())?;
         let mut encoder = GzEncoder::new(file, Compression::default());
         write_server_payload_prefix(&mut encoder, &local_header, &request)?;
         let decrypted = store.open_local_decrypted_reader(&request.local_cache_id, &local_scope)?;
@@ -803,6 +867,16 @@ fn bind_local_cache(
             ocr_model_version: local_header.ocr_model_version.clone(),
             plain_text_sha256: Some(plain_hash),
         };
+        let expected_payload_info = staged_payload_info(&temp_path)?;
+        if final_path.exists() {
+            let existing = store.existing_receipt(&request.server_cache_id, &server_scope)?;
+            if !rebind_receipt_matches(&existing, &cache_header, &expected_payload_info) {
+                return Err("LOCAL_CACHE_BIND_CONFLICT".to_string());
+            }
+            fs::remove_file(&temp_path)
+                .map_err(|_| "LOCAL_CACHE_REBIND_TEMP_CLEANUP_FAILED".to_string())?;
+            return Ok(existing);
+        }
         let plain_hash_bytes: [u8; 32] = hex::decode(
             cache_header
                 .plain_text_sha256
@@ -812,12 +886,22 @@ fn bind_local_cache(
         .map_err(|_| "LOCAL_CACHE_REBIND_HASH_INVALID".to_string())?
         .try_into()
         .map_err(|_| "LOCAL_CACHE_REBIND_HASH_INVALID".to_string())?;
-        let receipt = store.encrypt_gzip_file(
+        let receipt = match store.encrypt_gzip_file_unique(
             &request.server_cache_id,
             &cache_header,
             &temp_path,
             plain_hash_bytes,
-        )?;
+        ) {
+            Ok(receipt) => receipt,
+            Err(error) if error == "CACHE_ALREADY_EXISTS" => {
+                let existing = store.existing_receipt(&request.server_cache_id, &server_scope)?;
+                if !rebind_receipt_matches(&existing, &cache_header, &expected_payload_info) {
+                    return Err("LOCAL_CACHE_BIND_CONFLICT".to_string());
+                }
+                existing
+            }
+            Err(error) => return Err(error),
+        };
         fs::remove_file(&temp_path)
             .map_err(|_| "LOCAL_CACHE_REBIND_TEMP_CLEANUP_FAILED".to_string())?;
         Ok(receipt)
@@ -911,10 +995,7 @@ pub fn document_package_append(
     let builder = packages
         .get_mut(&package_id)
         .ok_or_else(|| "DOCUMENT_PACKAGE_NOT_FOUND".to_string())?;
-    match builder {
-        PendingPackage::Server(builder) => builder.append(block),
-        PendingPackage::Local(builder) => builder.append(block),
-    }
+    append_pending_package(builder, block)
 }
 
 #[tauri::command]
@@ -1090,6 +1171,39 @@ mod tests {
     }
 
     #[test]
+    fn server_append_rejects_local_pending_without_consuming_block() {
+        let root = temp_root();
+        let store = DocumentCacheStore::new(root.join("cache"), [8u8; 32]).unwrap();
+        let builder =
+            LocalPackageBuilder::begin(store, "local-cache-1".to_string(), local_header()).unwrap();
+        let mut pending = PendingPackage::Local(builder);
+        assert_eq!(
+            append_pending_package(&mut pending, block(0, "block")),
+            Err("DOCUMENT_PACKAGE_KIND_MISMATCH".to_string())
+        );
+        match pending {
+            PendingPackage::Local(builder) => assert_eq!(builder.next_ordinal, 0),
+            PendingPackage::Server(_) => panic!("local package changed kind"),
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_append_enforces_cumulative_payload_limit_before_writing() {
+        let root = temp_root();
+        let store = DocumentCacheStore::new(root.join("cache"), [8u8; 32]).unwrap();
+        let mut builder =
+            LocalPackageBuilder::begin(store, "local-cache-1".to_string(), local_header()).unwrap();
+        builder.payload_bytes = MAX_LOCAL_DERIVED_BYTES;
+        assert_eq!(
+            builder.append(block(0, "block")),
+            Err("DOCUMENT_LOCAL_PACKAGE_PAYLOAD_TOO_LARGE".to_string())
+        );
+        assert_eq!(builder.next_ordinal, 0);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn local_cache_can_be_bound_without_rebuilding_blocks() {
         let root = temp_root();
         let state = DocumentPackagerState::for_test(root.join("cache"), [8u8; 32]);
@@ -1114,7 +1228,15 @@ mod tests {
             ingestion_revision: "server-rev-1".to_string(),
             source_asset_sha256: "a".repeat(64),
         };
-        let receipt = bind_local_cache(state.local_store_for_test(), bind_request.clone()).unwrap();
+        let store_a = state.local_store_for_test();
+        let store_b = state.local_store_for_test();
+        let (first, second) = std::thread::scope(|scope| {
+            let first = scope.spawn(|| bind_local_cache(store_a, bind_request.clone()));
+            let second = scope.spawn(|| bind_local_cache(store_b, bind_request.clone()));
+            (first.join().unwrap(), second.join().unwrap())
+        });
+        let receipt = first.unwrap();
+        assert_eq!(second.unwrap(), receipt);
         assert_eq!(
             bind_local_cache(state.local_store_for_test(), bind_request.clone()).unwrap(),
             receipt
