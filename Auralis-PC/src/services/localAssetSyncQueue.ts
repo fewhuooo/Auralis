@@ -270,13 +270,34 @@ export class LocalAssetSyncQueue {
 }
 
 const queueCache = new Map<string, LocalAssetSyncQueue>()
+const queueInitPromises = new Map<string, Promise<LocalAssetSyncQueue>>()
 
-export function getOrCreateLocalAssetSyncQueue(options: LocalAssetSyncQueueOptions): LocalAssetSyncQueue {
+export async function getOrCreateLocalAssetSyncQueue(options: LocalAssetSyncQueueOptions): Promise<LocalAssetSyncQueue> {
   const key = `${options.assetRepository.userId}:${options.assetRepository.serverDeviceId}`
-  let instance = queueCache.get(key)
-  if (!instance) {
-    instance = new LocalAssetSyncQueue(options)
+  
+  const existing = queueCache.get(key)
+  if (existing) return existing
+  
+  const inFlight = queueInitPromises.get(key)
+  if (inFlight) return inFlight
+  
+  const initPromise = (async () => {
+    const instance = new LocalAssetSyncQueue(options)
+    await instance.recoverInflightJobs()
     queueCache.set(key, instance)
+    queueInitPromises.delete(key)
+    return instance
+  })()
+  
+  queueInitPromises.set(key, initPromise)
+  return initPromise
+}
+
+export function releaseLocalAssetSyncQueue(userId: string, serverDeviceId: string): void {
+  const key = `${userId}:${serverDeviceId}`
+  const instance = queueCache.get(key)
+  if (instance) {
+    instance.dispose()
+    queueCache.delete(key)
   }
-  return instance
 }

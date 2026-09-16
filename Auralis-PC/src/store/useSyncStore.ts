@@ -1,12 +1,15 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncApi } from '@/api/useSyncApi'
-import { getLocalRepository } from '@/services/localDb'
+import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
 import { publishProjectionChange } from '@/services/localProjectionEvents'
 import { runSyncCycle } from '@/services/syncCycle'
 import { createSyncScheduler } from '@/services/syncScheduler'
+import { LocalAssetService } from '@/services/localAssetService'
+import { LocalSourceDraftService } from '@/services/localSourceDraftService'
+import { getOrCreateLocalAssetSyncQueue, releaseLocalAssetSyncQueue, type LocalAssetSyncQueue } from '@/services/localAssetSyncQueue'
 
 function encodeKeyPart(value: string): string {
   return encodeURIComponent(value).replace(/%/g, '_')
@@ -47,8 +50,55 @@ export const useSyncStore = defineStore('sync', () => {
   let syncRequested = false
   const scheduler = createSyncScheduler({ delayMs: 500, run: async () => flushNow() })
 
+  let assetQueuePromise: Promise<LocalAssetSyncQueue> | null = null
+  let assetQueueKey: string | null = null
+
+  const authStore = useAuthStore()
+
+  watch(
+    () => `${authStore.user?.id}:${authStore.serverDeviceId}`,
+    (newKey, oldKey) => {
+      if (oldKey && oldKey !== ':' && oldKey !== newKey) {
+        const [oldUser, oldDevice] = oldKey.split(':')
+        releaseLocalAssetSyncQueue(oldUser, oldDevice)
+        if (assetQueueKey === oldKey) {
+          assetQueueKey = null
+          assetQueuePromise = null
+        }
+      }
+    }
+  )
+
+  async function getAssetQueue(): Promise<LocalAssetSyncQueue> {
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) throw new Error('Sync requires an authenticated user and device')
+    const key = `${userId}:${serverDeviceId}`
+
+    if (assetQueueKey !== key) {
+      if (assetQueueKey) {
+        const [oldUser, oldDevice] = assetQueueKey.split(':')
+        releaseLocalAssetSyncQueue(oldUser, oldDevice)
+      }
+      assetQueueKey = key
+      assetQueuePromise = (async () => {
+        const assetRepository = await getLocalAssetRepository(userId, serverDeviceId)
+        const rep = await getRepository()
+        const assetService = new LocalAssetService(assetRepository)
+        const draftService = new LocalSourceDraftService(assetRepository, rep)
+        
+        return getOrCreateLocalAssetSyncQueue({
+          assetRepository,
+          assetService,
+          draftService,
+          onWakeup: () => { requestBackgroundSync('write') },
+        })
+      })()
+    }
+    return assetQueuePromise!
+  }
+
   async function getRepository(): Promise<LocalRepository> {
-    const authStore = useAuthStore()
     const userId = authStore.user?.id
     const serverDeviceId = authStore.serverDeviceId
     if (!userId || !serverDeviceId) throw new Error('Sync requires an authenticated user and device')
@@ -69,9 +119,12 @@ export const useSyncStore = defineStore('sync', () => {
   }
 
   async function runCycle(): Promise<void> {
-    const authStore = useAuthStore()
     if (!authStore.serverDeviceId) throw new Error('Sync requires an authenticated device')
     const repositoryForSync = await getRepository()
+    
+    const assetQueue = await getAssetQueue()
+    await assetQueue.wakeUp()
+
     isPushing.value = true
     isPulling.value = true
     lastSyncError.value = null
@@ -119,6 +172,7 @@ export const useSyncStore = defineStore('sync', () => {
 
   function requestBackgroundSync(_reason: 'startup' | 'write' | 'realtime' | 'online' | 'read'): void {
     if (!useAuthStore().isAuthenticated) return
+    void getAssetQueue().catch(e => console.error('[useSyncStore] Failed to init asset queue:', e))
     scheduler.request()
   }
 

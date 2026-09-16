@@ -104,7 +104,8 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   assert.equal(inStoreSource.name, 'Quantum Mechanics')
 
   // 4. Verify LocalRepository has NO SOURCE outbox mutation!
-  const repo = await sourceStore.repository()
+  const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   const unresolved = await repo.listUnresolved()
   const sourceMutations = unresolved.filter((m) => m.resourceType === 'SOURCE')
   assert.equal(sourceMutations.length, 0, 'No SOURCE outbox mutation must exist before asset is READY')
@@ -126,10 +127,13 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   }
 
   // 6. Run queue
-  const { getLocalAssetRepository } = await import('../src/services/localDb.ts')
   const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
-  const assetService = getOrCreateLocalAssetService(localAssetRepo)
   const draftService = getOrCreateLocalSourceDraftService(localAssetRepo, repo)
+  const draftsBefore = await draftService.listDraftsForAsset(localAssetId)
+  assert.ok(draftsBefore.length > 0, 'Draft must exist before queue')
+
+  const assetService = getOrCreateLocalAssetService(localAssetRepo)
+  assetService.uploadAssetToRemote = async () => ({ status: 200, bytesSent: 100, payloadSha256: 'mock' }) // Mock to avoid fetch
   const queue = new LocalAssetSyncQueue({
     assetRepository: localAssetRepo,
     assetService,
@@ -145,7 +149,7 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   assert.equal(assetFile.serverAssetId, serverAssetId)
 
   // 8. Verify draft was released: exactly 1 SOURCE/CREATE outbox mutation with SAME sourceId and serverAssetId
-  const afterSyncUnresolved = await repo.listUnresolved()
+  const afterSyncUnresolved = await draftService.localRepository.listUnresolved()
   const releasedMutations = afterSyncUnresolved.filter((m) => m.resourceType === 'SOURCE')
   assert.equal(releasedMutations.length, 1)
   assert.equal(releasedMutations[0].resourceId, sourceId, 'Must keep the same localSourceId')

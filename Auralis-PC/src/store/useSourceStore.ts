@@ -330,7 +330,6 @@ export const useSourceStore = defineStore('source', () => {
     currentSourceCount,
     isLoading,
     lastError,
-    repository,
     loadSources,
     loadSourceFiles,
     loadLocalSourceFiles,
