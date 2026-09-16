@@ -9,7 +9,12 @@ import { runSyncCycle } from '@/services/syncCycle'
 import { createSyncScheduler } from '@/services/syncScheduler'
 import { getOrCreateLocalAssetService } from '@/services/localAssetService'
 import { getOrCreateLocalSourceDraftService } from '@/services/localSourceDraftService'
-import { getOrCreateLocalAssetSyncQueue, releaseLocalAssetSyncQueue, type LocalAssetSyncQueue } from '@/services/localAssetSyncQueue'
+import {
+  getOrCreateLocalAssetSyncQueue,
+  releaseLocalAssetSyncQueue,
+  QueueReleasedError,
+  type LocalAssetSyncQueue,
+} from '@/services/localAssetSyncQueue'
 
 function encodeKeyPart(value: string): string {
   return encodeURIComponent(value).replace(/%/g, '_')
@@ -34,30 +39,6 @@ export const getClientId = (): string => {
   const generated = globalThis.crypto?.randomUUID?.() ?? `pc_${Date.now()}_${Math.random().toString(36).slice(2)}`
   local?.setItem(key, generated)
   return generated
-}
-
-class QueueReleasedError extends Error {
-  readonly code = 'QUEUE_RELEASED_DURING_INIT'
-  constructor(message = 'QUEUE_RELEASED_DURING_INIT') {
-    super(message)
-    this.name = 'QueueReleasedError'
-  }
-}
-
-let activeGetAssetQueue: (() => Promise<LocalAssetSyncQueue>) | null = null
-
-/**
- * Narrow test-only seam for verifying asset queue initialization races without exposing
- * the queue instance or method on the production Store API.
- */
-export function __test_initAssetQueue(): Promise<LocalAssetSyncQueue> {
-  if (!activeGetAssetQueue) {
-    useSyncStore()
-  }
-  if (!activeGetAssetQueue) {
-    throw new Error('SyncStore not active')
-  }
-  return activeGetAssetQueue()
 }
 
 export const useSyncStore = defineStore('sync', () => {
@@ -153,7 +134,6 @@ export const useSyncStore = defineStore('sync', () => {
     }
     return assetQueuePromise
   }
-  activeGetAssetQueue = getAssetQueue
 
   async function getRepository(): Promise<LocalRepository> {
     const userId = authStore.user?.id

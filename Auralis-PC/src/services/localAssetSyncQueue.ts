@@ -54,7 +54,9 @@ function sanitizeErrorCode(error: unknown): string {
     'LOCAL_ASSET_BUSY',
     'NATIVE_UPLOAD_RECEIPT_MISMATCH',
     'QUEUE_DISPOSED',
-    'QUEUE_RELEASED_DURING_INIT'
+    'QUEUE_RELEASED_DURING_INIT',
+    'LOCAL_ASSET_QUEUE_DISPOSED',
+    'LOCAL_SOURCE_DRAFT_INTERRUPTED'
   ]
   for (const code of allowlist) {
     if (message.includes(code)) return code
@@ -92,10 +94,23 @@ function isDisposedError(error: unknown): boolean {
   if (!error) return false
   if (typeof error === 'object' && 'code' in error) {
     const code = String((error as { code?: unknown }).code)
-    if (code === 'QUEUE_DISPOSED' || code === 'QUEUE_RELEASED_DURING_INIT') return true
+    if (
+      code === 'QUEUE_DISPOSED' ||
+      code === 'QUEUE_RELEASED_DURING_INIT' ||
+      code === 'LOCAL_ASSET_QUEUE_DISPOSED'
+    ) {
+      return true
+    }
   }
   if (error instanceof Error) {
-    if (error.message === 'QUEUE_DISPOSED' || error.message === 'QUEUE_RELEASED_DURING_INIT') return true
+    if (
+      error.message === 'QUEUE_DISPOSED' ||
+      error.message === 'QUEUE_RELEASED_DURING_INIT' ||
+      error.message === 'LOCAL_ASSET_QUEUE_DISPOSED' ||
+      error.message === 'LOCAL_SOURCE_DRAFT_INTERRUPTED'
+    ) {
+      return true
+    }
   }
   return false
 }
@@ -172,13 +187,18 @@ export class LocalAssetSyncQueue {
     if (this.disposed) return
     const currentTime = this.now()
     if (jobId) {
+      if (this.disposed) return
       const job = await this.assetRepository.getSyncJob(jobId)
       if (this.disposed) return
       if (job && job.phase === 'PENDING') {
+        if (this.disposed) return
         await this.assetRepository.scheduleRetry(jobId, job.safeErrorCode ?? 'SYNC_FAILED', job.safeErrorDetail ?? '', currentTime)
+        if (this.disposed) return
       }
     }
+    if (this.disposed) return
     await this.processQueue()
+    if (this.disposed) return
   }
 
   async processQueue(): Promise<void> {
@@ -195,7 +215,7 @@ export class LocalAssetSyncQueue {
       while (!this.disposed) {
         const currentTime = this.now()
         const job = await this.assetRepository.claimNextSyncJob(currentTime)
-        if (!job || this.disposed) break
+        if (this.disposed || !job) break
 
         await this.processSingleJob(job.jobId, job.localAssetId, job.attempt, job.serverAssetId)
       }
@@ -221,7 +241,9 @@ export class LocalAssetSyncQueue {
       this.assertNotDisposed()
       if (!assetFile) {
         // Asset metadata missing; complete job
+        this.assertNotDisposed()
         await this.assetRepository.completeSyncJob(jobId)
+        this.assertNotDisposed()
         return
       }
 
@@ -247,20 +269,24 @@ export class LocalAssetSyncQueue {
         throw new Error('UPLOAD_INTENT_FAILED: Remote server did not return assetId')
       }
 
+      this.assertNotDisposed()
       await this.assetRepository.mapServerAssetId(localAssetId, serverAssetId)
       this.assertNotDisposed()
 
       if (intent.uploadStatus === 'READY') {
         isAlreadyReady = true
+        this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'BINDING_SOURCE', { serverAssetId })
+        this.assertNotDisposed()
       } else if (intent.uploadStatus === 'ORPHANED') {
         throw new Error('ASSET_ORPHANED: Remote asset is in ORPHANED state')
       } else {
         uploadUrl = intent.uploadUrl ?? null
         headers = intent.headers
+        this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'UPLOADING', { serverAssetId })
+        this.assertNotDisposed()
       }
-      this.assertNotDisposed()
 
       // 2. Binary upload & complete if not already ready
       if (!isAlreadyReady) {
@@ -268,43 +294,57 @@ export class LocalAssetSyncQueue {
           throw new Error('UPLOAD_INTENT_FAILED: Missing uploadUrl for UPLOADING phase')
         }
 
+        this.assertNotDisposed()
         const current = await this.assetRepository.getAssetFile(localAssetId)
         this.assertNotDisposed()
         if (current && (current.state === 'READY_LOCAL' || current.state === 'SYNC_FAILED')) {
+          this.assertNotDisposed()
           await this.assetRepository.transitionAssetState(localAssetId, 'SYNCING')
           this.assertNotDisposed()
         }
 
+        this.assertNotDisposed()
         await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
         this.assertNotDisposed()
 
+        this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'COMPLETING_REMOTE_ASSET', { serverAssetId })
         this.assertNotDisposed()
 
+        this.assertNotDisposed()
         await this.api.completeUpload(serverAssetId)
         this.assertNotDisposed()
 
+        this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'BINDING_SOURCE', { serverAssetId })
         this.assertNotDisposed()
       }
 
       // 3. Mark asset SYNCED in repository
+      this.assertNotDisposed()
       const currentAsset = await this.assetRepository.getAssetFile(localAssetId)
       this.assertNotDisposed()
       if (currentAsset && currentAsset.state !== 'SYNCED') {
+        this.assertNotDisposed()
         await this.assetRepository.transitionAssetState(localAssetId, 'SYNCED')
         this.assertNotDisposed()
       }
 
       // 4. Release all drafts for this asset
-      const released = await this.draftService.releaseDraftsForAsset(localAssetId, serverAssetId)
+      this.assertNotDisposed()
+      const released = await this.draftService.releaseDraftsForAsset(
+        localAssetId,
+        serverAssetId,
+        () => this.assertNotDisposed(),
+      )
       this.assertNotDisposed()
 
       // 5. Complete job
+      this.assertNotDisposed()
       await this.assetRepository.completeSyncJob(jobId)
       this.assertNotDisposed()
 
-      if (released.length > 0 && this.onWakeup) {
+      if (released.length > 0 && this.onWakeup && !this.disposed) {
         this.assertNotDisposed()
         this.onWakeup()
       }
@@ -319,15 +359,21 @@ export class LocalAssetSyncQueue {
 
       // Transition asset to SYNC_FAILED so local state remains observable without corrupting file
       try {
+        if (this.disposed) return
         const file = await this.assetRepository.getAssetFile(localAssetId)
+        if (this.disposed) return
         if (file && file.state === 'SYNCING') {
+          if (this.disposed) return
           await this.assetRepository.transitionAssetState(localAssetId, 'SYNC_FAILED')
+          if (this.disposed) return
         }
       } catch {
         // preserve local file state
       }
 
+      if (this.disposed) return
       await this.assetRepository.scheduleRetry(jobId, safeCode, safeDetail, nextRetryAt)
+      if (this.disposed) return
     }
   }
 }
