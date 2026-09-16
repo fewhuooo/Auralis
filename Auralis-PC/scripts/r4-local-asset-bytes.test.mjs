@@ -185,7 +185,7 @@ test('TauriLocalAssetNativeAdapter rejects files over 50MB before IPC', async ()
 })
 
 test('localAssetUploadPut validates exact Rust command and strictly checks parameters', async () => {
-  const { localAssetUploadPut } = await import('../src/api/tauri.ts')
+  const { localAssetUploadPut, MAX_LOCAL_ASSET_BYTES } = await import('../src/api/tauri.ts')
   const tauriMock = setupTauriInvokeMock(async (cmd, args) => {
     assert.equal(cmd, 'local_asset_upload_put')
     assert.ok(args.command)
@@ -195,6 +195,7 @@ test('localAssetUploadPut validates exact Rust command and strictly checks param
     assert.equal(args.command.uploadUrl, 'http://upload')
     assert.equal(args.command.expectedSize, 100)
     assert.equal(args.command.expectedSha256, '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
+    assert.deepEqual(args.command.headers, {})
     return { status: 200, bytesSent: 100, payloadSha256: args.command.expectedSha256 }
   })
   try {
@@ -211,4 +212,44 @@ test('localAssetUploadPut validates exact Rust command and strictly checks param
   } finally {
     tauriMock.restore()
   }
+
+  // Reject ftp protocol
+  await assert.rejects(
+    async () => {
+      await localAssetUploadPut({
+        userScope: 'u1', deviceId: 'd1', localAssetId: 'asset-1',
+        uploadUrl: 'ftp://upload',
+        expectedSize: 100,
+        expectedSha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      })
+    },
+    /LOCAL_ASSET_COMMAND_INVALID/
+  )
+
+  // Reject oversize
+  await assert.rejects(
+    async () => {
+      await localAssetUploadPut({
+        userScope: 'u1', deviceId: 'd1', localAssetId: 'asset-1',
+        uploadUrl: 'https://upload',
+        expectedSize: MAX_LOCAL_ASSET_BYTES + 1,
+        expectedSha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      })
+    },
+    /LOCAL_ASSET_COMMAND_INVALID/
+  )
+
+  // Reject CRLF header
+  await assert.rejects(
+    async () => {
+      await localAssetUploadPut({
+        userScope: 'u1', deviceId: 'd1', localAssetId: 'asset-1',
+        uploadUrl: 'https://upload',
+        headers: { 'X-Custom': 'val\r\n' },
+        expectedSize: 100,
+        expectedSha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+      })
+    },
+    /LOCAL_ASSET_COMMAND_INVALID/
+  )
 })

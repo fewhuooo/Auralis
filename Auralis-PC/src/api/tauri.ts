@@ -382,12 +382,61 @@ export const localAssetUploadPut = (command: LocalAssetUploadPutCommand): Promis
     !command.userScope?.trim() ||
     !command.deviceId?.trim() ||
     !command.localAssetId?.trim() ||
-    !command.uploadUrl?.trim() ||
-    typeof command.expectedSize !== 'number' ||
-    command.expectedSize < 0 ||
-    !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
+    !command.uploadUrl?.trim()
   ) {
     throw new Error('LOCAL_ASSET_COMMAND_INVALID')
   }
-  return invokeRustCmd<LocalAssetUploadPutReceipt>('local_asset_upload_put', { command })
+
+  try {
+    const parsedUrl = new URL(command.uploadUrl)
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+    }
+  } catch {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+
+  if (
+    typeof command.expectedSize !== 'number' ||
+    !Number.isFinite(command.expectedSize) ||
+    !Number.isInteger(command.expectedSize) ||
+    command.expectedSize < 0 ||
+    command.expectedSize > MAX_LOCAL_ASSET_BYTES
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+
+  if (!/^[a-f0-9]{64}$/i.test(command.expectedSha256)) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+
+  const resolvedHeaders = command.headers ?? {}
+  if (
+    typeof resolvedHeaders !== 'object' ||
+    resolvedHeaders === null ||
+    Array.isArray(resolvedHeaders)
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+
+  const headerEntries = Object.entries(resolvedHeaders)
+  if (headerEntries.length > 32) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+
+  for (const [key, value] of headerEntries) {
+    if (!key || !/^[!#$%&'*+.^_`|~a-zA-Z0-9-]+$/.test(key)) {
+      throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+    }
+    if (typeof value !== 'string' || /[\r\n]/.test(value)) {
+      throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+    }
+  }
+
+  return invokeRustCmd<LocalAssetUploadPutReceipt>('local_asset_upload_put', {
+    command: {
+      ...command,
+      headers: resolvedHeaders
+    }
+  })
 }
