@@ -29,11 +29,11 @@ const { LocalRepository } = await import('../src/services/localRepository.ts')
 const { LocalAssetRepository } = await import('../src/services/localAssetRepository.ts')
 const { LocalAssetService, TransientBrowserAssetAdapter, getOrCreateLocalAssetService } = await import('../src/services/localAssetService.ts')
 const { LocalSourceDraftService, getOrCreateLocalSourceDraftService } = await import('../src/services/localSourceDraftService.ts')
-const { LocalAssetSyncQueue, getOrCreateLocalAssetSyncQueue } = await import('../src/services/localAssetSyncQueue.ts')
+const { LocalAssetSyncQueue, getOrCreateLocalAssetSyncQueue, releaseLocalAssetSyncQueue } = await import('../src/services/localAssetSyncQueue.ts')
 const { useAssetStore } = await import('../src/store/useAssetStore.ts')
 const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
-const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { useSyncStore, __test_initAssetQueue } = await import('../src/store/useSyncStore.ts')
 
 class TemporarySqlite {
   constructor() {
@@ -61,22 +61,26 @@ test('useAssetStore.upload: offline-first persists to LocalAssetRepository, crea
   authStore.user = { id: 'user-test-1', email: 'test@example.com' }
   authStore.serverDeviceId = 'device-test-1'
 
-  const assetStore = useAssetStore()
-  const file = new File(['offline content test'], 'offline_doc.pdf', { type: 'application/pdf' })
+  try {
+    const assetStore = useAssetStore()
+    const file = new File(['offline content test'], 'offline_doc.pdf', { type: 'application/pdf' })
 
-  const model = await assetStore.upload(file)
+    const model = await assetStore.upload(file)
 
-  // Verify UUID format
-  assert.match(
-    model.id,
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-    'Synthetic model id must be a valid UUID',
-  )
-  assert.equal(model.originalName, 'offline_doc.pdf')
-  assert.equal(model.uploadStatus, 'UPLOADING')
+    // Verify UUID format
+    assert.match(
+      model.id,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      'Synthetic model id must be a valid UUID',
+    )
+    assert.equal(model.originalName, 'offline_doc.pdf')
+    assert.equal(model.uploadStatus, 'UPLOADING')
 
-  // Verify no long-term File retained in Map
-  assert.equal(assetStore.getLocalFile(model.id), null, 'Store must not retain long-term File map')
+    // Verify no long-term File retained in Map
+    assert.equal(assetStore.getLocalFile(model.id), null, 'Store must not retain long-term File map')
+  } finally {
+    releaseLocalAssetSyncQueue('user-test-1', 'device-test-1')
+  }
 })
 
 test('useSourceStore.createFileSource: local asset path writes projection + draft without SOURCE outbox mutation; queue completes and releases outbox', async () => {
@@ -90,77 +94,83 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   const assetStore = useAssetStore()
   const sourceStore = useSourceStore()
 
-  // 1. Upload asset offline
-  const file = new File(['quantum physics data'], 'quantum.pdf', { type: 'application/pdf' })
-  const assetModel = await assetStore.upload(file)
-  const localAssetId = assetModel.id
+  let queue
+  try {
+    // 1. Upload asset offline
+    const file = new File(['quantum physics data'], 'quantum.pdf', { type: 'application/pdf' })
+    const assetModel = await assetStore.upload(file)
+    const localAssetId = assetModel.id
 
-  // 2. Create file source referencing localAssetId
-  const sourceId = await sourceStore.createFileSource('subject-physics', 'Quantum Mechanics', localAssetId)
-  assert.ok(sourceId)
+    // 2. Create file source referencing localAssetId
+    const sourceId = await sourceStore.createFileSource('subject-physics', 'Quantum Mechanics', localAssetId)
+    assert.ok(sourceId)
 
-  // 3. Verify store state has the source
-  const inStoreSource = sourceStore.sources.find((s) => s.id === sourceId)
-  assert.ok(inStoreSource)
-  assert.equal(inStoreSource.name, 'Quantum Mechanics')
+    // 3. Verify store state has the source
+    const inStoreSource = sourceStore.sources.find((s) => s.id === sourceId)
+    assert.ok(inStoreSource)
+    assert.equal(inStoreSource.name, 'Quantum Mechanics')
 
-  // 4. Verify LocalRepository has NO SOURCE outbox mutation!
-  const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
-  const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
-  const unresolved = await repo.listUnresolved()
-  const sourceMutations = unresolved.filter((m) => m.resourceType === 'SOURCE')
-  assert.equal(sourceMutations.length, 0, 'No SOURCE outbox mutation must exist before asset is READY')
+    // 4. Verify LocalRepository has NO SOURCE outbox mutation!
+    const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+    const unresolved = await repo.listUnresolved()
+    const sourceMutations = unresolved.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(sourceMutations.length, 0, 'No SOURCE outbox mutation must exist before asset is READY')
 
-  // 5. Mock API for queue sync
-  const serverAssetId = 'ee333333-4444-4555-8888-999999999999'
-  const mockApi = {
-    createUploadIntent: async (req) => {
-      assert.equal(req.clientImportId, localAssetId)
-      return {
-        assetId: serverAssetId,
-        uploadUrl: 'https://minio.test/bucket/quantum',
-        headers: {},
-        uploadStatus: 'UPLOADING',
-      }
-    },
-    uploadToObjectStorage: async () => {},
-    completeUpload: async (assetId) => ({ id: assetId, uploadStatus: 'READY' }),
+    // 5. Mock API for queue sync
+    const serverAssetId = 'ee333333-4444-4555-8888-999999999999'
+    const mockApi = {
+      createUploadIntent: async (req) => {
+        assert.equal(req.clientImportId, localAssetId)
+        return {
+          assetId: serverAssetId,
+          uploadUrl: 'https://minio.test/bucket/quantum',
+          headers: {},
+          uploadStatus: 'UPLOADING',
+        }
+      },
+      uploadToObjectStorage: async () => {},
+      completeUpload: async (assetId) => ({ id: assetId, uploadStatus: 'READY' }),
+    }
+
+    // 6. Run queue
+    const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    const draftService = getOrCreateLocalSourceDraftService(localAssetRepo, repo)
+    const draftsBefore = await draftService.listDraftsForAsset(localAssetId)
+    assert.ok(draftsBefore.length > 0, 'Draft must exist before queue')
+
+    const adapter = new TransientBrowserAssetAdapter()
+    adapter.uploadAssetToRemote = async (args) => ({
+      status: 200,
+      bytesSent: args.expectedSize,
+      payloadSha256: args.expectedSha256
+    })
+    const assetService = new LocalAssetService(localAssetRepo, { nativeAdapter: adapter })
+    queue = new LocalAssetSyncQueue({
+      assetRepository: localAssetRepo,
+      assetService,
+      draftService,
+      api: mockApi,
+    })
+
+    await queue.processQueue()
+
+    // 7. Verify asset is SYNCED and serverAssetId mapped
+    const assetFile = await localAssetRepo.getAssetFile(localAssetId)
+    assert.equal(assetFile.state, 'SYNCED')
+    assert.equal(assetFile.serverAssetId, serverAssetId)
+
+    // 8. Verify draft was released: exactly 1 SOURCE/CREATE outbox mutation with SAME sourceId and serverAssetId
+    const afterSyncUnresolved = await repo.listUnresolved()
+    const releasedMutations = afterSyncUnresolved.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(releasedMutations.length, 1)
+    assert.equal(releasedMutations[0].resourceId, sourceId, 'Must keep the same localSourceId')
+    assert.equal(releasedMutations[0].mutationType, 'CREATE')
+    assert.equal(releasedMutations[0].payload.assetId, serverAssetId)
+  } finally {
+    queue?.dispose()
+    releaseLocalAssetSyncQueue('user-test-2', 'device-test-2')
   }
-
-  // 6. Run queue
-  const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
-  const draftService = getOrCreateLocalSourceDraftService(localAssetRepo, repo)
-  const draftsBefore = await draftService.listDraftsForAsset(localAssetId)
-  assert.ok(draftsBefore.length > 0, 'Draft must exist before queue')
-
-  const adapter = new TransientBrowserAssetAdapter()
-  adapter.uploadAssetToRemote = async (args) => ({
-    status: 200,
-    bytesSent: args.expectedSize,
-    payloadSha256: args.expectedSha256
-  })
-  const assetService = new LocalAssetService(localAssetRepo, { nativeAdapter: adapter })
-  const queue = new LocalAssetSyncQueue({
-    assetRepository: localAssetRepo,
-    assetService,
-    draftService,
-    api: mockApi,
-  })
-
-  await queue.processQueue()
-
-  // 7. Verify asset is SYNCED and serverAssetId mapped
-  const assetFile = await localAssetRepo.getAssetFile(localAssetId)
-  assert.equal(assetFile.state, 'SYNCED')
-  assert.equal(assetFile.serverAssetId, serverAssetId)
-
-  // 8. Verify draft was released: exactly 1 SOURCE/CREATE outbox mutation with SAME sourceId and serverAssetId
-  const afterSyncUnresolved = await repo.listUnresolved()
-  const releasedMutations = afterSyncUnresolved.filter((m) => m.resourceType === 'SOURCE')
-  assert.equal(releasedMutations.length, 1)
-  assert.equal(releasedMutations[0].resourceId, sourceId, 'Must keep the same localSourceId')
-  assert.equal(releasedMutations[0].mutationType, 'CREATE')
-  assert.equal(releasedMutations[0].payload.assetId, serverAssetId)
 })
 
 test('useSyncStore: identity switch during queue init releases/disposes old queue A, rejects old promise with QUEUE_RELEASED_DURING_INIT, and resolves queue B', async () => {
@@ -184,32 +194,38 @@ test('useSyncStore: identity switch during queue init releases/disposes old queu
   }
 
   const syncStore = useSyncStore()
+  assert.equal(syncStore.getAssetQueue, undefined, 'getAssetQueue must not be exposed in useSyncStore return object')
 
-  // Start initialization for User A
-  const promiseA = syncStore.getAssetQueue()
+  try {
+    // Start initialization for User A via test seam
+    const promiseA = __test_initAssetQueue()
 
-  // Switch identity to User B while A is still in-flight
-  authStore.user = { id: 'user-race-B', email: 'b@example.com' }
-  authStore.serverDeviceId = 'device-race-B'
+    // Switch identity to User B while A is still in-flight
+    authStore.user = { id: 'user-race-B', email: 'b@example.com' }
+    authStore.serverDeviceId = 'device-race-B'
 
-  // Start initialization for User B
-  const promiseB = syncStore.getAssetQueue()
+    // Start initialization for User B via test seam
+    const promiseB = __test_initAssetQueue()
 
-  // A subsequently succeeds
-  resolveRecoverA(0)
+    // A subsequently succeeds
+    resolveRecoverA(0)
 
-  // 1. Old promise A must reject with stable code QUEUE_RELEASED_DURING_INIT
-  await assert.rejects(
-    promiseA,
-    (err) => err && err.code === 'QUEUE_RELEASED_DURING_INIT' && err.message === 'QUEUE_RELEASED_DURING_INIT',
-    'Promise A must reject with QUEUE_RELEASED_DURING_INIT when identity switches before completion'
-  )
+    // 1. Old promise A must reject with stable code QUEUE_RELEASED_DURING_INIT
+    await assert.rejects(
+      promiseA,
+      (err) => err && (err.code === 'QUEUE_RELEASED_DURING_INIT' || err.message === 'QUEUE_RELEASED_DURING_INIT'),
+      'Promise A must reject with QUEUE_RELEASED_DURING_INIT when identity switches before completion'
+    )
 
-  // 2. Queue B must resolve successfully
-  const queueB = await promiseB
-  assert.ok(queueB, 'Queue B must successfully initialize')
-  const currentQueueB = await syncStore.getAssetQueue()
-  assert.equal(currentQueueB, queueB, 'syncStore must return B queue')
+    // 2. Queue B must resolve successfully
+    const queueB = await promiseB
+    assert.ok(queueB, 'Queue B must successfully initialize')
+    const currentQueueB = await __test_initAssetQueue()
+    assert.equal(currentQueueB, queueB, 'syncStore must return B queue')
+  } finally {
+    releaseLocalAssetSyncQueue('user-race-A', 'device-race-A')
+    releaseLocalAssetSyncQueue('user-race-B', 'device-race-B')
+  }
 })
 
 test('useSyncStore: error in old queue A init does not wipe or corrupt new queue B promise', async () => {
@@ -233,31 +249,37 @@ test('useSyncStore: error in old queue A init does not wipe or corrupt new queue
   }
 
   const syncStore = useSyncStore()
+  assert.equal(syncStore.getAssetQueue, undefined, 'getAssetQueue must not be exposed in useSyncStore return object')
 
-  // Start init for A
-  const promiseA = syncStore.getAssetQueue()
+  try {
+    // Start init for A
+    const promiseA = __test_initAssetQueue()
 
-  // Switch to B
-  authStore.user = { id: 'user-fail-B', email: 'failB@example.com' }
-  authStore.serverDeviceId = 'device-fail-B'
+    // Switch to B
+    authStore.user = { id: 'user-fail-B', email: 'failB@example.com' }
+    authStore.serverDeviceId = 'device-fail-B'
 
-  // Start init for B
-  const promiseB = syncStore.getAssetQueue()
+    // Start init for B
+    const promiseB = __test_initAssetQueue()
 
-  // A fails with an error
-  rejectRecoverA(new Error('Simulated repository crash for user A'))
+    // A fails with an error
+    rejectRecoverA(new Error('Simulated repository crash for user A'))
 
-  // Promise A rejects with simulated error
-  await assert.rejects(
-    promiseA,
-    /Simulated repository crash for user A/
-  )
+    // Promise A rejects with simulated error
+    await assert.rejects(
+      promiseA,
+      /Simulated repository crash for user A/
+    )
 
-  // Ensure B's promise was NOT cleared by A's catch block
-  const queueB = await promiseB
-  assert.ok(queueB, 'Queue B must successfully initialize despite A failure')
-  const currentQueueB = await syncStore.getAssetQueue()
-  assert.equal(currentQueueB, queueB, 'syncStore must return B queue')
+    // Ensure B's promise was NOT cleared by A's catch block
+    const queueB = await promiseB
+    assert.ok(queueB, 'Queue B must successfully initialize despite A failure')
+    const currentQueueB = await __test_initAssetQueue()
+    assert.equal(currentQueueB, queueB, 'syncStore must return B queue')
+  } finally {
+    releaseLocalAssetSyncQueue('user-fail-A', 'device-fail-A')
+    releaseLocalAssetSyncQueue('user-fail-B', 'device-fail-B')
+  }
 })
 
 test('useSyncStore: success path verifies captured userId/serverDeviceId against authStore and releases queue if auth changed', async () => {
@@ -281,18 +303,24 @@ test('useSyncStore: success path verifies captured userId/serverDeviceId against
   }
 
   const syncStore = useSyncStore()
-  const promiseA = syncStore.getAssetQueue()
+  assert.equal(syncStore.getAssetQueue, undefined, 'getAssetQueue must not be exposed in useSyncStore return object')
 
-  // User logs out (auth cleared, no new getAssetQueue call)
-  authStore.user = null
-  authStore.serverDeviceId = null
+  try {
+    const promiseA = __test_initAssetQueue()
 
-  // Allow A to finish
-  resolveRecoverA(0)
+    // User logs out (auth cleared, no new getAssetQueue call)
+    authStore.user = null
+    authStore.serverDeviceId = null
 
-  // Promise A must reject with QUEUE_RELEASED_DURING_INIT
-  await assert.rejects(
-    promiseA,
-    (err) => err && err.code === 'QUEUE_RELEASED_DURING_INIT'
-  )
+    // Allow A to finish
+    resolveRecoverA(0)
+
+    // Promise A must reject with QUEUE_RELEASED_DURING_INIT
+    await assert.rejects(
+      promiseA,
+      (err) => err && (err.code === 'QUEUE_RELEASED_DURING_INIT' || err.message === 'QUEUE_RELEASED_DURING_INIT')
+    )
+  } finally {
+    releaseLocalAssetSyncQueue('user-logout-A', 'device-logout-A')
+  }
 })

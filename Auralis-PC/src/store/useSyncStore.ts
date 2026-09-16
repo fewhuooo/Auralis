@@ -44,6 +44,22 @@ class QueueReleasedError extends Error {
   }
 }
 
+let activeGetAssetQueue: (() => Promise<LocalAssetSyncQueue>) | null = null
+
+/**
+ * Narrow test-only seam for verifying asset queue initialization races without exposing
+ * the queue instance or method on the production Store API.
+ */
+export function __test_initAssetQueue(): Promise<LocalAssetSyncQueue> {
+  if (!activeGetAssetQueue) {
+    useSyncStore()
+  }
+  if (!activeGetAssetQueue) {
+    throw new Error('SyncStore not active')
+  }
+  return activeGetAssetQueue()
+}
+
 export const useSyncStore = defineStore('sync', () => {
   const cursor = ref<string | null>(null)
   const resetRequired = ref(false)
@@ -68,9 +84,11 @@ export const useSyncStore = defineStore('sync', () => {
   watch(
     () => ({ userId: authStore.user?.id, deviceId: authStore.serverDeviceId }),
     (newVal, oldVal) => {
-      if (oldVal && oldVal.userId && oldVal.deviceId) {
+      if (oldVal && (oldVal.userId || oldVal.deviceId)) {
         if (oldVal.userId !== newVal.userId || oldVal.deviceId !== newVal.deviceId) {
-          releaseLocalAssetSyncQueue(oldVal.userId, oldVal.deviceId)
+          if (oldVal.userId && oldVal.deviceId) {
+            releaseLocalAssetSyncQueue(oldVal.userId, oldVal.deviceId)
+          }
           if (assetQueueUserId === oldVal.userId && assetQueueDeviceId === oldVal.deviceId) {
             assetQueueUserId = null
             assetQueueDeviceId = null
@@ -80,7 +98,7 @@ export const useSyncStore = defineStore('sync', () => {
         }
       }
     },
-    { deep: true }
+    { flush: 'sync', deep: true }
   )
 
   function getAssetQueue(): Promise<LocalAssetSyncQueue> {
@@ -88,15 +106,15 @@ export const useSyncStore = defineStore('sync', () => {
     const serverDeviceId = authStore.serverDeviceId
     if (!userId || !serverDeviceId) return Promise.reject(new Error('Sync requires an authenticated user and device'))
 
-    if (assetQueueUserId !== userId || assetQueueDeviceId !== serverDeviceId) {
+    if (assetQueueUserId !== userId || assetQueueDeviceId !== serverDeviceId || !assetQueuePromise) {
       if (assetQueueUserId && assetQueueDeviceId) {
         releaseLocalAssetSyncQueue(assetQueueUserId, assetQueueDeviceId)
       }
       assetQueueUserId = userId
       assetQueueDeviceId = serverDeviceId
 
-      const token = {}
-      assetQueuePromiseToken = token
+      const currentToken = {}
+      assetQueuePromiseToken = currentToken
       const p = (async () => {
         try {
           const assetRepository = await getLocalAssetRepository(userId, serverDeviceId)
@@ -112,7 +130,7 @@ export const useSyncStore = defineStore('sync', () => {
           })
 
           if (
-            assetQueuePromiseToken !== token ||
+            assetQueuePromiseToken !== currentToken ||
             authStore.user?.id !== userId ||
             authStore.serverDeviceId !== serverDeviceId
           ) {
@@ -122,7 +140,7 @@ export const useSyncStore = defineStore('sync', () => {
 
           return queue
         } catch (e) {
-          if (assetQueuePromiseToken === token) {
+          if (assetQueuePromiseToken === currentToken) {
             assetQueuePromise = null
             assetQueuePromiseToken = null
             assetQueueUserId = null
@@ -133,8 +151,9 @@ export const useSyncStore = defineStore('sync', () => {
       })()
       assetQueuePromise = p
     }
-    return assetQueuePromise!
+    return assetQueuePromise
   }
+  activeGetAssetQueue = getAssetQueue
 
   async function getRepository(): Promise<LocalRepository> {
     const userId = authStore.user?.id
@@ -235,7 +254,6 @@ export const useSyncStore = defineStore('sync', () => {
     isPushing,
     isSyncing,
     lastSyncError,
-    getAssetQueue,
     requestBackgroundSync,
     flushNow,
     triggerSync,

@@ -52,7 +52,9 @@ function sanitizeErrorCode(error: unknown): string {
     'LOCAL_ASSET_FILE_MISSING',
     'LOCAL_ASSET_FILE_AMBIGUOUS',
     'LOCAL_ASSET_BUSY',
-    'NATIVE_UPLOAD_RECEIPT_MISMATCH'
+    'NATIVE_UPLOAD_RECEIPT_MISMATCH',
+    'QUEUE_DISPOSED',
+    'QUEUE_RELEASED_DURING_INIT'
   ]
   for (const code of allowlist) {
     if (message.includes(code)) return code
@@ -68,6 +70,34 @@ function sanitizeErrorCode(error: unknown): string {
     return 'ASSET_ORPHANED'
   }
   return 'SYNC_FAILED'
+}
+
+export class QueueDisposedError extends Error {
+  readonly code = 'QUEUE_DISPOSED'
+  constructor(message = 'QUEUE_DISPOSED') {
+    super(message)
+    this.name = 'QueueDisposedError'
+  }
+}
+
+export class QueueReleasedError extends Error {
+  readonly code = 'QUEUE_RELEASED_DURING_INIT'
+  constructor(message = 'QUEUE_RELEASED_DURING_INIT') {
+    super(message)
+    this.name = 'QueueReleasedError'
+  }
+}
+
+function isDisposedError(error: unknown): boolean {
+  if (!error) return false
+  if (typeof error === 'object' && 'code' in error) {
+    const code = String((error as { code?: unknown }).code)
+    if (code === 'QUEUE_DISPOSED' || code === 'QUEUE_RELEASED_DURING_INIT') return true
+  }
+  if (error instanceof Error) {
+    if (error.message === 'QUEUE_DISPOSED' || error.message === 'QUEUE_RELEASED_DURING_INIT') return true
+  }
+  return false
 }
 
 function sanitizeErrorDetail(error: unknown): string {
@@ -113,6 +143,16 @@ export class LocalAssetSyncQueue {
     }
   }
 
+  private assertNotDisposed(): void {
+    if (this.disposed) {
+      throw new QueueDisposedError()
+    }
+  }
+
+  isDisposed(): boolean {
+    return this.disposed
+  }
+
   dispose(): void {
     this.disposed = true
     if (this.onlineHandler && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
@@ -129,9 +169,11 @@ export class LocalAssetSyncQueue {
   }
 
   async retryNow(jobId?: string): Promise<void> {
+    if (this.disposed) return
     const currentTime = this.now()
     if (jobId) {
       const job = await this.assetRepository.getSyncJob(jobId)
+      if (this.disposed) return
       if (job && job.phase === 'PENDING') {
         await this.assetRepository.scheduleRetry(jobId, job.safeErrorCode ?? 'SYNC_FAILED', job.safeErrorDetail ?? '', currentTime)
       }
@@ -153,7 +195,7 @@ export class LocalAssetSyncQueue {
       while (!this.disposed) {
         const currentTime = this.now()
         const job = await this.assetRepository.claimNextSyncJob(currentTime)
-        if (!job) break
+        if (!job || this.disposed) break
 
         await this.processSingleJob(job.jobId, job.localAssetId, job.attempt, job.serverAssetId)
       }
@@ -173,7 +215,10 @@ export class LocalAssetSyncQueue {
     initialServerAssetId: string | null,
   ): Promise<void> {
     try {
+      this.assertNotDisposed()
+
       const assetFile = await this.assetRepository.getAssetFile(localAssetId)
+      this.assertNotDisposed()
       if (!assetFile) {
         // Asset metadata missing; complete job
         await this.assetRepository.completeSyncJob(jobId)
@@ -186,6 +231,7 @@ export class LocalAssetSyncQueue {
       let isAlreadyReady = false
 
       // 1. Create or replay remote upload intent
+      this.assertNotDisposed()
       const intent = await this.api.createUploadIntent({
         baseVersion: 0,
         clientImportId: localAssetId,
@@ -194,6 +240,7 @@ export class LocalAssetSyncQueue {
         sizeBytes: assetFile.sizeBytes,
         sha256: assetFile.sha256,
       })
+      this.assertNotDisposed()
 
       serverAssetId = intent.assetId ?? serverAssetId
       if (!serverAssetId) {
@@ -201,6 +248,7 @@ export class LocalAssetSyncQueue {
       }
 
       await this.assetRepository.mapServerAssetId(localAssetId, serverAssetId)
+      this.assertNotDisposed()
 
       if (intent.uploadStatus === 'READY') {
         isAlreadyReady = true
@@ -212,6 +260,7 @@ export class LocalAssetSyncQueue {
         headers = intent.headers
         await this.assetRepository.updateSyncJobPhase(jobId, 'UPLOADING', { serverAssetId })
       }
+      this.assertNotDisposed()
 
       // 2. Binary upload & complete if not already ready
       if (!isAlreadyReady) {
@@ -220,35 +269,49 @@ export class LocalAssetSyncQueue {
         }
 
         const current = await this.assetRepository.getAssetFile(localAssetId)
+        this.assertNotDisposed()
         if (current && (current.state === 'READY_LOCAL' || current.state === 'SYNC_FAILED')) {
           await this.assetRepository.transitionAssetState(localAssetId, 'SYNCING')
+          this.assertNotDisposed()
         }
 
         await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
-
+        this.assertNotDisposed()
 
         await this.assetRepository.updateSyncJobPhase(jobId, 'COMPLETING_REMOTE_ASSET', { serverAssetId })
+        this.assertNotDisposed()
 
         await this.api.completeUpload(serverAssetId)
+        this.assertNotDisposed()
+
         await this.assetRepository.updateSyncJobPhase(jobId, 'BINDING_SOURCE', { serverAssetId })
+        this.assertNotDisposed()
       }
 
       // 3. Mark asset SYNCED in repository
       const currentAsset = await this.assetRepository.getAssetFile(localAssetId)
+      this.assertNotDisposed()
       if (currentAsset && currentAsset.state !== 'SYNCED') {
         await this.assetRepository.transitionAssetState(localAssetId, 'SYNCED')
+        this.assertNotDisposed()
       }
 
       // 4. Release all drafts for this asset
       const released = await this.draftService.releaseDraftsForAsset(localAssetId, serverAssetId)
+      this.assertNotDisposed()
 
       // 5. Complete job
       await this.assetRepository.completeSyncJob(jobId)
+      this.assertNotDisposed()
 
       if (released.length > 0 && this.onWakeup) {
+        this.assertNotDisposed()
         this.onWakeup()
       }
     } catch (error) {
+      if (this.disposed || isDisposedError(error)) {
+        return
+      }
       console.error('[LocalAssetSyncQueue] processSingleJob failed:', error)
       const safeCode = sanitizeErrorCode(error)
       const safeDetail = sanitizeErrorDetail(error)
@@ -291,9 +354,7 @@ export async function getOrCreateLocalAssetSyncQueue(options: LocalAssetSyncQueu
       await instance.recoverInflightJobs()
       if (queueInitTokens.get(key) !== token) {
         instance.dispose()
-        const err = new Error('QUEUE_RELEASED_DURING_INIT')
-        ;(err as Error & { code?: string }).code = 'QUEUE_RELEASED_DURING_INIT'
-        throw err
+        throw new QueueReleasedError()
       }
       queueCache.set(key, instance)
       return instance
