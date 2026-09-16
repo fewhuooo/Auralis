@@ -1,11 +1,14 @@
 import {
   importLocalAsset,
+  importLocalAssetBytes,
+  MAX_LOCAL_ASSET_BYTES,
   resolveLocalAssetNative,
   downloadLocalAsset,
   deleteLocalAsset,
   reconcileLocalAssets,
 } from '@/api/tauri'
 import { getFileExtension } from '@/utils/filePreview'
+import { uuidv7 } from '@/utils/uuid'
 import type { LocalAssetRepository } from '@/services/localAssetRepository'
 import {
   computeLocalAssetRelativePath,
@@ -61,11 +64,26 @@ export interface LocalAssetNativeAdapter {
     userId: string
     serverDeviceId: string
   }): Promise<{ removedStagingFiles: number; files: LocalAssetDescriptor[] }>
+
+  getAssetBlob?(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+  }): Promise<Blob>
+}
+
+export interface TauriLocalAssetNativeAdapterOptions {
+  blobReader?: (descriptor: LocalAssetDescriptor) => Promise<Blob>
 }
 
 export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
   readonly isPersistent = true
   readonly storageType = 'native-tauri' as const
+  private readonly blobReader?: (descriptor: LocalAssetDescriptor) => Promise<Blob>
+
+  constructor(options: TauriLocalAssetNativeAdapterOptions = {}) {
+    this.blobReader = options.blobReader
+  }
 
   async importAsset(args: {
     userId: string
@@ -79,8 +97,41 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
     expectedSize?: number
     expectedSha256?: string
   }): Promise<LocalAssetDescriptor> {
+    const safeExtension = (args.safeExtension || getFileExtension(args.originalName)).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+
+    if (args.file) {
+      if (args.file.size > MAX_LOCAL_ASSET_BYTES) {
+        throw new Error('LOCAL_ASSET_SIZE_LIMIT: File size exceeds 50MB limit')
+      }
+      const buffer = await args.file.arrayBuffer()
+      if (buffer.byteLength > MAX_LOCAL_ASSET_BYTES) {
+        throw new Error('LOCAL_ASSET_SIZE_LIMIT: File size exceeds 50MB limit')
+      }
+      const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer)
+      const computedSha = [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('')
+      const expectedSize = args.expectedSize ?? buffer.byteLength
+      const expectedSha256 = (args.expectedSha256 ?? computedSha).toLowerCase()
+
+      if (expectedSize !== buffer.byteLength) {
+        throw new Error('LOCAL_ASSET_SIZE_MISMATCH')
+      }
+      if (expectedSha256 !== computedSha) {
+        throw new Error('LOCAL_ASSET_HASH_MISMATCH')
+      }
+
+      const content = Array.from(new Uint8Array(buffer))
+      return importLocalAssetBytes({
+        userScope: args.userId,
+        deviceId: args.serverDeviceId,
+        localAssetId: args.localAssetId,
+        safeExtension,
+        expectedSize,
+        expectedSha256,
+        content,
+      })
+    }
+
     const sourcePath = args.sourcePath?.trim()
-    const safeExtension = (args.safeExtension || getFileExtension(args.originalName)).toLowerCase().replace(/[^a-z0-9]/g, '')
     const expectedSize = args.expectedSize
     const expectedSha256 = args.expectedSha256?.trim()
 
@@ -89,6 +140,7 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
       || !safeExtension
       || typeof expectedSize !== 'number'
       || expectedSize < 0
+      || expectedSize > MAX_LOCAL_ASSET_BYTES
       || !expectedSha256
       || !/^[a-f0-9]{64}$/i.test(expectedSha256)
     ) {
@@ -104,6 +156,24 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
       expectedSize,
       expectedSha256,
     })
+  }
+
+  async getAssetBlob(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+  }): Promise<Blob> {
+    const descriptor = await this.resolveAsset({
+      userId: args.userId,
+      serverDeviceId: args.serverDeviceId,
+      localAssetId: args.localAssetId,
+    })
+    if (this.blobReader) return this.blobReader(descriptor)
+    if (typeof window !== 'undefined' && 'fetch' in window) {
+      const response = await fetch(descriptor.absolutePath)
+      return await response.blob()
+    }
+    throw new Error('BLOB_READER_UNAVAILABLE')
   }
 
   async resolveAsset(args: {
@@ -258,6 +328,18 @@ export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
     const files = [...this.blobs.values()].map(item => item.descriptor)
     return { removedStagingFiles: 0, files }
   }
+
+  async getAssetBlob(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+  }): Promise<Blob> {
+    const found = this.blobs.get(args.localAssetId)
+    if (!found || !found.blob) {
+      throw new Error('FILE_MISSING: Asset file missing from transient storage')
+    }
+    return found.blob
+  }
 }
 
 export interface LocalAssetServiceOptions {
@@ -272,7 +354,7 @@ export class LocalAssetService {
 
   constructor(repository: LocalAssetRepository, options: LocalAssetServiceOptions = {}) {
     this.repository = repository
-    this.idFactory = options.idFactory ?? (() => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
+    this.idFactory = options.idFactory ?? (() => globalThis.crypto?.randomUUID?.() ?? uuidv7())
 
     if (options.nativeAdapter) {
       this.adapter = options.nativeAdapter
@@ -282,21 +364,25 @@ export class LocalAssetService {
     }
   }
 
-  async importAsset(input: ImportAssetInput): Promise<LocalAssetHandle> {
-    const localAssetId = this.idFactory()
+  async importAsset(input: ImportAssetInput & { localAssetId?: string }): Promise<LocalAssetHandle> {
+    const localAssetId = input.localAssetId ?? this.idFactory()
     const safeExtension = (input.safeExtension || getFileExtension(input.originalName)).toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
     const expectedSize = input.expectedSize ?? input.sizeBytes
     const expectedSha256 = input.expectedSha256 ?? input.sha256
 
     if (this.adapter.storageType === 'native-tauri') {
-      if (
-        !input.sourcePath?.trim()
-        || typeof expectedSize !== 'number'
-        || expectedSize < 0
-        || !expectedSha256?.trim()
-        || !/^[a-f0-9]{64}$/i.test(expectedSha256)
-      ) {
-        throw new Error('LOCAL_ASSET_IMPORT_PRECONDITIONS_MISSING: Native import requires sourcePath, safeExtension, expectedSize, and expectedSha256')
+      if (!input.sourcePath?.trim() && !input.file) {
+        throw new Error('LOCAL_ASSET_IMPORT_PRECONDITIONS_MISSING: Native import requires either sourcePath or file')
+      }
+      if (input.sourcePath?.trim()) {
+        if (
+          typeof expectedSize !== 'number'
+          || expectedSize < 0
+          || !expectedSha256?.trim()
+          || !/^[a-f0-9]{64}$/i.test(expectedSha256)
+        ) {
+          throw new Error('LOCAL_ASSET_IMPORT_PRECONDITIONS_MISSING: Native import requires sourcePath, safeExtension, expectedSize, and expectedSha256')
+        }
       }
     }
 
@@ -558,4 +644,29 @@ export class LocalAssetService {
       removedStagingFiles: result.removedStagingFiles,
     }
   }
+
+  async getAssetBlob(localAssetId: string): Promise<Blob> {
+    const record = await this.repository.getAssetFile(localAssetId)
+    if (!record) throw new Error('LOCAL_ASSET_NOT_FOUND')
+    if (this.adapter.getAssetBlob) {
+      return this.adapter.getAssetBlob({
+        userId: this.repository.userId,
+        serverDeviceId: this.repository.serverDeviceId,
+        localAssetId,
+      })
+    }
+    throw new Error('ADAPTER_DOES_NOT_SUPPORT_BLOB_READ')
+  }
+}
+
+const assetServiceCache = new Map<string, LocalAssetService>()
+
+export function getOrCreateLocalAssetService(repository: LocalAssetRepository): LocalAssetService {
+  const key = `${repository.userId}:${repository.serverDeviceId}`
+  let instance = assetServiceCache.get(key)
+  if (!instance) {
+    instance = new LocalAssetService(repository)
+    assetServiceCache.set(key, instance)
+  }
+  return instance
 }

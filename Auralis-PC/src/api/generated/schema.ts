@@ -1165,6 +1165,8 @@ export interface components {
         AssetUploadIntentRequest: {
             /** Format: int64 */
             baseVersion: number;
+            /** Format: uuid */
+            clientImportId: string;
             originalName: string;
             /** Format: int64 */
             sizeBytes?: number;
@@ -1180,6 +1182,8 @@ export interface components {
             };
             /** Format: date-time */
             expiresAt?: string;
+            /** @enum {string} */
+            uploadStatus?: "UPLOADING" | "READY" | "FAILED" | "ORPHANED";
         };
         SuggestionCommand: {
             /** @enum {string} */

@@ -2,8 +2,10 @@ import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
-import { getLocalRepository } from '@/services/localDb'
+import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
+import type { LocalAssetRepository } from '@/services/localAssetRepository'
+import { getOrCreateLocalSourceDraftService } from '@/services/localSourceDraftService'
 import { mapSourceView, sortSources, type SourceFileModel } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -13,7 +15,7 @@ import { shouldScheduleAwaitingClientDocument } from '@/utils/sourceSchedulingPo
 import type { FileOverviewTrigger } from '@/types/overview'
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 function asSourceDto(value: unknown): SourceView | null {
@@ -140,12 +142,58 @@ export const useSourceStore = defineStore('source', () => {
       && assetSizeBytes >= 0
       ? Math.trunc(assetSizeBytes)
       : undefined
+
+    const authStore = useAuthStore()
+    const repo = await repository()
+
+    let localAssetRepo: LocalAssetRepository | null = null
+    if (authStore.user?.id && authStore.serverDeviceId) {
+      localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    }
+
+    const localAsset = localAssetRepo ? await localAssetRepo.getAssetFile(assetId) : null
+
+    // If this is a local asset without serverAssetId, create draft and local projection,
+    // and hold back outbox mutation until asset is READY.
+    if (localAsset && !localAsset.serverAssetId) {
+      const id = uuidv7()
+      const draftService = getOrCreateLocalSourceDraftService(localAssetRepo!, repo)
+      await draftService.createDraft({
+        localSourceId: id,
+        localAssetId: assetId,
+        subjectId,
+        title,
+        outline,
+        assetSizeBytes: normalizedAssetSizeBytes,
+      })
+      const localView: SourceView = {
+        id,
+        baseVersion: 0,
+        subjectId,
+        type: 'FILE',
+        title,
+        assetId,
+        outline,
+        version: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        deletedAt: undefined,
+        ingestionStatus: 'AWAITING_CLIENT',
+        assetSizeBytes: normalizedAssetSizeBytes,
+      }
+      const model = mapSourceView(localView)
+      replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)])
+      scheduleSync()
+      return id
+    }
+
+    const targetAssetId = localAsset?.serverAssetId ?? assetId
     const payload: SourceCreateRequest = {
       baseVersion: 0,
       subjectId,
       type: 'FILE',
       title,
-      assetId,
+      assetId: targetAssetId,
       outline,
     }
     const id = uuidv7()
@@ -159,7 +207,6 @@ export const useSourceStore = defineStore('source', () => {
       ingestionStatus: 'AWAITING_CLIENT',
       assetSizeBytes: normalizedAssetSizeBytes,
     }
-    const repo = await repository()
     const { assetSizeBytes: _assetSizeBytes, ...mutationView } = localView
     await repo.commitMutation({
       resourceType: 'SOURCE', resourceId: id, value: localView, version: 0, deletedAt: null,
@@ -283,6 +330,7 @@ export const useSourceStore = defineStore('source', () => {
     currentSourceCount,
     isLoading,
     lastError,
+    repository,
     loadSources,
     loadSourceFiles,
     loadLocalSourceFiles,

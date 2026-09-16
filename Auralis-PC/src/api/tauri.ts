@@ -233,6 +233,8 @@ export interface LocalAssetDescriptor {
   absolutePath: string
 }
 
+export const MAX_LOCAL_ASSET_BYTES = 52_428_800
+
 export interface ImportLocalAssetCommand {
   userScope: string
   deviceId: string
@@ -241,6 +243,16 @@ export interface ImportLocalAssetCommand {
   safeExtension: string
   expectedSize: number
   expectedSha256: string
+}
+
+export interface ImportLocalAssetBytesCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+  safeExtension: string
+  expectedSize: number
+  expectedSha256: string
+  content: number[]
 }
 
 export interface ResolveLocalAssetCommand {
@@ -286,11 +298,30 @@ export const importLocalAsset = (command: ImportLocalAssetCommand): Promise<Loca
     || !command.safeExtension?.trim()
     || typeof command.expectedSize !== 'number'
     || command.expectedSize < 0
+    || command.expectedSize > MAX_LOCAL_ASSET_BYTES
     || !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
   ) {
     throw new Error('LOCAL_ASSET_COMMAND_INVALID')
   }
   return invokeRustCmd<LocalAssetDescriptor>('import_local_asset', { command })
+}
+
+export const importLocalAssetBytes = (command: ImportLocalAssetBytesCommand): Promise<LocalAssetDescriptor> => {
+  if (
+    !command.userScope?.trim()
+    || !command.deviceId?.trim()
+    || !command.localAssetId?.trim()
+    || !command.safeExtension?.trim()
+    || typeof command.expectedSize !== 'number'
+    || command.expectedSize < 0
+    || command.expectedSize > MAX_LOCAL_ASSET_BYTES
+    || !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
+    || !Array.isArray(command.content)
+    || command.content.length > MAX_LOCAL_ASSET_BYTES
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<LocalAssetDescriptor>('import_local_asset_bytes', { command })
 }
 
 export const resolveLocalAssetNative = (command: ResolveLocalAssetCommand): Promise<LocalAssetDescriptor> => {

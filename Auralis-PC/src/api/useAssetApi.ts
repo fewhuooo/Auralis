@@ -115,6 +115,7 @@ export function getDownloadUrl(assetId: string): Promise<DownloadUrlResponse> {
 
 export interface UploadAssetOptions {
   baseVersion?: number
+  clientImportId?: string
   sha256?: string
   onProgress?: (percent: number, stage: string) => void
 }
@@ -137,8 +138,11 @@ export async function uploadAsset(
   options.onProgress?.(5, '校验文件...')
   options.onProgress?.(10, '申请上传凭证...')
 
+  const clientImportId = options.clientImportId ?? (globalThis.crypto?.randomUUID?.() || `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`)
+
   const intent = await createUploadIntent({
     baseVersion: options.baseVersion ?? 0,
+    clientImportId,
     originalName: file.name,
     mimeType: file.type || 'application/octet-stream',
     sizeBytes: file.size,
@@ -166,6 +170,7 @@ export async function uploadAsset(
 export async function getPresignedUrl(fileName: string, contentType: string = 'application/octet-stream') {
   const intent = await createUploadIntent({
     baseVersion: 0,
+    clientImportId: globalThis.crypto?.randomUUID?.() || '00000000-0000-4000-8000-000000000000',
     originalName: fileName,
     mimeType: contentType,
   })

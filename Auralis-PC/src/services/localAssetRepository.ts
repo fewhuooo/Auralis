@@ -56,9 +56,9 @@ export interface LocalAssetRepositoryOptions {
 
 const LEGAL_ASSET_TRANSITIONS: Record<LocalAssetState, readonly LocalAssetState[]> = {
   STAGING: ['READY_LOCAL', 'CORRUPT', 'DELETING'],
-  READY_LOCAL: ['SYNCING', 'CORRUPT', 'DELETING'],
+  READY_LOCAL: ['SYNCING', 'SYNCED', 'CORRUPT', 'DELETING'],
   SYNCING: ['SYNCED', 'SYNC_FAILED', 'CORRUPT', 'DELETING'],
-  SYNC_FAILED: ['SYNCING', 'CORRUPT', 'DELETING'],
+  SYNC_FAILED: ['SYNCING', 'SYNCED', 'CORRUPT', 'DELETING'],
   SYNCED: ['CORRUPT', 'DELETING'],
   CORRUPT: ['READY_LOCAL', 'SYNCED', 'DELETING'],
   DELETING: [],
@@ -66,8 +66,8 @@ const LEGAL_ASSET_TRANSITIONS: Record<LocalAssetState, readonly LocalAssetState[
 
 const LEGAL_SYNC_PHASE_TRANSITIONS: Record<LocalAssetSyncPhase, readonly LocalAssetSyncPhase[]> = {
   PENDING: ['CREATING_REMOTE_ASSET', 'FAILED'],
-  CREATING_REMOTE_ASSET: ['UPLOADING', 'SYNCED', 'PENDING', 'FAILED'],
-  UPLOADING: ['COMPLETING_REMOTE_ASSET', 'SYNCED', 'PENDING', 'FAILED'],
+  CREATING_REMOTE_ASSET: ['UPLOADING', 'COMPLETING_REMOTE_ASSET', 'BINDING_SOURCE', 'SYNCED', 'PENDING', 'FAILED'],
+  UPLOADING: ['COMPLETING_REMOTE_ASSET', 'BINDING_SOURCE', 'SYNCED', 'PENDING', 'FAILED'],
   COMPLETING_REMOTE_ASSET: ['BINDING_SOURCE', 'SYNCED', 'PENDING', 'FAILED'],
   BINDING_SOURCE: ['SYNCED', 'PENDING', 'FAILED'],
   SYNCED: [],
@@ -93,6 +93,24 @@ const sqlWriteQueues = new WeakMap<object, Promise<void>>()
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const encodePart = (value: string): string => encodeURIComponent(value.trim())
 
+const fallbackMemoryStorage = new Map<string, string>()
+
+function defaultStorage(): LocalStorageLike {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage
+  }
+  return {
+    getItem: (key: string) => fallbackMemoryStorage.get(key) ?? null,
+    setItem: (key: string, value: string) => { fallbackMemoryStorage.set(key, String(value)) },
+    removeItem: (key: string) => { fallbackMemoryStorage.delete(key) },
+    clear: () => { fallbackMemoryStorage.clear() },
+    key: (index: number) => Array.from(fallbackMemoryStorage.keys())[index] ?? null,
+    get length() {
+      return fallbackMemoryStorage.size
+    },
+  }
+}
+
 export class LocalAssetRepository {
   readonly userId: string
   readonly serverDeviceId: string
@@ -116,7 +134,7 @@ export class LocalAssetRepository {
     this.serverDeviceId = serverDeviceId
     this.sql = options.sql
     this.schemaReady = options.schemaReady
-    this.storage = options.storage ?? (typeof window === 'undefined' ? { getItem: () => null, setItem: () => undefined } : window.localStorage)
+    this.storage = options.storage ?? defaultStorage()
     this.now = options.now ?? (() => new Date().toISOString())
     this.idFactory = options.idFactory ?? (() => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`)
     this.namespace = `auralis:v8:local-assets:${encodePart(userId)}:${encodePart(serverDeviceId)}`
@@ -868,5 +886,45 @@ export class LocalAssetRepository {
 
   async completeSyncJob(jobId: string): Promise<LocalAssetSyncJob> {
     return this.updateSyncJobPhase(jobId, 'SYNCED')
+  }
+
+  async recoverInflightJobs(): Promise<number> {
+    return this.serializeWrite(async () => {
+      const now = this.now()
+      if (this.sql) {
+        await this.ensureSql()
+        const rows = await this.sql.select<{ count: number }>(
+          `SELECT COUNT(*) as count FROM local_asset_sync_jobs
+           WHERE user_id = $1 AND device_id = $2
+             AND phase IN ('CREATING_REMOTE_ASSET', 'UPLOADING', 'COMPLETING_REMOTE_ASSET', 'BINDING_SOURCE')`,
+          [this.userId, this.serverDeviceId],
+        )
+        const count = rows[0]?.count ?? 0
+        if (count > 0) {
+          await this.sql.execute(
+            `UPDATE local_asset_sync_jobs
+             SET phase = 'PENDING', updated_at = $1
+             WHERE user_id = $2 AND device_id = $3
+               AND phase IN ('CREATING_REMOTE_ASSET', 'UPLOADING', 'COMPLETING_REMOTE_ASSET', 'BINDING_SOURCE')`,
+            [now, this.userId, this.serverDeviceId],
+          )
+        }
+        return Number(count)
+      }
+
+      const store = this.readBrowserStore()
+      let recovered = 0
+      for (const job of store.jobs) {
+        if (['CREATING_REMOTE_ASSET', 'UPLOADING', 'COMPLETING_REMOTE_ASSET', 'BINDING_SOURCE'].includes(job.phase)) {
+          job.phase = 'PENDING'
+          job.updatedAt = now
+          recovered++
+        }
+      }
+      if (recovered > 0) {
+        this.writeBrowserStore(store)
+      }
+      return recovered
+    })
   }
 }

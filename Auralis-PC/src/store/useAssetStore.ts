@@ -1,9 +1,13 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { getDownloadUrl, uploadAsset, type AssetView } from '@/api/useAssetApi'
+import { getDownloadUrl, type AssetView } from '@/api/useAssetApi'
 import { useAuthStore } from '@/store/useAuthStore'
-import { getLocalRepository } from '@/services/localDb'
+import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
 import { mapAssetView, type AssetModel } from '@/services/domainMappers'
+import { validateUploadFile } from '@/utils/filePreview'
+import { uuidv7 } from '@/utils/uuid'
+import { getOrCreateLocalAssetService } from '@/services/localAssetService'
+import { useSyncStore } from '@/store/useSyncStore'
 
 export interface PendingAssetUpload {
   clientUploadId: string
@@ -19,7 +23,6 @@ export const useAssetStore = defineStore('asset', () => {
   const assets = ref<AssetModel[]>([])
   const pendingUploads = ref<PendingAssetUpload[]>([])
   const lastError = ref<string | null>(null)
-  const localFiles = new Map<string, File>()
 
   async function cache(asset: AssetView): Promise<AssetModel> {
     const authStore = useAuthStore()
@@ -36,7 +39,15 @@ export const useAssetStore = defineStore('asset', () => {
   }
 
   async function upload(file: File, onProgress?: (percent: number, stage: string) => void): Promise<AssetModel> {
-    const clientUploadId = globalThis.crypto?.randomUUID?.() || `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const authStore = useAuthStore()
+    if (!authStore.user?.id || !authStore.serverDeviceId) {
+      throw new Error('Asset upload requires an authenticated user and device')
+    }
+
+    validateUploadFile(file)
+
+    const localAssetId = uuidv7()
+    const clientUploadId = localAssetId
     const pending: PendingAssetUpload = {
       clientUploadId,
       fileName: file.name,
@@ -47,17 +58,56 @@ export const useAssetStore = defineStore('asset', () => {
     }
     pendingUploads.value = [...pendingUploads.value, pending]
     lastError.value = null
+
     try {
-      const result = await uploadAsset(file, {
-        onProgress: (percent, stage) => {
-          const current = pendingUploads.value.find((item) => item.clientUploadId === clientUploadId)
-          if (current) current.progress = percent
-          onProgress?.(percent, stage)
-        },
+      onProgress?.(10, '校验并持久化本地资产...')
+      const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+      const assetService = getOrCreateLocalAssetService(localAssetRepo)
+
+      const handle = await assetService.importAsset({
+        file,
+        localAssetId,
+        originalName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        sizeBytes: file.size,
       })
-      const model = await cache(result.asset)
-      localFiles.set(model.id, file)
+
+      // Enqueue sync job in localAssetRepo with phase PENDING
+      await localAssetRepo.enqueueSyncJob(localAssetId)
+
+      onProgress?.(50, '登记本地资料库...')
+
+      const now = new Date().toISOString()
+      const syntheticView: AssetView = {
+        id: localAssetId,
+        originalName: file.name,
+        sizeBytes: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        sha256: handle.descriptor.sha256,
+        uploadStatus: 'UPLOADING',
+        createdAt: now,
+        updatedAt: now,
+      }
+
+      // Upsert to localRepository as ASSET so local reads see it
+      const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+      await repo.upsert('ASSET', localAssetId, syntheticView, {
+        version: 0,
+        deletedAt: null,
+        syncStatus: 'pending',
+      })
+
+      const model = Object.assign(mapAssetView(syntheticView), {
+        originalName: file.name,
+        uploadStatus: syntheticView.uploadStatus,
+      })
+      assets.value = [model, ...assets.value.filter((item) => item.id !== model.id)]
       pendingUploads.value = pendingUploads.value.filter((item) => item.clientUploadId !== clientUploadId)
+      onProgress?.(100, '本地导入完成')
+
+      // Request background sync
+      useSyncStore().requestBackgroundSync('write')
+
       return model
     } catch (error) {
       const message = error instanceof Error ? error.message : '资产上传失败'
@@ -72,6 +122,15 @@ export const useAssetStore = defineStore('asset', () => {
   }
 
   async function downloadUrl(assetId: string): Promise<string> {
+    const authStore = useAuthStore()
+    if (authStore.user?.id && authStore.serverDeviceId) {
+      const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+      const file = await localAssetRepo.getAssetFile(assetId)
+      if (file?.serverAssetId) {
+        const response = await getDownloadUrl(file.serverAssetId)
+        if (response.url) return response.url
+      }
+    }
     const response = await getDownloadUrl(assetId)
     if (!response.url) throw new Error('Asset download response missing URL')
     return response.url
@@ -91,12 +150,12 @@ export const useAssetStore = defineStore('asset', () => {
     }
   }
 
-  function getLocalFile(assetId: string): File | null {
-    return localFiles.get(assetId) ?? null
+  function getLocalFile(_assetId: string): File | null {
+    return null
   }
 
-  function forgetLocalFile(assetId: string): void {
-    localFiles.delete(assetId)
+  function forgetLocalFile(_assetId: string): void {
+    // No-op: Map<string, File> is removed to prevent long-term memory leaks
   }
 
   function getCachedAsset(assetId: string): AssetModel | null {
