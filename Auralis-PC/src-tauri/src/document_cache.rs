@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
 };
 
@@ -15,8 +15,12 @@ pub const CACHE_ENVELOPE_VERSION: u32 = 1;
 pub const CACHE_SCHEMA_VERSION: u32 = 1;
 pub const CACHE_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 const CACHE_MAGIC: &[u8; 5] = b"AURC1";
+const LOCAL_CACHE_MAGIC: &[u8; 5] = b"AURL1";
+pub const LOCAL_CACHE_ENVELOPE_VERSION: u32 = 1;
 const NONCE_BYTES: usize = 12;
 const MAX_HEADER_BYTES: usize = 64 * 1024;
+pub const MAX_LOCAL_DERIVED_BYTES: u64 = 512 * 1024 * 1024;
+pub const MAX_LOCAL_DERIVED_RATIO: u64 = 200;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +42,8 @@ pub struct CacheHeader {
     pub normalization_version: Option<String>,
     #[serde(default)]
     pub ocr_model_version: Option<String>,
+    #[serde(default)]
+    pub plain_text_sha256: Option<String>,
 }
 
 impl CacheHeader {
@@ -75,6 +81,60 @@ pub struct CacheScope {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct LocalCacheHeader {
+    pub schema_version: u32,
+    pub user_id: String,
+    pub device_id: String,
+    pub local_source_id: String,
+    pub local_content_revision: String,
+    pub source_asset_sha256: String,
+    pub parser_id: String,
+    pub parser_version: String,
+    pub normalization_version: String,
+    #[serde(default)]
+    pub ocr_model_version: Option<String>,
+}
+
+impl LocalCacheHeader {
+    fn aad(&self) -> Vec<u8> {
+        format!(
+            "auralis-local-cache|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            LOCAL_CACHE_ENVELOPE_VERSION,
+            self.schema_version,
+            self.user_id,
+            self.device_id,
+            self.local_source_id,
+            self.local_content_revision,
+            self.source_asset_sha256,
+            self.parser_id,
+            self.parser_version,
+            self.normalization_version,
+            self.ocr_model_version.as_deref().unwrap_or_default(),
+            "parsed-document-v1",
+        )
+        .into_bytes()
+    }
+
+    fn matches_scope(&self, scope: &LocalCacheScope) -> bool {
+        self.user_id == scope.user_id
+            && self.device_id == scope.device_id
+            && self.local_source_id == scope.local_source_id
+            && self.local_content_revision == scope.local_content_revision
+            && self.source_asset_sha256 == scope.source_asset_sha256
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalCacheScope {
+    pub user_id: String,
+    pub device_id: String,
+    pub local_source_id: String,
+    pub local_content_revision: String,
+    pub source_asset_sha256: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct CacheReceipt {
     pub cache_id: String,
     pub envelope_version: u32,
@@ -93,6 +153,27 @@ pub struct CacheReceipt {
     pub parser_version: Option<String>,
     #[serde(default)]
     pub normalization_version: Option<String>,
+    #[serde(default)]
+    pub ocr_model_version: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCacheReceipt {
+    pub cache_id: String,
+    pub envelope_version: u32,
+    pub chunk_count: u32,
+    pub encrypted_bytes: u64,
+    pub plain_text_sha256: String,
+    pub payload_sha256: String,
+    pub payload_bytes: u64,
+    pub local_source_id: String,
+    pub local_content_revision: String,
+    pub source_asset_sha256: String,
+    pub payload_format: String,
+    pub parser_id: String,
+    pub parser_version: String,
+    pub normalization_version: String,
     #[serde(default)]
     pub ocr_model_version: Option<String>,
 }
@@ -120,6 +201,11 @@ impl DocumentCacheStore {
     pub fn cache_path(&self, cache_id: &str) -> Result<PathBuf, String> {
         validate_cache_id(cache_id)?;
         Ok(self.root.join(format!("{cache_id}.cache")))
+    }
+
+    pub fn local_cache_path(&self, cache_id: &str) -> Result<PathBuf, String> {
+        validate_cache_id(cache_id)?;
+        Ok(self.root.join(format!("local-{cache_id}.cache")))
     }
 
     pub fn encrypt_gzip_file(
@@ -152,6 +238,130 @@ impl DocumentCacheStore {
             return Err(format!("CACHE_ATOMIC_RENAME_FAILED: {error}"));
         }
         Ok(receipt)
+    }
+
+    pub fn encrypt_local_gzip_file(
+        &self,
+        cache_id: &str,
+        header: &LocalCacheHeader,
+        gzip_path: &Path,
+        plain_text_sha256: [u8; 32],
+    ) -> Result<LocalCacheReceipt, String> {
+        if header.schema_version != CACHE_SCHEMA_VERSION
+            || header.user_id.trim().is_empty()
+            || header.device_id.trim().is_empty()
+            || header.local_source_id.trim().is_empty()
+            || header.local_content_revision.trim().is_empty()
+            || !is_lowercase_sha256(&header.source_asset_sha256)
+            || header.parser_id.trim().is_empty()
+            || header.parser_version.trim().is_empty()
+            || header.normalization_version.trim().is_empty()
+            || header
+                .ocr_model_version
+                .as_deref()
+                .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err("LOCAL_CACHE_METADATA_INVALID".to_string());
+        }
+        let final_path = self.local_cache_path(cache_id)?;
+        if final_path.exists() {
+            return Err("LOCAL_CACHE_ALREADY_EXISTS".to_string());
+        }
+        let temp_path = self.root.join(format!(".local-{cache_id}.tmp"));
+        let header_bytes = serde_json::to_vec(header)
+            .map_err(|e| format!("LOCAL_CACHE_HEADER_SERIALIZE_FAILED: {e}"))?;
+        if header_bytes.len() > MAX_HEADER_BYTES {
+            return Err("LOCAL_CACHE_HEADER_TOO_LARGE".to_string());
+        }
+        let result = (|| {
+            let mut input =
+                File::open(gzip_path).map_err(|e| format!("LOCAL_CACHE_GZIP_OPEN_FAILED: {e}"))?;
+            let mut output = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temp_path)
+                .map_err(|e| format!("LOCAL_CACHE_TEMP_OPEN_FAILED: {e}"))?;
+            output
+                .write_all(LOCAL_CACHE_MAGIC)
+                .and_then(|_| output.write_all(&(header_bytes.len() as u32).to_le_bytes()))
+                .and_then(|_| output.write_all(&header_bytes))
+                .map_err(|e| format!("LOCAL_CACHE_WRITE_FAILED: {e}"))?;
+            let aad = header.aad();
+            let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.key));
+            let mut buffer = vec![0u8; CACHE_CHUNK_BYTES];
+            let mut payload_hash = Sha256::new();
+            let mut payload_bytes = 0u64;
+            let mut chunk_count = 0u32;
+            loop {
+                let read = input
+                    .read(&mut buffer)
+                    .map_err(|e| format!("LOCAL_CACHE_GZIP_READ_FAILED: {e}"))?;
+                if read == 0 {
+                    break;
+                }
+                let mut nonce_bytes = [0u8; NONCE_BYTES];
+                rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+                let ciphertext = cipher
+                    .encrypt(
+                        Nonce::from_slice(&nonce_bytes),
+                        Payload {
+                            msg: &buffer[..read],
+                            aad: &aad,
+                        },
+                    )
+                    .map_err(|_| "LOCAL_CACHE_ENCRYPT_FAILED".to_string())?;
+                if ciphertext.len() > u32::MAX as usize {
+                    return Err("LOCAL_CACHE_CHUNK_TOO_LARGE".to_string());
+                }
+                payload_bytes = payload_bytes.saturating_add(read as u64);
+                if payload_bytes > MAX_LOCAL_DERIVED_BYTES {
+                    return Err("LOCAL_CACHE_PAYLOAD_TOO_LARGE".to_string());
+                }
+                payload_hash.update(&buffer[..read]);
+                output
+                    .write_all(&nonce_bytes)
+                    .and_then(|_| output.write_all(&(ciphertext.len() as u32).to_le_bytes()))
+                    .and_then(|_| output.write_all(&ciphertext))
+                    .map_err(|e| format!("LOCAL_CACHE_WRITE_FAILED: {e}"))?;
+                chunk_count = chunk_count.saturating_add(1);
+            }
+            output
+                .flush()
+                .and_then(|_| output.sync_all())
+                .map_err(|e| format!("LOCAL_CACHE_SYNC_FAILED: {e}"))?;
+            let encrypted_bytes = output
+                .metadata()
+                .map_err(|e| format!("LOCAL_CACHE_METADATA_FAILED: {e}"))?
+                .len();
+            Ok(LocalCacheReceipt {
+                cache_id: cache_id.to_string(),
+                envelope_version: LOCAL_CACHE_ENVELOPE_VERSION,
+                chunk_count,
+                encrypted_bytes,
+                plain_text_sha256: hex::encode(plain_text_sha256),
+                payload_sha256: hex::encode(payload_hash.finalize()),
+                payload_bytes,
+                local_source_id: header.local_source_id.clone(),
+                local_content_revision: header.local_content_revision.clone(),
+                source_asset_sha256: header.source_asset_sha256.clone(),
+                payload_format: "parsed-document-local-v1".to_string(),
+                parser_id: header.parser_id.clone(),
+                parser_version: header.parser_version.clone(),
+                normalization_version: header.normalization_version.clone(),
+                ocr_model_version: header.ocr_model_version.clone(),
+            })
+        })();
+        match result {
+            Ok(receipt) => {
+                fs::rename(&temp_path, &final_path)
+                    .map_err(|e| format!("LOCAL_CACHE_ATOMIC_RENAME_FAILED: {e}"))?;
+                Ok(receipt)
+            }
+            Err(error) => {
+                let _ = fs::remove_file(&temp_path);
+                Err(error)
+            }
+        }
     }
 
     fn encrypt_to_path(
@@ -265,6 +475,41 @@ impl DocumentCacheStore {
         })
     }
 
+    pub fn open_local_decrypted_reader(
+        &self,
+        cache_id: &str,
+        scope: &LocalCacheScope,
+    ) -> Result<DecryptedCacheReader, String> {
+        let path = self.local_cache_path(cache_id)?;
+        let mut file = File::open(&path).map_err(|e| format!("LOCAL_CACHE_OPEN_FAILED: {e}"))?;
+        let (header, aad) = read_local_header(&mut file)?;
+        if !header.matches_scope(scope) {
+            return Err("LOCAL_CACHE_SCOPE_MISMATCH".to_string());
+        }
+        Ok(DecryptedCacheReader {
+            file,
+            cipher: Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&self.key)),
+            aad,
+            buffer: Vec::new(),
+            offset: 0,
+            finished: false,
+        })
+    }
+
+    pub fn local_header(
+        &self,
+        cache_id: &str,
+        scope: &LocalCacheScope,
+    ) -> Result<LocalCacheHeader, String> {
+        let path = self.local_cache_path(cache_id)?;
+        let mut file = File::open(path).map_err(|e| format!("LOCAL_CACHE_OPEN_FAILED: {e}"))?;
+        let (header, _) = read_local_header(&mut file)?;
+        if !header.matches_scope(scope) {
+            return Err("LOCAL_CACHE_SCOPE_MISMATCH".to_string());
+        }
+        Ok(header)
+    }
+
     pub fn payload_info(
         &self,
         cache_id: &str,
@@ -287,6 +532,86 @@ impl DocumentCacheStore {
         Ok(CachePayloadInfo {
             payload_sha256: hex::encode(hash.finalize()),
             payload_bytes,
+        })
+    }
+
+    pub fn local_payload_info(
+        &self,
+        cache_id: &str,
+        scope: &LocalCacheScope,
+    ) -> Result<CachePayloadInfo, String> {
+        let mut reader = self.open_local_decrypted_reader(cache_id, scope)?;
+        let mut hash = Sha256::new();
+        let mut payload_bytes = 0u64;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let count = reader
+                .read(&mut buffer)
+                .map_err(|error| format!("LOCAL_CACHE_PAYLOAD_READ_FAILED: {error}"))?;
+            if count == 0 {
+                break;
+            }
+            payload_bytes = payload_bytes.saturating_add(count as u64);
+            hash.update(&buffer[..count]);
+        }
+        Ok(CachePayloadInfo {
+            payload_sha256: hex::encode(hash.finalize()),
+            payload_bytes,
+        })
+    }
+
+    pub fn existing_receipt(
+        &self,
+        cache_id: &str,
+        scope: &CacheScope,
+    ) -> Result<CacheReceipt, String> {
+        let path = self.cache_path(cache_id)?;
+        let mut file = File::open(&path).map_err(|e| format!("CACHE_OPEN_FAILED: {e}"))?;
+        let (header, _) = read_header(&mut file)?;
+        if !header.matches_scope(scope) {
+            return Err("CACHE_SCOPE_MISMATCH".to_string());
+        }
+        let plain_text_sha256 = header
+            .plain_text_sha256
+            .clone()
+            .filter(|value| is_lowercase_sha256(value))
+            .ok_or_else(|| "CACHE_RECEIPT_UNAVAILABLE".to_string())?;
+        let mut chunk_count = 0u32;
+        loop {
+            let mut nonce = [0u8; NONCE_BYTES];
+            match file.read_exact(&mut nonce) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(error) => return Err(format!("CACHE_RECEIPT_READ_FAILED: {error}")),
+            }
+            let mut length = [0u8; 4];
+            file.read_exact(&mut length)
+                .map_err(|e| format!("CACHE_RECEIPT_READ_FAILED: {e}"))?;
+            let length = u32::from_le_bytes(length) as u64;
+            if length < 16 || length > (CACHE_CHUNK_BYTES + 16) as u64 {
+                return Err("CACHE_CHUNK_LENGTH_INVALID".to_string());
+            }
+            file.seek(SeekFrom::Current(length as i64))
+                .map_err(|e| format!("CACHE_RECEIPT_READ_FAILED: {e}"))?;
+            chunk_count = chunk_count.saturating_add(1);
+        }
+        let info = self.payload_info(cache_id, scope)?;
+        Ok(CacheReceipt {
+            cache_id: cache_id.to_string(),
+            envelope_version: CACHE_ENVELOPE_VERSION,
+            chunk_count,
+            encrypted_bytes: fs::metadata(path)
+                .map_err(|e| format!("CACHE_METADATA_FAILED: {e}"))?
+                .len(),
+            plain_text_sha256,
+            payload_sha256: info.payload_sha256,
+            payload_bytes: info.payload_bytes,
+            payload_format: header.payload_format,
+            source_asset_sha256: header.source_asset_sha256,
+            parser_id: header.parser_id,
+            parser_version: Some(header.parser_version),
+            normalization_version: header.normalization_version,
+            ocr_model_version: header.ocr_model_version,
         })
     }
 
@@ -414,10 +739,35 @@ fn read_header(file: &mut File) -> Result<(CacheHeader, Vec<u8>), String> {
     Ok((header.clone(), header.aad()))
 }
 
+fn read_local_header(file: &mut File) -> Result<(LocalCacheHeader, Vec<u8>), String> {
+    let mut magic = [0u8; 5];
+    file.read_exact(&mut magic)
+        .map_err(|e| format!("LOCAL_CACHE_HEADER_READ_FAILED: {e}"))?;
+    if &magic != LOCAL_CACHE_MAGIC {
+        return Err("LOCAL_CACHE_MAGIC_INVALID".to_string());
+    }
+    let mut length_bytes = [0u8; 4];
+    file.read_exact(&mut length_bytes)
+        .map_err(|e| format!("LOCAL_CACHE_HEADER_READ_FAILED: {e}"))?;
+    let length = u32::from_le_bytes(length_bytes) as usize;
+    if length == 0 || length > MAX_HEADER_BYTES {
+        return Err("LOCAL_CACHE_HEADER_LENGTH_INVALID".to_string());
+    }
+    let mut bytes = vec![0u8; length];
+    file.read_exact(&mut bytes)
+        .map_err(|e| format!("LOCAL_CACHE_HEADER_READ_FAILED: {e}"))?;
+    let header: LocalCacheHeader =
+        serde_json::from_slice(&bytes).map_err(|e| format!("LOCAL_CACHE_HEADER_INVALID: {e}"))?;
+    if header.schema_version != CACHE_SCHEMA_VERSION {
+        return Err("LOCAL_CACHE_SCHEMA_VERSION_UNSUPPORTED".to_string());
+    }
+    Ok((header.clone(), header.aad()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flate2::{write::GzEncoder, Compression};
+    use flate2::{read::GzDecoder, write::GzEncoder, Compression};
     use rand::{RngCore, SeedableRng};
     use std::io::{Read, Write};
 
@@ -450,6 +800,7 @@ mod tests {
             parser_id: None,
             normalization_version: None,
             ocr_model_version: None,
+            plain_text_sha256: None,
         }
     }
 
@@ -461,6 +812,49 @@ mod tests {
             job_id: "job-1".to_string(),
             ingestion_revision: "revision-4".to_string(),
         }
+    }
+
+    #[test]
+    fn local_derived_cache_round_trips_with_a_separate_scope() {
+        let root = temp_root("local-cache-round-trip");
+        let gzip = gzip_file(&root, b"local derived payload");
+        let store = DocumentCacheStore::new(root.join("cache"), [4u8; 32]).unwrap();
+        let header = LocalCacheHeader {
+            schema_version: CACHE_SCHEMA_VERSION,
+            user_id: "user-a".to_string(),
+            device_id: "device-1".to_string(),
+            local_source_id: "local-source-1".to_string(),
+            local_content_revision: "local-rev-1".to_string(),
+            source_asset_sha256: "a".repeat(64),
+            parser_id: "parser".to_string(),
+            parser_version: "parser-v1".to_string(),
+            normalization_version: "normalization-v1".to_string(),
+            ocr_model_version: None,
+        };
+        let receipt = store
+            .encrypt_local_gzip_file("local-cache-1", &header, &gzip, [9u8; 32])
+            .unwrap();
+        assert_eq!(receipt.local_content_revision, "local-rev-1");
+        let mut reader = store
+            .open_local_decrypted_reader(
+                "local-cache-1",
+                &LocalCacheScope {
+                    user_id: "user-a".to_string(),
+                    device_id: "device-1".to_string(),
+                    local_source_id: "local-source-1".to_string(),
+                    local_content_revision: "local-rev-1".to_string(),
+                    source_asset_sha256: "a".repeat(64),
+                },
+            )
+            .unwrap();
+        let mut payload = Vec::new();
+        reader.read_to_end(&mut payload).unwrap();
+        let mut decoded = Vec::new();
+        GzDecoder::new(payload.as_slice())
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, b"local derived payload");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
