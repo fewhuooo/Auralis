@@ -119,12 +119,19 @@ const boundedMetadata = (value: string, optional = false): boolean =>
   (optional && value === '') || (value.trim().length > 0 && value.length <= MAX_PACKAGE_METADATA_CHARS)
 
 export const isDocumentCacheReceiptV1 = (receipt: DocumentCacheReceipt): boolean =>
-  receipt.payloadFormat === DOCUMENT_PAYLOAD_FORMAT
+  receipt.envelopeVersion === 1
+  && typeof receipt.cacheId === 'string' && receipt.cacheId.trim().length > 0 && receipt.cacheId.length <= 200
+  && typeof receipt.chunkCount === 'number' && Number.isInteger(receipt.chunkCount) && receipt.chunkCount > 0
+  && typeof receipt.encryptedBytes === 'number' && Number.isInteger(receipt.encryptedBytes) && receipt.encryptedBytes > 0
+  && typeof receipt.plainTextSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.plainTextSha256)
+  && typeof receipt.payloadSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.payloadSha256)
+  && typeof receipt.payloadBytes === 'number' && Number.isInteger(receipt.payloadBytes) && receipt.payloadBytes > 0
+  && receipt.payloadFormat === DOCUMENT_PAYLOAD_FORMAT
   && typeof receipt.sourceAssetSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.sourceAssetSha256)
   && typeof receipt.parserId === 'string' && boundedMetadata(receipt.parserId)
   && typeof receipt.parserVersion === 'string' && boundedMetadata(receipt.parserVersion)
   && typeof receipt.normalizationVersion === 'string' && boundedMetadata(receipt.normalizationVersion)
-  && (receipt.ocrModelVersion === null || (typeof receipt.ocrModelVersion === 'string' && boundedMetadata(receipt.ocrModelVersion)))
+  && (receipt.ocrModelVersion === null || receipt.ocrModelVersion === undefined || (typeof receipt.ocrModelVersion === 'string' && boundedMetadata(receipt.ocrModelVersion)))
 
 export interface DocumentCachePayloadInfo {
   payloadSha256: string
@@ -172,6 +179,141 @@ export const documentPackageAppend = (packageId: string, block: ParsedDocumentBl
 export const documentPackageFinish = (packageId: string): Promise<DocumentCacheReceipt> => {
   if (!packageId.trim()) throw new Error('DOCUMENT_PACKAGE_ID_INVALID')
   return invokeRustCmd<DocumentCacheReceipt>('document_package_finish', { packageId })
+}
+
+export interface LocalPackageHeader {
+  schemaVersion: 1
+  userId: string
+  deviceId: string
+  localSourceId: string
+  localContentRevision: string
+  sourceAssetSha256: string
+  parserId: string
+  parserVersion: string
+  normalizationVersion: string
+  ocrModelVersion?: string | null
+}
+
+export interface LocalCacheReceipt {
+  cacheId: string
+  envelopeVersion: 1
+  chunkCount: number
+  encryptedBytes: number
+  plainTextSha256: string
+  payloadSha256: string
+  payloadBytes: number
+  localSourceId: string
+  localContentRevision: string
+  sourceAssetSha256: string
+  payloadFormat: string
+  parserId: string
+  parserVersion: string
+  normalizationVersion: string
+  ocrModelVersion?: string | null
+}
+
+export interface LocalCacheBindRequest {
+  localCacheId: string
+  serverCacheId: string
+  userId: string
+  deviceId: string
+  localSourceId: string
+  localContentRevision: string
+  serverSourceId: string
+  jobId: string
+  ingestionRevision: string
+  sourceAssetSha256: string
+}
+
+export const isLocalCacheReceiptV1 = (receipt: LocalCacheReceipt): boolean =>
+  receipt.envelopeVersion === 1
+  && receipt.payloadFormat === 'parsed-document-local-v1'
+  && typeof receipt.cacheId === 'string' && receipt.cacheId.trim().length > 0 && receipt.cacheId.length <= 200
+  && typeof receipt.chunkCount === 'number' && Number.isInteger(receipt.chunkCount) && receipt.chunkCount > 0
+  && typeof receipt.encryptedBytes === 'number' && Number.isInteger(receipt.encryptedBytes) && receipt.encryptedBytes > 0
+  && typeof receipt.plainTextSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.plainTextSha256)
+  && typeof receipt.payloadSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.payloadSha256)
+  && typeof receipt.payloadBytes === 'number' && Number.isInteger(receipt.payloadBytes) && receipt.payloadBytes > 0
+  && typeof receipt.localSourceId === 'string' && receipt.localSourceId.trim().length > 0
+  && typeof receipt.localContentRevision === 'string' && receipt.localContentRevision.trim().length > 0
+  && typeof receipt.sourceAssetSha256 === 'string' && /^[a-f0-9]{64}$/.test(receipt.sourceAssetSha256)
+  && typeof receipt.parserId === 'string' && boundedMetadata(receipt.parserId)
+  && typeof receipt.parserVersion === 'string' && boundedMetadata(receipt.parserVersion)
+  && typeof receipt.normalizationVersion === 'string' && boundedMetadata(receipt.normalizationVersion)
+  && (receipt.ocrModelVersion === null || receipt.ocrModelVersion === undefined || (typeof receipt.ocrModelVersion === 'string' && boundedMetadata(receipt.ocrModelVersion)))
+
+export const documentLocalPackageBegin = async (header: LocalPackageHeader): Promise<string> => {
+  if (
+    header.schemaVersion !== 1
+    || !header.userId?.trim()
+    || !header.deviceId?.trim()
+    || !header.localSourceId?.trim()
+    || !header.localContentRevision?.trim()
+    || !/^[a-f0-9]{64}$/i.test(header.sourceAssetSha256)
+    || !boundedMetadata(header.parserId)
+    || !boundedMetadata(header.parserVersion)
+    || !boundedMetadata(header.normalizationVersion)
+    || (header.ocrModelVersion !== null && header.ocrModelVersion !== undefined && !boundedMetadata(header.ocrModelVersion))
+  ) {
+    throw new Error('DOCUMENT_LOCAL_PACKAGE_HEADER_INVALID')
+  }
+  const normalizedHeader: LocalPackageHeader = {
+    ...header,
+    userId: header.userId.trim(),
+    deviceId: header.deviceId.trim(),
+    localSourceId: header.localSourceId.trim(),
+    localContentRevision: header.localContentRevision.trim(),
+    sourceAssetSha256: header.sourceAssetSha256.trim().toLowerCase(),
+    parserId: header.parserId.trim(),
+    parserVersion: header.parserVersion.trim(),
+    normalizationVersion: header.normalizationVersion.trim(),
+    ocrModelVersion: header.ocrModelVersion === null || header.ocrModelVersion === undefined
+      ? null
+      : header.ocrModelVersion.trim(),
+  }
+  return invokeRustCmd<string>('document_local_package_begin', { header: normalizedHeader })
+}
+
+export const documentLocalPackageAppend = async (packageId: string, block: ParsedDocumentBlockCommand): Promise<void> => {
+  if (!packageId?.trim() || !Number.isInteger(block.ordinal) || block.ordinal < 0 || !block.text?.trim() || block.text.length > 100_000) {
+    throw new Error('DOCUMENT_LOCAL_PACKAGE_BLOCK_INVALID')
+  }
+  return invokeRustCmd<void>('document_local_package_append', { packageId: packageId.trim(), block })
+}
+
+export const documentLocalPackageFinish = async (packageId: string): Promise<LocalCacheReceipt> => {
+  if (!packageId?.trim()) throw new Error('DOCUMENT_LOCAL_PACKAGE_ID_INVALID')
+  return invokeRustCmd<LocalCacheReceipt>('document_local_package_finish', { packageId: packageId.trim() })
+}
+
+export const documentLocalCacheBind = async (request: LocalCacheBindRequest): Promise<DocumentCacheReceipt> => {
+  if (
+    !request.localCacheId?.trim()
+    || !request.serverCacheId?.trim()
+    || !request.userId?.trim()
+    || !request.deviceId?.trim()
+    || !request.localSourceId?.trim()
+    || !request.localContentRevision?.trim()
+    || !request.serverSourceId?.trim()
+    || !request.jobId?.trim()
+    || !request.ingestionRevision?.trim()
+    || !/^[a-f0-9]{64}$/i.test(request.sourceAssetSha256)
+  ) {
+    throw new Error('LOCAL_CACHE_BIND_REQUEST_INVALID')
+  }
+  const normalizedRequest: LocalCacheBindRequest = {
+    localCacheId: request.localCacheId.trim(),
+    serverCacheId: request.serverCacheId.trim(),
+    userId: request.userId.trim(),
+    deviceId: request.deviceId.trim(),
+    localSourceId: request.localSourceId.trim(),
+    localContentRevision: request.localContentRevision.trim(),
+    serverSourceId: request.serverSourceId.trim(),
+    jobId: request.jobId.trim(),
+    ingestionRevision: request.ingestionRevision.trim(),
+    sourceAssetSha256: request.sourceAssetSha256.trim().toLowerCase(),
+  }
+  return invokeRustCmd<DocumentCacheReceipt>('document_local_cache_bind', { request: normalizedRequest })
 }
 
 export const documentCacheDelete = (cacheId: string): Promise<boolean> => {

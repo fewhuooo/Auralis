@@ -1,7 +1,7 @@
 import type { LocalEntity, LocalMutation, LocalMutationStatus, LocalSyncStatus } from '@/types/api'
 import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob, type OcrCheckpointDiagnostic } from '@/types/documentProcessing'
-import type { DocumentCacheReceipt } from '@/api/tauri'
-import { DOCUMENT_PAYLOAD_FORMAT, isDocumentCacheReceiptV1, MAX_PACKAGE_METADATA_CHARS } from '@/api/tauri'
+import type { DocumentCacheReceipt, LocalCacheReceipt } from '@/api/tauri'
+import { DOCUMENT_PAYLOAD_FORMAT, isDocumentCacheReceiptV1, isLocalCacheReceiptV1, MAX_PACKAGE_METADATA_CHARS } from '@/api/tauri'
 import {
   LOCAL_ASSET_STATES,
   LOCAL_ASSET_SYNC_PHASES,
@@ -13,8 +13,13 @@ import {
   type LocalSourceDraft,
   type LocalSourceDraftState,
 } from '@/types/localAsset'
+import {
+  LOCAL_PARSED_DOCUMENT_PHASES,
+  type LocalParsedDocumentPhase,
+  type LocalParsedDocumentRecord,
+} from '@/types/localParsedDocument'
 
-export const LOCAL_SCHEMA_VERSION = 8
+export const LOCAL_SCHEMA_VERSION = 9
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -110,6 +115,34 @@ export interface LocalSourceDraftRow {
   local_content_revision: string
   server_ingestion_revision: string | null
   state: LocalSourceDraftState
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalParsedDocumentRow {
+  user_id: string
+  device_id: string
+  local_source_id: string
+  local_content_revision: string
+  local_asset_id: string
+  source_asset_sha256: string
+  parser_id: string
+  parser_version: string
+  normalization_version: string
+  ocr_model_version: string | null
+  local_cache_id: string | null
+  local_receipt_json: string | null
+  phase: LocalParsedDocumentPhase
+  server_source_id: string | null
+  server_ingestion_revision: string | null
+  server_cache_id: string | null
+  server_receipt_json: string | null
+  safe_error_code: string | null
+  safe_error_detail: string | null
+  attempt: number
+  checkpoint_page: number
+  checkpoint_ordinal: number
+  checkpoint_json: string | null
   created_at: string
   updated_at: string
 }
@@ -262,6 +295,41 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
     captured_at TEXT NOT NULL,
     UNIQUE (source_table, source_id)
   )`,
+  `CREATE TABLE IF NOT EXISTS local_parsed_documents (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    local_source_id TEXT NOT NULL CHECK (length(trim(local_source_id)) > 0),
+    local_content_revision TEXT NOT NULL CHECK (length(trim(local_content_revision)) > 0),
+    local_asset_id TEXT NOT NULL CHECK (length(trim(local_asset_id)) > 0),
+    source_asset_sha256 TEXT NOT NULL CHECK (length(source_asset_sha256) = 64 AND source_asset_sha256 NOT GLOB '*[^a-f0-9]*'),
+    parser_id TEXT NOT NULL CHECK (length(trim(parser_id)) > 0),
+    parser_version TEXT NOT NULL CHECK (length(trim(parser_version)) > 0),
+    normalization_version TEXT NOT NULL CHECK (length(trim(normalization_version)) > 0),
+    ocr_model_version TEXT,
+    local_cache_id TEXT CHECK (local_cache_id IS NULL OR length(trim(local_cache_id)) > 0),
+    local_receipt_json TEXT,
+    phase TEXT NOT NULL CHECK (phase IN (${LOCAL_PARSED_DOCUMENT_PHASES.map((p) => `'${p}'`).join(', ')})),
+    server_source_id TEXT CHECK (server_source_id IS NULL OR length(trim(server_source_id)) > 0),
+    server_ingestion_revision TEXT CHECK (server_ingestion_revision IS NULL OR length(trim(server_ingestion_revision)) > 0),
+    server_cache_id TEXT CHECK (server_cache_id IS NULL OR length(trim(server_cache_id)) > 0),
+    server_receipt_json TEXT,
+    safe_error_code TEXT,
+    safe_error_detail TEXT,
+    attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+    checkpoint_page INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_page >= 0),
+    checkpoint_ordinal INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_ordinal >= 0),
+    checkpoint_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, local_source_id, local_content_revision)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_local_parsed_docs_scope_phase
+    ON local_parsed_documents (user_id, device_id, phase, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_local_parsed_docs_asset
+    ON local_parsed_documents (user_id, device_id, local_asset_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_local_parsed_docs_server
+    ON local_parsed_documents (user_id, device_id, server_source_id, server_ingestion_revision)
+    WHERE server_source_id IS NOT NULL AND server_ingestion_revision IS NOT NULL`,
 ]
 
 type TableInfoRow = Record<string, unknown> & { name?: unknown }
@@ -555,6 +623,54 @@ export function sanitizeDocumentCacheReceipt(value: unknown): DocumentCacheRecei
   return isDocumentCacheReceiptV1(normalized) ? normalized : base
 }
 
+export function sanitizeParsedDocumentServerReceipt(value: unknown): DocumentCacheReceipt | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  const normalized: DocumentCacheReceipt = {
+    cacheId: typeof candidate.cacheId === 'string' ? candidate.cacheId.trim() : '',
+    envelopeVersion: 1,
+    chunkCount: typeof candidate.chunkCount === 'number' && Number.isInteger(candidate.chunkCount) ? candidate.chunkCount : Number(candidate.chunkCount ?? 0),
+    encryptedBytes: typeof candidate.encryptedBytes === 'number' && Number.isInteger(candidate.encryptedBytes) ? candidate.encryptedBytes : Number(candidate.encryptedBytes ?? 0),
+    plainTextSha256: typeof candidate.plainTextSha256 === 'string' ? candidate.plainTextSha256.trim().toLowerCase() : '',
+    payloadSha256: typeof candidate.payloadSha256 === 'string' ? candidate.payloadSha256.trim().toLowerCase() : '',
+    payloadBytes: typeof candidate.payloadBytes === 'number' && Number.isInteger(candidate.payloadBytes) ? candidate.payloadBytes : Number(candidate.payloadBytes ?? 0),
+    payloadFormat: typeof candidate.payloadFormat === 'string' ? (candidate.payloadFormat.trim() as 'parsed-document-v1') : DOCUMENT_PAYLOAD_FORMAT,
+    sourceAssetSha256: typeof candidate.sourceAssetSha256 === 'string' ? candidate.sourceAssetSha256.trim().toLowerCase() : '',
+    parserId: typeof candidate.parserId === 'string' ? candidate.parserId.trim() : '',
+    parserVersion: typeof candidate.parserVersion === 'string' ? candidate.parserVersion.trim() : '',
+    normalizationVersion: typeof candidate.normalizationVersion === 'string' ? candidate.normalizationVersion.trim() : '',
+    ocrModelVersion: candidate.ocrModelVersion === null || candidate.ocrModelVersion === undefined
+      ? null
+      : (typeof candidate.ocrModelVersion === 'string' && candidate.ocrModelVersion.trim() ? candidate.ocrModelVersion.trim() : null),
+  }
+  return isDocumentCacheReceiptV1(normalized) ? normalized : null
+}
+
+export function sanitizeLocalCacheReceipt(value: unknown): LocalCacheReceipt | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Record<string, unknown>
+  const normalized: LocalCacheReceipt = {
+    cacheId: typeof candidate.cacheId === 'string' ? candidate.cacheId.trim() : '',
+    envelopeVersion: 1,
+    chunkCount: typeof candidate.chunkCount === 'number' && Number.isInteger(candidate.chunkCount) ? candidate.chunkCount : Number(candidate.chunkCount ?? 0),
+    encryptedBytes: typeof candidate.encryptedBytes === 'number' && Number.isInteger(candidate.encryptedBytes) ? candidate.encryptedBytes : Number(candidate.encryptedBytes ?? 0),
+    plainTextSha256: typeof candidate.plainTextSha256 === 'string' ? candidate.plainTextSha256.trim().toLowerCase() : '',
+    payloadSha256: typeof candidate.payloadSha256 === 'string' ? candidate.payloadSha256.trim().toLowerCase() : '',
+    payloadBytes: typeof candidate.payloadBytes === 'number' && Number.isInteger(candidate.payloadBytes) ? candidate.payloadBytes : Number(candidate.payloadBytes ?? 0),
+    localSourceId: typeof candidate.localSourceId === 'string' ? candidate.localSourceId.trim() : '',
+    localContentRevision: typeof candidate.localContentRevision === 'string' ? candidate.localContentRevision.trim() : '',
+    sourceAssetSha256: typeof candidate.sourceAssetSha256 === 'string' ? candidate.sourceAssetSha256.trim().toLowerCase() : '',
+    payloadFormat: typeof candidate.payloadFormat === 'string' ? candidate.payloadFormat.trim() : 'parsed-document-local-v1',
+    parserId: typeof candidate.parserId === 'string' ? candidate.parserId.trim() : '',
+    parserVersion: typeof candidate.parserVersion === 'string' ? candidate.parserVersion.trim() : '',
+    normalizationVersion: typeof candidate.normalizationVersion === 'string' ? candidate.normalizationVersion.trim() : '',
+    ocrModelVersion: candidate.ocrModelVersion === null || candidate.ocrModelVersion === undefined
+      ? null
+      : (typeof candidate.ocrModelVersion === 'string' && candidate.ocrModelVersion.trim() ? candidate.ocrModelVersion.trim() : null),
+  }
+  return isLocalCacheReceiptV1(normalized) ? normalized : null
+}
+
 function sanitizeOcrDiagnostic(value: unknown): OcrCheckpointDiagnostic | undefined {
   if (!value || typeof value !== 'object') return undefined
   const candidate = value as Record<string, unknown>
@@ -708,6 +824,56 @@ export function localSourceDraftFromRow(row: LocalSourceDraftRow): LocalSourceDr
     localContentRevision: row.local_content_revision,
     serverIngestionRevision: row.server_ingestion_revision ?? null,
     state: row.state,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function localParsedDocumentFromRow(row: LocalParsedDocumentRow): LocalParsedDocumentRecord {
+  let localReceipt: LocalCacheReceipt | null = null
+  if (row.local_receipt_json) {
+    try {
+      const parsed = JSON.parse(row.local_receipt_json)
+      localReceipt = sanitizeLocalCacheReceipt(parsed)
+    } catch {
+      localReceipt = null
+    }
+  }
+
+  let serverReceipt: DocumentCacheReceipt | null = null
+  if (row.server_receipt_json) {
+    try {
+      const parsed = JSON.parse(row.server_receipt_json)
+      serverReceipt = sanitizeParsedDocumentServerReceipt(parsed)
+    } catch {
+      serverReceipt = null
+    }
+  }
+
+  return {
+    userId: row.user_id,
+    serverDeviceId: row.device_id,
+    localSourceId: row.local_source_id,
+    localContentRevision: row.local_content_revision,
+    localAssetId: row.local_asset_id,
+    sourceAssetSha256: row.source_asset_sha256,
+    parserId: row.parser_id,
+    parserVersion: row.parser_version,
+    normalizationVersion: row.normalization_version,
+    ocrModelVersion: row.ocr_model_version ?? null,
+    localCacheId: row.local_cache_id ?? null,
+    localReceipt,
+    phase: row.phase,
+    serverSourceId: row.server_source_id ?? null,
+    serverIngestionRevision: row.server_ingestion_revision ?? null,
+    serverCacheId: row.server_cache_id ?? null,
+    serverReceipt,
+    safeErrorCode: row.safe_error_code ?? null,
+    safeErrorDetail: row.safe_error_detail ?? null,
+    attempt: Number(row.attempt ?? 0),
+    checkpointPage: Number(row.checkpoint_page ?? 0),
+    checkpointOrdinal: Number(row.checkpoint_ordinal ?? 0),
+    checkpointJson: row.checkpoint_json ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
