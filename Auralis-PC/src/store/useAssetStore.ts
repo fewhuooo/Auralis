@@ -24,19 +24,7 @@ export const useAssetStore = defineStore('asset', () => {
   const pendingUploads = ref<PendingAssetUpload[]>([])
   const lastError = ref<string | null>(null)
 
-  async function cache(asset: AssetView): Promise<AssetModel> {
-    const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.serverDeviceId || !asset.id) throw new Error('Asset cache requires an authenticated user and asset id')
-    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
-    await repo.upsert('ASSET', String(asset.id), asset, {
-      version: 0,
-      deletedAt: null,
-      syncStatus: 'synced',
-    })
-    const model = mapAssetView(asset)
-    assets.value = [model, ...assets.value.filter((item) => item.id !== model.id)]
-    return model
-  }
+
 
   async function upload(file: File, onProgress?: (percent: number, stage: string) => void): Promise<AssetModel> {
     const authStore = useAuthStore()

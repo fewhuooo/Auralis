@@ -168,7 +168,6 @@ export const useSourceStore = defineStore('source', () => {
       })
       const localView: SourceView = {
         id,
-        baseVersion: 0,
         subjectId,
         type: 'FILE',
         title,

@@ -224,7 +224,7 @@ export class LocalAssetSyncQueue {
           await this.assetRepository.transitionAssetState(localAssetId, 'SYNCING')
         }
 
-        const receipt = await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
+        await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
 
 
         await this.assetRepository.updateSyncJobPhase(jobId, 'COMPLETING_REMOTE_ASSET', { serverAssetId })
@@ -271,25 +271,28 @@ export class LocalAssetSyncQueue {
 
 const queueCache = new Map<string, LocalAssetSyncQueue>()
 const queueInitPromises = new Map<string, Promise<LocalAssetSyncQueue>>()
+const queueInitTokens = new Map<string, object>()
 
 export async function getOrCreateLocalAssetSyncQueue(options: LocalAssetSyncQueueOptions): Promise<LocalAssetSyncQueue> {
   const key = `${options.assetRepository.userId}:${options.assetRepository.serverDeviceId}`
-  
+
   const existing = queueCache.get(key)
   if (existing) return existing
-  
+
   const inFlight = queueInitPromises.get(key)
   if (inFlight) return inFlight
-  
-  let initPromise: Promise<LocalAssetSyncQueue>
-  initPromise = (async () => {
+
+  const token = {}
+  queueInitTokens.set(key, token)
+
+  const initPromise = (async () => {
     const instance = new LocalAssetSyncQueue(options)
     try {
       await instance.recoverInflightJobs()
-      if (queueInitPromises.get(key) !== initPromise) {
+      if (queueInitTokens.get(key) !== token) {
         instance.dispose()
         const err = new Error('QUEUE_RELEASED_DURING_INIT')
-        ;(err as any).code = 'QUEUE_RELEASED_DURING_INIT'
+        ;(err as Error & { code?: string }).code = 'QUEUE_RELEASED_DURING_INIT'
         throw err
       }
       queueCache.set(key, instance)
@@ -298,12 +301,13 @@ export async function getOrCreateLocalAssetSyncQueue(options: LocalAssetSyncQueu
       instance.dispose()
       throw error
     } finally {
-      if (queueInitPromises.get(key) === initPromise) {
+      if (queueInitTokens.get(key) === token) {
+        queueInitTokens.delete(key)
         queueInitPromises.delete(key)
       }
     }
   })()
-  
+
   queueInitPromises.set(key, initPromise)
   return initPromise
 }
@@ -316,4 +320,5 @@ export function releaseLocalAssetSyncQueue(userId: string, serverDeviceId: strin
     queueCache.delete(key)
   }
   queueInitPromises.delete(key)
+  queueInitTokens.delete(key)
 }

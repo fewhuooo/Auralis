@@ -103,11 +103,6 @@ function defaultStorage(): LocalStorageLike {
     getItem: (key: string) => fallbackMemoryStorage.get(key) ?? null,
     setItem: (key: string, value: string) => { fallbackMemoryStorage.set(key, String(value)) },
     removeItem: (key: string) => { fallbackMemoryStorage.delete(key) },
-    clear: () => { fallbackMemoryStorage.clear() },
-    key: (index: number) => Array.from(fallbackMemoryStorage.keys())[index] ?? null,
-    get length() {
-      return fallbackMemoryStorage.size
-    },
   }
 }
 

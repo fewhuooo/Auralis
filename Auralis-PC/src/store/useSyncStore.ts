@@ -51,6 +51,7 @@ export const useSyncStore = defineStore('sync', () => {
   const scheduler = createSyncScheduler({ delayMs: 500, run: async () => flushNow() })
 
   let assetQueuePromise: Promise<LocalAssetSyncQueue> | null = null
+  let assetQueuePromiseToken: object | null = null
   let assetQueueUserId: string | null = null
   let assetQueueDeviceId: string | null = null
 
@@ -85,6 +86,8 @@ export const useSyncStore = defineStore('sync', () => {
       assetQueueUserId = userId
       assetQueueDeviceId = serverDeviceId
 
+      const token = {}
+      assetQueuePromiseToken = token
       const p = (async () => {
         try {
           const assetRepository = await getLocalAssetRepository(userId, serverDeviceId)
@@ -99,7 +102,7 @@ export const useSyncStore = defineStore('sync', () => {
             onWakeup: () => { requestBackgroundSync('write') },
           })
         } catch (e) {
-          if (assetQueuePromise === p) {
+          if (assetQueuePromiseToken === token) {
             assetQueuePromise = null
             assetQueueUserId = null
             assetQueueDeviceId = null
