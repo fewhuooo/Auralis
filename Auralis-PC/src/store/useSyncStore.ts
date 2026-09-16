@@ -88,7 +88,7 @@ export const useSyncStore = defineStore('sync', () => {
       const p = (async () => {
         try {
           const assetRepository = await getLocalAssetRepository(userId, serverDeviceId)
-          const rep = await getRepository()
+          const rep = await getLocalRepository(userId, serverDeviceId)
           const assetService = getOrCreateLocalAssetService(assetRepository)
           const draftService = getOrCreateLocalSourceDraftService(assetRepository, rep)
 
