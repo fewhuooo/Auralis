@@ -360,3 +360,34 @@ export const reconcileLocalAssets = (command: ReconcileLocalAssetsCommand): Prom
   }
   return invokeRustCmd<ReconcileLocalAssetsResult>('reconcile_local_assets', { command })
 }
+
+export interface LocalAssetUploadPutCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+  uploadUrl: string
+  headers?: Record<string, string>
+  expectedSize: number
+  expectedSha256: string
+}
+
+export interface LocalAssetUploadPutReceipt {
+  status: number
+  bytesSent: number
+  payloadSha256: string
+}
+
+export const localAssetUploadPut = (command: LocalAssetUploadPutCommand): Promise<LocalAssetUploadPutReceipt> => {
+  if (
+    !command.userScope?.trim() ||
+    !command.deviceId?.trim() ||
+    !command.localAssetId?.trim() ||
+    !command.uploadUrl?.trim() ||
+    typeof command.expectedSize !== 'number' ||
+    command.expectedSize < 0 ||
+    !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<LocalAssetUploadPutReceipt>('local_asset_upload_put', { command })
+}

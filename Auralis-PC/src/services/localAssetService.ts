@@ -6,6 +6,7 @@ import {
   downloadLocalAsset,
   deleteLocalAsset,
   reconcileLocalAssets,
+  localAssetUploadPut,
 } from '@/api/tauri'
 import { getFileExtension } from '@/utils/filePreview'
 import { uuidv7 } from '@/utils/uuid'
@@ -70,6 +71,16 @@ export interface LocalAssetNativeAdapter {
     serverDeviceId: string
     localAssetId: string
   }): Promise<Blob>
+
+  uploadAssetToRemote(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+    uploadUrl: string
+    headers?: Record<string, string>
+    expectedSize: number
+    expectedSha256: string
+  }): Promise<{ status: number; bytesSent: number; payloadSha256: string }>
 }
 
 export interface TauriLocalAssetNativeAdapterOptions {
@@ -233,6 +244,26 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
       deviceId: args.serverDeviceId,
     })
   }
+
+  async uploadAssetToRemote(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+    uploadUrl: string
+    headers?: Record<string, string>
+    expectedSize: number
+    expectedSha256: string
+  }): Promise<{ status: number; bytesSent: number; payloadSha256: string }> {
+    return localAssetUploadPut({
+      userScope: args.userId,
+      deviceId: args.serverDeviceId,
+      localAssetId: args.localAssetId,
+      uploadUrl: args.uploadUrl,
+      headers: args.headers,
+      expectedSize: args.expectedSize,
+      expectedSha256: args.expectedSha256,
+    })
+  }
 }
 
 export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
@@ -339,6 +370,32 @@ export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
       throw new Error('FILE_MISSING: Asset file missing from transient storage')
     }
     return found.blob
+  }
+
+  async uploadAssetToRemote(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+    uploadUrl: string
+    headers?: Record<string, string>
+    expectedSize: number
+    expectedSha256: string
+  }): Promise<{ status: number; bytesSent: number; payloadSha256: string }> {
+    const blob = await this.getAssetBlob({
+      userId: args.userId,
+      serverDeviceId: args.serverDeviceId,
+      localAssetId: args.localAssetId,
+    })
+    const res = await fetch(args.uploadUrl, {
+      method: 'PUT',
+      headers: args.headers,
+      body: blob,
+    })
+    return {
+      status: res.status,
+      bytesSent: args.expectedSize, // transient doesn't perfectly track bytes sent, using expected
+      payloadSha256: args.expectedSha256,
+    }
   }
 }
 
@@ -656,6 +713,24 @@ export class LocalAssetService {
       })
     }
     throw new Error('ADAPTER_DOES_NOT_SUPPORT_BLOB_READ')
+  }
+
+  async uploadAssetToRemote(
+    localAssetId: string,
+    uploadUrl: string,
+    headers?: Record<string, string>,
+  ): Promise<{ status: number; bytesSent: number; payloadSha256: string }> {
+    const record = await this.repository.getAssetFile(localAssetId)
+    if (!record) throw new Error('LOCAL_ASSET_NOT_FOUND')
+    return this.adapter.uploadAssetToRemote({
+      userId: this.repository.userId,
+      serverDeviceId: this.repository.serverDeviceId,
+      localAssetId,
+      uploadUrl,
+      headers,
+      expectedSize: record.sizeBytes,
+      expectedSha256: record.sha256,
+    })
   }
 }
 

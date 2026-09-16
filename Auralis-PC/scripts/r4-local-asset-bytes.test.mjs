@@ -183,3 +183,32 @@ test('TauriLocalAssetNativeAdapter rejects files over 50MB before IPC', async ()
     /LOCAL_ASSET_SIZE_LIMIT/
   )
 })
+
+test('localAssetUploadPut validates exact Rust command and strictly checks parameters', async () => {
+  const { localAssetUploadPut } = await import('../src/api/tauri.ts')
+  const tauriMock = setupTauriInvokeMock(async (cmd, args) => {
+    assert.equal(cmd, 'local_asset_upload_put')
+    assert.ok(args.command)
+    assert.equal(args.command.userScope, 'u1')
+    assert.equal(args.command.deviceId, 'd1')
+    assert.equal(args.command.localAssetId, 'asset-1')
+    assert.equal(args.command.uploadUrl, 'http://upload')
+    assert.equal(args.command.expectedSize, 100)
+    assert.equal(args.command.expectedSha256, '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
+    return { status: 200, bytesSent: 100, payloadSha256: args.command.expectedSha256 }
+  })
+  try {
+    const result = await localAssetUploadPut({
+      userScope: 'u1',
+      deviceId: 'd1',
+      localAssetId: 'asset-1',
+      uploadUrl: 'http://upload',
+      expectedSize: 100,
+      expectedSha256: '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824',
+    })
+    assert.equal(result.status, 200)
+    assert.equal(result.bytesSent, 100)
+  } finally {
+    tauriMock.restore()
+  }
+})

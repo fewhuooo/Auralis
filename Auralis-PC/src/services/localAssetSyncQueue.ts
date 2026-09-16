@@ -206,8 +206,19 @@ export class LocalAssetSyncQueue {
           await this.assetRepository.transitionAssetState(localAssetId, 'SYNCING')
         }
 
-        const blob = await this.assetService.getAssetBlob(localAssetId)
-        await this.api.uploadToObjectStorage(uploadUrl, blob, headers)
+        const receipt = await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
+
+        if (receipt.status < 200 || receipt.status >= 300) {
+          throw new Error(`NATIVE_UPLOAD_FAILED: Server returned status ${receipt.status}`)
+        }
+
+        // Note: The Rust command validates the bytes sent and payload SHA256 against expected values
+        // so we don't strictly need to do it here, but we can verify what's returned.
+        const expectedFile = await this.assetRepository.getAssetFile(localAssetId)
+        if (expectedFile && (receipt.bytesSent !== expectedFile.sizeBytes || receipt.payloadSha256 !== expectedFile.sha256)) {
+          throw new Error(`NATIVE_UPLOAD_RECEIPT_MISMATCH: Sent ${receipt.bytesSent} bytes (expected ${expectedFile.sizeBytes}), sha256 ${receipt.payloadSha256} (expected ${expectedFile.sha256})`)
+        }
+
         await this.assetRepository.updateSyncJobPhase(jobId, 'COMPLETING_REMOTE_ASSET', { serverAssetId })
 
         await this.api.completeUpload(serverAssetId)

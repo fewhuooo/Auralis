@@ -55,6 +55,11 @@ test('LocalAssetSyncQueue: full pipeline uploads asset, maps serverAssetId, rele
     const localRepo = new LocalRepository('user-1', 'dev-1', { sql: sqlite })
     const assetRepo = new LocalAssetRepository('user-1', 'dev-1', { sql: sqlite })
     const adapter = new TransientBrowserAssetAdapter()
+    const calls = []
+    adapter.uploadAssetToRemote = async (args) => {
+      calls.push({ name: 'uploadAssetToRemote', args })
+      return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
+    }
     const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
     const draftService = new LocalSourceDraftService(assetRepo, localRepo)
 
@@ -84,7 +89,6 @@ test('LocalAssetSyncQueue: full pipeline uploads asset, maps serverAssetId, rele
     await assetRepo.enqueueSyncJob(localAssetId)
 
     // Setup mock API
-    const calls = []
     const mockApi = {
       createUploadIntent: async (req) => {
         calls.push({ name: 'createUploadIntent', req })
@@ -97,7 +101,7 @@ test('LocalAssetSyncQueue: full pipeline uploads asset, maps serverAssetId, rele
         }
       },
       uploadToObjectStorage: async (url, blob, headers) => {
-        calls.push({ name: 'uploadToObjectStorage', url, blobSize: blob.size, headers })
+        // Now unused, replaced by adapter.uploadAssetToRemote
       },
       completeUpload: async (assetId) => {
         calls.push({ name: 'completeUpload', assetId })
@@ -120,7 +124,7 @@ test('LocalAssetSyncQueue: full pipeline uploads asset, maps serverAssetId, rele
     // Assert API calls
     assert.equal(calls.length, 3)
     assert.equal(calls[0].name, 'createUploadIntent')
-    assert.equal(calls[1].name, 'uploadToObjectStorage')
+    assert.equal(calls[1].name, 'uploadAssetToRemote')
     assert.equal(calls[2].name, 'completeUpload')
     assert.equal(calls[2].assetId, serverAssetId)
 
@@ -315,6 +319,42 @@ test('LocalAssetSyncQueue: recoverInflightJobs resets interrupted jobs to PENDIN
 
     const recoveredJob = await assetRepo.getSyncJob(job.jobId)
     assert.equal(recoveredJob.phase, 'PENDING')
+  } finally {
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue: native invoke receipt mismatch aborts upload and schedules retry', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-1', 'dev-1', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-1', 'dev-1', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    adapter.uploadAssetToRemote = async (args) => {
+      return { status: 200, bytesSent: args.expectedSize + 1, payloadSha256: args.expectedSha256 }
+    }
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286812'
+    const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
+    await assetService.importAsset({
+      localAssetId,
+      file: testFile,
+      originalName: testFile.name,
+      mimeType: testFile.type,
+      sizeBytes: testFile.size,
+    })
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+    const mockApi = {
+      createUploadIntent: async () => { return { assetId: 'server-1', uploadUrl: 'http://test', uploadStatus: 'UPLOADING' } },
+      completeUpload: async () => {},
+    }
+    const queue = new LocalAssetSyncQueue({ assetRepository: assetRepo, assetService, draftService, api: mockApi })
+    await queue.processQueue()
+    const updatedJob = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(updatedJob.phase, 'PENDING')
+    assert.ok(updatedJob.safeErrorDetail.includes('NATIVE_UPLOAD_RECEIPT_MISMATCH'))
   } finally {
     sqlite.close()
   }
