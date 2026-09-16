@@ -505,7 +505,7 @@ test('getOrCreateLocalAssetSyncQueue: init failure is retryable, release-during-
   }
 })
 
-test('LocalAssetSyncQueue: dispose during createUploadIntent await halts pipeline, avoids native PUT / complete / draft release / wakeup, and does not schedule retry backoff', async () => {
+test('LocalAssetSyncQueue: dispose during createUploadIntent (with started barrier) halts execution without completing job, scheduling retry, or mutating asset state', async () => {
   const sqlite = new TemporarySqlite()
   let queue
   try {
@@ -521,7 +521,181 @@ test('LocalAssetSyncQueue: dispose during createUploadIntent await halts pipelin
     const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
     const draftService = new LocalSourceDraftService(assetRepo, localRepo)
 
-    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286811'
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286820'
+    const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
+    await assetService.importAsset({
+      localAssetId,
+      file: testFile,
+      originalName: testFile.name,
+      mimeType: testFile.type,
+      sizeBytes: testFile.size,
+    })
+
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+
+    let intentStartedResolve
+    const intentStartedPromise = new Promise((r) => { intentStartedResolve = r })
+    let intentFinishResolve
+    const intentFinishPromise = new Promise((r) => { intentFinishResolve = r })
+
+    let completeCalled = false
+    let wakeupCalled = false
+
+    const mockApi = {
+      createUploadIntent: async () => {
+        intentStartedResolve()
+        await intentFinishPromise
+        return {
+          assetId: 'server-asset-dispose-1',
+          uploadUrl: 'https://test/upload',
+          headers: {},
+          uploadStatus: 'UPLOADING',
+        }
+      },
+      uploadToObjectStorage: async () => {},
+      completeUpload: async () => { completeCalled = true },
+    }
+
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService,
+      draftService,
+      api: mockApi,
+      onWakeup: () => { wakeupCalled = true },
+    })
+
+    const runPromise = queue.processQueue()
+    await intentStartedPromise
+    queue.dispose()
+    assert.equal(queue.isDisposed(), true)
+    intentFinishResolve()
+    await runPromise
+
+    assert.equal(uploadCalled, false, 'uploadAssetToRemote must not be called after dispose')
+    assert.equal(completeCalled, false, 'completeUpload must not be called after dispose')
+    assert.equal(wakeupCalled, false, 'onWakeup must not be called after dispose')
+
+    const currentJob = await assetRepo.getSyncJob(job.jobId)
+    assert.notEqual(currentJob.phase, 'SYNCED', 'Job must not be completed after dispose')
+    assert.equal(currentJob.safeErrorCode, null, 'No error code should be scheduled on dispose')
+    assert.equal(currentJob.nextRetryAt, null, 'No retry should be scheduled on dispose')
+
+    const assetFile = await assetRepo.getAssetFile(localAssetId)
+    assert.equal(assetFile.state, 'READY_LOCAL', 'Asset state must not transition to SYNC_FAILED on dispose')
+
+    const unresolved = await localRepo.listUnresolved()
+    const releasedDrafts = unresolved.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(releasedDrafts.length, 0, 'No draft should be released after dispose')
+  } finally {
+    queue?.dispose()
+    releaseLocalAssetSyncQueue('user-disp-1', 'dev-disp-1')
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue: dispose during native PUT uploadAssetToRemote (with started barrier) halts execution without calling completeUpload or failing state', async () => {
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-disp-2', 'dev-disp-2', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-disp-2', 'dev-disp-2', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+
+    let putStartedResolve
+    const putStartedPromise = new Promise((r) => { putStartedResolve = r })
+    let putFinishResolve
+    const putFinishPromise = new Promise((r) => { putFinishResolve = r })
+
+    adapter.uploadAssetToRemote = async (args) => {
+      putStartedResolve()
+      await putFinishPromise
+      return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
+    }
+
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286821'
+    const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
+    await assetService.importAsset({
+      localAssetId,
+      file: testFile,
+      originalName: testFile.name,
+      mimeType: testFile.type,
+      sizeBytes: testFile.size,
+    })
+
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+
+    let completeCalled = false
+    let wakeupCalled = false
+    const mockApi = {
+      createUploadIntent: async () => ({
+        assetId: 'server-asset-dispose-2',
+        uploadUrl: 'https://test/upload-put',
+        headers: {},
+        uploadStatus: 'UPLOADING',
+      }),
+      uploadToObjectStorage: async () => {},
+      completeUpload: async () => {
+        completeCalled = true
+        return { id: 'server-asset-dispose-2', uploadStatus: 'READY' }
+      },
+    }
+
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService,
+      draftService,
+      api: mockApi,
+      onWakeup: () => { wakeupCalled = true },
+    })
+
+    const runPromise = queue.processQueue()
+    await putStartedPromise
+    queue.dispose()
+    putFinishResolve()
+    await runPromise
+
+    assert.equal(completeCalled, false, 'completeUpload must not be called after queue was disposed during PUT')
+    assert.equal(wakeupCalled, false, 'onWakeup must not be called after dispose')
+
+    const currentJob = await assetRepo.getSyncJob(job.jobId)
+    assert.notEqual(currentJob.phase, 'SYNCED')
+    assert.equal(currentJob.safeErrorCode, null)
+
+    const assetFile = await assetRepo.getAssetFile(localAssetId)
+    assert.notEqual(assetFile.state, 'SYNC_FAILED', 'Asset state must not be marked SYNC_FAILED on dispose')
+
+    const unresolved = await localRepo.listUnresolved()
+    const releasedDrafts = unresolved.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(releasedDrafts.length, 0)
+  } finally {
+    queue?.dispose()
+    releaseLocalAssetSyncQueue('user-disp-2', 'dev-disp-2')
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue: dispose during completeUpload (with started barrier) halts execution without releasing drafts or completing job', async () => {
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-disp-3', 'dev-disp-3', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-disp-3', 'dev-disp-3', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    adapter.uploadAssetToRemote = async (args) => ({
+      status: 200,
+      bytesSent: args.expectedSize,
+      payloadSha256: args.expectedSha256,
+    })
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286822'
+    const localSourceId = '8f123456-789a-4bcd-ef01-23456789abc2'
     const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
     await assetService.importAsset({
       localAssetId,
@@ -531,201 +705,32 @@ test('LocalAssetSyncQueue: dispose during createUploadIntent await halts pipelin
       sizeBytes: testFile.size,
     })
     await draftService.createDraft({
-      localSourceId: 'src-disp-1',
+      localSourceId,
       localAssetId,
-      subjectId: 'sub-disp-1',
-      title: 'Doc',
+      subjectId: 'sub-1',
+      title: 'Doc Title',
     })
+
     const job = await assetRepo.enqueueSyncJob(localAssetId)
 
-    let resolveIntent
-    const intentPromise = new Promise((resolve) => { resolveIntent = resolve })
-    let completeCalled = false
+    let completeStartedResolve
+    const completeStartedPromise = new Promise((r) => { completeStartedResolve = r })
+    let completeFinishResolve
+    const completeFinishPromise = new Promise((r) => { completeFinishResolve = r })
     let wakeupCalled = false
 
     const mockApi = {
-      createUploadIntent: async () => {
-        await intentPromise
-        return {
-          assetId: 'srv-asset-1',
-          uploadUrl: 'http://upload',
-          headers: {},
-          uploadStatus: 'UPLOADING',
-        }
-      },
+      createUploadIntent: async () => ({
+        assetId: 'server-asset-dispose-3',
+        uploadUrl: 'https://test/upload-put',
+        headers: {},
+        uploadStatus: 'UPLOADING',
+      }),
       uploadToObjectStorage: async () => {},
-      completeUpload: async () => { completeCalled = true },
-    }
-
-    queue = new LocalAssetSyncQueue({
-      assetRepository: assetRepo,
-      assetService,
-      draftService,
-      api: mockApi,
-      onWakeup: () => { wakeupCalled = true },
-    })
-
-    const processPromise = queue.processQueue()
-
-    // Dispose while createUploadIntent is in flight
-    queue.dispose()
-    assert.equal(queue.isDisposed(), true)
-
-    // Resolve intent
-    resolveIntent()
-    await processPromise
-
-    // Assert subsequent steps never occurred
-    assert.equal(uploadCalled, false, 'uploadAssetToRemote must not be called after dispose')
-    assert.equal(completeCalled, false, 'completeUpload must not be called after dispose')
-    assert.equal(wakeupCalled, false, 'onWakeup must not be called after dispose')
-
-    const assetFile = await assetRepo.getAssetFile(localAssetId)
-    assert.notEqual(assetFile.state, 'SYNCED', 'Asset must not be marked SYNCED')
-    assert.notEqual(assetFile.state, 'SYNC_FAILED', 'Asset must not enter SYNC_FAILED on dispose')
-
-    const unresolved = await localRepo.listUnresolved()
-    const releasedSources = unresolved.filter((m) => m.resourceType === 'SOURCE')
-    assert.equal(releasedSources.length, 0, 'Draft must not be released after dispose')
-
-    // Job in repo must not have scheduleRetry backoff applied
-    const updatedJob = await assetRepo.getSyncJob(job.jobId)
-    assert.notEqual(updatedJob.safeErrorCode, 'NETWORK_ERROR')
-    assert.equal(updatedJob.safeErrorCode, null)
-  } finally {
-    queue?.dispose()
-    releaseLocalAssetSyncQueue('user-disp-1', 'dev-disp-1')
-    sqlite.close()
-  }
-})
-
-test('LocalAssetSyncQueue: dispose during native PUT await halts pipeline, avoids complete / draft release / wakeup, and does not schedule retry backoff', async () => {
-  const sqlite = new TemporarySqlite()
-  let queue
-  try {
-    await createVersionedLocalSchema(sqlite)
-    const localRepo = new LocalRepository('user-disp-2', 'dev-disp-2', { sql: sqlite })
-    const assetRepo = new LocalAssetRepository('user-disp-2', 'dev-disp-2', { sql: sqlite })
-    const adapter = new TransientBrowserAssetAdapter()
-    let resolveUpload
-    const uploadPromise = new Promise((resolve) => { resolveUpload = resolve })
-    adapter.uploadAssetToRemote = async (args) => {
-      await uploadPromise
-      return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
-    }
-    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
-    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
-
-    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286812'
-    const testFile = new File(['content2'], 'doc2.pdf', { type: 'application/pdf' })
-    await assetService.importAsset({
-      localAssetId,
-      file: testFile,
-      originalName: testFile.name,
-      mimeType: testFile.type,
-      sizeBytes: testFile.size,
-    })
-    await draftService.createDraft({
-      localSourceId: 'src-disp-2',
-      localAssetId,
-      subjectId: 'sub-disp-2',
-      title: 'Doc2',
-    })
-    const job = await assetRepo.enqueueSyncJob(localAssetId)
-
-    let completeCalled = false
-    let wakeupCalled = false
-    const mockApi = {
-      createUploadIntent: async () => {
-        return {
-          assetId: 'srv-asset-2',
-          uploadUrl: 'http://upload2',
-          headers: {},
-          uploadStatus: 'UPLOADING',
-        }
-      },
-      uploadToObjectStorage: async () => {},
-      completeUpload: async () => { completeCalled = true },
-    }
-
-    queue = new LocalAssetSyncQueue({
-      assetRepository: assetRepo,
-      assetService,
-      draftService,
-      api: mockApi,
-      onWakeup: () => { wakeupCalled = true },
-    })
-
-    const processPromise = queue.processQueue()
-
-    // Dispose while native upload is in flight
-    queue.dispose()
-    resolveUpload()
-    await processPromise
-
-    assert.equal(completeCalled, false, 'completeUpload must not be called after dispose')
-    assert.equal(wakeupCalled, false, 'onWakeup must not be called after dispose')
-
-    const assetFile = await assetRepo.getAssetFile(localAssetId)
-    assert.notEqual(assetFile.state, 'SYNCED')
-
-    const unresolved = await localRepo.listUnresolved()
-    const releasedSources = unresolved.filter((m) => m.resourceType === 'SOURCE')
-    assert.equal(releasedSources.length, 0)
-  } finally {
-    queue?.dispose()
-    releaseLocalAssetSyncQueue('user-disp-2', 'dev-disp-2')
-    sqlite.close()
-  }
-})
-
-test('LocalAssetSyncQueue: dispose during completeUpload await halts pipeline, avoids asset SYNCED / draft release / wakeup, and does not schedule retry backoff', async () => {
-  const sqlite = new TemporarySqlite()
-  let queue
-  try {
-    await createVersionedLocalSchema(sqlite)
-    const localRepo = new LocalRepository('user-disp-3', 'dev-disp-3', { sql: sqlite })
-    const assetRepo = new LocalAssetRepository('user-disp-3', 'dev-disp-3', { sql: sqlite })
-    const adapter = new TransientBrowserAssetAdapter()
-    adapter.uploadAssetToRemote = async (args) => {
-      return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
-    }
-    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
-    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
-
-    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286813'
-    const testFile = new File(['content3'], 'doc3.pdf', { type: 'application/pdf' })
-    await assetService.importAsset({
-      localAssetId,
-      file: testFile,
-      originalName: testFile.name,
-      mimeType: testFile.type,
-      sizeBytes: testFile.size,
-    })
-    await draftService.createDraft({
-      localSourceId: 'src-disp-3',
-      localAssetId,
-      subjectId: 'sub-disp-3',
-      title: 'Doc3',
-    })
-    const job = await assetRepo.enqueueSyncJob(localAssetId)
-
-    let resolveComplete
-    const completePromise = new Promise((resolve) => { resolveComplete = resolve })
-    let wakeupCalled = false
-    const mockApi = {
-      createUploadIntent: async () => {
-        return {
-          assetId: 'srv-asset-3',
-          uploadUrl: 'http://upload3',
-          headers: {},
-          uploadStatus: 'UPLOADING',
-        }
-      },
-      uploadToObjectStorage: async () => {},
-      completeUpload: async () => {
-        await completePromise
-        return { id: 'srv-asset-3', uploadStatus: 'READY' }
+      completeUpload: async (assetId) => {
+        completeStartedResolve()
+        await completeFinishPromise
+        return { id: assetId, uploadStatus: 'READY' }
       },
     }
 
@@ -737,24 +742,290 @@ test('LocalAssetSyncQueue: dispose during completeUpload await halts pipeline, a
       onWakeup: () => { wakeupCalled = true },
     })
 
-    const processPromise = queue.processQueue()
-
-    // Dispose while completeUpload is in flight
+    const runPromise = queue.processQueue()
+    await completeStartedPromise
     queue.dispose()
-    resolveComplete()
-    await processPromise
+    completeFinishResolve()
+    await runPromise
 
     assert.equal(wakeupCalled, false, 'onWakeup must not be called after dispose')
 
-    const assetFile = await assetRepo.getAssetFile(localAssetId)
-    assert.notEqual(assetFile.state, 'SYNCED', 'Asset must not be marked SYNCED after dispose')
+    const currentJob = await assetRepo.getSyncJob(job.jobId)
+    assert.notEqual(currentJob.phase, 'SYNCED')
+    assert.equal(currentJob.safeErrorCode, null)
 
     const unresolved = await localRepo.listUnresolved()
-    const releasedSources = unresolved.filter((m) => m.resourceType === 'SOURCE')
-    assert.equal(releasedSources.length, 0, 'Draft must not be released after dispose')
+    const releasedDrafts = unresolved.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(releasedDrafts.length, 0, 'No draft outbox mutation should be committed after dispose')
   } finally {
     queue?.dispose()
     releaseLocalAssetSyncQueue('user-disp-3', 'dev-disp-3')
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue: dispose during catch block error handling prevents transition to SYNC_FAILED and scheduleRetry', async () => {
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-disp-4', 'dev-disp-4', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-disp-4', 'dev-disp-4', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286823'
+    const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
+    await assetService.importAsset({
+      localAssetId,
+      file: testFile,
+      originalName: testFile.name,
+      mimeType: testFile.type,
+      sizeBytes: testFile.size,
+    })
+
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+
+    const mockApi = {
+      createUploadIntent: async () => {
+        queue.dispose()
+        throw new Error('NETWORK_FAILURE_AFTER_DISPOSE')
+      },
+      uploadToObjectStorage: async () => {},
+      completeUpload: async () => {},
+    }
+
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService,
+      draftService,
+      api: mockApi,
+    })
+
+    await queue.processQueue()
+
+    const currentJob = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(currentJob.safeErrorCode, null, 'scheduleRetry must not be called when disposed')
+    assert.equal(currentJob.nextRetryAt, null)
+
+    const assetFile = await assetRepo.getAssetFile(localAssetId)
+    assert.equal(assetFile.state, 'READY_LOCAL', 'Asset must not be transitioned to SYNC_FAILED when disposed')
+  } finally {
+    queue?.dispose()
+    releaseLocalAssetSyncQueue('user-disp-4', 'dev-disp-4')
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue: retryNow early returns without action when disposed', async () => {
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-disp-5', 'dev-disp-5', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-disp-5', 'dev-disp-5', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286824'
+    const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
+    await assetService.importAsset({
+      localAssetId,
+      file: testFile,
+      originalName: testFile.name,
+      mimeType: testFile.type,
+      sizeBytes: testFile.size,
+    })
+
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+    // Put job in PENDING with future retry
+    const futureTime = new Date(Date.now() + 600000).toISOString()
+    await assetRepo.scheduleRetry(job.jobId, 'SYNC_FAILED', 'error', futureTime)
+
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService,
+      draftService,
+    })
+
+    queue.dispose()
+    await queue.retryNow(job.jobId)
+
+    const updatedJob = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(updatedJob.nextRetryAt, futureTime, 'nextRetryAt must not be changed by retryNow when disposed')
+  } finally {
+    queue?.dispose()
+    releaseLocalAssetSyncQueue('user-disp-5', 'dev-disp-5')
+    sqlite.close()
+  }
+})
+
+test('LocalSourceDraftService: releaseDraftsForAsset handles mid-flight interruption and prevents duplicate SOURCE CREATE outbox mutation on retry', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-draft-1', 'dev-draft-1', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-draft-1', 'dev-draft-1', { sql: sqlite })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286825'
+    const localSourceId = '8f123456-789a-4bcd-ef01-23456789abc5'
+    const serverAssetId = 'server-asset-midflight'
+
+    await draftService.createDraft({
+      localSourceId,
+      localAssetId,
+      subjectId: 'sub-test',
+      title: 'Interrupted Draft Title',
+    })
+
+    // 1. First run: lifecycleGuard throws after commitMutation (simulating interruption between commitMutation and updateSourceDraft)
+    let commitCount = 0
+    const originalCommitMutation = localRepo.commitMutation.bind(localRepo)
+    let shouldInterrupt = false
+
+    localRepo.commitMutation = async (input) => {
+      commitCount++
+      const res = await originalCommitMutation(input)
+      shouldInterrupt = true
+      return res
+    }
+
+    const interruptingGuard = () => {
+      if (shouldInterrupt) {
+        return false // signals interruption / disposal
+      }
+    }
+
+    await assert.rejects(
+      draftService.releaseDraftsForAsset(localAssetId, serverAssetId, interruptingGuard),
+      /LOCAL_SOURCE_DRAFT_INTERRUPTED/
+    )
+
+    // Verify draft state in assetRepo is still DRAFT (interrupted before updateSourceDraft)
+    const draftAfterInterrupt = await draftService.getDraft(localSourceId)
+    assert.equal(draftAfterInterrupt.state, 'DRAFT')
+
+    // Verify local outbox has exactly 1 mutation
+    const unresolvedAfterInterrupt = await localRepo.listUnresolved()
+    const mutationsAfterInterrupt = unresolvedAfterInterrupt.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(mutationsAfterInterrupt.length, 1)
+
+    // 2. Second run: Retry releaseDraftsForAsset with active guard
+    // Reset commit interceptor
+    localRepo.commitMutation = originalCommitMutation
+    commitCount = 0
+
+    const releasedIds = await draftService.releaseDraftsForAsset(localAssetId, serverAssetId, () => true)
+    assert.deepEqual(releasedIds, [localSourceId])
+
+    // CRITICAL: commitMutation should NOT have been called again!
+    assert.equal(commitCount, 0, 'commitMutation must not be called again on retry for existing outbox mutation')
+
+    // Verify outbox STILL has exactly 1 mutation (no duplicate SOURCE CREATE!)
+    const finalUnresolved = await localRepo.listUnresolved()
+    const finalMutations = finalUnresolved.filter((m) => m.resourceType === 'SOURCE')
+    assert.equal(finalMutations.length, 1)
+    assert.equal(finalMutations[0].resourceId, localSourceId)
+    assert.equal(finalMutations[0].mutationType, 'CREATE')
+    assert.equal(finalMutations[0].payload.assetId, serverAssetId)
+
+    // Verify draft is now SYNCING
+    const finalDraft = await draftService.getDraft(localSourceId)
+    assert.equal(finalDraft.state, 'SYNCING')
+  } finally {
+    releaseLocalAssetSyncQueue('user-draft-1', 'dev-draft-1')
+    sqlite.close()
+  }
+})
+
+test('LocalSourceDraftService: releaseDraftsForAsset detects mutation conflict/payload mismatch and throws without marking draft SYNCING', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-draft-2', 'dev-draft-2', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-draft-2', 'dev-draft-2', { sql: sqlite })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286827'
+    const localSourceId = '8f123456-789a-4bcd-ef01-23456789abc7'
+    const serverAssetId = 'server-asset-conflict-expected'
+
+    const draft = await draftService.createDraft({
+      localSourceId,
+      localAssetId,
+      subjectId: 'sub-test',
+      title: 'Conflict Draft Title',
+    })
+
+    // Manually simulate an existing conflicting mutation (e.g. UPDATE instead of CREATE or mismatched payload)
+    await localRepo.commitMutation({
+      resourceType: 'SOURCE',
+      resourceId: localSourceId,
+      value: { id: localSourceId, title: 'Mutated Title' },
+      version: 1,
+      deletedAt: null,
+      mutation: {
+        clientMutationId: draft.localContentRevision,
+        resourceType: 'SOURCE',
+        resourceId: localSourceId,
+        mutationType: 'UPDATE',
+        baseVersion: 1,
+        payload: { assetId: 'different-server-asset-id' },
+      },
+    })
+
+    // Attempting to release drafts must throw a conflict error
+    await assert.rejects(
+      draftService.releaseDraftsForAsset(localAssetId, serverAssetId),
+      /LOCAL_SOURCE_DRAFT_CONFLICT/
+    )
+
+    // Draft state in assetRepo MUST remain DRAFT, NOT SYNCING!
+    const draftAfterConflict = await draftService.getDraft(localSourceId)
+    assert.equal(draftAfterConflict.state, 'DRAFT', 'Draft must remain DRAFT on mutation conflict')
+  } finally {
+    releaseLocalAssetSyncQueue('user-draft-2', 'dev-draft-2')
+    sqlite.close()
+  }
+})
+
+test('LocalAssetSyncQueue: missing asset metadata branch with dispose prevents completing job', async () => {
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-disp-6', 'dev-disp-6', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-disp-6', 'dev-disp-6', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+
+    const nonExistentAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286826'
+    const job = await assetRepo.enqueueSyncJob(nonExistentAssetId)
+
+    queue = new LocalAssetSyncQueue({
+      assetRepository: assetRepo,
+      assetService,
+      draftService,
+    })
+
+    // Intercept getAssetFile to dispose queue right when discovering missing file
+    const origGetAssetFile = assetRepo.getAssetFile.bind(assetRepo)
+    assetRepo.getAssetFile = async (id) => {
+      queue.dispose()
+      return origGetAssetFile(id)
+    }
+
+    await queue.processQueue()
+
+    const currentJob = await assetRepo.getSyncJob(job.jobId)
+    assert.notEqual(currentJob.phase, 'SYNCED', 'Job must not be marked complete if disposed during missing asset handling')
+  } finally {
+    queue?.dispose()
+    releaseLocalAssetSyncQueue('user-disp-6', 'dev-disp-6')
     sqlite.close()
   }
 })
