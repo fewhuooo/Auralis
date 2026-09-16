@@ -42,6 +42,22 @@ function sanitizeErrorCode(error: unknown): string {
     if (/^[A-Z0-9_]{1,64}$/.test(code)) return code
   }
   const message = error instanceof Error ? error.message : String(error)
+  const allowlist = [
+    'LOCAL_ASSET_UPLOAD_RETRYABLE',
+    'LOCAL_ASSET_UPLOAD_INTENT_EXPIRED',
+    'LOCAL_ASSET_UPLOAD_PAYLOAD_MISMATCH',
+    'LOCAL_ASSET_UPLOAD_HEADER_INVALID',
+    'LOCAL_ASSET_UPLOAD_HEADER_FORBIDDEN',
+    'LOCAL_ASSET_UPLOAD_URL_INVALID',
+    'LOCAL_ASSET_FILE_MISSING',
+    'LOCAL_ASSET_FILE_AMBIGUOUS',
+    'LOCAL_ASSET_BUSY',
+    'NATIVE_UPLOAD_RECEIPT_MISMATCH'
+  ]
+  for (const code of allowlist) {
+    if (message.includes(code)) return code
+  }
+
   if (message.includes('ECONNREFUSED') || message.includes('Failed to fetch') || message.includes('network')) {
     return 'NETWORK_ERROR'
   }
@@ -58,6 +74,8 @@ function sanitizeErrorDetail(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
   return raw
     .replace(/https?:\/\/[^\s?#]+(\?[^\s]*)?/gi, '<url>')
+    .replace(/[a-fA-F0-9]{64}/g, '<hash>')
+    .replace(/(authorization|x-amz-[a-z0-9-]+):\s*[^\s]+/gi, '$1: <redacted>')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .trim()
     .slice(0, 500) || 'Unknown sync failure'
@@ -208,16 +226,6 @@ export class LocalAssetSyncQueue {
 
         const receipt = await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
 
-        if (receipt.status < 200 || receipt.status >= 300) {
-          throw new Error(`NATIVE_UPLOAD_FAILED: Server returned status ${receipt.status}`)
-        }
-
-        // Note: The Rust command validates the bytes sent and payload SHA256 against expected values
-        // so we don't strictly need to do it here, but we can verify what's returned.
-        const expectedFile = await this.assetRepository.getAssetFile(localAssetId)
-        if (expectedFile && (receipt.bytesSent !== expectedFile.sizeBytes || receipt.payloadSha256 !== expectedFile.sha256)) {
-          throw new Error(`NATIVE_UPLOAD_RECEIPT_MISMATCH: Sent ${receipt.bytesSent} bytes (expected ${expectedFile.sizeBytes}), sha256 ${receipt.payloadSha256} (expected ${expectedFile.sha256})`)
-        }
 
         await this.assetRepository.updateSyncJobPhase(jobId, 'COMPLETING_REMOTE_ASSET', { serverAssetId })
 

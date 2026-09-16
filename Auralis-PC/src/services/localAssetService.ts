@@ -66,12 +66,6 @@ export interface LocalAssetNativeAdapter {
     serverDeviceId: string
   }): Promise<{ removedStagingFiles: number; files: LocalAssetDescriptor[] }>
 
-  getAssetBlob?(args: {
-    userId: string
-    serverDeviceId: string
-    localAssetId: string
-  }): Promise<Blob>
-
   uploadAssetToRemote(args: {
     userId: string
     serverDeviceId: string
@@ -83,18 +77,11 @@ export interface LocalAssetNativeAdapter {
   }): Promise<{ status: number; bytesSent: number; payloadSha256: string }>
 }
 
-export interface TauriLocalAssetNativeAdapterOptions {
-  blobReader?: (descriptor: LocalAssetDescriptor) => Promise<Blob>
-}
-
 export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
   readonly isPersistent = true
   readonly storageType = 'native-tauri' as const
-  private readonly blobReader?: (descriptor: LocalAssetDescriptor) => Promise<Blob>
 
-  constructor(options: TauriLocalAssetNativeAdapterOptions = {}) {
-    this.blobReader = options.blobReader
-  }
+  constructor() {}
 
   async importAsset(args: {
     userId: string
@@ -167,24 +154,6 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
       expectedSize,
       expectedSha256,
     })
-  }
-
-  async getAssetBlob(args: {
-    userId: string
-    serverDeviceId: string
-    localAssetId: string
-  }): Promise<Blob> {
-    const descriptor = await this.resolveAsset({
-      userId: args.userId,
-      serverDeviceId: args.serverDeviceId,
-      localAssetId: args.localAssetId,
-    })
-    if (this.blobReader) return this.blobReader(descriptor)
-    if (typeof window !== 'undefined' && 'fetch' in window) {
-      const response = await fetch(descriptor.absolutePath)
-      return await response.blob()
-    }
-    throw new Error('BLOB_READER_UNAVAILABLE')
   }
 
   async resolveAsset(args: {
@@ -702,19 +671,6 @@ export class LocalAssetService {
     }
   }
 
-  async getAssetBlob(localAssetId: string): Promise<Blob> {
-    const record = await this.repository.getAssetFile(localAssetId)
-    if (!record) throw new Error('LOCAL_ASSET_NOT_FOUND')
-    if (this.adapter.getAssetBlob) {
-      return this.adapter.getAssetBlob({
-        userId: this.repository.userId,
-        serverDeviceId: this.repository.serverDeviceId,
-        localAssetId,
-      })
-    }
-    throw new Error('ADAPTER_DOES_NOT_SUPPORT_BLOB_READ')
-  }
-
   async uploadAssetToRemote(
     localAssetId: string,
     uploadUrl: string,
@@ -722,7 +678,7 @@ export class LocalAssetService {
   ): Promise<{ status: number; bytesSent: number; payloadSha256: string }> {
     const record = await this.repository.getAssetFile(localAssetId)
     if (!record) throw new Error('LOCAL_ASSET_NOT_FOUND')
-    return this.adapter.uploadAssetToRemote({
+    const receipt = await this.adapter.uploadAssetToRemote({
       userId: this.repository.userId,
       serverDeviceId: this.repository.serverDeviceId,
       localAssetId,
@@ -731,6 +687,15 @@ export class LocalAssetService {
       expectedSize: record.sizeBytes,
       expectedSha256: record.sha256,
     })
+
+    if (receipt.status < 200 || receipt.status >= 300) {
+      throw new Error(`LOCAL_ASSET_UPLOAD_FAILED: Server returned status ${receipt.status}`)
+    }
+    if (receipt.bytesSent !== record.sizeBytes || receipt.payloadSha256.toLowerCase() !== record.sha256.toLowerCase()) {
+      throw new Error('NATIVE_UPLOAD_RECEIPT_MISMATCH')
+    }
+
+    return receipt
   }
 }
 

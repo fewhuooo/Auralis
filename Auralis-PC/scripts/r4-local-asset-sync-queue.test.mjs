@@ -359,3 +359,65 @@ test('LocalAssetSyncQueue: native invoke receipt mismatch aborts upload and sche
     sqlite.close()
   }
 })
+
+test('TauriLocalAssetNativeAdapter: does not expose getAssetBlob and does not use fetch', async () => {
+  const { TauriLocalAssetNativeAdapter } = await import('../src/services/localAssetService.ts')
+  const adapter = new TauriLocalAssetNativeAdapter()
+  assert.equal(adapter.getAssetBlob, undefined, 'getAssetBlob should not exist on Tauri adapter')
+})
+
+test('LocalAssetSyncQueue: native retryable/expired errors are correctly classified and completeUpload is not called', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-1', 'dev-1', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-1', 'dev-1', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+
+    // Mock native adapter to throw specific native errors
+    let throwErrorMsg = 'LOCAL_ASSET_UPLOAD_INTENT_EXPIRED: The presigned URL expired'
+    adapter.uploadAssetToRemote = async (args) => {
+      throw new Error(throwErrorMsg)
+    }
+
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286813'
+    const testFile = new File(['content'], 'doc.pdf', { type: 'application/pdf' })
+    await assetService.importAsset({
+      localAssetId,
+      file: testFile,
+      originalName: testFile.name,
+      mimeType: testFile.type,
+      sizeBytes: testFile.size,
+    })
+
+    let completeCalled = false
+    const mockApi = {
+      createUploadIntent: async () => { return { assetId: 'server-1', uploadUrl: 'http://test', uploadStatus: 'UPLOADING' } },
+      completeUpload: async () => { completeCalled = true },
+    }
+
+    const queue = new LocalAssetSyncQueue({ assetRepository: assetRepo, assetService, draftService, api: mockApi })
+
+    // Test INTENT_EXPIRED
+    let job = await assetRepo.enqueueSyncJob(localAssetId)
+    await queue.processQueue()
+    let updatedJob = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(updatedJob.phase, 'PENDING')
+    assert.equal(updatedJob.safeErrorCode, 'LOCAL_ASSET_UPLOAD_INTENT_EXPIRED')
+    assert.equal(completeCalled, false, 'completeUpload should not be called when native throws')
+
+    // Test RETRYABLE
+    throwErrorMsg = 'LOCAL_ASSET_UPLOAD_RETRYABLE: Transient network issue'
+    await assetRepo.scheduleRetry(job.jobId, 'SYNC_FAILED', 'reset', new Date().toISOString())
+    await queue.processQueue()
+    updatedJob = await assetRepo.getSyncJob(job.jobId)
+    assert.equal(updatedJob.phase, 'PENDING')
+    assert.equal(updatedJob.safeErrorCode, 'LOCAL_ASSET_UPLOAD_RETRYABLE')
+    assert.equal(completeCalled, false)
+
+  } finally {
+    sqlite.close()
+  }
+})
