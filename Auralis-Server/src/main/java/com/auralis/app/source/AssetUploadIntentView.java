@@ -8,5 +8,6 @@ public record AssetUploadIntentView(
         UUID assetId,
         String uploadUrl,
         Map<String, String> headers,
-        Instant expiresAt) {
+        Instant expiresAt,
+        AssetUploadStatus uploadStatus) {
 }

@@ -5,10 +5,12 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.internal.persistence.AssetEntity;
 import com.auralis.app.source.internal.persistence.AssetRepository;
 import com.auralis.app.source.internal.AssetFailureRecorder;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Locale;
 import java.util.UUID;
@@ -30,20 +32,87 @@ public class AssetService {
     private final AssetStoragePort assetStorage;
     private final AssetFailureRecorder assetFailureRecorder;
     private final AuralisProperties properties;
+    private final TransactionTemplate transactionTemplate;
 
     public AssetService(
             AssetRepository assetRepository,
             AssetStoragePort assetStorage,
             AssetFailureRecorder assetFailureRecorder,
-            AuralisProperties properties) {
+            AuralisProperties properties,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.assetRepository = assetRepository;
         this.assetStorage = assetStorage;
         this.assetFailureRecorder = assetFailureRecorder;
         this.properties = properties;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
     public AssetUploadIntentView createUploadIntent(UUID userId, AssetUploadIntentCommand command) {
+        UploadMetadata metadata = validate(command);
+        if (command.clientImportId() == null) {
+            throw new DomainException("VALIDATION_FAILED", "clientImportId is required");
+        }
+        AssetEntity asset;
+        try {
+            asset = transactionTemplate.execute(status -> createUploadIntentInTransaction(userId, command, metadata));
+        } catch (DataIntegrityViolationException race) {
+            // The unique owner/key index is the cross-instance arbiter. The
+            // losing transaction is already rolled back before this reload.
+            asset = transactionTemplate.execute(status -> assetRepository
+                    .findByUserIdAndClientImportId(userId, command.clientImportId())
+                    .map(existing -> {
+                        verifyImmutableMetadata(existing, metadata);
+                        existing.prepareUploadRetry();
+                        return existing;
+                    })
+                    .orElseThrow(() -> race));
+        }
+        // Keep the idempotency row committed even if signing the external
+        // upload URL fails. A later retry must reload this same Asset.
+        return issueUploadIntent(userId, asset);
+    }
+
+    private AssetEntity createUploadIntentInTransaction(
+            UUID userId,
+            AssetUploadIntentCommand command,
+            UploadMetadata metadata) {
+        var existing = assetRepository.findByUserIdAndClientImportId(userId, command.clientImportId());
+        if (existing.isPresent()) {
+            verifyImmutableMetadata(existing.get(), metadata);
+            existing.get().prepareUploadRetry();
+            return existing.get();
+        }
+
+        UUID assetId = UUID.randomUUID();
+        String objectKey = "users/" + userId + "/assets/" + assetId;
+        AssetEntity asset = assetRepository.saveAndFlush(new AssetEntity(
+                assetId, userId, objectKey, command.clientImportId(), metadata.originalName(),
+                metadata.sizeBytes(), metadata.mimeType(), metadata.sha256(), AssetUploadStatus.UPLOADING));
+        return asset;
+    }
+
+    private AssetUploadIntentView issueUploadIntent(UUID userId, AssetEntity asset) {
+        if (asset.getUploadStatus() != AssetUploadStatus.UPLOADING) {
+            return new AssetUploadIntentView(
+                    asset.getId(), null, java.util.Map.of(), null, asset.getUploadStatus());
+        }
+        AssetStoragePort.UploadIntent intent;
+        try {
+            intent = assetStorage.createUploadIntent(
+                    asset.getObjectKey(), asset.getMimeType(), asset.getSizeBytes(), asset.getSha256());
+        } catch (RuntimeException exception) {
+            log.warn("ASSET_UPLOAD_INTENT_FAILED userId={} assetId={} mimeType={} sizeBytes={} errorType={}",
+                    userId, asset.getId(), asset.getMimeType(), asset.getSizeBytes(),
+                    exception.getClass().getSimpleName());
+            throw exception;
+        }
+        log.info("ASSET_UPLOAD_INTENT_CREATED userId={} assetId={} mimeType={} sizeBytes={}",
+                userId, asset.getId(), asset.getMimeType(), asset.getSizeBytes());
+        return new AssetUploadIntentView(
+                asset.getId(), intent.url(), intent.headers(), intent.expiresAt(), asset.getUploadStatus());
+    }
+
+    private UploadMetadata validate(AssetUploadIntentCommand command) {
         if (command.baseVersion() != 0) {
             throw new DomainException("VALIDATION_FAILED", "Create baseVersion must be 0");
         }
@@ -51,26 +120,22 @@ public class AssetService {
         if (command.sizeBytes() <= 0 || command.sizeBytes() > properties.upload().maxFileSizeBytes()) {
             throw new DomainException("UPLOAD_VALIDATION_FAILED", "File size is outside the allowed range");
         }
-        String mimeType = requiredMimeType(command.mimeType());
-        String sha256 = optionalSha256(command.sha256());
-
-        UUID assetId = UUID.randomUUID();
-        String objectKey = "users/" + userId + "/assets/" + assetId;
-        AssetStoragePort.UploadIntent intent;
-        try {
-            intent = assetStorage.createUploadIntent(objectKey, mimeType, command.sizeBytes(), sha256);
-        } catch (RuntimeException exception) {
-            log.warn("ASSET_UPLOAD_INTENT_FAILED userId={} mimeType={} sizeBytes={} errorType={}",
-                    userId, mimeType, command.sizeBytes(), exception.getClass().getSimpleName());
-            throw exception;
-        }
-        assetRepository.save(new AssetEntity(
-                assetId, userId, objectKey, originalName, command.sizeBytes(), mimeType, sha256,
-                AssetUploadStatus.UPLOADING));
-        log.info("ASSET_UPLOAD_INTENT_CREATED userId={} assetId={} mimeType={} sizeBytes={}",
-                userId, assetId, mimeType, command.sizeBytes());
-        return new AssetUploadIntentView(assetId, intent.url(), intent.headers(), intent.expiresAt());
+        return new UploadMetadata(
+                originalName, command.sizeBytes(), requiredMimeType(command.mimeType()), optionalSha256(command.sha256()));
     }
+
+    private void verifyImmutableMetadata(AssetEntity existing, UploadMetadata metadata) {
+        if (!existing.getOriginalName().equals(metadata.originalName())
+                || existing.getSizeBytes() != metadata.sizeBytes()
+                || !existing.getMimeType().equals(metadata.mimeType())
+                || !java.util.Objects.equals(existing.getSha256(), metadata.sha256())) {
+            throw new DomainException(
+                    "MUTATION_REJECTED",
+                    "clientImportId is already bound to different asset metadata");
+        }
+    }
+
+    private record UploadMetadata(String originalName, long sizeBytes, String mimeType, String sha256) { }
 
     @Transactional
     public AssetView complete(UUID userId, UUID assetId) {

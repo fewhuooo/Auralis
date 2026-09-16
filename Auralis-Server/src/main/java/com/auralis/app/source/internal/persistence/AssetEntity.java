@@ -23,6 +23,9 @@ public class AssetEntity {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    @Column(name = "client_import_id")
+    private UUID clientImportId;
+
     @Column(name = "object_key", nullable = false, length = 512)
     private String objectKey;
 
@@ -58,6 +61,7 @@ public class AssetEntity {
             UUID id,
             UUID userId,
             String objectKey,
+            UUID clientImportId,
             String originalName,
             long sizeBytes,
             String mimeType,
@@ -66,11 +70,24 @@ public class AssetEntity {
         this.id = id;
         this.userId = userId;
         this.objectKey = objectKey;
+        this.clientImportId = clientImportId;
         this.originalName = originalName;
         this.sizeBytes = sizeBytes;
         this.mimeType = mimeType;
         this.sha256 = sha256;
         this.uploadStatus = uploadStatus;
+    }
+
+    public AssetEntity(
+            UUID id,
+            UUID userId,
+            String objectKey,
+            String originalName,
+            long sizeBytes,
+            String mimeType,
+            String sha256,
+            AssetUploadStatus uploadStatus) {
+        this(id, userId, objectKey, null, originalName, sizeBytes, mimeType, sha256, uploadStatus);
     }
 
     @PrePersist
@@ -90,6 +107,7 @@ public class AssetEntity {
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
+    public UUID getClientImportId() { return clientImportId; }
     public String getObjectKey() { return objectKey; }
     public String getOriginalName() { return originalName; }
     public long getSizeBytes() { return sizeBytes; }
@@ -107,6 +125,13 @@ public class AssetEntity {
 
     public void markFailed() {
         uploadStatus = AssetUploadStatus.FAILED;
+    }
+
+    public void prepareUploadRetry() {
+        if (uploadStatus == AssetUploadStatus.FAILED) {
+            uploadStatus = AssetUploadStatus.UPLOADING;
+            completedAt = null;
+        }
     }
 
     public void markOrphaned() {

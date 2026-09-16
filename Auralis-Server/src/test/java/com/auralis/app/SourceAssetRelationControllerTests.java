@@ -85,9 +85,24 @@ class SourceAssetRelationControllerTests {
         mockMvc.perform(get("/api/relations")).andExpect(status().isUnauthorized());
         mockMvc.perform(post("/api/assets/upload-intents")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"baseVersion\":0,\"originalName\":\"notes.md\","
+                        .content("{\"baseVersion\":0,\"clientImportId\":\"00000000-0000-0000-0000-000000000001\",\"originalName\":\"notes.md\","
                                 + "\"sizeBytes\":20,\"mimeType\":\"text/markdown\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void uploadIntentRequiresClientImportId() throws Exception {
+        JsonNode registered = register("required-key@example.com", "required-key-device");
+        String token = bearer(registered.path("tokens").path("accessToken").asText());
+
+        mockMvc.perform(post("/api/assets/upload-intents")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"originalName\":\"notes.md\","
+                                + "\"sizeBytes\":20,\"mimeType\":\"text/markdown\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors[?(@.field == 'clientImportId')]").isNotEmpty());
     }
 
     @Test
@@ -104,7 +119,7 @@ class SourceAssetRelationControllerTests {
         JsonNode intent = json(mockMvc.perform(post("/api/assets/upload-intents")
                         .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"baseVersion\":0,\"originalName\":\"notes.md\","
+                        .content("{\"baseVersion\":0,\"clientImportId\":\"00000000-0000-0000-0000-000000000002\",\"originalName\":\"notes.md\","
                                 + "\"sizeBytes\":20,\"mimeType\":\"text/markdown\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(header().string(HttpHeaders.LOCATION,

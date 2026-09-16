@@ -163,7 +163,7 @@ class ParsedDocumentCompleteTests {
 
         var current = sourceService.get(fixture.owner().user().id(), fixture.source().id());
         var replacementIntent = assetService.createUploadIntent(fixture.owner().user().id(),
-                new AssetUploadIntentCommand(0, "replacement.pdf", 12, "application/pdf", ASSET_SHA));
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "replacement.pdf", 12, "application/pdf", ASSET_SHA));
         String replacementKey = assetRepository.findById(replacementIntent.assetId()).orElseThrow().getObjectKey();
         storage.put(replacementKey, new AssetStoragePort.ObjectMetadata(12, "application/pdf", ASSET_SHA), "replacement");
         assetService.complete(fixture.owner().user().id(), replacementIntent.assetId());
@@ -249,7 +249,7 @@ class ParsedDocumentCompleteTests {
                 new DeviceCommand("device-" + suffix, "Test", DevicePlatform.WEB));
         var subject = subjectService.create(owner.user().id(), new SubjectCommand("Parsed", null, null, "001"));
         var assetIntent = assetService.createUploadIntent(owner.user().id(),
-                new AssetUploadIntentCommand(0, "source.pdf", 12, "application/pdf", ASSET_SHA));
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "source.pdf", 12, "application/pdf", ASSET_SHA));
         String assetKey = assetRepository.findById(assetIntent.assetId()).orElseThrow().getObjectKey();
         storage.put(assetKey, new AssetStoragePort.ObjectMetadata(12, "application/pdf", ASSET_SHA), "asset-bytes");
         assetService.complete(owner.user().id(), assetIntent.assetId());

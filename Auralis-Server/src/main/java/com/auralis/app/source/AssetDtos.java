@@ -18,12 +18,14 @@ public final class AssetDtos {
     @Schema(name = "AssetUploadIntentRequest")
     public record UploadIntentRequest(
             @NotNull Long baseVersion,
+            @NotNull UUID clientImportId,
             @NotBlank @Size(max = 255) String originalName,
             @Positive long sizeBytes,
             @NotBlank @Size(max = 128) String mimeType,
             @Size(min = 64, max = 64) String sha256) {
         AssetUploadIntentCommand command() {
-            return new AssetUploadIntentCommand(baseVersion, originalName, sizeBytes, mimeType, sha256);
+            return new AssetUploadIntentCommand(
+                    baseVersion, clientImportId, originalName, sizeBytes, mimeType, sha256);
         }
     }
 
@@ -32,9 +34,11 @@ public final class AssetDtos {
             UUID assetId,
             String uploadUrl,
             Map<String, String> headers,
-            Instant expiresAt) {
+            Instant expiresAt,
+            AssetUploadStatus uploadStatus) {
         static UploadIntentResponse from(AssetUploadIntentView view) {
-            return new UploadIntentResponse(view.assetId(), view.uploadUrl(), view.headers(), view.expiresAt());
+            return new UploadIntentResponse(
+                    view.assetId(), view.uploadUrl(), view.headers(), view.expiresAt(), view.uploadStatus());
         }
     }
 

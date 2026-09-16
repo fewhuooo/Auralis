@@ -104,7 +104,7 @@ AI 运行时使用结构化事件名输出可观测性：`AI_STREAM_*` 记录用
 
 ## 阶段 2B 实际 HTTP 表面
 
-- Asset：`POST /api/assets/upload-intents`、`POST /api/assets/{id}/complete`、`POST /api/assets/{id}/download-url`；AssetStoragePort 提供 test 适配器与配置启用的 MinIO 适配器。
+- Asset：`POST /api/assets/upload-intents`、`POST /api/assets/{id}/complete`、`POST /api/assets/{id}/download-url`；upload intent 要求用户范围的 `clientImportId`，通过数据库唯一约束和事务竞态重载实现幂等创建；同 key immutable metadata 冲突稳定返回 409 `MUTATION_REJECTED`，不同用户相互隔离。AssetStoragePort 提供 test 适配器与配置启用的 MinIO 适配器。
 - Source：`POST/GET /api/sources`、`GET/PUT/DELETE /api/sources/{id}`、`POST /api/sources/{id}/restore`、`POST /api/sources/{id}/reingest`。
 - Relation：`POST/GET /api/relations`、`GET/PUT/DELETE /api/relations/{id}`、`POST /api/relations/{id}/restore`。
 - Source 的 ingestion worker、Tika 解析和 source_chunks/pgvector 已在阶段 5 后端基线接入；Source/Relation 列表同样使用稳定 keyset cursor；真实 MinIO、完整 PostgreSQL 门禁和生产分页性能仍不在本阶段验收范围。

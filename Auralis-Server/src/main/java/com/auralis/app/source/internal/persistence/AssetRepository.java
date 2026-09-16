@@ -14,6 +14,8 @@ public interface AssetRepository extends JpaRepository<AssetEntity, UUID> {
 
     Optional<AssetEntity> findByIdAndUserId(UUID id, UUID userId);
 
+    Optional<AssetEntity> findByUserIdAndClientImportId(UUID userId, UUID clientImportId);
+
     Optional<AssetEntity> findByIdAndUserIdAndUploadStatus(
             UUID id, UUID userId, AssetUploadStatus uploadStatus);
 

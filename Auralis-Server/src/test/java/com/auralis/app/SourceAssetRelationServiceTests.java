@@ -52,6 +52,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -134,7 +135,7 @@ class SourceAssetRelationServiceTests {
     void assetCompletionUsesServerSideObjectMetadataBeforeReady() {
         var owner = register("asset");
         var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
-                0L, "notes.md", 20L, "text/markdown", "a".repeat(64)));
+                0L, UUID.randomUUID(), "notes.md", 20L, "text/markdown", "a".repeat(64)));
         String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
                 .orElseThrow()
                 .getObjectKey();
@@ -148,10 +149,133 @@ class SourceAssetRelationServiceTests {
     }
 
     @Test
+    void uploadIntentReplayUsesTheSameAssetForTheSameUserAndImportKey() {
+        var owner = register("asset-idempotent");
+        UUID clientImportId = UUID.randomUUID();
+        var command = new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64));
+
+        var first = assetService.createUploadIntent(owner.user().id(), command);
+        var replay = assetService.createUploadIntent(owner.user().id(), command);
+
+        assertThat(replay.assetId()).isEqualTo(first.assetId());
+        assertThat(assetRepository.findByIdAndUserId(first.assetId(), owner.user().id()))
+                .get()
+                .extracting(asset -> asset.getClientImportId())
+                .isEqualTo(clientImportId);
+    }
+
+    @Test
+    void uploadIntentReplayRejectsImmutableMetadataConflict() {
+        var owner = register("asset-idempotent-conflict");
+        UUID clientImportId = UUID.randomUUID();
+        assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64)));
+
+        assertThatThrownBy(() -> assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
+                0L, clientImportId, "renamed.pdf", 20L, "application/pdf", "a".repeat(64))))
+                .isInstanceOf(DomainException.class)
+                .satisfies(error -> assertThat(((DomainException) error).code()).isEqualTo("MUTATION_REJECTED"));
+    }
+
+    @Test
+    void failedUploadIntentReplayReopensTheSameAssetForRetry() {
+        var owner = register("asset-idempotent-retry");
+        UUID clientImportId = UUID.randomUUID();
+        var command = new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64));
+        var first = assetService.createUploadIntent(owner.user().id(), command);
+        assertThatThrownBy(() -> assetService.complete(owner.user().id(), first.assetId()))
+                .isInstanceOf(DomainException.class)
+                .satisfies(error -> assertThat(((DomainException) error).code())
+                        .isEqualTo("UPLOAD_VALIDATION_FAILED"));
+
+        var retry = assetService.createUploadIntent(owner.user().id(), command);
+
+        assertThat(retry.assetId()).isEqualTo(first.assetId());
+        assertThat(assetRepository.findByIdAndUserId(first.assetId(), owner.user().id()))
+                .get()
+                .extracting(asset -> asset.getUploadStatus())
+                .isEqualTo(AssetUploadStatus.UPLOADING);
+    }
+
+    @Test
+    void uploadSignerFailureKeepsTheCommittedIdempotencyRow() {
+        var owner = register("asset-idempotent-signer-failure");
+        UUID clientImportId = UUID.randomUUID();
+        var command = new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64));
+        assetStorage.failNextIntent();
+
+        assertThatThrownBy(() -> assetService.createUploadIntent(owner.user().id(), command))
+                .isInstanceOf(IllegalStateException.class);
+
+        var retry = assetService.createUploadIntent(owner.user().id(), command);
+
+        assertThat(assetRepository.findByUserIdAndClientImportId(owner.user().id(), clientImportId))
+                .get()
+                .extracting(asset -> asset.getId())
+                .isEqualTo(retry.assetId());
+    }
+
+    @Test
+    void readyAssetReplayReturnsStateWithoutAReplacementUploadUrl() {
+        var owner = register("asset-idempotent-ready");
+        UUID clientImportId = UUID.randomUUID();
+        var command = new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64));
+        var first = assetService.createUploadIntent(owner.user().id(), command);
+        String objectKey = assetRepository.findByIdAndUserId(first.assetId(), owner.user().id())
+                .orElseThrow()
+                .getObjectKey();
+        assetStorage.put(objectKey, new AssetStoragePort.ObjectMetadata(20L, "application/pdf", "a".repeat(64)));
+        assetService.complete(owner.user().id(), first.assetId());
+
+        var replay = assetService.createUploadIntent(owner.user().id(), command);
+
+        assertThat(replay.assetId()).isEqualTo(first.assetId());
+        assertThat(replay.uploadStatus()).isEqualTo(AssetUploadStatus.READY);
+        assertThat(replay.uploadUrl()).isNull();
+    }
+
+    @Test
+    void uploadIntentKeyIsScopedToTheOwningUser() {
+        var firstOwner = register("asset-idempotent-owner-one");
+        var secondOwner = register("asset-idempotent-owner-two");
+        UUID clientImportId = UUID.randomUUID();
+        var command = new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64));
+
+        var first = assetService.createUploadIntent(firstOwner.user().id(), command);
+        var second = assetService.createUploadIntent(secondOwner.user().id(), command);
+
+        assertThat(second.assetId()).isNotEqualTo(first.assetId());
+    }
+
+    @Test
+    void concurrentUploadIntentReplayConvergesOnOneAsset() throws Exception {
+        var owner = register("asset-idempotent-concurrent");
+        UUID clientImportId = UUID.randomUUID();
+        var command = new AssetUploadIntentCommand(
+                0L, clientImportId, "notes.pdf", 20L, "application/pdf", "a".repeat(64));
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var first = executor.submit(() -> assetService.createUploadIntent(owner.user().id(), command));
+            var second = executor.submit(() -> assetService.createUploadIntent(owner.user().id(), command));
+
+            assertThat(second.get().assetId()).isEqualTo(first.get().assetId());
+            assertThat(assetRepository.findByUserIdAndClientImportId(owner.user().id(), clientImportId))
+                    .isPresent();
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
     void invalidAssetCompletionPersistsFailedStatus() {
         var owner = register("asset-failed");
         var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
-                0L, "notes.md", 20L, "text/markdown", null));
+                0L, UUID.randomUUID(), "notes.md", 20L, "text/markdown", null));
 
         assertThatThrownBy(() -> assetService.complete(owner.user().id(), intent.assetId()))
                 .isInstanceOf(DomainException.class)
@@ -195,7 +319,7 @@ class SourceAssetRelationServiceTests {
         SubjectView subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Files", null, null, "001"));
         var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
-                0L, "notes.pdf", 3982329L, "application/pdf", null));
+                0L, UUID.randomUUID(), "notes.pdf", 3982329L, "application/pdf", null));
         String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
                 .orElseThrow()
                 .getObjectKey();
@@ -233,7 +357,7 @@ class SourceAssetRelationServiceTests {
         SubjectView subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Revision", null, null, "001"));
         var firstIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
-                0L, "first.pdf", 20L, "application/pdf", null));
+                0L, UUID.randomUUID(), "first.pdf", 20L, "application/pdf", null));
         String firstKey = assetRepository.findByIdAndUserId(firstIntent.assetId(), owner.user().id())
                 .orElseThrow().getObjectKey();
         assetStorage.put(firstKey, new AssetStoragePort.ObjectMetadata(20L, "application/pdf", null));
@@ -245,7 +369,7 @@ class SourceAssetRelationServiceTests {
         assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
 
         var secondIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
-                0L, "second.pdf", 20L, "application/pdf", null));
+                0L, UUID.randomUUID(), "second.pdf", 20L, "application/pdf", null));
         String secondKey = assetRepository.findByIdAndUserId(secondIntent.assetId(), owner.user().id())
                 .orElseThrow().getObjectKey();
         assetStorage.put(secondKey, new AssetStoragePort.ObjectMetadata(20L, "application/pdf", null));
@@ -269,7 +393,7 @@ class SourceAssetRelationServiceTests {
         SubjectView subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Cleanup", null, null, "001"));
         var intent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
-                0L, "notes.pdf", 20L, "application/pdf", null));
+                0L, UUID.randomUUID(), "notes.pdf", 20L, "application/pdf", null));
         String objectKey = assetRepository.findByIdAndUserId(intent.assetId(), owner.user().id())
                 .orElseThrow()
                 .getObjectKey();
@@ -323,9 +447,14 @@ class SourceAssetRelationServiceTests {
 
     static class TestAssetStorage implements AssetStoragePort {
         private final Map<String, ObjectMetadata> objects = new HashMap<>();
+        private boolean failNextIntent;
 
         @Override
         public UploadIntent createUploadIntent(String objectKey, String mimeType, long sizeBytes, String sha256) {
+            if (failNextIntent) {
+                failNextIntent = false;
+                throw new IllegalStateException("test signer failure");
+            }
             return new UploadIntent(
                     "https://storage.test/upload/" + objectKey,
                     Map.of("Content-Type", mimeType),
@@ -360,6 +489,10 @@ class SourceAssetRelationServiceTests {
 
         void clear() {
             objects.clear();
+        }
+
+        void failNextIntent() {
+            failNextIntent = true;
         }
     }
 

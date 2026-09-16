@@ -125,7 +125,7 @@
 
 ## 阶段 2B Source、Asset、Relation 已构建契约
 
-- `POST /api/assets/upload-intents` 请求字段为 `baseVersion`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt}`。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
+- `POST /api/assets/upload-intents` 请求字段为 `baseVersion=0`、必填 UUID `clientImportId`、`originalName`、`sizeBytes`、`mimeType`、可选 `sha256`；成功返回 `201 + Location` 和 `{assetId,uploadUrl,headers,expiresAt,uploadStatus}`。同一用户重放同一 `clientImportId` 且 immutable metadata（文件名、大小、MIME、sha256）一致时返回同一 Asset 及当前 `uploadStatus`；`UPLOADING` 会重新签发 URL，`READY`/`ORPHANED` 不会签发可覆盖对象的 URL。metadata 冲突返回 `409 MUTATION_REJECTED`。该 key 按用户隔离，不同用户可以复用。服务端生成用户前缀 object key，不接受客户端提交 object key；配置 MinIO 时 headers 包含 Content-Type/Content-Length，声明 sha256 时额外包含 `X-Amz-Meta-Sha256`。
 - `POST /api/assets/{id}/complete` 不接受客户端对象元数据；服务端对绑定 object key 执行 HEAD/stat，校验真实大小、MIME 和已声明 sha256，成功返回 `AssetResponse` 并将状态置为 `READY`。校验失败返回 `400 UPLOAD_VALIDATION_FAILED` 并记录 `FAILED`。
 - `POST /api/assets/{id}/download-url` 只对当前用户拥有且 `READY` 的 Asset 返回 `{url,expiresAt}`；Asset 不作为 Relation 节点，也不进入普通同步资源列表。
 - Source 创建/更新字段为 `baseVersion`、`subjectId`、`type`、`title`、可选 `assetId`、`originUrl`、`rawText`、`outline`；type 仅为 `FILE`、`TEXT`、`URL`。FILE 必须引用同一用户的 READY Asset，TEXT 必须有 rawText，URL 必须是 HTTP/HTTPS URL。Source 成功响应对 FILE 资料额外返回可选 `assetSizeBytes`（Asset 原始字节数），以及服务端生成、客户端只读的 `ingestionRevision`；TEXT/URL 或无法关联 Asset 时 `assetSizeBytes` 为 JSON `null`。

@@ -2451,32 +2451,16 @@
           "float" : {
             "type" : "boolean"
           },
-          "object" : {
-            "type" : "boolean"
-          },
           "container" : {
             "type" : "boolean"
           },
           "missingNode" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
+          "object" : {
             "type" : "boolean"
           },
-          "textual" : {
-            "type" : "boolean",
-            "deprecated" : true
-          },
-          "int" : {
-            "type" : "boolean"
-          },
-          "string" : {
-            "type" : "boolean"
-          },
-          "long" : {
-            "type" : "boolean"
-          },
-          "pojo" : {
+          "short" : {
             "type" : "boolean"
           },
           "number" : {
@@ -2485,16 +2469,29 @@
           "boolean" : {
             "type" : "boolean"
           },
-          "binary" : {
+          "int" : {
             "type" : "boolean"
           },
-          "short" : {
+          "long" : {
             "type" : "boolean"
           },
           "double" : {
             "type" : "boolean"
           },
-          "bigInteger" : {
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "binary" : {
+            "type" : "boolean"
+          },
+          "textual" : {
+            "type" : "boolean",
+            "deprecated" : true
+          },
+          "string" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
           "nodeType" : {
@@ -2502,6 +2499,9 @@
             "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
           },
           "integralNumber" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
             "type" : "boolean"
           },
           "valueNode" : {
@@ -3153,6 +3153,10 @@
             "type" : "integer",
             "format" : "int64"
           },
+          "clientImportId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
           "originalName" : {
             "type" : "string",
             "maxLength" : 255,
@@ -3173,7 +3177,7 @@
             "minLength" : 64
           }
         },
-        "required" : [ "baseVersion", "mimeType", "originalName" ]
+        "required" : [ "baseVersion", "clientImportId", "mimeType", "originalName" ]
       },
       "AssetUploadIntentResponse" : {
         "type" : "object",
@@ -3194,6 +3198,10 @@
           "expiresAt" : {
             "type" : "string",
             "format" : "date-time"
+          },
+          "uploadStatus" : {
+            "type" : "string",
+            "enum" : [ "UPLOADING", "READY", "FAILED", "ORPHANED" ]
           }
         }
       },

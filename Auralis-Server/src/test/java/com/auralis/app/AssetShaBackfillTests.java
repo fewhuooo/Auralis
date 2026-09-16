@@ -59,7 +59,7 @@ class AssetShaBackfillTests {
     void hashesLegacyAssetFromServerObjectAndConditionallyBackfillsOnlyOnce() throws Exception {
         AuthResult owner = register("asset-sha-backfill");
         var intent = assetService.createUploadIntent(owner.user().id(),
-                new AssetUploadIntentCommand(0, "legacy.pdf", 11, "application/pdf", null));
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "legacy.pdf", 11, "application/pdf", null));
         String key = assetRepository.findById(intent.assetId()).orElseThrow().getObjectKey();
         storage.put(key, new AssetStoragePort.ObjectMetadata(11, "application/pdf", null), "server-bytes");
         assetService.complete(owner.user().id(), intent.assetId());
@@ -77,7 +77,7 @@ class AssetShaBackfillTests {
     void concurrentBackfillLeavesOneStableHash() throws Exception {
         AuthResult owner = register("asset-sha-concurrent");
         var intent = assetService.createUploadIntent(owner.user().id(),
-                new AssetUploadIntentCommand(0, "legacy.pdf", 11, "application/pdf", null));
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "legacy.pdf", 11, "application/pdf", null));
         String key = assetRepository.findById(intent.assetId()).orElseThrow().getObjectKey();
         storage.put(key, new AssetStoragePort.ObjectMetadata(11, "application/pdf", null), "server-bytes");
         assetService.complete(owner.user().id(), intent.assetId());
