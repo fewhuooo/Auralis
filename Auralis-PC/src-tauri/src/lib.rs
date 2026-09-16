@@ -59,6 +59,7 @@ pub fn run() {
             document_upload::document_upload_put,
             local_database::replace_local_resource_snapshot,
             local_asset_store::import_local_asset,
+            local_asset_store::import_local_asset_bytes,
             local_asset_store::resolve_local_asset,
             local_asset_store::download_local_asset,
             local_asset_store::delete_local_asset,

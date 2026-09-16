@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::AppHandle;
@@ -38,6 +38,18 @@ pub struct ImportLocalAssetCommand {
     pub safe_extension: String,
     pub expected_size: u64,
     pub expected_sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportLocalAssetBytesCommand {
+    pub user_scope: String,
+    pub device_id: String,
+    pub local_asset_id: String,
+    pub safe_extension: String,
+    pub expected_size: u64,
+    pub expected_sha256: String,
+    pub content: Vec<u8>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -335,15 +347,15 @@ fn sync_directory(path: &Path) {
     let _ = path;
 }
 
-pub fn import_file(
+fn import_reader<R: Read>(
     root: &Path,
     user_scope: &str,
     device_id: &str,
     local_asset_id: &str,
-    source_path: &Path,
     safe_extension: &str,
     expected_size: u64,
     expected_sha256: &str,
+    mut reader: R,
 ) -> Result<LocalAssetDescriptor, String> {
     let destination =
         managed_asset_path(root, user_scope, device_id, local_asset_id, safe_extension)?;
@@ -361,13 +373,7 @@ pub fn import_file(
         .map(|_| existing)
         .map_err(|_| "LOCAL_ASSET_CONFLICT".to_string())
     } else {
-        let source =
-            File::open(source_path).map_err(|_| "LOCAL_ASSET_SOURCE_MISSING".to_string())?;
-        let source_size = source
-            .metadata()
-            .map_err(|_| "LOCAL_ASSET_SOURCE_MISSING".to_string())?
-            .len();
-        if source_size > MAX_LOCAL_ASSET_BYTES || expected_size > MAX_LOCAL_ASSET_BYTES {
+        if expected_size > MAX_LOCAL_ASSET_BYTES {
             return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
         }
         let staging = staging_dir(root, user_scope)?;
@@ -381,7 +387,6 @@ pub fn import_file(
             .open(&part)
             .map_err(|_| "LOCAL_ASSET_STAGING_FAILED".to_string())?;
         let part_guard = PartGuard::new(part.clone());
-        let mut reader = BufReader::new(source);
         let mut hasher = Sha256::new();
         let mut size = 0_u64;
         let mut buffer = [0_u8; 128 * 1024];
@@ -421,6 +426,61 @@ pub fn import_file(
         sync_directory(destination.parent().unwrap());
         descriptor_for(destination, local_asset_id, extension)
     }
+}
+
+pub fn import_file(
+    root: &Path,
+    user_scope: &str,
+    device_id: &str,
+    local_asset_id: &str,
+    source_path: &Path,
+    safe_extension: &str,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<LocalAssetDescriptor, String> {
+    let source = File::open(source_path).map_err(|_| "LOCAL_ASSET_SOURCE_MISSING".to_string())?;
+    let source_size = source
+        .metadata()
+        .map_err(|_| "LOCAL_ASSET_SOURCE_MISSING".to_string())?
+        .len();
+    if source_size > MAX_LOCAL_ASSET_BYTES || expected_size > MAX_LOCAL_ASSET_BYTES {
+        return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+    }
+    import_reader(
+        root,
+        user_scope,
+        device_id,
+        local_asset_id,
+        safe_extension,
+        expected_size,
+        expected_sha256,
+        BufReader::new(source),
+    )
+}
+
+pub fn import_bytes(
+    root: &Path,
+    user_scope: &str,
+    device_id: &str,
+    local_asset_id: &str,
+    safe_extension: &str,
+    expected_size: u64,
+    expected_sha256: &str,
+    content: &[u8],
+) -> Result<LocalAssetDescriptor, String> {
+    if content.len() as u64 > MAX_LOCAL_ASSET_BYTES || expected_size > MAX_LOCAL_ASSET_BYTES {
+        return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+    }
+    import_reader(
+        root,
+        user_scope,
+        device_id,
+        local_asset_id,
+        safe_extension,
+        expected_size,
+        expected_sha256,
+        Cursor::new(content),
+    )
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -543,6 +603,24 @@ pub fn import_local_asset(
         &command.safe_extension,
         command.expected_size,
         &command.expected_sha256,
+    )
+}
+
+#[tauri::command]
+pub fn import_local_asset_bytes(
+    command: ImportLocalAssetBytesCommand,
+    app: AppHandle,
+) -> Result<LocalAssetDescriptor, String> {
+    let root = crate::local_database::canonical_app_data_dir(&app)?;
+    import_bytes(
+        &root,
+        &command.user_scope,
+        &command.device_id,
+        &command.local_asset_id,
+        &command.safe_extension,
+        command.expected_size,
+        &command.expected_sha256,
+        &command.content,
     )
 }
 
@@ -1004,5 +1082,132 @@ mod tests {
         )
         .is_err());
         assert!(!root.path().join("assets").exists());
+    }
+
+    #[test]
+    fn bytes_import_rejects_oversized_payload_without_publishing() {
+        let root = TempRoot::new();
+        let error = import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "too-large",
+            "pdf",
+            MAX_LOCAL_ASSET_BYTES + 1,
+            &sha256_bytes(b"unused"),
+            b"small",
+        )
+        .unwrap_err();
+        assert_eq!(error, "LOCAL_ASSET_SIZE_LIMIT");
+        assert!(!root
+            .path()
+            .join("assets/user-a/too-large/content.pdf")
+            .exists());
+    }
+
+    #[test]
+    fn bytes_import_hash_mismatch_cleans_staging_file() {
+        let root = TempRoot::new();
+        let error = import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "hash-mismatch",
+            "pdf",
+            5,
+            &sha256_bytes(b"world"),
+            b"hello",
+        )
+        .unwrap_err();
+        assert_eq!(error, "LOCAL_ASSET_HASH_MISMATCH");
+        assert!(!root
+            .path()
+            .join("assets/user-a/hash-mismatch/content.pdf")
+            .exists());
+        let staging = root.path().join("asset-staging/user-a");
+        assert!(!staging.exists() || fs::read_dir(staging).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn bytes_import_same_content_is_idempotent() {
+        let root = TempRoot::new();
+        let hash = sha256_bytes(b"hello");
+        let first = import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            "pdf",
+            5,
+            &hash,
+            b"hello",
+        )
+        .unwrap();
+        let second = import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            "pdf",
+            5,
+            &hash,
+            b"hello",
+        )
+        .unwrap();
+        assert_eq!(first.absolute_path, second.absolute_path);
+        assert_eq!(first.sha256, second.sha256);
+        assert_eq!(fs::read(first.absolute_path).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn bytes_import_conflicting_content_does_not_replace_existing_asset() {
+        let root = TempRoot::new();
+        let first_hash = sha256_bytes(b"hello");
+        import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            "pdf",
+            5,
+            &first_hash,
+            b"hello",
+        )
+        .unwrap();
+        let error = import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            "pdf",
+            5,
+            &sha256_bytes(b"world"),
+            b"world",
+        )
+        .unwrap_err();
+        assert_eq!(error, "LOCAL_ASSET_CONFLICT");
+        assert_eq!(
+            fs::read(root.path().join("assets/user-a/asset-a/content.pdf")).unwrap(),
+            b"hello"
+        );
+    }
+
+    #[test]
+    fn bytes_import_publishes_verified_content() {
+        let root = TempRoot::new();
+        let descriptor = import_bytes(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            "pdf",
+            5,
+            &sha256_bytes(b"hello"),
+            b"hello",
+        )
+        .unwrap();
+        assert_eq!(descriptor.size_bytes, 5);
+        assert_eq!(descriptor.sha256, sha256_bytes(b"hello"));
+        assert_eq!(fs::read(descriptor.absolute_path).unwrap(), b"hello");
     }
 }
