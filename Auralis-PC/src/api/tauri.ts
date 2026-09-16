@@ -224,3 +224,108 @@ export const replaceLocalResourceSnapshot = (
     command: { userId, items },
   })
 }
+
+export interface LocalAssetDescriptor {
+  localAssetId: string
+  safeExtension: string
+  sizeBytes: number
+  sha256: string
+  absolutePath: string
+}
+
+export interface ImportLocalAssetCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+  sourcePath: string
+  safeExtension: string
+  expectedSize: number
+  expectedSha256: string
+}
+
+export interface ResolveLocalAssetCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+  expectedSize?: number
+  expectedSha256?: string
+}
+
+export interface DownloadLocalAssetCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+  remoteUrl: string
+  expectedSize: number
+  expectedSha256: string
+  safeExtension: string
+}
+
+export interface DeleteLocalAssetCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+}
+
+export interface ReconcileLocalAssetsCommand {
+  userScope: string
+  deviceId: string
+}
+
+export interface ReconcileLocalAssetsResult {
+  removedStagingFiles: number
+  files: LocalAssetDescriptor[]
+}
+
+export const importLocalAsset = (command: ImportLocalAssetCommand): Promise<LocalAssetDescriptor> => {
+  if (
+    !command.userScope?.trim()
+    || !command.deviceId?.trim()
+    || !command.localAssetId?.trim()
+    || !command.sourcePath?.trim()
+    || !command.safeExtension?.trim()
+    || typeof command.expectedSize !== 'number'
+    || command.expectedSize < 0
+    || !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<LocalAssetDescriptor>('import_local_asset', { command })
+}
+
+export const resolveLocalAssetNative = (command: ResolveLocalAssetCommand): Promise<LocalAssetDescriptor> => {
+  if (!command.userScope?.trim() || !command.deviceId?.trim() || !command.localAssetId?.trim()) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<LocalAssetDescriptor>('resolve_local_asset', { command })
+}
+
+export const downloadLocalAsset = (command: DownloadLocalAssetCommand): Promise<LocalAssetDescriptor> => {
+  if (
+    !command.userScope?.trim()
+    || !command.deviceId?.trim()
+    || !command.localAssetId?.trim()
+    || !command.remoteUrl?.trim()
+    || typeof command.expectedSize !== 'number'
+    || command.expectedSize < 0
+    || !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
+    || !command.safeExtension?.trim()
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<LocalAssetDescriptor>('download_local_asset', { command })
+}
+
+export const deleteLocalAsset = (command: DeleteLocalAssetCommand): Promise<void> => {
+  if (!command.userScope?.trim() || !command.deviceId?.trim() || !command.localAssetId?.trim()) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<void>('delete_local_asset', { command })
+}
+
+export const reconcileLocalAssets = (command: ReconcileLocalAssetsCommand): Promise<ReconcileLocalAssetsResult> => {
+  if (!command.userScope?.trim() || !command.deviceId?.trim()) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+  return invokeRustCmd<ReconcileLocalAssetsResult>('reconcile_local_assets', { command })
+}

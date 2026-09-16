@@ -11,6 +11,7 @@ import { LocalDatabaseRuntime } from '@/services/localDatabaseRuntime';
 import { LocalSqlQueue, serializeLocalSqlDatabase } from '@/services/localSqlQueue';
 import { replaceLocalResourceSnapshot } from '@/api/tauri';
 import { OverviewRepository } from '@/services/overviewRepository';
+import { LocalAssetRepository } from '@/services/localAssetRepository';
 
 // The legacy methods below still map many historical row shapes dynamically.
 // Keep their boundary dynamic while new R4 repositories use LocalSqlDatabase.
@@ -1144,4 +1145,19 @@ export async function getOverviewRepository(userId: string, serverDeviceId: stri
   await localDb.init();
   if (db === 'localstorage') return new OverviewRepository(userId, serverDeviceId);
   return new OverviewRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() });
+}
+
+/** Returns the owner/device-scoped LocalAssetRepository on the shared DB. */
+export async function getLocalAssetRepository(userId: string, serverDeviceId: string): Promise<LocalAssetRepository> {
+  await localDb.init();
+  if (db === 'localstorage') {
+    return localDatabaseRuntime.getOrCreate(
+      `local-assets:${userId}:${serverDeviceId}`,
+      () => new LocalAssetRepository(userId, serverDeviceId),
+    );
+  }
+  return localDatabaseRuntime.getOrCreate(
+    `local-assets:${userId}:${serverDeviceId}`,
+    () => new LocalAssetRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() }),
+  );
 }

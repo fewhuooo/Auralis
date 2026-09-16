@@ -49,7 +49,7 @@ test('legacy schema upgrades to v7 with durable cache receipt and overview metad
     const table = sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_processing_jobs'").get()
     assert.ok(table)
     const versions = sqlite.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map((row) => row.version)
-    assert.deepEqual(versions, [2, 7])
+    assert.deepEqual(versions, [2, 8])
     const columns = sqlite.database.prepare('PRAGMA table_info(document_processing_jobs)').all().map((row) => row.name)
     assert.ok(columns.includes('payload_receipt_json'))
     assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ai_overview_cache'").get())

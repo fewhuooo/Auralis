@@ -2,8 +2,19 @@ import type { LocalEntity, LocalMutation, LocalMutationStatus, LocalSyncStatus }
 import { DOCUMENT_JOB_PHASES, type DocumentJobPhase, type DocumentProcessingJob, type OcrCheckpointDiagnostic } from '@/types/documentProcessing'
 import type { DocumentCacheReceipt } from '@/api/tauri'
 import { DOCUMENT_PAYLOAD_FORMAT, isDocumentCacheReceiptV1, MAX_PACKAGE_METADATA_CHARS } from '@/api/tauri'
+import {
+  LOCAL_ASSET_STATES,
+  LOCAL_ASSET_SYNC_PHASES,
+  LOCAL_SOURCE_DRAFT_STATES,
+  type LocalAssetFile,
+  type LocalAssetState,
+  type LocalAssetSyncJob,
+  type LocalAssetSyncPhase,
+  type LocalSourceDraft,
+  type LocalSourceDraftState,
+} from '@/types/localAsset'
 
-export const LOCAL_SCHEMA_VERSION = 7
+export const LOCAL_SCHEMA_VERSION = 8
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -52,6 +63,53 @@ export interface DocumentProcessingJobRow {
   payload_receipt_json: string | null
   error_code: string | null
   error_detail: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalAssetFileRow {
+  user_id: string
+  device_id: string
+  local_asset_id: string
+  server_asset_id: string | null
+  relative_path: string
+  original_name: string
+  mime_type: string
+  size_bytes: number
+  sha256: string
+  state: LocalAssetState
+  created_at: string
+  verified_at: string
+  last_accessed_at: string
+  deleted_at: string | null
+}
+
+export interface LocalAssetSyncJobRow {
+  job_id: string
+  user_id: string
+  device_id: string
+  local_asset_id: string
+  phase: LocalAssetSyncPhase
+  attempt: number
+  next_retry_at: string | null
+  server_asset_id: string | null
+  safe_error_code: string | null
+  safe_error_detail: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalSourceDraftRow {
+  user_id: string
+  device_id: string
+  local_source_id: string
+  server_source_id: string | null
+  local_asset_id: string
+  subject_id: string
+  title: string
+  local_content_revision: string
+  server_ingestion_revision: string | null
+  state: LocalSourceDraftState
   created_at: string
   updated_at: string
 }
@@ -138,6 +196,64 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_ai_overview_cache_scope
     ON ai_overview_cache (user_id, device_id, scope_type, scope_id, updated_at)`,
+  `CREATE TABLE IF NOT EXISTS local_asset_files (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    local_asset_id TEXT NOT NULL,
+    server_asset_id TEXT,
+    relative_path TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+    sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+    state TEXT NOT NULL CHECK (state IN (${LOCAL_ASSET_STATES.map((s) => `'${s}'`).join(', ')})),
+    created_at TEXT NOT NULL,
+    verified_at TEXT NOT NULL,
+    last_accessed_at TEXT NOT NULL,
+    deleted_at TEXT,
+    PRIMARY KEY (user_id, device_id, local_asset_id)
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_local_asset_files_server_asset
+    ON local_asset_files (user_id, device_id, server_asset_id)
+    WHERE server_asset_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_local_asset_files_user_device_state
+    ON local_asset_files (user_id, device_id, state, last_accessed_at)`,
+  `CREATE TABLE IF NOT EXISTS local_asset_sync_jobs (
+    job_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    local_asset_id TEXT NOT NULL,
+    phase TEXT NOT NULL CHECK (phase IN (${LOCAL_ASSET_SYNC_PHASES.map((p) => `'${p}'`).join(', ')})),
+    attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+    next_retry_at TEXT,
+    server_asset_id TEXT,
+    safe_error_code TEXT,
+    safe_error_detail TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_local_asset_sync_jobs_active
+    ON local_asset_sync_jobs (user_id, device_id, local_asset_id)
+    WHERE phase <> 'SYNCED'`,
+  `CREATE INDEX IF NOT EXISTS idx_local_asset_sync_jobs_claim
+    ON local_asset_sync_jobs (user_id, device_id, phase, next_retry_at, created_at)`,
+  `CREATE TABLE IF NOT EXISTS local_source_drafts (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    local_source_id TEXT NOT NULL,
+    server_source_id TEXT,
+    local_asset_id TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    local_content_revision TEXT NOT NULL,
+    server_ingestion_revision TEXT,
+    state TEXT NOT NULL CHECK (state IN (${LOCAL_SOURCE_DRAFT_STATES.map((s) => `'${s}'`).join(', ')})),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, local_source_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_local_source_drafts_asset
+    ON local_source_drafts (user_id, device_id, local_asset_id)`,
   `CREATE TABLE IF NOT EXISTS legacy_unassigned_records (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_table TEXT NOT NULL,
@@ -539,6 +655,59 @@ export function documentProcessingJobFromRow(row: DocumentProcessingJobRow): Doc
     payloadReceipt: row.payload_receipt_json ? sanitizeDocumentCacheReceipt(parsePayload<unknown>(row.payload_receipt_json)) : null,
     errorCode: row.error_code ?? null,
     errorDetail: row.error_detail ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function localAssetFileFromRow(row: LocalAssetFileRow): LocalAssetFile {
+  return {
+    userId: row.user_id,
+    serverDeviceId: row.device_id,
+    localAssetId: row.local_asset_id,
+    serverAssetId: row.server_asset_id ?? null,
+    relativePath: row.relative_path,
+    originalName: row.original_name,
+    mimeType: row.mime_type,
+    sizeBytes: Number(row.size_bytes),
+    sha256: row.sha256,
+    state: row.state,
+    createdAt: row.created_at,
+    verifiedAt: row.verified_at,
+    lastAccessedAt: row.last_accessed_at,
+    deletedAt: row.deleted_at ?? null,
+  }
+}
+
+export function localAssetSyncJobFromRow(row: LocalAssetSyncJobRow): LocalAssetSyncJob {
+  return {
+    jobId: row.job_id,
+    userId: row.user_id,
+    serverDeviceId: row.device_id,
+    localAssetId: row.local_asset_id,
+    phase: row.phase,
+    attempt: Number(row.attempt),
+    nextRetryAt: row.next_retry_at ?? null,
+    serverAssetId: row.server_asset_id ?? null,
+    safeErrorCode: row.safe_error_code ?? null,
+    safeErrorDetail: row.safe_error_detail ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+export function localSourceDraftFromRow(row: LocalSourceDraftRow): LocalSourceDraft {
+  return {
+    userId: row.user_id,
+    serverDeviceId: row.device_id,
+    localSourceId: row.local_source_id,
+    serverSourceId: row.server_source_id ?? null,
+    localAssetId: row.local_asset_id,
+    subjectId: row.subject_id,
+    title: row.title,
+    localContentRevision: row.local_content_revision,
+    serverIngestionRevision: row.server_ingestion_revision ?? null,
+    state: row.state,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
