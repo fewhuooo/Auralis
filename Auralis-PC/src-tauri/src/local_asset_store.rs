@@ -408,19 +408,23 @@ fn build_upload_headers(command: &LocalAssetUploadPutCommand) -> Result<HeaderMa
     let mut headers = HeaderMap::new();
     let mut total_bytes = 0_usize;
     for (name, value) in &command.headers {
-        total_bytes = total_bytes
-            .saturating_add(name.len())
-            .saturating_add(value.len());
-        if name.len() > MAX_UPLOAD_HEADER_NAME_BYTES
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| "LOCAL_ASSET_UPLOAD_HEADER_INVALID".to_string())?;
+        if name.as_str().len() > MAX_UPLOAD_HEADER_NAME_BYTES
             || value.len() > MAX_UPLOAD_HEADER_VALUE_BYTES
-            || total_bytes > MAX_UPLOAD_HEADER_BYTES
         {
             return Err("LOCAL_ASSET_UPLOAD_HEADER_INVALID".to_string());
         }
-        let name = HeaderName::from_bytes(name.as_bytes())
-            .map_err(|_| "LOCAL_ASSET_UPLOAD_HEADER_INVALID".to_string())?;
+        if name == CONTENT_LENGTH {
+            continue;
+        }
+        total_bytes = total_bytes
+            .saturating_add(name.as_str().len())
+            .saturating_add(value.len());
+        if total_bytes > MAX_UPLOAD_HEADER_BYTES {
+            return Err("LOCAL_ASSET_UPLOAD_HEADER_INVALID".to_string());
+        }
         if name == HOST
-            || name == CONTENT_LENGTH
             || matches!(
                 name.as_str(),
                 "connection"
@@ -1595,8 +1599,11 @@ mod tests {
             .headers
             .insert("Content-Length".to_string(), "1".to_string());
         assert_eq!(
-            build_upload_headers(&command).unwrap_err(),
-            "LOCAL_ASSET_UPLOAD_HEADER_FORBIDDEN"
+            build_upload_headers(&command)
+                .unwrap()
+                .get(CONTENT_LENGTH)
+                .unwrap(),
+            HeaderValue::from_static("8")
         );
         command.headers.clear();
         command
@@ -1625,6 +1632,21 @@ mod tests {
             "LOCAL_ASSET_UPLOAD_FAILED:400"
         );
         assert_eq!(failed_server.join().unwrap(), contents);
+    }
+
+    #[test]
+    fn managed_asset_upload_overrides_caller_content_length_with_expected_size() {
+        let root = TempRoot::new();
+        let contents = b"verified payload";
+        prepare_managed_asset(&root, contents);
+        let (url, server) = serve_once(200);
+        let mut command = upload_command(url, contents);
+        command
+            .headers
+            .insert("Content-Length".to_string(), "1".to_string());
+        let receipt = upload_managed_asset(root.path(), &command).unwrap();
+        assert_eq!(receipt.bytes_sent, contents.len() as u64);
+        assert_eq!(server.join().unwrap(), contents);
     }
 
     #[test]
