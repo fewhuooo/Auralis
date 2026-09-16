@@ -2,7 +2,7 @@ use crate::crypto;
 use crate::document_cache::{
     is_lowercase_sha256, CacheHeader, CachePayloadInfo, CacheReceipt, CacheScope,
     DecryptedCacheReader, DocumentCacheStore, LocalCacheHeader, LocalCacheReceipt, LocalCacheScope,
-    CACHE_SCHEMA_VERSION, MAX_LOCAL_DERIVED_BYTES, MAX_LOCAL_DERIVED_RATIO,
+    PlaintextStagingLease, CACHE_SCHEMA_VERSION, MAX_LOCAL_DERIVED_BYTES, MAX_LOCAL_DERIVED_RATIO,
 };
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use serde::{
@@ -287,6 +287,7 @@ struct LocalPackageBuilder {
     cache_id: String,
     store: DocumentCacheStore,
     header: LocalCacheHeader,
+    _staging_lease: PlaintextStagingLease,
     temp_path: PathBuf,
     encoder: Option<GzEncoder<File>>,
     plain_text_hash: Sha256,
@@ -318,13 +319,15 @@ impl LocalPackageBuilder {
             return Err("DOCUMENT_LOCAL_PACKAGE_HEADER_INVALID".to_string());
         }
         let cache_header = header.into_cache_header();
-        let (temp_path, file) = store
+        let (staging_lease, file) = store
             .create_plaintext_staging_file("local", &cache_id)
             .map_err(|_| "DOCUMENT_LOCAL_PACKAGE_TEMP_FAILED".to_string())?;
+        let temp_path = staging_lease.path().to_path_buf();
         let mut builder = Self {
             cache_id,
             store,
             header: cache_header,
+            _staging_lease: staging_lease,
             temp_path,
             encoder: Some(GzEncoder::new(file, Compression::default())),
             plain_text_hash: Sha256::new(),
@@ -791,9 +794,10 @@ fn bind_local_cache(
         job_id: request.job_id.clone(),
         ingestion_revision: request.ingestion_revision.clone(),
     };
-    let (temp_path, file) = store
+    let (_staging_lease, file) = store
         .create_plaintext_staging_file("rebind", &request.server_cache_id)
         .map_err(|_| "LOCAL_CACHE_REBIND_TEMP_FAILED".to_string())?;
+    let temp_path = _staging_lease.path().to_path_buf();
     let result = (|| {
         let mut encoder = GzEncoder::new(file, Compression::default());
         write_server_payload_prefix(&mut encoder, &local_header, &request)?;

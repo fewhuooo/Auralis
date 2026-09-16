@@ -6,9 +6,11 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashSet,
     fs::{self, File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::Duration,
 };
 
@@ -22,6 +24,30 @@ const NONCE_BYTES: usize = 12;
 const MAX_HEADER_BYTES: usize = 64 * 1024;
 pub const MAX_LOCAL_DERIVED_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_LOCAL_DERIVED_RATIO: u64 = 200;
+
+static ACTIVE_STAGING_PATHS: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+
+fn active_staging_paths() -> &'static Mutex<HashSet<PathBuf>> {
+    ACTIVE_STAGING_PATHS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+pub struct PlaintextStagingLease {
+    path: PathBuf,
+}
+
+impl PlaintextStagingLease {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for PlaintextStagingLease {
+    fn drop(&mut self) {
+        if let Ok(mut paths) = active_staging_paths().lock() {
+            paths.remove(&self.path);
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -200,6 +226,7 @@ impl DocumentCacheStore {
     pub fn new(root: impl Into<PathBuf>, key: [u8; 32]) -> Result<Self, String> {
         let root = root.into();
         fs::create_dir_all(&root).map_err(|e| format!("CACHE_ROOT_CREATE_FAILED: {e}"))?;
+        let root = fs::canonicalize(&root).map_err(|e| format!("CACHE_ROOT_CREATE_FAILED: {e}"))?;
         cleanup_staging_files(&root, Duration::from_secs(60 * 60))?;
         Ok(Self { root, key })
     }
@@ -208,7 +235,7 @@ impl DocumentCacheStore {
         &self,
         kind: &str,
         cache_id: &str,
-    ) -> Result<(PathBuf, File), String> {
+    ) -> Result<(PlaintextStagingLease, File), String> {
         validate_cache_id(cache_id)?;
         if !matches!(kind, "local" | "rebind") {
             return Err("CACHE_STAGING_KIND_INVALID".to_string());
@@ -220,8 +247,14 @@ impl DocumentCacheStore {
                 ".document-staging-{kind}-{cache_id}-{}.gzip.tmp",
                 hex::encode(nonce)
             ));
+            let mut active_paths = active_staging_paths()
+                .lock()
+                .map_err(|_| "CACHE_STAGING_REGISTRY_LOCK_FAILED".to_string())?;
             match OpenOptions::new().create_new(true).write(true).open(&path) {
-                Ok(file) => return Ok((path, file)),
+                Ok(file) => {
+                    active_paths.insert(path.clone());
+                    return Ok((PlaintextStagingLease { path }, file));
+                }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
                 Err(error) => return Err(format!("CACHE_STAGING_CREATE_FAILED: {error}")),
             }
@@ -799,6 +832,9 @@ fn write_length_prefixed(output: &mut Vec<u8>, value: &[u8]) {
 }
 
 fn cleanup_staging_files(root: &Path, stale_after: Duration) -> Result<usize, String> {
+    let active_paths = active_staging_paths()
+        .lock()
+        .map_err(|_| "CACHE_STAGING_REGISTRY_LOCK_FAILED".to_string())?;
     let entries = fs::read_dir(root).map_err(|e| format!("CACHE_STAGING_SCAN_FAILED: {e}"))?;
     let mut removed = 0usize;
     for entry in entries {
@@ -817,6 +853,9 @@ fn cleanup_staging_files(root: &Path, stale_after: Duration) -> Result<usize, St
             .metadata()
             .map_err(|e| format!("CACHE_STAGING_SCAN_FAILED: {e}"))?;
         if !metadata.is_file() {
+            continue;
+        }
+        if active_paths.contains(&entry.path()) {
             continue;
         }
         let stale = metadata
@@ -1010,14 +1049,18 @@ mod tests {
     fn staging_cleanup_only_removes_owned_plaintext_staging_files() {
         let root = temp_root("staging-cleanup");
         let store = DocumentCacheStore::new(root.join("cache"), [6u8; 32]).unwrap();
-        let (staging_path, file) = store
+        let (staging_lease, file) = store
             .create_plaintext_staging_file("local", "cache-1")
             .unwrap();
+        let staging_path = staging_lease.path().to_path_buf();
         drop(file);
         let formal_cache = store.cache_path("cache-1").unwrap();
         fs::write(&formal_cache, b"must stay").unwrap();
         let unrelated = store.local_cache_path("unrelated").unwrap();
         fs::write(&unrelated, b"must stay").unwrap();
+        assert_eq!(store.cleanup_staging_files_for_test().unwrap(), 0);
+        assert!(staging_path.exists());
+        drop(staging_lease);
         assert_eq!(store.cleanup_staging_files_for_test().unwrap(), 1);
         assert!(!staging_path.exists());
         assert!(formal_cache.exists());
