@@ -36,6 +36,14 @@ export const getClientId = (): string => {
   return generated
 }
 
+class QueueReleasedError extends Error {
+  readonly code = 'QUEUE_RELEASED_DURING_INIT'
+  constructor(message = 'QUEUE_RELEASED_DURING_INIT') {
+    super(message)
+    this.name = 'QueueReleasedError'
+  }
+}
+
 export const useSyncStore = defineStore('sync', () => {
   const cursor = ref<string | null>(null)
   const resetRequired = ref(false)
@@ -67,6 +75,7 @@ export const useSyncStore = defineStore('sync', () => {
             assetQueueUserId = null
             assetQueueDeviceId = null
             assetQueuePromise = null
+            assetQueuePromiseToken = null
           }
         }
       }
@@ -74,10 +83,10 @@ export const useSyncStore = defineStore('sync', () => {
     { deep: true }
   )
 
-  async function getAssetQueue(): Promise<LocalAssetSyncQueue> {
+  function getAssetQueue(): Promise<LocalAssetSyncQueue> {
     const userId = authStore.user?.id
     const serverDeviceId = authStore.serverDeviceId
-    if (!userId || !serverDeviceId) throw new Error('Sync requires an authenticated user and device')
+    if (!userId || !serverDeviceId) return Promise.reject(new Error('Sync requires an authenticated user and device'))
 
     if (assetQueueUserId !== userId || assetQueueDeviceId !== serverDeviceId) {
       if (assetQueueUserId && assetQueueDeviceId) {
@@ -95,15 +104,27 @@ export const useSyncStore = defineStore('sync', () => {
           const assetService = getOrCreateLocalAssetService(assetRepository)
           const draftService = getOrCreateLocalSourceDraftService(assetRepository, rep)
 
-          return await getOrCreateLocalAssetSyncQueue({
+          const queue = await getOrCreateLocalAssetSyncQueue({
             assetRepository,
             assetService,
             draftService,
             onWakeup: () => { requestBackgroundSync('write') },
           })
+
+          if (
+            assetQueuePromiseToken !== token ||
+            authStore.user?.id !== userId ||
+            authStore.serverDeviceId !== serverDeviceId
+          ) {
+            releaseLocalAssetSyncQueue(userId, serverDeviceId)
+            throw new QueueReleasedError()
+          }
+
+          return queue
         } catch (e) {
           if (assetQueuePromiseToken === token) {
             assetQueuePromise = null
+            assetQueuePromiseToken = null
             assetQueueUserId = null
             assetQueueDeviceId = null
           }
@@ -214,6 +235,7 @@ export const useSyncStore = defineStore('sync', () => {
     isPushing,
     isSyncing,
     lastSyncError,
+    getAssetQueue,
     requestBackgroundSync,
     flushNow,
     triggerSync,

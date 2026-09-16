@@ -33,6 +33,7 @@ const { LocalAssetSyncQueue, getOrCreateLocalAssetSyncQueue } = await import('..
 const { useAssetStore } = await import('../src/store/useAssetStore.ts')
 const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
+const { useSyncStore } = await import('../src/store/useSyncStore.ts')
 
 class TemporarySqlite {
   constructor() {
@@ -160,4 +161,138 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   assert.equal(releasedMutations[0].resourceId, sourceId, 'Must keep the same localSourceId')
   assert.equal(releasedMutations[0].mutationType, 'CREATE')
   assert.equal(releasedMutations[0].payload.assetId, serverAssetId)
+})
+
+test('useSyncStore: identity switch during queue init releases/disposes old queue A, rejects old promise with QUEUE_RELEASED_DURING_INIT, and resolves queue B', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-race-A', email: 'a@example.com' }
+  authStore.serverDeviceId = 'device-race-A'
+
+  const { getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const repoA = await getLocalAssetRepository('user-race-A', 'device-race-A')
+
+  let resolveRecoverA
+  const recoverPromiseA = new Promise((resolve) => {
+    resolveRecoverA = resolve
+  })
+  repoA.recoverInflightJobs = async () => {
+    await recoverPromiseA
+    return 0
+  }
+
+  const syncStore = useSyncStore()
+
+  // Start initialization for User A
+  const promiseA = syncStore.getAssetQueue()
+
+  // Switch identity to User B while A is still in-flight
+  authStore.user = { id: 'user-race-B', email: 'b@example.com' }
+  authStore.serverDeviceId = 'device-race-B'
+
+  // Start initialization for User B
+  const promiseB = syncStore.getAssetQueue()
+
+  // A subsequently succeeds
+  resolveRecoverA(0)
+
+  // 1. Old promise A must reject with stable code QUEUE_RELEASED_DURING_INIT
+  await assert.rejects(
+    promiseA,
+    (err) => err && err.code === 'QUEUE_RELEASED_DURING_INIT' && err.message === 'QUEUE_RELEASED_DURING_INIT',
+    'Promise A must reject with QUEUE_RELEASED_DURING_INIT when identity switches before completion'
+  )
+
+  // 2. Queue B must resolve successfully
+  const queueB = await promiseB
+  assert.ok(queueB, 'Queue B must successfully initialize')
+  const currentQueueB = await syncStore.getAssetQueue()
+  assert.equal(currentQueueB, queueB, 'syncStore must return B queue')
+})
+
+test('useSyncStore: error in old queue A init does not wipe or corrupt new queue B promise', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-fail-A', email: 'failA@example.com' }
+  authStore.serverDeviceId = 'device-fail-A'
+
+  const { getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const repoA = await getLocalAssetRepository('user-fail-A', 'device-fail-A')
+
+  let rejectRecoverA
+  const recoverPromiseA = new Promise((_, reject) => {
+    rejectRecoverA = reject
+  })
+  repoA.recoverInflightJobs = async () => {
+    await recoverPromiseA
+    return 0
+  }
+
+  const syncStore = useSyncStore()
+
+  // Start init for A
+  const promiseA = syncStore.getAssetQueue()
+
+  // Switch to B
+  authStore.user = { id: 'user-fail-B', email: 'failB@example.com' }
+  authStore.serverDeviceId = 'device-fail-B'
+
+  // Start init for B
+  const promiseB = syncStore.getAssetQueue()
+
+  // A fails with an error
+  rejectRecoverA(new Error('Simulated repository crash for user A'))
+
+  // Promise A rejects with simulated error
+  await assert.rejects(
+    promiseA,
+    /Simulated repository crash for user A/
+  )
+
+  // Ensure B's promise was NOT cleared by A's catch block
+  const queueB = await promiseB
+  assert.ok(queueB, 'Queue B must successfully initialize despite A failure')
+  const currentQueueB = await syncStore.getAssetQueue()
+  assert.equal(currentQueueB, queueB, 'syncStore must return B queue')
+})
+
+test('useSyncStore: success path verifies captured userId/serverDeviceId against authStore and releases queue if auth changed', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-logout-A', email: 'logoutA@example.com' }
+  authStore.serverDeviceId = 'device-logout-A'
+
+  const { getLocalAssetRepository } = await import('../src/services/localDb.ts')
+  const repoA = await getLocalAssetRepository('user-logout-A', 'device-logout-A')
+
+  let resolveRecoverA
+  const recoverPromiseA = new Promise((resolve) => {
+    resolveRecoverA = resolve
+  })
+  repoA.recoverInflightJobs = async () => {
+    await recoverPromiseA
+    return 0
+  }
+
+  const syncStore = useSyncStore()
+  const promiseA = syncStore.getAssetQueue()
+
+  // User logs out (auth cleared, no new getAssetQueue call)
+  authStore.user = null
+  authStore.serverDeviceId = null
+
+  // Allow A to finish
+  resolveRecoverA(0)
+
+  // Promise A must reject with QUEUE_RELEASED_DURING_INIT
+  await assert.rejects(
+    promiseA,
+    (err) => err && err.code === 'QUEUE_RELEASED_DURING_INIT'
+  )
 })
