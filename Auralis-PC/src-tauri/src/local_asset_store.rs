@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tauri::AppHandle;
+use tauri::{ipc::Response, AppHandle};
 
 const ASSETS_DIR: &str = "assets";
 const STAGING_DIR: &str = "asset-staging";
@@ -116,6 +116,31 @@ pub struct LocalAssetUploadPutReceipt {
     pub status: u16,
     pub bytes_sent: u64,
     pub payload_sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadLocalAssetCommand {
+    pub user_scope: String,
+    pub device_id: String,
+    pub local_asset_id: String,
+    pub expected_size: u64,
+    pub expected_sha256: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalAssetReadReceipt {
+    pub local_asset_id: String,
+    pub safe_extension: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone)]
+struct LocalAssetReadResult {
+    frame: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -311,6 +336,31 @@ fn sha256_reader<R: Read>(reader: &mut R) -> Result<(u64, String), String> {
 fn sha256_file(path: &Path) -> Result<(u64, String), String> {
     let file = File::open(path).map_err(|_| "LOCAL_ASSET_FILE_MISSING".to_string())?;
     sha256_reader(&mut BufReader::new(file))
+}
+
+fn sha256_reader_bounded<R: Read>(reader: &mut R) -> Result<(u64, String), String> {
+    let mut hasher = Sha256::new();
+    let mut size = 0_u64;
+    let mut buffer = [0_u8; 128 * 1024];
+    loop {
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|_| "LOCAL_ASSET_READ_FAILED".to_string())?;
+        if read == 0 {
+            break;
+        }
+        size = size.saturating_add(read as u64);
+        if size > MAX_LOCAL_ASSET_BYTES {
+            return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok((size, hex::encode(hasher.finalize())))
+}
+
+fn sha256_file_bounded(path: &Path) -> Result<(u64, String), String> {
+    let file = File::open(path).map_err(|_| "LOCAL_ASSET_FILE_MISSING".to_string())?;
+    sha256_reader_bounded(&mut BufReader::new(file))
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -561,6 +611,139 @@ fn upload_managed_asset(
         bytes_sent: metrics.bytes,
         payload_sha256,
     })
+}
+
+fn read_managed_asset(
+    root: &Path,
+    user_scope: &str,
+    device_id: &str,
+    local_asset_id: &str,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<LocalAssetReadResult, String> {
+    validate_logical_segment(device_id)?;
+    validate_logical_segment(local_asset_id)?;
+    if expected_size > MAX_LOCAL_ASSET_BYTES {
+        return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+    }
+    let scope = existing_asset_scope(root, user_scope)?
+        .ok_or_else(|| "LOCAL_ASSET_FILE_MISSING".to_string())?;
+    let lock_path = scope.join(format!(".{local_asset_id}.lock"));
+    let _lock = acquire_asset_lock(&lock_path)?;
+    let path = unique_managed_content_path(root, user_scope, local_asset_id).map_err(|error| {
+        if matches!(
+            error.as_str(),
+            "LOCAL_ASSET_PATH_OUTSIDE_ROOT" | "LOCAL_ASSET_PATH_INVALID"
+        ) {
+            "LOCAL_ASSET_FILE_INVALID".to_string()
+        } else {
+            error
+        }
+    })?;
+    let extension = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("content."))
+        .ok_or_else(|| "LOCAL_ASSET_FILE_INVALID".to_string())?;
+    let extension = normalize_extension(extension)?;
+
+    let metadata =
+        fs::symlink_metadata(&path).map_err(|_| "LOCAL_ASSET_FILE_MISSING".to_string())?;
+    if !metadata.file_type().is_file() {
+        return Err("LOCAL_ASSET_FILE_INVALID".to_string());
+    }
+    if metadata.len() > MAX_LOCAL_ASSET_BYTES {
+        return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+    }
+    if metadata.len() != expected_size {
+        return Err("LOCAL_ASSET_SIZE_MISMATCH".to_string());
+    }
+    let (before_size, before_hash) = sha256_file_bounded(&path)?;
+    validate_expected(before_size, &before_hash, expected_size, expected_sha256)?;
+
+    let mut file = File::open(&path).map_err(|_| "LOCAL_ASSET_FILE_MISSING".to_string())?;
+    if !file
+        .metadata()
+        .map_err(|_| "LOCAL_ASSET_FILE_MISSING".to_string())?
+        .file_type()
+        .is_file()
+    {
+        return Err("LOCAL_ASSET_FILE_INVALID".to_string());
+    }
+    let reopened_size = file
+        .metadata()
+        .map_err(|_| "LOCAL_ASSET_READ_FAILED".to_string())?
+        .len();
+    if reopened_size > MAX_LOCAL_ASSET_BYTES {
+        return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+    }
+    if reopened_size != expected_size {
+        return Err("LOCAL_ASSET_SIZE_MISMATCH".to_string());
+    }
+    let receipt = LocalAssetReadReceipt {
+        local_asset_id: local_asset_id.to_string(),
+        safe_extension: extension,
+        size_bytes: expected_size,
+        sha256: before_hash.clone(),
+    };
+    let header =
+        serde_json::to_vec(&receipt).map_err(|_| "LOCAL_ASSET_READ_RESPONSE_FAILED".to_string())?;
+    let header_len =
+        u32::try_from(header.len()).map_err(|_| "LOCAL_ASSET_READ_RESPONSE_FAILED".to_string())?;
+    let payload_start = 4_usize
+        .checked_add(header.len())
+        .ok_or_else(|| "LOCAL_ASSET_READ_RESPONSE_FAILED".to_string())?;
+    let payload_len = usize::try_from(expected_size)
+        .map_err(|_| "LOCAL_ASSET_READ_RESPONSE_FAILED".to_string())?;
+    let frame_len = payload_start
+        .checked_add(payload_len)
+        .ok_or_else(|| "LOCAL_ASSET_READ_RESPONSE_FAILED".to_string())?;
+    let mut frame = vec![0_u8; frame_len];
+    frame[..4].copy_from_slice(&header_len.to_be_bytes());
+    frame[4..payload_start].copy_from_slice(&header);
+    let payload = &mut frame[payload_start..];
+    let mut hasher = Sha256::new();
+    let mut bytes_read = 0_usize;
+    while bytes_read < payload.len() {
+        let read = file
+            .read(&mut payload[bytes_read..])
+            .map_err(|_| "LOCAL_ASSET_READ_FAILED".to_string())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&payload[bytes_read..bytes_read + read]);
+        bytes_read += read;
+    }
+    if bytes_read != payload.len() {
+        return Err("LOCAL_ASSET_SIZE_MISMATCH".to_string());
+    }
+    let mut extra = [0_u8; 1];
+    let extra_read = file
+        .read(&mut extra)
+        .map_err(|_| "LOCAL_ASSET_READ_FAILED".to_string())?;
+    if extra_read > 0 {
+        return Err(if expected_size == MAX_LOCAL_ASSET_BYTES {
+            "LOCAL_ASSET_SIZE_LIMIT".to_string()
+        } else {
+            "LOCAL_ASSET_SIZE_MISMATCH".to_string()
+        });
+    }
+    let after_size = file
+        .metadata()
+        .map_err(|_| "LOCAL_ASSET_READ_FAILED".to_string())?
+        .len();
+    if after_size > MAX_LOCAL_ASSET_BYTES {
+        return Err("LOCAL_ASSET_SIZE_LIMIT".to_string());
+    }
+    let after_hash = hex::encode(hasher.finalize());
+    if after_size != bytes_read as u64 {
+        return Err("LOCAL_ASSET_SIZE_MISMATCH".to_string());
+    }
+    validate_expected(after_size, &after_hash, expected_size, expected_sha256)?;
+    if before_size != after_size || !before_hash.eq_ignore_ascii_case(&after_hash) {
+        return Err("LOCAL_ASSET_CHANGED_DURING_READ".to_string());
+    }
+    Ok(LocalAssetReadResult { frame })
 }
 
 struct PartGuard(Option<PathBuf>);
@@ -909,6 +1092,29 @@ pub fn resolve_local_asset(
     Ok(descriptor)
 }
 
+/// Reads a verified managed asset through raw IPC.
+///
+/// The response is a binary envelope: a 4-byte big-endian JSON receipt length,
+/// the small `LocalAssetReadReceipt` JSON object, and the exact file bytes.
+/// This deliberately avoids serializing a 50 MiB `Vec<u8>` as JSON and never
+/// exposes the managed absolute path to the renderer.
+#[tauri::command]
+pub fn read_local_asset_bytes(
+    command: ReadLocalAssetCommand,
+    app: AppHandle,
+) -> Result<Response, String> {
+    let root = crate::local_database::canonical_app_data_dir(&app)?;
+    let result = read_managed_asset(
+        &root,
+        &command.user_scope,
+        &command.device_id,
+        &command.local_asset_id,
+        command.expected_size,
+        &command.expected_sha256,
+    )?;
+    Ok(Response::new(result.frame))
+}
+
 #[tauri::command]
 pub fn local_asset_upload_put(
     command: LocalAssetUploadPutCommand,
@@ -1056,7 +1262,7 @@ pub fn reconcile_local_assets(
 mod tests {
     use super::*;
     use std::fs;
-    use std::io::Write;
+    use std::io::{self, Write};
     use std::net::TcpListener;
     use std::path::Path;
     use std::sync::Arc;
@@ -1689,5 +1895,225 @@ mod tests {
         );
         drop(lock);
         delete_file(root.path(), "user-a", "device-a", "asset-a", "pdf").unwrap();
+    }
+
+    #[test]
+    fn managed_asset_read_returns_verified_bytes_and_path_free_receipt() {
+        let root = TempRoot::new();
+        let contents = b"offline preview bytes";
+        prepare_managed_asset(&root, contents);
+        let result = read_managed_asset(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            contents.len() as u64,
+            &sha256_bytes(contents),
+        )
+        .unwrap();
+        let encoded = result.frame;
+        let header_len = u32::from_be_bytes(encoded[..4].try_into().unwrap()) as usize;
+        let receipt: LocalAssetReadReceipt =
+            serde_json::from_slice(&encoded[4..4 + header_len]).unwrap();
+        assert_eq!(receipt.local_asset_id, "asset-a");
+        assert_eq!(receipt.size_bytes, contents.len() as u64);
+        assert_eq!(receipt.sha256, sha256_bytes(contents));
+        let header = String::from_utf8(encoded[4..4 + header_len].to_vec()).unwrap();
+        assert!(!header.contains("absolutePath"));
+        assert!(!header.contains("absolute_path"));
+        assert_eq!(&encoded[4 + header_len..], contents);
+    }
+
+    #[test]
+    fn managed_asset_read_is_scope_isolated_and_rejects_missing_or_tampered_files() {
+        let root = TempRoot::new();
+        let contents = b"private offline bytes";
+        prepare_managed_asset(&root, contents);
+        let hash = sha256_bytes(contents);
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-b",
+                "device-a",
+                "asset-a",
+                contents.len() as u64,
+                &hash,
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_FILE_MISSING"
+        );
+        fs::write(
+            root.path().join("assets/user-a/asset-a/content.pdf"),
+            b"tampered",
+        )
+        .unwrap();
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-a",
+                contents.len() as u64,
+                &hash,
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_SIZE_MISMATCH"
+        );
+        assert_eq!(
+            read_managed_asset(root.path(), "user-a", "device-a", "asset-a", 8, &hash,)
+                .unwrap_err(),
+            "LOCAL_ASSET_HASH_MISMATCH"
+        );
+    }
+
+    #[test]
+    fn managed_asset_read_rejects_content_symlink() {
+        let root = TempRoot::new();
+        let outside = TempRoot::new();
+        let contents = b"private offline bytes";
+        prepare_managed_asset(&root, contents);
+        let path = root.path().join("assets/user-a/asset-a/content.pdf");
+        fs::remove_file(&path).unwrap();
+        fs::write(outside.path().join("outside.pdf"), contents).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(outside.path().join("outside.pdf"), &path).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_file(outside.path().join("outside.pdf"), &path).is_err() {
+            return;
+        }
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-a",
+                contents.len() as u64,
+                &sha256_bytes(contents),
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_FILE_INVALID"
+        );
+    }
+
+    #[test]
+    fn managed_asset_read_checks_size_hash_and_shared_advisory_lock() {
+        let root = TempRoot::new();
+        let contents = b"locked offline bytes";
+        prepare_managed_asset(&root, contents);
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-a",
+                MAX_LOCAL_ASSET_BYTES + 1,
+                &sha256_bytes(contents),
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_SIZE_LIMIT"
+        );
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-a",
+                contents.len() as u64 + 1,
+                &sha256_bytes(contents),
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_SIZE_MISMATCH"
+        );
+        let lock = acquire_asset_lock(&root.path().join("assets/user-a/.asset-a.lock")).unwrap();
+        let source = source_file(root.path(), "replacement.pdf", contents);
+        assert_eq!(
+            import_file(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-a",
+                &source,
+                "pdf",
+                contents.len() as u64,
+                &sha256_bytes(contents),
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_BUSY"
+        );
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-a",
+                contents.len() as u64,
+                &sha256_bytes(contents),
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_BUSY"
+        );
+        drop(lock);
+        assert!(read_managed_asset(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-a",
+            contents.len() as u64,
+            &sha256_bytes(contents),
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn managed_asset_read_rejects_oversized_file_before_hashing_or_allocating_frame() {
+        let root = TempRoot::new();
+        let asset_dir = root.path().join("assets/user-a/asset-large");
+        fs::create_dir_all(&asset_dir).unwrap();
+        let path = asset_dir.join("content.pdf");
+        let file = File::create(&path).unwrap();
+        file.set_len(MAX_LOCAL_ASSET_BYTES + 1).unwrap();
+        assert_eq!(
+            read_managed_asset(
+                root.path(),
+                "user-a",
+                "device-a",
+                "asset-large",
+                MAX_LOCAL_ASSET_BYTES,
+                &sha256_bytes(b"unused"),
+            )
+            .unwrap_err(),
+            "LOCAL_ASSET_SIZE_LIMIT"
+        );
+    }
+
+    #[test]
+    fn bounded_asset_hash_stops_at_the_limit_without_reading_the_unbounded_tail() {
+        struct OversizedReader {
+            emitted: u64,
+        }
+        impl Read for OversizedReader {
+            fn read(&mut self, output: &mut [u8]) -> io::Result<usize> {
+                let remaining = MAX_LOCAL_ASSET_BYTES + 1 - self.emitted;
+                let count = remaining.min(output.len() as u64) as usize;
+                output[..count].fill(0);
+                self.emitted += count as u64;
+                Ok(count)
+            }
+        }
+
+        let mut reader = OversizedReader { emitted: 0 };
+        assert_eq!(
+            sha256_reader_bounded(&mut reader).unwrap_err(),
+            "LOCAL_ASSET_SIZE_LIMIT"
+        );
+        assert_eq!(reader.emitted, MAX_LOCAL_ASSET_BYTES + 1);
+    }
+
+    #[test]
+    fn managed_asset_read_command_rejects_paths_and_other_untrusted_fields() {
+        let result = serde_json::from_str::<ReadLocalAssetCommand>(
+            r#"{"userScope":"user-a","deviceId":"device-a","localAssetId":"asset-a","expectedSize":1,"expectedSha256":"x","relativePath":"C:\\secret"}"#,
+        );
+        assert!(result.is_err());
     }
 }
