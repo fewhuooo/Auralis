@@ -5,6 +5,19 @@ use sqlx::{Connection, SqliteConnection};
 use std::{collections::HashSet, fs::create_dir_all, path::Path, time::Duration};
 use tauri::{AppHandle, Manager};
 
+pub fn canonical_app_data_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map_err(|_| "LOCAL_APP_DATA_PATH_FAILED".to_string())
+}
+
+pub fn canonical_local_database_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|path| path.join("auralis.db"))
+        .map_err(|_| "LOCAL_DATABASE_PATH_FAILED".to_string())
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalResourceSnapshotCommand {
@@ -115,11 +128,7 @@ pub async fn replace_local_resource_snapshot(
     command: LocalResourceSnapshotCommand,
     app: AppHandle,
 ) -> Result<(), String> {
-    let database_path = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("LOCAL_DATABASE_PATH_FAILED:{error}"))?
-        .join("auralis.db");
+    let database_path = canonical_local_database_path(&app)?;
     let mut connection = connect_local_database(&database_path).await?;
     let items = command
         .items

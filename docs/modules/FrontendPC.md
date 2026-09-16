@@ -195,6 +195,7 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 ## Tauri 边界
 
 - JavaScript API、CLI 和 Rust crate 当前统一为 `2.11.1`。
+- Local Asset Store 的 native 边界从 Tauri `app_data_dir()` 派生 `assets/` 和 `asset-staging/`；SQLite plugin 仍按其当前实现从 `app_config_dir()` 解析 `auralis.db`，两者不混用。`local_asset_store` 只接受 user/device/local-asset 逻辑身份与受校验的扩展名，不接受调用方目标路径，并沿用 Server 的 52,428,800 字节单文件上限。导入和远端物化均采用 `.part` 写入、flush/fsync、校验 size/SHA-256 后原子 rename；resolve/delete/reconcile 会执行路径 containment、文件类型和 owner scope 校验，并以有界错误码返回缺失、篡改、冲突和 staging 异常。当前未开放宽泛 Tauri asset protocol/CSP；实际 Tauri `app_data_dir()`、SQLite plugin 连接和 GUI 文件 URL 仍需人工验收。
 - 使用 `@tauri-apps/plugin-sql` 提供 SQL 插件能力。
 - 默认 capability 启用 `core:default`、`log:default`、`sql:default` 与持久化 repository 所需的 `sql:allow-execute`；当前未启用 shell/http/fs。Vite 开发代理只接受 `VITE_DEV_API_TARGET` 与 `VITE_DEV_WS_TARGET`，Tauri 运行时 API/WS base 必须显式配置。Vite 显式注入 `vue/compiler-sfc`，并忽略 `public/file-viewer/**` 生成资源的开发监听，避免 File Viewer 首次复制触发 `@vitejs/plugin-vue` 空 compiler HMR 竞态。SQLite 初始化同时识别 Tauri v2 的 `__TAURI_INTERNALS__` 和旧 `__TAURI__` 全局。Debug Tauri 的日志插件只写 stdout，避免已有日志文件阻止窗口启动。
 - AI 辅助阅读的 OCR 仅随 PC Tauri 打包：`src-tauri` 通过 bounded commands 管理 target-triple `auralis-ocr` externalBin，固定 RapidOCR/ONNX 模型与 manifest 从 `../ocr-sidecar` 作为 resources 进入安装包；前端不接受可执行文件、模型路径或任意 shell/fs/http 参数。

@@ -2,6 +2,7 @@ mod crypto;
 mod document_cache;
 mod document_packager;
 mod document_upload;
+mod local_asset_store;
 mod local_database;
 mod ocr_sidecar;
 use tauri::Manager;
@@ -57,6 +58,11 @@ pub fn run() {
             document_packager::document_cache_payload_info,
             document_upload::document_upload_put,
             local_database::replace_local_resource_snapshot,
+            local_asset_store::import_local_asset,
+            local_asset_store::resolve_local_asset,
+            local_asset_store::download_local_asset,
+            local_asset_store::delete_local_asset,
+            local_asset_store::reconcile_local_assets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
