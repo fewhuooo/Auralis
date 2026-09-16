@@ -61,6 +61,7 @@ pub fn run() {
             local_asset_store::import_local_asset,
             local_asset_store::import_local_asset_bytes,
             local_asset_store::resolve_local_asset,
+            local_asset_store::local_asset_upload_put,
             local_asset_store::download_local_asset,
             local_asset_store::delete_local_asset,
             local_asset_store::reconcile_local_assets,
