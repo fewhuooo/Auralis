@@ -281,12 +281,27 @@ export async function getOrCreateLocalAssetSyncQueue(options: LocalAssetSyncQueu
   const inFlight = queueInitPromises.get(key)
   if (inFlight) return inFlight
   
-  const initPromise = (async () => {
+  let initPromise: Promise<LocalAssetSyncQueue>
+  initPromise = (async () => {
     const instance = new LocalAssetSyncQueue(options)
-    await instance.recoverInflightJobs()
-    queueCache.set(key, instance)
-    queueInitPromises.delete(key)
-    return instance
+    try {
+      await instance.recoverInflightJobs()
+      if (queueInitPromises.get(key) !== initPromise) {
+        instance.dispose()
+        const err = new Error('QUEUE_RELEASED_DURING_INIT')
+        ;(err as any).code = 'QUEUE_RELEASED_DURING_INIT'
+        throw err
+      }
+      queueCache.set(key, instance)
+      return instance
+    } catch (error) {
+      instance.dispose()
+      throw error
+    } finally {
+      if (queueInitPromises.get(key) === initPromise) {
+        queueInitPromises.delete(key)
+      }
+    }
   })()
   
   queueInitPromises.set(key, initPromise)
@@ -300,4 +315,5 @@ export function releaseLocalAssetSyncQueue(userId: string, serverDeviceId: strin
     instance.dispose()
     queueCache.delete(key)
   }
+  queueInitPromises.delete(key)
 }

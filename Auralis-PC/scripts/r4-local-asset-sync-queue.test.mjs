@@ -421,3 +421,65 @@ test('LocalAssetSyncQueue: native retryable/expired errors are correctly classif
     sqlite.close()
   }
 })
+
+test('getOrCreateLocalAssetSyncQueue: init failure is retryable, release-during-init rejects and cleans up', async () => {
+  const { getOrCreateLocalAssetSyncQueue, releaseLocalAssetSyncQueue } = await import('../src/services/localAssetSyncQueue.ts')
+
+  let recoverCount = 0
+  let shouldFail = true
+  const mockRepo = {
+    userId: 'user-2',
+    serverDeviceId: 'dev-2',
+    recoverInflightJobs: async () => {
+      recoverCount++
+      if (shouldFail) throw new Error('Simulated DB failure')
+      return 0
+    }
+  }
+
+  const options = {
+    assetRepository: mockRepo,
+    assetService: {},
+    draftService: {},
+  }
+
+  await assert.rejects(
+    getOrCreateLocalAssetSyncQueue(options),
+    /Simulated DB failure/
+  )
+  assert.equal(recoverCount, 1)
+
+  shouldFail = false
+  const q1 = await getOrCreateLocalAssetSyncQueue(options)
+  assert.equal(recoverCount, 2)
+  assert.ok(q1)
+
+  releaseLocalAssetSyncQueue('user-2', 'dev-2')
+
+  let resolveRecover
+  let recoverPromise = new Promise(r => { resolveRecover = r })
+
+  mockRepo.recoverInflightJobs = async () => {
+    recoverCount++
+    await recoverPromise
+    return 0
+  }
+
+  mockRepo.userId = 'user-3'
+  mockRepo.serverDeviceId = 'dev-3'
+
+  const initPromise = getOrCreateLocalAssetSyncQueue(options)
+
+  releaseLocalAssetSyncQueue('user-3', 'dev-3')
+
+  resolveRecover()
+
+  await assert.rejects(
+    initPromise,
+    (err) => err.code === 'QUEUE_RELEASED_DURING_INIT'
+  )
+
+  mockRepo.recoverInflightJobs = async () => 0
+  const q2 = await getOrCreateLocalAssetSyncQueue(options)
+  assert.ok(q2)
+})

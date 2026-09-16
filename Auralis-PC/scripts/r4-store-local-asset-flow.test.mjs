@@ -132,8 +132,13 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   const draftsBefore = await draftService.listDraftsForAsset(localAssetId)
   assert.ok(draftsBefore.length > 0, 'Draft must exist before queue')
 
-  const assetService = getOrCreateLocalAssetService(localAssetRepo)
-  assetService.uploadAssetToRemote = async () => ({ status: 200, bytesSent: 100, payloadSha256: 'mock' }) // Mock to avoid fetch
+  const adapter = new TransientBrowserAssetAdapter()
+  adapter.uploadAssetToRemote = async (args) => ({
+    status: 200,
+    bytesSent: args.expectedSize,
+    payloadSha256: args.expectedSha256
+  })
+  const assetService = new LocalAssetService(localAssetRepo, { nativeAdapter: adapter })
   const queue = new LocalAssetSyncQueue({
     assetRepository: localAssetRepo,
     assetService,
@@ -149,7 +154,7 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   assert.equal(assetFile.serverAssetId, serverAssetId)
 
   // 8. Verify draft was released: exactly 1 SOURCE/CREATE outbox mutation with SAME sourceId and serverAssetId
-  const afterSyncUnresolved = await draftService.localRepository.listUnresolved()
+  const afterSyncUnresolved = await repo.listUnresolved()
   const releasedMutations = afterSyncUnresolved.filter((m) => m.resourceType === 'SOURCE')
   assert.equal(releasedMutations.length, 1)
   assert.equal(releasedMutations[0].resourceId, sourceId, 'Must keep the same localSourceId')
