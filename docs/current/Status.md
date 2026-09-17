@@ -1,14 +1,26 @@
 # Auralis 当前状态
 
+2026-09-17 修复点 1（待处理）：PC 前端实时解析状态展示缺失。当前需沿 `Source → ParsedDocument/DocumentProcessingJob → 前端状态组件` 链路核对状态事件、Store 映射和 UI 消费；本条仅记录问题，尚未声称修复或完成真实 Tauri 验收。
+
+2026-09-17 修复点 2（待实现）：AI 多文件提问交互需要从“静默调用其他文件”调整为显式选择。输入栏左侧提供 `+` 按钮，用户主动选择其他文件后，才将所选文件与当前上下文一起提交提问；未选择时不得静默引入其他文件。
+
+2026-09-17 修复点 3（待处理）：文件预览首次打开时疑似发生约 2–3 次重复加载；预览失败时的错误信息未在预览区域居中显示。当前仅记录现象，加载触发链和错误态布局仍待核对。
+
+2026-09-17 修复点 4（待处理）：无法连接后端时缺少用户可见的失败状态。问答请求没有错误反馈，左下角连接/同步状态也没有变化；需补齐连接状态传播、问答错误处理和全局状态展示。
+
+2026-09-17 修复点 5（已定位、待修复）：直接删除学科没有完整级联清理关联资源。当前 Server 仅软删除 Subject 并清理 Relation，PC 仅提交 Subject 删除 mutation；Source、KnowledgeBlock、Task、ParsedDocument/Overview、本地文件及相关处理任务的级联删除/清理仍不完整。
+
+2026-09-17 外部验证未完成：双设备真实收敛、MinIO 故障注入、低磁盘场景、写入/删除过程中强杀，以及长时间稳定性测试均尚未执行。
+
 2026-09-17 PC Local Asset Store Task 8：代码实现与自动验证已完成，真实验收仍开放。`b7a3bb7..c560d8b`（含 `f770277`、`e040e78`）完成永久本地资料库、owner/device scope、所有文件默认同步、断网导入/预览/本地 OCR/Parser、Source draft 与服务端 Asset 映射。原始文件在受管目录中以明文保存，由 OS ACL 保护；Local Asset 不提供备份、导出或恢复。只有用户明确删除且最后一个 Source 引用消失后才删除本地文件；上传、解析、修复和删除任务在该边界前后均受 fence 保护。启动同步前 reconcile 数据库、受管文件和 staging 残留，缺失或 hash/size 不一致标记 `CORRUPT`，未知内容 quarantine。
 
-自动验证：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check` 与 `cargo check` 通过；schema v8→v9 旧断言已由 `c560d8b` 对齐。最新 PC 全量 `test:r4-pc` 为 333/334，仅剩用户 dirty `task-view` 的 completed scheduled task 断言失败；`type-check` 仅有用户 dirty UI/Store 的 7 项错误。代码/构建/自动测试不替代真实 Tauri GUI、断网重启、真实文件系统、外部对象存储和双设备业务验收，不能写成业务验收通过。
+自动验证：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check` 与 `cargo check` 通过；schema v8→v9 旧断言已由 `c560d8b` 对齐。最新 PC 全量 `test:r4-pc` 为 334/334，`type-check` 通过；`check:r4-pc` 仍被测试代码中的固定本地地址静态规则误报阻断。代码/构建/自动测试不替代真实 Tauri GUI、断网重启、真实文件系统、外部对象存储和双设备业务验收，不能写成业务验收通过。
 
 2026-09-15 PC Local Asset Store 设计快照（已由 2026-09-17 实施记录更新）：当日产品与架构设计确认“已批准设计，尚未实施”，定义 PC Tauri 的永久本地文件、断网预览/解析、联网幂等同步、身份映射和最后 Source 引用删除语义；当日代码、SQLite schema、Server API 和运行行为尚未改变。
 
 2026-09-15 Overview 失败体验与真实运行证据收口：用户复跑同一真实 Overview 后，第二次全链路成功，证明永久预算链路已能完成运行；生成内容质量仍需用户判断。Overview 的 `MODEL_PROVIDER_ERROR` 现在由 PC 显示为“遇到意外情况，请重试”，不新增 Server/API 错误码；FAILED 终态保护继续生效，不自动重试，只有用户点击“重新生成”才发起新请求。该 Overview 专用文案不影响普通 AI 聊天/流式路径。
 
-2026-09-15 Overview 永久预算策略已实施并部署：多批 MAP/非最终 REDUCE 为 `max_tokens=3072`，最终调用为 `4096`；规范化 intermediate JSON 上限调整为 `5200`，self-pair 仍为 `12000`。紧凑 prompt 与现有 schema/错误边界保留，不自动压缩重试，普通聊天/流式不变。TDD 聚焦 Overview 38/38，Provider/Overview/Controller/Streaming 兼容集合 63/63，重建后的 backend 容器为 healthy。真实 42-chunk 请求 `ddfdb708-c44b-4b86-8ea2-8889acbd57ca` 已通过 6 个 MAP 和第一轮 2 个 REDUCE；最终 REDUCE 从 DeepSeek 收到 2xx、`finishReason=stop`、`2992 outputTokens`、`6556 responseChars`，随后在 `JSON_PARSE` 失败。预算/中间收敛已实通，完整端到端与业务验收仍未通过；当前阻塞为最终输出 JSON 非法，非 token 截断。
+2026-09-17 Overview token budget 调整为原预算的 150%：多批 MAP/非最终 REDUCE 为 `max_tokens=4608`，最终调用为 `6144`；规范化 intermediate JSON 上限与 self-pair 边界不变。普通聊天/流式不变。
 
 2026-09-15 DeepSeek Overview prompt 压缩真实验证：同一 42-chunk/6-MAP 资料在新 intermediate prompt 下，六个 MAP 全部通过，`normalizedChars` 依次为 `2131,2027,2581,2817,3680,1447`，最大 MAP5 为 `1750 outputTokens`；此前超限的 MAP2 从 5105 降至 2027。随后 REDUCE round 1 分两组，第一组为 `2446 chars/1041 tokens` 并通过，第二组为 `4678 chars/2239 tokens`，在 `finishReason=stop` 且 JSON/schema 成功后仅触发 `characterOverflow=true`；其 `selfPairPromptChars=10899<=12000`。结论是 prompt 能显著压缩 MAP，但不能独自保证所有 REDUCE 输出低于 4000。Final prompt、4000/12000 硬校验、batch 和临时无 `max_tokens` 行为未变；TDD RED/GREEN、review 与相关兼容集合 58/58 均完成，永久参数尚未实施。
 

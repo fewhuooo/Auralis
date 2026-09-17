@@ -1,6 +1,6 @@
 # Spring Boot 后端模块
 
-2026-09-15 Overview 永久预算策略已实施：多批 MAP 与非最终 REDUCE 使用 `max_tokens=3072`，single-batch MAP、Subject direct 与最终 REDUCE 使用 `4096`；规范化 intermediate JSON 上限为 `5200` 字符，self-pair 上限仍为 `12000`。紧凑 intermediate prompt、schema/规范化和 no-progress 校验保留，不做自动压缩重试，也未恢复 output token 后置拒绝。普通聊天、流式和 embedding 不变。自动测试已覆盖 Overview 38/38、兼容集合 63/63；本次不部署，真实 DeepSeek 全链路与业务验收由用户手动执行。
+2026-09-17 Overview token budget 调整为原预算的 150%：多批 MAP 与非最终 REDUCE 使用 `max_tokens=4608`，single-batch MAP、Subject direct 与最终 REDUCE 使用 `6144`；规范化 intermediate JSON 上限为 `5200` 字符，self-pair 上限仍为 `12000`。紧凑 intermediate prompt、schema/规范化和 no-progress 校验保留，不做自动压缩重试。普通聊天、流式和 embedding 不变。
 
 历史诊断记录（2026-09-15，永久策略实施前）：Task 4C 仅增强 intermediate system instruction，保留独立主题/section、压缩措辞、只合并重复/等价节点，并以序列化 JSON `<=3600` 为目标。真实 42-chunk 请求的六个 MAP 全部通过，输出为 1447–3680 字符；此前超限的 MAP2 从 5105 降至 2027。REDUCE round 1 第一组 2446 字符通过，第二组 4678 字符仍单独触发 4000 字符上限，self-pair 为 10899/12000。Prompt 有效但不是硬保证。Final prompt、硬校验、batch、Provider 和普通聊天/流式未变；该段记录的是永久策略实施前的实验状态。
 

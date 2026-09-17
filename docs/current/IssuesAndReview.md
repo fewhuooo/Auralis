@@ -1,10 +1,58 @@
 # Auralis 当前问题与审查登记
 
+### 2026-09-17 外部验证缺口：高风险运行场景尚未完成
+
+以下场景尚未取得真实运行证据：
+
+- 双设备真实收敛
+- MinIO 故障注入
+- 低磁盘空间
+- 写入/删除过程中强制终止进程
+- 长时间稳定性测试
+
+自动测试、构建通过和单机运行结果不能替代上述外部验证。
+
+### 2026-09-17 修复点 1：PC 前端实时解析状态展示缺失，待沿数据链路定位
+
+- 现象：前端不再显示文件实时解析/处理状态。
+- 排查边界：`Source`、`ParsedDocument`/`DocumentProcessingJob`、本地 processing Store/事件订阅、状态组件和 Tauri 实际回调；先确认状态是未产生、未映射、未订阅，还是仅 UI 未消费。
+- 当前结论：仅登记为待处理问题，尚未修改代码，也未进行真实 Tauri GUI 验收；不得将现有自动构建通过写成该问题已修复。
+
+### 2026-09-17 修复点 2：AI 多文件提问必须改为用户显式选择
+
+- 现状问题：AI 功能会静默调用其他文件，用户无法明确控制本次提问使用哪些资料。
+- 目标交互：在输入栏左侧增加 `+` 按钮；用户点击后选择一个或多个其他文件，再将所选文件与当前文件/当前上下文一起提问。
+- 约束：未主动选择时不得静默引入其他文件；选择状态应在输入栏中可见、可移除，并在发送请求时传递明确的 Source ID 列表。
+- 当前结论：本条为待实现需求，尚未修改 UI、Store、API 请求或检索范围，也未进行真实 GUI 验收。
+
+### 2026-09-17 修复点 3：预览重复加载与错误态位置异常
+
+- 现象一：文件预览刚开始时疑似触发约 2–3 次加载，需要确认是组件挂载、文件 URL/Blob 更新、`watch` 或重试逻辑重复触发。
+- 现象二：预览失败后的错误信息没有位于预览栏中间，影响错误态的可见性和布局一致性。
+- 排查范围：`FilePreview`、SubjectWorkspace 的预览状态/事件链、文件输入解析和相关 `watch`/生命周期；需分别记录每次加载触发原因与错误态容器尺寸/定位规则。
+- 当前结论：仅登记现象，尚未修改加载逻辑或错误提示布局，也未进行真实 GUI 验收。
+
+### 2026-09-17 修复点 4：后端连接失败缺少状态反馈
+
+- 现象一：后端不可连接时，问答请求没有向用户显示失败或离线提示。
+- 现象二：左下角连接/同步状态没有随后端连接失败发生变化，用户无法判断当前是否在线或请求是否可用。
+- 排查范围：API/HTTP 错误归一化、问答发送与流式错误回调、连接/同步 Store 状态传播、左下角状态组件及网络恢复后的状态重置。
+- 目标：连接失败应形成明确的全局状态；问答失败应在对话区域显示可理解的错误并结束 loading/streaming 状态；恢复连接后状态应可自动恢复。
+- 当前结论：仅登记现象和目标，尚未修改代码，也未进行断网/恢复网络的真实 GUI 验收。
+
+### 2026-09-17 修复点 5：删除学科没有完整级联清理，已定位根因
+
+- 现象：直接删除学科后，相关文件、知识块、任务、解析/总览数据或本地受管文件可能继续存在。
+- Server 证据：`SubjectService.delete()` 当前只设置 Subject 的 `deleted_at`、发布 Subject 删除事件；`RelationService` 的事件监听只软删除关联 Relation，不负责业务子资源级联。
+- PC 证据：`useSubjectStore.deleteSubject()` 只提交 `SUBJECT/DELETE` mutation 并移除内存中的 Subject，没有同步处理子 Source、KnowledgeBlock、Task、ParsedDocument/Overview 和本地 Asset 引用。
+- 约束：修复必须覆盖软删除、同步 change-log/outbox、Source/ParsedDocument/processing job、本地受管文件引用和可恢复/不可恢复边界，不能只删除页面列表或加数据库 `ON DELETE CASCADE`。
+- 当前结论：根因已确认，尚未实施级联修复或执行实际删除验收。
+
 ### 2026-09-17 PC Local Asset Store：实现与自动门禁完成，外部验收风险保持开放
 
 - 代码证据：`b7a3bb7..c560d8b`（重点 `f770277`、`e040e78`）已完成永久本地资料库；原始文件在 OS ACL 保护的受管目录中保持明文，所有文件默认同步，断网可导入/预览/本地解析，Asset、Source draft、任务和读取边界按 owner/device 隔离。Local Asset 没有备份、导出、恢复或副本管理能力。
 - 删除与恢复边界：只有用户明确删除 Source 且最后一个 Source 引用消失后才物理删除；上传、解析、修复和删除任务在 Source tombstone/reference fence 后才允许收口。启动时 reconcile 本地数据库、文件和 staging，异常文件 quarantine，缺失或校验不符内容标记 `CORRUPT`。
-- 自动证据：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check`/`cargo check` 通过；schema v8→v9 断言已由 `c560d8b` 修正。最新 `test:r4-pc` 为 333/334，仅剩用户 dirty `task-view` 的 completed scheduled task 断言；`type-check` 的 7 项错误均位于用户 dirty UI/Store。
+- 自动证据：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check`/`cargo check` 通过；schema v8→v9 断言已由 `c560d8b` 修正。最新 `test:r4-pc` 为 334/334，`type-check` 通过；`check:r4-pc` 仍被测试代码中的固定本地地址静态规则误报阻断。
 - P1 外部验收：真实 Tauri GUI、真实文件系统 ACL、断网导入/重启/本地解析、外部对象存储同步、双设备收敛、账户切换、低磁盘和最后引用删除尚未验收。自动代码和测试不关闭该风险，也不代表业务验收通过。
 
 ### 2026-09-15 PC Local Asset Store 已批准设计，实施与验收开放（历史快照）
@@ -23,7 +71,7 @@
 
 ### 2026-09-15 Overview 永久预算策略已部署，最终 JSON 解析仍阻塞
 
-- Server 已按阶段发送明确预算：多批 MAP/非最终 REDUCE 为 `max_tokens=3072`，最终调用为 `4096`；规范化 intermediate JSON 上限为 `5200`，self-pair 上限仍为 `12000`。紧凑 prompt、schema、Source fence 与 Reduce no-progress 保留，不做自动压缩重试，不恢复 output token 后置拒绝。
+- Server 已按阶段发送明确预算：多批 MAP/非最终 REDUCE 为 `max_tokens=4608`，最终调用为 `6144`（原预算的 150%）；规范化 intermediate JSON 上限为 `5200`，self-pair 上限仍为 `12000`。紧凑 prompt、schema、Source fence 与 Reduce no-progress 保留，不做自动压缩重试，不恢复 output token 后置拒绝。
 - TDD 已覆盖 5200 接受、5201 拒绝、self-pair 12000/12001、stage request maxTokens、非最终 REDUCE 与 Provider wire body；普通 chat/stream 兼容边界保持。backend 已重建且 healthy。真实 42-chunk 手动请求通过全部 6 个 MAP 和第一轮 2 个 REDUCE；最终 REDUCE 返回 2xx、自然 `stop`、`2992 outputTokens` 和 `6556 responseChars` 后在 `JSON_PARSE` 失败。该结果证明中间预算与收敛边界有效，但完整 DeepSeek 链路和业务内容覆盖尚未验收；下一步需为最终 JSON 非法增加安全的解析失败分类证据，再决定 prompt/schema 或有界修复策略。
 
 ### 2026-09-15 DeepSeek MAP JSON 截断假设：真实自然输出已取得，下一收敛边界已定位

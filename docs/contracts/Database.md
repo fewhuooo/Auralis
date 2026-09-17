@@ -194,6 +194,14 @@ PC 加密 cache/header 与 `payload_receipt_json` 现在记录本地派生格式
 
 内存 SQLite 与浏览器 fallback 已覆盖 owner/device/revision 隔离、分项替换、失败保留、并发保存/删除、损坏 JSON 和 fingerprint 稳定性。真实 Tauri SQLite v6→v7 重启升级与双账号 GUI 仍待人工验收。
 
+### PC Local Asset Store（本地 schema v8，2026-09-16）
+
+- `local_asset_files` 以 `(user_id, device_id, local_asset_id)` 为主键，保存可空 `server_asset_id`、受管 `relative_path`、原文件名、MIME、字节数、SHA-256、`STAGING | READY_LOCAL | SYNCING | SYNCED | SYNC_FAILED | CORRUPT | DELETING` 状态和本地审计时间。绝对路径只由 native resolve 临时返回，不进入 SQLite。
+- `local_asset_sync_jobs` 保存 owner/device/local Asset 作用域的持久同步阶段、attempt、`next_retry_at`、可空 `server_asset_id` 与安全错误摘要；partial unique index 保证每个 Asset 只有一个未 `SYNCED` 任务。阶段为 `PENDING | CREATING_REMOTE_ASSET | UPLOADING | COMPLETING_REMOTE_ASSET | BINDING_SOURCE | SYNCED | FAILED`。
+- `local_source_drafts` 以 `(user_id, device_id, local_source_id)` 为主键，保存 `local_asset_id`、Subject、标题、`local_content_revision`、可空服务端 Source/revision 映射及草稿状态。它只承载 Asset READY 前的离线 Source 门禁，不替代 `local_resource_records` 和 `local_mutations`。
+- `localAssetId` 是本地稳定 UUID，并直接作为 Server upload intent 的 `clientImportId`；`localContentRevision` 与服务端只读 `ingestionRevision` 不互换。
+- v8 初始化继续使用 `CREATE ... IF NOT EXISTS` 和单一版本记录，保留 v2-v7 所有表。自动测试覆盖 clean init、v7→v8 数据保留、重复初始化、owner/device 隔离、状态 CHECK、单活任务、Repository 状态机和浏览器 fallback；真实 Tauri 重启升级仍需人工验收。
+
 | 字段 | 语义 |
 | --- | --- |
 | `job_id` | 客户端任务稳定 ID，主键 |

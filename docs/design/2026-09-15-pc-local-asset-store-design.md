@@ -209,6 +209,11 @@ SQLite 与文件系统不能共享一个事务，因此使用“先发布文件�
 -> 创建本地 Source 投影、draft 与 Asset 同步任务
 ```
 
+现有 PC 文件入口使用标准 HTML `File`，无法取得可信绝对路径。因此 native 同时提供两种受控入口：
+原生路径入口用于可取得路径的 Tauri drag/drop 或 dialog；`import_local_asset_bytes` 用于 HTML File，调用方传入
+最多 52,428,800 字节的 JSON 数字数组。两种入口共用相同的 owner scope、Asset 锁、`.part`、大小/SHA-256
+校验、fsync、原子发布和幂等冲突语义。
+
 SQLite 写入失败时保留可识别的孤儿文件供 reconciliation 归因，不能直接覆盖或删除用户文件。
 在 `serverAssetId` 可用前，不创建或放行包含远端 Asset 引用的 Source mutation。
 
