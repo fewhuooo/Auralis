@@ -281,23 +281,18 @@ export class DocumentProcessingRuntime {
       localParsedRepo,
       localAssetRepo,
       localParsedCoordinator,
-      resolveLocalInput: async (assetId) => {
-        const file = assetStore.getLocalFile(assetId)
-        if (!file) return null
-        return {
-          file,
-          cleanup: () => {
-            if (assetStore.getLocalFile(assetId) === file) assetStore.forgetLocalFile(assetId)
-          },
-        }
-      },
-      downloadAsset: (assetId, source) => assetStore.downloadSourceInput(
+      resolveLocalInput: (assetId, source) => assetStore.resolveLocalFile(
         assetId,
         source.title || `asset-${assetId}`,
-        mimeTypeForSource(source, assetStore.getCachedAsset(assetId)?.mimeType),
+        mimeTypeForSource(source),
+      ),
+      downloadAsset: (assetId, source) => assetStore.resolveSourceInput(
+        assetId,
+        source.title || `asset-${assetId}`,
+        mimeTypeForSource(source),
       ),
       hashFile: sha256File,
-      expectedAssetSha256: async (assetId) => assetStore.getCachedAsset(assetId)?.sha256,
+      expectedAssetSha256: (assetId) => assetStore.getAssetSha256(assetId),
       prepareInput: async (job, _source, file) => {
         this.parserInputs.set(job.jobId, asRuntimeFile(file))
       },

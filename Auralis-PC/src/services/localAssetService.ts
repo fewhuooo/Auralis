@@ -431,6 +431,13 @@ export interface LocalAssetServiceOptions {
   idFactory?: () => string
 }
 
+export interface LocalAssetFileReadResult {
+  file: File
+  localAssetId: string
+  serverAssetId: string | null
+  cleanup: () => void
+}
+
 export class LocalAssetService {
   readonly repository: LocalAssetRepository
   private readonly adapter: LocalAssetNativeAdapter
@@ -771,6 +778,51 @@ export class LocalAssetService {
       expectedSize: resolvedSize,
       expectedSha256: resolvedSha256,
     })
+  }
+
+  /**
+   * Reads an owner-scoped local asset without exposing its managed path to a
+   * caller. The returned File is an ephemeral parser/preview input; the
+   * relative path and native absolute path remain inside the local store.
+   */
+  async readAssetFile(
+    identity: ResolveAssetIdentity,
+    options: { name?: string; mimeType?: string } = {},
+  ): Promise<LocalAssetFileReadResult | null> {
+    const record = 'localAssetId' in identity && identity.localAssetId
+      ? await this.repository.getAssetFile(identity.localAssetId)
+      : 'serverAssetId' in identity && identity.serverAssetId
+      ? await this.repository.getAssetFileByServerId(identity.serverAssetId)
+      : null
+
+    if (!record) return null
+
+    let readResult: LocalAssetReadResult
+    try {
+      readResult = await this.readAssetBytes(record.localAssetId, record.sizeBytes, record.sha256)
+    } catch (error) {
+      // A record whose managed file disappeared is a local miss. Mark it
+      // corrupt and let the caller decide whether an online server fallback
+      // is available; hash/frame errors must remain hard failures.
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/FILE_MISSING|LOCAL_ASSET_NOT_FOUND/i.test(message)) throw error
+      if (record.state !== 'CORRUPT' && record.state !== 'DELETING') {
+        await this.repository.transitionAssetState(record.localAssetId, 'CORRUPT').catch(() => undefined)
+      }
+      return null
+    }
+
+    await this.repository.touchAssetAccess(record.localAssetId)
+    const fileName = options.name?.trim() || record.originalName
+    const mimeType = options.mimeType?.trim() || record.mimeType || 'application/octet-stream'
+    const fileBytes = new Uint8Array(readResult.bytes.byteLength)
+    fileBytes.set(readResult.bytes)
+    return {
+      file: new File([fileBytes.buffer], fileName, { type: mimeType }),
+      localAssetId: record.localAssetId,
+      serverAssetId: record.serverAssetId,
+      cleanup: () => undefined,
+    }
   }
 }
 

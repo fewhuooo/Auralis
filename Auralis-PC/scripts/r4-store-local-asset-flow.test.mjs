@@ -84,6 +84,94 @@ test('useAssetStore.upload: offline-first persists to LocalAssetRepository, crea
   }
 })
 
+test('useAssetStore resolves localAssetId and serverAssetId locally before any download request', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-local-first', email: 'local@example.com' }
+  authStore.serverDeviceId = 'device-local-first'
+  const assetStore = useAssetStore()
+  const originalFetch = globalThis.fetch
+
+  try {
+    const model = await assetStore.upload(new File(['offline preview bytes'], 'preview.pdf', { type: 'application/pdf' }))
+    const localRepo = await (await import('../src/services/localDb.ts')).getLocalAssetRepository(
+      authStore.user.id,
+      authStore.serverDeviceId,
+    )
+    await localRepo.mapServerAssetId(model.id, 'server-local-first')
+    globalThis.fetch = async () => { throw new Error('NETWORK_MUST_NOT_BE_USED_FOR_LOCAL_ASSET') }
+
+    const local = await assetStore.resolveLocalFile('server-local-first', 'preview.pdf', 'application/pdf')
+    assert.ok(local)
+    assert.equal(await local.file.text(), 'offline preview bytes')
+    const input = await assetStore.resolveSourceInput('server-local-first', 'preview.pdf', 'application/pdf')
+    assert.equal(await input.file.text(), 'offline preview bytes')
+
+    authStore.user = { id: 'user-local-first-other', email: 'other@example.com' }
+    authStore.serverDeviceId = 'device-local-first-other'
+    assert.equal(await assetStore.resolveLocalFile(model.id, 'preview.pdf', 'application/pdf'), null)
+  } finally {
+    globalThis.fetch = originalFetch
+    releaseLocalAssetSyncQueue('user-local-first', 'device-local-first')
+  }
+})
+
+test('useAssetStore falls back only for a missing local asset and fences an owner switch during response.blob', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-download-fence-a', email: 'a@example.com' }
+  authStore.serverDeviceId = 'device-download-fence-a'
+  const assetStore = useAssetStore()
+  const originalPost = request.post
+  const originalFetch = globalThis.fetch
+  let blobStartedResolve
+  const blobStarted = new Promise((resolve) => { blobStartedResolve = resolve })
+  let releaseBlob
+  const blobRelease = new Promise((resolve) => { releaseBlob = resolve })
+
+  request.post = async (url) => {
+    assert.match(url, /\/api\/assets\/server-only-asset\/download-url/)
+    return { url: 'https://object.test/server-only-asset' }
+  }
+  globalThis.fetch = async (url) => {
+    assert.equal(url, 'https://object.test/server-only-asset')
+    return {
+      ok: true,
+      status: 200,
+      blob: async () => {
+        blobStartedResolve()
+        await blobRelease
+        return new Blob(['server bytes'], { type: 'application/pdf' })
+      },
+    }
+  }
+
+  try {
+    const pending = assetStore.resolveSourceInput('server-only-asset', 'server.pdf', 'application/pdf')
+    await blobStarted
+    authStore.user = { id: 'user-download-fence-b', email: 'b@example.com' }
+    authStore.serverDeviceId = 'device-download-fence-b'
+    releaseBlob()
+    await assert.rejects(pending, /ASSET_IDENTITY_CHANGED/)
+
+    authStore.user = { id: 'user-download-fence-a', email: 'a@example.com' }
+    authStore.serverDeviceId = 'device-download-fence-a'
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      blob: async () => new Blob(['fallback bytes'], { type: 'application/pdf' }),
+    })
+    const fallback = await assetStore.resolveSourceInput('server-only-asset', 'server.pdf', 'application/pdf')
+    assert.equal(await fallback.file.text(), 'fallback bytes')
+  } finally {
+    request.post = originalPost
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('useSourceStore.createFileSource: local asset path writes projection + draft without SOURCE outbox mutation; queue completes and releases outbox', async () => {
   const pinia = createPinia()
   setActivePinia(pinia)

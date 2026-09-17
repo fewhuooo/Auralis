@@ -558,3 +558,33 @@ test('reconciliation sends exact scope payload and TS compares returned files wi
     sqlite.close()
   }
 })
+
+test('readAssetFile resolves local and server Asset identities without exposing a managed path', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const repository = new LocalAssetRepository('user-read', 'device-read', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const service = new LocalAssetService(repository, { nativeAdapter: adapter })
+    const source = new File(['local-first bytes'], 'lecture.pdf', { type: 'application/pdf' })
+
+    const handle = await service.importAsset({
+      file: source,
+      originalName: source.name,
+      mimeType: source.type,
+    })
+    const serverAssetId = 'server-read-asset-1'
+    await repository.mapServerAssetId(handle.localAssetId, serverAssetId)
+
+    const resolved = await service.readAssetFile({ serverAssetId })
+    assert.ok(resolved)
+    assert.equal(resolved.file.name, 'lecture.pdf')
+    assert.equal(resolved.file.type, 'application/pdf')
+    assert.equal(await resolved.file.text(), 'local-first bytes')
+    assert.equal('absolutePath' in resolved, false)
+    assert.equal('absolutePath' in resolved.file, false)
+    assert.equal(await service.readAssetFile({ localAssetId: 'missing-local-asset' }), null)
+  } finally {
+    sqlite.close()
+  }
+})

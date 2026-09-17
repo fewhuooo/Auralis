@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { ElButton } from 'element-plus'
 import { useAssetStore } from '@/store/useAssetStore'
+import { useAuthStore } from '@/store/useAuthStore'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { canPreviewFile, resolveFileCapability, type FileCapability } from '@/utils/filePreview'
 import FileViewerRenderer from '@/components/preview/FileViewerRenderer.vue'
@@ -30,6 +31,7 @@ const emit = defineEmits<{
 }>()
 
 const assetStore = useAssetStore()
+const authStore = useAuthStore()
 const previewFile = ref<File | null>(null)
 const signedUrl = ref<string | null>(null)
 const isLoading = ref(false)
@@ -37,6 +39,8 @@ const isRendererLoading = ref(false)
 const errorMessage = ref<string | null>(null)
 const previewRequests = new PreviewRequestGate()
 let activePreviewAbort: AbortController | null = null
+let activeLocalCleanup: (() => void) | null = null
+let activeDownloadObjectUrl: string | null = null
 
 const rendererRef = ref<InstanceType<typeof FileViewerRenderer> | null>(null)
 const currentPage = ref(1)
@@ -59,14 +63,25 @@ function readableError(error: unknown): string {
   return '文件预览加载失败，请下载原文件后查看'
 }
 
+function cleanupActiveInput(): void {
+  activeLocalCleanup?.()
+  activeLocalCleanup = null
+  if (activeDownloadObjectUrl) {
+    URL.revokeObjectURL(activeDownloadObjectUrl)
+    activeDownloadObjectUrl = null
+  }
+}
+
 async function loadPreview(): Promise<void> {
   const requestId = previewRequests.begin()
   activePreviewAbort?.abort()
   activePreviewAbort = null
+  cleanupActiveInput()
   const file = { ...props.file }
   const shouldPreview = canPreview.value
   previewFile.value = null
   signedUrl.value = null
+  isLoading.value = false
   errorMessage.value = null
   currentPage.value = 1
   totalPages.value = 1
@@ -82,21 +97,27 @@ async function loadPreview(): Promise<void> {
     return
   }
 
-  const localFile = assetStore.getLocalFile(file.assetId)
-  if (localFile) {
-    previewFile.value = localFile
-    return
-  }
-
   isLoading.value = true
   try {
+    const localInput = await assetStore.resolveLocalFile(file.assetId, file.name, file.fileType)
+    if (!previewRequests.isCurrent(requestId)) {
+      localInput?.cleanup()
+      return
+    }
+    if (localInput) {
+      previewFile.value = localInput.file
+      activeLocalCleanup = localInput.cleanup
+      isLoading.value = false
+      return
+    }
+
     await new Promise<void>(resolve => window.setTimeout(resolve, 80))
     if (!previewRequests.isCurrent(requestId)) return
+    const abort = new AbortController()
+    activePreviewAbort = abort
     const url = await assetStore.downloadUrl(file.assetId)
     if (!previewRequests.isCurrent(requestId)) return
     signedUrl.value = url
-    const abort = new AbortController()
-    activePreviewAbort = abort
     const response = await fetch(url, { signal: abort.signal })
     if (!response.ok) throw new Error(`文件下载失败（${response.status}）`)
     const blob = await response.blob()
@@ -111,19 +132,36 @@ async function loadPreview(): Promise<void> {
     emit('preview-error', errorMessage.value)
   } finally {
     if (previewRequests.isCurrent(requestId)) isLoading.value = false
+    if (previewRequests.isCurrent(requestId)) activePreviewAbort = null
   }
 }
 
-onUnmounted(() => activePreviewAbort?.abort())
+onUnmounted(() => {
+  previewRequests.invalidate()
+  activePreviewAbort?.abort()
+  activePreviewAbort = null
+  cleanupActiveInput()
+})
 
 function downloadOriginal(): void {
-  if (!signedUrl.value) return
+  const localFile = previewFile.value
+  const objectUrl = localFile ? URL.createObjectURL(localFile) : null
+  const href = objectUrl || signedUrl.value
+  if (!href) return
+  if (activeDownloadObjectUrl) URL.revokeObjectURL(activeDownloadObjectUrl)
+  activeDownloadObjectUrl = objectUrl
   const link = document.createElement('a')
-  link.href = signedUrl.value
+  link.href = href
   link.download = props.file.name
   link.rel = 'noopener'
   link.target = '_blank'
   link.click()
+  if (objectUrl) {
+    window.setTimeout(() => {
+      if (activeDownloadObjectUrl === objectUrl) activeDownloadObjectUrl = null
+      URL.revokeObjectURL(objectUrl)
+    }, 0)
+  }
   emit('download')
 }
 
@@ -195,7 +233,14 @@ defineExpose({
 })
 
 watch(
-  [() => props.file.id, () => props.file.name, () => props.file.assetId, () => props.file.fileType],
+  [
+    () => props.file.id,
+    () => props.file.name,
+    () => props.file.assetId,
+    () => props.file.fileType,
+    () => authStore.user?.id,
+    () => authStore.serverDeviceId,
+  ],
   () => { void loadPreview() },
   { immediate: true },
 )
@@ -216,7 +261,7 @@ watch(
           <ElButton text size="small" @click="runRendererAction(renderer => renderer.rotateLeft())">左旋</ElButton>
           <ElButton text size="small" @click="runRendererAction(renderer => renderer.rotateRight())">右旋</ElButton>
         </template>
-        <ElButton v-if="signedUrl" text size="small" @click="downloadOriginal">下载原文件</ElButton>
+        <ElButton v-if="previewFile || signedUrl" text size="small" @click="downloadOriginal">下载原文件</ElButton>
         <ElButton v-if="errorMessage" text size="small" @click="retry">重试</ElButton>
         <ElButton v-if="compact" text size="small" @click="emit('close')">关闭</ElButton>
       </div>

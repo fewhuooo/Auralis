@@ -7,6 +7,7 @@ import { mapAssetView, type AssetModel } from '@/services/domainMappers'
 import { validateUploadFile } from '@/utils/filePreview'
 import { uuidv7 } from '@/utils/uuid'
 import { getOrCreateLocalAssetService } from '@/services/localAssetService'
+import type { LocalAssetFileReadResult } from '@/services/localAssetService'
 import { useSyncStore } from '@/store/useSyncStore'
 
 export interface PendingAssetUpload {
@@ -19,10 +20,32 @@ export interface PendingAssetUpload {
   error?: string
 }
 
+export type AssetInput = Pick<LocalAssetFileReadResult, 'file' | 'cleanup'>
+
+interface AssetOwnerSnapshot {
+  userId: string
+  serverDeviceId: string
+}
+
 export const useAssetStore = defineStore('asset', () => {
   const assets = ref<AssetModel[]>([])
   const pendingUploads = ref<PendingAssetUpload[]>([])
   const lastError = ref<string | null>(null)
+
+  function requireOwner(): AssetOwnerSnapshot {
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) throw new Error('Asset access requires an authenticated user and device')
+    return { userId, serverDeviceId }
+  }
+
+  function assertOwner(owner: AssetOwnerSnapshot): void {
+    const authStore = useAuthStore()
+    if (authStore.user?.id !== owner.userId || authStore.serverDeviceId !== owner.serverDeviceId) {
+      throw new Error('ASSET_IDENTITY_CHANGED')
+    }
+  }
 
 
 
@@ -109,33 +132,85 @@ export const useAssetStore = defineStore('asset', () => {
     }
   }
 
-  async function downloadUrl(assetId: string): Promise<string> {
-    const authStore = useAuthStore()
-    if (authStore.user?.id && authStore.serverDeviceId) {
-      const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
-      const file = await localAssetRepo.getAssetFile(assetId)
-      if (file?.serverAssetId) {
-        const response = await getDownloadUrl(file.serverAssetId)
-        if (response.url) return response.url
-      }
-    }
-    const response = await getDownloadUrl(assetId)
+  async function downloadUrlForOwner(assetId: string, owner: AssetOwnerSnapshot): Promise<string> {
+    const localAssetRepo = await getLocalAssetRepository(owner.userId, owner.serverDeviceId)
+    const localRecord = await localAssetRepo.getAssetFile(assetId)
+      ?? await localAssetRepo.getAssetFileByServerId(assetId)
+    assertOwner(owner)
+
+    const response = await getDownloadUrl(localRecord?.serverAssetId || assetId)
     if (!response.url) throw new Error('Asset download response missing URL')
+    assertOwner(owner)
     return response.url
+  }
+
+  async function downloadUrl(assetId: string): Promise<string> {
+    return downloadUrlForOwner(assetId, requireOwner())
+  }
+
+  async function resolveLocalFile(
+    assetId: string,
+    fileName?: string,
+    mimeType = 'application/octet-stream',
+  ): Promise<AssetInput | null> {
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId || !assetId.trim()) return null
+
+    const localAssetRepo = await getLocalAssetRepository(userId, serverDeviceId)
+    const assetService = getOrCreateLocalAssetService(localAssetRepo)
+    const options = { name: fileName, mimeType }
+    const local = await assetService.readAssetFile({ localAssetId: assetId }, options)
+      ?? await assetService.readAssetFile({ serverAssetId: assetId }, options)
+    if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) {
+      local?.cleanup()
+      throw new Error('ASSET_IDENTITY_CHANGED')
+    }
+    return local
   }
 
   async function downloadSourceInput(assetId: string, fileName: string, mimeType = 'application/octet-stream'): Promise<{
     file: File
     cleanup: () => void
   }> {
-    const url = await downloadUrl(assetId)
+    const owner = requireOwner()
+    const local = await resolveLocalFile(assetId, fileName, mimeType)
+    assertOwner(owner)
+    if (local) return local
+
+    const url = await downloadUrlForOwner(assetId, owner)
+    assertOwner(owner)
     const response = await fetch(url)
+    assertOwner(owner)
     if (!response.ok) throw new Error(`ASSET_DOWNLOAD_FAILED_${response.status}`)
     const blob = await response.blob()
+    assertOwner(owner)
     return {
       file: new File([blob], fileName, { type: mimeType }),
       cleanup: () => undefined,
     }
+  }
+
+  // Shared resolver for preview and the online/server-bound document pipeline.
+  // The scheduler calls this only after its local-only attempt, while callers
+  // such as preview can use it directly and still remain local-first.
+  async function resolveSourceInput(assetId: string, fileName: string, mimeType = 'application/octet-stream'): Promise<AssetInput> {
+    return downloadSourceInput(assetId, fileName, mimeType)
+  }
+
+  async function getAssetSha256(assetId: string): Promise<string | null> {
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId || !assetId.trim()) return null
+    const localAssetRepo = await getLocalAssetRepository(userId, serverDeviceId)
+    const record = await localAssetRepo.getAssetFile(assetId)
+      ?? await localAssetRepo.getAssetFileByServerId(assetId)
+    if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) {
+      throw new Error('ASSET_IDENTITY_CHANGED')
+    }
+    return record?.sha256 ?? null
   }
 
   function getLocalFile(_assetId: string): File | null {
@@ -156,7 +231,10 @@ export const useAssetStore = defineStore('asset', () => {
     lastError,
     upload,
     downloadUrl,
+    resolveLocalFile,
     downloadSourceInput,
+    resolveSourceInput,
+    getAssetSha256,
     getLocalFile,
     forgetLocalFile,
     getCachedAsset,

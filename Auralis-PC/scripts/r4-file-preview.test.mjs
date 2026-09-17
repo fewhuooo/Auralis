@@ -116,6 +116,8 @@ test('preview request gate rejects a late signed-url response for a previously s
 
   assert.equal(gate.isCurrent(first), false)
   assert.equal(gate.isCurrent(second), true)
+  gate.invalidate()
+  assert.equal(gate.isCurrent(second), false)
 })
 
 test('FilePreview aborts superseded binary downloads before starting another renderer load', () => {
@@ -126,6 +128,19 @@ test('FilePreview aborts superseded binary downloads before starting another ren
   assert.match(source, /\.abort\(\)/)
   assert.match(source, /fetch\(url, \{ signal:/)
   assert.match(source, /setTimeout/)
+})
+
+test('FilePreview resolves owner-scoped local bytes before signed-url fallback and revokes temporary download URLs', () => {
+  const filePreviewPath = path.resolve('src/components/FilePreview.vue')
+  const source = fs.readFileSync(filePreviewPath, 'utf8')
+
+  assert.match(source, /assetStore\.resolveLocalFile\(file\.assetId/)
+  assert.match(source, /URL\.createObjectURL\(localFile\)/)
+  assert.match(source, /URL\.revokeObjectURL\(/)
+  assert.match(source, /activeLocalCleanup/)
+  assert.match(source, /onUnmounted\(\(\) => \{[\s\S]*previewRequests\.invalidate\(\)[\s\S]*activePreviewAbort\?\.abort\(\)[\s\S]*cleanupActiveInput\(\)/)
+  assert.match(source, /\(\) => authStore\.user\?\.id/)
+  assert.match(source, /\(\) => authStore\.serverDeviceId/)
 })
 
 test('File Viewer adapter is isolated behind a renderer component', () => {

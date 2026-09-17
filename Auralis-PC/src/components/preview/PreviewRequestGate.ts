@@ -10,4 +10,8 @@ export class PreviewRequestGate {
   isCurrent(requestId: number): boolean {
     return requestId === this.latestRequestId
   }
+
+  invalidate(): void {
+    this.latestRequestId += 1
+  }
 }

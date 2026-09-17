@@ -62,6 +62,14 @@ test('runtime forwards the scheduler-owned Asset SHA without hashing the parser 
   assert.doesNotMatch(runJob[1], /sha256File\(/)
 })
 
+test('runtime uses the owner-scoped local-first Asset input resolver for parser and online fallback paths', async () => {
+  const runtime = await source('src/services/documentProcessing/runtime.ts')
+  assert.match(runtime, /resolveLocalInput:[\s\S]*assetStore\.resolveLocalFile\(/)
+  assert.match(runtime, /downloadAsset:[\s\S]*assetStore\.resolveSourceInput\(/)
+  assert.match(runtime, /expectedAssetSha256:[\s\S]*assetStore\.getAssetSha256\(/)
+  assert.doesNotMatch(runtime, /assetStore\.getLocalFile\(/)
+})
+
 test('Tauri document runtime flushes pending sync mutations before bootstrapping sources', async () => {
   const runtime = await source('src/services/documentProcessing/runtime.ts')
   assert.match(runtime, /import\s+\{\s*useSyncStore\s*\}\s+from\s+'@\/store\/useSyncStore'/)
