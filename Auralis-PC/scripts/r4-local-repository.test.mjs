@@ -176,7 +176,7 @@ test('saveCursor persists the current local schema version', async () => {
     const row = sqlite.database
       .prepare('SELECT schema_version FROM sync_metadata WHERE user_id = ? AND device_id = ?')
       .get('user-a', 'device-1');
-    assert.equal(row.schema_version, 8);
+    assert.equal(row.schema_version, 9);
   } finally {
     sqlite.close();
   }
