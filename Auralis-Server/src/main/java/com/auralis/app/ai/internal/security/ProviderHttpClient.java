@@ -140,8 +140,8 @@ public class ProviderHttpClient {
             }
             int tokenBudget = maxTokens.asInt(-1);
             String stage = switch (tokenBudget) {
-                case 3_072 -> "INTERMEDIATE";
-                case 4_096 -> "FINAL";
+                case 4_608 -> "INTERMEDIATE";
+                case 6_144 -> "FINAL";
                 default -> null;
             };
             if (stage != null) {

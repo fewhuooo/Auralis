@@ -370,7 +370,7 @@ class AiOverviewServiceTests {
 
         List<String> systemInstructions = requests.stream()
                 .map(request -> {
-                    assertThat(request.maxTokens()).isIn(3_072, 4_096);
+                    assertThat(request.maxTokens()).isIn(4_608, 6_144);
                     return request.messages().getFirst().content();
                 })
                 .toList();
@@ -517,7 +517,7 @@ class AiOverviewServiceTests {
         }
 
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .contains(3_072, 4_096)
+                .contains(4_608, 6_144)
                 .doesNotContainNull();
         assertThat(requests).allMatch(AiProviderRequest::structuredJson);
         List<String> logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
@@ -554,7 +554,7 @@ class AiOverviewServiceTests {
         service.generateSubject(userId, new OverviewDtos.SubjectOverviewRequest(subjectId, OverviewMode.ALL,
                 null, List.of(input)));
 
-        assertThat(requests).allMatch(request -> request.maxTokens() == 4_096);
+        assertThat(requests).allMatch(request -> request.maxTokens() == 6_144);
         assertThat(requests).allMatch(AiProviderRequest::structuredJson);
     }
 
@@ -585,7 +585,7 @@ class AiOverviewServiceTests {
         }
         assertThat(requests).hasSize(3);
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .containsExactly(3_072, 3_072, 4_096);
+                .containsExactly(4_608, 4_608, 6_144);
         List<String> budgetLogs = appender.list.stream()
                 .map(ILoggingEvent::getFormattedMessage)
                 .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK"))
@@ -652,7 +652,7 @@ class AiOverviewServiceTests {
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .contains(3_072, 4_096).doesNotContainNull();
+                .contains(4_608, 6_144).doesNotContainNull();
     }
 
     @Test
@@ -735,7 +735,7 @@ class AiOverviewServiceTests {
                         .contains("normalizedChars=5200", "selfPairPromptChars=12001",
                                 "characterOverflow=false", "selfPairOverflow=true"));
         assertThat(acceptedRequests).extracting(AiProviderRequest::maxTokens)
-                .contains(3_072, 4_096).doesNotContainNull();
+                .contains(4_608, 6_144).doesNotContainNull();
     }
 
     @Test
@@ -757,7 +757,7 @@ class AiOverviewServiceTests {
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .containsExactly(3_072, 3_072, 4_096);
+                .containsExactly(4_608, 4_608, 6_144);
     }
 
     @Test
@@ -787,7 +787,7 @@ class AiOverviewServiceTests {
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .containsExactly(3_072, 3_072, 3_072, 3_072, 3_072, 3_072, 4_096);
+                .containsExactly(4_608, 4_608, 4_608, 4_608, 4_608, 4_608, 6_144);
     }
 
     @Test
@@ -831,7 +831,7 @@ class AiOverviewServiceTests {
         assertThat(result).isNotNull();
         assertThat(requests).hasSize(3);
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .containsExactly(3_072, 3_072, 4_096);
+                .containsExactly(4_608, 4_608, 6_144);
         assertThat(requests).allMatch(AiProviderRequest::structuredJson);
         assertThat(requests.get(2).messages().get(1).content())
                 .contains("\"mapJson\"", "BOUNDARY_A", "BOUNDARY_B");

@@ -120,7 +120,7 @@ class AiProviderResilienceTests {
             return "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}"
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8);
         });
-        for (int maxTokens : List.of(3_072, 4_096)) {
+        for (int maxTokens : List.of(4_608, 6_144)) {
             provider.complete(new AiProviderRequest(
                     "chat-model", List.of(new AiProviderRequest.Message(AiMessageRole.USER, "return json")),
                     0.1, maxTokens, true), CREDENTIAL);
@@ -140,14 +140,14 @@ class AiProviderResilienceTests {
 
         provider.complete(new AiProviderRequest(
                 "deepseek-v4-flash", List.of(new AiProviderRequest.Message(AiMessageRole.USER, "final-prompt-marker")),
-                0.1, 4_096, true), DEEPSEEK_CREDENTIAL);
+                0.1, 6_144, true), DEEPSEEK_CREDENTIAL);
 
         var body = new ObjectMapper().readTree(capturedBody.get());
-        assertThat(body.path("max_tokens").asInt()).isEqualTo(4_096);
+        assertThat(body.path("max_tokens").asInt()).isEqualTo(6_144);
         assertThat(body.path("response_format").path("type").asText()).isEqualTo("json_object");
         assertThat(output.getOut())
                 .contains("AI_JSON_MODE", "structuredJson=true", "responseFormat=json_object",
-                        "maxTokens=4096", "stage=FINAL")
+                        "maxTokens=6144", "stage=FINAL")
                 .doesNotContain("final-prompt-marker", "provider-key-marker", "https://api.example.test/v1");
     }
 

@@ -37,8 +37,8 @@ public class OverviewGenerationService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OverviewGenerationService.class);
 
-    private static final int INTERMEDIATE_MAX_TOKENS = 3_072;
-    private static final int FINAL_MAX_TOKENS = 4_096;
+    private static final int INTERMEDIATE_MAX_TOKENS = 4_608;
+    private static final int FINAL_MAX_TOKENS = 6_144;
     private static final int MAX_INTERMEDIATE_JSON_CHARS = 5_200;
 
     private static final Set<String> ALLOWED_FAILURE_CODES = Set.of(
