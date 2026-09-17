@@ -7,6 +7,8 @@ import {
   deleteLocalAsset,
   reconcileLocalAssets,
   localAssetUploadPut,
+  readLocalAssetBytes,
+  type LocalAssetReadResult,
 } from '@/api/tauri'
 import { getFileExtension } from '@/utils/filePreview'
 import { uuidv7 } from '@/utils/uuid'
@@ -75,6 +77,14 @@ export interface LocalAssetNativeAdapter {
     expectedSize: number
     expectedSha256: string
   }): Promise<{ status: number; bytesSent: number; payloadSha256: string }>
+
+  readAssetBytes(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+    expectedSize: number
+    expectedSha256: string
+  }): Promise<LocalAssetReadResult>
 }
 
 export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
@@ -233,6 +243,22 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
       expectedSha256: args.expectedSha256,
     })
   }
+
+  async readAssetBytes(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+    expectedSize: number
+    expectedSha256: string
+  }): Promise<LocalAssetReadResult> {
+    return readLocalAssetBytes({
+      userScope: args.userId,
+      deviceId: args.serverDeviceId,
+      localAssetId: args.localAssetId,
+      expectedSize: args.expectedSize,
+      expectedSha256: args.expectedSha256,
+    })
+  }
 }
 
 export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
@@ -364,6 +390,38 @@ export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
       status: res.status,
       bytesSent: args.expectedSize, // transient doesn't perfectly track bytes sent, using expected
       payloadSha256: args.expectedSha256,
+    }
+  }
+
+  async readAssetBytes(args: {
+    userId: string
+    serverDeviceId: string
+    localAssetId: string
+    expectedSize: number
+    expectedSha256: string
+  }): Promise<LocalAssetReadResult> {
+    const found = this.blobs.get(args.localAssetId)
+    if (!found || !found.blob) {
+      throw new Error('FILE_MISSING: Asset file missing from transient storage')
+    }
+    const buffer = await found.blob.arrayBuffer()
+    const bytes = new Uint8Array(buffer)
+    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer)
+    const computedSha = [...new Uint8Array(hashBuffer)].map(b => b.toString(16).padStart(2, '0')).join('')
+    if (bytes.byteLength !== args.expectedSize) {
+      throw new Error('LOCAL_ASSET_SIZE_MISMATCH')
+    }
+    if (computedSha.toLowerCase() !== args.expectedSha256.toLowerCase()) {
+      throw new Error('LOCAL_ASSET_HASH_MISMATCH')
+    }
+    return {
+      receipt: {
+        localAssetId: args.localAssetId,
+        safeExtension: found.descriptor.safeExtension,
+        sizeBytes: bytes.byteLength,
+        sha256: computedSha,
+      },
+      bytes,
     }
   }
 }
@@ -696,6 +754,23 @@ export class LocalAssetService {
     }
 
     return receipt
+  }
+
+  async readAssetBytes(localAssetId: string, expectedSize?: number, expectedSha256?: string): Promise<LocalAssetReadResult> {
+    const record = await this.repository.getAssetFile(localAssetId)
+    if (!record) {
+      throw new Error('LOCAL_ASSET_NOT_FOUND: Local asset file record not found')
+    }
+    const resolvedSize = expectedSize ?? record.sizeBytes
+    const resolvedSha256 = expectedSha256 ?? record.sha256
+
+    return this.adapter.readAssetBytes({
+      userId: this.repository.userId,
+      serverDeviceId: this.repository.serverDeviceId,
+      localAssetId,
+      expectedSize: resolvedSize,
+      expectedSha256: resolvedSha256,
+    })
   }
 }
 

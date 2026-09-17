@@ -1,8 +1,18 @@
-import { isDocumentCacheReceiptV1, type DocumentCacheReceipt } from '@/api/tauri'
+import {
+  isDocumentCacheReceiptV1,
+  isLocalCacheReceiptV1,
+  documentLocalCacheBind,
+  type DocumentCacheReceipt,
+  type LocalCacheBindRequest,
+} from '@/api/tauri'
 import { ApiProblemError } from '../../api/httpError.ts'
 import type { SourceView } from '@/api/useSourceApi'
 import type { DocumentProcessingJob, CreateDocumentProcessingJobInput } from '@/types/documentProcessing'
 import { validatedDocumentCacheId } from './cacheSafety.ts'
+import type { LocalSourceDraftService } from '@/services/localSourceDraftService'
+import type { LocalParsedDocumentRepository } from '@/services/localParsedDocumentRepository'
+import type { LocalAssetRepository } from '@/services/localAssetRepository'
+import type { LocalParsedDocumentCoordinator } from './LocalParsedDocumentCoordinator'
 
 export interface SourceInput {
   /** The parser-facing file. It is never written to a job row or sent over HTTP. */
@@ -38,6 +48,11 @@ export interface SourceJobSchedulerOptions {
   repository: JobRepository
   sourceApi: SourceApi
   upload: UploadCoordinator
+  localDraftService?: LocalSourceDraftService
+  localParsedRepo?: LocalParsedDocumentRepository
+  localAssetRepo?: LocalAssetRepository
+  localParsedCoordinator?: LocalParsedDocumentCoordinator
+  bindLocalCache?: (request: LocalCacheBindRequest) => Promise<DocumentCacheReceipt>
   /** Returns the File still held by the current upload session, if any. */
   resolveLocalInput?: (assetId: string, source: SourceView) => Promise<SourceInput | null> | SourceInput | null
   /** Resolves an owner-scoped download URL internally and returns only a private input handle. */
@@ -54,12 +69,20 @@ export interface SourceJobSchedulerOptions {
   /** Releases a runtime-only parser input which must not outlive its job. */
   discardPreparedInput?: (jobId: string) => Promise<void> | void
   deleteCache?: (cacheId: string) => Promise<void>
+  deleteLocalCache?: (cacheId: string) => Promise<void>
   /** Keeps UI state in sync without letting observation failures interrupt processing. */
   onJobChanged?: () => Promise<void> | void
   idFactory?: () => string
 }
 
-export type SourceScheduleStatus = 'READY' | 'PAUSED_NETWORK' | 'FAILED_LOCAL' | 'FAILED_SERVER' | 'SKIPPED'
+export type SourceScheduleStatus =
+  | 'READY'
+  | 'LOCAL_READY'
+  | 'WAITING_SERVER_REVISION'
+  | 'PAUSED_NETWORK'
+  | 'FAILED_LOCAL'
+  | 'FAILED_SERVER'
+  | 'SKIPPED'
 
 export interface SourceScheduleResult {
   status: SourceScheduleStatus
@@ -110,6 +133,11 @@ export class SourceJobScheduler {
   private readonly repository: JobRepository
   private readonly sourceApi: SourceApi
   private readonly upload: UploadCoordinator
+  private readonly localDraftService?: LocalSourceDraftService
+  private readonly localParsedRepo?: LocalParsedDocumentRepository
+  private readonly localAssetRepo?: LocalAssetRepository
+  private readonly localParsedCoordinator?: LocalParsedDocumentCoordinator
+  private readonly bindLocalCache?: (request: LocalCacheBindRequest) => Promise<DocumentCacheReceipt>
   private readonly resolveLocalInput: NonNullable<SourceJobSchedulerOptions['resolveLocalInput']>
   private readonly downloadAsset: SourceJobSchedulerOptions['downloadAsset']
   private readonly hashFile: SourceJobSchedulerOptions['hashFile']
@@ -119,6 +147,7 @@ export class SourceJobScheduler {
   private readonly cancelJob?: SourceJobSchedulerOptions['cancelJob']
   private readonly discardPreparedInput?: SourceJobSchedulerOptions['discardPreparedInput']
   private readonly deleteCache?: SourceJobSchedulerOptions['deleteCache']
+  private readonly deleteLocalCache?: SourceJobSchedulerOptions['deleteLocalCache']
   private readonly onJobChanged?: SourceJobSchedulerOptions['onJobChanged']
   private readonly idFactory: () => string
   private readonly active = new Map<string, Promise<SourceScheduleResult>>()
@@ -129,6 +158,11 @@ export class SourceJobScheduler {
     this.repository = options.repository
     this.sourceApi = options.sourceApi
     this.upload = options.upload
+    this.localDraftService = options.localDraftService
+    this.localParsedRepo = options.localParsedRepo
+    this.localAssetRepo = options.localAssetRepo
+    this.localParsedCoordinator = options.localParsedCoordinator
+    this.bindLocalCache = options.bindLocalCache
     this.resolveLocalInput = options.resolveLocalInput ?? (() => null)
     this.downloadAsset = options.downloadAsset
     this.hashFile = options.hashFile
@@ -138,6 +172,7 @@ export class SourceJobScheduler {
     this.cancelJob = options.cancelJob
     this.discardPreparedInput = options.discardPreparedInput
     this.deleteCache = options.deleteCache
+    this.deleteLocalCache = options.deleteLocalCache
     this.onJobChanged = options.onJobChanged
     this.idFactory = options.idFactory ?? randomJobId
   }
@@ -202,6 +237,7 @@ export class SourceJobScheduler {
   async discard(sourceId: string): Promise<void> {
     if (!sourceId.trim()) return
     this.discardedSources.add(sourceId)
+    await this.localParsedCoordinator?.cancel(sourceId)
     const jobs = (await this.repository.list()).filter((job) => job.sourceId === sourceId)
     for (const job of jobs) {
       await this.cancelJob?.(job.jobId)
@@ -219,17 +255,75 @@ export class SourceJobScheduler {
         console.warn('[SourceJobScheduler] deleted Source cache cleanup failed', error)
       }
     }
+    try {
+      const localRecords = await this.localParsedRepo?.listBySource(sourceId) ?? []
+      for (const record of localRecords) {
+        if (record.localCacheId) await this.deleteLocalCache?.(record.localCacheId)
+      }
+      await this.localParsedRepo?.deleteBySource(sourceId)
+    } catch (error) {
+      console.warn('[SourceJobScheduler] deleted Source local parsed cache cleanup failed', error)
+    }
     await this.notifyJobChanged()
   }
 
   private async process(sourceId: string): Promise<SourceScheduleResult> {
     if (this.sourceNotFoundSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+
+    // 1. Check for offline local source draft
+    const localDraft = this.localDraftService ? await this.localDraftService.getDraft(sourceId) : null
+    if (localDraft && localDraft.state === 'DRAFT' && !localDraft.serverIngestionRevision) {
+      if (this.localParsedCoordinator) {
+        const assetFile = this.localAssetRepo ? await this.localAssetRepo.getAssetFile(localDraft.localAssetId) : null
+        const sha256 = assetFile?.sha256 ?? ''
+        const sizeBytes = assetFile?.sizeBytes
+        const originalName = assetFile?.originalName ?? localDraft.title
+        const mimeType = assetFile?.mimeType
+
+        const localRecord = await this.localParsedCoordinator.coordinate({
+          localSourceId: localDraft.localSourceId,
+          localContentRevision: localDraft.localContentRevision,
+          localAssetId: localDraft.localAssetId,
+          sourceAssetSha256: sha256,
+          originalName,
+          mimeType,
+          sizeBytes,
+        })
+
+        if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+
+        if (localRecord.phase === 'WAITING_SERVER_REVISION' || localRecord.phase === 'LOCAL_PARSED_READY') {
+          return { status: 'WAITING_SERVER_REVISION', jobId: localRecord.localCacheId ?? undefined }
+        }
+        if (localRecord.phase === 'PAUSED_NETWORK') {
+          return { status: 'PAUSED_NETWORK', jobId: localRecord.localCacheId ?? undefined }
+        }
+        if (localRecord.phase === 'FAILED_LOCAL') {
+          return {
+            status: 'FAILED_LOCAL',
+            jobId: localRecord.localCacheId ?? undefined,
+            reason: localRecord.safeErrorCode ?? undefined,
+          }
+        }
+      }
+    }
+
     let source: SourceView
     try {
       source = await this.sourceApi.get(sourceId)
     } catch (error) {
-      if (!isSourceNotFound(error)) throw error
+      if (!isSourceNotFound(error)) {
+        if (isNetworkFailure(error) && localDraft) {
+          const localRecord = this.localParsedRepo
+            ? await this.localParsedRepo.get(localDraft.localSourceId, localDraft.localContentRevision)
+            : null
+          if (localRecord?.phase === 'WAITING_SERVER_REVISION' || localRecord?.phase === 'LOCAL_PARSED_READY') {
+            return { status: 'WAITING_SERVER_REVISION', jobId: localRecord.localCacheId ?? undefined }
+          }
+        }
+        throw error
+      }
       this.sourceNotFoundSources.add(sourceId)
       await this.discard(sourceId)
       return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
@@ -314,6 +408,125 @@ export class SourceJobScheduler {
       })
     }
 
+    const authoritativeSourceId = source.id ?? sourceId
+    const authoritativeIngestionRevision = source.ingestionRevision!
+
+    // Check if we have a local parsed record that can be rebound to server revision
+    let localRecord = this.localParsedRepo
+      ? ((localDraft?.localContentRevision ? await this.localParsedRepo.get(sourceId, localDraft.localContentRevision) : null)
+        ?? (await this.localParsedRepo.getByServerRevision(authoritativeSourceId, authoritativeIngestionRevision)))
+      : null
+
+    if (
+      localRecord
+      && localRecord.localReceipt
+      && isLocalCacheReceiptV1(localRecord.localReceipt)
+      && !job.payloadReceipt
+    ) {
+      const expectedSha = (await this.expectedAssetSha256?.(source.assetId)) ?? localRecord.sourceAssetSha256
+      if (expectedSha && !sameSha(localRecord.sourceAssetSha256, expectedSha)) {
+        await this.failJob(job, 'SOURCE_ASSET_SHA_MISMATCH', 'The local Asset bytes do not match the expected Asset SHA-256')
+        return { status: 'FAILED_LOCAL', jobId: job.jobId, reason: 'SOURCE_ASSET_SHA_MISMATCH' }
+      }
+
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+
+      if (this.localDraftService) {
+        await this.localDraftService.bindServerIngestionRevision(localRecord.localSourceId, authoritativeIngestionRevision)
+      }
+
+      localRecord = await this.localParsedRepo!.bindServerRevision({
+        localSourceId: localRecord.localSourceId,
+        localContentRevision: localRecord.localContentRevision,
+        serverSourceId: authoritativeSourceId,
+        serverIngestionRevision: authoritativeIngestionRevision,
+        sourceAssetSha256: localRecord.sourceAssetSha256,
+      })
+
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+
+      localRecord = await this.localParsedRepo!.updatePhase(
+        localRecord.localSourceId,
+        localRecord.localContentRevision,
+        'REPACKAGING',
+      )
+
+      const serverCacheId = this.idFactory()
+      const bindReq = await this.localParsedRepo!.prepareBindRequest(
+        localRecord.localSourceId,
+        localRecord.localContentRevision,
+        {
+          serverCacheId,
+          jobId: job.jobId,
+        },
+      )
+
+      const bindFn = this.bindLocalCache ?? documentLocalCacheBind
+      const serverReceipt = await bindFn(bindReq)
+
+      if (this.discardedSources.has(sourceId)) {
+        await this.cleanupDiscardedBoundCache(serverReceipt.cacheId)
+        return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+      }
+
+      job = await this.repository.transition(job.jobId, 'UPLOADING', {
+        payloadCacheId: serverReceipt.cacheId,
+        payloadReceipt: serverReceipt,
+        errorCode: null,
+        errorDetail: null,
+      })
+
+      if (this.discardedSources.has(sourceId)) {
+        await this.cleanupDiscardedBoundCache(serverReceipt.cacheId)
+        return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+      }
+
+      localRecord = await this.localParsedRepo!.updatePhase(
+        localRecord.localSourceId,
+        localRecord.localContentRevision,
+        'UPLOADING',
+        {
+          serverCacheId: serverReceipt.cacheId,
+          serverReceipt,
+        },
+      )
+
+      if (this.discardedSources.has(sourceId)) {
+        await this.cleanupDiscardedBoundCache(serverReceipt.cacheId)
+        return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+      }
+
+      try {
+        await this.upload.upload(job.jobId, serverReceipt, { sourceAssetSha256: serverReceipt.sourceAssetSha256 })
+      } catch (uploadError) {
+        if (isNetworkFailure(uploadError)) {
+          await this.localParsedRepo!.updatePhase(
+            localRecord.localSourceId,
+            localRecord.localContentRevision,
+            'PAUSED_NETWORK',
+            { safeErrorCode: 'NETWORK_OFFLINE', safeErrorDetail: String(uploadError) },
+          ).catch(() => undefined)
+        }
+        throw uploadError
+      }
+
+      const completed = await this.repository.get(job.jobId)
+      if (completed?.phase === 'READY') {
+        if (localRecord) {
+          await this.markLocalParsedReady(localRecord, authoritativeSourceId, authoritativeIngestionRevision)
+        }
+        try {
+          await this.cleanupDerivedCache(completed)
+        } catch (error) {
+          const current = await this.repository.get(job.jobId)
+          if (current) await this.markCleanupFailure(current, error)
+        }
+        return { status: 'READY', jobId: job.jobId }
+      }
+      if (completed?.phase === 'PAUSED_NETWORK') return { status: 'PAUSED_NETWORK', jobId: job.jobId }
+      return { status: completed?.phase === 'FAILED_SERVER' ? 'FAILED_SERVER' : 'FAILED_LOCAL', jobId: job.jobId }
+    }
+
     let input: SourceInput | null = null
     try {
       job = await this.repository.get(job.jobId) ?? job
@@ -371,6 +584,9 @@ export class SourceJobScheduler {
 
       const completed = await this.repository.get(job.jobId)
       if (completed?.phase === 'READY') {
+        if (localRecord) {
+          await this.markLocalParsedReady(localRecord, authoritativeSourceId, authoritativeIngestionRevision)
+        }
         try {
           await this.cleanupDerivedCache(completed)
         } catch (error) {
@@ -403,6 +619,39 @@ export class SourceJobScheduler {
   private async resolveInput(assetId: string, source: SourceView): Promise<SourceInput> {
     const local = await this.resolveLocalInput(assetId, source)
     return local ?? this.downloadAsset(assetId, source)
+  }
+
+  private async markLocalParsedReady(
+    candidate: NonNullable<Awaited<ReturnType<LocalParsedDocumentRepository['get']>>>,
+    serverSourceId: string,
+    serverIngestionRevision: string,
+  ): Promise<void> {
+    if (!this.localParsedRepo) return
+    let record = await this.localParsedRepo.get(candidate.localSourceId, candidate.localContentRevision)
+    if (!record || record.phase === 'READY') return
+    if (record.serverSourceId !== serverSourceId || record.serverIngestionRevision !== serverIngestionRevision) return
+
+    if (record.phase === 'REPACKAGING' || record.phase === 'PAUSED_NETWORK') {
+      record = await this.localParsedRepo.updatePhase(record.localSourceId, record.localContentRevision, 'UPLOADING')
+    }
+    if (record.phase === 'UPLOADING') {
+      record = await this.localParsedRepo.updatePhase(record.localSourceId, record.localContentRevision, 'SERVER_VALIDATING')
+    }
+    if (record.phase === 'SERVER_VALIDATING') {
+      record = await this.localParsedRepo.updatePhase(record.localSourceId, record.localContentRevision, 'SERVER_INDEXING')
+    }
+    if (record.phase === 'SERVER_INDEXING') {
+      await this.localParsedRepo.updatePhase(record.localSourceId, record.localContentRevision, 'READY')
+    }
+  }
+
+  private async cleanupDiscardedBoundCache(cacheId: string): Promise<void> {
+    if (!this.deleteCache) return
+    try {
+      await this.deleteCache(cacheId)
+    } catch (error) {
+      console.warn('[SourceJobScheduler] discarded Source rebound cache cleanup failed', error)
+    }
   }
 
   private async supersedeStaleJobs(jobs: DocumentProcessingJob[], sourceId: string, revision: string): Promise<void> {

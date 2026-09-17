@@ -59,6 +59,7 @@ pub fn run() {
             document_packager::document_local_package_finish,
             document_packager::document_local_cache_bind,
             document_packager::document_cache_delete,
+            document_packager::document_local_cache_delete,
             document_packager::document_cache_payload_info,
             document_upload::document_upload_put,
             local_database::replace_local_resource_snapshot,

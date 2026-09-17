@@ -1088,6 +1088,14 @@ pub fn document_cache_delete(
 }
 
 #[tauri::command]
+pub fn document_local_cache_delete(
+    cache_id: String,
+    state: State<'_, DocumentPackagerState>,
+) -> Result<bool, String> {
+    state.store()?.delete_local(&cache_id)
+}
+
+#[tauri::command]
 pub fn document_cache_payload_info(
     cache_id: String,
     user_id: String,
@@ -1277,6 +1285,31 @@ mod tests {
             bind_local_cache(state.local_store_for_test(), stale).unwrap_err(),
             "LOCAL_CACHE_SCOPE_MISMATCH"
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_cache_delete_removes_only_local_envelope() {
+        let root = temp_root();
+        let store = DocumentCacheStore::new(root.join("cache"), [8u8; 32]).unwrap();
+        let mut builder = LocalPackageBuilder::begin(
+            store.clone(),
+            "local-cache-delete".to_string(),
+            local_header(),
+        )
+        .unwrap();
+        builder.append(block(0, "block")).unwrap();
+        builder.finish().unwrap();
+        assert!(store
+            .local_cache_path("local-cache-delete")
+            .unwrap()
+            .exists());
+        assert!(store.delete_local("local-cache-delete").unwrap());
+        assert!(!store
+            .local_cache_path("local-cache-delete")
+            .unwrap()
+            .exists());
+        assert!(!store.delete_local("local-cache-delete").unwrap());
         let _ = fs::remove_dir_all(root);
     }
 

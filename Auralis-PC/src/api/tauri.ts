@@ -321,6 +321,11 @@ export const documentCacheDelete = (cacheId: string): Promise<boolean> => {
   return invokeRustCmd<boolean>('document_cache_delete', { cacheId })
 }
 
+export const documentLocalCacheDelete = (cacheId: string): Promise<boolean> => {
+  if (!cacheId?.trim()) throw new Error('DOCUMENT_LOCAL_CACHE_ID_REQUIRED')
+  return invokeRustCmd<boolean>('document_local_cache_delete', { cacheId: cacheId.trim() })
+}
+
 export const documentCachePayloadInfo = (scope: {
   cacheId: string
   userId: string
@@ -429,6 +434,137 @@ export interface ReconcileLocalAssetsCommand {
 export interface ReconcileLocalAssetsResult {
   removedStagingFiles: number
   files: LocalAssetDescriptor[]
+}
+
+export interface ReadLocalAssetCommand {
+  userScope: string
+  deviceId: string
+  localAssetId: string
+  expectedSize: number
+  expectedSha256: string
+}
+
+export interface LocalAssetReadReceipt {
+  localAssetId: string
+  safeExtension: string
+  sizeBytes: number
+  sha256: string
+}
+
+export interface LocalAssetReadResult {
+  receipt: LocalAssetReadReceipt
+  bytes: Uint8Array
+}
+
+export const readLocalAssetBytes = async (command: ReadLocalAssetCommand): Promise<LocalAssetReadResult> => {
+  if (
+    !command.userScope?.trim()
+    || !command.deviceId?.trim()
+    || !command.localAssetId?.trim()
+    || typeof command.expectedSize !== 'number'
+    || !Number.isInteger(command.expectedSize)
+    || command.expectedSize < 0
+    || command.expectedSize > MAX_LOCAL_ASSET_BYTES
+    || !/^[a-f0-9]{64}$/i.test(command.expectedSha256)
+  ) {
+    throw new Error('LOCAL_ASSET_COMMAND_INVALID')
+  }
+
+  const normalizedCommand: ReadLocalAssetCommand = {
+    userScope: command.userScope.trim(),
+    deviceId: command.deviceId.trim(),
+    localAssetId: command.localAssetId.trim(),
+    expectedSize: command.expectedSize,
+    expectedSha256: command.expectedSha256.trim().toLowerCase(),
+  }
+
+  const raw = await invokeRustCmd<Uint8Array | ArrayBuffer | number[]>('read_local_asset_bytes', {
+    command: normalizedCommand,
+  })
+
+  let frame: Uint8Array
+  if (raw instanceof Uint8Array) {
+    frame = raw
+  } else if (raw instanceof ArrayBuffer) {
+    frame = new Uint8Array(raw)
+  } else if (Array.isArray(raw)) {
+    frame = new Uint8Array(raw)
+  } else {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  if (frame.byteLength < 4) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  const view = new DataView(frame.buffer, frame.byteOffset, frame.byteLength)
+  const headerLength = view.getUint32(0, false)
+
+  if (headerLength === 0 || 4 + headerLength > frame.byteLength) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  const headerBytes = frame.subarray(4, 4 + headerLength)
+  let receiptJson: unknown
+  try {
+    const headerText = new TextDecoder('utf-8').decode(headerBytes)
+    receiptJson = JSON.parse(headerText)
+  } catch {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  if (!receiptJson || typeof receiptJson !== 'object' || Array.isArray(receiptJson)) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  const candidate = receiptJson as Record<string, unknown>
+  if (
+    typeof candidate.localAssetId !== 'string'
+    || !candidate.localAssetId.trim()
+    || typeof candidate.safeExtension !== 'string'
+    || !candidate.safeExtension.trim()
+    || typeof candidate.sizeBytes !== 'number'
+    || !Number.isInteger(candidate.sizeBytes)
+    || candidate.sizeBytes < 0
+    || typeof candidate.sha256 !== 'string'
+    || !/^[a-f0-9]{64}$/i.test(candidate.sha256)
+  ) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  // Ensure no path leaks in receipt
+  if ('absolutePath' in candidate || 'path' in candidate || 'relativePath' in candidate) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  const receipt: LocalAssetReadReceipt = {
+    localAssetId: candidate.localAssetId.trim(),
+    safeExtension: candidate.safeExtension.trim(),
+    sizeBytes: candidate.sizeBytes,
+    sha256: candidate.sha256.trim().toLowerCase(),
+  }
+
+  const fileBytes = frame.subarray(4 + headerLength)
+  if (fileBytes.byteLength !== receipt.sizeBytes) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  if (receipt.localAssetId !== normalizedCommand.localAssetId) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  if (receipt.sizeBytes !== normalizedCommand.expectedSize) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  if (receipt.sha256.toLowerCase() !== normalizedCommand.expectedSha256.toLowerCase()) {
+    throw new Error('LOCAL_ASSET_FRAME_INVALID')
+  }
+
+  return {
+    receipt,
+    bytes: fileBytes,
+  }
 }
 
 export const importLocalAsset = (command: ImportLocalAssetCommand): Promise<LocalAssetDescriptor> => {

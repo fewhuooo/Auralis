@@ -183,6 +183,10 @@ export const useSourceStore = defineStore('source', () => {
       const model = mapSourceView(localView)
       replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)])
       scheduleSync()
+      if (documentScheduler) {
+        void documentScheduler.schedule(id)
+          .catch((error) => console.warn('[SourceStore] offline document scheduling failed', error))
+      }
       return id
     }
 

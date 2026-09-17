@@ -31,13 +31,13 @@ export interface LocalParsedDocumentRepositoryOptions {
 }
 
 export const LEGAL_LOCAL_PARSED_DOCUMENT_TRANSITIONS: Record<LocalParsedDocumentPhase, readonly LocalParsedDocumentPhase[]> = {
-  QUEUED: ['EXTRACTING', 'OCR_RUNNING', 'LOCAL_PARSED_READY', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
-  EXTRACTING: ['EXTRACTING', 'OCR_RUNNING', 'LOCAL_PARSED_READY', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
-  OCR_RUNNING: ['OCR_RUNNING', 'LOCAL_PARSED_READY', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
+  QUEUED: ['EXTRACTING', 'OCR_RUNNING', 'LOCAL_PARSED_READY', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
+  EXTRACTING: ['EXTRACTING', 'OCR_RUNNING', 'LOCAL_PARSED_READY', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
+  OCR_RUNNING: ['OCR_RUNNING', 'LOCAL_PARSED_READY', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
   LOCAL_PARSED_READY: ['WAITING_SERVER_REVISION', 'REPACKAGING', 'CORRUPT', 'SUPERSEDED', 'FAILED_LOCAL'],
   WAITING_SERVER_REVISION: ['REPACKAGING', 'PAUSED_NETWORK', 'CORRUPT', 'SUPERSEDED', 'FAILED_LOCAL'],
   REPACKAGING: ['UPLOADING', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
-  UPLOADING: ['SERVER_VALIDATING', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
+  UPLOADING: ['REPACKAGING', 'SERVER_VALIDATING', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
   SERVER_VALIDATING: ['SERVER_INDEXING', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
   SERVER_INDEXING: ['READY', 'PAUSED_NETWORK', 'FAILED_LOCAL', 'CORRUPT', 'SUPERSEDED'],
   READY: ['SUPERSEDED', 'CORRUPT'],
@@ -56,6 +56,21 @@ const sqlWriteQueues = new WeakMap<object, Promise<void>>()
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const encodePart = (value: string): string => encodeURIComponent(value.trim())
+
+function localReceiptMatchesRecord(
+  receipt: NonNullable<LocalParsedDocumentRecord['localReceipt']>,
+  record: LocalParsedDocumentRecord,
+  localCacheId: string | null,
+): boolean {
+  return localCacheId === receipt.cacheId
+    && receipt.localSourceId === record.localSourceId
+    && receipt.localContentRevision === record.localContentRevision
+    && receipt.sourceAssetSha256 === record.sourceAssetSha256
+    && receipt.parserId === record.parserId
+    && receipt.parserVersion === record.parserVersion
+    && receipt.normalizationVersion === record.normalizationVersion
+    && (receipt.ocrModelVersion ?? null) === (record.ocrModelVersion ?? null)
+}
 
 const fallbackMemoryStorage = new Map<string, string>()
 
@@ -255,6 +270,9 @@ export class LocalParsedDocumentRepository {
         createdAt: now,
         updatedAt: now,
       }
+      if (record.localReceipt && !localReceiptMatchesRecord(record.localReceipt, record, record.localCacheId)) {
+        throw new Error('LOCAL_PARSED_DOCUMENT_RECEIPT_INVALID: Local receipt does not match record identity')
+      }
 
       if (this.sql) {
         await this.ensureSql()
@@ -404,9 +422,10 @@ export class LocalParsedDocumentRepository {
         }
       }
 
+      const localCacheId = options.localCacheId !== undefined ? (options.localCacheId?.trim() ?? null) : current.localCacheId
       let localReceipt = options.localReceipt !== undefined ? options.localReceipt : current.localReceipt
       if (localReceipt) {
-        if (!isLocalCacheReceiptV1(localReceipt)) {
+        if (!isLocalCacheReceiptV1(localReceipt) || !localReceiptMatchesRecord(localReceipt, current, localCacheId)) {
           throw new Error('LOCAL_PARSED_DOCUMENT_RECEIPT_INVALID: Invalid local receipt format')
         }
       }
@@ -425,7 +444,7 @@ export class LocalParsedDocumentRepository {
         checkpointPage: options.checkpointPage !== undefined ? options.checkpointPage : current.checkpointPage,
         checkpointOrdinal: options.checkpointOrdinal !== undefined ? options.checkpointOrdinal : current.checkpointOrdinal,
         checkpointJson: options.checkpointJson !== undefined ? options.checkpointJson : current.checkpointJson,
-        localCacheId: options.localCacheId !== undefined ? (options.localCacheId?.trim() ?? null) : current.localCacheId,
+        localCacheId,
         localReceipt,
         serverSourceId: options.serverSourceId !== undefined ? (options.serverSourceId?.trim() ?? null) : current.serverSourceId,
         serverIngestionRevision: options.serverIngestionRevision !== undefined ? (options.serverIngestionRevision?.trim() ?? null) : current.serverIngestionRevision,
@@ -520,7 +539,13 @@ export class LocalParsedDocumentRepository {
         throw new Error(`LOCAL_PARSED_DOCUMENT_SHA_MISMATCH: Provided SHA256 ${input.sourceAssetSha256} does not match record ${current.sourceAssetSha256}`)
       }
 
-      let serverReceipt = input.serverReceipt !== undefined ? input.serverReceipt : current.serverReceipt
+      const nextServerSourceId = input.serverSourceId.trim()
+      const nextServerRevision = input.serverIngestionRevision.trim()
+      const revisionChanged = current.serverSourceId !== nextServerSourceId
+        || current.serverIngestionRevision !== nextServerRevision
+      let serverReceipt = input.serverReceipt !== undefined
+        ? input.serverReceipt
+        : revisionChanged ? null : current.serverReceipt
       if (serverReceipt) {
         if (!isDocumentCacheReceiptV1(serverReceipt)) {
           throw new Error('LOCAL_PARSED_DOCUMENT_RECEIPT_INVALID: Invalid server receipt format')
@@ -530,9 +555,11 @@ export class LocalParsedDocumentRepository {
       const now = this.now()
       const updated: LocalParsedDocumentRecord = {
         ...current,
-        serverSourceId: input.serverSourceId.trim(),
-        serverIngestionRevision: input.serverIngestionRevision.trim(),
-        serverCacheId: input.serverCacheId !== undefined ? (input.serverCacheId?.trim() ?? null) : current.serverCacheId,
+        serverSourceId: nextServerSourceId,
+        serverIngestionRevision: nextServerRevision,
+        serverCacheId: input.serverCacheId !== undefined
+          ? (input.serverCacheId?.trim() ?? null)
+          : revisionChanged ? null : current.serverCacheId,
         serverReceipt,
         updatedAt: now,
       }

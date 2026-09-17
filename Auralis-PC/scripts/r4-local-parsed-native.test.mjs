@@ -21,9 +21,25 @@ const {
   documentLocalPackageAppend,
   documentLocalPackageFinish,
   documentLocalCacheBind,
+  documentLocalCacheDelete,
   isLocalCacheReceiptV1,
   isDocumentCacheReceiptV1,
 } = await import('../src/api/tauri.ts')
+
+test('documentLocalCacheDelete validates and invokes the local-cache delete command', async () => {
+  assert.throws(() => documentLocalCacheDelete('  '), /DOCUMENT_LOCAL_CACHE_ID_REQUIRED/)
+  const mock = setupTauriInvokeMock(async (cmd, args) => {
+    assert.equal(cmd, 'document_local_cache_delete')
+    assert.deepEqual(args, { cacheId: 'local-cache-1' })
+    return true
+  })
+  try {
+    assert.equal(await documentLocalCacheDelete('  local-cache-1  '), true)
+    assert.equal(mock.calls.length, 1)
+  } finally {
+    mock.restore()
+  }
+})
 
 function setupTauriInvokeMock(handler) {
   const previousWindow = globalThis.window

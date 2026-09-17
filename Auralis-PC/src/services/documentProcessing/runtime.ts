@@ -1,5 +1,6 @@
 import {
   documentCacheDelete,
+  documentLocalCacheDelete,
   documentPackageAppend,
   documentPackageBegin,
   documentPackageFinish,
@@ -7,7 +8,13 @@ import {
 } from '@/api/tauri'
 import { e2ee } from '@/api/e2ee'
 import { useSourceApi, type SourceView } from '@/api/useSourceApi'
-import { getDocumentProcessingJobRepository, getOverviewRepository } from '@/services/localDb'
+import {
+  getDocumentProcessingJobRepository,
+  getOverviewRepository,
+  getLocalAssetRepository,
+  getLocalParsedDocumentRepository,
+  getLocalRepository,
+} from '@/services/localDb'
 import {
   DocumentProcessingJobRepository,
 } from '@/services/localRepository'
@@ -18,6 +25,10 @@ import { openPptxDocument } from '@/services/documentParser/PptxTextAdapter'
 import { FileViewerParserBridge } from '@/services/documentParser/fileViewerBridge'
 import { getBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
 import { ParsedDocumentUploadCoordinator } from './ParsedDocumentUploadCoordinator'
+import { LocalParsedDocumentCoordinator } from './LocalParsedDocumentCoordinator'
+import { getOrCreateLocalSourceDraftService } from '@/services/localSourceDraftService'
+import { getOrCreateLocalAssetService } from '@/services/localAssetService'
+import type { LocalParsedDocumentRecord } from '@/types/localParsedDocument'
 import { DocumentJobRunner } from './DocumentJobRunner'
 import { SourceJobScheduler, type SourceInput } from './sourceJobScheduler'
 import { useAssetStore } from '@/store/useAssetStore'
@@ -201,6 +212,18 @@ export class DocumentProcessingRuntime {
 
     const repository = await getDocumentProcessingJobRepository(userId, serverDeviceId)
     const overviewRepository = await getOverviewRepository(userId, serverDeviceId)
+    const localAssetRepo = await getLocalAssetRepository(userId, serverDeviceId)
+    const localParsedRepo = await getLocalParsedDocumentRepository(userId, serverDeviceId)
+    const localRepo = await getLocalRepository(userId, serverDeviceId)
+    const localDraftService = getOrCreateLocalSourceDraftService(localAssetRepo, localRepo)
+    const localAssetService = getOrCreateLocalAssetService(localAssetRepo)
+
+    const localParsedCoordinator = new LocalParsedDocumentCoordinator({
+      repository: localParsedRepo,
+      localAssetService,
+      parserFactory: async (record, file) => this.createLocalParser(record, file),
+    })
+
     await this.ensureEncryptionReady(repository)
     if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
     const assetStore = useAssetStore()
@@ -254,6 +277,10 @@ export class DocumentProcessingRuntime {
       repository,
       sourceApi: useSourceApi,
       upload,
+      localDraftService,
+      localParsedRepo,
+      localAssetRepo,
+      localParsedCoordinator,
       resolveLocalInput: async (assetId) => {
         const file = assetStore.getLocalFile(assetId)
         if (!file) return null
@@ -288,6 +315,7 @@ export class DocumentProcessingRuntime {
       cancelJob: (jobId) => runner.cancel(jobId),
       discardPreparedInput: (jobId) => { this.parserInputs.delete(jobId) },
       deleteCache: async (cacheId) => { await documentCacheDelete(cacheId) },
+      deleteLocalCache: async (cacheId) => { await documentLocalCacheDelete(cacheId) },
       onJobChanged: async () => {
         await processingStore.refresh()
         void overviewGeneration.resumePending('JOB_CHANGED')
@@ -377,6 +405,39 @@ export class DocumentProcessingRuntime {
       } finally {
         this.parserInputs.delete(job.jobId)
       }
+    })
+  }
+
+  private async createLocalParser(
+    record: LocalParsedDocumentRecord,
+    file: File,
+  ): Promise<(sink: Parameters<typeof parseDocument>[1], onProgress: (event: DocumentParserProgress) => Promise<void>) => Promise<void>> {
+    return (sink, onProgress) => serialized(async () => {
+      const extension = extensionOf(file.name)
+      const ocr = new TauriOcrAdapter()
+      const input: DocumentParserInput = {
+        file,
+        taskId: record.localSourceId,
+        ocr,
+      }
+      if (extension === 'pdf') {
+        input.pdf = await openPdfDocument(new Uint8Array(await file.arrayBuffer()))
+      } else if (extension === 'pptx') {
+        input.pptx = await openPptxDocument(new Uint8Array(await file.arrayBuffer()))
+      } else if (isOfficeExtension(file.name)) {
+        const bridge = new FileViewerParserBridge(getBackgroundParserHost)
+        input.office = {
+          get pageCount() {
+            const pageCount = getBackgroundParserHost()?.getPageCount?.() ?? 0
+            if (!Number.isInteger(pageCount) || pageCount < 1) throw new Error('DOCUMENT_FILE_TYPE_UNSUPPORTED')
+            return pageCount
+          },
+          bridge,
+        }
+      } else {
+        throw new Error('DOCUMENT_FILE_TYPE_UNSUPPORTED')
+      }
+      await parseDocument(input, sink, { onProgress })
     })
   }
 }

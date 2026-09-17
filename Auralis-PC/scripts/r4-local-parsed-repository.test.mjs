@@ -48,7 +48,7 @@ function createMemoryStorage() {
   }
 }
 
-function validLocalReceipt() {
+function validLocalReceipt(overrides = {}) {
   return {
     cacheId: 'local-cache-1',
     envelopeVersion: 1,
@@ -65,6 +65,7 @@ function validLocalReceipt() {
     parserVersion: '1.0.0',
     normalizationVersion: '1.0.0',
     ocrModelVersion: null,
+    ...overrides,
   }
 }
 
@@ -218,8 +219,17 @@ for (const backend of backends) {
       })
 
       await repo.updatePhase('src-rec-1', 'loc-rev-1', 'EXTRACTING')
+      await assert.rejects(
+        () => repo.updatePhase('src-rec-1', 'loc-rev-1', 'LOCAL_PARSED_READY', {
+          localCacheId: validLocalReceipt().cacheId,
+          localReceipt: validLocalReceipt({ localSourceId: 'wrong-source' }),
+        }),
+        /LOCAL_PARSED_DOCUMENT_RECEIPT_INVALID/
+      )
+      const matchingReceipt = validLocalReceipt({ localSourceId: 'src-rec-1' })
       await repo.updatePhase('src-rec-1', 'loc-rev-1', 'LOCAL_PARSED_READY', {
-        localReceipt: validLocalReceipt(),
+        localCacheId: matchingReceipt.cacheId,
+        localReceipt: matchingReceipt,
       })
 
       // Invalid server receipt (encryptedBytes <= 0) rejected on bindServerRevision
