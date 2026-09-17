@@ -1,6 +1,10 @@
 # Auralis 当前状态
 
-2026-09-15 PC Local Asset Store 已完成产品与架构设计确认，当前状态为“已批准设计，尚未实施”：PC Tauri 将把导入原文件作为当前设备的正式持久资料，支持断网导入、立即本地预览与解析、联网后幂等同步 MinIO，并在用户删除最后一个 Source 引用后通过同步删除各设备副本。设计采用本地 Asset/Source/revision 身份到 Server 权威身份的映射，保持 `Source.ingestionRevision` 的服务端仲裁语义；计划分为本地仓库基础、离线同步队列、Preview/OCR/Parser 统一接入和删除/安全收口四阶段。当前代码、SQLite schema、Server API 和运行行为均未改变，自动测试与真实 Tauri/MinIO/多设备验收尚未开始。
+2026-09-17 PC Local Asset Store Task 8：代码实现与自动验证已完成，真实验收仍开放。`b7a3bb7..c560d8b`（含 `f770277`、`e040e78`）完成永久本地资料库、owner/device scope、所有文件默认同步、断网导入/预览/本地 OCR/Parser、Source draft 与服务端 Asset 映射。原始文件在受管目录中以明文保存，由 OS ACL 保护；Local Asset 不提供备份、导出或恢复。只有用户明确删除且最后一个 Source 引用消失后才删除本地文件；上传、解析、修复和删除任务在该边界前后均受 fence 保护。启动同步前 reconcile 数据库、受管文件和 staging 残留，缺失或 hash/size 不一致标记 `CORRUPT`，未知内容 quarantine。
+
+自动验证：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check` 与 `cargo check` 通过；schema v8→v9 旧断言已由 `c560d8b` 对齐。最新 PC 全量 `test:r4-pc` 为 333/334，仅剩用户 dirty `task-view` 的 completed scheduled task 断言失败；`type-check` 仅有用户 dirty UI/Store 的 7 项错误。代码/构建/自动测试不替代真实 Tauri GUI、断网重启、真实文件系统、外部对象存储和双设备业务验收，不能写成业务验收通过。
+
+2026-09-15 PC Local Asset Store 设计快照（已由 2026-09-17 实施记录更新）：当日产品与架构设计确认“已批准设计，尚未实施”，定义 PC Tauri 的永久本地文件、断网预览/解析、联网幂等同步、身份映射和最后 Source 引用删除语义；当日代码、SQLite schema、Server API 和运行行为尚未改变。
 
 2026-09-15 Overview 失败体验与真实运行证据收口：用户复跑同一真实 Overview 后，第二次全链路成功，证明永久预算链路已能完成运行；生成内容质量仍需用户判断。Overview 的 `MODEL_PROVIDER_ERROR` 现在由 PC 显示为“遇到意外情况，请重试”，不新增 Server/API 错误码；FAILED 终态保护继续生效，不自动重试，只有用户点击“重新生成”才发起新请求。该 Overview 专用文案不影响普通 AI 聊天/流式路径。
 

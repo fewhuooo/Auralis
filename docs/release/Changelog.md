@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### PC Local Asset Store Task 8 收尾（2026-09-17）
+
+- `b7a3bb7..c560d8b` 完成 PC Tauri 永久本地资料库：原始文件在 OS ACL 保护的受管目录中保持明文，所有文件默认同步；断网可导入、预览和本地 OCR/Parser，联网后以稳定 `clientImportId` 幂等同步对象存储。Asset/Source draft 与任务边界按 owner/device 隔离，Preview、OCR、Parser 共享 Local Asset；不提供 Local Asset 备份、导出、恢复或副本管理。
+- 仅用户明确删除 Source 且最后一个 Source 引用消失后才删除本地文件；上传、解析、修复和删除任务带 fence。启动 reconcile 会校验数据库、文件和 staging，缺失/校验不符标记 `CORRUPT`，未知残留 quarantine。
+- 自动证据：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check`/`cargo check` 通过；schema v8→v9 旧断言已由 `c560d8b` 修正；最新 `test:r4-pc` 333/334，仅剩用户 dirty `task-view` 断言失败，`type-check` 仍有用户 dirty UI/Store 的 7 项错误。真实 Tauri GUI、断网/重启、真实对象存储和业务验收仍待执行。
+
 ### Overview 非 JSON 失败体验收口（2026-09-15）
 
 - 真实第二次 Overview 全链路已成功，证明永久预算链路可运行；生成内容质量仍需用户判断。

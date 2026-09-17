@@ -1,5 +1,9 @@
 # PC 前端模块
 
+2026-09-17 PC Local Asset Store Task 8 收尾：`b7a3bb7..c560d8b` 已将 PC Tauri 文件导入接入永久本地资料库。原始文件在受管目录中保持明文，由受管路径与 OS ACL 保护；本地 Asset 与 Source draft 以 `userId + serverDeviceId` 隔离，所有文件默认进入同步队列。断网时可完成导入、预览、OCR/Parser 本地解析，联网后以稳定 `clientImportId` 幂等同步对象存储；Preview、OCR、Parser 共享同一 Local Asset descriptor，`localContentRevision` 与服务端 `ingestionRevision` 分离。Local Asset 不提供备份、导出、恢复或副本管理能力。仅用户明确删除 Source 且最后一个 Source 引用消失后才进入受控删除；上传、解析、修复和 Source 删除均有任务 fence。启动同步前执行 owner/device-scoped reconcile：缺失或 hash/size 不一致标记 `CORRUPT`，未知或残留 staging 文件移入 quarantine，不静默删除。
+
+自动证据：`f770277`/`e040e78` 后 Task 7 定向 77/77、FilePreview+store 38/38、Rust Local Asset 30/30；`cargo fmt --check`、`cargo check` 通过。`npm.cmd run test:r4-pc` 当前 333/334，仅剩用户 dirty `task-view` 的 completed scheduled task 断言失败；`npm.cmd run type-check` 仍仅有用户 dirty UI/Store 的 7 项错误。上述代码和自动门禁不等于真实 Tauri GUI、断网重启、真实文件系统或外部对象存储验收通过。
+
 2026-09-15 Overview 失败体验收口：真实第二次 Overview 全链路已成功，证明当前永久预算链路可运行；生成内容质量仍需用户判断。对于 Overview 的 `MODEL_PROVIDER_ERROR`，PC 现在显示“遇到意外情况，请重试”，不新增 Server/API 错误码；既有 FAILED 终态保护保持不变，刷新、启动、联网、同步和 `JOB_CHANGED` 不会自动重试，只有用户点击“重新生成”才发起新请求。该文案映射仅位于 Overview 专用 failure policy，不影响普通 AI 聊天/流式错误。
 
 2026-09-14 Overview retry/convergence：当前 revision 的 FILE Overview 缓存一旦为 `FAILED` 或部分 `READY`，对 `SOURCE_READY`、`RESUME_BOOTSTRAP`、`RESUME_ONLINE`、`RESUME_SYNC`、`JOB_CHANGED` 的自动触发均视为终态，不再自动 POST；只有 `MANUAL_RETRY` 可绕过该限制，并继续使用现有 in-flight coalescing。失败或部分结果区域各自只显示一个可见“重新生成”操作，生成中 disabled；旧大纲/总结保留。`MODEL_TIMEOUT`、`MODEL_UNAVAILABLE`、客户端 timeout/网络失败使用“无法确认生成状态”文案，与确定性失败区分。PC focused 早期证据为 54/54，最新 `npm.cmd run test:r4-pc` 为 331/331；type-check、`check:r4-pc`（94 个生产文件）、`check:subject-workspace` 与 build 均退出 0。上述自动证据不代表 Server 持久幂等、真实 Provider、Tauri、网络、GUI 或业务验收完成。
@@ -144,7 +148,7 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 
 | 文件 | 职责 |
 | --- | --- |
-| `services/localSchema.ts` | Tauri SQLite v6 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换；迁移时清洗 TASK 负载颜色键并保留无效 JSON 原文 |
+| `services/localSchema.ts` | Tauri SQLite v9 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换；迁移时清洗 TASK 负载颜色键并保留无效 JSON 原文 |
 | `services/localRepository.ts` | 按 `userId + serverDeviceId` 隔离的资源、tombstone、原子资源+outbox 提交、cursor 与 snapshot repository |
 | `services/localDatabaseRuntime.ts` | 单个应用生命周期内的 SQLite 初始化 Promise 与按用户/设备范围缓存的 repository |
 | `services/localSqlQueue.ts` | 进程内 SQL 命令串行化 adapter，避免 SQL 插件 pool 中的并发写入竞争 |

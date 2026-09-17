@@ -1,9 +1,16 @@
 # Auralis 当前问题与审查登记
 
-### 2026-09-15 PC Local Asset Store 已批准设计，实施与验收开放
+### 2026-09-17 PC Local Asset Store：实现与自动门禁完成，外部验收风险保持开放
+
+- 代码证据：`b7a3bb7..c560d8b`（重点 `f770277`、`e040e78`）已完成永久本地资料库；原始文件在 OS ACL 保护的受管目录中保持明文，所有文件默认同步，断网可导入/预览/本地解析，Asset、Source draft、任务和读取边界按 owner/device 隔离。Local Asset 没有备份、导出、恢复或副本管理能力。
+- 删除与恢复边界：只有用户明确删除 Source 且最后一个 Source 引用消失后才物理删除；上传、解析、修复和删除任务在 Source tombstone/reference fence 后才允许收口。启动时 reconcile 本地数据库、文件和 staging，异常文件 quarantine，缺失或校验不符内容标记 `CORRUPT`。
+- 自动证据：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check`/`cargo check` 通过；schema v8→v9 断言已由 `c560d8b` 修正。最新 `test:r4-pc` 为 333/334，仅剩用户 dirty `task-view` 的 completed scheduled task 断言；`type-check` 的 7 项错误均位于用户 dirty UI/Store。
+- P1 外部验收：真实 Tauri GUI、真实文件系统 ACL、断网导入/重启/本地解析、外部对象存储同步、双设备收敛、账户切换、低磁盘和最后引用删除尚未验收。自动代码和测试不关闭该风险，也不代表业务验收通过。
+
+### 2026-09-15 PC Local Asset Store 已批准设计，实施与验收开放（历史快照）
 
 - 优先级：P1。
-- 证据：`docs/design/2026-09-15-pc-local-asset-store-design.md` 已确认本地持久文件、断网导入、最终云端同步、身份映射、统一消费方和最后引用删除语义；当前 `useAssetStore` 仍只有进程内 `Map<string, File>`，`FilePreview` 与文档调度仍存在独立 signed URL 下载路径，PC SQLite schema v7 没有原始文件表。
+- 证据（2026-09-15 当日快照，已由 2026-09-17 实施记录更新）：设计已确认本地持久文件、断网导入、最终云端同步、身份映射、统一消费方和最后引用删除语义；当时 `useAssetStore` 仍只有进程内 `Map<string, File>`，PC SQLite schema v7 没有原始文件表。
 - 影响：应用重启、跨设备、断网和多消费方场景仍无法获得正式持久的本地原文件语义；不得把已批准设计写成代码能力。
 - 处理：按四阶段实施 Local Asset Store、幂等 Asset 同步、Preview/OCR/Parser 统一读取以及删除传播和安全收口，并同步 PC、Server、API、Database、Architecture 与发布文档。
 - 关闭条件：schema/API migration、PC/Rust/Server 自动门禁通过，并取得真实 Windows Tauri、MinIO、断网重启、双账号和双设备删除传播证据；自动测试、外部联调、GUI 与业务验收分别记录。
