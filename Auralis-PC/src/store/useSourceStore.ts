@@ -296,11 +296,13 @@ export const useSourceStore = defineStore('source', () => {
       ? await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
       : null
 
-    // Fence all local work before the durable Source tombstone is written.
-    // This makes deletion restart-safe and prevents a late parser/upload
-    // completion from resurrecting the deleted Source or its Asset.
-    await documentScheduler?.discard(id)
+    // Remove the Source from the current projection immediately, then fence
+    // local work before the durable tombstone. Slow parser/cache cleanup must
+    // not keep an explicitly deleted file visible in the UI.
+    sources.value = sources.value.filter((item) => item.id !== id)
+    activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
     await fileOverviewGenerator?.discardFileOverview(id)
+    await documentScheduler?.discard(id)
     const draftBeforeDelete = await assetRepo?.getSourceDraft(id)
     const localOnlyDraft = Boolean(draftBeforeDelete && !draftBeforeDelete.serverSourceId)
     const now = new Date().toISOString()
@@ -321,8 +323,6 @@ export const useSourceStore = defineStore('source', () => {
         }),
       })
     }
-    sources.value = sources.value.filter((item) => item.id !== id)
-    activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
     if (!localOnlyDraft) scheduleSync()
 
     // The Source tombstone is now durable.  Mark the auxiliary draft after
@@ -334,7 +334,7 @@ export const useSourceStore = defineStore('source', () => {
     // cleanup retries after acknowledgement.
     await cleanupDeletedSourceAssets().catch((error) => {
       if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) {
-        console.warn('[SourceStore] deleted Source asset cleanup deferred', error)
+        console.warn('[SourceStore] deleted Source asset cleanup deferred')
       }
     })
   }

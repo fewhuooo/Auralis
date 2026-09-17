@@ -273,7 +273,7 @@ test('useSourceStore removes a deleted file from the projection before slow docu
   assert.doesNotMatch(source.slice(projectionRemove, schedulerCleanup), /await\s+documentScheduler\?\.discard/)
 })
 
-test('useSourceStore fences file Overviews before sync and document cleanup', () => {
+test('useSourceStore removes the projection, fences local consumers, then schedules Source sync', () => {
   const storePath = path.resolve('src/store/useSourceStore.ts')
   const source = fs.readFileSync(storePath, 'utf8')
   const deleteStart = source.indexOf('async function deleteSourceFile')
@@ -283,9 +283,12 @@ test('useSourceStore fences file Overviews before sync and document cleanup', ()
   const schedulerCleanup = source.indexOf('documentScheduler?.discard(id)', deleteStart)
   const deleteEnd = source.indexOf('\n  async function saveSourceFileCatalog', deleteStart)
 
+  const tombstone = source.indexOf("mutationType: 'DELETE'", deleteStart)
+
   assert.ok(overviewFence > projectionRemove, 'Overview fence must follow local projection removal')
-  assert.ok(sync > overviewFence, 'sync must be scheduled after the Overview fence is invoked')
-  assert.ok(schedulerCleanup > sync, 'document cleanup must be invoked after sync scheduling')
+  assert.ok(schedulerCleanup > overviewFence, 'document cleanup must follow the Overview fence')
+  assert.ok(tombstone > schedulerCleanup, 'durable tombstone must follow local consumer fences')
+  assert.ok(sync > tombstone, 'sync must be scheduled after the durable tombstone')
   assert.doesNotMatch(source.slice(deleteStart, deleteEnd), /console\.warn\([^\n]*,\s*error\)/)
 })
 
