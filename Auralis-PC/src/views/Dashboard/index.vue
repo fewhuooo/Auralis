@@ -156,6 +156,7 @@
             <div
               v-if="slot.task"
               class="tl-task"
+              :class="{ 'is-completed': isCompletedScheduledTask(slot.task) }"
               :style="{ 
                 borderLeftColor: 'var(--color-primary-accent)',
                 height: getTaskHeight(slot.task.duration)
@@ -192,7 +193,8 @@
                 v-for="task in getScheduledTasksForDay(day.dayCode)"
                 :key="task.id" 
                 class="db-weekly-task-block"
-                :style="{ borderLeftColor: 'var(--color-primary-accent)', backgroundColor: 'var(--color-primary-accent)' }"
+                :class="{ 'is-completed': isCompletedScheduledTask(task) }"
+                :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name} (${task.duration}m)`"
               >
                 <span class="db-weekly-block-time">{{ getTaskTimeStr(task.startTime) }}</span>
@@ -416,7 +418,7 @@ const { pendingTasks, allTasks, timeSlots, selectedDay } = storeToRefs(taskStore
 const authStore = useAuthStore()
 
 const dashboardViewMode = ref<'day' | 'week'>('day')
-const timelineDays = computed(() => getTimelineDays())
+const timelineDays = computed(() => getTimelineDays(taskStore.currentNow))
 const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
 const selectDay = (day: string) => {
@@ -1484,6 +1486,17 @@ html.dark .dashboard-right {
   font-size: 8px;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+.db-weekly-task-block.is-completed,
+.tl-task.is-completed {
+  opacity: 0.55;
+  filter: grayscale(100%);
+}
+.db-weekly-task-block.is-completed .db-weekly-block-name,
+.tl-task.is-completed .tl-task-name {
+  text-decoration: line-through;
+  color: var(--text-muted);
 }
 
 .db-weekly-block-name {

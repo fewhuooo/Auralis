@@ -98,7 +98,7 @@
               <div 
                 v-if="slot.task" 
                 class="slot-task" 
-                :class="{ 'is-past': isPastTask(slot.task) }"
+                :class="{ 'is-past': isPastTask(slot.task), 'is-completed': isCompletedScheduledTask(slot.task) }"
                 :style="{ 
                   borderLeftColor: 'var(--color-primary-accent)',
                   height: getTaskHeight(slot.task.duration)
@@ -108,7 +108,7 @@
               >
                 <div class="task-header">
                   <span class="task-name">{{ slot.task.name }}</span>
-                  <span class="task-tag" :style="{ backgroundColor: 'var(--color-primary-accent)' }">
+                  <span class="task-tag">
                     {{ slot.task.subject }}
                   </span>
                   <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)" title="删除任务">✕</button>
@@ -207,7 +207,7 @@
               v-for="task in getScheduledTasksForDay(day.dayCode)"
               :key="task.id" 
               class="weekly-task-card"
-              :class="{ 'is-past': isPastTask(task) }"
+              :class="{ 'is-past': isPastTask(task), 'is-completed': isCompletedScheduledTask(task) }"
               :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
               :draggable="!isCompletedScheduledTask(task)"
               @dragstart.stop="handleDragStart($event, 'scheduled', task.id || '', task.startTime)"
@@ -218,7 +218,7 @@
               </div>
               <div class="weekly-task-meta">
                 <span class="weekly-task-time">⏰ {{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
-                <span class="weekly-task-tag" :style="{ backgroundColor: 'var(--color-primary-accent)' }">
+                <span class="weekly-task-tag">
                   {{ task.subject }}
                 </span>
               </div>
@@ -405,7 +405,7 @@ const { recentBlocks } = storeToRefs(knowledgeStore)
 
 // Core timeline states
 const viewMode = ref<'day' | 'week'>('day')
-const timelineDays = computed(() => getTimelineDays())
+const timelineDays = computed(() => getTimelineDays(taskStore.currentNow))
 const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
 const selectDay = async (day: string) => {
@@ -1309,10 +1309,19 @@ html.dark .slot-grid-line {
 }
 
 .task-tag {
+  background: rgba(163, 177, 155, 0.22);
+  color: #2D3E25;
+  border: 1px solid rgba(163, 177, 155, 0.35);
+  padding: 2px 8px;
+  border-radius: 10px;
   font-size: 10px;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  font-weight: 500;
+  font-weight: 700;
+}
+
+html.dark .task-tag {
+  color: #D6E2D0;
+  background: rgba(163, 177, 155, 0.15);
+  border-color: rgba(163, 177, 155, 0.28);
 }
 
 .task-detail {
@@ -1485,9 +1494,21 @@ html.dark .slot-grid-line {
 }
 
 .pending-subject {
+  background: rgba(163, 177, 155, 0.22);
+  color: #2D3E25;
+  border: 1px solid rgba(163, 177, 155, 0.35);
+  padding: 2px 8px;
+  border-radius: 10px;
   font-size: 10px;
-  color: var(--text-muted);
-  margin-top: 1px;
+  font-weight: 700;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+html.dark .pending-subject {
+  color: #D6E2D0;
+  background: rgba(163, 177, 155, 0.15);
+  border-color: rgba(163, 177, 155, 0.28);
 }
 
 .pending-meta {
@@ -2080,13 +2101,23 @@ html.dark .weekly-column.is-today {
 }
 
 .weekly-task-tag {
-  padding: 1px 4px;
-  border-radius: var(--radius-sm);
-  font-size: 8px;
+  background: rgba(163, 177, 155, 0.22);
+  color: #2D3E25;
+  border: 1px solid rgba(163, 177, 155, 0.35);
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 9px;
+  font-weight: 700;
   max-width: 60px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+html.dark .weekly-task-tag {
+  color: #D6E2D0;
+  background: rgba(163, 177, 155, 0.15);
+  border-color: rgba(163, 177, 155, 0.28);
 }
 
 .weekly-empty-placeholder {
@@ -2349,5 +2380,15 @@ html.dark .duration-bar-thumb {
   cursor: not-allowed;
   box-shadow: none;
   transform: none;
+}
+.slot-task.is-completed,
+.weekly-task-card.is-completed {
+  opacity: 0.55;
+  filter: grayscale(100%);
+}
+.slot-task.is-completed .task-name,
+.weekly-task-card.is-completed .weekly-task-name {
+  text-decoration: line-through;
+  color: var(--text-muted);
 }
 </style>

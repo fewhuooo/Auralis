@@ -262,8 +262,8 @@ html.dark .hall-content {
 }
 
 .subject-card {
-  background: color-mix(in srgb, #7D9372 8%, var(--color-bg-primary));
-  border: 1px solid color-mix(in srgb, #7D9372 15%, var(--border-default));
+  background: var(--color-bg-primary);
+  border: 1.5px solid var(--color-primary-accent, #7D9372);
   border-radius: var(--radius-lg);
   padding: 24px;
   cursor: pointer;
@@ -273,12 +273,13 @@ html.dark .hall-content {
   position: relative;
   overflow: hidden;
   aspect-ratio: 1.3 / 1;
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  box-shadow: 0 8px 24px rgba(125, 147, 114, 0.12);
 }
 
 html.dark .subject-card {
-  background: color-mix(in srgb, #7D9372 12%, var(--color-bg-secondary));
-  border-color: color-mix(in srgb, #7D9372 20%, var(--border-subtle));
+  background: var(--color-bg-secondary);
+  border-color: var(--color-primary-accent, #7D9372);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 
 .subject-card:hover {

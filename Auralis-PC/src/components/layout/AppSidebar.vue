@@ -395,9 +395,10 @@ onMounted(async () => {
   justify-content: center;
   font-size: 15px;
   flex-shrink: 0;
-  background: var(--accent-gradient, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%));
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.25);
+  background: transparent;
+  border: 2px solid #A3B19B;
+  color: var(--color-primary-accent, #7D9372);
+  box-shadow: none;
 }
 
 .subject-icon-glyph {

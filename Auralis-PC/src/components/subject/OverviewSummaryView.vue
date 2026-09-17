@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { AlertTriangle, ArrowLeft, RefreshCw, Sparkles } from 'lucide-vue-next'
+import { AlertTriangle, ArrowLeft, RefreshCw } from 'lucide-vue-next'
 import type { OverviewSummary } from '@/types/overview'
 
 const props = withDefaults(defineProps<{
@@ -26,8 +26,8 @@ const regenerateWithInstruction = () => {
       <button type="button" class="summary-back" @click="emit('close')"><ArrowLeft :size="15" />返回文件</button>
       <div class="summary-title"><small>{{ kind === 'subject' ? '学科总结' : '文件总结' }}</small><strong>{{ title }}</strong></div>
       <div class="summary-actions">
-        <button v-if="!error" type="button" :disabled="isGenerating" @click="emit('regenerate')"><RefreshCw :size="13" :class="{ 'is-spinning': isGenerating }" />重新生成</button>
-        <button type="button" :disabled="isGenerating" @click="showInstruction = true"><Sparkles :size="13" />调整要求</button>
+        <button v-if="!error" type="button" :disabled="isGenerating" @click="emit('regenerate')"><RefreshCw v-if="isGenerating" :size="13" class="is-spinning" />重新生成</button>
+        <button type="button" :disabled="isGenerating" @click="showInstruction = true">调整要求</button>
       </div>
     </header>
     <div class="overview-summary-view__body">
@@ -45,7 +45,6 @@ const regenerateWithInstruction = () => {
       </p>
       <div v-if="!summary" class="summary-empty">
         <RefreshCw v-if="isGenerating" :size="22" class="is-spinning" />
-        <Sparkles v-else :size="22" />
         <strong>{{ isGenerating ? '正在生成总结…' : (error ? '总结生成失败' : '暂无总结') }}</strong>
       </div>
       <div v-else class="summary-content">

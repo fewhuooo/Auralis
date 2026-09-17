@@ -12,6 +12,7 @@ import type { LocalRepository } from '@/services/localRepository'
 import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
+import { useSubjectStore } from '@/store/useSubjectStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
 import { getTasksForTimeline, isCompletedScheduledTask, isSchedulableTask, isScheduledAtInPast, isScheduledTaskPast, isUnscheduledTaskPastDue } from '@/services/taskViewRules'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
@@ -155,24 +156,35 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     status,
     scheduledAt,
     dueAt: input.dueAt,
-    durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
+    durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
     version: input.version ?? 0,
     deletedAt: null,
   }
 }
 
-function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 'synced', subjectName?: string): Task {  return {
+function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 'synced', subjectName?: string): Task {
+  const task: Partial<Task> = {
     ...model,
     status: statusToPresentation(model.status, model.scheduledAt),
     name: model.title,
-    subject: subjectName || model.subjectId,
     desc: model.description,
-    duration: model.durationMinutes,    startTime: timeForScheduledAt(model.scheduledAt),
+    duration: model.durationMinutes,
+    startTime: timeForScheduledAt(model.scheduledAt),
     position: model.sortKey,
     sync_status: syncStatus,
     sync_version: model.version,
     is_deleted: Boolean(model.deletedAt),
   }
+  Object.defineProperty(task, 'subject', {
+    get() {
+      if (subjectName) return subjectName
+      const subjStore = useSubjectStore()
+      const subj = subjStore.subjects.find((s) => s.id === model.subjectId)
+      return subj ? subj.name : model.subjectId
+    },
+    enumerable: true,
+  })
+  return task as Task
 }
 
 function taskDto(model: TaskModel): TaskView {
@@ -263,6 +275,7 @@ export const useTaskStore = defineStore('task', () => {
   const lastError = ref<string | null>(null)
   const selectedDay = ref<string>(getTodayDayCode())
   const timeSlots = ref<TimeSlot[]>(generateTimeSlots())
+  const currentNow = ref<Date>(new Date())
 
   function assertScheduledAtIsNotPast(scheduledAt: string | undefined): void {
     if (isScheduledAtInPast(scheduledAt)) {
@@ -298,8 +311,22 @@ export const useTaskStore = defineStore('task', () => {
     })
   }
 
+  let lastDayCode = getTodayDayCode()
   if (typeof window !== 'undefined') {
     window.setInterval(() => {
+      const now = new Date()
+      currentNow.value = now
+      const currentDayCode = getTodayDayCode()
+
+      // Auto-switch timeline to today if the day rolls over and we were looking at yesterday
+      if (currentDayCode !== lastDayCode) {
+        if (selectedDay.value === lastDayCode) {
+          selectedDay.value = currentDayCode
+          rebuildSchedule()
+        }
+        lastDayCode = currentDayCode
+      }
+
       updateCurrentSlot()
       void recoverOverdueTasks()
     }, 60_000)
@@ -529,6 +556,7 @@ export const useTaskStore = defineStore('task', () => {
     lastError,
     timeSlots,
     selectedDay,
+    currentNow,
     completedCount,
     pendingCount,
     totalFocusHours,

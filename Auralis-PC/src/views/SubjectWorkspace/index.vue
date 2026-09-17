@@ -185,7 +185,7 @@
       <header class="center-status-bar">
         <div class="status-left">
           <span v-if="centerView === 'summary' && summaryTarget" class="status-file">
-            <Sparkles :size="14" class="status-icon" /> {{ summaryTarget.title }} · 总结
+            {{ summaryTarget.title }} · 总结
           </span>
           <span v-else-if="centerView === 'preview' && selectedFile" class="status-file">
             <FileText :size="14" class="status-icon" /> {{ selectedFile.name }}
@@ -514,7 +514,16 @@
             <div class="drag-hint">支持 PDF、DOC、DOCX、PPT、PPTX；图片和文本仅可预览</div>
           </div>
           <input type="file" ref="hiddenFileInput" style="display: none" :accept="SUPPORTED_UPLOAD_EXTENSIONS.join(',')" @change="handleFileSelect" />
-          <p v-if="isUploading" class="upload-progress" aria-live="polite">{{ uploadStage || '正在上传文件' }} {{ uploadProgress }}%</p>
+          <div v-if="isUploading" class="upload-progress-wrapper" style="margin-top: 12px; padding: 12px; background: var(--bg-modifier-hover); border-radius: var(--radius-md);">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+              <span aria-live="polite" style="font-weight: 500;">{{ uploadStage || '正在上传文件' }}</span>
+              <span style="font-weight: 600; color: var(--color-zen-sage);">{{ uploadProgress }}%</span>
+            </div>
+            <div style="height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; position: relative;">
+              <div :style="{ width: uploadProgress + '%', height: '100%', background: 'var(--accent-gradient)', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)', borderRadius: '2px' }"></div>
+              <div v-if="uploadProgress < 100" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 1.5s infinite; transform: translateX(-100%);"></div>
+            </div>
+          </div>
           <div class="form-group"><label>文件名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络.pdf" /></div>
           <div class="form-group"><label>归档至 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
             <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
@@ -612,7 +621,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
 import { Clock } from '@element-plus/icons-vue'
-import { Blocks, Plus, FileText, Sparkles } from 'lucide-vue-next'
+import { Blocks, Plus, FileText } from 'lucide-vue-next'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-message-box.css'
@@ -972,10 +981,26 @@ const chapterDraft = ref('')
 const chapterDrafts = ref<Record<string, string>>({})
 const chapterDragIndex = ref<number | null>(null)
 const sectionDrag = ref<{ chapterIndex: number; sectionIndex: number } | null>(null)
-const subjectOutline = ref<OutlineChapter[]>([
-  { id: 'chapter-foundation', title: '第一章 · 基础概念', sections: [{ id: 'section-overview', title: '核心概念总览' }] },
-  { id: 'chapter-practice', title: '第二章 · 重点与练习', sections: [{ id: 'section-application', title: '典型应用与易错点' }] }
-])
+const subjectOutline = ref<OutlineChapter[]>([])
+
+watch(isOutlineComposer, (val) => {
+  if (val && subjectOverviewRecord.value?.outline?.length) {
+    subjectOutline.value = subjectOverviewRecord.value.outline.map((chap, i) => ({
+      id: `chap-${i}-${Date.now()}`,
+      title: chap.title,
+      sections: chap.sections.map((sec, j) => ({
+        id: `sec-${i}-${j}-${Date.now()}`,
+        title: sec.title,
+        // Source identity lives on the section; locator only carries page/block coordinates.
+        fileId: sec.sourceIds[0] || ''
+      }))
+    }))
+  } else if (val && !subjectOutline.value.length) {
+    subjectOutline.value = [
+      { id: 'chapter-1', title: '第一章 · 新建章节', sections: [] }
+    ]
+  }
+})
 const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id === id)
 const syncOutlineFileLinks = () => {
   const files = activeSourceFiles.value
@@ -1507,8 +1532,9 @@ html.dark .tier1-btn:hover {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  background: #7D9372;
-  color: #fff;
+  background: transparent;
+  border: 2px solid #A3B19B;
+  color: var(--color-primary-accent, #7D9372);
   box-shadow: var(--shadow-sm);
 }
 

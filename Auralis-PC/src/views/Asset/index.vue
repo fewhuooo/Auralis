@@ -52,7 +52,7 @@
             <div v-if="group.open" class="tree-children">
               <!-- Level 2: Folders (e.g. 全部文件, 任务) -->
               <div v-for="folder in group.children" :key="folder.id" class="tree-folder-container">
-                <div class="tree-folder-header" :class="{ 'is-focus': focusUnassigned && folder.id === 'all-tasks-unassigned' }" @click="toggleTreeNode(folder)">
+                <div class="tree-folder-header" @click="toggleTreeNode(folder)">
                   <span class="folder-arrow">{{ folder.open ? '▾' : '▸' }}</span>
                   <component :is="folder.lucideIcon" :size="13" class="folder-icon" />
                   <span class="folder-name">{{ folder.name }}</span>
@@ -65,7 +65,7 @@
                     <div v-if="item.type === 'folder'" class="tree-subfolder-container">
                       <div
                         class="tree-folder-header"
-                        :class="{ 'is-focus': focusUnassigned && item.id.endsWith('-tasks-unassigned') }"
+                        :class="{ 'is-focus': focusUnassigned && item.id === 'all-tasks-unassigned' }"
                         @click="toggleTreeNode(item)"
                       >
                         <span class="folder-arrow">{{ item.open ? '▾' : '▸' }}</span>
@@ -926,16 +926,18 @@ html.dark .studio-left {
 }
 .icon-btn:hover { background: var(--accent-gradient); color: white; border-color: transparent; }
 
-.tree-search { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); }
+.tree-search { padding: 10px 12px; position: relative; z-index: 10; background: transparent; }
 .search-input {
   width: 100%; padding: 6px 10px;
   background: var(--color-bg-tertiary);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-primary); font-family: inherit; font-size: 12px; outline: none;
-  transition: border-color var(--transition-fast);
+  transition: all var(--transition-fast);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
-.search-input:focus { border-color: var(--border-accent); }
+html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
+.search-input:focus { border-color: var(--border-accent); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
 .search-input::placeholder { color: var(--text-muted); }
 
 /* Inline Upload Panel */
@@ -978,7 +980,7 @@ html.dark .studio-left {
 .mini-bar-fill { height: 100%; background: var(--accent-gradient); transition: width 0.3s; }
 
 /* Tree */
-.tree-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+.tree-body { flex: 1; overflow-y: auto; margin-top: -46px; padding: 54px 0 8px 0; }
 .tree-empty {
   padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -987,49 +989,50 @@ html.dark .studio-left {
 
 .tree-group-header {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 14px; cursor: pointer;
+  padding: 6px 6px; margin: 1px 8px; border-radius: 10px; cursor: pointer;
   user-select: none; transition: background var(--transition-fast);
 }
 .tree-group-header:hover { background: rgba(255,255,255,0.03); }
-.group-arrow { font-size: 10px; color: var(--text-muted); width: 10px; }
-.group-icon { font-size: 13px; }
-.group-name { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; flex: 1; }
+.group-arrow { font-size: 10px; color: var(--text-primary); width: 10px; }
+.group-icon { font-size: 13px; color: var(--text-primary); }
+.group-name { font-size: 13px; font-weight: 700; color: var(--text-primary); flex: 1; }
 
-.tree-folder-container { padding-left: 6px; }
+.tree-folder-container { }
 .tree-folder-header {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 14px 6px 20px; cursor: pointer;
+  padding: 6px 6px 6px 20px; margin: 1px 8px; border-radius: 10px; cursor: pointer;
   user-select: none; transition: background var(--transition-fast);
 }
 .tree-folder-header:hover { background: rgba(255,255,255,0.03); }
-.tree-folder-header.is-focus { background: rgba(125, 147, 114, 0.16); color: var(--color-primary-accent); }
+.tree-folder-header.is-focus { background: rgba(125, 147, 114, 0.16); color: var(--color-primary-accent); box-shadow: inset 0 0 0 1px var(--color-primary-accent); }
 .folder-arrow { font-size: 10px; color: var(--text-muted); width: 10px; }
-.folder-icon { font-size: 13px; color: var(--text-secondary); }
-.folder-name { font-size: 12px; font-weight: 500; color: var(--text-secondary); flex: 1; }
+.folder-icon { font-size: 13px; color: var(--text-primary); }
+.folder-name { font-size: 12px; font-weight: 600; color: var(--text-primary); flex: 1; }
 .folder-count { font-size: 10px; background: var(--color-bg-tertiary); color: var(--text-muted); padding: 1px 5px; border-radius: var(--radius-full); }
 
-.tree-empty-folder { padding: 4px 14px 4px 40px; font-size: 10px; color: var(--text-muted); }
+.tree-empty-folder { padding: 4px 6px 4px 36px; font-size: 10px; color: var(--text-muted); }
 
 .tree-items { padding: 2px 0; }
-.tree-subfolder-container { padding-left: 6px; }
-.tree-subitem { padding-left: 36px; }
-.tree-subitem-empty { padding-left: 36px; }
+.tree-subfolder-container { }
+.tree-subfolder-container > .tree-folder-header { padding-left: 36px; }
+.tree-subitem { padding-left: 52px !important; }
+.tree-subitem-empty { padding-left: 52px !important; }
 .tree-item {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 14px 8px 40px; cursor: pointer;
-  transition: all var(--transition-fast); border-radius: 0;
+  padding: 8px 6px 8px 36px; margin: 1px 8px; cursor: pointer;
+  transition: all var(--transition-fast); border-radius: 10px;
 }
 .tree-item:hover { background: rgba(255,255,255,0.03); }
-.tree-item.is-active { background: var(--border-subtle); border-right: 2px solid var(--text-accent); }
-.item-icon { font-size: 14px; flex-shrink: 0; }
+.tree-item.is-active { background: rgba(125, 147, 114, 0.16); box-shadow: inset 0 0 0 1px var(--color-primary-accent); }\n.tree-item.is-active .item-name, .tree-item.is-active .item-icon { color: var(--color-primary-accent); font-weight: 600; }
+.item-icon { font-size: 14px; flex-shrink: 0; color: var(--text-secondary); }
 .item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.item-name { font-size: 12px; font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.item-name { font-size: 11.5px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-name.is-done { text-decoration: line-through; opacity: 0.6; }
 .item-meta { font-size: 10px; color: var(--text-muted); }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-right: 6px; }
 .status-dot.success { background: #22c55e; }
 .status-dot.processing { background: var(--text-accent); animation: blink 1.5s infinite; }
-.task-done-icon { color: #22c55e; flex-shrink: 0; }
+.task-done-icon { color: #22c55e; flex-shrink: 0; margin-right: 6px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* Drop Zone */
