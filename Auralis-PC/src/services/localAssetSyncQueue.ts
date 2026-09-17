@@ -56,7 +56,8 @@ function sanitizeErrorCode(error: unknown): string {
     'QUEUE_DISPOSED',
     'QUEUE_RELEASED_DURING_INIT',
     'LOCAL_ASSET_QUEUE_DISPOSED',
-    'LOCAL_SOURCE_DRAFT_INTERRUPTED'
+    'LOCAL_SOURCE_DRAFT_INTERRUPTED',
+    'LOCAL_ASSET_DELETE_FENCED'
   ]
   for (const code of allowlist) {
     if (message.includes(code)) return code
@@ -90,6 +91,14 @@ export class QueueReleasedError extends Error {
   }
 }
 
+class AssetDeleteFencedError extends Error {
+  readonly code = 'LOCAL_ASSET_DELETE_FENCED'
+  constructor() {
+    super('LOCAL_ASSET_DELETE_FENCED')
+    this.name = 'AssetDeleteFencedError'
+  }
+}
+
 function isDisposedError(error: unknown): boolean {
   if (!error) return false
   if (typeof error === 'object' && 'code' in error) {
@@ -97,7 +106,8 @@ function isDisposedError(error: unknown): boolean {
     if (
       code === 'QUEUE_DISPOSED' ||
       code === 'QUEUE_RELEASED_DURING_INIT' ||
-      code === 'LOCAL_ASSET_QUEUE_DISPOSED'
+      code === 'LOCAL_ASSET_QUEUE_DISPOSED' ||
+      code === 'LOCAL_ASSET_DELETE_FENCED'
     ) {
       return true
     }
@@ -107,7 +117,8 @@ function isDisposedError(error: unknown): boolean {
       error.message === 'QUEUE_DISPOSED' ||
       error.message === 'QUEUE_RELEASED_DURING_INIT' ||
       error.message === 'LOCAL_ASSET_QUEUE_DISPOSED' ||
-      error.message === 'LOCAL_SOURCE_DRAFT_INTERRUPTED'
+      error.message === 'LOCAL_SOURCE_DRAFT_INTERRUPTED' ||
+      error.message === 'LOCAL_ASSET_DELETE_FENCED'
     ) {
       return true
     }
@@ -161,6 +172,15 @@ export class LocalAssetSyncQueue {
   private assertNotDisposed(): void {
     if (this.disposed) {
       throw new QueueDisposedError()
+    }
+  }
+
+  private async assertJobLive(jobId: string, localAssetId: string): Promise<void> {
+    this.assertNotDisposed()
+    const job = await this.assetRepository.getSyncJob(jobId)
+    const asset = await this.assetRepository.getAssetFile(localAssetId)
+    if (!job || job.phase === 'SYNCED' || !asset || asset.state === 'DELETING') {
+      throw new AssetDeleteFencedError()
     }
   }
 
@@ -236,6 +256,7 @@ export class LocalAssetSyncQueue {
   ): Promise<void> {
     try {
       this.assertNotDisposed()
+      await this.assertJobLive(jobId, localAssetId)
 
       const assetFile = await this.assetRepository.getAssetFile(localAssetId)
       this.assertNotDisposed()
@@ -263,6 +284,7 @@ export class LocalAssetSyncQueue {
         sha256: assetFile.sha256,
       })
       this.assertNotDisposed()
+      await this.assertJobLive(jobId, localAssetId)
 
       serverAssetId = intent.assetId ?? serverAssetId
       if (!serverAssetId) {
@@ -272,6 +294,7 @@ export class LocalAssetSyncQueue {
       this.assertNotDisposed()
       await this.assetRepository.mapServerAssetId(localAssetId, serverAssetId)
       this.assertNotDisposed()
+      await this.assertJobLive(jobId, localAssetId)
 
       if (intent.uploadStatus === 'READY') {
         isAlreadyReady = true
@@ -286,6 +309,7 @@ export class LocalAssetSyncQueue {
         this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'UPLOADING', { serverAssetId })
         this.assertNotDisposed()
+        await this.assertJobLive(jobId, localAssetId)
       }
 
       // 2. Binary upload & complete if not already ready
@@ -306,6 +330,7 @@ export class LocalAssetSyncQueue {
         this.assertNotDisposed()
         await this.assetService.uploadAssetToRemote(localAssetId, uploadUrl, headers)
         this.assertNotDisposed()
+        await this.assertJobLive(jobId, localAssetId)
 
         this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'COMPLETING_REMOTE_ASSET', { serverAssetId })
@@ -314,6 +339,7 @@ export class LocalAssetSyncQueue {
         this.assertNotDisposed()
         await this.api.completeUpload(serverAssetId)
         this.assertNotDisposed()
+        await this.assertJobLive(jobId, localAssetId)
 
         this.assertNotDisposed()
         await this.assetRepository.updateSyncJobPhase(jobId, 'BINDING_SOURCE', { serverAssetId })
@@ -328,6 +354,7 @@ export class LocalAssetSyncQueue {
         this.assertNotDisposed()
         await this.assetRepository.transitionAssetState(localAssetId, 'SYNCED')
         this.assertNotDisposed()
+        await this.assertJobLive(jobId, localAssetId)
       }
 
       // 4. Release all drafts for this asset
@@ -338,6 +365,7 @@ export class LocalAssetSyncQueue {
         () => this.assertNotDisposed(),
       )
       this.assertNotDisposed()
+      await this.assertJobLive(jobId, localAssetId)
 
       // 5. Complete job
       this.assertNotDisposed()
@@ -372,6 +400,11 @@ export class LocalAssetSyncQueue {
       }
 
       if (this.disposed) return
+      // Source deletion may have fenced and removed this job while an
+      // already-claimed network request was in flight.  The durable delete
+      // fence wins; never recreate the upload row from error recovery.
+      const remainingJob = await this.assetRepository.getSyncJob(jobId)
+      if (!remainingJob) return
       await this.assetRepository.scheduleRetry(jobId, safeCode, safeDetail, nextRetryAt)
       if (this.disposed) return
     }

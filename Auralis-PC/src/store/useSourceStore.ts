@@ -3,6 +3,8 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
 import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
+import { getOrCreateLocalAssetService } from '@/services/localAssetService'
+import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import type { LocalRepository } from '@/services/localRepository'
 import type { LocalAssetRepository } from '@/services/localAssetRepository'
 import { getOrCreateLocalSourceDraftService } from '@/services/localSourceDraftService'
@@ -94,7 +96,43 @@ export const useSourceStore = defineStore('source', () => {
     const local = await readLocal()
     replaceSources(local)
     scheduleAwaitingClientDocuments(local)
+    // A restart may be the first opportunity to finish a physical delete
+    // whose Source tombstone was acknowledged while the app was closed.
+    void cleanupDeletedSourceAssets().catch((error) => {
+      console.warn('[SourceStore] deleted Source asset cleanup failed', error)
+    })
     return local
+  }
+
+  async function cleanupDeletedSourceAssets(): Promise<void> {
+    const authStore = useAuthStore()
+    if (!authStore.user?.id || !authStore.serverDeviceId) return
+    const repo = await repository()
+    const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    const assetService = getOrCreateLocalAssetService(assetRepo)
+    const tombstones = await repo.list<SourceView>('SOURCE', { includeDeleted: true })
+    for (const row of tombstones) {
+      if (!row.deletedAt) continue
+      const draft = await assetRepo.getSourceDraft(row.id)
+      if (draft && draft.state !== 'DELETED') {
+        // A crash can occur after the SOURCE tombstone commits but before the
+        // draft store is updated.  Repair that durable two-store gap before
+        // recounting references; the operation is idempotent.
+        await assetRepo.deleteSourceDraft(row.id)
+      }
+      const assetId = typeof row.value?.assetId === 'string' ? row.value.assetId : null
+      if (!assetId) continue
+      const localAsset = await assetRepo.getAssetFile(assetId) ?? await assetRepo.getAssetFileByServerId(assetId)
+      if (!localAsset) continue
+      try {
+        await assetService.deleteUnreferencedAsset(localAsset.localAssetId)
+      } catch (error) {
+        // Active Source references (including an unacknowledged server
+        // tombstone) deliberately keep the managed file.  The next sync or
+        // startup reconciliation retries this idempotently.
+        if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) throw error
+      }
+    }
   }
 
   async function loadSources(): Promise<SourceFileModel[]> {
@@ -145,6 +183,9 @@ export const useSourceStore = defineStore('source', () => {
 
     const authStore = useAuthStore()
     const repo = await repository()
+    const ownerId = authStore.user?.id
+    const deviceId = authStore.serverDeviceId
+    if (!ownerId || !deviceId) throw new Error('Sources require an authenticated user and device')
 
     let localAssetRepo: LocalAssetRepository | null = null
     if (authStore.user?.id && authStore.serverDeviceId) {
@@ -211,13 +252,30 @@ export const useSourceStore = defineStore('source', () => {
       assetSizeBytes: normalizedAssetSizeBytes,
     }
     const { assetSizeBytes: _assetSizeBytes, ...mutationView } = localView
-    await repo.commitMutation({
-      resourceType: 'SOURCE', resourceId: id, value: localView, version: 0, deletedAt: null,
-      mutation: createStableMutation({
-        clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'CREATE', baseVersion: 0,
-        payload: mutationView as unknown as Record<string, unknown>,
-      }),
-    })
+    const commitSource = async (): Promise<void> => {
+      await repo.commitMutationUnlocked({
+        resourceType: 'SOURCE', resourceId: id, value: localView, version: 0, deletedAt: null,
+        mutation: createStableMutation({
+          clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'CREATE', baseVersion: 0,
+          payload: mutationView as unknown as Record<string, unknown>,
+        }),
+      })
+    }
+    if (localAsset?.serverAssetId) {
+      await withLocalAssetLifecycleLock(ownerId, deviceId, async () => {
+        const currentAsset = await localAssetRepo!.getAssetFile(assetId)
+        if (!currentAsset || currentAsset.state === 'DELETING') throw new Error('LOCAL_ASSET_DELETE_FENCED')
+        await commitSource()
+      })
+    } else {
+      await repo.commitMutation({
+        resourceType: 'SOURCE', resourceId: id, value: localView, version: 0, deletedAt: null,
+        mutation: createStableMutation({
+          clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'CREATE', baseVersion: 0,
+          payload: mutationView as unknown as Record<string, unknown>,
+        }),
+      })
+    }
     const model = mapSourceView(localView)
     replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)])
     scheduleSync()
@@ -233,25 +291,51 @@ export const useSourceStore = defineStore('source', () => {
     if (!source) return
     const repo = await repository()
     const existing = await repo.read<SourceView>('SOURCE', id)
+    const authStore = useAuthStore()
+    const assetRepo = authStore.user?.id && authStore.serverDeviceId
+      ? await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+      : null
+
+    // Fence all local work before the durable Source tombstone is written.
+    // This makes deletion restart-safe and prevents a late parser/upload
+    // completion from resurrecting the deleted Source or its Asset.
+    await documentScheduler?.discard(id)
+    await fileOverviewGenerator?.discardFileOverview(id)
+    const draftBeforeDelete = await assetRepo?.getSourceDraft(id)
+    const localOnlyDraft = Boolean(draftBeforeDelete && !draftBeforeDelete.serverSourceId)
     const now = new Date().toISOString()
     const localView: SourceView = {
       ...(existing?.value ?? { id, subjectId: source.subjectId, type: source.type, title: source.name }),
       id, version: source.version, updatedAt: now, deletedAt: now,
     }
-    await repo.commitMutation({
-      resourceType: 'SOURCE', resourceId: id, value: localView, version: source.version, deletedAt: now,
-      mutation: createStableMutation({
-        clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'DELETE', baseVersion: source.version, payload: { id },
-      }),
-    })
+    if (localOnlyDraft) {
+      // This Source never reached the server.  Persist a local tombstone
+      // without manufacturing a DELETE mutation that can remain unresolved
+      // forever against a non-existent server row.
+      await repo.tombstone('SOURCE', id, { version: source.version, deletedAt: now, syncStatus: 'synced' })
+    } else {
+      await repo.commitMutation({
+        resourceType: 'SOURCE', resourceId: id, value: localView, version: source.version, deletedAt: now,
+        mutation: createStableMutation({
+          clientMutationId: uuidv7(), resourceType: 'SOURCE', resourceId: id, mutationType: 'DELETE', baseVersion: source.version, payload: { id },
+        }),
+      })
+    }
     sources.value = sources.value.filter((item) => item.id !== id)
     activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
-    void fileOverviewGenerator?.discardFileOverview(id).catch(() => {
-      console.warn('[SourceStore] deleted Source overview cleanup failed')
-    })
-    scheduleSync()
-    void documentScheduler?.discard(id).catch(() => {
-      console.warn('[SourceStore] deleted Source document cleanup failed')
+    if (!localOnlyDraft) scheduleSync()
+
+    // The Source tombstone is now durable.  Mark the auxiliary draft after
+    // it, so a failure before this line is repairable by startup cleanup.
+    const draft = draftBeforeDelete ?? await assetRepo?.getSourceDraft(id)
+    if (assetRepo && draft && draft.state !== 'DELETED') await assetRepo.deleteSourceDraft(id)
+    // For a local-only draft this can complete immediately.  For a server
+    // Source the tombstone remains a reference until sync settles; startup
+    // cleanup retries after acknowledgement.
+    await cleanupDeletedSourceAssets().catch((error) => {
+      if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) {
+        console.warn('[SourceStore] deleted Source asset cleanup deferred', error)
+      }
     })
   }
 

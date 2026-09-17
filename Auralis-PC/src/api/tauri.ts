@@ -429,10 +429,12 @@ export interface DeleteLocalAssetCommand {
 export interface ReconcileLocalAssetsCommand {
   userScope: string
   deviceId: string
+  knownLocalAssetIds: string[]
 }
 
 export interface ReconcileLocalAssetsResult {
   removedStagingFiles: number
+  quarantinedFiles: string[]
   files: LocalAssetDescriptor[]
 }
 

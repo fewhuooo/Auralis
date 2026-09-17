@@ -262,6 +262,38 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
   }
 })
 
+test('useSourceStore.deleteSourceFile: local-only tombstone releases draft and immediately removes last local asset', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-local-delete', email: 'delete@example.com' }
+  authStore.serverDeviceId = 'device-local-delete'
+  const assetStore = useAssetStore()
+  const sourceStore = useSourceStore()
+
+  try {
+    const assetModel = await assetStore.upload(new File(['delete me'], 'delete.pdf', { type: 'application/pdf' }))
+    const localAssetId = assetModel.id
+    const sourceId = await sourceStore.createFileSource('subject-delete', 'Delete me', localAssetId)
+    const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+    const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+
+    await sourceStore.deleteSourceFile(sourceId)
+
+    const source = await repo.read('SOURCE', sourceId)
+    const draft = await assetRepo.getSourceDraft(sourceId)
+    const asset = await assetRepo.getAssetFile(localAssetId)
+    assert.equal(source?.deletedAt !== null, true, 'local-only Source must persist a durable tombstone')
+    assert.equal(draft?.state, 'DELETED', 'local-only draft must be released after the tombstone')
+    assert.equal(asset, null, 'last local-only Source deletion must remove the managed Asset immediately')
+    assert.equal((await repo.listUnresolved()).filter((mutation) => mutation.resourceType === 'SOURCE').length, 0)
+  } finally {
+    releaseLocalAssetSyncQueue('user-local-delete', 'device-local-delete')
+  }
+})
+
 test('useSyncStore: does not expose test seams or getAssetQueue in production store contract', () => {
   const pinia = createPinia()
   setActivePinia(pinia)

@@ -24,6 +24,7 @@ import {
   type LocalStorageLike,
 } from '@/services/legacyLocalData'
 import { DOCUMENT_JOB_PHASES, type CreateDocumentProcessingJobInput, type DocumentJobPhase, type DocumentJobTransitionOptions, type DocumentProcessingJob } from '@/types/documentProcessing'
+import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 
 export type LocalResourceKey = { resourceType: string; resourceId: string }
 
@@ -299,6 +300,19 @@ export class LocalRepository {
     value: T,
     options: LocalWriteOptions = {},
   ): Promise<LocalEntity<T>> {
+    if (resourceType === 'SOURCE') {
+      return withLocalAssetLifecycleLock(this.userId, this.serverDeviceId, () =>
+        this.upsertInternal(resourceType, resourceId, value, options))
+    }
+    return this.upsertInternal(resourceType, resourceId, value, options)
+  }
+
+  private async upsertInternal<T>(
+    resourceType: string,
+    resourceId: string,
+    value: T,
+    options: LocalWriteOptions = {},
+  ): Promise<LocalEntity<T>> {
     const existing = await this.read<unknown>(resourceType, resourceId)
     this.assertBaseVersion(existing, options.baseVersion, resourceType, resourceId)
     const entity: LocalEntity<T> = {
@@ -351,6 +365,19 @@ export class LocalRepository {
   }
 
   async commitMutation<T>(input: LocalCommitInput<T>): Promise<LocalEntity<T>> {
+    if (input.resourceType === 'SOURCE') {
+      return withLocalAssetLifecycleLock(this.userId, this.serverDeviceId, () =>
+        this.commitMutationInternal(input))
+    }
+    return this.commitMutationInternal(input)
+  }
+
+  /** Caller must already hold the owner-scoped lifecycle lock. */
+  async commitMutationUnlocked<T>(input: LocalCommitInput<T>): Promise<LocalEntity<T>> {
+    return this.commitMutationInternal(input)
+  }
+
+  private async commitMutationInternal<T>(input: LocalCommitInput<T>): Promise<LocalEntity<T>> {
     const mutation = this.mutationFromInput(input.mutation)
     if (mutation.resourceType !== input.resourceType || mutation.resourceId !== input.resourceId) {
       throw new Error('Local mutation must target the committed resource')

@@ -188,6 +188,15 @@ test('source drafts CRUD and server binding work with scope isolation', async ()
     const repo = new LocalAssetRepository('user-a', 'device-1', { sql: sqlite })
     const repoB = new LocalAssetRepository('user-b', 'device-1', { sql: sqlite })
 
+    await repo.createAssetFile({
+      localAssetId: 'asset-1',
+      relativePath: 'assets/user-a/asset-1/content.pdf',
+      originalName: 'math.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1,
+      sha256: sampleSha,
+    })
+
     const draft = await repo.createSourceDraft({
       localSourceId: 'draft-source-1',
       localAssetId: 'asset-1',
@@ -245,8 +254,19 @@ test('source reference counting detects drafts, local resource records, and muta
     assert.equal(await repo.countActiveSourceReferences('asset-1'), 1)
     assert.equal(await repo.hasActiveSourceReferences('asset-1'), true)
 
-    // Mark draft DELETED -> references drop back to 0
+    // The persisted SOURCE row for the same logical Source must not add a
+    // second reference while a draft is being handed off.
+    await sqlite.execute(
+      'INSERT INTO local_resource_records (user_id, resource_type, resource_id, version, deleted_at, payload) VALUES ($1, $2, $3, $4, $5, $6)',
+      ['user-a', 'SOURCE', 'draft-1', 1, null, JSON.stringify({ id: 'draft-1', localAssetId: 'asset-1' })]
+    )
+    assert.equal(await repo.countActiveSourceReferences('asset-1'), 1)
+
+    // Mark draft DELETED; the active SOURCE row now remains the sole reference.
     await repo.deleteSourceDraft('draft-1')
+    assert.equal(await repo.countActiveSourceReferences('asset-1'), 1)
+    assert.equal(await repo.hasActiveSourceReferences('asset-1'), true)
+    await sqlite.execute("UPDATE local_resource_records SET deleted_at = '2026-09-16T00:00:00.000Z', sync_status = 'synced' WHERE resource_id = 'draft-1'")
     assert.equal(await repo.countActiveSourceReferences('asset-1'), 0)
     assert.equal(await repo.hasActiveSourceReferences('asset-1'), false)
 

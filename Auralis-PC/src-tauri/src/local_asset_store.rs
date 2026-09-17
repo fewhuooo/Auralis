@@ -13,6 +13,7 @@ use tauri::{ipc::Response, AppHandle};
 
 const ASSETS_DIR: &str = "assets";
 const STAGING_DIR: &str = "asset-staging";
+const QUARANTINE_DIR: &str = "asset-quarantine";
 pub const MAX_LOCAL_ASSET_BYTES: u64 = 52_428_800;
 const MAX_UPLOAD_HEADERS: usize = 32;
 const MAX_UPLOAD_HEADER_NAME_BYTES: usize = 128;
@@ -34,6 +35,7 @@ pub struct LocalAssetDescriptor {
 #[serde(rename_all = "camelCase")]
 pub struct ReconcileReport {
     pub removed_staging_files: u64,
+    pub quarantined_files: Vec<String>,
     pub files: Vec<LocalAssetDescriptor>,
 }
 
@@ -96,6 +98,7 @@ pub struct DeleteLocalAssetCommand {
 pub struct ReconcileLocalAssetsCommand {
     pub user_scope: String,
     pub device_id: String,
+    pub known_local_asset_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -221,6 +224,22 @@ fn ensure_contained(root: &Path, candidate: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate the directory containing an entry without canonicalizing the
+/// entry itself.  This is required when quarantining a symlink/junction: the
+/// link target may intentionally be outside the managed root, but renaming
+/// the link itself is safe and must not abort the global reconciliation.
+fn ensure_entry_parent_contained(root: &Path, entry: &Path) -> Result<(), String> {
+    let root = fs::canonicalize(root).map_err(|_| "LOCAL_ASSET_ROOT_INVALID".to_string())?;
+    let parent = entry
+        .parent()
+        .ok_or_else(|| "LOCAL_ASSET_PATH_INVALID".to_string())?;
+    let parent = fs::canonicalize(parent).map_err(|_| "LOCAL_ASSET_PATH_INVALID".to_string())?;
+    if !parent.starts_with(&root) {
+        return Err("LOCAL_ASSET_PATH_OUTSIDE_ROOT".to_string());
+    }
+    Ok(())
+}
+
 fn managed_asset_dir(
     root: &Path,
     user_scope: &str,
@@ -314,6 +333,37 @@ fn staging_dir(root: &Path, user_scope: &str) -> Result<PathBuf, String> {
     fs::create_dir_all(&scope).map_err(|_| "LOCAL_ASSET_STAGING_FAILED".to_string())?;
     ensure_contained(root, &scope)?;
     Ok(scope)
+}
+
+fn quarantine_dir(root: &Path, user_scope: &str) -> Result<PathBuf, String> {
+    validate_logical_segment(user_scope)?;
+    let quarantine = root.join(QUARANTINE_DIR);
+    fs::create_dir_all(&quarantine).map_err(|_| "LOCAL_ASSET_QUARANTINE_FAILED".to_string())?;
+    ensure_contained(root, &quarantine)?;
+    let scope = quarantine.join(user_scope);
+    fs::create_dir_all(&scope).map_err(|_| "LOCAL_ASSET_QUARANTINE_FAILED".to_string())?;
+    ensure_contained(root, &scope)?;
+    Ok(scope)
+}
+
+fn quarantine_entry(
+    root: &Path,
+    user_scope: &str,
+    entry: &Path,
+    label: &str,
+) -> Result<(), String> {
+    ensure_entry_parent_contained(root, entry)?;
+    let destination_dir = quarantine_dir(root, user_scope)?;
+    let basename = entry
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let destination = destination_dir.join(format!(
+        "{label}-{}-{basename}",
+        NONCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    ensure_contained(root, &destination)?;
+    fs::rename(entry, destination).map_err(|_| "LOCAL_ASSET_QUARANTINE_FAILED".to_string())
 }
 
 fn sha256_reader<R: Read>(reader: &mut R) -> Result<(u64, String), String> {
@@ -962,56 +1012,158 @@ pub fn delete_file(
     Ok(())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn reconcile_files(
     root: &Path,
     user_scope: &str,
     device_id: &str,
 ) -> Result<ReconcileReport, String> {
+    reconcile_files_with_known(root, user_scope, device_id, None)
+}
+
+fn reconcile_files_with_known(
+    root: &Path,
+    user_scope: &str,
+    device_id: &str,
+    known_local_asset_ids: Option<&[String]>,
+) -> Result<ReconcileReport, String> {
     validate_logical_segment(device_id)?;
-    let staging = staging_dir(root, user_scope)?;
     let mut removed = 0_u64;
-    for entry in fs::read_dir(&staging).map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())? {
-        let entry = entry.map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?;
-        let path = entry.path();
-        if path.is_file() && path.extension().is_some_and(|value| value == "part") {
-            fs::remove_file(path).map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?;
+    let staging_root = root.join(STAGING_DIR);
+    let staging_scope_path = staging_root.join(user_scope);
+    let staging_scope = match fs::symlink_metadata(&staging_root) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            quarantine_entry(root, user_scope, &staging_root, "staging-root")?;
             removed += 1;
+            None
+        }
+        Ok(_) => match fs::symlink_metadata(&staging_scope_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                quarantine_entry(root, user_scope, &staging_scope_path, "staging-scope")?;
+                removed += 1;
+                None
+            }
+            Ok(_) => {
+                ensure_contained(root, &staging_scope_path)?;
+                Some(staging_scope_path)
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                Some(staging_dir(root, user_scope)?)
+            }
+            Err(_) => return Err("LOCAL_ASSET_RECONCILE_FAILED".to_string()),
+        },
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            Some(staging_dir(root, user_scope)?)
+        }
+        Err(_) => return Err("LOCAL_ASSET_RECONCILE_FAILED".to_string()),
+    };
+    if let Some(staging) = staging_scope {
+        for entry in
+            fs::read_dir(&staging).map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?
+        {
+            let entry = entry.map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?;
+            let path = entry.path();
+            if path.is_file() || path.is_dir() || fs::symlink_metadata(&path).is_ok() {
+                quarantine_entry(root, user_scope, &path, "staging")?;
+                removed += 1;
+            }
         }
     }
-    let scope = root.join(ASSETS_DIR).join(user_scope);
-    if !scope.exists() {
+    let assets_root = root.join(ASSETS_DIR);
+    if let Ok(metadata) = fs::symlink_metadata(&assets_root) {
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            quarantine_entry(root, user_scope, &assets_root, "assets-root")?;
+            return Ok(ReconcileReport {
+                removed_staging_files: removed,
+                quarantined_files: vec![ASSETS_DIR.to_string()],
+                files: Vec::new(),
+            });
+        }
+    }
+    let scope = assets_root.join(user_scope);
+    let scope_metadata = match fs::symlink_metadata(&scope) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok(ReconcileReport {
+                removed_staging_files: removed,
+                quarantined_files: Vec::new(),
+                files: Vec::new(),
+            });
+        }
+        Err(_) => return Err("LOCAL_ASSET_RECONCILE_FAILED".to_string()),
+    };
+    if scope_metadata.file_type().is_symlink() || !scope_metadata.is_dir() {
+        quarantine_entry(root, user_scope, &scope, "scope-link")?;
         return Ok(ReconcileReport {
             removed_staging_files: removed,
+            quarantined_files: vec![user_scope.to_string()],
             files: Vec::new(),
         });
     }
     ensure_contained(root, &scope)?;
     let mut files = Vec::new();
+    let mut quarantined_files = Vec::new();
     for asset in fs::read_dir(scope).map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())? {
         let asset = asset.map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?;
-        if !asset
+        let asset_type = asset
             .file_type()
-            .map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?
-            .is_dir()
-        {
+            .map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?;
+        if !asset_type.is_dir() {
+            let label = asset.file_name().to_string_lossy().to_string();
+            quarantine_entry(root, user_scope, &asset.path(), "scope")?;
+            quarantined_files.push(label);
             continue;
         }
         let id = asset.file_name().to_string_lossy().to_string();
         validate_logical_segment(&id)?;
-        for content in
-            fs::read_dir(asset.path()).map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?
-        {
-            let content = content.map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?;
-            let name = content.file_name().to_string_lossy().to_string();
-            if let Some(extension) = name.strip_prefix("content.") {
-                let extension = normalize_extension(extension)?;
-                ensure_contained(root, &content.path())?;
-                files.push(descriptor_for(content.path(), &id, extension)?);
+        if let Some(known) = known_local_asset_ids {
+            if !known.iter().any(|known_id| known_id == &id) {
+                quarantine_entry(root, user_scope, &asset.path(), "unknown-asset")?;
+                quarantined_files.push(id);
+                continue;
             }
         }
+        let entries: Vec<_> = fs::read_dir(asset.path())
+            .map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string())?
+            .map(|entry| entry.map_err(|_| "LOCAL_ASSET_RECONCILE_FAILED".to_string()))
+            .collect::<Result<_, _>>()?;
+        let content_entries: Vec<_> = entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .file_type()
+                    .map(|kind| kind.is_file())
+                    .unwrap_or(false)
+            })
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                name.strip_prefix("content.")
+                    .and_then(|extension| normalize_extension(extension).ok())
+                    .map(|extension| (entry.path(), extension))
+            })
+            .collect();
+
+        if content_entries.len() != 1 {
+            quarantine_entry(root, user_scope, &asset.path(), "asset")?;
+            quarantined_files.push(id);
+            continue;
+        }
+
+        for entry in &entries {
+            let is_known = entry.path() == content_entries[0].0;
+            if !is_known {
+                let label = format!("{id}-{}", entry.file_name().to_string_lossy());
+                quarantine_entry(root, user_scope, &entry.path(), "content")?;
+                quarantined_files.push(label);
+            }
+        }
+        let (path, extension) = &content_entries[0];
+        ensure_contained(root, path)?;
+        files.push(descriptor_for(path.clone(), &id, extension.clone())?);
     }
     Ok(ReconcileReport {
         removed_staging_files: removed,
+        quarantined_files,
         files,
     })
 }
@@ -1255,7 +1407,15 @@ pub fn reconcile_local_assets(
     app: AppHandle,
 ) -> Result<ReconcileReport, String> {
     let root = crate::local_database::canonical_app_data_dir(&app)?;
-    reconcile_files(&root, &command.user_scope, &command.device_id)
+    for local_asset_id in &command.known_local_asset_ids {
+        validate_logical_segment(local_asset_id)?;
+    }
+    reconcile_files_with_known(
+        &root,
+        &command.user_scope,
+        &command.device_id,
+        Some(&command.known_local_asset_ids),
+    )
 }
 
 #[cfg(test)]
@@ -1264,6 +1424,8 @@ mod tests {
     use std::fs;
     use std::io::{self, Write};
     use std::net::TcpListener;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use std::path::Path;
     use std::sync::Arc;
     use std::thread;
@@ -1500,7 +1662,70 @@ mod tests {
         .unwrap();
         let report = reconcile_files(root.path(), "user-a", "device-a").unwrap();
         assert!(report.removed_staging_files >= 1);
+        assert!(root.path().join("asset-quarantine/user-a").exists());
         assert!(ready.absolute_path.exists());
+    }
+
+    #[test]
+    fn reconciliation_quarantines_unknown_managed_assets_without_returning_paths() {
+        let root = TempRoot::new();
+        let input = source_file(root.path(), "source.pdf", b"known");
+        let known = import_file(
+            root.path(),
+            "user-a",
+            "device-a",
+            "asset-known",
+            &input,
+            "pdf",
+            5,
+            &sha256_bytes(b"known"),
+        )
+        .unwrap();
+        let unknown_dir = root.path().join("assets/user-a/asset-unknown");
+        fs::create_dir_all(&unknown_dir).unwrap();
+        fs::write(unknown_dir.join("content.pdf"), b"unknown").unwrap();
+
+        let known_ids = vec!["asset-known".to_string()];
+        let report =
+            reconcile_files_with_known(root.path(), "user-a", "device-a", Some(&known_ids))
+                .unwrap();
+
+        assert_eq!(report.files.len(), 1);
+        assert_eq!(report.files[0].local_asset_id, "asset-known");
+        assert!(report
+            .quarantined_files
+            .iter()
+            .any(|id| id == "asset-unknown"));
+        assert!(known.absolute_path.exists());
+        assert!(!unknown_dir.exists());
+        assert!(root.path().join("asset-quarantine/user-a").exists());
+        assert!(report
+            .files
+            .iter()
+            .all(|descriptor| !descriptor.local_asset_id.contains("unknown")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_quarantines_scope_symlink_without_following_external_target() {
+        let root = TempRoot::new();
+        let outside = TempRoot::new();
+        let assets = root.path().join("assets");
+        fs::create_dir_all(&assets).unwrap();
+        fs::create_dir_all(outside.path().join("external")).unwrap();
+        symlink(outside.path().join("external"), assets.join("user-a")).unwrap();
+
+        let report =
+            reconcile_files_with_known(root.path(), "user-a", "device-a", Some(&Vec::new()))
+                .unwrap();
+
+        assert!(report
+            .quarantined_files
+            .iter()
+            .any(|value| value == "user-a"));
+        assert!(!assets.join("user-a").exists());
+        assert!(root.path().join("asset-quarantine/user-a").exists());
+        assert!(outside.path().join("external").exists());
     }
     #[test]
     fn part_guard_removes_unpublished_file_on_failure_path() {

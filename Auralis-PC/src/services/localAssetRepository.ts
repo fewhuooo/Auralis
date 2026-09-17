@@ -11,6 +11,7 @@ import {
   type LocalSqlDatabase,
 } from '@/services/localSchema'
 import type { LocalStorageLike } from '@/services/legacyLocalData'
+import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import {
   computeLocalAssetRelativePath,
   type LocalAssetFile,
@@ -61,6 +62,8 @@ const LEGAL_ASSET_TRANSITIONS: Record<LocalAssetState, readonly LocalAssetState[
   SYNC_FAILED: ['SYNCING', 'SYNCED', 'CORRUPT', 'DELETING'],
   SYNCED: ['CORRUPT', 'DELETING'],
   CORRUPT: ['READY_LOCAL', 'SYNCED', 'DELETING'],
+  // DELETING is a durable terminal fence.  A failed native delete is retried
+  // by startup reconciliation; it is never rolled back in metadata.
   DELETING: [],
 }
 
@@ -291,51 +294,74 @@ export class LocalAssetRepository {
     toState: LocalAssetState,
     extra?: { verifiedAt?: string; lastAccessedAt?: string; deletedAt?: string | null },
   ): Promise<LocalAssetFile> {
+    return this.serializeWrite(() => this.transitionAssetStateUnsafe(localAssetId, toState, extra))
+  }
+
+  private async transitionAssetStateUnsafe(
+    localAssetId: string,
+    toState: LocalAssetState,
+    extra?: { verifiedAt?: string; lastAccessedAt?: string; deletedAt?: string | null },
+  ): Promise<LocalAssetFile> {
+    const current = await this.getAssetFile(localAssetId)
+    if (!current) throw new Error('LOCAL_ASSET_NOT_FOUND')
+
+    const allowed = LEGAL_ASSET_TRANSITIONS[current.state]
+    if (!allowed.includes(toState)) {
+      throw new Error(`LOCAL_ASSET_ILLEGAL_TRANSITION: Cannot transition asset from ${current.state} to ${toState}`)
+    }
+
+    const now = this.now()
+    const verifiedAt = extra?.verifiedAt ?? current.verifiedAt
+    const lastAccessedAt = extra?.lastAccessedAt ?? current.lastAccessedAt
+    const deletedAt = extra?.deletedAt !== undefined ? extra.deletedAt : (toState === 'DELETING' ? now : current.deletedAt)
+
+    if (this.sql) {
+      await this.ensureSql()
+      await this.sql.execute(
+        `UPDATE local_asset_files
+         SET state = $1, verified_at = $2, last_accessed_at = $3, deleted_at = $4
+         WHERE user_id = $5 AND device_id = $6 AND local_asset_id = $7`,
+        [toState, verifiedAt, lastAccessedAt, deletedAt, this.userId, this.serverDeviceId, localAssetId],
+      )
+      return {
+        ...current,
+        state: toState,
+        verifiedAt,
+        lastAccessedAt,
+        deletedAt,
+      }
+    }
+
+    const store = this.readBrowserStore()
+    const index = store.files.findIndex(f => f.localAssetId === localAssetId)
+    if (index >= 0) {
+      store.files[index] = {
+        ...store.files[index],
+        state: toState,
+        verifiedAt,
+        lastAccessedAt,
+        deletedAt,
+      }
+      this.writeBrowserStore(store)
+      return clone(store.files[index])
+    }
+    throw new Error('LOCAL_ASSET_NOT_FOUND')
+  }
+
+  /**
+   * Atomically re-check Source references and publish the terminal delete
+   * fence under the repository's serialized write boundary.  Source writes
+   * use the owner lifecycle mutex before entering this method, so a new
+   * reference cannot land between the count and DELETING transition.
+   */
+  async markUnreferencedAssetDeleting(localAssetId: string): Promise<LocalAssetFile | null> {
     return this.serializeWrite(async () => {
+      if (await this.hasActiveSourceReferences(localAssetId)) {
+        throw new Error('ASSET_HAS_ACTIVE_REFERENCES: Cannot delete asset while active source drafts, records, or mutations still reference it')
+      }
       const current = await this.getAssetFile(localAssetId)
-      if (!current) throw new Error('LOCAL_ASSET_NOT_FOUND')
-
-      const allowed = LEGAL_ASSET_TRANSITIONS[current.state]
-      if (!allowed.includes(toState)) {
-        throw new Error(`LOCAL_ASSET_ILLEGAL_TRANSITION: Cannot transition asset from ${current.state} to ${toState}`)
-      }
-
-      const now = this.now()
-      const verifiedAt = extra?.verifiedAt ?? current.verifiedAt
-      const lastAccessedAt = extra?.lastAccessedAt ?? current.lastAccessedAt
-      const deletedAt = extra?.deletedAt !== undefined ? extra.deletedAt : (toState === 'DELETING' ? now : current.deletedAt)
-
-      if (this.sql) {
-        await this.ensureSql()
-        await this.sql.execute(
-          `UPDATE local_asset_files
-           SET state = $1, verified_at = $2, last_accessed_at = $3, deleted_at = $4
-           WHERE user_id = $5 AND device_id = $6 AND local_asset_id = $7`,
-          [toState, verifiedAt, lastAccessedAt, deletedAt, this.userId, this.serverDeviceId, localAssetId],
-        )
-        return {
-          ...current,
-          state: toState,
-          verifiedAt,
-          lastAccessedAt,
-          deletedAt,
-        }
-      }
-
-      const store = this.readBrowserStore()
-      const index = store.files.findIndex(f => f.localAssetId === localAssetId)
-      if (index >= 0) {
-        store.files[index] = {
-          ...store.files[index],
-          state: toState,
-          verifiedAt,
-          lastAccessedAt,
-          deletedAt,
-        }
-        this.writeBrowserStore(store)
-        return clone(store.files[index])
-      }
-      throw new Error('LOCAL_ASSET_NOT_FOUND')
+      if (!current || current.state === 'DELETING') return current
+      return this.transitionAssetStateUnsafe(localAssetId, 'DELETING')
     })
   }
 
@@ -405,10 +431,43 @@ export class LocalAssetRepository {
     })
   }
 
+  /**
+   * Fence an asset upload before a user-driven Source deletion.  Removing the
+   * durable job row is intentional: an already-running queue observes the
+   * missing row and must not recreate it during its error recovery path.
+   */
+  async cancelSyncJobsForAsset(localAssetId: string): Promise<number> {
+    return this.serializeWrite(async () => {
+      if (this.sql) {
+        await this.ensureSql()
+        const rows = await this.sql.select<{ count: number }>(
+          `SELECT COUNT(*) AS count FROM local_asset_sync_jobs
+           WHERE user_id = $1 AND device_id = $2 AND local_asset_id = $3 AND phase <> 'SYNCED'`,
+          [this.userId, this.serverDeviceId, localAssetId],
+        )
+        await this.sql.execute(
+          `DELETE FROM local_asset_sync_jobs
+           WHERE user_id = $1 AND device_id = $2 AND local_asset_id = $3 AND phase <> 'SYNCED'`,
+          [this.userId, this.serverDeviceId, localAssetId],
+        )
+        return Number(rows[0]?.count ?? 0)
+      }
+
+      const store = this.readBrowserStore()
+      const before = store.jobs.length
+      store.jobs = store.jobs.filter((job) => !(job.localAssetId === localAssetId && job.phase !== 'SYNCED'))
+      this.writeBrowserStore(store)
+      return before - store.jobs.length
+    })
+  }
+
   // --- Local Source Drafts ---
 
   async createSourceDraft(input: CreateSourceDraftInput): Promise<LocalSourceDraft> {
-    return this.serializeWrite(async () => {
+    return withLocalAssetLifecycleLock(this.userId, this.serverDeviceId, () => this.serializeWrite(async () => {
+      const asset = await this.getAssetFile(input.localAssetId)
+      if (!asset) throw new Error('LOCAL_ASSET_NOT_FOUND')
+      if (asset.state === 'DELETING') throw new Error('LOCAL_ASSET_DELETE_FENCED')
       const now = this.now()
       const state: LocalSourceDraftState = input.state ?? 'DRAFT'
       const draft: LocalSourceDraft = {
@@ -449,7 +508,7 @@ export class LocalAssetRepository {
       store.drafts.push(draft)
       this.writeBrowserStore(store)
       return clone(draft)
-    })
+    }))
   }
 
   async getSourceDraft(localSourceId: string): Promise<LocalSourceDraft | null> {
@@ -564,29 +623,43 @@ export class LocalAssetRepository {
   // --- Source Reference Counting ---
 
   async countActiveSourceReferences(localAssetId: string): Promise<number> {
-    let count = 0
+    const sourceIds = new Set<string>()
     const asset = await this.getAssetFile(localAssetId)
     const serverAssetId = asset?.serverAssetId ?? null
+    const allDrafts = await this.listSourceDrafts({ localAssetId })
+    const draftsBySource = new Map(allDrafts.map((draft) => [draft.localSourceId, draft]))
 
-    // 1. Active drafts referencing localAssetId
-    const activeDrafts = await this.listSourceDrafts({ localAssetId })
-    count += activeDrafts.filter(d => d.state !== 'DELETED').length
+    // 1. Active drafts referencing localAssetId.  Drafts and their eventual
+    // SOURCE resource/mutation all represent the same logical Source, so use
+    // the same key here to avoid counting one Source twice during the
+    // draft->resource hand-off.
+    for (const draft of allDrafts.filter(d => d.state !== 'DELETED')) sourceIds.add(`source:${draft.localSourceId}`)
 
     // 2. Active SOURCE records in local_resource_records
     if (this.sql) {
       await this.ensureSql()
       const resourceRows = await this.sql.select<LocalResourceRow>(
-        "SELECT * FROM local_resource_records WHERE user_id = $1 AND resource_type = 'SOURCE' AND deleted_at IS NULL",
+        "SELECT * FROM local_resource_records WHERE user_id = $1 AND resource_type = 'SOURCE'",
         [this.userId],
       )
       for (const row of resourceRows) {
         try {
           const payload = JSON.parse(row.payload) as Record<string, unknown>
-          if (
+          // A tombstone is still a server-side reference until its SOURCE
+          // mutation is settled.  Once synced, it is safe to release it.
+          const deletedDraft = draftsBySource.get(row.resource_id)
+          // A never-released local draft has no server Source to protect.  A
+          // released/synced draft keeps the server-side reference until its
+          // tombstone is acknowledged.
+          const localOnlyDraftTombstone = row.deleted_at !== null
+            && deletedDraft?.state === 'DELETED'
+            && !deletedDraft.serverSourceId
+          const isReference = !localOnlyDraftTombstone && (row.deleted_at === null || row.sync_status !== 'synced')
+          if (isReference && (
             (payload.assetId && (payload.assetId === localAssetId || (serverAssetId && payload.assetId === serverAssetId))) ||
             (payload.localAssetId && payload.localAssetId === localAssetId)
-          ) {
-            count += 1
+          )) {
+            sourceIds.add(`source:${row.resource_id}`)
           }
         } catch {
           // ignore malformed payload
@@ -595,7 +668,7 @@ export class LocalAssetRepository {
 
       // 3. Pending/inflight SOURCE mutations
       const mutationRows = await this.sql.select<LocalMutationRow>(
-        "SELECT * FROM local_mutations WHERE user_id = $1 AND resource_type = 'SOURCE' AND status IN ('pending', 'inflight')",
+        "SELECT * FROM local_mutations WHERE user_id = $1 AND resource_type = 'SOURCE' AND status IN ('pending', 'inflight', 'conflict', 'error')",
         [this.userId],
       )
       for (const row of mutationRows) {
@@ -605,7 +678,7 @@ export class LocalAssetRepository {
             (payload.assetId && (payload.assetId === localAssetId || (serverAssetId && payload.assetId === serverAssetId))) ||
             (payload.localAssetId && payload.localAssetId === localAssetId)
           ) {
-            count += 1
+            sourceIds.add(`source:${row.resource_id}`)
           }
         } catch {
           // ignore malformed payload
@@ -618,17 +691,18 @@ export class LocalAssetRepository {
       if (raw) {
         try {
           const parsed = JSON.parse(raw) as {
-            records?: Array<{ resourceType: string; deletedAt: string | null; value: Record<string, unknown> }>
-            mutations?: Array<{ resourceType: string; status: string; payload: Record<string, unknown> }>
+            resources?: Array<{ resourceType: string; id: string; deletedAt: string | null; syncStatus?: string; value: Record<string, unknown> }>
+            mutations?: Array<{ resourceType: string; resourceId?: string; status: string; payload?: Record<string, unknown> }>
           }
-          if (Array.isArray(parsed.records)) {
-            for (const rec of parsed.records) {
-              if (rec.resourceType === 'SOURCE' && rec.deletedAt === null && rec.value) {
+          if (Array.isArray(parsed.resources)) {
+            for (const rec of parsed.resources) {
+              const isReference = rec.deletedAt === null || rec.syncStatus !== 'synced'
+              if (rec.resourceType === 'SOURCE' && isReference && rec.value) {
                 if (
                   (rec.value.assetId && (rec.value.assetId === localAssetId || (serverAssetId && rec.value.assetId === serverAssetId))) ||
                   (rec.value.localAssetId && rec.value.localAssetId === localAssetId)
                 ) {
-                  count += 1
+                  sourceIds.add(`source:${rec.id}`)
                 }
               }
             }
@@ -640,7 +714,7 @@ export class LocalAssetRepository {
                   (mut.payload.assetId && (mut.payload.assetId === localAssetId || (serverAssetId && mut.payload.assetId === serverAssetId))) ||
                   (mut.payload.localAssetId && mut.payload.localAssetId === localAssetId)
                 ) {
-                  count += 1
+                  sourceIds.add(`source:${mut.resourceId ?? mut.payload?.id ?? 'mutation'}`)
                 }
               }
             }
@@ -651,7 +725,7 @@ export class LocalAssetRepository {
       }
     }
 
-    return count
+    return sourceIds.size
   }
 
   async hasActiveSourceReferences(localAssetId: string): Promise<boolean> {

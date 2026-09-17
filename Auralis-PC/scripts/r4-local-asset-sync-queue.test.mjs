@@ -152,6 +152,65 @@ test('LocalAssetSyncQueue: full pipeline uploads asset, maps serverAssetId, rele
   }
 })
 
+test('LocalAssetSyncQueue: successful remote completion cannot cross a durable last-reference delete fence', async () => {
+  const sqlite = new TemporarySqlite()
+  let queue
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const localRepo = new LocalRepository('user-fence', 'dev-fence', { sql: sqlite })
+    const assetRepo = new LocalAssetRepository('user-fence', 'dev-fence', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    adapter.uploadAssetToRemote = async (args) => ({
+      status: 200,
+      bytesSent: args.expectedSize,
+      payloadSha256: args.expectedSha256,
+    })
+    const assetService = new LocalAssetService(assetRepo, { nativeAdapter: adapter })
+    const draftService = new LocalSourceDraftService(assetRepo, localRepo)
+    const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f02868f1'
+    await assetService.importAsset({
+      localAssetId,
+      file: new File(['fenced-content'], 'fenced.pdf', { type: 'application/pdf' }),
+      originalName: 'fenced.pdf',
+      mimeType: 'application/pdf',
+    })
+    const job = await assetRepo.enqueueSyncJob(localAssetId)
+    let completeStarted
+    const completeBarrier = new Promise((resolve) => { completeStarted = resolve })
+    let releaseComplete
+    const completeRelease = new Promise((resolve) => { releaseComplete = resolve })
+    let completeCalls = 0
+    const api = {
+      createUploadIntent: async () => ({
+        assetId: 'server-fence-asset',
+        uploadUrl: 'https://test/fence',
+        headers: {},
+        uploadStatus: 'UPLOADING',
+      }),
+      uploadToObjectStorage: async () => {},
+      completeUpload: async (assetId) => {
+        completeCalls += 1
+        completeStarted()
+        await completeRelease
+        return { id: assetId, uploadStatus: 'READY' }
+      },
+    }
+    queue = new LocalAssetSyncQueue({ assetRepository: assetRepo, assetService, draftService, api })
+    const runPromise = queue.processQueue()
+    await completeBarrier
+    await assetService.deleteUnreferencedAsset(localAssetId)
+    releaseComplete()
+    await runPromise
+
+    assert.equal(completeCalls, 1)
+    assert.equal(await assetRepo.getAssetFile(localAssetId), null)
+    assert.equal(await assetRepo.getSyncJob(job.jobId), null)
+  } finally {
+    queue?.dispose()
+    sqlite.close()
+  }
+})
+
 test('LocalAssetSyncQueue: replay handling when upload-intent returns uploadStatus READY skips upload/complete directly to draft release', async () => {
   const sqlite = new TemporarySqlite()
   let queue
@@ -874,6 +933,15 @@ test('LocalSourceDraftService: releaseDraftsForAsset handles mid-flight interrup
     const localSourceId = '8f123456-789a-4bcd-ef01-23456789abc5'
     const serverAssetId = 'server-asset-midflight'
 
+    await assetRepo.createAssetFile({
+      localAssetId,
+      relativePath: `assets/user-draft-1/${localAssetId}/content.pdf`,
+      originalName: 'draft.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1,
+      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    })
+
     await draftService.createDraft({
       localSourceId,
       localAssetId,
@@ -952,6 +1020,15 @@ test('LocalSourceDraftService: releaseDraftsForAsset detects mutation conflict/p
     const localAssetId = 'd3b07384-d113-4f4b-a2c3-4d64f0286827'
     const localSourceId = '8f123456-789a-4bcd-ef01-23456789abc7'
     const serverAssetId = 'server-asset-conflict-expected'
+
+    await assetRepo.createAssetFile({
+      localAssetId,
+      relativePath: `assets/user-draft-2/${localAssetId}/content.pdf`,
+      originalName: 'draft.pdf',
+      mimeType: 'application/pdf',
+      sizeBytes: 1,
+      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    })
 
     const draft = await draftService.createDraft({
       localSourceId,

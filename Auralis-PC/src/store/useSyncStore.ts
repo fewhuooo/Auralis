@@ -103,6 +103,19 @@ export const useSyncStore = defineStore('sync', () => {
           const assetService = getOrCreateLocalAssetService(assetRepository)
           const draftService = getOrCreateLocalSourceDraftService(assetRepository, rep)
 
+          // Reconcile only the captured owner/device before starting its
+          // upload queue.  Native reconciliation receives the DB allowlist,
+          // marks missing/hash-mismatched rows CORRUPT, and quarantines
+          // unexplained files without exposing paths to the UI.
+          await assetService.reconcileLocalAssets()
+          if (
+            assetQueuePromiseToken !== currentToken ||
+            authStore.user?.id !== userId ||
+            authStore.serverDeviceId !== serverDeviceId
+          ) {
+            throw new QueueReleasedError()
+          }
+
           const queue = await getOrCreateLocalAssetSyncQueue({
             assetRepository,
             assetService,

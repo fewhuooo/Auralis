@@ -126,6 +126,7 @@ export interface ReconciliationReport {
   markedCorrupt: string[]
   orphansIdentified: string[]
   removedStagingFiles?: number
+  quarantinedFiles?: string[]
 }
 
 /**

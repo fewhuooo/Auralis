@@ -412,6 +412,126 @@ test('delete unreferenced asset verifies void return and exact payload, blocked 
   }
 })
 
+test('last-reference deletion preserves the managed file until every Source tombstone is synced', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const repository = new LocalAssetRepository('user-refs', 'device-refs', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const service = new LocalAssetService(repository, { nativeAdapter: adapter })
+    const handle = await service.importAsset({
+      localAssetId: 'asset-shared-refs',
+      file: new File(['shared'], 'shared.pdf', { type: 'application/pdf' }),
+      originalName: 'shared.pdf',
+      mimeType: 'application/pdf',
+    })
+    const sourcePayload = JSON.stringify({ id: 'source-1', assetId: handle.localAssetId })
+    const sourcePayload2 = JSON.stringify({ id: 'source-2', assetId: handle.localAssetId })
+    await sqlite.execute(
+      `INSERT INTO local_resource_records (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+       VALUES (?, 'SOURCE', ?, 0, NULL, 'synced', ?)`,
+      ['user-refs', 'source-1', sourcePayload],
+    )
+    await sqlite.execute(
+      `INSERT INTO local_resource_records (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+       VALUES (?, 'SOURCE', ?, 0, NULL, 'synced', ?)`,
+      ['user-refs', 'source-2', sourcePayload2],
+    )
+
+    await assert.rejects(() => service.deleteUnreferencedAsset(handle.localAssetId), /ASSET_HAS_ACTIVE_REFERENCES/)
+    assert.ok(await service.resolveLocalAsset({ localAssetId: handle.localAssetId }))
+
+    await sqlite.execute(
+      `UPDATE local_resource_records SET deleted_at = ?, sync_status = 'pending' WHERE user_id = ? AND resource_type = 'SOURCE' AND resource_id = ?`,
+      [new Date().toISOString(), 'user-refs', 'source-1'],
+    )
+    await assert.rejects(() => service.deleteUnreferencedAsset(handle.localAssetId), /ASSET_HAS_ACTIVE_REFERENCES/)
+
+    await sqlite.execute(
+      `UPDATE local_resource_records SET sync_status = 'synced' WHERE user_id = ? AND resource_type = 'SOURCE' AND resource_id = ?`,
+      ['user-refs', 'source-1'],
+    )
+    await assert.rejects(() => service.deleteUnreferencedAsset(handle.localAssetId), /ASSET_HAS_ACTIVE_REFERENCES/)
+
+    await sqlite.execute(
+      `UPDATE local_resource_records SET deleted_at = ?, sync_status = 'synced' WHERE user_id = ? AND resource_type = 'SOURCE' AND resource_id = ?`,
+      [new Date().toISOString(), 'user-refs', 'source-2'],
+    )
+    const result = await service.deleteUnreferencedAsset(handle.localAssetId)
+    assert.equal(result.deleted, true)
+    assert.equal(await repository.getAssetFile(handle.localAssetId), null)
+  } finally {
+    sqlite.close()
+  }
+})
+
+test('startup reconciliation retries a crash-window DELETING row idempotently', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const repository = new LocalAssetRepository('user-crash', 'device-crash', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const originalDelete = adapter.deleteAsset.bind(adapter)
+    let failDelete = true
+    adapter.deleteAsset = async (args) => {
+      if (failDelete) throw new Error('LOCAL_ASSET_BUSY')
+      await originalDelete(args)
+    }
+    const service = new LocalAssetService(repository, { nativeAdapter: adapter })
+    const handle = await service.importAsset({
+      localAssetId: 'asset-crash-window',
+      file: new File(['crash-window'], 'crash.pdf', { type: 'application/pdf' }),
+      originalName: 'crash.pdf',
+      mimeType: 'application/pdf',
+    })
+
+    await assert.rejects(() => service.deleteUnreferencedAsset(handle.localAssetId), /LOCAL_ASSET_BUSY/)
+    assert.equal((await repository.getAssetFile(handle.localAssetId))?.state, 'DELETING')
+
+    failDelete = false
+    const report = await service.reconcileLocalAssets()
+    assert.deepEqual(report.markedCorrupt, [])
+    assert.equal(await repository.getAssetFile(handle.localAssetId), null)
+  } finally {
+    sqlite.close()
+  }
+})
+
+test('owner lifecycle lock serializes concurrent new Source reference versus last-reference delete', async () => {
+  const sqlite = new TemporarySqlite()
+  try {
+    await createVersionedLocalSchema(sqlite)
+    const repository = new LocalAssetRepository('user-race', 'device-race', { sql: sqlite })
+    const adapter = new TransientBrowserAssetAdapter()
+    const service = new LocalAssetService(repository, { nativeAdapter: adapter })
+    const handle = await service.importAsset({
+      localAssetId: 'asset-race-last-ref',
+      file: new File(['race'], 'race.pdf', { type: 'application/pdf' }),
+      originalName: 'race.pdf',
+      mimeType: 'application/pdf',
+    })
+
+    const results = await Promise.allSettled([
+      service.deleteUnreferencedAsset(handle.localAssetId),
+      repository.createSourceDraft({
+        localSourceId: 'source-race',
+        localAssetId: handle.localAssetId,
+        subjectId: 'subject-race',
+        title: 'Race',
+        localContentRevision: 'revision-race',
+      }),
+    ])
+    const draft = await repository.getSourceDraft('source-race')
+    const asset = await repository.getAssetFile(handle.localAssetId)
+    // The lock permits exactly one safe outcome: a successful new reference
+    // keeps the Asset, or deletion wins and the reference is rejected.
+    assert.ok(!draft || asset, 'a committed Source draft must never outlive its Asset')
+    assert.ok(results.some((result) => result.status === 'fulfilled'))
+  } finally {
+    sqlite.close()
+  }
+})
+
 test('downloadRemoteAsset verifies exact Rust download payload and return descriptor', async () => {
   const sqlite = new TemporarySqlite()
   try {
@@ -495,11 +615,12 @@ test('reconciliation sends exact scope payload and TS compares returned files wi
         assert.ok(args.command)
         assert.equal(args.command.userScope, 'user-a')
         assert.equal(args.command.deviceId, 'device-1')
-        assert.equal(args.command.knownAssets, undefined, 'Must not send knownAssets to Rust')
+        assert.deepEqual(args.command.knownLocalAssetIds.sort(), ['asset-h1', 'asset-h2'])
 
-        // Return { removedStagingFiles, files: LocalAssetDescriptor[] }
+        // Return { removedStagingFiles, quarantinedFiles, files: LocalAssetDescriptor[] }
         return {
           removedStagingFiles: 3,
+          quarantinedFiles: ['orphan-on-disk-1'],
           files: [
             // Only h1 is present, h2 is missing from disk, and orphan-1 is on disk but not in DB
             filesOnDisk.get('asset-h1'),

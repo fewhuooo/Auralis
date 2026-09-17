@@ -13,6 +13,7 @@ import {
 import { getFileExtension } from '@/utils/filePreview'
 import { uuidv7 } from '@/utils/uuid'
 import type { LocalAssetRepository } from '@/services/localAssetRepository'
+import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 import {
   computeLocalAssetRelativePath,
   type ImportAssetInput,
@@ -66,7 +67,8 @@ export interface LocalAssetNativeAdapter {
   reconcileAssets(args: {
     userId: string
     serverDeviceId: string
-  }): Promise<{ removedStagingFiles: number; files: LocalAssetDescriptor[] }>
+    knownLocalAssetIds: string[]
+  }): Promise<{ removedStagingFiles: number; quarantinedFiles?: string[]; files: LocalAssetDescriptor[] }>
 
   uploadAssetToRemote(args: {
     userId: string
@@ -217,10 +219,12 @@ export class TauriLocalAssetNativeAdapter implements LocalAssetNativeAdapter {
   async reconcileAssets(args: {
     userId: string
     serverDeviceId: string
-  }): Promise<{ removedStagingFiles: number; files: LocalAssetDescriptor[] }> {
+    knownLocalAssetIds: string[]
+  }): Promise<{ removedStagingFiles: number; quarantinedFiles?: string[]; files: LocalAssetDescriptor[] }> {
     return reconcileLocalAssets({
       userScope: args.userId,
       deviceId: args.serverDeviceId,
+      knownLocalAssetIds: args.knownLocalAssetIds,
     })
   }
 
@@ -350,9 +354,10 @@ export class TransientBrowserAssetAdapter implements LocalAssetNativeAdapter {
   async reconcileAssets(_args: {
     userId: string
     serverDeviceId: string
-  }): Promise<{ removedStagingFiles: number; files: LocalAssetDescriptor[] }> {
+    knownLocalAssetIds: string[]
+  }): Promise<{ removedStagingFiles: number; quarantinedFiles?: string[]; files: LocalAssetDescriptor[] }> {
     const files = [...this.blobs.values()].map(item => item.descriptor)
-    return { removedStagingFiles: 0, files }
+    return { removedStagingFiles: 0, quarantinedFiles: [], files }
   }
 
   async getAssetBlob(args: {
@@ -661,18 +666,21 @@ export class LocalAssetService {
   }
 
   async deleteUnreferencedAsset(localAssetId: string): Promise<{ deleted: boolean; reason?: string }> {
-    const hasRefs = await this.repository.hasActiveSourceReferences(localAssetId)
-    if (hasRefs) {
-      throw new Error('ASSET_HAS_ACTIVE_REFERENCES: Cannot delete asset while active source drafts, records, or mutations still reference it')
-    }
+    return withLocalAssetLifecycleLock(this.repository.userId, this.repository.serverDeviceId, () =>
+      this.deleteUnreferencedAssetLocked(localAssetId))
+  }
 
-    const record = await this.repository.getAssetFile(localAssetId)
+  private async deleteUnreferencedAssetLocked(localAssetId: string): Promise<{ deleted: boolean; reason?: string }> {
+    const record = await this.repository.markUnreferencedAssetDeleting(localAssetId)
     if (!record) return { deleted: true }
 
-    // Transition state to DELETING
-    await this.repository.transitionAssetState(localAssetId, 'DELETING')
+    // Publish the durable fence before touching bytes.  Queue workers check
+    // both the job row and this state at every external boundary, so a
+    // successful late upload cannot bind a deleted Source.
+    // DELETING is terminal and durable.  A crash or native busy/error leaves
+    // this fence in place; startup reconciliation retries idempotently.
+    await this.repository.cancelSyncJobsForAsset(localAssetId)
 
-    // Native delete
     await this.adapter.deleteAsset({
       userId: this.repository.userId,
       serverDeviceId: this.repository.serverDeviceId,
@@ -691,6 +699,7 @@ export class LocalAssetService {
     const result = await this.adapter.reconcileAssets({
       userId: this.repository.userId,
       serverDeviceId: this.repository.serverDeviceId,
+      knownLocalAssetIds: allFiles.map((file) => file.localAssetId),
     })
 
     const nativeMap = new Map<string, LocalAssetDescriptor>()
@@ -724,7 +733,24 @@ export class LocalAssetService {
     const orphansIdentified: string[] = []
     for (const nativeFile of result.files) {
       if (!allDbFileIds.has(nativeFile.localAssetId)) {
-        orphansIdentified.push(nativeFile.absolutePath || nativeFile.localAssetId)
+        // Native reconciliation must never return absolute paths for files
+        // that are not backed by a DB row.  Keep only the logical identifier
+        // in the report; the native side quarantines the actual bytes.
+        orphansIdentified.push(nativeFile.localAssetId)
+      }
+    }
+
+    // A crash may leave metadata in the terminal DELETING state after the
+    // durable fence but before native bytes/metadata cleanup.  Retry those
+    // rows idempotently during startup; active references still win and keep
+    // the row for a later reconciliation pass.
+    for (const deleting of allFiles.filter((file) => file.state === 'DELETING')) {
+      try {
+        await this.deleteUnreferencedAsset(deleting.localAssetId)
+      } catch (error) {
+        if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) {
+          console.warn('[LocalAsset] deferred DELETING cleanup', error)
+        }
       }
     }
 
@@ -733,6 +759,7 @@ export class LocalAssetService {
       markedCorrupt,
       orphansIdentified,
       removedStagingFiles: result.removedStagingFiles,
+      quarantinedFiles: result.quarantinedFiles ?? [],
     }
   }
 
