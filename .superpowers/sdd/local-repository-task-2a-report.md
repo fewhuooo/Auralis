@@ -81,3 +81,47 @@ The original implementation commit was `46f2348a8df565c6640f6fcd752742464ada7c91
 ## Remaining external limitations
 
 The automated evidence uses H2/Spring Boot/JPA and does not constitute real PostgreSQL, MinIO, Docker/Testcontainers, multi-device convergence, or GUI/business acceptance. No schema or object-retention behavior was exercised against external services in this task.
+
+## Unified database lock protocol audit and follow-up
+
+Before the architectural correction, the scoped paths audited from the current implementation were:
+
+| Path | Current lock order | Protocol status |
+| --- | --- | --- |
+| Subject delete | Subject row lock → active child discovery/mutation without concrete row locks → Relation listener discovery/mutation | Noncompliant: child/relation resources were not locked after the Subject lock. |
+| Task schedule swap | Task row locks → Subject owner locks → mutation | Noncompliant: Resource → Subject reverse order and request-direction risk. |
+| Source move | Source discovery → Subject owner locks → unlocked Source re-read/mutation | Noncompliant: concrete Source lock missing after Subject lock. |
+| Task move | Task discovery → Subject owner locks → unlocked Task re-read/mutation | Noncompliant: concrete Task lock missing after Subject lock. |
+| Relation create/update | endpoint/relation discovery → Subject owner locks → endpoint helpers/relation mutation | Noncompliant: no single coordinator and no concrete endpoint/Relation lock protocol. |
+| Resource create/restore | Subject validation/lock → insert or unlocked child restore | Noncompliant for restore resource locking; create had no shared coordinator boundary. |
+
+RED evidence for the correction:
+
+`Auralis-Server\\mvnw.cmd -B -ntp -Dtest=SubjectDeletionCascadeTests test` initially failed with the new task-swap order assertion because `SubjectRepository.findAllForUpdateByUserIdAndIdInOrderByIdAsc(...)` did not exist. After the first implementation pass, the same suite exposed the H2 lock-query behavior and stale test doubles; the coordinator was tightened to sorted per-row pessimistic locks and the deterministic suite became 6/6 GREEN.
+
+## Final unified-protocol verification
+
+The final implementation uses the thin `SubjectLockCoordinator` as the one owner-lock entry point. It deduplicates and UUID-sorts Subject IDs, locks each owner row with `PESSIMISTIC_WRITE`, validates user ownership and active state, and leaves child-resource behavior to the owning module. Discovery queries for Source, KnowledgeBlock, Task, Relation, and ParsedDocument paths return only owner IDs or unmanaged endpoint snapshots; after the owner locks are held, each path obtains a concrete resource lock and re-reads/revalidates active state, ownership, subject IDs, endpoints, and versions. Subject delete listeners lock active child rows before tombstoning. Relation endpoint cleanup runs under the already-held owner lock and never reacquires Subject locks after a resource lock.
+
+The final scoped path review is therefore:
+
+| Path | Final order | Protocol status |
+| --- | --- | --- |
+| Subject delete | owner Subject → locked Source/KnowledgeBlock/Task/Relation rows → revalidation/mutation | Compliant |
+| Task schedule swap | discover both owners → canonical Subject locks → Task rows in UUID order → revalidation/swap | Compliant |
+| Source move | discover old owner + requested new owner → canonical Subject locks → Source row → revalidation/move | Compliant |
+| Task move | discover old owner + requested new owner → canonical Subject locks → Task row → revalidation/move | Compliant |
+| Relation create/update/restore/delete | discover endpoint/relation owners → canonical Subject locks → Relation and endpoint rows → revalidation/mutation | Compliant |
+| Resource create/restore and ParsedDocument completion | Subject owner discovery where needed → canonical Subject lock → concrete resource row → revalidation/mutation | Compliant |
+
+Strict RED→GREEN evidence for this correction is recorded above. The final focused command
+`Auralis-Server\\mvnw.cmd -B -ntp '-Dtest=SubjectDeletionCascadeTests,SubjectLockCoordinatorPostgresIntegrationTests' test`
+exited 0 with 7 tests, 0 failures, 0 errors, 0 skipped. The H2 cascade/concurrency tests were 6/6; the PostgreSQL 17/Testcontainers integration was 1/1 and demonstrated reversed request order blocking behind canonical UUID row-lock acquisition. `ParsedDocumentCompleteTests` exited 0 with 4/4 after replacing stale managed-entity discovery with a scalar owner-ID projection. `ArchitectureTests` exited 0 with 1/1, and `SourceAssetRelationServiceTests,SourceIngestionSyncEventTests,SyncServiceTests` exited 0 with 27/27. Fresh `Auralis-Server\\mvnw.cmd -B -ntp clean test-compile` exited 0, compiling 281 main and 77 test sources.
+
+The final full Server command `Auralis-Server\\mvnw.cmd -B -ntp test` ran with Docker/Testcontainers available and exited 1 after 287 tests: 286 passed, 1 failed, 0 errors. The sole failure remains the pre-existing `TaskColorRemovalMigrationTests.cleanSchemaValidationRunsFreshDatabaseThroughLatest` assertion at line 62, which expects Flyway version `21` while the repository applies version `22`; all Task 2A cascade, lock, relation, ParsedDocument, PostgreSQL, MinIO, and architecture tests passed in that run. This task did not modify the migration or that test.
+
+Additional implementation files in this correction are `SubjectLockCoordinator.java`, `RelationEndpointSnapshot.java`, and `SubjectLockCoordinatorPostgresIntegrationTests.java`; `ParsedDocumentService.java` now participates in the same owner-lock fence. No API/schema/MinIO behavior was changed.
+
+## Final commit
+
+The final correction implementation/docs/test commit is `761f7b1b59adcef75354de329be205a65c40c5c8` (`fix(server): unify subject owner lock protocol`). The report evidence is committed separately after this SHA was known.
