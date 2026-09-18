@@ -98,6 +98,7 @@
 - [文档架构设计](design/DocumentationArchitecture.md)
 - [前端设计](design/Frontend.md)
 - [PC Local Asset Store 本地优先文件资料库设计（2026-09-15）](design/2026-09-15-pc-local-asset-store-design.md)
+- [PC OCR 运行时页级进度恢复设计（2026-09-18）](design/2026-09-18-pc-ocr-runtime-progress-design.md)
 - [PC 学科总览与文件 AI 总结设计（2026-09-09）](design/2026-09-09-pc-subject-overview-ai-design.md)
 - [PC 文件 Overview 触发链诊断设计（2026-09-10）](design/2026-09-10-pc-overview-trigger-diagnostics-design.md)
 - [Overview Source 删除屏障设计（2026-09-10）](design/2026-09-10-overview-source-deletion-fence-design.md)
