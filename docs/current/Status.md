@@ -8,15 +8,15 @@
 
 2026-09-17 修复点 4（待处理）：无法连接后端时缺少用户可见的失败状态。问答请求没有错误反馈，左下角连接/同步状态也没有变化；需补齐连接状态传播、问答错误处理和全局状态展示。
 
-2026-09-18 修复点 5（代码完成、自动验证通过，真实运行验收待完成）：Server 删除 Subject 时在同一事务内软删除 Source、KnowledgeBlock、Task、Relation 并写入既有同步事件；相关 mutation 统一遵循“UUID 排序锁全部 Subject → 锁并重读具体资源 → 重校验 → 修改”的数据库锁协议。PC 先持久提交父删除标记，再围栏子投影、draft、处理任务与文件总览；父删除未决期间保留可回滚的 draft/bytes，服务端确认 APPLIED 后才终结 draft 并按最后引用规则清理本地 Asset，拒绝时原子恢复父记录并持久请求 authoritative snapshot。Server 聚焦 40/40，PC `test:r4-pc` 342/342、`type-check`、build 均通过；真实 Tauri 强杀恢复、真实 PostgreSQL/MinIO、多设备和 GUI 验收仍开放。
+2026-09-18 修复点 5（已完成并通过真机验收）：Server 删除 Subject 时在同一事务内软删除 Source、KnowledgeBlock、Task、Relation 并写入既有同步事件；相关 mutation 统一遵循“UUID 排序锁全部 Subject → 锁并重读具体资源 → 重校验 → 修改”的数据库锁协议。PC 先持久提交父删除标记，再围栏子投影、draft、处理任务与文件总览；父删除未决期间保留可回滚的 draft/bytes，服务端确认 APPLIED 后才终结 draft 并按最后引用规则清理本地 Asset，拒绝时原子恢复父记录并持久请求 authoritative snapshot。Server 聚焦 40/40，PC `test:r4-pc` 342/342、`type-check`、build 均通过；本轮 Subject 删除生命周期、重启与强杀恢复已完成人工真机验收，未发现阻塞问题。
 
-2026-09-18 修复点 6（代码完成、自动验证通过，真实运行复验待完成）：根因是 PC `replaceSources()` 从可见首行推断当前 Subject，导致跨学科导入、空学科和异步 A→B 加载时投影错位；现已把当前 Subject 与可见行解耦，并用 generation/subject guard 丢弃过期完成结果。Local Asset 的物理路径继续使用与学科无关的稳定 `assets/{userScope}/{localAssetId}/content.{ext}`，业务学科归属由 Source/draft 的 `subjectId` 表达，不新增按学科复制或搬移文件。相关流程 9/9、PC `test:r4-pc` 334/334、`type-check` 通过；仍需在真实 Tauri 中完成两个学科导入、重启、同步后的归属复验。
+2026-09-18 修复点 6（已完成并通过真机验收）：根因是 PC `replaceSources()` 从可见首行推断当前 Subject，导致跨学科导入、空学科和异步 A→B 加载时投影错位；现已把当前 Subject 与可见行解耦，并用 generation/subject guard 丢弃过期完成结果。Local Asset 的物理路径继续使用与学科无关的稳定 `assets/{userScope}/{localAssetId}/content.{ext}`，业务学科归属由 Source/draft 的 `subjectId` 表达，不新增按学科复制或搬移文件。相关流程 9/9、PC `test:r4-pc` 334/334、`type-check` 通过；本轮文件学科归属真机验收通过。
 
-2026-09-17 外部验证未完成：双设备真实收敛、MinIO 故障注入、低磁盘场景、写入/删除过程中强杀，以及长时间稳定性测试均尚未执行。
+2026-09-18 release/stability 非阻塞测试项：双设备真实收敛、低磁盘、MinIO 故障注入和长时间稳定性尚未取得明确逐项执行记录，继续保留在发布稳定性测试范围，但不再作为 Local Asset Store 改造的未完成任务。MinIO 实际同步主链路此前已人工验证；本轮重启、强杀及异常恢复流程已人工验证，未发现阻塞问题。
 
-2026-09-17 PC Local Asset Store Task 8：代码实现与自动验证已完成，真实验收仍开放。`b7a3bb7..c560d8b`（含 `f770277`、`e040e78`）完成永久本地资料库、owner/device scope、所有文件默认同步、断网导入/预览/本地 OCR/Parser、Source draft 与服务端 Asset 映射。原始文件在受管目录中以明文保存，由 OS ACL 保护；Local Asset 不提供备份、导出或恢复。只有用户明确删除且最后一个 Source 引用消失后才删除本地文件；上传、解析、修复和删除任务在该边界前后均受 fence 保护。启动同步前 reconcile 数据库、受管文件和 staging 残留，缺失或 hash/size 不一致标记 `CORRUPT`，未知内容 quarantine。
+2026-09-18 PC Local Asset Store 改造已完成并通过本轮真机验收。`b7a3bb7..c560d8b`（含 `f770277`、`e040e78`）完成永久本地资料库、owner/device scope、所有文件默认同步、断网导入/预览/本地 OCR/Parser、Source draft 与服务端 Asset 映射；后续提交完成文件学科归属与 Subject 删除生命周期收口。原始文件在受管目录中以明文保存，由 OS ACL 保护；Local Asset 不提供备份、导出或恢复。只有用户明确删除且最后一个 Source 引用消失后才删除本地文件；上传、解析、修复和删除任务在该边界前后均受 fence 保护。启动同步前 reconcile 数据库、受管文件和 staging 残留，缺失或 hash/size 不一致标记 `CORRUPT`，未知内容 quarantine。本轮主要流程、Subject 删除、重启/强杀及异常恢复均已人工验证，基本未发现问题；MinIO 实际同步主链路此前已人工验证。
 
-自动验证：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check` 与 `cargo check` 通过；schema v8→v9 旧断言已由 `c560d8b` 对齐。最新 PC 全量 `test:r4-pc` 为 334/334，`type-check` 通过；`check:r4-pc` 仍被测试代码中的固定本地地址静态规则误报阻断。代码/构建/自动测试不替代真实 Tauri GUI、断网重启、真实文件系统、外部对象存储和双设备业务验收，不能写成业务验收通过。
+自动与人工证据分开记录：Task 7 定向 77/77、FilePreview+store 38/38、Rust 30/30，`cargo fmt --check` 与 `cargo check` 通过；schema v8→v9 旧断言已由 `c560d8b` 对齐。最新本轮 PC 全量 `test:r4-pc` 为 342/342，`type-check` 与 build 通过。本轮另有真机人工验收结论；双设备、低磁盘、MinIO 故障注入和长时间稳定性仍属于未逐项执行的 release/stability 测试，不影响本地仓库改造完成状态。
 
 2026-09-15 PC Local Asset Store 设计快照（已由 2026-09-17 实施记录更新）：当日产品与架构设计确认“已批准设计，尚未实施”，定义 PC Tauri 的永久本地文件、断网预览/解析、联网幂等同步、身份映射和最后 Source 引用删除语义；当日代码、SQLite schema、Server API 和运行行为尚未改变。
 
