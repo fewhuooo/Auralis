@@ -35,6 +35,7 @@ const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useSubjectStore } = await import('../src/store/useSubjectStore.ts')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { publishProjectionChange } = await import('../src/services/localProjectionEvents.ts')
 const request = (await import('../src/api/request.ts')).default
 
 class TemporarySqlite {
@@ -430,6 +431,75 @@ test('useSubjectStore.deleteSubject applies the local cascade fence before sync 
   } finally {
     syncStore.requestBackgroundSync = originalRequestBackgroundSync
     releaseLocalAssetSyncQueue('user-subject-delete-store', 'device-subject-delete-store')
+  }
+})
+
+test('Source Store consumes a local cascade projection notification immediately', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-projection-refresh', email: 'projection@example.com' },
+    tokens: { accessToken: 'token-projection', refreshToken: 'refresh-projection' },
+    sessionId: 'session-projection',
+    serverDeviceId: 'device-projection-refresh',
+  })
+  const { getLocalRepository } = await import('../src/services/localDb.ts')
+  const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+  await repo.upsert('SOURCE', 'source-projection-refresh', { id: 'source-projection-refresh', subjectId: 'subject-projection-refresh', title: 'Refresh me', type: 'FILE' }, { version: 1 })
+  const sourceStore = useSourceStore()
+  await sourceStore.loadLocalSourceFiles('subject-projection-refresh')
+  assert.equal(sourceStore.activeSourceFiles.some((source) => source.id === 'source-projection-refresh'), true)
+  await repo.tombstone('SOURCE', 'source-projection-refresh', { version: 1, deletedAt: '2026-09-18T01:00:00.000Z', syncStatus: 'synced' })
+  publishProjectionChange({ resourceTypes: new Set(['SOURCE']) })
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(sourceStore.activeSourceFiles.some((source) => source.id === 'source-projection-refresh'), false)
+})
+
+test('useSubjectStore hydration restores a local-only draft after rejected Subject sync', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-subject-reject-hydration', email: 'reject-hydration@example.com' },
+    tokens: { accessToken: 'token-reject-hydration', refreshToken: 'refresh-reject-hydration' },
+    sessionId: 'session-reject-hydration',
+    serverDeviceId: 'device-subject-reject-hydration',
+  })
+  const syncStore = useSyncStore()
+  const originalRequestBackgroundSync = syncStore.requestBackgroundSync
+  syncStore.requestBackgroundSync = () => undefined
+  try {
+    const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+    const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    await repo.upsert('SUBJECT', 'subject-reject-hydration', { id: 'subject-reject-hydration', name: 'Local' }, { version: 1 })
+    await repo.upsert('SOURCE', 'source-reject-hydration', { id: 'source-reject-hydration', subjectId: 'subject-reject-hydration', assetId: 'asset-reject-hydration' }, { version: 0 })
+    await assetRepo.createAssetFile({ localAssetId: 'asset-reject-hydration', originalName: 'local.pdf', mimeType: 'application/pdf', sizeBytes: 0, sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' })
+    await assetRepo.createSourceDraft({ localSourceId: 'source-reject-hydration', localAssetId: 'asset-reject-hydration', subjectId: 'subject-reject-hydration', title: 'Local', localContentRevision: 'e3b0c442-98fc-1c49-27ae-f4c8996fb924' })
+    const subjectStore = useSubjectStore()
+    subjectStore.subjects.push({ id: 'subject-reject-hydration', name: 'Local', description: '', icon: '', iconKey: '', version: 1, deletedAt: null })
+    await subjectStore.deleteSubject('subject-reject-hydration')
+    assert.equal((await assetRepo.getSourceDraft('source-reject-hydration'))?.state, 'DRAFT')
+    const parentMutation = (await repo.listUnresolved('SUBJECT'))[0]
+    assert.ok(parentMutation)
+    const { runSyncCycle } = await import('../src/services/syncCycle.ts')
+    await runSyncCycle({
+      repository: repo,
+      serverDeviceId: authStore.serverDeviceId,
+      api: {
+        async pushChanges() { return { results: [{ clientMutationId: parentMutation.clientMutationId, decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-reject-hydration', current: { id: 'subject-reject-hydration', name: 'Remote', version: 2, deletedAt: null } }] } },
+        async pullChanges() { return { changes: [], nextCursor: 'reject-hydration', hasMore: false, resetRequired: false } },
+        async getSnapshot() { return { snapshotCursor: 'reject-hydration', subjects: [{ id: 'subject-reject-hydration', name: 'Remote', version: 2 }], sources: [], knowledgeBlocks: [], tasks: [], relations: [] } },
+      },
+    })
+    await subjectStore.loadSubjects()
+    assert.equal(subjectStore.subjects.some((subject) => subject.id === 'subject-reject-hydration'), true)
+    assert.equal((await repo.read('SOURCE', 'source-reject-hydration'))?.deletedAt, null)
+    assert.equal((await assetRepo.getSourceDraft('source-reject-hydration'))?.state, 'DRAFT')
+  } finally {
+    syncStore.requestBackgroundSync = originalRequestBackgroundSync
+    releaseLocalAssetSyncQueue('user-subject-reject-hydration', 'device-subject-reject-hydration')
   }
 })
 

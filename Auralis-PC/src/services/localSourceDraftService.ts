@@ -4,6 +4,7 @@ import type { LocalSourceDraft } from '@/types/localAsset'
 import type { SourceView } from '@/api/useSourceApi'
 import { createStableMutation } from '@/services/offlineWritePolicy'
 import { uuidv7 } from '@/utils/uuid'
+import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 
 export interface CreateDraftInput {
   localSourceId: string
@@ -99,6 +100,16 @@ export class LocalSourceDraftService {
     serverAssetId: string,
     lifecycleGuard?: LifecycleGuard,
   ): Promise<string[]> {
+    return withLocalAssetLifecycleLock(this.assetRepository.userId, this.assetRepository.serverDeviceId, () =>
+      this.releaseDraftsForAssetUnlocked(localAssetId, serverAssetId, lifecycleGuard))
+  }
+
+  /** Caller must already hold the owner/device asset lifecycle lock. */
+  private async releaseDraftsForAssetUnlocked(
+    localAssetId: string,
+    serverAssetId: string,
+    lifecycleGuard?: LifecycleGuard,
+  ): Promise<string[]> {
     checkLifecycleGuard(lifecycleGuard)
     const drafts = await this.assetRepository.listSourceDrafts({
       localAssetId,
@@ -110,6 +121,13 @@ export class LocalSourceDraftService {
 
     for (const draft of drafts) {
       checkLifecycleGuard(lifecycleGuard)
+      const existing = await this.localRepository.read<SourceView>('SOURCE', draft.localSourceId)
+      checkLifecycleGuard(lifecycleGuard)
+      // A Subject/Source delete fence can run after the queue has claimed its
+      // job. The shared lifecycle lock serializes this read with the fence;
+      // never recreate SOURCE/CREATE for an already tombstoned projection.
+      if (existing?.deletedAt) continue
+
       if (!draft.localContentRevision || !UUID_REGEX.test(draft.localContentRevision)) {
         throw new Error(
           `DRAFT_INVALID_REVISION: localContentRevision for draft ${draft.localSourceId} must be a valid UUID`,
@@ -117,9 +135,6 @@ export class LocalSourceDraftService {
       }
 
       checkLifecycleGuard(lifecycleGuard)
-      const existing = await this.localRepository.read<SourceView>('SOURCE', draft.localSourceId)
-      checkLifecycleGuard(lifecycleGuard)
-
       checkLifecycleGuard(lifecycleGuard)
       const unresolved = await this.localRepository.listUnresolved()
       checkLifecycleGuard(lifecycleGuard)
@@ -187,7 +202,7 @@ export class LocalSourceDraftService {
         })
 
         checkLifecycleGuard(lifecycleGuard)
-        await this.localRepository.commitMutation({
+        await this.localRepository.commitMutationUnlocked({
           resourceType: 'SOURCE',
           resourceId: draft.localSourceId,
           value: updatedView,

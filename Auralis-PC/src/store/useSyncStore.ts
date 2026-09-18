@@ -192,6 +192,14 @@ export const useSyncStore = defineStore('sync', () => {
       }
     } catch (error) {
       lastSyncError.value = error instanceof Error ? error.message : String(error)
+      // A rejected Subject repair persists reset_required before requesting
+      // the snapshot. Reflect that durable state even when the request fails,
+      // so the next cycle and the UI both remain on the reset path.
+      const state = await repositoryForSync.getSyncState().catch(() => null)
+      if (state) {
+        cursor.value = state.cursor
+        resetRequired.value = state.resetRequired
+      }
       throw error
     } finally {
       isPushing.value = false

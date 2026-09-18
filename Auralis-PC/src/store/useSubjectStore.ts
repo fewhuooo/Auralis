@@ -61,6 +61,8 @@ export const useSubjectStore = defineStore('subject', () => {
   const activeSubjectId = ref<string | null>(null)
   const isLoading = ref(false)
   const lastError = ref<string | null>(null)
+  let hydrationPromise: Promise<void> | null = null
+  let hydrationDirty = false
   const sourceStore = useSourceStore()
 
   function replaceSubjects(models: Subject[]): void {
@@ -121,14 +123,28 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   async function hydrateSubjects(): Promise<void> {
-    // The Subject tombstone is the crash-recovery marker. Repair any child
-    // projections left behind by a process exit after that marker committed.
-    try {
-      await (await deletionCoordinator()).reconcileDeletedSubjects()
-    } catch (error) {
-      console.warn('[SubjectStore] deleted Subject reconciliation deferred', error)
+    if (hydrationPromise) {
+      hydrationDirty = true
+      return hydrationPromise
     }
-    replaceSubjects(await localSubjects())
+    hydrationPromise = (async () => {
+      do {
+        hydrationDirty = false
+        // The Subject tombstone is the crash-recovery marker. Repair any child
+        // projections left behind by a process exit after that marker committed.
+        try {
+          await (await deletionCoordinator()).reconcileDeletedSubjects()
+        } catch (error) {
+          console.warn('[SubjectStore] deleted Subject reconciliation deferred', error)
+        }
+        replaceSubjects(await localSubjects())
+      } while (hydrationDirty)
+    })()
+    try {
+      await hydrationPromise
+    } finally {
+      hydrationPromise = null
+    }
   }
 
   async function loadSubjects(): Promise<void> {
@@ -143,6 +159,7 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   subscribeProjectionChange((change) => {
+    if (change.suppressSubjectHydration) return
     if (change.resourceTypes.has('SUBJECT') || change.resourceTypes.has('SOURCE') || change.resourceTypes.has('KNOWLEDGE_BLOCK')) {
       void hydrateSubjects()
     }

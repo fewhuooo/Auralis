@@ -843,6 +843,16 @@ export class LocalRepository {
            WHERE user_id = $4 AND client_mutation_id = $5`,
           ['SUBJECT_DELETE_REJECTED_RESTORED', JSON.stringify(restoredValue), input.remoteVersion ?? null, this.userId, input.clientMutationId],
         )
+        // Keep the reset request in the same SQL transaction as restoring the
+        // parent and resolving its fence. A crash or failed snapshot must
+        // leave the next sync cycle on the authoritative snapshot path.
+        await database.execute(
+          `INSERT INTO sync_metadata (user_id, device_id, cursor, reset_required, schema_version)
+           VALUES ($1, $2, NULL, 1, $3)
+           ON CONFLICT (user_id, device_id) DO UPDATE SET
+             reset_required = 1, schema_version = excluded.schema_version`,
+          [this.userId, this.serverDeviceId, LOCAL_SCHEMA_VERSION],
+        )
         return true
       })
     }
@@ -865,6 +875,7 @@ export class LocalRepository {
     mutation.error = 'SUBJECT_DELETE_REJECTED_RESTORED'
     mutation.remoteValue = restoredValue
     mutation.remoteVersion = input.remoteVersion
+    state.sync = { ...state.sync, resetRequired: true }
     this.writeBrowserState(state)
     return true
   }

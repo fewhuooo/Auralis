@@ -115,9 +115,17 @@ export const useSourceStore = defineStore('source', () => {
     const repo = await repository()
     const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
     const assetService = getOrCreateLocalAssetService(assetRepo)
+    const pendingSubjectDeletes = new Set((await repo.listUnresolved('SUBJECT'))
+      .filter((mutation) => mutation.mutationType === 'DELETE')
+      .map((mutation) => mutation.resourceId))
     const tombstones = await repo.list<SourceView>('SOURCE', { includeDeleted: true })
     for (const row of tombstones) {
       if (!row.deletedAt) continue
+      const subjectId = typeof row.value?.subjectId === 'string' ? row.value.subjectId : null
+      // A Subject cascade keeps local-only draft metadata and bytes recoverable
+      // until the parent DELETE is APPLIED. The Subject coordinator owns that
+      // terminal cleanup; Source hydration must not race it.
+      if (subjectId && pendingSubjectDeletes.has(subjectId)) continue
       const draft = await assetRepo.getSourceDraft(row.id)
       if (draft && draft.state !== 'DELETED') {
         // A crash can occur after the SOURCE tombstone commits but before the

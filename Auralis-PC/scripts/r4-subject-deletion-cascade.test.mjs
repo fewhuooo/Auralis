@@ -24,6 +24,7 @@ const { DocumentProcessingJobRepository, LocalRepository, createMemoryStorage } 
 const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
 const { LocalAssetRepository } = await import('../src/services/localAssetRepository.ts')
 const { LocalAssetService, TransientBrowserAssetAdapter } = await import('../src/services/localAssetService.ts')
+const { LocalSourceDraftService } = await import('../src/services/localSourceDraftService.ts')
 const { OverviewRepository } = await import('../src/services/overviewRepository.ts')
 const { SubjectDeletionCoordinator } = await import('../src/services/subjectDeletionCoordinator.ts')
 const { runSyncCycle } = await import('../src/services/syncCycle.ts')
@@ -59,6 +60,8 @@ test('subject deletion coordinator local-tombstones descendants without child ou
   const assetService = new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() })
   await assetService.importAsset({ localAssetId: 'asset-a', file: new File([''], 'a.pdf', { type: 'application/pdf' }), originalName: 'a.pdf', mimeType: 'application/pdf', expectedSize: 0, expectedSha256: sha })
   await assetRepo.createSourceDraft({ localSourceId: 'source-a', localAssetId: 'asset-a', subjectId: 'subject-a', title: 'A', localContentRevision: 'r1' })
+  await assetRepo.enqueueSyncJob('asset-a')
+  assert.ok(await assetRepo.claimNextSyncJob(now), 'test must model an already-claimed asset queue job')
 
   const overview = new OverviewRepository('user-a', 'device-a', { storage, now: () => now })
   await overview.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: 'f', response: { title: 'A', outline: [], summary: { overview: 'x', keyPoints: [], learningPath: [] } } })
@@ -78,7 +81,10 @@ test('subject deletion coordinator local-tombstones descendants without child ou
   assert.equal(await overview.getSubjectOverview('subject-a'), null)
   assert.equal(await overview.getFileOverview('source-a', 'rev-a'), null)
   assert.equal((await jobs.list()).length, 0)
-  assert.equal((await assetRepo.getSourceDraft('source-a'))?.state, 'DELETED')
+  assert.equal((await assetRepo.getSourceDraft('source-a'))?.state, 'DRAFT', 'pending parent delete must retain recoverable draft metadata')
+  const draftService = new LocalSourceDraftService(assetRepo, repo, () => now)
+  assert.deepEqual(await draftService.releaseDraftsForAsset('asset-a', 'server-asset-a'), [], 'a resumed claimed queue must not recreate SOURCE/CREATE')
+  assert.equal((await repo.listUnresolved()).some((item) => item.resourceType === 'SOURCE'), false)
   assert.ok(await assetRepo.getAssetFile('asset-a'), 'pending parent delete must preserve bytes')
   await repo.markApplied('SUBJECT-subject-a-DELETE')
   await coordinator.reconcileDeletedSubject('subject-a')
@@ -93,13 +99,34 @@ test('subject deletion reconciliation is idempotent and preserves an asset refer
   await repo.upsert('SOURCE', 'source-b', { id: 'source-b', subjectId: 'subject-b', assetId: 'asset-shared' }, { version: 1 })
   const assetRepo = new LocalAssetRepository('user-a', 'device-a', { storage, now: () => now })
   const assetService = new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() })
-  await assetRepo.createAssetFile({ localAssetId: 'asset-shared', originalName: 'shared.pdf', mimeType: 'application/pdf', sizeBytes: 0, sha256: sha })
+  await assetRepo.createAssetFile({ localAssetId: 'asset-shared', serverAssetId: 'server-asset-shared', originalName: 'shared.pdf', mimeType: 'application/pdf', sizeBytes: 0, sha256: sha })
   await assetRepo.createSourceDraft({ localSourceId: 'source-a', localAssetId: 'asset-shared', subjectId: 'subject-a', title: 'A', localContentRevision: 'r1' })
   const coordinator = new SubjectDeletionCoordinator({ repo, assetRepo, assetService })
   await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-a', value: { id: 'subject-a' }, version: 1, deletedAt: now, mutation: mutation('SUBJECT', 'subject-a', 'DELETE') })
   await coordinator.reconcileDeletedSubject('subject-a')
   await coordinator.reconcileDeletedSubject('subject-a')
   assert.ok(await assetRepo.getAssetFile('asset-shared'))
+  await repo.markApplied('SUBJECT-subject-a-DELETE')
+  await coordinator.reconcileDeletedSubject('subject-a')
+  assert.ok(await assetRepo.getAssetFile('asset-shared'), 'an APPLIED parent still preserves a server-backed asset shared by another Source')
+})
+
+test('subject deletion invokes the active runtime hooks before dropping derived work', async () => {
+  const storage = createMemoryStorage()
+  const repo = new LocalRepository('user-runtime-hooks', 'device-runtime-hooks', { storage, now: () => now })
+  await repo.upsert('SUBJECT', 'subject-runtime-hooks', { id: 'subject-runtime-hooks' }, { version: 1 })
+  await repo.upsert('SOURCE', 'source-runtime-hooks', { id: 'source-runtime-hooks', subjectId: 'subject-runtime-hooks' }, { version: 1 })
+  const calls = []
+  const coordinator = new SubjectDeletionCoordinator({
+    repo,
+    hooks: {
+      discardSource: async (sourceId) => calls.push(`source:${sourceId}`),
+      discardFileOverview: async (sourceId) => calls.push(`overview:${sourceId}`),
+    },
+  })
+  await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-runtime-hooks', value: { id: 'subject-runtime-hooks' }, version: 1, deletedAt: now, mutation: mutation('SUBJECT', 'subject-runtime-hooks', 'DELETE') })
+  await coordinator.reconcileDeletedSubject('subject-runtime-hooks')
+  assert.deepEqual(calls, ['source:source-runtime-hooks', 'overview:source-runtime-hooks'])
 })
 
 test('SQL cascade is user-scoped, cleans relations, and publishes every affected projection type', async () => {
@@ -122,6 +149,11 @@ test('SQL cascade is user-scoped, cleans relations, and publishes every affected
     assert.equal((await first.list('RELATION', { includeDeleted: false })).length, 0)
     assert.equal((await other.list('SOURCE', { includeDeleted: false })).length, 1)
     assert.deepEqual(changes.at(-1), ['KNOWLEDGE_BLOCK', 'RELATION', 'SOURCE', 'SUBJECT', 'TASK'])
+    const replayChanges = []
+    const unsubscribeReplay = subscribeProjectionChange((change) => replayChanges.push([...change.resourceTypes].sort()))
+    await coordinator.reconcileDeletedSubject('subject-a')
+    unsubscribeReplay()
+    assert.deepEqual(replayChanges.at(-1), ['KNOWLEDGE_BLOCK', 'RELATION', 'SOURCE', 'SUBJECT', 'TASK'], 'reconciliation replay must refresh stores even when child tombstones already exist')
   } finally { sqlite.close() }
 })
 
@@ -140,4 +172,61 @@ test('rejected Subject DELETE restores remote Subject, clears the unresolved fen
   assert.equal((await repo.read('SUBJECT', 'subject-a'))?.value.name, 'Remote A')
   assert.equal((await repo.listUnresolved()).length, 0)
   assert.equal((await repo.read('SOURCE', 'source-a'))?.deletedAt, null)
+})
+
+test('rejected Subject DELETE atomically sets reset_required and retries a failed snapshot in browser and SQL state', async () => {
+  for (const mode of ['browser', 'sql']) {
+    const sqlite = mode === 'sql' ? new TemporarySqlite() : null
+    try {
+      if (sqlite) await createVersionedLocalSchema(sqlite)
+      const repo = new LocalRepository('user-reset', 'device-reset', sqlite ? { sql: sqlite, now: () => now } : { storage: createMemoryStorage(), now: () => now })
+      await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-reset', value: { id: 'subject-reset', name: 'Local', version: 2 }, version: 2, deletedAt: now, mutation: mutation('SUBJECT', 'subject-reset', 'DELETE') })
+      let snapshotAttempts = 0
+      const api = {
+        async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-reset-DELETE', decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-reset', current: { id: 'subject-reset', name: 'Remote', version: 3, deletedAt: null } }] } },
+        async pullChanges() { throw new Error('PULL_MUST_NOT_RUN_WHILE_RESET_REQUIRED') },
+        async getSnapshot() {
+          snapshotAttempts += 1
+          if (snapshotAttempts === 1) throw new Error('SNAPSHOT_TEMPORARILY_UNAVAILABLE')
+          return { snapshotCursor: 'reset-ok', subjects: [{ id: 'subject-reset', name: 'Remote', version: 3 }], sources: [{ id: 'source-reset', subjectId: 'subject-reset', version: 1 }], knowledgeBlocks: [], tasks: [], relations: [] }
+        },
+      }
+      await assert.rejects(runSyncCycle({ repository: repo, api, serverDeviceId: 'device-reset' }), /SNAPSHOT_TEMPORARILY_UNAVAILABLE/)
+      assert.equal((await repo.read('SUBJECT', 'subject-reset'))?.deletedAt, null)
+      assert.equal((await repo.listUnresolved()).length, 0)
+      assert.equal((await repo.getSyncState()).resetRequired, true)
+      const retry = await runSyncCycle({ repository: repo, api, serverDeviceId: 'device-reset' })
+      assert.equal(retry.cursor, 'reset-ok')
+      assert.equal((await repo.getSyncState()).resetRequired, false)
+      assert.equal((await repo.read('SOURCE', 'source-reset'))?.deletedAt, null)
+    } finally {
+      sqlite?.close()
+    }
+  }
+})
+
+test('rejected Subject DELETE reprojects a local-only draft and preserves its asset bytes', async () => {
+  const storage = createMemoryStorage()
+  const repo = new LocalRepository('user-local-reject', 'device-local-reject', { storage, now: () => now })
+  const assetRepo = new LocalAssetRepository('user-local-reject', 'device-local-reject', { storage, now: () => now })
+  await repo.upsert('SUBJECT', 'subject-local-reject', { id: 'subject-local-reject', name: 'Local' }, { version: 1 })
+  await repo.upsert('SOURCE', 'source-local-reject', { id: 'source-local-reject', subjectId: 'subject-local-reject', assetId: 'asset-local-reject' }, { version: 0 })
+  await assetRepo.createAssetFile({ localAssetId: 'asset-local-reject', originalName: 'local.pdf', mimeType: 'application/pdf', sizeBytes: 0, sha256: sha })
+  await assetRepo.createSourceDraft({ localSourceId: 'source-local-reject', localAssetId: 'asset-local-reject', subjectId: 'subject-local-reject', title: 'Local', localContentRevision: 'e3b0c442-98fc-1c49-27ae-f4c8996fb924' })
+  await assetRepo.enqueueSyncJob('asset-local-reject')
+  const coordinator = new SubjectDeletionCoordinator({ repo, assetRepo })
+  await repo.commitMutation({ resourceType: 'SUBJECT', resourceId: 'subject-local-reject', value: { id: 'subject-local-reject', name: 'Local' }, version: 1, deletedAt: now, mutation: mutation('SUBJECT', 'subject-local-reject', 'DELETE') })
+  await coordinator.reconcileDeletedSubject('subject-local-reject')
+  const api = {
+    async pushChanges() { return { results: [{ clientMutationId: 'SUBJECT-subject-local-reject-DELETE', decision: 'REJECTED', resourceType: 'SUBJECT', resourceId: 'subject-local-reject', current: { id: 'subject-local-reject', name: 'Remote', version: 2, deletedAt: null } }] } },
+    async pullChanges() { return { changes: [], nextCursor: 'local-reject', hasMore: false, resetRequired: false } },
+    async getSnapshot() { return { snapshotCursor: 'local-reject', subjects: [{ id: 'subject-local-reject', name: 'Remote', version: 2 }], sources: [], knowledgeBlocks: [], tasks: [], relations: [] } },
+  }
+  await runSyncCycle({ repository: repo, api, serverDeviceId: 'device-local-reject' })
+  await coordinator.reconcileDeletedSubjects()
+  assert.equal((await assetRepo.getSourceDraft('source-local-reject'))?.state, 'DRAFT')
+  assert.ok(await assetRepo.getAssetFile('asset-local-reject'))
+  assert.equal((await assetRepo.getActiveSyncJobForAsset('asset-local-reject')) !== null, true)
+  assert.equal((await repo.read('SOURCE', 'source-local-reject'))?.deletedAt, null)
+  assert.equal((await repo.listUnresolved()).some((item) => item.resourceType === 'SOURCE'), false)
 })

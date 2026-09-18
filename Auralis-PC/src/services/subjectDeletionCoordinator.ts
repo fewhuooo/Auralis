@@ -4,6 +4,7 @@ import type { LocalAssetService } from '@/services/localAssetService'
 import type { LocalRepository, LocalSubjectCascadeResource } from '@/services/localRepository'
 import type { DocumentProcessingJobRepository } from '@/services/localRepository'
 import { publishProjectionChange } from '@/services/localProjectionEvents'
+import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
 
 export interface SubjectDeletionRuntimeHooks {
   discardSource?: (sourceId: string) => Promise<void>
@@ -51,6 +52,12 @@ export class SubjectDeletionCoordinator {
 
   /** Commits the local-only child fences before the sync scheduler is released. */
   async markDeletedSubject(subjectId: string): Promise<LocalSubjectCascadeResource[]> {
+    return withLocalAssetLifecycleLock(this.repo.userId, this.repo.serverDeviceId, () =>
+      this.markDeletedSubjectUnlocked(subjectId))
+  }
+
+  /** Caller must already hold the owner/device asset lifecycle lock. */
+  private async markDeletedSubjectUnlocked(subjectId: string): Promise<LocalSubjectCascadeResource[]> {
     const subject = await this.repo.read('SUBJECT', subjectId)
     if (!subject?.deletedAt) return []
     const impacted = await this.repo.tombstoneSubjectChildren(subjectId, subject.deletedAt)
@@ -60,24 +67,26 @@ export class SubjectDeletionCoordinator {
     // already-claimed Asset queue could release the draft and recreate
     // SOURCE/CREATE after this method returns.
     if (this.assetRepo) {
+      const deletedSourceIds = new Set(impacted
+        .filter((resource) => resource.resourceType === 'SOURCE')
+        .map((resource) => resource.id))
       for (const source of impacted.filter((item) => item.resourceType === 'SOURCE')) {
-        const draft = await this.assetRepo.getSourceDraft(source.id)
-        if (draft && draft.state !== 'DELETED') {
-          changed = true
-          await this.assetRepo.deleteSourceDraft(source.id)
-        }
         const assetId = recordAssetId(source)
         const asset = assetId
           ? await this.assetRepo.getAssetFile(assetId) ?? await this.assetRepo.getAssetFileByServerId(assetId)
           : null
-        if (asset && !(await this.assetRepo.hasActiveSourceReferences(asset.localAssetId))) {
+        if (asset && !(await this.assetRepo.hasActiveSourceReferences(asset.localAssetId, deletedSourceIds))) {
           await this.assetRepo.cancelSyncJobsForAsset(asset.localAssetId)
         }
       }
     }
-    if (changed) {
+    // A replay may find already-tombstoned children after a crash or before
+    // a Store subscribed. Publish again when there are affected rows; the
+    // Subject Store coalesces hydration so this cannot recurse indefinitely.
+    if (changed || impacted.length > 0) {
       publishProjectionChange({
         resourceTypes: new Set(['SUBJECT', 'SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION']),
+        suppressSubjectHydration: !changed,
       })
     }
     return impacted
@@ -111,6 +120,7 @@ export class SubjectDeletionCoordinator {
     for (const subject of subjects) {
       if (subject.deletedAt) await this.reconcileDeletedSubject(subject.id)
     }
+    await this.restoreLocalOnlySources(subjects.filter((subject) => !subject.deletedAt).map((subject) => subject.id))
   }
 
   private async cleanupSubjectOverview(subjectId: string): Promise<void> {
@@ -127,11 +137,19 @@ export class SubjectDeletionCoordinator {
     if (!this.hooks.discardFileOverview) await this.overview?.removeFileOverviews(sourceId)
 
     if (!this.assetRepo) return
-    const draft = await this.assetRepo.getSourceDraft(sourceId)
     const assetId = recordAssetId(source)
-    if (draft && draft.state !== 'DELETED') await this.assetRepo.deleteSourceDraft(sourceId)
-    if (!allowPhysicalAssetDeletion || !assetId || !this.assetService) return
+    if (!allowPhysicalAssetDeletion) return
 
+    // Terminal draft deletion is serialized with the claimed queue's release
+    // section. The asset service is called after releasing this lock because
+    // it owns the same non-reentrant lock internally.
+    await withLocalAssetLifecycleLock(this.repo.userId, this.repo.serverDeviceId, async () => {
+      const draft = await this.assetRepo!.getSourceDraft(sourceId)
+      if (draft && draft.state !== 'DELETED') await this.assetRepo!.deleteSourceDraft(sourceId)
+      if (assetId) await this.assetRepo!.cancelSyncJobsForAsset(assetId)
+    })
+
+    if (!assetId || !this.assetService) return
     const localAsset = await this.assetRepo.getAssetFile(assetId) ?? await this.assetRepo.getAssetFileByServerId(assetId)
     if (!localAsset) return
     try {
@@ -140,6 +158,35 @@ export class SubjectDeletionCoordinator {
       // An active Source outside the deleted Subject is the explicit fence;
       // startup reconciliation will retry after that Source is deleted.
       if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) throw error
+    }
+  }
+
+  private async restoreLocalOnlySources(activeSubjectIds: string[]): Promise<void> {
+    if (!this.assetRepo || activeSubjectIds.length === 0) return
+    const activeSubjects = new Set(activeSubjectIds)
+    let changed = false
+    for (const draft of await this.assetRepo.listSourceDrafts({ state: 'DRAFT' })) {
+      if (draft.serverSourceId || !activeSubjects.has(draft.subjectId)) continue
+      const current = await this.repo.read<Record<string, unknown>>('SOURCE', draft.localSourceId)
+      if (current && !current.deletedAt) continue
+      await this.repo.upsert('SOURCE', draft.localSourceId, {
+        ...(current?.value ?? {}),
+        id: draft.localSourceId,
+        subjectId: draft.subjectId,
+        type: 'FILE',
+        title: draft.title,
+        assetId: draft.localAssetId,
+        version: current?.version ?? 0,
+        updatedAt: draft.updatedAt,
+        ingestionStatus: 'AWAITING_CLIENT',
+      }, { version: current?.version ?? 0, deletedAt: null, syncStatus: 'pending' })
+      await this.assetRepo.enqueueSyncJob(draft.localAssetId)
+      changed = true
+    }
+    if (changed) {
+      publishProjectionChange({
+        resourceTypes: new Set(['SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION']),
+      })
     }
   }
 }

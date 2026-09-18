@@ -20,6 +20,14 @@ After the binding corrections were added to the brief, the focused regression te
 
 The fixes then added explicit rejected-delete restoration and snapshot reset, awaited draft cancellation/job fencing, projection notification publication and store consumption, pending-vs-APPLIED physical asset cleanup, and scheduling continuity when coordinator construction fails.
 
+## Second-round reviewer RED→GREEN evidence
+
+The second-round focused tests were extended before the corresponding production edits. The RED run exited 1 with the expected failures: rejected restore did not persist `reset_required`, pending deletion terminally marked the local-only draft, and a resumed draft release could recreate `SOURCE/CREATE`.
+
+`npm.cmd exec -- node --experimental-strip-types --test scripts/r4-subject-deletion-cascade.test.mjs`
+
+The GREEN implementation now makes parent restore, auditable mutation resolution, and `reset_required = 1` one SQL transaction or one browser-state write; keeps the reset flag after snapshot failure for the next retry; serializes the Subject fence and queue release through the existing non-reentrant owner/device lifecycle lock; retains pending local-only draft metadata/bytes and reprojects them after rejection; and coalesces hydration while replay notifications refresh the other Stores.
+
 ## Implementation boundary
 
 - `LocalRepository.tombstoneSubjectChildren()` performs an owner-scoped, transaction-backed local-only cascade. It marks descendants deleted, purges their unresolved outbox rows, and returns the affected projections for auxiliary cleanup. Relation endpoints are matched when either endpoint is the deleted Subject.
@@ -34,6 +42,11 @@ The fixes then added explicit rejected-delete restoration and snapshot reset, aw
 - `Auralis-PC/src/services/subjectDeletionCoordinator.ts`
 - `Auralis-PC/src/services/syncCycle.ts`
 - `Auralis-PC/src/store/useSubjectStore.ts`
+- `Auralis-PC/src/store/useSyncStore.ts`
+- `Auralis-PC/src/store/useSourceStore.ts`
+- `Auralis-PC/src/services/localSourceDraftService.ts`
+- `Auralis-PC/src/services/localAssetRepository.ts`
+- `Auralis-PC/src/services/localProjectionEvents.ts`
 - `Auralis-PC/src/services/documentProcessing/runtime.ts`
 - `Auralis-PC/scripts/r4-subject-deletion-cascade.test.mjs`
 - `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`
@@ -53,6 +66,13 @@ Date: 2026-09-18
 5. `npm.cmd run build` — exit 0; Vite production build completed. Existing large-chunk, browser-externalization, dynamic-import, and plugin-timing warnings remain informational.
 6. `git diff --check` — exit 0; no whitespace errors in the task diff.
 
+Second-round focused verification:
+
+1. `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-subject-deletion-cascade.test.mjs` — exit 0; 7/7 tests passed, including SQL/browser reset retry, claimed queue fencing, runtime hooks, replay notification, local-only draft/asset rejection recovery, and APPLIED shared server-backed asset retention.
+2. `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs` — exit 0; 12/12 tests passed, including actual Source Store notification consumption and `useSubjectStore` rejected-sync hydration recovery.
+3. `npm.cmd run type-check` — exit 0; `vue-tsc -b` passed after the second-round changes.
+4. `npm.cmd run test:r4-pc` — exit 0; 341/341 tests passed.
+
 No Rust tests were required because no native behavior changed.
 
 ## Manual limitations
@@ -64,3 +84,5 @@ Automated tests do not constitute real Tauri GUI, SQLite restart, native filesys
 Initial implementation commit: `501671b feat(pc): cascade local subject deletion`.
 
 Review-fix implementation commit: `34942bdcc3b7af48d11ad1bef3586e27c4af18e2`.
+
+Second-round implementation commit is recorded after staging the reviewer-fix files.

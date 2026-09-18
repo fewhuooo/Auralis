@@ -622,7 +622,7 @@ export class LocalAssetRepository {
 
   // --- Source Reference Counting ---
 
-  async countActiveSourceReferences(localAssetId: string): Promise<number> {
+  async countActiveSourceReferences(localAssetId: string, excludedSourceIds: ReadonlySet<string> = new Set()): Promise<number> {
     const sourceIds = new Set<string>()
     const asset = await this.getAssetFile(localAssetId)
     const serverAssetId = asset?.serverAssetId ?? null
@@ -633,7 +633,7 @@ export class LocalAssetRepository {
     // SOURCE resource/mutation all represent the same logical Source, so use
     // the same key here to avoid counting one Source twice during the
     // draft->resource hand-off.
-    for (const draft of allDrafts.filter(d => d.state !== 'DELETED')) sourceIds.add(`source:${draft.localSourceId}`)
+    for (const draft of allDrafts.filter(d => d.state !== 'DELETED' && !excludedSourceIds.has(d.localSourceId))) sourceIds.add(`source:${draft.localSourceId}`)
 
     // 2. Active SOURCE records in local_resource_records
     if (this.sql) {
@@ -655,7 +655,7 @@ export class LocalAssetRepository {
             && deletedDraft?.state === 'DELETED'
             && !deletedDraft.serverSourceId
           const isReference = !localOnlyDraftTombstone && (row.deleted_at === null || row.sync_status !== 'synced')
-          if (isReference && (
+          if (!excludedSourceIds.has(row.resource_id) && isReference && (
             (payload.assetId && (payload.assetId === localAssetId || (serverAssetId && payload.assetId === serverAssetId))) ||
             (payload.localAssetId && payload.localAssetId === localAssetId)
           )) {
@@ -674,10 +674,10 @@ export class LocalAssetRepository {
       for (const row of mutationRows) {
         try {
           const payload = JSON.parse(row.payload) as Record<string, unknown>
-          if (
+          if (!excludedSourceIds.has(row.resource_id) && (
             (payload.assetId && (payload.assetId === localAssetId || (serverAssetId && payload.assetId === serverAssetId))) ||
             (payload.localAssetId && payload.localAssetId === localAssetId)
-          ) {
+          )) {
             sourceIds.add(`source:${row.resource_id}`)
           }
         } catch {
@@ -697,7 +697,7 @@ export class LocalAssetRepository {
           if (Array.isArray(parsed.resources)) {
             for (const rec of parsed.resources) {
               const isReference = rec.deletedAt === null || rec.syncStatus !== 'synced'
-              if (rec.resourceType === 'SOURCE' && isReference && rec.value) {
+              if (!excludedSourceIds.has(rec.id) && rec.resourceType === 'SOURCE' && isReference && rec.value) {
                 if (
                   (rec.value.assetId && (rec.value.assetId === localAssetId || (serverAssetId && rec.value.assetId === serverAssetId))) ||
                   (rec.value.localAssetId && rec.value.localAssetId === localAssetId)
@@ -709,7 +709,7 @@ export class LocalAssetRepository {
           }
           if (Array.isArray(parsed.mutations)) {
             for (const mut of parsed.mutations) {
-              if (mut.resourceType === 'SOURCE' && ['pending', 'inflight'].includes(mut.status) && mut.payload) {
+              if ((!mut.resourceId || !excludedSourceIds.has(mut.resourceId)) && mut.resourceType === 'SOURCE' && ['pending', 'inflight'].includes(mut.status) && mut.payload) {
                 if (
                   (mut.payload.assetId && (mut.payload.assetId === localAssetId || (serverAssetId && mut.payload.assetId === serverAssetId))) ||
                   (mut.payload.localAssetId && mut.payload.localAssetId === localAssetId)
@@ -728,8 +728,8 @@ export class LocalAssetRepository {
     return sourceIds.size
   }
 
-  async hasActiveSourceReferences(localAssetId: string): Promise<boolean> {
-    const count = await this.countActiveSourceReferences(localAssetId)
+  async hasActiveSourceReferences(localAssetId: string, excludedSourceIds: ReadonlySet<string> = new Set()): Promise<boolean> {
+    const count = await this.countActiveSourceReferences(localAssetId, excludedSourceIds)
     return count > 0
   }
 

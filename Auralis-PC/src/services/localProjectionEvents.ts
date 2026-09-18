@@ -1,5 +1,6 @@
 export type ProjectionChange = {
   resourceTypes: ReadonlySet<string>
+  suppressSubjectHydration?: boolean
 }
 
 const listeners = new Set<(change: ProjectionChange) => void>()
