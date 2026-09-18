@@ -1,5 +1,12 @@
 # Auralis 变更记录
 
+### PC OCR 页进度与 Source 收敛 Task 4 收口（2026-09-18）
+
+- 本地 OCR 页级检查点现在投影到既有文档处理 Store，Source 行复用原有 `正在识别第 X/Y 页` 显示；不新增百分比、进度组件或其它 UI。
+- 替换 WebSocket 在 `onopen` 只请求一次既有 background `read` sync；处理 runtime 对 processing Source 使用生命周期/认证 scope 守卫的共享有界 reconciliation，覆盖遗漏 `READY` 的恢复路径。
+- 自动证据：OCR/UI/runtime/protocol/sync focused 90/90、`npm.cmd run type-check`、PC `npm.cmd run test:r4-pc` 352/352、`npm.cmd run build` 和 `git diff --check` 通过。测试修正仅扩大 Overview 源码合同测试的 callsite 截取窗口，以适配 Task 3 新增 guard，不改变生产行为。
+- 真实 Tauri/GUI OCR 进度、真实后端 WebSocket/event delivery、跨设备收敛和业务验收仍未声称完成，继续作为人工/发布验证边界；本轮无 API 或数据库 schema 变化。
+
 ### Subject 归属与删除生命周期收口（2026-09-18）
 
 - PC 修复 Subject 文件投影：当前 Subject 不再从首条可见 Source 推断；跨学科导入、空学科和异步加载均按明确 `subjectId` 隔离。Local Asset 仍采用稳定 Asset 路径，未改为按学科复制物理原件。

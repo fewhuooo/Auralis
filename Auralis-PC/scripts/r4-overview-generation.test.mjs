@@ -26,7 +26,7 @@ const source = async (relativePath) => readFile(path.resolve(import.meta.dirname
 function assertCallsiteLiteral(text, marker, literal) {
   const start = text.indexOf(marker)
   assert.notEqual(start, -1, `missing callsite marker: ${marker}`)
-  const callsite = text.slice(start, start + 500)
+  const callsite = text.slice(start, start + 1000)
   assert.match(callsite, new RegExp(`resumePending\\(['"]${literal}['"]\\)`))
 }
 
