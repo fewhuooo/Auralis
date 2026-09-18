@@ -6,7 +6,7 @@
 
 ## 目标
 
-恢复默认本地文件导入路径中的 OCR 页级进度展示。OCR 运行期间，现有处理状态界面应在不刷新页面的情况下显示 `currentPage / totalPages`，例如“正在识别第 2/4 页”。
+恢复默认本地文件导入路径中的 OCR 页级进度数据传递。OCR 运行期间，现有处理状态界面应在不刷新页面的情况下继续使用既有“正在识别第 X/Y 页”展现方式。
 
 ## 已确认根因
 
@@ -27,8 +27,8 @@
 ### UI 消费
 
 - 复用 Subject Workspace 和 Document Processing Center 已有的 1.5 秒刷新周期。
-- 现有处理中心与文件状态提示从 Store 读取 local-only 页级进度，并显示“正在识别第 X/Y 页”。
-- 不调整布局、主题、动画或其他视觉样式。
+- 复用 Document Processing Center 已有的 OCR 诊断格式化与“正在识别第 X/Y 页”展示，不新增组件、入口、文案或状态样式。
+- 文件状态点、Subject Workspace 布局、主题和动画保持现有行为。
 
 ### Source 投影可靠性验证
 
@@ -42,7 +42,7 @@
 先以失败测试固定以下行为，再实施最小生产修改：
 
 1. local-only OCR 在 Parser 发出第 2/4 页事件后，Store 能在 server revision 建立前读到 `currentPage=2`、`totalPages=4`。
-2. 处理状态 UI 能显示“正在识别第 2/4 页”。
+2. 现有处理状态展示在获得 local-only 进度后继续输出“正在识别第 2/4 页”。
 3. 进入 server-backed Job 后，既有 Job 状态与操作行为不回归。
 4. READY realtime 缺失和 WebSocket 重连分别具有明确的自动收敛结论。
 
