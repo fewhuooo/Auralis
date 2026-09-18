@@ -27,8 +27,10 @@ export async function resolve(specifier, context, nextResolve) {
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
 const { createPinia, setActivePinia } = await import('pinia')
+const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { getLocalRepository } = await import('../src/services/localDb.ts')
 const { DocumentProcessingRuntime } = await import('../src/services/documentProcessing/runtime.ts')
 
 function sourceModel(id, ingestionStatus) {
@@ -55,6 +57,13 @@ async function source(relativePath) {
 
 test('runtime discovers processing Sources once, shares one bounded sync cycle, and stops each terminal state', async () => {
   setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-1', username: 'runtime' },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: 'session-1',
+    serverDeviceId: 'device-1',
+  })
   const sourceStore = useSourceStore()
   const syncStore = useSyncStore()
   let models = [sourceModel('source-ready', 'INDEXING'), sourceModel('source-failed', 'PARSING'), sourceModel('source-deleted', 'PENDING')]
@@ -64,13 +73,12 @@ test('runtime discovers processing Sources once, shares one bounded sync cycle, 
   let loadSourcesCalls = 0
   syncStore.triggerSync = async () => {
     syncCalls += 1
-    models = [
-      sourceModel('source-ready', 'READY'),
-      sourceModel('source-failed', 'FAILED'),
-    ]
+    models = syncCalls === 1
+      ? [sourceModel('source-ready', 'READY'), sourceModel('source-failed', 'FAILED'), sourceModel('source-added-mid-cycle', 'INDEXING')]
+      : [sourceModel('source-ready', 'READY'), sourceModel('source-failed', 'FAILED'), sourceModel('source-added-mid-cycle', 'READY')]
     sourceStore.sources = models
   }
-  sourceStore.hydrateLocalSources = async () => {
+  sourceStore.refreshLocalProjection = async () => {
     hydrateCalls += 1
     sourceStore.sources = models
     return models
@@ -95,15 +103,23 @@ test('runtime discovers processing Sources once, shares one bounded sync cycle, 
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   assert.deepEqual(resumeIds[0].sort(), ['source-deleted', 'source-failed', 'source-ready'])
-  assert.equal(syncCalls, 1, 'all observed processing Sources share one read-sync cycle')
-  assert.equal(hydrateCalls, 1, 'a cycle hydrates the local projection once')
+  assert.equal(syncCalls, 2, 'one sync per shared cycle, including a Source added mid-cycle')
+  assert.equal(hydrateCalls, 2, 'each shared cycle hydrates the local projection once')
   assert.equal(loadSourcesCalls, 0)
-  assert.deepEqual(sourceStore.sources.map((source) => source.ingestionStatus), ['READY', 'FAILED'])
+  assert.deepEqual(sourceStore.sources.map((source) => source.ingestionStatus), ['READY', 'FAILED', 'READY'])
   runtime.stop()
+  authStore.clearSession()
 })
 
 test('runtime stop cancels a pending reconciliation timer and prevents later sync or hydration', async () => {
   setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-1', username: 'runtime' },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: 'session-1',
+    serverDeviceId: 'device-1',
+  })
   const sourceStore = useSourceStore()
   const syncStore = useSyncStore()
   const models = [sourceModel('source-stuck', 'INDEXING')]
@@ -111,7 +127,7 @@ test('runtime stop cancels a pending reconciliation timer and prevents later syn
   let syncCalls = 0
   let hydrateCalls = 0
   syncStore.triggerSync = async () => { syncCalls += 1 }
-  sourceStore.hydrateLocalSources = async () => { hydrateCalls += 1; return models }
+  sourceStore.refreshLocalProjection = async () => { hydrateCalls += 1; return models }
 
   const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 3, sourceReconciliationWaitMs: 10 })
   runtime.snapshot = {
@@ -130,6 +146,135 @@ test('runtime stop cancels a pending reconciliation timer and prevents later syn
   await new Promise((resolve) => setTimeout(resolve, 30))
   assert.equal(syncCalls, 1)
   assert.equal(hydrateCalls, 1)
+  authStore.clearSession()
+})
+
+test('runtime scope change prevents an old reconciliation cycle from syncing again', async () => {
+  setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-old', username: 'old' },
+    tokens: { accessToken: 'access-old', refreshToken: 'refresh-old' },
+    sessionId: 'session-old',
+    serverDeviceId: 'device-old',
+  })
+  const sourceStore = useSourceStore()
+  const syncStore = useSyncStore()
+  const models = [sourceModel('source-old-scope', 'INDEXING')]
+  sourceStore.sources = models
+  let syncCalls = 0
+  let hydrateCalls = 0
+  syncStore.triggerSync = async () => { syncCalls += 1 }
+  sourceStore.refreshLocalProjection = async () => { hydrateCalls += 1; return models }
+
+  const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 3, sourceReconciliationWaitMs: 10 })
+  runtime.snapshot = {
+    userId: 'user-old',
+    serverDeviceId: 'device-old',
+    runner: null,
+    repository: { list: async () => [] },
+    scheduler: { resume: async () => {} },
+    overviewGeneration: { resumePending: async () => {} },
+  }
+
+  await runtime.resumePending()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(syncCalls, 1)
+  assert.equal(hydrateCalls, 1)
+  authStore.setSession({
+    user: { id: 'user-new', username: 'new' },
+    tokens: { accessToken: 'access-new', refreshToken: 'refresh-new' },
+    sessionId: 'session-new',
+    serverDeviceId: 'device-new',
+  })
+  await new Promise((resolve) => setTimeout(resolve, 30))
+
+  assert.equal(syncCalls, 1)
+  assert.equal(hydrateCalls, 1)
+  runtime.stop()
+  authStore.clearSession()
+})
+
+test('resumePending does not start reconciliation after stop during an in-flight repository read', async () => {
+  setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-resume', username: 'resume' },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: 'session-resume',
+    serverDeviceId: 'device-resume',
+  })
+  let resolveList
+  let schedulerCalls = 0
+  const runtime = new DocumentProcessingRuntime({ sourceReconciliationWaitMs: 0 })
+  runtime.snapshot = {
+    userId: 'user-resume',
+    serverDeviceId: 'device-resume',
+    runner: null,
+    repository: { list: async () => new Promise((resolve) => { resolveList = resolve }) },
+    scheduler: { resume: async () => { schedulerCalls += 1 } },
+    overviewGeneration: { resumePending: async () => {} },
+  }
+
+  const pending = runtime.resumePending()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  runtime.stop()
+  resolveList([])
+  await pending
+
+  assert.equal(schedulerCalls, 0)
+})
+
+test('refreshLocalProjection keeps the newer auth scope during a real repository hydration race', async () => {
+  const values = new Map()
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key) => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, String(value)),
+      removeItem: (key) => values.delete(key),
+      clear: () => values.clear(),
+    },
+  })
+  setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-scope-a', username: 'scope-a' },
+    tokens: { accessToken: 'access-a', refreshToken: 'refresh-a' },
+    sessionId: 'session-a',
+    serverDeviceId: 'device-a',
+  })
+  const repository = await getLocalRepository('user-scope-a', 'device-a')
+  await repository.upsert('SOURCE', 'source-a', {
+    id: 'source-a', subjectId: 'subject-a', type: 'FILE', title: 'A', assetId: 'asset-a',
+    outline: '[]', version: 1, createdAt: '2026-09-18', updatedAt: '2026-09-18', ingestionStatus: 'INDEXING',
+  }, { version: 1, syncStatus: 'synced' })
+
+  const sourceStore = useSourceStore()
+  sourceStore.sources = [sourceModel('visible-a', 'INDEXING')]
+  const originalList = repository.list.bind(repository)
+  let releaseRead
+  repository.list = async (...args) => {
+    await new Promise((resolve) => { releaseRead = resolve })
+    return originalList(...args)
+  }
+  const refresh = sourceStore.refreshLocalProjection({ userId: 'user-scope-a', serverDeviceId: 'device-a' })
+  for (let attempt = 0; attempt < 10 && !releaseRead; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  authStore.setSession({
+    user: { id: 'user-scope-b', username: 'scope-b' },
+    tokens: { accessToken: 'access-b', refreshToken: 'refresh-b' },
+    sessionId: 'session-b',
+    serverDeviceId: 'device-b',
+  })
+  sourceStore.sources = [sourceModel('visible-b', 'READY')]
+  releaseRead()
+  await refresh
+
+  assert.deepEqual(sourceStore.sources.map((source) => source.id), ['visible-b'])
+  authStore.clearSession()
 })
 
 test('Tauri document runtime composes the durable repository, parser, package, upload and scheduler', async () => {
@@ -179,7 +324,7 @@ test('runtime passes parser progress into the durable document runner', async ()
 
 test('runtime forwards the scheduler-owned Asset SHA without hashing the parser input again', async () => {
   const runtime = await source('src/services/documentProcessing/runtime.ts')
-  const runJob = runtime.match(/runJob:\s*async \(jobId, metadata\) => \{([\s\S]*?)\n\s*\},\n\s*cancelJob/)
+  const runJob = runtime.match(/runJob:\s*async \(jobId, metadata\) => \{([\s\S]*?)\r?\n\s*\},\r?\n\s*cancelJob/)
   assert.ok(runJob)
   assert.match(runJob[1], /sourceAssetSha256:\s*metadata\.sourceAssetSha256/)
   assert.doesNotMatch(runJob[1], /sha256File\(/)

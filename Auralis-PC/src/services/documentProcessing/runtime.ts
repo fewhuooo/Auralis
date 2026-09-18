@@ -175,12 +175,12 @@ export async function reconcileProcessingSource(
 export async function reconcileProcessingSources(
   options: ProcessingSourceReconciliationOptions,
 ): Promise<Map<string, ProcessingSourceReconciliationResult>> {
-  const sourceIds = [...new Set(options.sourceIds.filter((sourceId) => sourceId.trim()))]
+  const sourceIds = new Set(options.sourceIds.filter((sourceId) => sourceId.trim()))
   const results = new Map<string, ProcessingSourceReconciliationResult>()
   const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 6))
   const waitMs = Math.max(0, Math.floor(options.waitMs ?? 1500))
 
-  if (sourceIds.length === 0) return results
+  if (sourceIds.size === 0) return results
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (options.signal?.aborted) {
@@ -193,8 +193,13 @@ export async function reconcileProcessingSources(
       return results
     }
     const byId = new Map(sources.map((source) => [source.id, source]))
+    for (const source of sources) {
+      if (source.type === 'FILE' && PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus)) {
+        sourceIds.add(source.id)
+      }
+    }
     const activeSourceIds: string[] = []
-    for (const sourceId of sourceIds) {
+    for (const sourceId of [...sourceIds]) {
       if (results.has(sourceId)) continue
       const source = byId.get(sourceId)
       if (!source || source.deletedAt) results.set(sourceId, 'DELETED')
@@ -207,7 +212,7 @@ export async function reconcileProcessingSources(
 
     await options.requestReadSync()
     if (options.signal?.aborted) {
-      for (const sourceId of activeSourceIds) if (!results.has(sourceId)) results.set(sourceId, 'CANCELLED')
+      for (const sourceId of sourceIds) if (!results.has(sourceId)) results.set(sourceId, 'CANCELLED')
       return results
     }
     if (attempt + 1 < maxAttempts && waitMs > 0 && !(await waitForReconciliation(waitMs, options.signal))) {
@@ -249,9 +254,21 @@ export class DocumentProcessingRuntime {
     void this.resumePending('RESUME_ONLINE').catch(() => console.warn('[DocumentRuntime] online resume failed'))
   }
   private readonly syncHandler = (): void => {
+    const snapshot = this.snapshot
+    if (!snapshot) return
+    const generation = this.lifecycleGeneration
+    const scope = { userId: snapshot.userId, serverDeviceId: snapshot.serverDeviceId }
+    const isCurrentScope = (): boolean => this.lifecycleGeneration === generation
+      && this.snapshot === snapshot
+      && useAuthStore().user?.id === scope.userId
+      && useAuthStore().serverDeviceId === scope.serverDeviceId
+    if (!isCurrentScope()) return
     const sourceStore = useSourceStore()
-    void sourceStore.loadSources()
-      .then(() => this.resumePending('RESUME_SYNC'))
+    void sourceStore.refreshLocalProjection(scope)
+      .then(() => {
+        if (!isCurrentScope()) return
+        return this.resumePending('RESUME_SYNC')
+      })
       .catch(() => console.warn('[DocumentRuntime] sync resume failed'))
   }
 
@@ -297,12 +314,15 @@ export class DocumentProcessingRuntime {
     this.sourceReconciliation = null
   }
 
-  private startSourceReconciliation(sourceIds: string[]): void {
+  private startSourceReconciliation(sourceIds: string[], scope: { userId: string; serverDeviceId: string }): void {
     if (this.sourceReconciliation || sourceIds.length === 0) return
     const generation = this.lifecycleGeneration
     const controller = new AbortController()
     this.sourceReconciliationController = controller
-    const isCurrent = (): boolean => this.lifecycleGeneration === generation && this.sourceReconciliationController === controller
+    const isCurrent = (): boolean => this.lifecycleGeneration === generation
+      && this.sourceReconciliationController === controller
+      && useAuthStore().user?.id === scope.userId
+      && useAuthStore().serverDeviceId === scope.serverDeviceId
     const task = reconcileProcessingSources({
       sourceIds,
       signal: controller.signal,
@@ -322,7 +342,7 @@ export class DocumentProcessingRuntime {
         const syncStore = useSyncStore()
         await syncStore.triggerSync().catch(() => undefined)
         if (!isCurrent()) return
-        await useSourceStore().hydrateLocalSources().catch(() => undefined)
+        await useSourceStore().refreshLocalProjection(scope).catch(() => undefined)
         if (!isCurrent()) return
       },
     })
@@ -335,28 +355,40 @@ export class DocumentProcessingRuntime {
     })
   }
 
-  private startProcessingSourceReconciliations(): void {
+  private startProcessingSourceReconciliations(scope: { userId: string; serverDeviceId: string }): void {
     const sourceStore = useSourceStore()
     const sourceIds = sourceStore.sources
       .filter((source) => source.type === 'FILE' && PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus))
       .map((source) => source.id)
-    this.startSourceReconciliation(sourceIds)
+    this.startSourceReconciliation(sourceIds, scope)
   }
 
   async resumePending(trigger: FileOverviewTrigger = 'RESUME_ONLINE'): Promise<void> {
     const snapshot = this.snapshot
     if (!snapshot) return
+    const generation = this.lifecycleGeneration
+    const scope = { userId: snapshot.userId, serverDeviceId: snapshot.serverDeviceId }
+    const isCurrent = (): boolean => this.lifecycleGeneration === generation
+      && this.snapshot === snapshot
+      && useAuthStore().user?.id === scope.userId
+      && useAuthStore().serverDeviceId === scope.serverDeviceId
     const jobs = await snapshot.repository.list()
+    if (!isCurrent()) return
     const sourceStore = useSourceStore()
     const sourceIds = new Set<string>([
       ...jobs.map((job) => job.sourceId),
       ...sourceStore.sources.map((source) => source.id),
     ])
     await snapshot.scheduler.resume([...sourceIds])
-    void snapshot.overviewGeneration.resumePending(trigger)
+    if (!isCurrent()) return
+    await snapshot.overviewGeneration.resumePending(trigger)
       .catch(() => console.warn('[DocumentRuntime] overview resume failed'))
-    useDocumentProcessingStore().setJobs(await snapshot.repository.list())
-    this.startProcessingSourceReconciliations()
+    if (!isCurrent()) return
+    const refreshedJobs = await snapshot.repository.list()
+    if (!isCurrent()) return
+    useDocumentProcessingStore().setJobs(refreshedJobs)
+    if (!isCurrent()) return
+    this.startProcessingSourceReconciliations(scope)
   }
 
   getSnapshot(): DocumentProcessingRuntimeSnapshot | null {

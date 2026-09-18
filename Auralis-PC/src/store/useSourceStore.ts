@@ -161,10 +161,18 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   // Processing reconciliation has already completed its transport read and
-  // must only refresh the local projection. Keeping this boundary separate
-  // avoids scheduling a second background sync from each reconciliation pass.
-  async function hydrateLocalSources(): Promise<SourceFileModel[]> {
-    return hydrateSources()
+  // must only refresh the local projection. The scope is checked both before
+  // and after the repository read so an old account/device cannot replace a
+  // newer projection after an auth switch.
+  async function refreshLocalProjection(scope?: { userId: string; serverDeviceId: string }): Promise<SourceFileModel[]> {
+    const authStore = useAuthStore()
+    const isCurrentScope = (): boolean => !scope
+      || authStore.user?.id === scope.userId && authStore.serverDeviceId === scope.serverDeviceId
+    if (!isCurrentScope()) return []
+    const local = await readLocal()
+    if (!isCurrentScope()) return []
+    replaceSources(local)
+    return local
   }
 
   subscribeProjectionChange((change) => {
@@ -453,7 +461,7 @@ export const useSourceStore = defineStore('source', () => {
     isLoading,
     lastError,
     loadSources,
-    hydrateLocalSources,
+    refreshLocalProjection,
     loadSourceFiles,
     loadLocalSourceFiles,
     clearActiveSourceFiles,
