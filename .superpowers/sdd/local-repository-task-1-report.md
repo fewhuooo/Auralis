@@ -76,4 +76,4 @@ Follow-up GREEN verification:
 | `npm.cmd run type-check` | 0 | `vue-tsc -b` passed |
 | `npm.cmd run test:r4-pc` | 0 | Full PC R4 suite: `334/334` passed |
 
-Follow-up code changes are in `Auralis-PC/src/store/useSourceStore.ts`, `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`, and the clarified `docs/modules/FrontendPC.md` entry. The follow-up code commit is recorded by the handoff together with this report update.
+Follow-up code changes are in `Auralis-PC/src/store/useSourceStore.ts`, `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`, and the clarified `docs/modules/FrontendPC.md` entry. Follow-up code/report commit: `80e1d73` (`fix(pc): guard subject source projection races`).
