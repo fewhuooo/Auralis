@@ -53,3 +53,27 @@ The focused test is a separate Local Asset/Source flow script and is not one of 
 - Real Tauri GUI route switching, restart hydration, and native filesystem behavior were not manually exercised in this task.
 - Two-device convergence, Server/MinIO sync, offline restart, low-disk behavior, and forced termination remain outside this automated run and retain the repository's existing manual-acceptance boundary.
 - Pre-existing user changes in `Auralis-PC/auto-imports.d.ts`, `docs/current/Status.md`, `docs/current/IssuesAndReview.md`, and `.reset-backup-*` were not staged or modified.
+
+## Review follow-up evidence
+
+The first implementation passed the requested import target as the active projection focus. Review correctly identified that this could make a Subject B import replace the visible Subject A workspace. The fix now uses the existing workspace focus when present (`activeSubjectId ?? subjectId`); the target Subject is used only when no workspace focus exists. The integration regression now drives `useSubjectStore.setActiveSubject('subject-a')`, imports a file targeted at Subject B, and verifies that the visible projection remains Subject A while the stored Source remains owned by Subject B.
+
+The first implementation also allowed an older fire-and-forget Subject A load to commit after a newer Subject B load. `useSourceStore.loadLocalSourceFiles()` now increments a request generation, records the current subject before awaiting storage, and drops a result whose generation or current subject no longer matches. Clearing the active workspace invalidates pending loads as well.
+
+Follow-up RED command:
+
+```text
+npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs
+```
+
+Exit code: `1`; the review regressions reported `7/9` passed and `2` failed: import focus still switched to Subject B, and the stale A load overwrote Subject B.
+
+Follow-up GREEN verification:
+
+| Command | Exit code | Result |
+| --- | ---: | --- |
+| `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs` | 0 | Focused Local Asset/Source flow: `9/9` passed, including workspace-focus and deferred-load race regressions |
+| `npm.cmd run type-check` | 0 | `vue-tsc -b` passed |
+| `npm.cmd run test:r4-pc` | 0 | Full PC R4 suite: `334/334` passed |
+
+Follow-up code changes are in `Auralis-PC/src/store/useSourceStore.ts`, `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`, and the clarified `docs/modules/FrontendPC.md` entry. The follow-up code commit is recorded by the handoff together with this report update.

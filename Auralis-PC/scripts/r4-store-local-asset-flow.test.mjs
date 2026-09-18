@@ -32,6 +32,7 @@ const { LocalSourceDraftService, getOrCreateLocalSourceDraftService } = await im
 const { LocalAssetSyncQueue, getOrCreateLocalAssetSyncQueue, releaseLocalAssetSyncQueue } = await import('../src/services/localAssetSyncQueue.ts')
 const { useAssetStore } = await import('../src/store/useAssetStore.ts')
 const { useSourceStore } = await import('../src/store/useSourceStore.ts')
+const { useSubjectStore } = await import('../src/store/useSubjectStore.ts')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
 const request = (await import('../src/api/request.ts')).default
@@ -273,11 +274,14 @@ test('useSourceStore keeps imported and hydrated projections scoped to the reque
 
   const assetStore = useAssetStore()
   const sourceStore = useSourceStore()
+  const subjectStore = useSubjectStore()
 
   try {
     const subjectAAsset = await assetStore.upload(new File(['subject A'], 'subject-a.pdf', { type: 'application/pdf' }))
     await sourceStore.createFileSource('subject-a', 'Subject A file', subjectAAsset.id)
+    subjectStore.setActiveSubject('subject-a')
     await sourceStore.loadLocalSourceFiles('subject-a')
+    assert.equal(subjectStore.activeSubjectId, 'subject-a')
     assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-a'])
 
     const subjectBAsset = await assetStore.upload(new File(['subject B'], 'subject-b.pdf', { type: 'application/pdf' }))
@@ -288,8 +292,8 @@ test('useSourceStore keeps imported and hydrated projections scoped to the reque
     assert.equal((await sourceRepository.read('SOURCE', subjectBSourceId)).value.subjectId, 'subject-b')
     assert.equal((await assetRepository.getSourceDraft(subjectBSourceId)).subjectId, 'subject-b')
 
-    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.id), [subjectBSourceId])
-    assert.equal(sourceStore.activeSourceFiles[0].subjectId, 'subject-b')
+    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-a'])
+    assert.equal(sourceStore.sources.some((source) => source.id === subjectBSourceId && source.subjectId === 'subject-b'), true)
 
     await sourceStore.loadLocalSourceFiles('subject-empty')
     assert.deepEqual(sourceStore.activeSourceFiles, [])
@@ -297,6 +301,70 @@ test('useSourceStore keeps imported and hydrated projections scoped to the reque
     assert.deepEqual(sourceStore.activeSourceFiles, [])
   } finally {
     releaseLocalAssetSyncQueue('user-subject-scope', 'device-subject-scope')
+  }
+})
+
+test('useSourceStore ignores a stale subject load that resolves after the current subject', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-subject-load-race', email: 'race@example.com' }
+  authStore.serverDeviceId = 'device-subject-load-race'
+
+  const assetStore = useAssetStore()
+  const sourceStore = useSourceStore()
+  const subjectStore = useSubjectStore()
+
+  try {
+    const subjectAAsset = await assetStore.upload(new File(['race A'], 'race-a.pdf', { type: 'application/pdf' }))
+    await sourceStore.createFileSource('subject-a', 'Race A file', subjectAAsset.id)
+    const subjectBAsset = await assetStore.upload(new File(['race B'], 'race-b.pdf', { type: 'application/pdf' }))
+    await sourceStore.createFileSource('subject-b', 'Race B file', subjectBAsset.id)
+    await sourceStore.loadLocalSourceFiles('subject-a')
+
+    const { getLocalRepository } = await import('../src/services/localDb.ts')
+    const repository = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+    const originalList = repository.list.bind(repository)
+    let listCalls = 0
+    let releaseSubjectA
+    const subjectARelease = new Promise((resolve) => { releaseSubjectA = resolve })
+    let subjectAStartedResolve
+    const subjectAStarted = new Promise((resolve) => { subjectAStartedResolve = resolve })
+    let subjectAFinishedResolve
+    const subjectAFinished = new Promise((resolve) => { subjectAFinishedResolve = resolve })
+    let subjectBResolvedResolve
+    const subjectBResolved = new Promise((resolve) => { subjectBResolvedResolve = resolve })
+    repository.list = async (...args) => {
+      const rows = await originalList(...args)
+      const callNumber = listCalls++
+      if (callNumber === 0) {
+        subjectAStartedResolve()
+        await subjectARelease
+        subjectAFinishedResolve()
+      } else if (callNumber === 1) {
+        subjectBResolvedResolve()
+      }
+      return rows
+    }
+
+    subjectStore.setActiveSubject('subject-a')
+    await subjectAStarted
+    subjectStore.setActiveSubject('subject-b')
+    await subjectBResolved
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.equal(subjectStore.activeSubjectId, 'subject-b')
+    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-b'])
+
+    releaseSubjectA()
+    await subjectAFinished
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-b'])
+    repository.list = originalList
+  } finally {
+    releaseLocalAssetSyncQueue('user-subject-load-race', 'device-subject-load-race')
   }
 })
 

@@ -49,6 +49,7 @@ export const useSourceStore = defineStore('source', () => {
   // Keep the requested subject separate from the visible rows. An empty
   // subject has no first row from which to infer focus during hydration.
   const activeSubjectId = ref<string | null>(null)
+  let sourceLoadGeneration = 0
   const isLoading = ref(false)
   const lastError = ref<string | null>(null)
 
@@ -163,7 +164,12 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   async function loadLocalSourceFiles(subjectId: string): Promise<SourceFileModel[]> {
+    const requestGeneration = ++sourceLoadGeneration
+    activeSubjectId.value = subjectId
     const local = await readLocal(subjectId)
+    if (requestGeneration !== sourceLoadGeneration || activeSubjectId.value !== subjectId) {
+      return activeSourceFiles.value
+    }
     replaceSources([
       ...sources.value.filter((source) => source.subjectId !== subjectId),
       ...local,
@@ -172,6 +178,7 @@ export const useSourceStore = defineStore('source', () => {
   }
 
   function clearActiveSourceFiles(): void {
+    sourceLoadGeneration += 1
     activeSubjectId.value = null
     activeSourceFiles.value = []
   }
@@ -231,7 +238,7 @@ export const useSourceStore = defineStore('source', () => {
         assetSizeBytes: normalizedAssetSizeBytes,
       }
       const model = mapSourceView(localView)
-      replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], subjectId)
+      replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], activeSubjectId.value ?? subjectId)
       scheduleSync()
       if (documentScheduler) {
         void documentScheduler.schedule(id)
@@ -286,7 +293,7 @@ export const useSourceStore = defineStore('source', () => {
       })
     }
     const model = mapSourceView(localView)
-    replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], subjectId)
+    replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], activeSubjectId.value ?? subjectId)
     scheduleSync()
     return id
   }
