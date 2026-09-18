@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
 
 @Service
@@ -49,7 +50,12 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView create(UUID userId, UUID blockId, KnowledgeBlockCommand command) {
-        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
+        List<UUID> ownerSubjectIds = new ArrayList<>();
+        ownerSubjectIds.add(command.subjectId());
+        if (command.sourceId() != null) {
+            ownerSubjectIds.add(sourceService.ownerSubjectIdForMutation(userId, command.sourceId()));
+        }
+        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
         validateSource(userId, command.sourceId());
         KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
                 blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
@@ -96,18 +102,29 @@ public class KnowledgeBlockService {
 
     @Transactional
     public KnowledgeBlockView requireActiveKnowledgeBlockForMutation(UUID userId, UUID id) {
-        KnowledgeBlockView result = get(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, result.subjectId());
-        return result;
+        KnowledgeBlockEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
+        return view(active(userId, id));
+    }
+
+    @Transactional(readOnly = true)
+    public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
+        return mutable(userId, id).getSubjectId();
     }
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView update(UUID userId, UUID id, long baseVersion, KnowledgeBlockCommand command) {
-        KnowledgeBlockEntity entity = mutable(userId, id);
-        requireActive(entity);
+        KnowledgeBlockEntity candidate = mutable(userId, id);
+        requireActive(candidate);
+        List<UUID> ownerSubjectIds = new ArrayList<>();
+        ownerSubjectIds.add(candidate.getSubjectId());
+        ownerSubjectIds.add(command.subjectId());
+        if (command.sourceId() != null) {
+            ownerSubjectIds.add(sourceService.ownerSubjectIdForMutation(userId, command.sourceId()));
+        }
+        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
+        KnowledgeBlockEntity entity = active(userId, id);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
-        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
         validateSource(userId, command.sourceId());
         entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"), command.summary(),
                 required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride());
@@ -118,10 +135,11 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        KnowledgeBlockEntity entity = mutable(userId, id);
-        requireActive(entity);
+        KnowledgeBlockEntity candidate = mutable(userId, id);
+        requireActive(candidate);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
+        KnowledgeBlockEntity entity = active(userId, id);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.softDelete();
         knowledgeBlockRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -147,12 +165,13 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView restore(UUID userId, UUID id, long baseVersion) {
+        KnowledgeBlockEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
         KnowledgeBlockEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Knowledge block is not deleted");
         }
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.restore();
         KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");

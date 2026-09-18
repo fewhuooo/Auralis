@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -91,18 +92,26 @@ public class TaskService {
 
     @Transactional
     public TaskView requireActiveTaskForMutation(UUID userId, UUID id) {
-        TaskView result = get(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, result.subjectId());
-        return result;
+        TaskEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
+        return view(active(userId, id));
+    }
+
+    @Transactional(readOnly = true)
+    public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
+        return mutable(userId, id).getSubjectId();
     }
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView update(UUID userId, UUID id, long baseVersion, TaskCommand command) {
-        TaskEntity entity = mutable(userId, id);
-        requireActive(entity);
+        TaskEntity candidate = mutable(userId, id);
+        requireActive(candidate);
+        List<UUID> ownerSubjectIds = new ArrayList<>();
+        ownerSubjectIds.add(candidate.getSubjectId());
+        ownerSubjectIds.add(command.subjectId());
+        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
+        TaskEntity entity = active(userId, id);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
-        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
         validateSchedule(command);
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
                 command.scheduledAt(), command.dueAt(), command.durationMinutes(),
@@ -131,8 +140,7 @@ public class TaskService {
         TaskEntity[] locked = lockActivePair(userId, sourceTaskId, targetTaskId);
         TaskEntity source = locked[0];
         TaskEntity target = locked[1];
-        subjectService.requireActiveSubjectForMutation(userId, source.getSubjectId());
-        subjectService.requireActiveSubjectForMutation(userId, target.getSubjectId());
+        subjectService.requireActiveSubjectsForMutation(userId, List.of(source.getSubjectId(), target.getSubjectId()));
         requireVersion(source, sourceBaseVersion);
         requireVersion(target, targetBaseVersion);
 
@@ -158,10 +166,11 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        TaskEntity entity = mutable(userId, id);
-        requireActive(entity);
+        TaskEntity candidate = mutable(userId, id);
+        requireActive(candidate);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
+        TaskEntity entity = active(userId, id);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.softDelete();
         taskRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -187,12 +196,13 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView restore(UUID userId, UUID id, long baseVersion) {
+        TaskEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
         TaskEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Task is not deleted");
         }
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.restore();
         TaskView result = view(taskRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");

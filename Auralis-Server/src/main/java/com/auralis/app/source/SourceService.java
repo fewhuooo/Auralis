@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -121,18 +122,26 @@ public class SourceService {
 
     @Transactional
     public SourceView requireActiveSourceForMutation(UUID userId, UUID id) {
-        SourceView result = get(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, result.subjectId());
-        return result;
+        SourceEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
+        return view(active(userId, id));
+    }
+
+    @Transactional(readOnly = true)
+    public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
+        return mutable(userId, id).getSubjectId();
     }
 
     @Transactional(noRollbackFor = DomainException.class)
     public SourceView update(UUID userId, UUID id, long baseVersion, SourceCommand command) {
-        SourceEntity entity = mutable(userId, id);
-        requireActive(entity);
+        SourceEntity candidate = mutable(userId, id);
+        requireActive(candidate);
+        List<UUID> ownerSubjectIds = new ArrayList<>();
+        ownerSubjectIds.add(candidate.getSubjectId());
+        ownerSubjectIds.add(command.subjectId());
+        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
+        SourceEntity entity = active(userId, id);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
-        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
         ValidatedSource data = validate(userId, command);
         SourceType previousType = entity.getType();
         UUID previousAssetId = entity.getAssetId();
@@ -159,10 +168,11 @@ public class SourceService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        SourceEntity entity = mutable(userId, id);
-        requireActive(entity);
+        SourceEntity candidate = mutable(userId, id);
+        requireActive(candidate);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
+        SourceEntity entity = active(userId, id);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.softDelete();
         sourceRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -188,12 +198,13 @@ public class SourceService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SourceView restore(UUID userId, UUID id, long baseVersion) {
+        SourceEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
         SourceEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Source is not deleted");
         }
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         if (entity.getType() == SourceType.FILE) {
             requireReadyAsset(userId, entity.getAssetId());
         }
@@ -205,10 +216,11 @@ public class SourceService {
 
     @Transactional
     public SourceView reingest(UUID userId, UUID id, long baseVersion) {
+        SourceEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
         SourceEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         if (entity.getType() == SourceType.FILE) {
             var accepted = parsedDocumentRepository.findFirstByUserIdAndSourceIdAndIngestionRevisionAndStatus(
                     userId, id, entity.getIngestionRevision(), ParsedDocumentStatus.ACCEPTED);
@@ -256,9 +268,10 @@ public class SourceService {
     }
 
     private SourceView transitionIngestion(UUID userId, UUID id, Consumer<SourceEntity> transition) {
+        SourceEntity candidate = mutable(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
         SourceEntity entity = mutable(userId, id);
         requireActive(entity);
-        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         SourceIngestionStatus previousStatus = entity.getIngestionStatus();
         String previousErrorCode = entity.getSafeErrorCode();
         String previousErrorDetail = entity.getSafeErrorDetail();

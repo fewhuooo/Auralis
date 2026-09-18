@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.UUID;
 
 @Service
@@ -146,6 +148,19 @@ public class SubjectService {
             throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
         }
         return view(entity);
+    }
+
+    @Transactional
+    public void requireActiveSubjectsForMutation(UUID userId, Collection<UUID> ids) {
+        if (ids.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
+        }
+        ids.stream().distinct().sorted(Comparator.naturalOrder()).forEach(id -> {
+            SubjectEntity entity = lockedMutable(userId, id);
+            if (entity.getDeletedAt() != null) {
+                throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
+            }
+        });
     }
 
     private SubjectEntity active(UUID userId, UUID id) {

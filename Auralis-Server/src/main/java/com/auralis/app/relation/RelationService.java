@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,6 +56,7 @@ public class RelationService {
     @Transactional(noRollbackFor = DomainException.class)
     public RelationView create(UUID userId, UUID relationId, RelationCommand command) {
         NormalizedRelation relation = normalize(command);
+        lockEndpointOwners(userId, relation);
         validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicate(
                 userId, relation.sourceType(), relation.sourceId(), relation.targetType(),
@@ -109,9 +111,11 @@ public class RelationService {
         RelationEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        lockEndpointOwner(userId, entity.getSourceType(), entity.getSourceId());
-        lockEndpointOwner(userId, entity.getTargetType(), entity.getTargetId());
         NormalizedRelation relation = normalize(command);
+        NormalizedRelation existing = new NormalizedRelation(
+                entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
+                entity.getType(), entity.getLabel());
+        lockEndpointOwners(userId, existing, relation);
         validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
@@ -131,8 +135,9 @@ public class RelationService {
         RelationEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        lockEndpointOwner(userId, entity.getSourceType(), entity.getSourceId());
-        lockEndpointOwner(userId, entity.getTargetType(), entity.getTargetId());
+        lockEndpointOwners(userId, new NormalizedRelation(
+                entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
+                entity.getType(), entity.getLabel()));
         entity.softDelete();
         relationRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -148,6 +153,7 @@ public class RelationService {
         NormalizedRelation relation = new NormalizedRelation(
                 entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
                 entity.getType(), entity.getLabel());
+        lockEndpointOwners(userId, relation);
         validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
@@ -220,13 +226,23 @@ public class RelationService {
         }
     }
 
-    private void lockEndpointOwner(UUID userId, RelationNodeType type, UUID id) {
-        switch (type) {
-            case SUBJECT -> subjectService.requireActiveSubjectForMutation(userId, id);
-            case SOURCE -> sourceService.requireActiveSourceForMutation(userId, id);
-            case KNOWLEDGE_BLOCK -> knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, id);
-            case TASK -> taskService.requireActiveTaskForMutation(userId, id);
+    private void lockEndpointOwners(UUID userId, NormalizedRelation... relations) {
+        List<UUID> subjectIds = new ArrayList<>();
+        for (NormalizedRelation relation : relations) {
+            subjectIds.add(ownerSubjectId(userId, relation.sourceType(), relation.sourceId()));
+            subjectIds.add(ownerSubjectId(userId, relation.targetType(), relation.targetId()));
         }
+        subjectService.requireActiveSubjectsForMutation(userId, subjectIds);
+    }
+
+    private UUID ownerSubjectId(UUID userId, RelationNodeType type, UUID id) {
+        switch (type) {
+            case SUBJECT -> { return id; }
+            case SOURCE -> { return sourceService.ownerSubjectIdForMutation(userId, id); }
+            case KNOWLEDGE_BLOCK -> { return knowledgeBlockService.ownerSubjectIdForMutation(userId, id); }
+            case TASK -> { return taskService.ownerSubjectIdForMutation(userId, id); }
+        }
+        throw new IllegalStateException("Unknown relation endpoint type: " + type);
     }
 
     private RelationEntity active(UUID userId, UUID id) {

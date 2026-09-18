@@ -43,6 +43,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.List;
 import java.util.UUID;
 
@@ -51,6 +52,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.reset;
 
 @SpringBootTest(classes = AuralisApplication.class)
@@ -58,7 +61,7 @@ import static org.mockito.Mockito.reset;
 class SubjectDeletionCascadeTests {
 
     @Autowired private IdentityService identityService;
-    @Autowired private SubjectService subjectService;
+    @MockitoSpyBean private SubjectService subjectService;
     @Autowired private SourceService sourceService;
     @Autowired private KnowledgeBlockService knowledgeBlockService;
     @Autowired private TaskService taskService;
@@ -296,6 +299,78 @@ class SubjectDeletionCascadeTests {
             reset(sourceRepository);
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void multiSubjectMutationLocksSubjectsInCanonicalUuidOrder() {
+        var owner = register("subject-cascade-lock-order");
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        subjectService.create(owner.user().id(), first, new SubjectCommand("First", null, null, "001"));
+        subjectService.create(owner.user().id(), second, new SubjectCommand("Second", null, null, "002"));
+        clearInvocations(subjectRepository);
+
+        subjectService.requireActiveSubjectsForMutation(owner.user().id(), List.of(second, first));
+
+        var order = inOrder(subjectRepository);
+        order.verify(subjectRepository).findForUpdateByIdAndUserId(first, owner.user().id());
+        order.verify(subjectRepository).findForUpdateByIdAndUserId(second, owner.user().id());
+    }
+
+    @Test
+    void relationEndpointRevalidatesChildAfterOwnerLockWait() throws Exception {
+        var owner = register("subject-cascade-endpoint-race");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Endpoint", null, null, "001"));
+        var source = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.TEXT, "Endpoint source", null, null, "text", null));
+        CountDownLatch childStarted = new CountDownLatch(1);
+        CountDownLatch endpointRead = new CountDownLatch(1);
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        AtomicReference<CompletableFuture<Throwable>> relationCreateRef = new AtomicReference<>();
+        doAnswer(invocation -> {
+            endpointRead.countDown();
+            return invocation.callRealMethod();
+        }).when(subjectService).requireActiveSubjectsForMutation(
+                org.mockito.ArgumentMatchers.eq(owner.user().id()), org.mockito.ArgumentMatchers.anyList());
+        try {
+            template.executeWithoutResult(status -> {
+                subjectRepository.findForUpdateByIdAndUserId(subject.id(), owner.user().id()).orElseThrow();
+                CompletableFuture<Throwable> relationCreate = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        childStarted.countDown();
+                        template.executeWithoutResult(inner -> relationService.create(owner.user().id(),
+                                new RelationCommand(RelationNodeType.SOURCE, source.id(),
+                                        RelationNodeType.SUBJECT, subject.id(), RelationType.CONTAINS, null)));
+                        return null;
+                    } catch (Throwable failure) {
+                        return failure;
+                    }
+                }, executor);
+                relationCreateRef.set(relationCreate);
+                try {
+                    assertThat(childStarted.await(1, TimeUnit.SECONDS)).isTrue();
+                    assertThat(endpointRead.await(1, TimeUnit.SECONDS)).isTrue();
+                    var sourceRow = sourceRepository.findByIdAndUserId(source.id(), owner.user().id()).orElseThrow();
+                    sourceRow.softDelete();
+                    sourceRepository.saveAndFlush(sourceRow);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+            });
+        } finally {
+            reset(subjectService);
+            executor.shutdownNow();
+        }
+
+        Throwable relationFailure = relationCreateRef.get().get(5, TimeUnit.SECONDS);
+        assertThat(relationFailure).isInstanceOf(com.auralis.app.shared.error.DomainException.class)
+                .extracting(failure -> ((com.auralis.app.shared.error.DomainException) failure).code())
+                .isEqualTo("RESOURCE_NOT_FOUND");
+        assertThat(relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.user().id()))
+                .isEmpty();
     }
 
     private com.auralis.app.identity.AuthResult register(String suffix) {
