@@ -39,3 +39,20 @@ Implementation commit: `9ce3520e6410fe954c5c7019e3ce061f7f95345d` (`fix(pc): pro
 ## Uncovered scope
 
 The focused Task 1 test and type-check pass. Real Tauri runtime behavior and the unrelated existing runtime-test regex failure remain outside this task's implementation scope.
+
+## Follow-up: stale completion guard
+
+Reviewer IMPORTANT was addressed with a reader generation/identity guard and a refresh sequence guard. Deferred tests prove that a reader resolving after detach cannot repopulate the projection and that an older overlapping refresh cannot overwrite a newer projection.
+
+| Command | Exit code | Key output / scope |
+| --- | ---: | --- |
+| `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs` (RED, before guard) | 1 | 13/15 passed; detach test observed stale `local-source-stale` projection after detach, and overlap test observed stale `local-source-old` replacing `local-source-new`. |
+| `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs` (GREEN, after guard) | 0 | 15/15 passed, including both deferred/barrier stale-completion tests. |
+| `npm.cmd run type-check` | 0 | `vue-tsc -b` passed. |
+| `git diff --check` | 0 | No whitespace errors. |
+
+Follow-up implementation commit: `9f56b4aa70178652a7f1367327e3e81b19b22c5d` (`fix(pc): guard stale local OCR progress refresh`)
+
+Follow-up files changed: `Auralis-PC/src/store/useDocumentProcessingStore.ts`, `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`.
+
+The previously recorded unrelated runtime-test regex failure remains unchanged and was not broadened into this fix.
