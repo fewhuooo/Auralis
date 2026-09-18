@@ -225,8 +225,8 @@ export const useSubjectStore = defineStore('subject', () => {
     })
     if (activeSubjectId.value === id) setActiveSubject(null)
     subjects.value = subjects.value.filter((item) => item.id !== id)
-    const coordinator = await deletionCoordinator(repo)
     try {
+      const coordinator = await deletionCoordinator(repo)
       const impacted = await coordinator.markDeletedSubject(id)
       // The local projection/outbox fence is complete before sync is released;
       // physical files and parser caches may finish in the background.

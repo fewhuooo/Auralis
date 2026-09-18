@@ -15,6 +15,7 @@ const SYNC_RESOURCE_TYPES = new Set<SyncResourceType>(['SUBJECT', 'SOURCE', 'KNO
 type SyncRepository = Pick<LocalRepository,
   'claimPending' | 'settleMutation' | 'releaseInflight' | 'getSyncState' | 'saveCursor'
   | 'listUnresolved' | 'read' | 'upsert' | 'replaceSnapshotPreservingPending'>
+  & Partial<Pick<LocalRepository, 'resolveRejectedSubjectDelete'>>
 
 type SyncApi = {
   pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }): Promise<SyncPushResponse>
@@ -167,8 +168,35 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
     if (claimed.length > 0) {
       const pushed = await input.api.pushChanges({ serverDeviceId: input.serverDeviceId, mutations: claimed })
       for (const result of pushed.results) {
+        const claimedMutation = result.clientMutationId
+          ? claimed.find((mutation) => mutation.clientMutationId === result.clientMutationId)
+          : undefined
         const resourceType = await settlePushResult(input.repository, result)
         if (resourceType) changedResourceTypes.add(resourceType)
+        const rejectedSubjectDelete = claimedMutation?.resourceType === 'SUBJECT'
+          && claimedMutation.mutationType === 'DELETE'
+          && result.decision !== 'APPLIED'
+          && result.decision !== 'PROCESSING'
+        if (rejectedSubjectDelete && input.repository.resolveRejectedSubjectDelete) {
+          const restored = await input.repository.resolveRejectedSubjectDelete({
+            clientMutationId: claimedMutation.clientMutationId,
+            remoteValue: result.current,
+            remoteVersion: resourceVersion(result.current, claimedMutation.baseVersion),
+          })
+          if (restored) {
+            // A rejected parent cascade must be reconciled from a fresh server
+            // snapshot. This repopulates remote children and prevents startup
+            // hydration from immediately re-tombstoning the restored Subject.
+            const snapshot = await input.api.getSnapshot()
+            await input.repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
+            await input.repository.saveCursor(snapshot.snapshotCursor, false)
+            changedResourceTypes.add('SUBJECT')
+            changedResourceTypes.add('SOURCE')
+            changedResourceTypes.add('KNOWLEDGE_BLOCK')
+            changedResourceTypes.add('TASK')
+            changedResourceTypes.add('RELATION')
+          }
+        }
       }
     }
   } catch (error) {

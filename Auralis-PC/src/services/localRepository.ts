@@ -398,7 +398,9 @@ export class LocalRepository {
         for (const row of rows) {
           const entity = resourceFromRow(row)
           if (!ownsSubject(entity.resourceType, entity.value)) continue
-          impacted.push({ ...entity, resourceType: entity.resourceType as LocalSubjectCascadeResource['resourceType'], deletedAt })
+          // Preserve the prior marker in the returned value so the coordinator
+          // can distinguish a first local fence from an idempotent replay.
+          impacted.push({ ...entity, resourceType: entity.resourceType as LocalSubjectCascadeResource['resourceType'] })
           await database.execute(
             `UPDATE local_resource_records SET deleted_at = $1, sync_status = 'synced'
              WHERE user_id = $2 AND resource_type = $3 AND resource_id = $4`,
@@ -418,7 +420,7 @@ export class LocalRepository {
     for (const entity of state.resources) {
       if (entity.userId !== this.userId || !childTypes.includes(entity.resourceType as typeof childTypes[number])
         || !ownsSubject(entity.resourceType, entity.value)) continue
-      impacted.push({ ...clone(entity), resourceType: entity.resourceType as LocalSubjectCascadeResource['resourceType'], deletedAt })
+      impacted.push({ ...clone(entity), resourceType: entity.resourceType as LocalSubjectCascadeResource['resourceType'] })
       entity.deletedAt = deletedAt
       entity.syncStatus = 'synced'
       state.mutations = state.mutations.filter((mutation) => !(mutation.userId === this.userId
@@ -796,6 +798,75 @@ export class LocalRepository {
         ? 'pending' : statuses.includes('conflict') ? 'conflict' : statuses.includes('error') ? 'error' : 'synced'
     }
     this.writeBrowserState(state)
+  }
+
+  /**
+   * Resolves a rejected Subject DELETE by restoring the server's current
+   * projection and marking the rejected mutation as auditable/applied. The
+   * row is no longer an unresolved local fence, so the next snapshot/pull can
+   * repopulate children without the hydration tombstone loop.
+   */
+  async resolveRejectedSubjectDelete(input: {
+    clientMutationId: string
+    remoteValue?: unknown
+    remoteVersion?: number
+  }): Promise<boolean> {
+    if (!input.clientMutationId.trim()) throw new Error('MUTATION_ID_REQUIRED')
+    if (this.sql) {
+      return this.runSqlTransaction(async (database) => {
+        const rows = await database.select<LocalMutationRow>(
+          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
+                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
+           FROM local_mutations WHERE user_id = $1 AND client_mutation_id = $2`,
+          [this.userId, input.clientMutationId],
+        )
+        const mutation = rows[0] ? mutationFromRow(rows[0]) : null
+        if (!mutation || mutation.resourceType !== 'SUBJECT' || mutation.mutationType !== 'DELETE') return false
+        const current = await database.select<LocalResourceRow>(
+          `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
+           FROM local_resource_records WHERE user_id = $1 AND resource_type = 'SUBJECT' AND resource_id = $2`,
+          [this.userId, mutation.resourceId],
+        )
+        let restoredValue = input.remoteValue ?? (current[0] ? resourceFromRow(current[0]).value : { id: mutation.resourceId })
+        if (!restoredValue || typeof restoredValue !== 'object' || Array.isArray(restoredValue)) restoredValue = { id: mutation.resourceId }
+        await database.execute(
+          `INSERT INTO local_resource_records
+             (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+           VALUES ($1, 'SUBJECT', $2, $3, NULL, 'synced', $4)
+           ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET
+             version = excluded.version, deleted_at = NULL, sync_status = 'synced', payload = excluded.payload`,
+          [this.userId, mutation.resourceId, input.remoteVersion ?? current[0]?.version ?? mutation.baseVersion, JSON.stringify(restoredValue)],
+        )
+        await database.execute(
+          `UPDATE local_mutations SET status = 'applied', error = $1, in_flight_at = NULL,
+             remote_payload = $2, remote_version = $3
+           WHERE user_id = $4 AND client_mutation_id = $5`,
+          ['SUBJECT_DELETE_REJECTED_RESTORED', JSON.stringify(restoredValue), input.remoteVersion ?? null, this.userId, input.clientMutationId],
+        )
+        return true
+      })
+    }
+    const state = this.readBrowserState()
+    const mutation = state.mutations.find((item) => item.userId === this.userId && item.clientMutationId === input.clientMutationId)
+    if (!mutation || mutation.resourceType !== 'SUBJECT' || mutation.mutationType !== 'DELETE') return false
+    const resource = state.resources.find((item) => item.userId === this.userId && item.resourceType === 'SUBJECT' && item.id === mutation.resourceId)
+    const restoredValue = input.remoteValue && typeof input.remoteValue === 'object' && !Array.isArray(input.remoteValue)
+      ? clone(input.remoteValue) : clone(resource?.value ?? { id: mutation.resourceId })
+    if (resource) {
+      resource.value = restoredValue
+      resource.version = input.remoteVersion ?? resource.version
+      resource.deletedAt = null
+      resource.syncStatus = 'synced'
+    } else {
+      state.resources.push({ id: mutation.resourceId, resourceType: 'SUBJECT', userId: this.userId,
+        version: input.remoteVersion ?? mutation.baseVersion, deletedAt: null, syncStatus: 'synced', value: restoredValue })
+    }
+    mutation.status = 'applied'
+    mutation.error = 'SUBJECT_DELETE_REJECTED_RESTORED'
+    mutation.remoteValue = restoredValue
+    mutation.remoteVersion = input.remoteVersion
+    this.writeBrowserState(state)
+    return true
   }
 
   async getSyncState(): Promise<LocalSyncState> {

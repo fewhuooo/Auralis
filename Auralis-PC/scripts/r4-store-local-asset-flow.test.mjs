@@ -403,6 +403,36 @@ test('useSourceStore.deleteSourceFile: local-only tombstone releases draft and i
   }
 })
 
+test('useSubjectStore.deleteSubject applies the local cascade fence before sync scheduling', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-subject-delete-store', email: 'delete@example.com' },
+    tokens: { accessToken: 'token-delete', refreshToken: 'refresh-delete' },
+    sessionId: 'session-delete',
+    serverDeviceId: 'device-subject-delete-store',
+  })
+  const syncStore = useSyncStore()
+  const originalRequestBackgroundSync = syncStore.requestBackgroundSync
+  syncStore.requestBackgroundSync = () => undefined
+  try {
+    const { getLocalRepository } = await import('../src/services/localDb.ts')
+    const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+    await repo.upsert('SUBJECT', 'subject-delete-store', { id: 'subject-delete-store', name: 'Delete me' }, { version: 1 })
+    await repo.upsert('SOURCE', 'source-delete-store', { id: 'source-delete-store', subjectId: 'subject-delete-store' }, { version: 1 })
+    const subjectStore = useSubjectStore()
+    subjectStore.subjects.push({ id: 'subject-delete-store', name: 'Delete me', description: '', icon: '', iconKey: '', version: 1, deletedAt: null })
+    await subjectStore.deleteSubject('subject-delete-store')
+    assert.equal((await repo.read('SUBJECT', 'subject-delete-store'))?.deletedAt !== null, true)
+    assert.equal((await repo.list('SOURCE', { includeDeleted: false })).length, 0)
+    assert.deepEqual((await repo.listUnresolved()).map((item) => item.resourceType), ['SUBJECT'])
+  } finally {
+    syncStore.requestBackgroundSync = originalRequestBackgroundSync
+    releaseLocalAssetSyncQueue('user-subject-delete-store', 'device-subject-delete-store')
+  }
+})
+
 test('useSyncStore: does not expose test seams or getAssetQueue in production store contract', () => {
   const pinia = createPinia()
   setActivePinia(pinia)
