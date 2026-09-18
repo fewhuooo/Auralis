@@ -248,6 +248,7 @@ class SubjectDeletionCascadeTests {
         var owner = register("subject-cascade-lock");
         SubjectView subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Lock", null, null, "001"));
+        CountDownLatch childStarted = new CountDownLatch(1);
         CountDownLatch childReachedSave = new CountDownLatch(1);
         AtomicBoolean childReachedSaveBeforeDelete = new AtomicBoolean();
         ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -260,6 +261,7 @@ class SubjectDeletionCascadeTests {
         try {
             CompletableFuture<Throwable> child = CompletableFuture.supplyAsync(() -> {
                 try {
+                    childStarted.countDown();
                     template.executeWithoutResult(status -> sourceService.create(owner.user().id(), new SourceCommand(
                             subject.id(), SourceType.TEXT, "Late source", null, null, "text", null)));
                     return null;
@@ -271,6 +273,9 @@ class SubjectDeletionCascadeTests {
             template.executeWithoutResult(status -> {
                 subjectRepository.findForUpdateByIdAndUserId(subject.id(), owner.user().id()).orElseThrow();
                 try {
+                    assertThat(childStarted.await(1, TimeUnit.SECONDS))
+                            .as("concurrent child mutation must start before the delete scan")
+                            .isTrue();
                     childReachedSaveBeforeDelete.set(childReachedSave.await(1, TimeUnit.SECONDS));
                 } catch (InterruptedException interrupted) {
                     Thread.currentThread().interrupt();
