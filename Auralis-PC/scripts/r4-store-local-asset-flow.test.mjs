@@ -35,6 +35,7 @@ const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useSubjectStore } = await import('../src/store/useSubjectStore.ts')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { useDocumentProcessingStore } = await import('../src/store/useDocumentProcessingStore.ts')
 const { publishProjectionChange } = await import('../src/services/localProjectionEvents.ts')
 const request = (await import('../src/api/request.ts')).default
 
@@ -602,4 +603,80 @@ test('useSyncStore: identity switch during queue init releases/disposes old queu
     releaseLocalAssetSyncQueue('user-switch-A', 'device-switch-A')
     releaseLocalAssetSyncQueue('user-switch-B', 'device-switch-B')
   }
+})
+
+test('useDocumentProcessingStore.refresh projects valid local OCR checkpoints and isolates reader failures', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const store = useDocumentProcessingStore()
+  let jobListCalls = 0
+  let readerCalls = 0
+  const runner = {
+    list: async () => {
+      jobListCalls += 1
+      return [{ jobId: 'job-1', sourceId: 'source-1', phase: 'OCR_RUNNING' }]
+    },
+  }
+  const records = [
+    {
+      localSourceId: 'local-source-1',
+      checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 2, totalPages: 4, imageBytes: 10 }),
+    },
+    { localSourceId: 'local-source-malformed', checkpointJson: '{not-json' },
+    {
+      localSourceId: 'local-source-zero',
+      checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 0, totalPages: 4 }),
+    },
+    {
+      localSourceId: 'local-source-fractional',
+      checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 2.5, totalPages: 4 }),
+    },
+    {
+      localSourceId: 'local-source-out-of-bounds',
+      checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 5, totalPages: 4 }),
+    },
+    {
+      localSourceId: 'local-source-other-event',
+      checkpointJson: JSON.stringify({ type: 'after-recognize', pageNumber: 3, totalPages: 4 }),
+    },
+    { localSourceId: 'local-source-null', checkpointJson: null },
+  ]
+
+  store.attachRunner(runner)
+  store.attachLocalOcrProgressReader({
+    list: async () => {
+      readerCalls += 1
+      return records
+    },
+  })
+
+  await store.refresh()
+
+  assert.equal(jobListCalls, 1)
+  assert.equal(readerCalls, 1)
+  assert.deepEqual(store.jobs, [{ jobId: 'job-1', sourceId: 'source-1', phase: 'OCR_RUNNING' }])
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-1': { currentPage: 2, totalPages: 4 },
+  })
+
+  store.attachLocalOcrProgressReader({
+    list: async () => {
+      throw new Error('LOCAL_READER_FAILED')
+    },
+  })
+  await store.refresh()
+
+  assert.equal(jobListCalls, 2, 'reader failure must not prevent Job refresh')
+  assert.deepEqual(store.jobs, [{ jobId: 'job-1', sourceId: 'source-1', phase: 'OCR_RUNNING' }])
+  assert.deepEqual(store.localOcrProgressBySource, {})
+
+  store.attachLocalOcrProgressReader({ list: async () => records })
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource['local-source-1'], { currentPage: 2, totalPages: 4 })
+
+  store.attachLocalOcrProgressReader(null)
+  assert.deepEqual(store.localOcrProgressBySource, {}, 'detaching the reader must clear the projection')
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource, {})
 })

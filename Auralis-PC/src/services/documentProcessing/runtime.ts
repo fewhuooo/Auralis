@@ -169,6 +169,7 @@ export class DocumentProcessingRuntime {
       useSourceStore().attachFileOverviewGenerator(null)
       useDocumentProcessingStore().attachRunner(null)
       useDocumentProcessingStore().attachScheduler(null)
+      useDocumentProcessingStore().attachLocalOcrProgressReader(null)
     }
     this.snapshot = null
     this.key = null
@@ -331,6 +332,12 @@ export class DocumentProcessingRuntime {
     sourceStore.attachFileOverviewGenerator(overviewGeneration)
     processingStore.attachRunner(runner)
     processingStore.attachScheduler(scheduler)
+    processingStore.attachLocalOcrProgressReader({
+      list: async () => (await localParsedRepo.listByPhase('OCR_RUNNING')).map((record) => ({
+        localSourceId: record.localSourceId,
+        checkpointJson: record.checkpointJson,
+      })),
+    })
 
     const warmup = await ocrWarmup().catch((error) => {
       console.warn('[DocumentRuntime] OCR warmup deferred', error)

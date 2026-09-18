@@ -6,11 +6,25 @@ interface DocumentSourceScheduler {
   retry(jobId: string): Promise<unknown>
 }
 
+export interface LocalOcrPageProgress {
+  currentPage: number
+  totalPages: number
+}
+
+interface LocalOcrProgressReader {
+  list(): Promise<Array<{
+    localSourceId: string
+    checkpointJson: string | null
+  }>>
+}
+
 export const useDocumentProcessingStore = defineStore('document-processing', {
   state: () => ({
     jobs: [] as DocumentProcessingJob[],
     runner: null as DocumentJobRunner | null,
     scheduler: null as DocumentSourceScheduler | null,
+    localOcrProgressReader: null as LocalOcrProgressReader | null,
+    localOcrProgressBySource: {} as Record<string, LocalOcrPageProgress>,
     loading: false,
     lastError: null as string | null,
   }),
@@ -26,12 +40,52 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     attachScheduler(scheduler: DocumentSourceScheduler | null): void {
       this.scheduler = scheduler
     },
+    attachLocalOcrProgressReader(reader: LocalOcrProgressReader | null): void {
+      this.localOcrProgressReader = reader
+      this.localOcrProgressBySource = {}
+    },
     setJobs(jobs: DocumentProcessingJob[]): void {
       this.jobs = jobs
     },
     async refresh(): Promise<void> {
       if (!this.runner) return
       this.jobs = await this.runner.list()
+      this.localOcrProgressBySource = {}
+      if (!this.localOcrProgressReader) return
+
+      try {
+        const projection: Record<string, LocalOcrPageProgress> = {}
+        const records = await this.localOcrProgressReader.list()
+        for (const record of records) {
+          if (!record.checkpointJson) continue
+          try {
+            const parsed: unknown = JSON.parse(record.checkpointJson)
+            if (!parsed || typeof parsed !== 'object') continue
+            const checkpoint = parsed as {
+              type?: unknown
+              pageNumber?: unknown
+              totalPages?: unknown
+            }
+            if (
+              checkpoint.type !== 'before-recognize'
+              || !Number.isInteger(checkpoint.pageNumber)
+              || !Number.isInteger(checkpoint.totalPages)
+              || (checkpoint.pageNumber as number) < 1
+              || (checkpoint.totalPages as number) < (checkpoint.pageNumber as number)
+            ) continue
+            projection[record.localSourceId] = {
+              currentPage: checkpoint.pageNumber as number,
+              totalPages: checkpoint.totalPages as number,
+            }
+          } catch {
+            // Malformed checkpoints are ignored; the durable Job refresh remains usable.
+          }
+        }
+        this.localOcrProgressBySource = projection
+      } catch {
+        // A local reader failure must not prevent the durable Job refresh.
+        this.localOcrProgressBySource = {}
+      }
     },
     async start(jobId: string): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
