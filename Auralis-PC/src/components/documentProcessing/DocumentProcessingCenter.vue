@@ -44,7 +44,7 @@
         </div>
         <div class="processing-item-meta">
           <span v-if="source.safeErrorDetail || sourceActionErrors[source.id]" class="processing-error">{{ source.safeErrorDetail || sourceActionErrors[source.id] }}</span>
-          <span v-else>{{ sourceDetailLabel(source.ingestionStatus) }}</span>
+          <span v-else>{{ sourceDetail(source) }}</span>
           <div class="processing-actions">
             <button v-if="source.ingestionStatus === 'AWAITING_CLIENT'" type="button" @click="resumeSource(source.id)">开始本机处理</button>
           </div>
@@ -58,6 +58,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
+import type { SourceFileModel } from '@/services/domainMappers'
 import { sourceDetailLabel, sourcePhaseLabel } from '@/utils/documentProcessingStatus'
 import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback, type OcrDiagnosticsView } from '@/utils/ocrDiagnostics'
 
@@ -74,6 +75,12 @@ let timer: ReturnType<typeof setInterval> | null = null
 let sourcePollTicks = 0
 
 const sourceName = (sourceId: string) => sourceStore.sources.find((source) => source.id === sourceId)?.name || '未命名文件'
+const sourceDetail = (source: SourceFileModel): string => {
+  const progress = store.localOcrProgressBySource[source.id]
+  return progress
+    ? `正在识别第 ${progress.currentPage}/${progress.totalPages} 页`
+    : sourceDetailLabel(source.ingestionStatus)
+}
 const phaseLabel = (phase: string) => ({
   QUEUED: '排队中', DOWNLOADING_SOURCE: '下载文件', EXTRACTING: '解析文本', OCR_RUNNING: 'OCR 识别',
   PACKAGING: '整理结果', UPLOADING: '上传结果', SERVER_VALIDATING: '服务端校验', SERVER_INDEXING: '建立索引',

@@ -75,6 +75,17 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(workspace, /showProcessingRequired/)
 })
 
+test('Source row prefers local OCR page progress and falls back to its existing detail label', async () => {
+  const center = await source('src/components/documentProcessing/DocumentProcessingCenter.vue')
+  assert.match(center, /import type \{ SourceFileModel \} from ['"]@\/services\/domainMappers['"]/
+  )
+  assert.match(center, /const sourceDetail = \(source: SourceFileModel\): string => \{[\s\S]*const progress = store\.localOcrProgressBySource\[source\.id\][\s\S]*return progress[\s\S]*`正在识别第 \$\{progress\.currentPage\}\/\$\{progress\.totalPages\} 页`[\s\S]*sourceDetailLabel\(source\.ingestionStatus\)/
+  )
+  assert.match(center, /<span v-else>\{\{ sourceDetail\(source\) \}\}<\/span>/
+  )
+  assert.doesNotMatch(center, /<DocumentProcessingProgress\b|class="[^"]*processing-progress[^"]*"/)
+})
+
 test('OCR diagnostics formatter exposes safe progress and empty-page warning', () => {
   const formatted = formatOcrDiagnostics({
     phase: 'OCR_RUNNING',
