@@ -52,6 +52,10 @@ export interface LocalCommitInput<T = unknown> extends LocalResourceKey {
   mutation: LocalMutationInput
 }
 
+export interface LocalSubjectCascadeResource extends LocalEntity<unknown> {
+  resourceType: 'SOURCE' | 'KNOWLEDGE_BLOCK' | 'TASK' | 'RELATION'
+}
+
 export interface LocalMutationSettlement {
   clientMutationId: string
   status: Extract<LocalMutationStatus, 'applied' | 'conflict' | 'error'>
@@ -362,6 +366,66 @@ export class LocalRepository {
       deletedAt: options.deletedAt ?? this.now(),
       syncStatus: options.syncStatus ?? 'pending',
     })
+  }
+
+  /**
+   * Locally hides every projection owned by a deleted Subject and discards
+   * child outbox entries.  The Subject mutation remains the only server
+   * mutation; server-side cascade tombstones are authoritative for peers.
+   */
+  async tombstoneSubjectChildren(subjectId: string, deletedAt = this.now()): Promise<LocalSubjectCascadeResource[]> {
+    if (!subjectId.trim()) throw new Error('SUBJECT_ID_REQUIRED')
+    const childTypes = ['SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION'] as const
+    const ownsSubject = (resourceType: string, value: unknown): boolean => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+      const record = value as Record<string, unknown>
+      if (resourceType === 'RELATION') {
+        return (record.sourceType === 'SUBJECT' && record.sourceId === subjectId)
+          || (record.targetType === 'SUBJECT' && record.targetId === subjectId)
+      }
+      return record.subjectId === subjectId
+    }
+
+    if (this.sql) {
+      return this.runSqlTransaction(async (database) => {
+        const rows = await database.select<LocalResourceRow>(
+          `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
+           FROM local_resource_records
+           WHERE user_id = $1 AND resource_type IN ('SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION')`,
+          [this.userId],
+        )
+        const impacted: LocalSubjectCascadeResource[] = []
+        for (const row of rows) {
+          const entity = resourceFromRow(row)
+          if (!ownsSubject(entity.resourceType, entity.value)) continue
+          impacted.push({ ...entity, resourceType: entity.resourceType as LocalSubjectCascadeResource['resourceType'], deletedAt })
+          await database.execute(
+            `UPDATE local_resource_records SET deleted_at = $1, sync_status = 'synced'
+             WHERE user_id = $2 AND resource_type = $3 AND resource_id = $4`,
+            [deletedAt, this.userId, entity.resourceType, entity.id],
+          )
+          await database.execute(
+            `DELETE FROM local_mutations WHERE user_id = $1 AND resource_type = $2 AND resource_id = $3`,
+            [this.userId, entity.resourceType, entity.id],
+          )
+        }
+        return impacted
+      })
+    }
+
+    const state = this.readBrowserState()
+    const impacted: LocalSubjectCascadeResource[] = []
+    for (const entity of state.resources) {
+      if (entity.userId !== this.userId || !childTypes.includes(entity.resourceType as typeof childTypes[number])
+        || !ownsSubject(entity.resourceType, entity.value)) continue
+      impacted.push({ ...clone(entity), resourceType: entity.resourceType as LocalSubjectCascadeResource['resourceType'], deletedAt })
+      entity.deletedAt = deletedAt
+      entity.syncStatus = 'synced'
+      state.mutations = state.mutations.filter((mutation) => !(mutation.userId === this.userId
+        && mutation.resourceType === entity.resourceType && mutation.resourceId === entity.id))
+    }
+    this.writeBrowserState(state)
+    return impacted
   }
 
   async commitMutation<T>(input: LocalCommitInput<T>): Promise<LocalEntity<T>> {

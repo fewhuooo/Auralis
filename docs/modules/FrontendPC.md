@@ -149,7 +149,8 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 | 文件 | 职责 |
 | --- | --- |
 | `services/localSchema.ts` | Tauri SQLite v9 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换；迁移时清洗 TASK 负载颜色键并保留无效 JSON 原文 |
-| `services/localRepository.ts` | 按 `userId + serverDeviceId` 隔离的资源、tombstone、原子资源+outbox 提交、cursor 与 snapshot repository |
+| `services/localRepository.ts` | 按 `userId + serverDeviceId` 隔离的资源、tombstone、原子资源+outbox 提交、cursor 与 snapshot repository；Subject 删除后由 `tombstoneSubjectChildren()` 幂等隐藏所属 Source/KnowledgeBlock/Task/Relation 投影并清除子资源 outbox，不生成子 DELETE mutation |
+| `services/subjectDeletionCoordinator.ts` | Subject durable DELETE marker 之后的本地级联协调器；启动/hydration 重放子投影、Subject/File Overview、文档任务、Source draft 与最后引用 Local Asset 清理，保留其他 Subject 的资源和共享 Asset |
 | `services/localDatabaseRuntime.ts` | 单个应用生命周期内的 SQLite 初始化 Promise 与按用户/设备范围缓存的 repository |
 | `services/localSqlQueue.ts` | 进程内 SQL 命令串行化 adapter，避免 SQL 插件 pool 中的并发写入竞争 |
 | `services/legacyLocalData.ts` | 旧 account-less localStorage 的 `legacy_unassigned` 备份和显式迁移选择记录 |

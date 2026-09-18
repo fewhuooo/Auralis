@@ -2,8 +2,10 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
 import { type SubjectCreateRequest, type SubjectView } from '@/api/useSubjectApi'
-import { getLocalRepository } from '@/services/localDb'
+import { getDocumentProcessingJobRepository, getLocalAssetRepository, getLocalRepository, getOverviewRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
+import { SubjectDeletionCoordinator } from '@/services/subjectDeletionCoordinator'
+import { getOrCreateLocalAssetService } from '@/services/localAssetService'
 import { mapSubjectView, type SourceFileModel, type SubjectModel } from '@/services/domainMappers'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useSyncStore } from '@/store/useSyncStore'
@@ -89,6 +91,20 @@ export const useSubjectStore = defineStore('subject', () => {
     return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
+  async function deletionCoordinator(repo?: LocalRepository): Promise<SubjectDeletionCoordinator> {
+    const authStore = useAuthStore()
+    if (!authStore.user?.id || !authStore.serverDeviceId) throw new Error('Subjects require an authenticated user and device')
+    const localRepo = repo ?? await repository()
+    const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    return new SubjectDeletionCoordinator({
+      repo: localRepo,
+      assetRepo,
+      assetService: getOrCreateLocalAssetService(assetRepo),
+      overview: await getOverviewRepository(authStore.user.id, authStore.serverDeviceId),
+      jobs: await getDocumentProcessingJobRepository(authStore.user.id, authStore.serverDeviceId),
+    })
+  }
+
   async function localSubjects(): Promise<Subject[]> {
     const repo = await repository()
     const rows = await repo.list<SubjectView>('SUBJECT', { includeDeleted: false })
@@ -105,6 +121,13 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   async function hydrateSubjects(): Promise<void> {
+    // The Subject tombstone is the crash-recovery marker. Repair any child
+    // projections left behind by a process exit after that marker committed.
+    try {
+      await (await deletionCoordinator()).reconcileDeletedSubjects()
+    } catch (error) {
+      console.warn('[SubjectStore] deleted Subject reconciliation deferred', error)
+    }
     replaceSubjects(await localSubjects())
   }
 
@@ -202,6 +225,17 @@ export const useSubjectStore = defineStore('subject', () => {
     })
     if (activeSubjectId.value === id) setActiveSubject(null)
     subjects.value = subjects.value.filter((item) => item.id !== id)
+    const coordinator = await deletionCoordinator(repo)
+    try {
+      const impacted = await coordinator.markDeletedSubject(id)
+      // The local projection/outbox fence is complete before sync is released;
+      // physical files and parser caches may finish in the background.
+      void coordinator.cleanupMarkedSubject(impacted).catch((error) => {
+        console.warn('[SubjectStore] deleted Subject cleanup deferred', error)
+      })
+    } catch (error) {
+      console.warn('[SubjectStore] deleted Subject projection cleanup deferred', error)
+    }
     scheduleSync()
   }
 

@@ -35,6 +35,7 @@ import { useAssetStore } from '@/store/useAssetStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
+import { attachSubjectDeletionRuntime } from '@/services/subjectDeletionCoordinator'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useOverviewApi } from '@/api/useOverviewApi'
 import { OverviewGenerationService } from '@/services/overviewGenerationService'
@@ -163,6 +164,7 @@ export class DocumentProcessingRuntime {
     if (typeof window !== 'undefined') window.removeEventListener('online', this.onlineHandler)
     if (typeof window !== 'undefined') window.removeEventListener('auralis-sync-updated', this.syncHandler)
     if (this.snapshot) {
+      attachSubjectDeletionRuntime(null)
       useSourceStore().attachDocumentScheduler(null)
       useSourceStore().attachFileOverviewGenerator(null)
       useDocumentProcessingStore().attachRunner(null)
@@ -321,6 +323,10 @@ export class DocumentProcessingRuntime {
     if (!this.isCurrentStart(generation, userId, serverDeviceId)) return
     this.key = key
     this.snapshot = { userId, serverDeviceId, repository, runner, scheduler, overviewGeneration }
+    attachSubjectDeletionRuntime({
+      discardSource: (sourceId) => scheduler.discard(sourceId),
+      discardFileOverview: (sourceId) => overviewGeneration.discardFileOverview(sourceId),
+    })
     sourceStore.attachDocumentScheduler(scheduler)
     sourceStore.attachFileOverviewGenerator(overviewGeneration)
     processingStore.attachRunner(runner)
