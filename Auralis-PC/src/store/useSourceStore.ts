@@ -166,9 +166,13 @@ export const useSourceStore = defineStore('source', () => {
   async function loadLocalSourceFiles(subjectId: string): Promise<SourceFileModel[]> {
     const requestGeneration = ++sourceLoadGeneration
     activeSubjectId.value = subjectId
+    // Scope the visible projection immediately. This prevents the previous
+    // subject from being rendered while the requested rows are being read.
+    activeSourceFiles.value = sources.value.filter((source) => source.subjectId === subjectId)
     const local = await readLocal(subjectId)
     if (requestGeneration !== sourceLoadGeneration || activeSubjectId.value !== subjectId) {
-      return activeSourceFiles.value
+      // A superseded route caller must not consume another subject's rows.
+      return []
     }
     replaceSources([
       ...sources.value.filter((source) => source.subjectId !== subjectId),

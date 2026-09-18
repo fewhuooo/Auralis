@@ -348,20 +348,23 @@ test('useSourceStore ignores a stale subject load that resolves after the curren
       return rows
     }
 
-    subjectStore.setActiveSubject('subject-a')
+    const staleSubjectALoad = sourceStore.loadLocalSourceFiles('subject-a')
     await subjectAStarted
-    subjectStore.setActiveSubject('subject-b')
+    subjectStore.setActiveSubject('subject-empty')
+    assert.deepEqual(sourceStore.activeSourceFiles, [])
     await subjectBResolved
     await Promise.resolve()
     await Promise.resolve()
-    assert.equal(subjectStore.activeSubjectId, 'subject-b')
-    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-b'])
+    assert.equal(subjectStore.activeSubjectId, 'subject-empty')
+    assert.deepEqual(sourceStore.activeSourceFiles, [])
 
     releaseSubjectA()
     await subjectAFinished
+    const staleSubjectAResult = await staleSubjectALoad
+    assert.deepEqual(staleSubjectAResult, [])
     await Promise.resolve()
     await Promise.resolve()
-    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-b'])
+    assert.deepEqual(sourceStore.activeSourceFiles, [])
     repository.list = originalList
   } finally {
     releaseLocalAssetSyncQueue('user-subject-load-race', 'device-subject-load-race')

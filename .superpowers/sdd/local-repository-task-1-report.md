@@ -25,7 +25,7 @@ Expected failure: the new subject-scope regression failed because the active pro
 ## Changed behavior
 
 - `useSourceStore` now tracks the requested subject independently from visible rows, so an empty subject remains the focus during hydration.
-- `createFileSource()` passes its selected `subjectId` into projection replacement for both local-draft and server-ready Asset paths.
+- `createFileSource()` preserves the current workspace focus when updating the projection; it falls back to the selected `subjectId` only when no workspace focus exists, for both local-draft and server-ready Asset paths.
 - `useSubjectStore.setActiveSubject(null)` clears the Source focus through the Store API instead of mutating the projection directly.
 - The focused regression covers Subject A → Subject B import, empty-subject hydration, local Source projection, local Source draft, and `SOURCE/CREATE` subject ownership.
 - `docs/modules/FrontendPC.md` records the subject-scoped projection behavior.
@@ -77,3 +77,25 @@ Follow-up GREEN verification:
 | `npm.cmd run test:r4-pc` | 0 | Full PC R4 suite: `334/334` passed |
 
 Follow-up code changes are in `Auralis-PC/src/store/useSourceStore.ts`, `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`, and the clarified `docs/modules/FrontendPC.md` entry. Follow-up code/report commit: `80e1d73` (`fix(pc): guard subject source projection races`).
+
+## Second review follow-up evidence
+
+The second review found two remaining async projection issues. Starting a new subject load changed `activeSubjectId` but left the previous subject's rows visible until storage returned, and a superseded caller returned the current active rows from the newer subject. The final implementation now immediately recomputes `activeSourceFiles` from the cached full projection for the new subject (which clears the list for an empty subject) and returns an explicit empty array for a superseded request.
+
+Second-review RED command:
+
+```text
+npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs
+```
+
+Exit code: `1`; the focused run reported `8/9` passed and failed on the new transition-state assertion, showing the prior Subject A row still visible after switching to an empty Subject before the deferred read resolved.
+
+Second-review GREEN verification:
+
+| Command | Exit code | Result |
+| --- | ---: | --- |
+| `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs` | 0 | Focused Local Asset/Source flow: `9/9` passed, including immediate empty-subject clearing and stale-caller result semantics |
+| `npm.cmd run type-check` | 0 | `vue-tsc -b` passed |
+| `npm.cmd run test:r4-pc` | 0 | Full PC R4 suite: `334/334` passed |
+
+Second-review fixes are included in the follow-up commit to be reported by the handoff.
