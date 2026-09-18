@@ -88,7 +88,7 @@ public class SubjectService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SubjectView update(UUID userId, UUID id, long baseVersion, SubjectCommand command) {
-        SubjectEntity entity = mutable(userId, id);
+        SubjectEntity entity = lockedMutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         String name = requiredName(command.name());
@@ -104,7 +104,7 @@ public class SubjectService {
 
     @Transactional
     public void delete(UUID userId, UUID id, long baseVersion) {
-        SubjectEntity entity = mutable(userId, id);
+        SubjectEntity entity = lockedMutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         entity.softDelete();
@@ -115,7 +115,7 @@ public class SubjectService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SubjectView restore(UUID userId, UUID id, long baseVersion) {
-        SubjectEntity entity = mutable(userId, id);
+        SubjectEntity entity = lockedMutable(userId, id);
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Subject is not deleted");
         }
@@ -134,13 +134,27 @@ public class SubjectService {
         return get(userId, id);
     }
 
+    /**
+     * Locks an active Subject for a child mutation. Subject deletion holds the
+     * same row lock while it scans and cascades, preventing a late child insert
+     * from passing validation after the cascade scan.
+     */
+    @Transactional
+    public SubjectView requireActiveSubjectForMutation(UUID userId, UUID id) {
+        SubjectEntity entity = lockedMutable(userId, id);
+        if (entity.getDeletedAt() != null) {
+            throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
+        }
+        return view(entity);
+    }
+
     private SubjectEntity active(UUID userId, UUID id) {
         return subjectRepository.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Subject was not found"));
     }
 
-    private SubjectEntity mutable(UUID userId, UUID id) {
-        return subjectRepository.findByIdAndUserId(id, userId)
+    private SubjectEntity lockedMutable(UUID userId, UUID id) {
+        return subjectRepository.findForUpdateByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Subject was not found"));
     }
 

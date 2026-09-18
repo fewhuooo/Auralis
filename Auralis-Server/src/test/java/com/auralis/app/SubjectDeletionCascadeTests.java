@@ -32,15 +32,24 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 
@@ -60,7 +69,8 @@ class SubjectDeletionCascadeTests {
     @Autowired private KnowledgeBlockRepository knowledgeBlockRepository;
     @Autowired private TaskRepository taskRepository;
     @Autowired private RelationRepository relationRepository;
-    @Autowired private SubjectRepository subjectRepository;
+    @MockitoSpyBean private SubjectRepository subjectRepository;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     @BeforeEach
     void cleanData() {
@@ -115,18 +125,30 @@ class SubjectDeletionCascadeTests {
 
         subjectService.delete(owner.user().id(), deletedSubject.id(), deletedSubject.version());
 
-        assertThat(subjectRepository.findByIdAndUserId(deletedSubject.id(), owner.user().id()).orElseThrow().getDeletedAt())
-                .isNotNull();
-        assertThat(sourceRepository.findByIdAndUserId(deletedSource.id(), owner.user().id()).orElseThrow().getDeletedAt())
-                .isNotNull();
-        assertThat(knowledgeBlockRepository.findByIdAndUserId(deletedBlock.id(), owner.user().id()).orElseThrow().getDeletedAt())
-                .isNotNull();
-        assertThat(taskRepository.findByIdAndUserId(deletedTask.id(), owner.user().id()).orElseThrow().getDeletedAt())
-                .isNotNull();
-        assertThat(relationRepository.findByIdAndUserId(deletedRelation.id(), owner.user().id()).orElseThrow().getDeletedAt())
-                .isNotNull();
-        assertThat(relationRepository.findByIdAndUserId(deletedChildRelation.id(), owner.user().id()).orElseThrow().getDeletedAt())
-                .isNotNull();
+        var deletedSubjectRow = subjectRepository.findByIdAndUserId(deletedSubject.id(), owner.user().id()).orElseThrow();
+        var deletedSourceRow = sourceRepository.findByIdAndUserId(deletedSource.id(), owner.user().id()).orElseThrow();
+        var deletedBlockRow = knowledgeBlockRepository.findByIdAndUserId(deletedBlock.id(), owner.user().id()).orElseThrow();
+        var deletedTaskRow = taskRepository.findByIdAndUserId(deletedTask.id(), owner.user().id()).orElseThrow();
+        var deletedRelationRow = relationRepository.findByIdAndUserId(deletedRelation.id(), owner.user().id()).orElseThrow();
+        var deletedChildRelationRow = relationRepository.findByIdAndUserId(deletedChildRelation.id(), owner.user().id()).orElseThrow();
+        assertThat(deletedSubjectRow.getDeletedAt()).isNotNull();
+        assertThat(deletedSourceRow.getDeletedAt()).isNotNull();
+        assertThat(deletedBlockRow.getDeletedAt()).isNotNull();
+        assertThat(deletedTaskRow.getDeletedAt()).isNotNull();
+        assertThat(deletedRelationRow.getDeletedAt()).isNotNull();
+        assertThat(deletedChildRelationRow.getDeletedAt()).isNotNull();
+        assertThat(deletedSubjectRow.getVersion()).isGreaterThan(deletedSubject.version());
+        assertThat(deletedSourceRow.getVersion()).isGreaterThan(deletedSource.version());
+        assertThat(deletedBlockRow.getVersion()).isGreaterThan(deletedBlock.version());
+        assertThat(deletedTaskRow.getVersion()).isGreaterThan(deletedTask.version());
+        assertThat(deletedRelationRow.getVersion()).isGreaterThan(deletedRelation.version());
+        assertThat(deletedChildRelationRow.getVersion()).isGreaterThan(deletedChildRelation.version());
+        assertThat(deletedSubjectRow.getUpdatedAt()).isAfter(deletedSubject.updatedAt());
+        assertThat(deletedSourceRow.getUpdatedAt()).isAfter(deletedSource.updatedAt());
+        assertThat(deletedBlockRow.getUpdatedAt()).isAfter(deletedBlock.updatedAt());
+        assertThat(deletedTaskRow.getUpdatedAt()).isAfter(deletedTask.updatedAt());
+        assertThat(deletedRelationRow.getUpdatedAt()).isAfter(deletedRelation.updatedAt());
+        assertThat(deletedChildRelationRow.getUpdatedAt()).isAfter(deletedChildRelation.updatedAt());
 
         assertThat(sourceRepository.findByIdAndUserId(retainedSource.id(), owner.user().id()).orElseThrow().getDeletedAt())
                 .isNull();
@@ -149,6 +171,11 @@ class SubjectDeletionCascadeTests {
         var deletes = changeLogService.pull(owner.user().id(), new SyncCursor(0), 200).changes().stream()
                 .filter(change -> change.mutationType().name().equals("DELETE"))
                 .toList();
+        assertThat(deletes).allSatisfy(change -> {
+            assertThat(change.version()).isGreaterThan(0);
+            assertThat(change.deletedAt()).isNotNull();
+            assertThat(change.payload()).isNotBlank();
+        });
         assertThat(deletes).extracting(change -> change.resourceId())
                 .containsExactlyInAnyOrder(deletedSubject.id(), deletedSource.id(), deletedBlock.id(), deletedTask.id(),
                         deletedRelation.id(), deletedChildRelation.id());
@@ -166,6 +193,16 @@ class SubjectDeletionCascadeTests {
                 new SubjectCommand("Rollback", null, null, "001"));
         var source = sourceService.create(owner.user().id(), new SourceCommand(
                 subject.id(), SourceType.TEXT, "Rollback source", null, null, "text", null));
+        var block = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
+                subject.id(), source.id(), "Rollback block", null, "body", List.of(), null));
+        var task = taskService.create(owner.user().id(), new TaskCommand(
+                subject.id(), "Rollback task", null, null, null, null, null, "001"));
+        var subjectRelation = relationService.create(owner.user().id(), new RelationCommand(
+                RelationNodeType.SUBJECT, subject.id(), RelationNodeType.SOURCE, source.id(),
+                RelationType.CONTAINS, null));
+        var childRelation = relationService.create(owner.user().id(), new RelationCommand(
+                RelationNodeType.SOURCE, source.id(), RelationNodeType.KNOWLEDGE_BLOCK, block.id(),
+                RelationType.DERIVED_FROM, null));
 
         doThrow(new IllegalStateException("forced cascade failure"))
                 .when(sourceRepository).saveAndFlush(any(SourceEntity.class));
@@ -181,6 +218,79 @@ class SubjectDeletionCascadeTests {
                 .isNull();
         assertThat(sourceRepository.findByIdAndUserId(source.id(), owner.user().id()).orElseThrow().getDeletedAt())
                 .isNull();
+        assertThat(knowledgeBlockRepository.findByIdAndUserId(block.id(), owner.user().id()).orElseThrow().getDeletedAt())
+                .isNull();
+        assertThat(taskRepository.findByIdAndUserId(task.id(), owner.user().id()).orElseThrow().getDeletedAt())
+                .isNull();
+        assertThat(relationRepository.findByIdAndUserId(subjectRelation.id(), owner.user().id()).orElseThrow().getDeletedAt())
+                .isNull();
+        assertThat(relationRepository.findByIdAndUserId(childRelation.id(), owner.user().id()).orElseThrow().getDeletedAt())
+                .isNull();
+        assertThat(subjectRepository.findByIdAndUserId(subject.id(), owner.user().id()).orElseThrow().getVersion())
+                .isZero();
+        assertThat(sourceRepository.findByIdAndUserId(source.id(), owner.user().id()).orElseThrow().getVersion())
+                .isZero();
+        assertThat(knowledgeBlockRepository.findByIdAndUserId(block.id(), owner.user().id()).orElseThrow().getVersion())
+                .isZero();
+        assertThat(taskRepository.findByIdAndUserId(task.id(), owner.user().id()).orElseThrow().getVersion())
+                .isZero();
+        assertThat(relationRepository.findByIdAndUserId(subjectRelation.id(), owner.user().id()).orElseThrow().getVersion())
+                .isZero();
+        assertThat(relationRepository.findByIdAndUserId(childRelation.id(), owner.user().id()).orElseThrow().getVersion())
+                .isZero();
+        assertThat(changeLogService.pull(owner.user().id(), new SyncCursor(0), 200).changes())
+                .filteredOn(change -> change.mutationType().name().equals("DELETE"))
+                .isEmpty();
+    }
+
+    @Test
+    void subjectDeleteSerializesConcurrentChildCreateBeforeCascadeScan() throws Exception {
+        var owner = register("subject-cascade-lock");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Lock", null, null, "001"));
+        CountDownLatch childReachedSave = new CountDownLatch(1);
+        AtomicBoolean childReachedSaveBeforeDelete = new AtomicBoolean();
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+
+        doAnswer(invocation -> {
+            childReachedSave.countDown();
+            return invocation.callRealMethod();
+        }).when(sourceRepository).save(any(SourceEntity.class));
+        try {
+            CompletableFuture<Throwable> child = CompletableFuture.supplyAsync(() -> {
+                try {
+                    template.executeWithoutResult(status -> sourceService.create(owner.user().id(), new SourceCommand(
+                            subject.id(), SourceType.TEXT, "Late source", null, null, "text", null)));
+                    return null;
+                } catch (Throwable failure) {
+                    return failure;
+                }
+            }, executor);
+
+            template.executeWithoutResult(status -> {
+                subjectRepository.findForUpdateByIdAndUserId(subject.id(), owner.user().id()).orElseThrow();
+                try {
+                    childReachedSaveBeforeDelete.set(childReachedSave.await(1, TimeUnit.SECONDS));
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new AssertionError(interrupted);
+                }
+                subjectService.delete(owner.user().id(), subject.id(), subject.version());
+            });
+
+            assertThat(childReachedSaveBeforeDelete).as("child mutation must wait for the Subject row lock")
+                    .isFalse();
+            Throwable childFailure = child.get(5, TimeUnit.SECONDS);
+            assertThat(childFailure).isInstanceOf(com.auralis.app.shared.error.DomainException.class)
+                    .extracting(failure -> ((com.auralis.app.shared.error.DomainException) failure).code())
+                    .isEqualTo("RESOURCE_NOT_FOUND");
+            assertThat(sourceRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+                    owner.user().id(), subject.id())).isEmpty();
+        } finally {
+            reset(sourceRepository);
+            executor.shutdownNow();
+        }
     }
 
     private com.auralis.app.identity.AuthResult register(String suffix) {

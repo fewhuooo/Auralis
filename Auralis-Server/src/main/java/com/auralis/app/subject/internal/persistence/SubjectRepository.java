@@ -2,8 +2,11 @@ package com.auralis.app.subject.internal.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,6 +17,10 @@ public interface SubjectRepository extends JpaRepository<SubjectEntity, UUID> {
     Optional<SubjectEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
     Optional<SubjectEntity> findByIdAndUserId(UUID id, UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select subject from SubjectEntity subject where subject.id = :id and subject.userId = :userId")
+    Optional<SubjectEntity> findForUpdateByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 
     List<SubjectEntity> findAllByUserIdAndDeletedAtIsNullOrderBySortKeyAscUpdatedAtDescIdAsc(UUID userId);
 

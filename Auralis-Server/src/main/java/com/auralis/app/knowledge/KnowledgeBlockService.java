@@ -49,8 +49,8 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView create(UUID userId, UUID blockId, KnowledgeBlockCommand command) {
+        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
         validateSource(userId, command.sourceId());
-        subjectService.requireActiveSubject(userId, command.subjectId());
         KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
                 blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
                 command.summary(), required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride())));
@@ -94,13 +94,21 @@ public class KnowledgeBlockService {
         return view(active(userId, id));
     }
 
+    @Transactional
+    public KnowledgeBlockView requireActiveKnowledgeBlockForMutation(UUID userId, UUID id) {
+        KnowledgeBlockView result = get(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, result.subjectId());
+        return result;
+    }
+
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView update(UUID userId, UUID id, long baseVersion, KnowledgeBlockCommand command) {
-        validateSource(userId, command.sourceId());
         KnowledgeBlockEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubject(userId, command.subjectId());
+        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
+        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
+        validateSource(userId, command.sourceId());
         entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"), command.summary(),
                 required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride());
         KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
@@ -113,6 +121,7 @@ public class KnowledgeBlockService {
         KnowledgeBlockEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
+        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.softDelete();
         knowledgeBlockRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -143,7 +152,7 @@ public class KnowledgeBlockService {
             throw new DomainException("MUTATION_REJECTED", "Knowledge block is not deleted");
         }
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubject(userId, entity.getSubjectId());
+        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.restore();
         KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");
@@ -181,7 +190,7 @@ public class KnowledgeBlockService {
 
     private void validateSource(UUID userId, UUID sourceId) {
         if (sourceId != null) {
-            sourceService.requireActiveSource(userId, sourceId);
+            sourceService.requireActiveSourceForMutation(userId, sourceId);
         }
     }
 

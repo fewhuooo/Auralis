@@ -55,7 +55,7 @@ public class RelationService {
     @Transactional(noRollbackFor = DomainException.class)
     public RelationView create(UUID userId, UUID relationId, RelationCommand command) {
         NormalizedRelation relation = normalize(command);
-        validateEndpoints(userId, relation);
+        validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicate(
                 userId, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type())) {
@@ -109,8 +109,10 @@ public class RelationService {
         RelationEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
+        lockEndpointOwner(userId, entity.getSourceType(), entity.getSourceId());
+        lockEndpointOwner(userId, entity.getTargetType(), entity.getTargetId());
         NormalizedRelation relation = normalize(command);
-        validateEndpoints(userId, relation);
+        validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type())) {
@@ -129,6 +131,8 @@ public class RelationService {
         RelationEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
+        lockEndpointOwner(userId, entity.getSourceType(), entity.getSourceId());
+        lockEndpointOwner(userId, entity.getTargetType(), entity.getTargetId());
         entity.softDelete();
         relationRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -144,7 +148,7 @@ public class RelationService {
         NormalizedRelation relation = new NormalizedRelation(
                 entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
                 entity.getType(), entity.getLabel());
-        validateEndpoints(userId, relation);
+        validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type())) {
@@ -202,17 +206,26 @@ public class RelationService {
         return type.name() + ":" + id;
     }
 
-    private void validateEndpoints(UUID userId, NormalizedRelation relation) {
-        validateEndpoint(userId, relation.sourceType(), relation.sourceId());
-        validateEndpoint(userId, relation.targetType(), relation.targetId());
+    private void validateEndpointsForMutation(UUID userId, NormalizedRelation relation) {
+        validateEndpointForMutation(userId, relation.sourceType(), relation.sourceId());
+        validateEndpointForMutation(userId, relation.targetType(), relation.targetId());
     }
 
-    private void validateEndpoint(UUID userId, RelationNodeType type, UUID id) {
+    private void validateEndpointForMutation(UUID userId, RelationNodeType type, UUID id) {
         switch (type) {
-            case SUBJECT -> subjectService.requireActiveSubject(userId, id);
-            case SOURCE -> sourceService.requireActiveSource(userId, id);
-            case KNOWLEDGE_BLOCK -> knowledgeBlockService.get(userId, id);
-            case TASK -> taskService.get(userId, id);
+            case SUBJECT -> subjectService.requireActiveSubjectForMutation(userId, id);
+            case SOURCE -> sourceService.requireActiveSourceForMutation(userId, id);
+            case KNOWLEDGE_BLOCK -> knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, id);
+            case TASK -> taskService.requireActiveTaskForMutation(userId, id);
+        }
+    }
+
+    private void lockEndpointOwner(UUID userId, RelationNodeType type, UUID id) {
+        switch (type) {
+            case SUBJECT -> subjectService.requireActiveSubjectForMutation(userId, id);
+            case SOURCE -> sourceService.requireActiveSourceForMutation(userId, id);
+            case KNOWLEDGE_BLOCK -> knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, id);
+            case TASK -> taskService.requireActiveTaskForMutation(userId, id);
         }
     }
 

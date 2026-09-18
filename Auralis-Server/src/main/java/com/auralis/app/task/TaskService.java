@@ -42,7 +42,7 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView create(UUID userId, UUID taskId, TaskCommand command) {
-        subjectService.requireActiveSubject(userId, command.subjectId());
+        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
         validateSchedule(command);
         TaskEntity entity = new TaskEntity(
                 taskId, userId, command.subjectId(), required(command.title()), command.description(),
@@ -89,12 +89,20 @@ public class TaskService {
         return view(active(userId, id));
     }
 
+    @Transactional
+    public TaskView requireActiveTaskForMutation(UUID userId, UUID id) {
+        TaskView result = get(userId, id);
+        subjectService.requireActiveSubjectForMutation(userId, result.subjectId());
+        return result;
+    }
+
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView update(UUID userId, UUID id, long baseVersion, TaskCommand command) {
         TaskEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubject(userId, command.subjectId());
+        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
+        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
         validateSchedule(command);
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
                 command.scheduledAt(), command.dueAt(), command.durationMinutes(),
@@ -123,6 +131,8 @@ public class TaskService {
         TaskEntity[] locked = lockActivePair(userId, sourceTaskId, targetTaskId);
         TaskEntity source = locked[0];
         TaskEntity target = locked[1];
+        subjectService.requireActiveSubjectForMutation(userId, source.getSubjectId());
+        subjectService.requireActiveSubjectForMutation(userId, target.getSubjectId());
         requireVersion(source, sourceBaseVersion);
         requireVersion(target, targetBaseVersion);
 
@@ -151,6 +161,7 @@ public class TaskService {
         TaskEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
+        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.softDelete();
         taskRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -181,7 +192,7 @@ public class TaskService {
             throw new DomainException("MUTATION_REJECTED", "Task is not deleted");
         }
         requireVersion(entity, baseVersion);
-        subjectService.requireActiveSubject(userId, entity.getSubjectId());
+        subjectService.requireActiveSubjectForMutation(userId, entity.getSubjectId());
         entity.restore();
         TaskView result = view(taskRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");
