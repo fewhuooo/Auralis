@@ -680,3 +680,78 @@ test('useDocumentProcessingStore.refresh projects valid local OCR checkpoints an
   await store.refresh()
   assert.deepEqual(store.localOcrProgressBySource, {})
 })
+
+test('useDocumentProcessingStore.refresh ignores a reader that resolves after detach', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let readerStartedResolve
+  const readerStarted = new Promise((resolve) => { readerStartedResolve = resolve })
+  let readerResolve
+  const reader = new Promise((resolve) => { readerResolve = resolve })
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-detach', sourceId: 'source-detach', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => {
+      readerStartedResolve()
+      return reader
+    },
+  })
+
+  const refresh = store.refresh()
+  await readerStarted
+  store.attachLocalOcrProgressReader(null)
+  readerResolve([{
+    localSourceId: 'local-source-stale',
+    checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 1, totalPages: 2 }),
+  }])
+  await refresh
+
+  assert.deepEqual(store.localOcrProgressBySource, {}, 'detached reader must not repopulate the projection')
+})
+
+test('useDocumentProcessingStore.refresh ignores an older overlapping reader completion', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let oldReaderStartedResolve
+  const oldReaderStarted = new Promise((resolve) => { oldReaderStartedResolve = resolve })
+  let oldReaderResolve
+  const oldReader = new Promise((resolve) => { oldReaderResolve = resolve })
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-overlap', sourceId: 'source-overlap', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => {
+      oldReaderStartedResolve()
+      return oldReader
+    },
+  })
+
+  const oldRefresh = store.refresh()
+  await oldReaderStarted
+
+  store.attachLocalOcrProgressReader({
+    list: async () => [{
+      localSourceId: 'local-source-new',
+      checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 3, totalPages: 5 }),
+    }],
+  })
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-new': { currentPage: 3, totalPages: 5 },
+  })
+
+  oldReaderResolve([{
+    localSourceId: 'local-source-old',
+    checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 1, totalPages: 2 }),
+  }])
+  await oldRefresh
+
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-new': { currentPage: 3, totalPages: 5 },
+  }, 'older refresh must not overwrite the newer projection')
+})

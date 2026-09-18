@@ -24,6 +24,8 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     runner: null as DocumentJobRunner | null,
     scheduler: null as DocumentSourceScheduler | null,
     localOcrProgressReader: null as LocalOcrProgressReader | null,
+    localOcrReaderGeneration: 0,
+    localOcrRefreshSequence: 0,
     localOcrProgressBySource: {} as Record<string, LocalOcrPageProgress>,
     loading: false,
     lastError: null as string | null,
@@ -42,20 +44,35 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     },
     attachLocalOcrProgressReader(reader: LocalOcrProgressReader | null): void {
       this.localOcrProgressReader = reader
+      this.localOcrReaderGeneration += 1
+      this.localOcrRefreshSequence += 1
       this.localOcrProgressBySource = {}
     },
     setJobs(jobs: DocumentProcessingJob[]): void {
       this.jobs = jobs
     },
     async refresh(): Promise<void> {
-      if (!this.runner) return
-      this.jobs = await this.runner.list()
+      const refreshSequence = this.localOcrRefreshSequence + 1
+      this.localOcrRefreshSequence = refreshSequence
+      const runner = this.runner
+      if (!runner) return
+      const jobs = await runner.list()
+      if (refreshSequence !== this.localOcrRefreshSequence || this.runner !== runner) return
+      this.jobs = jobs
       this.localOcrProgressBySource = {}
-      if (!this.localOcrProgressReader) return
+      const reader = this.localOcrProgressReader
+      const readerGeneration = this.localOcrReaderGeneration
+      if (!reader) return
+      const isCurrent = (): boolean => (
+        refreshSequence === this.localOcrRefreshSequence
+        && this.localOcrProgressReader === reader
+        && this.localOcrReaderGeneration === readerGeneration
+        && this.runner === runner
+      )
 
       try {
         const projection: Record<string, LocalOcrPageProgress> = {}
-        const records = await this.localOcrProgressReader.list()
+        const records = await reader.list()
         for (const record of records) {
           if (!record.checkpointJson) continue
           try {
@@ -81,9 +98,11 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
             // Malformed checkpoints are ignored; the durable Job refresh remains usable.
           }
         }
+        if (!isCurrent()) return
         this.localOcrProgressBySource = projection
       } catch {
         // A local reader failure must not prevent the durable Job refresh.
+        if (!isCurrent()) return
         this.localOcrProgressBySource = {}
       }
     },
