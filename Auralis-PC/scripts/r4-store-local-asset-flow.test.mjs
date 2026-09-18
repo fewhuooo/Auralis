@@ -768,6 +768,8 @@ test('useDocumentProcessingStore.refresh preserves OCR progress across a same-ru
   store.attachLocalOcrProgressReader({
     list: async () => [{
       localSourceId: 'local-source-progress',
+      attempt: 1,
+      localContentRevision: 'revision-progress',
       checkpointJson: JSON.stringify({ type: checkpointType, pageNumber: 2, totalPages: 4 }),
     }],
   })
@@ -804,6 +806,8 @@ test('useDocumentProcessingStore.refresh keeps OCR progress while a second reade
       if (readerCalls === 1) {
         return [{
           localSourceId: 'local-source-pending',
+          attempt: 1,
+          localContentRevision: 'revision-pending',
           checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 1, totalPages: 3 }),
         }]
       }
@@ -825,7 +829,129 @@ test('useDocumentProcessingStore.refresh keeps OCR progress while a second reade
 
   deferredResolve([{
     localSourceId: 'local-source-pending',
+    attempt: 1,
+    localContentRevision: 'revision-pending',
     checkpointJson: JSON.stringify({ type: 'page-result', pageNumber: 1, totalPages: 3 }),
   }])
   await secondRefresh
+})
+
+test('useDocumentProcessingStore.refresh does not inherit OCR progress across attempt or revision', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let record = {
+    localSourceId: 'local-source-token',
+    attempt: 1,
+    localContentRevision: 'revision-1',
+    checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 2, totalPages: 4 }),
+  }
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-token', sourceId: 'local-source-token', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({ list: async () => [record] })
+
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource['local-source-token'], { currentPage: 2, totalPages: 4 })
+
+  record = {
+    ...record,
+    attempt: 2,
+    checkpointJson: JSON.stringify({ type: 'page-result', pageNumber: 2, totalPages: 4 }),
+  }
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource, {}, 'a new attempt must wait for its own before-recognize checkpoint')
+
+  record = {
+    ...record,
+    attempt: 3,
+    localContentRevision: 'revision-2',
+    checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 1, totalPages: 4 }),
+  }
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource['local-source-token'], { currentPage: 1, totalPages: 4 }, 'a new run may reset to page one')
+
+  record = {
+    ...record,
+    localContentRevision: 'revision-3',
+    checkpointJson: JSON.stringify({ type: 'page-result', pageNumber: 1, totalPages: 4 }),
+  }
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource, {}, 'a new revision must not inherit a prior revision projection')
+})
+
+test('useDocumentProcessingStore.refresh rejects a same-run event with different total pages', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let checkpointJson = JSON.stringify({ type: 'before-recognize', pageNumber: 2, totalPages: 4 })
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-total-pages', sourceId: 'local-source-total-pages', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => [{
+      localSourceId: 'local-source-total-pages',
+      attempt: 1,
+      localContentRevision: 'revision-total-pages',
+      checkpointJson,
+    }],
+  })
+
+  await store.refresh()
+  checkpointJson = JSON.stringify({ type: 'page-result', pageNumber: 2, totalPages: 5 })
+  await store.refresh()
+
+  assert.deepEqual(store.localOcrProgressBySource, {}, 'a checkpoint with different total pages must not inherit progress')
+})
+
+test('useDocumentProcessingStore.refresh does not move a same-run OCR page backward', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let checkpointJson = JSON.stringify({ type: 'before-recognize', pageNumber: 3, totalPages: 5 })
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-backward', sourceId: 'local-source-backward', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => [{
+      localSourceId: 'local-source-backward',
+      attempt: 1,
+      localContentRevision: 'revision-backward',
+      checkpointJson,
+    }],
+  })
+
+  await store.refresh()
+  checkpointJson = JSON.stringify({ type: 'before-recognize', pageNumber: 2, totalPages: 5 })
+  await store.refresh()
+
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-backward': { currentPage: 3, totalPages: 5 },
+  }, 'an older before-recognize checkpoint must not move the visible page backward')
+})
+
+test('useDocumentProcessingStore.refresh clears progress when the OCR reader omits a Source', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let records = [{
+    localSourceId: 'local-source-missing',
+    attempt: 1,
+    localContentRevision: 'revision-missing',
+    checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 1, totalPages: 2 }),
+  }]
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-missing', sourceId: 'local-source-missing', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({ list: async () => records })
+
+  await store.refresh()
+  records = []
+  await store.refresh()
+
+  assert.deepEqual(store.localOcrProgressBySource, {}, 'a Source missing from a successful reader result must be cleared')
 })

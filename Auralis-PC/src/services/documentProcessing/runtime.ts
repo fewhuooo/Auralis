@@ -534,6 +534,8 @@ export class DocumentProcessingRuntime {
     processingStore.attachLocalOcrProgressReader({
       list: async () => (await localParsedRepo.listByPhase('OCR_RUNNING')).map((record) => ({
         localSourceId: record.localSourceId,
+        attempt: record.attempt,
+        localContentRevision: record.localContentRevision,
         checkpointJson: record.checkpointJson,
       })),
     })

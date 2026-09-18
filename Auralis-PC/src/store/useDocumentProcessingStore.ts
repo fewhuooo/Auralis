@@ -14,8 +14,16 @@ export interface LocalOcrPageProgress {
 interface LocalOcrProgressReader {
   list(): Promise<Array<{
     localSourceId: string
+    attempt: number
+    localContentRevision: string
     checkpointJson: string | null
   }>>
+}
+
+interface LocalOcrProgressIdentity {
+  attempt: number
+  localContentRevision: string
+  progress: LocalOcrPageProgress
 }
 
 export const useDocumentProcessingStore = defineStore('document-processing', {
@@ -27,6 +35,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     localOcrReaderGeneration: 0,
     localOcrRefreshSequence: 0,
     localOcrProgressBySource: {} as Record<string, LocalOcrPageProgress>,
+    localOcrProgressIdentityBySource: {} as Record<string, LocalOcrProgressIdentity>,
     loading: false,
     lastError: null as string | null,
   }),
@@ -47,6 +56,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
       this.localOcrReaderGeneration += 1
       this.localOcrRefreshSequence += 1
       this.localOcrProgressBySource = {}
+      this.localOcrProgressIdentityBySource = {}
     },
     setJobs(jobs: DocumentProcessingJob[]): void {
       this.jobs = jobs
@@ -71,10 +81,14 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
 
       try {
         const projection: Record<string, LocalOcrPageProgress> = {}
-        const previousProjection = this.localOcrProgressBySource
+        const identityProjection: Record<string, LocalOcrProgressIdentity> = {}
+        const previousProjection = this.localOcrProgressIdentityBySource
         const records = await reader.list()
         for (const record of records) {
           if (!record.checkpointJson) continue
+          const hasRunIdentity = Number.isInteger(record.attempt)
+            && typeof record.localContentRevision === 'string'
+            && record.localContentRevision.trim().length > 0
           try {
             const parsed: unknown = JSON.parse(record.checkpointJson)
             if (!parsed || typeof parsed !== 'object') continue
@@ -90,25 +104,60 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
                 || (checkpoint.pageNumber as number) < 1
                 || (checkpoint.totalPages as number) < (checkpoint.pageNumber as number)
               ) continue
-              projection[record.localSourceId] = {
+              const progress = {
                 currentPage: checkpoint.pageNumber as number,
                 totalPages: checkpoint.totalPages as number,
               }
+              const previous = previousProjection[record.localSourceId]
+              if (
+                previous
+                && hasRunIdentity
+                && previous.attempt === record.attempt
+                && previous.localContentRevision === record.localContentRevision
+                && previous.progress.totalPages === progress.totalPages
+                && progress.currentPage < previous.progress.currentPage
+              ) {
+                projection[record.localSourceId] = previous.progress
+                identityProjection[record.localSourceId] = previous
+              } else {
+                projection[record.localSourceId] = progress
+                if (hasRunIdentity) {
+                  identityProjection[record.localSourceId] = {
+                    attempt: record.attempt,
+                    localContentRevision: record.localContentRevision,
+                    progress,
+                  }
+                }
+              }
             } else if (
               ['after-recognize', 'after-normalize', 'page-result', 'empty-page'].includes(String(checkpoint.type))
-              && previousProjection[record.localSourceId]
+              && hasRunIdentity
             ) {
-              projection[record.localSourceId] = previousProjection[record.localSourceId]
+              const previous = previousProjection[record.localSourceId]
+              if (
+                previous
+                && previous.attempt === record.attempt
+                && previous.localContentRevision === record.localContentRevision
+                && Number.isInteger(checkpoint.pageNumber)
+                && Number.isInteger(checkpoint.totalPages)
+                && checkpoint.pageNumber === previous.progress.currentPage
+                && checkpoint.totalPages === previous.progress.totalPages
+              ) {
+                projection[record.localSourceId] = previous.progress
+                identityProjection[record.localSourceId] = previous
+              }
             }
           } catch {
             // Malformed checkpoints are ignored; the durable Job refresh remains usable.
           }
         }
         if (!isCurrent()) return
+        this.localOcrProgressIdentityBySource = identityProjection
         this.localOcrProgressBySource = projection
       } catch {
         // A local reader failure must not prevent the durable Job refresh.
         if (!isCurrent()) return
+        this.localOcrProgressIdentityBySource = {}
         this.localOcrProgressBySource = {}
       }
     },
