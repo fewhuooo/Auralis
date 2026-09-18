@@ -18,6 +18,7 @@ export interface RealtimeControllerOptions {
   onEvent?: (event: RealtimeEvent) => void
   onSyncSignal?: (reason: string) => void
   onStatusChange?: (status: RealtimeStatus) => void
+  requestSync?: () => Promise<void> | void
   initialCursor?: string | null
   maxRetryDelayMs?: number
 }
@@ -58,6 +59,7 @@ export class RealtimeController {
   private readonly onEvent?: (event: RealtimeEvent) => void
   private readonly onSyncSignal?: (reason: string) => void
   private readonly onStatusChange?: (status: RealtimeStatus) => void
+  private readonly requestSync: () => Promise<void> | void
   private readonly maxRetryDelayMs: number
 
   constructor(options: RealtimeControllerOptions = {}) {
@@ -75,6 +77,7 @@ export class RealtimeController {
     this.onEvent = options.onEvent
     this.onSyncSignal = options.onSyncSignal
     this.onStatusChange = options.onStatusChange
+    this.requestSync = options.requestSync ?? requestStoreSync
     this.currentCursor = normalizeCursor(options.initialCursor)
     this.maxRetryDelayMs = options.maxRetryDelayMs ?? 30000
   }
@@ -199,9 +202,11 @@ export class RealtimeController {
           }
           return
         }
+        const wasReconnect = this.retryCount > 0
         this.retryCount = 0
         this.isConnecting = false
         this.setStatus('connected')
+        if (wasReconnect) void this.requestSync()
       }
 
       socket.onmessage = (event: MessageEvent) => {
@@ -332,7 +337,7 @@ export class RealtimeController {
       }
     }
 
-    void requestStoreSync()
+    void this.requestSync()
   }
 }
 

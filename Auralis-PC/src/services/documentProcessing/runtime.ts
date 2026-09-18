@@ -111,6 +111,48 @@ function isOfficeExtension(fileName: string): boolean {
   return ['doc', 'docx', 'ppt', 'pptx'].includes(extensionOf(fileName))
 }
 
+type ProcessingSourceStatus = 'PENDING' | 'VALIDATING' | 'PARSING' | 'INDEXING'
+type ReconciliationResult = 'READY' | 'FAILED' | 'DELETED' | 'STOPPED' | 'EXHAUSTED'
+
+interface ProcessingSourceSnapshot {
+  id: string
+  type?: string
+  ingestionStatus?: string
+  deletedAt?: string | null
+}
+
+export interface ProcessingSourceReconciliationOptions {
+  sourceId: string
+  getSource: () => ProcessingSourceSnapshot | null | Promise<ProcessingSourceSnapshot | null>
+  requestReadSync: () => void | Promise<void>
+  maxAttempts?: number
+  waitMs?: number
+}
+
+const PROCESSING_SOURCE_STATUSES = new Set<ProcessingSourceStatus>(['PENDING', 'VALIDATING', 'PARSING', 'INDEXING'])
+
+export async function reconcileProcessingSource(
+  options: ProcessingSourceReconciliationOptions,
+): Promise<ReconciliationResult> {
+  const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 6))
+  const waitMs = Math.max(0, Math.floor(options.waitMs ?? 1500))
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const source = await options.getSource()
+    if (!source || source.id !== options.sourceId || source.deletedAt) return 'DELETED'
+    if (source.ingestionStatus === 'READY') return 'READY'
+    if (source.ingestionStatus === 'FAILED') return 'FAILED'
+    if (!PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus)) return 'STOPPED'
+
+    await options.requestReadSync()
+    if (attempt + 1 < maxAttempts && waitMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, waitMs))
+    }
+  }
+
+  return 'EXHAUSTED'
+}
+
 export interface DocumentProcessingRuntimeSnapshot {
   userId: string
   serverDeviceId: string
@@ -132,6 +174,7 @@ export class DocumentProcessingRuntime {
   private starting: Promise<void> | null = null
   private lifecycleGeneration = 0
   private readonly parserInputs = new Map<string, RuntimeFile>()
+  private readonly sourceReconciliations = new Map<string, Promise<ReconciliationResult>>()
   private readonly onlineHandler = (): void => {
     void this.resumePending('RESUME_ONLINE').catch(() => console.warn('[DocumentRuntime] online resume failed'))
   }
@@ -174,6 +217,45 @@ export class DocumentProcessingRuntime {
     this.snapshot = null
     this.key = null
     this.parserInputs.clear()
+    this.sourceReconciliations.clear()
+  }
+
+  private startSourceReconciliation(sourceId: string): void {
+    if (this.sourceReconciliations.has(sourceId)) return
+    const generation = this.lifecycleGeneration
+    const task = reconcileProcessingSource({
+      sourceId,
+      getSource: () => {
+        if (this.lifecycleGeneration !== generation) return null
+        const source = useSourceStore().sources.find((candidate) => candidate.id === sourceId)
+        if (!source) return null
+        return {
+          id: source.id,
+          type: source.type,
+          ingestionStatus: source.ingestionStatus,
+          deletedAt: (source as SourceView & { deletedAt?: string | null }).deletedAt,
+        }
+      },
+      requestReadSync: async () => {
+        if (this.lifecycleGeneration !== generation) return
+        const syncStore = useSyncStore()
+        await syncStore.triggerSync().catch(() => undefined)
+        await useSourceStore().loadSources().catch(() => undefined)
+      },
+    })
+    this.sourceReconciliations.set(sourceId, task)
+    void task.finally(() => {
+      if (this.sourceReconciliations.get(sourceId) === task) this.sourceReconciliations.delete(sourceId)
+    })
+  }
+
+  private startProcessingSourceReconciliations(): void {
+    const sourceStore = useSourceStore()
+    for (const source of sourceStore.sources) {
+      if (source.type === 'FILE' && PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus)) {
+        this.startSourceReconciliation(source.id)
+      }
+    }
   }
 
   async resumePending(trigger: FileOverviewTrigger = 'RESUME_ONLINE'): Promise<void> {
@@ -189,6 +271,7 @@ export class DocumentProcessingRuntime {
     void snapshot.overviewGeneration.resumePending(trigger)
       .catch(() => console.warn('[DocumentRuntime] overview resume failed'))
     useDocumentProcessingStore().setJobs(await snapshot.repository.list())
+    this.startProcessingSourceReconciliations()
   }
 
   getSnapshot(): DocumentProcessingRuntimeSnapshot | null {

@@ -51,6 +51,7 @@ export async function resolve(specifier, context, nextResolve) {
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url);
 
 const { parseSseStream } = await import('../src/api/sse.ts');
+const { reconcileProcessingSource } = await import('../src/services/documentProcessing/runtime.ts');
 const {
   useSubjectApi,
   listSubjects,
@@ -558,6 +559,113 @@ test('RealtimeController requests a brand new ticket on reconnection without reu
 
   controller.stop();
   assert.equal(controller.getStatus(), 'disconnected');
+});
+
+test('RealtimeController requests one background sync when a replacement socket opens so a READY Source converges', async () => {
+  MockWebSocket.reset();
+  let ticketCount = 0;
+  let serverSourceStatus = 'INDEXING';
+  let localSourceStatus = 'INDEXING';
+  let backgroundSyncRequests = 0;
+
+  const controller = new RealtimeController({
+    getServerDeviceId: () => 'dev-uuid-ready-reconnect',
+    requestTicket: async () => {
+      ticketCount += 1;
+      return {
+        ticket: `ticket-ready-${ticketCount}`,
+        websocketUrl: `/ws/events?ticket=ticket-ready-${ticketCount}`,
+      };
+    },
+    getRuntimeConfig: () => ({
+      apiBaseUrl: 'https://api.auralis.test',
+      websocketBaseUrl: 'wss://api.auralis.test',
+      isTauri: false,
+    }),
+    websocketFactory: (url) => new MockWebSocket(url),
+    maxRetryDelayMs: 5,
+    requestSync: () => {
+      backgroundSyncRequests += 1;
+      localSourceStatus = serverSourceStatus;
+    },
+  });
+
+  controller.start();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const firstWs = MockWebSocket.instances[0];
+  firstWs.simulateOpen();
+  assert.equal(backgroundSyncRequests, 0);
+
+  firstWs.simulateClose(1006, 'Abnormal closure');
+  serverSourceStatus = 'READY';
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const replacementWs = MockWebSocket.instances[1];
+  replacementWs.simulateOpen();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(backgroundSyncRequests, 1);
+  assert.equal(localSourceStatus, 'READY');
+  controller.stop();
+});
+
+test('processing-owned reconciliation converges a missed READY Source without a realtime message', async () => {
+  const localSource = { id: 'source-missed-ready', type: 'FILE', ingestionStatus: 'INDEXING' };
+  const serverSource = { id: 'source-missed-ready', type: 'FILE', ingestionStatus: 'READY' };
+  let readSyncRequests = 0;
+
+  const result = await reconcileProcessingSource({
+    sourceId: localSource.id,
+    getSource: () => ({ ...localSource }),
+    requestReadSync: () => {
+      readSyncRequests += 1;
+      localSource.ingestionStatus = serverSource.ingestionStatus;
+    },
+    maxAttempts: 3,
+    waitMs: 0,
+  });
+
+  assert.equal(result, 'READY');
+  assert.equal(readSyncRequests, 1);
+  assert.equal(localSource.ingestionStatus, 'READY');
+});
+
+test('processing-owned reconciliation stops at FAILED or deletion and remains bounded', async () => {
+  let failedSyncs = 0;
+  let failedStatus = 'INDEXING';
+  const failedResult = await reconcileProcessingSource({
+    sourceId: 'source-failed',
+    getSource: () => ({ id: 'source-failed', type: 'FILE', ingestionStatus: failedStatus }),
+    requestReadSync: () => {
+      failedSyncs += 1;
+      failedStatus = 'FAILED';
+    },
+    maxAttempts: 3,
+    waitMs: 0,
+  });
+  assert.equal(failedResult, 'FAILED');
+  assert.equal(failedSyncs, 1);
+
+  let deletedSyncs = 0;
+  const deletedResult = await reconcileProcessingSource({
+    sourceId: 'source-deleted',
+    getSource: () => null,
+    requestReadSync: () => { deletedSyncs += 1; },
+    maxAttempts: 3,
+    waitMs: 0,
+  });
+  assert.equal(deletedResult, 'DELETED');
+  assert.equal(deletedSyncs, 0);
+
+  let attempts = 0;
+  const exhaustedResult = await reconcileProcessingSource({
+    sourceId: 'source-stuck',
+    getSource: () => ({ id: 'source-stuck', type: 'FILE', ingestionStatus: 'INDEXING' }),
+    requestReadSync: () => { attempts += 1; },
+    maxAttempts: 2,
+    waitMs: 0,
+  });
+  assert.equal(exhaustedResult, 'EXHAUSTED');
+  assert.equal(attempts, 2);
 });
 
 test('RealtimeController renews the ticket when its expiry is reached', async () => {
