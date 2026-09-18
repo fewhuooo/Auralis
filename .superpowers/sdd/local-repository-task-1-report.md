@@ -98,4 +98,4 @@ Second-review GREEN verification:
 | `npm.cmd run type-check` | 0 | `vue-tsc -b` passed |
 | `npm.cmd run test:r4-pc` | 0 | Full PC R4 suite: `334/334` passed |
 
-Second-review fixes are included in the follow-up commit to be reported by the handoff.
+Second-review fixes commit: `bd88af9` (`fix(pc): clear stale subject source projections`).
