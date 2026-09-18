@@ -381,9 +381,8 @@ export class DocumentProcessingRuntime {
     ])
     await snapshot.scheduler.resume([...sourceIds])
     if (!isCurrent()) return
-    await snapshot.overviewGeneration.resumePending(trigger)
+    void snapshot.overviewGeneration.resumePending(trigger)
       .catch(() => console.warn('[DocumentRuntime] overview resume failed'))
-    if (!isCurrent()) return
     const refreshedJobs = await snapshot.repository.list()
     if (!isCurrent()) return
     useDocumentProcessingStore().setJobs(refreshedJobs)

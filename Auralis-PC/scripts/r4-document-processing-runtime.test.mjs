@@ -111,6 +111,49 @@ test('runtime discovers processing Sources once, shares one bounded sync cycle, 
   authStore.clearSession()
 })
 
+test('resumePending does not wait for overview generation before Source reconciliation', async () => {
+  setActivePinia(createPinia())
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-overview', username: 'overview' },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: 'session-overview',
+    serverDeviceId: 'device-overview',
+  })
+  const sourceStore = useSourceStore()
+  const syncStore = useSyncStore()
+  sourceStore.sources = [sourceModel('source-overview', 'INDEXING')]
+  let syncCalls = 0
+  let resolveOverview
+  const overviewPending = new Promise((resolve) => { resolveOverview = resolve })
+  syncStore.triggerSync = async () => { syncCalls += 1 }
+  sourceStore.refreshLocalProjection = async () => sourceStore.sources
+
+  const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 1, sourceReconciliationWaitMs: 0 })
+  runtime.snapshot = {
+    userId: 'user-overview',
+    serverDeviceId: 'device-overview',
+    runner: null,
+    repository: { list: async () => [] },
+    scheduler: { resume: async () => {} },
+    overviewGeneration: { resumePending: async () => overviewPending },
+  }
+
+  const pending = runtime.resumePending()
+  const completedBeforeOverview = await Promise.race([
+    pending.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 30)),
+  ])
+  assert.equal(completedBeforeOverview, true)
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(syncCalls, 1)
+
+  resolveOverview()
+  await pending
+  runtime.stop()
+  authStore.clearSession()
+})
+
 test('runtime stop cancels a pending reconciliation timer and prevents later sync or hydration', async () => {
   setActivePinia(createPinia())
   const authStore = useAuthStore()
