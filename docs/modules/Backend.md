@@ -79,6 +79,8 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 换位端点以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本、截止时间及新排期；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
 
+2026-09-18 Task 2A：Subject DELETE 仍使用原有公开 API 和软删除语义，但在同一事务内通过各业务模块的公开领域事件边界级联软删除当前用户、当前 Subject 下的活动 Source、KnowledgeBlock 和 Task。每个子资源递增 version/更新时间、发布普通 `DELETE` `ResourceChangedEvent`，并继续发布端点删除事件使相关 Relation 逐条生成墓碑；已删除子资源不重复写入，Subject restore 不恢复子资源。级联异常会回滚 Subject、子资源、Relation 和 change-log 写入；不改变 ParsedDocument 审计元数据、延迟 Asset/MinIO 保留清理或数据库 schema。
+
 阶段 2B 验证证据：2026-08-13 `Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，阶段2B基线执行 42 个真实测试；包含 V1/V2/V3 schema、Source/Asset/Relation Repository/Service/Controller、KnowledgeBlock Source 关联、RELATED_TO 反向去重、端点删除级联、Auth/阶段 2A 回归和 Modulith 边界。阶段 3/4 审核修复后在全量 clean test 中验证 Sync、Review、Stats、Realtime、V6/V7 迁移和并发回归，最终合计 69 个测试。证据范围为 H2、JPA、MockMvc 和测试存储适配器，不包含 PostgreSQL、Docker、真实 MinIO、解析 worker、双设备、浏览器 WebSocket、三端联调或人工业务验收。
 
 ## 目标技术基线

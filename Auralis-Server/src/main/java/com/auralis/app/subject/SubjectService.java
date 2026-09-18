@@ -102,7 +102,7 @@ public class SubjectService {
         return result;
     }
 
-    @Transactional(noRollbackFor = DomainException.class)
+    @Transactional
     public void delete(UUID userId, UUID id, long baseVersion) {
         SubjectEntity entity = mutable(userId, id);
         requireActive(entity);

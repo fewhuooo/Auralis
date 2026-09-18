@@ -25,6 +25,8 @@ public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
 
     List<SourceEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
+    List<SourceEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(UUID userId, UUID subjectId);
+
     List<SourceEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
             UUID userId, Pageable pageable);
 

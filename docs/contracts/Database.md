@@ -78,6 +78,7 @@ Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_
 - `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
 - `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`sort_key`；数据库 CHECK 与服务同时约束状态、非负时长和排期顺序。`V18__restore_task_schedule_order.sql` 会先把历史 `due_at < scheduled_at` 行的 `scheduled_at` 清空，再恢复该 CHECK；`V20__remove_task_cognitive_load` 删除已废弃的认知负荷列及 Task 同步 JSON 字段，V21 删除 Task 颜色列及历史颜色键。客户端按当前时间将 `due_at` 或 `scheduled_at` 已过且未完成/取消的任务回归未排期，不能以放宽字段顺序约束替代。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
+- Subject 软删除由 Server 事务内的领域事件级联处理同一用户、同一 `subject_id` 下的活动 Source、KnowledgeBlock 和 Task：子行通过实体更新递增 `version`、更新审计时间并写入 `deleted_at`，不执行 SQL 硬删除或新增表/字段；每个子行的 DELETE change-log tombstone 与受影响 Relation tombstone 同事务提交。Subject restore 不恢复这些子行，已删除子行不会重复产生 tombstone。
 
 ## 阶段 2B Source、Asset、Relation V3 已实现 schema
 

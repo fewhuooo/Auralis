@@ -8,6 +8,7 @@ import com.auralis.app.subject.SubjectService;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import com.auralis.app.task.internal.persistence.TaskEntity;
 import com.auralis.app.task.internal.persistence.TaskRepository;
@@ -154,6 +155,23 @@ public class TaskService {
         taskRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
         eventPublisher.publishEvent(new ResourceDeletedEvent(userId, ResourceType.TASK, id));
+    }
+
+    @EventListener
+    @Transactional
+    public void onSubjectDeleted(ResourceDeletedEvent event) {
+        if (event.resourceType() != ResourceType.SUBJECT) {
+            return;
+        }
+        taskRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+                        event.userId(), event.resourceId())
+                .forEach(task -> {
+                    task.softDelete();
+                    TaskView result = view(taskRepository.saveAndFlush(task));
+                    publishChange(event.userId(), result, "DELETE");
+                    eventPublisher.publishEvent(new ResourceDeletedEvent(
+                            event.userId(), ResourceType.TASK, task.getId()));
+                });
     }
 
     @Transactional(noRollbackFor = DomainException.class)

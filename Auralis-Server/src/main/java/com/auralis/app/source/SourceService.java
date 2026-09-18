@@ -15,6 +15,7 @@ import com.auralis.app.shared.pagination.CursorPage;
 import com.auralis.app.source.ParsedDocumentStatus;
 import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -157,6 +158,23 @@ public class SourceService {
         sourceRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
         eventPublisher.publishEvent(new ResourceDeletedEvent(userId, ResourceType.SOURCE, id));
+    }
+
+    @EventListener
+    @Transactional
+    public void onSubjectDeleted(ResourceDeletedEvent event) {
+        if (event.resourceType() != ResourceType.SUBJECT) {
+            return;
+        }
+        sourceRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+                        event.userId(), event.resourceId())
+                .forEach(source -> {
+                    source.softDelete();
+                    SourceView result = view(sourceRepository.saveAndFlush(source));
+                    publishChange(event.userId(), result, "DELETE");
+                    eventPublisher.publishEvent(new ResourceDeletedEvent(
+                            event.userId(), ResourceType.SOURCE, source.getId()));
+                });
     }
 
     @Transactional(noRollbackFor = DomainException.class)

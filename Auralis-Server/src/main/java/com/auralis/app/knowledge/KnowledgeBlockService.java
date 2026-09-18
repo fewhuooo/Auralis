@@ -14,6 +14,7 @@ import com.auralis.app.source.SourceService;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -116,6 +117,23 @@ public class KnowledgeBlockService {
         knowledgeBlockRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
         eventPublisher.publishEvent(new ResourceDeletedEvent(userId, ResourceType.KNOWLEDGE_BLOCK, id));
+    }
+
+    @EventListener
+    @Transactional
+    public void onSubjectDeleted(ResourceDeletedEvent event) {
+        if (event.resourceType() != ResourceType.SUBJECT) {
+            return;
+        }
+        knowledgeBlockRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+                        event.userId(), event.resourceId())
+                .forEach(block -> {
+                    block.softDelete();
+                    KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(block));
+                    publishChange(event.userId(), result, "DELETE");
+                    eventPublisher.publishEvent(new ResourceDeletedEvent(
+                            event.userId(), ResourceType.KNOWLEDGE_BLOCK, block.getId()));
+                });
     }
 
     @Transactional(noRollbackFor = DomainException.class)
