@@ -128,7 +128,7 @@ export const useSubjectStore = defineStore('subject', () => {
   function setActiveSubject(id: string | null): void {
     activeSubjectId.value = id
     if (id) void sourceStore.loadSourceFiles(id)
-    else sourceStore.activeSourceFiles = []
+    else sourceStore.clearActiveSourceFiles()
   }
 
   async function addSubject(name: string, description: string, icon: string): Promise<string> {

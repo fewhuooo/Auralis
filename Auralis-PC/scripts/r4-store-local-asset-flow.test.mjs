@@ -256,9 +256,47 @@ test('useSourceStore.createFileSource: local asset path writes projection + draf
     assert.equal(releasedMutations[0].resourceId, sourceId, 'Must keep the same localSourceId')
     assert.equal(releasedMutations[0].mutationType, 'CREATE')
     assert.equal(releasedMutations[0].payload.assetId, serverAssetId)
+    assert.equal(releasedMutations[0].payload.subjectId, 'subject-physics')
   } finally {
     queue?.dispose()
     releaseLocalAssetSyncQueue('user-test-2', 'device-test-2')
+  }
+})
+
+test('useSourceStore keeps imported and hydrated projections scoped to the requested subject, including an empty subject', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  authStore.user = { id: 'user-subject-scope', email: 'scope@example.com' }
+  authStore.serverDeviceId = 'device-subject-scope'
+
+  const assetStore = useAssetStore()
+  const sourceStore = useSourceStore()
+
+  try {
+    const subjectAAsset = await assetStore.upload(new File(['subject A'], 'subject-a.pdf', { type: 'application/pdf' }))
+    await sourceStore.createFileSource('subject-a', 'Subject A file', subjectAAsset.id)
+    await sourceStore.loadLocalSourceFiles('subject-a')
+    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.subjectId), ['subject-a'])
+
+    const subjectBAsset = await assetStore.upload(new File(['subject B'], 'subject-b.pdf', { type: 'application/pdf' }))
+    const subjectBSourceId = await sourceStore.createFileSource('subject-b', 'Subject B file', subjectBAsset.id)
+    const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
+    const sourceRepository = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+    const assetRepository = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    assert.equal((await sourceRepository.read('SOURCE', subjectBSourceId)).value.subjectId, 'subject-b')
+    assert.equal((await assetRepository.getSourceDraft(subjectBSourceId)).subjectId, 'subject-b')
+
+    assert.deepEqual(sourceStore.activeSourceFiles.map((source) => source.id), [subjectBSourceId])
+    assert.equal(sourceStore.activeSourceFiles[0].subjectId, 'subject-b')
+
+    await sourceStore.loadLocalSourceFiles('subject-empty')
+    assert.deepEqual(sourceStore.activeSourceFiles, [])
+    await sourceStore.loadSources()
+    assert.deepEqual(sourceStore.activeSourceFiles, [])
+  } finally {
+    releaseLocalAssetSyncQueue('user-subject-scope', 'device-subject-scope')
   }
 })
 

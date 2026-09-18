@@ -46,6 +46,9 @@ let fileOverviewGenerator: FileOverviewGenerator | null = null
 export const useSourceStore = defineStore('source', () => {
   const sources = ref<SourceFileModel[]>([])
   const activeSourceFiles = ref<SourceFileModel[]>([])
+  // Keep the requested subject separate from the visible rows. An empty
+  // subject has no first row from which to infer focus during hydration.
+  const activeSubjectId = ref<string | null>(null)
   const isLoading = ref(false)
   const lastError = ref<string | null>(null)
 
@@ -84,7 +87,8 @@ export const useSourceStore = defineStore('source', () => {
   function replaceSources(models: SourceFileModel[], subjectIdToFocus?: string): void {
     const sorted = sortSources(models)
     sources.value = sorted
-    const focusId = subjectIdToFocus ?? activeSourceFiles.value[0]?.subjectId
+    if (subjectIdToFocus !== undefined) activeSubjectId.value = subjectIdToFocus
+    const focusId = activeSubjectId.value
     if (focusId) {
       activeSourceFiles.value = sorted.filter((source) => source.subjectId === focusId)
     } else {
@@ -167,6 +171,11 @@ export const useSourceStore = defineStore('source', () => {
     return activeSourceFiles.value
   }
 
+  function clearActiveSourceFiles(): void {
+    activeSubjectId.value = null
+    activeSourceFiles.value = []
+  }
+
   async function createFileSource(
     subjectId: string,
     title: string,
@@ -222,7 +231,7 @@ export const useSourceStore = defineStore('source', () => {
         assetSizeBytes: normalizedAssetSizeBytes,
       }
       const model = mapSourceView(localView)
-      replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)])
+      replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], subjectId)
       scheduleSync()
       if (documentScheduler) {
         void documentScheduler.schedule(id)
@@ -277,7 +286,7 @@ export const useSourceStore = defineStore('source', () => {
       })
     }
     const model = mapSourceView(localView)
-    replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)])
+    replaceSources([model, ...sources.value.filter((source) => source.id !== model.id)], subjectId)
     scheduleSync()
     return id
   }
@@ -420,6 +429,7 @@ export const useSourceStore = defineStore('source', () => {
     loadSources,
     loadSourceFiles,
     loadLocalSourceFiles,
+    clearActiveSourceFiles,
     createFileSource,
     addSourceFile,
     deleteSourceFile,

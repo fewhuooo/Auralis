@@ -104,7 +104,7 @@ Auralis-PC/
 | `useBlockStore.ts` | 旧知识块兼容 facade；正式页面使用 `useKnowledgeStore` |
 | `useTaskStore.ts` | Task typed API、user/device repository、排期、状态和 mutation |
 | `useSubjectStore.ts` | 学科列表和当前学科 |
-| `useSourceStore.ts` | Source 分页、资料目录、关联 Asset 元数据、软删除和 Source mutation |
+| `useSourceStore.ts` | Source 分页、资料目录、关联 Asset 元数据、软删除和 Source mutation；`activeSourceFiles` 始终按当前请求的 `subjectId` 投影，空学科也会在后续本地 hydration 中保持为空 |
 | `useKnowledgeStore.ts` | KnowledgeBlock 列表、关联 Source、离线缓存和 mutation |
 | `useAssetStore.ts` | Asset upload-intent、对象存储上传、complete、下载 URL 和失败 pending 状态 |
 | `useSyncStore.ts` | cursor、resetRequired、pull/push 状态、错误和统一同步入口 |
