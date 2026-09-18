@@ -25,6 +25,7 @@ const { createVersionedLocalSchema } = await import('../src/services/localSchema
 const { LocalAssetRepository } = await import('../src/services/localAssetRepository.ts')
 const { LocalAssetService, TransientBrowserAssetAdapter } = await import('../src/services/localAssetService.ts')
 const { LocalSourceDraftService } = await import('../src/services/localSourceDraftService.ts')
+const { LocalAssetSyncQueue } = await import('../src/services/localAssetSyncQueue.ts')
 const { OverviewRepository } = await import('../src/services/overviewRepository.ts')
 const { SubjectDeletionCoordinator } = await import('../src/services/subjectDeletionCoordinator.ts')
 const { runSyncCycle } = await import('../src/services/syncCycle.ts')
@@ -109,6 +110,86 @@ test('subject deletion reconciliation is idempotent and preserves an asset refer
   await repo.markApplied('SUBJECT-subject-a-DELETE')
   await coordinator.reconcileDeletedSubject('subject-a')
   assert.ok(await assetRepo.getAssetFile('asset-shared'), 'an APPLIED parent still preserves a server-backed asset shared by another Source')
+})
+
+test('claimed queue release cannot create SOURCE after the parent delete marker wins before the child fence', async () => {
+  const storage = createMemoryStorage()
+  const repo = new LocalRepository('user-lock-race', 'device-lock-race', { storage, now: () => now })
+  const assetRepo = new LocalAssetRepository('user-lock-race', 'device-lock-race', { storage, now: () => now })
+  const assetService = new LocalAssetService(assetRepo, { nativeAdapter: new TransientBrowserAssetAdapter() })
+  await repo.upsert('SUBJECT', 'subject-lock-race', { id: 'subject-lock-race', name: 'Race' }, { version: 1 })
+  await repo.upsert('SOURCE', 'source-lock-race', { id: 'source-lock-race', subjectId: 'subject-lock-race', assetId: 'asset-lock-race' }, { version: 0 })
+  await assetService.importAsset({
+    localAssetId: 'asset-lock-race',
+    file: new File([''], 'race.pdf', { type: 'application/pdf' }),
+    originalName: 'race.pdf',
+    mimeType: 'application/pdf',
+    expectedSize: 0,
+    expectedSha256: sha,
+  })
+  await assetRepo.createSourceDraft({
+    localSourceId: 'source-lock-race',
+    localAssetId: 'asset-lock-race',
+    subjectId: 'subject-lock-race',
+    title: 'Race',
+    localContentRevision: 'e3b0c442-98fc-1c49-87ae-f4c8996fb924',
+  })
+  await assetRepo.enqueueSyncJob('asset-lock-race')
+  const coordinator = new SubjectDeletionCoordinator({ repo, assetRepo, assetService })
+
+  // The parent marker is durable, but the coordinator has not acquired the
+  // lifecycle lock to tombstone children yet.
+  await repo.commitMutation({
+    resourceType: 'SUBJECT',
+    resourceId: 'subject-lock-race',
+    value: { id: 'subject-lock-race', name: 'Race' },
+    version: 1,
+    deletedAt: now,
+    mutation: mutation('SUBJECT', 'subject-lock-race', 'DELETE'),
+  })
+
+  let sourceReadStarted
+  const sourceReadStartedPromise = new Promise((resolve) => { sourceReadStarted = resolve })
+  let releaseSourceRead
+  const releaseSourceReadPromise = new Promise((resolve) => { releaseSourceRead = resolve })
+  const originalRead = repo.read.bind(repo)
+  let paused = true
+  repo.read = async (resourceType, resourceId) => {
+    if (paused && resourceType === 'SOURCE' && resourceId === 'source-lock-race') {
+      paused = false
+      sourceReadStarted()
+      await releaseSourceReadPromise
+    }
+    return originalRead(resourceType, resourceId)
+  }
+
+  let wakeupCount = 0
+  const queue = new LocalAssetSyncQueue({
+    assetRepository: assetRepo,
+    assetService,
+    draftService: new LocalSourceDraftService(assetRepo, repo, () => now),
+    api: {
+      async createUploadIntent() {
+        return { assetId: 'server-asset-lock-race', uploadStatus: 'READY' }
+      },
+    },
+    onWakeup: () => { wakeupCount++ },
+  })
+
+  // This is the already-claimed queue path. Its SOURCE read is a barrier
+  // proving it owns the lifecycle lock before the coordinator can enter.
+  const releasePromise = queue.processQueue()
+  await sourceReadStartedPromise
+  const fencePromise = coordinator.markDeletedSubject('subject-lock-race')
+  releaseSourceRead()
+
+  await releasePromise
+  await fencePromise
+  assert.equal(wakeupCount, 0, 'suppressed draft release must not wake SOURCE sync')
+  assert.equal((await repo.listUnresolved()).some((item) => item.resourceType === 'SOURCE'), false)
+  assert.equal((await assetRepo.getSourceDraft('source-lock-race'))?.state, 'DRAFT')
+  assert.ok(await assetService.readAssetFile({ localAssetId: 'asset-lock-race' }), 'claimed queue race must preserve local bytes')
+  queue.dispose()
 })
 
 test('subject deletion invokes the active runtime hooks before dropping derived work', async () => {

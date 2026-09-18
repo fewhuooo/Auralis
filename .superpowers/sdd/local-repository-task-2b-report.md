@@ -75,6 +75,19 @@ Second-round focused verification:
 
 No Rust tests were required because no native behavior changed.
 
+## Final reviewer critical-lock RED→GREEN evidence
+
+- RED: `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-subject-deletion-cascade.test.mjs` — exit 1; the deterministic claimed-queue barrier returned `['source-lock-race']`, proving the old implementation could create SOURCE/CREATE after the parent marker but before the child fence acquired the lifecycle lock.
+- GREEN: the same focused command — exit 0; 8/8 passed. The barrier now runs a real claimed `LocalAssetSyncQueue`, confirms the queue owns the owner/device lifecycle lock before the coordinator enters, and asserts no SOURCE mutation, draft remains `DRAFT`, local bytes remain readable, and no SOURCE wakeup occurs.
+- Combined focused: `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-subject-deletion-cascade.test.mjs scripts/r4-store-local-asset-flow.test.mjs` — exit 0; 20/20 passed.
+- Queue/sync ordering: `npm.cmd exec -- node --experimental-strip-types --test scripts/r4-local-asset-sync-queue.test.mjs scripts/r4-sync.test.mjs` — exit 0; 29/29 passed, including release wakeup behavior, interrupted release retry, and sync push ordering coverage.
+- `npm.cmd run type-check` — exit 0; `vue-tsc -b` passed.
+- `npm.cmd run test:r4-pc` — exit 0; 342/342 passed.
+- `npm.cmd run build` — exit 0; Vite production build completed with the existing externalization, chunk-size, dynamic-import, and plugin-timing warnings.
+- `git diff --check` — exit 0; no whitespace errors.
+
+The final lock fix only re-reads the draft's Subject projection and unresolved mutations while holding the existing owner/device lifecycle lock; it skips release without terminally deleting the draft when a local or unresolved SUBJECT/DELETE fence is present. `syncOrdering` remains SUBJECT-before-SOURCE for creates, and queue wakeup remains conditional on an actual released Source, so this barrier cannot enqueue or push SOURCE/CREATE.
+
 ## Manual limitations
 
 Automated tests do not constitute real Tauri GUI, SQLite restart, native filesystem, forced-termination, two-device convergence, Server/MinIO, low-disk, or long-running parser acceptance. Those remain open manual/business verification items.

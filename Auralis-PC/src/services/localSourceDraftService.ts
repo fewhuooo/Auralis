@@ -128,16 +128,23 @@ export class LocalSourceDraftService {
       // never recreate SOURCE/CREATE for an already tombstoned projection.
       if (existing?.deletedAt) continue
 
+      const subject = await this.localRepository.read<Record<string, unknown>>('SUBJECT', draft.subjectId)
+      checkLifecycleGuard(lifecycleGuard)
+      const unresolved = await this.localRepository.listUnresolved()
+      checkLifecycleGuard(lifecycleGuard)
+      // The parent marker is committed before the coordinator acquires this
+      // lock. Re-reading both the parent projection and its unresolved fence
+      // closes that ordering gap even while SOURCE is still active.
+      if (subject?.deletedAt || unresolved.some((mutation) =>
+        mutation.resourceType === 'SUBJECT' && mutation.resourceId === draft.subjectId && mutation.mutationType === 'DELETE')) {
+        continue
+      }
+
       if (!draft.localContentRevision || !UUID_REGEX.test(draft.localContentRevision)) {
         throw new Error(
           `DRAFT_INVALID_REVISION: localContentRevision for draft ${draft.localSourceId} must be a valid UUID`,
         )
       }
-
-      checkLifecycleGuard(lifecycleGuard)
-      checkLifecycleGuard(lifecycleGuard)
-      const unresolved = await this.localRepository.listUnresolved()
-      checkLifecycleGuard(lifecycleGuard)
 
       const resourceMutations = unresolved.filter(
         (m) => m.resourceType === 'SOURCE' && m.resourceId === draft.localSourceId,

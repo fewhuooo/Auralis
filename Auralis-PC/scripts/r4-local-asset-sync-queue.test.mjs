@@ -949,12 +949,13 @@ test('LocalSourceDraftService: releaseDraftsForAsset handles mid-flight interrup
       title: 'Interrupted Draft Title',
     })
 
-    // 1. First run: lifecycleGuard throws after commitMutation (simulating interruption between commitMutation and updateSourceDraft)
+    // 1. First run: lifecycleGuard throws after commitMutationUnlocked
+    // (simulating interruption between commitMutation and updateSourceDraft).
     let commitCount = 0
-    const originalCommitMutation = localRepo.commitMutation.bind(localRepo)
+    const originalCommitMutation = localRepo.commitMutationUnlocked.bind(localRepo)
     let shouldInterrupt = false
 
-    localRepo.commitMutation = async (input) => {
+    localRepo.commitMutationUnlocked = async (input) => {
       commitCount++
       const res = await originalCommitMutation(input)
       shouldInterrupt = true
@@ -983,7 +984,7 @@ test('LocalSourceDraftService: releaseDraftsForAsset handles mid-flight interrup
 
     // 2. Second run: Retry releaseDraftsForAsset with active guard
     // Reset commit interceptor
-    localRepo.commitMutation = originalCommitMutation
+    localRepo.commitMutationUnlocked = originalCommitMutation
     commitCount = 0
 
     const releasedIds = await draftService.releaseDraftsForAsset(localAssetId, serverAssetId, () => true)
