@@ -53,9 +53,30 @@ GREEN command:
 
 Exit code 0; 3 tests, 0 failures, 0 errors, 0 skipped. The regression now observes no child save before deletion, receives `RESOURCE_NOT_FOUND` after the committed delete, and finds no active late Source. The forced rollback test verifies Subject, Source, KnowledgeBlock, Task, both Relation rows, versions, and DELETE change-log entries have no partial tombstones or metadata.
 
+## Second review follow-up evidence
+
+The multi-Subject mutation path now collects every distinct owner Subject before mutation and locks them in canonical UUID order. This covers Source/KnowledgeBlock/Task moves, KnowledgeBlock source ownership validation, task schedule swaps, and relation create/update/restore/delete old and new endpoints. Endpoint helpers first acquire the owner lock and then re-read the child active row, so a child deleted while validation waits cannot be returned as a stale active endpoint.
+
+RED command:
+
+`Auralis-Server\\mvnw.cmd -B -ntp -Dtest=SubjectDeletionCascadeTests test`
+
+Before the second fix, the added 5-test suite had 2 failures: the reversed-order lock assertion and `relationEndpointRevalidatesChildAfterOwnerLockWait`, which observed the relation create succeed after its Source endpoint was deleted while owner validation was blocked. Exit code 1.
+
+GREEN command:
+
+`Auralis-Server\\mvnw.cmd -B -ntp -Dtest=SubjectDeletionCascadeTests test`
+
+Exit code 0; 5 tests, 0 failures, 0 errors, 0 skipped. The suite now proves canonical lock order and rejects the stale endpoint with `RESOURCE_NOT_FOUND` without an active relation.
+
+Additional verification:
+
+- `Auralis-Server\\mvnw.cmd -B -ntp '-Dtest=CoreDomainServiceTests,SourceAssetRelationServiceTests,SyncServiceTests,ArchitectureTests' test` — exit 0; 32 tests, 0 failures, 0 errors, 0 skipped.
+- `Auralis-Server\\mvnw.cmd -B -ntp clean test-compile` — exit 0; main 279 and test 76 source files compiled successfully.
+
 ## Commit
 
-The original implementation commit was `46f2348a8df565c6640f6fcd752742464ada7c91` (`feat(server): cascade subject deletion tombstones`). The review-fix implementation commit is `30fccd4` (`fix(server): serialize subject-owned mutations`).
+The original implementation commit was `46f2348a8df565c6640f6fcd752742464ada7c91` (`feat(server): cascade subject deletion tombstones`). The review-fix implementation commit is `30fccd4` (`fix(server): serialize subject-owned mutations`). The second-review implementation commit is `7204887f1e1ac6292845ffb320db202e04a911ed` (`fix(server): order subject owner locks canonically`).
 
 ## Remaining external limitations
 
