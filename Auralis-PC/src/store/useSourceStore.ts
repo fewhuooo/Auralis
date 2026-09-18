@@ -160,6 +160,13 @@ export const useSourceStore = defineStore('source', () => {
     }
   }
 
+  // Processing reconciliation has already completed its transport read and
+  // must only refresh the local projection. Keeping this boundary separate
+  // avoids scheduling a second background sync from each reconciliation pass.
+  async function hydrateLocalSources(): Promise<SourceFileModel[]> {
+    return hydrateSources()
+  }
+
   subscribeProjectionChange((change) => {
     if (change.resourceTypes.has('SOURCE')) void hydrateSources()
       .catch((error) => console.warn('[SourceStore] projection hydration failed', error))
@@ -446,6 +453,7 @@ export const useSourceStore = defineStore('source', () => {
     isLoading,
     lastError,
     loadSources,
+    hydrateLocalSources,
     loadSourceFiles,
     loadLocalSourceFiles,
     clearActiveSourceFiles,

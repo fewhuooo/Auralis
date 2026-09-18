@@ -2,12 +2,135 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import path from 'node:path'
+import { register } from 'node:module'
 
 const root = path.resolve(import.meta.dirname, '..')
+
+const srcRootUrl = new URL('../src/', import.meta.url).href
+const loaderCode = `
+export async function resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@/')) {
+    const root = '${srcRootUrl}'
+    const subPath = specifier.slice(2)
+    const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts'
+    return nextResolve(new URL(withExt, root).href, context)
+  }
+  if (specifier.startsWith('./') || specifier.startsWith('../')) {
+    const parentUrl = context.parentURL
+    if (parentUrl && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs')) {
+      return nextResolve(new URL(specifier + '.ts', parentUrl).href, context)
+    }
+  }
+  return nextResolve(specifier, context)
+}
+`
+register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
+
+const { createPinia, setActivePinia } = await import('pinia')
+const { useSourceStore } = await import('../src/store/useSourceStore.ts')
+const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { DocumentProcessingRuntime } = await import('../src/services/documentProcessing/runtime.ts')
+
+function sourceModel(id, ingestionStatus) {
+  return {
+    id,
+    subjectId: 'subject-1',
+    type: 'FILE',
+    name: id,
+    filePath: '',
+    fileType: 'pdf',
+    fileSize: 1,
+    catalogJson: '[]',
+    blockCount: 0,
+    ingestionStatus,
+    ingestionRevision: 'revision-1',
+    version: 1,
+    deletedAt: null,
+  }
+}
 
 async function source(relativePath) {
   return readFile(path.join(root, relativePath), 'utf8')
 }
+
+test('runtime discovers processing Sources once, shares one bounded sync cycle, and stops each terminal state', async () => {
+  setActivePinia(createPinia())
+  const sourceStore = useSourceStore()
+  const syncStore = useSyncStore()
+  let models = [sourceModel('source-ready', 'INDEXING'), sourceModel('source-failed', 'PARSING'), sourceModel('source-deleted', 'PENDING')]
+  sourceStore.sources = models
+  let syncCalls = 0
+  let hydrateCalls = 0
+  let loadSourcesCalls = 0
+  syncStore.triggerSync = async () => {
+    syncCalls += 1
+    models = [
+      sourceModel('source-ready', 'READY'),
+      sourceModel('source-failed', 'FAILED'),
+    ]
+    sourceStore.sources = models
+  }
+  sourceStore.hydrateLocalSources = async () => {
+    hydrateCalls += 1
+    sourceStore.sources = models
+    return models
+  }
+  sourceStore.loadSources = async () => {
+    loadSourcesCalls += 1
+    throw new Error('reconciliation must not schedule a second SourceStore sync')
+  }
+
+  const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 3, sourceReconciliationWaitMs: 0 })
+  const resumeIds = []
+  runtime.snapshot = {
+    userId: 'user-1',
+    serverDeviceId: 'device-1',
+    runner: null,
+    repository: { list: async () => [] },
+    scheduler: { resume: async (ids) => { resumeIds.push(ids) } },
+    overviewGeneration: { resumePending: async () => {} },
+  }
+
+  await Promise.all([runtime.resumePending(), runtime.resumePending()])
+  await new Promise((resolve) => setTimeout(resolve, 0))
+
+  assert.deepEqual(resumeIds[0].sort(), ['source-deleted', 'source-failed', 'source-ready'])
+  assert.equal(syncCalls, 1, 'all observed processing Sources share one read-sync cycle')
+  assert.equal(hydrateCalls, 1, 'a cycle hydrates the local projection once')
+  assert.equal(loadSourcesCalls, 0)
+  assert.deepEqual(sourceStore.sources.map((source) => source.ingestionStatus), ['READY', 'FAILED'])
+  runtime.stop()
+})
+
+test('runtime stop cancels a pending reconciliation timer and prevents later sync or hydration', async () => {
+  setActivePinia(createPinia())
+  const sourceStore = useSourceStore()
+  const syncStore = useSyncStore()
+  const models = [sourceModel('source-stuck', 'INDEXING')]
+  sourceStore.sources = models
+  let syncCalls = 0
+  let hydrateCalls = 0
+  syncStore.triggerSync = async () => { syncCalls += 1 }
+  sourceStore.hydrateLocalSources = async () => { hydrateCalls += 1; return models }
+
+  const runtime = new DocumentProcessingRuntime({ sourceReconciliationMaxAttempts: 3, sourceReconciliationWaitMs: 10 })
+  runtime.snapshot = {
+    userId: 'user-1',
+    serverDeviceId: 'device-1',
+    runner: null,
+    repository: { list: async () => [] },
+    scheduler: { resume: async () => {} },
+    overviewGeneration: { resumePending: async () => {} },
+  }
+  await runtime.resumePending()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(syncCalls, 1)
+
+  runtime.stop()
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  assert.equal(syncCalls, 1)
+  assert.equal(hydrateCalls, 1)
+})
 
 test('Tauri document runtime composes the durable repository, parser, package, upload and scheduler', async () => {
   const runtime = await source('src/services/documentProcessing/runtime.ts')

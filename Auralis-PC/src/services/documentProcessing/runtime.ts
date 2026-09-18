@@ -112,7 +112,7 @@ function isOfficeExtension(fileName: string): boolean {
 }
 
 type ProcessingSourceStatus = 'PENDING' | 'VALIDATING' | 'PARSING' | 'INDEXING'
-type ReconciliationResult = 'READY' | 'FAILED' | 'DELETED' | 'STOPPED' | 'EXHAUSTED'
+export type ProcessingSourceReconciliationResult = 'READY' | 'FAILED' | 'DELETED' | 'STOPPED' | 'EXHAUSTED' | 'CANCELLED'
 
 interface ProcessingSourceSnapshot {
   id: string
@@ -122,35 +122,102 @@ interface ProcessingSourceSnapshot {
 }
 
 export interface ProcessingSourceReconciliationOptions {
-  sourceId: string
-  getSource: () => ProcessingSourceSnapshot | null | Promise<ProcessingSourceSnapshot | null>
+  sourceIds: readonly string[]
+  getSources: () => ProcessingSourceSnapshot[] | Promise<ProcessingSourceSnapshot[]>
   requestReadSync: () => void | Promise<void>
   maxAttempts?: number
   waitMs?: number
+  signal?: AbortSignal
+}
+
+export interface DocumentProcessingRuntimeOptions {
+  sourceReconciliationMaxAttempts?: number
+  sourceReconciliationWaitMs?: number
 }
 
 const PROCESSING_SOURCE_STATUSES = new Set<ProcessingSourceStatus>(['PENDING', 'VALIDATING', 'PARSING', 'INDEXING'])
 
+function waitForReconciliation(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false)
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      timer = null
+      signal?.removeEventListener('abort', onAbort)
+      resolve(!signal?.aborted)
+    }, ms)
+    const onAbort = (): void => {
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      signal?.removeEventListener('abort', onAbort)
+      resolve(false)
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 export async function reconcileProcessingSource(
+  options: Omit<ProcessingSourceReconciliationOptions, 'sourceIds' | 'getSources'> & {
+    sourceId: string
+    getSource: () => ProcessingSourceSnapshot | null | Promise<ProcessingSourceSnapshot | null>
+  },
+): Promise<ProcessingSourceReconciliationResult> {
+  const results = await reconcileProcessingSources({
+    ...options,
+    sourceIds: [options.sourceId],
+    getSources: async () => {
+      const source = await options.getSource()
+      return source ? [source] : []
+    },
+  })
+  return results.get(options.sourceId) ?? 'DELETED'
+}
+
+export async function reconcileProcessingSources(
   options: ProcessingSourceReconciliationOptions,
-): Promise<ReconciliationResult> {
+): Promise<Map<string, ProcessingSourceReconciliationResult>> {
+  const sourceIds = [...new Set(options.sourceIds.filter((sourceId) => sourceId.trim()))]
+  const results = new Map<string, ProcessingSourceReconciliationResult>()
   const maxAttempts = Math.max(1, Math.floor(options.maxAttempts ?? 6))
   const waitMs = Math.max(0, Math.floor(options.waitMs ?? 1500))
 
+  if (sourceIds.length === 0) return results
+
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const source = await options.getSource()
-    if (!source || source.id !== options.sourceId || source.deletedAt) return 'DELETED'
-    if (source.ingestionStatus === 'READY') return 'READY'
-    if (source.ingestionStatus === 'FAILED') return 'FAILED'
-    if (!PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus)) return 'STOPPED'
+    if (options.signal?.aborted) {
+      for (const sourceId of sourceIds) if (!results.has(sourceId)) results.set(sourceId, 'CANCELLED')
+      return results
+    }
+    const sources = await options.getSources()
+    if (options.signal?.aborted) {
+      for (const sourceId of sourceIds) if (!results.has(sourceId)) results.set(sourceId, 'CANCELLED')
+      return results
+    }
+    const byId = new Map(sources.map((source) => [source.id, source]))
+    const activeSourceIds: string[] = []
+    for (const sourceId of sourceIds) {
+      if (results.has(sourceId)) continue
+      const source = byId.get(sourceId)
+      if (!source || source.deletedAt) results.set(sourceId, 'DELETED')
+      else if (source.ingestionStatus === 'READY') results.set(sourceId, 'READY')
+      else if (source.ingestionStatus === 'FAILED') results.set(sourceId, 'FAILED')
+      else if (!PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus)) results.set(sourceId, 'STOPPED')
+      else activeSourceIds.push(sourceId)
+    }
+    if (activeSourceIds.length === 0) return results
 
     await options.requestReadSync()
-    if (attempt + 1 < maxAttempts && waitMs > 0) {
-      await new Promise<void>((resolve) => setTimeout(resolve, waitMs))
+    if (options.signal?.aborted) {
+      for (const sourceId of activeSourceIds) if (!results.has(sourceId)) results.set(sourceId, 'CANCELLED')
+      return results
+    }
+    if (attempt + 1 < maxAttempts && waitMs > 0 && !(await waitForReconciliation(waitMs, options.signal))) {
+      for (const sourceId of activeSourceIds) if (!results.has(sourceId)) results.set(sourceId, 'CANCELLED')
+      return results
     }
   }
 
-  return 'EXHAUSTED'
+  for (const sourceId of sourceIds) if (!results.has(sourceId)) results.set(sourceId, 'EXHAUSTED')
+  return results
 }
 
 export interface DocumentProcessingRuntimeSnapshot {
@@ -174,7 +241,10 @@ export class DocumentProcessingRuntime {
   private starting: Promise<void> | null = null
   private lifecycleGeneration = 0
   private readonly parserInputs = new Map<string, RuntimeFile>()
-  private readonly sourceReconciliations = new Map<string, Promise<ReconciliationResult>>()
+  private sourceReconciliation: Promise<Map<string, ProcessingSourceReconciliationResult>> | null = null
+  private sourceReconciliationController: AbortController | null = null
+  private readonly sourceReconciliationMaxAttempts: number
+  private readonly sourceReconciliationWaitMs: number
   private readonly onlineHandler = (): void => {
     void this.resumePending('RESUME_ONLINE').catch(() => console.warn('[DocumentRuntime] online resume failed'))
   }
@@ -183,6 +253,11 @@ export class DocumentProcessingRuntime {
     void sourceStore.loadSources()
       .then(() => this.resumePending('RESUME_SYNC'))
       .catch(() => console.warn('[DocumentRuntime] sync resume failed'))
+  }
+
+  constructor(options: DocumentProcessingRuntimeOptions = {}) {
+    this.sourceReconciliationMaxAttempts = options.sourceReconciliationMaxAttempts ?? 6
+    this.sourceReconciliationWaitMs = options.sourceReconciliationWaitMs ?? 1500
   }
 
   async start(): Promise<void> {
@@ -217,45 +292,55 @@ export class DocumentProcessingRuntime {
     this.snapshot = null
     this.key = null
     this.parserInputs.clear()
-    this.sourceReconciliations.clear()
+    this.sourceReconciliationController?.abort()
+    this.sourceReconciliationController = null
+    this.sourceReconciliation = null
   }
 
-  private startSourceReconciliation(sourceId: string): void {
-    if (this.sourceReconciliations.has(sourceId)) return
+  private startSourceReconciliation(sourceIds: string[]): void {
+    if (this.sourceReconciliation || sourceIds.length === 0) return
     const generation = this.lifecycleGeneration
-    const task = reconcileProcessingSource({
-      sourceId,
-      getSource: () => {
-        if (this.lifecycleGeneration !== generation) return null
-        const source = useSourceStore().sources.find((candidate) => candidate.id === sourceId)
-        if (!source) return null
-        return {
+    const controller = new AbortController()
+    this.sourceReconciliationController = controller
+    const isCurrent = (): boolean => this.lifecycleGeneration === generation && this.sourceReconciliationController === controller
+    const task = reconcileProcessingSources({
+      sourceIds,
+      signal: controller.signal,
+      maxAttempts: this.sourceReconciliationMaxAttempts,
+      waitMs: this.sourceReconciliationWaitMs,
+      getSources: () => {
+        if (!isCurrent()) return []
+        return useSourceStore().sources.map((source) => ({
           id: source.id,
           type: source.type,
           ingestionStatus: source.ingestionStatus,
           deletedAt: (source as SourceView & { deletedAt?: string | null }).deletedAt,
-        }
+        }))
       },
       requestReadSync: async () => {
-        if (this.lifecycleGeneration !== generation) return
+        if (!isCurrent()) return
         const syncStore = useSyncStore()
         await syncStore.triggerSync().catch(() => undefined)
-        await useSourceStore().loadSources().catch(() => undefined)
+        if (!isCurrent()) return
+        await useSourceStore().hydrateLocalSources().catch(() => undefined)
+        if (!isCurrent()) return
       },
     })
-    this.sourceReconciliations.set(sourceId, task)
-    void task.finally(() => {
-      if (this.sourceReconciliations.get(sourceId) === task) this.sourceReconciliations.delete(sourceId)
+    this.sourceReconciliation = task
+    void task.then(() => undefined, () => undefined).finally(() => {
+      if (this.sourceReconciliation === task) {
+        this.sourceReconciliation = null
+        this.sourceReconciliationController = null
+      }
     })
   }
 
   private startProcessingSourceReconciliations(): void {
     const sourceStore = useSourceStore()
-    for (const source of sourceStore.sources) {
-      if (source.type === 'FILE' && PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus)) {
-        this.startSourceReconciliation(source.id)
-      }
-    }
+    const sourceIds = sourceStore.sources
+      .filter((source) => source.type === 'FILE' && PROCESSING_SOURCE_STATUSES.has(source.ingestionStatus as ProcessingSourceStatus))
+      .map((source) => source.id)
+    this.startSourceReconciliation(sourceIds)
   }
 
   async resumePending(trigger: FileOverviewTrigger = 'RESUME_ONLINE'): Promise<void> {
