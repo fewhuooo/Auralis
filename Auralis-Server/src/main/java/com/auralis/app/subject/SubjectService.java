@@ -15,17 +15,21 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.UUID;
 
 @Service
 public class SubjectService {
 
     private final SubjectRepository subjectRepository;
+    private final SubjectLockCoordinator subjectLockCoordinator;
     private final ApplicationEventPublisher eventPublisher;
 
-    public SubjectService(SubjectRepository subjectRepository, ApplicationEventPublisher eventPublisher) {
+    public SubjectService(
+            SubjectRepository subjectRepository,
+            SubjectLockCoordinator subjectLockCoordinator,
+            ApplicationEventPublisher eventPublisher) {
         this.subjectRepository = subjectRepository;
+        this.subjectLockCoordinator = subjectLockCoordinator;
         this.eventPublisher = eventPublisher;
     }
 
@@ -90,7 +94,8 @@ public class SubjectService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SubjectView update(UUID userId, UUID id, long baseVersion, SubjectCommand command) {
-        SubjectEntity entity = lockedMutable(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(id));
+        SubjectEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         String name = requiredName(command.name());
@@ -106,7 +111,8 @@ public class SubjectService {
 
     @Transactional
     public void delete(UUID userId, UUID id, long baseVersion) {
-        SubjectEntity entity = lockedMutable(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(id));
+        SubjectEntity entity = mutable(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         entity.softDelete();
@@ -117,7 +123,8 @@ public class SubjectService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SubjectView restore(UUID userId, UUID id, long baseVersion) {
-        SubjectEntity entity = lockedMutable(userId, id);
+        subjectLockCoordinator.lockSubjectsIncludingDeleted(userId, List.of(id));
+        SubjectEntity entity = mutable(userId, id);
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Subject is not deleted");
         }
@@ -143,24 +150,13 @@ public class SubjectService {
      */
     @Transactional
     public SubjectView requireActiveSubjectForMutation(UUID userId, UUID id) {
-        SubjectEntity entity = lockedMutable(userId, id);
-        if (entity.getDeletedAt() != null) {
-            throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
-        }
-        return view(entity);
+        subjectLockCoordinator.lockSubjects(userId, List.of(id));
+        return view(active(userId, id));
     }
 
     @Transactional
     public void requireActiveSubjectsForMutation(UUID userId, Collection<UUID> ids) {
-        if (ids.stream().anyMatch(java.util.Objects::isNull)) {
-            throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
-        }
-        ids.stream().distinct().sorted(Comparator.naturalOrder()).forEach(id -> {
-            SubjectEntity entity = lockedMutable(userId, id);
-            if (entity.getDeletedAt() != null) {
-                throw new DomainException("RESOURCE_NOT_FOUND", "Subject was not found");
-            }
-        });
+        subjectLockCoordinator.lockSubjects(userId, ids);
     }
 
     private SubjectEntity active(UUID userId, UUID id) {
@@ -168,8 +164,8 @@ public class SubjectService {
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Subject was not found"));
     }
 
-    private SubjectEntity lockedMutable(UUID userId, UUID id) {
-        return subjectRepository.findForUpdateByIdAndUserId(id, userId)
+    private SubjectEntity mutable(UUID userId, UUID id) {
+        return subjectRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Subject was not found"));
     }
 

@@ -81,6 +81,15 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 2026-09-18 Task 2A：Subject DELETE 仍使用原有公开 API 和软删除语义，但在同一事务内通过各业务模块的公开领域事件边界级联软删除当前用户、当前 Subject 下的活动 Source、KnowledgeBlock 和 Task。每个子资源递增 version/更新时间、发布普通 `DELETE` `ResourceChangedEvent`，并继续发布端点删除事件使相关 Relation 逐条生成墓碑；已删除子资源不重复写入，Subject restore 不恢复子资源。级联异常会回滚 Subject、子资源、Relation 和 change-log 写入；不改变 ParsedDocument 审计元数据、延迟 Asset/MinIO 保留清理或数据库 schema。
 
+Task 2A 统一数据库锁协议：所有涉及 Subject-owned 资源的写事务先收集 owner Subject IDs，去重并按 UUID 升序通过 `SubjectLockCoordinator` 获取悲观行锁，再按稳定资源顺序锁定具体 Source/KnowledgeBlock/Task/Relation，最后重新读取并校验活动状态、归属、`subjectId` 和 Relation 端点。代码复核必须逐条回答：
+
+- 涉及哪些 Subject，是否覆盖移动、换位、Relation 两端和级联端点？
+- Subject 锁是否由 `SubjectLockCoordinator` 去重并按 UUID 升序先取得？
+- Subject 与具体资源锁取得后，是否重新读取并重新验证活动状态、归属、版本和端点？
+- 是否不存在持有 Source/KnowledgeBlock/Task/Relation 锁后再获取 Subject 锁的 Resource→Subject 反向路径？
+
+首次解锁读取仅可用于发现 owner Subject lock set；它的实体和值不得直接用于 mutation。该协议覆盖 Subject delete、Task schedule swap、Source/Task move、Relation create/update/restore/delete、KnowledgeBlock source validation、resource create/restore 及 ParsedDocument Source fence，不改变 API、schema 或 MinIO retention。
+
 阶段 2B 验证证据：2026-08-13 `Auralis-Server\\mvnw.cmd -B -ntp clean test` 退出码 0，阶段2B基线执行 42 个真实测试；包含 V1/V2/V3 schema、Source/Asset/Relation Repository/Service/Controller、KnowledgeBlock Source 关联、RELATED_TO 反向去重、端点删除级联、Auth/阶段 2A 回归和 Modulith 边界。阶段 3/4 审核修复后在全量 clean test 中验证 Sync、Review、Stats、Realtime、V6/V7 迁移和并发回归，最终合计 69 个测试。证据范围为 H2、JPA、MockMvc 和测试存储适配器，不包含 PostgreSQL、Docker、真实 MinIO、解析 worker、双设备、浏览器 WebSocket、三端联调或人工业务验收。
 
 ## 目标技术基线

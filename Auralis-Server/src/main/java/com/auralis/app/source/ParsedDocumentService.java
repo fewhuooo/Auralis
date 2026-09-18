@@ -6,6 +6,7 @@ import com.auralis.app.source.internal.persistence.ParsedDocumentEntity;
 import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import com.auralis.app.source.internal.persistence.SourceEntity;
 import com.auralis.app.source.internal.persistence.SourceRepository;
+import com.auralis.app.subject.SubjectLockCoordinator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
@@ -27,6 +28,7 @@ public class ParsedDocumentService {
     private final ParsedDocumentValidator validator;
     private final ParsedDocumentIngestionPort ingestionJobService;
     private final SourceService sourceService;
+    private final SubjectLockCoordinator subjectLockCoordinator;
 
     public ParsedDocumentService(
             SourceRepository sourceRepository,
@@ -36,7 +38,8 @@ public class ParsedDocumentService {
             AssetService assetService,
             ParsedDocumentValidator validator,
             ParsedDocumentIngestionPort ingestionJobService,
-            SourceService sourceService) {
+            SourceService sourceService,
+            SubjectLockCoordinator subjectLockCoordinator) {
         this.sourceRepository = sourceRepository;
         this.parsedDocumentRepository = parsedDocumentRepository;
         this.assetStorage = assetStorage;
@@ -45,12 +48,16 @@ public class ParsedDocumentService {
         this.validator = validator;
         this.ingestionJobService = ingestionJobService;
         this.sourceService = sourceService;
+        this.subjectLockCoordinator = subjectLockCoordinator;
     }
 
     @Transactional
     public ParsedDocumentUploadIntentView createUploadIntent(
             UUID userId, UUID sourceId, ParsedDocumentUploadCommand command) {
-        SourceEntity source = sourceRepository.findByIdAndUserIdAndDeletedAtIsNull(sourceId, userId)
+        UUID subjectId = sourceRepository.findSubjectIdByIdAndUserId(sourceId, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
+        subjectLockCoordinator.lockSubjects(userId, java.util.List.of(subjectId));
+        SourceEntity source = sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(sourceId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
         if (source.getType() != SourceType.FILE) {
             throw new DomainException("MUTATION_REJECTED", "Parsed documents are only valid for FILE sources");
@@ -84,6 +91,9 @@ public class ParsedDocumentService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public ParsedDocumentCompleteView complete(UUID userId, UUID sourceId, UUID parsedDocumentId) {
+        UUID subjectId = sourceRepository.findSubjectIdByIdAndUserId(sourceId, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
+        subjectLockCoordinator.lockSubjects(userId, java.util.List.of(subjectId));
         SourceEntity source = sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(sourceId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
         ParsedDocumentEntity document = parsedDocumentRepository.findByIdAndUserId(parsedDocumentId, userId)

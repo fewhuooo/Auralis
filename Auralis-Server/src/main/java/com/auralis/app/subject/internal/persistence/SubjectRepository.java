@@ -20,7 +20,8 @@ public interface SubjectRepository extends JpaRepository<SubjectEntity, UUID> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select subject from SubjectEntity subject where subject.id = :id and subject.userId = :userId")
-    Optional<SubjectEntity> findForUpdateByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+    Optional<SubjectEntity> findForUpdateByIdAndUserId(
+            @Param("id") UUID id, @Param("userId") UUID userId);
 
     List<SubjectEntity> findAllByUserIdAndDeletedAtIsNullOrderBySortKeyAscUpdatedAtDescIdAsc(UUID userId);
 

@@ -9,7 +9,7 @@ import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
-import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
@@ -27,18 +27,18 @@ import java.util.UUID;
 public class KnowledgeBlockService {
 
     private final KnowledgeBlockRepository knowledgeBlockRepository;
-    private final SubjectService subjectService;
+    private final SubjectLockCoordinator subjectLockCoordinator;
     private final SourceService sourceService;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public KnowledgeBlockService(
             KnowledgeBlockRepository knowledgeBlockRepository,
-            SubjectService subjectService,
+            SubjectLockCoordinator subjectLockCoordinator,
             SourceService sourceService,
             ApplicationEventPublisher eventPublisher) {
         this.knowledgeBlockRepository = knowledgeBlockRepository;
-        this.subjectService = subjectService;
+        this.subjectLockCoordinator = subjectLockCoordinator;
         this.sourceService = sourceService;
         this.eventPublisher = eventPublisher;
     }
@@ -55,7 +55,7 @@ public class KnowledgeBlockService {
         if (command.sourceId() != null) {
             ownerSubjectIds.add(sourceService.ownerSubjectIdForMutation(userId, command.sourceId()));
         }
-        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
+        subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
         validateSource(userId, command.sourceId());
         KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
                 blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
@@ -102,28 +102,28 @@ public class KnowledgeBlockService {
 
     @Transactional
     public KnowledgeBlockView requireActiveKnowledgeBlockForMutation(UUID userId, UUID id) {
-        KnowledgeBlockEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        return view(active(userId, id));
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        return view(activeForUpdate(userId, id));
     }
 
     @Transactional(readOnly = true)
     public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
-        return mutable(userId, id).getSubjectId();
+        return knowledgeBlockRepository.findSubjectIdByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
     }
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView update(UUID userId, UUID id, long baseVersion, KnowledgeBlockCommand command) {
-        KnowledgeBlockEntity candidate = mutable(userId, id);
-        requireActive(candidate);
+        UUID currentSubjectId = ownerSubjectIdForMutation(userId, id);
         List<UUID> ownerSubjectIds = new ArrayList<>();
-        ownerSubjectIds.add(candidate.getSubjectId());
+        ownerSubjectIds.add(currentSubjectId);
         ownerSubjectIds.add(command.subjectId());
         if (command.sourceId() != null) {
             ownerSubjectIds.add(sourceService.ownerSubjectIdForMutation(userId, command.sourceId()));
         }
-        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
-        KnowledgeBlockEntity entity = active(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
+        KnowledgeBlockEntity entity = activeForUpdate(userId, id);
         requireVersion(entity, baseVersion);
         validateSource(userId, command.sourceId());
         entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"), command.summary(),
@@ -135,10 +135,9 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        KnowledgeBlockEntity candidate = mutable(userId, id);
-        requireActive(candidate);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        KnowledgeBlockEntity entity = active(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        KnowledgeBlockEntity entity = activeForUpdate(userId, id);
         requireVersion(entity, baseVersion);
         entity.softDelete();
         knowledgeBlockRepository.saveAndFlush(entity);
@@ -152,7 +151,7 @@ public class KnowledgeBlockService {
         if (event.resourceType() != ResourceType.SUBJECT) {
             return;
         }
-        knowledgeBlockRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+        knowledgeBlockRepository.findAllForUpdateByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
                         event.userId(), event.resourceId())
                 .forEach(block -> {
                     block.softDelete();
@@ -165,9 +164,10 @@ public class KnowledgeBlockService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public KnowledgeBlockView restore(UUID userId, UUID id, long baseVersion) {
-        KnowledgeBlockEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        KnowledgeBlockEntity entity = mutable(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        KnowledgeBlockEntity entity = knowledgeBlockRepository.findForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Knowledge block is not deleted");
         }
@@ -180,6 +180,11 @@ public class KnowledgeBlockService {
 
     private KnowledgeBlockEntity active(UUID userId, UUID id) {
         return knowledgeBlockRepository.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
+    }
+
+    private KnowledgeBlockEntity activeForUpdate(UUID userId, UUID id) {
+        return knowledgeBlockRepository.findActiveForUpdate(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
     }
 

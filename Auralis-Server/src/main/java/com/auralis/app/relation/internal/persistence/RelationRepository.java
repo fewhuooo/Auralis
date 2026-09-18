@@ -4,6 +4,7 @@ import com.auralis.app.relation.RelationNodeType;
 import com.auralis.app.relation.RelationType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import jakarta.persistence.LockModeType;
 
 public interface RelationRepository extends JpaRepository<RelationEntity, UUID> {
 
@@ -19,7 +21,23 @@ public interface RelationRepository extends JpaRepository<RelationEntity, UUID> 
 
     Optional<RelationEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
+    @Query("select relation.sourceType as sourceType, relation.sourceId as sourceId, "
+            + "relation.targetType as targetType, relation.targetId as targetId, "
+            + "relation.type as type, relation.label as label from RelationEntity relation "
+            + "where relation.id = :id and relation.userId = :userId")
+    Optional<RelationEndpointSnapshot> findEndpointSnapshotByIdAndUserId(
+            @Param("id") UUID id, @Param("userId") UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select relation from RelationEntity relation where relation.id = :id and relation.userId = :userId")
+    Optional<RelationEntity> findForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
+
     List<RelationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select relation from RelationEntity relation where relation.userId = :userId "
+            + "and relation.deletedAt is null order by relation.id asc")
+    List<RelationEntity> findAllActiveForUpdateOrderByIdAsc(@Param("userId") UUID userId);
 
     List<RelationEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
             UUID userId, Pageable pageable);

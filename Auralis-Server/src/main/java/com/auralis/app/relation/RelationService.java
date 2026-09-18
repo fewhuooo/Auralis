@@ -3,12 +3,13 @@ package com.auralis.app.relation;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.relation.internal.persistence.RelationEntity;
 import com.auralis.app.relation.internal.persistence.RelationRepository;
+import com.auralis.app.relation.internal.persistence.RelationEndpointSnapshot;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.SourceService;
-import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
@@ -27,7 +28,7 @@ import java.util.UUID;
 public class RelationService {
 
     private final RelationRepository relationRepository;
-    private final SubjectService subjectService;
+    private final SubjectLockCoordinator subjectLockCoordinator;
     private final SourceService sourceService;
     private final KnowledgeBlockService knowledgeBlockService;
     private final TaskService taskService;
@@ -35,13 +36,13 @@ public class RelationService {
 
     public RelationService(
             RelationRepository relationRepository,
-            SubjectService subjectService,
+            SubjectLockCoordinator subjectLockCoordinator,
             SourceService sourceService,
             KnowledgeBlockService knowledgeBlockService,
             TaskService taskService,
             ApplicationEventPublisher eventPublisher) {
         this.relationRepository = relationRepository;
-        this.subjectService = subjectService;
+        this.subjectLockCoordinator = subjectLockCoordinator;
         this.sourceService = sourceService;
         this.knowledgeBlockService = knowledgeBlockService;
         this.taskService = taskService;
@@ -108,14 +109,17 @@ public class RelationService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public RelationView update(UUID userId, UUID id, long baseVersion, RelationCommand command) {
-        RelationEntity entity = mutable(userId, id);
-        requireActive(entity);
-        requireVersion(entity, baseVersion);
+        RelationEndpointSnapshot candidate = relationRepository.findEndpointSnapshotByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
         NormalizedRelation relation = normalize(command);
         NormalizedRelation existing = new NormalizedRelation(
-                entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
-                entity.getType(), entity.getLabel());
+                candidate.getSourceType(), candidate.getSourceId(), candidate.getTargetType(), candidate.getTargetId(),
+                candidate.getType(), candidate.getLabel());
         lockEndpointOwners(userId, existing, relation);
+        RelationEntity entity = relationRepository.findForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
+        requireActive(entity);
+        requireVersion(entity, baseVersion);
         validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
@@ -132,12 +136,13 @@ public class RelationService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        RelationEntity entity = mutable(userId, id);
+        RelationEndpointSnapshot candidate = relationRepository.findEndpointSnapshotByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
+        lockEndpointOwners(userId, relationOf(candidate));
+        RelationEntity entity = relationRepository.findForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        lockEndpointOwners(userId, new NormalizedRelation(
-                entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
-                entity.getType(), entity.getLabel()));
         entity.softDelete();
         relationRepository.saveAndFlush(entity);
         publishChange(userId, view(entity), "DELETE");
@@ -145,15 +150,17 @@ public class RelationService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public RelationView restore(UUID userId, UUID id, long baseVersion) {
-        RelationEntity entity = mutable(userId, id);
+        RelationEndpointSnapshot candidate = relationRepository.findEndpointSnapshotByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
+        NormalizedRelation relation = relationOf(candidate);
+        lockEndpointOwners(userId, relation);
+        RelationEntity entity = relationRepository.findForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Relation is not deleted");
         }
         requireVersion(entity, baseVersion);
-        NormalizedRelation relation = new NormalizedRelation(
-                entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
-                entity.getType(), entity.getLabel());
-        lockEndpointOwners(userId, relation);
+        relation = relationOf(entity);
         validateEndpointsForMutation(userId, relation);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
@@ -173,7 +180,7 @@ public class RelationService {
             return;
         }
         RelationNodeType nodeType = RelationNodeType.valueOf(event.resourceType().name());
-        relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(event.userId()).stream()
+        relationRepository.findAllActiveForUpdateOrderByIdAsc(event.userId()).stream()
                 .filter(relation -> (relation.getSourceType() == nodeType && relation.getSourceId().equals(event.resourceId()))
                         || (relation.getTargetType() == nodeType && relation.getTargetId().equals(event.resourceId())))
                 .forEach(relation -> {
@@ -219,7 +226,7 @@ public class RelationService {
 
     private void validateEndpointForMutation(UUID userId, RelationNodeType type, UUID id) {
         switch (type) {
-            case SUBJECT -> subjectService.requireActiveSubjectForMutation(userId, id);
+            case SUBJECT -> subjectLockCoordinator.lockSubjects(userId, List.of(id));
             case SOURCE -> sourceService.requireActiveSourceForMutation(userId, id);
             case KNOWLEDGE_BLOCK -> knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, id);
             case TASK -> taskService.requireActiveTaskForMutation(userId, id);
@@ -232,7 +239,7 @@ public class RelationService {
             subjectIds.add(ownerSubjectId(userId, relation.sourceType(), relation.sourceId()));
             subjectIds.add(ownerSubjectId(userId, relation.targetType(), relation.targetId()));
         }
-        subjectService.requireActiveSubjectsForMutation(userId, subjectIds);
+        subjectLockCoordinator.lockSubjects(userId, subjectIds);
     }
 
     private UUID ownerSubjectId(UUID userId, RelationNodeType type, UUID id) {
@@ -253,6 +260,18 @@ public class RelationService {
     private RelationEntity mutable(UUID userId, UUID id) {
         return relationRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
+    }
+
+    private NormalizedRelation relationOf(RelationEntity entity) {
+        return new NormalizedRelation(
+                entity.getSourceType(), entity.getSourceId(), entity.getTargetType(), entity.getTargetId(),
+                entity.getType(), entity.getLabel());
+    }
+
+    private NormalizedRelation relationOf(RelationEndpointSnapshot relation) {
+        return new NormalizedRelation(
+                relation.getSourceType(), relation.getSourceId(), relation.getTargetType(), relation.getTargetId(),
+                relation.getType(), relation.getLabel());
     }
 
     private void requireActive(RelationEntity entity) {

@@ -19,6 +19,7 @@ import com.auralis.app.source.internal.persistence.SourceRepository;
 import com.auralis.app.source.internal.persistence.SourceEntity;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.subject.SubjectView;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.TaskCommand;
@@ -61,7 +62,7 @@ import static org.mockito.Mockito.reset;
 class SubjectDeletionCascadeTests {
 
     @Autowired private IdentityService identityService;
-    @MockitoSpyBean private SubjectService subjectService;
+    @Autowired private SubjectService subjectService;
     @Autowired private SourceService sourceService;
     @Autowired private KnowledgeBlockService knowledgeBlockService;
     @Autowired private TaskService taskService;
@@ -70,10 +71,11 @@ class SubjectDeletionCascadeTests {
     @Autowired private ApplicationEventPublisher eventPublisher;
     @MockitoSpyBean private SourceRepository sourceRepository;
     @Autowired private KnowledgeBlockRepository knowledgeBlockRepository;
-    @Autowired private TaskRepository taskRepository;
+    @MockitoSpyBean private TaskRepository taskRepository;
     @Autowired private RelationRepository relationRepository;
     @MockitoSpyBean private SubjectRepository subjectRepository;
     @Autowired private PlatformTransactionManager transactionManager;
+    @MockitoSpyBean private SubjectLockCoordinator subjectLockCoordinator;
 
     @BeforeEach
     void cleanData() {
@@ -274,7 +276,7 @@ class SubjectDeletionCascadeTests {
             }, executor);
 
             template.executeWithoutResult(status -> {
-                subjectRepository.findForUpdateByIdAndUserId(subject.id(), owner.user().id()).orElseThrow();
+                subjectLockCoordinator.lockSubjects(owner.user().id(), List.of(subject.id()));
                 try {
                     assertThat(childStarted.await(1, TimeUnit.SECONDS))
                             .as("concurrent child mutation must start before the delete scan")
@@ -329,14 +331,14 @@ class SubjectDeletionCascadeTests {
         ExecutorService executor = Executors.newSingleThreadExecutor();
         TransactionTemplate template = new TransactionTemplate(transactionManager);
         AtomicReference<CompletableFuture<Throwable>> relationCreateRef = new AtomicReference<>();
-        doAnswer(invocation -> {
-            endpointRead.countDown();
-            return invocation.callRealMethod();
-        }).when(subjectService).requireActiveSubjectsForMutation(
-                org.mockito.ArgumentMatchers.eq(owner.user().id()), org.mockito.ArgumentMatchers.anyList());
         try {
             template.executeWithoutResult(status -> {
-                subjectRepository.findForUpdateByIdAndUserId(subject.id(), owner.user().id()).orElseThrow();
+                subjectLockCoordinator.lockSubjects(owner.user().id(), List.of(subject.id()));
+                doAnswer(invocation -> {
+                    endpointRead.countDown();
+                    return invocation.callRealMethod();
+                }).when(subjectLockCoordinator).lockSubjects(
+                        org.mockito.ArgumentMatchers.eq(owner.user().id()), org.mockito.ArgumentMatchers.anyList());
                 CompletableFuture<Throwable> relationCreate = CompletableFuture.supplyAsync(() -> {
                     try {
                         childStarted.countDown();
@@ -361,7 +363,6 @@ class SubjectDeletionCascadeTests {
                 }
             });
         } finally {
-            reset(subjectService);
             executor.shutdownNow();
         }
 
@@ -371,6 +372,35 @@ class SubjectDeletionCascadeTests {
                 .isEqualTo("RESOURCE_NOT_FOUND");
         assertThat(relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.user().id()))
                 .isEmpty();
+    }
+
+    @Test
+    void taskSwapLocksCanonicalSubjectsBeforeConcreteTasks() {
+        var owner = register("subject-cascade-task-lock-order");
+        UUID firstSubjectId = UUID.fromString("00000000-0000-0000-0000-000000000011");
+        UUID secondSubjectId = UUID.fromString("00000000-0000-0000-0000-000000000012");
+        SubjectView firstSubject = subjectService.create(owner.user().id(), firstSubjectId,
+                new SubjectCommand("First task subject", null, null, "001"));
+        SubjectView secondSubject = subjectService.create(owner.user().id(), secondSubjectId,
+                new SubjectCommand("Second task subject", null, null, "002"));
+        UUID firstTaskId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        UUID secondTaskId = UUID.fromString("00000000-0000-0000-0000-000000000102");
+        var firstTask = taskService.create(owner.user().id(), firstTaskId, new TaskCommand(
+                firstSubject.id(), "First task", null, null,
+                java.time.Instant.parse("2026-01-01T09:00:00Z"), null, null, "001"));
+        var secondTask = taskService.create(owner.user().id(), secondTaskId, new TaskCommand(
+                secondSubject.id(), "Second task", null, null,
+                java.time.Instant.parse("2026-01-01T10:00:00Z"), null, null, "001"));
+        clearInvocations(subjectRepository, taskRepository);
+
+        taskService.swapSchedules(owner.user().id(), secondTask.id(), secondTask.version(),
+                firstTask.id(), firstTask.version());
+
+        var order = inOrder(subjectRepository, taskRepository);
+        order.verify(subjectRepository).findForUpdateByIdAndUserId(firstSubject.id(), owner.user().id());
+        order.verify(subjectRepository).findForUpdateByIdAndUserId(secondSubject.id(), owner.user().id());
+        order.verify(taskRepository).findActiveForUpdate(firstTask.id(), owner.user().id());
+        order.verify(taskRepository).findActiveForUpdate(secondTask.id(), owner.user().id());
     }
 
     private com.auralis.app.identity.AuthResult register(String suffix) {

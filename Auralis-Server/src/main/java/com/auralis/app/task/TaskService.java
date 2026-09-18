@@ -4,7 +4,7 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
-import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
 import org.springframework.context.ApplicationEventPublisher;
@@ -24,15 +24,15 @@ import java.util.UUID;
 public class TaskService {
 
     private final TaskRepository taskRepository;
-    private final SubjectService subjectService;
+    private final SubjectLockCoordinator subjectLockCoordinator;
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(
             TaskRepository taskRepository,
-            SubjectService subjectService,
+            SubjectLockCoordinator subjectLockCoordinator,
             ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
-        this.subjectService = subjectService;
+        this.subjectLockCoordinator = subjectLockCoordinator;
         this.eventPublisher = eventPublisher;
     }
 
@@ -43,7 +43,7 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView create(UUID userId, UUID taskId, TaskCommand command) {
-        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
+        subjectLockCoordinator.lockSubjects(userId, List.of(command.subjectId()));
         validateSchedule(command);
         TaskEntity entity = new TaskEntity(
                 taskId, userId, command.subjectId(), required(command.title()), command.description(),
@@ -92,25 +92,25 @@ public class TaskService {
 
     @Transactional
     public TaskView requireActiveTaskForMutation(UUID userId, UUID id) {
-        TaskEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        return view(active(userId, id));
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        return view(activeForUpdate(userId, id));
     }
 
     @Transactional(readOnly = true)
     public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
-        return mutable(userId, id).getSubjectId();
+        return taskRepository.findSubjectIdByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
     }
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView update(UUID userId, UUID id, long baseVersion, TaskCommand command) {
-        TaskEntity candidate = mutable(userId, id);
-        requireActive(candidate);
+        UUID currentSubjectId = ownerSubjectIdForMutation(userId, id);
         List<UUID> ownerSubjectIds = new ArrayList<>();
-        ownerSubjectIds.add(candidate.getSubjectId());
+        ownerSubjectIds.add(currentSubjectId);
         ownerSubjectIds.add(command.subjectId());
-        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
-        TaskEntity entity = active(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
+        TaskEntity entity = activeForUpdate(userId, id);
         requireVersion(entity, baseVersion);
         validateSchedule(command);
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
@@ -137,10 +137,16 @@ public class TaskService {
             throw new DomainException("VALIDATION_FAILED", "A task cannot be swapped with itself");
         }
 
+        UUID sourceSubjectId = ownerSubjectIdForMutation(userId, sourceTaskId);
+        UUID targetSubjectId = ownerSubjectIdForMutation(userId, targetTaskId);
+        subjectLockCoordinator.lockSubjects(userId, List.of(sourceSubjectId, targetSubjectId));
+
         TaskEntity[] locked = lockActivePair(userId, sourceTaskId, targetTaskId);
         TaskEntity source = locked[0];
         TaskEntity target = locked[1];
-        subjectService.requireActiveSubjectsForMutation(userId, List.of(source.getSubjectId(), target.getSubjectId()));
+        if (!source.getSubjectId().equals(sourceSubjectId) || !target.getSubjectId().equals(targetSubjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being swapped");
+        }
         requireVersion(source, sourceBaseVersion);
         requireVersion(target, targetBaseVersion);
 
@@ -166,10 +172,9 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        TaskEntity candidate = mutable(userId, id);
-        requireActive(candidate);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        TaskEntity entity = active(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        TaskEntity entity = activeForUpdate(userId, id);
         requireVersion(entity, baseVersion);
         entity.softDelete();
         taskRepository.saveAndFlush(entity);
@@ -183,7 +188,7 @@ public class TaskService {
         if (event.resourceType() != ResourceType.SUBJECT) {
             return;
         }
-        taskRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+        taskRepository.findAllForUpdateByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
                         event.userId(), event.resourceId())
                 .forEach(task -> {
                     task.softDelete();
@@ -196,9 +201,10 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView restore(UUID userId, UUID id, long baseVersion) {
-        TaskEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        TaskEntity entity = mutable(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        TaskEntity entity = taskRepository.findForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Task is not deleted");
         }
@@ -214,6 +220,11 @@ public class TaskService {
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
     }
 
+    private TaskEntity activeForUpdate(UUID userId, UUID id) {
+        return taskRepository.findActiveForUpdate(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
+    }
+
     private TaskEntity mutable(UUID userId, UUID id) {
         return taskRepository.findByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
@@ -224,11 +235,6 @@ public class TaskService {
         TaskEntity first = activeForUpdate(userId, sourceFirst ? sourceTaskId : targetTaskId);
         TaskEntity second = activeForUpdate(userId, sourceFirst ? targetTaskId : sourceTaskId);
         return sourceFirst ? new TaskEntity[] { first, second } : new TaskEntity[] { second, first };
-    }
-
-    private TaskEntity activeForUpdate(UUID userId, UUID id) {
-        return taskRepository.findActiveForUpdate(id, userId)
-                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
     }
 
     private void requireActive(TaskEntity entity) {

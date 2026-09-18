@@ -2,8 +2,10 @@ package com.auralis.app.knowledge.internal.persistence;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,9 +17,29 @@ public interface KnowledgeBlockRepository extends JpaRepository<KnowledgeBlockEn
 
     Optional<KnowledgeBlockEntity> findByIdAndUserId(UUID id, UUID userId);
 
+    @Query("select block.subjectId from KnowledgeBlockEntity block where block.id = :id and block.userId = :userId")
+    Optional<UUID> findSubjectIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select block from KnowledgeBlockEntity block where block.id = :id and block.userId = :userId "
+            + "and block.deletedAt is null")
+    Optional<KnowledgeBlockEntity> findActiveForUpdate(
+            @Param("id") UUID id, @Param("userId") UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select block from KnowledgeBlockEntity block where block.id = :id and block.userId = :userId")
+    Optional<KnowledgeBlockEntity> findForUpdate(
+            @Param("id") UUID id, @Param("userId") UUID userId);
+
     List<KnowledgeBlockEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     List<KnowledgeBlockEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(UUID userId, UUID subjectId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select block from KnowledgeBlockEntity block where block.userId = :userId "
+            + "and block.subjectId = :subjectId and block.deletedAt is null order by block.id asc")
+    List<KnowledgeBlockEntity> findAllForUpdateByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+            @Param("userId") UUID userId, @Param("subjectId") UUID subjectId);
 
     List<KnowledgeBlockEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
             UUID userId, Pageable pageable);

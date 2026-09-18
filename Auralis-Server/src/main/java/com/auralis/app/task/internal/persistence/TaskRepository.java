@@ -17,13 +17,26 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
 
     Optional<TaskEntity> findByIdAndUserId(UUID id, UUID userId);
 
+    @Query("select task.subjectId from TaskEntity task where task.id = :id and task.userId = :userId")
+    Optional<UUID> findSubjectIdByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select task from TaskEntity task where task.id = :id and task.userId = :userId and task.deletedAt is null")
     Optional<TaskEntity> findActiveForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select task from TaskEntity task where task.id = :id and task.userId = :userId")
+    Optional<TaskEntity> findForUpdate(@Param("id") UUID id, @Param("userId") UUID userId);
+
     List<TaskEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
     List<TaskEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(UUID userId, UUID subjectId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select task from TaskEntity task where task.userId = :userId "
+            + "and task.subjectId = :subjectId and task.deletedAt is null order by task.id asc")
+    List<TaskEntity> findAllForUpdateByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+            @Param("userId") UUID userId, @Param("subjectId") UUID subjectId);
 
     List<TaskEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(
             UUID userId, Pageable pageable);

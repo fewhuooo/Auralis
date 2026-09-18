@@ -117,6 +117,7 @@
 - 三类资源均使用 `POST` 创建、`GET` 列表/详情、`PUT` 更新、`DELETE` 软删除和 `POST /{id}/restore` 恢复；创建返回 `201 + Location`，删除返回 `204`。
 - 创建请求必须携带 `baseVersion=0`；更新、删除和恢复请求携带精确的 `baseVersion`。成功更新、删除、恢复均使服务器 `version` 增加 1。注册后的 Subject 列表允许为空；历史遗留的 `defaultSubject=true` 记录也按普通 Subject 软删除，不再设置不可删除特权。
 - Subject DELETE 的请求/响应形状不变。成功删除 Subject 会在同一服务端事务内为同一用户且 `subjectId` 匹配的活动 Source、KnowledgeBlock、Task 生成普通 `DELETE` 同步墓碑，并为受影响 Relation 生成普通 `DELETE` 墓碑；每个资源只生成一次，已删除子资源保持幂等，Subject restore 不自动恢复子资源。级联失败会回滚整次删除；客户端仍通过既有 Sync change-log/snapshot 协议收敛。
+- Subject-owned 写入在服务端使用统一数据库锁协议：先由内部 `SubjectLockCoordinator` 对所有涉及 Subject 去重并按 UUID 升序获取悲观行锁，再锁具体业务资源并重新读取、校验活动状态、归属、`subjectId` 和 Relation 端点。该并发实现不改变任何公开 API 请求/响应、版本或同步字段。
 - `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 和可选 `limit`（默认 100，范围 1–200），默认过滤已删除记录。Subject 按 `sortKey ASC, updatedAt DESC, id ASC` 稳定分页，其余三类按 `updatedAt DESC, id ASC` 稳定分页。
 - Subject 请求字段为 `name`、`description`、`iconKey`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。Subject 不提供专属颜色字段，客户端使用全局语义设计色。
 - KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity。

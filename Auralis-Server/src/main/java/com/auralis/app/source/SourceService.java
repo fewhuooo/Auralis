@@ -9,7 +9,7 @@ import com.auralis.app.source.internal.persistence.AssetEntity;
 import com.auralis.app.source.internal.persistence.AssetRepository;
 import com.auralis.app.source.internal.persistence.SourceEntity;
 import com.auralis.app.source.internal.persistence.SourceRepository;
-import com.auralis.app.subject.SubjectService;
+import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
 import com.auralis.app.source.ParsedDocumentStatus;
@@ -37,7 +37,7 @@ public class SourceService {
 
     private final SourceRepository sourceRepository;
     private final AssetRepository assetRepository;
-    private final SubjectService subjectService;
+    private final SubjectLockCoordinator subjectLockCoordinator;
     private final ApplicationEventPublisher eventPublisher;
     private final ParsedDocumentRepository parsedDocumentRepository;
     private final ParsedDocumentIngestionPort ingestionJobService;
@@ -45,13 +45,13 @@ public class SourceService {
     public SourceService(
             SourceRepository sourceRepository,
             AssetRepository assetRepository,
-            SubjectService subjectService,
+            SubjectLockCoordinator subjectLockCoordinator,
             ApplicationEventPublisher eventPublisher,
             ParsedDocumentRepository parsedDocumentRepository,
             ParsedDocumentIngestionPort ingestionJobService) {
         this.sourceRepository = sourceRepository;
         this.assetRepository = assetRepository;
-        this.subjectService = subjectService;
+        this.subjectLockCoordinator = subjectLockCoordinator;
         this.eventPublisher = eventPublisher;
         this.parsedDocumentRepository = parsedDocumentRepository;
         this.ingestionJobService = ingestionJobService;
@@ -64,7 +64,7 @@ public class SourceService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SourceView create(UUID userId, UUID sourceId, SourceCommand command) {
-        subjectService.requireActiveSubjectForMutation(userId, command.subjectId());
+        subjectLockCoordinator.lockSubjects(userId, List.of(command.subjectId()));
         ValidatedSource data = validate(userId, command);
         SourceIngestionStatus initialStatus = data.type() == SourceType.FILE
                 ? SourceIngestionStatus.AWAITING_CLIENT
@@ -122,25 +122,25 @@ public class SourceService {
 
     @Transactional
     public SourceView requireActiveSourceForMutation(UUID userId, UUID id) {
-        SourceEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        return view(active(userId, id));
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        return view(activeForUpdate(userId, id));
     }
 
     @Transactional(readOnly = true)
     public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
-        return mutable(userId, id).getSubjectId();
+        return sourceRepository.findSubjectIdByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
     }
 
     @Transactional(noRollbackFor = DomainException.class)
     public SourceView update(UUID userId, UUID id, long baseVersion, SourceCommand command) {
-        SourceEntity candidate = mutable(userId, id);
-        requireActive(candidate);
+        UUID currentSubjectId = ownerSubjectIdForMutation(userId, id);
         List<UUID> ownerSubjectIds = new ArrayList<>();
-        ownerSubjectIds.add(candidate.getSubjectId());
+        ownerSubjectIds.add(currentSubjectId);
         ownerSubjectIds.add(command.subjectId());
-        subjectService.requireActiveSubjectsForMutation(userId, ownerSubjectIds);
-        SourceEntity entity = active(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
+        SourceEntity entity = activeForUpdate(userId, id);
         requireVersion(entity, baseVersion);
         ValidatedSource data = validate(userId, command);
         SourceType previousType = entity.getType();
@@ -168,10 +168,9 @@ public class SourceService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public void delete(UUID userId, UUID id, long baseVersion) {
-        SourceEntity candidate = mutable(userId, id);
-        requireActive(candidate);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        SourceEntity entity = active(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        SourceEntity entity = activeForUpdate(userId, id);
         requireVersion(entity, baseVersion);
         entity.softDelete();
         sourceRepository.saveAndFlush(entity);
@@ -185,7 +184,7 @@ public class SourceService {
         if (event.resourceType() != ResourceType.SUBJECT) {
             return;
         }
-        sourceRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
+        sourceRepository.findAllForUpdateByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
                         event.userId(), event.resourceId())
                 .forEach(source -> {
                     source.softDelete();
@@ -198,9 +197,10 @@ public class SourceService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public SourceView restore(UUID userId, UUID id, long baseVersion) {
-        SourceEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        SourceEntity entity = mutable(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        SourceEntity entity = sourceRepository.findForUpdateByIdAndUserId(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Source is not deleted");
         }
@@ -216,9 +216,9 @@ public class SourceService {
 
     @Transactional
     public SourceView reingest(UUID userId, UUID id, long baseVersion) {
-        SourceEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        SourceEntity entity = mutable(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        SourceEntity entity = activeForUpdate(userId, id);
         requireActive(entity);
         requireVersion(entity, baseVersion);
         if (entity.getType() == SourceType.FILE) {
@@ -268,9 +268,9 @@ public class SourceService {
     }
 
     private SourceView transitionIngestion(UUID userId, UUID id, Consumer<SourceEntity> transition) {
-        SourceEntity candidate = mutable(userId, id);
-        subjectService.requireActiveSubjectForMutation(userId, candidate.getSubjectId());
-        SourceEntity entity = mutable(userId, id);
+        UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
+        SourceEntity entity = activeForUpdate(userId, id);
         requireActive(entity);
         SourceIngestionStatus previousStatus = entity.getIngestionStatus();
         String previousErrorCode = entity.getSafeErrorCode();
@@ -349,6 +349,11 @@ public class SourceService {
 
     private SourceEntity active(UUID userId, UUID id) {
         return sourceRepository.findByIdAndUserIdAndDeletedAtIsNull(id, userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
+    }
+
+    private SourceEntity activeForUpdate(UUID userId, UUID id) {
+        return sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
     }
 
