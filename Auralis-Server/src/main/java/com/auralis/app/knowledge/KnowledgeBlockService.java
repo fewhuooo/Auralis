@@ -52,11 +52,11 @@ public class KnowledgeBlockService {
     public KnowledgeBlockView create(UUID userId, UUID blockId, KnowledgeBlockCommand command) {
         List<UUID> ownerSubjectIds = new ArrayList<>();
         ownerSubjectIds.add(command.subjectId());
-        if (command.sourceId() != null) {
-            ownerSubjectIds.add(sourceService.ownerSubjectIdForMutation(userId, command.sourceId()));
-        }
+        UUID sourceSubjectId = command.sourceId() == null
+                ? null : sourceService.ownerSubjectIdForMutation(userId, command.sourceId());
+        if (sourceSubjectId != null) ownerSubjectIds.add(sourceSubjectId);
         subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
-        validateSource(userId, command.sourceId());
+        validateSource(userId, command.sourceId(), sourceSubjectId);
         KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
                 blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
                 command.summary(), required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride())));
@@ -107,6 +107,16 @@ public class KnowledgeBlockService {
         return view(activeForUpdate(userId, id));
     }
 
+    /** Revalidates a KnowledgeBlock after all owner Subject locks are held. */
+    public KnowledgeBlockView requireActiveKnowledgeBlockForMutation(
+            UUID userId, UUID id, UUID expectedSubjectId) {
+        KnowledgeBlockEntity block = activeForUpdate(userId, id);
+        if (!expectedSubjectId.equals(block.getSubjectId())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block subject changed while being validated");
+        }
+        return view(block);
+    }
+
     @Transactional(readOnly = true)
     public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
         return knowledgeBlockRepository.findSubjectIdByIdAndUserId(id, userId)
@@ -119,13 +129,16 @@ public class KnowledgeBlockService {
         List<UUID> ownerSubjectIds = new ArrayList<>();
         ownerSubjectIds.add(currentSubjectId);
         ownerSubjectIds.add(command.subjectId());
-        if (command.sourceId() != null) {
-            ownerSubjectIds.add(sourceService.ownerSubjectIdForMutation(userId, command.sourceId()));
-        }
+        UUID sourceSubjectId = command.sourceId() == null
+                ? null : sourceService.ownerSubjectIdForMutation(userId, command.sourceId());
+        if (sourceSubjectId != null) ownerSubjectIds.add(sourceSubjectId);
         subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
         KnowledgeBlockEntity entity = activeForUpdate(userId, id);
+        if (!entity.getSubjectId().equals(currentSubjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block subject changed while being updated");
+        }
         requireVersion(entity, baseVersion);
-        validateSource(userId, command.sourceId());
+        validateSource(userId, command.sourceId(), sourceSubjectId);
         entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"), command.summary(),
                 required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride());
         KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
@@ -168,6 +181,9 @@ public class KnowledgeBlockService {
         subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
         KnowledgeBlockEntity entity = knowledgeBlockRepository.findForUpdate(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Knowledge block was not found"));
+        if (!entity.getSubjectId().equals(subjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block subject changed while being restored");
+        }
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Knowledge block is not deleted");
         }
@@ -212,9 +228,9 @@ public class KnowledgeBlockService {
         return value.trim();
     }
 
-    private void validateSource(UUID userId, UUID sourceId) {
+    private void validateSource(UUID userId, UUID sourceId, UUID expectedSubjectId) {
         if (sourceId != null) {
-            sourceService.requireActiveSourceForMutation(userId, sourceId);
+            sourceService.requireActiveSourceForMutation(userId, sourceId, expectedSubjectId);
         }
     }
 

@@ -59,6 +59,7 @@ public class ParsedDocumentService {
         subjectLockCoordinator.lockSubjects(userId, java.util.List.of(subjectId));
         SourceEntity source = sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(sourceId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
+        requireSubjectUnchanged(source, subjectId);
         if (source.getType() != SourceType.FILE) {
             throw new DomainException("MUTATION_REJECTED", "Parsed documents are only valid for FILE sources");
         }
@@ -96,6 +97,7 @@ public class ParsedDocumentService {
         subjectLockCoordinator.lockSubjects(userId, java.util.List.of(subjectId));
         SourceEntity source = sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(sourceId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
+        requireSubjectUnchanged(source, subjectId);
         ParsedDocumentEntity document = parsedDocumentRepository.findByIdAndUserId(parsedDocumentId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Parsed document was not found"));
         if (!Objects.equals(document.getSourceId(), sourceId)) {
@@ -175,6 +177,12 @@ public class ParsedDocumentService {
             document.reject();
             parsedDocumentRepository.saveAndFlush(document);
             throw exception;
+        }
+    }
+
+    private void requireSubjectUnchanged(SourceEntity source, UUID expectedSubjectId) {
+        if (!expectedSubjectId.equals(source.getSubjectId())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Source subject changed while being validated");
         }
     }
 

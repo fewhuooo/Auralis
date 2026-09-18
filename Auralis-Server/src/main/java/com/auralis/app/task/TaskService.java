@@ -97,6 +97,15 @@ public class TaskService {
         return view(activeForUpdate(userId, id));
     }
 
+    /** Revalidates a Task after the caller has acquired all owner Subject locks. */
+    public TaskView requireActiveTaskForMutation(UUID userId, UUID id, UUID expectedSubjectId) {
+        TaskEntity task = activeForUpdate(userId, id);
+        if (!expectedSubjectId.equals(task.getSubjectId())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being validated");
+        }
+        return view(task);
+    }
+
     @Transactional(readOnly = true)
     public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
         return taskRepository.findSubjectIdByIdAndUserId(id, userId)
@@ -111,6 +120,9 @@ public class TaskService {
         ownerSubjectIds.add(command.subjectId());
         subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
         TaskEntity entity = activeForUpdate(userId, id);
+        if (!entity.getSubjectId().equals(currentSubjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being updated");
+        }
         requireVersion(entity, baseVersion);
         validateSchedule(command);
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
@@ -205,6 +217,9 @@ public class TaskService {
         subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
         TaskEntity entity = taskRepository.findForUpdate(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
+        if (!entity.getSubjectId().equals(subjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being restored");
+        }
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Task is not deleted");
         }

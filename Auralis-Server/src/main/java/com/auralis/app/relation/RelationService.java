@@ -22,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.UUID;
 
 @Service
@@ -57,8 +59,8 @@ public class RelationService {
     @Transactional(noRollbackFor = DomainException.class)
     public RelationView create(UUID userId, UUID relationId, RelationCommand command) {
         NormalizedRelation relation = normalize(command);
-        lockEndpointOwners(userId, relation);
-        validateEndpointsForMutation(userId, relation);
+        Map<Endpoint, UUID> ownerSubjects = lockEndpointOwners(userId, relation);
+        validateEndpointsForMutation(userId, relation, ownerSubjects);
         if (relationRepository.existsActiveDuplicate(
                 userId, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type())) {
@@ -115,12 +117,12 @@ public class RelationService {
         NormalizedRelation existing = new NormalizedRelation(
                 candidate.getSourceType(), candidate.getSourceId(), candidate.getTargetType(), candidate.getTargetId(),
                 candidate.getType(), candidate.getLabel());
-        lockEndpointOwners(userId, existing, relation);
+        Map<Endpoint, UUID> ownerSubjects = lockEndpointOwners(userId, existing, relation);
         RelationEntity entity = relationRepository.findForUpdate(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
         requireActive(entity);
         requireVersion(entity, baseVersion);
-        validateEndpointsForMutation(userId, relation);
+        validateEndpointsForMutation(userId, relation, ownerSubjects);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type())) {
@@ -153,7 +155,7 @@ public class RelationService {
         RelationEndpointSnapshot candidate = relationRepository.findEndpointSnapshotByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
         NormalizedRelation relation = relationOf(candidate);
-        lockEndpointOwners(userId, relation);
+        Map<Endpoint, UUID> ownerSubjects = lockEndpointOwners(userId, relation);
         RelationEntity entity = relationRepository.findForUpdate(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Relation was not found"));
         if (entity.getDeletedAt() == null) {
@@ -161,7 +163,7 @@ public class RelationService {
         }
         requireVersion(entity, baseVersion);
         relation = relationOf(entity);
-        validateEndpointsForMutation(userId, relation);
+        validateEndpointsForMutation(userId, relation, ownerSubjects);
         if (relationRepository.existsActiveDuplicateExcluding(
                 userId, id, relation.sourceType(), relation.sourceId(), relation.targetType(),
                 relation.targetId(), relation.type())) {
@@ -219,27 +221,40 @@ public class RelationService {
         return type.name() + ":" + id;
     }
 
-    private void validateEndpointsForMutation(UUID userId, NormalizedRelation relation) {
-        validateEndpointForMutation(userId, relation.sourceType(), relation.sourceId());
-        validateEndpointForMutation(userId, relation.targetType(), relation.targetId());
+    private void validateEndpointsForMutation(
+            UUID userId, NormalizedRelation relation, Map<Endpoint, UUID> ownerSubjects) {
+        validateEndpointForMutation(userId, relation.sourceType(), relation.sourceId(), ownerSubjects);
+        validateEndpointForMutation(userId, relation.targetType(), relation.targetId(), ownerSubjects);
     }
 
-    private void validateEndpointForMutation(UUID userId, RelationNodeType type, UUID id) {
+    private void validateEndpointForMutation(
+            UUID userId, RelationNodeType type, UUID id, Map<Endpoint, UUID> ownerSubjects) {
+        UUID expectedSubjectId = ownerSubjects.get(new Endpoint(type, id));
+        if (expectedSubjectId == null) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Relation endpoint owner changed while being validated");
+        }
         switch (type) {
-            case SUBJECT -> subjectLockCoordinator.lockSubjects(userId, List.of(id));
-            case SOURCE -> sourceService.requireActiveSourceForMutation(userId, id);
-            case KNOWLEDGE_BLOCK -> knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, id);
-            case TASK -> taskService.requireActiveTaskForMutation(userId, id);
+            case SUBJECT -> {
+                if (!id.equals(expectedSubjectId)) {
+                    throw new DomainException("RESOURCE_VERSION_CONFLICT", "Subject endpoint owner changed while being validated");
+                }
+            }
+            case SOURCE -> sourceService.requireActiveSourceForMutation(userId, id, expectedSubjectId);
+            case KNOWLEDGE_BLOCK -> knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, id, expectedSubjectId);
+            case TASK -> taskService.requireActiveTaskForMutation(userId, id, expectedSubjectId);
         }
     }
 
-    private void lockEndpointOwners(UUID userId, NormalizedRelation... relations) {
-        List<UUID> subjectIds = new ArrayList<>();
+    private Map<Endpoint, UUID> lockEndpointOwners(UUID userId, NormalizedRelation... relations) {
+        Map<Endpoint, UUID> ownerSubjects = new HashMap<>();
         for (NormalizedRelation relation : relations) {
-            subjectIds.add(ownerSubjectId(userId, relation.sourceType(), relation.sourceId()));
-            subjectIds.add(ownerSubjectId(userId, relation.targetType(), relation.targetId()));
+            ownerSubjects.put(new Endpoint(relation.sourceType(), relation.sourceId()),
+                    ownerSubjectId(userId, relation.sourceType(), relation.sourceId()));
+            ownerSubjects.put(new Endpoint(relation.targetType(), relation.targetId()),
+                    ownerSubjectId(userId, relation.targetType(), relation.targetId()));
         }
-        subjectLockCoordinator.lockSubjects(userId, subjectIds);
+        subjectLockCoordinator.lockSubjects(userId, ownerSubjects.values());
+        return ownerSubjects;
     }
 
     private UUID ownerSubjectId(UUID userId, RelationNodeType type, UUID id) {
@@ -312,5 +327,8 @@ public class RelationService {
             UUID targetId,
             RelationType type,
             String label) {
+    }
+
+    private record Endpoint(RelationNodeType type, UUID id) {
     }
 }

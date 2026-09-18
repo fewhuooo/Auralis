@@ -45,17 +45,21 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest(classes = AuralisApplication.class)
 @ActiveProfiles("test")
@@ -299,6 +303,7 @@ class SubjectDeletionCascadeTests {
                     owner.user().id(), subject.id())).isEmpty();
         } finally {
             reset(sourceRepository);
+            reset(subjectLockCoordinator);
             executor.shutdownNow();
         }
     }
@@ -338,7 +343,7 @@ class SubjectDeletionCascadeTests {
                     endpointRead.countDown();
                     return invocation.callRealMethod();
                 }).when(subjectLockCoordinator).lockSubjects(
-                        org.mockito.ArgumentMatchers.eq(owner.user().id()), org.mockito.ArgumentMatchers.anyList());
+                        org.mockito.ArgumentMatchers.eq(owner.user().id()), any(Collection.class));
                 CompletableFuture<Throwable> relationCreate = CompletableFuture.supplyAsync(() -> {
                     try {
                         childStarted.countDown();
@@ -363,6 +368,8 @@ class SubjectDeletionCascadeTests {
                 }
             });
         } finally {
+            reset(sourceRepository);
+            reset(subjectLockCoordinator);
             executor.shutdownNow();
         }
 
@@ -372,6 +379,24 @@ class SubjectDeletionCascadeTests {
                 .isEqualTo("RESOURCE_NOT_FOUND");
         assertThat(relationRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(owner.user().id()))
                 .isEmpty();
+    }
+
+    @Test
+    void relationEndpointValidationDoesNotAcquireSubjectLocksAfterOwnerSetIsHeld() {
+        var owner = register("subject-cascade-endpoint-lock-set");
+        SubjectView subject = subjectService.create(owner.user().id(),
+                new SubjectCommand("Endpoint lock set", null, null, "001"));
+        var source = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.TEXT, "First endpoint", null, null, "text", null));
+        var target = sourceService.create(owner.user().id(), new SourceCommand(
+                subject.id(), SourceType.TEXT, "Second endpoint", null, null, "text", null));
+        clearInvocations(subjectLockCoordinator);
+
+        relationService.create(owner.user().id(), new RelationCommand(
+                RelationNodeType.SOURCE, source.id(), RelationNodeType.SOURCE, target.id(),
+                RelationType.RELATED_TO, null));
+
+        verify(subjectLockCoordinator, times(1)).lockSubjects(eq(owner.user().id()), any(Collection.class));
     }
 
     @Test

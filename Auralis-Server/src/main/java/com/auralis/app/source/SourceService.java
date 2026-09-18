@@ -127,6 +127,19 @@ public class SourceService {
         return view(activeForUpdate(userId, id));
     }
 
+    /**
+     * Revalidates and locks a Source after the caller has already acquired its
+     * complete Subject lock set. This overload must not acquire another Subject
+     * lock, otherwise a move can introduce a reverse lock order.
+     */
+    public SourceView requireActiveSourceForMutation(UUID userId, UUID id, UUID expectedSubjectId) {
+        SourceEntity source = activeForUpdate(userId, id);
+        if (!expectedSubjectId.equals(source.getSubjectId())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Source subject changed while being validated");
+        }
+        return view(source);
+    }
+
     @Transactional(readOnly = true)
     public UUID ownerSubjectIdForMutation(UUID userId, UUID id) {
         return sourceRepository.findSubjectIdByIdAndUserId(id, userId)
@@ -141,6 +154,9 @@ public class SourceService {
         ownerSubjectIds.add(command.subjectId());
         subjectLockCoordinator.lockSubjects(userId, ownerSubjectIds);
         SourceEntity entity = activeForUpdate(userId, id);
+        if (!entity.getSubjectId().equals(currentSubjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Source subject changed while being updated");
+        }
         requireVersion(entity, baseVersion);
         ValidatedSource data = validate(userId, command);
         SourceType previousType = entity.getType();
@@ -201,6 +217,9 @@ public class SourceService {
         subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
         SourceEntity entity = sourceRepository.findForUpdateByIdAndUserId(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
+        if (!entity.getSubjectId().equals(subjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Source subject changed while being restored");
+        }
         if (entity.getDeletedAt() == null) {
             throw new DomainException("MUTATION_REJECTED", "Source is not deleted");
         }
