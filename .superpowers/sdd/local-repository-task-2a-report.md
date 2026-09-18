@@ -122,6 +122,16 @@ The final full Server command `Auralis-Server\\mvnw.cmd -B -ntp test` ran with D
 
 Additional implementation files in this correction are `SubjectLockCoordinator.java`, `RelationEndpointSnapshot.java`, and `SubjectLockCoordinatorPostgresIntegrationTests.java`; `ParsedDocumentService.java` now participates in the same owner-lock fence. No API/schema/MinIO behavior was changed.
 
+## Final architecture-review correction
+
+The review regression `relationEndpointValidationDoesNotAcquireSubjectLocksAfterOwnerSetIsHeld` was intentionally run RED against the first unified-protocol commit. It failed in `SubjectDeletionCascadeTests` because Relation create acquired the coordinator three times (owner discovery lock plus endpoint helper reacquisition), violating the hard prohibition on acquiring Subject locks after the owner set/resource lock phase. The failing run was 1 test, 1 failure, exit 1; the full 7-test cascade run consequently reported 1 failure.
+
+The fix adds post-lock expected-owner validation methods for Source, KnowledgeBlock, and Task, and RelationService now retains the discovered endpoint→owner map, locks that complete set once, then only locks/re-reads concrete endpoint rows. Subject endpoints are revalidated without coordinator reacquisition. Source/KnowledgeBlock/Task/ParsedDocument paths also reject a changed `subjectId` after their concrete row lock. The fresh GREEN command `Auralis-Server\\mvnw.cmd -B -ntp '-Dtest=SubjectDeletionCascadeTests' test` exited 0 with 7/7. The fresh combined regression command
+`Auralis-Server\\mvnw.cmd -B -ntp '-Dtest=SubjectDeletionCascadeTests,SubjectLockCoordinatorPostgresIntegrationTests,SourceAssetRelationServiceTests,SourceIngestionSyncEventTests,SyncServiceTests,ArchitectureTests,ParsedDocumentCompleteTests' test`
+exited 0 with 40/40. Fresh `Auralis-Server\\mvnw.cmd -B -ntp clean test-compile` again exited 0 with 281 main and 77 test sources.
+
+The post-fix full Server command `Auralis-Server\\mvnw.cmd -B -ntp test` exited 1 after 288 tests: 287 passed, 1 failed, 0 errors. The sole failure was `TaskColorRemovalMigrationTests.cleanSchemaValidationRunsFreshDatabaseThroughLatest` at line 62 (`expected: "21"`, `but was: "22"`); this remains outside Task 2A and was not changed. No failed run is presented as passing evidence.
+
 ## Final commit
 
-The final correction implementation/docs/test commit is `761f7b1b59adcef75354de329be205a65c40c5c8` (`fix(server): unify subject owner lock protocol`). The report evidence is committed separately after this SHA was known.
+The unified-protocol implementation commit is `761f7b1b59adcef75354de329be205a65c40c5c8` (`fix(server): unify subject owner lock protocol`). The final endpoint-validation correction is `40b5c608d6dc4cf90e735c2154ac6377cf2249de` (`fix(server): avoid subject lock reacquisition after owner fence`). The report evidence is committed separately after the final implementation SHA was known.
