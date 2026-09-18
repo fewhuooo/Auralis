@@ -8,7 +8,9 @@
 
 2026-09-17 修复点 4（待处理）：无法连接后端时缺少用户可见的失败状态。问答请求没有错误反馈，左下角连接/同步状态也没有变化；需补齐连接状态传播、问答错误处理和全局状态展示。
 
-2026-09-17 修复点 5（已定位、待修复）：直接删除学科没有完整级联清理关联资源。当前 Server 仅软删除 Subject 并清理 Relation，PC 仅提交 Subject 删除 mutation；Source、KnowledgeBlock、Task、ParsedDocument/Overview、本地文件及相关处理任务的级联删除/清理仍不完整。
+2026-09-18 修复点 5（代码完成、自动验证通过，真实运行验收待完成）：Server 删除 Subject 时在同一事务内软删除 Source、KnowledgeBlock、Task、Relation 并写入既有同步事件；相关 mutation 统一遵循“UUID 排序锁全部 Subject → 锁并重读具体资源 → 重校验 → 修改”的数据库锁协议。PC 先持久提交父删除标记，再围栏子投影、draft、处理任务与文件总览；父删除未决期间保留可回滚的 draft/bytes，服务端确认 APPLIED 后才终结 draft 并按最后引用规则清理本地 Asset，拒绝时原子恢复父记录并持久请求 authoritative snapshot。Server 聚焦 40/40，PC `test:r4-pc` 342/342、`type-check`、build 均通过；真实 Tauri 强杀恢复、真实 PostgreSQL/MinIO、多设备和 GUI 验收仍开放。
+
+2026-09-18 修复点 6（代码完成、自动验证通过，真实运行复验待完成）：根因是 PC `replaceSources()` 从可见首行推断当前 Subject，导致跨学科导入、空学科和异步 A→B 加载时投影错位；现已把当前 Subject 与可见行解耦，并用 generation/subject guard 丢弃过期完成结果。Local Asset 的物理路径继续使用与学科无关的稳定 `assets/{userScope}/{localAssetId}/content.{ext}`，业务学科归属由 Source/draft 的 `subjectId` 表达，不新增按学科复制或搬移文件。相关流程 9/9、PC `test:r4-pc` 334/334、`type-check` 通过；仍需在真实 Tauri 中完成两个学科导入、重启、同步后的归属复验。
 
 2026-09-17 外部验证未完成：双设备真实收敛、MinIO 故障注入、低磁盘场景、写入/删除过程中强杀，以及长时间稳定性测试均尚未执行。
 

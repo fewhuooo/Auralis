@@ -40,13 +40,24 @@
 - 目标：连接失败应形成明确的全局状态；问答失败应在对话区域显示可理解的错误并结束 loading/streaming 状态；恢复连接后状态应可自动恢复。
 - 当前结论：仅登记现象和目标，尚未修改代码，也未进行断网/恢复网络的真实 GUI 验收。
 
-### 2026-09-17 修复点 5：删除学科没有完整级联清理，已定位根因
+### 2026-09-18 修复点 5：删除学科级联与统一数据库锁协议已完成代码收口
 
 - 现象：直接删除学科后，相关文件、知识块、任务、解析/总览数据或本地受管文件可能继续存在。
-- Server 证据：`SubjectService.delete()` 当前只设置 Subject 的 `deleted_at`、发布 Subject 删除事件；`RelationService` 的事件监听只软删除关联 Relation，不负责业务子资源级联。
-- PC 证据：`useSubjectStore.deleteSubject()` 只提交 `SUBJECT/DELETE` mutation 并移除内存中的 Subject，没有同步处理子 Source、KnowledgeBlock、Task、ParsedDocument/Overview 和本地 Asset 引用。
-- 约束：修复必须覆盖软删除、同步 change-log/outbox、Source/ParsedDocument/processing job、本地受管文件引用和可恢复/不可恢复边界，不能只删除页面列表或加数据库 `ON DELETE CASCADE`。
-- 当前结论：根因已确认，尚未实施级联修复或执行实际删除验收。
+- Server 实现：Subject 删除在同一事务内软删除所属 Source、KnowledgeBlock、Task、Relation 并写既有 DELETE change-log；创建、恢复、移动、Task swap 与 Relation mutation 统一经薄层 `SubjectLockCoordinator`，按 UUID 排序锁 Subject，再锁并重读资源、重校验归属和 active 状态。禁止 Resource → Subject 的反向锁序。
+- PC 实现：父 `SUBJECT/DELETE` 是崩溃恢复标记；本地级联围栏子投影、未决 outbox、处理任务和 Overview。未决/推送中保留 draft 与 bytes；APPLIED 后才终结 draft 并按最后 Source 引用清理 Asset。拒绝时父恢复、mutation resolution 与 `reset_required=1` 同事务持久化，snapshot 失败后可在下一轮重试。
+- 并发边界：draft release 与 Subject 围栏共用 owner/device lifecycle lock，并在锁内重读父 Subject 与未决 `SUBJECT/DELETE`，关闭“父标记已提交、子围栏未获取锁”时创建 `SOURCE/CREATE` 的窗口。
+- 自动证据：Server 聚焦组合 40/40、PostgreSQL 锁集成 1/1、`clean test-compile` 通过；全量 287/288，唯一失败是既有 `TaskColorRemovalMigrationTests` 仍预期 Flyway 21 而仓库已应用 22。PC cascade 8/8、Store 12/12、`test:r4-pc` 342/342、`type-check`、build 通过；两轮 reviewer 最终均 Approved。
+- 当前结论：代码与自动门禁已完成；真实 Tauri/SQLite 重启与强杀、真实 PostgreSQL/MinIO、多设备收敛、GUI 和业务验收尚未完成，故不标记为外部验收通过。
+
+### 2026-09-18 修复点 6：PC 学科文件投影错位已修复，真实 Tauri 复验待完成
+
+- 根因：`useSourceStore.replaceSources()` 通过第一条可见 Source 推断当前 Subject，跨学科导入、空学科和异步加载竞态会让文件投影进入错误工作区。
+- 修复：Store 独立维护当前 Subject；跨学科导入不再切换当前投影；空学科立即清空；A→B 异步加载以 generation/subject guard 丢弃 A 的迟到结果，迟到调用方返回空数组。
+- 存储边界：Local Asset 物理原件仍按稳定 Asset 身份保存到 `assets/{userScope}/{localAssetId}/content.{ext}`。学科归属由 Source/Source draft 的 `subjectId` 表达；不按学科复制文件，也不因学科改名或移动而改写物理路径。
+- 自动证据：聚焦 Local Asset/Source 流程 9/9、`test:r4-pc` 334/334、`type-check` 通过，reviewer Approved。
+- 验收条件：在真实 Tauri 环境分别向至少两个学科导入文件，重启并完成一次 Server/MinIO 同步后，文件仍只出现在正确学科；SQLite、同步 payload 和 Server 数据库中的 Subject 归属一致。
+- 阶段性人工结果：用户反馈本轮测试除上述学科归属问题外基本正常。由于尚未形成逐项操作、输入、预期和运行证据清单，该反馈不等同于所有 Local Asset 外部验收项通过，也不关闭双设备、低磁盘、强杀恢复或长时间稳定性风险。
+- 当前结论：代码和自动测试已完成，真实 Tauri/SQLite/Server/MinIO 复验尚未完成；用户此前“除该问题外基本正常”的阶段性结果不关闭双设备、低磁盘、强杀恢复或长时间稳定性风险。
 
 ### 2026-09-17 PC Local Asset Store：实现与自动门禁完成，外部验收风险保持开放
 

@@ -1,5 +1,12 @@
 # Auralis 变更记录
 
+### Subject 归属与删除生命周期收口（2026-09-18）
+
+- PC 修复 Subject 文件投影：当前 Subject 不再从首条可见 Source 推断；跨学科导入、空学科和异步加载均按明确 `subjectId` 隔离。Local Asset 仍采用稳定 Asset 路径，未改为按学科复制物理原件。
+- Server Subject 删除在一个事务中级联软删除 Source、KnowledgeBlock、Task、Relation，并以 `SubjectLockCoordinator` 收口 Subject-first、UUID 稳定排序、资源锁后重读重校验的数据库锁协议；API、schema 和 MinIO 协议未改变。
+- PC Subject 删除以父 mutation 为持久恢复标记，围栏子投影、draft、处理任务和 Overview；未决阶段保留可回滚的 draft/bytes，APPLIED 后才按最后引用清理 Asset，拒绝恢复会持久请求 authoritative snapshot。draft release 在生命周期锁内检查父 Subject 删除状态，阻止删除窗口内产生 `SOURCE/CREATE`。
+- 自动验证：PC Subject cascade 8/8、Store 12/12、全套 342/342、type-check 与 build 通过；Server 聚焦组合 40/40、PostgreSQL 锁集成 1/1、`clean test-compile` 通过。真实 Tauri/SQLite 强杀恢复、真实 PostgreSQL/MinIO、多设备和 GUI/业务验收仍开放。
+
 ### PC Local Asset Store Task 8 收尾（2026-09-17）
 
 - `b7a3bb7..c560d8b` 完成 PC Tauri 永久本地资料库：原始文件在 OS ACL 保护的受管目录中保持明文，所有文件默认同步；断网可导入、预览和本地 OCR/Parser，联网后以稳定 `clientImportId` 幂等同步对象存储。Asset/Source draft 与任务边界按 owner/device 隔离，Preview、OCR、Parser 共享 Local Asset；不提供 Local Asset 备份、导出、恢复或副本管理。
