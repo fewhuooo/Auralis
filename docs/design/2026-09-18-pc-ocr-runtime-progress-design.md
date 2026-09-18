@@ -14,6 +14,12 @@
 
 刷新或后续绑定服务端 revision 后会进入 server-backed Job 路径，但这不能提供 local-only OCR 运行期间的页级状态。
 
+### 2026-09-18 进度闪烁补充
+
+真机观察到 OCR 实际继续推进时，详情偶发短暂回退到“等待本机处理”。根因有两层：Local Parsed Document 的同一 `checkpointJson` 会依次记录 `before-recognize`、`after-recognize`、`after-normalize` 和 `page-result`，而页进度投影只接受 `before-recognize`；同时 Store 在异步读取 SQLite 前先清空旧投影。两者都会在下一次有效页起始事件到达前制造短暂空投影。
+
+修复保持最近一次有效页进度：刷新期间不预先清空，读取成功后以新有效进度覆盖；处于 `OCR_RUNNING` 但最新事件为同页后续事件时，沿用该 Source 已有的有效页进度。记录退出 `OCR_RUNNING`、reader 被替换/解绑或新读取明确不再包含该 Source 时，仍按现有生命周期清理，不把旧进度保留到后续阶段。
+
 ## 设计
 
 ### 本地进度投影
@@ -45,6 +51,7 @@
 2. 现有处理状态展示在获得 local-only 进度后继续输出“正在识别第 2/4 页”。
 3. 进入 server-backed Job 后，既有 Job 状态与操作行为不回归。
 4. READY realtime 缺失和 WebSocket 重连分别具有明确的自动收敛结论。
+5. `before-recognize → after-recognize → page-result` 的页内事件切换不会清空最近有效页进度；reader 延迟时刷新期间也不先清空旧投影。
 
 验证范围包括聚焦测试、`test:r4-pc`、`type-check`、生产 build 与 `git diff --check`。自动测试不替代真实 Tauri OCR 运行验收。
 

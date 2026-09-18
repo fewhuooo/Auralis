@@ -263,3 +263,46 @@ Stage only task-owned documentation and commit:
 ```text
 docs(pc): record OCR progress recovery
 ```
+
+---
+
+### Task 5: Eliminate transient OCR progress fallback
+
+**Files:**
+- Modify: `Auralis-PC/src/store/useDocumentProcessingStore.ts`
+- Test: `Auralis-PC/scripts/r4-store-local-asset-flow.test.mjs`
+- Modify after verification: `docs/modules/FrontendPC.md`, `docs/current/Status.md`, `docs/current/IssuesAndReview.md`, `docs/release/Changelog.md`
+
+**Interfaces:**
+- Consumes: the existing `localOcrProgressBySource` projection and scoped `LocalOcrProgressReader`.
+- Produces: a stable last-valid page projection while an `OCR_RUNNING` record temporarily contains a non-`before-recognize` checkpoint or the reader is still pending.
+
+- [ ] **Step 1: Write two failing Store tests**
+
+Add one test that first reads a valid `before-recognize` checkpoint, then changes the same `OCR_RUNNING` record to `after-recognize`/`page-result`; assert that the existing `{ currentPage, totalPages }` remains visible. Add one deferred-reader test that starts a second `refresh()`, observes state before the reader resolves, and asserts the old projection is still present.
+
+- [ ] **Step 2: Run RED**
+
+```powershell
+npm.cmd exec -- node --experimental-strip-types --test --test-name-pattern="preserves.*OCR progress|keeps.*while.*reader" scripts/r4-store-local-asset-flow.test.mjs
+```
+
+Expected: both tests fail because `refresh()` clears `localOcrProgressBySource` before/after the asynchronous read.
+
+- [ ] **Step 3: Implement the minimal atomic projection update**
+
+Remove the eager projection clear before `reader.list()`. Build the next projection from the successful read, retaining the existing per-Source value only when that Source still has an `OCR_RUNNING` record whose latest checkpoint is a recognized same-run non-page-start event. Atomically assign the completed projection after the existing sequence/reader/generation guards pass. Preserve detach and lifecycle clearing behavior.
+
+- [ ] **Step 4: Run GREEN and regressions**
+
+```powershell
+npm.cmd exec -- node --experimental-strip-types --test scripts/r4-store-local-asset-flow.test.mjs scripts/r4-document-processing-ui.test.mjs scripts/r4-local-parsed-coordinator.test.mjs
+npm.cmd run type-check
+git diff --check
+```
+
+Expected: all focused tests pass, type-check exits 0, and diff-check reports no whitespace errors.
+
+- [ ] **Step 5: Document, review, and commit**
+
+Record the verified anti-flicker behavior and retain real Tauri observation as an explicit manual boundary. Use one read-only reviewer; stop only with BLOCKER=0 and IMPORTANT=0. Commit only task-owned files.
