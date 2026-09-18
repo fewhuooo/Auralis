@@ -63,4 +63,4 @@ Automated tests do not constitute real Tauri GUI, SQLite restart, native filesys
 
 Initial implementation commit: `501671b feat(pc): cascade local subject deletion`.
 
-Review-fix commit: `6a10fd5` (amended below only to record this final SHA).
+Review-fix implementation commit: `34942bdcc3b7af48d11ad1bef3586e27c4af18e2`.
