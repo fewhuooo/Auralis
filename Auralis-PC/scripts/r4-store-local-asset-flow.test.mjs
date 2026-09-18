@@ -755,3 +755,77 @@ test('useDocumentProcessingStore.refresh ignores an older overlapping reader com
     'local-source-new': { currentPage: 3, totalPages: 5 },
   }, 'older refresh must not overwrite the newer projection')
 })
+
+test('useDocumentProcessingStore.refresh preserves OCR progress across a same-run page result', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let checkpointType = 'before-recognize'
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-progress', sourceId: 'local-source-progress', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => [{
+      localSourceId: 'local-source-progress',
+      checkpointJson: JSON.stringify({ type: checkpointType, pageNumber: 2, totalPages: 4 }),
+    }],
+  })
+
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-progress': { currentPage: 2, totalPages: 4 },
+  })
+
+  checkpointType = 'page-result'
+  await store.refresh()
+
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-progress': { currentPage: 2, totalPages: 4 },
+  }, 'same OCR_RUNNING Source must retain its last valid page during page-result')
+})
+
+test('useDocumentProcessingStore.refresh keeps OCR progress while a second reader is pending', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let readerCalls = 0
+  let readerStartedResolve
+  const readerStarted = new Promise((resolve) => { readerStartedResolve = resolve })
+  let deferredResolve
+  const deferredReader = new Promise((resolve) => { deferredResolve = resolve })
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-pending', sourceId: 'local-source-pending', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => {
+      readerCalls += 1
+      if (readerCalls === 1) {
+        return [{
+          localSourceId: 'local-source-pending',
+          checkpointJson: JSON.stringify({ type: 'before-recognize', pageNumber: 1, totalPages: 3 }),
+        }]
+      }
+      readerStartedResolve()
+      return deferredReader
+    },
+  })
+
+  await store.refresh()
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-pending': { currentPage: 1, totalPages: 3 },
+  })
+
+  const secondRefresh = store.refresh()
+  await readerStarted
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-pending': { currentPage: 1, totalPages: 3 },
+  }, 'a pending reader must not clear the last valid OCR page')
+
+  deferredResolve([{
+    localSourceId: 'local-source-pending',
+    checkpointJson: JSON.stringify({ type: 'page-result', pageNumber: 1, totalPages: 3 }),
+  }])
+  await secondRefresh
+})

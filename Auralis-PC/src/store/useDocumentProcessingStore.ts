@@ -59,7 +59,6 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
       const jobs = await runner.list()
       if (refreshSequence !== this.localOcrRefreshSequence || this.runner !== runner) return
       this.jobs = jobs
-      this.localOcrProgressBySource = {}
       const reader = this.localOcrProgressReader
       const readerGeneration = this.localOcrReaderGeneration
       if (!reader) return
@@ -72,6 +71,7 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
 
       try {
         const projection: Record<string, LocalOcrPageProgress> = {}
+        const previousProjection = this.localOcrProgressBySource
         const records = await reader.list()
         for (const record of records) {
           if (!record.checkpointJson) continue
@@ -83,16 +83,22 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
               pageNumber?: unknown
               totalPages?: unknown
             }
-            if (
-              checkpoint.type !== 'before-recognize'
-              || !Number.isInteger(checkpoint.pageNumber)
-              || !Number.isInteger(checkpoint.totalPages)
-              || (checkpoint.pageNumber as number) < 1
-              || (checkpoint.totalPages as number) < (checkpoint.pageNumber as number)
-            ) continue
-            projection[record.localSourceId] = {
-              currentPage: checkpoint.pageNumber as number,
-              totalPages: checkpoint.totalPages as number,
+            if (checkpoint.type === 'before-recognize') {
+              if (
+                !Number.isInteger(checkpoint.pageNumber)
+                || !Number.isInteger(checkpoint.totalPages)
+                || (checkpoint.pageNumber as number) < 1
+                || (checkpoint.totalPages as number) < (checkpoint.pageNumber as number)
+              ) continue
+              projection[record.localSourceId] = {
+                currentPage: checkpoint.pageNumber as number,
+                totalPages: checkpoint.totalPages as number,
+              }
+            } else if (
+              ['after-recognize', 'after-normalize', 'page-result', 'empty-page'].includes(String(checkpoint.type))
+              && previousProjection[record.localSourceId]
+            ) {
+              projection[record.localSourceId] = previousProjection[record.localSourceId]
             }
           } catch {
             // Malformed checkpoints are ignored; the durable Job refresh remains usable.

@@ -1,5 +1,10 @@
 # Auralis 变更记录
 
+### PC OCR 页进度投影抗闪烁 Task 5（2026-09-18）
+
+- Store 的 Local OCR projection 改为 reader 成功完成后的原子替换；reader pending 时保留最近有效页值，同一 `OCR_RUNNING` Source 的 `after-recognize`、`after-normalize`、`page-result`、`empty-page` 检查点复用该值，Source 消失、reader detach 或 reader 失败清理失效值。
+- 新增两条 Store 回归；Store/UI/coordinator focused 43/43、`npm.cmd run type-check`、`git diff --check` 通过。未修改 UI、OCR Coordinator/runtime/sync、API 或数据库契约；真实 Tauri/GUI OCR 进度仍待人工验收。
+
 ### PC OCR 页进度与 Source 收敛 Task 4 收口（2026-09-18）
 
 - 本地 OCR 页级检查点现在投影到既有文档处理 Store，Source 行复用原有 `正在识别第 X/Y 页` 显示；不新增百分比、进度组件或其它 UI。

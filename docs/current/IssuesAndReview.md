@@ -428,6 +428,10 @@ R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动
 - **P1-PC-OCR-GUI-Validation（仍开放）**：本地-only OCR 页进度投影已由 focused 自动测试验证，Source 行复用既有 `正在识别第 X/Y 页` 文案；未新增百分比或新 UI。真实 Tauri/GUI OCR 进度、真实日志和剪贴板/accessibility 观察仍未完成。处理：在 Windows Tauri 中运行真实 `1.pdf` 并记录页级进度与诊断边界；关闭条件仍为现场 GUI/日志证据。
 - **P1-PC-Source-Convergence-External-Validation（仍开放）**：自动测试已证明替换 socket `onopen` 只触发一次既有 background `read` sync，且处理 runtime 的生命周期/scope-guarded 共享有界 reconciliation 可收敛遗漏的 `READY`；focused 90/90、PC 全量 352/352、type-check 与 build 通过。测试使用模拟 socket/local projection，未证明真实后端 WebSocket/event delivery、cursor persistence、Tauri 运行时或跨设备收敛。处理：在真实 Server/Tauri 双设备环境观察断线重连、遗漏事件恢复和最终 Source 状态；关闭条件为端到端事件与跨设备现场证据。
 
+## 2026-09-18 OCR 页进度 Task 5
+
+- **P1-PC-OCR-GUI-Validation（仍开放）**：Store 现在在 reader pending 和同一 `OCR_RUNNING` Source 的非 `before-recognize` 检查点期间保持最近有效页投影，并在 reader detach、Source 消失或失败时清理；自动回归 43/43、type-check 和 diff-check 通过。自动证据仍未覆盖真实 Tauri/GUI 的 OCR 进度、日志、剪贴板/accessibility 或真实 OCR 质量。处理与关闭条件仍为在 Windows Tauri 运行真实 `1.pdf` 并记录现场证据。
+
 ### P1-PC-Overview-Server-Deduplication（2026-09-10）
 
 - 优先级：P1。
