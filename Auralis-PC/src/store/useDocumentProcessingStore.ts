@@ -114,8 +114,10 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
                 && hasRunIdentity
                 && previous.attempt === record.attempt
                 && previous.localContentRevision === record.localContentRevision
-                && previous.progress.totalPages === progress.totalPages
-                && progress.currentPage < previous.progress.currentPage
+                && (
+                  previous.progress.totalPages !== progress.totalPages
+                  || progress.currentPage < previous.progress.currentPage
+                )
               ) {
                 projection[record.localSourceId] = previous.progress
                 identityProjection[record.localSourceId] = previous

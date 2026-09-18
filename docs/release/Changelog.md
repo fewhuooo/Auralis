@@ -3,7 +3,7 @@
 ### PC OCR 页进度投影抗闪烁 Task 5（2026-09-18）
 
 - Store 的 Local OCR projection 改为 reader 成功完成后的原子替换；reader pending 时保留最近有效页值。同一 `attempt + localContentRevision` 的 `OCR_RUNNING` Source 只有在 `after-recognize`、`after-normalize`、`page-result`、`empty-page` 的 page/total 与最近有效值一致时复用该值；同 run 倒退 checkpoint 不覆盖，新 run 必须先建立自己的 `before-recognize`，Source 消失、reader detach 或 reader 失败清理失效值。
-- runtime reader 仅补传已有 local record identity；新增回归覆盖跨 attempt/revision、totalPages 不一致、倒退 checkpoint、后续事件匹配、pending、detach、Source missing 和 reader failure。Store/UI/coordinator/runtime focused 67/67、`npm.cmd run type-check`、`git diff --check` 通过。未修改 UI、OCR Coordinator、sync、API 或数据库契约；真实 Tauri/GUI OCR 进度仍待人工验收。
+- runtime reader 仅补传已有 local record identity；新增回归覆盖跨 attempt/revision、totalPages 不一致、同 run 含 totalPages 变化的倒退 checkpoint、后续事件匹配、new-run page 1 reset、pending、detach、Source missing 和 reader failure。Store/UI/coordinator/runtime focused 68/68、`npm.cmd run type-check`、`git diff --check` 通过。未修改 UI、OCR Coordinator、sync、API 或数据库契约；真实 Tauri/GUI OCR 进度仍待人工验收。
 
 ### PC OCR 页进度与 Source 收敛 Task 4 收口（2026-09-18）
 

@@ -933,6 +933,33 @@ test('useDocumentProcessingStore.refresh does not move a same-run OCR page backw
   }, 'an older before-recognize checkpoint must not move the visible page backward')
 })
 
+test('useDocumentProcessingStore.refresh does not move a same-run OCR page backward when total pages changes', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  let checkpointJson = JSON.stringify({ type: 'before-recognize', pageNumber: 3, totalPages: 5 })
+  const store = useDocumentProcessingStore()
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-backward-total', sourceId: 'local-source-backward-total', phase: 'OCR_RUNNING' }],
+  })
+  store.attachLocalOcrProgressReader({
+    list: async () => [{
+      localSourceId: 'local-source-backward-total',
+      attempt: 1,
+      localContentRevision: 'revision-backward-total',
+      checkpointJson,
+    }],
+  })
+
+  await store.refresh()
+  checkpointJson = JSON.stringify({ type: 'before-recognize', pageNumber: 2, totalPages: 4 })
+  await store.refresh()
+
+  assert.deepEqual(store.localOcrProgressBySource, {
+    'local-source-backward-total': { currentPage: 3, totalPages: 5 },
+  }, 'a same-run page and total regression must retain the last valid projection')
+})
+
 test('useDocumentProcessingStore.refresh clears progress when the OCR reader omits a Source', async () => {
   const pinia = createPinia()
   setActivePinia(pinia)
