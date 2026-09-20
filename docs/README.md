@@ -194,6 +194,7 @@
 - [Overview 手动重试、收敛预算与错误码实施计划（2026-09-14）](plans/2026-09-14-overview-retry-and-convergence.md)
 - [PC Local Asset Store 全栈实施计划（2026-09-16）](plans/2026-09-16-pc-local-asset-store.md)
 - [PC OCR 运行时页级进度恢复实施计划（2026-09-18）](plans/2026-09-18-pc-ocr-runtime-progress.md)
+- [Overview Reduce Prompt 均衡压缩实施计划（2026-09-20）](plans/2026-09-20-overview-reduce-prompt-compression.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
