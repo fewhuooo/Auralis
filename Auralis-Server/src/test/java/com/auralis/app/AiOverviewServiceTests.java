@@ -374,9 +374,29 @@ class AiOverviewServiceTests {
                     return request.messages().getFirst().content();
                 })
                 .toList();
-        List<String> intermediateInstructions = systemInstructions.stream()
+        List<AiProviderRequest> reduceRequests = requests.stream()
+                .filter(request -> request.messages().get(1).content().contains("\"mapJson\""))
+                .toList();
+        List<AiProviderRequest> mapRequests = requests.stream()
+                .filter(request -> request.messages().get(1).content().contains("\"chunks\""))
+                .toList();
+        assertThat(reduceRequests).isNotEmpty().allSatisfy(request -> assertThat(request.messages().getFirst().content())
+                .contains("already-compressed overview JSON")
+                .contains("do not summarize each input separately")
+                .contains("duplicate, overlapping, adjacent, equivalent topics")
+                .contains("no chapter/section per input")
+                .contains("State each fact once")
+                .contains("definitions, conceptual relationships, causal chains, key conclusions")
+                .contains("examples, rhetoric, procedure")
+                .contains("fewer, denser chapters and sections")
+                .contains("2500 and 3000 characters")
+                .contains("Do not pad"));
+
+        List<String> intermediateInstructions = mapRequests.stream()
+                .map(request -> request.messages().getFirst().content())
                 .filter(instruction -> instruction.contains("Intermediate JSON"))
                 .toList();
+        assertThat(mapRequests).isNotEmpty();
         assertThat(intermediateInstructions).isNotEmpty().allSatisfy(instruction -> assertThat(instruction)
                 .contains("preserve every distinct topic/section and retain independent content while shortening wording")
                 .contains("Merge only duplicate/equivalent nodes")
@@ -384,17 +404,48 @@ class AiOverviewServiceTests {
                 .contains("remove redundant examples, rhetoric, and repetition")
                 .contains("Target compact serialized JSON <=3600 chars")
                 .doesNotContain("at most 6 chapters", "at most 12 sections"));
+    }
 
-        List<String> finalInstructions = systemInstructions.stream()
-                .filter(instruction -> !instruction.contains("Intermediate JSON"))
-                .toList();
-        assertThat(finalInstructions).isNotEmpty().allSatisfy(instruction -> assertThat(instruction)
-                .contains("Compact JSON")
-                .doesNotContain("preserve every distinct topic/section")
-                .doesNotContain("Merge only duplicate/equivalent nodes")
-                .doesNotContain("Shorten title, section.summary, summary.overview, keyPoints, learningPath")
-                .doesNotContain("Target compact serialized JSON <=3600 chars")
-                .doesNotContain("at most 6 chapters", "at most 12 sections"));
+    @Test
+    void keepsSingleBatchMapAndSubjectDirectOnBasePrompt() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        SubjectService subjectService = mock(SubjectService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        List<AiProviderRequest> mapRequests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, subjectService,
+                List.of(chunk(userId, sourceId, true, "Calculus content")), 12_000,
+                validDocument("source-1"), mapRequests);
+
+        service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
+
+        assertThat(mapRequests).singleElement().satisfies(request -> {
+            assertThat(request.messages().get(1).content()).contains("\"chunks\"");
+            assertThat(request.messages().getFirst().content())
+                    .contains("Compact JSON")
+                    .doesNotContain("already-compressed overview JSON")
+                    .doesNotContain("do not summarize each input separately");
+        });
+
+        mapRequests.clear();
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("summary", List.of(), List.of());
+        OverviewDtos.OverviewSection section = new OverviewDtos.OverviewSection("Section", "summary",
+                List.of(sourceId.toString()), null);
+        OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(sourceId,
+                "Calculus", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(section))), summary);
+        service.generateSubject(userId, new OverviewDtos.SubjectOverviewRequest(subjectId, OverviewMode.ALL, null,
+                List.of(input)));
+
+        assertThat(mapRequests).singleElement().satisfies(request -> {
+            assertThat(request.messages().get(1).content()).contains("\"sources\"");
+            assertThat(request.messages().getFirst().content())
+                    .contains("Compact JSON")
+                    .doesNotContain("already-compressed overview JSON")
+                    .doesNotContain("do not summarize each input separately");
+        });
     }
 
     @Test
@@ -647,7 +698,7 @@ class AiOverviewServiceTests {
                         chunk(userId, sourceId, true, "c".repeat(2_000)),
                         chunk(userId, sourceId, true, "d".repeat(2_000)),
                         chunk(userId, sourceId, true, "e".repeat(2_000)),
-                        chunk(userId, sourceId, true, "f".repeat(2_000))), 12_000, requests);
+                        chunk(userId, sourceId, true, "f".repeat(2_000))), 12_300, requests);
 
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
@@ -682,7 +733,7 @@ class AiOverviewServiceTests {
         try {
             List<AiProviderRequest> baselineRequests = new ArrayList<>();
             OverviewGenerationService baselineService = serviceWithResponses(sourceService, responses, chunks,
-                    12_000, baselineRequests);
+                    12_307, baselineRequests);
             assertThat(baselineService.generateSource(userId,
                     sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
         } finally {
@@ -696,7 +747,7 @@ class AiOverviewServiceTests {
 
         List<AiProviderRequest> acceptedRequests = new ArrayList<>();
         OverviewGenerationService acceptedService = serviceWithResponses(sourceService, responses, chunks,
-                12_000, acceptedRequests);
+                12_307, acceptedRequests);
         ListAppender<ILoggingEvent> acceptedAppender = new ListAppender<>();
         acceptedAppender.start();
         logger.addAppender(acceptedAppender);
@@ -770,7 +821,7 @@ class AiOverviewServiceTests {
         List<AiProviderRequest> requests = new ArrayList<>();
         String valid = validDocument("source-1");
         List<AiProviderResponse> responses = new ArrayList<>();
-        String largeIntermediate = balancedLargeValidDocument("source-1", 3_000, 1_975);
+        String largeIntermediate = balancedLargeValidDocument("source-1", 3_000, 1_850);
         for (int i = 0; i < 4; i++) {
             responses.add(new AiProviderResponse(largeIntermediate, 1, 3_072));
         }

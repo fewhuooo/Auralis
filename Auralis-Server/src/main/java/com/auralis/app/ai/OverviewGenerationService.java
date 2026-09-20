@@ -54,7 +54,17 @@ public class OverviewGenerationService {
             Limits: instruction <=2000 characters, title/chapter/section title <=300, prose <=4000, chapters <=60, total sections <=500, keyPoints <=100, learningPath <=100, sourceIds per section <=100. Compact JSON.
             """.strip();
 
+    private static final String INTERMEDIATE_MAP_INSTRUCTION = """
+            Intermediate JSON: preserve every distinct topic/section and retain independent content while shortening wording to fit the target. Merge only duplicate/equivalent nodes. Shorten title, section.summary, summary.overview, keyPoints, learningPath; remove redundant examples, rhetoric, and repetition. Target compact serialized JSON <=3600 chars.
+            """.strip();
+
+    private static final String REDUCE_INSTRUCTION = """
+            Reduce: Synthesize already-compressed overview JSON; do not summarize each input separately. Merge duplicate, overlapping, adjacent, equivalent topics; no chapter/section per input. State each fact once across outline, summary.overview, keyPoints, learningPath. Preserve definitions, conceptual relationships, causal chains, key conclusions, evidence; remove examples, rhetoric, procedure, repeated caveats/conclusions, low-value detail first. Use fewer, denser chapters and sections; concise titles/sentences; don't quote/add facts. Target JSON between 2500 and 3000 characters when substantial; obey mode, aliases, schema, locator=null; Do not pad.
+            """.strip();
+
     private enum OutputStage { INTERMEDIATE, FINAL }
+
+    private enum PromptPurpose { MAP, REDUCE, SUBJECT_DIRECT }
 
     private final SourceService sourceService;
     private final SubjectService subjectService;
@@ -108,9 +118,11 @@ public class OverviewGenerationService {
         }
         Map<String, String> aliases = Map.of("source-1", source.id().toString());
         List<OverviewResponse> mapped = new ArrayList<>();
-            List<List<String>> batches = packChunks(request.mode(), request.instruction(), source.title(), chunks, OutputStage.FINAL);
+            List<List<String>> batches = packChunks(request.mode(), request.instruction(), source.title(), chunks,
+                    OutputStage.FINAL, PromptPurpose.MAP);
             if (batches.size() > 1) {
-                batches = packChunks(request.mode(), request.instruction(), source.title(), chunks, OutputStage.INTERMEDIATE);
+                batches = packChunks(request.mode(), request.instruction(), source.title(), chunks,
+                        OutputStage.INTERMEDIATE, PromptPurpose.MAP);
             }
             logPhase(context, "MAP_START", "batchCount={}", batches.size());
             int mapIndex = 0;
@@ -118,7 +130,7 @@ public class OverviewGenerationService {
                 mapIndex++;
                 mapped.add(invoke(context, request.mode(), request.instruction(), aliases,
                         userData(request.mode(), request.instruction(), "sourceAlias", "source-1", "sourceTitle", source.title(), "chunks", batch),
-                        batches.size() == 1 ? OutputStage.FINAL : OutputStage.INTERMEDIATE));
+                        batches.size() == 1 ? OutputStage.FINAL : OutputStage.INTERMEDIATE, PromptPurpose.MAP));
             logPhase(context, "MAP_SUCCESS", "index={} batchChunkCount={}", mapIndex, batch.size());
         }
         OverviewResponse reduced = reduce(context, request.mode(), request.instruction(), aliases, mapped);
@@ -166,7 +178,8 @@ public class OverviewGenerationService {
             throw new DomainException("VALIDATION_FAILED", "Subject overview requires at least one usable source");
         }
         OverviewResponse result = invoke(context, request.mode(), request.instruction(), aliases,
-                userData(request.mode(), request.instruction(), "sources", safeSources), OutputStage.FINAL);
+                userData(request.mode(), request.instruction(), "sources", safeSources), OutputStage.FINAL,
+                PromptPurpose.SUBJECT_DIRECT);
         logPhase(context, "CACHE_RETURN", "sourceCount={}", safeSources.size());
         logSuccess(context);
         return forMode(documentValidator.mapAliasesToSourceIds(result, aliases), request.mode());
@@ -247,8 +260,8 @@ public class OverviewGenerationService {
     }
 
     private OverviewResponse invoke(GenerationContext context, OverviewMode mode, String instruction, Map<String, String> aliases,
-                                    String userData, OutputStage stage) {
-        if (messageLength(mode, instruction, userData, stage) > maximumPromptChars()) {
+                                    String userData, OutputStage stage, PromptPurpose purpose) {
+        if (messageLength(mode, instruction, userData, stage, purpose) > maximumPromptChars()) {
             throw new DomainException("VALIDATION_FAILED", "Overview prompt exceeds the configured limit");
         }
         AiProviderType providerType = configuredProvider();
@@ -258,7 +271,7 @@ public class OverviewGenerationService {
             logPhase(context, "PROVIDER_REQUEST", "provider={} payloadChars={}", providerType, userData.length());
             AiSettingsService.ResolvedSettings settings = settingsService.resolve(context.userId(), providerType);
             response = providerRegistry.require(providerType).complete(new AiProviderRequest(
-                    settings.chatModel(), List.of(new AiProviderRequest.Message(AiMessageRole.SYSTEM, systemInstruction(stage)),
+                    settings.chatModel(), List.of(new AiProviderRequest.Message(AiMessageRole.SYSTEM, systemInstruction(stage, purpose)),
                             new AiProviderRequest.Message(AiMessageRole.USER, userData)), 0.1, maxTokens(stage), true), settings.credential(),
                     overviewResponseTimeoutMillis());
         } catch (DomainException exception) {
@@ -314,7 +327,7 @@ public class OverviewGenerationService {
                                             OverviewResponse parsed) {
         String normalized = write(parsed);
         String selfPairData = userData(mode, instruction, "mapJson", List.of(parsed, parsed));
-        int selfPairPromptChars = messageLength(mode, instruction, selfPairData, OutputStage.INTERMEDIATE);
+        int selfPairPromptChars = messageLength(mode, instruction, selfPairData, OutputStage.INTERMEDIATE, PromptPurpose.MAP);
         int promptLimit = maximumPromptChars();
         boolean characterOverflow = normalized.length() > MAX_INTERMEDIATE_JSON_CHARS;
         boolean selfPairOverflow = selfPairPromptChars > promptLimit;
@@ -335,9 +348,11 @@ public class OverviewGenerationService {
         int round = 0;
         while (current.size() > 1) {
             round++;
-            List<List<OverviewResponse>> groups = packDocuments(mode, instruction, current, OutputStage.FINAL);
+            List<List<OverviewResponse>> groups = packDocuments(mode, instruction, current,
+                    OutputStage.FINAL, PromptPurpose.REDUCE);
             if (groups.size() > 1) {
-                groups = packDocuments(mode, instruction, current, OutputStage.INTERMEDIATE);
+                groups = packDocuments(mode, instruction, current,
+                        OutputStage.INTERMEDIATE, PromptPurpose.REDUCE);
             }
             logPhase(context, "REDUCE_START", "round={} inputCount={} groupCount={}", round, current.size(), groups.size());
             try {
@@ -350,7 +365,7 @@ public class OverviewGenerationService {
             for (List<OverviewResponse> group : groups) {
                 next.add(invoke(context, mode, instruction, aliases,
                         userData(mode, instruction, "mapJson", group),
-                        groups.size() == 1 ? OutputStage.FINAL : OutputStage.INTERMEDIATE));
+                        groups.size() == 1 ? OutputStage.FINAL : OutputStage.INTERMEDIATE, PromptPurpose.REDUCE));
             }
             logPhase(context, "REDUCE_SUCCESS", "round={} outputCount={}", round, next.size());
             current = List.copyOf(next);
@@ -366,19 +381,19 @@ public class OverviewGenerationService {
     }
 
     private List<List<String>> packChunks(OverviewMode mode, String instruction, String title, List<String> chunks,
-                                          OutputStage stage) {
+                                          OutputStage stage, PromptPurpose purpose) {
         List<List<String>> batches = new ArrayList<>();
         List<String> current = new ArrayList<>();
         for (String chunk : chunks) {
             List<String> candidate = new ArrayList<>(current);
             candidate.add(chunk);
-            if (!fits(mode, instruction, userData(mode, instruction, "sourceTitle", title, "chunks", candidate), stage)) {
+            if (!fits(mode, instruction, userData(mode, instruction, "sourceTitle", title, "chunks", candidate), stage, purpose)) {
                 if (current.isEmpty()) {
                     throw new DomainException("VALIDATION_FAILED", "Overview source chunk exceeds the configured prompt limit");
                 }
                 batches.add(List.copyOf(current));
                 current = new ArrayList<>(List.of(chunk));
-                if (!fits(mode, instruction, userData(mode, instruction, "sourceTitle", title, "chunks", current), stage)) {
+                if (!fits(mode, instruction, userData(mode, instruction, "sourceTitle", title, "chunks", current), stage, purpose)) {
                     throw new DomainException("VALIDATION_FAILED", "Overview source chunk exceeds the configured prompt limit");
                 }
             } else {
@@ -390,17 +405,17 @@ public class OverviewGenerationService {
     }
 
     private List<List<OverviewResponse>> packDocuments(OverviewMode mode, String instruction,
-                                                       List<OverviewResponse> documents, OutputStage stage) {
+                                                       List<OverviewResponse> documents, OutputStage stage, PromptPurpose purpose) {
         List<List<OverviewResponse>> groups = new ArrayList<>();
         List<OverviewResponse> current = new ArrayList<>();
         for (OverviewResponse document : documents) {
             List<OverviewResponse> candidate = new ArrayList<>(current);
             candidate.add(document);
-            if (!fits(mode, instruction, userData(mode, instruction, "mapJson", candidate), stage)) {
+            if (!fits(mode, instruction, userData(mode, instruction, "mapJson", candidate), stage, purpose)) {
                 if (current.isEmpty()) throw new DomainException("VALIDATION_FAILED", "Overview reduce input exceeds the configured prompt limit");
                 groups.add(List.copyOf(current));
                 current = new ArrayList<>(List.of(document));
-                if (!fits(mode, instruction, userData(mode, instruction, "mapJson", current), stage)) {
+                if (!fits(mode, instruction, userData(mode, instruction, "mapJson", current), stage, purpose)) {
                     throw new DomainException("VALIDATION_FAILED", "Overview reduce input exceeds the configured prompt limit");
                 }
             } else current = candidate;
@@ -409,12 +424,12 @@ public class OverviewGenerationService {
         return groups;
     }
 
-    private boolean fits(OverviewMode mode, String instruction, String userData, OutputStage stage) {
-        return messageLength(mode, instruction, userData, stage) <= maximumPromptChars();
+    private boolean fits(OverviewMode mode, String instruction, String userData, OutputStage stage, PromptPurpose purpose) {
+        return messageLength(mode, instruction, userData, stage, purpose) <= maximumPromptChars();
     }
 
-    private int messageLength(OverviewMode mode, String instruction, String userData, OutputStage stage) {
-        return systemInstruction(stage).length() + userData.length();
+    private int messageLength(OverviewMode mode, String instruction, String userData, OutputStage stage, PromptPurpose purpose) {
+        return systemInstruction(stage, purpose).length() + userData.length();
     }
 
     private int maxTokens(OutputStage stage) {
@@ -491,14 +506,14 @@ public class OverviewGenerationService {
         catch (IllegalArgumentException exception) { throw new DomainException("MODEL_UNAVAILABLE", "AI default provider is invalid"); }
     }
     private int maximumPromptChars() { int value = properties == null || properties.ai() == null ? 0 : properties.ai().maxPromptChars(); return value > 0 ? value : 12_000; }
-    private String systemInstruction(OutputStage stage) {
-        return stage == OutputStage.INTERMEDIATE
-                ? SYSTEM_INSTRUCTION
-                        + "\nIntermediate JSON: preserve every distinct topic/section and retain independent content while shortening wording to fit the target. "
-                        + "Merge only duplicate/equivalent nodes. "
-                        + "Shorten title, section.summary, summary.overview, keyPoints, learningPath; remove redundant examples, rhetoric, and repetition. "
-                        + "Target compact serialized JSON <=3600 chars."
-                : SYSTEM_INSTRUCTION;
+    private String systemInstruction(OutputStage stage, PromptPurpose purpose) {
+        if (purpose == PromptPurpose.REDUCE) {
+            return SYSTEM_INSTRUCTION + "\n" + REDUCE_INSTRUCTION;
+        }
+        if (purpose == PromptPurpose.MAP && stage == OutputStage.INTERMEDIATE) {
+            return SYSTEM_INSTRUCTION + "\n" + INTERMEDIATE_MAP_INSTRUCTION;
+        }
+        return SYSTEM_INSTRUCTION;
     }
     private long overviewResponseTimeoutMillis() {
         long value = properties == null || properties.ai() == null ? 0 : properties.ai().overviewResponseTimeoutMillis();
