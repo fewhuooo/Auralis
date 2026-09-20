@@ -363,7 +363,7 @@ class AiOverviewServiceTests {
                         chunk(userId, sourceId, true, "e".repeat(250)),
                         chunk(userId, sourceId, true, "f".repeat(250)),
                         chunk(userId, sourceId, true, "g".repeat(250)),
-                        chunk(userId, sourceId, true, "h".repeat(250))), 2_500,
+                        chunk(userId, sourceId, true, "h".repeat(250))), 3_000,
                 validDocument("source-1"), requests);
 
         service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
@@ -382,15 +382,17 @@ class AiOverviewServiceTests {
                 .toList();
         assertThat(reduceRequests).isNotEmpty().allSatisfy(request -> assertThat(request.messages().getFirst().content())
                 .contains("already-compressed overview JSON")
+                .contains("synthesize into one cohesive overview")
                 .contains("do not summarize each input separately")
-                .contains("duplicate, overlapping, adjacent, equivalent topics")
-                .contains("no chapter/section per input")
-                .contains("State each fact once")
+                .contains("duplicate, overlapping, adjacent, or equivalent topics")
+                .contains("do not create one chapter or section per input document")
+                .contains("each fact once in the most appropriate field")
                 .contains("definitions, conceptual relationships, causal chains, key conclusions")
-                .contains("examples, rhetoric, procedure")
+                .contains("only evidence required to understand concepts/conclusions")
+                .contains("examples, rhetoric, procedural narration")
                 .contains("fewer, denser chapters and sections")
                 .contains("2500 and 3000 characters")
-                .contains("Do not pad"));
+                .contains("do not pad"));
 
         List<String> intermediateInstructions = mapRequests.stream()
                 .map(request -> request.messages().getFirst().content())
@@ -529,7 +531,7 @@ class AiOverviewServiceTests {
                         chunk(userId, sourceId, true, "e".repeat(250)),
                         chunk(userId, sourceId, true, "f".repeat(250)),
                         chunk(userId, sourceId, true, "g".repeat(250)),
-                        chunk(userId, sourceId, true, "h".repeat(250))), 2_500,
+                        chunk(userId, sourceId, true, "h".repeat(250))), 3_000,
                 validDocument("source-1"), new ArrayList<>(), null, responseTimeouts);
 
         service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
@@ -553,7 +555,7 @@ class AiOverviewServiceTests {
                         chunk(userId, sourceId, true, "e".repeat(250)),
                         chunk(userId, sourceId, true, "f".repeat(250)),
                         chunk(userId, sourceId, true, "g".repeat(250)),
-                        chunk(userId, sourceId, true, "h".repeat(250))), 2_500,
+                        chunk(userId, sourceId, true, "h".repeat(250))), 3_000,
                 validDocument("source-1"), requests);
 
         Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
@@ -698,7 +700,7 @@ class AiOverviewServiceTests {
                         chunk(userId, sourceId, true, "c".repeat(2_000)),
                         chunk(userId, sourceId, true, "d".repeat(2_000)),
                         chunk(userId, sourceId, true, "e".repeat(2_000)),
-                        chunk(userId, sourceId, true, "f".repeat(2_000))), 12_300, requests);
+                        chunk(userId, sourceId, true, "f".repeat(2_000))), 12_500, requests);
 
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
@@ -713,7 +715,7 @@ class AiOverviewServiceTests {
         SourceService sourceService = mock(SourceService.class);
         when(sourceService.requireActiveSource(userId, sourceId))
                 .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
-        String boundaryDocument = balancedLargeValidDocument("source-1", 3_000, 1_975);
+        String boundaryDocument = balancedLargeValidDocument("source-1", 3_000, 1_765);
         List<SourceChunkEntity> chunks = List.of(
                 chunk(userId, sourceId, true, "a".repeat(2_000)),
                 chunk(userId, sourceId, true, "b".repeat(2_000)),
@@ -733,7 +735,7 @@ class AiOverviewServiceTests {
         try {
             List<AiProviderRequest> baselineRequests = new ArrayList<>();
             OverviewGenerationService baselineService = serviceWithResponses(sourceService, responses, chunks,
-                    12_307, baselineRequests);
+                    12_000, baselineRequests);
             assertThat(baselineService.generateSource(userId,
                     sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
         } finally {
@@ -742,12 +744,12 @@ class AiOverviewServiceTests {
         }
         int baselineSelfPairChars = budgetValue(baselineAppender, "selfPairPromptChars=");
         int instructionPadding = 12_000 - baselineSelfPairChars;
-        assertThat(instructionPadding).isPositive();
+        assertThat(instructionPadding).isGreaterThanOrEqualTo(0);
         String boundaryInstruction = "i".repeat(instructionPadding);
 
         List<AiProviderRequest> acceptedRequests = new ArrayList<>();
         OverviewGenerationService acceptedService = serviceWithResponses(sourceService, responses, chunks,
-                12_307, acceptedRequests);
+                12_000, acceptedRequests);
         ListAppender<ILoggingEvent> acceptedAppender = new ListAppender<>();
         acceptedAppender.start();
         logger.addAppender(acceptedAppender);
@@ -761,7 +763,7 @@ class AiOverviewServiceTests {
         assertThat(acceptedAppender.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")))
                 .anySatisfy(log -> assertThat(log)
-                        .contains("normalizedChars=5200", "selfPairPromptChars=12000",
+                        .contains("normalizedChars=4990", "selfPairPromptChars=12000",
                                 "characterOverflow=false", "selfPairOverflow=false"));
 
         List<AiProviderRequest> rejectedRequests = new ArrayList<>();
@@ -783,7 +785,7 @@ class AiOverviewServiceTests {
         assertThat(rejectedAppender.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")))
                 .anySatisfy(log -> assertThat(log)
-                        .contains("normalizedChars=5200", "selfPairPromptChars=12001",
+                        .contains("normalizedChars=4990", "selfPairPromptChars=12001",
                                 "characterOverflow=false", "selfPairOverflow=true"));
         assertThat(acceptedRequests).extracting(AiProviderRequest::maxTokens)
                 .contains(4_608, 6_144).doesNotContainNull();
@@ -821,7 +823,7 @@ class AiOverviewServiceTests {
         List<AiProviderRequest> requests = new ArrayList<>();
         String valid = validDocument("source-1");
         List<AiProviderResponse> responses = new ArrayList<>();
-        String largeIntermediate = balancedLargeValidDocument("source-1", 3_000, 1_850);
+        String largeIntermediate = balancedLargeValidDocument("source-1", 3_000, 1_765);
         for (int i = 0; i < 4; i++) {
             responses.add(new AiProviderResponse(largeIntermediate, 1, 3_072));
         }
@@ -874,7 +876,7 @@ class AiOverviewServiceTests {
                         new AiProviderResponse(markedDocument("source-1", "BOUNDARY_B"), 1, 1_024),
                         new AiProviderResponse(validDocument("source-1"), 1, 4_096)),
                 List.of(chunk(userId, sourceId, true, "a".repeat(800)),
-                        chunk(userId, sourceId, true, "b".repeat(800))), 2_500, requests);
+                        chunk(userId, sourceId, true, "b".repeat(800))), 2_800, requests);
 
         OverviewDtos.OverviewResponse result = service.generateSource(
                 userId, sourceRequest(sourceId, OverviewMode.ALL, null));
@@ -905,7 +907,7 @@ class AiOverviewServiceTests {
                 chunk(userId, sourceId, true, "g".repeat(250)),
                 chunk(userId, sourceId, true, "h".repeat(250)));
         List<AiProviderRequest> requests = new ArrayList<>();
-        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), chunks, 2_500,
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), chunks, 3_000,
                 validDocument("source-1"), requests);
 
         OverviewDtos.OverviewResponse result = service.generateSource(

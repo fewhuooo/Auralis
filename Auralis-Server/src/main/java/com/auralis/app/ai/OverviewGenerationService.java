@@ -59,7 +59,7 @@ public class OverviewGenerationService {
             """.strip();
 
     private static final String REDUCE_INSTRUCTION = """
-            Reduce: Synthesize already-compressed overview JSON; do not summarize each input separately. Merge duplicate, overlapping, adjacent, equivalent topics; no chapter/section per input. State each fact once across outline, summary.overview, keyPoints, learningPath. Preserve definitions, conceptual relationships, causal chains, key conclusions, evidence; remove examples, rhetoric, procedure, repeated caveats/conclusions, low-value detail first. Use fewer, denser chapters and sections; concise titles/sentences; don't quote/add facts. Target JSON between 2500 and 3000 characters when substantial; obey mode, aliases, schema, locator=null; Do not pad.
+            Reduce: synthesize into one cohesive overview from already-compressed overview JSON; do not summarize each input separately. Merge duplicate, overlapping, adjacent, or equivalent topics; do not create one chapter or section per input document. State each fact once in the most appropriate field (outline, summary.overview, keyPoints, or learningPath). Preserve definitions, conceptual relationships, causal chains, key conclusions, and only evidence required to understand concepts/conclusions; remove examples, rhetoric, procedural narration, repeated caveats/conclusions, and low-value detail first. Use fewer, denser chapters and sections; do not quote input or add facts. Target serialized JSON between 2500 and 3000 characters when substantial; obey mode, aliases, schema, locator=null; do not pad.
             """.strip();
 
     private enum OutputStage { INTERMEDIATE, FINAL }
@@ -327,7 +327,7 @@ public class OverviewGenerationService {
                                             OverviewResponse parsed) {
         String normalized = write(parsed);
         String selfPairData = userData(mode, instruction, "mapJson", List.of(parsed, parsed));
-        int selfPairPromptChars = messageLength(mode, instruction, selfPairData, OutputStage.INTERMEDIATE, PromptPurpose.MAP);
+        int selfPairPromptChars = messageLength(mode, instruction, selfPairData, OutputStage.INTERMEDIATE, PromptPurpose.REDUCE);
         int promptLimit = maximumPromptChars();
         boolean characterOverflow = normalized.length() > MAX_INTERMEDIATE_JSON_CHARS;
         boolean selfPairOverflow = selfPairPromptChars > promptLimit;
