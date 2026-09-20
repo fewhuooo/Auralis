@@ -247,6 +247,14 @@ onMounted(async () => {
   flex-direction: column;
   align-items: center;
   overflow-y: auto;
+  /* Hide scrollbar for IE, Edge and Firefox */
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.sidebar-nav::-webkit-scrollbar {
+  display: none;
 }
 
 .nav-item {
@@ -255,6 +263,7 @@ onMounted(async () => {
   justify-content: center;
   width: 44px;
   height: 44px;
+  flex-shrink: 0;
   border-radius: var(--radius-md);
   color: var(--text-secondary);
   text-decoration: none;
@@ -357,6 +366,7 @@ onMounted(async () => {
 .subject-item {
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;

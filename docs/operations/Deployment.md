@@ -13,6 +13,8 @@
 - 密码：AuralisPcTest#2026
 - 显示名：PC AI 测试账号
 
+需要重建本机数据库、清空 MinIO 并重新注入账号和时间轴测试数据时，使用[测试账号与测试数据重置/注入流程](TestAccountDataResetAndSeed.md)，不要手工拼接数据库 hash 或直接绕过 API 写入业务数据。
+
 ## 部署模式
 
 | 模式 | 用途 | 组成 |

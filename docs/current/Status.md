@@ -4,6 +4,8 @@
 
 2026-09-18 OCR 页级进度 Task 5 已完成代码和自动验证：Pinia Store 的 Local OCR projection 改为成功 reader 结果的原子更新，并以已有 `attempt + localContentRevision` 作为内部 run identity；同一 run 的允许后续事件必须与最近有效 page/total 一致才保留，倒退 `before-recognize`（包括 totalPages 变化）不覆盖，新 run 必须先建立自己的 checkpoint，reader pending 时保留旧值，reader detach、Source 从 OCR_RUNNING 读集中消失或 reader 失败时清除失效投影。新增回归与 Store/UI/coordinator/runtime 套件 68/68、`npm.cmd run type-check`、`git diff --check` 通过。仅证明 Store/runtime 投影代码和自动回归，不等价于真实 Tauri/GUI OCR 进度观察；本轮未改 UI、OCR Coordinator、sync、API 或数据库契约。
 
+2026-09-18 测试注入排期问题已定位并修正：注入脚本原使用 45 分钟起始间隔，但任务时长包含 60/90 分钟，导致时间轴任务块必然重叠。现行流程改为全局 2 小时起始间隔，并要求间隔不小于最大任务时长；当前 192 条活动排期已通过 API 修正，区间重叠为 0、最小空档为 30 分钟。该问题确认为测试注入数据问题，不归因于前端时间轴布局。
+
 2026-09-18 OCR 页进度与 Source 收敛 Task 4 已完成代码和自动验证收口：本地 OCR 页级进度投影已修复，复用既有 `正在识别第 X/Y 页` 文案，不新增百分比或新 UI；替换 WebSocket 在 `onopen` 只触发一次既有 background `read` sync；处理 runtime 以生命周期/认证 scope guard 管理共享有界 reconciliation，覆盖遗漏的 Source `READY`。focused OCR/UI/runtime/protocol/sync 套件 90/90、`npm.cmd run type-check`、PC `npm.cmd run test:r4-pc` 352/352、`npm.cmd run build` 与 `git diff --check` 通过。上述为自动验证和代码状态证据，不等价于真实 Tauri/GUI OCR 进度、真实后端 WebSocket/event delivery 或跨设备收敛；这些仍属人工/发布验收边界。API、数据库 schema 和契约未变化。
 
 2026-09-17 修复点 1（待处理）：PC 前端实时解析状态展示缺失。当前需沿 `Source → ParsedDocument/DocumentProcessingJob → 前端状态组件` 链路核对状态事件、Store 映射和 UI 消费；本条仅记录问题，尚未声称修复或完成真实 Tauri 验收。

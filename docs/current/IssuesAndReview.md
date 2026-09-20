@@ -6,6 +6,13 @@
 - 自动证据：`.\mvnw.cmd -B -ntp '-Dtest=AiOverviewServiceTests,AiOverviewControllerTests,AiProviderContractTests,AiProviderResilienceTests' test` 退出 0，55/55（2+42+1+10），无 failures/errors/skipped；`.\mvnw.cmd -B -ntp -DskipTests test-compile` 退出 0；根目录 `git diff --check` 退出 0。测试日志中的 SpringDoc/JVM 警告及 Provider resilience failure/invalid-response 日志属于现有测试场景或运行提示，不构成失败。
 - P1 外部验收仍开放：尚未完成真实 DeepSeek 样本的 Reduce 输出字符数、内容覆盖、JSON/schema 成功、延迟、token 使用和成本核对。自动测试只证明 prompt routing、文本约束和既有硬边界，不得写成真实 Provider 或业务质量已验收。
 
+### 2026-09-18 测试注入排期间隔不足：时间轴任务块重叠（已定位）
+
+- 根因：注入流程使用 45 分钟起始间隔，但任务时长包含 60/90 分钟；即使 `scheduled_at` 各不相同，任务块仍会在时间轴上相互覆盖。
+- 修复：注入流程改为 2 小时起始间隔，并明确要求相邻排期的间隔不小于最大 `durationMinutes`。
+- 当前状态：根因已定位并修正流程；当前 192 条活动排期已通过 API 重新写入，区间重叠为 0，最小空档为 30 分钟。
+- 关闭条件：已满足测试注入数据层面的关闭条件；后续若真实文件或用户手工拖拽仍出现重叠，应另开前端时间轴布局问题，不再归因于本次测试注入。
+
 ### 2026-09-18 release/stability 非阻塞测试项
 
 以下场景尚未取得明确逐项执行记录，继续作为发布与长期稳定性测试项保留，但不再作为 Local Asset Store 改造的未完成任务：

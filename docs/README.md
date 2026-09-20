@@ -149,6 +149,7 @@
 
 - [部署指南](operations/Deployment.md)
 - [运维手册](operations/Runbook.md)
+- [测试账号与测试数据重置/注入流程](operations/TestAccountDataResetAndSeed.md)
 - [后端绿地重写完整实施计划](plans/backend-greenfield-rewrite-plan.md)
 - [后端绿地重写阶段 0 实施计划](plans/backend-greenfield-phase-0-plan.md)
 - [PC 学科工作区重建实施计划（2026-07-13）](plans/2026-07-13-pc-subject-workspace-reconstruction.md)
