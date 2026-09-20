@@ -391,6 +391,8 @@ class AiOverviewServiceTests {
                 .contains("only evidence required to understand concepts/conclusions")
                 .contains("examples, rhetoric, procedural narration")
                 .contains("fewer, denser chapters and sections")
+                .contains("short titles")
+                .contains("concise sentences")
                 .contains("2500 and 3000 characters")
                 .contains("do not pad"));
 
@@ -715,7 +717,7 @@ class AiOverviewServiceTests {
         SourceService sourceService = mock(SourceService.class);
         when(sourceService.requireActiveSource(userId, sourceId))
                 .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
-        String boundaryDocument = balancedLargeValidDocument("source-1", 3_000, 1_765);
+        String boundaryDocument = balancedLargeValidDocument("source-1", 3_000, 1_753);
         List<SourceChunkEntity> chunks = List.of(
                 chunk(userId, sourceId, true, "a".repeat(2_000)),
                 chunk(userId, sourceId, true, "b".repeat(2_000)),
@@ -763,7 +765,7 @@ class AiOverviewServiceTests {
         assertThat(acceptedAppender.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")))
                 .anySatisfy(log -> assertThat(log)
-                        .contains("normalizedChars=4990", "selfPairPromptChars=12000",
+                        .contains("normalizedChars=4978", "selfPairPromptChars=12000",
                                 "characterOverflow=false", "selfPairOverflow=false"));
 
         List<AiProviderRequest> rejectedRequests = new ArrayList<>();
@@ -785,7 +787,7 @@ class AiOverviewServiceTests {
         assertThat(rejectedAppender.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")))
                 .anySatisfy(log -> assertThat(log)
-                        .contains("normalizedChars=4990", "selfPairPromptChars=12001",
+                        .contains("normalizedChars=4978", "selfPairPromptChars=12001",
                                 "characterOverflow=false", "selfPairOverflow=true"));
         assertThat(acceptedRequests).extracting(AiProviderRequest::maxTokens)
                 .contains(4_608, 6_144).doesNotContainNull();
@@ -823,7 +825,7 @@ class AiOverviewServiceTests {
         List<AiProviderRequest> requests = new ArrayList<>();
         String valid = validDocument("source-1");
         List<AiProviderResponse> responses = new ArrayList<>();
-        String largeIntermediate = balancedLargeValidDocument("source-1", 3_000, 1_765);
+        String largeIntermediate = balancedLargeValidDocument("source-1", 3_000, 1_753);
         for (int i = 0; i < 4; i++) {
             responses.add(new AiProviderResponse(largeIntermediate, 1, 3_072));
         }
