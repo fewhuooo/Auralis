@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### Overview Reduce prompt 均衡压缩（2026-09-20）
+
+- MAP 行为保持不变；非最终及最终文档 REDUCE 现在使用专用均衡压缩 prompt，规范化长度为 843 字符，面向需要实质归并的输出目标约 2500–3000 个序列化 JSON 字符。该目标不替代既有校验。
+- `max_tokens=4608/6144`、规范化 intermediate `<=5200`、self-pair `<=12000`、Reduce no-progress、schema/alias/mode/locator 校验和分组/批次边界均保持不变；没有新增自动压缩重试、API、数据库或普通聊天/流式行为变化。
+- Server focused 自动测试 55/55、test-compile 与 `git diff --check` 通过。真实 DeepSeek 的压缩质量、内容覆盖、延迟、token 使用、成本及业务验收仍待真实样本验证。
+
 ### PC OCR 页进度投影抗闪烁 Task 5（2026-09-18）
 
 - Store 的 Local OCR projection 改为 reader 成功完成后的原子替换；reader pending 时保留最近有效页值。同一 `attempt + localContentRevision` 的 `OCR_RUNNING` Source 只有在 `after-recognize`、`after-normalize`、`page-result`、`empty-page` 的 page/total 与最近有效值一致时复用该值；同 run 倒退 checkpoint 不覆盖，新 run 必须先建立自己的 `before-recognize`，Source 消失、reader detach 或 reader 失败清理失效值。

@@ -1,5 +1,7 @@
 # Auralis 当前状态
 
+2026-09-20 Overview Reduce prompt compression Task 2 已完成文档与自动验证收口：Task 1 保持 MAP prompt 行为不变，并为非最终及最终文档 REDUCE 接入专用均衡压缩 prompt；其规范化长度为 843 字符，目标约 2500–3000 个序列化 JSON 字符。`max_tokens=4608/6144`、规范化 intermediate `<=5200`、self-pair `<=12000`、no-progress、schema/alias/mode/locator 校验及分组/批次边界均不变。focused Server 四类测试实际 55/55，test-compile 与根目录 `git diff --check` 通过；自动证据只覆盖路由、prompt 约束和既有不变量，不等价于真实 DeepSeek 压缩质量验收。真实样本的输出字符数、内容覆盖、JSON/schema 成功、延迟、token 使用和成本仍未验证。
+
 2026-09-18 OCR 页级进度 Task 5 已完成代码和自动验证：Pinia Store 的 Local OCR projection 改为成功 reader 结果的原子更新，并以已有 `attempt + localContentRevision` 作为内部 run identity；同一 run 的允许后续事件必须与最近有效 page/total 一致才保留，倒退 `before-recognize`（包括 totalPages 变化）不覆盖，新 run 必须先建立自己的 checkpoint，reader pending 时保留旧值，reader detach、Source 从 OCR_RUNNING 读集中消失或 reader 失败时清除失效投影。新增回归与 Store/UI/coordinator/runtime 套件 68/68、`npm.cmd run type-check`、`git diff --check` 通过。仅证明 Store/runtime 投影代码和自动回归，不等价于真实 Tauri/GUI OCR 进度观察；本轮未改 UI、OCR Coordinator、sync、API 或数据库契约。
 
 2026-09-18 OCR 页进度与 Source 收敛 Task 4 已完成代码和自动验证收口：本地 OCR 页级进度投影已修复，复用既有 `正在识别第 X/Y 页` 文案，不新增百分比或新 UI；替换 WebSocket 在 `onopen` 只触发一次既有 background `read` sync；处理 runtime 以生命周期/认证 scope guard 管理共享有界 reconciliation，覆盖遗漏的 Source `READY`。focused OCR/UI/runtime/protocol/sync 套件 90/90、`npm.cmd run type-check`、PC `npm.cmd run test:r4-pc` 352/352、`npm.cmd run build` 与 `git diff --check` 通过。上述为自动验证和代码状态证据，不等价于真实 Tauri/GUI OCR 进度、真实后端 WebSocket/event delivery 或跨设备收敛；这些仍属人工/发布验收边界。API、数据库 schema 和契约未变化。

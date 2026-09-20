@@ -1,5 +1,11 @@
 # Auralis 当前问题与审查登记
 
+### 2026-09-20 Overview Reduce prompt compression：代码/自动验证完成，真实质量验收开放
+
+- Task 1 已将 MAP 与 REDUCE 的内部 prompt 路由分离：MAP 行为未改变；非最终及最终 REDUCE 使用专用均衡压缩指令，规范化长度 843 字符，目标约 2500–3000 个序列化 JSON 字符。预算 `max_tokens=4608/6144`、intermediate `<=5200`、self-pair `<=12000`、no-progress、schema/alias/mode/locator 校验、分组/批次和 Subject/Source 隔离边界均未改变；API、数据库、Provider 安全和普通聊天/流式契约未改变。
+- 自动证据：`.\mvnw.cmd -B -ntp '-Dtest=AiOverviewServiceTests,AiOverviewControllerTests,AiProviderContractTests,AiProviderResilienceTests' test` 退出 0，55/55（2+42+1+10），无 failures/errors/skipped；`.\mvnw.cmd -B -ntp -DskipTests test-compile` 退出 0；根目录 `git diff --check` 退出 0。测试日志中的 SpringDoc/JVM 警告及 Provider resilience failure/invalid-response 日志属于现有测试场景或运行提示，不构成失败。
+- P1 外部验收仍开放：尚未完成真实 DeepSeek 样本的 Reduce 输出字符数、内容覆盖、JSON/schema 成功、延迟、token 使用和成本核对。自动测试只证明 prompt routing、文本约束和既有硬边界，不得写成真实 Provider 或业务质量已验收。
+
 ### 2026-09-18 release/stability 非阻塞测试项
 
 以下场景尚未取得明确逐项执行记录，继续作为发布与长期稳定性测试项保留，但不再作为 Local Asset Store 改造的未完成任务：

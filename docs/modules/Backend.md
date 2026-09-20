@@ -1,5 +1,7 @@
 # Spring Boot 后端模块
 
+2026-09-20 Overview Reduce prompt routing 已完成：MAP 行为保持不变；所有文档 REDUCE 调用（非最终与最终）现在在既有 SYSTEM/schema、安全、mode、alias 和 locator 规则之后接收 Reduce 专用均衡压缩指令。该指令经 Java text-block 规范化后为 843 字符，面向需要实质归并的输出目标约 2500–3000 个序列化 JSON 字符；目标不是硬上限。`max_tokens=4608`（多批 MAP、非最终 REDUCE）与 `6144`（single-batch MAP、Subject direct、最终 REDUCE）不变；规范化 intermediate JSON `<=5200` 字符、self-pair `<=12000`、Reduce no-progress、JSON/schema/alias/mode/locator 校验、分组/批次和调用次数均不变，也不增加自动压缩重试。Task 1 focused Server 自动验证 55/55 与 test-compile 已通过；这些证据只证明 prompt 路由和既有不变量，不证明真实 DeepSeek 的压缩质量、内容覆盖、延迟、token 使用或成本，真实样本仍待验收。
+
 2026-09-17 Overview token budget 调整为原预算的 150%：多批 MAP 与非最终 REDUCE 使用 `max_tokens=4608`，single-batch MAP、Subject direct 与最终 REDUCE 使用 `6144`；规范化 intermediate JSON 上限为 `5200` 字符，self-pair 上限仍为 `12000`。紧凑 intermediate prompt、schema/规范化和 no-progress 校验保留，不做自动压缩重试。普通聊天、流式和 embedding 不变。
 
 历史诊断记录（2026-09-15，永久策略实施前）：Task 4C 仅增强 intermediate system instruction，保留独立主题/section、压缩措辞、只合并重复/等价节点，并以序列化 JSON `<=3600` 为目标。真实 42-chunk 请求的六个 MAP 全部通过，输出为 1447–3680 字符；此前超限的 MAP2 从 5105 降至 2027。REDUCE round 1 第一组 2446 字符通过，第二组 4678 字符仍单独触发 4000 字符上限，self-pair 为 10899/12000。Prompt 有效但不是硬保证。Final prompt、硬校验、batch、Provider 和普通聊天/流式未变；该段记录的是永久策略实施前的实验状态。
