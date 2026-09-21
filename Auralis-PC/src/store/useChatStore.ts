@@ -23,6 +23,8 @@ export interface ChatRequestOptions {
   context?: string
   topK?: number
   selectionText?: string
+  /** Existing pending request to dispatch again; never creates a duplicate message. */
+  pendingRequestId?: string
 }
 
 export interface ChatSession {
@@ -125,6 +127,15 @@ export const useChatStore = defineStore('chat', () => {
   const controller = new AiStreamController()
 
   const activeSession = computed(() => sessions.value.find((session) => session.id === activeSessionId.value) || null)
+  const pendingMessage = computed(() => {
+    for (let index = messages.value.length - 1; index >= 0; index -= 1) {
+      const message = messages.value[index]
+      if (message.conversationId === activeSessionId.value && message.role === 'USER' && message.status === 'PENDING' && message.clientRequestId) {
+        return message
+      }
+    }
+    return null
+  })
 
   async function cacheSession(session: ChatSession, syncStatus: 'synced' | 'pending' = session.localOnly ? 'pending' : 'synced'): Promise<void> {
     const repo = await currentRepository()
@@ -261,6 +272,7 @@ export const useChatStore = defineStore('chat', () => {
     replaceSession(session)
     activeSessionId.value = session.id
     messages.value = []
+    lastError.value = null
     return session.id
   }
 
@@ -282,6 +294,7 @@ export const useChatStore = defineStore('chat', () => {
     replaceSession(session)
     activeSessionId.value = session.id
     messages.value = []
+    lastError.value = null
     return session.id
   }
 
@@ -326,7 +339,6 @@ export const useChatStore = defineStore('chat', () => {
     isStreaming.value = true
     streamingContent.value = ''
     citations.value = []
-    lastError.value = null
     const options = message.requestOptions || {}
     try {
       const result = await controller.run({
@@ -346,8 +358,8 @@ export const useChatStore = defineStore('chat', () => {
       }, {
         onStarted: (data) => {
           const started = data as { messageId?: string } | undefined
-          const completedUser = { ...message, serverMessageId: started?.messageId, status: 'COMPLETED' as const }
-          void updateCachedMessage(completedUser)
+          const startedUser = { ...message, serverMessageId: started?.messageId }
+          void updateCachedMessage(startedUser)
         },
         onDelta: (delta) => { streamingContent.value += delta },
         onCitation: (citation) => { citations.value = [...citations.value, citation] },
@@ -365,6 +377,9 @@ export const useChatStore = defineStore('chat', () => {
         messages.value.push(assistant)
         await cacheMessage(assistant)
       }
+      const completedUser = messages.value.find((item) => item.id === message.id)
+      if (completedUser) await updateCachedMessage({ ...completedUser, status: 'COMPLETED' })
+      lastError.value = null
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         lastError.value = '生成已取消'
@@ -395,7 +410,21 @@ export const useChatStore = defineStore('chat', () => {
   async function sendMessage(content: string, options: ChatRequestOptions = {}): Promise<void> {
     const text = content.trim()
     if (!text || isStreaming.value) return
-    const message = await appendUserMessage(text, options)
+    let message: ChatMessage | undefined
+    if (options.pendingRequestId) {
+      message = messages.value.find((item) =>
+        item.conversationId === activeSessionId.value &&
+        item.role === 'USER' &&
+        item.status === 'PENDING' &&
+        item.clientRequestId === options.pendingRequestId &&
+        item.content === text,
+      )
+      if (!message) return
+    } else {
+      const { pendingRequestId: _pendingRequestId, ...messageOptions } = options
+      message = await appendUserMessage(text, messageOptions)
+    }
+    if (!message) return
     await dispatchPendingMessage(message)
   }
 
@@ -408,7 +437,9 @@ export const useChatStore = defineStore('chat', () => {
         const pending = (await localMessages(session.id)).filter((message) => message.role === 'USER' && message.status === 'PENDING')
         for (const message of pending) await dispatchPendingMessage(message)
       } catch (error) {
-        if (!isOfflineTransportFailure(error)) lastError.value = error instanceof Error ? error.message : '离线会话恢复失败'
+        lastError.value = isOfflineTransportFailure(error)
+          ? '当前离线，消息会在恢复网络后继续发送'
+          : error instanceof Error ? error.message : '离线会话恢复失败'
       }
     }
   }
@@ -421,6 +452,7 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     streamingContent.value = ''
     citations.value = []
+    lastError.value = null
   }
 
   async function deleteSession(sessionId: string): Promise<void> {
@@ -468,6 +500,7 @@ export const useChatStore = defineStore('chat', () => {
     sessions,
     activeSessionId,
     activeSession,
+    pendingMessage,
     messages,
     isStreaming,
     streamingContent,

@@ -91,7 +91,8 @@
     <!-- Footer: 三端同步状态 -->
     <div class="sidebar-footer">
       <div class="sync-status"
-        @mouseenter="handleMouseEnter($event, 'sync', { title: syncStatusText })"
+        :aria-label="syncStatusText"
+        @mouseenter="handleMouseEnter($event, 'sync', { title: projection.message })"
         @mouseleave="handleMouseLeave"
       >
         <span class="sync-dot" :class="syncDotClass"></span>
@@ -127,12 +128,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LayoutDashboard, Compass, CalendarClock, Database, Timer } from 'lucide-vue-next'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
+import { useChatStore } from '@/store/useChatStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { realtimeController, type RealtimeStatus } from '@/services/realtimeController'
+import { projectConnectionStatus } from '@/services/connectionStatusProjection'
 import {
   getLegacySubjectIcon,
   getSubjectIconComponent,
@@ -141,9 +145,12 @@ import {
 
 const route = useRoute()
 const router = useRouter()
+const props = defineProps<{ online?: boolean }>()
 const authStore = useAuthStore()
 const syncStore = useSyncStore()
+const chatStore = useChatStore()
 const subjectStore = useSubjectStore()
+const realtimeStatus = ref<RealtimeStatus>(realtimeController.getStatus())
 
 // Hover States
 const hoverState = ref<{
@@ -190,20 +197,39 @@ const keepHoverCard = () => {
   }
 }
 
-const syncStatusText = computed(() => {
-  return syncStore.isSyncing ? '同步中...' : '三端同步就绪'
-})
-const syncDotClass = computed(() => {
-  return syncStore.isSyncing ? 'syncing' : 'ready'
-})
+const connectionProjection = computed(() => projectConnectionStatus({
+  online: props.online ?? (typeof navigator === 'undefined' || navigator.onLine),
+  syncError: syncStore.lastSyncError,
+  serviceUnavailable: false,
+  realtime: realtimeStatus.value,
+  syncing: syncStore.isSyncing,
+  chatError: chatStore.lastError,
+}))
+const projection = connectionProjection
+const syncStatusText = computed(() => connectionProjection.value.message)
+const syncDotClass = computed(() => `status-${connectionProjection.value.level}`)
+
+const handleRealtimeStatus = (event: Event): void => {
+  const status = (event as CustomEvent<unknown>).detail
+  if (status === 'disconnected' || status === 'connecting' || status === 'connected' || status === 'reconnecting') {
+    realtimeStatus.value = status
+  } else {
+    realtimeStatus.value = realtimeController.getStatus()
+  }
+}
 
 onMounted(async () => {
+  window.addEventListener('auralis-realtime-status', handleRealtimeStatus)
   if (!authStore.isAuthenticated) return
   try {
     await subjectStore.loadSubjects()
   } catch (error) {
     console.warn('[AppSidebar] subjects load failed', error)
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('auralis-realtime-status', handleRealtimeStatus)
 })
 
 
@@ -569,6 +595,27 @@ onMounted(async () => {
 .sync-dot.ready {
   background: #22c55e;
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.sync-dot.status-ready {
+  background: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.sync-dot.status-syncing {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+}
+
+.sync-dot.status-error {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.sync-dot.status-offline,
+.sync-dot.status-reconnecting {
+  background: #f59e0b;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
 }
 
 .sync-dot.syncing {

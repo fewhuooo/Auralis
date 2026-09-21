@@ -63,6 +63,14 @@ test('SubjectWorkspace integrates overview UI without moving the existing AI act
   assert.match(source, /regenerateSubjectOverview\(subjectId\.value, 'ALL'\)/)
 })
 
+test('SubjectWorkspace keeps chat failures in the chat region and retries the same pending request', async () => {
+  const source = await read('src/views/SubjectWorkspace/index.vue')
+  assert.match(source, /class="ai-messages"[\s\S]*role="alert"/)
+  assert.match(source, /chatStore\.lastError/)
+  assert.match(source, /pendingRequestId:\s*pending\.clientRequestId/)
+  assert.match(source, /@click="retryChat"/)
+})
+
 test('file overview failures expose direct retry actions with classified copy', async () => {
   const fileOutlineSource = await read('src/components/subject/FileOutlineList.vue')
   const summaryViewSource = await read('src/components/subject/OverviewSummaryView.vue')

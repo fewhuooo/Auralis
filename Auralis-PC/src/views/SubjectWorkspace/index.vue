@@ -446,6 +446,17 @@
             </div>
           </div>
         </div>
+
+        <div v-if="chatStore.lastError" class="chat-error" role="alert">
+          <span class="chat-error-message">{{ chatStore.lastError }}</span>
+          <button
+            v-if="pendingChatMessage"
+            type="button"
+            class="chat-error-retry"
+            :disabled="isAiStreaming"
+            @click="retryChat"
+          >重试</button>
+        </div>
       </div>
 
       <!-- Input Box -->
@@ -670,7 +681,12 @@ const chatStore = useChatStore()
 const documentProcessingStore = useDocumentProcessingStore()
 const { activeSubject } = storeToRefs(subjectStore)
 const { activeSourceFiles } = storeToRefs(sourceStore)
-const { messages: storedChatMessages, isStreaming: storedChatStreaming, streamingContent: storedStreamingContent } = storeToRefs(chatStore)
+const {
+  messages: storedChatMessages,
+  isStreaming: storedChatStreaming,
+  streamingContent: storedStreamingContent,
+  pendingMessage: storedPendingMessage,
+} = storeToRefs(chatStore)
 const taskStore = useTaskStore()
 
 const subjectId = computed(() => route.params.id as string)
@@ -1268,6 +1284,7 @@ interface ChatMsg { role: 'user' | 'assistant'; content: string }
 const chatMessages = computed<ChatMsg[]>(() => storedChatMessages.value
   .filter((message) => message.role === 'USER' || message.role === 'ASSISTANT')
   .map((message) => ({ role: message.role === 'USER' ? 'user' : 'assistant', content: message.content })))
+const pendingChatMessage = computed(() => storedPendingMessage.value)
 const chatInput = ref('')
 const isAiStreaming = computed(() => storedChatStreaming.value)
 const streamingContent = computed(() => storedStreamingContent.value)
@@ -1318,6 +1335,21 @@ const sendChat = async () => {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
       ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
     }
+  } finally {
+    scrollChatToBottom()
+  }
+}
+
+const retryChat = async () => {
+  const pending = pendingChatMessage.value
+  if (!pending?.clientRequestId || isAiStreaming.value) return
+  try {
+    await chatStore.sendMessage(pending.content, {
+      ...(pending.requestOptions || {}),
+      pendingRequestId: pending.clientRequestId,
+    })
+  } catch (error) {
+    ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
   } finally {
     scrollChatToBottom()
   }
@@ -2358,6 +2390,40 @@ html.dark .ai-header {
   border: 1px solid rgba(0, 0, 0, 0.08);
   color: var(--text-primary);
   border-radius: 2px 14px 14px 14px;
+}
+
+.chat-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.08);
+  color: #b42318;
+  font-size: 12px;
+}
+
+.chat-error-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-error-retry {
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.chat-error-retry:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .chat-content {

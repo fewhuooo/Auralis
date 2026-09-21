@@ -1,6 +1,6 @@
 <template>
   <div v-if="isAuthenticatedRoute" class="app-shell">
-    <AppSidebar />
+    <AppSidebar :online="browserOnline" />
     <div class="app-body">
       <AppHeader />
       <main class="app-content">
@@ -45,6 +45,7 @@ import type { BackgroundParserHostHandle } from '@/services/documentParser/fileV
 
 let stopWatchingAuth: (() => void) | undefined
 const backgroundParserHost = ref<BackgroundParserHostHandle | null>(null)
+const browserOnline = ref(typeof navigator === 'undefined' || navigator.onLine)
 const route = useRoute()
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
@@ -66,8 +67,14 @@ const startAuthenticatedRuntime = (): void => {
   syncStore.requestBackgroundSync('startup')
 }
 
+const updateBrowserOnline = (): void => {
+  browserOnline.value = typeof navigator === 'undefined' || navigator.onLine
+}
+
 onMounted(() => {
   setBackgroundParserHost(backgroundParserHost.value)
+  window.addEventListener('online', updateBrowserOnline)
+  window.addEventListener('offline', updateBrowserOnline)
 
   if (authStore.isAuthenticated) {
     startAuthenticatedRuntime()
@@ -87,6 +94,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('online', updateBrowserOnline)
+  window.removeEventListener('offline', updateBrowserOnline)
   stopWatchingAuth?.()
   stopWatchingAuth = undefined
   realtimeController.stop()

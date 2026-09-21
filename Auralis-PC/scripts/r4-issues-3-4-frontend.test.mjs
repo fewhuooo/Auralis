@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import path from 'node:path'
 import test from 'node:test'
 
 import { projectConnectionStatus } from '../src/services/connectionStatusProjection.ts'
+
+const root = path.resolve(import.meta.dirname, '..')
+const read = file => readFile(path.join(root, file), 'utf8')
 
 const readyInput = {
   online: true,
@@ -36,4 +41,17 @@ test('surfaces a chat error instead of reporting sync success', () => {
   assert.equal(projection.code, 'SERVICE_UNAVAILABLE')
   assert.equal(projection.message, '问答请求失败')
   assert.equal(projection.retryable, true)
+})
+
+test('sidebar consumes the unified connection projection', async () => {
+  const sidebar = await read('src/components/layout/AppSidebar.vue')
+  assert.match(sidebar, /connectionProjection/)
+  assert.match(sidebar, /projection\.message/)
+  assert.doesNotMatch(sidebar, /三端同步就绪/)
+})
+
+test('workspace renders chat errors inside the chat region', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  assert.match(workspace, /role="alert"/)
+  assert.match(workspace, /lastError/)
 })
