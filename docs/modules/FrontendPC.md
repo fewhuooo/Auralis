@@ -6,7 +6,7 @@
 - Overview 的所有 eligibility/not-ready/no-input 分支均返回 `SKIPPED`，不把 skip 写成 `FAILED`；Subject 生成在 Provider 返回后以当前参与 Source 的 fingerprint、generation 和 abort fence 复核，删除/修订/新一代响应不会写入缓存。
 - `classifyClientError` 对已经安全化的 `SafeClientError` 保持原有 `code`、用户文案和 `retryable`，避免跨 Store/Controller 边界二次降级；Subject discard 会 abort 使用该 Source 的进行中生成，Provider 返回后再逐个复核 Source existence、FILE/READY、revision 与 eligibility。
 - 已补真正运行时回归：同步错误持续到成功 cycle、SSE 安全错误、聊天 retry 保持 `clientRequestId`、Subject `NO_USABLE_INPUT` 及 revision late-result。手动完成的 `STARTED` 反馈显示“已更新”，旧内容提示仅在确有旧内容时出现。
-- PC 完整 R4 门禁本轮为 379/379，type-check 通过；真实 WebSocket、Tauri/GUI、Provider 和业务验收仍需单独记录。
+- 最终 focused 回归为 68/68，PC 完整 R4 门禁为 382/382；`npm.cmd run type-check`、`npm.cmd run build`、根目录 `git diff --check` 均通过。真实 WebSocket、Tauri/GUI、Provider 和业务验收仍需单独记录。
 
 ### 2026-09-21 Issue 3/4 前端反馈收口（自动证据完成，人工验收开放）
 

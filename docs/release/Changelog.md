@@ -4,7 +4,7 @@
 
 - 已安全化的 `SafeClientError` 在二次分类时保留 `code`、安全文案和 `retryable`；Chat Store retry 直接复用原 PENDING 消息和 `clientRequestId`，不追加重复 USER 消息。
 - Subject Overview 保存前逐 Source 复核 existence、类型、READY、revision、blocked/eligibility；Source discard 会 abort 受影响的 subject generation，删除、状态变化和 revision 变化的晚到响应均不写入 cache。
-- 新增真实 Store/Service runtime 回归；聚焦套件 65/65、完整 `test:r4-pc`、type-check、build 和 diff-check 结果见任务报告。真实 Provider、Tauri/GUI、浏览器网络与业务验收仍待执行。
+- 新增真实 Store/Service runtime 与 Subject 保存竞态回归；最终 focused 68/68、完整 `test:r4-pc` 382/382，`type-check`、`build` 和 `diff-check` 均通过。真实 Provider、Tauri/GUI、浏览器网络与业务验收仍待执行。
 
 ### PC Issue 3/4 连接状态与 Overview 反馈收口（2026-09-21）
 
