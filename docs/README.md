@@ -197,6 +197,8 @@
 - [PC Local Asset Store 全栈实施计划（2026-09-16）](plans/2026-09-16-pc-local-asset-store.md)
 - [PC OCR 运行时页级进度恢复实施计划（2026-09-18）](plans/2026-09-18-pc-ocr-runtime-progress.md)
 - [Overview Reduce Prompt 均衡压缩实施计划（2026-09-20）](plans/2026-09-20-overview-reduce-prompt-compression.md)
+- [Source 永久删除与单 PC 会话实施计划（2026-09-21）](plans/2026-09-21-source-permanent-delete-and-single-pc.md)
+- [Issue 3/4 前端修复实施计划（2026-09-21）](plans/2026-09-21-issues-3-4-frontend-fixes.md)
 - [部署测试前主任务清单](planning/PreDeploymentReadinessTasks.md)
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
