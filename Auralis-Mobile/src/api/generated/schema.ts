@@ -890,27 +890,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
+            missingNode?: boolean;
             object?: boolean;
             container?: boolean;
-            missingNode?: boolean;
-            floatingPointNumber?: boolean;
+            double?: boolean;
+            number?: boolean;
+            pojo?: boolean;
+            long?: boolean;
+            short?: boolean;
+            string?: boolean;
+            int?: boolean;
             /** @deprecated */
             textual?: boolean;
-            int?: boolean;
-            string?: boolean;
-            long?: boolean;
-            pojo?: boolean;
-            number?: boolean;
             boolean?: boolean;
             binary?: boolean;
-            short?: boolean;
-            double?: boolean;
+            valueNode?: boolean;
+            bigDecimal?: boolean;
             bigInteger?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             integralNumber?: boolean;
-            valueNode?: boolean;
-            bigDecimal?: boolean;
+            floatingPointNumber?: boolean;
             embeddedValue?: boolean;
         };
         MutationRequest: {
