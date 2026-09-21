@@ -76,3 +76,21 @@ git diff --check
 ```
 
 复核结果：TDD 修复前 14 pass、2 fail；修复后聚焦 + reliability 21/21 pass，type-check 与 diff-check 均退出码 0。
+
+## Review follow-up 2
+
+复审发现 App 根级初始化 ChatStore 后，未认证窗口的 `online` 事件可能进入无 scope 的恢复入口并产生未处理 Promise rejection。已按最小范围修复：
+
+- `recoverOfflineSessions()` 入口先读取 `useAuthStore()`，缺少 `user.id` 或 `serverDeviceId` 时安全返回，不触发 local repository 初始化。
+- ChatStore 的 `online` handler 对恢复 Promise 显式 `.catch()`，只记录固定诊断，避免事件回调泄漏 rejection；恢复入口内部仍保留业务错误处理，不把任意异常伪装成成功。
+- `r4-reliability.test.mjs` 增加未认证/无完整 local scope no-op 与 online handler rejection 覆盖。
+
+复核命令：
+
+```powershell
+node --experimental-strip-types --test scripts/r4-issues-3-4-frontend.test.mjs scripts/r4-subject-overview-ui.test.mjs scripts/r4-reliability.test.mjs
+npm.cmd run type-check
+git diff --check
+```
+
+复核结果：TDD 修复前 21 pass、1 fail；修复后 22/22 pass，type-check 与 diff-check 均退出码 0。

@@ -86,3 +86,13 @@ test('persists stable IDs needed for ordered offline AI session recovery', async
   assert.match(source, /clientRequestId:\s*message\.clientRequestId/)
   assert.match(source, /window\.addEventListener\('online'/)
 })
+
+test('online chat recovery is a guarded no-op without an authenticated local scope', async () => {
+  const source = await readFile(new URL('../src/store/useChatStore.ts', import.meta.url), 'utf8')
+
+  assert.match(
+    source,
+    /async function recoverOfflineSessions\(\): Promise<void> \{[\s\S]*const auth = useAuthStore\(\)[\s\S]*if \(!auth\.user\?\.id \|\| !auth\.serverDeviceId\) return/,
+  )
+  assert.match(source, /void recoverOfflineSessions\(\)\.catch\(/)
+})

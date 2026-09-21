@@ -429,6 +429,8 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function recoverOfflineSessions(): Promise<void> {
+    const auth = useAuthStore()
+    if (!auth.user?.id || !auth.serverDeviceId) return
     const local = sessions.value.length ? sessions.value : await localSessions()
     if (!sessions.value.length) sessions.value = local
     for (const session of local) {
@@ -493,7 +495,11 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   if (typeof window !== 'undefined') {
-    window.addEventListener('online', () => { void recoverOfflineSessions() })
+    window.addEventListener('online', () => {
+      void recoverOfflineSessions().catch(() => {
+        console.warn('[Chat] online recovery failed')
+      })
+    })
   }
 
   return {
