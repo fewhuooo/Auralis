@@ -36,6 +36,10 @@ Auralis-Server/target/
 # Local database / run data
 data/
 
+# Local database backups and generated test fixtures
+/.reset-backup-*/
+/tmp/
+
 # Local development caches and generated artifacts
 .worktrees/
 .pnpm-store/
