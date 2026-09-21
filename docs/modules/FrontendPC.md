@@ -1,5 +1,12 @@
 # PC 前端模块
 
+### 2026-09-21 Issue 3/4 前端反馈收口（自动证据完成，人工验收开放）
+
+- Issue 3 的 PC 连接状态现在由统一 projection 按错误、离线、Realtime 重连、同步中、已同步的优先级计算；同步错误、服务不可用和问答错误保持为可见错误，不会因浏览器恢复 online 事件直接伪装为已同步。问答失败保留在聊天区域并提供重试入口。
+- Issue 4 的手动文件/学科 Overview 重生成返回结构化 `STARTED`、`SKIPPED` 或 `FAILED` 结果；调用方对 Source 未就绪、版本/eligibility 不满足和 Provider/网络失败给出明确反馈。自动触发继续静默记录有界结果，不弹出通知、不递归重试；失败或跳过均保留已有缓存内容，只有手动重试可绕过当前 revision 的终态策略。
+- 自动验证：Issue 3/4 focused 命令 `node --experimental-strip-types --test scripts/r4-issues-3-4-frontend.test.mjs scripts/r4-overview-generation.test.mjs scripts/r4-overview-cache.test.mjs scripts/r4-subject-overview-ui.test.mjs scripts/r4-sync.test.mjs scripts/r4-reliability.test.mjs` 为 88/88；`npm.cmd run test:r4-pc` 为 369/369；`npm.cmd run type-check`、`npm.cmd run build` 和根目录 `git diff --check` 均退出 0。
+- 构建/测试输出仍包含既有 SQLite experimental、Vite externalized/dynamic-import 和 chunk size 警告；它们未被改写为失败，也不等同于真实验收。真实 WebSocket delivery、浏览器 online/offline 事件、Tauri/GUI 文件预览及真实 AI Provider 输出尚未验收；本轮无 API 或数据库契约变化。
+
 2026-09-17 PC Local Asset Store Task 8 收尾：`b7a3bb7..c560d8b` 已将 PC Tauri 文件导入接入永久本地资料库。原始文件在受管目录中保持明文，由受管路径与 OS ACL 保护；本地 Asset 与 Source draft 以 `userId + serverDeviceId` 隔离，所有文件默认进入同步队列。断网时可完成导入、预览、OCR/Parser 本地解析，联网后以稳定 `clientImportId` 幂等同步对象存储；Preview、OCR、Parser 共享同一 Local Asset descriptor，`localContentRevision` 与服务端 `ingestionRevision` 分离。Local Asset 不提供备份、导出、恢复或副本管理能力。仅用户明确删除 Source 且最后一个 Source 引用消失后才进入受控删除；上传、解析、修复和 Source 删除均有任务 fence。启动同步前执行 owner/device-scoped reconcile：缺失或 hash/size 不一致标记 `CORRUPT`，未知或残留 staging 文件移入 quarantine，不静默删除。
 
 自动证据：`f770277`/`e040e78` 后 Task 7 定向 77/77、FilePreview+store 38/38、Rust Local Asset 30/30；`cargo fmt --check`、`cargo check` 通过。`npm.cmd run test:r4-pc` 当前 333/334，仅剩用户 dirty `task-view` 的 completed scheduled task 断言失败；`npm.cmd run type-check` 仍仅有用户 dirty UI/Store 的 7 项错误。上述代码和自动门禁不等于真实 Tauri GUI、断网重启、真实文件系统或外部对象存储验收通过。

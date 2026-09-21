@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### PC Issue 3/4 连接状态与 Overview 反馈收口（2026-09-21）
+
+- PC 连接状态统一按错误、离线、Realtime 重连、同步中、已同步的优先级投影；问答失败在聊天区域保持可见并可重试。Overview 手动重生成返回 `STARTED`/`SKIPPED`/`FAILED` 结构化结果，自动触发静默处理预期失败并保留已有缓存，只有手动重试绕过终态策略。
+- 自动证据：Issue 3/4 focused 88/88，完整 `npm.cmd run test:r4-pc` 369/369，`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 通过。既有 SQLite experimental、Vite externalized/dynamic-import/chunk size 警告仍存在。
+- 真实 WebSocket、浏览器 online/offline、Tauri/GUI 文件预览和 AI Provider 输出仍待人工验收；本轮无 API 或数据库契约变化。
+
 ### Overview Reduce prompt 均衡压缩（2026-09-20）
 
 - MAP 行为保持不变；非最终及最终文档 REDUCE 现在使用专用均衡压缩 prompt，规范化长度为 843 字符，面向需要实质归并的输出目标约 2500–3000 个序列化 JSON 字符。该目标不替代既有校验。

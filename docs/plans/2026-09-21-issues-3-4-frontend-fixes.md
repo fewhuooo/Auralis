@@ -444,7 +444,7 @@ Add a dated entry describing the projection priority, persistent chat error, str
 - [ ] **Step 3: Run documentation self-check**
 
 ```
-rg -n -i "T[D]D|T[O]DO|[F]IXME|[P]LACEHOLDER|implement[ ]later" docs/plans/2026-09-21-issues-3-4-frontend-fixes.md
+rg -n -i "T[B]D|T[O]DO|[F]IXME|[P]LACEHOLDER|implement[ ]later" docs/plans/2026-09-21-issues-3-4-frontend-fixes.md
 if ($LASTEXITCODE -eq 0) { throw 'plan scan found a prohibited token' }
 git diff --check
 git status --short
