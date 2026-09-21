@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### PC Issue 3/4 final review 重要问题收口（2026-09-21）
+
+- 已安全化的 `SafeClientError` 在二次分类时保留 `code`、安全文案和 `retryable`；Chat Store retry 直接复用原 PENDING 消息和 `clientRequestId`，不追加重复 USER 消息。
+- Subject Overview 保存前逐 Source 复核 existence、类型、READY、revision、blocked/eligibility；Source discard 会 abort 受影响的 subject generation，删除、状态变化和 revision 变化的晚到响应均不写入 cache。
+- 新增真实 Store/Service runtime 回归；聚焦套件 65/65、完整 `test:r4-pc`、type-check、build 和 diff-check 结果见任务报告。真实 Provider、Tauri/GUI、浏览器网络与业务验收仍待执行。
+
 ### PC Issue 3/4 连接状态与 Overview 反馈收口（2026-09-21）
 
 - PC 连接状态统一按错误、离线、Realtime 重连、同步中、已同步的优先级投影；问答失败在聊天区域保持可见并可重试。Overview 手动重生成返回 `STARTED`/`SKIPPED`/`FAILED` 结构化结果，自动触发静默处理预期失败并保留已有缓存，只有手动重试绕过终态策略。

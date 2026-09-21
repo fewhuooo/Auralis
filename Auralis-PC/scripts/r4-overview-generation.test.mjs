@@ -582,6 +582,76 @@ test('subject regeneration rejects a late response when source revision changes 
   assert.equal(repository.failures.length, 0)
 })
 
+test('subject regeneration rejects a late response when a participating Source is deleted', async () => {
+  const repository = new FakeOverviewRepository()
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  let currentSource = { id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }
+  let releaseProvider
+  const providerGate = new Promise((resolve) => { releaseProvider = resolve })
+  const service = new OverviewGenerationService({
+    api: { async generateSubjectOverview() { await providerGate; return response('ALL') } },
+    repository,
+    sourceApi: { async get() { return currentSource } },
+    listLocalFileOverviews: async () => files,
+  })
+  const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  currentSource = null
+  releaseProvider()
+
+  const result = await attempt
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'SOURCE_NOT_ELIGIBLE' })
+  assert.equal(await repository.getSubjectOverview('subject-1'), null)
+  assert.equal(repository.failures.length, 0)
+})
+
+test('subject regeneration rejects a late response when a participating Source leaves READY', async () => {
+  const repository = new FakeOverviewRepository()
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  let currentSource = { id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }
+  let releaseProvider
+  const providerGate = new Promise((resolve) => { releaseProvider = resolve })
+  const service = new OverviewGenerationService({
+    api: { async generateSubjectOverview() { await providerGate; return response('ALL') } },
+    repository,
+    sourceApi: { async get() { return currentSource } },
+    listLocalFileOverviews: async () => files,
+  })
+  const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  currentSource = { ...currentSource, ingestionStatus: 'PARSING' }
+  releaseProvider()
+
+  const result = await attempt
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'SOURCE_NOT_ELIGIBLE' })
+  assert.equal(await repository.getSubjectOverview('subject-1'), null)
+  assert.equal(repository.failures.length, 0)
+})
+
+test('discard aborts an in-flight subject generation that uses the discarded Source', async () => {
+  const repository = new FakeOverviewRepository()
+  let releaseProvider
+  const providerGate = new Promise((resolve) => { releaseProvider = resolve })
+  let signal
+  const service = new OverviewGenerationService({
+    api: { async generateSubjectOverview(_request, context) { signal = context.signal; await providerGate; return response('ALL') } },
+    repository,
+    listLocalFileOverviews: async () => [
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+    ],
+  })
+  const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  await service.discardFileOverview('source-1')
+  releaseProvider()
+
+  const result = await attempt
+  assert.equal(signal.aborted, true)
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.equal(await repository.getSubjectOverview('subject-1'), null)
+  assert.equal(repository.failures.length, 0)
+})
+
 test('overview response validation rejects malformed or mode-inconsistent provider data', () => {
   assert.deepEqual(validateOverviewResponse(response('ALL'), 'ALL'), response('ALL'))
   assert.throws(() => validateOverviewResponse({ ...response('ALL'), schemaVersion: 2 }, 'ALL'), /OVERVIEW_RESPONSE_INVALID/)

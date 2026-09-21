@@ -24,6 +24,7 @@ const { classifyClientError, SafeClientError } = await import('../src/services/c
 const { AiStreamController } = await import('../src/services/aiStreamController.ts')
 const { createPinia, setActivePinia } = await import('pinia')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
+const { useChatStore } = await import('../src/store/useChatStore.ts')
 const { useSyncStore } = await import('../src/store/useSyncStore.ts')
 const { useSyncApi } = await import('../src/api/useSyncApi.ts')
 const { getLocalRepository } = await import('../src/services/localDb.ts')
@@ -42,6 +43,19 @@ test('safe client errors map raw provider details to bounded actionable copy', (
   assert.equal(mapped.message, 'AI 请求失败，请重试')
   assert.doesNotMatch(mapped.message, /secret provider detail/)
   assert.ok(mapped.detail.length <= 240)
+})
+
+test('safe client errors remain stable when classifyClientError is called a second time', () => {
+  const cases = [
+    { code: 'AUTH_REQUIRED', message: '登录状态已失效，请重新登录', detail: 'auth detail', offline: false, retryable: false },
+    { code: 'AI_PROVIDER_ERROR', message: 'AI 请求失败，请重试', detail: 'provider detail', offline: false, retryable: true },
+    { code: 'NETWORK_OFFLINE', message: '网络中断，消息会使用相同请求 ID 重试', detail: 'offline detail', offline: true, retryable: true },
+  ]
+  for (const expected of cases) {
+    const safe = new SafeClientError(expected)
+    const remapped = classifyClientError(safe, 'CHAT')
+    assert.deepEqual(remapped, expected)
+  }
 })
 
 test('SSE message.error never becomes a raw UI Error.message', async () => {
@@ -67,6 +81,59 @@ test('chat retry reuses the same clientRequestId for the same logical request', 
   await controller.run(input)
   await controller.run(input)
   assert.deepEqual(seen, ['request-1', 'request-1'])
+})
+
+test('chat Store retry dispatches the existing pending message without appending another user message', async () => {
+  globalThis.localStorage = new MemoryStorage()
+  setActivePinia(createPinia())
+  const auth = useAuthStore()
+  auth.setSession({
+    user: { id: 'chat-retry-user', username: 'chat-retry' },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: 'chat-retry-session',
+    serverDeviceId: 'chat-retry-device',
+  })
+  const chat = useChatStore()
+  const sessionId = 'chat-retry-conversation'
+  chat.sessions.push({
+    id: sessionId,
+    remoteId: 'remote-chat-retry',
+    creationRequestId: 'creation-request',
+    title: '重试会话',
+    version: 1,
+    localOnly: false,
+    purpose: 'GENERAL',
+  })
+  chat.activeSessionId = sessionId
+  chat.messages.push({
+    id: 'pending-user',
+    conversationId: sessionId,
+    clientRequestId: 'client-retry-1',
+    role: 'USER',
+    status: 'PENDING',
+    content: 'retry me',
+    createdAt: new Date().toISOString(),
+    citations: [],
+  })
+  const requests = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body))
+    return new Response('event: message.completed\ndata: {"content":"ok"}\n\n', {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }
+  try {
+    await chat.sendMessage('retry me', { pendingRequestId: 'client-retry-1' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  assert.equal(requests.length, 1)
+  assert.equal(requests[0].clientRequestId, 'client-retry-1')
+  assert.equal(chat.messages.filter((message) => message.role === 'USER').length, 1)
+  assert.equal(chat.messages.find((message) => message.id === 'pending-user').status, 'COMPLETED')
+  assert.equal(chat.messages.find((message) => message.role === 'ASSISTANT')?.content, 'ok')
 })
 
 test('sync error remains projected until a complete subsequent cycle succeeds', async () => {

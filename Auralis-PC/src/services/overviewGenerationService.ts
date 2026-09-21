@@ -21,7 +21,7 @@ interface FileSource {
   ingestionRevision?: string
 }
 
-interface SourceApi { get(sourceId: string): Promise<FileSource> }
+interface SourceApi { get(sourceId: string): Promise<FileSource | null> }
 interface OverviewRepositoryLike {
   getFileOverview(sourceId: string, ingestionRevision: string): Promise<FileOverviewRecord | null>
   saveFileOverviewPart(input: { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse }): Promise<unknown>
@@ -48,6 +48,11 @@ interface InFlightFile {
   requestId: string
   sourceId: string
   controller: AbortController
+}
+
+interface SubjectGenerationContext {
+  generation: number
+  sources: ReadyFile[]
 }
 
 const DIAGNOSTIC_PREFIX = '[FILE_OVERVIEW_TRIGGER]'
@@ -117,6 +122,7 @@ export class OverviewGenerationService {
   private readonly blockedSourceIds = new Set<string>()
   private readonly subjectGenerations = new Map<string, number>()
   private readonly subjectControllers = new Map<string, AbortController>()
+  private readonly subjectContexts = new Map<string, SubjectGenerationContext>()
 
   constructor(options: Options) {
     this.api = options.api
@@ -195,6 +201,11 @@ export class OverviewGenerationService {
     for (const entry of this.inFlight.values()) {
       if (entry.sourceId === sourceId) entry.controller.abort()
     }
+    for (const [subjectId, context] of this.subjectContexts) {
+      if (!context.sources.some((source) => source.sourceId === sourceId)) continue
+      this.subjectGenerations.set(subjectId, context.generation + 1)
+      this.subjectControllers.get(subjectId)?.abort()
+    }
     await this.repository.removeFileOverviews(sourceId)
   }
 
@@ -232,6 +243,11 @@ export class OverviewGenerationService {
       const files = allFiles
         .filter((file) => supportsMode(file, mode))
       if (files.length === 0) return skippedResult('NO_USABLE_INPUT')
+      const context: SubjectGenerationContext = {
+        generation,
+        sources: files.map((file) => ({ sourceId: file.sourceId, ingestionRevision: file.ingestionRevision })),
+      }
+      this.subjectContexts.set(subjectId, context)
       const inputFingerprint = await computeSubjectInputFingerprint(allFiles)
       const sources: SubjectOverviewSourceInput[] = files.map((file) => ({
         sourceId: file.sourceId,
@@ -243,6 +259,9 @@ export class OverviewGenerationService {
       const generated = await this.api.generateSubjectOverview(request, { requestId, signal: controller.signal })
       if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) {
         return skippedResult('ABORTED')
+      }
+      if (!(await this.areSubjectSourcesCurrent(context.sources))) {
+        return skippedResult('SOURCE_NOT_ELIGIBLE')
       }
       const latestFiles = (await this.listLocalFileOverviews?.(subjectId) ?? [])
         .filter(hasUsableOverview)
@@ -260,14 +279,23 @@ export class OverviewGenerationService {
       return failed
     } finally {
       if (this.subjectControllers.get(subjectId) === controller) this.subjectControllers.delete(subjectId)
+      if (this.subjectContexts.get(subjectId)?.generation === generation) this.subjectContexts.delete(subjectId)
     }
+  }
+
+  private async areSubjectSourcesCurrent(sources: ReadyFile[]): Promise<boolean> {
+    for (const source of sources) {
+      if (!(await this.isEligible(source.sourceId, source.ingestionRevision))) return false
+      if (!(await this.isCurrentReady(source.sourceId, source.ingestionRevision))) return false
+    }
+    return true
   }
 
   private async isCurrentReady(sourceId: string, revision: string): Promise<boolean> {
     if (!this.sourceApi) return true
     try {
       const source = await this.sourceApi.get(sourceId)
-      return source.id === sourceId && source.type === 'FILE' && source.ingestionStatus === 'READY' && source.ingestionRevision === revision
+      return Boolean(source && source.id === sourceId && source.type === 'FILE' && source.ingestionStatus === 'READY' && source.ingestionRevision === revision)
     } catch { return false }
   }
 

@@ -8,6 +8,7 @@ export interface SafeClientErrorInfo {
   message: string
   detail: string
   offline: boolean
+  retryable: boolean
 }
 
 const SAFE_CODES = new Set([
@@ -73,6 +74,15 @@ function messageFor(domain: ClientErrorDomain, code: string): string {
 }
 
 export function classifyClientError(error: unknown, domain: ClientErrorDomain): SafeClientErrorInfo {
+  if (error instanceof SafeClientError) {
+    return {
+      code: error.code,
+      message: error.message,
+      detail: error.detail,
+      offline: error.offline,
+      retryable: error.retryable,
+    }
+  }
   const offline = isOfflineTransportFailure(error) || candidateCode(error) === 'NETWORK_OFFLINE'
   const status = candidateStatus(error)
   let code = 'AI_REQUEST_FAILED'
@@ -83,17 +93,23 @@ export function classifyClientError(error: unknown, domain: ClientErrorDomain): 
   else if (domain === 'SYNC') code = 'SYNC_FAILED'
   else if (['MODEL_PROVIDER_ERROR', 'AI_PROVIDER_ERROR', 'PROVIDER_UNAVAILABLE'].includes(candidateCode(error))) code = 'AI_PROVIDER_ERROR'
   if (!SAFE_CODES.has(code)) code = domain === 'SYNC' ? 'SYNC_FAILED' : 'AI_REQUEST_FAILED'
-  return { code, message: messageFor(domain, code), detail: boundedDetail(error), offline }
+  return { code, message: messageFor(domain, code), detail: boundedDetail(error), offline, retryable: code !== 'AUTH_REQUIRED' }
 }
 
 export class SafeClientError extends Error {
   readonly code: string
+  readonly detail: string
+  readonly offline: boolean
+  readonly retryable: boolean
   readonly status: number
 
   constructor(info: SafeClientErrorInfo) {
     super(info.message)
     this.name = 'SafeClientError'
     this.code = info.code
+    this.detail = info.detail
+    this.offline = info.offline
+    this.retryable = info.retryable
     this.status = info.offline ? 0 : 500
   }
 }
