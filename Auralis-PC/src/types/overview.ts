@@ -1,6 +1,26 @@
 export type OverviewMode = 'ALL' | 'OUTLINE' | 'SUMMARY'
 export type OverviewCacheStatus = 'READY' | 'FAILED'
 export type FileOverviewTrigger = 'SOURCE_READY' | 'RESUME_BOOTSTRAP' | 'RESUME_ONLINE' | 'RESUME_SYNC' | 'JOB_CHANGED' | 'MANUAL_RETRY'
+export type OverviewSkipCode =
+  | 'SOURCE_NOT_ELIGIBLE'
+  | 'SOURCE_NOT_READY'
+  | 'SOURCE_UNAVAILABLE'
+  | 'CACHE_COMPLETE'
+  | 'SKIPPED_FAILED_REQUIRES_MANUAL_RETRY'
+  | 'PARTIAL_REQUIRES_MANUAL_RETRY'
+  | 'ABORTED'
+export type OverviewFailureCode =
+  | 'MODEL_PROVIDER_ERROR'
+  | 'MODEL_TIMEOUT'
+  | 'MODEL_UNAVAILABLE'
+  | 'OVERVIEW_STATUS_UNKNOWN'
+  | 'OVERVIEW_GENERATION_FAILED'
+  | 'SUBJECT_OVERVIEW_FILES_UNAVAILABLE'
+  | (string & {})
+export type OverviewRegenerationResult =
+  | { status: 'STARTED'; requestId?: string }
+  | { status: 'SKIPPED'; code: OverviewSkipCode }
+  | { status: 'FAILED'; code: OverviewFailureCode; detail?: string }
 
 export interface OverviewLocator { page: number | null; blockId: string | null }
 export interface OverviewSection { title: string; summary: string | null; sourceIds: string[]; locator: OverviewLocator | null }

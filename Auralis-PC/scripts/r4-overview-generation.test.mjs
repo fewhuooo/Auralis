@@ -172,6 +172,55 @@ test('manual retry bypasses terminal cache policy and still coalesces duplicate 
   assert.equal(calls, 1)
 })
 
+test('manual file regeneration returns a structured skipped result without replacing cached content', async () => {
+  const repository = new FakeOverviewRepository()
+  await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: response('ALL') })
+  const service = new OverviewGenerationService({
+    api: { async generateSourceOverview() { throw new Error('must not call provider') } },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'PARSING', ingestionRevision: 'rev-1' }),
+  })
+
+  const result = await service.regenerateFileOverview('source-1', 'OUTLINE')
+
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'SOURCE_NOT_READY' })
+  const cached = await repository.getFileOverview('source-1', 'rev-1')
+  assert.deepEqual(cached.outline, outline)
+  assert.deepEqual(cached.summary, summary)
+})
+
+test('manual file regeneration returns STARTED with request id after successful completion', async () => {
+  const repository = new FakeOverviewRepository()
+  const service = new OverviewGenerationService({
+    api: { async generateSourceOverview() { return response('OUTLINE') } },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    requestIdFactory: () => 'request-started',
+  })
+
+  const result = await service.regenerateFileOverview('source-1', 'OUTLINE')
+
+  assert.deepEqual(result, { status: 'STARTED', requestId: 'request-started' })
+})
+
+test('manual file regeneration returns FAILED after provider failure and preserves successful cache content', async () => {
+  const repository = new FakeOverviewRepository()
+  await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: response('ALL') })
+  const service = new OverviewGenerationService({
+    api: { async generateSourceOverview() { throw { code: 'MODEL_PROVIDER_ERROR', detail: 'provider detail' } } },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+  })
+
+  const result = await service.regenerateFileOverview('source-1', 'SUMMARY')
+
+  assert.deepEqual(result, { status: 'FAILED', code: 'MODEL_PROVIDER_ERROR', detail: 'Overview generation failed: MODEL_PROVIDER_ERROR' })
+  const cached = await repository.getFileOverview('source-1', 'rev-1')
+  assert.deepEqual(cached.outline, outline)
+  assert.deepEqual(cached.summary, summary)
+  assert.equal(repository.failures.at(-1).code, 'MODEL_PROVIDER_ERROR')
+})
+
 test('transport uncertainty is persisted as a stable safe code', async () => {
   const repository = new FakeOverviewRepository()
   const service = readyService(repository, async () => {
@@ -306,6 +355,50 @@ test('subject regeneration submits only local file overviews and stores the succ
   assert.equal(calls[0].subjectId, 'subject-1')
   assert.deepEqual(calls[0].sources.map((source) => source.sourceId), ['a', 'b'])
   assert.ok((await repository.getSubjectOverview('subject-1')).inputFingerprint)
+})
+
+test('manual subject regeneration returns STARTED with the request id after saving', async () => {
+  const repository = new FakeOverviewRepository()
+  let context
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSubjectOverview(request, requestContext) {
+        context = requestContext
+        return response(request.mode)
+      },
+    },
+    repository,
+    requestIdFactory: () => 'subject-request-1',
+    listLocalFileOverviews: async () => [
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+    ],
+  })
+
+  const result = await service.regenerateSubjectOverview('subject-1', 'ALL')
+
+  assert.deepEqual(result, { status: 'STARTED', requestId: 'subject-request-1' })
+  assert.deepEqual(context, { requestId: 'subject-request-1' })
+})
+
+test('manual subject regeneration returns FAILED and preserves the previous result on provider failure', async () => {
+  const repository = new FakeOverviewRepository()
+  await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'ALL', response: response('ALL'), inputFingerprint: 'old-fingerprint' })
+  const service = new OverviewGenerationService({
+    api: { async generateSubjectOverview() { throw { code: 'MODEL_PROVIDER_ERROR' } } },
+    repository,
+    requestIdFactory: () => 'subject-request-2',
+    listLocalFileOverviews: async () => [
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+    ],
+  })
+
+  const result = await service.regenerateSubjectOverview('subject-1', 'ALL')
+
+  assert.deepEqual(result, { status: 'FAILED', code: 'MODEL_PROVIDER_ERROR', detail: 'Overview generation failed: MODEL_PROVIDER_ERROR' })
+  assert.deepEqual(await repository.getSubjectOverview('subject-1'), {
+    subjectId: 'subject-1', mode: 'ALL', response: response('ALL'), inputFingerprint: 'old-fingerprint', status: 'READY',
+  })
+  assert.equal(repository.failures.at(-1).code, 'MODEL_PROVIDER_ERROR')
 })
 
 test('subject regeneration filters local inputs by the requested mode', async () => {

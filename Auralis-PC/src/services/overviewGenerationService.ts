@@ -9,6 +9,9 @@ import type {
   SubjectOverviewSourceInput,
   SourceOverviewRequest,
   SubjectOverviewRequest,
+  OverviewRegenerationResult,
+  OverviewSkipCode,
+  OverviewFailureCode,
 } from '@/types/overview'
 
 interface FileSource {
@@ -41,7 +44,7 @@ interface Options {
 }
 
 interface InFlightFile {
-  promise: Promise<void>
+  promise: Promise<OverviewRegenerationResult>
   requestId: string
   sourceId: string
   controller: AbortController
@@ -62,6 +65,15 @@ function monotonicNow(): number {
 function elapsedSince(start: number): number {
   const value = monotonicNow() - start
   return Number.isFinite(value) && value >= 0 ? value : 0
+}
+
+function skippedResult(code: OverviewSkipCode): OverviewRegenerationResult {
+  return { status: 'SKIPPED', code }
+}
+
+function failedResult(error: unknown): Extract<OverviewRegenerationResult, { status: 'FAILED' }> {
+  const safe = classifyOverviewFailure(error)
+  return { status: 'FAILED', code: safe.code as OverviewFailureCode, detail: safe.detail }
 }
 
 
@@ -141,40 +153,40 @@ export class OverviewGenerationService {
     await this.runFile(sourceId, ingestionRevision, 'ALL', undefined, trigger)
   }
 
-  async regenerateFileOverview(sourceId: string, mode: OverviewMode, instruction?: string): Promise<void> {
+  async regenerateFileOverview(sourceId: string, mode: OverviewMode, instruction?: string): Promise<OverviewRegenerationResult> {
     const trigger: FileOverviewTrigger = 'MANUAL_RETRY'
     this.log({ event: 'TRIGGER', trigger, sourceId, mode })
     if (this.blockedSourceIds.has(sourceId)) {
       this.log({ event: 'SKIPPED', trigger, sourceId, mode, outcome: 'SOURCE_NOT_ELIGIBLE' })
-      return
+      return skippedResult('SOURCE_NOT_ELIGIBLE')
     }
     const localRevision = this.getLocalFileGenerationRevision
       ? await this.getLocalFileGenerationRevision(sourceId).catch(() => null)
       : null
     if (this.blockedSourceIds.has(sourceId) || this.getLocalFileGenerationRevision && !localRevision) {
       this.log({ event: 'SKIPPED', trigger, sourceId, mode, outcome: 'SOURCE_NOT_ELIGIBLE' })
-      return
+      return skippedResult('SOURCE_NOT_ELIGIBLE')
     }
     let source: FileSource | null = null
     try { source = this.sourceApi ? await this.sourceApi.get(sourceId) : null } catch {
       this.log({ event: 'SKIPPED', trigger, sourceId, mode, outcome: 'SOURCE_UNAVAILABLE' })
-      return
+      return skippedResult('SOURCE_UNAVAILABLE')
     }
     const revision = source?.ingestionRevision
     if (!source || !revision || source.type && source.type !== 'FILE' || source.ingestionStatus && source.ingestionStatus !== 'READY') {
-      if (revision) await this.repository.markFileOverviewFailed(sourceId, revision, mode, 'SOURCE_NOT_READY', 'Source is not ready for overview generation')
+      if (revision) await this.repository.markFileOverviewFailed(sourceId, revision, mode, 'SOURCE_NOT_READY', 'Source is not ready for overview generation').catch(() => undefined)
       this.log({ event: 'SKIPPED', trigger, sourceId, revision, mode, outcome: 'SOURCE_NOT_READY' })
-      return
+      return skippedResult('SOURCE_NOT_READY')
     }
     if (localRevision && revision !== localRevision) {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision, mode, outcome: 'SOURCE_NOT_ELIGIBLE' })
-      return
+      return skippedResult('SOURCE_NOT_ELIGIBLE')
     }
     if (!(await this.isEligible(sourceId, revision))) {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision, mode, outcome: 'SOURCE_NOT_ELIGIBLE' })
-      return
+      return skippedResult('SOURCE_NOT_ELIGIBLE')
     }
-    await this.runFile(sourceId, revision, mode, instruction, trigger)
+    return this.runFile(sourceId, revision, mode, instruction, trigger)
   }
 
   async discardFileOverview(sourceId: string): Promise<void> {
@@ -201,7 +213,8 @@ export class OverviewGenerationService {
     }
   }
 
-  async regenerateSubjectOverview(subjectId: string, mode: OverviewMode, instruction?: string): Promise<void> {
+  async regenerateSubjectOverview(subjectId: string, mode: OverviewMode, instruction?: string): Promise<OverviewRegenerationResult> {
+    const requestId = this.requestIdFactory()
     try {
       const allFiles = (await this.listLocalFileOverviews?.(subjectId) ?? [])
         .filter(hasUsableOverview)
@@ -217,11 +230,13 @@ export class OverviewGenerationService {
         summary: mode === 'OUTLINE' ? null : file.summary,
       }))
       const request = withInstruction({ subjectId, mode, sources }, instruction) as SubjectOverviewRequest
-      const generated = await this.api.generateSubjectOverview(request)
+      const generated = await this.api.generateSubjectOverview(request, { requestId })
       await this.repository.saveSubjectOverviewPart({ subjectId, mode, response: generated, inputFingerprint })
+      return { status: 'STARTED', requestId }
     } catch (error) {
-      const safe = classifyOverviewFailure(error)
-      await this.repository.markSubjectOverviewFailed(subjectId, mode, safe.code, safe.detail).catch(() => undefined)
+      const failed = failedResult(error)
+      await this.repository.markSubjectOverviewFailed(subjectId, mode, failed.code, failed.detail ?? '').catch(() => undefined)
+      return failed
     }
   }
 
@@ -244,7 +259,7 @@ export class OverviewGenerationService {
     }
   }
 
-  private async runFile(sourceId: string, revision: string, mode: OverviewMode, instruction: string | undefined, trigger: FileOverviewTrigger): Promise<void> {
+  private async runFile(sourceId: string, revision: string, mode: OverviewMode, instruction: string | undefined, trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult> {
     const key = `${sourceId}:${revision}:${mode}:${instruction?.trim() ?? ''}`
     const running = this.inFlight.get(key)
     if (running) {
@@ -254,33 +269,35 @@ export class OverviewGenerationService {
     const requestId = this.requestIdFactory()
     const controller = new AbortController()
     const startedAt = monotonicNow()
-    const task = (async () => {
+    const task: Promise<OverviewRegenerationResult> = (async () => {
       const request = withInstruction({ sourceId, mode }, instruction) as SourceOverviewRequest
       this.log({ event: 'START', trigger, requestId, sourceId, revision, mode, durationMs: elapsedSince(startedAt) })
       try {
         if (!(await this.isEligible(sourceId, revision))) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: 'SOURCE_NOT_ELIGIBLE' })
-          return
+          return skippedResult('SOURCE_NOT_ELIGIBLE')
         }
         const generated = await this.api.generateSourceOverview(request, { requestId, signal: controller.signal })
         if (!(await this.isEligible(sourceId, revision))) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE' })
-          return
+          return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
         }
         await this.repository.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode, response: generated })
+        return { status: 'STARTED', requestId }
       } catch (error) {
         if (controller.signal.aborted || this.blockedSourceIds.has(sourceId)) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: 'ABORTED', durationMs: elapsedSince(startedAt) })
-          return
+          return skippedResult('ABORTED')
         }
-        const safe = classifyOverviewFailure(error)
-        this.log({ event: 'FAILED', trigger, requestId, sourceId, revision, mode, errorCode: safe.code, durationMs: elapsedSince(startedAt) })
-        await this.repository.markFileOverviewFailed(sourceId, revision, mode, safe.code, safe.detail).catch(() => undefined)
+        const failed = failedResult(error)
+        this.log({ event: 'FAILED', trigger, requestId, sourceId, revision, mode, errorCode: failed.code, durationMs: elapsedSince(startedAt) })
+        await this.repository.markFileOverviewFailed(sourceId, revision, mode, failed.code, failed.detail ?? '').catch(() => undefined)
+        return failed
       }
     })()
     const entry = { promise: task, requestId, sourceId, controller }
     this.inFlight.set(key, entry)
-    try { await task } finally {
+    try { return await task } finally {
       if (this.inFlight.get(key) === entry) {
         this.inFlight.delete(key)
         this.log({ event: 'RELEASED', trigger, requestId, sourceId, revision, mode, durationMs: elapsedSince(startedAt) })
