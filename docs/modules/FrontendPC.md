@@ -1,5 +1,12 @@
 # PC 前端模块
 
+### 2026-09-21 Issue 3/4 final review fixes
+
+- `useSyncStore` 保留上一次安全同步错误，只有完整的 push/pull/asset cycle 成功后才清除；同步、聊天和 AI SSE 错误统一经过有限 code/用户文案映射，原始诊断只进入有界受控日志，并保留离线分类。
+- Overview 的所有 eligibility/not-ready/no-input 分支均返回 `SKIPPED`，不把 skip 写成 `FAILED`；Subject 生成在 Provider 返回后以当前参与 Source 的 fingerprint、generation 和 abort fence 复核，删除/修订/新一代响应不会写入缓存。
+- 已补真正运行时回归：同步错误持续到成功 cycle、SSE 安全错误、聊天 retry 保持 `clientRequestId`、Subject `NO_USABLE_INPUT` 及 revision late-result。手动完成的 `STARTED` 反馈显示“已更新”，旧内容提示仅在确有旧内容时出现。
+- PC 完整 R4 门禁本轮为 374/374，type-check 通过；真实 WebSocket、Tauri/GUI、Provider 和业务验收仍需单独记录。
+
 ### 2026-09-21 Issue 3/4 前端反馈收口（自动证据完成，人工验收开放）
 
 - Issue 3 的 PC 连接状态现在由统一 projection 按错误、离线、Realtime 重连、同步中、已同步的优先级计算；同步错误、服务不可用和问答错误保持为可见错误，不会因浏览器恢复 online 事件直接伪装为已同步。问答失败保留在聊天区域并提供重试入口。

@@ -58,10 +58,12 @@ const isAuthenticatedRoute = computed(() => Boolean(route.meta.requiresAuth && a
 const connectionProjection = computed<ConnectionProjection>(() => projectConnectionStatus({
   online: browserOnline.value,
   syncError: syncStore.lastSyncError,
+  syncErrorCode: syncStore.lastSyncErrorCode,
   serviceUnavailable: false,
   realtime: realtimeStatus.value,
   syncing: syncStore.isSyncing,
   chatError: chatStore.lastError,
+  chatErrorCode: chatStore.lastErrorCode,
 }))
 
 const fetchTasksOnStartup = async () => {

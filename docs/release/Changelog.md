@@ -904,3 +904,7 @@
 - 未来任务进入 `planning/`，未关闭风险进入 `current/IssuesAndReview.md`。
 - 历史命令结果必须标明日期，不能写成当前验证。
 - 重大发布应记录版本、环境、构建结果、迁移、回滚点和人工验收设备。
+### 2026-09-21
+
+- Issue 3/4 final review：同步错误在完整成功前持续可见，Sync/Chat/AI SSE 改用安全错误 code 与可行动文案；Overview skip 不再污染 FAILED 状态，Subject late provider response 增加 generation/abort/fingerprint fence。
+- 新增 PC 运行时回归覆盖同步错误清除边界、安全错误映射、SSE、聊天 retry 请求 ID、Subject 无输入与 revision late-result；`test:r4-pc` 374/374，type-check 通过。

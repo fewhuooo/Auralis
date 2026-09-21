@@ -16,6 +16,7 @@ import { AiStreamController } from '@/services/aiStreamController'
 import type { AiStreamCitation } from '@/api/sse'
 import { uuidv7 } from '@/utils/uuid'
 import { isOfflineTransportFailure } from '@/services/offlineWritePolicy'
+import { classifyClientError, logClientError, toSafeClientError } from '@/services/clientErrorPolicy.ts'
 
 export interface ChatRequestOptions {
   subjectId?: string
@@ -124,6 +125,7 @@ export const useChatStore = defineStore('chat', () => {
   const streamingContent = ref('')
   const citations = ref<AiStreamCitation[]>([])
   const lastError = ref<string | null>(null)
+  const lastErrorCode = ref<string | null>(null)
   const controller = new AiStreamController()
 
   const activeSession = computed(() => sessions.value.find((session) => session.id === activeSessionId.value) || null)
@@ -223,9 +225,12 @@ export const useChatStore = defineStore('chat', () => {
       sessions.value = [...remote, ...pending.filter((session) => !remote.some((item) => item.id === session.id))]
       return sessions.value
     } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
+      const safe = classifyClientError(error, 'CHAT')
+      logClientError('[Chat] session load failed', error, safe)
+      if (!safe.offline) throw toSafeClientError(error, 'CHAT')
       sessions.value = local
-      lastError.value = error instanceof Error ? error.message : '会话加载失败，当前使用本地缓存'
+      lastError.value = safe.message
+      lastErrorCode.value = safe.code
       return local
     }
   }
@@ -249,9 +254,12 @@ export const useChatStore = defineStore('chat', () => {
         .sort((left, right) => String(left.createdAt || '').localeCompare(String(right.createdAt || '')))
       return messages.value
     } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
+      const safe = classifyClientError(error, 'CHAT')
+      logClientError('[Chat] message load failed', error, safe)
+      if (!safe.offline) throw toSafeClientError(error, 'CHAT')
       messages.value = await localMessages(sessionId)
-      lastError.value = error instanceof Error ? error.message : '消息加载失败'
+      lastError.value = safe.message
+      lastErrorCode.value = safe.code
       return messages.value
     }
   }
@@ -273,6 +281,7 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId.value = session.id
     messages.value = []
     lastError.value = null
+    lastErrorCode.value = null
     return session.id
   }
 
@@ -295,6 +304,7 @@ export const useChatStore = defineStore('chat', () => {
     activeSessionId.value = session.id
     messages.value = []
     lastError.value = null
+    lastErrorCode.value = null
     return session.id
   }
 
@@ -327,12 +337,16 @@ export const useChatStore = defineStore('chat', () => {
     try {
       session = await ensureRemoteSession(message.conversationId)
     } catch (error) {
-      if (isOfflineTransportFailure(error)) {
-        lastError.value = '当前离线，消息会在恢复网络后继续发送'
+      const safe = classifyClientError(error, 'CHAT')
+      logClientError('[Chat] session creation failed', error, safe)
+      if (safe.offline) {
+        lastError.value = safe.message
+        lastErrorCode.value = safe.code
         return
       }
-      lastError.value = error instanceof Error ? error.message : 'AI 请求失败'
-      throw error
+      lastError.value = safe.message
+      lastErrorCode.value = safe.code
+      throw toSafeClientError(error, 'CHAT')
     }
 
     if (!session.remoteId) return
@@ -380,9 +394,11 @@ export const useChatStore = defineStore('chat', () => {
       const completedUser = messages.value.find((item) => item.id === message.id)
       if (completedUser) await updateCachedMessage({ ...completedUser, status: 'COMPLETED' })
       lastError.value = null
+      lastErrorCode.value = null
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
         lastError.value = '生成已取消'
+        lastErrorCode.value = 'AI_REQUEST_FAILED'
         const assistant: ChatMessage = {
           id: uuidv7(), conversationId: message.conversationId, role: 'ASSISTANT', status: 'INTERRUPTED',
           content: streamingContent.value, createdAt: new Date().toISOString(), citations: citations.value,
@@ -390,16 +406,22 @@ export const useChatStore = defineStore('chat', () => {
         messages.value.push(assistant)
         await cacheMessage(assistant)
       } else if (isOfflineTransportFailure(error)) {
-        lastError.value = '网络中断，消息会使用相同请求 ID 重试'
+        const safe = classifyClientError(error, 'CHAT')
+        logClientError('[Chat] stream interrupted', error, safe)
+        lastError.value = safe.message
+        lastErrorCode.value = safe.code
       } else {
-        lastError.value = error instanceof Error ? error.message : 'AI 请求失败'
+        const safe = classifyClientError(error, 'CHAT')
+        logClientError('[Chat] request failed', error, safe)
+        lastError.value = safe.message
+        lastErrorCode.value = safe.code
         const assistant: ChatMessage = {
           id: uuidv7(), conversationId: message.conversationId, role: 'ASSISTANT', status: 'FAILED',
           content: '', createdAt: new Date().toISOString(), citations: citations.value,
         }
         messages.value.push(assistant)
         await cacheMessage(assistant)
-        throw error
+        throw toSafeClientError(error, 'CHAT')
       }
     } finally {
       isStreaming.value = false
@@ -439,9 +461,10 @@ export const useChatStore = defineStore('chat', () => {
         const pending = (await localMessages(session.id)).filter((message) => message.role === 'USER' && message.status === 'PENDING')
         for (const message of pending) await dispatchPendingMessage(message)
       } catch (error) {
-        lastError.value = isOfflineTransportFailure(error)
-          ? '当前离线，消息会在恢复网络后继续发送'
-          : error instanceof Error ? error.message : '离线会话恢复失败'
+        const safe = classifyClientError(error, 'CHAT')
+        logClientError('[Chat] offline recovery failed', error, safe)
+        lastError.value = safe.message
+        lastErrorCode.value = safe.code
       }
     }
   }
@@ -455,6 +478,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent.value = ''
     citations.value = []
     lastError.value = null
+    lastErrorCode.value = null
   }
 
   async function deleteSession(sessionId: string): Promise<void> {
@@ -512,6 +536,7 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent,
     citations,
     lastError,
+    lastErrorCode,
     loadSessions,
     loadMessages,
     startNewSession,

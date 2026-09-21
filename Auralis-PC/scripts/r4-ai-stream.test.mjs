@@ -41,7 +41,7 @@ test('controller emits ordered deltas/citations and converts provider errors', a
       onDelta: (delta) => observed.deltas.push(delta),
       onCitation: (citation) => observed.citations.push(citation),
     }),
-    /provider unavailable/,
+    (error) => error.code === 'AI_REQUEST_FAILED' && error.message === 'AI 请求失败，请重试',
   )
   assert.deepEqual(observed.deltas, ['first'])
   assert.deepEqual(observed.citations, [{ sourceId: 's-1', chunkId: 'c-1', ordinal: 1 }])

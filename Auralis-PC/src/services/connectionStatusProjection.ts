@@ -3,10 +3,12 @@ export type ConnectionLevel = 'error' | 'offline' | 'reconnecting' | 'syncing' |
 export interface ConnectionStatusInput {
   online: boolean
   syncError: string | null
+  syncErrorCode?: string | null
   serviceUnavailable: boolean
   realtime: 'disconnected' | 'connecting' | 'connected' | 'reconnecting'
   syncing: boolean
   chatError: string | null
+  chatErrorCode?: string | null
 }
 
 export interface ConnectionProjection {
@@ -20,7 +22,7 @@ export function projectConnectionStatus(input: ConnectionStatusInput): Connectio
   if (input.syncError || input.serviceUnavailable || input.chatError) {
     return {
       level: 'error',
-      code: input.syncError || 'SERVICE_UNAVAILABLE',
+      code: input.syncErrorCode || input.chatErrorCode || input.syncError || 'SERVICE_UNAVAILABLE',
       message: input.syncError || input.chatError || '服务暂时不可用',
       retryable: true,
     }

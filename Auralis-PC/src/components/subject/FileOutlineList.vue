@@ -39,7 +39,7 @@ const emit = defineEmits<{
           </el-popover>
         </span>
       </header>
-      <p v-if="file.error && file.outline?.length" class="file-outline__notice">
+      <p v-if="file.error && (file.outline?.length || file.summary)" class="file-outline__notice">
         <AlertTriangle :size="12" />
         <span class="file-outline__notice-text">{{ file.error }}；当前内容仍可查看。</span>
         <button

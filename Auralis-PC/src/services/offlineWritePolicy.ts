@@ -22,7 +22,7 @@ export function isOfflineTransportFailure(error: unknown): boolean {
   const candidate = error as { status?: unknown; code?: unknown }
   const status = Number(candidate.status)
   if (Number.isFinite(status)) return status === 0
-  return candidate.code === 'ERR_NETWORK' || candidate.code === 'ECONNABORTED'
+  return candidate.code === 'ERR_NETWORK' || candidate.code === 'ECONNABORTED' || candidate.code === 'NETWORK_OFFLINE'
 }
 
 /**

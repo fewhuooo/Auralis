@@ -74,14 +74,14 @@ test('manual overview handlers branch on structured results and refresh only aft
   assert.match(source, /没有可用于生成的内容/)
   assert.match(source, /生成失败，请重试/)
   assert.match(source, /result\.status\s*===\s*['"]STARTED['"]/)
-  assert.match(source, /正在生成/)
+  assert.match(source, /已更新/)
   assert.match(source, /if\s*\(applyManualOverviewResult\(result/)
 })
 
 test('file outline preserves old content with an actionable retry message', async () => {
   const source = await read('src/components/subject/FileOutlineList.vue')
   assert.match(source, /当前内容仍可查看/)
-  assert.match(source, /file\.error\s*&&\s*file\.outline\?\.length/)
+  assert.match(source, /file\.error\s*&&\s*\(file\.outline\?\.length\s*\|\|\s*file\.summary\)/)
   assert.match(source, /重新生成/)
 })
 
@@ -109,7 +109,7 @@ test('file overview failures expose direct retry actions with classified copy', 
 
 test('file overview failure notice and retry buttons enforce mutual exclusion and disabled state', async () => {
   const source = await read('src/components/subject/FileOutlineList.vue')
-  assert.match(source, /v-if="file\.error\s*&&\s*file\.outline\?\.length"/)
+  assert.match(source, /v-if="file\.error\s*&&\s*\(file\.outline\?\.length\s*\|\|\s*file\.summary\)"/)
   assert.doesNotMatch(source, /<p\s+v-if="file\.error"\s+class="file-outline__notice"/)
 
   const retryButtons = source.match(/<button[\s\S]*?class="file-outline__retry"[\s\S]*?>/g) ?? []

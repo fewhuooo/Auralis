@@ -657,6 +657,7 @@ import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { getOverviewRepository } from '@/services/localDb'
 import { OverviewGenerationService, hasUsableOverview } from '@/services/overviewGenerationService'
 import { overviewFailureMessage } from '@/services/overviewFailurePolicy'
+import { classifyClientError, logClientError } from '@/services/clientErrorPolicy'
 import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
 import { useOverviewApi } from '@/api/useOverviewApi'
 import { useSourceApi } from '@/api/useSourceApi'
@@ -871,7 +872,7 @@ const clearFileOverviewManualError = (fileId: string) => {
 
 const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: { kind: 'file'; id: string } | { kind: 'subject'; id: string }) => {
   if (result.status === 'STARTED') {
-    ElMessage.info('正在生成')
+    ElMessage.success('已更新')
     if (scope.kind === 'subject') subjectOverviewManualError.value = null
     else clearFileOverviewManualError(scope.id)
     return true
@@ -1182,7 +1183,7 @@ const parseFileMetadata = (file: File & { path?: string }) => {
   try {
     validateUploadFile(file)
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '仅支持上传 PDF、DOC、DOCX、PPT、PPTX 文件')
+    ElMessage.error('文件上传失败，请检查格式和大小')
     return false
   }
 
@@ -1379,7 +1380,9 @@ const sendChat = async () => {
     })
   } catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
-      ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
+      const safe = classifyClientError(error, 'CHAT')
+      logClientError('[SubjectWorkspace] chat send failed', error, safe)
+      ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
     }
   } finally {
     scrollChatToBottom()
@@ -1395,7 +1398,9 @@ const retryChat = async () => {
       pendingRequestId: pending.clientRequestId,
     })
   } catch (error) {
-    ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
+    const safe = classifyClientError(error, 'CHAT')
+    logClientError('[SubjectWorkspace] chat retry failed', error, safe)
+    ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
   } finally {
     scrollChatToBottom()
   }
@@ -1417,7 +1422,9 @@ const sendSelectionQuestion = async (prompt: string) => {
   try {
     await chatStore.sendMessage(prompt, { subjectId: subjectId.value, sourceId: selectedFileId.value || undefined, selectionText: selectedText.value })
   } catch (error) {
-    ElNotification({ title: 'AI 请求失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', position: 'top-right' })
+    const safe = classifyClientError(error, 'CHAT')
+    logClientError('[SubjectWorkspace] selection chat failed', error, safe)
+    ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
   }
 }
 const explainSelection = () => { void sendSelectionQuestion('请解释我选中的内容，并指出其中的关键概念。') }

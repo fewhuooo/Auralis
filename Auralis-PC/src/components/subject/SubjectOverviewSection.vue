@@ -42,7 +42,7 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
     </div>
 
     <div v-show="!collapsed" class="subject-overview__body">
-      <p v-if="error" class="overview-notice overview-notice--error">{{ error }}；当前内容仍可查看。</p>
+      <p v-if="error" class="overview-notice overview-notice--error">{{ error }}<span v-if="hasContent()">；当前内容仍可查看。</span></p>
       <p v-if="isStale && hasContent()" class="overview-notice">资料发生变化，当前内容仍可查看，建议重新生成。</p>
       <div v-if="!hasContent()" class="subject-overview__empty">
         <div v-if="isGenerating" class="empty-loading"><RefreshCw :size="16" class="is-spinning" /></div>

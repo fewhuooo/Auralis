@@ -115,6 +115,8 @@ export class OverviewGenerationService {
   private readonly getLocalFileGenerationRevision?: Options['getLocalFileGenerationRevision']
   private readonly inFlight = new Map<string, InFlightFile>()
   private readonly blockedSourceIds = new Set<string>()
+  private readonly subjectGenerations = new Map<string, number>()
+  private readonly subjectControllers = new Map<string, AbortController>()
 
   constructor(options: Options) {
     this.api = options.api
@@ -174,7 +176,6 @@ export class OverviewGenerationService {
     }
     const revision = source?.ingestionRevision
     if (!source || !revision || source.type && source.type !== 'FILE' || source.ingestionStatus && source.ingestionStatus !== 'READY') {
-      if (revision) await this.repository.markFileOverviewFailed(sourceId, revision, mode, 'SOURCE_NOT_READY', 'Source is not ready for overview generation').catch(() => undefined)
       this.log({ event: 'SKIPPED', trigger, sourceId, revision, mode, outcome: 'SOURCE_NOT_READY' })
       return skippedResult('SOURCE_NOT_READY')
     }
@@ -219,13 +220,18 @@ export class OverviewGenerationService {
 
   async regenerateSubjectOverview(subjectId: string, mode: OverviewMode, instruction?: string): Promise<OverviewRegenerationResult> {
     const requestId = this.requestIdFactory()
+    const generation = (this.subjectGenerations.get(subjectId) ?? 0) + 1
+    this.subjectGenerations.set(subjectId, generation)
+    this.subjectControllers.get(subjectId)?.abort()
+    const controller = new AbortController()
+    this.subjectControllers.set(subjectId, controller)
     try {
       const allFiles = (await this.listLocalFileOverviews?.(subjectId) ?? [])
         .filter(hasUsableOverview)
         .sort((a, b) => a.sourceId.localeCompare(b.sourceId))
       const files = allFiles
         .filter((file) => supportsMode(file, mode))
-      if (files.length === 0) throw { code: 'SUBJECT_OVERVIEW_FILES_UNAVAILABLE' }
+      if (files.length === 0) return skippedResult('NO_USABLE_INPUT')
       const inputFingerprint = await computeSubjectInputFingerprint(allFiles)
       const sources: SubjectOverviewSourceInput[] = files.map((file) => ({
         sourceId: file.sourceId,
@@ -234,13 +240,26 @@ export class OverviewGenerationService {
         summary: mode === 'OUTLINE' ? null : file.summary,
       }))
       const request = withInstruction({ subjectId, mode, sources }, instruction) as SubjectOverviewRequest
-      const generated = await this.api.generateSubjectOverview(request, { requestId })
+      const generated = await this.api.generateSubjectOverview(request, { requestId, signal: controller.signal })
+      if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) {
+        return skippedResult('ABORTED')
+      }
+      const latestFiles = (await this.listLocalFileOverviews?.(subjectId) ?? [])
+        .filter(hasUsableOverview)
+        .sort((a, b) => a.sourceId.localeCompare(b.sourceId))
+      const latestFingerprint = await computeSubjectInputFingerprint(latestFiles)
+      if (latestFingerprint !== inputFingerprint) {
+        return skippedResult('SOURCE_NOT_ELIGIBLE')
+      }
       await this.repository.saveSubjectOverviewPart({ subjectId, mode, response: generated, inputFingerprint })
       return { status: 'STARTED', requestId }
     } catch (error) {
+      if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) return skippedResult('ABORTED')
       const failed = failedResult(error)
       await this.repository.markSubjectOverviewFailed(subjectId, mode, failed.code, failed.detail ?? '').catch(() => undefined)
       return failed
+    } finally {
+      if (this.subjectControllers.get(subjectId) === controller) this.subjectControllers.delete(subjectId)
     }
   }
 
@@ -282,7 +301,7 @@ export class OverviewGenerationService {
           return skippedResult('SOURCE_NOT_ELIGIBLE')
         }
         const generated = await this.api.generateSourceOverview(request, { requestId, signal: controller.signal })
-        if (!(await this.isEligible(sourceId, revision))) {
+        if (!(await this.isEligible(sourceId, revision)) || !(await this.isCurrentReady(sourceId, revision))) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE' })
           return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
         }

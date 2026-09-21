@@ -15,6 +15,7 @@ import {
   QueueReleasedError,
   type LocalAssetSyncQueue,
 } from '@/services/localAssetSyncQueue'
+import { classifyClientError, logClientError } from '@/services/clientErrorPolicy.ts'
 
 function encodeKeyPart(value: string): string {
   return encodeURIComponent(value).replace(/%/g, '_')
@@ -47,6 +48,7 @@ export const useSyncStore = defineStore('sync', () => {
   const isPulling = ref(false)
   const isPushing = ref(false)
   const lastSyncError = ref<string | null>(null)
+  const lastSyncErrorCode = ref<string | null>(null)
   const isSyncing = computed(() => isPulling.value || isPushing.value)
 
   let repository: LocalRepository | null = null
@@ -174,7 +176,6 @@ export const useSyncStore = defineStore('sync', () => {
     
     isPushing.value = true
     isPulling.value = true
-    lastSyncError.value = null
     try {
       const assetQueue = await getAssetQueue()
       await assetQueue.wakeUp()
@@ -190,8 +191,14 @@ export const useSyncStore = defineStore('sync', () => {
         publishProjectionChange({ resourceTypes: result.changedResourceTypes })
         publishUpdated()
       }
+      // A previous failure remains visible until this complete cycle succeeds.
+      lastSyncError.value = null
+      lastSyncErrorCode.value = null
     } catch (error) {
-      lastSyncError.value = error instanceof Error ? error.message : String(error)
+      const safe = classifyClientError(error, 'SYNC')
+      logClientError('[useSyncStore] sync failed', error, safe)
+      lastSyncError.value = safe.message
+      lastSyncErrorCode.value = safe.code
       // A rejected Subject repair persists reset_required before requesting
       // the snapshot. Reflect that durable state even when the request fails,
       // so the next cycle and the UI both remain on the reset path.
@@ -255,6 +262,7 @@ export const useSyncStore = defineStore('sync', () => {
     isPushing,
     isSyncing,
     lastSyncError,
+    lastSyncErrorCode,
     requestBackgroundSync,
     flushNow,
     triggerSync,

@@ -1,6 +1,7 @@
 import type { AiMessageCommand } from '@/api/aiClient'
 import type { AiStreamCitation, AiStreamEvent } from '@/api/sse'
 import { reduceAiStreamEvent as reduceStreamEvent } from './aiStreamReducer.ts'
+import { classifyClientError, logClientError, SafeClientError } from './clientErrorPolicy.ts'
 
 type AiStreamSource = (
   input: AiMessageCommand,
@@ -56,8 +57,10 @@ export class AiStreamController {
         if (next.citations.length > result.citations.length) handlers.onCitation?.(next.citations[next.citations.length - 1])
         result = next
         if (event.event === 'message.error') {
-          const data = event.data as { message?: string; detail?: string } | undefined
-          throw new Error(data?.message || data?.detail || 'AI 请求失败')
+          const data = event.data as { code?: string; message?: string; detail?: string } | undefined
+          const info = classifyClientError(data, 'AI_STREAM')
+          logClientError('[AiStreamController] stream failed', data, info)
+          throw new SafeClientError(info)
         }
       }
       if (controller.signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError')

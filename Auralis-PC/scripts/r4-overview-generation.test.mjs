@@ -262,6 +262,7 @@ test('manual file regeneration returns a structured skipped result without repla
   const cached = await repository.getFileOverview('source-1', 'rev-1')
   assert.deepEqual(cached.outline, outline)
   assert.deepEqual(cached.summary, summary)
+  assert.equal(repository.failures.length, 0)
 })
 
 test('manual file regeneration returns STARTED with request id after successful completion', async () => {
@@ -452,7 +453,8 @@ test('manual subject regeneration returns STARTED with the request id after savi
   const result = await service.regenerateSubjectOverview('subject-1', 'ALL')
 
   assert.deepEqual(result, { status: 'STARTED', requestId: 'subject-request-1' })
-  assert.deepEqual(context, { requestId: 'subject-request-1' })
+  assert.equal(context.requestId, 'subject-request-1')
+  assert.ok(context.signal instanceof AbortSignal)
 })
 
 test('manual subject regeneration returns FAILED and preserves the previous result on provider failure', async () => {
@@ -541,13 +543,43 @@ test('subject regeneration safely preserves the previous result when every local
     ],
   })
 
-  await service.regenerateSubjectOverview('subject-1', 'ALL')
+  const result = await service.regenerateSubjectOverview('subject-1', 'ALL')
 
   assert.deepEqual(calls, [])
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'NO_USABLE_INPUT' })
   assert.deepEqual(await repository.getSubjectOverview('subject-1'), {
     subjectId: 'subject-1', mode: 'ALL', response: response('ALL'), inputFingerprint: 'old-fingerprint', status: 'READY',
   })
-  assert.equal(repository.failures.at(-1).code, 'SUBJECT_OVERVIEW_FILES_UNAVAILABLE')
+  assert.equal(repository.failures.length, 0)
+})
+
+test('subject regeneration rejects a late response when source revision changes before save', async () => {
+  const repository = new FakeOverviewRepository()
+  let files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  let releaseProvider
+  const providerGate = new Promise((resolve) => { releaseProvider = resolve })
+  let calls = 0
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSubjectOverview() {
+        calls += 1
+        await providerGate
+        return response('ALL')
+      },
+    },
+    repository,
+    listLocalFileOverviews: async () => files,
+  })
+  const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  files = [{ ...files[0], ingestionRevision: 'rev-2' }]
+  releaseProvider()
+  const result = await attempt
+
+  assert.equal(calls, 1)
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'SOURCE_NOT_ELIGIBLE' })
+  assert.equal(await repository.getSubjectOverview('subject-1'), null)
+  assert.equal(repository.failures.length, 0)
 })
 
 test('overview response validation rejects malformed or mode-inconsistent provider data', () => {
