@@ -127,30 +127,30 @@ export class OverviewGenerationService {
     this.getLocalFileGenerationRevision = options.getLocalFileGenerationRevision
   }
 
-  async generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<void> {
+  async generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult> {
     this.log({ event: 'TRIGGER', trigger, sourceId, revision: ingestionRevision, mode: 'ALL' })
     if (!(await this.isEligible(sourceId, ingestionRevision))) {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision: ingestionRevision, mode: 'ALL', outcome: 'SOURCE_NOT_ELIGIBLE' })
-      return
+      return skippedResult('SOURCE_NOT_ELIGIBLE')
     }
     if (!this.sourceApi || !(await this.isCurrentReady(sourceId, ingestionRevision))) {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision: ingestionRevision, mode: 'ALL', outcome: 'SOURCE_NOT_READY' })
-      return
+      return skippedResult('SOURCE_NOT_READY')
     }
     const existing = await this.repository.getFileOverview(sourceId, ingestionRevision)
     if (isComplete(existing)) {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision: ingestionRevision, mode: 'ALL', outcome: 'CACHE_COMPLETE' })
-      return
+      return skippedResult('CACHE_COMPLETE')
     }
     if (existing?.status === 'FAILED') {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision: ingestionRevision, mode: 'ALL', outcome: 'SKIPPED_FAILED_REQUIRES_MANUAL_RETRY' })
-      return
+      return skippedResult('SKIPPED_FAILED_REQUIRES_MANUAL_RETRY')
     }
     if (existing?.status === 'READY') {
       this.log({ event: 'SKIPPED', trigger, sourceId, revision: ingestionRevision, mode: 'ALL', outcome: 'PARTIAL_REQUIRES_MANUAL_RETRY' })
-      return
+      return skippedResult('PARTIAL_REQUIRES_MANUAL_RETRY')
     }
-    await this.runFile(sourceId, ingestionRevision, 'ALL', undefined, trigger)
+    return this.runFile(sourceId, ingestionRevision, 'ALL', undefined, trigger)
   }
 
   async regenerateFileOverview(sourceId: string, mode: OverviewMode, instruction?: string): Promise<OverviewRegenerationResult> {
@@ -197,20 +197,24 @@ export class OverviewGenerationService {
     await this.repository.removeFileOverviews(sourceId)
   }
 
-  async resumePending(trigger: FileOverviewTrigger): Promise<void> {
-    if (!this.listReadyFiles) return
+  async resumePending(trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult[]> {
+    if (!this.listReadyFiles) return []
     let files: ReadyFile[]
     try { files = await this.listReadyFiles() } catch {
       console.warn('[OverviewGeneration] ready-file scan failed')
-      return
+      return []
     }
+    const results: OverviewRegenerationResult[] = []
     for (const file of files) {
       try {
-        await this.generateReadyFileOverview(file.sourceId, file.ingestionRevision, trigger)
-      } catch {
-        console.warn('[OverviewGeneration] resume failed')
+        results.push(await this.generateReadyFileOverview(file.sourceId, file.ingestionRevision, trigger))
+      } catch (error) {
+        const failed = failedResult(error)
+        console.warn('[OverviewGeneration] resume failed', failed.code)
+        results.push(failed)
       }
     }
+    return results
   }
 
   async regenerateSubjectOverview(subjectId: string, mode: OverviewMode, instruction?: string): Promise<OverviewRegenerationResult> {

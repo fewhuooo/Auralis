@@ -14,7 +14,7 @@ import { useSyncStore } from '@/store/useSyncStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 import { shouldScheduleAwaitingClientDocument } from '@/utils/sourceSchedulingPolicy'
-import type { FileOverviewTrigger } from '@/types/overview'
+import type { FileOverviewTrigger, OverviewRegenerationResult } from '@/types/overview'
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -36,7 +36,7 @@ interface SourceDocumentScheduler {
 }
 
 interface FileOverviewGenerator {
-  generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<void>
+  generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult>
   discardFileOverview(sourceId: string): Promise<void>
 }
 

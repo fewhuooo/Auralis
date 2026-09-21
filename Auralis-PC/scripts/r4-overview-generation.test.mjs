@@ -62,7 +62,22 @@ class FakeOverviewRepository {
     this.files.set(key, next)
     return next
   }
-  async markFileOverviewFailed(sourceId, revision, mode, code, detail) { this.failures.push({ sourceId, revision, mode, code, detail }) }
+  async markFileOverviewFailed(sourceId, revision, mode, code, detail) {
+    this.failures.push({ sourceId, revision, mode, code, detail })
+    const key = `${sourceId}:${revision}`
+    if (!this.files.has(key)) {
+      this.files.set(key, {
+        sourceId,
+        ingestionRevision: revision,
+        title: '',
+        outline: null,
+        summary: null,
+        status: 'FAILED',
+        errorCode: code,
+        errorDetail: detail,
+      })
+    }
+  }
   async removeFileOverviews(sourceId) {
     this.removedOverviewSources.push(sourceId)
     for (const key of this.files.keys()) if (key.startsWith(`${sourceId}:`)) this.files.delete(key)
@@ -137,6 +152,66 @@ test('automatic triggers require a missing cache and never retry failed or parti
       console.info = originalInfo
     }
   }
+})
+
+test('automatic terminal skips return structured results without notifying or replacing partial cache', async () => {
+  const repository = new FakeOverviewRepository()
+  await repository.saveFileOverviewPart({
+    sourceId: 'source-1',
+    ingestionRevision: 'rev-1',
+    mode: 'OUTLINE',
+    response: response('OUTLINE'),
+  })
+  const notifications = []
+  let calls = 0
+  const service = readyService(repository, async () => {
+    calls += 1
+    notifications.push('unexpected')
+    return response('ALL')
+  })
+
+  const result = await service.generateReadyFileOverview('source-1', 'rev-1', 'RESUME_ONLINE')
+
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'PARTIAL_REQUIRES_MANUAL_RETRY' })
+  assert.deepEqual(notifications, [])
+  assert.equal(calls, 0)
+  const cached = await repository.getFileOverview('source-1', 'rev-1')
+  assert.deepEqual(cached.outline, outline)
+  assert.equal(cached.summary, null)
+})
+
+test('automatic provider failure returns a structured result and does not recursively retry', async () => {
+  const repository = new FakeOverviewRepository()
+  let calls = 0
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview() {
+        calls += 1
+        throw { code: 'MODEL_PROVIDER_ERROR' }
+      },
+    },
+    repository,
+    sourceApi: sourceApi({
+      id: 'source-1',
+      type: 'FILE',
+      ingestionStatus: 'READY',
+      ingestionRevision: 'rev-1',
+    }),
+    listReadyFiles: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1' }],
+  })
+
+  const result = await service.generateReadyFileOverview('source-1', 'rev-1', 'SOURCE_READY')
+
+  assert.deepEqual(result, {
+    status: 'FAILED',
+    code: 'MODEL_PROVIDER_ERROR',
+    detail: 'Overview generation failed: MODEL_PROVIDER_ERROR',
+  })
+  assert.equal(calls, 1)
+  assert.equal(repository.failures.at(-1).code, 'MODEL_PROVIDER_ERROR')
+
+  await service.resumePending('RESUME_ONLINE')
+  assert.equal(calls, 1)
 })
 
 test('automatic trigger still generates once when the current revision has no cache', async () => {
