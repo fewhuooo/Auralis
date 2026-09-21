@@ -35,7 +35,7 @@ const regenerateWithInstruction = () => {
       <p v-if="isStale && !isGenerating" class="summary-notice"><AlertTriangle :size="13" />资料已更新，当前总结可能过期。</p>
       <p v-if="error" class="summary-notice summary-notice--error">
         <AlertTriangle :size="13" />
-        <span class="summary-notice__text">{{ error }}<span v-if="summary">，当前总结仍可查看。</span></span>
+        <span class="summary-notice__text">{{ error }}<span v-if="summary">；当前内容仍可查看。</span></span>
         <button
           type="button"
           class="summary-notice__retry"

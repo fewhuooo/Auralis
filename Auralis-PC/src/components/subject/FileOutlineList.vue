@@ -41,7 +41,7 @@ const emit = defineEmits<{
       </header>
       <p v-if="file.error && file.outline?.length" class="file-outline__notice">
         <AlertTriangle :size="12" />
-        <span class="file-outline__notice-text">{{ file.error }}；已有内容未清除。</span>
+        <span class="file-outline__notice-text">{{ file.error }}；当前内容仍可查看。</span>
         <button
           type="button"
           class="file-outline__retry"

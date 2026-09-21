@@ -661,7 +661,7 @@ import { documentProcessingRuntime } from '@/services/documentProcessing/runtime
 import { useOverviewApi } from '@/api/useOverviewApi'
 import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
-import type { FileOverviewRecord, SubjectOverviewRecord } from '@/types/overview'
+import type { FileOverviewRecord, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -794,13 +794,16 @@ const fileOverviewRecords = ref<Record<string, FileOverviewRecord>>({})
 const subjectOverviewGenerating = ref(false)
 const generatingFileIds = ref<Set<string>>(new Set())
 const isSubjectOverviewStale = ref(false)
+const subjectOverviewManualError = ref<string | null>(null)
+const fileOverviewManualErrors = ref<Record<string, string>>({})
 const selectedSummaryScope = ref<{ kind: 'file' | 'subject'; id: string } | null>(null)
 let overviewRepository: OverviewRepository | null = null
 let overviewGeneration: OverviewGenerationService | null = null
 
-const subjectOverviewError = computed(() => subjectOverviewRecord.value?.status === 'FAILED'
-  ? overviewFailureMessage(subjectOverviewRecord.value.errorCode)
-  : null)
+const subjectOverviewError = computed(() => subjectOverviewManualError.value
+  || (subjectOverviewRecord.value?.status === 'FAILED'
+    ? overviewFailureMessage(subjectOverviewRecord.value.errorCode)
+    : null))
 
 const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.value.map((file) => {
   const record = fileOverviewRecords.value[file.id]
@@ -810,7 +813,8 @@ const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.v
     outline: record?.outline ?? null,
     summary: record?.summary ?? null,
     status: record?.status ?? (file.ingestionStatus === 'READY' ? 'PENDING' : undefined),
-    error: record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null,
+    error: fileOverviewManualErrors.value[file.id]
+      || (record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null),
     isGenerating: generatingFileIds.value.has(file.id),
   }
 }))
@@ -834,7 +838,8 @@ const summaryTarget = computed(() => {
     record,
     isGenerating: generatingFileIds.value.has(scope.id),
     isStale: Boolean(record && file.ingestionRevision && record.ingestionRevision !== file.ingestionRevision),
-    error: record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null,
+    error: fileOverviewManualErrors.value[scope.id]
+      || (record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null),
   } : null
 })
 
@@ -842,6 +847,41 @@ const setFileGenerating = (fileId: string, generating: boolean) => {
   const next = new Set(generatingFileIds.value)
   if (generating) next.add(fileId); else next.delete(fileId)
   generatingFileIds.value = next
+}
+
+const overviewSkipMessage = (code: string) => {
+  if (code === 'SOURCE_NOT_READY' || code === 'SOURCE_NOT_ELIGIBLE') return '文件尚未处理完成'
+  if (code === 'REVISION_MISMATCH') return '文件版本已变化，请刷新后重试'
+  if (code === 'NO_USABLE_INPUT') return '没有可用于生成的内容'
+  return '暂时无法生成，请刷新后重试'
+}
+
+const manualOverviewFailureMessage = (code: string) => {
+  if (code === 'SOURCE_NOT_READY' || code === 'SOURCE_NOT_ELIGIBLE') return '文件尚未处理完成'
+  if (code === 'REVISION_MISMATCH') return '文件版本已变化，请刷新后重试'
+  if (code === 'NO_USABLE_INPUT') return '没有可用于生成的内容'
+  return '生成失败，请重试'
+}
+
+const clearFileOverviewManualError = (fileId: string) => {
+  const next = { ...fileOverviewManualErrors.value }
+  delete next[fileId]
+  fileOverviewManualErrors.value = next
+}
+
+const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: { kind: 'file'; id: string } | { kind: 'subject'; id: string }) => {
+  if (result.status === 'STARTED') {
+    ElMessage.info('正在生成')
+    if (scope.kind === 'subject') subjectOverviewManualError.value = null
+    else clearFileOverviewManualError(scope.id)
+    return true
+  }
+  const message = result.status === 'SKIPPED' ? overviewSkipMessage(result.code) : manualOverviewFailureMessage(result.code)
+  if (scope.kind === 'subject') subjectOverviewManualError.value = message
+  else fileOverviewManualErrors.value = { ...fileOverviewManualErrors.value, [scope.id]: message }
+  if (result.status === 'SKIPPED') ElMessage.warning(message)
+  else ElMessage.error(message)
+  return false
 }
 
 const refreshOverviewCache = async () => {
@@ -908,8 +948,8 @@ const regenerateFileOverview = async ({ fileId, mode }: { fileId: string; mode: 
   if (!await ensureOverviewRuntime() || !overviewGeneration) return
   setFileGenerating(fileId, true)
   try {
-    await overviewGeneration.regenerateFileOverview(fileId, mode)
-    await refreshOverviewCache()
+    const result = await overviewGeneration.regenerateFileOverview(fileId, mode)
+    if (applyManualOverviewResult(result, { kind: 'file', id: fileId })) await refreshOverviewCache()
   } finally {
     setFileGenerating(fileId, false)
   }
@@ -920,11 +960,17 @@ const regenerateSelectedSummary = async (instruction?: string) => {
   if (!scope || !await ensureOverviewRuntime() || !overviewGeneration) return
   if (scope.kind === 'subject') {
     subjectOverviewGenerating.value = true
-    try { await overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction); await refreshOverviewCache() }
+    try {
+      const result = await overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction)
+      if (applyManualOverviewResult(result, scope)) await refreshOverviewCache()
+    }
     finally { subjectOverviewGenerating.value = false }
   } else {
     setFileGenerating(scope.id, true)
-    try { await overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction); await refreshOverviewCache() }
+    try {
+      const result = await overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction)
+      if (applyManualOverviewResult(result, scope)) await refreshOverviewCache()
+    }
     finally { setFileGenerating(scope.id, false) }
   }
 }
@@ -1085,8 +1131,8 @@ const handleOutlineAi = async () => {
   if (!await ensureOverviewRuntime() || !overviewGeneration) return
   subjectOverviewGenerating.value = true
   try {
-    await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'ALL')
-    await refreshOverviewCache()
+    const result = await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'ALL')
+    if (applyManualOverviewResult(result, { kind: 'subject', id: subjectId.value })) await refreshOverviewCache()
   } finally {
     subjectOverviewGenerating.value = false
   }
@@ -1098,8 +1144,8 @@ const handleSubjectOutlineRegenerate = async () => {
   if (!await ensureOverviewRuntime() || !overviewGeneration) return
   subjectOverviewGenerating.value = true
   try {
-    await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'OUTLINE')
-    await refreshOverviewCache()
+    const result = await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'OUTLINE')
+    if (applyManualOverviewResult(result, { kind: 'subject', id: subjectId.value })) await refreshOverviewCache()
   } finally {
     subjectOverviewGenerating.value = false
   }

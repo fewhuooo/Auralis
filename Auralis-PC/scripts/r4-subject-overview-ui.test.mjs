@@ -18,7 +18,7 @@ test('subject overview is default-collapsed and generated only from an emitted a
   assert.match(source, /collapsed:\s*true/)
   assert.match(source, />学科总览</)
   assert.match(source, /emit\('generate'\)/)
-  assert.match(source, /原有内容已保留/)
+  assert.match(source, /当前内容仍可查看/)
 })
 
 test('subject overview exposes a separate outline regeneration action and compares stale state even with no usable files', async () => {
@@ -45,7 +45,7 @@ test('middle summary view preserves old content during regeneration or error', a
   const source = await read('src/components/subject/OverviewSummaryView.vue')
   assert.match(source, /isGenerating && summary/)
   assert.match(source, /error/)
-  assert.match(source, /当前总结继续保留/)
+  assert.match(source, /当前内容仍可查看/)
   assert.match(source, /内容概述/)
   assert.match(source, /核心要点/)
   assert.match(source, /推荐学习路径/)
@@ -61,6 +61,28 @@ test('SubjectWorkspace integrates overview UI without moving the existing AI act
   assert.match(source, /<OverviewSummaryView/)
   assert.match(source, /centerView === 'summary'/)
   assert.match(source, /regenerateSubjectOverview\(subjectId\.value, 'ALL'\)/)
+})
+
+test('manual overview handlers branch on structured results and refresh only after success', async () => {
+  const source = await read('src/views/SubjectWorkspace/index.vue')
+  assert.match(source, /result\.status/)
+  assert.match(source, /SOURCE_NOT_READY|SOURCE_NOT_ELIGIBLE/)
+  assert.match(source, /REVISION_MISMATCH/)
+  assert.match(source, /NO_USABLE_INPUT/)
+  assert.match(source, /文件尚未处理完成/)
+  assert.match(source, /文件版本已变化，请刷新后重试/)
+  assert.match(source, /没有可用于生成的内容/)
+  assert.match(source, /生成失败，请重试/)
+  assert.match(source, /result\.status\s*===\s*['"]STARTED['"]/)
+  assert.match(source, /正在生成/)
+  assert.match(source, /if\s*\(applyManualOverviewResult\(result/)
+})
+
+test('file outline preserves old content with an actionable retry message', async () => {
+  const source = await read('src/components/subject/FileOutlineList.vue')
+  assert.match(source, /当前内容仍可查看/)
+  assert.match(source, /file\.error\s*&&\s*file\.outline\?\.length/)
+  assert.match(source, /重新生成/)
 })
 
 test('SubjectWorkspace keeps chat failures in the chat region and retries the same pending request', async () => {
