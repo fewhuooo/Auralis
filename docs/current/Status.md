@@ -1,5 +1,9 @@
 # Auralis 当前状态
 
+2026-09-21 Server + PC 功能问题登记（附件 2–7）：新增 6 项待核实问题，其中 P1 为删除 Source 后 chunk 可能污染 RAG TopK、PC 同步/连接状态无法反映真实错误、Overview 手动重新生成静默 no-op；P2 为 FilePreview 重复加载、DocumentProcessingStore 暴露 Runner 直接入口、SourceService/Retrieval N+1 查询。当前仅登记用户报告与验收方向，尚未确认根因、修改代码或完成自动/真实 Server/PC/Tauri 验收；各项需分别实施和关闭。
+
+2026-09-21 Issue 3/4 前端实现与自动验证已收口：PC 连接状态 projection 按错误、离线、Realtime 重连、同步中、已同步的优先级展示，问答错误在聊天区域保持可见并可重试；Overview 手动重生成返回 `STARTED`/`SKIPPED`/`FAILED` 结构化结果，自动触发静默处理，失败/跳过保留既有缓存，并以 generation/abort/Source 状态 fence 阻止删除或修订后的晚到 Subject 结果写回。最终 focused 68/68，`npm.cmd run test:r4-pc` 382/382，`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 均通过。自动证据不等价于真实 WebSocket、浏览器 online/offline、Tauri/GUI 文件预览或真实 Provider 验收；SQLite experimental、Vite externalized/dynamic-import/chunk size 警告仍存在。Issue 2（删除 Source 后 Chunk/RAG TopK）仍为计划未实现，Issue 5–7 仍待分别核实；本轮未改 API 或数据库契约。
+
 2026-09-20 Overview Reduce prompt compression Task 2 已完成文档与自动验证收口：Task 1 保持 MAP prompt 行为不变，并为非最终及最终文档 REDUCE 接入专用均衡压缩 prompt；其规范化长度为 843 字符，目标约 2500–3000 个序列化 JSON 字符。`max_tokens=4608/6144`、规范化 intermediate `<=5200`、self-pair `<=12000`、no-progress、schema/alias/mode/locator 校验及分组/批次边界均不变。focused Server 四类测试实际 55/55，test-compile 与根目录 `git diff --check` 通过；自动证据只覆盖路由、prompt 约束和既有不变量，不等价于真实 DeepSeek 压缩质量验收。真实样本的输出字符数、内容覆盖、JSON/schema 成功、延迟、token 使用和成本仍未验证。
 
 2026-09-18 OCR 页级进度 Task 5 已完成代码和自动验证：Pinia Store 的 Local OCR projection 改为成功 reader 结果的原子更新，并以已有 `attempt + localContentRevision` 作为内部 run identity；同一 run 的允许后续事件必须与最近有效 page/total 一致才保留，倒退 `before-recognize`（包括 totalPages 变化）不覆盖，新 run 必须先建立自己的 checkpoint，reader pending 时保留旧值，reader detach、Source 从 OCR_RUNNING 读集中消失或 reader 失败时清除失效投影。新增回归与 Store/UI/coordinator/runtime 套件 68/68、`npm.cmd run type-check`、`git diff --check` 通过。仅证明 Store/runtime 投影代码和自动回归，不等价于真实 Tauri/GUI OCR 进度观察；本轮未改 UI、OCR Coordinator、sync、API 或数据库契约。

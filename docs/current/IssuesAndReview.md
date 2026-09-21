@@ -1,5 +1,30 @@
 # Auralis 当前问题与审查登记
 
+### 2026-09-21 Server + PC 功能问题登记（附件 2–7，待核实）
+
+来源：`Auralis_Server_PC_Function_Issues_2-7.md`。以下内容是用户报告及建议，不代表当前代码已确认存在，也不代表已完成根因定位或业务验收；各项应分别实施、验证和关闭，不合并为一次大重构。
+
+#### P1
+
+- **2. 删除 Source 后的 Chunk 仍可能占用 RAG TopK**：需核对 Source 软删除与 `source_chunks` active/generation 语义，以及 Retrieval 先取 TopK、后过滤 Source 的链路。关闭条件：删除后对应 chunk 不再参与 TopK；restore 后通过 reingest 生成的新 generation 可检索；删除其他 Source 不减少有效 Source 的 TopK/citation 名额。
+- **3. PC 左下角同步/连接状态不能反映真实错误**：需核对 `useSyncStore`、Realtime 状态、问答错误和 `AppSidebar.vue` 的统一状态投影。至少覆盖已同步、同步中、离线、服务不可达、Realtime 重连中、同步错误，以及恢复连接并完成一次 Sync 后恢复已同步。
+- **4. Overview 手动重新生成存在静默 no-op**：需核对 `OverviewGenerationService.regenerateFileOverview()` 的所有提前返回及调用方反馈。关闭条件：成功、Source 未 READY、网络错误、runtime/revision 不满足和 eligibility 失败均有明确结果/UI反馈；失败不无条件清空已有 Overview。
+
+#### P2
+
+- **5. `FilePreview` 可能重复触发加载**：需记录首次打开时每次 load 的触发原因，核对 watcher 与 projection hydration。候选 identity 为 user/device、asset、content revision 或 sha256；显示名称变化不应触发内容重新读取，asset/content revision 变化仍须正确重载，旧请求不得覆盖当前文件。
+- **6. `DocumentProcessingStore` 仍暴露 Runner 直接入口**：需核对 `start(jobId)`、`resumePending()`、`retry` 及 UI 调用关系。目标是 UI 统一经 `SourceJobScheduler`，由其重新解析 Source/Asset/SHA256 并准备 metadata；重启 pending job 和 retry 也不得绕过该边界。
+- **7. `SourceService` / Retrieval 存在 N+1 查询**：需核对 Source list/view 的逐条 Asset 查询及 Retrieval citation 中重复 `sourceService.get()`。优先采用 owner-scoped 批量查询和 `Map<UUID, Asset>` 组装；关闭条件包括查询数不随 Source 数量线性增长，且 SourceView 与 Retrieval/citation 语义不变。
+
+登记时状态：仅完成问题登记，尚未修改代码、API、数据库或前端行为；后续实施状态与验证证据以紧随其后的同日更新为准。
+
+### 2026-09-21 Issue 3/4 前端实现与自动验证收口
+
+- **Issue 3（PC 同步/连接状态）**：已实现统一状态 projection，按错误、离线、Realtime 重连、同步中、已同步的优先级展示；同步/服务/问答错误保持可见，问答区域保留错误和重试入口。
+- **Issue 4（Overview 手动重生成）**：已实现 `STARTED`/`SKIPPED`/`FAILED` 结构化结果及手动反馈；自动触发静默处理预期失败，不递归重试；失败或跳过保留已有 Overview 缓存，手动重试仍是绕过终态策略的入口。
+- 自动证据：最终 focused 68/68；`npm.cmd run test:r4-pc` 382/382；`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 均通过。日志仍有既有 SQLite experimental、Vite externalized/dynamic-import/chunk size 警告。
+- 限制：上述仅证明代码和自动门禁；真实 WebSocket delivery、浏览器 online/offline 事件、Tauri/GUI 文件预览、真实 AI Provider 输出尚未验收。Issue 2 仍为计划未实现；Issue 5–7 仍按原登记待核实。本轮未修改 API 或数据库契约。
+
 ### 2026-09-20 Overview Reduce prompt compression：代码/自动验证完成，真实质量验收开放
 
 - Task 1 已将 MAP 与 REDUCE 的内部 prompt 路由分离：MAP 行为未改变；非最终及最终 REDUCE 使用专用均衡压缩指令，规范化长度 843 字符，目标约 2500–3000 个序列化 JSON 字符。预算 `max_tokens=4608/6144`、intermediate `<=5200`、self-pair `<=12000`、no-progress、schema/alias/mode/locator 校验、分组/批次和 Subject/Source 隔离边界均未改变；API、数据库、Provider 安全和普通聊天/流式契约未改变。
