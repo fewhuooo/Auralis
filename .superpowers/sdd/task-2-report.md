@@ -57,3 +57,22 @@ git diff --check
 - 未执行真实 Tauri/GUI、浏览器真实 online/offline、WebSocket delivery 或真实 AI provider 验收；这些仍需人工验收。
 - 未执行 PC 全量 `test:r4-pc` 或 production build；本 Task brief 要求的 focused tests、reliability 和 type-check 已执行。
 - 工作树提交前仅包含本 Task 六个实现/测试文件；未覆盖用户未提交修改。
+
+## Review follow-up
+
+评审指出 Sidebar 不应直接依赖 Store/Realtime 内部，且 projection 的 `retryable` 必须有渲染用途。已修复：
+
+- `App.vue` 现在统一组装 `connectionProjection`，订阅浏览器 `online/offline` 和已有 `auralis-realtime-status` 事件，并通过明确的 `connection-projection` prop 传给 Sidebar。
+- `AppSidebar.vue` 移除 `useSyncStore`、`useChatStore`、`realtimeController` 及 Realtime 事件监听，只消费 `ConnectionProjection`；`retryable` 用于 `data-retryable`、ARIA 标签及现有浮动提示的“可重试”文案。
+- 新增静态断言证明 Sidebar 无内部连接依赖、App 持有 projection assembly/subscription，以及 `retryable` 有 DOM 渲染用途。
+
+复核命令：
+
+```powershell
+node --experimental-strip-types --test scripts/r4-issues-3-4-frontend.test.mjs scripts/r4-subject-overview-ui.test.mjs
+node --experimental-strip-types --test scripts/r4-issues-3-4-frontend.test.mjs scripts/r4-subject-overview-ui.test.mjs scripts/r4-reliability.test.mjs
+npm.cmd run type-check
+git diff --check
+```
+
+复核结果：TDD 修复前 14 pass、2 fail；修复后聚焦 + reliability 21/21 pass，type-check 与 diff-check 均退出码 0。

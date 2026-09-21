@@ -45,9 +45,18 @@ test('surfaces a chat error instead of reporting sync success', () => {
 
 test('sidebar consumes the unified connection projection', async () => {
   const sidebar = await read('src/components/layout/AppSidebar.vue')
-  assert.match(sidebar, /connectionProjection/)
-  assert.match(sidebar, /projection\.message/)
+  assert.match(sidebar, /connectionProjection\.message/)
+  assert.match(sidebar, /connectionProjection\.retryable/)
+  assert.doesNotMatch(sidebar, /useSyncStore|useChatStore|realtimeController|auralis-realtime-status/)
   assert.doesNotMatch(sidebar, /三端同步就绪/)
+})
+
+test('App owns connection projection assembly and live status subscriptions', async () => {
+  const app = await read('src/App.vue')
+  assert.match(app, /projectConnectionStatus/)
+  assert.match(app, /connectionProjection/)
+  assert.match(app, /auralis-realtime-status/)
+  assert.match(app, /online|offline/)
 })
 
 test('workspace renders chat errors inside the chat region', async () => {

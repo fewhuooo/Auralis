@@ -1,6 +1,6 @@
 <template>
   <div v-if="isAuthenticatedRoute" class="app-shell">
-    <AppSidebar :online="browserOnline" />
+    <AppSidebar :connection-projection="connectionProjection" />
     <div class="app-body">
       <AppHeader />
       <main class="app-content">
@@ -37,8 +37,10 @@ import SearchPalette from '@/components/SearchPalette.vue'
 import BackgroundParserHost from '@/components/preview/BackgroundParserHost.vue'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
+import { useChatStore } from '@/store/useChatStore'
 import { useTaskStore } from '@/store/useTaskStore'
-import { realtimeController } from '@/services/realtimeController'
+import { realtimeController, type RealtimeStatus } from '@/services/realtimeController'
+import { projectConnectionStatus, type ConnectionProjection } from '@/services/connectionStatusProjection'
 import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
 import { setBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
 import type { BackgroundParserHostHandle } from '@/services/documentParser/fileViewerBridge'
@@ -50,7 +52,17 @@ const route = useRoute()
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
 const syncStore = useSyncStore()
+const chatStore = useChatStore()
+const realtimeStatus = ref<RealtimeStatus>(realtimeController.getStatus())
 const isAuthenticatedRoute = computed(() => Boolean(route.meta.requiresAuth && authStore.isAuthenticated))
+const connectionProjection = computed<ConnectionProjection>(() => projectConnectionStatus({
+  online: browserOnline.value,
+  syncError: syncStore.lastSyncError,
+  serviceUnavailable: false,
+  realtime: realtimeStatus.value,
+  syncing: syncStore.isSyncing,
+  chatError: chatStore.lastError,
+}))
 
 const fetchTasksOnStartup = async () => {
   try {
@@ -71,10 +83,20 @@ const updateBrowserOnline = (): void => {
   browserOnline.value = typeof navigator === 'undefined' || navigator.onLine
 }
 
+const handleRealtimeStatus = (event: Event): void => {
+  const status = (event as CustomEvent<unknown>).detail
+  if (status === 'disconnected' || status === 'connecting' || status === 'connected' || status === 'reconnecting') {
+    realtimeStatus.value = status
+  } else {
+    realtimeStatus.value = realtimeController.getStatus()
+  }
+}
+
 onMounted(() => {
   setBackgroundParserHost(backgroundParserHost.value)
   window.addEventListener('online', updateBrowserOnline)
   window.addEventListener('offline', updateBrowserOnline)
+  window.addEventListener('auralis-realtime-status', handleRealtimeStatus)
 
   if (authStore.isAuthenticated) {
     startAuthenticatedRuntime()
@@ -96,6 +118,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('online', updateBrowserOnline)
   window.removeEventListener('offline', updateBrowserOnline)
+  window.removeEventListener('auralis-realtime-status', handleRealtimeStatus)
   stopWatchingAuth?.()
   stopWatchingAuth = undefined
   realtimeController.stop()

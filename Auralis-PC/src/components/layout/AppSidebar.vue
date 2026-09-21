@@ -91,11 +91,12 @@
     <!-- Footer: 三端同步状态 -->
     <div class="sidebar-footer">
       <div class="sync-status"
-        :aria-label="syncStatusText"
-        @mouseenter="handleMouseEnter($event, 'sync', { title: projection.message })"
+        :aria-label="`${connectionProjection.message}${connectionProjection.retryable ? '，可重试' : ''}`"
+        :data-retryable="connectionProjection.retryable"
+        @mouseenter="handleMouseEnter($event, 'sync', { title: connectionProjection.message, desc: connectionProjection.retryable ? '可重试' : undefined })"
         @mouseleave="handleMouseLeave"
       >
-        <span class="sync-dot" :class="syncDotClass"></span>
+        <span class="sync-dot" :class="`status-${connectionProjection.level}`"></span>
       </div>
     </div>
 
@@ -128,15 +129,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { LayoutDashboard, Compass, CalendarClock, Database, Timer } from 'lucide-vue-next'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useSyncStore } from '@/store/useSyncStore'
-import { useChatStore } from '@/store/useChatStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { realtimeController, type RealtimeStatus } from '@/services/realtimeController'
-import { projectConnectionStatus } from '@/services/connectionStatusProjection'
+import type { ConnectionProjection } from '@/services/connectionStatusProjection'
 import {
   getLegacySubjectIcon,
   getSubjectIconComponent,
@@ -145,12 +143,9 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const props = defineProps<{ online?: boolean }>()
+defineProps<{ connectionProjection: ConnectionProjection }>()
 const authStore = useAuthStore()
-const syncStore = useSyncStore()
-const chatStore = useChatStore()
 const subjectStore = useSubjectStore()
-const realtimeStatus = ref<RealtimeStatus>(realtimeController.getStatus())
 
 // Hover States
 const hoverState = ref<{
@@ -197,29 +192,7 @@ const keepHoverCard = () => {
   }
 }
 
-const connectionProjection = computed(() => projectConnectionStatus({
-  online: props.online ?? (typeof navigator === 'undefined' || navigator.onLine),
-  syncError: syncStore.lastSyncError,
-  serviceUnavailable: false,
-  realtime: realtimeStatus.value,
-  syncing: syncStore.isSyncing,
-  chatError: chatStore.lastError,
-}))
-const projection = connectionProjection
-const syncStatusText = computed(() => connectionProjection.value.message)
-const syncDotClass = computed(() => `status-${connectionProjection.value.level}`)
-
-const handleRealtimeStatus = (event: Event): void => {
-  const status = (event as CustomEvent<unknown>).detail
-  if (status === 'disconnected' || status === 'connecting' || status === 'connected' || status === 'reconnecting') {
-    realtimeStatus.value = status
-  } else {
-    realtimeStatus.value = realtimeController.getStatus()
-  }
-}
-
 onMounted(async () => {
-  window.addEventListener('auralis-realtime-status', handleRealtimeStatus)
   if (!authStore.isAuthenticated) return
   try {
     await subjectStore.loadSubjects()
@@ -229,7 +202,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('auralis-realtime-status', handleRealtimeStatus)
+  if (closeTimeout) clearTimeout(closeTimeout)
 })
 
 
