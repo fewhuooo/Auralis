@@ -28,6 +28,7 @@ interface OverviewRepositoryLike {
   markFileOverviewFailed(sourceId: string, ingestionRevision: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
   saveSubjectOverviewPart(input: { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string }): Promise<unknown>
   markSubjectOverviewFailed(subjectId: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
+  removeSubjectOverview(subjectId: string): Promise<void>
   removeFileOverviews(sourceId: string): Promise<void>
 }
 
@@ -198,15 +199,18 @@ export class OverviewGenerationService {
 
   async discardFileOverview(sourceId: string): Promise<void> {
     this.blockedSourceIds.add(sourceId)
+    const affectedSubjects = new Set<string>()
     for (const entry of this.inFlight.values()) {
       if (entry.sourceId === sourceId) entry.controller.abort()
     }
     for (const [subjectId, context] of this.subjectContexts) {
       if (!context.sources.some((source) => source.sourceId === sourceId)) continue
+      affectedSubjects.add(subjectId)
       this.subjectGenerations.set(subjectId, context.generation + 1)
       this.subjectControllers.get(subjectId)?.abort()
     }
     await this.repository.removeFileOverviews(sourceId)
+    await Promise.all([...affectedSubjects].map((subjectId) => this.repository.removeSubjectOverview(subjectId)))
   }
 
   async resumePending(trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult[]> {
@@ -270,7 +274,16 @@ export class OverviewGenerationService {
       if (latestFingerprint !== inputFingerprint) {
         return skippedResult('SOURCE_NOT_ELIGIBLE')
       }
+      if (!(await this.canCommitSubjectGeneration(subjectId, generation, controller, context.sources))) {
+        return skippedResult(this.subjectGenerationSkipCode(subjectId, generation, controller))
+      }
       await this.repository.saveSubjectOverviewPart({ subjectId, mode, response: generated, inputFingerprint })
+      if (!(await this.canCommitSubjectGeneration(subjectId, generation, controller, context.sources))) {
+        if (this.subjectContexts.get(subjectId)?.generation === generation) {
+          await this.repository.removeSubjectOverview(subjectId)
+        }
+        return skippedResult(this.subjectGenerationSkipCode(subjectId, generation, controller))
+      }
       return { status: 'STARTED', requestId }
     } catch (error) {
       if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) return skippedResult('ABORTED')
@@ -289,6 +302,15 @@ export class OverviewGenerationService {
       if (!(await this.isCurrentReady(source.sourceId, source.ingestionRevision))) return false
     }
     return true
+  }
+
+  private subjectGenerationSkipCode(subjectId: string, generation: number, controller: AbortController): OverviewSkipCode {
+    return controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE'
+  }
+
+  private async canCommitSubjectGeneration(subjectId: string, generation: number, controller: AbortController, sources: ReadyFile[]): Promise<boolean> {
+    if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) return false
+    return this.areSubjectSourcesCurrent(sources)
   }
 
   private async isCurrentReady(sourceId: string, revision: string): Promise<boolean> {

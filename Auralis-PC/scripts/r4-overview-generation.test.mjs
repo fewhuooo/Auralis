@@ -47,7 +47,7 @@ const response = (mode = 'ALL') => ({
 })
 
 class FakeOverviewRepository {
-  constructor() { this.files = new Map(); this.subjects = new Map(); this.failures = []; this.removedOverviewSources = [] }
+  constructor() { this.files = new Map(); this.subjects = new Map(); this.failures = []; this.removedOverviewSources = []; this.removedSubjectOverviews = [] }
   async getFileOverview(sourceId, revision) { return this.files.get(`${sourceId}:${revision}`) ?? null }
   async saveFileOverviewPart(input) {
     const key = `${input.sourceId}:${input.ingestionRevision}`
@@ -81,6 +81,10 @@ class FakeOverviewRepository {
   async removeFileOverviews(sourceId) {
     this.removedOverviewSources.push(sourceId)
     for (const key of this.files.keys()) if (key.startsWith(`${sourceId}:`)) this.files.delete(key)
+  }
+  async removeSubjectOverview(subjectId) {
+    this.removedSubjectOverviews.push(subjectId)
+    this.subjects.delete(subjectId)
   }
   async getSubjectOverview(subjectId) { return this.subjects.get(subjectId) ?? null }
   async saveSubjectOverviewPart(input) { this.subjects.set(input.subjectId, { ...input, status: 'READY' }); return this.subjects.get(input.subjectId) }
@@ -650,6 +654,104 @@ test('discard aborts an in-flight subject generation that uses the discarded Sou
   assert.deepEqual(result, { status: 'SKIPPED', code: 'ABORTED' })
   assert.equal(await repository.getSubjectOverview('subject-1'), null)
   assert.equal(repository.failures.length, 0)
+})
+
+test('subject generation rechecks the generation fence after the latest fingerprint and before saving', async () => {
+  const repository = new FakeOverviewRepository()
+  const files = [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }]
+  let service
+  let listCalls = 0
+  const api = { async generateSubjectOverview() { return response('ALL') } }
+  service = new OverviewGenerationService({
+    api,
+    repository,
+    listLocalFileOverviews: async () => {
+      listCalls += 1
+      if (listCalls === 2) void service.discardFileOverview('source-1')
+      return files
+    },
+  })
+
+  const result = await service.regenerateSubjectOverview('subject-1', 'ALL')
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.equal(await repository.getSubjectOverview('subject-1'), null)
+  assert.equal(repository.removedSubjectOverviews.includes('subject-1'), true)
+})
+
+test('discard during subject cache save compensates the late write before generation settles', async () => {
+  const repository = new FakeOverviewRepository()
+  let releaseSave
+  const saveGate = new Promise((resolve) => { releaseSave = resolve })
+  const originalSave = repository.saveSubjectOverviewPart.bind(repository)
+  repository.saveSubjectOverviewPart = async (input) => {
+    const saved = await originalSave(input)
+    await saveGate
+    return saved
+  }
+  const service = new OverviewGenerationService({
+    api: { async generateSubjectOverview() { return response('ALL') } },
+    repository,
+    listLocalFileOverviews: async () => [
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+    ],
+  })
+  const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  await service.discardFileOverview('source-1')
+  releaseSave()
+
+  const result = await attempt
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.equal(await repository.getSubjectOverview('subject-1'), null)
+  assert.ok(repository.removedSubjectOverviews.includes('subject-1'))
+})
+
+test('superseded subject save cannot compensate by deleting the newer generation cache', async () => {
+  const repository = new FakeOverviewRepository()
+  let releaseFirstSave
+  let firstSaveStarted
+  const firstSaveGate = new Promise((resolve) => { releaseFirstSave = resolve })
+  const firstSaveStartedGate = new Promise((resolve) => { firstSaveStarted = resolve })
+  const originalSave = repository.saveSubjectOverviewPart.bind(repository)
+  let saveCount = 0
+  repository.saveSubjectOverviewPart = async (input) => {
+    saveCount += 1
+    const saved = await originalSave(input)
+    if (saveCount === 1) {
+      firstSaveStarted()
+      await firstSaveGate
+    }
+    return saved
+  }
+  let releaseFirstProvider
+  const firstProviderGate = new Promise((resolve) => { releaseFirstProvider = resolve })
+  let providerCalls = 0
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSubjectOverview() {
+        providerCalls += 1
+        if (providerCalls === 1) await firstProviderGate
+        return response('ALL')
+      },
+    },
+    repository,
+    listLocalFileOverviews: async () => [
+      { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
+    ],
+  })
+  const first = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  releaseFirstProvider()
+  await firstSaveStartedGate
+  const second = service.regenerateSubjectOverview('subject-1', 'ALL')
+  const secondResult = await second
+  releaseFirstSave()
+  const firstResult = await first
+
+  assert.deepEqual(firstResult, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.equal(secondResult.status, 'STARTED')
+  assert.equal((await repository.getSubjectOverview('subject-1')).status, 'READY')
+  assert.equal(saveCount, 2)
 })
 
 test('overview response validation rejects malformed or mode-inconsistent provider data', () => {
