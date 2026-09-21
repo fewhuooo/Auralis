@@ -314,9 +314,12 @@ export const useChatStore = defineStore('chat', () => {
     try {
       session = await ensureRemoteSession(message.conversationId)
     } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      lastError.value = '当前离线，消息会在恢复网络后继续发送'
-      return
+      if (isOfflineTransportFailure(error)) {
+        lastError.value = '当前离线，消息会在恢复网络后继续发送'
+        return
+      }
+      lastError.value = error instanceof Error ? error.message : 'AI 请求失败'
+      throw error
     }
 
     if (!session.remoteId) return

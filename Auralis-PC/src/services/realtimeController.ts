@@ -98,6 +98,13 @@ export class RealtimeController {
     if (this.status !== newStatus) {
       this.status = newStatus
       this.onStatusChange?.(newStatus)
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        try {
+          window.dispatchEvent(new CustomEvent('auralis-realtime-status', { detail: newStatus }))
+        } catch {
+          // Ignore status event dispatch errors
+        }
+      }
     }
   }
 

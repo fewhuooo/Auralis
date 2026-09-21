@@ -24,7 +24,7 @@ function storage(): Storage | null {
   return typeof window === 'undefined' ? null : window.localStorage
 }
 
-function isOnline(): boolean {
+export function isOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
