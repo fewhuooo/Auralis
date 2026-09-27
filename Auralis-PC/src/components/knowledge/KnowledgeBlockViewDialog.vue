@@ -2,8 +2,10 @@
   <ModalShell
     :model-value="modelValue"
     size="lg"
-    aria-label="知识块详情"
+    :aria-label="dialogAriaLabel"
+    :show-close-button="false"
     @update:model-value="emit('update:modelValue', $event)"
+    @close="close"
   >
     <div class="knowledge-view-container">
       <!-- 头部信息区 -->
@@ -88,6 +90,10 @@ const emit = defineEmits<{
 }>()
 
 const copied = ref(false)
+
+const dialogAriaLabel = computed(() => {
+  return props.block?.title ? `知识块详情：${props.block.title}` : '知识块详情'
+})
 
 const rawContent = computed(() => {
   return props.block?.content || props.block?.preview || ''

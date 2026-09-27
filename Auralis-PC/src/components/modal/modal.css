@@ -174,3 +174,183 @@ html.dark {
   opacity: 0;
   transform: scale(0.97) translateY(4px);
 }
+
+/* ==========================================================================
+   Unified Zen Minimalist Button System
+   ========================================================================== */
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 18px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.modal-btn:focus-visible {
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.3);
+}
+
+.modal-btn-secondary {
+  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.04));
+  border-color: var(--border-default, rgba(0, 0, 0, 0.1));
+  color: var(--text-secondary, #4a5568);
+}
+
+html.dark .modal-btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary, #cbd5e1);
+}
+
+.modal-btn-secondary:hover:not(:disabled) {
+  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.08));
+  color: var(--text-primary, #1a202c);
+  border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
+}
+
+html.dark .modal-btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary, #f1f5f9);
+}
+
+.modal-btn-primary {
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  color: #FFFFFF;
+  border: none;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.32);
+}
+
+.modal-btn-primary:hover:not(:disabled) {
+  opacity: 0.93;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.42);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.modal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.modal-btn-danger {
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+.modal-btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.38);
+  transform: translateY(-1px);
+}
+
+/* ==========================================================================
+   Unified Zen Minimalist Form Controls
+   ========================================================================== */
+.modal-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.modal-form-group:last-child {
+  margin-bottom: 0;
+}
+
+.modal-form-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #2d3748);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.modal-form-label .required {
+  color: #e53e3e;
+}
+
+.modal-form-input,
+.modal-form-textarea,
+.modal-form-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.12));
+  background: var(--color-bg-primary, #ffffff);
+  color: var(--text-primary, #2d3748);
+  font-size: 13.5px;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+html.dark .modal-form-input,
+html.dark .modal-form-textarea,
+html.dark .modal-form-select {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary, #f1f5f9);
+}
+
+.modal-form-input:focus,
+.modal-form-textarea:focus,
+.modal-form-select:focus {
+  border-color: var(--color-zen-sage, #8B9A6E);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+}
+
+/* ==========================================================================
+   Modal Markdown Typography
+   ========================================================================== */
+.modal-markdown-body {
+  color: var(--text-primary, #2d3748);
+  font-size: 14px;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.modal-markdown-body :deep(h1),
+.modal-markdown-body :deep(h2),
+.modal-markdown-body :deep(h3) {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.modal-markdown-body :deep(p) {
+  margin: 0.6em 0;
+}
+
+.modal-markdown-body :deep(pre) {
+  background: var(--bg-tertiary, #f7f9f6);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 13px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+}
+
+html.dark .modal-markdown-body :deep(pre) {
+  background: #141715;
+  border-color: rgba(255, 255, 255, 0.08);
+}

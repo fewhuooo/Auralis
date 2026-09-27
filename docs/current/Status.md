@@ -1,9 +1,15 @@
 # Auralis 当前状态
 
-2026-09-27 PC 全局弹窗与模态层组件化规范与提取重构（代码与门禁验证通过，GUI 待验收）：
-1. 统一模态基础设施建设：新增 `src/components/modal/modal.css`（建立 Zen Sage 禅意配色体系、五档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、标准输入与按钮样式规范）与基础模态壳 `src/components/modal/ModalShell.vue`（标准化 `Teleport`、淡入轻缩放进出动效、`Esc` 快捷退出、遮罩防误触安全关闭、`aria-modal` 无障碍属性及多层嵌套 `body` 滚动穿透锁定）；
-2. 业务弹窗系统化提取与全域接入：解耦并提取 6 大独立业务弹窗——`ChangePasswordDialog.vue`（修改密码）、`SummaryInstructionDialog.vue`（提炼指令定制）、`TaskCreateDialog.vue`（排期任务创建，服务于 Dashboard/Timeline/Workspace）、`FileRegisterDialog.vue`（文件参考登记，服务于 Asset/Workspace）、`KnowledgeBlockViewDialog.vue`（Dashboard 与 Timeline 知识卡片详情查看，彻底清除 Timeline 页面内残留的内联 block-modal）与 `WorkspaceKnowledgeBlockDialog.vue`（Workspace 知识块三态流转）；并将 `SubjectCreateModal.vue`（学科创建/编辑）与 `ConfirmDialog.vue`（全局确认框）全面接入统一 `ModalShell` 容器，消除散落的手写遮罩与容器样式；
-3. 严格保护既有契约与测试回归：宿主视图状态与数据流保持原有闭环，既有正则断言（密码长度、提炼限制、排期时长、文件登记前置校验等）100% 保持满足；PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check`（0 error）与 `npm.cmd run build` 生产构建均顺利通过。真实外部环境与人工 GUI 体验待验收。
+2026-09-27 PC 全局弹窗与模态层组件化规范、视觉重构与焦点/无障碍修复（代码与门禁验证通过，GUI 待验收）：
+1. 统一模态基础设施建设与管理器：新增 `src/components/modal/modalManager.ts` 与 `src/components/modal/modal.css`（建立 Zen Sage 禅意配色体系、五档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、标准输入与 `.modal-btn` 胶囊按钮体系、`.modal-markdown-body` 排版规范）与基础模态壳 `src/components/modal/ModalShell.vue`；
+2. 5 项核心交互与焦点/无障碍问题修复：
+   - 上传关闭守卫前置：`ModalShell` 在任何状态变更或关闭事件触发前严格先执行 `preventClose` / `beforeClose` 守卫判定；`FileRegisterDialog` 绑定上传状态守卫，并在上传失败时不重置表单，允许用户保留文件与文件名立即重试；
+   - 共享引用计数解决多层滚动锁：使用 `lockBodyScroll()` 与 `unlockBodyScroll()` 全局引用计数管理 `document.body.style.overflow`，彻底解决多层弹窗任意顺序关闭时提前解锁或残留 `hidden` 的问题；
+   - LIFO 弹窗栈与单层 Escape 拦截：通过全局活动栈仅允许最顶层弹窗响应 Escape，并配合 `e.stopImmediatePropagation()` 阻止下层弹窗同时被关闭；
+   - 焦点闭环与智能入场聚焦：入场时优先保持已有聚焦、检测 `[autofocus]` 与第一表单输入框，避免强制聚焦覆盖任务名称等组件的原生自动聚焦；弹窗激活期间通过全局与容器 `trapTabKey` 实现 Tab/Shift+Tab 弹窗内闭环循环；弹窗关闭或销毁后自动将焦点还给触发元素（opener）；
+   - 无障碍名称绑定修复：`ModalShell` 智能区分 `effectiveAriaLabelledBy`（仅在有明确标题时绑定 `titleId`）与 `effectiveAriaLabel`（自适应绑定传入的 `aria-label`），彻底解决知识块查看弹窗与工作区弹窗在未传 `title` 时指向空标题 ID 的缺陷；
+3. 业务弹窗系统化提取、视觉优化与全域接入：解耦并提取 6 大独立业务弹窗——`ChangePasswordDialog.vue`、`SummaryInstructionDialog.vue`、`TaskCreateDialog.vue`、`FileRegisterDialog.vue`、`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`；并将 `SubjectCreateModal.vue`（清理双重标题栏冗余，接入 `#footer` 插槽）与 `ConfirmDialog.vue`（全局确认框）全面接入统一 `ModalShell` 容器，消除散落的手写遮罩与容器样式；
+4. 严格保护既有契约与测试回归：宿主视图状态与数据流保持原有闭环，既有正则断言（学科版本 `version: props.subjectData.version`、线条图标映射、密码长度、提炼限制、排期时长、文件登记前置校验等）100% 保持满足；PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check`（0 error）与 `npm.cmd run build` 生产构建均顺利通过。真实外部环境与人工 GUI 体验待验收。
 
 2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复（代码与门禁验证通过，GUI 待验收）：排查并彻底解决点击侧栏下周排期时当周任务被误关联至下周的根因：在 `useTaskStore.ts` 中增强 `dateForDay` 与 `rebuildSchedule` 支持 `YYYY-MM-DD` 格式的 `dateKey` 精确比对，打破原有仅依赖单周 `DayCode` ('Mon'~'Sun') 导致的跨周模糊匹配；更新 `setSelectedDay` 与 `insertTaskAtSlot` 支持 `dateKey` 级传递；并在 `Timeline/index.vue` 中由 `selectedTimelineDay.dateKey` 精确驱动中间“时间流细节”各槽位任务与当前点渲染，确保选中下周某一天时只精确呈现下周该天的实际排期任务。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 

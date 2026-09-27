@@ -3,7 +3,9 @@
     :model-value="modelValue"
     size="lg"
     :aria-label="dialogTitle"
+    :show-close-button="false"
     @update:model-value="handleOverlayClose"
+    @close="handleClose"
   >
     <div class="workspace-block-dialog">
       <!-- 弹窗顶部栏 -->

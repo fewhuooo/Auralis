@@ -4,7 +4,12 @@
     :title="title"
     size="md"
     custom-class="file-register-modal"
-    @update:model-value="$emit('update:modelValue', $event)"
+    :prevent-close="isUploading"
+    :before-close="() => !isUploading"
+    :close-on-click-overlay="!isUploading"
+    :close-on-press-escape="!isUploading"
+    :show-close-button="!isUploading"
+    @update:model-value="handleModelValueUpdate"
     @close="handleClose"
   >
     <div
@@ -183,8 +188,8 @@ const resetForm = () => {
 
 watch(
   () => props.modelValue,
-  (visible) => {
-    if (visible) {
+  (visible, prevVisible) => {
+    if (visible && !prevVisible) {
       resetForm()
     }
   },
@@ -220,6 +225,14 @@ const applyFile = (file: File) => {
   }
   if (!selectedSubjectId.value && resolvedSubjects.value.length > 0) {
     selectedSubjectId.value = resolvedSubjects.value[0].id
+  }
+}
+
+const handleModelValueUpdate = (val: boolean) => {
+  if (!val && props.isUploading) return
+  emit('update:modelValue', val)
+  if (!val) {
+    emit('cancel')
   }
 }
 

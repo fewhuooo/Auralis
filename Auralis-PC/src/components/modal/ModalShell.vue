@@ -6,6 +6,7 @@
         class="modal-shell-overlay"
         :style="{ zIndex }"
         @click.self="handleOverlayClick"
+        @keydown="handleKeyDown"
       >
         <div
           ref="cardRef"
@@ -16,18 +17,19 @@
           ]"
           role="dialog"
           aria-modal="true"
-          :aria-labelledby="titleId"
+          :aria-labelledby="effectiveAriaLabelledBy"
+          :aria-label="effectiveAriaLabel"
           tabindex="-1"
         >
           <!-- Header slot or default header -->
           <slot name="header" :close="requestClose">
             <div v-if="title || showCloseButton" class="modal-shell-header" :class="headerClass">
               <h3 v-if="title" :id="titleId" class="modal-shell-title">{{ title }}</h3>
-              <div v-else :id="titleId" style="display: none"></div>
               <button
                 v-if="showCloseButton"
                 type="button"
                 class="modal-shell-close"
+                :disabled="preventClose"
                 aria-label="关闭"
                 @click="requestClose"
               >
@@ -52,17 +54,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onUnmounted, nextTick, useAttrs } from 'vue'
 import './modal.css'
+import {
+  lockBodyScroll,
+  unlockBodyScroll,
+  registerModal,
+  updateModalContainer,
+  unregisterModal,
+  trapTabKey,
+  getFocusableElements
+} from './modalManager'
 
 export interface ModalShellProps {
   modelValue: boolean
   title?: string
+  ariaLabel?: string
+  ariaLabelledBy?: string
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'auto'
   closeOnClickOverlay?: boolean
   closeOnPressEscape?: boolean
   showCloseButton?: boolean
   lockScroll?: boolean
+  preventClose?: boolean
+  beforeClose?: () => boolean | Promise<boolean>
+  initialFocus?: string
   teleport?: boolean
   teleportTo?: string
   zIndex?: number
@@ -74,11 +90,16 @@ export interface ModalShellProps {
 
 const props = withDefaults(defineProps<ModalShellProps>(), {
   title: '',
+  ariaLabel: '',
+  ariaLabelledBy: '',
   size: 'md',
   closeOnClickOverlay: true,
   closeOnPressEscape: true,
   showCloseButton: true,
   lockScroll: true,
+  preventClose: false,
+  beforeClose: undefined,
+  initialFocus: '',
   teleport: true,
   teleportTo: 'body',
   zIndex: 1000,
@@ -95,79 +116,161 @@ const emit = defineEmits<{
   (e: 'closed'): void
 }>()
 
+const attrs = useAttrs()
 const cardRef = ref<HTMLElement | null>(null)
-const titleId = ref(`modal-title-${Math.random().toString(36).substring(2, 9)}`)
-let previousBodyOverflow = ''
-let isScrollLocked = false
+const modalInstanceId = `modal-${Math.random().toString(36).substring(2, 9)}`
+const titleId = `modal-title-${modalInstanceId}`
 
-const sizeClass = computed(() => {
-  return `modal-size-${props.size}`
+let isScrollLocked = false
+let previousActiveElement: HTMLElement | null = null
+
+const sizeClass = computed(() => `modal-size-${props.size}`)
+
+const effectiveAriaLabelledBy = computed(() => {
+  if (props.ariaLabelledBy) return props.ariaLabelledBy
+  return props.title ? titleId : undefined
 })
 
-const requestClose = () => {
+const effectiveAriaLabel = computed(() => {
+  if (effectiveAriaLabelledBy.value) return undefined
+  if (props.ariaLabel) return props.ariaLabel
+  if (typeof attrs['aria-label'] === 'string' && attrs['aria-label'].trim()) {
+    return attrs['aria-label']
+  }
+  return undefined
+})
+
+const requestClose = async () => {
+  if (props.preventClose) return
+  if (props.beforeClose) {
+    try {
+      const allowed = await props.beforeClose()
+      if (!allowed) return
+    } catch {
+      return
+    }
+  }
   emit('update:modelValue', false)
   emit('close')
 }
 
 const handleOverlayClick = () => {
-  if (props.closeOnClickOverlay) {
-    requestClose()
-  }
+  if (props.preventClose || !props.closeOnClickOverlay) return
+  requestClose()
 }
 
 const handleKeyDown = (e: KeyboardEvent) => {
-  if (props.closeOnPressEscape && e.key === 'Escape') {
-    e.stopPropagation()
-    requestClose()
+  if (e.key === 'Tab' && cardRef.value) {
+    trapTabKey(cardRef.value, e)
   }
-}
-
-const lockBodyScroll = () => {
-  if (!props.lockScroll || typeof document === 'undefined' || isScrollLocked) return
-  previousBodyOverflow = document.body.style.overflow
-  document.body.style.overflow = 'hidden'
-  isScrollLocked = true
-}
-
-const unlockBodyScroll = () => {
-  if (!isScrollLocked || typeof document === 'undefined') return
-  document.body.style.overflow = previousBodyOverflow
-  isScrollLocked = false
 }
 
 const onAfterEnter = () => {
   emit('opened')
+  updateModalContainer(modalInstanceId, cardRef.value)
   nextTick(() => {
-    cardRef.value?.focus()
+    if (!cardRef.value) return
+    // 0. If activeElement is already an inner element inside cardRef (not card itself), keep it
+    if (
+      document.activeElement &&
+      cardRef.value.contains(document.activeElement) &&
+      document.activeElement !== cardRef.value
+    ) {
+      return
+    }
+    // 1. If props.initialFocus is specified
+    if (props.initialFocus) {
+      const target = cardRef.value.querySelector<HTMLElement>(props.initialFocus)
+      if (target && typeof target.focus === 'function') {
+        target.focus()
+        return
+      }
+    }
+    // 2. Explicit [autofocus] element
+    const autofocusEl = cardRef.value.querySelector<HTMLElement>('[autofocus]')
+    if (autofocusEl && typeof autofocusEl.focus === 'function') {
+      autofocusEl.focus()
+      return
+    }
+    // 3. First editable input or textarea
+    const input = cardRef.value.querySelector<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), textarea:not([disabled]), select:not([disabled])'
+    )
+    if (input && typeof input.focus === 'function') {
+      input.focus()
+      return
+    }
+    // 4. Fallback: focus first focusable element or the card container
+    const focusables = getFocusableElements(cardRef.value)
+    if (focusables.length > 0) {
+      focusables[0].focus()
+    } else {
+      cardRef.value.focus()
+    }
   })
 }
 
 const onAfterLeave = () => {
   emit('closed')
+  // Return focus to trigger element
+  if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+    try {
+      previousActiveElement.focus()
+    } catch {
+      // ignore
+    }
+    previousActiveElement = null
+  }
 }
 
 watch(
   () => props.modelValue,
   (val) => {
     if (val) {
-      lockBodyScroll()
-      if (typeof window !== 'undefined') {
-        window.addEventListener('keydown', handleKeyDown, true)
+      // Save previously focused element
+      if (typeof document !== 'undefined') {
+        previousActiveElement = document.activeElement as HTMLElement | null
       }
+      if (props.lockScroll && !isScrollLocked) {
+        lockBodyScroll()
+        isScrollLocked = true
+      }
+      registerModal(
+        modalInstanceId,
+        () => {
+          if (props.closeOnPressEscape && !props.preventClose) {
+            requestClose()
+          }
+        },
+        cardRef.value
+      )
+      nextTick(() => {
+        updateModalContainer(modalInstanceId, cardRef.value)
+      })
     } else {
-      unlockBodyScroll()
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('keydown', handleKeyDown, true)
+      if (isScrollLocked) {
+        unlockBodyScroll()
+        isScrollLocked = false
       }
+      unregisterModal(modalInstanceId)
     }
   },
   { immediate: true }
 )
 
 onUnmounted(() => {
-  unlockBodyScroll()
-  if (typeof window !== 'undefined') {
-    window.removeEventListener('keydown', handleKeyDown, true)
+  if (isScrollLocked) {
+    unlockBodyScroll()
+    isScrollLocked = false
+  }
+  unregisterModal(modalInstanceId)
+  if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+    try {
+      previousActiveElement.focus()
+    } catch {
+      // ignore
+    }
+    previousActiveElement = null
   }
 })
 </script>

@@ -240,6 +240,23 @@
   - 学科卡片（`.subject-card`）加入常态分层立体底部微阴影与更饱满的悬浮投影扩散，深色模式同步适配。
 - **验证**：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（382/382）、`npm.cmd run build`、`git diff --check` 全部通过。
 
+### 2026-09-27 PC 弹窗与模态层组件化规范、视觉重构与焦点/无障碍修复
+
+- **模态基础设施与管理器**：
+  - `src/components/modal/modalManager.ts`：实现全局活动弹窗管理、引用计数级 `body` 滚动穿透锁定（`lockBodyScroll` / `unlockBodyScroll`）、LIFO 弹窗栈（`modalStack`）、顶层 `Escape` 拦截机制（`stopImmediatePropagation`）与全局焦点循环管理（`trapTabKey`）。
+  - `src/components/modal/ModalShell.vue`：统一作为所有 PC 模态弹窗的基础容器，实现标准化 `Teleport`、淡入缩放微动效、`role="dialog"` 可访问性名称计算（`effectiveAriaLabelledBy` 与 `effectiveAriaLabel`）、入场智能聚焦（保持已有聚焦、检测 `[autofocus]`、优先聚焦首个输入控件）、退场焦点归还触发元素（`previousActiveElement`）以及 `preventClose` / `beforeClose` 关闭守卫。
+  - `src/components/modal/modal.css`：建立全局 Zen Sage 禅意配色体系、五档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、`.modal-btn`（`.modal-btn-primary`, `.modal-btn-secondary`, `.modal-btn-danger`）统一胶囊按钮体系、`.modal-form-group` 统一表单控件以及 `.modal-markdown-body` 排版规范。
+- **5 项核心交互与焦点/无障碍问题修复**：
+  1. 上传关闭守卫前置：`ModalShell` 在触发任何状态变更前执行关闭守卫；`FileRegisterDialog` 绑定上传状态守卫，并在上传失败时不重置表单，允许用户保留所选文件与文件名立即重试。
+  2. 共享引用计数滚动锁：使用全局引用计数管理 `document.body.style.overflow`，彻底解决多层弹窗以任意顺序关闭时的提早解锁或残留 `overflow: hidden` 问题。
+  3. LIFO 弹窗栈单层 Escape：多层弹窗时仅允许最顶层响应 Escape，并配合 `e.stopImmediatePropagation()` 阻止下层弹窗同时被关闭。
+  4. 焦点闭环：实现弹窗内 Tab/Shift+Tab 闭环循环，关闭后焦点无损返还给触发按钮，且入场聚焦检测 `[autofocus]`，不覆盖任务名称等组件的原生自动聚焦。
+  5. 无障碍名称绑定修复：`ModalShell` 在无 `title` 时移除 `aria-labelledby` 并无缝切换至 `effectiveAriaLabel`，修复知识块查看弹窗与工作区弹窗在未传 `title` 时的空 ID 引用缺陷。
+- **业务弹窗提取与接入**：
+  - 系统化解耦并提取 6 大独立业务弹窗组件（`ChangePasswordDialog.vue`、`SummaryInstructionDialog.vue`、`TaskCreateDialog.vue`、`FileRegisterDialog.vue`、`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`）；
+  - 全面改造 `SubjectCreateModal.vue`（消除双重标题栏冗余，接入 `#footer` 插槽）与 `ConfirmDialog.vue`。
+- **门禁与自动化验证**：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（433/433 pass）、`npm.cmd run build` 均全部通过。
+
 ### 2026-09-21 PC 端全量界面语义图标迁移至 Tabler Icons（@tabler/icons-vue）
 
 - 全面统一 PC 端所有界面语义图标库为 `@tabler/icons-vue`，清理历史遗留的 `lucide-vue-next` 与散落内联 `<svg>`。
