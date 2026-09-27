@@ -71,6 +71,46 @@ public class ProviderHttpClient {
         return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis);
     }
 
+    public <T> T getJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Class<T> responseType) throws IOException {
+        if (endpoint == null || path == null || !path.startsWith("/")
+                || apiKey == null || apiKey.isBlank() || responseType == null) {
+            throw new IllegalArgumentException("Provider request is invalid");
+        }
+        long startedAt = System.nanoTime();
+        LOGGER.info("AI_PROVIDER_HTTP_START kind=json method=GET host={} port={} path={} resolvedAddressCount={}",
+                endpoint.host(), endpoint.port(), path, endpoint.addresses().size());
+        try {
+            byte[] responseBody = transport.get(endpoint, path, apiKey, connectTimeoutMillis, responseTimeoutMillis);
+            if (responseBody == null || responseBody.length > maxResponseBytes) {
+                throw new ProviderResponseTooLargeException();
+            }
+            try {
+                T response = objectMapper.readValue(responseBody, responseType);
+                LOGGER.info("AI_PROVIDER_HTTP_SUCCESS kind=json method=GET host={} port={} path={} status=2xx responseBytes={} elapsedMs={}",
+                        endpoint.host(), endpoint.port(), path, responseBody.length, elapsedMillis(startedAt));
+                return response;
+            } catch (JacksonException exception) {
+                throw new IOException("Could not parse provider response", exception);
+            }
+        } catch (ProviderHttpException exception) {
+            LOGGER.warn("AI_PROVIDER_HTTP_FAILED kind=json method=GET host={} port={} path={} status={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.status(), elapsedMillis(startedAt));
+            throw exception;
+        } catch (ProviderResponseTooLargeException exception) {
+            LOGGER.warn("AI_PROVIDER_HTTP_FAILED kind=json method=GET host={} port={} path={} error=response_too_large elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, elapsedMillis(startedAt));
+            throw exception;
+        } catch (IOException exception) {
+            LOGGER.warn("AI_PROVIDER_HTTP_FAILED kind=json method=GET host={} port={} path={} errorType={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(), elapsedMillis(startedAt));
+            throw exception;
+        }
+    }
+
     public <T> T postJson(
             ResolvedProviderEndpoint endpoint,
             String path,
@@ -248,6 +288,34 @@ public class ProviderHttpClient {
             connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
             try {
                 connection.getOutputStream().write(requestBody);
+                int status = connection.getResponseCode();
+                if (status < 200 || status >= 300) {
+                    throw new ProviderHttpException(status);
+                }
+                try (InputStream input = connection.getInputStream()) {
+                    return readBounded(input, maxResponseBytes);
+                }
+            } finally {
+                connection.disconnect();
+            }
+        }
+
+        @Override
+        public byte[] get(ResolvedProviderEndpoint endpoint, String path, String apiKey,
+                          long connectTimeoutMillis, long responseTimeoutMillis) throws IOException {
+            URI target = buildTargetUri(endpoint, path);
+            HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
+            int connectTimeout = toIntTimeout(connectTimeoutMillis);
+            connection.setConnectTimeout(connectTimeout);
+            connection.setReadTimeout(toIntTimeout(responseTimeoutMillis));
+            connection.setInstanceFollowRedirects(false);
+            connection.setRequestMethod("GET");
+            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setSSLSocketFactory(new PinnedSslSocketFactory(
+                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout));
+            connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+            try {
                 int status = connection.getResponseCode();
                 if (status < 200 || status >= 300) {
                     throw new ProviderHttpException(status);

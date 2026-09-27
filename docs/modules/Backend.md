@@ -1,5 +1,29 @@
 # Spring Boot 后端模块
 
+2026-09-27 PC/Service 风险修复：Sync pull 对省略/零 cursor 也使用用户独立高水位和最早保留日志识别清理缺口；Subject Overview 在转换 outline 引用前先建立所有请求 Source 别名；Source Overview 同一进程内以 owner/source/revision/title/mode/instruction 合并进行中生成。TEXT/URL 解析输入变更轮换 Source ingestion revision，新旧修订使用不同 job；Source 与对应 job 在同一事务持久化，失败整体回滚；恢复处理中的 TEXT/URL Source 时按当前 revision 补建或复用 job。worker 的结果及失败写入按 revision、job/generation、attempt 与锁后新鲜时钟的有效 lease 栅栏化，成功的 Source/chunks/job 在短事务内提交。Server clean 聚焦 114/114、PostgreSQL pgvector 2/2 通过；跨服务实例 Overview 去重、真实 Provider/运行服务尚未验收。
+
+2026-09-26 AI 显式检索范围补充：聊天 `ReadingContext` 保留既有 `AUTO` 当前 Source 行为，并支持用户显式选择的 Source ID 集合或全学科范围。检索前验证活动 Subject 属于当前用户；显式 Source 必须属于当前用户及该 Subject 且为活动 READY 状态，结果不得扩展到未选 Source。定向 `AiRetrievalTests` clean 12/12、`ArchitectureTests` 1/1 通过；真实 PostgreSQL/pgvector、Provider 和 GUI 尚未验收。
+
+2026-09-26 Source/RAG 修复：PostgreSQL pgvector 检索仍在 LIMIT 前过滤软删除 Source；H2/fallback 现先按 owner 批量解析活动 Source 再排序/TopK，删除 Source 的旧 chunk 不占有效引用名额。Source 列表、分页和含删除项列表的 Asset size 改为 owner-scoped 批量加载；Retrieval citation 复用一次批量 SourceView 查询，不再逐条 `sourceService.get()`。SourceView 排序、Asset 大小、citation 内容及 generation 语义不变。focused clean 8/8、PostgreSQL 17/pgvector 2/2；真实业务数据与负载性能未验收。
+
+2026-09-26 注销运行验收：用户重建后提交的指定账号作业已于 `06:50:10.172777 UTC` 达到 `COMPLETED`，`last_error=NULL`，用户行和该用户归属的 21 张清理表记录均已清空，本作业对象键记录为 0。此证据确认数据库清理链路，MinIO 对象与当时 HTTP/GUI 响应未单独验收。
+
+2026-09-26 注销运行态与完整链路验证：现运行 backend JAR 的 `IdentityService.requestAccountDeletion()` 字节码确认 `requested_at/not_before` 使用 UTC `OffsetDateTime` 绑定，V25 已安装。独立 Testcontainers PostgreSQL 17/pgvector 定向回归 4/4，涵盖有效确认密码受理后到期清理用户、Subject/Task/Asset 与对象键，以及错误密码保持用户 `ACTIVE` 且不建作业。本轮未改后端生产逻辑，真实账号和 MinIO 未验收。
+
+2026-09-26 账户注销受理入口：`IdentityService.requestAccountDeletion()` 写入 V25 `account_deletion_jobs.requested_at/not_before` 时，JDBC 边界将 `Instant` 转为 UTC `OffsetDateTime`，使 pgJDBC 可绑定带时区时间列；领域时间、返回值、事务及作业流程不变。独立 PostgreSQL 17 异时区定向回归 2/2、主源码 clean compile 与 backend 镜像构建通过；当前运行容器尚未加载新镜像，真实账户注销仍待验证。
+
+2026-09-25 账户注销清理 JDBC 时间参数修复：`AccountDeletionCleanupService` 的 PostgreSQL `JdbcTemplate` 查询和更新将 `Instant` 明确转换为 UTC `OffsetDateTime` 后绑定，匹配 V25 的 `TIMESTAMP WITH TIME ZONE` 列，覆盖作业领取、租约、对象删除时间、完成时间与完成后复扫。作业状态机、事务与删除顺序不变。独立 Testcontainers PostgreSQL 17/pgvector 上经 Flyway V1–V25 运行专门回归 1/1；当前运行中的 Compose 服务未重建，真实账户注销尚待验收。
+
+2026-09-25 AI 聊天配置调整：用户 BYOK 只配置聊天模型和凭据；Embedding 固定使用服务端 SiliconFlow 配置。`OPENAI_COMPATIBLE` 可使用经公网 DNS/固定地址校验的 HTTPS host，并拒绝 NAT64、6to4、Teredo 转换前缀；命名 Provider 继续使用精确 host allowlist。连接测试使用已保存聊天模型的最小 `/chat/completions` 请求，`/models` 仅作可选发现。真实服务商、GUI 和本地地址兼容尚未验收。
+
+2026-09-25 头像 multipart 接收上限：服务端在共享 Spring 配置中显式设置单文件上限 5 MiB、整个 multipart 请求上限 6 MiB；后者为表单封装留余量，使恰好 5 MiB 的头像仍能到达现有业务校验。此配置与 Asset/ParsedDocument 的预签名直传大小限制分离。
+
+2026-09-24 PC 个人空间所需服务端能力：Identity 新增带 `baseVersion` 的昵称更新与改密、私有 PNG/JPEG 头像上传/读取/重置，以及 `DELETE /api/auth/me` 异步账户注销受理。头像经类型/尺寸校验后重编码 PNG 存入 V24 `user_avatars`；注销由 V25 作业与对象键表记录待清理 Asset/ParsedDocument，先停用用户并撤销 refresh sessions，上传意图签发与停用用户经用户锁串行化。等待预签名上传窗口后由带行锁和租约的 worker 清理对象，再按 owner 显式删除数据库依赖与用户；已完成作业继续有界复扫已知对象键以清理晚到 PUT，不改变原业务表 FK 语义。改密与登录/刷新签发也经用户锁串行化，防止撤销后并发生成新 refresh session。AI 新增当前用户已保存 BYOK 的模型列表与连接测试，两者通过既有出站安全策略请求兼容协议 `/models`，不读取 env 默认密钥。定向测试与 OpenAPI/SDK 校验记录见当前状态；真实 PostgreSQL/MinIO、真实 Provider 和 PC 前端调用尚未验收。
+
+2026-09-24 紧邻排期交换：`schedule-swaps` 对原排期区间首尾严格相接的两项任务，交换顺序后从原共同窗口的起点紧凑安排，保持窗口终点不变；非紧邻仍交换开始时间。两个版本、固定任务、与其他任务的完整区间冲突仍在原事务和锁内校验，成功只改两项排期。
+
+2026-09-24 Timeline 卡片主体严格放置：`POST /api/tasks/schedule-insertions` 可选 `targetTaskId` 标识主体落点。服务端在既有锁与事务内读取目标任务，将源任务安排在目标结束后的首个半小时槽；目标及其他任务不移动。若源任务完整区间与后续任务冲突或目标结束后无可用槽，整笔拒绝且不产生部分更新。不含该字段的普通空白槽位仍按原有插入顺延处理；顶部栏继续使用交换接口。
+
 2026-09-20 Overview Reduce prompt routing 已完成：MAP 行为保持不变；所有文档 REDUCE 调用（非最终与最终）现在在既有 SYSTEM/schema、安全、mode、alias 和 locator 规则之后接收 Reduce 专用均衡压缩指令。该指令经 Java text-block 规范化后为 843 字符，面向需要实质归并的输出目标约 2500–3000 个序列化 JSON 字符；目标不是硬上限。`max_tokens=4608`（多批 MAP、非最终 REDUCE）与 `6144`（single-batch MAP、Subject direct、最终 REDUCE）不变；规范化 intermediate JSON `<=5200` 字符、self-pair `<=12000`、Reduce no-progress、JSON/schema/alias/mode/locator 校验、分组/批次和调用次数均不变，也不增加自动压缩重试。Task 1 focused Server 自动验证 55/55 与 test-compile 已通过；这些证据只证明 prompt 路由和既有不变量，不证明真实 DeepSeek 的压缩质量、内容覆盖、延迟、token 使用或成本，真实样本仍待验收。
 
 2026-09-17 Overview token budget 调整为原预算的 150%：多批 MAP 与非最终 REDUCE 使用 `max_tokens=4608`，single-batch MAP、Subject direct 与最终 REDUCE 使用 `6144`；规范化 intermediate JSON 上限为 `5200` 字符，self-pair 上限仍为 `12000`。紧凑 intermediate prompt、schema/规范化和 no-progress 校验保留，不做自动压缩重试。普通聊天、流式和 embedding 不变。
@@ -77,16 +101,21 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 
 - Subject：`POST/GET /api/subjects`、`GET/PUT/DELETE /api/subjects/{id}`、`POST /api/subjects/{id}/restore`。
 - KnowledgeBlock：`POST/GET /api/knowledge-blocks`、`GET/PUT/DELETE /api/knowledge-blocks/{id}`、`POST /api/knowledge-blocks/{id}/restore`。
-- Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`、`POST /api/tasks/schedule-swaps`；Task 颜色字段已由 V21 从 API、Entity 和历史同步 JSON 中移除，KnowledgeBlock 颜色仍保留。
+- Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`、`POST /api/tasks/schedule-swaps`、`POST /api/tasks/schedule-insertions`；Task 颜色字段已由 V21 从 API、Entity 和历史同步 JSON 中移除，KnowledgeBlock 颜色仍保留。
 
-创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 换位端点以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本、截止时间及新排期；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
+创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 排期创建、更新、恢复和换位在事务中先悲观锁定所属 User 行，再按既有 Subject→Task 顺序加锁，以序列化同一用户跨学科的排期写入；通过 TaskService 进入的 REST 与 Sync 写入共用该锁。服务端按 `[scheduledAt, scheduledAt + durationMinutes)` 检查同用户所有未取消、未删除 Task，首尾相接允许，`durationMinutes=null` 按 30 分钟比较；update 排除自身，restore 检查恢复后的区间，swap 同时排除双方旧行并校验双方新区间互不重叠且不冲突于第三方。冲突返回 `VALIDATION_FAILED`，Sync 将该 mutation 记为 `REJECTED`，不会部分写入。Task 的 `dueAt` 只作提醒和排序，不限制创建、更新或排期晚于截止时间；V23 移除历史排期顺序 CHECK。Task 换位仍以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本及换位结果；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
+
+`POST /api/tasks/schedule-insertions` 在不含 `targetTaskId` 时将 Task 插入普通时间槽并顺延发生区间冲突的后续 Task，保留未冲突的空档；含目标 ID 时按本文件最新主体规则严格放置。该请求携带被拖 Task 的 `baseVersion`、目标 `scheduledAt` 及当天 `windowStartAt`/`windowLastStartAt`（08:00 和 22:30 对应的 UTC instants）；服务端按窗口起点向上取整到半小时槽。完成 Task 固定、取消 Task 不占用时间，若需要移动完成 Task或顺延超出窗口则整体拒绝；`dueAt` 不限制插入或顺延时间。所有实际改时的 Task 各增加一次版本并发布普通 `UPDATE` 变更，HTTP 200 响应只返回实际变化的 Task；原子写入失败不保留任何部分变更。该在线操作不增加 Sync mutation，已有事件由客户端 read pull 收敛。
+
+顺延链只移动起始时间位于目标日窗口内的 Task；前一日开始、区间延续到当天的 Task 不会被改期，若与插入结果冲突则整笔拒绝。
 
 2026-09-18 Task 2A：Subject DELETE 仍使用原有公开 API 和软删除语义，但在同一事务内通过各业务模块的公开领域事件边界级联软删除当前用户、当前 Subject 下的活动 Source、KnowledgeBlock 和 Task。每个子资源递增 version/更新时间、发布普通 `DELETE` `ResourceChangedEvent`，并继续发布端点删除事件使相关 Relation 逐条生成墓碑；已删除子资源不重复写入，Subject restore 不恢复子资源。级联异常会回滚 Subject、子资源、Relation 和 change-log 写入；不改变 ParsedDocument 审计元数据、延迟 Asset/MinIO 保留清理或数据库 schema。
 
-Task 2A 统一数据库锁协议：所有涉及 Subject-owned 资源的写事务先收集 owner Subject IDs，去重并按 UUID 升序通过 `SubjectLockCoordinator` 获取悲观行锁，再按稳定资源顺序锁定具体 Source/KnowledgeBlock/Task/Relation，最后重新读取并校验活动状态、归属、`subjectId` 和 Relation 端点。代码复核必须逐条回答：
+Task 2A 统一数据库锁协议：所有涉及 Subject-owned 资源的写事务先收集 owner Subject IDs，去重并按 UUID 升序通过 `SubjectLockCoordinator` 获取悲观行锁，再按稳定资源顺序锁定具体 Source/KnowledgeBlock/Task/Relation，最后重新读取并校验活动状态、归属、`subjectId` 和 Relation 端点。Task 排期写入还须在此前先通过 `IdentityService.lockUserForScheduling` 锁所属 User 行，锁序固定为 User→Subject→Task；Subject 删除等非排期路径仍从 Subject 锁开始，不得在持有 Task/Subject 锁后反向等待 User 锁。代码复核必须逐条回答：
 
 - 涉及哪些 Subject，是否覆盖移动、换位、Relation 两端和级联端点？
 - Subject 锁是否由 `SubjectLockCoordinator` 去重并按 UUID 升序先取得？
+- 对 Task 排期 create/update/restore/swap/insertion，User 排期锁是否先于 Subject 锁取得并覆盖整个冲突查询与写入事务？插入重排是否按稳定 Task ID 顺序一次锁住目标与当天参与任务？
 - Subject 与具体资源锁取得后，是否重新读取并重新验证活动状态、归属、版本和端点？
 - 是否不存在持有 Source/KnowledgeBlock/Task/Relation 锁后再获取 Subject 锁的 Resource→Subject 反向路径？
 

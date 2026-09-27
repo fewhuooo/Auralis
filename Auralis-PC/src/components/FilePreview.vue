@@ -4,7 +4,7 @@ import { ElButton } from 'element-plus'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import type { SourceFileModel } from '@/services/domainMappers'
-import { canPreviewFile, resolveFileCapability, type FileCapability } from '@/utils/filePreview'
+import { canPreviewFile, getPreviewSourceIdentity, resolveFileCapability, type FileCapability } from '@/utils/filePreview'
 import FileViewerRenderer from '@/components/preview/FileViewerRenderer.vue'
 import UnsupportedPreview from '@/components/preview/UnsupportedPreview.vue'
 import { PreviewRequestGate } from '@/components/preview/PreviewRequestGate'
@@ -234,10 +234,7 @@ defineExpose({
 
 watch(
   [
-    () => props.file.id,
-    () => props.file.name,
-    () => props.file.assetId,
-    () => props.file.fileType,
+    () => getPreviewSourceIdentity(props.file),
     () => authStore.user?.id,
     () => authStore.serverDeviceId,
   ],
@@ -311,9 +308,9 @@ watch(
   flex-direction: column;
   gap: 14px;
   padding: 18px;
-  border: 1px solid var(--hairline, #e6e6e4);
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.42);
+  background: var(--color-bg-tertiary, #FAF7F2);
 }
 
 .file-preview.is-compact {
@@ -330,13 +327,14 @@ watch(
 }
 
 .file-preview.is-bare .file-preview-body {
-  height: auto;
+  height: 100%;
   flex: 1;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
   padding: 12px 16px;
-  background: var(--color-bg-secondary, #f3f5f4);
+  background: var(--color-bg-primary, #F7F2EB);
 }
 
 .file-preview.is-bare .file-preview-renderer-shell {
@@ -345,7 +343,15 @@ watch(
   min-height: 0;
   overflow: hidden;
   border-radius: 10px;
-  box-shadow: 0 1px 4px rgba(24, 32, 28, 0.08);
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+}
+
+.file-preview.is-bare :deep(.unsupported-preview) {
+  flex: 1;
+  width: 100%;
+  height: 100%;
 }
 
 .file-preview-header {
@@ -388,6 +394,9 @@ watch(
   position: relative;
   min-height: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-primary, #F7F2EB);
 }
 
 .file-preview-renderer-shell {
@@ -395,16 +404,24 @@ watch(
   width: 100%;
   height: 100%;
   min-height: 460px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
 }
 
 .file-preview-state {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+  height: 100%;
   min-height: 320px;
-  place-content: center;
-  justify-items: center;
   gap: 12px;
   color: var(--text-secondary, #656560);
   font-size: 13px;
+  text-align: center;
 }
 
 .file-preview-state.is-error {
@@ -418,8 +435,8 @@ watch(
 .file-preview-spinner {
   width: 18px;
   height: 18px;
-  border: 2px solid rgba(125, 147, 114, 0.22);
-  border-top-color: var(--color-zen-sage, #7d9372);
+  border: 2px solid rgba(139, 154, 110, 0.25);
+  border-top-color: var(--color-primary-accent, #8B9A6E);
   border-radius: 50%;
   animation: file-preview-spin 0.8s linear infinite;
 }

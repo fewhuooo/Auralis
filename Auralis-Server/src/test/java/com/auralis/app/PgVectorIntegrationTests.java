@@ -108,6 +108,25 @@ class PgVectorIntegrationTests {
                 .containsExactly(sourceId, "Private vector source", 1.0);
         assertThat(retrievalService.retrieve(userId, vector(0.0, 1.0, 0.0), 5)).isEmpty();
 
+        sourceChunkService.replace(
+                userId,
+                sourceId,
+                generation,
+                List.of(new TextChunk(0, "updated private text", 0, 20)),
+                List.of(query));
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_chunks where user_id = ? and source_id = ? and generation = ?",
+                Integer.class,
+                userId,
+                sourceId,
+                generation)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select content from source_chunks where user_id = ? and source_id = ? and generation = ? and active",
+                String.class,
+                userId,
+                sourceId,
+                generation)).isEqualTo("updated private text");
+
         assertThatThrownBy(() -> sourceChunkService.replace(
                 userId,
                 sourceId,
@@ -131,6 +150,48 @@ class PgVectorIntegrationTests {
 
         jdbcTemplate.update("update sources set deleted_at = current_timestamp where id = ?", sourceId);
         assertThat(retrievalService.retrieve(userId, query, 5)).isEmpty();
+    }
+
+    @Test
+    void deletedSourceDoesNotConsumeTopKAndRestoredSourceCanPublishANewGeneration() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID deletedSourceId = UUID.randomUUID();
+        UUID activeSourceId = UUID.randomUUID();
+        UUID originalGeneration = UUID.randomUUID();
+        UUID restoredGeneration = UUID.randomUUID();
+        insertUser(userId, "pg-it-rag-delete-" + userId);
+        insertSubject(subjectId, userId, "RAG delete integration");
+        insertSource(deletedSourceId, userId, subjectId, "Deleted source");
+        insertSource(activeSourceId, userId, subjectId, "Active source");
+
+        List<Double> exact = vector(1.0, 0.0, 0.0);
+        List<Double> lower = vector(0.8, 0.6, 0.0);
+        sourceChunkService.replace(userId, deletedSourceId, originalGeneration,
+                List.of(new TextChunk(0, "old deleted chunk", 0, 17)), List.of(exact));
+        sourceChunkService.replace(userId, activeSourceId, UUID.randomUUID(),
+                List.of(new TextChunk(0, "active source chunk", 0, 19)), List.of(lower));
+
+        jdbcTemplate.update("update sources set deleted_at = current_timestamp where id = ?", deletedSourceId);
+
+        assertThat(retrievalService.retrieve(userId, exact, 1)).singleElement()
+                .extracting(Citation::sourceId, Citation::title, Citation::excerpt)
+                .containsExactly(activeSourceId, "Active source", "active source chunk");
+
+        jdbcTemplate.update("update sources set deleted_at = null where id = ?", deletedSourceId);
+        sourceChunkService.replace(userId, deletedSourceId, restoredGeneration,
+                List.of(new TextChunk(0, "restored reingest chunk", 0, 22)), List.of(exact));
+
+        assertThat(retrievalService.retrieve(userId, exact, 1)).singleElement()
+                .extracting(Citation::sourceId, Citation::excerpt)
+                .containsExactly(deletedSourceId, "restored reingest chunk");
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_chunks where user_id = ? and source_id = ? and active",
+                Integer.class, userId, deletedSourceId)).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from source_chunks where user_id = ? and source_id = ? "
+                        + "and generation = ? and active",
+                Integer.class, userId, deletedSourceId, originalGeneration)).isZero();
     }
 
     private void insertUser(UUID id, String username) {

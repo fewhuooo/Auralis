@@ -14,7 +14,7 @@ const SYNC_RESOURCE_TYPES = new Set<SyncResourceType>(['SUBJECT', 'SOURCE', 'KNO
 
 type SyncRepository = Pick<LocalRepository,
   'claimPending' | 'settleMutation' | 'releaseInflight' | 'getSyncState' | 'saveCursor'
-  | 'listUnresolved' | 'read' | 'upsert' | 'replaceSnapshotPreservingPending'>
+  | 'listUnresolved' | 'read' | 'upsert' | 'upsertFromSync' | 'replaceSnapshotPreservingPending'>
   & Partial<Pick<LocalRepository, 'resolveRejectedSubjectDelete'>>
 
 type SyncApi = {
@@ -93,12 +93,12 @@ export async function applyPullPage(repository: SyncRepository, changes: SyncCha
     const deletedAt = change.mutationType === 'DELETE'
       ? change.deletedAt ?? new Date().toISOString()
       : change.mutationType === 'RESTORE' ? null : change.deletedAt
-    await repository.upsert(change.resourceType, change.resourceId, changeValue(change, current), {
+    const applied = await repository.upsertFromSync(change.resourceType, change.resourceId, changeValue(change, current), {
       version: change.version,
       deletedAt,
       syncStatus: 'synced',
     })
-    changed.add(change.resourceType)
+    if (applied) changed.add(change.resourceType)
   }
   return changed
 }
@@ -136,13 +136,13 @@ async function settlePushResult(
 async function pullToCursor(repository: SyncRepository, api: SyncApi): Promise<{ cursor: string | null; changedResourceTypes: Set<SyncResourceType> }> {
   const state = await repository.getSyncState()
   const changedResourceTypes = new Set<SyncResourceType>()
-  if (state.resetRequired) {
+  if (state.resetRequired || state.cursor === null) {
     const snapshot = await api.getSnapshot()
     await repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
     await repository.saveCursor(snapshot.snapshotCursor, false)
-    return { cursor: snapshot.snapshotCursor, changedResourceTypes }
+    return { cursor: snapshot.snapshotCursor, changedResourceTypes: new Set(SYNC_RESOURCE_TYPES) }
   }
-  let cursor = state.cursor
+  let cursor: string | null = state.cursor
   let hasMore = true
   while (hasMore) {
     const response = await api.pullChanges({ ...(cursor ? { cursor } : {}), limit: 100 })
@@ -150,7 +150,7 @@ async function pullToCursor(repository: SyncRepository, api: SyncApi): Promise<{
       const snapshot = await api.getSnapshot()
       await repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
       await repository.saveCursor(snapshot.snapshotCursor, false)
-      return { cursor: snapshot.snapshotCursor, changedResourceTypes }
+      return { cursor: snapshot.snapshotCursor, changedResourceTypes: new Set(SYNC_RESOURCE_TYPES) }
     }
     for (const resourceType of await applyPullPage(repository, response.changes)) changedResourceTypes.add(resourceType)
     const previousCursor = cursor

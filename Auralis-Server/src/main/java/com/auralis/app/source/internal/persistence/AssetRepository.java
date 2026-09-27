@@ -8,11 +8,14 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Collection;
 import java.util.UUID;
 
 public interface AssetRepository extends JpaRepository<AssetEntity, UUID> {
 
     Optional<AssetEntity> findByIdAndUserId(UUID id, UUID userId);
+
+    java.util.List<AssetEntity> findAllByUserIdAndIdIn(UUID userId, Collection<UUID> ids);
 
     Optional<AssetEntity> findByUserIdAndClientImportId(UUID userId, UUID clientImportId);
 

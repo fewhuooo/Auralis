@@ -6,7 +6,7 @@
           <h1 class="hall-title">学科空间</h1>
           <p class="hall-desc">选择或创建一个专属的学科空间，进行深度的材料解析与知识沉淀</p>
         </div>
-        <button class="create-btn" @click="openCreateSubject(null)">＋ 新建学科</button>
+        <button class="create-btn" @click="openCreateSubject(null)"><IconPlus :size="14" :stroke-width="2" style="margin-right: 4px; vertical-align: -2px;" />新建学科</button>
       </div>
 
       <div class="hall-search" v-if="subjectStore.subjects.length > 0">
@@ -32,8 +32,12 @@
               <span v-else>{{ getLegacySubjectIcon(subj.icon) }}</span>
             </div>
             <div class="subject-card-actions" @click.stop>
-              <button class="card-action-btn" title="编辑" @click="openCreateSubject(subj)">✎</button>
-              <button class="card-action-btn delete" title="删除" @click="confirmDeleteSubject(subj)">✕</button>
+              <button class="card-action-btn" title="编辑" @click="openCreateSubject(subj)">
+                <IconPencil :size="12" :stroke-width="1.8" />
+              </button>
+              <button class="card-action-btn delete" title="删除" @click="confirmDeleteSubject(subj)">
+                <IconX :size="12" :stroke-width="1.8" />
+              </button>
             </div>
           </div>
           <h4 class="subject-card-title">{{ subj.name }}</h4>
@@ -47,20 +51,20 @@
 
         <!-- Add Subject Card -->
         <div class="subject-card add-card" @click="openCreateSubject(null)">
-          <div class="add-plus-btn">＋</div>
+          <div class="add-plus-btn"><IconPlus :size="20" :stroke-width="2" /></div>
           <span class="add-label">新建学科空间</span>
         </div>
       </div>
 
       <div class="empty-hall" v-else-if="subjectStore.subjects.length === 0">
-        <div class="empty-icon">🏛️</div>
+        <div class="empty-icon"><IconBooks :size="48" :stroke-width="1.4" /></div>
         <h3>还没有学科空间</h3>
         <p>创建你的第一个学科空间，开始系统化管理知识</p>
-        <button class="create-btn" @click="openCreateSubject(null)">＋ 新建学科</button>
+        <button class="create-btn" @click="openCreateSubject(null)"><IconPlus :size="14" :stroke-width="2" style="margin-right: 4px; vertical-align: -2px;" />新建学科</button>
       </div>
 
       <div class="empty-hall" v-else>
-        <div class="empty-icon">🔍</div>
+        <div class="empty-icon"><IconSearch :size="48" :stroke-width="1.4" /></div>
         <h3>未找到匹配的学科空间</h3>
         <p>尝试更换关键词进行搜索</p>
       </div>
@@ -80,6 +84,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElIcon, ElNotification } from 'element-plus'
+import { IconPencil, IconX, IconPlus, IconBooks, IconSearch } from '@tabler/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
 
 import { useSubjectStore, type Subject } from '@/store/useSubjectStore'
@@ -161,16 +166,16 @@ const confirmDeleteSubject = async (subject: Subject) => {
   height: 100%;
   width: 100%;
   overflow-y: auto;
-  background: var(--color-zen-ivory); /* Zen Ivory base */
+  background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
   padding: 8px;
   box-sizing: border-box;
 
   /* Zen Minimalist Theme override */
-  --color-primary-accent: #7D9372;
-  --color-primary-accent-hover: #6c8062;
-  --color-primary-light: rgba(163, 177, 155, 0.12);
-  --color-primary-glow: rgba(163, 177, 155, 0.25);
-  --accent-gradient: var(--color-zen-sage);
+  --color-primary-accent: #8B9A6E;
+  --color-primary-accent-hover: #76855B;
+  --color-primary-light: rgba(139, 154, 110, 0.16);
+  --color-primary-glow: rgba(139, 154, 110, 0.28);
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
 }
 
 html.dark .hall-container {
@@ -181,15 +186,15 @@ html.dark .hall-container {
   max-width: 1440px;
   margin: 12px auto;
   padding: 32px 40px;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .hall-content {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .hall-header {
@@ -223,11 +228,13 @@ html.dark .hall-content {
   cursor: pointer;
   transition: all var(--transition-fast);
   font-family: inherit;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3);
 }
 
 .create-btn:hover {
-  opacity: 0.9;
+  opacity: 0.92;
   transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45);
 }
 
 .hall-search {
@@ -238,21 +245,28 @@ html.dark .hall-content {
   width: 100%;
   max-width: 400px;
   padding: 10px 16px;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: all var(--transition-normal);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.03), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+}
+
+html.dark .search-input {
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
 }
 
 .search-input:focus {
-  border-color: #7D9372;
-  box-shadow: 0 0 20px rgba(125, 147, 114, 0.35);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+html.dark .search-input:focus {
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .subjects-grid {
@@ -262,8 +276,8 @@ html.dark .hall-content {
 }
 
 .subject-card {
-  background: var(--color-bg-primary);
-  border: 1.5px solid var(--color-primary-accent, #7D9372);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 24px;
   cursor: pointer;
@@ -273,19 +287,23 @@ html.dark .hall-content {
   position: relative;
   overflow: hidden;
   aspect-ratio: 1.3 / 1;
-  box-shadow: 0 8px 24px rgba(125, 147, 114, 0.12);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
 }
 
 html.dark .subject-card {
   background: var(--color-bg-secondary);
-  border-color: var(--color-primary-accent, #7D9372);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  border-color: var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.35), 0 3px 6px -1px rgba(0, 0, 0, 0.2);
 }
 
 .subject-card:hover {
-  transform: translateY(-4px);
-  border-color: #7D9372;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.06);
+  transform: translateY(-3px);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(139, 154, 110, 0.12);
+}
+
+html.dark .subject-card:hover {
+  box-shadow: 0 16px 32px -4px rgba(0, 0, 0, 0.5), 0 6px 12px -2px rgba(0, 0, 0, 0.35);
 }
 
 .subject-card-header {
@@ -303,11 +321,12 @@ html.dark .subject-card {
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  background: color-mix(in srgb, #7D9372 20%, var(--color-bg-primary));
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--color-primary-accent, #8B9A6E);
 }
 
 html.dark .subject-card-icon {
-  background: color-mix(in srgb, #7D9372 25%, var(--color-bg-secondary));
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 25%, var(--color-bg-secondary));
 }
 
 .subject-card-actions {
@@ -322,7 +341,7 @@ html.dark .subject-card-icon {
 }
 
 .card-action-btn {
-  background: var(--color-bg-primary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
   font-size: 11px;
@@ -337,7 +356,7 @@ html.dark .subject-card-icon {
 }
 
 .card-action-btn:hover {
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-primary);
   color: var(--text-primary);
   border-color: var(--border-strong);
 }
@@ -375,13 +394,13 @@ html.dark .subject-card-icon {
 .mastery-fill {
   height: 100%;
   border-radius: var(--radius-full);
-  background: linear-gradient(90deg, #7D9372, #A3B19B);
+  background: linear-gradient(90deg, #8B9A6E, #AAB88E);
   transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .add-card {
-  border: 2px dashed var(--border-default) !important;
-  background: var(--color-bg-primary) !important;
+  border: 2px dashed rgba(139, 154, 110, 0.35) !important;
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -396,20 +415,20 @@ html.dark .add-card {
 }
 
 .add-card:hover {
-  background: color-mix(in srgb, var(--color-primary-accent, #7D9372) 4%, var(--color-bg-primary)) !important;
-  border-color: var(--color-primary-accent, #7D9372) !important;
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 4%, var(--color-bg-tertiary, #FAF7F2)) !important;
+  border-color: var(--color-primary-accent, #8B9A6E) !important;
 }
 
 html.dark .add-card:hover {
-  background: color-mix(in srgb, var(--color-primary-accent, #7D9372) 6%, var(--color-bg-secondary)) !important;
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 6%, var(--color-bg-secondary)) !important;
 }
 
 .add-plus-btn {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--color-primary-accent, #7D9372) 8%, var(--color-bg-primary));
-  color: var(--color-primary-accent, #7D9372);
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--color-primary-accent, #8B9A6E);
   font-size: 24px;
   display: flex;
   align-items: center;
@@ -418,11 +437,11 @@ html.dark .add-card:hover {
 }
 
 html.dark .add-plus-btn {
-  background: color-mix(in srgb, var(--color-primary-accent, #7D9372) 12%, var(--color-bg-secondary));
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 12%, var(--color-bg-secondary));
 }
 
 .add-card:hover .add-plus-btn {
-  background: var(--color-primary-accent, #7D9372);
+  background: var(--color-primary-accent, #8B9A6E);
   color: white;
 }
 
@@ -442,8 +461,12 @@ html.dark .add-plus-btn {
 }
 
 .empty-icon {
-  font-size: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   margin-bottom: 16px;
+  color: var(--text-muted);
+  opacity: 0.5;
 }
 
 .empty-hall h3 {

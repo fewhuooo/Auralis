@@ -84,6 +84,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["changePassword"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["me"];
+        put: operations["updateProfile"];
+        post?: never;
+        delete: operations["deleteAccount"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/settings": {
         parameters: {
             query?: never;
@@ -142,6 +174,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["swapSchedules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/schedule-insertions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["insertSchedule"];
         delete?: never;
         options?: never;
         head?: never;
@@ -404,6 +452,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/me/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["avatar"];
+        put?: never;
+        post: operations["uploadAvatar"];
+        delete: operations["resetAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -526,6 +590,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["sourceOverview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/settings/{provider}/test-connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testConnection"];
         delete?: never;
         options?: never;
         head?: never;
@@ -676,14 +756,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/me": {
+    "/api/ai/settings/{provider}/models": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["me"];
+        get: operations["models"];
         put?: never;
         post?: never;
         delete?: never;
@@ -830,12 +910,30 @@ export interface components {
             /** Format: date-time */
             deletedAt?: string;
         };
+        PasswordChangeRequest: {
+            /** Format: int64 */
+            baseVersion: number;
+            currentPassword: string;
+            newPassword: string;
+        };
+        ProfileUpdateRequest: {
+            /** Format: int64 */
+            baseVersion: number;
+            displayName: string;
+        };
+        UserView: {
+            /** Format: uuid */
+            id?: string;
+            username?: string;
+            displayName?: string;
+            /** Format: int64 */
+            version?: number;
+        };
         AiSettingsCommand: {
             /** @enum {string} */
             provider: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
             baseUrl?: string;
             chatModel?: string;
-            embeddingModel?: string;
             apiKey?: string;
         };
         AiSettingsView: {
@@ -845,7 +943,6 @@ export interface components {
             provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
             baseUrl?: string;
             chatModel?: string;
-            embeddingModel?: string;
             hasApiKey?: boolean;
             /** Format: date-time */
             updatedAt?: string;
@@ -885,32 +982,49 @@ export interface components {
             source?: components["schemas"]["Response"];
             target?: components["schemas"]["Response"];
         };
+        ScheduleInsertionRequest: {
+            /** Format: uuid */
+            taskId: string;
+            /** Format: int64 */
+            baseVersion: number;
+            /** Format: date-time */
+            scheduledAt: string;
+            /** Format: date-time */
+            windowStartAt: string;
+            /** Format: date-time */
+            windowLastStartAt: string;
+            /** Format: uuid */
+            targetTaskId?: string;
+        };
+        ScheduleInsertionResponse: {
+            tasks: components["schemas"]["Response"][];
+        };
         JsonNode: {
             array?: boolean;
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            missingNode?: boolean;
-            object?: boolean;
             container?: boolean;
+            missingNode?: boolean;
+            floatingPointNumber?: boolean;
+            object?: boolean;
             double?: boolean;
-            number?: boolean;
-            pojo?: boolean;
-            long?: boolean;
-            short?: boolean;
-            string?: boolean;
-            int?: boolean;
             /** @deprecated */
             textual?: boolean;
             boolean?: boolean;
             binary?: boolean;
+            short?: boolean;
+            string?: boolean;
+            pojo?: boolean;
+            int?: boolean;
+            long?: boolean;
+            number?: boolean;
             valueNode?: boolean;
             bigDecimal?: boolean;
-            bigInteger?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             integralNumber?: boolean;
-            floatingPointNumber?: boolean;
+            bigInteger?: boolean;
             embeddedValue?: boolean;
         };
         MutationRequest: {
@@ -1123,12 +1237,6 @@ export interface components {
             /** Format: int64 */
             refreshTokenExpiresInSeconds?: number;
         };
-        UserView: {
-            /** Format: uuid */
-            id?: string;
-            username?: string;
-            displayName?: string;
-        };
         RefreshRequest: {
             refreshToken: string;
         };
@@ -1265,6 +1373,12 @@ export interface components {
             mode: "ALL" | "OUTLINE" | "SUMMARY";
             instruction?: string;
         };
+        AiConnectionTestView: {
+            /** @enum {string} */
+            provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
+            reachable?: boolean;
+            chatModel?: string;
+        };
         AiMessageCommand: {
             /** Format: uuid */
             conversationId?: string;
@@ -1279,11 +1393,12 @@ export interface components {
         };
         ReadingContext: {
             /** Format: uuid */
-            currentSourceId: string;
+            currentSourceId?: string;
             /** Format: uuid */
             subjectId: string;
             /** @enum {string} */
-            retrievalMode: "AUTO";
+            retrievalMode: "AUTO" | "SELECTED_SOURCES" | "SUBJECT";
+            sourceIds?: string[];
             selectionText?: string;
         };
         StreamingResponseBody: unknown;
@@ -1419,6 +1534,21 @@ export interface components {
             /** Format: date-time */
             revokedAt?: string;
             current?: boolean;
+        };
+        AiModelListView: {
+            /** @enum {string} */
+            provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
+            models?: string[];
+        };
+        AccountDeletionRequest: {
+            password: string;
+        };
+        AccountDeletionResponse: {
+            /** Format: uuid */
+            id?: string;
+            status?: string;
+            /** Format: date-time */
+            requestedAt?: string;
         };
     };
     responses: never;
@@ -1789,6 +1919,96 @@ export interface operations {
             };
         };
     };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserView"];
+                };
+            };
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["UserView"];
+                };
+            };
+        };
+    };
+    deleteAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AccountDeletionResponse"];
+                };
+            };
+        };
+    };
     settings: {
         parameters: {
             query?: never;
@@ -1926,6 +2146,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ScheduleSwapResponse"];
+                };
+            };
+        };
+    };
+    insertSchedule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleInsertionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ScheduleInsertionResponse"];
                 };
             };
         };
@@ -2431,6 +2675,69 @@ export interface operations {
             };
         };
     };
+    avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
+            };
+        };
+    };
+    uploadAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    resetAvatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     logout: {
         parameters: {
             query?: never;
@@ -2613,6 +2920,28 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["OverviewResponse"];
+                };
+            };
+        };
+    };
+    testConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AiConnectionTestView"];
                 };
             };
         };
@@ -2838,11 +3167,13 @@ export interface operations {
             };
         };
     };
-    me: {
+    models: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                provider: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -2853,7 +3184,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["UserView"];
+                    "*/*": components["schemas"]["AiModelListView"];
                 };
             };
         };

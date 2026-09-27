@@ -8,25 +8,25 @@
    ========================================================================== */
 
 :root {
-  /* ===== Zen Minimalist System Colors ===== */
-  --color-zen-ivory: #F9F9F7;
+  /* ===== Zen Minimalist System Colors (Custom Palette) ===== */
+  --color-zen-ivory: #F7F2EB;     /* 主内容底色 rgb(247, 242, 235) */
   --color-zen-graphite: #1C1C1A;
-  --color-zen-sage: #A3B19B;
-  --color-zen-hairline: #E6E6E4;
+  --color-zen-sage: #8B9A6E;      /* 主色 rgb(139, 154, 110) */
+  --color-zen-hairline: #DDD5C7;  /* 柔和中性发丝边框 */
   --color-zen-white: #FFFFFF;
   --color-zen-stone: #A8A8A5;
-  --color-sage-dark: #7D9372;
+  --color-sage-dark: #76855B;     /* 主色深一度，用于悬浮与渐变收尾 */
 
   /* ===== 1. Base Palette ===== */
   --color-white: var(--color-zen-white);
   --color-black: var(--color-zen-graphite);
   --color-transparent: transparent;
   
-  /* Ins-style Clean Grays */
-  --color-gray-50: var(--color-zen-ivory);
-  --color-gray-100: #f4f4f2;
-  --color-gray-200: var(--color-zen-hairline);
-  --color-gray-300: #dadad8;
+  /* Clean Neutral Grays & Oatmeal Bases */
+  --color-gray-50: #F7F2EB;
+  --color-gray-100: #EAE2D6;
+  --color-gray-200: #EEEEEE;
+  --color-gray-300: #DDD5C7;
   --color-gray-400: var(--color-zen-stone);
   --color-gray-500: #777771;
   --color-gray-600: #5f5e5c;
@@ -34,52 +34,60 @@
   --color-gray-800: #2f3130;
   --color-gray-900: var(--color-zen-graphite);
 
-  /* Oatmeal & Minimalist Gray Palette mapped to Zen */
-  --color-oatmeal-light: var(--color-zen-ivory);
-  --color-oatmeal-mid: #eeeeec;
-  --color-oatmeal-dark: #e8e8e6;
-  --color-gray-soft: #f4f4f2;
+  /* Oatmeal & Minimalist Palette */
+  --color-oatmeal-light: #F7F2EB;
+  --color-oatmeal-mid: #EEEEEE;
+  --color-oatmeal-dark: #DDD5C7;
+  --color-gray-soft: #EAE2D6;
   --color-gray-muted: var(--color-zen-stone);
 
   /* ===== 2. Semantic Colors (Light Mode) ===== */
   /* Backgrounds */
-  --color-bg-primary: var(--color-zen-ivory);
-  --color-bg-secondary: var(--color-zen-ivory);
-  --color-bg-tertiary: var(--color-zen-white);
-  --color-bg-elevated: var(--color-zen-white);
+  --color-bg-page: #EEEEEE;       /* 页面大背景 / 次级中性底 rgb(238, 238, 238) */
+  --color-bg-primary: #F7F2EB;    /* 主内容底色 rgb(247, 242, 235) */
+  --color-bg-secondary: #EEEEEE;  /* 页面大背景 / 次级中性底 */
+  --color-bg-tertiary: #FAF7F2;   /* 次级背景 / 模块卡片色 (比#F7F2EB更浅一点点的暖米白 rgb(250, 247, 242)) */
+  --color-bg-elevated: #FAF7F2;   /* 模块卡片色 / 浮层底色 */
+  --color-bg-card: #FAF7F2;       /* 模块卡片色 */
+
+  /* Semantic Aliases */
+  --bg-primary: var(--color-bg-primary);
+  --bg-secondary: var(--color-bg-secondary);
+  --bg-tertiary: var(--color-bg-tertiary);
+  --bg-card: var(--color-bg-card);
   
   /* Text */
   --text-primary: var(--color-zen-graphite);
-  --text-secondary: var(--color-zen-graphite);
-  --text-muted: var(--color-zen-stone);
+  --text-secondary: #2C2C28;
+  --text-muted: #7A7A75;
   --text-accent: var(--color-zen-sage);
   --text-inverse: var(--color-zen-white);
 
   /* Borders */
-  --border-subtle: var(--color-zen-hairline);
-  --border-default: var(--color-zen-hairline);
-  --border-strong: var(--color-zen-stone);
-  --border-accent: rgba(163, 177, 155, 0.4);
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.10);
+  --border-strong: rgba(0, 0, 0, 0.18);
+  --border-accent: rgba(139, 154, 110, 0.45);
 
   /* Glassmorphism */
-  --glass-bg: rgba(255, 255, 255, 0.75);
-  --glass-border: var(--color-zen-hairline);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.02);
+  --glass-bg: rgba(247, 242, 235, 0.92);
+  --glass-border: rgba(0, 0, 0, 0.06);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.03);
   --glass-blur: blur(20px);
 
   /* Status / Feedback */
-  --color-success: var(--color-zen-sage);
+  --color-success: #8B9A6E;
   --color-warning: #d9c5b2;
   --color-danger: #d4a3a3;
   --color-info: #b3c0cf;
 
-  /* Accent Colors - Zen Sage */
-  --accent-start: var(--color-sage-dark);
-  --accent-gradient: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  /* Accent Colors - Custom Sage #8B9A6E */
+  --accent-start: #8B9A6E;
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
   --btn-primary-bg: var(--accent-gradient);
-  --accent-glow: 0 0 20px rgba(125, 147, 114, 0.35);
-  --color-sage-bg: rgba(125, 147, 114, 0.08);
-  --color-sage-glow: rgba(125, 147, 114, 0.35);
+  --accent-glow: 0 0 20px rgba(139, 154, 110, 0.35);
+  --color-sage-bg: rgba(139, 154, 110, 0.12);
+  --color-sage-glow: rgba(139, 154, 110, 0.35);
 
   /* ===== 3. Typography ===== */
   --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -211,7 +219,7 @@ html {
 
 body {
   font-family: var(--font-family-base);
-  background-color: var(--color-bg-primary);
+  background-color: var(--color-bg-page);
   color: var(--text-primary);
   line-height: var(--line-height-normal);
   overflow: hidden;
@@ -257,22 +265,55 @@ select:focus {
   outline: none;
 }
 
-/* ===== Scrollbar Customization ===== */
-::-webkit-scrollbar {
+/* ===== Scrollbar: 全局隐藏滚动轴外观，内容正常滚动 ===== */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* ===== 唯一保留：文件预览阅读区域（PDF / 文档 / 媒体等） ===== */
+.file-preview,
+.file-preview *,
+.file-viewer-renderer,
+.file-viewer-renderer * {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+}
+
+.file-preview::-webkit-scrollbar,
+.file-preview *::-webkit-scrollbar,
+.file-viewer-renderer::-webkit-scrollbar,
+.file-viewer-renderer *::-webkit-scrollbar {
+  display: block;
   width: 6px;
   height: 6px;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-transparent);
+.file-preview::-webkit-scrollbar-track,
+.file-preview *::-webkit-scrollbar-track,
+.file-viewer-renderer::-webkit-scrollbar-track,
+.file-viewer-renderer *::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+.file-preview::-webkit-scrollbar-thumb,
+.file-preview *::-webkit-scrollbar-thumb,
+.file-viewer-renderer::-webkit-scrollbar-thumb,
+.file-viewer-renderer *::-webkit-scrollbar-thumb {
   background: var(--border-default);
   border-radius: var(--radius-full);
 }
 
-::-webkit-scrollbar-thumb:hover {
+.file-preview::-webkit-scrollbar-thumb:hover,
+.file-preview *::-webkit-scrollbar-thumb:hover,
+.file-viewer-renderer::-webkit-scrollbar-thumb:hover,
+.file-viewer-renderer *::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
 }
 
@@ -354,4 +395,21 @@ select:focus {
 
 @keyframes shimmer {
   100% { transform: translateX(100%); }
+}
+
+/* ===== 9. Popover & Context Menus ===== */
+.el-popover.zen-action-popover {
+  border-radius: 12px !important;
+  padding: 6px !important;
+  background: var(--bg-card) !important;
+  border: 1px solid var(--border-subtle) !important;
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.12), 0 2px 8px -2px rgba(0, 0, 0, 0.06) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+html.dark .el-popover.zen-action-popover {
+  background: rgba(30, 30, 30, 0.92) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
 }

@@ -210,6 +210,9 @@ defineExpose({
   height: 100%;
   overflow: auto;
   scrollbar-gutter: stable;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  --file-viewer-bg: var(--color-bg-tertiary, #FAF7F2);
+  --file-viewer-render-surface-background: var(--color-bg-tertiary, #FAF7F2);
 }
 
 .file-viewer-rotation-layer {
@@ -217,9 +220,17 @@ defineExpose({
   height: 100%;
   transform-origin: center;
   transition: transform 160ms ease;
+  background: var(--color-bg-tertiary, #FAF7F2);
 }
 
 .file-viewer-renderer :deep(.image-toolbar) {
   display: none !important;
+}
+
+.file-viewer-renderer :deep(.render-surface),
+.file-viewer-renderer :deep(.file-viewer-surface),
+.file-viewer-renderer :deep(.file-viewer-paper),
+.file-viewer-renderer :deep(.ff-file-viewer-render-surface) {
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
 }
 </style>

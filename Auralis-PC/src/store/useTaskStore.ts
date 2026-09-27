@@ -8,13 +8,13 @@ import {
 } from '@/api/useTaskApi'
 import { useAuthStore } from '@/store/useAuthStore'
 import { getLocalRepository } from '@/services/localDb'
-import type { LocalRepository } from '@/services/localRepository'
+import { LocalConflictError, type LocalRepository } from '@/services/localRepository'
 import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
-import { getTasksForTimeline, isCompletedScheduledTask, isSchedulableTask, isScheduledAtInPast, isScheduledTaskPast, isUnscheduledTaskPastDue } from '@/services/taskViewRules'
+import { findScheduleConflict, getTasksForTimeline, isCompletedScheduledTask, isCompletedTask, isSchedulableTask, isScheduledAtInPast, isScheduledCompletionLocked, isScheduledTaskPast, taskStatusToPresentation } from '@/services/taskViewRules'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -23,6 +23,7 @@ export type DayCode = typeof DAY_CODES[number]
 export const getTodayDayCode = (): DayCode => DAY_CODES[new Date().getDay()] || 'Mon'
 
 export type TaskPresentationStatus = 'pending' | 'scheduled' | 'completed' | 'learning' | 'to_review' | 'cancelled'
+export type ScheduleInsertionResult = 'saved' | 'refreshing'
 
 /**
  * The old-looking fields in this interface are presentation aliases only.
@@ -86,23 +87,24 @@ function statusFromLegacy(value: TaskInput['status'], hasSchedule: boolean): Tas
   return 'TODO'
 }
 
-function statusToPresentation(value: TaskStatus, scheduledAt?: string): TaskPresentationStatus {
-  if (value === 'DONE') return 'completed'
-  if (value === 'IN_PROGRESS') return 'learning'
-  if (value === 'CANCELLED') return 'cancelled'
-  if (value === 'TODO' && scheduledAt) return 'scheduled'
-  return 'pending'
-}
-
-function dateForDay(day: DayCode, time: string): Date {
+function dateForDay(dayOrDateKey: string, time: string): Date {
   const [hours, minutes] = time.split(':').map(Number)
+  const h = Number.isFinite(hours) ? hours : 9
+  const m = Number.isFinite(minutes) ? minutes : 0
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dayOrDateKey.trim())) {
+    const [y, mon, d] = dayOrDateKey.trim().split('-').map(Number)
+    return new Date(y, mon - 1, d, h, m, 0, 0)
+  }
+
+  const day = (DAY_CODES as readonly string[]).includes(dayOrDateKey) ? (dayOrDateKey as DayCode) : getTodayDayCode()
   const now = new Date()
   const currentDay = now.getDay()
   const targetDay = DAY_CODES.indexOf(day)
-  const delta = targetDay - currentDay
+  const delta = targetDay < 0 ? 0 : targetDay - currentDay
   const date = new Date(now)
   date.setDate(now.getDate() + delta)
-  date.setHours(Number.isFinite(hours) ? hours : 9, Number.isFinite(minutes) ? minutes : 0, 0, 0)
+  date.setHours(h, m, 0, 0)
   return date
 }
 
@@ -143,6 +145,15 @@ function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
   return timeStringFromMinutes(Math.floor(totalMinutes / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES)
 }
 
+function isSameScheduleTime(a?: string | null, b?: string | null): boolean {
+  if (!a && !b) return true
+  if (!a || !b) return false
+  if (a === b) return true
+  const ta = Date.parse(a)
+  const tb = Date.parse(b)
+  return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb
+}
+
 function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
   const scheduledAt = input.startTime !== undefined
     ? scheduledAtFromLegacy(input.startTime, fallbackDay)
@@ -165,7 +176,7 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
 function toPresentationTask(model: TaskModel, syncStatus: Task['sync_status'] = 'synced', subjectName?: string): Task {
   const task: Partial<Task> = {
     ...model,
-    status: statusToPresentation(model.status, model.scheduledAt),
+    status: taskStatusToPresentation(model.status, model.scheduledAt),
     name: model.title,
     desc: model.description,
     duration: model.durationMinutes,
@@ -276,6 +287,13 @@ export const useTaskStore = defineStore('task', () => {
   const selectedDay = ref<string>(getTodayDayCode())
   const timeSlots = ref<TimeSlot[]>(generateTimeSlots())
   const currentNow = ref<Date>(new Date())
+  let scheduleMutationQueue: Promise<void> = Promise.resolve()
+
+  function withScheduleMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = scheduleMutationQueue.then(operation, operation)
+    scheduleMutationQueue = result.then(() => undefined, () => undefined)
+    return result
+  }
 
   function assertScheduledAtIsNotPast(scheduledAt: string | undefined): void {
     if (isScheduledAtInPast(scheduledAt)) {
@@ -283,18 +301,47 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
+  function assertScheduleDoesNotOverlap(model: TaskModel, excludedTaskIds: ReadonlySet<string> = new Set()): void {
+    const candidate = toPresentationTask(model)
+    const conflict = findScheduleConflict(allTasks.value, candidate, excludedTaskIds)
+    if (conflict) throw new Error(`与任务“${conflict.title}”的排期时间重叠`)
+  }
+
   async function recoverOverdueTasks(): Promise<void> {
     if (!isLoading.value && useAuthStore().isAuthenticated) {
-      for (const task of allTasks.value) {
-        if (isScheduledTaskPast(task)) {
-          const model = toTaskModel({ ...task, status: 'completed', scheduledAt: task.scheduledAt })
-          model.version = task.version
-          await updateTaskModel(model)
-        } else if (isUnscheduledTaskPastDue(task)) {
-          const model = toTaskModel({ ...task, dueAt: undefined, scheduledAt: undefined, startTime: undefined })
-          model.version = task.version
-          model.dueAt = model.dueAt ?? undefined
-          await updateTaskModel(model)
+      const endedTaskIds = allTasks.value.filter((task) => isScheduledTaskPast(task)).map((task) => task.id)
+      for (const taskId of endedTaskIds) {
+        try {
+          await withScheduleMutation(async () => {
+            const repo = await repository()
+            const [localRow, unresolved] = await Promise.all([
+              repo.read<TaskView>('TASK', taskId),
+              repo.listUnresolved('TASK'),
+            ])
+            const existingMutation = unresolved.find((mutation) => mutation.resourceId === taskId)
+            if (existingMutation && existingMutation.status !== 'pending') return
+
+            const current = findTask(taskId)
+            const localModel = localRow ? dtoFromLocal(localRow.value) : null
+            if (!current || !localRow || !localModel
+              || localRow.version !== current.version
+              || localModel.scheduledAt !== current.scheduledAt) {
+              void loadLocalTasks()
+              return
+            }
+
+            const latestTask = toPresentationTask(localModel)
+            if (!isScheduledTaskPast(latestTask)) return
+            const model = toTaskModel({ ...latestTask, status: 'completed', scheduledAt: latestTask.scheduledAt })
+            model.version = localRow.version
+            await updateTaskModel(model, {
+              expectedLocalVersion: localRow.version,
+              rejectIfNonPendingMutation: true,
+            })
+          })
+        } catch (error) {
+          if (error instanceof LocalConflictError) await loadLocalTasks()
+          // Keep scanning so one local persistence failure cannot starve later tasks.
         }
       }
     }
@@ -338,22 +385,45 @@ export const useTaskStore = defineStore('task', () => {
     return getLocalRepository(authStore.user.id, authStore.serverDeviceId)
   }
 
-  function rebuildSchedule(): void {
+  function rebuildSchedule(targetDateKey?: string): void {
     updateCurrentSlot()
     const tasks = allTasks.value
-    // Array.prototype.filter passes an index as its second argument; keep the
-    // view-rule clock parameter explicit so it can never receive that index.
     pendingTasks.value = tasks.filter((task) => isSchedulableTask(task))
     const scheduled = getTasksForTimeline(tasks)
-    timeSlots.value = timeSlots.value.map((slot) => ({
-      ...slot,
-      task: scheduled.find((task) => dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value && timelineSlotTimeForScheduledAt(task.scheduledAt) === slot.time) || null
-    }))
+
+    const activeKey = targetDateKey || (
+      /^\d{4}-\d{2}-\d{2}$/.test(selectedDay.value) ? selectedDay.value : undefined
+    )
+    const candidateTasks = activeKey ? tasks : scheduled
+
+    timeSlots.value = timeSlots.value.map((slot) => {
+      const matchedTask = candidateTasks.find((task) => {
+        if (!task.scheduledAt || task.status === 'cancelled') return false
+        const d = new Date(task.scheduledAt)
+        if (Number.isNaN(d.getTime())) return false
+
+        const slotTime = timelineSlotTimeForScheduledAt(task.scheduledAt)
+        if (slotTime !== slot.time) return false
+
+        if (activeKey) {
+          const month = String(d.getMonth() + 1).padStart(2, '0')
+          const dayNum = String(d.getDate()).padStart(2, '0')
+          const key = `${d.getFullYear()}-${month}-${dayNum}`
+          return key === activeKey
+        } else {
+          return dayCodeForScheduledAt(task.scheduledAt) === selectedDay.value
+        }
+      })
+      return {
+        ...slot,
+        task: matchedTask || null,
+      }
+    })
   }
 
-  function setSelectedDay(day: string): void {
-    selectedDay.value = day
-    rebuildSchedule()
+  function setSelectedDay(day: string, dateKey?: string): void {
+    selectedDay.value = dateKey || day
+    rebuildSchedule(dateKey || day)
   }
 
   async function loadLocalTasks(): Promise<Task[]> {
@@ -383,6 +453,8 @@ export const useTaskStore = defineStore('task', () => {
     lastError.value = null
     try {
       await loadLocalTasks()
+      isLoading.value = false
+      await recoverOverdueTasks()
       useSyncStore().requestBackgroundSync('read')
       return allTasks.value
     } finally {
@@ -391,7 +463,9 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   subscribeProjectionChange((change) => {
-    if (change.resourceTypes.has('TASK')) void loadLocalTasks()
+    if (change.resourceTypes.has('TASK')) {
+      void loadLocalTasks().then(() => recoverOverdueTasks())
+    }
   })
 
   function replaceInMemory(task: Task): void {
@@ -401,15 +475,49 @@ export const useTaskStore = defineStore('task', () => {
     rebuildSchedule()
   }
 
-  async function persistOffline(model: TaskModel, mutationType: 'CREATE' | 'UPDATE' | 'DELETE', payload: Record<string, unknown>): Promise<Task> {
+  function replaceInMemoryMany(tasks: Task[]): void {
+    const replacements = new Map(tasks.map((task) => [task.id, task]))
+    const next = allTasks.value.map((task) => replacements.get(task.id) ?? task)
+    const existingIds = new Set(allTasks.value.map((task) => task.id))
+    for (const task of tasks) {
+      if (!existingIds.has(task.id)) next.push(task)
+    }
+    allTasks.value = next
+    rebuildSchedule()
+  }
+
+  async function persistOffline(
+    model: TaskModel,
+    mutationType: 'CREATE' | 'UPDATE' | 'DELETE',
+    payload: Record<string, unknown>,
+    options: { expectedLocalVersion?: number; rejectIfNonPendingMutation?: boolean } = {},
+  ): Promise<Task> {
+    const assertScheduleMutationAllowed = () => {
+      if (mutationType === 'DELETE') return
+      const current = findTask(model.id)
+      const scheduleChanged = !current
+        || !isSameScheduleTime(current.scheduledAt, model.scheduledAt)
+        || current.durationMinutes !== model.durationMinutes
+        || (current.status === 'cancelled' && model.status !== 'CANCELLED')
+      if (scheduleChanged && model.scheduledAt && model.status !== 'CANCELLED' && model.status !== 'DONE') {
+        if (!current || !isSameScheduleTime(current.scheduledAt, model.scheduledAt)) assertScheduledAtIsNotPast(model.scheduledAt)
+        assertScheduleDoesNotOverlap(model)
+      }
+    }
+    assertScheduleMutationAllowed()
     const task = toPresentationTask(model, mutationType === 'CREATE' ? 'pending_create' : mutationType === 'UPDATE' ? 'pending_update' : 'pending_delete')
     const repo = await repository()
+    // Revalidate after repository initialization: another projection refresh may
+    // have arrived while the local database was opening.
+    assertScheduleMutationAllowed()
     await repo.commitMutation({
       resourceType: 'TASK',
       resourceId: model.id,
       value: taskDto(model),
       version: model.version,
       deletedAt: model.deletedAt,
+      expectedLocalVersion: options.expectedLocalVersion,
+      rejectIfNonPendingMutation: options.rejectIfNonPendingMutation,
       mutation: clientMutation(model.id, mutationType, model.version, payload),
     })
     replaceInMemory(task)
@@ -418,17 +526,22 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function addTask(input: TaskInput): Promise<string> {
-    const model = toTaskModel(input, (selectedDay.value as DayCode) || getTodayDayCode())
-    if (!model.subjectId) throw new Error('Task requires a subjectId')
-    const payload = createPayload(model)
-    await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
-    return model.id
+    return withScheduleMutation(async () => {
+      const model = toTaskModel(input, (selectedDay.value as DayCode) || getTodayDayCode())
+      if (!model.subjectId) throw new Error('Task requires a subjectId')
+      const payload = createPayload(model)
+      await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
+      return model.id
+    })
   }
 
-  async function updateTaskModel(model: TaskModel): Promise<void> {
+  async function updateTaskModel(
+    model: TaskModel,
+    options: { expectedLocalVersion?: number; rejectIfNonPendingMutation?: boolean } = {},
+  ): Promise<void> {
     const payload = updatePayload(model)
     try {
-      await persistOffline(model, 'UPDATE', payload as unknown as Record<string, unknown>)
+      await persistOffline(model, 'UPDATE', payload as unknown as Record<string, unknown>, options)
     } catch (error) {
       lastError.value = error instanceof Error ? error.message : '任务本地保存失败'
       throw error
@@ -439,111 +552,237 @@ export const useTaskStore = defineStore('task', () => {
     return allTasks.value.find((task) => task.id === id)
   }
 
-  async function updateTaskStatus(taskId: string, newStatus: TaskPresentationStatus): Promise<void> {
-    const current = findTask(taskId)
-    if (!current) return
-    const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
-    model.version = current.version
-    await updateTaskModel(model)
+  function localDateKey(value: string | undefined): string | undefined {
+    if (!value) return undefined
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return undefined
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   }
 
-  async function updateTaskDetails(taskId: string, changes: Pick<TaskInput, 'title' | 'description' | 'dueAt' | 'durationMinutes'>): Promise<void> {
-    const current = findTask(taskId)
-    if (!current) return
-    const hasDueAtChange = Object.prototype.hasOwnProperty.call(changes, 'dueAt')
-    const model = toTaskModel({
-      ...current,
-      title: changes.title ?? current.title,
-      description: changes.description ?? current.description,
-      dueAt: hasDueAtChange ? changes.dueAt : current.dueAt,
-      durationMinutes: changes.durationMinutes ?? current.durationMinutes,
-      scheduledAt: current.scheduledAt,
-      status: current.status,
+  async function assertScheduleDaySynced(scheduledAt: string, sourceTaskId: string): Promise<void> {
+    const repo = await repository()
+    const [rows, pendingMutations] = await Promise.all([
+      repo.list<TaskView>('TASK'),
+      repo.listUnresolved(),
+    ])
+    const targetDate = localDateKey(scheduledAt)
+    const pendingIds = new Set(pendingMutations.map((mutation) => mutation.resourceId))
+    const sourceRow = rows.find((row) => row.id === sourceTaskId)
+    const affected = rows.flatMap((row) => {
+      const model = dtoFromLocal(row.value)
+      if (!model?.scheduledAt || localDateKey(model.scheduledAt) !== targetDate) return []
+      return [{ row, model }]
     })
-    model.version = current.version
-    await updateTaskModel(model)
+    if (pendingIds.has(sourceTaskId)
+      || (sourceRow && sourceRow.syncStatus !== 'synced')
+      || affected.some(({ row, model }) => row.syncStatus !== 'synced' || pendingIds.has(model.id))) {
+      throw new Error('当天排期包含尚未同步的任务，请同步后再调整')
+    }
   }
 
-  async function scheduleTask(taskId: string, slotTime: string): Promise<void> {
-    const task = pendingTasks.value.find((item) => item.id === taskId)
-    if (!task) return
-    const slot = timeSlots.value.find((item) => item.time === slotTime)
-    if (!slot) return
-    if (slot.task && isCompletedScheduledTask(slot.task)) throw new Error('已完成的排期任务已固定')
-    if (slot.task) await unscheduleTask(slotTime)
-    const model = toTaskModel({ ...task, status: task.status, startTime: `${selectedDay.value} ${slotTime}` })
-    assertScheduledAtIsNotPast(model.scheduledAt)
-    model.version = task.version
-    await updateTaskModel(model)
+  async function persistRemoteScheduleModels(models: TaskModel[]): Promise<ScheduleInsertionResult> {
+    let cacheNeedsRefresh = false
+    try {
+      const repo = await repository()
+      const persisted = await repo.upsertSyncedBatch(models.map((model) => ({
+        resourceType: 'TASK',
+        resourceId: model.id,
+        version: model.version,
+        deletedAt: model.deletedAt,
+        value: taskDto(model),
+      })))
+      if (!persisted) {
+        cacheNeedsRefresh = true
+        await loadLocalTasks()
+        lastError.value = '排期已保存到服务端，本地任务有未同步修改，正在同步'
+      } else {
+        replaceInMemoryMany(models.map((model) => toPresentationTask(model, 'synced')))
+      }
+    } catch (error) {
+      // The server transaction already committed. Show its complete response;
+      // the unchanged local cursor lets the next read cycle replay both updates.
+      cacheNeedsRefresh = true
+      lastError.value = error instanceof Error ? `排期已保存到服务端，本地刷新中：${error.message}` : '排期已保存到服务端，本地刷新中'
+      replaceInMemoryMany(models.map((model) => toPresentationTask(model, 'synced')))
+    }
+    const syncStore = useSyncStore()
+    syncStore.requestBackgroundSync('read')
+    if (cacheNeedsRefresh) {
+      void syncStore.flushNow().catch((error) => {
+        const detail = error instanceof Error ? error.message : '同步失败'
+        lastError.value = `排期已保存到服务端，等待本地同步恢复：${detail}`
+      })
+    }
+    return cacheNeedsRefresh ? 'refreshing' : 'saved'
+  }
+
+  async function insertTaskAtSlot(taskId: string, slotTime: string, day: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
+    const task = findTask(taskId)
+    if (!task) throw new Error('源任务已变化，请刷新后重试')
+    if (!timeSlots.value.some((slot) => slot.time === slotTime)) {
+      throw new Error('目标时间槽不存在，请拖到可见时段')
+    }
+    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+    if (task.status === 'cancelled') throw new Error('已取消的任务不能排期')
+    const selectedDayOrKey = day || selectedDay.value || getTodayDayCode()
+    const scheduledAt = dateForDay(selectedDayOrKey, slotTime).toISOString()
+    assertScheduledAtIsNotPast(scheduledAt)
+    await assertScheduleDaySynced(scheduledAt, taskId)
+
+    const windowStartAt = dateForDay(selectedDayOrKey, timeStringFromMinutes(TIMELINE_START_MINUTES)).toISOString()
+    const windowLastStartAt = dateForDay(selectedDayOrKey, timeStringFromMinutes(TIMELINE_END_MINUTES)).toISOString()
+    const response = await useTaskApi.scheduleInsertions({
+      taskId,
+      baseVersion: task.version,
+      scheduledAt,
+      windowStartAt,
+      windowLastStartAt,
+      targetTaskId,
+    })
+    const changedModels = response.tasks.map((taskView) => mapTaskView(taskView))
+    return await persistRemoteScheduleModels(changedModels)
+  }
+
+  async function updateTaskStatus(taskId: string, newStatus: TaskPresentationStatus): Promise<void> {
+    return withScheduleMutation(async () => {
+      const current = findTask(taskId)
+      if (!current) return
+      if (newStatus !== 'completed' && isScheduledCompletionLocked(current)) {
+        throw new Error('已结束的排期任务不能取消完成状态')
+      }
+      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
+      model.version = current.version
+      await updateTaskModel(model)
+    })
+  }
+
+  async function updateTaskDetails(taskId: string, changes: Pick<TaskInput, 'title' | 'description' | 'dueAt' | 'durationMinutes' | 'subjectId'>): Promise<void> {
+    return withScheduleMutation(async () => {
+      const current = findTask(taskId)
+      if (!current) return
+      const hasDueAtChange = Object.prototype.hasOwnProperty.call(changes, 'dueAt')
+      const model = toTaskModel({
+        ...current,
+        subjectId: changes.subjectId ?? current.subjectId,
+        title: changes.title ?? current.title,
+        description: changes.description ?? current.description,
+        dueAt: hasDueAtChange ? changes.dueAt : current.dueAt,
+        durationMinutes: changes.durationMinutes ?? current.durationMinutes,
+        scheduledAt: current.scheduledAt,
+        status: current.status,
+        startTime: undefined,
+      })
+      model.version = current.version
+      await updateTaskModel(model)
+    })
+  }
+
+  async function scheduleTask(taskId: string, slotTime: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
+    return withScheduleMutation(async () => {
+      const task = findTask(taskId)
+      if (!task || !isSchedulableTask(task)) throw new Error('源任务已变化，请刷新后重试')
+      const slot = timeSlots.value.find((item) => item.time === slotTime)
+      if (!slot) throw new Error('目标时间槽不存在，请拖到可见时段')
+      if (slot.task && isCompletedScheduledTask(slot.task)) throw new Error('已完成的排期任务已固定')
+      return await insertTaskAtSlot(taskId, slotTime, selectedDay.value, targetTaskId)
+    })
   }
 
   async function scheduleTaskToDay(taskId: string, day: string): Promise<void> {
-    const task = findTask(taskId)
-    if (!task) return
-    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
-    const occupied = allTasks.value
-      .filter((item) => item.id !== taskId && dayCodeForScheduledAt(item.scheduledAt) === day)
-      .map((item) => timeForScheduledAt(item.scheduledAt))
-    let hour = 8
-    while (occupied.includes(`${String(hour).padStart(2, '0')}:00`) && hour <= 22) hour += 1
-    const model = toTaskModel({ ...task, status: task.status, startTime: `${day} ${String(hour).padStart(2, '0')}:00` })
-    assertScheduledAtIsNotPast(model.scheduledAt)
-    model.version = task.version
-    await updateTaskModel(model)
+    return withScheduleMutation(async () => {
+      const task = findTask(taskId)
+      if (!task || !isSchedulableTask(task)) throw new Error('源任务已变化，请刷新后重试')
+      if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+      let model: TaskModel | undefined
+      for (let minutes = 8 * 60; minutes <= 22 * 60; minutes += TIMELINE_SLOT_MINUTES) {
+        const slotTime = timeStringFromMinutes(minutes)
+        const candidate = toTaskModel({ ...task, status: task.status, startTime: `${day} ${slotTime}` })
+        if (isScheduledAtInPast(candidate.scheduledAt)) continue
+        if (!findScheduleConflict(allTasks.value, toPresentationTask(candidate), new Set([taskId]))) {
+          model = candidate
+          break
+        }
+      }
+      if (!model) throw new Error('当天没有可用的排期时段')
+      assertScheduledAtIsNotPast(model.scheduledAt)
+      model.version = task.version
+      await updateTaskModel(model)
+    })
   }
 
-  async function rescheduleTask(fromSlotTime: string, toSlotTime: string): Promise<void> {
-    const from = timeSlots.value.find((slot) => slot.time === fromSlotTime)?.task
-    const to = timeSlots.value.find((slot) => slot.time === toSlotTime)?.task
-    if (!from) return
-    if (isCompletedScheduledTask(from) || (to && isCompletedScheduledTask(to))) throw new Error('已完成的排期任务已固定')
+  async function rescheduleTask(taskId: string, toSlotTime: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
+    return withScheduleMutation(async () => {
+      const task = findTask(taskId)
+      if (!task?.scheduledAt || task.status === 'cancelled') throw new Error('源排期已变化，请刷新后重试')
+      if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+      if (dayCodeForScheduledAt(task.scheduledAt) !== selectedDay.value) {
+        throw new Error('源排期已变化，请刷新时间轴后重试')
+      }
+      const targetSlot = timeSlots.value.find((slot) => slot.time === toSlotTime)
+      if (!targetSlot) throw new Error('目标时间槽不存在，请拖到可见时段')
+      return await insertTaskAtSlot(taskId, toSlotTime, selectedDay.value, targetTaskId)
+    })
+  }
 
-    const fromModel = toTaskModel({ ...from, status: from.status, startTime: `${selectedDay.value} ${toSlotTime}` })
-    assertScheduledAtIsNotPast(fromModel.scheduledAt)
+  async function swapScheduledTasks(sourceTaskId: string, targetTaskId: string): Promise<ScheduleInsertionResult | void> {
+    return withScheduleMutation(async () => {
+      if (sourceTaskId === targetTaskId) return
+      const from = findTask(sourceTaskId)
+      const to = findTask(targetTaskId)
+      if (!from || !to) throw new Error('交换任务已变化，请刷新后重试')
+      if (isCompletedScheduledTask(from) || isCompletedScheduledTask(to)) throw new Error('已完成的排期任务已固定')
+      if (!from.scheduledAt || !to.scheduledAt) throw new Error('只有两个已排期任务可以交换')
+      const day = dayCodeForScheduledAt(to.scheduledAt)
+      if (!day || dayCodeForScheduledAt(from.scheduledAt) !== day) throw new Error('只能交换同一天的任务')
+      assertScheduledAtIsNotPast(to.scheduledAt)
+      assertScheduledAtIsNotPast(from.scheduledAt)
+      await assertScheduleDaySynced(to.scheduledAt, from.id)
 
-    if (to) {
-      const toModel = toTaskModel({ ...to, status: to.status, startTime: `${selectedDay.value} ${fromSlotTime}` })
-      assertScheduledAtIsNotPast(toModel.scheduledAt)
-      await useTaskApi.swapSchedules({
-        sourceTaskId: fromModel.id,
-        sourceBaseVersion: from.version, targetTaskId: toModel.id, targetBaseVersion: to.version
+      const response = await useTaskApi.swapSchedules({
+        sourceTaskId: from.id,
+        sourceBaseVersion: from.version,
+        targetTaskId: to.id,
+        targetBaseVersion: to.version,
       })
-      toModel.version = to.version + 1
-      fromModel.version = from.version + 1
-      replaceInMemory(toPresentationTask(toModel, 'synced'))
-      replaceInMemory(toPresentationTask(fromModel, 'synced'))
-    } else {
-      await updateTaskModel(fromModel)
-    }
-    useSyncStore().requestBackgroundSync('read')
+      if (!response.source || !response.target) {
+        useSyncStore().requestBackgroundSync('read')
+        return 'refreshing'
+      }
+      const changedModels = [mapTaskView(response.source), mapTaskView(response.target)]
+      return await persistRemoteScheduleModels(changedModels)
+    })
   }
 
-  async function unscheduleTask(slotTime: string): Promise<void> {
-    const task = timeSlots.value.find((slot) => slot.time === slotTime)?.task
-    if (!task) return
-    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
-    const model = toTaskModel({ ...task, status: task.status, scheduledAt: undefined, startTime: undefined })
-    model.version = task.version
-    await updateTaskModel(model)
+  async function unscheduleTask(idOrSlotTime: string): Promise<void> {
+    return withScheduleMutation(async () => {
+      const task = findTask(idOrSlotTime) ?? timeSlots.value.find((slot) => slot.time === idOrSlotTime)?.task
+      if (!task) return
+      if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+      const model = toTaskModel({ ...task, status: task.status, scheduledAt: undefined, startTime: undefined })
+      model.version = task.version
+      await updateTaskModel(model)
+    })
   }
 
   async function deleteTask(id: string): Promise<void> {
-    const task = findTask(id)
-    if (!task) return
-    const model = toTaskModel(task)
-    model.version = task.version
-    model.deletedAt = new Date().toISOString()
-    await persistOffline(model, 'DELETE', { id })
-    allTasks.value = allTasks.value.filter((item) => item.id !== id)
-    rebuildSchedule()
+    return withScheduleMutation(async () => {
+      const task = findTask(id)
+      if (!task) return
+      const model = toTaskModel(task)
+      model.version = task.version
+      model.deletedAt = new Date().toISOString()
+      await persistOffline(model, 'DELETE', { id })
+      allTasks.value = allTasks.value.filter((item) => item.id !== id)
+      rebuildSchedule()
+    })
   }
 
 
 
-  const completedCount = computed(() => allTasks.value.filter((task) => task.status === 'completed').length)
+  const completedCount = computed(() => allTasks.value.filter((task) => isCompletedTask(task)).length)
   const pendingCount = computed(() => pendingTasks.value.length)
   const totalFocusHours = computed(() => {
-    const minutes = allTasks.value.filter((task) => task.status === 'completed').reduce((sum, task) => sum + task.durationMinutes, 0)
+    const minutes = allTasks.value.filter((task) => isCompletedTask(task)).reduce((sum, task) => sum + task.durationMinutes, 0)
     return `${(minutes / 60).toFixed(1)}h`
   })
 
@@ -567,6 +806,7 @@ export const useTaskStore = defineStore('task', () => {
     scheduleTask,
     scheduleTaskToDay,
     rescheduleTask,
+    swapScheduledTasks,
     unscheduleTask,
     deleteTask,
     updateTaskStatus,

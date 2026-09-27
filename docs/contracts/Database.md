@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-09-08
+更新时间：2026-09-24
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -70,13 +70,19 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 
 三张表均使用 `ON DELETE RESTRICT` 的归属外键；V1 为 owner、expiry、revocation、rotation family 和 token hash 建立查询索引。JPA Entity 使用 `Instant`、UUID、字符串枚举和 `@Version` 映射，Repository 查询包含当前 `userId` 的方法不省略归属条件。
 
+## PC 个人空间服务端数据扩展（V24/V25，2026-09-24）
+
+- V24 新增 `user_avatars(user_id,content_type,image_bytes,updated_at)`：`user_id` 是主键且外键指向 `users(id)`，头像只存服务端校验并重编码后的 PNG，数据库限制非空且不超过 5 MiB。旧 `users.avatar_url` 保留既有字段，本次头像读写不再使用它。头像不进入普通业务资源同步或 Asset 表。
+- V25 新增 `account_deletion_jobs(id,user_id,status,requested_at,not_before,next_object_scan_at,object_scan_after_key,lease_until,completed_at,last_error)` 与 `account_deletion_objects(job_id,object_key,deleted_at)`。作业保留待清理对象键、可重试状态、租约和已完成作业的分批复扫游标；`account_deletion_jobs.user_id` 不设置用户外键，使用户最终删除后仍可保留对象键记录。对象键由服务端从当前用户的 Asset、ParsedDocument 元数据收集，不能由客户端指定。
+- 注销请求先将用户状态设为 `DISABLED` 并撤销 refresh sessions；上传意图签发与停用用户通过用户行锁串行化。在现有预签名上传有效期及缓冲后，后台 worker 清理对象，最终在事务中按 `user_id` 显式删除依赖行与用户。已完成作业仍按有界批次周期性复扫已记录对象键，以清除预签名 PUT 晚到造成的对象重现。V25 不修改原有 Subject、Source、Asset 等表的外键删除语义。对象存储与 PostgreSQL/MinIO 真实联动仍需验收。
+
 ## 阶段 2A 核心领域 V2 已实现 schema
 
 Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。
 
 - `subjects` 保存 `name`、`description`、`icon_key`、`sort_key`、`is_default`；新用户注册不自动创建 Subject，列表可以为空。历史遗留的“未分类”记录仍保留 `is_default=true` 以兼容读取，但可按普通 Subject 软删除。名称唯一和恢复占用冲突由 SubjectService 校验。Flyway `V19__remove_subject_color.sql` 删除历史遗留的 `color` 列，仅丢弃该列值，不影响 Subject 行或其他资源。
 - `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
-- `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`sort_key`；数据库 CHECK 与服务同时约束状态、非负时长和排期顺序。`V18__restore_task_schedule_order.sql` 会先把历史 `due_at < scheduled_at` 行的 `scheduled_at` 清空，再恢复该 CHECK；`V20__remove_task_cognitive_load` 删除已废弃的认知负荷列及 Task 同步 JSON 字段，V21 删除 Task 颜色列及历史颜色键。客户端按当前时间将 `due_at` 或 `scheduled_at` 已过且未完成/取消的任务回归未排期，不能以放宽字段顺序约束替代。
+  - `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`sort_key`；数据库 CHECK 与服务约束状态和非负时长，`due_at` 是提醒/排序信息，不与 `scheduled_at` 建立先后约束。历史迁移 `V18__restore_task_schedule_order.sql` 曾清空 `due_at < scheduled_at` 行的 `scheduled_at` 并添加 `ck_tasks_schedule_order`；新迁移 `V23__allow_scheduled_tasks_after_due_at.sql` 移除此 CHECK，不修改现有行。该历史清空不会由 V23 自动恢复。`V20__remove_task_cognitive_load` 删除已废弃的认知负荷列及 Task 同步 JSON 字段，V21 删除 Task 颜色列及历史颜色键。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
 - Subject 软删除由 Server 事务内的领域事件级联处理同一用户、同一 `subject_id` 下的活动 Source、KnowledgeBlock 和 Task：子行通过实体更新递增 `version`、更新审计时间并写入 `deleted_at`，不执行 SQL 硬删除或新增表/字段；每个子行的 DELETE change-log tombstone 与受影响 Relation tombstone 同事务提交。Subject restore 不恢复这些子行，已删除子行不会重复产生 tombstone。
 
@@ -133,7 +139,7 @@ Asset 不作为 Relation 节点，也不进入普通离线 mutation；Source 才
 
 ### Task
 
-保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、sortKey、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间。排期不自动改变状态。V21 删除 Task `colorOverride` 并清理相关 JSON。
+保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、sortKey、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间。排期不自动改变状态；`dueAt` 仅作截止提醒和排序信息，允许 `scheduledAt` 晚于 `dueAt`，写入与迁移均保留截止时间。V21 删除 Task `colorOverride` 并清理相关 JSON；V23 移除历史排期顺序 CHECK。
 
 ### Relation
 
@@ -165,6 +171,7 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 - Tauri SQLite 使用 `sync_metadata(user_id, device_id, cursor, reset_required, schema_version)`、`local_resource_records(user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)` 和 `local_mutations(client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version, payload, status, created_at, error)`；其中本地 `device_id` 列语义为 `serverDeviceId`，资源主键、mutation 主键 `(user_id, client_mutation_id)` 和查询均包含当前用户域。
 - 浏览器 fallback 使用 `auralis:v2:<userId>:<serverDeviceId>:state` namespace，业务记录、tombstone、mutation 和 cursor 不再写入新的全局未命名业务 key。
 - repository 对外返回 camelCase `LocalEntity`/`LocalMutation` DTO；snake_case 只存在于 SQLite adapter。`baseVersion` 不匹配返回 `LocalConflictError`，删除保留 `deletedAt` tombstone，snapshot reset 会保留当前用户所有 pending mutation 及其本地 payload。
+- PC 时间轴自动完成在提交本地 TASK mutation 时额外传入可选 `expectedLocalVersion` 与非 pending mutation 拒绝条件：SQLite 在同一写事务内核对当前资源版本与同资源的 inflight/error/conflict，再提交或合并 pending；浏览器 fallback 在同步 read/modify/write 内进行同样检查。缺行、版本已变化或存在不能合并的未解决 mutation 时拒绝，避免旧自动写入覆盖同步投影或产生重复 outbox。增量 pull 使用 `upsertFromSync` 在同一写边界重新核对同资源未解决 mutation，跳过期间新产生本地写入的资源。其他普通 mutation 调用保持原有提交语义；未新增表或同步字段。
 - 旧 account-less localStorage 数据仅复制到 `auralis:legacy_unassigned:v1` 备份空间；Tauri 旧 SQLite 资源行复制到 `legacy_unassigned_records`，均保留原值。首次登录必须由用户明确选择“导入当前账号”或“保留未归属备份”，不得静默归属或删除。
 
 该边界已用临时内存 SQLite 与独立 localStorage namespace 覆盖用户隔离、旧 SQLite 行备份、tombstone、版本冲突、snapshot pending 保留和 legacy backup；真实 Tauri plugin、跨版本旧数据库升级和 GUI 迁移选择仍未验收。
@@ -241,6 +248,7 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 - `V8__ai_rag_schema.sql` 新增 `ai_credentials`、`ingestion_jobs`、`source_chunks`、`conversations`、`messages`。所有表均保存 `user_id` 或可通过会话/Source 追溯用户，并建立用户/资源外键和查询索引。
 - `ai_credentials` 按 `(user_id, provider)` 唯一；API key 只保存 AES-GCM 生成的 `api_key_ciphertext` 和 `key_version`，数据库不保存明文 key。Provider 当前约束为 `DEEPSEEK`、`OPENAI_COMPATIBLE`、`SILICONFLOW`。
+- 2026-09-25：用户 AI 设置 API 不再接收或返回 `embedding_model`；该历史可空列保留，无数据库迁移。入库和检索的 Embedding 解析服务端 SiliconFlow 配置，不读取用户聊天 Provider 的该列。
 - `ingestion_jobs` 保存 Source ingestion 状态、attempt、lease、错误安全摘要及开始/完成时间；当前状态约束为 `PENDING`、`PARSING`、`INDEXING`、`READY`、`FAILED`。worker 通过 `PESSIMISTIC_WRITE` claim-next 选择最早任务，`PARSING/INDEXING` 的过期 lease 可恢复；达到最大 attempt 后进入 `FAILED`，当前不新增 schema 列。
 - `source_chunks` 保存 ordinal、正文、SHA-256、字符偏移、兼容性 `embedding_json`、`generation` 和 `active`；唯一键为 `(user_id, source_id, generation, ordinal)`。embedding 业务校验固定为 1024 个有限浮点数。
 - `conversations` 支持用户隔离和软删除；`messages` 保存 `message_sequence`、`role`、`status`、正文、模型和安全错误元数据，按 `(conversation_id, message_sequence)` 唯一；USER 消息可保存 `client_request_id`，按 `(user_id, client_request_id)` 唯一用于安全重试。
@@ -258,10 +266,10 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 
 本节登记 V15 迁移及 S1–S6、C4/C5 已落地的数据行为；真实 PostgreSQL 升级复核和人工业务验收仍待完成。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../design/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
 
-- `sources` 新增服务端生成的 `ingestion_revision UUID`。FILE Source 创建、Asset 替换或需要重新端侧解析时轮换 revision；普通重新分块/Embedding 复用当前 revision 和最新兼容 ParsedDocument。Source DTO/同步快照只读暴露该值，客户端 mutation 不能覆盖。
+- `sources` 新增服务端生成的 `ingestion_revision UUID`。FILE Source 创建、Asset 替换或需要重新端侧解析时轮换 revision；TEXT 的正文或 URL 的来源地址等解析输入变更也轮换 revision。相同输入的普通重新分块/Embedding 复用当前 revision；FILE 继续复用最新兼容 ParsedDocument。Source DTO/同步快照只读暴露该值，客户端 mutation 不能覆盖。
 - 新增非同步派生表 `parsed_documents`，保存 `id`、`user_id`、`source_id`、`ingestion_revision`、当前 Asset SHA-256、schema/parser/normalization/OCR model 版本、私有 object key、payload SHA-256、size、status、ingestion generation、`object_deleted_at`、创建和接收时间。状态至少为 `UPLOADING`、`VALIDATING`、`ACCEPTED`、`REJECTED`、`SUPERSEDED`；该表不进入 change log、snapshot 或普通客户端 mutation。
 - complete 在 owner-scoped Source 行锁内执行“首个有效结果胜出”。同 revision + payload hash 重放幂等，不同 payload 不能覆盖已接受结果；Source 删除、Asset 替换或 revision 轮换使迟到结果失效。迁移和服务测试必须证明并发 complete 只创建一个 indexing job。
-- `ingestion_jobs` 新增可空 `parsed_document_id` 与 `ingestion_revision`。FILE Source 只有在 ParsedDocument 校验通过后进入该 generation 的 INDEXING；新 generation 完整写入并切换 active 前，旧 READY chunks 保持有效。`ingestion_jobs.status` 继续只使用现有 `PENDING/PARSING/INDEXING/READY/FAILED`。
+- `ingestion_jobs` 新增可空 `parsed_document_id` 与 `ingestion_revision`。TEXT/URL Source 与 job 同事务持久化；恢复处理中 Source 时按当前 revision 补建或复用活跃 job；FILE Source 只有在 ParsedDocument 校验通过后进入该 generation 的 INDEXING。新 generation 完整写入并切换 active 前，旧 READY chunks 保持有效。同一 revision 的活跃 job 可复用，不同 revision 或终态重跑创建新 job ID/generation；worker 提交时以 job ID、revision、attempt 和锁后有效 lease 拒绝迟到结果。`ingestion_jobs.status` 继续只使用现有 `PENDING/PARSING/INDEXING/READY/FAILED`，本轮无迁移。
 - `sources.ingestion_status` 目标扩展 `AWAITING_CLIENT` 与 `VALIDATING`；两者均适配现有 `VARCHAR(16)`，但必须替换数据库 CHECK 和 Java enum。现有 `PENDING/PARSING/INDEXING/READY/FAILED` 继续服务 TEXT/URL 和兼容路径。既有 READY FILE 且有活动 chunks 的记录保持 READY；未 READY FILE 分配 revision 后迁移为 `AWAITING_CLIENT`。
 - `assets.sha256` 为兼容既有上传仍可为空，但 ParsedDocument 接受后必须非空且经过原对象流式校验；并发回填使用锁或条件更新，不能 last-write-wins。
 - Task 14（2026-09-09）：Source ingestion 状态及安全失败诊断的实际变化由既有 `ResourceChangedEvent(SOURCE, UPDATE)` 链路写入 change log；相同三元组重复调用不增加 Source version 或同步记录。该变化不新增字段、迁移或 schema。

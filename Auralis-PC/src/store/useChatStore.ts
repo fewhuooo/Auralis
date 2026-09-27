@@ -21,6 +21,8 @@ import { classifyClientError, logClientError, toSafeClientError } from '@/servic
 export interface ChatRequestOptions {
   subjectId?: string
   sourceId?: string
+  sourceIds?: string[]
+  retrievalMode?: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT' | 'NONE'
   context?: string
   topK?: number
   selectionText?: string
@@ -354,21 +356,28 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent.value = ''
     citations.value = []
     const options = message.requestOptions || {}
+    const referenceMode = options.retrievalMode ?? (options.sourceId && options.subjectId ? 'AUTO' : undefined)
+    const readingContext = options.subjectId && referenceMode && referenceMode !== 'NONE'
+      ? {
+          currentSourceId: options.sourceId,
+          subjectId: options.subjectId,
+          retrievalMode: referenceMode,
+          sourceIds: referenceMode === 'SELECTED_SOURCES' ? options.sourceIds : undefined,
+          selectionText: options.selectionText?.slice(0, 4000),
+        }
+      : undefined
     try {
       const result = await controller.run({
         conversationId: session.remoteId,
         content: message.content,
-        retrievalEnabled: Boolean(options.sourceId || options.selectionText || options.context),
+        retrievalEnabled: referenceMode === 'NONE'
+          ? false
+          : referenceMode
+            ? Boolean(readingContext)
+            : Boolean(options.sourceId || options.selectionText || options.context),
         topK: options.topK ?? 8,
         clientRequestId: message.clientRequestId,
-        readingContext: options.sourceId && options.subjectId
-          ? {
-              currentSourceId: options.sourceId,
-              subjectId: options.subjectId,
-              retrievalMode: 'AUTO',
-              selectionText: options.selectionText?.slice(0, 4000),
-            }
-          : undefined,
+        readingContext,
       }, {
         onStarted: (data) => {
           const started = data as { messageId?: string } | undefined
@@ -501,11 +510,28 @@ export const useChatStore = defineStore('chat', () => {
       clearActiveConversation()
       return
     }
+    const targetSessionId = session.id
     try {
-      await deleteSession(session.id)
+      await deleteSession(targetSessionId)
     } finally {
-      activeSessionId.value = null
-      clearActiveConversation()
+      if (activeSessionId.value === targetSessionId) {
+        activeSessionId.value = null
+        clearActiveConversation()
+      }
+    }
+  }
+
+  async function endSessionById(sessionId: string): Promise<void> {
+    if (activeSessionId.value === sessionId) {
+      abortStream()
+    }
+    try {
+      await deleteSession(sessionId)
+    } finally {
+      if (activeSessionId.value === sessionId) {
+        activeSessionId.value = null
+        clearActiveConversation()
+      }
     }
   }
 
@@ -550,5 +576,6 @@ export const useChatStore = defineStore('chat', () => {
     finalizeAssistantMessage,
     deleteSession,
     endActiveSession,
+    endSessionById,
   }
 })

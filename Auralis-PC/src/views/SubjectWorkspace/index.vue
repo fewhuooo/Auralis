@@ -5,7 +5,7 @@
     <nav class="tier1-strip">
       <div class="tier1-top">
         <button class="tier1-btn" title="返回" @click="router.push('/subjects')">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+          <IconArrowLeft :size="20" :stroke-width="1.6" />
           <span class="tier1-btn-text">返回</span>
         </button>
         <button
@@ -14,7 +14,7 @@
           title="学习材料"
           @click="toggleTier2('files')"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <IconFileText :size="20" :stroke-width="1.6" />
           <span class="tier1-btn-text">材料</span>
         </button>
         <button
@@ -23,7 +23,7 @@
           title="总览"
           @click="toggleTier2('outline')"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <IconList :size="20" :stroke-width="1.6" />
           <span class="tier1-btn-text">总览</span>
         </button>
         <button
@@ -32,7 +32,7 @@
           title="知识库"
           @click="centerView = 'blocks'; tier2Open = false"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <IconLayoutGrid :size="20" :stroke-width="1.6" />
           <span class="tier1-btn-text">知识库</span>
         </button>
       </div>
@@ -52,7 +52,9 @@
       <div v-if="tier2Mode === 'files'" class="drawer-content">
         <div class="drawer-header">
           <h3 class="drawer-title">学习文件</h3>
-          <button class="drawer-action" @click="openRegisterModal" title="添加文件">+</button>
+          <button class="drawer-action" @click="openRegisterModal" title="添加文件" aria-label="添加文件">
+            <IconPlus :size="15" :stroke-width="2.4" />
+          </button>
         </div>
         <div class="drawer-list" v-if="activeSourceFiles.length > 0">
           <div
@@ -74,7 +76,7 @@
               title="删除文件"
               @click.stop="handleDeleteFile(file)"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              <IconX :size="14" :stroke-width="2" />
             </button>
           </div>
         </div>
@@ -86,71 +88,332 @@
       <!-- Outline Mode -->
       <div v-else-if="tier2Mode === 'outline'" class="drawer-content">
         <div class="drawer-header outline-header">
-          <h3 class="drawer-title">总览</h3>
+          <div class="outline-header-left">
+            <h3 class="drawer-title">总览</h3>
+            <transition name="hint-capsule-fade">
+              <div v-if="isOutlineComposer" class="outline-header-hint-capsule" title="可拖拽章节与小节调整顺序，点击文字直接修改">
+                <span class="hint-dot"></span>
+                <span class="hint-text">拖拽排序 · 点击修改</span>
+              </div>
+            </transition>
+          </div>
           <div class="outline-header-actions">
-            <button class="outline-ai-button" @click="handleOutlineAi">AI 梳理</button>
-            <button class="outline-add-button" title="编排大纲" aria-label="编排大纲" @click="isOutlineComposer = !isOutlineComposer">+</button>
+            <button
+              class="outline-add-button"
+              :class="{ 'is-active': isOutlineComposer }"
+              :title="isOutlineComposer ? '关闭编排' : '编排大纲'"
+              :aria-label="isOutlineComposer ? '关闭编排' : '编排大纲'"
+              @click="isOutlineComposer = !isOutlineComposer"
+            >
+              <IconPlus :size="15" :stroke-width="2.4" class="outline-add-icon" />
+            </button>
           </div>
         </div>
         <div v-if="isOutlineComposer" class="outline-composer">
-          <p class="outline-composer-tip">拖拽章节或所属小节调整顺序</p>
-          <div v-for="(chapter, chapterIndex) in subjectOutline" :key="chapter.id" class="composer-chapter" draggable="true" @dragstart="startChapterDrag(chapterIndex)" @dragover.prevent @drop="handleChapterDrop(chapterIndex)">
-            <div class="composer-row">
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <span class="drag-handle" title="拖拽章节">⠿</span>
-                <strong>{{ chapter.title }}</strong>
-              </div>
-              <button class="composer-link-btn" title="删除章节" @click.stop="deleteChapter(chapterIndex)">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-              </button>
-            </div>
-            <div class="composer-sections">
-              <div v-for="(section, sectionIndex) in chapter.sections" :key="section.id" class="composer-section" draggable="true" @dragstart.stop="startSectionDrag(chapterIndex, sectionIndex)" @dragover.prevent @drop.stop="handleSectionDrop(chapterIndex, sectionIndex)">
-                <div style="display: flex; gap: 10px; flex: 1;">
-                  <span class="drag-handle">⠿</span>
-                  <div class="composer-section-content">
-                    <span class="composer-section-title">{{ section.title }}</span>
-                    <div class="composer-section-file" v-if="section.fileId">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                      <span class="composer-section-file-name">{{ fileById(section.fileId)?.name || '未知文件' }}</span>
-                      <button class="composer-unlink-btn" title="解除关联" @click.stop="unlinkFile(chapterIndex, sectionIndex)">
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          <div class="subject-overview-wrapper">
+            <article class="file-outline subject-overview is-editing">
+              <!-- 统一卡片头部 -->
+              <header class="file-outline__header subject-overview__header">
+                <div class="file-outline__name subject-overview__name" style="cursor: default;">
+                  <IconBook :size="13" :stroke-width="1.6" class="subject-icon" />
+                  <span class="subject-overview-title">学科大纲</span>
+                </div>
+                <span class="file-outline__actions">
+                  <button
+                    type="button"
+                    class="composer-capsule-btn is-primary"
+                    :disabled="isSavingOutline"
+                    title="保存大纲修改"
+                    @click="saveCurrentOutline"
+                  >
+                    <IconCheck v-if="!isSavingOutline" :size="10.5" :stroke-width="2.2" />
+                    <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
+                    <span>{{ isSavingOutline ? '保存中' : '保存' }}</span>
+                  </button>
+                </span>
+              </header>
+
+              <!-- 卡片内容主体 -->
+              <div class="subject-overview__body">
+                <ol class="file-outline__chapters composer-chapter-list">
+                  <li
+                    v-for="(chapter, chapterIndex) in subjectOutline"
+                    :key="chapter.id"
+                    class="composer-chapter-item"
+                    draggable="true"
+                    @dragstart="startChapterDrag(chapterIndex)"
+                    @dragover.prevent
+                    @drop="handleChapterDrop(chapterIndex)"
+                  >
+                    <!-- 章节标题：统一非编辑态左侧绿色胶囊微条与排版 -->
+                    <strong class="chapter-header composer-chapter-header">
+                      <span class="composer-drag-handle" title="拖拽调整章节顺序">
+                        <IconGripVertical :size="12" :stroke-width="1.8" />
+                      </span>
+                      <input
+                        v-model="chapter.title"
+                        class="composer-inline-title"
+                        placeholder="章节名称"
+                      />
+                      <button
+                        type="button"
+                        class="composer-del-btn"
+                        title="删除章节"
+                        @click.stop="deleteChapter(chapterIndex)"
+                      >
+                        <IconTrash :size="12" :stroke-width="1.8" />
                       </button>
+                    </strong>
+
+                    <!-- 小节列表：统一非编辑态 4px 微圆点与极简导轨 -->
+                    <div class="composer-sections-wrap">
+                      <div
+                        v-for="(section, sectionIndex) in chapter.sections"
+                        :key="section.id"
+                        class="subject-outline__section composer-section-item"
+                        draggable="true"
+                        @dragstart.stop="startSectionDrag(chapterIndex, sectionIndex)"
+                        @dragover.prevent
+                        @drop.stop="handleSectionDrop(chapterIndex, sectionIndex)"
+                      >
+                        <span class="composer-drag-handle composer-section-grip" title="拖拽调整小节顺序">
+                          <IconGripVertical :size="11" :stroke-width="1.8" />
+                        </span>
+
+                        <div class="composer-section-main">
+                          <input
+                            v-model="section.title"
+                            class="composer-inline-section"
+                            placeholder="小节名称"
+                          />
+                          <span
+                            v-for="sId in (section.sourceIds?.length ? section.sourceIds : (section.fileId ? [section.fileId] : []))"
+                            :key="sId"
+                            class="composer-file-tag"
+                            :title="fileById(sId)?.name"
+                          >
+                            <IconFileText :size="10.5" :stroke-width="1.6" />
+                            <span class="composer-file-name">{{ fileById(sId)?.name || '关联文件' }}</span>
+                            <button
+                              type="button"
+                              class="composer-unlink-icon"
+                              title="解除关联"
+                              @click.stop="unlinkFile(chapterIndex, sectionIndex, sId)"
+                            >
+                              <IconX :size="10" :stroke-width="2" />
+                            </button>
+                          </span>
+                        </div>
+
+                        <div class="composer-item-actions">
+                          <el-popover placement="bottom-end" trigger="click" width="280" popper-class="zen-popover zen-action-popover" :hide-after="0">
+                            <template #reference>
+                              <button type="button" class="composer-action-btn" title="选择关联文件" @click.stop>
+                                <IconLink :size="12" :stroke-width="1.8" />
+                              </button>
+                            </template>
+                            <div style="margin-bottom: 8px; font-size: 12px; font-weight: 650; color: var(--text-primary);">选择关联文件</div>
+                            <div class="subject-capsule-grid" v-if="activeSourceFiles.length">
+                              <div
+                                v-for="file in activeSourceFiles"
+                                :key="file.id"
+                                class="subject-capsule-item"
+                                @click="handleLinkFile(chapterIndex, sectionIndex, file.id)"
+                              >
+                                <span class="subj-capsule-icon">📄</span>
+                                <span class="subj-capsule-name">{{ file.name }}</span>
+                              </div>
+                            </div>
+                            <div v-else style="padding: 10px 0; text-align: center; color: var(--text-muted); font-size: 11.5px;">
+                              暂无学习文件，请先导入
+                            </div>
+                          </el-popover>
+                          <button
+                            type="button"
+                            class="composer-action-btn"
+                            title="删除小节"
+                            @click.stop="deleteSection(chapterIndex, sectionIndex)"
+                          >
+                            <IconX :size="12" :stroke-width="2" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- 极简内联添加小节 -->
+                      <div class="composer-add-section-row">
+                        <span class="composer-add-dot">＋</span>
+                        <input
+                          v-model="chapterDrafts[chapter.id]"
+                          class="composer-add-input"
+                          placeholder="添加小节 (按 Enter 确认)"
+                          @keyup.enter="addSection(chapter.id)"
+                        />
+                      </div>
                     </div>
+                  </li>
+                </ol>
+
+                <!-- 添加新章节 -->
+                <div class="composer-add-chapter-row">
+                  <input
+                    v-model="chapterDraft"
+                    class="composer-add-chapter-input"
+                    placeholder="＋ 添加新章节 (按 Enter 确认)"
+                    @keyup.enter="addChapter"
+                  />
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <!-- 分文件大纲编辑列表：在编辑态下每个文件大纲均可独立编辑、拖拽与保存 -->
+          <div class="file-outline-composer-list">
+            <div
+              v-for="file in activeSourceFiles"
+              :key="file.id"
+              class="file-overview-wrapper"
+            >
+              <article class="file-outline file-overview is-editing" :class="{ 'is-selected': file.id === selectedFileId }">
+                <!-- 文件大纲头部 -->
+                <header class="file-outline__header">
+                  <button
+                    type="button"
+                    class="overview-collapse-btn"
+                    :title="fileCardCollapsed[file.id] ? '展开文件大纲' : '收起文件大纲'"
+                    @click="fileCardCollapsed[file.id] = !fileCardCollapsed[file.id]"
+                  >
+                    <IconChevronDown v-if="!fileCardCollapsed[file.id]" :size="13" :stroke-width="2" />
+                    <IconChevronRight v-else :size="13" :stroke-width="2" />
+                  </button>
+                  <button type="button" class="file-outline__name" :title="`查看并编辑 ${file.name}`" @click="selectFile(file.id)">
+                    <IconFileText :size="13" :stroke-width="1.6" class="subject-icon" />
+                    <span class="subject-overview-title">{{ file.name }}</span>
+                  </button>
+                  <span class="file-outline__actions">
+                    <button
+                      type="button"
+                      class="composer-capsule-btn is-primary"
+                      :disabled="savingFileIds.has(file.id)"
+                      :title="`保存《${file.name}》大纲修改`"
+                      @click="saveFileOutline(file.id)"
+                    >
+                      <IconCheck v-if="!savingFileIds.has(file.id)" :size="10.5" :stroke-width="2.2" />
+                      <IconRotate v-else :size="10.5" :stroke-width="2" class="is-spinning" />
+                      <span>{{ savingFileIds.has(file.id) ? '保存中' : '保存' }}</span>
+                    </button>
+                  </span>
+                </header>
+
+                <!-- 文件大纲内容主体 -->
+                <div v-show="!fileCardCollapsed[file.id]" class="subject-overview__body">
+                  <!-- 暂无大纲时的初始创建引导 -->
+                  <div v-if="!fileOutlineDrafts[file.id]?.length" class="composer-file-empty-box">
+                    <span class="empty-hint">该文件暂无大纲内容</span>
+                    <button
+                      type="button"
+                      class="composer-capsule-btn"
+                      @click="createInitialFileOutline(file.id)"
+                    >
+                      ＋ 创建初始大纲
+                    </button>
+                  </div>
+
+                  <!-- 章节与小节列表 -->
+                  <ol v-else class="file-outline__chapters composer-chapter-list">
+                    <li
+                      v-for="(chapter, chapterIndex) in fileOutlineDrafts[file.id]"
+                      :key="chapter.id"
+                      class="composer-chapter-item"
+                      draggable="true"
+                      @dragstart="startFileChapterDrag(file.id, chapterIndex)"
+                      @dragover.prevent
+                      @drop="handleFileChapterDrop(file.id, chapterIndex)"
+                    >
+                      <!-- 章节标题行 -->
+                      <strong class="chapter-header composer-chapter-header">
+                        <span class="composer-drag-handle" title="拖拽调整章节顺序">
+                          <IconGripVertical :size="12" :stroke-width="1.8" />
+                        </span>
+                        <input
+                          v-model="chapter.title"
+                          class="composer-inline-title"
+                          placeholder="章节名称"
+                        />
+                        <button
+                          type="button"
+                          class="composer-del-btn"
+                          title="删除章节"
+                          @click.stop="deleteFileChapter(file.id, chapterIndex)"
+                        >
+                          <IconTrash :size="12" :stroke-width="1.8" />
+                        </button>
+                      </strong>
+
+                      <!-- 小节列表 -->
+                      <div class="composer-sections-wrap">
+                        <div
+                          v-for="(section, sectionIndex) in chapter.sections"
+                          :key="section.id"
+                          class="subject-outline__section composer-section-item"
+                          draggable="true"
+                          @dragstart.stop="startFileSectionDrag(file.id, chapterIndex, sectionIndex)"
+                          @dragover.prevent
+                          @drop.stop="handleFileSectionDrop(file.id, chapterIndex, sectionIndex)"
+                        >
+                          <span class="composer-drag-handle composer-section-grip" title="拖拽调整小节顺序">
+                            <IconGripVertical :size="11" :stroke-width="1.8" />
+                          </span>
+
+                          <div class="composer-section-main">
+                            <input
+                              v-model="section.title"
+                              class="composer-inline-section"
+                              placeholder="小节名称"
+                            />
+                          </div>
+
+                          <div class="composer-item-actions">
+                            <button
+                              type="button"
+                              class="composer-action-btn"
+                              title="删除小节"
+                              @click.stop="deleteFileSection(file.id, chapterIndex, sectionIndex)"
+                            >
+                              <IconX :size="12" :stroke-width="2" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <!-- 内联添加小节 -->
+                        <div class="composer-add-section-row">
+                          <span class="composer-add-dot">＋</span>
+                          <input
+                            v-model="fileSectionDrafts[`${file.id}-${chapter.id}`]"
+                            class="composer-add-input"
+                            placeholder="添加小节 (按 Enter 确认)"
+                            @keyup.enter="addFileSection(file.id, chapter.id, chapterIndex)"
+                          />
+                        </div>
+                      </div>
+                    </li>
+                  </ol>
+
+                  <!-- 添加新章节 -->
+                  <div v-if="fileOutlineDrafts[file.id]?.length" class="composer-add-chapter-row">
+                    <input
+                      v-model="fileChapterDrafts[file.id]"
+                      class="composer-add-chapter-input"
+                      placeholder="＋ 添加新章节 (按 Enter 确认)"
+                      @keyup.enter="addFileChapter(file.id)"
+                    />
                   </div>
                 </div>
-                <div style="display: flex; gap: 6px; align-items: center;">
-                <el-popover placement="bottom-end" trigger="click" width="280" popper-class="zen-popover" :hide-after="0">
-                  <template #reference>
-                    <button class="composer-link-btn" title="关联文件" @click.stop>
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                    </button>
-                  </template>
-                  <div style="margin-bottom: 12px; font-size: 13px; font-weight: 700; color: var(--text-primary);">选择工作区文件</div>
-                  <div class="subject-capsule-grid" v-if="activeSourceFiles.length">
-                    <div
-                      v-for="file in activeSourceFiles"
-                      :key="file.id"
-                      class="subject-capsule-item"
-                      @click="handleLinkFile(chapterIndex, sectionIndex, file.id)"
-                    >
-                      <span class="subj-capsule-icon">📄</span>
-                      <span class="subj-capsule-name">{{ file.name }}</span>
-                    </div>
-                  </div>
-                  <div v-else style="padding: 12px 0; text-align: center; color: var(--text-muted); font-size: 12px;">
-                    暂无学习文件，请先导入
-                  </div>
-                </el-popover>
-                <button class="composer-link-btn" title="删除小节" @click.stop="deleteSection(chapterIndex, sectionIndex)">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                </button>
-              </div>
+              </article>
             </div>
-            <input v-model="chapterDrafts[chapter.id]" class="outline-inline-input" placeholder="输入小节后按 Enter" @keyup.enter="addSection(chapter.id)" />
+            <div v-if="!activeSourceFiles.length" class="drawer-empty" style="padding: 18px 0;">
+              <span>暂无学习文件</span>
+            </div>
           </div>
-          </div>
-          <input v-model="chapterDraft" class="outline-inline-input chapter-input" placeholder="输入新章节后按 Enter" @keyup.enter="addChapter" />
         </div>
         <div v-else class="outline-overview-list">
           <SubjectOverviewSection
@@ -188,10 +451,10 @@
             {{ summaryTarget.title }} · 总结
           </span>
           <span v-else-if="centerView === 'preview' && selectedFile" class="status-file">
-            <FileText :size="14" class="status-icon" /> {{ selectedFile.name }}
+            <IconFileText :size="14" :stroke-width="1.6" class="status-icon" /> {{ selectedFile.name }}
           </span>
           <span v-else-if="centerView === 'blocks'" class="status-file">
-            <Blocks :size="14" class="status-icon" /> 知识块 · {{ filteredBlocks.length }} 个知识块
+            <IconNotes :size="14" :stroke-width="1.6" class="status-icon" /> 知识块 · {{ filteredBlocks.length }} 个知识块
           </span>
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
@@ -205,11 +468,11 @@
             </div>
             <div class="preview-control-group preview-rotation-controls" aria-label="旋转控制">
               <button type="button" class="preview-status-button preview-status-button-icon" title="向左旋转 90 度" aria-label="向左旋转 90 度" @click="filePreviewRef?.rotateLeft()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 14-5-5 5-5"/><path d="M4 9h9a7 7 0 1 1-7 7"/></svg>
+                <IconArrowBackUp :size="14" :stroke-width="1.9" aria-hidden="true" />
               </button>
               <span class="preview-rotation-value" aria-live="polite">{{ previewRotation }}°</span>
               <button type="button" class="preview-status-button preview-status-button-icon" title="向右旋转 90 度" aria-label="向右旋转 90 度" @click="filePreviewRef?.rotateRight()">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a7 7 0 1 0 7 7"/></svg>
+                <IconArrowForwardUp :size="14" :stroke-width="1.9" aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -222,7 +485,8 @@
       <div class="center-body">
         <!-- Collapse Left Button -->
         <button class="edge-collapse edge-left" @click="toggleTier2Panel" :title="tier2Open ? '收起左栏' : '展开左栏'">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="tier2Open ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
+          <IconChevronLeft v-if="tier2Open" :size="12" :stroke-width="2.5" />
+          <IconChevronRight v-else :size="12" :stroke-width="2.5" />
         </button>
 
         <OverviewSummaryView
@@ -269,7 +533,7 @@
         <div v-else-if="centerView === 'blocks'" class="blocks-workspace">
           <div class="blocks-top-bar">
             <div class="blocks-search">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <IconSearch :size="12" :stroke-width="2" />
               <input v-model="blockSearchQuery" placeholder="搜索知识块..." />
             </div>
             <button class="blocks-add-btn" @click="openCreateDialog">+ 手动录入</button>
@@ -296,7 +560,7 @@
           <div class="onboarding-workspace" v-else>
             <div class="onboarding-header" style="margin-bottom: 24px;">
               <div class="onboarding-emoji" style="margin-bottom: 12px; opacity: 0.3; color: var(--text-muted);">
-                <Blocks :size="60" />
+                <IconNotes :size="60" :stroke-width="1.5" />
               </div>
               <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary);">知识库暂无内容</h3>
               <p style="font-size: 12px; color: var(--text-muted);">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
@@ -304,7 +568,7 @@
             <div class="onboarding-grid" style="max-width: 640px; margin: 0 auto;">
               <div class="onboarding-card" @click="openCreateDialog">
                 <div class="onboarding-card-icon">
-                  <Plus :size="24" />
+                  <IconPlus :size="24" :stroke-width="2" />
                 </div>
                 <div class="onboarding-card-body">
                   <h4>手动新建知识块</h4>
@@ -314,7 +578,7 @@
               </div>
               <div class="onboarding-card" @click="tier2Mode = 'files'; tier2Open = true; centerView = 'overview'">
                 <div class="onboarding-card-icon">
-                  <FileText :size="24" />
+                  <IconFileText :size="24" :stroke-width="2" />
                 </div>
                 <div class="onboarding-card-body">
                   <h4>关联学习材料</h4>
@@ -340,14 +604,15 @@
           </div>
 
             <div class="onboarding-drag-capsule">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              <IconUpload :size="16" :stroke-width="2" />
               <span>将 PDF 或图片文件拖入此处进行关联</span>
             </div>
         </div>
 
         <!-- Collapse Right Button -->
         <button class="edge-collapse edge-right" @click="rightCollapsed = !rightCollapsed" :title="rightCollapsed ? '展开 AI 助手' : '收起 AI 助手'">
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline :points="rightCollapsed ? '15 18 9 12 15 6' : '9 18 15 12 9 6'"/></svg>
+          <IconChevronRight v-if="rightCollapsed" :size="12" :stroke-width="2.5" />
+          <IconChevronLeft v-else :size="12" :stroke-width="2.5" />
         </button>
       </div>
     </main>
@@ -358,53 +623,113 @@
     <!-- ===== RIGHT: AI Assistant ===== -->
     <aside class="workspace-right" :class="{ 'is-open': !rightCollapsed }" :style="{ width: !rightCollapsed ? rightWidth + '%' : '0px' }">
       <div class="ai-header">
-        <button class="ai-model-switch" @click="showModelMenu = !showModelMenu">
-          <span class="model-icon-top">{{ currentAiModeObj.icon }}</span>
-          <span class="model-text">{{ currentAiModeObj.label }}</span>
-          <svg class="chevron-icon" :class="{ 'is-rotated': showModelMenu }" width="10" height="7" viewBox="0 0 10 7" fill="none">
-            <path d="M1 1L5 5.5L9 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+        <button
+          class="ai-model-switch ai-file-switch"
+          :title="aiSourceSummaryTitle"
+          @click="showModelMenu = !showModelMenu"
+        >
+          <span class="model-icon-top">
+            <IconSparkles v-if="isAllAiSourcesSelected" :size="15" :stroke-width="1.8" />
+            <IconFiles v-else-if="selectedAiSourceIds.length > 1" :size="15" :stroke-width="1.8" />
+            <IconFileText v-else :size="15" :stroke-width="1.8" />
+          </span>
+          <span class="model-text">{{ aiSourceSummaryText }}</span>
+          <IconChevronDown class="chevron-icon" :class="{ 'is-rotated': showModelMenu }" :size="12" :stroke-width="2" />
         </button>
         <div class="dropdown-mask" v-if="showModelMenu" @click="showModelMenu = false" style="position: fixed; inset: 0; z-index: 3;"></div>
-        <div v-if="showModelMenu" class="ai-model-menu" style="z-index: 4;">
-          <div v-for="m in aiModesOptions" :key="m.id" class="mini-menu-item" @click="currentAiMode = m.label; showModelMenu = false">
-            <span class="mini-menu-icon">{{ m.icon }}</span>
-            <div class="mini-menu-text">
-              <span class="mini-menu-label" :class="{ 'is-active': currentAiMode === m.label }">{{ m.label }}</span>
-              <span class="mini-menu-desc">{{ m.desc }}</span>
-            </div>
-            <span v-if="currentAiMode === m.label" class="mini-check">✓</span>
+        <div v-if="showModelMenu" class="ai-model-menu ai-file-menu" style="z-index: 4;" @click.stop>
+          <div class="ai-menu-section-header">
+            <span>参考范围 (多选)</span>
           </div>
+          <div
+            v-if="selectedFileId"
+            class="mini-menu-item"
+            :class="{ 'is-active': aiReferenceScope === 'AUTO' }"
+            @click="selectCurrentAiSource"
+          >
+            <span class="mini-menu-icon"><IconFileText :size="16" :stroke-width="1.8" /></span>
+            <div class="mini-menu-text">
+              <span class="mini-menu-label" :class="{ 'is-active': aiReferenceScope === 'AUTO' }">当前文件</span>
+              <span class="mini-menu-desc">优先检索当前文件，按原有规则处理跨文件问题</span>
+            </div>
+          </div>
+          <div class="mini-menu-item" :class="{ 'is-active': isAllAiSourcesSelected }" @click="selectAllAiSources">
+            <span class="mini-menu-icon"><IconSparkles :size="16" :stroke-width="1.8" /></span>
+            <div class="mini-menu-text">
+              <span class="mini-menu-label" :class="{ 'is-active': isAllAiSourcesSelected }">全学科资料</span>
+              <span class="mini-menu-desc">检索当前学科所有已就绪资料</span>
+            </div>
+          </div>
+          <div class="mini-menu-item" :class="{ 'is-active': aiReferenceScope === 'NONE' }" @click="selectNoAiSources">
+            <span class="mini-menu-icon"><IconMessageCircle :size="16" :stroke-width="1.8" /></span>
+            <div class="mini-menu-text">
+              <span class="mini-menu-label" :class="{ 'is-active': aiReferenceScope === 'NONE' }">不引用资料</span>
+              <span class="mini-menu-desc">按普通对话回答，不检索文件</span>
+            </div>
+          </div>
+
+          <template v-if="activeSourceFiles.length > 0">
+            <div class="ai-menu-divider"></div>
+            <div class="ai-menu-section-header">
+              <span>已关联文件</span>
+              <span class="ai-menu-header-count" v-if="selectedAiSourceIds.length > 0 && !isAllAiSourcesSelected">
+                已选 {{ selectedAiSourceIds.length }} / {{ activeSourceFiles.length }}
+              </span>
+            </div>
+            <div
+              v-for="file in activeSourceFiles"
+              :key="file.id"
+              class="mini-menu-item"
+              :class="{ 'is-active': isAiSourceSelected(file.id), 'is-disabled': file.ingestionStatus !== 'READY' }"
+              :aria-disabled="file.ingestionStatus !== 'READY'"
+              :title="file.ingestionStatus !== 'READY' ? '文件处理完成后才能用于 AI 检索' : undefined"
+              @click="toggleAiSource(file.id)"
+            >
+              <span class="mini-menu-icon"><IconFileText :size="16" :stroke-width="1.8" /></span>
+              <div class="mini-menu-text">
+                <span class="mini-menu-label" :class="{ 'is-active': isAiSourceSelected(file.id) }">{{ file.name }}</span>
+                <span class="mini-menu-desc">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
+              </div>
+            </div>
+          </template>
         </div>
-        <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话">
+          <IconRotate :size="16" :stroke-width="2" />
+        </button>
       </div>
 
         <!-- Chat Flow -->
         <div class="ai-messages" ref="chatScrollRef">
           <div class="ai-welcome" v-if="chatMessages.length === 0">
-          <div class="ai-spark-wrap" aria-hidden="true">
-            <div class="ai-spark-ring" style="display: none;"></div>
-            <svg class="ai-spark-svg" viewBox="0 0 52 52" fill="none">
-              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-welcome-gradient)" />
-              <defs><linearGradient id="workspace-ai-welcome-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset=".5" stop-color="#9AB08F" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
-            </svg>
+            <div class="ai-brand-wrap" aria-hidden="true">
+              <div class="ai-spark-ring" style="display: none;"></div>
+              <svg class="ai-spark-svg" width="56" height="56" viewBox="0 0 28 28" fill="none">
+                <rect width="28" height="28" rx="8" fill="url(#workspace-ai-welcome-brand-grad)" />
+                <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+                <defs>
+                  <linearGradient id="workspace-ai-welcome-brand-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#8B9A6E" />
+                    <stop offset="1" stop-color="#AAB88E" />
+                  </linearGradient>
+                </defs>
+              </svg>
+            </div>
+            <h3 class="welcome-title">今天想探索点什么？</h3>
+            <p class="welcome-desc">{{ aiGreetingName }}，结合当前参考资料，我随时可以为您梳理重点、解释概念或生成练习。</p>
+
+            <div class="preset-questions">
+              <button
+                v-for="item in presetQuestions"
+                :key="item.label"
+                type="button"
+                class="preset-pill"
+                @click="sendPreset(item.prompt)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
           </div>
-          <p class="welcome-title">今天想探索点什么？</p>
-          <p class="welcome-desc">{{ aiGreetingName }}，我会结合当前学科与文件，帮你梳理重点、解释概念并一起学习。</p>
-          
-          <div class="preset-section-title">试 试 问 我</div>
-          
-          <div class="preset-questions">
-            <button
-              v-for="q in presetQuestions"
-              :key="q"
-              class="preset-btn"
-              @click="sendPreset(q)"
-            >
-              {{ q }}
-            </button>
-          </div>
-        </div>
         
         <div
           v-for="(msg, i) in chatMessages"
@@ -415,7 +740,7 @@
           <div class="assistant-spark-avatar" v-if="msg.role === 'assistant'" aria-hidden="true">
             <svg viewBox="0 0 52 52" fill="none">
               <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-avatar-gradient)" />
-              <defs><linearGradient id="workspace-ai-avatar-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
+              <defs><linearGradient id="workspace-ai-avatar-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#8B9A6E" /><stop offset="1" stop-color="#76855B" /></linearGradient></defs>
             </svg>
           </div>
 
@@ -431,7 +756,7 @@
           <div class="assistant-spark-avatar" aria-hidden="true">
             <svg viewBox="0 0 52 52" fill="none">
               <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-stream-gradient)" />
-              <defs><linearGradient id="workspace-ai-stream-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#7D9372" /><stop offset="1" stop-color="#5C7051" /></linearGradient></defs>
+              <defs><linearGradient id="workspace-ai-stream-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#8B9A6E" /><stop offset="1" stop-color="#76855B" /></linearGradient></defs>
             </svg>
           </div>
           <div class="chat-bubble-wrapper">
@@ -479,7 +804,7 @@
             title="发送消息"
             aria-label="发送消息"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg>
+            <IconArrowUp :size="16" :stroke-width="2" />
           </button>
         </div>
       </div>
@@ -520,7 +845,7 @@
           @drop.prevent="handleFileDrop"
         >
           <div class="drag-drop-zone" :class="{ 'is-active': isDraggingFile }" @click="triggerFileInput">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 8px; color: var(--text-muted);"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <IconUpload :size="24" :stroke-width="2" style="margin-bottom: 8px; color: var(--text-muted);" />
             <div class="drag-text">拖拽文件到此处自动识别，或点击选择</div>
             <div class="drag-hint">支持 PDF、DOC、DOCX、PPT、PPTX；图片和文本仅可预览</div>
           </div>
@@ -596,10 +921,10 @@
             <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
             <div class="modal-meta-row">
               <span class="modal-time-badge">
-                <ElIcon style="margin-right:4px;"><Clock /></ElIcon>
+                <IconClock :size="14" :stroke-width="1.6" style="margin-right:4px;" />
                 {{ selectedBlock?.time }}
               </span>
-              <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--color-bg-secondary)' }">{{ selectedBlock?.subject }}</span>
+              <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--color-bg-tertiary, #FAF7F2)' }">{{ selectedBlock?.subject }}</span>
             </div>
           </div>
           <div class="modal-divider"></div>
@@ -631,8 +956,33 @@ import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
-import { Clock } from '@element-plus/icons-vue'
-import { Blocks, Plus, FileText } from 'lucide-vue-next'
+import {
+  IconArrowLeft,
+  IconFileText,
+  IconList,
+  IconLayoutGrid,
+  IconX,
+  IconLink,
+  IconArrowBackUp,
+  IconArrowForwardUp,
+  IconChevronLeft,
+  IconChevronRight,
+  IconChevronDown,
+  IconSearch,
+  IconUpload,
+  IconRotate,
+  IconArrowUp,
+  IconClock,
+  IconPlus,
+  IconNotes,
+  IconSparkles,
+  IconFiles,
+  IconMessageCircle,
+  IconBook,
+  IconCheck,
+  IconGripVertical,
+  IconTrash
+} from '@tabler/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message.css'
 import 'element-plus/theme-chalk/el-message-box.css'
@@ -662,7 +1012,7 @@ import { documentProcessingRuntime } from '@/services/documentProcessing/runtime
 import { useOverviewApi } from '@/api/useOverviewApi'
 import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
-import type { FileOverviewRecord, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
+import type { FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -982,12 +1332,24 @@ const selectFile = async (id: string) => {
     centerView.value = 'preview'
     return
   }
+  const fileSelectGen = ++currentSubjectSwitchGen
+  const targetSubjectId = subjectId.value
   await chatStore.endActiveSession().catch(() => undefined)
+  if (!isComponentMounted || currentSubjectSwitchGen !== fileSelectGen || subjectId.value !== targetSubjectId) {
+    return
+  }
   selectedFileId.value = id
   selectedSummaryScope.value = null
   centerView.value = 'preview'
   const file = activeSourceFiles.value.find((item) => item.id === id)
-  if (file) await chatStore.startReadingSession(id, subjectId.value, file.name).catch(() => undefined)
+  if (file) {
+    const readingSessionId = await chatStore.startReadingSession(id, targetSubjectId, file.name).catch(() => undefined)
+    if (!isComponentMounted || currentSubjectSwitchGen !== fileSelectGen || subjectId.value !== targetSubjectId || selectedFileId.value !== id) {
+      if (readingSessionId) {
+        void chatStore.endSessionById(readingSessionId).catch(() => undefined)
+      }
+    }
+  }
 }
 
 const handleDeleteFile = async (file: SourceFileModel) => {
@@ -1037,7 +1399,14 @@ const handlePreviewPageChange = (page: number, total: number) => {
 }
 
 // ===== Subject outline (visual prototype; not persisted) =====
-interface OutlineSection { id: string; title: string; fileId?: string }
+interface OutlineSection {
+  id: string
+  title: string
+  fileId?: string
+  sourceIds?: string[]
+  summary?: string | null
+  locator?: OverviewLocator | null
+}
 interface OutlineChapter { id: string; title: string; sections: OutlineSection[] }
 const isOutlineComposer = ref(false)
 const chapterDraft = ref('')
@@ -1045,35 +1414,176 @@ const chapterDrafts = ref<Record<string, string>>({})
 const chapterDragIndex = ref<number | null>(null)
 const sectionDrag = ref<{ chapterIndex: number; sectionIndex: number } | null>(null)
 const subjectOutline = ref<OutlineChapter[]>([])
+const isSavingOutline = ref(false)
 
-watch(isOutlineComposer, (val) => {
-  if (val && subjectOverviewRecord.value?.outline?.length) {
-    subjectOutline.value = subjectOverviewRecord.value.outline.map((chap, i) => ({
-      id: `chap-${i}-${Date.now()}`,
-      title: chap.title,
-      sections: chap.sections.map((sec, j) => ({
-        id: `sec-${i}-${j}-${Date.now()}`,
-        title: sec.title,
-        // Source identity lives on the section; locator only carries page/block coordinates.
-        fileId: sec.sourceIds[0] || ''
+// ===== 各文件大纲编辑草稿与状态 =====
+interface FileDraftSection {
+  id: string
+  title: string
+  locator?: OverviewLocator | null
+  summary?: string | null
+}
+interface FileDraftChapter {
+  id: string
+  title: string
+  sections: FileDraftSection[]
+}
+
+const fileOutlineDrafts = ref<Record<string, FileDraftChapter[]>>({})
+const savingFileIds = ref<Set<string>>(new Set())
+const fileSectionDrafts = ref<Record<string, string>>({})
+const fileChapterDrafts = ref<Record<string, string>>({})
+const fileCardCollapsed = ref<Record<string, boolean>>({})
+
+const draggingFileChapter = ref<{ fileId: string; index: number } | null>(null)
+const draggingFileSection = ref<{ fileId: string; chapterIndex: number; sectionIndex: number } | null>(null)
+
+const initFileOutlineDraft = (fileId: string, force = false) => {
+  const currentDraft = fileOutlineDrafts.value[fileId]
+  if (!force && currentDraft && currentDraft.length > 0) return
+
+  const item = fileOverviewItems.value.find(i => i.id === fileId)
+  const outline = item?.outline || fileOverviewRecords.value[fileId]?.outline
+  if (Array.isArray(outline) && outline.length > 0) {
+    fileOutlineDrafts.value[fileId] = outline.map((chap, cIdx) => ({
+      id: `fchap-${fileId}-${cIdx}-${Date.now()}`,
+      title: chap.title || `第 ${cIdx + 1} 章`,
+      sections: (chap.sections || []).map((sec, sIdx) => ({
+        id: `fsec-${fileId}-${cIdx}-${sIdx}-${Date.now()}`,
+        title: sec.title || `第 ${sIdx + 1} 节`,
+        locator: sec.locator ?? null,
+        summary: sec.summary ?? null
       }))
     }))
-  } else if (val && !subjectOutline.value.length) {
+  } else if (!currentDraft) {
+    fileOutlineDrafts.value[fileId] = []
+  }
+}
+
+const initAllFileOutlineDrafts = (force = false) => {
+  for (const file of activeSourceFiles.value) {
+    initFileOutlineDraft(file.id, force)
+  }
+}
+
+const initSubjectOutlineFromExisting = (force = false) => {
+  // 1. 如果学科总览已包含章节大纲，优先载入真正的学科综合大纲
+  const subjectChapList = subjectOverviewRecord.value?.outline
+  if (Array.isArray(subjectChapList) && subjectChapList.length > 0) {
+    subjectOutline.value = subjectChapList.map((chap, i) => ({
+      id: `chap-${i}-${Date.now()}`,
+      title: chap.title || `第 ${i + 1} 章`,
+      sections: (chap.sections || []).map((sec, j) => ({
+        id: `sec-${i}-${j}-${Date.now()}`,
+        title: sec.title || `第 ${j + 1} 节`,
+        fileId: sec.sourceIds?.[0] || '',
+        sourceIds: Array.isArray(sec.sourceIds) ? [...sec.sourceIds] : (sec.sourceIds ? [sec.sourceIds] : []),
+        summary: sec.summary ?? null,
+        locator: sec.locator ?? null
+      }))
+    }))
+    return
+  }
+
+  // 2. 如果学科总览尚未生成综合大纲：
+  // 若只有单一文件且已有大纲，载入该文件大纲；
+  // 若有多份文件，不将所有文件大纲无脑揉在一起，而是保持学科大纲独立，分文件大纲在下方各卡片独立展示
+  const filesWithOutline = fileOverviewItems.value.filter(item => Array.isArray(item.outline) && item.outline.length > 0)
+  if (filesWithOutline.length === 1) {
+    const singleFile = filesWithOutline[0]
+    subjectOutline.value = (singleFile.outline || []).map((chap, i) => ({
+      id: `chap-${i}-${Date.now()}`,
+      title: chap.title || `第 ${i + 1} 章`,
+      sections: (chap.sections || []).map((sec, j) => ({
+        id: `sec-${i}-${j}-${Date.now()}`,
+        title: sec.title || `第 ${j + 1} 节`,
+        fileId: singleFile.id,
+        sourceIds: Array.isArray(sec.sourceIds) && sec.sourceIds.length > 0 ? [...sec.sourceIds] : [singleFile.id],
+        summary: sec.summary ?? null,
+        locator: sec.locator ?? null
+      }))
+    }))
+    return
+  }
+
+  // 3. 多份文件且未生成学科综合大纲时，初始化默认起始章节供用户编排学科大纲
+  if (force || !subjectOutline.value.length) {
     subjectOutline.value = [
-      { id: 'chapter-1', title: '第一章 · 新建章节', sections: [] }
+      { id: `chapter-${Date.now()}`, title: '第一章 · 新建章节', sections: [] }
     ]
   }
-})
-const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id === id)
-const syncOutlineFileLinks = () => {
-  const files = activeSourceFiles.value
-  if (!files.length) return
-  subjectOutline.value.forEach((chapter, chapterIndex) => {
-    chapter.sections.forEach((section, sectionIndex) => {
-      section.fileId = files[(chapterIndex + sectionIndex) % files.length].id
-    })
-  })
 }
+
+watch(isOutlineComposer, (val) => {
+  if (val) {
+    initSubjectOutlineFromExisting()
+    initAllFileOutlineDrafts()
+  }
+})
+
+watch(() => subjectOverviewRecord.value?.outline, (newOutline) => {
+  if (isOutlineComposer.value && newOutline && newOutline.length > 0) {
+    initSubjectOutlineFromExisting()
+  }
+})
+
+watch(fileOverviewItems, (items) => {
+  if (isOutlineComposer.value) {
+    for (const item of items) {
+      const draft = fileOutlineDrafts.value[item.id]
+      if ((!draft || draft.length === 0) && item.outline && item.outline.length > 0) {
+        initFileOutlineDraft(item.id, true)
+      }
+    }
+  }
+}, { deep: true, immediate: true })
+
+const saveCurrentOutline = async () => {
+  if (!subjectId.value || !overviewRepository || isSavingOutline.value) return
+  if (!subjectOutline.value.length) return
+  const targetSubjectId = subjectId.value
+  isSavingOutline.value = true
+  try {
+    const formattedOutline: OverviewChapter[] = subjectOutline.value.map(chap => ({
+      title: chap.title.trim() || '未命名章节',
+      sections: chap.sections.map(sec => {
+        const sourceIds = Array.isArray(sec.sourceIds) && sec.sourceIds.length > 0
+          ? sec.sourceIds.filter(Boolean)
+          : (sec.fileId ? [sec.fileId] : [])
+        return {
+          title: sec.title.trim() || '未命名小节',
+          summary: sec.summary ?? null,
+          sourceIds,
+          locator: sec.locator ?? null
+        }
+      })
+    }))
+
+    const fingerprint = subjectOverviewRecord.value?.inputFingerprint || 'manual-edit'
+    const record = await overviewRepository.saveSubjectOverviewPart({
+      subjectId: targetSubjectId,
+      mode: 'OUTLINE',
+      response: {
+        schemaVersion: 1,
+        title: subjectOverviewRecord.value?.title || '学科总览',
+        outline: formattedOutline,
+        summary: subjectOverviewRecord.value?.summary || null
+      },
+      inputFingerprint: fingerprint
+    })
+    // 检查保存返回后当前学科是否仍为目标学科，若已切换学科则不更新当前页面的 state 与提示，防止旧学科大纲污染新学科
+    if (subjectId.value !== targetSubjectId) return
+    subjectOverviewRecord.value = record
+    ElMessage.success('大纲已成功保存')
+  } catch (err) {
+    if (subjectId.value !== targetSubjectId) return
+    console.error('保存大纲失败:', err)
+    ElMessage.error('保存大纲失败，请重试')
+  } finally {
+    isSavingOutline.value = false
+  }
+}
+const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id === id)
 const addChapter = () => {
   const title = chapterDraft.value.trim()
   if (!title) return
@@ -1084,7 +1594,7 @@ const addSection = (chapterId: string) => {
   const title = chapterDrafts.value[chapterId]?.trim()
   if (!title) return
   const chapter = subjectOutline.value.find(item => item.id === chapterId)
-  if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, title })
+  if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, title, sourceIds: [], summary: null, locator: null })
   chapterDrafts.value[chapterId] = ''
 }
 const deleteChapter = (chapterIndex: number) => {
@@ -1111,18 +1621,159 @@ const handleSectionDrop = (chapterIndex: number, target: number) => {
   sectionDrag.value = null
 }
 
+// ===== 各文件大纲操作与保存逻辑 =====
+const saveFileOutline = async (fileId: string) => {
+  const file = activeSourceFiles.value.find(f => f.id === fileId)
+  if (!file || !overviewRepository) return
 
+  const drafts = fileOutlineDrafts.value[fileId] || []
+  savingFileIds.value.add(fileId)
+  try {
+    const formattedOutline: OverviewChapter[] = drafts.map(chap => ({
+      title: chap.title.trim() || '未命名章节',
+      sections: chap.sections.map(sec => ({
+        title: sec.title.trim() || '未命名小节',
+        summary: sec.summary ?? null,
+        sourceIds: [fileId],
+        locator: sec.locator ?? null
+      }))
+    }))
+
+    const existingRecord = fileOverviewRecords.value[fileId]
+    const revision = file.ingestionRevision || existingRecord?.ingestionRevision || 'manual-edit'
+
+    const updatedRecord = await overviewRepository.saveFileOverviewPart({
+      sourceId: fileId,
+      ingestionRevision: revision,
+      mode: 'OUTLINE',
+      response: {
+        schemaVersion: 1,
+        title: existingRecord?.title || file.name,
+        outline: formattedOutline,
+        summary: existingRecord?.summary || null
+      }
+    })
+
+    fileOverviewRecords.value = {
+      ...fileOverviewRecords.value,
+      [fileId]: updatedRecord
+    }
+
+    ElMessage.success(`《${file.name}》大纲已保存`)
+  } catch (err) {
+    console.error(`保存文件大纲失败 [${fileId}]:`, err)
+    ElMessage.error(`保存《${file.name}》大纲失败，请重试`)
+  } finally {
+    savingFileIds.value.delete(fileId)
+  }
+}
+
+const createInitialFileOutline = (fileId: string) => {
+  fileOutlineDrafts.value[fileId] = [
+    {
+      id: `fchap-${fileId}-0-${Date.now()}`,
+      title: '第一章 · 新建章节',
+      sections: []
+    }
+  ]
+}
+
+const addFileChapter = (fileId: string) => {
+  const title = (fileChapterDrafts.value[fileId] || '').trim()
+  if (!title) return
+  if (!fileOutlineDrafts.value[fileId]) {
+    fileOutlineDrafts.value[fileId] = []
+  }
+  fileOutlineDrafts.value[fileId].push({
+    id: `fchap-${fileId}-${Date.now()}`,
+    title,
+    sections: []
+  })
+  fileChapterDrafts.value[fileId] = ''
+}
+
+const deleteFileChapter = (fileId: string, chapterIndex: number) => {
+  fileOutlineDrafts.value[fileId]?.splice(chapterIndex, 1)
+}
+
+const addFileSection = (fileId: string, chapterId: string, chapterIndex: number) => {
+  const draftKey = `${fileId}-${chapterId}`
+  const title = (fileSectionDrafts.value[draftKey] || '').trim()
+  if (!title) return
+  const chapter = fileOutlineDrafts.value[fileId]?.[chapterIndex]
+  if (!chapter) return
+  chapter.sections.push({
+    id: `fsec-${fileId}-${chapterId}-${Date.now()}`,
+    title
+  })
+  fileSectionDrafts.value[draftKey] = ''
+}
+
+const deleteFileSection = (fileId: string, chapterIndex: number, sectionIndex: number) => {
+  fileOutlineDrafts.value[fileId]?.[chapterIndex]?.sections?.splice(sectionIndex, 1)
+}
+
+const startFileChapterDrag = (fileId: string, chapterIndex: number) => {
+  draggingFileChapter.value = { fileId, index: chapterIndex }
+}
+
+const handleFileChapterDrop = (fileId: string, targetIndex: number) => {
+  if (!draggingFileChapter.value || draggingFileChapter.value.fileId !== fileId) return
+  const src = draggingFileChapter.value.index
+  if (src === targetIndex) return
+  const list = fileOutlineDrafts.value[fileId]
+  if (!list) return
+  const [item] = list.splice(src, 1)
+  list.splice(targetIndex, 0, item)
+  draggingFileChapter.value = null
+}
+
+const startFileSectionDrag = (fileId: string, chapterIndex: number, sectionIndex: number) => {
+  draggingFileSection.value = { fileId, chapterIndex, sectionIndex }
+}
+
+const handleFileSectionDrop = (fileId: string, targetChapterIndex: number, targetSectionIndex: number) => {
+  if (!draggingFileSection.value || draggingFileSection.value.fileId !== fileId) return
+  const { chapterIndex: srcChap, sectionIndex: srcSec } = draggingFileSection.value
+  const list = fileOutlineDrafts.value[fileId]
+  if (!list) return
+  const srcChapter = list[srcChap]
+  const targetChapter = list[targetChapterIndex]
+  if (!srcChapter || !targetChapter) return
+  const [sec] = srcChapter.sections.splice(srcSec, 1)
+  targetChapter.sections.splice(targetSectionIndex, 0, sec)
+  draggingFileSection.value = null
+}
 
 const handleLinkFile = (chapterIndex: number, sectionIndex: number, fileId: string) => {
   if (fileId) {
-    subjectOutline.value[chapterIndex].sections[sectionIndex].fileId = fileId
-    ElMessage.success('已关联文件')
+    const section = subjectOutline.value[chapterIndex]?.sections?.[sectionIndex]
+    if (section) {
+      section.fileId = fileId
+      if (!section.sourceIds) section.sourceIds = []
+      if (!section.sourceIds.includes(fileId)) {
+        section.sourceIds.push(fileId)
+      }
+      ElMessage.success('已关联文件')
+    }
   }
   document.body.click() // close popover
 }
 
-const unlinkFile = (chapterIndex: number, sectionIndex: number) => {
-  delete subjectOutline.value[chapterIndex].sections[sectionIndex].fileId
+const unlinkFile = (chapterIndex: number, sectionIndex: number, targetFileId?: string) => {
+  const section = subjectOutline.value[chapterIndex]?.sections?.[sectionIndex]
+  if (!section) return
+  if (targetFileId) {
+    if (Array.isArray(section.sourceIds)) {
+      section.sourceIds = section.sourceIds.filter(id => id !== targetFileId)
+    }
+    if (section.fileId === targetFileId) {
+      section.fileId = section.sourceIds?.[0] || ''
+    }
+  } else {
+    delete section.fileId
+    section.sourceIds = []
+  }
   ElMessage.success('已解除关联')
 }
 
@@ -1313,10 +1964,15 @@ const handleSaveBlock = async () => {
 
 const handleDeleteBlock = async (id: string) => { if (!id || !confirm('确定删除？')) return; await blockStore.removeBlock(id); blockDialogVisible.value = false; ElNotification({ title: '已删除', type: 'success', position: 'top-right' }) }
 const handleCopyBlockContent = (c: string) => { if (c) { navigator.clipboard.writeText(c); ElNotification({ title: '已复制', type: 'success', position: 'top-right', duration: 2000 }) } }
-const presetQuestions = [
-  '总结当前文件的核心概念',
-  '查找本章的关键定义与解释',
-  '针对当前内容生成 3 道测试题'
+interface PresetQuestionItem {
+  label: string
+  prompt: string
+}
+
+const presetQuestions: PresetQuestionItem[] = [
+  { label: '提炼当前核心要点', prompt: '总结当前文件的核心要点与关键脉络' },
+  { label: '梳理本章关键概念', prompt: '查找并梳理本章的核心概念与权威解释' },
+  { label: '生成三道自测考题', prompt: '针对当前内容生成 3 道自测题以巩固记忆' }
 ]
 
 const sendPreset = (q: string) => {
@@ -1337,19 +1993,169 @@ const isAiStreaming = computed(() => storedChatStreaming.value)
 const streamingContent = computed(() => storedStreamingContent.value)
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
-const isSelectedFileReady = computed(() => selectedFile.value?.ingestionStatus === 'READY')
-const selectedFileJob = computed(() => selectedFileId.value
-  ? documentProcessingStore.jobs.find((job) => job.sourceId === selectedFileId.value && job.phase !== 'READY')
-  : undefined)
-const showProcessingRequired = computed(() => Boolean(selectedFile.value && (!isSelectedFileReady.value || selectedFileJob.value)))
-const aiModesOptions = [
-  { id: 1, icon: '✦', label: '学习伴读', desc: '深度严谨，为你推演难题' },
-  { id: 2, icon: '◈', label: '重点梳理', desc: '全科架构概览与核心提炼' },
-  { id: 3, icon: '✧', label: '练习出题', desc: '知识巩固与测试检验' }
-]
-const currentAiMode = ref(aiModesOptions[0].label)
-const currentAiModeObj = computed(() => aiModesOptions.find(m => m.label === currentAiMode.value) || aiModesOptions[0])
-const showModelMenu = ref(false)
+const showProcessingRequired = computed(() => {
+  const sourceIds = aiReferenceScope.value === 'AUTO'
+    ? (selectedFileId.value ? [selectedFileId.value] : [])
+    : aiReferenceScope.value === 'SELECTED_SOURCES'
+      ? selectedAiSourceIds.value
+      : []
+  return sourceIds.some((sourceId) => {
+    const file = activeSourceFiles.value.find((item) => item.id === sourceId)
+    return !file || file.ingestionStatus !== 'READY'
+      || documentProcessingStore.jobs.some((job) => job.sourceId === sourceId && job.phase !== 'READY')
+  })
+})
+const showFileMenu = ref(false)
+const showModelMenu = showFileMenu
+
+type AiReferenceScope = 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT' | 'NONE'
+const MAX_AI_REFERENCE_SOURCES = 100
+const aiReferenceScope = ref<AiReferenceScope>('NONE')
+const selectedAiSourceIds = ref<string[]>([])
+
+const addAiReferenceSourceWithinLimit = (selected: Set<string>, sourceId: string) => {
+  if (selected.has(sourceId)) return true
+  if (selected.size >= MAX_AI_REFERENCE_SOURCES) {
+    ElNotification({
+      title: '参考资料数量已达上限',
+      message: '最多引用 100 份资料（包含当前文件），请先取消选择其他资料。',
+      type: 'warning',
+      position: 'top-right',
+    })
+    return false
+  }
+  selected.add(sourceId)
+  return true
+}
+
+watch(
+  selectedFileId,
+  (newId) => {
+    if (aiReferenceScope.value === 'AUTO') {
+      selectedAiSourceIds.value = newId ? [newId] : []
+    } else if (aiReferenceScope.value === 'SELECTED_SOURCES' && newId) {
+      const current = activeSourceFiles.value.find((file) => file.id === newId)
+      if (current?.ingestionStatus === 'READY' && !selectedAiSourceIds.value.includes(newId)) {
+        const selected = new Set(selectedAiSourceIds.value)
+        if (addAiReferenceSourceWithinLimit(selected, newId)) {
+          selectedAiSourceIds.value = [...selected]
+        }
+      }
+    }
+  },
+  { immediate: true }
+)
+
+const isAllAiSourcesSelected = computed(() => {
+  return aiReferenceScope.value === 'SUBJECT'
+})
+
+const isAiSourceSelected = (id: string) => {
+  return aiReferenceScope.value === 'SUBJECT' || selectedAiSourceIds.value.includes(id)
+}
+
+const toggleAiSource = (id: string) => {
+  const file = activeSourceFiles.value.find((item) => item.id === id)
+  if (!file || file.ingestionStatus !== 'READY') return
+  if (id === selectedFileId.value) {
+    selectCurrentAiSource()
+    return
+  }
+
+  const selected = new Set(aiReferenceScope.value === 'SELECTED_SOURCES'
+    ? selectedAiSourceIds.value
+    : [])
+  const current = activeSourceFiles.value.find((item) => item.id === selectedFileId.value)
+  if (selected.has(id)) {
+    selected.delete(id)
+    if (current?.ingestionStatus === 'READY' && !addAiReferenceSourceWithinLimit(selected, current.id)) return
+  } else {
+    if (current?.ingestionStatus === 'READY' && !addAiReferenceSourceWithinLimit(selected, current.id)) return
+    if (!addAiReferenceSourceWithinLimit(selected, id)) return
+  }
+
+  selectedAiSourceIds.value = [...selected]
+  aiReferenceScope.value = selected.size === 0
+    ? 'NONE'
+    : selected.size === 1 && selected.has(selectedFileId.value || '')
+      ? 'AUTO'
+      : 'SELECTED_SOURCES'
+}
+
+const selectCurrentAiSource = () => {
+  if (!selectedFileId.value) return
+  aiReferenceScope.value = 'AUTO'
+  selectedAiSourceIds.value = [selectedFileId.value]
+}
+
+const selectNoAiSources = () => {
+  aiReferenceScope.value = 'NONE'
+  selectedAiSourceIds.value = []
+}
+
+const selectAllAiSources = () => {
+  aiReferenceScope.value = 'SUBJECT'
+  selectedAiSourceIds.value = []
+}
+
+const aiChatReferenceOptions = () => {
+  const current = activeSourceFiles.value.find((file) =>
+    file.id === selectedFileId.value && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')
+  if (aiReferenceScope.value === 'NONE') {
+    return { subjectId: subjectId.value, retrievalMode: 'NONE' as const }
+  }
+  if (aiReferenceScope.value === 'SUBJECT') {
+    return { subjectId: subjectId.value, retrievalMode: 'SUBJECT' as const }
+  }
+  if (aiReferenceScope.value === 'AUTO') {
+    return {
+      subjectId: subjectId.value,
+      sourceId: current?.id,
+      retrievalMode: 'AUTO' as const,
+    }
+  }
+
+  const sourceIds = [...new Set(selectedAiSourceIds.value.filter((id) =>
+    activeSourceFiles.value.some((file) =>
+      file.id === id && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')))]
+  if (sourceIds.length === 1 && sourceIds[0] === current?.id) {
+    return { subjectId: subjectId.value, sourceId: current.id, retrievalMode: 'AUTO' as const }
+  }
+  return {
+    subjectId: subjectId.value,
+    sourceIds,
+    retrievalMode: sourceIds.length ? 'SELECTED_SOURCES' as const : 'NONE' as const,
+  }
+}
+
+const aiSourceSummaryText = computed(() => {
+  if (aiReferenceScope.value === 'SUBJECT') return '全学科资料'
+  if (aiReferenceScope.value === 'NONE') return '不引用资料'
+  if (aiReferenceScope.value === 'AUTO') return selectedFile.value?.name || '当前文件'
+  const count = selectedAiSourceIds.value.length
+  if (count === 1) {
+    const file = activeSourceFiles.value.find(f => f.id === selectedAiSourceIds.value[0])
+    return file?.name || '1 份资料'
+  }
+  return `已选 ${count} 份资料`
+})
+
+const aiSourceSummaryTitle = computed(() => {
+  if (aiReferenceScope.value === 'SUBJECT') return `当前参考：全学科资料 (共 ${activeSourceFiles.value.length} 份)`
+  if (aiReferenceScope.value === 'NONE') return '当前不引用资料，AI 不会检索文件'
+  if (aiReferenceScope.value === 'AUTO') return `当前参考：${selectedFile.value?.name || '当前文件'}`
+  const count = selectedAiSourceIds.value.length
+  if (count === 1) {
+    const file = activeSourceFiles.value.find(f => f.id === selectedAiSourceIds.value[0])
+    return `当前参考：${file?.name || '1 份资料'}`
+  }
+  const names = selectedAiSourceIds.value
+    .map(id => activeSourceFiles.value.find(f => f.id === id)?.name)
+    .filter(Boolean)
+    .join('、')
+  return `当前参考 (${count} 份)：${names}`
+})
+
 const aiGreetingName = computed(() => authStore.username || '同学')
 
 const autoResizeInput = () => {
@@ -1375,8 +2181,7 @@ const sendChat = async () => {
   scrollChatToBottom()
   try {
     await chatStore.sendMessage(msg, {
-      subjectId: subjectId.value,
-      sourceId: selectedFileId.value || undefined,
+      ...aiChatReferenceOptions(),
     })
   } catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -1392,9 +2197,16 @@ const sendChat = async () => {
 const retryChat = async () => {
   const pending = pendingChatMessage.value
   if (!pending?.clientRequestId || isAiStreaming.value) return
+  const reqOptions = { ...(pending.requestOptions || {}) }
+  if (reqOptions.sourceId && !activeSourceFiles.value.some(f => f.id === reqOptions.sourceId && f.subjectId === subjectId.value)) {
+    delete reqOptions.sourceId
+  }
+  if (reqOptions.subjectId && reqOptions.subjectId !== subjectId.value) {
+    reqOptions.subjectId = subjectId.value
+  }
   try {
     await chatStore.sendMessage(pending.content, {
-      ...(pending.requestOptions || {}),
+      ...reqOptions,
       pendingRequestId: pending.clientRequestId,
     })
   } catch (error) {
@@ -1420,7 +2232,7 @@ const sendSelectionQuestion = async (prompt: string) => {
     return
   }
   try {
-    await chatStore.sendMessage(prompt, { subjectId: subjectId.value, sourceId: selectedFileId.value || undefined, selectionText: selectedText.value })
+    await chatStore.sendMessage(prompt, { ...aiChatReferenceOptions(), selectionText: selectedText.value })
   } catch (error) {
     const safe = classifyClientError(error, 'CHAT')
     logClientError('[SubjectWorkspace] selection chat failed', error, safe)
@@ -1436,9 +2248,12 @@ const askSelection = () => {
 const saveSelection = () => { showKnowledgeEditor.value = true }
 const saveKnowledgeBlock = async (value: { title: string; content: string; tags: string[] }) => {
   if (!activeSubject.value) return
+  const validSourceFileId = activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
+    ? (selectedFileId.value || undefined)
+    : undefined
   await blockStore.addBlock({
     subjectId: subjectId.value,
-    sourceFileId: selectedFileId.value || undefined,
+    sourceFileId: validSourceFileId,
     subject: activeSubject.value.name,
     title: value.title,
     preview: value.content.slice(0, 180),
@@ -1456,8 +2271,25 @@ const startFreshChatSession = async () => {
 }
 
 let processingRefreshTimer: ReturnType<typeof setInterval> | null = null
+let currentSubjectSwitchGen = 0
+let isComponentMounted = false
+
+const startProcessingRefresh = () => {
+  if (!isComponentMounted || processingRefreshTimer !== null) return
+  processingRefreshTimer = setInterval(() => { void documentProcessingStore.refresh() }, 1500)
+}
+
+const stopProcessingRefresh = () => {
+  if (processingRefreshTimer !== null) {
+    clearInterval(processingRefreshTimer)
+    processingRefreshTimer = null
+  }
+}
 
 onMounted(async () => {
+  isComponentMounted = true
+  startProcessingRefresh()
+  const mountGen = ++currentSubjectSwitchGen
   try {
     await startFreshChatSession()
   } catch {
@@ -1465,41 +2297,93 @@ onMounted(async () => {
   }
   const id = subjectId.value
   if (id) {
+    if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     subjectStore.setActiveSubject(id)
     await subjectStore.loadSourceFiles(id)
+    if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     await ensureOverviewRuntime()
+    if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     await blockStore.fetchBlocks(undefined, id)
-    syncOutlineFileLinks()
+    if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     if (activeSourceFiles.value.length > 0) {
-      selectedFileId.value = activeSourceFiles.value[0].id
+      const firstFile = activeSourceFiles.value[0]
+      aiReferenceScope.value = 'AUTO'
+      selectedAiSourceIds.value = [firstFile.id]
+      selectedFileId.value = firstFile.id
       centerView.value = 'preview'
-      await chatStore.startReadingSession(activeSourceFiles.value[0].id, subjectId.value, activeSourceFiles.value[0].name)
+      const readingSessionId = await chatStore.startReadingSession(firstFile.id, id, firstFile.name).catch(() => undefined)
+      if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id || selectedFileId.value !== firstFile.id) {
+        if (readingSessionId) {
+          void chatStore.endSessionById(readingSessionId).catch(() => undefined)
+        }
+        return
+      }
     } else {
       centerView.value = 'overview'
     }
   }
-  processingRefreshTimer = setInterval(() => { void documentProcessingStore.refresh() }, 1500)
 })
 
 watch(subjectId, async (newId) => {
+  const switchGen = ++currentSubjectSwitchGen
   if (newId) {
+    // 立即同步清空草稿、大纲与选中文件状态，杜绝任何异步间隙内新学科携带旧文件或旧草稿
+    chatStore.abortStream()
+    chatStore.clearActiveConversation()
+    selectedFileId.value = null
+    selectedText.value = ''
+    selectedAiSourceIds.value = []
+    aiReferenceScope.value = 'NONE'
+    sourceStore.clearActiveSourceFiles()
+    subjectOutline.value = []
+    fileOutlineDrafts.value = {}
+    chapterDraft.value = ''
+    chapterDrafts.value = {}
+    fileSectionDrafts.value = {}
+    fileChapterDrafts.value = {}
+    selectedSummaryScope.value = null
+    subjectOverviewRecord.value = null
+    fileOverviewRecords.value = {}
+    isSubjectOverviewStale.value = false
+    subjectOverviewManualError.value = null
+    fileOverviewManualErrors.value = {}
+    subjectOverviewGenerating.value = false
+    generatingFileIds.value = new Set()
+
+    subjectStore.setActiveSubject(newId)
+
     try {
       await startFreshChatSession()
     } catch {
       // Keep the workspace usable when a fresh chat session cannot be created.
     }
-    subjectStore.setActiveSubject(newId)
-    selectedSummaryScope.value = null
-    subjectOverviewRecord.value = null
-    fileOverviewRecords.value = {}
+    if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
+
     await subjectStore.loadSourceFiles(newId)
+    if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
+
     await ensureOverviewRuntime()
+    if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
+
     await blockStore.fetchBlocks(undefined, newId)
-    syncOutlineFileLinks()
+    if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId) return
+    if (isOutlineComposer.value) {
+      initSubjectOutlineFromExisting(true)
+      initAllFileOutlineDrafts(true)
+    }
     if (activeSourceFiles.value.length > 0) {
-      selectedFileId.value = activeSourceFiles.value[0].id
+      const firstFile = activeSourceFiles.value[0]
+      aiReferenceScope.value = 'AUTO'
+      selectedAiSourceIds.value = [firstFile.id]
+      selectedFileId.value = firstFile.id
       centerView.value = 'preview'
-      await chatStore.startReadingSession(activeSourceFiles.value[0].id, newId, activeSourceFiles.value[0].name)
+      const readingSessionId = await chatStore.startReadingSession(firstFile.id, newId, firstFile.name).catch(() => undefined)
+      if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId || selectedFileId.value !== firstFile.id) {
+        if (readingSessionId) {
+          void chatStore.endSessionById(readingSessionId).catch(() => undefined)
+        }
+        return
+      }
     } else {
       selectedFileId.value = null
       centerView.value = 'overview'
@@ -1508,7 +2392,9 @@ watch(subjectId, async (newId) => {
 })
 
 onUnmounted(() => {
-  if (processingRefreshTimer) clearInterval(processingRefreshTimer)
+  isComponentMounted = false
+  currentSubjectSwitchGen++
+  stopProcessingRefresh()
   void chatStore.endActiveSession().catch(() => undefined)
 })
 </script>
@@ -1520,20 +2406,22 @@ onUnmounted(() => {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: var(--color-zen-ivory); /* Zen Ivory base */
+  background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
   padding: 8px;
   gap: 8px;
 
   /* Zen Minimalist Theme override */
-  --color-primary-accent: #7D9372;
-  --color-primary-accent-hover: #6c8062;
-  --color-primary-light: rgba(163, 177, 155, 0.12);
-  --color-primary-glow: rgba(163, 177, 155, 0.25);
-  --accent-gradient: var(--color-zen-sage);
+  --color-primary-accent: #8B9A6E;
+  --color-primary-accent-hover: #76855B;
+  --color-primary-light: rgba(139, 154, 110, 0.16);
+  --color-primary-glow: rgba(139, 154, 110, 0.28);
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
+  --workspace-card-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .workspace-container {
   background: var(--color-bg-primary);
+  --workspace-card-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
 }
 
 /* ===== Tier-1 Icon Strip ===== */
@@ -1546,15 +2434,15 @@ html.dark .workspace-container {
   justify-content: space-between;
   align-items: center;
   padding: 20px 0;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--workspace-card-shadow);
 }
 
 html.dark .tier1-strip {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .tier1-top, .tier1-bottom {
@@ -1617,9 +2505,8 @@ html.dark .tier1-btn:hover {
   align-items: center;
   justify-content: center;
   font-size: 18px;
-  background: transparent;
-  border: 2px solid #A3B19B;
-  color: var(--color-primary-accent, #7D9372);
+  background: #7D9372;
+  color: #ffffff;
   box-shadow: var(--shadow-sm);
 }
 
@@ -1629,10 +2516,10 @@ html.dark .tier1-btn:hover {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--workspace-card-shadow);
   overflow: hidden;
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-width 0.3s ease;
 }
@@ -1662,31 +2549,36 @@ html.dark .tier2-drawer {
 .drawer-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
 
 .drawer-action {
-  width: 26px;
-  height: 26px;
-  border: 1.5px solid transparent;
+  width: 27px;
+  height: 27px;
+  border: 0;
   border-radius: 50%;
-  background: var(--color-bg-secondary);
-  color: var(--text-secondary);
-  font-size: 16px;
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  color: #ffffff;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, opacity 0.2s ease;
 }
 
-.drawer-action:hover { 
-  border-color: rgba(125, 147, 114, 0.3); 
-  color: #7D9372; 
-  background: rgba(125, 147, 114, 0.1); 
-  transform: translateY(-1px); 
+.drawer-action:hover {
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.5);
+  opacity: 0.95;
 }
 
-html.dark .drawer-action:hover {
-  background: rgba(154, 176, 143, 0.15);
-  border-color: rgba(154, 176, 143, 0.3);
-  color: #9AB08F;
+.drawer-action:active {
+  transform: scale(0.96);
+  box-shadow: 0 2px 4px rgba(139, 154, 110, 0.25);
+}
+
+html.dark .drawer-action {
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4);
 }
 
 .drawer-list { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 4px; }
@@ -1702,13 +2594,14 @@ html.dark .drawer-action:hover {
   position: relative;
 }
 
-.drawer-item:hover { background: rgba(255, 255, 255, 0.8); }
+.drawer-item:hover { background: var(--color-bg-tertiary, #FAF7F2); }
 html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
 
 .drawer-item.is-active {
-  background: var(--color-primary-light);
+  background: linear-gradient(90deg, rgba(139, 154, 110, 0.15) 0%, rgba(139, 154, 110, 0.04) 100%);
   font-weight: 700;
   color: var(--color-primary-accent);
+  box-shadow: 0 2px 10px rgba(139, 154, 110, 0.08);
 }
 
 .drawer-item.is-active::before {
@@ -1720,6 +2613,7 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   width: 3px;
   background: var(--color-primary-accent);
   border-radius: 1.5px;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.5);
 }
 
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -1907,14 +2801,14 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--workspace-card-shadow);
 }
 
 html.dark .workspace-center {
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .center-status-bar {
@@ -1924,11 +2818,11 @@ html.dark .workspace-center {
   justify-content: space-between;
   align-items: center;
   padding: 0 24px;
-  border-bottom: 0;
-  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
   position: relative;
   z-index: 2;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
 }
 
 .status-left, .status-right { display: flex; align-items: center; gap: 10px; }
@@ -1952,25 +2846,25 @@ html.dark .workspace-center {
   align-items: center;
   gap: 2px;
   padding: 3px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--border-subtle);
   border-radius: 9px;
-  background: var(--color-bg-secondary);
-  box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
 }
 .preview-status-button,
 .preview-page-button {
   min-width: 28px;
   height: 28px;
   padding: 0 9px;
-  border: 1px solid var(--border-default);
+  border: 1px solid transparent;
   border-radius: 7px;
-  color: var(--text-primary);
-  background: var(--color-bg-primary);
-  box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08);
+  color: var(--text-secondary);
+  background: transparent;
+  box-shadow: none;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+  transition: all 120ms ease;
 }
 .preview-status-button {
   border-color: transparent;
@@ -1979,15 +2873,20 @@ html.dark .workspace-center {
 }
 .preview-status-button:hover:not(:disabled) {
   border-color: transparent;
-  background: var(--color-primary-light);
-  color: var(--text-primary);
+  background: rgba(139, 154, 110, 0.14);
+  color: var(--color-primary-accent, #8B9A6E);
   box-shadow: none;
 }
+.preview-page-button {
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+}
 .preview-page-button:hover:not(:disabled) {
-  border-color: var(--color-primary-accent);
-  background: var(--color-primary-light);
-  color: var(--text-primary);
-  box-shadow: 0 2px 5px rgba(24, 32, 28, 0.12);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.14);
+  color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.2);
 }
 .preview-status-button:active:not(:disabled) {
   transform: translateY(1px);
@@ -1995,22 +2894,29 @@ html.dark .workspace-center {
 }
 .preview-page-button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08); }
 .preview-status-button:focus-visible,
-.preview-page-button:focus-visible { outline: 2px solid var(--color-primary-accent); outline-offset: 2px; }
+.preview-page-button:focus-visible { outline: 2px solid var(--color-primary-accent, #8B9A6E); outline-offset: 2px; }
 .preview-status-button:disabled,
 .preview-page-button:disabled {
   cursor: not-allowed;
-  border-color: var(--border-subtle, var(--border-default));
+  border-color: transparent;
   color: var(--text-muted);
-  background: var(--color-bg-secondary);
+  background: transparent;
   box-shadow: none;
-  opacity: 0.6;
+  opacity: 0.5;
 }
 .preview-status-button:disabled {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
-.preview-status-button-wide { min-width: 42px; }
+.preview-status-button-wide {
+  min-width: 42px;
+  color: var(--color-primary-accent, #8B9A6E);
+}
+.preview-status-button-wide:hover:not(:disabled) {
+  color: #76855B;
+  background: rgba(139, 154, 110, 0.18);
+}
 .preview-status-button-icon { width: 30px; padding: 0; }
 .preview-zoom-value,
 .preview-rotation-value {
@@ -2043,7 +2949,7 @@ html.dark .workspace-center {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-primary, #F7F2EB);
 }
 
 .preview-page-footer {
@@ -2054,11 +2960,11 @@ html.dark .workspace-center {
   gap: 12px;
   min-height: 48px;
   padding: 6px 0;
-  border-top: 0;
-  background: var(--color-bg-primary);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
   position: relative;
   z-index: 2;
-  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.03);
 }
 .preview-page-count { min-width: 48px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 
@@ -2109,15 +3015,22 @@ html.dark .workspace-center {
 .pdf-workspace {
   flex: 1;
   overflow: hidden;
-  background: #F5F7FA;
+  background: var(--color-bg-primary, #F7F2EB);
   display: flex;
   flex-direction: column;
 }
 
 /* Blocks Workspace */
-.blocks-workspace { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 20px 24px; }
+.blocks-workspace {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 24px 28px 20px;
+  background: var(--color-bg-primary, #F7F2EB);
+}
 
-.blocks-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-shrink: 0; }
+.blocks-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-shrink: 0; }
 
 .blocks-search {
   display: flex;
@@ -2155,11 +3068,14 @@ html.dark .workspace-center {
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 20px;
   align-content: start;
+  padding: 8px 6px 24px 6px;
+  margin: 0 -6px;
 }
 .blocks-grid::-webkit-scrollbar { display: none; }
 
 .block-card {
-  background: var(--color-bg-primary);
+  position: relative;
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 14px;
   padding: 18px;
   cursor: pointer;
@@ -2167,14 +3083,24 @@ html.dark .workspace-center {
   display: flex;
   flex-direction: column;
   min-height: 150px;
-  border: 1.5px solid var(--border-subtle);
-  box-shadow: rgba(0, 0, 0, 0.03) 0px 4px 16px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+}
+
+html.dark .block-card {
+  background: var(--color-bg-secondary);
+  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.35), 0 3px 6px -1px rgba(0, 0, 0, 0.2);
 }
 
 .block-card:hover {
   transform: translateY(-3px);
-  border-color: var(--color-primary-accent);
-  box-shadow: rgba(163, 177, 155, 0.12) 0px 8px 24px;
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(139, 154, 110, 0.12);
+  z-index: 2;
+}
+
+html.dark .block-card:hover {
+  box-shadow: 0 14px 28px -4px rgba(0, 0, 0, 0.45), 0 6px 12px -2px rgba(0, 0, 0, 0.3);
 }
 
 .block-tag { align-self: flex-start; font-size: 10px; padding: 3px 10px; border-radius: 6px; color: var(--text-primary); font-weight: 700; margin-bottom: 10px; }
@@ -2242,19 +3168,19 @@ html.dark .workspace-center {
   margin-top: 32px;
   padding: 12px 24px;
   border-radius: 999px;
-  background: rgba(125,147,114,0.06);
-  color: #7D9372;
+  background: rgba(139, 154, 110, 0.08);
+  color: var(--color-primary-accent, #8B9A6E);
   font-size: 14px;
   font-weight: 600;
-  border: 1px dashed rgba(125,147,114,0.3);
+  border: 1px dashed rgba(139, 154, 110, 0.35);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .onboarding-drag-capsule:hover {
-  background: rgba(125,147,114,0.12);
-  border-color: rgba(125,147,114,0.5);
+  background: rgba(139, 154, 110, 0.14);
+  border-color: rgba(139, 154, 110, 0.55);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(125,147,114,0.1);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.12);
 }
 
 .onboarding-grid {
@@ -2267,8 +3193,8 @@ html.dark .workspace-center {
 }
 
 .onboarding-card {
-  background: var(--color-bg-primary);
-  border: 1.5px solid var(--border-default);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
   padding: 24px;
   cursor: pointer;
@@ -2277,13 +3203,17 @@ html.dark .workspace-center {
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+}
+
+html.dark .onboarding-card {
+  background: var(--color-bg-secondary);
 }
 
 .onboarding-card:hover {
-  transform: translateY(-4px);
-  border-color: var(--color-primary-accent);
-  box-shadow: var(--shadow-md), var(--color-primary-glow);
+  transform: translateY(-3px);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(139, 154, 110, 0.12);
 }
 
 .onboarding-card-icon {
@@ -2345,10 +3275,10 @@ html.dark .workspace-center {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--workspace-card-shadow);
   overflow: hidden;
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-width 0.3s ease;
 }
@@ -2362,7 +3292,7 @@ html.dark .workspace-center {
 
 html.dark .workspace-right {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .ai-header {
@@ -2372,8 +3302,8 @@ html.dark .workspace-right {
   justify-content: space-between;
   align-items: center;
   padding: 0 20px;
-  border-bottom: 1px solid var(--border-default);
-  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
 }
 
 html.dark .ai-header {
@@ -2439,10 +3369,11 @@ html.dark .ai-header {
 }
 
 .chat-msg-row.assistant .chat-bubble {
-  background: var(--color-bg-primary);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   border-radius: 2px 14px 14px 14px;
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.03);
 }
 
 .chat-error {
@@ -2532,29 +3463,30 @@ html.dark .ai-header {
 .ai-input-area {
   flex-shrink: 0;
   padding: 14px 16px 16px;
-  border-top: 1px solid var(--border-default);
-  background: var(--color-bg-primary);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
 }
 
 .ai-input-wrapper {
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  background: var(--color-gray-100);
-  border: 1.5px solid var(--border-subtle);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default);
   border-radius: 14px;
   padding: 8px 12px;
   transition: all var(--transition-fast);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .ai-input-wrapper {
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-secondary);
 }
 
 .ai-input-wrapper:focus-within {
-  border-color: var(--color-primary-accent);
-  background: var(--color-bg-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-glow);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .ai-input {
@@ -2575,24 +3507,34 @@ html.dark .ai-input-wrapper {
 .ai-input::placeholder { color: var(--text-muted); }
 
 .ai-send-btn {
-  width: 30px;
-  height: 30px;
+  width: 34px;
+  height: 34px;
   border: none;
-  background: transparent;
+  background: rgba(139, 154, 110, 0.12);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   color: var(--text-muted);
-  opacity: 0.4;
-  transition: all 150ms ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
 }
 
-.ai-send-btn.is-ready { opacity: 1; color: var(--color-primary-accent); }
-.ai-send-btn:disabled { cursor: default; }
-.ai-send-btn.is-ready:hover { background: var(--color-primary-light); }
+.ai-send-btn.is-ready {
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4);
+}
+.ai-send-btn.is-ready:hover {
+  transform: scale(1.06);
+  background: #76855B;
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.55);
+}
+.ai-send-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
 
 /* ===== AI Refine Overlay ===== */
 .refine-overlay {
@@ -2641,7 +3583,7 @@ html.dark .ai-input-wrapper {
 .block-read-header { display: flex; flex-direction: column; gap: 12px; }
 .modal-title { font-size: 22px; font-weight: 800; color: var(--text-primary); margin: 0; letter-spacing: -0.5px; line-height: 1.3; }
 .modal-meta-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.modal-time-badge { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); background: var(--color-bg-secondary); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-default); }
+.modal-time-badge { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 600; color: var(--text-secondary); background: var(--color-bg-tertiary, #FAF7F2); padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-default); }
 .modal-divider { height: 1px; background: linear-gradient(90deg, transparent, var(--border-subtle) 15%, var(--border-subtle) 85%, transparent); margin: 20px 0; border: none; }
 .modal-content { font-size: 14.5px; color: var(--text-secondary); line-height: 1.8; }
 
@@ -2651,46 +3593,666 @@ html.dark .ai-input-wrapper {
 .color-dot.is-selected { border-color: var(--text-primary); transform: scale(1.15); }
 
 /* ===== Subject summary & outline prototype ===== */
-.outline-header-actions { display: flex; align-items: center; gap: 8px; }
-.outline-ai-button { border: 0; border-radius: 7px; padding: 6px 9px; background: var(--color-primary-light); color: var(--color-primary-accent); font-size: 11px; font-weight: 700; cursor: pointer; }
-.outline-add-button { width: 27px; height: 27px; border: 0; border-radius: 50%; background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); color: white; font-size: 19px; line-height: 1; cursor: pointer; }
-.outline-composer, .outline-overview-list { padding: 0 12px 14px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 14px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.05));
+  margin-bottom: 10px;
+}
+.outline-header .drawer-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+.outline-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.outline-header-hint-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 4.5px;
+  padding: 1.5px 7.5px;
+  border-radius: 999px;
+  background: rgba(125, 147, 114, 0.1);
+  border: 1px solid rgba(125, 147, 114, 0.25);
+  color: var(--color-primary-accent);
+  font-size: 10px;
+  font-weight: 550;
+  white-space: nowrap;
+  line-height: 1.2;
+  user-select: none;
+  min-width: 0;
+  flex-shrink: 1;
+}
+.hint-dot {
+  width: 4.5px;
+  height: 4.5px;
+  border-radius: 50%;
+  background: var(--color-primary-accent);
+  box-shadow: 0 0 5px rgba(125, 147, 114, 0.55);
+  flex-shrink: 0;
+  animation: hint-dot-pulse 2.2s ease-in-out infinite alternate;
+}
+@keyframes hint-dot-pulse {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.65;
+    box-shadow: 0 0 3px rgba(125, 147, 114, 0.35);
+  }
+  100% {
+    transform: scale(1.18);
+    opacity: 1;
+    box-shadow: 0 0 7px rgba(125, 147, 114, 0.75);
+  }
+}
+.hint-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hint-capsule-fade-enter-active {
+  transition: opacity 0.32s cubic-bezier(0.16, 1, 0.3, 1), transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.hint-capsule-fade-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hint-capsule-fade-enter-from {
+  opacity: 0;
+  transform: translateX(-6px) scale(0.88);
+}
+.hint-capsule-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-3px) scale(0.94);
+}
+.outline-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.outline-add-button {
+  position: relative;
+  width: 27px;
+  height: 27px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.07));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, background 0.25s ease;
+}
+.outline-add-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 0.28s cubic-bezier(0.2, 0, 0, 1), transform 0.28s cubic-bezier(0.2, 0, 0, 1);
+  z-index: 1;
+}
+.outline-add-button::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(139, 154, 110, 0.4);
+  box-shadow: 0 0 10px rgba(139, 154, 110, 0.3);
+  opacity: 0;
+  transform: scale(0.8);
+  pointer-events: none;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 0;
+}
+.outline-add-button:hover {
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.5);
+}
+.outline-add-button:active {
+  transform: scale(0.96);
+}
+.outline-add-icon {
+  position: relative;
+  z-index: 2;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(0deg);
+  transform-origin: 50% 50%;
+  transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.25s ease;
+}
+.outline-add-button.is-active {
+  box-shadow: none;
+  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.08));
+}
+.outline-add-button.is-active::before {
+  opacity: 0;
+  transform: scale(0.82);
+}
+.outline-add-button.is-active::after {
+  opacity: 1;
+  transform: scale(1);
+  animation: outline-button-pulse 2.6s ease-in-out infinite alternate;
+}
+.outline-add-button.is-active:hover {
+  background: rgba(0, 0, 0, 0.12);
+  box-shadow: none;
+}
+.outline-add-button.is-active .outline-add-icon {
+  transform: rotate(45deg);
+  color: var(--text-muted, #767676);
+}
+@keyframes outline-button-pulse {
+  0% {
+    box-shadow: 0 0 5px rgba(125, 147, 114, 0.25), 0 0 1px rgba(125, 147, 114, 0.3);
+    border-color: rgba(125, 147, 114, 0.3);
+  }
+  100% {
+    box-shadow: 0 0 14px rgba(125, 147, 114, 0.55), 0 0 2px rgba(125, 147, 114, 0.5);
+    border-color: rgba(125, 147, 114, 0.65);
+  }
+}
+.outline-composer, .outline-overview-list { padding: 0 0 14px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
 .outline-composer::-webkit-scrollbar, .outline-overview-list::-webkit-scrollbar { display: none; }
-.outline-composer-tip { margin: 0 0 16px; color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.outline-composer-tip::before { content: ''; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #7D9372; }
-.composer-chapter { margin-bottom: 12px; border: 1px solid transparent; border-radius: 12px; background: rgba(0,0,0,0.02); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-.composer-chapter:hover { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.05); }
-.composer-row, .composer-section { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; font-size: 13px; transition: all 0.2s; }
-.composer-row { border-bottom: 1px solid rgba(0,0,0,0.03); }
-.composer-row:hover .composer-link-btn { opacity: 1; }
-.composer-sections { padding: 6px 10px 10px 32px; display: flex; flex-direction: column; gap: 4px; }
-.composer-section { border-radius: 8px; color: var(--text-secondary); padding: 8px 12px; justify-content: space-between; align-items: flex-start; }
-.composer-section:hover { background: rgba(125,147,114,0.08); color: var(--text-primary); }
-.composer-section-content { flex: 1; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
-.composer-section-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 24px; }
-.composer-section-file { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: #7D9372; background: rgba(125,147,114,0.1); padding: 4px 8px 4px 10px; border-radius: 6px; width: fit-content; max-width: 100%; border: 1px solid rgba(125,147,114,0.15); }
-.composer-section-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
-.composer-unlink-btn { background: transparent; border: none; padding: 2px; margin-left: 2px; cursor: pointer; color: inherit; opacity: 0.5; display: flex; border-radius: 4px; transition: all 0.2s; }
-.composer-unlink-btn:hover { opacity: 1; background: rgba(0,0,0,0.08); }
-.composer-link-btn { width: 24px; height: 24px; margin-top: 0px; border: none; border-radius: 6px; background: rgba(0,0,0,0.04); color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; opacity: 0; padding: 0; }
-.composer-section:hover .composer-link-btn { opacity: 1; }
-.composer-link-btn:hover { background: #7D9372; color: #fff; transform: scale(1.05); }
-.drag-handle { color: var(--text-muted); cursor: grab; font-size: 14px; opacity: 0.3; transition: opacity 0.2s; user-select: none; }
-.composer-row:hover .drag-handle, .composer-section:hover .drag-handle { opacity: 0.8; }
-.outline-inline-input { width: 100%; box-sizing: border-box; border: 1px solid transparent; border-radius: 8px; padding: 8px 12px; background: rgba(0,0,0,0.04); color: var(--text-primary); outline: none; font-size: 12.5px; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-.outline-inline-input:focus { background: #ffffff; border-color: rgba(125,147,114,0.3); box-shadow: 0 4px 12px rgba(125,147,114,0.08); }
-.outline-inline-input::placeholder { color: var(--text-muted); transition: color 0.2s; }
-.outline-inline-input:focus::placeholder { color: transparent; }
-.chapter-input { margin-top: 8px; padding: 10px 14px; font-size: 13px; background: rgba(0,0,0,0.03); border-radius: 10px; }
+
+/* ===== 大纲编排卡片与头部样式 ===== */
+.subject-overview-wrapper {
+  padding: 0 10px;
+  margin-bottom: 10px;
+}
+.file-outline-composer-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 10px 14px;
+}
+.file-overview-wrapper {
+  min-width: 0;
+}
+.file-outline.subject-overview.is-editing,
+.file-outline.file-overview.is-editing {
+  position: relative;
+  border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  overflow: hidden;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.file-outline.subject-overview.is-editing {
+  border-width: 1.5px;
+  border-color: rgba(139, 154, 110, 0.4);
+}
+.file-outline.subject-overview.is-editing:hover,
+.file-outline.file-overview.is-editing:hover {
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 8px 20px -3px rgba(0, 0, 0, 0.06), 0 3px 8px -1px rgba(139, 154, 110, 0.12);
+}
+.file-outline.file-overview.is-editing.is-selected {
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.35), 0 8px 20px -3px rgba(139, 154, 110, 0.14);
+}
+.composer-file-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 10px;
+  margin: 4px 0;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-radius: 8px;
+  border: 1px dashed var(--border-subtle);
+}
+.composer-file-empty-box .empty-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.file-outline__header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 6px !important;
+  padding: 6px 10px !important;
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+  box-sizing: border-box !important;
+  flex-wrap: nowrap !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+.file-outline__header.subject-overview__header {
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
+  border-bottom: 1px solid var(--border-subtle) !important;
+}
+.overview-collapse-btn {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  margin-right: 1px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.overview-collapse-btn:hover {
+  background: var(--bg-modifier-hover);
+  color: var(--text-primary);
+}
+.file-outline__name {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+  flex: 1 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  background: transparent !important;
+  padding: 2px 4px !important;
+  border-radius: 6px !important;
+  text-align: left !important;
+  cursor: pointer !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+.file-outline__name:hover {
+  background: rgba(125, 147, 114, 0.08) !important;
+}
+.file-outline.is-selected .file-outline__name {
+  color: var(--color-primary-accent) !important;
+}
+.subject-icon {
+  color: var(--color-primary-accent) !important;
+  flex-shrink: 0 !important;
+}
+.subject-overview-title {
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  color: var(--text-primary) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  line-height: 1.2 !important;
+}
+.composer-mode-badge {
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 1px 5px !important;
+  border-radius: 999px !important;
+  background: rgba(125, 147, 114, 0.14) !important;
+  border: 1px solid rgba(125, 147, 114, 0.22) !important;
+  color: var(--color-primary-accent) !important;
+  font-size: 9.5px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  user-select: none !important;
+  white-space: nowrap !important;
+}
+.file-outline__actions {
+  flex-shrink: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
+.subject-overview__body {
+  padding: 6px 8px 10px;
+  display: grid;
+  gap: 6px;
+}
+.composer-capsule-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2.5px 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 550;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.composer-capsule-btn:hover:not(:disabled) {
+  border-color: var(--color-primary-accent);
+  color: var(--color-primary-accent);
+  background: var(--bg-modifier-hover);
+}
+.composer-capsule-btn.is-primary {
+  background: var(--color-primary-accent);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 1px 4px rgba(125, 147, 114, 0.35);
+}
+.composer-capsule-btn.is-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+.composer-capsule-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+.composer-chapter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 2px;
+  padding: 2px 2px 4px;
+  list-style: none;
+}
+.composer-chapter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+}
+.composer-chapter-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  user-select: none;
+  position: relative;
+}
+.composer-chapter-header::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--color-primary-accent);
+  opacity: 0.75;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+.composer-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: grab;
+  opacity: 0.22;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+.composer-chapter-header:hover .composer-drag-handle,
+.composer-section-item:hover .composer-drag-handle {
+  opacity: 0.8;
+}
+.composer-inline-title {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  padding: 1.5px 4px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.composer-inline-title:hover {
+  background: var(--bg-modifier-hover);
+}
+.composer-inline-title:focus {
+  background: var(--bg-card);
+  border-color: var(--color-primary-accent);
+  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.15);
+}
+.composer-del-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+.composer-chapter-header:hover .composer-del-btn {
+  opacity: 0.7;
+}
+.composer-del-btn:hover {
+  opacity: 1 !important;
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+.composer-sections-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.composer-section-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3.5px 6px 3.5px 8px;
+  margin: 1px 0 1px 4px;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.composer-section-item::before {
+  content: "";
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.4;
+  flex-shrink: 0;
+  transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+.composer-section-item:hover {
+  background: var(--bg-modifier-hover);
+  color: var(--text-primary);
+}
+.composer-section-item:hover::before {
+  background: var(--color-primary-accent);
+  opacity: 1;
+  transform: scale(1.25);
+}
+.composer-section-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.composer-inline-section {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  padding: 1px 4px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.composer-inline-section:hover {
+  background: rgba(0, 0, 0, 0.03);
+  color: var(--text-primary);
+}
+.composer-inline-section:focus {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-color: var(--color-primary-accent);
+  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.12);
+}
+.composer-file-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3.5px;
+  max-width: 130px;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  background: rgba(125, 147, 114, 0.12);
+  border: 1px solid rgba(125, 147, 114, 0.28);
+  color: var(--color-primary-accent);
+  font-size: 10px;
+  font-weight: 550;
+  flex-shrink: 0;
+  line-height: 1.2;
+  transition: all 0.15s ease;
+}
+.composer-file-tag:hover {
+  background: rgba(125, 147, 114, 0.18);
+  border-color: rgba(125, 147, 114, 0.4);
+}
+.composer-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-unlink-icon {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  display: flex;
+}
+.composer-unlink-icon:hover {
+  opacity: 1;
+  color: #ef4444;
+}
+.composer-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.composer-section-item:hover .composer-item-actions {
+  opacity: 1;
+}
+.composer-action-btn {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.composer-action-btn:hover {
+  background: var(--bg-modifier-hover);
+  color: var(--text-primary);
+}
+.composer-add-section-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 2px 14px;
+  padding: 2px 6px;
+}
+.composer-add-dot {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.45;
+}
+.composer-add-input {
+  flex: 1;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  padding: 2px 6px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.composer-add-input:hover {
+  border-color: var(--border-default);
+  background: var(--bg-modifier-hover);
+}
+.composer-add-input:focus {
+  border-style: solid;
+  border-color: var(--color-primary-accent);
+  background: var(--bg-card);
+  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.12);
+}
+.composer-add-chapter-row {
+  margin: 8px 4px 4px;
+  padding: 2px 0;
+}
+.composer-add-chapter-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px dashed var(--border-default);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: center;
+  padding: 6px 12px;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.composer-add-chapter-input:hover {
+  border-color: var(--color-primary-accent);
+  color: var(--color-primary-accent);
+  background: rgba(125, 147, 114, 0.05);
+}
+.composer-add-chapter-input:focus {
+  border-style: solid;
+  border-color: var(--color-primary-accent);
+  background: var(--bg-card);
+  text-align: left;
+  cursor: text;
+  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.12);
+}
 
 .outline-overview-chapter { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
 .outline-overview-chapter strong { position: relative; color: var(--text-primary); font-size: 13.5px; font-weight: 700; padding: 0 0 8px 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; }
-.outline-overview-chapter strong::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 12px; border-radius: 4px; background: #7D9372; }
+.outline-overview-chapter strong::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 12px; border-radius: 4px; background: var(--color-primary-accent, #8B9A6E); }
 .outline-section-container { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .outline-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); padding-left: 12px; position: relative; display: flex; align-items: center; }
 .outline-section-title::before { content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 4px; height: 4px; border-radius: 50%; background: rgba(0,0,0,0.15); }
 .outline-file-link { margin-left: 12px; padding: 10px 12px; border: 1px solid transparent; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: rgba(0,0,0,0.02); color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; }
-.outline-file-link:hover { background: rgba(125,147,114,0.08); border-color: rgba(125,147,114,0.15); transform: translateX(2px); color: #7D9372; }
+.outline-file-link:hover { background: rgba(139,154,110,0.1); border-color: rgba(139,154,110,0.22); transform: translateX(2px); color: var(--color-primary-accent, #8B9A6E); }
 .outline-file-link-icon { opacity: 0.7; }
 .outline-file-link-file { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 .summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
@@ -2702,12 +4264,12 @@ html.dark .ai-input-wrapper {
 .summary-markdown :deep(ul), .summary-markdown :deep(ol) { margin: 0 0 16px 0; padding-left: 24px; }
 .summary-markdown :deep(li) { margin-bottom: 6px; }
 .summary-markdown :deep(li::marker) { color: var(--text-muted); }
-.summary-markdown :deep(blockquote) { margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #7D9372; background: rgba(125, 147, 114, 0.05); border-radius: 0 8px 8px 0; color: var(--text-muted); font-style: italic; }
+.summary-markdown :deep(blockquote) { margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #8B9A6E; background: rgba(139, 154, 110, 0.08); border-radius: 0 8px 8px 0; color: var(--text-muted); font-style: italic; }
 .summary-markdown :deep(pre) { background: #1C1C1A; padding: 16px; border-radius: 12px; overflow-x: auto; margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-.summary-markdown :deep(code) { font-family: var(--font-family-mono); font-size: 13px; background: rgba(0,0,0,0.04); padding: 3px 6px; border-radius: 6px; color: #7D9372; font-weight: 500; }
+.summary-markdown :deep(code) { font-family: var(--font-family-mono); font-size: 13px; background: rgba(0,0,0,0.04); padding: 3px 6px; border-radius: 6px; color: #8B9A6E; font-weight: 500; }
 .summary-markdown :deep(pre code) { background: transparent; padding: 0; color: #E6E6E4; font-weight: 400; font-size: 13.5px; }
-.summary-markdown :deep(a) { color: #7D9372; text-decoration: none; border-bottom: 1px solid transparent; transition: all 0.2s; }
-.summary-markdown :deep(a:hover) { border-bottom-color: #7D9372; }
+.summary-markdown :deep(a) { color: #8B9A6E; text-decoration: none; border-bottom: 1px solid transparent; transition: all 0.2s; }
+.summary-markdown :deep(a:hover) { border-bottom-color: #8B9A6E; }
 .summary-markdown :deep(img) { max-width: 100%; border-radius: 12px; margin: 16px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
 .summary-markdown :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 16px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .summary-markdown :deep(th), .summary-markdown :deep(td) { padding: 10px 14px; border: 1px solid var(--border-subtle); text-align: left; }
@@ -2717,51 +4279,57 @@ html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
 
 /* ===== Refined Zen Minimalist AI Visual Language (PC) ===== */
 .ai-header { position: relative; justify-content: space-between; background: transparent; backdrop-filter: blur(12px); border-bottom: none; z-index: 10; padding: 24px 20px 12px; }
-.ai-model-switch { display: flex; align-items: center; gap: 6px; border: none; background: rgba(0,0,0,0.04); color: var(--text-secondary); font-weight: 600; cursor: pointer; padding: 8px 16px; border-radius: 999px; transition: all 0.2s; font-size: 13px; }
-.ai-model-switch:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); }
-.model-icon-top { font-size: 14px; color: #7D9372; }
-.model-text { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
-.chevron-icon { transition: transform 0.2s; opacity: 0.6; }
+.ai-model-switch.ai-file-switch { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-subtle); background: var(--color-bg-tertiary, #FAF7F2); color: var(--text-secondary); font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 999px; transition: all 0.2s; font-size: 12.5px; box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04); max-width: 210px; }
+.ai-model-switch.ai-file-switch:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 4px 12px rgba(139, 154, 110, 0.2); transform: translateY(-1px); }
+.ai-file-switch .model-icon-top { display: flex; align-items: center; color: var(--color-primary-accent, #8B9A6E); flex-shrink: 0; }
+.ai-file-switch .model-text { font-size: 12.5px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+.chevron-icon { transition: transform 0.2s; opacity: 0.6; flex-shrink: 0; }
 .chevron-icon.is-rotated { transform: rotate(180deg); opacity: 1; }
-.ai-model-menu { position: absolute; top: 72px; left: 20px; z-index: 4; min-width: 200px; padding: 8px; background: rgba(255,255,255,0.95); backdrop-filter: blur(12px); border: 1px solid rgba(0,0,0,0.08); border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 4px; }
-.mini-menu-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; cursor: pointer; transition: background 0.2s; }
-.mini-menu-item:hover { background: rgba(125,147,114,0.08); }
-.mini-menu-icon { font-size: 16px; color: #7D9372; display: flex; align-items: center; justify-content: center; width: 24px; }
-.mini-menu-text { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.mini-menu-label { font-size: 13.5px; font-weight: 600; color: var(--text-primary); line-height: 1.2; }
-.mini-menu-label.is-active { color: #7D9372; }
-.mini-menu-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.2; }
-.mini-check { color: #7D9372; font-weight: bold; font-size: 14px; margin-left: auto; padding-right: 4px; }
-.ai-clear { width: 34px; height: 34px; display: grid; place-items: center; padding: 0; font-size: 0; border-radius: 50%; border: none; background: rgba(0,0,0,0.04); transition: all 0.2s; color: var(--text-secondary); cursor: pointer; }
+.ai-model-menu.ai-file-menu { position: absolute; top: 62px; left: 20px; z-index: 10; min-width: 240px; max-width: 290px; max-height: 320px; overflow-y: auto; padding: 8px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(16px); border: 1px solid var(--border-default); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; gap: 3px; }
+html.dark .ai-model-menu.ai-file-menu { background: var(--color-bg-secondary); border-color: var(--border-subtle); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
+.ai-menu-section-header { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 6px 10px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
+.ai-menu-header-count { font-size: 10px; color: var(--color-primary-accent, #8B9A6E); font-weight: 600; text-transform: none; }
+.ai-menu-divider { height: 1px; background: var(--border-subtle); margin: 4px 6px; }
+.mini-menu-item { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 14px; border-radius: 8px; cursor: pointer; transition: all 0.15s ease; user-select: none; }
+.mini-menu-item:hover { background: rgba(0, 0, 0, 0.04); }
+html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
+.mini-menu-item.is-active { background: var(--color-primary-light); color: var(--color-primary-accent); font-weight: 700; }
+.mini-menu-item.is-active::before { content: ''; position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px; background: var(--color-primary-accent); border-radius: 1.5px; }
+.mini-menu-icon { font-size: 16px; color: var(--text-muted); display: flex; align-items: center; justify-content: center; width: 18px; flex-shrink: 0; transition: color 0.15s; }
+.mini-menu-item.is-active .mini-menu-icon { color: var(--color-primary-accent); }
+.mini-menu-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.mini-menu-label { font-size: 12.5px; font-weight: 500; color: var(--text-primary); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-menu-item.is-active .mini-menu-label { color: var(--color-primary-accent); font-weight: 700; }
+.mini-menu-desc { font-size: 10.5px; color: var(--text-muted); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-menu-item.is-active .mini-menu-desc { color: var(--color-primary-accent); opacity: 0.8; }
+.ai-clear { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; border-radius: 50%; border: 1px solid var(--border-subtle); background: var(--color-bg-tertiary, #FAF7F2); color: var(--text-secondary); cursor: pointer; box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .ai-clear svg { stroke: currentColor; }
-.ai-clear:hover { background: rgba(0,0,0,0.08); color: var(--text-primary); }
+.ai-clear:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.4); color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 4px 12px rgba(139, 154, 110, 0.2); transform: rotate(-30deg); }
 
-.ai-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 0 24px; animation: ai-fade-in 0.6s ease-out; }
-.ai-spark-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 20px; }
-.ai-spark-svg { width: 56px; height: 56px; opacity: 0.95; filter: drop-shadow(0 4px 12px rgba(125, 147, 114, 0.15)); }
-.welcome-title { font-size: 24px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), #5C7051); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 10px; letter-spacing: -0.2px; }
-.welcome-desc { font-size: 13.5px; font-weight: 400; color: var(--text-secondary); margin-bottom: 40px; max-width: 260px; line-height: 1.6; opacity: 0.85; }
-.preset-section-title { display: flex; align-items: center; width: 100%; max-width: 240px; font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 16px; letter-spacing: 2px; text-transform: uppercase; opacity: 0.6; }
-.preset-section-title::before, .preset-section-title::after { content: ''; flex: 1; height: 1px; background: rgba(0,0,0,0.1); }
-.preset-section-title::before { margin-right: 12px; }
-.preset-section-title::after { margin-left: 12px; }
-.preset-questions { display: flex; flex-direction: column; align-items: stretch; gap: 10px; margin-top: 12px; width: 100%; max-width: 280px; }
-.preset-btn { width: 100%; border-radius: 999px; padding: 10px 18px; background: rgba(255,255,255,0.8); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); text-align: center; font-size: 13px; color: var(--text-primary); font-weight: 500; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.02); cursor: pointer; }
-.preset-btn:hover { border-color: #7D9372; background: rgba(125, 147, 114, 0.08); box-shadow: 0 4px 12px rgba(125, 147, 114, 0.15); color: #5C7051; transform: translateY(-1px); }
+.ai-welcome { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 20px 24px 28px; animation: ai-fade-in 0.4s ease-out; width: 100%; max-width: 320px; margin: 0 auto; box-sizing: border-box; }
+.ai-spark-wrap, .ai-brand-wrap { position: relative; width: 56px; height: 56px; display: grid; place-items: center; margin-bottom: 16px; filter: drop-shadow(0 8px 20px rgba(139, 154, 110, 0.24)); transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-brand-wrap:hover { transform: translateY(-2px) scale(1.03); }
+.ai-spark-svg, .ai-brand-svg { width: 56px; height: 56px; display: block; border-radius: 16px; }
+.welcome-title { font-size: 22.5px; font-weight: 650; color: var(--text-primary); margin: 0 0 8px; letter-spacing: -0.3px; line-height: 1.3; }
+.welcome-desc { font-size: 12.5px; font-weight: 400; color: var(--text-muted); margin: 0 0 26px; line-height: 1.55; max-width: 260px; }
+.preset-questions { display: flex; flex-direction: column; align-items: center; gap: 9px; width: 100%; max-width: 260px; box-sizing: border-box; }
+.preset-pill { width: 100%; padding: 9px 20px; border-radius: 999px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; font-weight: 550; letter-spacing: 0.8px; text-align: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02); user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
+.preset-pill:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); font-weight: 600; transform: translateY(-1.5px); box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.22), 0 2px 4px rgba(0, 0, 0, 0.03); }
+.preset-pill:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); }
 
-.assistant-spark-avatar { width: 34px; height: 34px; border: 1px solid rgba(0,0,0,0.06); border-radius: 50%; display: grid; place-items: center; background: #ffffff; flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+.assistant-spark-avatar { width: 34px; height: 34px; border: 1px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .assistant-spark-avatar svg { width: 20px; height: 20px; }
-.chat-msg-row.user .chat-bubble { background: var(--text-primary); color: var(--color-bg-primary); border-radius: 16px 4px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
-.chat-msg-row.assistant .chat-bubble { background: #ffffff; border: 1px solid rgba(0,0,0,0.06); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 4px 16px rgba(0,0,0,0.02); }
+.chat-msg-row.user .chat-bubble { background: #303431; color: #FAF7F2; border-radius: 16px 4px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
+.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.03); }
 
 .ai-input-area { padding: 16px 20px 24px; background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
-.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: rgba(255,255,255,0.9); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.08); box-shadow: 0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.04); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.ai-chat-capsule:focus-within { border-color: rgba(125,147,114,0.3); box-shadow: 0 12px 36px rgba(125,147,114,0.12), 0 4px 12px rgba(125,147,114,0.06); transform: translateY(-2px); }
+.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(8px); border: 1px solid var(--border-default); box-shadow: 0 4px 16px -2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-chat-capsule:focus-within { border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0,0,0,0.05); transform: translateY(-1px); }
 .ai-input { flex: 1; background: transparent; font-size: 14.5px; line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
 .ai-input::placeholder { color: var(--text-muted); }
-.ai-send-btn { width: 38px; height: 38px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: transparent; color: var(--text-muted); }
-.ai-send-btn.is-ready { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); color: #fff; box-shadow: 0 4px 12px rgba(125, 147, 114, 0.25); }
-.ai-send-btn.is-ready:hover { transform: scale(1.05); background: #6c8062; box-shadow: 0 6px 16px rgba(125, 147, 114, 0.3); }
+.ai-send-btn { width: 36px; height: 36px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); color: var(--color-primary-accent, #8B9A6E); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ai-send-btn.is-ready { background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)) !important; color: #fff !important; box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4) !important; }
+.ai-send-btn.is-ready:hover { transform: scale(1.06); background: #76855B !important; box-shadow: 0 4px 14px rgba(139, 154, 110, 0.55) !important; }
 
 .ai-typing-dots { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 4px 6px; }
 .ai-typing-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: ai-dot-bounce 1.4s ease-in-out infinite both; }
@@ -2770,10 +4338,10 @@ html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
 
 
 html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html.dark .assistant-spark-avatar, html.dark .chat-msg-row.assistant .chat-bubble { background: #1C1C1C; border-color: rgba(255,255,255,0.08); }
-html.dark .preset-btn { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); color: var(--text-secondary); }
-html.dark .preset-btn:hover { background: rgba(125, 147, 114, 0.15); border-color: #7D9372; color: #9AB08F; }
-html.dark .welcome-title { background: linear-gradient(135deg, #ffffff, #9AB08F); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-html.dark .preset-section-title::before, html.dark .preset-section-title::after { background: rgba(255,255,255,0.1); }
+html.dark .preset-pill { background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.07); color: var(--text-secondary); box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.35); }
+html.dark .preset-pill:hover { background: rgba(125, 147, 114, 0.12); border-color: rgba(125, 147, 114, 0.4); color: #A3B899; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
+html.dark .ai-brand-wrap { filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45)); }
+html.dark .welcome-title { color: #FFFFFF; }
 
 html.dark .outline-overview-chapter strong { border-color: rgba(255,255,255,0.04); }
 html.dark .outline-section-title::before { background: rgba(255,255,255,0.15); }
@@ -2802,9 +4370,9 @@ html.dark .onboarding-drag-capsule:hover { background: rgba(125,147,114,0.2); bo
 .zen-dropdown .el-select-dropdown__item { border-radius: 8px !important; margin: 2px !important; font-size: 13px !important; color: var(--text-primary) !important; transition: all 0.2s !important; padding: 8px 12px !important; line-height: 1.4 !important; height: auto !important; }
 .zen-dropdown .el-dropdown-menu__item:hover,
 .zen-dropdown .el-select-dropdown__item.is-hovering,
-.zen-dropdown .el-select-dropdown__item:hover { background: rgba(125,147,114,0.1) !important; color: #7D9372 !important; }
+.zen-dropdown .el-select-dropdown__item:hover { background: rgba(139, 154, 110, 0.12) !important; color: var(--color-primary-accent, #8B9A6E) !important; }
 .zen-dropdown .el-select-dropdown__item.selected,
-.zen-dropdown .el-select-dropdown__item.is-selected { background: rgba(125,147,114,0.15) !important; color: #7D9372 !important; font-weight: 700 !important; }
+.zen-dropdown .el-select-dropdown__item.is-selected { background: rgba(139, 154, 110, 0.18) !important; color: var(--color-primary-accent, #8B9A6E) !important; font-weight: 700 !important; }
 .zen-dropdown .el-dropdown-menu__item.is-disabled,
 .zen-dropdown .el-select-dropdown__item.is-disabled { opacity: 0.5 !important; background: transparent !important; color: var(--text-muted) !important; cursor: not-allowed !important; }
 .zen-dropdown .el-dropdown-menu__item--divided { border-top: none !important; margin-top: 6px !important; position: relative; }
@@ -2814,18 +4382,18 @@ html.dark .zen-dropdown,
 html.dark .zen-dropdown.el-popper { background: rgba(30,30,30,0.85) !important; border-color: rgba(255,255,255,0.05) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.4) !important; }
 html.dark .zen-dropdown .el-dropdown-menu__item:hover,
 html.dark .zen-dropdown .el-select-dropdown__item.is-hovering,
-html.dark .zen-dropdown .el-select-dropdown__item:hover { background: rgba(125,147,114,0.2) !important; color: #9AB08F !important; }
+html.dark .zen-dropdown .el-select-dropdown__item:hover { background: rgba(139, 154, 110, 0.2) !important; color: #9AB08F !important; }
 html.dark .zen-dropdown .el-select-dropdown__item.selected,
-html.dark .zen-dropdown .el-select-dropdown__item.is-selected { background: rgba(125,147,114,0.25) !important; color: #9AB08F !important; }
+html.dark .zen-dropdown .el-select-dropdown__item.is-selected { background: rgba(139, 154, 110, 0.25) !important; color: #9AB08F !important; }
 html.dark .zen-dropdown .el-dropdown-menu__item--divided::before { background-color: rgba(255,255,255,0.08) !important; }
 
 /* ===== 关联文件气泡弹窗 (借鉴移动端卡片化胶囊设计) ===== */
 .zen-popover { border-radius: 14px !important; padding: 16px !important; background: rgba(255,255,255,0.85) !important; backdrop-filter: blur(12px) !important; -webkit-backdrop-filter: blur(12px) !important; border: 1px solid rgba(0,0,0,0.05) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.1) !important; }
 html.dark .zen-popover { background: rgba(30,30,30,0.85) !important; border-color: rgba(255,255,255,0.05) !important; box-shadow: 0 12px 32px rgba(0,0,0,0.4) !important; }
 .subject-capsule-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.subject-capsule-item { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-bg-secondary); border: 1.5px solid transparent; border-radius: 9999px; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-.subject-capsule-item:hover { transform: translateY(-1px); background: var(--color-bg-tertiary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); border-color: rgba(125,147,114,0.3); color: #7D9372; }
-.subject-capsule-item.is-active { background: rgba(125, 147, 114, 0.1) !important; border-color: #7D9372 !important; color: #7D9372 !important; box-shadow: 0 2px 8px rgba(125, 147, 114, 0.15); }
+.subject-capsule-item { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-bg-tertiary, #FAF7F2); border: 1.5px solid var(--border-default); border-radius: 9999px; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.subject-capsule-item:hover { transform: translateY(-1px); background: var(--color-bg-tertiary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); border-color: rgba(139, 154, 110, 0.35); color: var(--color-primary-accent, #8B9A6E); }
+.subject-capsule-item.is-active { background: rgba(139, 154, 110, 0.12) !important; border-color: #8B9A6E !important; color: #8B9A6E !important; box-shadow: 0 2px 8px rgba(139, 154, 110, 0.18); }
 html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15) !important; border-color: #9AB08F !important; color: #9AB08F !important; }
 .subj-capsule-icon { font-size: 13px; }
 @keyframes ai-spark-pulse { 0%, 100% { transform: scale(1); opacity: .5; } 50% { transform: scale(1.2); opacity: 1; } }
@@ -2837,7 +4405,7 @@ html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15
 /* Drag and Drop Zone */
 .drag-drop-zone { border: 2px dashed rgba(0,0,0,0.1); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255,255,255,0.4); margin-bottom: 8px; }
 .drag-drop-zone:hover { border-color: rgba(0,0,0,0.2); background: rgba(255,255,255,0.8); }
-.drag-drop-zone.is-active { border-color: #7D9372; background: rgba(125, 147, 114, 0.05); }
+.drag-drop-zone.is-active { border-color: #8B9A6E; background: rgba(139, 154, 110, 0.08); }
 .drag-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
 .drag-hint { margin-top: 6px; color: var(--text-muted); font-size: 11px; }
 html.dark .drag-drop-zone { border-color: rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
@@ -2845,7 +4413,7 @@ html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); backgroun
 html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }
 
 /* Home Modal Styles for Register Modal */
-.modal-container { width: 90%; max-width: 520px; background: #FFFFFF; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-container { width: 90%; max-width: 520px; background: var(--color-bg-tertiary, #FAF7F2); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
 @keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
@@ -2855,19 +4423,19 @@ html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 1
 html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
 .modal-container .modal-body { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; max-height: 70vh; overflow-y: auto; }
 .form-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
-.styled-input:focus, .styled-textarea:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
-html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
+.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input:focus, .styled-textarea:focus { border-color: #8B9A6E; background: var(--color-bg-tertiary, #FAF7F2); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18); }
+html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.2); }
 .styled-textarea { resize: vertical; line-height: 1.6; min-height: 100px; }
 .styled-el-select { width: 100%; }
-.styled-el-select :deep(.el-input__wrapper) { background: var(--color-bg-secondary); border-radius: 12px; box-shadow: 0 0 0 1px var(--border-default) inset; padding: 4px 14px; transition: all 0.2s; }
-.styled-el-select :deep(.el-input__wrapper.is-focus) { background: var(--color-bg-primary); box-shadow: 0 0 0 1px #7D9372 inset, 0 0 0 3px rgba(125, 147, 114, 0.15) !important; }
-html.dark .styled-el-select :deep(.el-input__wrapper.is-focus) { background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 1px #9AB08F inset, 0 0 0 3px rgba(125, 147, 114, 0.2) !important; }
+.styled-el-select :deep(.el-input__wrapper) { background: var(--color-bg-tertiary, #FAF7F2); border-radius: 12px; box-shadow: 0 0 0 1px var(--border-default) inset; padding: 4px 14px; transition: all 0.2s; }
+.styled-el-select :deep(.el-input__wrapper.is-focus) { background: var(--color-bg-tertiary, #FAF7F2); box-shadow: 0 0 0 1px #8B9A6E inset, 0 0 0 3px rgba(139, 154, 110, 0.18) !important; }
+html.dark .styled-el-select :deep(.el-input__wrapper.is-focus) { background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 1px #9AB08F inset, 0 0 0 3px rgba(139, 154, 110, 0.2) !important; }
 .modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--border-subtle); background: transparent; }
-.btn-secondary { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-secondary:hover { background: var(--color-bg-secondary); color: var(--text-primary); }
-.btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3); }
-.btn-primary:hover:not(:disabled) { background: #6E8364; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45); }
+.btn-secondary { background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-secondary:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-primary); }
+.btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3); }
+.btn-primary:hover:not(:disabled) { background: #76855B; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45); }
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
 html.dark .btn-primary { background: #9AB08F; color: #1a1a1a; }
 html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(154, 176, 143, 0.2); }

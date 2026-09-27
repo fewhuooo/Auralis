@@ -1,61 +1,62 @@
 import type { Component } from 'vue'
 import {
-  BookOpenText,
-  BookMarked,
-  Archive,
-  Terminal,
-  Cpu,
-  Activity,
-  Infinity as InfinityIcon,
-  Scroll,
-  Feather,
-  PenTool,
-  Orbit,
-  Blocks,
-  Hourglass,
-  Award,
-  Telescope,
-  Rocket
-} from 'lucide-vue-next'
+  IconMathFunction,
+  IconTerminal2,
+  IconAtom,
+  IconFlask,
+  IconDna,
+  IconCpu,
+  IconChartDots,
+  IconLanguage,
+  IconBook2,
+  IconTrendingUp,
+  IconBriefcase,
+  IconScale,
+  IconStethoscope,
+  IconBuilding,
+  IconPalette,
+  IconSchool
+} from '@tabler/icons-vue'
 
 export const subjectIconOptions = [
-  { key: 'book', label: '阅读', component: BookOpenText },
-  { key: 'reading', label: '文献', component: BookMarked },
-  { key: 'library', label: '资料', component: Archive },
-  { key: 'code', label: '编程', component: Terminal },
-  { key: 'computer', label: '硬件', component: Cpu },
-  { key: 'analysis', label: '数据', component: Activity },
-  { key: 'math', label: '理科', component: InfinityIcon },
-  { key: 'school', label: '学术', component: Scroll },
-  { key: 'art', label: '创意', component: Feather },
-  { key: 'notes', label: '笔记', component: PenTool },
-  { key: 'idea', label: '灵感', component: Orbit },
-  { key: 'settings', label: '工程', component: Blocks },
-  { key: 'focus', label: '专注', component: Hourglass },
-  { key: 'achievement', label: '成就', component: Award },
-  { key: 'research', label: '探索', component: Telescope },
-  { key: 'laptop', label: '构建', component: Rocket }
+  { key: 'math', label: '高等数学', component: IconMathFunction },
+  { key: 'code', label: '程序设计', component: IconTerminal2 },
+  { key: 'physics', label: '大学物理', component: IconAtom },
+  { key: 'chemistry', label: '基础化学', component: IconFlask },
+  { key: 'biology', label: '生命科学', component: IconDna },
+  { key: 'computer', label: '电子信息', component: IconCpu },
+  { key: 'analysis', label: '数据与AI', component: IconChartDots },
+  { key: 'language', label: '学术外语', component: IconLanguage },
+  { key: 'book', label: '文学传播', component: IconBook2 },
+  { key: 'economics', label: '经济金融', component: IconTrendingUp },
+  { key: 'business', label: '工商管理', component: IconBriefcase },
+  { key: 'law', label: '法律法学', component: IconScale },
+  { key: 'medicine', label: '临床医学', component: IconStethoscope },
+  { key: 'engineering', label: '建筑土木', component: IconBuilding },
+  { key: 'art', label: '艺术设计', component: IconPalette },
+  { key: 'school', label: '通识思政', component: IconSchool }
 ] as const
 
 export type SubjectIconKey = (typeof subjectIconOptions)[number]['key']
 
 const iconComponents: Record<SubjectIconKey, Component> = {
-  book: BookOpenText,
-  reading: BookMarked,
-  library: Archive,
-  code: Terminal,
-  computer: Cpu,
-  analysis: Activity,
-  math: InfinityIcon,
-  school: Scroll,
-  art: Feather,
-  notes: PenTool,
-  idea: Orbit,
-  settings: Blocks,
-  focus: Hourglass,
-  achievement: Award,
-  research: Telescope,
-  laptop: Rocket
+  // 16 大大学学科核心语义键
+  math: IconMathFunction,
+  code: IconTerminal2,
+  physics: IconAtom,
+  chemistry: IconFlask,
+  biology: IconDna,
+  computer: IconCpu,
+  analysis: IconChartDots,
+  language: IconLanguage,
+  book: IconBook2,
+  economics: IconTrendingUp,
+  business: IconBriefcase,
+  law: IconScale,
+  medicine: IconStethoscope,
+  engineering: IconBuilding,
+  art: IconPalette,
+  school: IconSchool
 }
 
 const semanticIconPattern = /^[a-z0-9_-]+$/i

@@ -60,7 +60,6 @@ class AiSettingsServiceTests {
                 AiProviderType.DEEPSEEK,
                 "https://api.deepseek.com",
                 "deepseek-chat",
-                "bge-m3",
                 "sk-secret-value");
         when(endpointPolicy.validate(AiProviderType.DEEPSEEK, command.baseUrl()))
                 .thenReturn(URI.create(command.baseUrl()));
@@ -88,7 +87,6 @@ class AiSettingsServiceTests {
                 AiProviderType.OPENAI_COMPATIBLE,
                 "https://evil.example",
                 "model",
-                "embedding-model",
                 "sk-secret-value");
         when(endpointPolicy.validate(AiProviderType.OPENAI_COMPATIBLE, command.baseUrl()))
                 .thenThrow(new DomainException("VALIDATION_FAILED", "Provider URL is not allowed"));
@@ -120,12 +118,59 @@ class AiSettingsServiceTests {
         assertThat(resolved.provider()).isEqualTo(AiProviderType.DEEPSEEK);
         assertThat(resolved.chatModel()).isEqualTo("deepseek-chat");
         assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
-                "https://api.deepseek.com", "env-deepseek-key", "bge-m3"));
+                "https://api.deepseek.com", "env-deepseek-key"));
         assertThat(output.getOut())
                 .contains("AI_SETTINGS_RESOLVED")
                 .contains("source=ENV_DEFAULT")
                 .contains("provider=DEEPSEEK")
                 .doesNotContain("env-deepseek-key");
         verifyNoInteractions(keyCipher);
+    }
+
+    @Test
+    void probeCredentialRequiresSavedByokAndNeverFallsBackToEnvironmentDefaults() {
+        UUID userId = UUID.randomUUID();
+        when(credentialRepository.findByUserIdAndProvider(userId, AiProviderType.OPENAI_COMPATIBLE))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> settingsService.requireSavedByok(userId, AiProviderType.OPENAI_COMPATIBLE))
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Saved AI provider settings are required")
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_UNAVAILABLE");
+
+        verifyNoInteractions(keyCipher, properties);
+    }
+
+    @Test
+    void managedEmbeddingResolutionUsesOnlyServerSiliconFlowDefaults() {
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.defaults()).thenReturn(new AuralisProperties.Defaults(
+                new AuralisProperties.Provider("https://api.deepseek.com", "deepseek-chat", "user-embedding", ""),
+                new AuralisProperties.Provider("https://api.openai.com/v1", "gpt", "other-embedding", ""),
+                new AuralisProperties.Provider(
+                        "https://api.siliconflow.cn/v1", "server-chat", "server-embedding", "server-key")));
+
+        AiSettingsService.ResolvedSettings resolved = settingsService.resolveServerManagedEmbedding();
+
+        assertThat(resolved.provider()).isEqualTo(AiProviderType.SILICONFLOW);
+        assertThat(resolved.credential()).isEqualTo(new com.auralis.app.ai.AiCredential(
+                "https://api.siliconflow.cn/v1", "server-key", "server-embedding"));
+        verifyNoInteractions(credentialRepository, keyCipher);
+    }
+
+    @Test
+    void managedEmbeddingResolutionFailsClearlyWhenServerKeyIsMissing() {
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.defaults()).thenReturn(new AuralisProperties.Defaults(
+                null, null, new AuralisProperties.Provider(
+                        "https://api.siliconflow.cn/v1", "server-chat", "server-embedding", " ")));
+
+        assertThatThrownBy(settingsService::resolveServerManagedEmbedding)
+                .isInstanceOf(DomainException.class)
+                .hasMessage("Server-managed embedding provider is not configured")
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_UNAVAILABLE");
+        verifyNoInteractions(credentialRepository, keyCipher);
     }
 }

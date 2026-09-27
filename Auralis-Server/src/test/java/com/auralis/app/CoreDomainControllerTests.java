@@ -200,6 +200,111 @@ class CoreDomainControllerTests {
     }
 
     @Test
+    void taskCreateRejectsAnOverlappingScheduleInterval() throws Exception {
+        JsonNode registered = register("schedule-overlap-api@example.com", "schedule-overlap-api-device");
+        String token = bearer(registered.path("tokens").path("accessToken").asText());
+        String subjectId = createSubject(token, "Schedule overlap API");
+        createScheduledTask(token, subjectId, "First", "2026-08-27T08:00:00.000Z");
+
+        mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Overlap\",\"scheduledAt\":\"2026-08-27T08:15:00.000Z\","
+                                + "\"durationMinutes\":30}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void taskScheduleInsertionReturnsChangedTasksAndRejectsOverflowAtomically() throws Exception {
+        JsonNode registered = register("schedule-insertion-api@example.com", "schedule-insertion-api-device");
+        String token = bearer(registered.path("tokens").path("accessToken").asText());
+        String subjectId = createSubject(token, "Schedule insertion API");
+        JsonNode existing = createScheduledTask(token, subjectId, "Existing", "2026-08-27T09:00:00.000Z");
+        JsonNode inserted = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Inserted\",\"durationMinutes\":60}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+
+        mockMvc.perform(post("/api/tasks/schedule-insertions")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":\"" + inserted.path("id").asText()
+                                + "\",\"baseVersion\":0,\"scheduledAt\":\"2026-08-27T09:00:00Z\""
+                                + ",\"windowStartAt\":\"2026-08-27T08:00:00Z\""
+                                + ",\"windowLastStartAt\":\"2026-08-27T22:30:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tasks.length()").value(2))
+                .andExpect(jsonPath("$.tasks[0].id").value(inserted.path("id").asText()))
+                .andExpect(jsonPath("$.tasks[0].scheduledAt").value("2026-08-27T09:00:00Z"))
+                .andExpect(jsonPath("$.tasks[1].id").value(existing.path("id").asText()))
+                .andExpect(jsonPath("$.tasks[1].scheduledAt").value("2026-08-27T10:00:00Z"));
+
+        JsonNode lastSlot = createScheduledTask(token, subjectId, "Last slot", "2026-08-27T22:30:00.000Z");
+        JsonNode overflow = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Overflow\",\"durationMinutes\":60}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+        mockMvc.perform(post("/api/tasks/schedule-insertions")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":\"" + overflow.path("id").asText()
+                                + "\",\"baseVersion\":0,\"scheduledAt\":\"2026-08-27T22:00:00Z\""
+                                + ",\"windowStartAt\":\"2026-08-27T08:00:00Z\""
+                                + ",\"windowLastStartAt\":\"2026-08-27T22:30:00Z\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        mockMvc.perform(get("/api/tasks/{id}", lastSlot.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T22:30:00Z"));
+        mockMvc.perform(get("/api/tasks/{id}", overflow.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").doesNotExist());
+    }
+
+    @Test
+    void taskScheduleInsertionWithTargetTaskIdPlacesOnlyDraggedTaskAfterTarget() throws Exception {
+        JsonNode registered = register("schedule-insertion-target-api@example.com", "schedule-insertion-target-api-device");
+        String token = bearer(registered.path("tokens").path("accessToken").asText());
+        String subjectId = createSubject(token, "Schedule insertion target API");
+        JsonNode target = createScheduledTask(token, subjectId, "Target", "2026-08-27T09:00:00.000Z");
+        JsonNode inserted = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Inserted\",\"durationMinutes\":60}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+
+        mockMvc.perform(post("/api/tasks/schedule-insertions")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":\"" + inserted.path("id").asText()
+                                + "\",\"targetTaskId\":\"" + target.path("id").asText()
+                                + "\",\"baseVersion\":0,\"scheduledAt\":\"2026-08-27T09:30:00Z\""
+                                + ",\"windowStartAt\":\"2026-08-27T08:00:00Z\""
+                                + ",\"windowLastStartAt\":\"2026-08-27T22:30:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tasks.length()").value(1))
+                .andExpect(jsonPath("$.tasks[0].id").value(inserted.path("id").asText()))
+                .andExpect(jsonPath("$.tasks[0].scheduledAt").value("2026-08-27T09:30:00Z"));
+
+        mockMvc.perform(get("/api/tasks/{id}", target.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T09:00:00Z"));
+    }
+
+    @Test
     void taskScheduleSwapIsAtomicAndLeavesNeitherTaskPartiallyChangedOnFailure() throws Exception {
         JsonNode registered = register("schedule-swap@example.com", "schedule-swap-device");
         String token = bearer(registered.path("tokens").path("accessToken").asText());
@@ -236,6 +341,69 @@ class CoreDomainControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T08:00:00Z"))
                 .andExpect(jsonPath("$.version").value(1));
+    }
+
+    @Test
+    void taskScheduleEndpointsAllowOverdueDeadlinesAcrossUpdateSwapAndInsertion() throws Exception {
+        JsonNode registered = register("schedule-overdue-api@example.com", "schedule-overdue-api-device");
+        String token = bearer(registered.path("tokens").path("accessToken").asText());
+        String subjectId = createSubject(token, "Schedule overdue");
+        JsonNode source = createScheduledTask(token, subjectId, "Source", "2026-08-27T08:00:00.000Z");
+        JsonNode target = createScheduledTask(token, subjectId, "Target", "2026-08-27T10:00:00.000Z");
+        JsonNode existing = createScheduledTask(token, subjectId, "Existing", "2026-08-27T12:00:00.000Z");
+        JsonNode inserted = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Inserted\",\"durationMinutes\":60}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+
+        updateTask(token, subjectId, source, "2026-08-27T08:00:00Z", "2026-08-27T07:30:00Z", 30)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T08:00:00Z"));
+        updateTask(token, subjectId, target, "2026-08-27T10:00:00Z", "2026-08-27T09:30:00Z", 30)
+                .andExpect(status().isOk());
+        updateTask(token, subjectId, existing, "2026-08-27T12:00:00Z", "2026-08-27T11:30:00Z", 30)
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/tasks/schedule-swaps")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceTaskId\":\"" + source.path("id").asText()
+                                + "\",\"sourceBaseVersion\":1,\"targetTaskId\":\""
+                                + target.path("id").asText() + "\",\"targetBaseVersion\":1}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.source.scheduledAt").value("2026-08-27T10:00:00Z"))
+                .andExpect(jsonPath("$.target.scheduledAt").value("2026-08-27T08:00:00Z"));
+
+        mockMvc.perform(post("/api/tasks/schedule-insertions")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"taskId\":\"" + inserted.path("id").asText()
+                                + "\",\"baseVersion\":0,\"scheduledAt\":\"2026-08-27T12:00:00Z\""
+                                + ",\"windowStartAt\":\"2026-08-27T08:00:00Z\""
+                                + ",\"windowLastStartAt\":\"2026-08-27T22:30:00Z\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tasks.length()").value(2));
+        mockMvc.perform(get("/api/tasks/{id}", existing.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T13:00:00Z"))
+                .andExpect(jsonPath("$.dueAt").value("2026-08-27T11:30:00Z"));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions updateTask(
+            String token, String subjectId, JsonNode task, String scheduledAt, String dueAt, int durationMinutes)
+            throws Exception {
+        return mockMvc.perform(put("/api/tasks/{id}", task.path("id").asText())
+                .header(HttpHeaders.AUTHORIZATION, token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                        + "\",\"title\":\"" + task.path("title").asText()
+                        + "\",\"status\":\"TODO\",\"scheduledAt\":\"" + scheduledAt
+                        + "\",\"dueAt\":\"" + dueAt + "\",\"durationMinutes\":" + durationMinutes
+                        + ",\"sortKey\":\"api\"}"));
     }
 
     private String createSubject(String token, String name) throws Exception {

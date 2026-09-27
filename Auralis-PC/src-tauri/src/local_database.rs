@@ -63,7 +63,7 @@ async fn replace_snapshot_on_connection(
         .map_err(|error| format!("LOCAL_SNAPSHOT_BEGIN_FAILED:{error}"))?;
     let unresolved: HashSet<(String, String)> = sqlx::query_as(
         "SELECT resource_type, resource_id FROM local_mutations
-         WHERE user_id = ? AND status IN ('pending', 'conflict', 'error')",
+         WHERE user_id = ? AND status IN ('pending', 'inflight', 'conflict', 'error')",
     )
     .bind(user_id)
     .fetch_all(&mut *transaction)
@@ -80,7 +80,7 @@ async fn replace_snapshot_on_connection(
               WHERE local_mutations.user_id = local_resource_records.user_id
                 AND local_mutations.resource_type = local_resource_records.resource_type
                 AND local_mutations.resource_id = local_resource_records.resource_id
-                AND local_mutations.status IN ('pending', 'conflict', 'error')
+                AND local_mutations.status IN ('pending', 'inflight', 'conflict', 'error')
            )",
     )
     .bind(user_id)
@@ -185,6 +185,22 @@ mod tests {
             .execute(&mut connection)
             .await
             .unwrap();
+            let inflight_local_payload = json!({ "title": "Local inflight" }).to_string();
+            sqlx::query(
+                "INSERT INTO local_resource_records
+                    (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind("user-a")
+            .bind("TASK")
+            .bind("inflight-task")
+            .bind(5_i64)
+            .bind(Option::<String>::None)
+            .bind("pending")
+            .bind(inflight_local_payload.clone())
+            .execute(&mut connection)
+            .await
+            .unwrap();
             sqlx::query(
                 "INSERT INTO local_mutations
                     (client_mutation_id, user_id, resource_type, resource_id, status)
@@ -195,6 +211,19 @@ mod tests {
             .bind("TASK")
             .bind("pending-task")
             .bind("pending")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+            sqlx::query(
+                "INSERT INTO local_mutations
+                    (client_mutation_id, user_id, resource_type, resource_id, status)
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind("mutation-2")
+            .bind("user-a")
+            .bind("TASK")
+            .bind("inflight-task")
+            .bind("inflight")
             .execute(&mut connection)
             .await
             .unwrap();
@@ -209,6 +238,13 @@ mod tests {
                         4,
                         None,
                         json!({ "title": "Remote" }),
+                    ),
+                    (
+                        "TASK".into(),
+                        "inflight-task".into(),
+                        6,
+                        None,
+                        json!({ "title": "Remote inflight" }),
                     ),
                     (
                         "SUBJECT".into(),
@@ -228,6 +264,13 @@ mod tests {
             .bind("user-a").bind("TASK").bind("pending-task")
             .fetch_one(&mut connection).await.unwrap();
             assert_eq!(pending_payload, r#"{\"title\":\"Local\"}"#);
+
+            let inflight_payload: String = sqlx::query_scalar(
+                "SELECT payload FROM local_resource_records WHERE user_id = ? AND resource_type = ? AND resource_id = ?",
+            )
+            .bind("user-a").bind("TASK").bind("inflight-task")
+            .fetch_one(&mut connection).await.unwrap();
+            assert_eq!(inflight_payload, inflight_local_payload);
 
             let result = replace_snapshot_on_connection(
                 &mut connection,

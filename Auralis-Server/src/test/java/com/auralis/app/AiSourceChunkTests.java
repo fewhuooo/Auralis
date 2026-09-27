@@ -52,6 +52,7 @@ class AiSourceChunkTests {
         SourceChunkEntity inserted = captor.getValue().get(0);
         assertThat(inserted.getGeneration()).isEqualTo(generation);
         assertThat(inserted.isActive()).isFalse();
+        verify(chunkRepository).deleteGeneration(userId, sourceId, generation);
         verify(chunkRepository).deactivateActive(userId, sourceId);
         verify(chunkRepository).activateGeneration(userId, sourceId, generation);
     }

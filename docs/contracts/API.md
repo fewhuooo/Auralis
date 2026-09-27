@@ -1,6 +1,6 @@
 # Auralis API 契约
 
-更新时间：2026-09-14
+更新时间：2026-09-24
 
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
@@ -26,6 +26,12 @@
 | POST | /api/auth/refresh | rotation refresh session 并签发新 token pair，HTTP 200 |
 | POST | /api/auth/logout | 撤销当前 access token 对应的 refresh session，HTTP 204 |
 | GET | /api/auth/me | 返回当前用户公开资料，需 Bearer access token |
+| PUT | /api/auth/me | 按 baseVersion 更新当前用户昵称，返回 UserView |
+| PUT | /api/auth/password | 校验原密码并修改密码，撤销该用户 refresh sessions，HTTP 204 |
+| POST | /api/auth/me/avatar | 上传当前用户 PNG/JPEG 头像并规范化保存，HTTP 204 |
+| GET | /api/auth/me/avatar | 读取当前用户私有 PNG 头像；无头像返回 404 |
+| DELETE | /api/auth/me/avatar | 重置当前用户头像，HTTP 204 |
+| DELETE | /api/auth/me | 校验密码并受理可恢复账户注销，HTTP 202 |
 | GET | /api/auth/sessions | 返回当前用户每台设备的活动会话元数据，需 Bearer access token |
 | DELETE | /api/auth/sessions/{sessionId} | owner-scoped 撤销会话，HTTP 204 |
 | DELETE | /api/auth/sessions/others | 撤销当前会话以外的会话，HTTP 204 |
@@ -71,7 +77,7 @@
 | traceId | string | 诊断关联值 |
 | fieldErrors | array | 参数字段错误 |
 
-错误码至少包含 VALIDATION_FAILED、UNAUTHENTICATED、FORBIDDEN、RESOURCE_NOT_FOUND、RESOURCE_DELETED、RESOURCE_VERSION_CONFLICT、MUTATION_REJECTED、UPLOAD_VALIDATION_FAILED、INGESTION_FAILED、MODEL_PROVIDER_ERROR、OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE、OVERVIEW_REDUCE_NO_PROGRESS、MODEL_UNAVAILABLE、MODEL_TIMEOUT 和 RATE_LIMITED。
+错误码至少包含 VALIDATION_FAILED、UNAUTHENTICATED、FORBIDDEN、RESOURCE_NOT_FOUND、RESOURCE_DELETED、RESOURCE_VERSION_CONFLICT、MUTATION_REJECTED、SOURCE_NOT_READY、UPLOAD_VALIDATION_FAILED、INGESTION_FAILED、MODEL_PROVIDER_ERROR、OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE、OVERVIEW_REDUCE_NO_PROGRESS、MODEL_UNAVAILABLE、MODEL_TIMEOUT 和 RATE_LIMITED。
 
 ## 目标路由总览
 
@@ -84,7 +90,7 @@
 | Asset | /api/assets/upload-intents、/api/assets/{id}/complete、/api/assets/{id}/download-url | implemented-phase-2b |
 | Source | /api/sources、/api/sources/{id}、/api/sources/{id}/restore、/api/sources/{id}/reingest | implemented-phase-2b |
 | Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | implemented-phase-2a |
-| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore、/api/tasks/schedule-swaps | implemented-phase-2a |
+| Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore、/api/tasks/schedule-swaps、/api/tasks/schedule-insertions | implemented-phase-2a |
 | Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore | implemented-phase-2b |
 | Review | /api/reviews/due、/api/reviews/events、/api/reviews/history | implemented-phase-4 |
 | Stats | /api/stats/overview、/api/stats/weekly | implemented-phase-4 |
@@ -100,7 +106,10 @@
 - `POST /api/auth/login` 请求字段为 `username`、`password`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 200 和 AuthResult。
 - `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult。旧 refresh token 立即失效。
 - AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`serverDeviceId`。
-- `GET /api/auth/me` 返回 `UserView { id, username, displayName }`。
+- `GET /api/auth/me` 返回 `UserView { id, username, displayName, version }`。`PUT /api/auth/me` 接受 `{baseVersion,displayName}`，服务端修剪昵称并限制为 1–120 字符，版本不一致返回 `409 RESOURCE_VERSION_CONFLICT`；头像单独读取，不进入 UserView。
+- `PUT /api/auth/password` 接受 `{baseVersion,currentPassword,newPassword}`，新密码为 12–200 字符且不得与原密码相同。服务端校验原密码和用户版本，更新密码哈希并撤销该用户全部 refresh sessions；已签发的 access JWT 仍遵循原 15 分钟有效期边界。原密码错误返回身份凭据错误，不返回敏感字段。
+- `POST /api/auth/me/avatar` 使用 `multipart/form-data` 的 `file` 字段，只接受实际 PNG/JPEG、原文件最大 5 MiB、边长不超过 4096 像素且总像素不超过 1600 万；Spring multipart 单文件接收上限为 5 MiB，完整请求上限为 6 MiB，以容纳表单封装开销。服务端解码并统一重编码为 PNG，私有存储于当前用户头像表。`GET /api/auth/me/avatar` 只返回当前用户头像且设置 no-store/nosniff；客户端须接受 `image/png`，并可同时接受 `application/problem+json` 用于错误响应，不能仅发送 `Accept: application/json`。`DELETE /api/auth/me/avatar` 删除当前用户头像。头像不复用资料 Asset 上传协议。
+- `DELETE /api/auth/me` 接受 `{password}` 并返回 HTTP 202 `{id,status,requestedAt}`，表示注销清理已受理而非永久删除已完成。服务端在事务中停用用户、撤销 refresh sessions、持久化 Asset 与 ParsedDocument 对象键；上传意图签发与停用用户通过用户锁串行化。后台任务等待既有上传签名有效期及缓冲后，按键幂等清理对象并在用户归属锁下重扫，最后按 owner 显式删除关联数据和用户，保留不含用户外键的完成记录。已完成作业继续分批复扫已记录对象键，处理预签名 PUT 晚到造成的对象重现；对象清理失败保留作业并重试。没有公开的跨账户作业状态查询路由。
 - `GET /api/auth/sessions` 返回 `{ items, nextCursor, hasMore }`；每个 item 包含 `id`、`serverDeviceId`、`deviceName`、`platform`、`createdAt`、`lastUsedAt`、`expiresAt`、`revokedAt`、`current`。列表只展示未轮换、未撤销、未过期的活动会话，并按 `serverDeviceId` 归并为一条；同一用户在同一设备再次登录会先撤销该设备的旧活动 refresh session，再签发新的会话。阶段 1 当前不提供 cursor，因此 `nextCursor=null`、`hasMore=false`。
 - 登出和会话撤销成功返回 HTTP 204；会话查询和撤销始终从 SecurityContext 的 userId 推导归属，不接受客户端 userId。撤销会阻止 refresh token 续期；已签发的 access JWT 仍在其 15 分钟有效期内自然过期，不承诺瞬时断开。
 
@@ -122,7 +131,11 @@
 - Subject 请求字段为 `name`、`description`、`iconKey`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。Subject 不提供专属颜色字段，客户端使用全局语义设计色。
 - KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity。
 - Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`sortKey`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`。更新任务时 `scheduledAt: null` 或 `dueAt: null` 分别明确清除排期或截止时间；PC 客户端把仍未完成/取消且 `scheduledAt` 已过的排期任务更新为 `DONE` 并保留排期，把无 `scheduledAt` 且 `dueAt` 已过的任务更新为 `dueAt: null`，以进入未排期。V21 删除 `tasks.color_override` 并清理 TASK 历史 JSON 颜色键，KnowledgeBlock 的 `colorOverride` 保留。
-- `POST /api/tasks/schedule-swaps` 用于两个已排期 Task 的原子时段交换。请求为 `{sourceTaskId,sourceBaseVersion,targetTaskId,targetBaseVersion}`，四项均必填；服务端按稳定顺序加锁并一次事务内校验两个版本、截止时间与换位结果，成功返回 `{source,target}` 两个更新后的 Task。任一版本、校验或持久化失败均回滚整个交换，不产生半交换状态。`scheduledAt`/`dueAt` 均为 RFC 3339 UTC/带时区 instant；无法反序列化的字段返回 `400 VALIDATION_FAILED` 与 `fieldErrors`。
+- 所有 Task 排期写入均阻止同一用户未删除且非 `CANCELLED` Task 的排期区间重叠，区间按半开形式 `[scheduledAt, scheduledAt + durationMinutes)` 计算，首尾相接允许；`durationMinutes` 为 `null` 时按 30 分钟计算。REST 冲突返回 `400 VALIDATION_FAILED`；Sync push 冲突将该 mutation 记为 `REJECTED` 并返回 `VALIDATION_FAILED`，其他 mutation 仍按各自结果处理。服务端在事务内以同一用户行锁串行化排期写入，覆盖跨 Subject 并发。
+- Task 的 `dueAt` 是截止日期提醒和排序信息，保存或排期时不要求 `scheduledAt <= dueAt`；截止时间已过的任务仍可排在之后，Server 不改写用户提供的 `dueAt`。
+- `POST /api/tasks/schedule-swaps` 用于两个已排期 Task 的原子时段交换。请求为 `{sourceTaskId,sourceBaseVersion,targetTaskId,targetBaseVersion}`，四项均必填；服务端按稳定顺序加锁并在一次事务内校验两个版本和换位后的区间；若两任务原区间首尾紧邻，则交换先后顺序并将两任务紧凑排在原共同时间窗口内，窗口起止不变；非紧邻任务仍互换原开始时间。服务端确认双方新区间不互相重叠且不与同用户其他未取消任务冲突，成功返回 `{source,target}` 两个更新后的 Task。`dueAt` 不限制换位后的排期；`DONE` 和 `CANCELLED` 任务不可交换。任一版本、区间校验或持久化失败均回滚整个交换，不产生半交换状态。`scheduledAt`/`dueAt` 均为 RFC 3339 UTC/带时区 instant；无法反序列化的字段返回 `400 VALIDATION_FAILED` 与 `fieldErrors`。
+- `POST /api/tasks/schedule-insertions` 支持普通空白槽位的插入顺延与任务主体的严格放置，只有顶部交互栏落点使用 `schedule-swaps`。请求为 `{taskId,baseVersion,scheduledAt,windowStartAt,windowLastStartAt,targetTaskId?}`，前五项必填；`targetTaskId` 是可选 UUID，三个时间字段为 RFC 3339 带时区 instant；窗口必须正好覆盖 PC Timeline 当天 08:00 至 22:30 的起始槽，客户端提交这两个本地时间对应的 instants。服务端以 `windowStartAt` 为半小时网格起点将目标向上取整；按目标顺序检查 Task 完整时长，仅当下一任务的原起始时间早于前项结束时间才将其顺延到前项结束后的第一个半小时槽，原有空档会保留。不含 `targetTaskId` 的普通空白槽位请求维持原有插入顺延。含 `targetTaskId` 的卡片主体请求以锁定后的目标任务结束时间计算首个半小时槽，仅移动被拖任务，目标及其他任务不变；若被拖任务完整区间与任何其他排期冲突或目标后无可用起始槽，则整笔返回 `400 VALIDATION_FAILED`；目标已变化导致结束槽不符返回 `409 RESOURCE_VERSION_CONFLICT`，目标不存在返回资源未找到。`DONE` 任务固定，`CANCELLED` 不占用区间；如果需移动 DONE 或任何顺延起点超过 `windowLastStartAt`，则返回 `400 VALIDATION_FAILED` 并回滚整组。`dueAt` 不限制新排期或顺延起点。服务端按 User→Subject(UUID 升序)→相关 Task(UUID 升序) 获取悲观锁并在同一事务中提交。成功返回 HTTP 200 `{tasks:[TaskResponse...]}`，列表只含 `scheduledAt` 实际改变的 Task，按新排期时间和 UUID 排序；每项版本增加 1，并发布普通 `UPDATE` change-log/realtime 事件，客户端后续通过既有 Sync read pull 收敛。版本冲突为 `409 RESOURCE_VERSION_CONFLICT`。本操作是在线 REST 动作，不扩展 Sync inbound mutation 类型。
+- 插入顺延仅移动起始时间处于请求当天窗口内的 Task。前一日开始但区间跨入当天的 Task 保持不动；若它与插入后的排期冲突，整个请求返回 `400 VALIDATION_FAILED`，不改写任何 Task。
 - 所有资源的用户归属均从 Bearer access token 推导；跨用户 ID 统一按未找到处理。版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`，删除后的普通详情/列表不返回墓碑。
 
 ## 阶段 2B Source、Asset、Relation 已构建契约
@@ -143,7 +156,7 @@
 - Push 返回 `results` 和 `serverCursor`。结果 decision 为 `APPLIED`、`CONFLICT` 或 `REJECTED`，包含资源、mutation、change cursor、当前 DTO/快照、稳定 code 和 `recordedAt`。同一用户/设备/`clientMutationId` 重放时返回首次结果；同键不同内容只拒绝该条 mutation，并返回 `MUTATION_REJECTED`，不会中止同批其他 mutation。
 - `GET /api/sync/pull?cursor=<opaque>&limit=<1..200>` 返回 `changes`、`nextCursor`、`hasMore`、`resetRequired`；省略 cursor 从 0 开始。cursor 为 Base64URL 不透明值，资源变更由 REST 直接写入和 push 共同记录。
 - `GET /api/sync/snapshot` 返回 `snapshotCursor` 以及当前用户 subjects、sources、knowledgeBlocks、tasks、relations 的完整视图，包含 `deletedAt` 非空的墓碑记录；快照 cursor 与这些列表在同一可重复读事务中确定。快照与同步数据不暴露 JPA Entity，Asset 不进入普通 mutation。
-- 同步设备必须属于当前用户且未撤销；所有资源、change log 和幂等记录均执行 userId 隔离。默认保留窗口为 30 天，`SyncRetentionService` 按 `auralis.sync.retention-cleanup-delay-millis` 定时清理，并通过 Micrometer 记录清理行数、失败数和 `resetRequired` 次数；高水位 cursor 不随清理回退，过期 cursor 返回 `resetRequired=true`，客户端应执行完整 snapshot。PostgreSQL、双设备断网重连和生产调度验收仍未执行。
+- 同步设备必须属于当前用户且未撤销；所有资源、change log 和幂等记录均执行 userId 隔离。默认保留窗口为 30 天，`SyncRetentionService` 按 `auralis.sync.retention-cleanup-delay-millis` 定时清理，并通过 Micrometer 记录清理行数、失败数和 `resetRequired` 次数；高水位 cursor 不随清理回退。省略 cursor 或 cursor=0 时，若该用户无历史变更或从 1 起的日志仍完整，可正常 pull；若早期日志已部分或全部清理，则返回 `resetRequired=true`。所有过期 cursor 均要求客户端执行完整 snapshot。PostgreSQL、双设备断网重连和生产调度验收仍未执行。
 
 ## 阶段 4 Review、Stats、Realtime 已实现契约
 
@@ -178,16 +191,17 @@
 
 ## 阶段 5 AI/RAG 后端基线契约（2026-08-16）
 
-- `GET /api/ai/settings` 返回当前用户各 Provider 的配置摘要；`PUT /api/ai/settings` 接受 `provider`、`baseUrl`、`chatModel`、`embeddingModel` 和可选 `apiKey`。返回值只暴露 `hasApiKey`，不返回明文或密文。Provider 配置按用户隔离，首次创建必须提供 key，更新时可保留原 key。客户端只能在本请求 body 中提交 key，禁止持久化明文或在普通请求中附加 BYOK header。运行时解析顺序为当前用户有效 BYOK 优先，其次是服务端 env 默认 Provider（`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY`）；env key 不写入 `ai_credentials` 或 API 响应。
+- `GET /api/ai/settings` 返回当前用户各 Provider 的配置摘要；`PUT /api/ai/settings` 接受 `provider`、`baseUrl`、`chatModel` 和可选 `apiKey`，不接受用户 Embedding 模型配置。返回值只暴露 `hasApiKey`，不返回明文或密文。Provider 配置按用户隔离，首次创建必须提供 key，更新时可保留原 key。客户端只能在本请求 body 中提交 key，禁止持久化明文或在普通请求中附加 BYOK header。普通聊天运行时解析顺序为当前用户有效 BYOK 优先，其次是服务端 env 默认 Provider（`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY`）；env key 不写入 `ai_credentials` 或 API 响应。检索及入库的 Embedding 使用服务端 SiliconFlow 配置，与用户聊天 Provider 分离。
+- `GET /api/ai/settings/{provider}/models` 返回 `{provider,models}`，可选地读取已保存 BYOK Provider 的 `GET /models`，按 `data[].id` 最多提取 200 个模型；不支持该端点的服务仍可手动填写 `chatModel`。`POST /api/ai/settings/{provider}/test-connection` 使用已保存的聊天模型发起最小 `POST /chat/completions` 请求，返回 `{provider,reachable,chatModel}`，不依赖 `/models`。两者均不读取 env 默认凭据，也不接收临时明文密钥。未保存配置返回 `503 MODEL_UNAVAILABLE`；无效/不安全地址返回 `400 VALIDATION_FAILED`；上游认证拒绝或响应格式无效返回 `502 MODEL_PROVIDER_ERROR`；超时返回 `504 MODEL_TIMEOUT`，429 返回 `RATE_LIMITED`，上游 5xx 返回 `503 MODEL_UNAVAILABLE`。`OPENAI_COMPATIBLE` 是通用协议类型，服务商名称不单独持久化。
 - `POST /api/ai/conversations` 创建会话；请求可选 `clientRequestId`，同一用户重放同一非空值必须返回同一会话，供离线会话恢复使用。`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息和会话 `version`；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 必须携带当前 `baseVersion` 并执行 owner-scoped 软删除，版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`。
 - `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、可选 `provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。省略 `provider` 时使用 `auralis.ai.default-provider`；`topK` 必须为正整数且不超过 `auralis.ai.max-retrieved-chunks`（当前 DTO 上限为 32）；同一用户的 `clientRequestId` 重试会回放已持久化结果，不重复创建 USER 消息或调用 Provider。相同会话并发请求会在短事务中先唯一保留 USER 消息，Provider I/O 不持有数据库事务；assistant 仅关联其对应的 USER 消息。事件为 `message.started`、零个或多个 `citation`、零个或多个 `message.delta`、`message.completed`、`message.error`；citation 包含 `sourceId`、`chunkId`、ordinal、标题、excerpt 和 similarity，USER 消息先持久化，ASSISTANT 成功、失败或断流状态随后持久化。
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
 - `POST /api/ai/source-overviews` 接受 `{sourceId,mode,instruction?}`；`POST /api/ai/subject-overviews` 接受 `{subjectId,mode,instruction?,sources}`。客户端可通过 `X-Overview-Request-Id` 传递本次尝试的关联 ID；服务端日志为每次生成记录 `generationId`，并按 user/source/revision 和 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 阶段关联。两者都从 Bearer access token 推导 user，拒绝 `userId`、Provider 凭据及非当前 owner 的 Source/Subject。`mode` 只能为 `ALL`、`OUTLINE`、`SUMMARY`；响应固定为 `{schemaVersion:1,title,outline,summary}`，其中 `OUTLINE` 的 `summary` 为 `null`，`SUMMARY` 的 `outline` 为 `null`，`ALL` 两项均非 null；可空响应字段仍是契约的一部分而非缺省字段。
 - `instruction` 最长 2,000 字符，Subject `sources` 必须为 1–100 项且不能重复 Source；响应 title 最长 300 字符、最多 60 个 chapter/500 个 section/100 个 key point，所有 prose 字段最长 4,000 字符。Source overview 只读取 owner-scoped `READY` Source 的 active chunks；Subject overview 按请求 mode 要求每个输入拥有相应非空 outline/summary，逐项验证 Source 属于请求 Subject 和当前 user，并将服务端 Source UUID 映射为短别名后才交给模型。
 - 模型只接收固定 SYSTEM schema/安全规则与独立的 USER 数据字段（instruction、title、chunks/map JSON、显式 alias）；USER 资料内命令不能改变 SYSTEM 规则。回复仅接受单个 JSON object 或单个 `json` fenced block；服务端拒绝包围 prose、malformed JSON、未知/重复 Source alias、过量节点及任何 locator（当前 chunks 没有可信页码/block alias，输出 `locator` 必须为 `null`），并只在最终响应映射为实际 Source UUID。多 batch Source MAP 与非最终 multi-group REDUCE 是 intermediate，使用 `max_tokens=4608`；single-batch Source MAP、Subject direct 与最终单 group REDUCE 是 final，使用 `max_tokens=6144`。Intermediate 规范化 JSON 必须 `<=5200` 字符且 self-pair prompt fit（`<=12000`），Reduce 每轮结果数量必须严格下降；不自动压缩重试。所有 Overview 调用继续使用内部 structured JSON 标记要求 OpenAI-compatible `json_object` response format；DeepSeek completion 同时关闭 thinking，且不会把 `reasoning_content` 回退为最终 JSON。普通聊天/流式请求不启用该标记，公开请求/响应 DTO 不变。两个端点同步且无状态：不创建 Conversation/Message、同步资源、数据库表或迁移；结果由 PC 的 owner/device-scoped 派生缓存保存。客户端输入验证、instruction 或输入 prompt 不合法返回 400 `VALIDATION_FAILED`；Provider 输出 parse/schema/alias/locator 等其它无效错误返回 502 `MODEL_PROVIDER_ERROR`；中间输出预算超限返回 502 `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE`；Reduce 无进展返回 502 `OVERVIEW_REDUCE_NO_PROGRESS`；Provider 不可用返回 `MODEL_UNAVAILABLE`。公开 API route、DTO、OpenAPI schema 未因该内部预算策略变化。
-- Source 创建、更新和 reingest 在提交后发布 ingestion 请求；启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行，租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。PostgreSQL 使用 pgvector SQL/HNSW 执行用户隔离的 cosine 检索；H2 保留 JSON embedding 的确定性 cosine fallback。
+- TEXT/URL Source 创建、更新和 reingest 与对应 ingestion job 在同一事务持久化，job 入队失败则 Source 与 change log 一起回滚；恢复处于 `PENDING/PARSING/INDEXING` 的 TEXT/URL Source 时，按当前 revision 原子补建或复用活跃 job，`READY/FAILED` 不自动重跑；FILE 继续等待 ParsedDocument complete。TEXT 正文或 URL 地址等解析输入变化轮换只读 `ingestionRevision`，不同修订分别建 job，同修订活跃 job 可复用。启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行；提交前核对 Source revision、job/generation、attempt 和在取得行锁后仍有效的 lease，旧 worker 不得覆盖新修订的 Source/chunks。租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。PostgreSQL 使用 pgvector SQL/HNSW 执行用户隔离的 cosine 检索；H2 保留 JSON embedding 的确定性 cosine fallback。
 - SSE 使用 Spring MVC `StreamingResponseBody`，Controller 通过回调把 Provider 增量直接写入响应，不先构造完整事件列表；OpenAI-compatible 适配器解析上游 SSE 的 `data:` 增量、`[DONE]`、超时、429/5xx 和 malformed event。当前自动证据为 Stub/受控 HTTP，不代表真实 Provider 网络、证书、配额或前端联调已通过。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
-- Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443），host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；保存和实际请求前都会校验所有 DNS 地址，实际连接固定到已检查地址，Provider 重定向关闭。
+- Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443）。`DEEPSEEK` 与 `SILICONFLOW` 的 host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；`OPENAI_COMPATIBLE` 允许用户指定公网 HTTPS host。保存和实际请求前执行地址安全校验，实际连接固定到已检查的公网 DNS 地址，Provider 重定向关闭；本地、内网及 NAT64、6to4、Teredo IPv6 转换前缀不在通用 Provider 范围内。
 - Provider 请求使用独立的 `AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS` 连接超时与 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 普通聊天/流式/embedding response-read 窗口；Overview map/reduce 非流式 completion 使用可配置的 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`（默认 120000ms，允许范围 60000–120000ms）。连接超时只用于固定地址 TLS socket，普通请求 response/read 默认 10000ms。`SocketTimeoutException` 返回稳定 `MODEL_TIMEOUT`（HTTP 504），其它 IOException 仍为 `MODEL_UNAVAILABLE`（HTTP 503），429/5xx/400 的既有映射不变；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
 - 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V14、架构测试、出站安全专项，以及默认 `clean test` 的真实 PostgreSQL 17/pgvector 与 MinIO Testcontainers。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04/R1-05 增加了会话恢复键、同一请求并发保留、精确 assistant 关联及流式回放测试。真实 Provider 网络/证书/限流、浏览器前端联调和人工业务验收仍未完成。
 
@@ -208,7 +222,7 @@
 - C4 已将 PC Tauri 的加密 cache receipt 接入 upload coordinator：Rust 只解密流式 PUT 到服务端签名 URL，URL/headers 只保留在内存；PUT 过期可重新申请 intent，网络错误进入 `PAUSED_NETWORK`，随后调用幂等 complete。SQLite 任务 `ingestion_revision` 使用服务端 UUID 文本，旧数字 v3 行迁移到可恢复 legacy 表；正文不穿过 Vue/HTTP coordinator。C5 的 FILE Source scheduler 只在 `AWAITING_CLIENT + ingestionRevision` 下创建本地 job，重启/跨设备通过 owner-scoped Asset download adapter 恢复，签名 URL 不落库。
 - C5 将本地 job 的完整 `DocumentCacheReceipt` 元数据（cache id、大小、hash、chunk/envelope 信息）持久化为任务元数据，正文仍只在加密 Tauri cache；`PACKAGING/UPLOADING/PAUSED_NETWORK` 可恢复上传而不重复 OCR/package。Asset SHA mismatch、旧 revision 和非 FILE Source 在客户端边界拒绝或跳过。2026-08-26 起 `DocumentProcessingRuntime` 在 Tauri 登录后负责组装并绑定这些组件，sync/online 事件触发 Source 重载与 pending job 恢复；带 receipt 的网络暂停会回到 `UPLOADING` 边界。
 - FILE Source 创建、Asset 替换和缺少兼容 ParsedDocument 的 reingest 不发布现有服务端解析事件；只有 complete 接受成功后创建 indexing job。`POST /api/sources/{id}/reingest` 在存在最新兼容 ParsedDocument 时复用该派生对象；原 Asset/schema 变化或显式重新解析时轮换 `ingestionRevision` 并回到 `AWAITING_CLIENT`。
-- `POST /api/ai/messages/stream` 目标请求在现有字段上新增可选 `readingContext`，其中包含必填 `currentSourceId`、`subjectId`、`retrievalMode=AUTO` 和可选 `selectionText`。PC 当前文件检索必须提交该对象；服务端验证用户、Source、Subject 关系和 Source READY 状态，默认只检索当前 Source，命中确定性规则后只扩大到当前 Subject，并记录 `EXPLICIT_CROSS_FILE`、`SUBJECT_SOURCE_TITLE_MATCH` 或 `INSUFFICIENT_CURRENT_RESULTS`。异常时保持当前 Source，不能扩大到用户全库。
-- `readingContext` 省略时保留现有普通聊天契约，不套用阅读工作区范围升级；PC 工作区不得再把文件名拼接进 `content` 代替结构化上下文。`selectionText` 只作为有长度限制的用户 prompt 上下文，不参与检索命中、citation 或证据归属。
+- `POST /api/ai/messages/stream` 目标请求在现有字段上新增可选 `readingContext`，字段为可选 `currentSourceId`、必填 `subjectId`、必填 `retrievalMode`、可选且最多 100 项的 UUID `sourceIds` 和可选 `selectionText`。`AUTO` 要求 `currentSourceId`，保留当前文件检索及现有确定性跨文件规则；`SELECTED_SOURCES` 要求 1–100 个不重复的 `sourceIds`，只检索这些 Source；`SUBJECT` 不接受 Source ID，用户显式选择后检索该 Subject 下所有活动且 READY 的 Source。两种显式范围均先验证 Subject owner 与活动状态；所选 Source 必须归属该 Subject、归属当前用户且处于 READY，不能扩展到显式范围以外。当前文件继续沿用 `AUTO`；不引用资料时省略 `readingContext` 并设置 `retrievalEnabled=false`。无效集合或 Subject 返回 `VALIDATION_FAILED`，不存在或不属于当前用户的 Source 返回 `RESOURCE_NOT_FOUND`，未就绪 Source 返回 `SOURCE_NOT_READY`。
+- `readingContext` 省略时保留现有普通聊天契约；PC 工作区不得把文件名拼接进 `content` 代替结构化上下文。`selectionText` 只作为有长度限制的用户 prompt 上下文，不参与检索命中、citation 或证据归属。
 - `POST /api/ai/conversations` 目标新增可选 `purpose` 与 `sourceId`；省略 purpose 时为 `GENERAL`，阅读工作区使用 `purpose=READING_SESSION` 并绑定当前 Source。该会话不进入普通历史列表，切换/离开时客户端 best-effort 删除，服务端清理超过 24 小时无活动的遗留阅读会话。
 - AI 会话在当前打开期间组装已完成历史消息；失败、取消或未完成 Assistant 消息不进入后续 Prompt。SSE citation 仍以实际检索结果为权威，PC 只呈现去重来源文件名。

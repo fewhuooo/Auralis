@@ -249,7 +249,7 @@ public class AiStreamingService {
         String embeddingModel = "<unknown>";
         try {
             AiSettingsService.ResolvedSettings embeddingSettings =
-                    settingsService.resolve(userId, AiProviderType.SILICONFLOW);
+                    settingsService.resolveServerManagedEmbedding();
             embeddingModel = embeddingSettings.credential().model();
             LOGGER.info(
                     "AI_EMBEDDING_CONFIG_RESOLVED userId={} conversationId={} messageId={} provider={} model={} endpointHost={}",

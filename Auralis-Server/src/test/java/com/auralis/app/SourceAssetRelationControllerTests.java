@@ -2,6 +2,8 @@ package com.auralis.app;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
+import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
@@ -23,6 +25,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -53,6 +56,9 @@ class SourceAssetRelationControllerTests {
 
     @Autowired
     private SourceRepository sourceRepository;
+
+    @Autowired
+    private IngestionJobRepository ingestionJobRepository;
 
     @Autowired
     private AssetRepository assetRepository;
@@ -165,6 +171,40 @@ class SourceAssetRelationControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1));
 
+        String revision = source.path("ingestionRevision").asText();
+        IngestionJobEntity staleJob = ingestionJobRepository.findAll().stream()
+                .filter(job -> sourceId.equals(job.getSourceId().toString()))
+                .findFirst()
+                .orElseThrow();
+        staleJob.markFailed(java.time.Instant.now(), "INGESTION_FAILED", "simulated terminal job while deleted");
+        ingestionJobRepository.saveAndFlush(staleJob);
+
+        mockMvc.perform(delete("/api/sources/{id}", sourceId)
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":" + source.path("version").asLong() + "}"))
+                .andExpect(status().isNoContent());
+        long deletedVersion = sourceRepository.findById(java.util.UUID.fromString(sourceId))
+                .orElseThrow().getVersion();
+        mockMvc.perform(post("/api/sources/{id}/restore", sourceId)
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":" + deletedVersion + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ingestionStatus").value("PENDING"))
+                .andExpect(jsonPath("$.ingestionRevision").value(revision));
+
+        assertThat(ingestionJobRepository.findAll().stream()
+                .filter(job -> sourceId.equals(job.getSourceId().toString()))
+                .filter(IngestionJobEntity::isActive)
+                .filter(job -> revision.equals(job.getIngestionRevision().toString())))
+                .hasSize(1);
+        assertThat(ingestionJobRepository.findAll().stream()
+                .filter(job -> sourceId.equals(job.getSourceId().toString()))
+                .filter(IngestionJobEntity::isActive)
+                .filter(job -> revision.equals(job.getIngestionRevision().toString()))
+                .findFirst().orElseThrow().getId())
+                .isNotEqualTo(staleJob.getId());
         assertThat(sourceId).isNotBlank();
     }
 

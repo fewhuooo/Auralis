@@ -5,7 +5,7 @@ FROM eclipse-temurin:21.0.8_9-jdk-jammy AS build
 WORKDIR /workspace
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
-RUN chmod +x mvnw
+RUN sed -i 's/\r$//' mvnw && chmod +x mvnw
 RUN ./mvnw -B -ntp dependency:go-offline
 COPY src src
 RUN ./mvnw -B -ntp -DskipTests package

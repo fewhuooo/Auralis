@@ -59,6 +59,21 @@ public final class TaskDtos {
     public record ScheduleSwapResponse(Response source, Response target) {
     }
 
+    public record ScheduleInsertionRequest(
+            @NotNull UUID taskId,
+            @NotNull @PositiveOrZero Long baseVersion,
+            @NotNull Instant scheduledAt,
+            @NotNull Instant windowStartAt,
+            @NotNull Instant windowLastStartAt,
+            UUID targetTaskId) {
+    }
+
+    public record ScheduleInsertionResponse(@NotNull List<Response> tasks) {
+        public ScheduleInsertionResponse {
+            tasks = List.copyOf(tasks);
+        }
+    }
+
     public record ListResponse(List<Response> items, String nextCursor, boolean hasMore) {
         public ListResponse {
             items = List.copyOf(items);

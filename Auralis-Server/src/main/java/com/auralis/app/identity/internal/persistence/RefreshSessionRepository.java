@@ -19,6 +19,9 @@ public interface RefreshSessionRepository extends JpaRepository<RefreshSessionEn
     @Query("select session from RefreshSessionEntity session where session.tokenHash = :tokenHash")
     Optional<RefreshSessionEntity> findByTokenHashForUpdate(@Param("tokenHash") String tokenHash);
 
+    @Query("select session.userId from RefreshSessionEntity session where session.tokenHash = :tokenHash")
+    Optional<UUID> findUserIdByTokenHash(@Param("tokenHash") String tokenHash);
+
     Optional<RefreshSessionEntity> findByIdAndUserId(UUID id, UUID userId);
 
     List<RefreshSessionEntity> findAllByUserIdOrderByLastUsedAtDesc(UUID userId);

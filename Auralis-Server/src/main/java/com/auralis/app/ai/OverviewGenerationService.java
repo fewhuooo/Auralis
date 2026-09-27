@@ -30,6 +30,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.function.Supplier;
 
 /** Synchronous, non-persistent structured overview generation for the PC-derived cache. */
 @Service
@@ -74,6 +79,9 @@ public class OverviewGenerationService {
     private final AuralisProperties properties;
     private final OverviewDocumentValidator documentValidator;
     private final ObjectMapper objectMapper;
+    // Coalesces calls handled by this service instance; it does not coordinate across server replicas.
+    private final ConcurrentMap<SourceGenerationKey, CompletableFuture<OverviewResponse>> inFlightSourceGenerations =
+            new ConcurrentHashMap<>();
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
                                      SourceChunkRepository chunkRepository, AiSettingsService settingsService,
@@ -109,7 +117,22 @@ public class OverviewGenerationService {
         if (source.ingestionStatus() != SourceIngestionStatus.READY) {
             throw new DomainException("MUTATION_REJECTED", "Source is not ready for overview generation");
         }
-        List<String> chunks = chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(userId, source.id())
+        GenerationContext generationContext = context;
+        SourceGenerationKey key = new SourceGenerationKey(userId, source.id(), source.ingestionRevision(),
+                source.title(), request.mode(), request.instruction() == null ? "" : request.instruction());
+        OverviewResponse result = singleFlight(key,
+                () -> generateSourceOverview(generationContext, request, source));
+        logSuccess(context);
+        return result;
+        } catch (RuntimeException exception) {
+            logFailure(context, exception);
+            throw exception;
+        }
+    }
+
+    private OverviewResponse generateSourceOverview(GenerationContext context, SourceOverviewRequest request,
+                                                     SourceView source) {
+        List<String> chunks = chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(context.userId(), source.id())
                 .stream().map(chunk -> chunk.getContent()).filter(content -> content != null && !content.isBlank())
                 .map(String::trim).toList();
         logPhase(context, "CHUNK_LOAD_SUCCESS", "chunkCount={}", chunks.size());
@@ -135,11 +158,34 @@ public class OverviewGenerationService {
         }
         OverviewResponse reduced = reduce(context, request.mode(), request.instruction(), aliases, mapped);
         logPhase(context, "CACHE_RETURN", "mappedCount={}", mapped.size());
-        OverviewResponse result = forMode(documentValidator.mapAliasesToSourceIds(reduced, aliases), request.mode());
-        logSuccess(context);
-        return result;
-        } catch (RuntimeException exception) {
-            logFailure(context, exception);
+        return forMode(documentValidator.mapAliasesToSourceIds(reduced, aliases), request.mode());
+    }
+
+    private OverviewResponse singleFlight(SourceGenerationKey key, Supplier<OverviewResponse> operation) {
+        CompletableFuture<OverviewResponse> candidate = new CompletableFuture<>();
+        CompletableFuture<OverviewResponse> inFlight = inFlightSourceGenerations.putIfAbsent(key, candidate);
+        if (inFlight != null) {
+            return await(inFlight);
+        }
+        try {
+            OverviewResponse result = operation.get();
+            candidate.complete(result);
+            return result;
+        } catch (RuntimeException | Error failure) {
+            candidate.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            inFlightSourceGenerations.remove(key, candidate);
+        }
+    }
+
+    private OverviewResponse await(CompletableFuture<OverviewResponse> inFlight) {
+        try {
+            return inFlight.join();
+        } catch (CompletionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) throw runtimeException;
+            if (cause instanceof Error error) throw error;
             throw exception;
         }
     }
@@ -160,6 +206,7 @@ public class OverviewGenerationService {
         validateSubjectInputs(request);
         Map<String, String> aliases = new LinkedHashMap<>();
         List<ModelSubjectInput> safeSources = new ArrayList<>();
+        List<SourceView> resolvedSources = new ArrayList<>();
         Set<UUID> seen = new LinkedHashSet<>();
         int index = 1;
         for (SubjectOverviewSourceInput input : request.sources()) {
@@ -172,6 +219,12 @@ public class OverviewGenerationService {
             }
             String alias = "source-" + index++;
             aliases.put(alias, source.id().toString());
+            resolvedSources.add(source);
+        }
+        for (int sourceIndex = 0; sourceIndex < request.sources().size(); sourceIndex++) {
+            SubjectOverviewSourceInput input = request.sources().get(sourceIndex);
+            SourceView source = resolvedSources.get(sourceIndex);
+            String alias = "source-" + (sourceIndex + 1);
             safeSources.add(new ModelSubjectInput(alias, source.title(), aliasizeOutline(input.outline(), aliases), input.summary()));
         }
         if (safeSources.isEmpty()) {
@@ -577,6 +630,10 @@ public class OverviewGenerationService {
         private GenerationContext withSource(UUID sourceId, UUID revision) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId);
         }
+    }
+
+    private record SourceGenerationKey(UUID userId, UUID sourceId, UUID revision, String title, OverviewMode mode,
+                                       String instruction) {
     }
 
     private record ModelSubjectInput(String sourceAlias, String title, List<OverviewChapter> outline, OverviewDtos.OverviewSummary summary) { }

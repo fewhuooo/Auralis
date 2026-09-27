@@ -149,16 +149,29 @@ test('sync error remains projected until a complete subsequent cycle succeeds', 
   const originalPush = useSyncApi.pushChanges
   const originalPull = useSyncApi.pullChanges
   let failed = true
+  let pullFailsOnce = true
   let pushCalls = 0
+  let pullCalls = 0
   try {
     useSyncApi.pushChanges = async () => {
       pushCalls += 1
       if (failed) throw { response: { status: 503, data: { title: 'Unavailable', status: 503, detail: 'provider secret' } } }
-      return { results: [], serverCursor: null }
+      return {
+        results: [{ clientMutationId: 'final-fix-mutation', decision: 'PROCESSING' }],
+        serverCursor: null,
+      }
     }
-    useSyncApi.pullChanges = async () => ({ changes: [], nextCursor: null, hasMore: false, resetRequired: false })
+    useSyncApi.pullChanges = async () => {
+      pullCalls += 1
+      if (pullFailsOnce) {
+        pullFailsOnce = false
+        throw { response: { status: 503, data: { title: 'Unavailable', status: 503, detail: 'pull provider secret' } } }
+      }
+      return { changes: [], nextCursor: 'final-fix-cursor', hasMore: false, resetRequired: false }
+    }
     const sync = useSyncStore()
     const repository = await getLocalRepository('final-fix-user', 'final-fix-device')
+    await repository.saveCursor('final-fix-cursor', false)
     await repository.commitMutation({
       resourceType: 'TASK', resourceId: 'final-fix-task', value: { id: 'final-fix-task', title: 'pending' },
       version: 1, deletedAt: null,
@@ -169,7 +182,13 @@ test('sync error remains projected until a complete subsequent cycle succeeds', 
     assert.equal(sync.lastSyncErrorCode, 'SERVICE_UNAVAILABLE')
     assert.equal(sync.lastSyncError, '服务暂时不可用，请稍后重试')
     failed = false
+    await assert.rejects(sync.flushNow())
+    assert.equal(pushCalls, 2)
+    assert.equal(pullCalls, 1)
+    assert.equal(sync.lastSyncErrorCode, 'SERVICE_UNAVAILABLE')
+    assert.equal(sync.lastSyncError, '服务暂时不可用，请稍后重试')
     await sync.flushNow()
+    assert.equal(pullCalls, 2)
     assert.equal(sync.lastSyncError, null)
     assert.equal(sync.lastSyncErrorCode, null)
   } finally {

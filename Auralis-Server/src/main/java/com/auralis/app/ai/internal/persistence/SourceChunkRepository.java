@@ -22,6 +22,18 @@ public interface SourceChunkRepository extends JpaRepository<SourceChunkEntity, 
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
+            delete from SourceChunkEntity chunk
+             where chunk.userId = :userId
+               and chunk.sourceId = :sourceId
+               and chunk.generation = :generation
+            """)
+    int deleteGeneration(
+            @Param("userId") UUID userId,
+            @Param("sourceId") UUID sourceId,
+            @Param("generation") UUID generation);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
             update SourceChunkEntity chunk
                set chunk.active = false
              where chunk.userId = :userId

@@ -146,7 +146,7 @@ const handleSave = () => {
 .modal-container {
   width: 90%;
   max-width: 520px;
-  background: #FFFFFF;
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
   border: 1px solid var(--border-subtle);
@@ -223,7 +223,7 @@ html.dark .close-btn:hover {
   align-items: center;
   gap: 16px;
   padding: 16px;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 16px;
   border: 1px solid var(--border-default);
 }
@@ -293,7 +293,7 @@ html.dark .preview-card {
 }
 
 .styled-input, .styled-textarea {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   border-radius: 10px;
   padding: 10px 14px;
@@ -305,9 +305,9 @@ html.dark .preview-card {
 }
 
 .styled-input:focus, .styled-textarea:focus {
-  border-color: #7D9372;
-  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15);
-  background: var(--color-bg-primary);
+  border-color: #8B9A6E;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+  background: var(--color-bg-tertiary, #FAF7F2);
 }
 
 html.dark .styled-input:focus, html.dark .styled-textarea:focus {
@@ -327,8 +327,8 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus {
 }
 
 .icon-btn {
-  background: var(--color-bg-secondary);
-  border: 1.5px solid transparent;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1.5px solid var(--border-default);
   border-radius: 10px;
   height: 44px;
   font-size: 20px;
@@ -341,14 +341,15 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus {
 }
 
 .icon-btn:hover {
-  background: var(--color-bg-tertiary);
+  background: rgba(139, 154, 110, 0.1);
+  border-color: rgba(139, 154, 110, 0.35);
   transform: translateY(-1px);
 }
 
 .icon-btn.is-selected {
-  background: rgba(125, 147, 114, 0.1);
-  border-color: #7D9372;
-  color: #7D9372;
+  background: rgba(139, 154, 110, 0.14);
+  border-color: #8B9A6E;
+  color: #8B9A6E;
   font-weight: 700;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
@@ -368,7 +369,7 @@ html.dark .icon-btn.is-selected {
 }
 
 .btn-secondary {
-  background: transparent;
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
   padding: 8px 20px;
@@ -380,12 +381,12 @@ html.dark .icon-btn.is-selected {
 }
 
 .btn-secondary:hover {
-  background: var(--color-bg-secondary);
+  background: rgba(0, 0, 0, 0.05);
   color: var(--text-primary);
 }
 
 .btn-primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%));
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   border: none;
   color: #FFFFFF;
   padding: 8px 26px;

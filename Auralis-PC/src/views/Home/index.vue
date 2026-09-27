@@ -227,7 +227,7 @@
           <div class="pane-header-left">
             <h3 class="pane-title">{{ activeSubjectId ? `${activeSubject?.name} · 知识库` : '最近入库的知识块' }}</h3>
             <div class="block-search-box">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <IconSearch class="search-icon" :size="12" :stroke-width="2" />
               <input v-model="blockSearchQuery" class="block-search-input" placeholder="搜索知识块标题或内容..." />
             </div>
           </div>
@@ -255,7 +255,7 @@
             <!-- View All fade card -->
             <div class="block-card view-all-card" @click="blockSearchQuery = ''">
               <div class="view-all-inner">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+                <IconChevronRight :size="20" :stroke-width="2" />
                 <span class="view-all-text">查看全部</span>
               </div>
             </div>
@@ -276,7 +276,7 @@
       <div class="sidebar-header">
         <h3 class="sidebar-title">日程看板</h3>
         <button class="add-task-btn" @click="openCreateTaskDialog" title="新建任务">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <IconPlus :size="14" :stroke-width="2.5" />
         </button>
       </div>
 
@@ -287,7 +287,7 @@
           :class="{ 'is-active': viewMode === 'timeline' }"
           @click="viewMode = 'timeline'"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <IconClock :size="12" :stroke-width="2" />
           日视图
         </button>
         <button
@@ -295,7 +295,7 @@
           :class="{ 'is-active': viewMode === 'weekly' }"
           @click="viewMode = 'weekly'"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <IconCalendar :size="12" :stroke-width="2" />
           周视图
         </button>
       </div>
@@ -346,7 +346,7 @@
       <!-- Weekly View (placeholder) -->
       <div class="schedule-section" v-show="viewMode === 'weekly'">
         <div class="weekly-placeholder">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="1.5" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <IconCalendar :size="32" :stroke-width="1.5" color="var(--text-muted)" />
           <span class="placeholder-title">周视图</span>
           <span class="placeholder-desc">可视化一周学习排期，即将上线</span>
         </div>
@@ -386,7 +386,10 @@
           </div>
 
           <div v-if="filteredPendingTasks.length === 0" class="empty-pending">
-            <span>🎉 所有待办任务已排期或完成</span>
+            <span style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+              <IconCircleCheck :size="15" :stroke-width="1.8" style="color: var(--color-primary-accent, #7D9372);" />
+              所有待办任务已排期或完成
+            </span>
           </div>
         </div>
       </div>
@@ -519,7 +522,7 @@
             <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
             <div class="modal-meta-row">
               <span class="modal-time-badge">
-                <ElIcon style="margin-right:4px;"><Clock /></ElIcon>
+                <IconHistory :size="14" :stroke-width="2" style="margin-right:4px;" />
                 记于 {{ selectedBlock?.time }}
               </span>
             </div>
@@ -564,7 +567,15 @@ import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElIcon, ElNotification, ElMessageBox } from 'element-plus'
-import { Clock } from '@element-plus/icons-vue'
+import {
+  IconSearch,
+  IconChevronRight,
+  IconPlus,
+  IconClock,
+  IconHistory,
+  IconCircleCheck,
+  IconCalendar
+} from '@tabler/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 
@@ -586,7 +597,7 @@ marked.setOptions({
   gfm: true
 })
 
-const SUBJECT_THEME_COLOR = '#7D9372'
+const SUBJECT_THEME_COLOR = '#8B9A6E'
 
 const renderMarkdown = (content: string) => {
   if (!content) return ''

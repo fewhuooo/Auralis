@@ -19,7 +19,9 @@
 
       <!-- Phase Status -->
       <div class="phase-status">
-        <span :style="{ color: ringColor }">{{ isBreakPhase ? '休息时间' : '专注中' }}</span>
+        <span class="phase-pill" :class="{ 'is-break': isBreakPhase }">
+          {{ isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}
+        </span>
       </div>
 
       <!-- Progress Dots -->
@@ -28,18 +30,18 @@
           v-for="i in 4" 
           :key="i"
           class="dot"
-          :style="currentPomodoro >= i ? { backgroundColor: ringColor } : { backgroundColor: ringColor + '30' }"
+          :class="{ 'is-filled': currentPomodoro >= i, 'is-break-filled': currentPomodoro >= i && isBreakPhase }"
         ></div>
       </div>
 
       <!-- Controls -->
       <div class="controls">
-        <div class="ctrl-btn secondary" @click="resetTimer">重置</div>
-        <div class="main-btn" @click="toggleTimer">
+        <button class="ctrl-btn secondary" type="button" @click="resetTimer">重置</button>
+        <button class="main-btn" type="button" :class="{ 'is-running': isRunning, 'is-break': isBreakPhase }" @click="toggleTimer">
           <div class="pause-icon" v-if="isRunning"></div>
           <div class="play-icon" v-else></div>
-        </div>
-        <div class="ctrl-btn secondary" @click="skipPhase">跳过</div>
+        </button>
+        <button class="ctrl-btn secondary" type="button" @click="skipPhase">跳过</button>
       </div>
     </div>
   </div>
@@ -91,8 +93,9 @@ const totalSeconds = computed(() => {
 const remainingSeconds = ref(totalSeconds.value)
 let timer: ReturnType<typeof setInterval> | null = null
 
+// Zen Minimalist Palette: Focus = Zen Sage (#8B9A6E), Break = Warm Amber Tea (#C89B6D)
 const ringColor = computed(() => {
-  return isBreakPhase.value ? '#10B981' : '#E85D04' // Tailwind colors for break and pomodoro
+  return isBreakPhase.value ? '#C89B6D' : '#8B9A6E'
 })
 
 const toggleTimer = () => {
@@ -174,14 +177,19 @@ clockTimer = setInterval(() => {
 
 .time-row {
   position: absolute;
-  top: 0;
-  left: 0;
+  top: 10px;
+  left: 20px;
 }
 .datetime-text {
-  font-size: 14px;
-  color: var(--text-muted);
+  font-size: 13px;
+  color: var(--text-muted, #7A7A75);
   font-weight: 600;
   font-family: var(--font-family-base);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle, #E6E6E4);
+  padding: 5px 14px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 .center-block {
@@ -198,78 +206,148 @@ clockTimer = setInterval(() => {
 
 .phase-status {
   text-align: center;
-  margin-top: 20px;
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  font-family: var(--font-family-base);
+  margin-top: 18px;
+}
+.phase-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 16px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: rgba(139, 154, 110, 0.12);
+  color: #637748;
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.08);
+  transition: all 0.3s ease;
+}
+.phase-pill.is-break {
+  background: rgba(200, 155, 109, 0.15);
+  color: #9C7240;
+  border-color: rgba(200, 155, 109, 0.3);
+  box-shadow: 0 2px 6px rgba(200, 155, 109, 0.1);
 }
 
 .progress-dots {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 14px;
 }
 .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  background: rgba(139, 154, 110, 0.22);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dot.is-filled {
+  background: #8B9A6E;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.6);
+  transform: scale(1.15);
+}
+.dot.is-break-filled {
+  background: #C89B6D;
+  box-shadow: 0 0 8px rgba(200, 155, 109, 0.6);
 }
 
 .controls {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 30px;
-  margin-top: 24px;
+  gap: 28px;
+  margin-top: 26px;
 }
 .ctrl-btn {
-  font-size: 14px;
-  color: var(--text-primary);
+  font-size: 13px;
+  color: var(--text-secondary, #344139);
   font-weight: 600;
-  padding: 9px 18px;
-  border-radius: 999px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--border-default);
+  padding: 8px 18px;
+  border-radius: 9999px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default, #E6E6E4);
   cursor: pointer;
-  transition: all 0.2s;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ctrl-btn:hover {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: #8B9A6E;
+  color: #8B9A6E;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.16);
 }
 .ctrl-btn:active {
   transform: scale(0.96);
-  background: rgba(0, 0, 0, 0.04);
 }
+
 .main-btn {
-  width: 80px;
-  height: 80px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: var(--text-primary);
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-  transition: transform 0.2s;
+  box-shadow: 0 6px 20px rgba(139, 154, 110, 0.38);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
 }
 .main-btn:hover {
-  transform: scale(1.05);
+  transform: scale(1.06) translateY(-2px);
+  box-shadow: 0 8px 26px rgba(139, 154, 110, 0.5);
 }
 .main-btn:active {
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
+.main-btn.is-break {
+  background: linear-gradient(135deg, #D6AF83 0%, #C89B6D 100%);
+  box-shadow: 0 6px 20px rgba(200, 155, 109, 0.38);
+}
+.main-btn.is-break:hover {
+  box-shadow: 0 8px 26px rgba(200, 155, 109, 0.5);
+}
+
 .play-icon {
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 14px 0 14px 21px;
-  border-color: transparent transparent transparent var(--color-bg-primary);
-  margin-left: 7px;
+  border-width: 13px 0 13px 20px;
+  border-color: transparent transparent transparent #FFFFFF;
+  margin-left: 5px;
 }
 .pause-icon {
-  width: 14px;
-  height: 21px;
-  border-left: 5px solid var(--color-bg-primary);
-  border-right: 5px solid var(--color-bg-primary);
+  width: 16px;
+  height: 20px;
+  border-left: 5px solid #FFFFFF;
+  border-right: 5px solid #FFFFFF;
   box-sizing: border-box;
+}
+
+/* Dark Mode Overrides */
+html.dark .datetime-text {
+  background: #212621;
+  border-color: rgba(163, 177, 155, 0.25);
+  color: #d9d0c7;
+}
+html.dark .ctrl-btn {
+  background: #212621;
+  border-color: rgba(163, 177, 155, 0.25);
+  color: #FAF7F2;
+}
+html.dark .ctrl-btn:hover {
+  background: #293029;
+  border-color: #9AB08F;
+  color: #9AB08F;
+}
+html.dark .main-btn {
+  background: #9AB08F;
+  box-shadow: 0 6px 20px rgba(154, 176, 143, 0.3);
+}
+html.dark .main-btn.is-break {
+  background: #C89B6D;
+  box-shadow: 0 6px 20px rgba(200, 155, 109, 0.3);
 }
 </style>

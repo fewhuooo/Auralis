@@ -203,6 +203,97 @@ test('sync cycle settles only its claimed mutation and preserves later pending w
   assert.equal(repository.resource.syncStatus, 'pending');
 });
 
+test('a new local sync scope bootstraps from a snapshot without losing unresolved writes', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const storage = createMemoryStorage();
+  const repository = new LocalRepository('user-a', 'new-device', { storage });
+  const otherScope = new LocalRepository('user-b', 'existing-device', { storage });
+
+  await repository.commitMutation({
+    resourceType: 'TASK',
+    resourceId: 'task-local',
+    value: { id: 'task-local', title: 'Offline edit', status: 'TODO' },
+    version: 0,
+    deletedAt: null,
+    mutation: {
+      clientMutationId: 'mutation-local',
+      resourceType: 'TASK',
+      resourceId: 'task-local',
+      mutationType: 'CREATE',
+      baseVersion: 0,
+      payload: { id: 'task-local', title: 'Offline edit', status: 'TODO' },
+    },
+  });
+  await otherScope.saveCursor('other-scope-cursor', false);
+  await otherScope.upsert('TASK', 'other-task', { id: 'other-task', title: 'Other user' }, {
+    version: 1,
+    deletedAt: null,
+    syncStatus: 'synced',
+  });
+
+  let pullCalls = 0;
+  let snapshotCalls = 0;
+  const result = await runSyncCycle({
+    repository,
+    serverDeviceId: 'new-device',
+    api: {
+      async pushChanges({ mutations }) {
+        assert.deepEqual(mutations.map((item) => item.clientMutationId), ['mutation-local']);
+        return { results: [{ clientMutationId: 'mutation-local', decision: 'PROCESSING' }], serverCursor: null };
+      },
+      async pullChanges() {
+        pullCalls += 1;
+        return {
+          changes: [{ cursor: 'c-80', resourceType: 'TASK', resourceId: 'recent-task', mutationType: 'CREATE', version: 1, payload: { id: 'recent-task', title: 'Recent' } }],
+          nextCursor: 'c-80',
+          hasMore: false,
+          resetRequired: false,
+        };
+      },
+      async getSnapshot() {
+        snapshotCalls += 1;
+        return {
+          snapshotCursor: 'snapshot-c-80',
+          subjects: [],
+          sources: [],
+          knowledgeBlocks: [],
+          tasks: [
+            { id: 'old-task', title: 'Changed before changelog retention', version: 3, deletedAt: null },
+            { id: 'recent-task', title: 'Recent', version: 1, deletedAt: null },
+            { id: 'task-local', title: 'Server copy', status: 'TODO', version: 1, deletedAt: null },
+          ],
+          relations: [],
+        };
+      },
+    },
+  });
+
+  assert.equal(snapshotCalls, 1);
+  assert.equal(pullCalls, 0);
+  assert.deepEqual([...result.changedResourceTypes].sort(), [
+    'KNOWLEDGE_BLOCK',
+    'RELATION',
+    'SOURCE',
+    'SUBJECT',
+    'TASK',
+  ]);
+  const state = await repository.getSyncState();
+  assert.deepEqual({ cursor: state.cursor, resetRequired: state.resetRequired }, {
+    cursor: 'snapshot-c-80',
+    resetRequired: false,
+  });
+  assert.equal((await repository.read('TASK', 'old-task'))?.value.title, 'Changed before changelog retention');
+  assert.equal((await repository.read('TASK', 'recent-task'))?.value.title, 'Recent');
+  assert.equal((await repository.read('TASK', 'task-local'))?.value.title, 'Offline edit');
+  assert.deepEqual((await repository.listUnresolved()).map((item) => item.clientMutationId), ['mutation-local']);
+  assert.deepEqual(await otherScope.getSyncState().then(({ cursor, resetRequired }) => ({ cursor, resetRequired })), {
+    cursor: 'other-scope-cursor',
+    resetRequired: false,
+  });
+  assert.equal((await otherScope.read('TASK', 'other-task'))?.value.title, 'Other user');
+});
+
 test('pull writes only the last cursor record for a resource', async () => {
   const { applyPullPage } = await import('../src/services/syncCycle.ts');
   const writes = [];
@@ -213,6 +304,11 @@ test('pull writes only the last cursor record for a resource', async () => {
     async upsert(resourceType, resourceId, value, options) {
       writes.push({ resourceType, resourceId, value, options });
       records.set(`${resourceType}:${resourceId}`, { value, ...options });
+    },
+    async upsertFromSync(resourceType, resourceId, value, options) {
+      writes.push({ resourceType, resourceId, value, options });
+      records.set(`${resourceType}:${resourceId}`, { value, ...options });
+      return true;
     },
   };
 
@@ -226,6 +322,38 @@ test('pull writes only the last cursor record for a resource', async () => {
   assert.equal(records.get('TASK:task-1').version, 3);
 });
 
+test('pull cannot overwrite a local mutation created after its unresolved snapshot', async () => {
+  const { applyPullPage } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const backing = new LocalRepository('user-a', 'device-pull-race', { storage: createMemoryStorage() });
+  await backing.upsert('TASK', 'task-1', { id: 'task-1', status: 'TODO', title: 'Remote v4' }, { version: 4, syncStatus: 'synced' });
+  let injectedLocalMutation = false;
+  const repository = {
+    async listUnresolved(resourceType) {
+      const initial = await backing.listUnresolved(resourceType);
+      if (!injectedLocalMutation) {
+        injectedLocalMutation = true;
+        await backing.commitMutation({
+          resourceType: 'TASK', resourceId: 'task-1', value: { id: 'task-1', status: 'DONE', title: 'Auto complete' },
+          version: 4, deletedAt: null,
+          mutation: { clientMutationId: 'automatic-completion', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 4, payload: { status: 'DONE' } },
+        });
+      }
+      return initial;
+    },
+    read: backing.read.bind(backing),
+    upsertFromSync: backing.upsertFromSync.bind(backing),
+  };
+
+  const changed = await applyPullPage(repository, [
+    { cursor: 'c-5', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', version: 5, payload: { id: 'task-1', status: 'TODO', title: 'Remote v5' } },
+  ]);
+
+  assert.equal(changed.has('TASK'), false);
+  assert.equal((await backing.read('TASK', 'task-1'))?.value.status, 'DONE');
+  assert.equal((await backing.read('TASK', 'task-1'))?.value.title, 'Auto complete');
+});
+
 test('remote tombstone removes a settled projection but not a locally unresolved one', async () => {
   const { applyPullPage } = await import('../src/services/syncCycle.ts');
   const record = { value: { id: 'task-1', title: 'local' }, version: 1, deletedAt: null, syncStatus: 'synced' };
@@ -234,6 +362,11 @@ test('remote tombstone removes a settled projection but not a locally unresolved
     async listUnresolved() { return this.unresolved; },
     async read() { return record; },
     async upsert(_resourceType, _resourceId, value, options) { Object.assign(record, { value, ...options }); },
+    async upsertFromSync(_resourceType, _resourceId, value, options) {
+      if (this.unresolved.some((mutation) => mutation.resourceType === _resourceType && mutation.resourceId === _resourceId)) return false;
+      Object.assign(record, { value, ...options });
+      return true;
+    },
   };
   const tombstone = [{ cursor: 'c-4', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'DELETE', version: 4, deletedAt: '2026-09-04T10:00:00Z', payload: null }];
 

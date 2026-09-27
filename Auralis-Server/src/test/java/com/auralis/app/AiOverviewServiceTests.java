@@ -36,6 +36,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -611,6 +620,185 @@ class AiOverviewServiceTests {
 
         assertThat(requests).allMatch(request -> request.maxTokens() == 6_144);
         assertThat(requests).allMatch(AiProviderRequest::structuredJson);
+    }
+
+    @Test
+    void subjectOutlineCanReferenceLaterRequestedSource() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, firstId))
+                .thenReturn(source(firstId, subjectId, SourceIngestionStatus.READY));
+        when(sourceService.requireActiveSource(userId, secondId))
+                .thenReturn(source(secondId, subjectId, SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(),
+                12_000, validDocument("source-1"), requests);
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("summary", List.of(), List.of());
+        OverviewDtos.OverviewSection firstSection = new OverviewDtos.OverviewSection("Section", "summary",
+                List.of(secondId.toString()), null);
+        OverviewDtos.SubjectOverviewSourceInput first = new OverviewDtos.SubjectOverviewSourceInput(firstId,
+                "First", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(firstSection))), summary);
+        OverviewDtos.SubjectOverviewSourceInput second = new OverviewDtos.SubjectOverviewSourceInput(secondId,
+                "Second", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(
+                        new OverviewDtos.OverviewSection("Section", "summary", List.of(secondId.toString()), null)))),
+                summary);
+
+        service.generateSubject(userId, new OverviewDtos.SubjectOverviewRequest(subjectId, OverviewMode.ALL,
+                null, List.of(first, second)));
+
+        assertThat(requests).singleElement().satisfies(request -> assertThat(request.messages().get(1).content())
+                .contains("\"sourceIds\":[\"source-2\"]")
+                .doesNotContain(secondId.toString()));
+    }
+
+    @Test
+    void concurrentSameKeySourceOverviewsShareOneGeneration() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID revision = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY, revision));
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        AtomicInteger providerCalls = new AtomicInteger();
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                if (providerCalls.incrementAndGet() == 1) {
+                    providerEntered.countDown();
+                    await(releaseProvider);
+                }
+                return new AiProviderResponse(validDocument("source-1"), 1, 1);
+            }
+        };
+        OverviewGenerationService service = service(sourceService,
+                List.of(chunk(userId, sourceId, true, "Calculus content")), 12_000, provider);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        AtomicReference<Thread> followerThread = new AtomicReference<>();
+        try {
+            Future<OverviewDtos.OverviewResponse> leader = executor.submit(() -> service.generateSource(userId,
+                    sourceRequest(sourceId, OverviewMode.ALL, "focus on limits"), UUID.randomUUID().toString()));
+            assertThat(providerEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<OverviewDtos.OverviewResponse> follower = executor.submit(() -> {
+                followerThread.set(Thread.currentThread());
+                return service.generateSource(userId,
+                        sourceRequest(sourceId, OverviewMode.ALL, "focus on limits"), UUID.randomUUID().toString());
+            });
+
+            awaitFollowerJoinOrCompletion(follower, followerThread);
+            assertThat(follower.isDone()).isFalse();
+            assertThat(providerCalls).hasValue(1);
+            releaseProvider.countDown();
+
+            assertThat(leader.get(5, TimeUnit.SECONDS)).isEqualTo(follower.get(5, TimeUnit.SECONDS));
+            assertThat(providerCalls).hasValue(1);
+        } finally {
+            releaseProvider.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void renamedSourceDoesNotJoinAnOlderTitleGeneration() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID revision = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        SourceView original = source(sourceId, subjectId, SourceIngestionStatus.READY, revision);
+        SourceView renamed = new SourceView(sourceId, subjectId, SourceType.FILE, "Renamed", null, null,
+                null, null, SourceIngestionStatus.READY, revision, null, null, 1,
+                Instant.now(), Instant.now(), null, null);
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(original, renamed);
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        AtomicInteger providerCalls = new AtomicInteger();
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                if (providerCalls.incrementAndGet() == 1) {
+                    providerEntered.countDown();
+                    await(releaseProvider);
+                }
+                return new AiProviderResponse(validDocument("source-1"), 1, 1);
+            }
+        };
+        OverviewGenerationService service = service(sourceService,
+                List.of(chunk(userId, sourceId, true, "Calculus content")), 12_000, provider);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<OverviewDtos.OverviewResponse> originalRequest = executor.submit(() -> service.generateSource(
+                    userId, sourceRequest(sourceId, OverviewMode.ALL, null)));
+            assertThat(providerEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<OverviewDtos.OverviewResponse> renamedRequest = executor.submit(() -> service.generateSource(
+                    userId, sourceRequest(sourceId, OverviewMode.ALL, null)));
+            assertThat(renamedRequest.get(5, TimeUnit.SECONDS)).isNotNull();
+            assertThat(providerCalls).hasValue(2);
+            releaseProvider.countDown();
+            assertThat(originalRequest.get(5, TimeUnit.SECONDS)).isNotNull();
+        } finally {
+            releaseProvider.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void concurrentSourceOverviewFailurePreservesDomainExceptionAndAllowsRetry() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID revision = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY, revision));
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch releaseProvider = new CountDownLatch(1);
+        AtomicInteger providerCalls = new AtomicInteger();
+        DomainException providerFailure = new DomainException("MODEL_PROVIDER_ERROR", "provider failed");
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                providerCalls.incrementAndGet();
+                providerEntered.countDown();
+                await(releaseProvider);
+                throw providerFailure;
+            }
+        };
+        OverviewGenerationService service = service(sourceService,
+                List.of(chunk(userId, sourceId, true, "Calculus content")), 12_000, provider);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        AtomicReference<Thread> followerThread = new AtomicReference<>();
+        try {
+            Future<OverviewDtos.OverviewResponse> leader = executor.submit(() -> service.generateSource(userId,
+                    sourceRequest(sourceId, OverviewMode.ALL, null), UUID.randomUUID().toString()));
+            assertThat(providerEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            Future<OverviewDtos.OverviewResponse> follower = executor.submit(() -> {
+                followerThread.set(Thread.currentThread());
+                return service.generateSource(userId,
+                        sourceRequest(sourceId, OverviewMode.ALL, null), UUID.randomUUID().toString());
+            });
+
+            awaitFollowerJoinOrCompletion(follower, followerThread);
+            assertThat(follower.isDone()).isFalse();
+            assertThat(providerCalls).hasValue(1);
+            releaseProvider.countDown();
+
+            assertFutureFailureIs(leader, providerFailure);
+            assertFutureFailureIs(follower, providerFailure);
+            assertThatThrownBy(() -> service.generateSource(userId,
+                    sourceRequest(sourceId, OverviewMode.ALL, null)))
+                    .isSameAs(providerFailure);
+            assertThat(providerCalls).hasValue(2);
+        } finally {
+            releaseProvider.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test
@@ -1242,6 +1430,28 @@ class AiOverviewServiceTests {
 
     private static OverviewGenerationService service(
             SourceService sourceService,
+            List<SourceChunkEntity> chunks,
+            int maxPromptChars,
+            AiProviderPort provider) {
+        SourceChunkRepository chunkRepository = mock(SourceChunkRepository.class);
+        when(chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(any(), any())).thenReturn(chunks);
+        AiSettingsService settingsService = mock(AiSettingsService.class);
+        when(settingsService.resolve(any(), eq(AiProviderType.DEEPSEEK))).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "test-model", new AiCredential("https://api.example.test", "key", "embed")));
+        AiProviderRegistry providerRegistry = mock(AiProviderRegistry.class);
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(provider);
+        AuralisProperties properties = mock(AuralisProperties.class);
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(properties.ai()).thenReturn(ai);
+        when(ai.defaultProvider()).thenReturn("DEEPSEEK");
+        when(ai.maxPromptChars()).thenReturn(maxPromptChars);
+        when(ai.overviewResponseTimeoutMillis()).thenReturn(120_000L);
+        return new OverviewGenerationService(sourceService, mock(SubjectService.class), chunkRepository, settingsService,
+                providerRegistry, properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
+    }
+
+    private static OverviewGenerationService service(
+            SourceService sourceService,
             SubjectService subjectService,
             List<SourceChunkEntity> chunks,
             int maxPromptChars,
@@ -1388,6 +1598,44 @@ class AiOverviewServiceTests {
     private static SourceView source(UUID sourceId, UUID subjectId, SourceIngestionStatus status, UUID revision) {
         return new SourceView(sourceId, subjectId, SourceType.FILE, "Calculus", null, null, null, null,
                 status, revision, null, null, 1, Instant.now(), Instant.now(), null, null);
+    }
+
+    private static void awaitFollowerJoinOrCompletion(Future<?> follower, AtomicReference<Thread> followerThread)
+            throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (System.nanoTime() < deadline) {
+            if (follower.isDone()) return;
+            Thread thread = followerThread.get();
+            if (thread != null && thread.getState() == Thread.State.WAITING) {
+                boolean joinedFuture = java.util.Arrays.stream(thread.getStackTrace())
+                        .anyMatch(frame -> frame.getClassName().equals(CompletableFuture.class.getName())
+                                && (frame.getMethodName().equals("join") || frame.getMethodName().equals("waitingGet")));
+                if (joinedFuture) return;
+            }
+            Thread.sleep(5);
+        }
+        throw new AssertionError("follower neither joined the in-flight generation nor completed");
+    }
+
+    private static void assertFutureFailureIs(Future<?> future, DomainException expected) throws Exception {
+        try {
+            future.get(5, TimeUnit.SECONDS);
+        } catch (ExecutionException exception) {
+            assertThat(exception.getCause()).isSameAs(expected);
+            return;
+        }
+        throw new AssertionError("expected the future to fail");
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("timed out waiting for test latch");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted while waiting for test latch", exception);
+        }
     }
 
     private static String validDocument(String alias) {

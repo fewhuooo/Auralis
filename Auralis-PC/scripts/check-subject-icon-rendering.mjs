@@ -14,7 +14,7 @@ const sidebar = await readFile(new URL('components/layout/AppSidebar.vue', root)
 
 assert.match(iconUtility, /export const subjectIconOptions/, 'new subjects need a line-icon option list')
 assert.match(iconUtility, /export const isSubjectIconKey/, 'rendering must distinguish semantic keys from legacy values')
-assert.match(iconUtility, /lucide-vue-next/, 'semantic keys must resolve to Lucide icons')
+assert.match(iconUtility, /@tabler\/icons-vue/, 'semantic keys must resolve to Tabler icons')
 assert.match(main, /element-plus\/theme-chalk\/el-icon\.css/, 'Element Plus icon sizing styles must load globally')
 assert.match(modal, /subjectIconOptions/, 'create modal must source its choices from the shared option list')
 assert.match(modal, /<ElIcon/, 'create modal preview and choices must render outline icons')

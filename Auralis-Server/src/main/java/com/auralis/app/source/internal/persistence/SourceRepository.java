@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import jakarta.persistence.LockModeType;
 
 import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 import java.time.Instant;
@@ -39,6 +40,8 @@ public interface SourceRepository extends JpaRepository<SourceEntity, UUID> {
             @Param("userId") UUID userId, @Param("subjectId") UUID subjectId);
 
     List<SourceEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
+
+    List<SourceEntity> findAllByUserIdAndIdInAndDeletedAtIsNull(UUID userId, Collection<UUID> ids);
 
     List<SourceEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(UUID userId, UUID subjectId);
 

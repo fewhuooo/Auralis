@@ -130,7 +130,6 @@ const {
   createConversation,
   getConversation,
   deleteConversation,
-  getSuggestions,
   streamAiMessage,
 } = await import('../src/api/aiClient.ts');
 const { default: request } = await import('../src/api/request.ts');
@@ -1312,7 +1311,7 @@ test('Asset API upload-intent, complete, download-url and size validation contra
   }
 });
 
-test('AI Client calls settings, conversations, suggestions, and health without legacy paths', async () => {
+test('AI Client calls settings, conversations, and health without legacy paths', async () => {
   const calls = [];
   const origGet = request.get;
   const origPost = request.post;
@@ -1331,7 +1330,6 @@ test('AI Client calls settings, conversations, suggestions, and health without l
     request.post = async (url, data, config) => {
       calls.push({ method: 'POST', url, data, config });
       if (url === '/api/ai/conversations') return { id: 'conv-created', title: data?.title };
-      if (url === '/api/ai/suggestions') return { id: 'sug-1', title: 'Summary', body: 'AI summary' };
       return {};
     };
     request.put = async (url, data, config) => {
@@ -1377,11 +1375,6 @@ test('AI Client calls settings, conversations, suggestions, and health without l
     assert.equal(calls[6].url, '/api/ai/conversations/conv-1');
     assert.deepEqual(calls[6].config?.params, { baseVersion: 2 });
 
-    // getSuggestions
-    const suggestions = await getSuggestions({ type: 'SUMMARY', knowledgeBlockId: 'kb-1', limit: 3 });
-    assert.equal(calls[7].method, 'POST');
-    assert.equal(calls[7].url, '/api/ai/suggestions');
-    assert.equal(suggestions.title, 'Summary');
   } finally {
     request.get = origGet;
     request.post = origPost;

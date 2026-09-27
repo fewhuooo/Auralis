@@ -1,5 +1,11 @@
 # 基础设施与数据服务模块
 
+2026-09-24 紧邻任务交换部署：仅重建并重启本机 Compose `backend`，最终容器 `72be6c8240a8…`、镜像 `sha256:bf8e7bb72f0c…`，health/readiness HTTP 200 且 status UP。启动日志验证 PostgreSQL 17.11、23 项 Flyway migration，schema 仍为 23；db/minio 容器 ID 与镜像 ID 均未变，未重建卷。GUI 拖放和认证业务请求尚未验收。
+
+2026-09-24：Timeline 主体放置修复后仅重建并重启本机 Compose `backend`，容器 `ee3d733c00c8…`、镜像 `sha256:80d303401599…`，health/readiness 均为 UP。Flyway 从 22 升至 23，`flyway_schema_history` 中 V23 `success=true`；db/minio 容器 ID 未变化、均 healthy，未重建卷。认证业务请求与 GUI 拖放未验收。
+
+2026-09-23：排期插入失败源于运行中的 backend 镜像落后于当前 TaskController：日志为 `POST /api/tasks/schedule-insertions` 的 `HttpRequestMethodNotSupportedException`，旧镜像构建时间为 2026-09-20。重建 backend 后容器 healthy，readiness HTTP 200。构建期间发现 Windows Maven wrapper 为 CRLF，Dockerfile 现在在运行 wrapper 前将其转为 LF。该 Compose 使用默认 prod profile，运行时 `/v3/api-docs` 按配置关闭（HTTP 404）；OpenAPI artifact 包含该接口。恢复时只重建 backend；db/minio 仅启动已有容器，其命名数据卷未重建；backend 无数据卷。
+
 更新时间：2026-09-10
 
 文档状态：现行

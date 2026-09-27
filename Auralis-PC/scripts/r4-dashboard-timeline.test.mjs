@@ -38,25 +38,33 @@ test('timeline renders half-hour scheduled tasks and marks past tasks without re
 
 test('timeline drag/drop carries a native payload and uses half-hour geometry', () => {
   assert.match(timeline, /sourceSlotTime/)
-  assert.match(dashboard, /sourceSlotTime/)
   assert.match(timeline, /sourceSlotTime\s*===\s*slotTime/)
-  assert.match(dashboard, /sourceSlotTime\s*===\s*slotTime/)
   assert.match(timeline, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*80/)
-  assert.match(dashboard, /const\s+TIMELINE_SLOT_HEIGHT\s*=\s*52/)
   assert.match(timeline, /slots\s*\*\s*TIMELINE_SLOT_HEIGHT\s*\+\s*\(slots\s*-\s*1\)\s*\*\s*TIMELINE_SLOT_GAP/)
-  assert.match(dashboard, /slots\s*\*\s*TIMELINE_SLOT_HEIGHT/)
   assert.match(timeline, /min-height:\s*80px/)
-  assert.match(dashboard, /min-height:\s*52px/)
-  assert.match(dashboard, /currentMinutes/)
-  assert.doesNotMatch(dashboard, /const currentHour = parseInt\(slotTime\.split\('\:'\)\[0\], 10\)/)
+  // Dashboard is simplified to linear task list without slot heights or drag-to-reschedule
+  assert.doesNotMatch(dashboard, /const\s+TIMELINE_SLOT_HEIGHT/)
+  assert.doesNotMatch(dashboard, /handleDragStart/)
+  assert.match(dashboard, /dayScheduledTasks/)
 })
 
-test('completed scheduled cards are fixed and cannot accept replacement drops', () => {
+test('completed scheduled cards block slot insertions and report rejected header swaps', () => {
   assert.match(timeline, /:draggable="!isCompletedScheduledTask\(slot\.task\)"/)
   assert.match(timeline, /:draggable="!isCompletedScheduledTask\(task\)"/)
-  assert.match(dashboard, /:draggable="!isCompletedScheduledTask\(slot\.task\)"/)
-  assert.match(timeline, /const targetTask = timeSlots\.value\.find\(\(slot\) => slot\.time === slotTime\)\?\.task[\s\S]*?if \(targetTask && isCompletedScheduledTask\(targetTask\)\) return/)
-  assert.match(dashboard, /const targetTask = timeSlots\.value\.find\(\(slot\) => slot\.time === slotTime\)\?\.task[\s\S]*?if \(targetTask && isCompletedScheduledTask\(targetTask\)\) return/)
+  const slotDropHandler = timeline.slice(timeline.indexOf('const handleDrop ='), timeline.indexOf('const handleDropOnHeader ='))
+  const completedTargetGuardIndex = slotDropHandler.indexOf('if (targetTask && isCompletedScheduledTask(targetTask))')
+  assert.notEqual(completedTargetGuardIndex, -1, 'slot drops must detect a completed target')
+  for (const writePath of ['taskStore.scheduleTask(', 'taskStore.rescheduleTask(']) {
+    const writePathIndex = slotDropHandler.indexOf(writePath)
+    assert.ok(writePathIndex < 0 || completedTargetGuardIndex < writePathIndex, `${writePath} must not run for a completed target`)
+  }
+
+  const headerDropHandler = timeline.slice(timeline.indexOf('const handleDropOnHeader ='), timeline.indexOf('const handleDropOnDay ='))
+  const swapHandler = taskStore.slice(taskStore.indexOf('async function swapScheduledTasks('), taskStore.indexOf('async function unscheduleTask('))
+  assert.match(headerDropHandler, /await taskStore\.swapScheduledTasks\([\s\S]*?catch \(error\) \{[\s\S]*?reportDragFailure\(error\)/)
+  assert.match(swapHandler, /if \(isCompletedScheduledTask\(from\) \|\| isCompletedScheduledTask\(to\)\) throw new Error\('已完成的排期任务已固定'\)/)
+  // Dashboard uses non-draggable linear list
+  assert.doesNotMatch(dashboard, /:draggable/)
 })
 
 test('the desktop shell does not surface an overdue-task notice', async () => {
@@ -121,9 +129,47 @@ test('timeline keeps the local task projection when changing days and refreshing
   assert.doesNotMatch(dashboardSelectDaySource, /loadLocalTasks/, 'Dashboard day selection must not clear in-memory tasks after a local read failure')
 })
 
-test('schedule drag reports a local persistence failure without leaving the UI stuck', () => {
-  // assert.match(timeline, /const reportDragFailure = \\(error: unknown\\)/)
-  // assert.match(dashboard, /const reportDragFailure = \\(error: unknown\\)/)
-  // assert.match(timeline, /catch \\(error\\) \\{\\s*reportDragFailure\\(error\\)/)
-  // assert.match(dashboard, /catch \\(error\\) \\{\\s*reportDragFailure\\(error\\)/)
+test('dashboard removes tasks from schedule by exact task ID and notifies on failure', () => {
+  assert.match(dashboard, /await taskStore\.unscheduleTask\(task\.id\)/)
+  assert.doesNotMatch(dashboard, /await taskStore\.unscheduleTask\(slotTime\)/)
+  assert.match(dashboard, /title:\s*['"]移出日程失败['"]/)
+})
+
+test('dashboard binds task checkboxes and toggles completion safely', () => {
+  assert.match(dashboard, /:checked="isCompletedScheduledTask\(task\)"/)
+  assert.match(dashboard, /:disabled="isScheduledCompletionLocked\(task, taskStore\.currentNow\)"/)
+  assert.match(dashboard, /任务时段已结束，完成状态不可取消/)
+  assert.match(dashboard, /\.scheduled-task-content\.is-completion-locked\s*\{\s*cursor:\s*not-allowed/)
+  assert.doesNotMatch(dashboard, /class="todo-item"[\s\S]*?<input[^>]*type="checkbox"/)
+  assert.match(dashboard, /const toggleTaskCompletion = async \(task: Task\) =>/)
+  assert.match(dashboard, /await taskStore\.updateTaskStatus\(task\.id, newStatus\)/)
+  assert.match(dashboard, /title:\s*['"]更新任务状态失败['"]/)
+})
+
+test('isCompletedTask and isCompletedScheduledTask recognize both presentation and canonical completed statuses', async () => {
+  const { isCompletedTask, isCompletedScheduledTask, isSchedulableTask, isScheduledTaskPast } = await import('../src/services/taskViewRules.ts')
+  assert.equal(isCompletedTask({ status: 'completed' }), true)
+  assert.equal(isCompletedTask({ status: 'DONE' }), true)
+  assert.equal(isCompletedTask({ status: 'pending' }), false)
+  assert.equal(isCompletedTask({ status: 'TODO' }), false)
+
+  assert.equal(isCompletedScheduledTask({ status: 'completed', scheduledAt: '2026-09-24T00:00:00Z' }), true)
+  assert.equal(isCompletedScheduledTask({ status: 'DONE', scheduledAt: '2026-09-24T00:00:00Z' }), true)
+  assert.equal(isCompletedScheduledTask({ status: 'completed', scheduledAt: undefined }), false)
+  assert.equal(isCompletedScheduledTask({ status: 'DONE', scheduledAt: undefined }), false)
+  assert.equal(isCompletedScheduledTask({ status: 'scheduled', scheduledAt: '2026-09-24T00:00:00Z' }), false)
+
+  // DONE status must not be treated as schedulable or actionable overdue task
+  assert.equal(isSchedulableTask({ status: 'DONE' }), false)
+  assert.equal(isSchedulableTask({ status: 'completed' }), false)
+  assert.equal(isSchedulableTask({ status: 'pending' }), true)
+  assert.equal(isScheduledTaskPast({ status: 'DONE', scheduledAt: '2026-09-20T00:00:00Z', durationMinutes: 30 }), false)
+  assert.equal(isScheduledTaskPast({ status: 'completed', scheduledAt: '2026-09-20T00:00:00Z', durationMinutes: 30 }), false)
+})
+
+test('task store metrics and offline persistence protect completed tasks from past-schedule assertion', () => {
+  assert.match(taskStore, /const completedCount = computed\(\(\) => allTasks\.value\.filter\(\(task\) => isCompletedTask\(task\)\)\.length\)/)
+  assert.match(taskStore, /allTasks\.value\.filter\(\(task\) => isCompletedTask\(task\)\)\.reduce/)
+  assert.match(taskStore, /model\.status !== 'CANCELLED' && model\.status !== 'DONE'/)
+  assert.match(dashboard, /\.todo-item\.is-completed/)
 })

@@ -58,6 +58,16 @@ export function isPublicAuthPath(url: string): boolean {
     || path === '/actuator/health'
 }
 
+export function isAccountDeletionConfirmationFailure(url: string, method: string | undefined, responseData: unknown): boolean {
+  const path = url.split('?', 1)[0].replace(/^https?:\/\/[^/]+/i, '')
+  if (method?.toUpperCase() !== 'DELETE' || path !== '/api/auth/me' || !responseData || typeof responseData !== 'object') {
+    return false
+  }
+
+  const problem = responseData as { code?: unknown; detail?: unknown }
+  return problem.code === 'UNAUTHENTICATED' && problem.detail === 'Invalid credentials'
+}
+
 export function shouldBlockProtectedRequest(url: string, reauthenticationRequired: boolean): boolean {
   return reauthenticationRequired && !isPublicAuthPath(url)
 }

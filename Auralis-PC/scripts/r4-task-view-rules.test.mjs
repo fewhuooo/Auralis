@@ -1,5 +1,20 @@
 import assert from 'node:assert/strict'
+import { register } from 'node:module'
 import test from 'node:test'
+
+const srcRootUrl = new URL('../src/', import.meta.url).href
+const loaderCode = `
+export async function resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@/')) {
+    const root = '${srcRootUrl}'
+    const subPath = specifier.slice(2)
+    const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts'
+    return nextResolve(new URL(withExt, root).href, context)
+  }
+  return nextResolve(specifier, context)
+}
+`
+register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
 const {
   getTasksForAssetGroups,
@@ -11,6 +26,11 @@ const {
   isScheduledAtInPast,
   isScheduledTaskPast,
   isUnscheduledTaskPastDue,
+  comparePendingTasks,
+  isCompletedTask,
+  isCompletedScheduledTask,
+  taskStatusToPresentation,
+  isScheduledCompletionLocked,
 } = await import('../src/services/taskViewRules.ts')
 
 const task = (overrides = {}) => ({
@@ -21,6 +41,7 @@ const task = (overrides = {}) => ({
   status: 'pending',
   dueAt: undefined,
   scheduledAt: undefined,
+  durationMinutes: 30,
   createdAt: '2026-08-20T00:00:00Z',
   updatedAt: '2026-08-20T00:00:00Z',
   ...overrides,
@@ -38,6 +59,66 @@ test('groups unassigned tasks before completion groups', () => {
   assert.deepEqual(groups.completed.map((item) => item.id), ['completed'])
 })
 
+test('completed tasks without a deadline or schedule belong in the completed Asset folder', () => {
+  const groups = getTasksForAssetGroups([
+    task({ id: 'pending-unassigned', status: 'pending' }),
+    task({ id: 'completed-unassigned', status: 'completed' }),
+    task({ id: 'canonical-done-unassigned', status: 'DONE' }),
+  ])
+
+  assert.deepEqual(groups.unassigned.map((item) => item.id), ['pending-unassigned'])
+  assert.deepEqual(groups.completed.map((item) => item.id), ['completed-unassigned', 'canonical-done-unassigned'])
+})
+
+test('local and pulled DONE projections become checked presentation tasks and completed Asset entries', async () => {
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts')
+  const { mapTaskView } = await import('../src/services/domainMappers.ts')
+  const { applyPullPage } = await import('../src/services/syncCycle.ts')
+  const scheduledAt = '2026-09-24T09:00:00.000Z'
+  const localRepository = new LocalRepository('user-flow', 'device-local-flow', { storage: createMemoryStorage() })
+  await localRepository.upsert('TASK', 'local-done', {
+    id: 'local-done', subjectId: 'subject-1', title: 'Local completion', status: 'TODO',
+    scheduledAt, durationMinutes: 30, version: 7,
+  }, { version: 7, syncStatus: 'synced' })
+  await localRepository.commitMutation({
+    resourceType: 'TASK', resourceId: 'local-done',
+    value: { id: 'local-done', subjectId: 'subject-1', title: 'Local completion', status: 'DONE', scheduledAt, durationMinutes: 30, version: 7 },
+    version: 7, deletedAt: null,
+    mutation: { clientMutationId: 'local-completion', resourceType: 'TASK', resourceId: 'local-done', mutationType: 'UPDATE', baseVersion: 7, payload: { status: 'DONE' } },
+  })
+
+  const localRow = await localRepository.read('TASK', 'local-done')
+  const localModel = mapTaskView(localRow.value)
+  const localTask = { ...localModel, status: taskStatusToPresentation(localModel.status, localModel.scheduledAt) }
+  assert.equal(localTask.status, 'completed')
+  assert.equal(isCompletedScheduledTask(localTask), true, 'Dashboard day schedule checkbox reads checked presentation state')
+  assert.deepEqual(getTasksForAssetGroups([localTask]).completed.map((item) => item.id), ['local-done'])
+
+  const syncRepository = new LocalRepository('user-flow', 'device-sync-flow', { storage: createMemoryStorage() })
+  const changed = await applyPullPage(syncRepository, [{
+    cursor: 'c-8', resourceType: 'TASK', resourceId: 'remote-done', mutationType: 'UPDATE', version: 8,
+    payload: { id: 'remote-done', subjectId: 'subject-1', title: 'Pulled completion', status: 'DONE', scheduledAt, durationMinutes: 30, version: 8 },
+  }])
+  assert.equal(changed.has('TASK'), true)
+  const remoteRow = await syncRepository.read('TASK', 'remote-done')
+  const remoteModel = mapTaskView(remoteRow.value)
+  const remoteTask = { ...remoteModel, status: taskStatusToPresentation(remoteModel.status, remoteModel.scheduledAt) }
+  assert.equal(remoteTask.status, 'completed')
+  assert.equal(isCompletedScheduledTask(remoteTask), true, 'Dashboard must remain checked after the local projection reloads a pull result')
+  assert.deepEqual(getTasksForAssetGroups([remoteTask]).completed.map((item) => item.id), ['remote-done'])
+})
+
+test('ended scheduled completions cannot be toggled back to active but unfinished tasks can still be completed', () => {
+  const now = new Date('2026-09-25T10:00:00.000Z')
+  const endedCompleted = task({ status: 'completed', scheduledAt: '2026-09-25T09:00:00.000Z', durationMinutes: 30 })
+  assert.equal(isScheduledTaskPast(endedCompleted, now), false, 'auto-completion eligibility is false after the task is complete')
+  assert.equal(isScheduledCompletionLocked(endedCompleted, now), true, 'the end-time lock must still cover an already completed task')
+  assert.equal(isScheduledCompletionLocked(task({ status: 'DONE', scheduledAt: '2026-09-25T09:00:00.000Z', durationMinutes: 30 }), now), true)
+  assert.equal(isScheduledCompletionLocked(task({ status: 'scheduled', scheduledAt: '2026-09-25T09:00:00.000Z', durationMinutes: 30 }), now), false)
+  assert.equal(isScheduledCompletionLocked(task({ status: 'completed', scheduledAt: '2026-09-25T09:45:00.000Z', durationMinutes: 30 }), now), false)
+  assert.equal(isScheduledCompletionLocked(task({ status: 'completed' }), now), false)
+})
+
 test('sorts deadline-bearing groups by dueAt and keeps missing deadlines last', () => {
   const groups = getTasksForAssetGroups([
     task({ id: 'late', dueAt: '2026-08-25T00:00:00Z' }),
@@ -49,10 +130,10 @@ test('sorts deadline-bearing groups by dueAt and keeps missing deadlines last', 
   assert.deepEqual(groups.unassigned.map((item) => item.id), ['unassigned'])
 })
 
-test('only deadline-bearing unscheduled tasks enter the scheduling queue, including overdue unscheduled tasks', () => {
+test('all unscheduled active tasks enter the scheduling queue regardless of deadline, including overdue unscheduled tasks', () => {
   assert.equal(isSchedulableTask(task({ dueAt: '2026-09-23T00:00:00Z' })), true)
   assert.equal(isSchedulableTask(task({ dueAt: '2026-08-01T00:00:00Z' })), true)
-  assert.equal(isSchedulableTask(task()), false)
+  assert.equal(isSchedulableTask(task()), true)
   assert.equal(isSchedulableTask(task({ dueAt: '2026-09-23T00:00:00Z', scheduledAt: '2026-09-22T12:00:00Z' })), false)
   assert.equal(isSchedulableTask(task({ dueAt: '2026-08-01T00:00:00Z', scheduledAt: '2026-08-01T09:00:00Z' })), false)
   assert.equal(isSchedulableTask(task({ status: 'completed', dueAt: '2026-09-23T00:00:00Z' })), false)
@@ -74,7 +155,20 @@ test('separates elapsed timeline tasks from overdue unscheduled tasks', () => {
   assert.equal(isUnscheduledTaskPastDue(elapsedTimelineTask, now), false)
 })
 
-test('marks an unfinished scheduled task overdue after its scheduled time passes', () => {
+test('scheduled task auto-completion waits until its scheduled duration ends', () => {
+  const now = new Date('2026-08-22T10:00:00+08:00')
+
+  assert.equal(isScheduledTaskPast(task({
+    scheduledAt: '2026-08-22T09:45:00+08:00',
+    durationMinutes: 30,
+  }), now), false, 'a task still in its scheduled interval must remain active')
+  assert.equal(isScheduledTaskPast(task({
+    scheduledAt: '2026-08-22T09:30:00+08:00',
+    durationMinutes: 30,
+  }), now), true, 'a task ending at the current time should be eligible for completion')
+})
+
+test('marks an unfinished scheduled task overdue after its full scheduled interval passes', () => {
   const now = new Date('2026-08-22T10:00:00+08:00')
 
   assert.equal(isOverdueTask(task({
@@ -170,4 +264,23 @@ test('uses the full calendar week containing the selected day', () => {
   ])
   assert.deepEqual(days.map((day) => day.weekdayShort), ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])
   assert.equal(days[6].isToday, true)
+})
+
+test('comparePendingTasks prioritizes tasks with deadline, earlier deadline, and shorter duration', () => {
+  const taskA = task({ id: 'has-due-near-short', name: 'A', dueAt: '2026-08-22T10:00:00Z', duration: 30 })
+  const taskB = task({ id: 'has-due-near-long', name: 'B', dueAt: '2026-08-22T10:00:00Z', duration: 90 })
+  const taskC = task({ id: 'has-due-far-short', name: 'C', dueAt: '2026-08-25T10:00:00Z', duration: 30 })
+  const taskD = task({ id: 'no-due-short', name: 'D', dueAt: null, duration: 30 })
+  const taskE = task({ id: 'no-due-long', name: 'E', dueAt: null, duration: 120 })
+
+  const list = [taskE, taskD, taskC, taskB, taskA]
+  const sorted = [...list].sort(comparePendingTasks)
+
+  assert.deepEqual(sorted.map((item) => item.id), [
+    'has-due-near-short',
+    'has-due-near-long',
+    'has-due-far-short',
+    'no-due-short',
+    'no-due-long',
+  ])
 })

@@ -139,6 +139,7 @@ class AiStreamingTests {
         assertThat(events).extracting(AiStreamEvent::event)
                 .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
         verify(settingsService).resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
+        verify(settingsService, never()).resolveServerManagedEmbedding();
         verify(providerRegistry).require(AiProviderType.OPENAI_COMPATIBLE);
     }
 
@@ -154,7 +155,7 @@ class AiStreamingTests {
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
-        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW)).thenReturn(new AiSettingsService.ResolvedSettings(
+        when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.SILICONFLOW, "embedding-model", new AiCredential("https://embedding.test", "secret")));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         List<Double> vector = java.util.Collections.nCopies(1024, 1.0);
@@ -306,7 +307,7 @@ class AiStreamingTests {
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-ai/DeepSeek-V3",
                 new AiCredential("https://api.deepseek.com", "chat-secret-key", "deepseek-chat")));
-        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW)).thenReturn(new AiSettingsService.ResolvedSettings(
+        when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.SILICONFLOW, "deepseek-ai/DeepSeek-V3",
                 new AiCredential("https://api.siliconflow.cn/v1", "provider-secret-key", "BAAI/bge-m3")));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);

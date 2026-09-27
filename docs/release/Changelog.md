@@ -1,6 +1,161 @@
 # Auralis 变更记录
 
-### PC Issue 3/4 final review 重要问题收口（2026-09-21）
+### PC/Service 数据一致性与暂藏 Suggestions（2026-09-27）
+
+- PC 移除未使用的 Suggestions API 入口；Timeline 双任务交换在本地原子写入并在写入失败后触发同步恢复。Server 修复 Sync 初始游标日志缺口、Subject Overview 后序资料引用、同实例 Overview 并发重复生成，以及 Source 更新期间旧摄取任务覆盖新修订的竞态；TEXT/URL Source 与 job 同事务持久化，恢复处理中的 Source 时补建或复用 job。PC 433/433、Server clean 聚焦 114/114、PostgreSQL pgvector 2/2 通过；真实 GUI/Provider/双设备待验收，跨实例 Overview 去重仍留风险。
+
+### PC 同步与 AI 参考范围等功能修复（2026-09-26）
+
+- 新 PC 设备首次同步改为完整快照并刷新本地投影；Tauri 快照保护未结算写入；AI 多文件选择和显式全学科范围接入服务端受限检索。Overview 单次请求超时延长，预览改名不重载，连接状态反映通用服务错误；个人空间说明对齐实际导出、密码与 AI 请求路径。PC 全量 430/430、类型检查、构建、Rust 与 Server 定向测试及 OpenAPI/双端 SDK 门禁通过；真实双设备/Provider/GUI 仍待验收。
+
+### Source/RAG 与文档处理入口优化（2026-09-26）
+
+- 修复 fallback 检索中已删除 Source 的旧 chunk 挤占 TopK；Source 与 Asset 在列表和引用构建中改为用户隔离的批量读取。PC 文档处理 Store 的开始和恢复入口统一经过 SourceJobScheduler。Server 定向 8/8、PostgreSQL/pgvector 2/2，PC 定向 66/66、类型检查与构建通过；运行服务及 GUI 尚未验收。
+
+### 注销账户运行结果核对（2026-09-26）
+
+- 用户重建前后端并重试注销后，关联作业在等待期结束后完成：`COMPLETED`、用户行删除、21 张归属清理表与作业对象键记录均无残留、`last_error=NULL`。数据库链路已核实；MinIO 与 GUI 提示未单独核查。
+
+### 注销确认密码错误的 PC 会话处理（2026-09-26）
+
+- PC 对 `DELETE /api/auth/me` 返回的确认密码错误保留当前会话并显示失败通知，不再把该 401 当成 access token 过期而刷新、重放或跳转；真正的 Bearer 失效仍按原流程处理。PC 定向回归 6/6、类型检查、生产构建和 Docker 镜像构建通过；独立 PostgreSQL 注销受理到完成及错误密码回归 4/4。前端容器尚未更新，真实 GUI/账号未验收。
+
+### 注销账户受理入口 PostgreSQL 时间绑定（2026-09-26）
+
+- 修复 `DELETE /api/auth/me` 写入注销作业时把 `Instant` 直接传给 pgJDBC 导致受理失败；`requested_at` 与 `not_before` 改为 UTC `OffsetDateTime` 绑定。独立 PostgreSQL 异时区定向回归 2/2、backend 镜像构建通过；运行容器尚未更新，真实账户注销仍待验收。
+
+### 注销账户清理任务 PostgreSQL 时间绑定（2026-09-25）
+
+- 修复后台清理服务把 `Instant` 直接传给 pgJDBC 导致作业领取失败的问题；同类时间参数统一转为 UTC `OffsetDateTime`，对应数据库带时区列。隔离 PostgreSQL 17/pgvector 异时区回归 1/1 通过；当前运行服务与真实账户未作清理验收。
+
+### 通用 AI 聊天 Provider 配置（2026-09-25）
+
+- 用户只配置聊天模型与 BYOK；Embedding 改由服务端 SiliconFlow 设置统一提供。通用 OpenAI 兼容 Provider 接受经安全校验的公网 HTTPS 地址，连接测试直接验证所填聊天模型，不依赖模型列表端点。
+- PC 设置页和 OpenAPI/双端生成类型已同步；安全策略拒绝 NAT64、6to4、Teredo 转换前缀。Server clean 定向 45/45、安全专项 clean 18/18、OpenAPI artifact 8/8、SDK gate、PC 定向 5/5 与 PC type-check 通过；真实 Provider 和 GUI 待验收。
+
+### PC 个人空间头像读取 406 修复（2026-09-25）
+
+- 头像 GET 请求单独接受 PNG 和 Problem Details，避免通用 JSON `Accept` 与服务端 PNG 响应不匹配。Blob 读取及无头像 404 处理保留；定向测试 5/5、PC type-check 通过，真实 HTTP 与 GUI 待验收。
+
+### PC 完成任务分组与首页日程恢复检查（2026-09-25）
+
+- 资产库已完成任务优先归入“已完成”，包括没有截止时间和排期的任务；任务树完成标记统一使用完成状态规则。TASK 投影刷新后即时重试已结束排期任务的自动完成检查。已结束且已完成的排期任务禁止取消完成，避免自动恢复再次勾选造成状态往返。任务规则 14/14、资产库 2/2、首页/时间轴 15/15、Store 排期 25/25、PC type-check 通过；首页 GUI 与真实同步时序待验收。
+
+### PC 时间轴任务结束后自动完成（2026-09-25）
+
+- 排期任务在 `scheduledAt + durationMinutes` 到达后自动完成并保留原排期；首次加载立即检查，随后每分钟复查。单项写入失败不影响其他任务，自动完成与手动改期/编辑按同一任务变更队列串行，并由本地仓储版本及 outbox 条件拒绝过期写入；增量同步拉取不会覆盖期间新建的本地 mutation。定向测试 35/35 + 18/18 + 12/12、PC type-check 通过；GUI 与跨设备同步待验收。
+
+### 头像上传 multipart 上限（2026-09-25）
+
+- Spring multipart 单文件上限提高至 5 MiB，完整请求上限设为 6 MiB，为头像表单封装留余量；头像业务校验仍限制原文件最多 5 MiB。ConfigurationTests clean 定向 3/3 通过，真实 HTTP 上传尚未验证。
+
+### PC 个人空间后端能力（2026-09-24）
+
+- 新增当前用户昵称更新、密码修改、头像上传/读取/重置、异步账户注销受理接口；V24 保存规范化私有头像，V25 保存注销作业和对象键并支持清理重试及已完成作业周期复扫。登录/刷新、上传意图签发与相关账户变更按用户锁串行化。
+- 新增基于当前用户已保存 BYOK 的兼容协议模型列表与连接测试接口，使用既有出站地址安全策略，不读取环境默认密钥。
+- Identity/Source/Asset/ParsedDocument/Architecture clean 定向测试 36/36，先前 Identity+AI 联合 clean 29/29，OpenAPI artifact 8/8 与双端生成 schema 一致性检查通过。PC 页面尚未接入；真实 PostgreSQL/MinIO、外部 Provider 和 GUI 仍待验收。
+
+### PC Asset 力导向关系星图与中栏预览联动（2026-09-24）
+
+- 星图使用真实 Subject、Source、KnowledgeBlock 关系，采用对称互斥、弹簧吸引、弱重力与阻尼；节点以稳定 ID 初始化，同范围刷新保留节点位置和镜头，切换图谱范围后重新适配，初始模拟有收敛条件与 180 帧上限。
+- 鼠标、触控与触控笔可拖动画布或任意节点；拖动时锁定目标节点并实时推动关联邻居，释放后最多进行 30 帧低强度松弛。点击 Source/KnowledgeBlock 节点在 Asset 中栏打开对应文件预览或知识块编辑器，同时保留 Home `open-block-detail` 事件。力/交互专项 6/6、PC 全量回归 403/403、type-check、build 与 `git diff --check` 通过；浏览器/Tauri 真实手势仍待验收。
+
+### 紧邻任务保留原窗口的交换（2026-09-24）
+
+- 顶部交互栏交换两个首尾紧邻任务时，按新顺序占用两项原共同时间窗口；即使时长不同，也不再由 PC 的旧预检直接阻断。后端在事务中校验完整区间，PC 应用返回的两项实际时间。
+- PC 全量回归 397/397、类型检查和构建通过；Server clean 聚焦 3/3。本机仅重建并重启 backend，health/readiness HTTP 200、Flyway 23；GUI 拖放验收待核对。
+
+### Timeline 任务主体严格放置（2026-09-24）
+
+- 拖到任务卡片主体时，被拖任务接在目标结束后的首个半小时槽；若与后续排期冲突则拒绝，目标和其他任务保持原位。普通空白槽位保留插入顺延，顶部栏保留双任务交换。
+- 插入请求增加可选 `targetTaskId` 供服务端锁定目标并原子校验。
+- PC 全量回归 397/397、类型检查与构建通过；Server 聚焦 5/5、OpenAPI artifact 测试 8/8、双端 SDK 一致性检查通过。本机仅重建并重启 backend，health/readiness UP，Flyway V23 成功；GUI 拖放与认证业务请求尚未验收。
+
+### dueAt 纯提醒与 Server 排期校验一致（2026-09-23）
+
+- Server 创建、更新、交换和插入排期允许 `scheduledAt` 晚于 `dueAt`，并保留用户设置的截止时间；任务区间冲突、固定完成任务和插入窗口限制不变。
+- 新增 Flyway V23 移除 `ck_tasks_schedule_order`，不修改已有任务。V18 迁移此前清空的历史排期时间不会自动恢复。
+- 新增服务与 Controller 回归覆盖 overdue 更新、交换、插入和原子冲突拒绝；fresh H2 定向测试 26/26，Server package 构建通过。真实 PostgreSQL migration、Docker 部署和 GUI 行为仍待验证。
+
+### 排期插入接口运行恢复（2026-09-23）
+
+- 运行日志确认旧 backend 镜像对 `POST /api/tasks/schedule-insertions` 返回 `HttpRequestMethodNotSupportedException`，经通用异常处理显示为 `An unexpected error occurred`。重建并仅重启 backend 后，容器 healthy、readiness HTTP 200。
+- 修正 Server Dockerfile：复制 Windows 工作树中的 Maven wrapper 后先统一为 LF，避免 Linux build stage 将 `#!/bin/sh` 解析失败。
+- 当前 Compose 默认 prod profile，按配置关闭 `/v3/api-docs`（运行时 HTTP 404）；签入 OpenAPI artifact 已包含该 POST。数据库和 MinIO 只启动既有容器，未重建服务或数据卷；backend 无数据挂载。
+
+### Timeline 插入顺延与顶部交换（2026-09-23）
+
+- 普通时间槽和任务卡片主体现在插入任务，并原子顺延发生碰撞的后续任务；保留原有空档。仅任务卡片顶部交互栏执行双任务交换。
+- 顺延按半小时槽对齐，固定任务、跨日已有任务或超出当天窗口导致冲突时整体拒绝，原排期保持不变。成功后 PC 更新本地缓存并通过 Sync read 收敛。
+- 新增 `/api/tasks/schedule-insertions`、OpenAPI 产物及 PC/Mobile 生成类型；无 Mobile 运行时行为修改。
+- PC 完整回归 395/395、type-check、build、OpenAPI 契约检查通过；Server 服务/控制器/OpenAPI 定向测试最终 32/32。Mobile type-check 与 Server 全量 testCompile 仍有本轮未改的环境/源码阻断，真实 GUI、跨设备及 PostgreSQL 并发尚未验收。
+
+### PC 与 Server 排期区间冲突防护（2026-09-23）
+
+- 排期创建、移动、按天安排、已排期任务时长修改和双任务换位均校验完整任务区间，阻止未取消任务出现时间重叠；首尾相接允许。
+- 按天排期改为寻找无冲突的半小时起始槽，无法找到可用时间时保留任务原状并提示原因。
+- Store 对本端排期相关操作串行校验；待排期任务拖到占用槽时明确拒绝，避免原任务排期被分次提交意外清除。已排期任务的同槽交换继续使用服务端原子 API。
+- 对既有重叠排期不做自动迁移；尝试安排到冲突区间时明确拒绝。
+- Server 的 REST 与 Sync 写入在 create/update/restore/swap 时按同用户完整区间拒绝重叠；事务内按 User→Subject→Task 锁序串行化，空时长按 30 分钟处理。
+- PC 排期、任务视图与 DTO 映射定向回归 40/40、完整 PC 回归 392/392，`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 均退出 0；Server 聚焦测试 29/29 与 diff-check 退出 0。真实 PostgreSQL 并发、跨设备同步及 GUI 交互尚未验收。PC `mapTaskView` 将远端 null/缺失及无效时长对齐为 30 分钟有效默认值，避免本地与 Server 对区间结束时间计算不一致。
+
+### PC 学科大纲保存数据保留、大纲草稿隔离、首页移出日程按 ID 寻址、学科切换文件隔离与测试数据脚本一致性（2026-09-23）
+
+- **学科大纲保存数据保留与多文件关联**：
+  - 修复 `SubjectWorkspace/index.vue` 在手工编排大纲保存时小节 `summary` 被设为 `null` 以及只保留单文件关联的问题；
+  - 彻底移除早期原型遗留的 `syncOutlineFileLinks` 逻辑，杜绝在挂载与学科切换时按章节顺序重设小节文件 ID 的错误覆写行为；
+  - 载入时保留每小节全部 `sourceIds`、`summary` 与 `locator`；保存时优先保留既有属性，不破坏未编辑细节；
+  - 编排器支持对小节展示关联的全部文件胶囊，并支持独立解除特定文件关联；
+- **学科切换大纲草稿生命周期隔离与异步防竞态**：
+  - 在 `watch(subjectId)` 入口第一行立即同步清空 `subjectOutline` 及相关章节/小节草稿，绝不在等待结束旧聊天会话等异步期间残留旧草稿，彻底杜绝切换学科异步等待期间将旧学科大纲写进新学科的漏洞；并在 `saveCurrentOutline` 加入空大纲与防重守卫；
+- **学科切换 AI 请求旧文件隔离与跨学科校验**：
+  - 在 `watch(subjectId)` 入口第一行同步触发 `chatStore.abortStream()`、`chatStore.clearActiveConversation()`、清空 `selectedFileId`、`selectedAiSourceIds`，并调用 `sourceStore.clearActiveSourceFiles()`，阻断旧会话流式与状态残留；
+  - 在 `sendChat`、`retryChat`、`sendSelectionQuestion` 以及 `saveKnowledgeBlock` 请求组装时增加严密的归属双重校验：关联的 `sourceId` 必须能在当前 `activeSourceFiles` 中找到且 `subjectId` 与当前学科一致，否则严格过滤置空，彻底杜绝切换等待期将旧文件 ID 携带进新学科请求的竞态问题；
+- **首页移出日程按唯一任务 ID 寻址与失败用户通知**：
+  - `Dashboard/index.vue` 移出日程由传递槽位时间升级为直接传递 `task.id`；
+  - `useTaskStore.ts` 的 `unscheduleTask` 优先按任务 ID 查找目标任务，彻底消除同时间槽多任务时的串操作以及首项已完成时无法移出的限制；
+  - 移出日程发生异常时，通过 `ElNotification` 向用户展示具体错误或已完成固定提示，不再静默仅写控制台；
+- **测试数据注入脚本 companion 账号清理**：
+  - 移除 `scripts/seed-test-account.mjs` 中注册冗余 companion 账号的代码，保持与 `docs/current/Status.md:3` 数据库校验 `users=1` 基准严格一致；
+- **验证**：PC 全量 `npm.cmd run test:r4-pc`（386/386）、`npm.cmd run type-check`、`npm.cmd run check:subject-workspace`、`npm.cmd run check:subject-icons` 及 `git diff --check` 全部通过。
+
+### 测试数据注入规范与时间轴有效窗口对齐（2026-09-22）
+
+- 定位并修复测试数据重置注入流程中排期任务溢出时间轴可视窗口的问题（`docs/operations/TestAccountDataResetAndSeed.md` 与 `docs/current/IssuesAndReview.md`）；
+- 彻底移除全局简单加 2 小时累加导致的凌晨（01:00/03:00/05:00）或深夜排期；
+- 明确引入每日合法槽位集合（`08:30`、`10:30`、`14:00`、`16:00`、`19:00`、`21:00`），将注入排期严格限制在前端时间轴支持的有效可视范围（`08:00 ~ 22:30`）内，每天容量上限为 6 项并按日自动向后递增，禁止将排期注入到时间轴没有的无效区间。
+
+### PC 首页看盘时间轴简化为纯任务排列（2026-09-22）
+
+- 重构首页看盘（`Dashboard/index.vue`）右侧面板，采用上下双卡片分区架构；
+- 上半部日程展示彻底移除 06:00~23:30 垂直网格刻度槽位、当前时间指示红线及拖拽换槽改期逻辑，改为「日程任务」简单线性排列；
+- 按任务开始时间先后升序排列，每个任务项显示时间微胶囊（如 `09:30 · 60m`）、学科标签、标题及即时完成复选框和移出日程按钮；
+- 保留原有日视图/周视图切换按钮、7 天日期快捷选择与新建任务功能；
+- 下半部「待办清单」移除拖动手柄与拖动属性，纯列表展示未排期任务并支持直接勾选完成；
+- 时间轴复杂拖拽、跨槽换位与全天半小时网格编排完全收敛至 `/timeline`（排期副驾）；
+- 自动验证：对齐 `scripts/r4-dashboard-timeline.test.mjs` 测试断言，PC `npm.cmd run test:r4-pc` 382/382、`npm.cmd run type-check` 与 `npm.cmd run build` 全部退出 0。
+
+### PC 学科中心知识块布局优化与底部立体阴影（2026-09-22）
+
+- 学科工作区（`SubjectWorkspace/index.vue`）知识库网格（`.blocks-grid`）与上方顶栏增加缓冲下移距离，`.blocks-workspace` 调整为 `padding: 24px 28px 20px`，`.blocks-top-bar` 调整为 `margin-bottom: 24px`；
+- `.blocks-grid` 引入 `padding: 8px 6px 24px 6px` 与 `margin: 0 -6px`，整体视觉向下自然沉降 16px，彻底消除卡片鼠标悬浮态（`transform: translateY(-3px)`）被滚动容器顶边界及上方微状态栏遮挡裁切的问题；
+- 为知识块卡片（`.block-card`）加入分层立体底部微阴影（常态 `box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.06), 0 3px 6px -1px rgba(0, 0, 0, 0.04)`，悬浮态 `0 14px 28px -4px rgba(0, 0, 0, 0.09), 0 6px 12px -2px rgba(125, 147, 114, 0.15)` 并提升至 `z-index: 2`，深色模式自适应适配）；
+- 为学科空间（`SubjectHall/index.vue`）搜索输入框（`.search-input`）与学科卡片（`.subject-card`）同步应用分层立体底部微阴影与暗色模式适配；
+- 自动化验证：PC `npm.cmd run test:r4-pc` 382/382、`npm.cmd run type-check`、`npm.cmd run build` 及 `git diff --check` 全部通过。
+
+### PC 总览栏展现与交互优化（2026-09-22）
+
+- 移除抽屉顶栏“AI 梳理”按钮，保留总览标题与大纲编排入口；
+- 大纲编排加号按钮在激活编辑状态时支持平滑旋转 45° 转换为灰色 `×`，退出编辑平滑还原；
+- 学科总览外边框加粗为 2px 灰绿品牌色，与普通文件卡片形成分明层级；
+- 顶栏错误重试与说明采用一体化胶囊绑定，一键生成改为上下居中极简排版与纯文本胶囊按钮；
+- 文件总览卡片的“总结”按钮升级为轻量圆角胶囊按钮；
+- “...”弹出菜单外壳及菜单项全面升级为圆角微质感风格；
+- 重构大纲章节与小节层级排版，彻底移除生硬老旧的折线分支，升级为现代极简导轨与小节微圆点对齐风格，保留悬停高光微弹反馈与定位图钉交互；
+- 完整保留学科总览生成、大纲重新生成、查看总结、资料更新提示与错误重试全部功能与数据流契约；
+- 自动验证：更新 `scripts/r4-subject-overview-ui.test.mjs` 测试契约断言，PC `npm.cmd run test:r4-pc` 382/382、`npm.cmd run type-check`、`npm.cmd run build` 及 `git diff --check` 全部通过。
+
+
 
 - 已安全化的 `SafeClientError` 在二次分类时保留 `code`、安全文案和 `retryable`；Chat Store retry 直接复用原 PENDING 消息和 `clientRequestId`，不追加重复 USER 消息。
 - Subject Overview 保存前逐 Source 复核 existence、类型、READY、revision、blocked/eligibility；Source discard 会 abort 受影响的 subject generation，删除、状态变化和 revision 变化的晚到响应均不写入 cache。

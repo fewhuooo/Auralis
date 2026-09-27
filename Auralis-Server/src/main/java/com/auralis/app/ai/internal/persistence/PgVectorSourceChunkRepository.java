@@ -46,6 +46,10 @@ public class PgVectorSourceChunkRepository {
             throw new IllegalArgumentException("Chunk and embedding counts must match");
         }
         vectors.forEach(vectorCodec::validate);
+        jdbcTemplate.update("""
+                delete from source_chunks
+                 where user_id = ? and source_id = ? and generation = ?
+                """, userId, sourceId, generation);
         jdbcTemplate.batchUpdate(INSERT_SQL, new org.springframework.jdbc.core.BatchPreparedStatementSetter() {
             @Override
             public void setValues(PreparedStatement statement, int index) throws SQLException {

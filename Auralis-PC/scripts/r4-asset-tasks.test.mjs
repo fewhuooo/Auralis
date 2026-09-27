@@ -4,11 +4,17 @@ import test from 'node:test'
 
 test('Asset view removes demo tasks and uses real tasks', async () => {
   const assetSource = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
+  const assetTreeRebuilder = assetSource.slice(assetSource.indexOf('function rebuildAssetTree()'), assetSource.indexOf('const loadAssetsFromBackend'))
 
   assert.doesNotMatch(assetSource, /id:\s*['"`]t-1['"`]/, 'Must not contain hardcoded task t-1')
   assert.doesNotMatch(assetSource, /id:\s*['"`]t-2['"`]/, 'Must not contain hardcoded task t-2')
   assert.match(assetSource, /taskStore\.fetchTasks\(\)/, 'Must call taskStore.fetchTasks() to get latest tasks')
   assert.match(assetSource, /getTasksForAssetGroups/, 'Must partition tasks into unassigned, pending, and completed groups')
+  assert.match(assetSource, /done: isCompletedTask\(task\)/, 'Asset task checkmarks must use the shared canonical/presentation completion rule')
+  assert.match(assetSource, /:disabled="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\)"/)
+  assert.match(assetSource, /:title="isScheduledCompletionLocked\(selected\.originalData, taskStore\.currentNow\) \? '任务时段已结束，完成状态不可取消'/)
+  assert.match(assetSource, /const previousDone = task\.done[\s\S]*?catch \(err\)[\s\S]*?task\.done = previousDone/, 'A failed status write must restore the tree checkmark')
+  assert.match(assetTreeRebuilder, /const selectedId = selected\.value\?\.id[\s\S]*?rootNodes\.value = newRoots[\s\S]*?selected\.value = findTreeNode\(newRoots, selectedId\)/, 'Selected tasks must refresh after local and sync projections rebuild the tree')
   assert.match(assetSource, /未排期/, 'Must expose an unassigned task group')
   assert.match(assetSource, /未完成/, 'Must expose an incomplete task group')
   assert.match(assetSource, /已完成/, 'Must expose a completed task group')

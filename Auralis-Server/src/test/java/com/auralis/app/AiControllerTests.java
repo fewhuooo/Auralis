@@ -32,5 +32,14 @@ class AiControllerTests {
                         .content("{\"provider\":\"DEEPSEEK\",\"apiKey\":\"secret\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+
+        mockMvc.perform(get("/api/ai/settings/OPENAI_COMPATIBLE/models"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/ai/settings/OPENAI_COMPATIBLE/test-connection"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
     }
 }

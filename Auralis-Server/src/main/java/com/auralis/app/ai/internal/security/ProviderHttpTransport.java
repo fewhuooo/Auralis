@@ -10,6 +10,11 @@ public interface ProviderHttpTransport {
     byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody)
             throws IOException;
 
+    default byte[] get(ResolvedProviderEndpoint endpoint, String path, String apiKey,
+            long connectTimeoutMillis, long responseTimeoutMillis) throws IOException {
+        throw new IOException("Provider GET is not supported by this transport");
+    }
+
     default byte[] post(
             ResolvedProviderEndpoint endpoint,
             String path,

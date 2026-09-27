@@ -21,6 +21,13 @@ type FileLike = {
   size?: number
 }
 
+export interface FilePreviewSource {
+  id: string
+  assetId?: string | null
+  name: string
+  fileType: string
+}
+
 const CAPABILITIES: Record<string, FileCapability> = {
   pdf: { allowedForUpload: true, kind: 'pdf', renderer: 'file-viewer', extension: 'pdf' },
   doc: { allowedForUpload: true, kind: 'office', renderer: 'file-viewer', extension: 'doc' },
@@ -48,6 +55,10 @@ export function getFileExtension(name: string): string {
   const dot = normalized.lastIndexOf('.')
   if (dot < 0 || dot === normalized.length - 1) return ''
   return normalized.slice(dot + 1)
+}
+
+export function getPreviewSourceIdentity(file: FilePreviewSource): string {
+  return JSON.stringify([file.id, file.assetId, file.fileType, getFileExtension(file.name)])
 }
 
 export function resolveFileCapability(file: Pick<FileLike, 'name' | 'type'>): FileCapability {

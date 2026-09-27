@@ -253,6 +253,16 @@ export const useSyncStore = defineStore('sync', () => {
     await flushNow()
   }
 
+  async function resetOfflineData(): Promise<void> {
+    const repositoryForSync = await getRepository()
+    await repositoryForSync.resetOfflineStorage()
+    cursor.value = null
+    resetRequired.value = true
+    publishProjectionChange({ resourceTypes: new Set(['SUBJECT', 'SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'REVIEW_STATE']) })
+    publishUpdated()
+    await flushNow()
+  }
+
   const initE2EE = async (): Promise<void> => {}
 
   return {
@@ -268,6 +278,7 @@ export const useSyncStore = defineStore('sync', () => {
     triggerSync,
     pullChanges,
     pushChanges,
+    resetOfflineData,
     initE2EE,
   }
 })

@@ -1,869 +1,749 @@
 <template>
-  <div class="knowledge-graph-wrapper">
-    <canvas ref="canvasEl" class="graph-canvas"></canvas>
+  <div ref="wrapperEl" class="knowledge-graph-wrapper">
+    <canvas
+      ref="canvasEl"
+      class="graph-canvas"
+      :aria-label="canvasLabel"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointercancel="onPointerCancel"
+      @lostpointercapture="onPointerCancel"
+      @wheel="onWheel"
+    ></canvas>
 
-    <!-- UI Overlay: Instructions & Search -->
-    <div class="graph-overlay">
-      <div class="overlay-header">
-        <span class="overlay-title">知识关系图</span>
-        <span class="overlay-desc">拖拽平移 · 滚轮缩放</span>
+    <!-- Sleek Minimalist HUD Overlay (No Clunky Middle Border) -->
+    <div class="graph-hud">
+      <div class="hud-legend">
+        <span class="legend-item"><i class="dot subject"></i>学科</span>
+        <span class="legend-item"><i class="dot source"></i>文件</span>
+        <span class="legend-item"><i class="dot block"></i>知识块</span>
       </div>
-      <div class="overlay-legend">
-        <div class="legend-item"><span class="legend-dot core"></span>核心学科</div>
-        <div class="legend-item"><span class="legend-dot source"></span>文档源</div>
-        <div class="legend-item"><span class="legend-dot block"></span>知识节点</div>
+      <div class="hud-hint">
+        <span>平移拖拽 · 滚轮缩放 · 点击节点</span>
       </div>
     </div>
 
-    <!-- Node Detail Sidebar Panel (Slide Over) -->
-    <Transition name="slide">
-      <div v-if="selectedNode" class="node-detail-panel">
-        <div class="panel-header">
-          <span class="panel-tag" :style="{ backgroundColor: selectedNode.color || 'var(--border-subtle)' }">
-            {{ selectedNode.block?.subject || '知识片' }}
-          </span>
-          <button class="close-btn" @click="selectedNode = null">✕</button>
-        </div>
-        <div class="panel-body">
-          <h3 class="panel-title">{{ selectedNode.name }}</h3>
-          <span class="panel-time" v-if="selectedNode.block?.time">⏰ 记录于: {{ selectedNode.block.time }}</span>
-          
-          <div class="panel-divider"></div>
-          
-          <div class="panel-content-markdown" v-html="renderMarkdown(selectedNode.block?.content || selectedNode.block?.preview || '')"></div>
-        </div>
-        <div class="panel-footer">
-          <button class="panel-action-btn secondary" @click="copyContent(selectedNode.block?.content || selectedNode.block?.preview)">
-            复制内容
-          </button>
-          <button class="panel-action-btn primary" @click="triggerOpenDetail(selectedNode.block)">
-            查看详情
-          </button>
-        </div>
-      </div>
-    </Transition>
+    <!-- Sleek Pill Fit View Button -->
+    <button class="fit-button" type="button" @click="fitView" title="适配星图视野">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+      </svg>
+      <span>适配视野</span>
+    </button>
+    <p v-if="nodes.length === 0" class="empty-state">暂无可展示的星图资产</p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
-import { ElNotification } from 'element-plus'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { applyKnowledgeGraphForces, setManualGraphPosition, type PhysicsLink, type PhysicsNode } from './knowledgeGraphPhysics'
 
-const props = defineProps({
-  subjectId: {
-    type: String,
-    required: true
-  },
-  blocks: {
-    type: Array,
-    required: true
-  },
-  subjectName: {
-    type: String,
-    default: '当前学科'
+interface SubjectInput { id: string; name: string }
+interface SourceInput { id: string; name: string; subjectId: string }
+interface BlockInput { id: string; title: string; subjectId: string; subject?: string; sourceFileId?: string | null; source?: string; content?: string; preview?: string; time?: string }
+type AssetType = 'file' | 'block'
+interface GraphNode extends PhysicsNode {
+  id: string
+  subjectId: string
+  name: string
+  block?: BlockInput
+}
+interface GraphLink extends PhysicsLink { a: GraphNode; b: GraphNode }
+
+const props = withDefaults(defineProps<{
+  subjectId: string
+  subjectName?: string
+  subjectColor?: string
+  subjects?: SubjectInput[]
+  sources?: SourceInput[]
+  blocks: BlockInput[]
+  selectedAsset?: { type: AssetType; id: string } | null
+}>(), { subjectName: '当前学科', subjects: () => [], sources: () => [], selectedAsset: null })
+
+const emit = defineEmits<{
+  'select-node': [payload: { type: AssetType; id: string; subjectId: string }]
+  'open-block-detail': [block: BlockInput]
+}>()
+
+const wrapperEl = ref<HTMLDivElement | null>(null)
+const canvasEl = ref<HTMLCanvasElement | null>(null)
+const nodes = shallowRef<GraphNode[]>([])
+const graphTitle = computed(() => props.subjectId === 'all' ? '全局关联图' : props.subjectName)
+const canvasLabel = computed(() => `${graphTitle.value}：点击文件或知识块打开预览`)
+
+let links: GraphLink[] = []
+let context: CanvasRenderingContext2D | null = null
+let resizeObserver: ResizeObserver | null = null
+let animationFrameId = 0
+let isComponentMounted = false
+let isLoopRunning = false
+let lastScopeId: string | null = null
+let manualInteraction = false
+let width = 0
+let height = 0
+let hovered: GraphNode | null = null
+let dragged: GraphNode | null = null
+let down: { pointerId: number; startX: number; startY: number; x: number; y: number; moved: boolean } | null = null
+let camera = { x: 0, y: 0, k: 1 }
+
+// Ambient background stardust particles
+const ambientStars = Array.from({ length: 28 }, (_, i) => {
+  const hashX = stableHash(`star_x_${i}`)
+  const hashY = stableHash(`star_y_${i}`)
+  return {
+    x: ((hashX % 1200) - 600),
+    y: ((hashY % 1200) - 600),
+    size: 1 + (hashX % 2) * 0.7,
+    speed: 0.0008 + (hashY % 5) * 0.0003,
+    phase: (hashX % 100) * 0.1
   }
 })
 
-const emit = defineEmits(['open-block-detail'])
-
-const canvasEl = ref<HTMLCanvasElement | null>(null)
-const selectedNode = ref<any | null>(null)
-
-// Markdown renderer helper
-const renderMarkdown = (content: string) => {
-  if (!content) return ''
-  return DOMPurify.sanitize(marked.parse(content) as string)
+// Simulation State
+interface SimState {
+  active: boolean
+  frame: number
+  maxFrames: number
+  alpha: number
+  alphaDecay: number
+  minimumFrames: number
+  energyThreshold: number
+  mode: 'layout' | 'settle' | 'drag'
+  fitAfter: boolean
 }
 
-const copyContent = (text: string) => {
-  if (!text) return
-  navigator.clipboard.writeText(text)
-  ElNotification({
-    title: '📋 已复制',
-    message: '知识块内容已成功复制。',
-    type: 'success',
-    position: 'top-right',
-    duration: 2000
-  })
+const simState: SimState = {
+  active: false,
+  frame: 0,
+  maxFrames: 180,
+  alpha: 1,
+  alphaDecay: 0.94,
+  minimumFrames: 24,
+  energyThreshold: 0.006,
+  mode: 'layout',
+  fitAfter: false
 }
 
-const triggerOpenDetail = (block: any) => {
-  emit('open-block-detail', block)
+const keyFor = (type: GraphNode['type'], id: string) => `${type}:${id}`
+const isSelected = (node: GraphNode) => node.type !== 'subject' && props.selectedAsset?.type === node.type && props.selectedAsset.id === node.id
+
+function stableHash(value: string) {
+  let hash = 2166136261
+  for (const character of value) {
+    hash ^= character.charCodeAt(0)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
 }
 
-// 2D Physics and Canvas state
-interface GraphNode {
-  id: string
-  name: string
-  color: string
-  radius: number
-  x: number
-  y: number
-  vx: number
-  vy: number
-  isCore: boolean
-  isSource: boolean
-  block?: any
+function initialPosition(node: GraphNode, subjectCount: number, subjectPositions: Map<string, { x: number; y: number }>, parent?: GraphNode) {
+  const hash = stableHash(node.key)
+  const angle = hash / 0xffffffff * Math.PI * 2
+  const distance = 38 + (hash % 43)
+  if (node.type === 'subject') {
+    if (subjectCount <= 1) return { x: 0, y: 0 }
+    const index = [...subjectPositions.keys()].length
+    const subjectAngle = index / subjectCount * Math.PI * 2 - Math.PI / 2
+    const radius = Math.max(115, Math.min(225, subjectCount * 22))
+    return { x: Math.cos(subjectAngle) * radius, y: Math.sin(subjectAngle) * radius }
+  }
+  const origin = parent ? { x: parent.x, y: parent.y } : subjectPositions.get(node.subjectId) || { x: 0, y: 0 }
+  return { x: origin.x + Math.cos(angle) * distance, y: origin.y + Math.sin(angle) * distance }
 }
 
-interface GraphLink {
-  source: string
-  target: string
-  distance: number
-}
+function buildGraph() {
+  const scopeChanged = lastScopeId !== props.subjectId
+  const previousNodes = scopeChanged ? new Map<string, GraphNode>() : new Map(nodes.value.map(node => [node.key, node]))
+  const subjects = props.subjectId === 'all'
+    ? props.subjects
+    : props.subjectId
+      ? [{ id: props.subjectId, name: props.subjectName }]
+      : [...new Map(props.blocks.filter(block => block.subjectId).map(block => [block.subjectId, { id: block.subjectId, name: block.subject || '未命名学科' }])).values()]
+  const sourceItems = props.sources
+  const blockItems = props.blocks
+  const byKey = new Map<string, GraphNode>()
+  const subjectPositions = new Map<string, { x: number; y: number }>()
 
-let nodes: GraphNode[] = []
-let links: GraphLink[] = []
-let animationFrameId: number
-let ctx: CanvasRenderingContext2D | null = null
-let width = 0
-let height = 0
+  const addNode = (type: GraphNode['type'], id: string, subjectId: string, name: string, parent?: GraphNode) => {
+    const key = keyFor(type, id)
+    const existing = byKey.get(key)
+    if (existing) return existing
+    const radius = type === 'subject' ? 13 : type === 'file' ? 8.5 : 6
+    const prior = previousNodes.get(key)
+    const node: GraphNode = prior ?? {
+      key, id, subjectId, type, name, radius,
+      ...initialPosition({ key, id, subjectId, type, name, radius, x: 0, y: 0, vx: 0, vy: 0 }, subjects.length, subjectPositions, parent),
+      vx: 0,
+      vy: 0,
+    }
+    node.subjectId = subjectId
+    node.name = name
+    node.radius = radius
+    byKey.set(key, node)
+    return node
+  }
 
-// Viewport / Camera
-let transform = { x: 0, y: 0, k: 1 }
+  for (const subject of [...subjects].sort((a, b) => a.id.localeCompare(b.id))) {
+    const node = addNode('subject', subject.id, subject.id, subject.name)
+    subjectPositions.set(subject.id, { x: node.x, y: node.y })
+  }
+  for (const source of [...sourceItems].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (!byKey.has(keyFor('subject', source.subjectId))) continue
+    addNode('file', source.id, source.subjectId, source.name, byKey.get(keyFor('subject', source.subjectId)))
+  }
+  for (const block of [...blockItems].sort((a, b) => a.id.localeCompare(b.id))) {
+    if (!byKey.has(keyFor('subject', block.subjectId))) continue
+    const source = block.sourceFileId ? byKey.get(keyFor('file', block.sourceFileId)) : undefined
+    const node = addNode('block', block.id, block.subjectId, block.title, source?.subjectId === block.subjectId ? source : byKey.get(keyFor('subject', block.subjectId)))
+    node.block = block
+  }
 
-// Animation state
-let hoveredNode: GraphNode | null = null
-let draggedNode: GraphNode | null = null
-
-// Force directed layout constants
-const REPULSION_STRENGTH = 2000
-const ATTRACTION_STRENGTH = 0.05
-const CENTER_GRAVITY = 0.01
-const DAMPING = 0.90 // Reduced from 0.93 for softer, less wild dynamics
-
-const initGraph = () => {
-  nodes = []
+  nodes.value = [...byKey.values()]
   links = []
-
-  const blockList = props.blocks as any[]
-
-  if (props.subjectId === 'all') {
-    // Global view: Parallel subjects
-    const subjectsMap = new Map<string, { id: string, name: string }>()
-    blockList.forEach(block => {
-      const sId = block.subjectId || 'unknown'
-      const sName = block.subject || '未分类'
-      if (!subjectsMap.has(sId)) {
-        subjectsMap.set(sId, { id: `subj-${sId}`, name: sName })
-      }
-    })
-
-    let idx = 0
-    const angleStep = (Math.PI * 2) / Math.max(1, subjectsMap.size)
-    subjectsMap.forEach((subj) => {
-      const distance = 100 + Math.random() * 50
-      const angle = idx * angleStep
-      nodes.push({
-        id: subj.id,
-        name: subj.name,
-        color: '#7D9372',
-        radius: 12,
-        x: Math.cos(angle) * distance,
-        y: Math.sin(angle) * distance,
-        vx: 0, vy: 0,
-        isCore: true,
-        isSource: false
-      })
-      idx++
-    })
-
-    const sourcesMap = new Map<string, { id: string, name: string, subjectNodeId: string }>()
-    blockList.forEach(block => {
-      const sourceKey = block.sourceFileId || block.source || '未分类材料'
-      const sourceName = block.source || '未分类材料'
-      const sId = block.subjectId || 'unknown'
-      if (!sourcesMap.has(sourceKey)) {
-        sourcesMap.set(sourceKey, {
-          id: `source-${sourceKey}`,
-          name: sourceName,
-          subjectNodeId: `subj-${sId}`
-        })
-      }
-    })
-
-    sourcesMap.forEach((source) => {
-      const parentNode = nodes.find(n => n.id === source.subjectNodeId)
-      const px = parentNode ? parentNode.x : 0
-      const py = parentNode ? parentNode.y : 0
-      const angle = Math.random() * Math.PI * 2
-      const distance = 50 + Math.random() * 50
-      nodes.push({
-        id: source.id,
-        name: source.name,
-        color: '#9ca3af',
-        radius: 8,
-        x: px + Math.cos(angle) * distance,
-        y: py + Math.sin(angle) * distance,
-        vx: 0, vy: 0,
-        isCore: false,
-        isSource: true
-      })
-      links.push({ source: source.id, target: source.subjectNodeId, distance: 100 })
-    })
-
-  } else {
-    // Single subject view: One core node
-    nodes.push({
-      id: 'core',
-      name: props.subjectName,
-      color: '#7D9372',
-      radius: 12,
-      x: 0, y: 0, vx: 0, vy: 0,
-      isCore: true,
-      isSource: false
-    })
-
-    const sourcesMap = new Map<string, { id: string, name: string }>()
-    blockList.forEach(block => {
-      const sourceKey = block.sourceFileId || block.source || '未分类材料'
-      const sourceName = block.source || '未分类材料'
-      if (!sourcesMap.has(sourceKey)) {
-        sourcesMap.set(sourceKey, { id: `source-${sourceKey}`, name: sourceName })
-      }
-    })
-
-    sourcesMap.forEach((source) => {
-      const angle = Math.random() * Math.PI * 2
-      const distance = 50 + Math.random() * 50
-      nodes.push({
-        id: source.id,
-        name: source.name,
-        color: '#9ca3af',
-        radius: 8,
-        x: Math.cos(angle) * distance,
-        y: Math.sin(angle) * distance,
-        vx: 0, vy: 0,
-        isCore: false,
-        isSource: true
-      })
-      links.push({ source: source.id, target: 'core', distance: 100 })
-    })
+  const linkKeys = new Set<string>()
+  const addLink = (sourceKey: string, targetKey: string) => {
+    const a = byKey.get(sourceKey)
+    const b = byKey.get(targetKey)
+    if (!a || !b || a.subjectId !== b.subjectId) return
+    const id = `${sourceKey}>${targetKey}`
+    if (linkKeys.has(id)) return
+    linkKeys.add(id)
+    links.push({ sourceKey, targetKey, a, b })
+  }
+  for (const source of sourceItems) addLink(keyFor('subject', source.subjectId), keyFor('file', source.id))
+  for (const block of blockItems) {
+    const subjectKey = keyFor('subject', block.subjectId)
+    const sourceKey = block.sourceFileId ? keyFor('file', block.sourceFileId) : ''
+    const source = sourceKey ? byKey.get(sourceKey) : undefined
+    if (source?.subjectId === block.subjectId) addLink(sourceKey, keyFor('block', block.id))
+    else addLink(subjectKey, keyFor('block', block.id))
   }
 
-  // 3. Block nodes (same for both modes)
-  blockList.forEach(block => {
-    const sourceKey = block.sourceFileId || block.source || '未分类材料'
-    const parentId = `source-${sourceKey}`
-    const parentNode = nodes.find(n => n.id === parentId)
-    
-    const px = parentNode ? parentNode.x : 0
-    const py = parentNode ? parentNode.y : 0
-    const angle = Math.random() * Math.PI * 2
-    const distance = 20 + Math.random() * 20
-    
-    let color = '#A3B19B'
-    if (block.difficulty === 'easy') color = '#10b981'
-    else if (block.difficulty === 'medium') color = '#f59e0b'
-    else if (block.difficulty === 'hard') color = '#ef4444'
-
-    nodes.push({
-      id: block.id,
-      name: block.title,
-      color: color,
-      radius: 5,
-      x: px + Math.cos(angle) * distance,
-      y: py + Math.sin(angle) * distance,
-      vx: 0, vy: 0,
-      isCore: false,
-      isSource: false,
-      block: block
-    })
-    
-    links.push({ source: block.id, target: parentId, distance: 40 })
-
-    if (block.relatedBlockIds && Array.isArray(block.relatedBlockIds)) {
-      block.relatedBlockIds.forEach((relId: string) => {
-        if (relId && relId.localeCompare(block.id) > 0) {
-          links.push({ source: block.id, target: relId, distance: 80 })
-        }
-      })
-    }
-  })
-}
-
-const updatePhysics = () => {
-  if (nodes.length <= 1) return
-
-  const isGlobalView = props.subjectId === 'all'
-
-  // Repulsion
-  for (let i = 0; i < nodes.length; i++) {
-    const nodeA = nodes[i]
-    for (let j = i + 1; j < nodes.length; j++) {
-      const nodeB = nodes[j]
-      const dx = nodeA.x - nodeB.x
-      const dy = nodeA.y - nodeB.y
-      const distSq = dx * dx + dy * dy + 0.1
-      const dist = Math.sqrt(distSq)
-
-      if (dist < 150) {
-        const force = REPULSION_STRENGTH / distSq
-        const fx = (dx / dist) * force
-        const fy = (dy / dist) * force
-
-        const isPinnedA = nodeA.isCore && !isGlobalView
-        const isPinnedB = nodeB.isCore && !isGlobalView
-
-        if (!isPinnedA) { nodeA.vx += fx; nodeA.vy += fy }
-        if (!isPinnedB) { nodeB.vx -= fx; nodeB.vy -= fy }
-      }
-    }
+  hovered = null
+  dragged = null
+  if (scopeChanged) {
+    camera = { x: 0, y: 0, k: 1 }
+    manualInteraction = false
   }
-
-  // Attraction
-  links.forEach(link => {
-    const sourceNode = nodes.find(n => n.id === link.source)
-    const targetNode = nodes.find(n => n.id === link.target)
-    if (!sourceNode || !targetNode) return
-
-    const dx = sourceNode.x - targetNode.x
-    const dy = sourceNode.y - targetNode.y
-    const dist = Math.sqrt(dx * dx + dy * dy) + 0.1
-
-    const force = (dist - link.distance) * ATTRACTION_STRENGTH
-    const fx = (dx / dist) * force
-    const fy = (dy / dist) * force
-
-    const isPinnedSource = sourceNode.isCore && !isGlobalView
-    const isPinnedTarget = targetNode.isCore && !isGlobalView
-
-    if (!isPinnedSource) { sourceNode.vx -= fx; sourceNode.vy -= fy }
-    if (!isPinnedTarget) { targetNode.vx += fx; targetNode.vy += fy }
-  })
-
-  // Center Gravity & Damping
-  nodes.forEach(node => {
-    const isPinned = node.isCore && !isGlobalView
-    if (isPinned) {
-      node.x = 0
-      node.y = 0
-      return
-    }
-
-    if (draggedNode && node.id === draggedNode.id) {
-      // Don't apply forces to actively dragged node
-      return
-    }
-
-    if (node.isCore) {
-      node.vx -= node.x * CENTER_GRAVITY
-      node.vy -= node.y * CENTER_GRAVITY
-    }
-    
-    // Velocity cap for stability
-    const MAX_VELOCITY = 10;
-    const vMag = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
-    if (vMag > MAX_VELOCITY) {
-      node.vx = (node.vx / vMag) * MAX_VELOCITY;
-      node.vy = (node.vy / vMag) * MAX_VELOCITY;
-    }
-
-    node.vx *= DAMPING
-    node.vy *= DAMPING
-
-    node.x += node.vx
-    node.y += node.vy
-  })
+  lastScopeId = props.subjectId
+  if (scopeChanged) triggerSimulation(true, 'layout')
+  else if (manualInteraction) draw(performance.now())
+  else triggerSimulation(false, 'layout')
 }
 
-const draw = () => {
-  if (!ctx) return
-  ctx.clearRect(0, 0, width, height)
+function triggerSimulation(fitAfter = false, mode: 'layout' | 'settle' | 'drag' = 'layout') {
+  if (!nodes.value.length) return
+  simState.active = true
+  simState.frame = 0
+  simState.mode = mode
+  simState.fitAfter = fitAfter
+  simState.alpha = mode === 'layout' ? 1 : mode === 'settle' ? 0.18 : 0.22
+  simState.maxFrames = mode === 'layout' ? 180 : mode === 'settle' ? 30 : 36
+  simState.alphaDecay = mode === 'layout' ? 0.94 : mode === 'settle' ? 0.9 : 1
+  simState.minimumFrames = mode === 'layout' ? 24 : mode === 'settle' ? 10 : 12
+  simState.energyThreshold = mode === 'layout' ? 0.006 : mode === 'settle' ? 0.001 : 0.003
+}
 
+function drawLabel(ctx: CanvasRenderingContext2D, node: GraphNode, isHover: boolean) {
   ctx.save()
-  // Apply transform
-  ctx.translate(transform.x + width / 2, transform.y + height / 2)
-  ctx.scale(transform.k, transform.k)
+  ctx.font = node.type === 'subject'
+    ? '600 12px var(--font-family-base, sans-serif)'
+    : '500 11px var(--font-family-base, sans-serif)'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  const label = node.name.length > 22 ? `${node.name.slice(0, 21)}…` : node.name
+  const textMetrics = ctx.measureText(label)
+  const labelWidth = textMetrics.width
+  const labelY = node.y + node.radius + (node.type === 'subject' ? 18 : 14)
+  const pillPaddingX = 8
+  const pillHeight = 20
+  const pillX = node.x - labelWidth / 2 - pillPaddingX
+  const pillY = labelY - pillHeight / 2
 
-  // Draw links
-  ctx.lineWidth = 1
+  // Rounded pill capsule with gentle soft shadow
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.06)'
+  ctx.shadowBlur = 6
+  ctx.shadowOffsetY = 2
+  ctx.fillStyle = isHover ? '#FAF7F2' : 'rgba(250, 247, 242, 0.92)'
   ctx.beginPath()
-  links.forEach(link => {
-    const sourceNode = nodes.find(n => n.id === link.source)
-    const targetNode = nodes.find(n => n.id === link.target)
-    if (!sourceNode || !targetNode) return
-    
-    ctx!.strokeStyle = `rgba(163, 177, 155, 0.2)`
-    ctx!.moveTo(sourceNode.x, sourceNode.y)
-    ctx!.lineTo(targetNode.x, targetNode.y)
-  })
+  ctx.roundRect(pillX, pillY, labelWidth + pillPaddingX * 2, pillHeight, 9999)
+  ctx.fill()
+
+  // Pill border
+  ctx.shadowColor = 'transparent'
+  ctx.lineWidth = 1
+  ctx.strokeStyle = isHover ? '#8B9A6E' : 'rgba(139, 154, 110, 0.28)'
   ctx.stroke()
 
-  // Draw nodes
-  nodes.forEach(node => {
-    const isHovered = hoveredNode && hoveredNode.id === node.id
-    const isSelected = selectedNode.value && selectedNode.value.id === node.id
-    
-    let currentRadius = node.radius
-    
-    if (isHovered) {
-      currentRadius += 2 // Enlarge on hover
+  // Label text
+  ctx.fillStyle = isHover ? '#1C1C1A' : '#344139'
+  ctx.fillText(label, node.x, labelY)
+  ctx.restore()
+}
+
+function draw(timestamp: number) {
+  if (!context) return
+  const ctx = context
+  ctx.clearRect(0, 0, width, height)
+  ctx.save()
+  ctx.translate(width / 2 + camera.x, height / 2 + camera.y)
+  ctx.scale(camera.k, camera.k)
+
+  // 1. Subtle Background Stardust Points
+  for (const star of ambientStars) {
+    const twinkle = 0.12 + 0.18 * Math.sin(timestamp * star.speed + star.phase)
+    ctx.fillStyle = `rgba(139, 154, 110, ${twinkle})`
+    ctx.beginPath()
+    ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  // 2. Determine Focus & Neighbor Network for Hover
+  const isHovering = Boolean(hovered)
+  const connectedNeighbors = new Set<string>()
+  if (hovered) {
+    connectedNeighbors.add(hovered.key)
+    for (const link of links) {
+      if (link.a === hovered) connectedNeighbors.add(link.b.key)
+      if (link.b === hovered) connectedNeighbors.add(link.a.key)
+    }
+  }
+
+  // 3. Constellation Links & Living Energy Photons
+  for (let i = 0; i < links.length; i++) {
+    const link = links[i]
+    const isLinkActive = hovered === link.a || hovered === link.b || isSelected(link.a) || isSelected(link.b)
+
+    // Attenuate unrelated links when focusing on a specific node
+    const linkAlpha = isHovering
+      ? (isLinkActive ? 0.85 : 0.08)
+      : (isLinkActive ? 0.75 : 0.25)
+
+    ctx.beginPath()
+    ctx.moveTo(link.a.x, link.a.y)
+    ctx.lineTo(link.b.x, link.b.y)
+    ctx.lineWidth = isLinkActive ? 1.8 : 1
+    ctx.strokeStyle = isLinkActive
+      ? `rgba(139, 154, 110, ${linkAlpha})`
+      : `rgba(163, 177, 155, ${linkAlpha})`
+    ctx.stroke()
+
+    // Flowing Constellation Energy Photon (travelling along link)
+    const photonProgress = ((timestamp * 0.00035 + i * 0.19) % 1)
+    const px = link.a.x + (link.b.x - link.a.x) * photonProgress
+    const py = link.a.y + (link.b.y - link.a.y) * photonProgress
+
+    ctx.beginPath()
+    ctx.arc(px, py, isLinkActive ? 2.2 : 1.4, 0, Math.PI * 2)
+    ctx.fillStyle = isLinkActive
+      ? 'rgba(139, 154, 110, 0.95)'
+      : `rgba(163, 177, 155, ${isHovering ? 0.2 : 0.55})`
+    ctx.fill()
+  }
+
+  // 4. Star Nodes with Breathing Aura & Dynamic Interaction
+  for (const node of nodes.value) {
+    const active = hovered === node || isSelected(node)
+    const isConnected = !isHovering || connectedNeighbors.has(node.key)
+    const nodeHash = stableHash(node.key)
+
+    // Subtle organic breathing animation
+    const breath = Math.sin(timestamp * 0.0022 + nodeHash * 0.1) * 0.65
+    const currentRadius = node.radius + (active ? 2.5 : breath)
+    const color = node.type === 'subject' ? '#718C67' : node.type === 'file' ? '#6E8898' : '#9BAA88'
+
+    ctx.save()
+    // Soft dimming for unfocused nodes during hover
+    ctx.globalAlpha = isConnected ? 1.0 : 0.28
+
+    // Subject Celestial Aura / Halo
+    if (node.type === 'subject') {
+      const auraRadius = currentRadius + 8 + 3 * Math.sin(timestamp * 0.002)
+      const auraGrad = ctx.createRadialGradient(node.x, node.y, currentRadius * 0.6, node.x, node.y, auraRadius)
+      auraGrad.addColorStop(0, 'rgba(113, 140, 103, 0.35)')
+      auraGrad.addColorStop(1, 'rgba(113, 140, 103, 0)')
+      ctx.fillStyle = auraGrad
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, auraRadius, 0, Math.PI * 2)
+      ctx.fill()
     }
 
-    ctx!.beginPath()
-    ctx!.arc(node.x, node.y, currentRadius, 0, Math.PI * 2)
-    ctx!.fillStyle = node.color
-    
-    // Add glow (simplified)
-    ctx!.shadowBlur = isHovered || isSelected ? 12 : 0
-    ctx!.shadowColor = isHovered || isSelected ? node.color : 'transparent'
-    
-    ctx!.fill()
-    
-    // Reset shadow for stroke
-    ctx!.shadowBlur = 0
-    
-    // Selection highlight or Hover
-    if (isSelected || isHovered) {
-      ctx!.lineWidth = 2
-      ctx!.strokeStyle = node.color
-      ctx!.globalAlpha = 0.4
-      ctx!.stroke()
-      ctx!.globalAlpha = 1.0
-      ctx!.beginPath()
-      ctx!.arc(node.x, node.y, currentRadius + 5, 0, Math.PI * 2)
-      ctx!.strokeStyle = node.color
-      ctx!.globalAlpha = 0.15
-      ctx!.stroke()
-      ctx!.globalAlpha = 1.0
+    // Active Node Radiating Ring
+    if (active) {
+      const ringRadius = currentRadius + 5 + 2 * Math.sin(timestamp * 0.005)
+      ctx.beginPath()
+      ctx.arc(node.x, node.y, ringRadius, 0, Math.PI * 2)
+      ctx.lineWidth = 1.6
+      ctx.strokeStyle = color
+      ctx.stroke()
     }
-    
-    // Central indicator for core node
-    if (node.isCore) {
-      ctx!.beginPath()
-      ctx!.arc(node.x, node.y, currentRadius * 0.5, 0, Math.PI * 2)
-      ctx!.fillStyle = 'rgba(255,255,255,0.4)'
-      ctx!.fill()
-    }
-  })
 
-  // Draw Labels for hover or selected
-  nodes.forEach(node => {
-    const isHovered = hoveredNode && hoveredNode.id === node.id
-    const isSelected = selectedNode.value && selectedNode.value.id === node.id
-    if (isHovered || isSelected || node.isCore) {
-      ctx!.font = (node.isCore ? 'bold 12px' : '500 11px') + ' Inter, sans-serif'
-      const textWidth = ctx!.measureText(node.name).width
-      const paddingX = 6
-      const paddingY = 4
-      const labelY = node.y + node.radius + 14
-      
-      // Background pill
-      ctx!.fillStyle = 'rgba(255, 255, 255, 0.85)'
-      ctx!.shadowBlur = 8
-      ctx!.shadowColor = 'rgba(0,0,0,0.1)'
-      ctx!.beginPath()
-      ctx!.roundRect(node.x - textWidth/2 - paddingX, labelY - 9 - paddingY, textWidth + paddingX*2, 11 + paddingY*2, 6)
-      ctx!.fill()
-      ctx!.shadowBlur = 0
-      
-      // Text
-      ctx!.fillStyle = '#1f2937'
-      ctx!.textAlign = 'center'
-      ctx!.textBaseline = 'middle'
-      ctx!.fillText(node.name, node.x, labelY)
+    // Core Star Body
+    ctx.beginPath()
+    ctx.arc(node.x, node.y, currentRadius, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+
+    // Draw Capsule Label for Subjects or Active Nodes
+    if (node.type === 'subject' || active) {
+      drawLabel(ctx, node, active)
     }
-  })
+
+    ctx.restore()
+  }
 
   ctx.restore()
 }
 
-const animate = () => {
-  updatePhysics()
-  draw()
-  animationFrameId = requestAnimationFrame(animate)
-}
+// Continuous 60fps Ambient Render Loop
+function startRenderLoop() {
+  if (isLoopRunning) return
+  isLoopRunning = true
 
-// Interaction
-let isDragging = false
-let dragStart = { x: 0, y: 0 }
+  const frame = (timestamp: number) => {
+    if (!isLoopRunning || !isComponentMounted) return
 
-const handleMouseDown = (e: MouseEvent) => {
-  if (hoveredNode && !hoveredNode.isCore) {
-    draggedNode = hoveredNode
-    if (canvasEl.value) canvasEl.value.style.cursor = 'grabbing'
-  } else {
-    isDragging = true
-    dragStart = { x: e.clientX - transform.x, y: e.clientY - transform.y }
-    if (canvasEl.value) canvasEl.value.style.cursor = 'grabbing'
-  }
-}
+    // Advance physics if active
+    if (simState.active && nodes.value.length) {
+      const energy = applyKnowledgeGraphForces(
+        nodes.value,
+        links,
+        simState.alpha,
+        simState.mode === 'drag' ? dragged?.key : undefined
+      )
+      simState.alpha *= simState.alphaDecay
+      simState.frame += 1
 
-const handleMouseMove = (e: MouseEvent) => {
-  if (!canvasEl.value) return
-  const rect = canvasEl.value.getBoundingClientRect()
-  const mx = (e.clientX - rect.left - transform.x - width / 2) / transform.k
-  const my = (e.clientY - rect.top - transform.y - height / 2) / transform.k
-
-  if (draggedNode) {
-    draggedNode.x = mx
-    draggedNode.y = my
-    draggedNode.vx = 0
-    draggedNode.vy = 0
-  } else if (isDragging) {
-    transform.x = e.clientX - dragStart.x
-    transform.y = e.clientY - dragStart.y
-  } else {
-    // Hover detection
-    let found: GraphNode | null = null
-    for (let i = nodes.length - 1; i >= 0; i--) {
-      const node = nodes[i]
-      const dx = node.x - mx
-      const dy = node.y - my
-      if (dx * dx + dy * dy <= (node.radius + 10) ** 2) {
-        found = node
-        break
-      }
-    }
-    hoveredNode = found
-    canvasEl.value.style.cursor = found ? (found.isCore ? 'default' : 'grab') : 'default'
-  }
-}
-
-const handleMouseUp = () => {
-  if (draggedNode) {
-    links.forEach(link => {
-      if (link.source === draggedNode!.id || link.target === draggedNode!.id) {
-        const nA = nodes.find(n => n.id === link.source)
-        const nB = nodes.find(n => n.id === link.target)
-        if (nA && nB) {
-          const dx = nA.x - nB.x
-          const dy = nA.y - nB.y
-          link.distance = Math.max(30, Math.min(Math.sqrt(dx * dx + dy * dy), 350))
+      if (
+        simState.frame >= simState.maxFrames ||
+        (simState.frame >= simState.minimumFrames && energy <= simState.energyThreshold)
+      ) {
+        simState.active = false
+        for (const node of nodes.value) {
+          node.vx = 0
+          node.vy = 0
+        }
+        if (simState.fitAfter) {
+          fitView()
         }
       }
-    })
+    }
+
+    draw(timestamp)
+    animationFrameId = requestAnimationFrame(frame)
   }
-  isDragging = false
-  draggedNode = null
-  if (canvasEl.value) canvasEl.value.style.cursor = hoveredNode ? (hoveredNode.isCore ? 'default' : 'grab') : 'default'
+
+  animationFrameId = requestAnimationFrame(frame)
 }
 
-const handleWheel = (e: WheelEvent) => {
-  e.preventDefault()
-  const zoomIntensity = 0.1
-  const delta = e.deltaY < 0 ? 1 + zoomIntensity : 1 - zoomIntensity
-  const newK = Math.max(0.2, Math.min(transform.k * delta, 5))
-  transform.k = newK
+function stopRenderLoop() {
+  isLoopRunning = false
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = 0
+  }
 }
 
-const handleClick = (e: MouseEvent) => {
-  if (!canvasEl.value) return
-  const rect = canvasEl.value.getBoundingClientRect()
-  // Mouse pos relative to canvas center
-  const mx = (e.clientX - rect.left - transform.x - width / 2) / transform.k
-  const my = (e.clientY - rect.top - transform.y - height / 2) / transform.k
+function screenToWorld(clientX: number, clientY: number) {
+  const rect = canvasEl.value!.getBoundingClientRect()
+  return {
+    x: (clientX - rect.left - width / 2 - camera.x) / camera.k,
+    y: (clientY - rect.top - height / 2 - camera.y) / camera.k,
+  }
+}
 
-  // Find clicked node
-  let clicked: GraphNode | null = null
-  for (let i = nodes.length - 1; i >= 0; i--) {
-    const node = nodes[i]
-    const dx = node.x - mx
-    const dy = node.y - my
-    if (dx * dx + dy * dy <= (node.radius + 5) ** 2) {
-      clicked = node
-      break
+function hitTest(clientX: number, clientY: number) {
+  const point = screenToWorld(clientX, clientY)
+  for (let index = nodes.value.length - 1; index >= 0; index -= 1) {
+    const node = nodes.value[index]
+    if (Math.hypot(node.x - point.x, node.y - point.y) <= node.radius + 7 / camera.k) return node
+  }
+  return null
+}
+
+function beginManualGesture() {
+  manualInteraction = true
+  simState.active = false
+  for (const node of nodes.value) { node.vx = 0; node.vy = 0 }
+}
+
+function onPointerDown(event: PointerEvent) {
+  if (event.button !== 0 || down) return
+  down = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, moved: false }
+  dragged = hitTest(event.clientX, event.clientY)
+  canvasEl.value?.setPointerCapture(event.pointerId)
+}
+
+function onPointerMove(event: PointerEvent) {
+  if (down) {
+    if (event.pointerId !== down.pointerId) return
+    const dx = event.clientX - down.x
+    const dy = event.clientY - down.y
+    if (Math.hypot(dx, dy) > 3 && !down.moved) {
+      down.moved = true
+      beginManualGesture()
+    }
+    if (down.moved) {
+      if (dragged) {
+        const point = screenToWorld(event.clientX, event.clientY)
+        setManualGraphPosition(dragged, point.x, point.y)
+      } else {
+        camera.x += dx
+        camera.y += dy
+      }
+      if (dragged && !simState.active) triggerSimulation(false, 'drag')
+      down.x = event.clientX
+      down.y = event.clientY
+    }
+  } else {
+    const next = hitTest(event.clientX, event.clientY)
+    if (next !== hovered) { hovered = next }
+  }
+  if (canvasEl.value) canvasEl.value.style.cursor = down?.moved ? 'grabbing' : hovered && hovered.type !== 'subject' ? 'pointer' : 'grab'
+}
+
+function onPointerUp(event: PointerEvent) {
+  if (down && event.pointerId !== down.pointerId) return
+  if (down) {
+    const dx = event.clientX - down.x
+    const dy = event.clientY - down.y
+    if (!down.moved && Math.hypot(event.clientX - down.startX, event.clientY - down.startY) > 3) {
+      down.moved = true
+      beginManualGesture()
+    }
+    if (down.moved && Math.hypot(dx, dy) > 0) {
+      if (dragged) {
+        const point = screenToWorld(event.clientX, event.clientY)
+        setManualGraphPosition(dragged, point.x, point.y)
+      } else {
+        camera.x += dx
+        camera.y += dy
+      }
     }
   }
-
-  if (clicked && !clicked.isCore && !clicked.isSource) {
-    selectedNode.value = clicked
-  } else if (!clicked) {
-    selectedNode.value = null
+  const didManualDrag = Boolean(down?.moved)
+  if (down && !down.moved) {
+    const node = hitTest(event.clientX, event.clientY)
+    if (node && node.type !== 'subject') {
+      emit('select-node', { type: node.type, id: node.id, subjectId: node.subjectId })
+      if (node.type === 'block' && node.block) emit('open-block-detail', node.block)
+    }
   }
+  down = null
+  dragged = null
+  if (canvasEl.value) canvasEl.value.style.cursor = hovered && hovered.type !== 'subject' ? 'pointer' : 'grab'
+  if (didManualDrag) triggerSimulation(false, 'settle')
 }
 
-const resizeCanvas = () => {
-  if (!canvasEl.value) return
-  const parent = canvasEl.value.parentElement
-  if (!parent) return
-  width = parent.clientWidth
-  height = parent.clientHeight
-  canvasEl.value.width = width
-  canvasEl.value.height = height
+function onPointerCancel(event: PointerEvent) {
+  if (down && event.pointerId !== down.pointerId) return
+  const didManualDrag = Boolean(down?.moved)
+  down = null
+  dragged = null
+  if (canvasEl.value) canvasEl.value.style.cursor = 'grab'
+  if (didManualDrag) triggerSimulation(false, 'settle')
+}
+
+function onWheel(event: WheelEvent) {
+  event.preventDefault()
+  const rect = canvasEl.value!.getBoundingClientRect()
+  const px = event.clientX - rect.left - width / 2
+  const py = event.clientY - rect.top - height / 2
+  const next = Math.max(0.25, Math.min(3.5, camera.k * Math.exp(-event.deltaY * 0.001)))
+  const ratio = next / camera.k
+  camera.x = px - (px - camera.x) * ratio
+  camera.y = py - (py - camera.y) * ratio
+  camera.k = next
+}
+
+function fitView() {
+  if (!nodes.value.length || !width || !height) return
+  const bounds = nodes.value.map(node => ({
+    minX: node.x - node.radius - (node.type === 'subject' ? 70 : 8),
+    maxX: node.x + node.radius + (node.type === 'subject' ? 70 : 8),
+    minY: node.y - node.radius - 8,
+    maxY: node.y + node.radius + 26,
+  }))
+  const minX = Math.min(...bounds.map(bound => bound.minX))
+  const maxX = Math.max(...bounds.map(bound => bound.maxX))
+  const minY = Math.min(...bounds.map(bound => bound.minY))
+  const maxY = Math.max(...bounds.map(bound => bound.maxY))
+  camera.k = Math.max(0.25, Math.min(1.5, Math.min((width - 40) / Math.max(80, maxX - minX), (height - 100) / Math.max(80, maxY - minY))))
+  camera.x = -(minX + maxX) / 2 * camera.k
+  camera.y = -(minY + maxY) / 2 * camera.k
+}
+
+function resizeCanvas() {
+  if (!canvasEl.value || !wrapperEl.value || !context) return
+  width = wrapperEl.value.clientWidth
+  height = wrapperEl.value.clientHeight
+  const dpr = Math.min(window.devicePixelRatio || 1, 3)
+  canvasEl.value.width = Math.round(width * dpr)
+  canvasEl.value.height = Math.round(height * dpr)
+  context.setTransform(dpr, 0, 0, dpr, 0, 0)
+}
+
+function handleVisibilityChange() {
+  if (document.hidden) {
+    stopRenderLoop()
+  } else if (isComponentMounted) {
+    startRenderLoop()
+  }
 }
 
 onMounted(() => {
-  if (!canvasEl.value) return
-  ctx = canvasEl.value.getContext('2d')
-  
+  isComponentMounted = true
+  context = canvasEl.value?.getContext('2d') ?? null
+  resizeObserver = new ResizeObserver(resizeCanvas)
+  if (wrapperEl.value) resizeObserver.observe(wrapperEl.value)
   resizeCanvas()
-  window.addEventListener('resize', resizeCanvas)
-  
-  canvasEl.value.addEventListener('mousedown', handleMouseDown)
-  window.addEventListener('mousemove', handleMouseMove)
-  window.addEventListener('mouseup', handleMouseUp)
-  canvasEl.value.addEventListener('wheel', handleWheel, { passive: false })
-  canvasEl.value.addEventListener('click', handleClick)
-
-  initGraph()
-  animate()
+  buildGraph()
+  startRenderLoop()
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
-  cancelAnimationFrame(animationFrameId)
-  window.removeEventListener('resize', resizeCanvas)
-  window.removeEventListener('mousemove', handleMouseMove)
-  window.removeEventListener('mouseup', handleMouseUp)
+  isComponentMounted = false
+  stopRenderLoop()
+  resizeObserver?.disconnect()
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
 })
 
-watch(() => props.blocks, () => {
-  initGraph()
-}, { deep: true })
-
-watch(() => props.subjectId, () => {
-  initGraph()
-  transform = { x: 0, y: 0, k: 1 }
-})
+watch(() => [props.subjectId, props.subjectName, props.subjects, props.sources, props.blocks], buildGraph, { deep: true })
 </script>
 
 <style scoped>
+/* Seamless Star Map Container (No middle redundant borders) */
 .knowledge-graph-wrapper {
   position: relative;
   width: 100%;
   height: 100%;
   min-height: 480px;
-  background: #ffffff; /* Explicit white background as requested */
-  border-radius: var(--radius-xl, 20px);
   overflow: hidden;
-  border: 1px solid var(--border-subtle, #e5e7eb);
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
 }
-
 .graph-canvas {
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
+  touch-action: none;
   cursor: grab;
 }
 
-.graph-canvas:active {
-  cursor: grabbing;
-}
-
-/* UI Overlay styling */
-.graph-overlay {
+/* Minimalist Frosted Glass HUD Overlay */
+.graph-hud {
   position: absolute;
-  top: 16px;
-  left: 16px;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  z-index: 5;
-}
-
-.overlay-header {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  padding: 10px 14px;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-
-.overlay-title {
-  font-size: 13px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.overlay-desc {
-  font-size: 10px;
-  color: #6b7280;
-}
-
-.overlay-legend {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  padding: 8px 12px;
-  border-radius: 10px;
+  top: 14px;
+  left: 14px;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  pointer-events: none;
 }
-
-.legend-item {
-  display: flex;
+.hud-legend {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 10px;
-  color: #4b5563;
-  font-weight: 500;
+  gap: 12px;
+  padding: 5px 14px;
+  background: rgba(250, 247, 242, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
-
-.legend-dot {
-  width: 8px;
-  height: 8px;
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary, #344139);
+}
+.dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
+.dot.subject { background: #718C67; box-shadow: 0 0 6px rgba(113, 140, 103, 0.5); }
+.dot.source { background: #6E8898; box-shadow: 0 0 6px rgba(110, 136, 152, 0.5); }
+.dot.block { background: #9BAA88; box-shadow: 0 0 6px rgba(155, 170, 136, 0.5); }
 
-.legend-dot.core {
-  background: #7D9372;
+.hud-hint {
+  font-size: 10.5px;
+  color: var(--text-muted, #7A7A75);
+  padding-left: 6px;
+  letter-spacing: 0.2px;
+  opacity: 0.75;
 }
 
-.legend-dot.source {
-  background: #9ca3af;
-}
-
-.legend-dot.block {
-  background: #A3B19B;
-}
-
-/* Sidebar slide over styling */
-.node-detail-panel {
+/* Floating Sleek Pill Fit View Button */
+.fit-button {
   position: absolute;
-  top: 16px;
-  right: 16px;
-  bottom: 16px;
-  width: 280px;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 16px;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.08);
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.panel-header {
-  padding: 14px 16px;
-  display: flex;
-  justify-content: space-between;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: inline-flex;
   align-items: center;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-.panel-tag {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 8px;
-  border-radius: 6px;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #6b7280;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 4px;
-  transition: color 0.2s;
-}
-
-.close-btn:hover {
-  color: #111827;
-}
-
-.panel-body {
-  padding: 16px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.panel-title {
-  margin: 0 0 8px 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: #111827;
-  line-height: 1.4;
-}
-
-.panel-time {
-  font-size: 11px;
-  color: #6b7280;
-  display: block;
-}
-
-.panel-divider {
-  height: 1px;
-  background: rgba(0, 0, 0, 0.06);
-  margin: 12px 0;
-}
-
-.panel-content-markdown {
-  font-size: 12px;
-  line-height: 1.6;
-  color: #374151;
-}
-
-.panel-content-markdown :deep(p) {
-  margin-bottom: 8px;
-}
-.panel-content-markdown :deep(h1), .panel-content-markdown :deep(h2), .panel-content-markdown :deep(h3) {
-  margin-top: 12px;
-  margin-bottom: 8px;
-  color: #111827;
-}
-.panel-content-markdown :deep(ul), .panel-content-markdown :deep(ol) {
-  padding-left: 20px;
-  margin-bottom: 8px;
-}
-.panel-content-markdown :deep(code) {
-  background: transparent;
-  padding: 0;
-  border: none;
-  font-weight: 700;
-  font-family: var(--font-family-mono);
-}
-
-.panel-footer {
-  padding: 12px 16px;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  display: flex;
-  gap: 8px;
-}
-
-.panel-action-btn {
-  flex: 1;
-  padding: 8px;
-  border-radius: 8px;
-  font-size: 12px;
+  gap: 5px;
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  border-radius: 9999px;
+  padding: 6px 14px;
+  background: rgba(250, 247, 242, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #3B5740;
+  font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
-  border: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: all var(--transition-fast, 0.15s ease);
 }
-
-.panel-action-btn.secondary {
-  background: rgba(0, 0, 0, 0.04);
-  color: #4b5563;
-}
-
-.panel-action-btn.secondary:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.panel-action-btn.primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%));
-  color: #fff;
-}
-
-.panel-action-btn.primary:hover {
-  opacity: 0.9;
+.fit-button:hover {
+  background: #FAF7F2;
+  border-color: #8B9A6E;
+  color: #8B9A6E;
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.18);
 }
 
-/* Animations */
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+.empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-muted, #738077);
+  font-size: 13px;
+  pointer-events: none;
 }
 
-.slide-enter-from,
-.slide-leave-to {
-  opacity: 0;
-  transform: translateX(20px);
+/* Dark Mode Overrides for Knowledge Graph */
+html.dark .hud-legend {
+  background: rgba(30, 32, 28, 0.85);
+  border-color: rgba(154, 176, 143, 0.25);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+html.dark .legend-item {
+  color: #d9d0c7;
+}
+html.dark .hud-hint {
+  color: #8a867e;
+}
+html.dark .fit-button {
+  background: rgba(30, 32, 28, 0.88);
+  border-color: rgba(154, 176, 143, 0.25);
+  color: #9AB08F;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+html.dark .fit-button:hover {
+  background: #242622;
+  border-color: #9AB08F;
+  color: #b0c2a7;
+  box-shadow: 0 4px 14px rgba(154, 176, 143, 0.2);
 }
 </style>

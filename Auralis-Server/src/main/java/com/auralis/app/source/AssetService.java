@@ -2,6 +2,7 @@ package com.auralis.app.source;
 
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.identity.IdentityService;
 import com.auralis.app.source.internal.persistence.AssetEntity;
 import com.auralis.app.source.internal.persistence.AssetRepository;
 import com.auralis.app.source.internal.AssetFailureRecorder;
@@ -31,6 +32,7 @@ public class AssetService {
     private final AssetRepository assetRepository;
     private final AssetStoragePort assetStorage;
     private final AssetFailureRecorder assetFailureRecorder;
+    private final IdentityService identityService;
     private final AuralisProperties properties;
     private final TransactionTemplate transactionTemplate;
 
@@ -38,11 +40,13 @@ public class AssetService {
             AssetRepository assetRepository,
             AssetStoragePort assetStorage,
             AssetFailureRecorder assetFailureRecorder,
+            IdentityService identityService,
             AuralisProperties properties,
             org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.assetRepository = assetRepository;
         this.assetStorage = assetStorage;
         this.assetFailureRecorder = assetFailureRecorder;
+        this.identityService = identityService;
         this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -58,24 +62,33 @@ public class AssetService {
         } catch (DataIntegrityViolationException race) {
             // The unique owner/key index is the cross-instance arbiter. The
             // losing transaction is already rolled back before this reload.
-            asset = transactionTemplate.execute(status -> assetRepository
-                    .findByUserIdAndClientImportId(userId, command.clientImportId())
-                    .map(existing -> {
-                        verifyImmutableMetadata(existing, metadata);
-                        existing.prepareUploadRetry();
-                        return existing;
-                    })
-                    .orElseThrow(() -> race));
+            asset = transactionTemplate.execute(status -> {
+                identityService.lockActiveUserForStorage(userId);
+                return assetRepository.findByUserIdAndClientImportId(userId, command.clientImportId())
+                        .map(existing -> {
+                            verifyImmutableMetadata(existing, metadata);
+                            existing.prepareUploadRetry();
+                            return existing;
+                        })
+                        .orElseThrow(() -> race);
+            });
         }
         // Keep the idempotency row committed even if signing the external
         // upload URL fails. A later retry must reload this same Asset.
-        return issueUploadIntent(userId, asset);
+        UUID assetId = asset.getId();
+        return transactionTemplate.execute(status -> {
+            identityService.lockActiveUserForStorage(userId);
+            AssetEntity current = assetRepository.findByIdAndUserId(assetId, userId)
+                    .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
+            return issueUploadIntent(userId, current);
+        });
     }
 
     private AssetEntity createUploadIntentInTransaction(
             UUID userId,
             AssetUploadIntentCommand command,
             UploadMetadata metadata) {
+        identityService.lockActiveUserForStorage(userId);
         var existing = assetRepository.findByUserIdAndClientImportId(userId, command.clientImportId());
         if (existing.isPresent()) {
             verifyImmutableMetadata(existing.get(), metadata);

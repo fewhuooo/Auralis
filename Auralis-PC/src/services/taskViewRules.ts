@@ -8,26 +8,48 @@ export interface AssetTaskGroups {
   completed: Task[]
 }
 
-type TaskStatusFields = Pick<Task, 'status' | 'dueAt' | 'scheduledAt'>
+type TaskStatusFields = Pick<Task, 'status' | 'dueAt' | 'scheduledAt' | 'durationMinutes'>
 
 export function isCompletedTask(task: Pick<Task, 'status'>): boolean {
+  if ((task.status as any) === 'DONE') return true
   return task.status === 'completed'
 }
 
+export function taskStatusToPresentation(status: 'TODO' | 'IN_PROGRESS' | 'DONE' | 'CANCELLED', scheduledAt?: string): Task['status'] {
+  if (status === 'DONE') return 'completed'
+  if (status === 'IN_PROGRESS') return 'learning'
+  if (status === 'CANCELLED') return 'cancelled'
+  return scheduledAt ? 'scheduled' : 'pending'
+}
+
 export function isCompletedScheduledTask(task: TaskStatusFields): boolean {
+  if ((task.status as any) === 'DONE') return Boolean(task.scheduledAt)
   return task.status === 'completed' && Boolean(task.scheduledAt)
 }
 
+export function isScheduledIntervalEnded(
+  task: Pick<Task, 'scheduledAt' | 'durationMinutes'>,
+  now = new Date(),
+): boolean {
+  const scheduledTimestamp = task.scheduledAt ? Date.parse(task.scheduledAt) : Number.NaN
+  const durationMinutes = Number(task.durationMinutes)
+  const duration = Number.isFinite(durationMinutes) ? Math.max(0, durationMinutes) : 0
+  return Boolean(task.scheduledAt)
+    && Number.isFinite(scheduledTimestamp)
+    && scheduledTimestamp + duration * 60_000 <= now.getTime()
+}
+
+export function isScheduledCompletionLocked(task: TaskStatusFields | null | undefined, now = new Date()): boolean {
+  if (!task) return false
+  return isCompletedTask(task) && isScheduledIntervalEnded(task, now)
+}
+
 function isActionableTask(task: TaskStatusFields): boolean {
-  return task.status !== 'completed' && task.status !== 'cancelled'
+  return !isCompletedTask(task) && task.status !== 'cancelled'
 }
 
 export function isScheduledTaskPast(task: TaskStatusFields, now = new Date()): boolean {
-  const scheduledTimestamp = task.scheduledAt ? Date.parse(task.scheduledAt) : Number.NaN
-  return isActionableTask(task)
-    && Boolean(task.scheduledAt)
-    && Number.isFinite(scheduledTimestamp)
-    && scheduledTimestamp < now.getTime()
+  return isActionableTask(task) && isScheduledIntervalEnded(task, now)
 }
 
 export function isUnscheduledTaskPastDue(task: TaskStatusFields, now = new Date()): boolean {
@@ -48,11 +70,33 @@ export function isOverdueTask(task: TaskStatusFields, now = new Date()): boolean
 }
 
 export function isSchedulableTask(task: TaskStatusFields): boolean {
-  const dueTimestamp = task.dueAt ? Date.parse(task.dueAt) : Number.NaN
-  return task.status !== 'completed'
+  return !isCompletedTask(task)
     && task.status !== 'cancelled'
-    && Number.isFinite(dueTimestamp)
     && !task.scheduledAt
+}
+
+type ScheduleIntervalTask = Pick<Task, 'id' | 'status' | 'scheduledAt' | 'durationMinutes' | 'title'>
+
+export function findScheduleConflict(
+  tasks: ScheduleIntervalTask[],
+  candidate: ScheduleIntervalTask,
+  excludedTaskIds: ReadonlySet<string> = new Set(),
+): ScheduleIntervalTask | undefined {
+  if (candidate.status === 'cancelled' || !candidate.scheduledAt) return undefined
+
+  const start = Date.parse(candidate.scheduledAt)
+  const duration = Number(candidate.durationMinutes)
+  if (!Number.isFinite(start) || !Number.isFinite(duration) || duration <= 0) return undefined
+  const end = start + duration * 60_000
+
+  return tasks.find((task) => {
+    if (task.id === candidate.id || excludedTaskIds.has(task.id) || task.status === 'cancelled' || !task.scheduledAt) return false
+    const otherStart = Date.parse(task.scheduledAt)
+    const otherDuration = Number(task.durationMinutes)
+    if (!Number.isFinite(otherStart) || !Number.isFinite(otherDuration) || otherDuration <= 0) return false
+    const otherEnd = otherStart + otherDuration * 60_000
+    return start < otherEnd && otherStart < end
+  })
 }
 
 function timestamp(value?: string): number {
@@ -87,12 +131,10 @@ export function getTasksForAssetGroups(tasks: Task[]): AssetTaskGroups {
   for (const task of tasks) {
     if (task.status === 'cancelled') continue
 
-    // Unassigned takes precedence over completion/status: no deadline and no
-    // schedule means the task has not entered either working bucket yet.
-    if (!task.dueAt && !task.scheduledAt) {
-      groups.unassigned.push(task)
-    } else if (isCompletedTask(task)) {
+    if (isCompletedTask(task)) {
       groups.completed.push(task)
+    } else if (!task.dueAt && !task.scheduledAt) {
+      groups.unassigned.push(task)
     } else {
       groups.pending.push(task)
     }
@@ -111,6 +153,29 @@ export function getTimelineRange(now = new Date()): { start: Date; end: Date } {
   const end = new Date(start)
   end.setDate(end.getDate() + 7)
   return { start, end }
+}
+
+export function getTimelineDropSlotTime(
+  startSlotTime: string,
+  durationMinutes: number,
+  verticalOffsetPx: number,
+  rowStepPx: number,
+): string | undefined {
+  const match = /^(\d{2}):(\d{2})$/.exec(startSlotTime)
+  const rowStep = Number(rowStepPx)
+  const offset = Number(verticalOffsetPx)
+  if (!match || !Number.isFinite(rowStep) || rowStep <= 0 || !Number.isFinite(offset)) return undefined
+
+  const startMinutes = Number(match[1]) * 60 + Number(match[2])
+  if (Number(match[2]) > 59 || startMinutes > 22 * 60 + 30) return undefined
+
+  const duration = Number(durationMinutes)
+  const slotCount = Number.isFinite(duration) && duration > 0
+    ? Math.max(1, Math.ceil(duration / 30))
+    : 1
+  const slotOffset = Math.min(slotCount - 1, Math.floor(Math.max(0, offset) / rowStep))
+  const targetMinutes = Math.min(22 * 60 + 30, startMinutes + slotOffset * 30)
+  return `${String(Math.floor(targetMinutes / 60)).padStart(2, '0')}:${String(targetMinutes % 60).padStart(2, '0')}`
 }
 
 export interface VisibleDay {
@@ -174,4 +239,37 @@ export function getTasksForTimeline(tasks: Task[], now = new Date()): Task[] {
       return scheduledTimestamp >= startTimestamp && scheduledTimestamp < endTimestamp
     })
     .sort((left, right) => timestamp(left.scheduledAt) - timestamp(right.scheduledAt) || left.id.localeCompare(right.id))
+}
+
+export function comparePendingTasks(
+  a: Pick<Task, 'dueAt' | 'duration' | 'durationMinutes' | 'name' | 'title'>,
+  b: Pick<Task, 'dueAt' | 'duration' | 'durationMinutes' | 'name' | 'title'>
+): number {
+  // 1. 有 DDL 时间优先
+  const hasDueA = Boolean(a.dueAt)
+  const hasDueB = Boolean(b.dueAt)
+  if (hasDueA !== hasDueB) {
+    return hasDueA ? -1 : 1
+  }
+
+  // 2. DDL 时间近优先（时间戳升序）
+  if (hasDueA && hasDueB && a.dueAt && b.dueAt) {
+    const timeA = Date.parse(a.dueAt)
+    const timeB = Date.parse(b.dueAt)
+    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
+      return timeA - timeB
+    }
+  }
+
+  // 3. 持续时间短优先（时长升序）
+  const durA = Number(a.duration ?? a.durationMinutes) || 0
+  const durB = Number(b.duration ?? b.durationMinutes) || 0
+  if (durA !== durB) {
+    return durA - durB
+  }
+
+  // 4. 兜底稳定名称比较
+  const nameA = a.name ?? a.title ?? ''
+  const nameB = b.name ?? b.title ?? ''
+  return nameA.localeCompare(nameB)
 }

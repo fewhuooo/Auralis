@@ -5,6 +5,18 @@ import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.identity.internal.persistence.DeviceRepository;
 import com.auralis.app.identity.internal.persistence.RefreshSessionRepository;
 import com.auralis.app.identity.internal.persistence.UserRepository;
+import com.auralis.app.identity.AccountDeletionCleanupService;
+import com.auralis.app.identity.AuthDtos;
+import com.auralis.app.identity.AuthResult;
+import com.auralis.app.identity.DeviceCommand;
+import com.auralis.app.identity.DevicePlatform;
+import com.auralis.app.identity.IdentityException;
+import com.auralis.app.identity.IdentityService;
+import com.auralis.app.source.AssetService;
+import com.auralis.app.source.AssetUploadIntentCommand;
+import com.auralis.app.source.ParsedDocumentService;
+import com.auralis.app.source.ParsedDocumentUploadCommand;
+import com.auralis.app.source.internal.storage.InMemoryAssetStorage;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
 import com.auralis.app.relation.internal.persistence.RelationRepository;
 import com.auralis.app.source.internal.persistence.AssetRepository;
@@ -18,14 +30,32 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.util.UUID;
+import java.time.Instant;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicReference;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -51,6 +81,30 @@ class AuthControllerTests {
     private UserRepository userRepository;
 
     @Autowired
+    private AccountDeletionCleanupService accountDeletionCleanupService;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private TestAccountDeletionObjectStorageAdapter accountDeletionObjectStorage;
+
+    @Autowired
+    private InMemoryAssetStorage inMemoryAssetStorage;
+
+    @Autowired
+    private IdentityService identityService;
+
+    @Autowired
+    private AssetService assetService;
+
+    @Autowired
+    private ParsedDocumentService parsedDocumentService;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    @Autowired
     private KnowledgeBlockRepository knowledgeBlockRepository;
 
     @Autowired
@@ -70,6 +124,7 @@ class AuthControllerTests {
 
     @BeforeEach
     void cleanIdentityData() {
+        jdbcTemplate.update("delete from account_deletion_jobs");
         relationRepository.deleteAll();
         knowledgeBlockRepository.deleteAll();
         sourceRepository.deleteAll();
@@ -248,6 +303,328 @@ class AuthControllerTests {
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'username')]").exists())
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'password')]").exists())
                 .andExpect(jsonPath("$.fieldErrors[?(@.field == 'clientDeviceKey')]").exists());
+    }
+
+    @Test
+    void updatesOnlyAuthenticatedUsersDisplayName() throws Exception {
+        JsonNode alice = register("alice@example.com", "profile-alice", "Alice's browser");
+        JsonNode bob = register("bob@example.com", "profile-bob", "Bob's browser");
+        String aliceToken = alice.path("tokens").path("accessToken").asText();
+        String bobToken = bob.path("tokens").path("accessToken").asText();
+
+        mockMvc.perform(put("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(bobToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"displayName\":\"Bob\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(put("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(aliceToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"displayName\":\"New Alice\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("New Alice"));
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(bobToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.displayName").value("Bob"));
+
+        mockMvc.perform(put("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(bobToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"displayName\":\"Stale write\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("RESOURCE_VERSION_CONFLICT"));
+    }
+
+    @Test
+    void changesPasswordOnlyAfterVerifyingCurrentPasswordAndRevokesRefreshSessions() throws Exception {
+        JsonNode alice = register("alice@example.com", "password-alice", "Alice's browser");
+        String token = alice.path("tokens").path("accessToken").asText();
+
+        mockMvc.perform(put("/api/auth/password")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"wrong password\",\"newPassword\":\"a longer new password\"}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(put("/api/auth/password")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"currentPassword\":\"correct horse battery staple\",\"newPassword\":\"a longer new password\"}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + alice.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(loginJson("alice@example.com", "password-alice", "password-alice-next")))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"alice@example.com\",\"password\":\"a longer new password\","
+                                + "\"clientDeviceKey\":\"password-alice-next\",\"deviceName\":\"Alice's browser\",\"platform\":\"WEB\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void avatarUploadValidatesImageAndSupportsPrivateReadAndReset() throws Exception {
+        JsonNode alice = register("alice@example.com", "avatar-alice", "Alice's browser");
+        JsonNode bob = register("bob@example.com", "avatar-bob", "Bob's browser");
+        String token = alice.path("tokens").path("accessToken").asText();
+        String bobToken = bob.path("tokens").path("accessToken").asText();
+        byte[] png = java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pV8AAAAASUVORK5CYII=");
+
+        mockMvc.perform(multipart("/api/auth/me/avatar")
+                        .file(new MockMultipartFile("file", "avatar.png", "image/png", png))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.IMAGE_PNG));
+        mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(bobToken)))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(multipart("/api/auth/me/avatar")
+                        .file(new MockMultipartFile("file", "avatar.png", "image/png", "not an image".getBytes()))
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(delete("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void deletesAssetlessAccountAndRevokesItsSessions() throws Exception {
+        JsonNode alice = register("alice@example.com", "delete-alice", "Alice's browser");
+        String token = alice.path("tokens").path("accessToken").asText();
+        UUID userId = UUID.fromString(alice.path("user").path("id").asText());
+        UUID subjectId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        jdbcTemplate.update("insert into subjects (id, user_id, name, sort_key) values (?, ?, 'Delete me', '')",
+                subjectId, userId);
+        jdbcTemplate.update("insert into tasks (id, user_id, subject_id, title, status, sort_key) "
+                + "values (?, ?, ?, 'Delete me', 'TODO', '')", taskId, userId, subjectId);
+
+        mockMvc.perform(delete("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"incorrect password\"}"))
+                .andExpect(status().isUnauthorized());
+        assertThat(userRepository.findById(userId)).isPresent();
+
+        MvcResult requested = mockMvc.perform(delete("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"correct horse battery staple\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andReturn();
+
+        String jobId = json(requested).path("id").asText();
+        assertThat(userRepository.findByNormalizedUsername("alice@example.com")).isPresent();
+        jdbcTemplate.update("update account_deletion_jobs set not_before = ? where id = ?",
+                Instant.EPOCH, UUID.fromString(jobId));
+        assertThat(accountDeletionCleanupService.processPending()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from tasks where id = ?", Integer.class, taskId)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from subjects where id = ?", Integer.class, subjectId)).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from account_deletion_jobs where id = ?", String.class, UUID.fromString(jobId)))
+                .isEqualTo("COMPLETED");
+
+        mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + alice.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isUnauthorized());
+        assertThat(userRepository.findByNormalizedUsername("alice@example.com")).isEmpty();
+    }
+
+    @Test
+    void accountDeletionWaitsForUploadUrlExpiryAndClaimsCleanupJobOnce() throws Exception {
+        JsonNode alice = register("alice@example.com", "delete-race", "Alice's browser");
+        String token = alice.path("tokens").path("accessToken").asText();
+        UUID userId = UUID.fromString(alice.path("user").path("id").asText());
+        String objectKey = "users/" + userId + "/assets/race.bin";
+        UUID assetId = UUID.randomUUID();
+        jdbcTemplate.update("insert into assets (id, user_id, object_key, original_name, size_bytes, mime_type, upload_status) "
+                + "values (?, ?, ?, 'race.bin', 4, 'application/octet-stream', 'READY')",
+                assetId, userId, objectKey);
+        inMemoryAssetStorage.putObject(objectKey, new byte[] { 1, 2, 3, 4 });
+
+        MvcResult requested = mockMvc.perform(delete("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"correct horse battery staple\"}"))
+                .andExpect(status().isAccepted())
+                .andReturn();
+        UUID jobId = UUID.fromString(json(requested).path("id").asText());
+        assertThat(accountDeletionCleanupService.processPending()).isZero();
+        assertThat(userRepository.findById(userId)).isPresent();
+
+        jdbcTemplate.update("update account_deletion_jobs set not_before = ? where id = ?", Instant.EPOCH, jobId);
+        accountDeletionObjectStorage.failNextDelete();
+        assertThat(accountDeletionCleanupService.processPending()).isZero();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from account_deletion_jobs where id = ?", String.class, jobId)).isEqualTo("FAILED");
+        assertThat(userRepository.findById(userId)).isPresent();
+        accountDeletionObjectStorage.blockNextDelete();
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<Integer> first = executor.submit(accountDeletionCleanupService::processPending);
+            assertThat(accountDeletionObjectStorage.awaitDeleteStarted()).isTrue();
+            assertThat(accountDeletionCleanupService.processPending()).isZero();
+            accountDeletionObjectStorage.releaseDelete();
+            assertThat(first.get()).isEqualTo(1);
+        }
+
+        assertThat(accountDeletionObjectStorage.deleteCount()).isEqualTo(2);
+        assertThat(userRepository.findById(userId)).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "select status from account_deletion_jobs where id = ?", String.class, jobId)).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void completedAccountDeletionReconcilesLateWritesToPreviouslyAuthorizedObjectKeys() throws Exception {
+        JsonNode alice = register("alice@example.com", "delete-late-write", "Alice's browser");
+        UUID userId = UUID.fromString(alice.path("user").path("id").asText());
+        AssetUploadIntentCommand command = new AssetUploadIntentCommand(
+                0, UUID.randomUUID(), "late-write.bin", 4, "application/octet-stream", null);
+        inMemoryAssetStorage.blockNextUploadIntent();
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> upload = executor.submit(() -> assetService.createUploadIntent(userId, command));
+            assertThat(inMemoryAssetStorage.awaitUploadIntentStarted()).isTrue();
+            Future<?> deletion = executor.submit(() ->
+                    identityService.requestAccountDeletion(userId, "correct horse battery staple"));
+            assertThatThrownBy(() -> deletion.get(300, TimeUnit.MILLISECONDS))
+                    .isInstanceOf(TimeoutException.class);
+            inMemoryAssetStorage.releaseUploadIntent();
+            upload.get(2, TimeUnit.SECONDS);
+            AuthDtos.AccountDeletionResponse response =
+                    (AuthDtos.AccountDeletionResponse) deletion.get(2, TimeUnit.SECONDS);
+            UUID jobId = response.id();
+            String objectKey = jdbcTemplate.queryForObject(
+                    "select object_key from assets where user_id = ?", String.class, userId);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select count(*) from account_deletion_objects where job_id = ? and object_key = ?",
+                    Integer.class, jobId, objectKey)).isEqualTo(1);
+            assertThat(userRepository.findById(userId)).isPresent();
+
+            jdbcTemplate.update("update account_deletion_jobs set not_before = ? where id = ?", Instant.EPOCH, jobId);
+            assertThat(accountDeletionCleanupService.processPending()).isEqualTo(1);
+            assertThat(userRepository.findById(userId)).isEmpty();
+
+            // A PUT authorized before deletion can finish after the first delete.
+            inMemoryAssetStorage.putObject(objectKey, new byte[] { 1, 2, 3, 4 });
+            jdbcTemplate.update("update account_deletion_jobs set next_object_scan_at = ? where id = ?", Instant.EPOCH, jobId);
+            assertThat(accountDeletionCleanupService.processPending()).isZero();
+            assertThatThrownBy(() -> inMemoryAssetStorage.openObject(objectKey))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThat(jdbcTemplate.queryForObject(
+                    "select status from account_deletion_jobs where id = ?", String.class, jobId)).isEqualTo("COMPLETED");
+        } finally {
+            inMemoryAssetStorage.releaseUploadIntent();
+        }
+    }
+
+    @Test
+    void loginWaitsForUserLockBeforeCheckingPasswordAndIssuingSession() throws Exception {
+        JsonNode alice = register("alice@example.com", "login-lock", "Alice's browser");
+        UUID userId = UUID.fromString(alice.path("user").path("id").asText());
+        CountDownLatch started = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            AtomicReference<Future<AuthResult>> loginRef = new AtomicReference<>();
+            TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+            transaction.execute(status -> {
+                assertThat(userRepository.findForUpdateById(userId)).isPresent();
+                Future<AuthResult> login = executor.submit(() -> {
+                    started.countDown();
+                    return identityService.login("alice@example.com", "correct horse battery staple",
+                            new DeviceCommand("stale-login", "Stale login", DevicePlatform.WEB));
+                });
+                loginRef.set(login);
+                try {
+                    assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+                    assertThatThrownBy(() -> login.get(300, TimeUnit.MILLISECONDS))
+                            .isInstanceOf(TimeoutException.class);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+                identityService.changePassword(userId, 0,
+                        "correct horse battery staple", "a different long password");
+                return null;
+            });
+            Future<AuthResult> login = loginRef.get();
+            assertThatThrownBy(login::get)
+                    .isInstanceOf(ExecutionException.class)
+                    .hasCauseInstanceOf(IdentityException.class);
+            assertThat(refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId))
+                    .allMatch(session -> session.getRevokedAt() != null);
+        }
+    }
+
+    @Test
+    void refreshWaitsForUserLockBeforeLockingOrRotatingSession() throws Exception {
+        JsonNode alice = register("alice@example.com", "refresh-lock", "Alice's browser");
+        UUID userId = UUID.fromString(alice.path("user").path("id").asText());
+        String rawRefreshToken = alice.path("tokens").path("refreshToken").asText();
+        CountDownLatch started = new CountDownLatch(1);
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            AtomicReference<Future<AuthResult>> refreshRef = new AtomicReference<>();
+            TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+            transaction.execute(status -> {
+                assertThat(userRepository.findForUpdateById(userId)).isPresent();
+                Future<AuthResult> refresh = executor.submit(() -> {
+                    started.countDown();
+                    return identityService.refresh(rawRefreshToken);
+                });
+                refreshRef.set(refresh);
+                try {
+                    assertThat(started.await(2, TimeUnit.SECONDS)).isTrue();
+                    assertThatThrownBy(() -> refresh.get(300, TimeUnit.MILLISECONDS))
+                            .isInstanceOf(TimeoutException.class);
+                    Thread.sleep(100);
+                    String tokenHash = jdbcTemplate.queryForObject(
+                            "select token_hash from refresh_sessions where user_id = ? and replaced_by_session_id is null",
+                            String.class, userId);
+                    Future<Boolean> canLockSession = executor.submit(() ->
+                            new TransactionTemplate(transactionManager).execute(inner ->
+                                    refreshSessionRepository.findByTokenHashForUpdate(tokenHash).isPresent()));
+                    assertThat(canLockSession.get(500, TimeUnit.MILLISECONDS)).isTrue();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                } catch (ExecutionException | TimeoutException exception) {
+                    throw new IllegalStateException(exception);
+                }
+                return null;
+            });
+            Future<AuthResult> refresh = refreshRef.get();
+            assertThat(refresh.get()).isNotNull();
+        }
+    }
+
+    @Test
+    void disabledAccountCannotCreateAnAssetUploadIntent() throws Exception {
+        JsonNode alice = register("alice@example.com", "disabled-upload", "Alice's browser");
+        UUID userId = UUID.fromString(alice.path("user").path("id").asText());
+        identityService.requestAccountDeletion(userId, "correct horse battery staple");
+
+        assertThatThrownBy(() -> assetService.createUploadIntent(userId,
+                new AssetUploadIntentCommand(0, UUID.randomUUID(), "file.txt", 4,
+                        "text/plain", null)))
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> parsedDocumentService.createUploadIntent(userId, UUID.randomUUID(),
+                new ParsedDocumentUploadCommand(UUID.randomUUID(), 1, "parser", "1", "1", null,
+                        "a".repeat(64), "b".repeat(64), 4)))
+                .isInstanceOf(RuntimeException.class);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from assets where user_id = ?", Integer.class, userId))
+                .isZero();
     }
 
     private JsonNode register(String username, String clientDeviceKey, String deviceName) throws Exception {

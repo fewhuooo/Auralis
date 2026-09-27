@@ -50,6 +50,7 @@ public class SourceChunkService {
             pgVectorRepository.replace(userId, sourceId, generation, chunks, vectors);
             return;
         }
+        chunkRepository.deleteGeneration(userId, sourceId, generation);
         List<SourceChunkEntity> replacements = new java.util.ArrayList<>();
         for (int index = 0; index < chunks.size(); index++) {
             TextChunk chunk = chunks.get(index);

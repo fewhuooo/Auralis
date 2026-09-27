@@ -1,6 +1,8 @@
 package com.auralis.app.identity.internal.security;
 
 import com.auralis.app.shared.security.AuthenticatedUser;
+import com.auralis.app.identity.UserStatus;
+import com.auralis.app.identity.internal.persistence.UserRepository;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -14,14 +16,24 @@ import java.util.UUID;
 @Component
 public class JwtAuthenticationFilter implements Converter<Jwt, AbstractAuthenticationToken> {
 
+    private final UserRepository userRepository;
+
+    public JwtAuthenticationFilter(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         if (!"access".equals(jwt.getClaimAsString("typ"))) {
             throw new BadCredentialsException("Only access tokens are accepted");
         }
         try {
+            UUID userId = UUID.fromString(jwt.getSubject());
+            if (userRepository.findById(userId).filter(user -> user.getStatus() == UserStatus.ACTIVE).isEmpty()) {
+                throw new BadCredentialsException("Account is unavailable");
+            }
             AuthenticatedUser principal = new AuthenticatedUser(
-                    UUID.fromString(jwt.getSubject()),
+                    userId,
                     UUID.fromString(requiredClaim(jwt, "sid")),
                     UUID.fromString(requiredClaim(jwt, "serverDeviceId")));
             return new UsernamePasswordAuthenticationToken(

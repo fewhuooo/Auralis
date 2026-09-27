@@ -15,7 +15,6 @@ import com.auralis.app.relation.RelationService;
 import com.auralis.app.relation.RelationType;
 import com.auralis.app.relation.internal.persistence.RelationRepository;
 import com.auralis.app.shared.error.DomainException;
-import com.auralis.app.shared.domain.SourceIngestionRequestedEvent;
 import com.auralis.app.source.AssetService;
 import com.auralis.app.source.AssetStoragePort;
 import com.auralis.app.source.AssetRetentionCleanupService;
@@ -27,6 +26,7 @@ import com.auralis.app.source.SourceType;
 import com.auralis.app.source.SourceView;
 import com.auralis.app.source.internal.persistence.AssetRepository;
 import com.auralis.app.source.internal.persistence.SourceRepository;
+import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.subject.SubjectView;
@@ -40,8 +40,6 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.event.ApplicationEvents;
-import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.context.annotation.Import;
 
 import java.time.Instant;
@@ -60,7 +58,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest(classes = AuralisApplication.class)
 @ActiveProfiles("test")
 @Import(SourceAssetRelationServiceTests.StorageConfiguration.class)
-@RecordApplicationEvents
 class SourceAssetRelationServiceTests {
 
     @Autowired
@@ -94,6 +91,9 @@ class SourceAssetRelationServiceTests {
     private SourceRepository sourceRepository;
 
     @Autowired
+    private IngestionJobRepository ingestionJobRepository;
+
+    @Autowired
     private AssetRepository assetRepository;
 
     @Autowired
@@ -113,9 +113,6 @@ class SourceAssetRelationServiceTests {
 
     @Autowired
     private UserRepository userRepository;
-
-    @Autowired
-    private ApplicationEvents applicationEvents;
 
     @BeforeEach
     void cleanData() {
@@ -332,11 +329,24 @@ class SourceAssetRelationServiceTests {
         assertThat(source.assetSizeBytes()).isEqualTo(3982329L);
         assertThat(source.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
         assertThat(source.ingestionRevision()).isNotNull();
-        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
+        assertThat(ingestionJobRepository.findAll().stream()
+                .noneMatch(job -> owner.user().id().equals(job.getUserId())
+                        && source.id().equals(job.getSourceId())))
+                .isTrue();
+
+        sourceService.delete(owner.user().id(), source.id(), source.version());
+        long deletedVersion = sourceRepository.findById(source.id()).orElseThrow().getVersion();
+        SourceView restored = sourceService.restore(owner.user().id(), source.id(), deletedVersion);
+
+        assertThat(restored.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
+        assertThat(ingestionJobRepository.findAll().stream()
+                .noneMatch(job -> owner.user().id().equals(job.getUserId())
+                        && source.id().equals(job.getSourceId())))
+                .isTrue();
     }
 
     @Test
-    void textAndUrlSourcesStillPublishServerIngestionEvents() {
+    void textAndUrlSourcesPersistServerIngestionJobs() {
         var owner = register("source-events");
         SubjectView subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Events", null, null, "001"));
@@ -348,7 +358,16 @@ class SourceAssetRelationServiceTests {
 
         assertThat(textSource.ingestionStatus().name()).isEqualTo("PENDING");
         assertThat(urlSource.ingestionStatus().name()).isEqualTo("PENDING");
-        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).hasSize(2);
+        assertThat(ingestionJobRepository.findAll().stream()
+                .filter(job -> owner.user().id().equals(job.getUserId()))
+                .filter(job -> textSource.id().equals(job.getSourceId()))
+                .filter(job -> textSource.ingestionRevision().equals(job.getIngestionRevision())))
+                .hasSize(1);
+        assertThat(ingestionJobRepository.findAll().stream()
+                .filter(job -> owner.user().id().equals(job.getUserId()))
+                .filter(job -> urlSource.id().equals(job.getSourceId()))
+                .filter(job -> urlSource.ingestionRevision().equals(job.getIngestionRevision())))
+                .hasSize(1);
     }
 
     @Test
@@ -366,7 +385,6 @@ class SourceAssetRelationServiceTests {
         SourceView created = sourceService.create(owner.user().id(), new SourceCommand(
                 subject.id(), SourceType.FILE, "first.pdf", firstIntent.assetId(), null, null, null));
         UUID initialRevision = created.ingestionRevision();
-        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
 
         var secondIntent = assetService.createUploadIntent(owner.user().id(), new AssetUploadIntentCommand(
                 0L, UUID.randomUUID(), "second.pdf", 20L, "application/pdf", null));
@@ -379,12 +397,14 @@ class SourceAssetRelationServiceTests {
                 subject.id(), SourceType.FILE, "second.pdf", secondIntent.assetId(), null, null, null));
         assertThat(replaced.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
         assertThat(replaced.ingestionRevision()).isNotNull().isNotEqualTo(initialRevision);
-        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
 
         SourceView reingested = sourceService.reingest(owner.user().id(), replaced.id(), replaced.version());
         assertThat(reingested.ingestionStatus().name()).isEqualTo("AWAITING_CLIENT");
         assertThat(reingested.ingestionRevision()).isNotNull().isNotEqualTo(replaced.ingestionRevision());
-        assertThat(applicationEvents.stream(SourceIngestionRequestedEvent.class)).isEmpty();
+        assertThat(ingestionJobRepository.findAll().stream()
+                .noneMatch(job -> owner.user().id().equals(job.getUserId())
+                        && replaced.id().equals(job.getSourceId())))
+                .isTrue();
     }
 
     @Test

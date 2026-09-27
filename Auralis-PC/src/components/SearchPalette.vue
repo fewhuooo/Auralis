@@ -4,10 +4,7 @@
       <div v-if="isVisible" class="palette-backdrop" @click="close">
         <div class="palette-container" @click.stop>
           <div class="palette-header">
-            <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
+            <IconSearch class="search-icon" :size="20" :stroke-width="2" />
             <input
               ref="searchInput"
               v-model="query"
@@ -76,6 +73,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { IconSearch } from '@tabler/icons-vue'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 
 const router = useRouter()

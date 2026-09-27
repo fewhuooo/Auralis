@@ -20,8 +20,16 @@ public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity
 
     Optional<IngestionJobEntity> findByIdAndUserId(UUID id, UUID userId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select job from IngestionJobEntity job where job.id = :id and job.userId = :userId")
+    Optional<IngestionJobEntity> findForUpdateByIdAndUserId(
+            @Param("id") UUID id, @Param("userId") UUID userId);
+
     Optional<IngestionJobEntity> findFirstByUserIdAndSourceIdAndIngestionRevisionOrderByCreatedAtDesc(
             UUID userId, UUID sourceId, UUID ingestionRevision);
+
+    Optional<IngestionJobEntity> findFirstByUserIdAndSourceIdAndIngestionRevisionAndStatusInOrderByCreatedAtDesc(
+            UUID userId, UUID sourceId, UUID ingestionRevision, List<IngestionJobStatus> statuses);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

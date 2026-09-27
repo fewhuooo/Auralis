@@ -3,8 +3,10 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { createRefreshCoordinator } from '@/api/authRefresh'
 import { ApiProblemError, assertDirectDto, createApiProblemError } from '@/api/httpError'
 import { getClientRuntimeConfig } from '@/config/runtime'
+import { beginServiceRequest, observeServiceAvailable, observeServiceFailure } from '@/services/serviceAvailability'
 import {
   AuthenticationRequiredError,
+  isAccountDeletionConfirmationFailure,
   isPublicAuthPath,
   shouldBlockProtectedRequest,
 } from '@/auth/authSessionState'
@@ -19,6 +21,11 @@ interface AuthTokensResponse {
 interface RetriableRequestConfig extends AxiosRequestConfig {
   _r4Retried?: boolean;
   _skipAuthRefresh?: boolean;
+  serviceAvailabilityRequestId?: number;
+}
+
+interface ServiceAvailabilityRequestConfig extends InternalAxiosRequestConfig {
+  serviceAvailabilityRequestId?: number;
 }
 
 const runtime = getClientRuntimeConfig()
@@ -47,6 +54,8 @@ function attachToken(config: InternalAxiosRequestConfig): InternalAxiosRequestCo
     throw new AuthenticationRequiredError()
   }
   if (authStore.token) config.headers.Authorization = `Bearer ${authStore.token}`
+  const availabilityConfig = config as ServiceAvailabilityRequestConfig
+  availabilityConfig.serviceAvailabilityRequestId = beginServiceRequest()
   return config
 }
 
@@ -111,14 +120,22 @@ function withAuthorization(config: AxiosRequestConfig, token: string): AxiosRequ
 function createResponseInterceptor(instance: AxiosInstance): void {
   instance.interceptors.request.use(attachToken)
   instance.interceptors.response.use(
-    (response) => assertDirectDto(response.data),
+    (response) => {
+      observeServiceAvailable((response.config as ServiceAvailabilityRequestConfig).serviceAvailabilityRequestId)
+      return assertDirectDto(response.data)
+    },
     async (error: AxiosError) => {
       const originalRequest = error.config as RetriableRequestConfig | undefined
+      observeServiceFailure(originalRequest?.serviceAvailabilityRequestId, error.response?.status, error.code)
+      const isDeletionConfirmationFailure = originalRequest
+        ? isAccountDeletionConfirmationFailure(originalRequest.url ?? '', originalRequest.method, error.response?.data)
+        : false
       if (
         error.response?.status === 401 &&
         originalRequest &&
         !originalRequest._r4Retried &&
         !originalRequest._skipAuthRefresh &&
+        !isDeletionConfirmationFailure &&
         !isPublicAuthPath(originalRequest.url ?? '')
       ) {
         originalRequest._r4Retried = true
@@ -131,7 +148,7 @@ function createResponseInterceptor(instance: AxiosInstance): void {
         }
       }
 
-      if (error.response?.status === 401 && originalRequest && !isPublicAuthPath(originalRequest.url ?? '')) {
+      if (error.response?.status === 401 && originalRequest && !isDeletionConfirmationFailure && !isPublicAuthPath(originalRequest.url ?? '')) {
         redirectToLogin()
       }
 

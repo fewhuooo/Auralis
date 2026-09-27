@@ -11,8 +11,9 @@
 - 清空本机 PostgreSQL `public` schema，让 Server 启动时重新执行全部 Flyway migration。
 - 清空本机 MinIO `auralis-assets` bucket 中的对象，但保留 bucket。
 - 注册或登录一个测试账号。
-- 创建 12 个测试学科和 240 个类真实任务，其中 192 个为未来时间轴任务，且时间槽唯一。
-- 可选注入 7 个不可解析的假文件，并为每个文件创建 FILE Source 和关联 KnowledgeBlock；这条路径只用于验证 Asset、Source、列表展示和关联关系，不替代真实文件解析验收。
+- 创建 12 个测试学科和 240 个类真实任务：包含 48 个时间轴合法排期任务（每个学科 4 个，槽位唯一无重叠）、144 个未排期活跃待办任务（每个学科 12 个，涵盖无截止日期与有截止日期两类任务）、24 个已完成任务及 24 个取消任务。
+- 任务时长约束：任务时长严格为整半小时（30、60、90、120 分钟），严禁出现 45 分钟或任何非 30 分钟整倍数时长；
+- 知识块约束：本轮注入严格不注入知识块（保持 0 知识块）。
 
 该流程会破坏本机数据库和对象存储数据。禁止在生产环境、共享环境或未确认目标容器时执行。流程默认不备份；需要保留数据时应先按 [运维手册](Runbook.md) 备份。
 
@@ -125,7 +126,11 @@ $userId = $auth.user.id
 
 ## 5. 注入测试学科和任务
 
-下面的 PowerShell 片段通过正式 API 注入 12 个学科、每个学科 20 个任务：16 个未来时间轴任务、2 个已完成任务、2 个取消任务。每个未来任务占用唯一时间槽，避免时间轴按槽展示时互相覆盖。
+下面的 PowerShell 片段通过正式 API 注入 12 个学科、每个学科 20 个任务（共 240 项）：
+- **48 个时间轴任务**（每个学科 4 项）：安排在未来 8 天合法白天槽位（08:30~21:00），每天 6 项，时间槽唯一；
+- **144 个活跃待办任务**（每个学科 12 项）：`scheduledAt: null`，作为首页待办清单和排期副驾待安排队列的核心数据源。其中一半（72 项）无截止日期（`dueAt: null`），另一半（72 项）带未来截止日期；
+- **24 个已完成任务**（每个学科 2 项）：`status: 'DONE'`，`scheduledAt: null`；
+- **24 个已取消任务**（每个学科 2 项）：`status: 'CANCELLED'`，`scheduledAt: null`。
 
 ```powershell
 $subjects = @(
@@ -184,17 +189,33 @@ $taskTemplates = @(
 $subjectNames = @($subjects | ForEach-Object { $_.name })
 $taskCount = 0
 $scheduleSlotIndex = 0
+# 时间轴有效可视窗口为每日 08:00 至 22:30；定义每日有效槽位列表，确保不注入到时间轴没有的位置（如凌晨或深夜）：
+$dailyTimeSlots = @('08:30', '10:30', '14:00', '16:00', '19:00', '21:00')
+
 for ($subjectIndex = 0; $subjectIndex -lt $subjectNames.Count; $subjectIndex++) {
   $subjectName = $subjectNames[$subjectIndex]
   for ($taskIndex = 0; $taskIndex -lt 20; $taskIndex++) {
     $status = if ($taskIndex -ge 16 -and $taskIndex -lt 18) { 'DONE' } elseif ($taskIndex -ge 18) { 'CANCELLED' } elseif (($taskIndex + $subjectIndex) % 7 -eq 0) { 'IN_PROGRESS' } else { 'TODO' }
     $scheduledAt = $null
-    if ($taskIndex -lt 16) {
-      # 最大任务时长为 90 分钟，使用 2 小时起始间隔，确保时间轴任务块不重叠。
-      $slot = (Get-Date).ToUniversalTime().Date.AddDays(1).AddHours(7).AddHours($scheduleSlotIndex * 2)
+    $dueAt = $null
+
+    if ($taskIndex -lt 4) {
+      # 严格约束在时间轴有效可视范围（08:00~22:30）内，每天最多安排 6 个任务，超出自动递增到下一天白天：
+      $dayOffset = 1 + [Math]::Floor($scheduleSlotIndex / $dailyTimeSlots.Count)
+      $timeStr = $dailyTimeSlots[$scheduleSlotIndex % $dailyTimeSlots.Count]
+      $targetDate = (Get-Date).Date.AddDays($dayOffset)
+      $timeParts = $timeStr.Split(':')
+      $slot = $targetDate.AddHours([int]$timeParts[0]).AddMinutes([int]$timeParts[1])
       $scheduledAt = $slot.ToUniversalTime().ToString('o')
       $scheduleSlotIndex++
+    } elseif ($taskIndex -ge 4 -and $taskIndex -lt 16) {
+      # 活跃未排期待办任务：奇数项设置未来截止日期，偶数项为纯无截止时间任务
+      if ($taskIndex % 2 -eq 1) {
+        $dueDayOffset = 1 + (($taskIndex + $subjectIndex) % 7)
+        $dueAt = (Get-Date).Date.AddDays($dueDayOffset).AddHours(20).ToUniversalTime().ToString('o')
+      }
     }
+
     $body = @{
       baseVersion = 0
       subjectId = $subjectIds[$subjectName]
@@ -202,7 +223,7 @@ for ($subjectIndex = 0; $subjectIndex -lt $subjectNames.Count; $subjectIndex++) 
       description = "测试数据：$subjectName 第 $($taskIndex + 1) 项学习任务，用于验证时间轴、状态筛选和任务详情。"
       status = $status
       scheduledAt = $scheduledAt
-      dueAt = $null
+      dueAt = $dueAt
       durationMinutes = @(30, 45, 60, 90)[($taskCount % 4)]
       sortKey = ('{0:D3}' -f $taskCount)
     } | ConvertTo-Json
@@ -213,7 +234,7 @@ for ($subjectIndex = 0; $subjectIndex -lt $subjectNames.Count; $subjectIndex++) 
 }
 ```
 
-如果需要更多数据，优先扩展这段注入逻辑并保持以下约束：任务 `subjectId` 必须属于测试账号；时间轴任务的 `scheduledAt` 必须是未来时间且不重复；相邻排期的间隔必须大于等于最大 `durationMinutes`；不要直接绕过 API 写入业务表。
+如果需要更多数据，优先扩展这段注入逻辑并保持以下约束：任务 `subjectId` 必须属于测试账号；时间轴任务的 `scheduledAt` 必须是未来时间且不重复，**且必须落在时间轴支持的有效槽位范围（08:00~22:30）内，严禁排入时间轴不存在的凌晨或深夜区间**；保留充分的无排期活跃任务供待办清单展示与手动排期；相邻排期的间隔必须大于等于最大 `durationMinutes`；不要直接绕过 API 写入业务表。
 
 ## 6. 注入不可解析假文件并链接 KnowledgeBlock
 
@@ -302,10 +323,10 @@ docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT 
 时间轴候选和重复时间检查：
 
 ```powershell
-docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT count(*) AS active_scheduled FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NOT NULL; SELECT scheduled_at, count(*) FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NOT NULL GROUP BY scheduled_at HAVING count(*) > 1;"
+docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT count(*) AS active_scheduled FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NOT NULL; SELECT count(*) AS active_unscheduled, count(due_at) AS has_due FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NULL; SELECT scheduled_at, count(*) FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NOT NULL GROUP BY scheduled_at HAVING count(*) > 1;"
 ```
 
-预期结果为 `active_scheduled=192`，重复时间查询无行。最后在 PC/Tauri 中登录测试账号，等待本地 projection/sync 完成，再人工检查 Dashboard、Timeline、SubjectHall 和任务状态。
+预期结果为：`active_scheduled=48`，未排期活跃任务 `active_unscheduled=144`（其中 `has_due=72`，无截止日期 `72` 项），重复时间查询无行。最后在 PC/Tauri 中登录测试账号，等待本地 projection/sync 完成，再人工检查 Dashboard、Timeline、SubjectHall 和任务状态。
 
 ## 8. 文件由用户手动导入
 

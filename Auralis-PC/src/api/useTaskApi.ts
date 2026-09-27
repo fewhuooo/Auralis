@@ -15,6 +15,9 @@ export type TaskVersionRequest = components['schemas']['VersionRequest']
 export type TaskScheduleSwapRequest = components['schemas']['ScheduleSwapRequest']
 export type TaskScheduleSwapResponse = components['schemas']['ScheduleSwapResponse']
 
+export type TaskScheduleInsertionRequest = components['schemas']['ScheduleInsertionRequest']
+export type TaskScheduleInsertionResponse = components['schemas']['ScheduleInsertionResponse']
+
 export interface TaskQuery {
   cursor?: string
   limit?: number
@@ -47,6 +50,9 @@ export const useTaskApi = {
   },
   swapSchedules(data: TaskScheduleSwapRequest): Promise<TaskScheduleSwapResponse> {
     return request.post('/api/tasks/schedule-swaps', data) as unknown as Promise<TaskScheduleSwapResponse>
+  },
+  scheduleInsertions(data: TaskScheduleInsertionRequest): Promise<TaskScheduleInsertionResponse> {
+    return request.post('/api/tasks/schedule-insertions', data) as unknown as Promise<TaskScheduleInsertionResponse>
   },
   delete(id: string, data: TaskVersionRequest): Promise<void> {
     return request.delete(`/api/tasks/${encodeURIComponent(id)}`, { data }) as unknown as Promise<void>

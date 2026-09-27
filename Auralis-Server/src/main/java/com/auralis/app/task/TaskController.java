@@ -83,6 +83,15 @@ public class TaskController {
                 TaskDtos.Response.from(result.source()), TaskDtos.Response.from(result.target()));
     }
 
+    @PostMapping("/schedule-insertions")
+    public TaskDtos.ScheduleInsertionResponse insertSchedule(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @Valid @RequestBody TaskDtos.ScheduleInsertionRequest request) {
+        var changed = taskService.insertSchedule(principal.userId(), request.taskId(), request.baseVersion(),
+                request.scheduledAt(), request.windowStartAt(), request.windowLastStartAt(), request.targetTaskId());
+        return new TaskDtos.ScheduleInsertionResponse(changed.stream().map(TaskDtos.Response::from).toList());
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(NO_CONTENT)
     public ResponseEntity<Void> delete(

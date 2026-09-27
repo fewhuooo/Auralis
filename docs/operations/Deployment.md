@@ -1,5 +1,13 @@
 # Auralis 部署指南
 
+### 2026-09-24 紧邻任务交换本机部署记录
+
+执行 `docker compose --env-file .env config --quiet`、`build backend`、`up -d --no-deps --force-recreate backend`，均退出 0。最终仅 backend 被替换为容器 `72be6c8240a8…`、镜像 `sha256:bf8e7bb72f0c…`；health/readiness HTTP 200 且 status UP。db/minio 容器与镜像均保持原样、数据卷未重建；Flyway 当前版本 23，无新迁移。GUI 拖放及认证业务请求尚未验收。
+
+### 2026-09-24 本机 backend 部署记录
+
+执行 `docker compose --env-file .env config --quiet`、`build backend` 与 `up -d --no-deps --force-recreate backend`，均退出 0；只替换 backend 容器，db/minio 容器和数据卷未重建。新容器 `ee3d733c00c8…` healthy，health/readiness UP；Flyway V23 成功且当前 schema 版本为 23。此证据只证明本机运行和迁移，尚无认证后的排期操作或 GUI 拖放验收。
+
 更新时间：2026-09-10
 
 文档状态：现行，生产方案待加固
@@ -177,6 +185,8 @@ npm.cmd run build:mp-weixin
 5. 记录基础库版本、设备和平台审核限制。
 
 ## Compose 组合部署
+
+Server 镜像构建会在 Linux build stage 中把 Maven wrapper 统一为 LF，兼容 Windows checkout 的 CRLF。backend 更新后可单独运行 `docker compose --env-file .env build backend` 与 `docker compose --env-file .env up -d --no-deps backend`；该操作不会重建 db 或 MinIO。Compose 默认使用 `prod` profile，`/v3/api-docs` 与 Swagger UI 按配置关闭；契约检查使用仓库内生成的 OpenAPI artifact。
 
 ```powershell
 docker compose build backend frontend

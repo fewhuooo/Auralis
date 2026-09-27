@@ -42,6 +42,8 @@ export const useAuthStore = defineStore(
     const showAuthModal = ref(false)
     const authStatus = ref<AuthSessionStatus>('anonymous')
     const reauthenticationReason = ref<string | null>(null)
+    const avatarUrl = ref<string>('')
+    let currentAvatarBlobUrl: string | null = null
 
     const token = computed({
       get: () => tokens.value?.accessToken ?? null,
@@ -87,6 +89,7 @@ export const useAuthStore = defineStore(
       authStatus.value = 'authenticated'
       reauthenticationReason.value = null
       showAuthModal.value = false
+      void loadAvatar()
     }
 
     function setTokens(tokenPair: TokenPair | null | undefined): void {
@@ -101,6 +104,11 @@ export const useAuthStore = defineStore(
       authStatus.value = 'anonymous'
       reauthenticationReason.value = null
       showAuthModal.value = false
+      if (currentAvatarBlobUrl) {
+        URL.revokeObjectURL(currentAvatarBlobUrl)
+        currentAvatarBlobUrl = null
+      }
+      avatarUrl.value = ''
     }
 
     function requireReauthentication(reason = '登录会话已失效，请重新登录。'): void {
@@ -162,6 +170,45 @@ export const useAuthStore = defineStore(
       return me
     }
 
+    function setAvatarUrl(url: string): void {
+      if (currentAvatarBlobUrl && currentAvatarBlobUrl !== url) {
+        URL.revokeObjectURL(currentAvatarBlobUrl)
+        currentAvatarBlobUrl = null
+      }
+      avatarUrl.value = url
+      if (url.startsWith('blob:')) {
+        currentAvatarBlobUrl = url
+      }
+    }
+
+    async function loadAvatar(): Promise<string> {
+      if (!tokens.value?.accessToken) {
+        if (currentAvatarBlobUrl) {
+          URL.revokeObjectURL(currentAvatarBlobUrl)
+          currentAvatarBlobUrl = null
+        }
+        avatarUrl.value = ''
+        return ''
+      }
+      try {
+        const blob = await useAuthApi.getAvatarBlob()
+        if (blob && blob.size > 0) {
+          if (currentAvatarBlobUrl) {
+            URL.revokeObjectURL(currentAvatarBlobUrl)
+          }
+          currentAvatarBlobUrl = URL.createObjectURL(blob)
+          avatarUrl.value = currentAvatarBlobUrl
+          return currentAvatarBlobUrl
+        } else {
+          avatarUrl.value = ''
+          return ''
+        }
+      } catch {
+        avatarUrl.value = ''
+        return ''
+      }
+    }
+
     return {
       user,
       tokens,
@@ -184,6 +231,9 @@ export const useAuthStore = defineStore(
       register,
       logout,
       fetchMe,
+      avatarUrl,
+      setAvatarUrl,
+      loadAvatar,
     }
   },
   {

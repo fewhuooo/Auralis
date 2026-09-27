@@ -101,9 +101,16 @@ class OpenApiArtifactTests {
         JsonNode document = openApiDocument();
 
         JsonNode message = document.at("/components/schemas/AiMessageCommand");
+        JsonNode readingContext = document.at("/components/schemas/ReadingContext");
         assertThat(message.at("/properties/readingContext").isObject()).isTrue();
-        assertThat(document.at("/components/schemas/ReadingContext/properties/currentSourceId").isObject()).isTrue();
-        assertThat(document.at("/components/schemas/ReadingContext/properties/selectionText/maxLength").asInt())
+        assertThat(readingContext.at("/properties/currentSourceId").isObject()).isTrue();
+        assertThat(readingContext.at("/required").toString()).doesNotContain("currentSourceId");
+        assertThat(readingContext.at("/properties/sourceIds/maxItems").asInt()).isEqualTo(100);
+        assertThat(readingContext.at("/properties/retrievalMode/enum").toString())
+                .contains("AUTO")
+                .contains("SELECTED_SOURCES")
+                .contains("SUBJECT");
+        assertThat(readingContext.at("/properties/selectionText/maxLength").asInt())
                 .isEqualTo(4000);
         assertThat(document.at("/components/schemas/ConversationCommand/properties/purpose/enum").toString())
                 .contains("READING_SESSION");

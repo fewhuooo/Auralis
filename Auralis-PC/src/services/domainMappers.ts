@@ -186,7 +186,7 @@ export interface TaskDtoLike {
   status?: TaskStatus
   scheduledAt?: string
   dueAt?: string
-  durationMinutes?: number
+  durationMinutes?: number | null
   sortKey?: string
   version?: number
   createdAt?: string
@@ -323,13 +323,19 @@ export function mapTaskView(view: TaskDtoLike): TaskModel {
     status: view.status || 'TODO',
     scheduledAt: view.scheduledAt,
     dueAt: view.dueAt,
-    durationMinutes: view.durationMinutes ?? 25,
+    durationMinutes: normalizeTaskDurationMinutes(view.durationMinutes),
     sortKey: view.sortKey,
     version: view.version ?? 0,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
     deletedAt: view.deletedAt ?? null,
   }
+}
+
+function normalizeTaskDurationMinutes(value: number | null | undefined): number {
+  if (value === null || value === undefined) return 30
+  if (!Number.isInteger(value) || value < 0 || value > 2_147_483_647) return 30
+  return value
 }
 
 export function mapReviewStateView(view: ReviewStateDtoLike): ReviewStateModel {

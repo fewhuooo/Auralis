@@ -15,6 +15,9 @@ import com.auralis.app.subject.SubjectView;
 import com.auralis.app.subject.internal.persistence.SubjectEntity;
 import com.auralis.app.subject.internal.persistence.SubjectRepository;
 import com.auralis.app.task.TaskService;
+import com.auralis.app.task.TaskCommand;
+import com.auralis.app.task.TaskStatus;
+import com.auralis.app.task.TaskView;
 import com.auralis.app.task.internal.persistence.TaskRepository;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
 import com.auralis.app.relation.internal.persistence.RelationRepository;
@@ -27,6 +30,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -128,6 +139,471 @@ class CoreDomainServiceTests {
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("RESOURCE_NOT_FOUND");
+    }
+
+    @Test
+    void taskScheduleRejectsOverlapAcrossSubjectsAndAllowsAdjacentIntervals() {
+        var owner = register("schedule-overlap");
+        SubjectView firstSubject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule A", null, null, "001"));
+        SubjectView secondSubject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule B", null, null, "002"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+
+        taskService.create(owner.user().id(), scheduledTask(firstSubject.id(), "First", start, 30));
+
+        assertThatThrownBy(() -> taskService.create(owner.user().id(), scheduledTask(
+                secondSubject.id(), "Overlap", start.plusSeconds(15 * 60), 30)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+
+        assertThat(taskService.create(owner.user().id(), scheduledTask(
+                secondSubject.id(), "Adjacent", start.plusSeconds(30 * 60), 30)).scheduledAt())
+                .isEqualTo(start.plusSeconds(30 * 60));
+    }
+
+    @Test
+    void taskScheduleUsesThirtyMinuteDefaultForNullDurationAndRejectsDurationExpansion() {
+        var owner = register("schedule-duration");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var nullDuration = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Default duration", start, null));
+        var adjacent = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Adjacent", start.plusSeconds(30 * 60), 30));
+
+        assertThatThrownBy(() -> taskService.update(owner.user().id(), adjacent.id(), adjacent.version(),
+                scheduledTask(subject.id(), "Expanded first task", start, 60)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+
+        assertThat(taskService.get(owner.user().id(), nullDuration.id()).durationMinutes()).isNull();
+    }
+
+    @Test
+    void taskRestoreRejectsRestoringAnOverlappingSchedule() {
+        var owner = register("schedule-restore");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var deleted = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Deleted", start, 30));
+        taskService.delete(owner.user().id(), deleted.id(), deleted.version());
+        taskService.create(owner.user().id(), scheduledTask(subject.id(), "Replacement", start, 30));
+
+        assertThatThrownBy(() -> taskService.restore(owner.user().id(), deleted.id(), deleted.version() + 1))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+    }
+
+    @Test
+    void taskScheduleSwapKeepsAdjacentTasksInsideTheirOriginalWindow() {
+        var owner = register("schedule-swap-adjacent");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        Instant sourceDueAt = start.minusSeconds(30 * 60L);
+        Instant targetDueAt = start.plusSeconds(3 * 60 * 60L);
+        var source = taskService.create(owner.user().id(), new TaskCommand(subject.id(), "Source", null,
+                TaskStatus.TODO, start, sourceDueAt, 60, "source"));
+        var target = taskService.create(owner.user().id(), new TaskCommand(subject.id(), "Target", null,
+                TaskStatus.TODO, start.plusSeconds(60 * 60L), targetDueAt, 90, "target"));
+
+        var swapped = taskService.swapSchedules(owner.user().id(), source.id(), source.version(),
+                target.id(), target.version());
+
+        assertThat(swapped.target().scheduledAt()).isEqualTo(start);
+        assertThat(swapped.source().scheduledAt()).isEqualTo(start.plusSeconds(90 * 60L));
+        assertThat(swapped.target().durationMinutes()).isEqualTo(90);
+        assertThat(swapped.source().durationMinutes()).isEqualTo(60);
+        assertThat(swapped.source().dueAt()).isEqualTo(sourceDueAt);
+        assertThat(swapped.target().dueAt()).isEqualTo(targetDueAt);
+        assertThat(swapped.source().scheduledAt().plusSeconds(60 * 60L))
+                .isEqualTo(start.plusSeconds(150 * 60L));
+
+        Instant reverseWindowStart = start.plusSeconds(5 * 60 * 60L);
+        var laterSource = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Later source", reverseWindowStart.plusSeconds(90 * 60L), 60));
+        var earlierTarget = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Earlier target", reverseWindowStart, 90));
+
+        var reverseSwap = taskService.swapSchedules(owner.user().id(), laterSource.id(), laterSource.version(),
+                earlierTarget.id(), earlierTarget.version());
+
+        assertThat(reverseSwap.source().scheduledAt()).isEqualTo(reverseWindowStart);
+        assertThat(reverseSwap.target().scheduledAt()).isEqualTo(reverseWindowStart.plusSeconds(60 * 60L));
+        assertThat(reverseSwap.target().scheduledAt().plusSeconds(90 * 60L))
+                .isEqualTo(reverseWindowStart.plusSeconds(150 * 60L));
+
+        Instant doneStart = start.plusSeconds(8 * 60 * 60L);
+        var done = taskService.create(owner.user().id(), new TaskCommand(subject.id(), "Done", null,
+                TaskStatus.DONE, doneStart, null, 60, "done"));
+        var adjacentTodo = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Adjacent todo", doneStart.plusSeconds(60 * 60L), 90));
+
+        assertThatThrownBy(() -> taskService.swapSchedules(owner.user().id(), done.id(), done.version(),
+                adjacentTodo.id(), adjacentTodo.version()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.get(owner.user().id(), done.id()).scheduledAt()).isEqualTo(doneStart);
+        assertThat(taskService.get(owner.user().id(), adjacentTodo.id()).scheduledAt())
+                .isEqualTo(doneStart.plusSeconds(60 * 60L));
+
+        Instant cancelledStart = doneStart.plusSeconds(4 * 60 * 60L);
+        var cancelled = taskService.create(owner.user().id(), new TaskCommand(subject.id(), "Cancelled", null,
+                TaskStatus.CANCELLED, cancelledStart, null, 60, "cancelled"));
+        var adjacentActive = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Adjacent active", cancelledStart.plusSeconds(60 * 60L), 90));
+
+        assertThatThrownBy(() -> taskService.swapSchedules(owner.user().id(), cancelled.id(), cancelled.version(),
+                adjacentActive.id(), adjacentActive.version()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.get(owner.user().id(), cancelled.id()).scheduledAt()).isEqualTo(cancelledStart);
+        assertThat(taskService.get(owner.user().id(), adjacentActive.id()).scheduledAt())
+                .isEqualTo(cancelledStart.plusSeconds(60 * 60L));
+    }
+
+    @Test
+    void taskScheduleSwapRejectsOverlapBetweenSwappedTasksAndWithThirdTask() {
+        var owner = register("schedule-swap-overlap");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var shortTask = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Short", start, 30));
+        var longTask = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Long", start.plusSeconds(60 * 60), 120));
+
+        assertThatThrownBy(() -> taskService.swapSchedules(owner.user().id(), shortTask.id(), shortTask.version(),
+                longTask.id(), longTask.version()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.get(owner.user().id(), shortTask.id()).scheduledAt()).isEqualTo(start);
+        assertThat(taskService.get(owner.user().id(), longTask.id()).scheduledAt()).isEqualTo(start.plusSeconds(3600));
+
+        var first = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "First slot", start.plusSeconds(8 * 60 * 60), 120));
+        var second = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Second slot", start.plusSeconds(12 * 60 * 60), 30));
+        taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Third slot", start.plusSeconds(13 * 60 * 60), 30));
+
+        assertThatThrownBy(() -> taskService.swapSchedules(owner.user().id(), first.id(), first.version(),
+                second.id(), second.version()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+    }
+
+    @Test
+    void taskScheduleInsertionPushesOnlyCollidingSuccessorsAndPreservesGaps() {
+        var owner = register("schedule-insert-cascade");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var predecessor = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Predecessor", start, 60));
+        var first = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "First successor", start.plusSeconds(60 * 60), 90));
+        var second = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Second successor", start.plusSeconds(3 * 60 * 60), 60));
+        var withGap = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Gap successor", start.plusSeconds(5 * 60 * 60), 30));
+        var inserted = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Inserted", null, 60));
+
+        var changed = taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                start.plusSeconds(60 * 60), start, start.plusSeconds(14 * 60 * 60 + 30 * 60));
+
+        assertThat(changed).extracting(view -> view.id())
+                .containsExactly(inserted.id(), first.id(), second.id());
+        assertThat(taskService.get(owner.user().id(), predecessor.id()).scheduledAt()).isEqualTo(start);
+        assertThat(taskService.get(owner.user().id(), inserted.id()).scheduledAt()).isEqualTo(start.plusSeconds(3600));
+        assertThat(taskService.get(owner.user().id(), first.id()).scheduledAt()).isEqualTo(start.plusSeconds(2 * 3600));
+        assertThat(taskService.get(owner.user().id(), second.id()).scheduledAt()).isEqualTo(start.plusSeconds(3 * 3600 + 30 * 60));
+        assertThat(taskService.get(owner.user().id(), withGap.id()).scheduledAt()).isEqualTo(start.plusSeconds(5 * 3600));
+        assertThat(taskService.get(owner.user().id(), first.id()).version()).isEqualTo(first.version() + 1);
+        assertThat(taskService.get(owner.user().id(), second.id()).version()).isEqualTo(second.version() + 1);
+        assertThat(taskService.get(owner.user().id(), withGap.id()).version()).isEqualTo(withGap.version());
+    }
+
+    @Test
+    void taskScheduleInsertionRoundsUpAndMovesOutOfAnOccupiedInterval() {
+        var owner = register("schedule-insert-round");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var longTask = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Long", start, 120));
+        var covered = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Covered", start.plusSeconds(2 * 3600), 30));
+        var inserted = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Inserted", null, 30));
+
+        taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                start.plusSeconds(45 * 60), start, start.plusSeconds(14 * 60 * 60 + 30 * 60));
+
+        assertThat(taskService.get(owner.user().id(), inserted.id()).scheduledAt()).isEqualTo(start.plusSeconds(60 * 60));
+        assertThat(taskService.get(owner.user().id(), longTask.id()).scheduledAt()).isEqualTo(start.plusSeconds(90 * 60));
+        assertThat(taskService.get(owner.user().id(), covered.id()).scheduledAt()).isEqualTo(start.plusSeconds(210 * 60));
+    }
+
+    @Test
+    void taskScheduleInsertionPlacesDraggedTaskAtTargetEndWithoutMovingTargetOrSuccessor() {
+        var owner = register("schedule-insert-mid-interval");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var containing = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Containing", start.plusSeconds(60 * 60), 45));
+        var successor = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Successor", start.plusSeconds(4 * 60 * 60), 30));
+        var inserted = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Inserted", start.plusSeconds(6 * 60 * 60), 60));
+
+        assertThatThrownBy(() -> taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                start.plusSeconds(90 * 60), start, start.plusSeconds(14 * 60 * 60 + 30 * 60), containing.id()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+
+        var changed = taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                start.plusSeconds(120 * 60), start, start.plusSeconds(14 * 60 * 60 + 30 * 60), containing.id());
+
+        assertThat(changed).extracting(TaskView::id).containsExactly(inserted.id());
+        assertThat(taskService.get(owner.user().id(), inserted.id()).scheduledAt())
+                .isEqualTo(start.plusSeconds(120 * 60));
+        assertThat(taskService.get(owner.user().id(), containing.id()).scheduledAt())
+                .isEqualTo(start.plusSeconds(60 * 60));
+        assertThat(taskService.get(owner.user().id(), successor.id()).scheduledAt())
+                .isEqualTo(start.plusSeconds(4 * 60 * 60));
+    }
+
+    @Test
+    void taskScheduleInsertionRejectsBodyPlacementThatWouldOverlapSuccessorWithoutMovingAnyTask() {
+        var owner = register("schedule-insert-body-conflict");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var source = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Source", start, 30));
+        var target = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Target", start.plusSeconds(60 * 60), 45));
+        var successor = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Successor", start.plusSeconds(120 * 60), 30));
+
+        assertThatThrownBy(() -> taskService.insertSchedule(owner.user().id(), source.id(), source.version(),
+                start.plusSeconds(120 * 60), start, start.plusSeconds(14 * 60 * 60 + 30 * 60), target.id()))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+
+        assertThat(taskService.get(owner.user().id(), source.id()).scheduledAt()).isEqualTo(start);
+        assertThat(taskService.get(owner.user().id(), source.id()).version()).isEqualTo(source.version());
+        assertThat(taskService.get(owner.user().id(), target.id()).scheduledAt()).isEqualTo(target.scheduledAt());
+        assertThat(taskService.get(owner.user().id(), target.id()).version()).isEqualTo(target.version());
+        assertThat(taskService.get(owner.user().id(), successor.id()).scheduledAt()).isEqualTo(successor.scheduledAt());
+        assertThat(taskService.get(owner.user().id(), successor.id()).version()).isEqualTo(successor.version());
+    }
+
+    @Test
+    void taskScheduleInsertionNeverMovesPreviousDayTaskAcrossTheWindowBoundary() {
+        var owner = register("schedule-insert-prior-day");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant windowStart = Instant.parse("2026-09-25T08:00:00Z");
+        Instant previousStart = windowStart.minusSeconds(9 * 60 * 60);
+        var previousDay = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Previous day", previousStart, 600));
+        var inserted = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Inserted", null, 60));
+        Instant windowLastStart = windowStart.plusSeconds(14 * 60 * 60 + 30 * 60);
+
+        assertThatThrownBy(() -> taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                windowStart, windowStart, windowLastStart))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.get(owner.user().id(), previousDay.id()).scheduledAt()).isEqualTo(previousStart);
+        assertThat(taskService.get(owner.user().id(), previousDay.id()).version()).isEqualTo(previousDay.version());
+        assertThat(taskService.get(owner.user().id(), inserted.id()).scheduledAt()).isNull();
+
+        var changed = taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                windowStart.plusSeconds(60 * 60), windowStart, windowLastStart);
+        assertThat(changed).extracting(view -> view.id()).containsExactly(inserted.id());
+        assertThat(taskService.get(owner.user().id(), previousDay.id()).scheduledAt()).isEqualTo(previousStart);
+        assertThat(taskService.get(owner.user().id(), previousDay.id()).version()).isEqualTo(previousDay.version());
+    }
+
+    @Test
+    void taskScheduleInsertionRejectsFixedDoneTasksAndWindowOverflowWithoutPartialWrites() {
+        var owner = register("schedule-insert-atomic-reject");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var done = taskService.create(owner.user().id(), new TaskCommand(subject.id(), "Done", null,
+                TaskStatus.DONE, start.plusSeconds(60 * 60), null, 30, "done"));
+        var inserted = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Inserted", null, 60));
+
+        assertThatThrownBy(() -> taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                done.scheduledAt(), start, start.plusSeconds(14 * 60 * 60 + 30 * 60)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.get(owner.user().id(), done.id()).scheduledAt()).isEqualTo(done.scheduledAt());
+        assertThat(taskService.get(owner.user().id(), inserted.id()).scheduledAt()).isNull();
+
+        var late = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Last slot", start.plusSeconds(14 * 60 * 60 + 30 * 60), 30));
+        var beforeLate = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Before late", null, 60));
+        assertThatThrownBy(() -> taskService.insertSchedule(owner.user().id(), beforeLate.id(), beforeLate.version(),
+                start.plusSeconds(14 * 60 * 60), start, start.plusSeconds(14 * 60 * 60 + 30 * 60)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.get(owner.user().id(), late.id()).scheduledAt())
+                .isEqualTo(start.plusSeconds(14 * 60 * 60 + 30 * 60));
+        assertThat(taskService.get(owner.user().id(), beforeLate.id()).scheduledAt()).isNull();
+    }
+
+    @Test
+    void taskScheduleInsertionAllowsDeadlineToPassAndPreservesDueAt() {
+        var owner = register("schedule-insert-due-rollback");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var dueTask = taskService.create(owner.user().id(), new TaskCommand(subject.id(), "Due", null,
+                TaskStatus.TODO, start.plusSeconds(60 * 60), start.plusSeconds(90 * 60), 30, "due"));
+        var inserted = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Inserted", null, 60));
+
+        var changed = taskService.insertSchedule(owner.user().id(), inserted.id(), inserted.version(),
+                dueTask.scheduledAt(), start, start.plusSeconds(14 * 60 * 60 + 30 * 60));
+
+        assertThat(changed).extracting(TaskView::id).containsExactly(inserted.id(), dueTask.id());
+        assertThat(taskService.get(owner.user().id(), dueTask.id()).scheduledAt())
+                .isEqualTo(dueTask.scheduledAt().plusSeconds(60 * 60));
+        assertThat(taskService.get(owner.user().id(), dueTask.id()).dueAt()).isEqualTo(dueTask.dueAt());
+        assertThat(taskService.get(owner.user().id(), dueTask.id()).version()).isEqualTo(dueTask.version() + 1);
+        assertThat(taskService.get(owner.user().id(), inserted.id()).scheduledAt()).isEqualTo(dueTask.scheduledAt());
+    }
+
+    @Test
+    void taskUpdateAndSwapAllowSchedulesAfterDueAt() {
+        var owner = register("schedule-overdue-update-swap");
+        SubjectView subject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var source = taskService.create(owner.user().id(), scheduledTask(subject.id(), "Source", start, 30));
+        var target = taskService.create(owner.user().id(), scheduledTask(
+                subject.id(), "Target", start.plusSeconds(2 * 60 * 60), 30));
+
+        TaskView overdueSource = taskService.update(owner.user().id(), source.id(), source.version(),
+                new TaskCommand(subject.id(), "Source", null, TaskStatus.TODO, start,
+                        start.minusSeconds(30 * 60), 30, "source"));
+        TaskView overdueTarget = taskService.update(owner.user().id(), target.id(), target.version(),
+                new TaskCommand(subject.id(), "Target", null, TaskStatus.TODO, start.plusSeconds(2 * 60 * 60),
+                        start.plusSeconds(60 * 60), 30, "target"));
+
+        var swapped = taskService.swapSchedules(owner.user().id(), overdueSource.id(), overdueSource.version(),
+                overdueTarget.id(), overdueTarget.version());
+
+        assertThat(swapped.source().scheduledAt()).isEqualTo(start.plusSeconds(2 * 60 * 60));
+        assertThat(swapped.source().dueAt()).isEqualTo(start.minusSeconds(30 * 60));
+        assertThat(swapped.target().scheduledAt()).isEqualTo(start);
+        assertThat(swapped.target().dueAt()).isEqualTo(start.plusSeconds(60 * 60));
+    }
+
+    @Test
+    void concurrentTaskSchedulesForOneUserAreSerializedAcrossSubjects() throws Exception {
+        var owner = register("schedule-concurrency");
+        SubjectView firstSubject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule A", null, null, "001"));
+        SubjectView secondSubject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule B", null, null, "002"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch startTogether = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<Boolean> first = executor.submit(() -> tryCreateAfterGate(
+                    owner.user().id(), scheduledTask(firstSubject.id(), "First", start, 60), ready, startTogether));
+            Future<Boolean> second = executor.submit(() -> tryCreateAfterGate(
+                    owner.user().id(), scheduledTask(secondSubject.id(), "Second", start.plusSeconds(30 * 60), 60),
+                    ready, startTogether));
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            startTogether.countDown();
+            assertThat(List.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+        }
+    }
+
+    @Test
+    void concurrentTaskScheduleInsertionsAreSerializedWithoutOverlapping() throws Exception {
+        var owner = register("schedule-insert-concurrency");
+        SubjectView firstSubject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule A", null, null, "001"));
+        SubjectView secondSubject = subjectService.create(owner.user().id(), new SubjectCommand(
+                "Schedule B", null, null, "002"));
+        Instant start = Instant.parse("2026-09-25T08:00:00Z");
+        var first = taskService.create(owner.user().id(), scheduledTask(firstSubject.id(), "First", null, 60));
+        var second = taskService.create(owner.user().id(), scheduledTask(secondSubject.id(), "Second", null, 60));
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch startTogether = new CountDownLatch(1);
+
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<?> firstResult = executor.submit(() -> insertAfterGate(
+                    owner.user().id(), first.id(), first.version(), start, start, ready, startTogether));
+            Future<?> secondResult = executor.submit(() -> insertAfterGate(
+                    owner.user().id(), second.id(), second.version(), start, start, ready, startTogether));
+
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            startTogether.countDown();
+            firstResult.get(10, TimeUnit.SECONDS);
+            secondResult.get(10, TimeUnit.SECONDS);
+        }
+
+        var scheduled = List.of(taskService.get(owner.user().id(), first.id()),
+                taskService.get(owner.user().id(), second.id()));
+        assertThat(scheduled).extracting(view -> view.scheduledAt()).doesNotContainNull();
+        assertThat(Duration.between(scheduled.get(0).scheduledAt(), scheduled.get(1).scheduledAt()).abs())
+                .isGreaterThanOrEqualTo(Duration.ofHours(1));
+    }
+
+    private void insertAfterGate(UUID userId, UUID taskId, long baseVersion, Instant target,
+            Instant windowStart, CountDownLatch ready, CountDownLatch startTogether) {
+        ready.countDown();
+        try {
+            if (!startTogether.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Concurrent insertion test did not start");
+            }
+            taskService.insertSchedule(userId, taskId, baseVersion, target,
+                    windowStart, windowStart.plusSeconds(14 * 60 * 60 + 30 * 60));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Concurrent insertion test was interrupted", exception);
+        }
+    }
+
+    private boolean tryCreateAfterGate(UUID userId, TaskCommand command, CountDownLatch ready,
+            CountDownLatch startTogether) throws InterruptedException {
+        ready.countDown();
+        if (!startTogether.await(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Concurrent schedule test did not start");
+        }
+        try {
+            taskService.create(userId, command);
+            return true;
+        } catch (DomainException exception) {
+            if ("VALIDATION_FAILED".equals(exception.code())) {
+                return false;
+            }
+            throw exception;
+        }
+    }
+
+    private TaskCommand scheduledTask(UUID subjectId, String title, Instant scheduledAt, Integer durationMinutes) {
+        return new TaskCommand(subjectId, title, null, TaskStatus.TODO, scheduledAt, null, durationMinutes, title);
     }
 
     @Test

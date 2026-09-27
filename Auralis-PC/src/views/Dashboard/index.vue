@@ -12,12 +12,7 @@
         @click="selectSubject(null)"
       >
         <div class="global-icon-wrap">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
-            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
-            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
-            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
-          </svg>
+          <IconLayoutGrid :size="18" :stroke-width="1.6" />
         </div>
         <div class="global-text-wrap">
           <span class="global-title">全部知识</span>
@@ -73,10 +68,7 @@
             <span class="row-subj-badge">{{ block.subject }}</span>
             <span class="row-source-badge">来源: {{ block.source }}</span>
             <span class="row-time-badge" style="display: inline-flex; align-items: center; gap: 4px;">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
+              <IconHistory :size="12" :stroke-width="1.6" />
               {{ timeAgo(block.time) }}
             </span>
           </div>
@@ -103,14 +95,14 @@
               <button 
                 class="db-view-toggle-btn" 
                 :class="{ 'is-active': dashboardViewMode === 'day' }"
-                @click="dashboardViewMode = 'day'"
+                @click="setDashboardViewMode('day')"
               >
                 日视图
               </button>
               <button 
                 class="db-view-toggle-btn" 
                 :class="{ 'is-active': dashboardViewMode === 'week' }"
-                @click="dashboardViewMode = 'week'"
+                @click="setDashboardViewMode('week')"
               >
                 周视图
               </button>
@@ -134,44 +126,45 @@
           </button>
         </div>
 
-        <!-- Timeline Day Slots -->
-        <div v-if="dashboardViewMode === 'day'" class="timeline-scroll">
+        <!-- Day Tasks List: Simple Linear Task List (No timeline grid, no drag) -->
+        <div v-if="dashboardViewMode === 'day'" class="scheduled-task-list">
           <div
-            v-for="slot in filteredTimeSlots"
-            :key="slot.time"
-            class="tl-slot"
-            :class="{
-              'has-task': slot.task,
-              'is-current': slot.isCurrent,
-              'is-empty': !slot.task,
-              'drag-over': dragOverSlot === slot.time
-            }"
-            v-show="!isSlotCovered(slot.time)"
-            @dragover.prevent="handleDragOver(slot.time)"
-            @dragleave.prevent="handleDragLeave"
-            @drop.prevent="handleDrop(slot.time)"
+            v-for="task in dayScheduledTasks"
+            :key="task.id"
+            class="scheduled-task-card"
+            :class="{ 'is-completed': isCompletedScheduledTask(task) }"
           >
-            <span class="tl-time">{{ slot.time }}</span>
-            <span class="tl-dash" v-if="!slot.task"></span>
+            <input
+              type="checkbox"
+              :checked="isCompletedScheduledTask(task)"
+              :disabled="isScheduledCompletionLocked(task, taskStore.currentNow)"
+              :title="isScheduledCompletionLocked(task, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : '切换任务完成状态'"
+              @change="toggleTaskCompletion(task)"
+              class="task-checkbox"
+              @click.stop
+            />
             <div
-              v-if="slot.task"
-              class="tl-task"
-              :class="{ 'is-completed': isCompletedScheduledTask(slot.task) }"
-              :style="{ 
-                borderLeftColor: 'var(--color-primary-accent)',
-                height: getTaskHeight(slot.task.duration)
-              }"
-              :draggable="!isCompletedScheduledTask(slot.task)"
-              @dragstart.stop="handleDragStart($event, 'scheduled', slot.task.id || '', slot.time)"
+              class="scheduled-task-content"
+              :class="{ 'is-completion-locked': isScheduledCompletionLocked(task, taskStore.currentNow) }"
+              @click="toggleTaskCompletion(task)"
             >
-              <span class="tl-task-name">{{ slot.task.name }}</span>
-              <button v-if="!isCompletedScheduledTask(slot.task)" class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)">✕</button>
+              <div class="scheduled-task-header">
+                <span class="scheduled-task-time">
+                  {{ getTaskTimeStr(task.startTime) }} · {{ task.duration || 30 }}m
+                </span>
+                <span class="scheduled-task-subject" v-if="task.subject">{{ task.subject }}</span>
+              </div>
+              <div class="scheduled-task-title">{{ task.name }}</div>
             </div>
-            <div v-else class="tl-empty"></div>
-            <div v-if="slot.isCurrent" class="current-indicator">
-              <span class="current-dot"></span>
-              <span class="current-line"></span>
-            </div>
+            <button
+              v-if="!isCompletedScheduledTask(task)"
+              class="scheduled-task-remove-btn"
+              @click.stop="handleRemoveSchedule(task)"
+              title="移出日程"
+            >✕</button>
+          </div>
+          <div v-if="dayScheduledTasks.length === 0" class="empty-scheduled-state">
+            <span class="empty-scheduled-text">当日暂无排期任务</span>
           </div>
         </div>
 
@@ -211,39 +204,33 @@
       <!-- Horizontal divider -->
       <div class="right-divider"></div>
 
-      <!-- Todo List (bottom 30%) -->
+      <!-- Todo List (bottom, simple task list, no drag) -->
       <section class="todo-section">
         <div class="todo-header">
           <h3 class="todo-title">待办清单</h3>
+          <button class="todo-jump-btn" @click="router.push('/timeline')" title="前往排期副驾">
+            <span>前往排期</span>
+            <IconChevronRight :size="12" :stroke-width="2" />
+          </button>
         </div>
-        <div
-          class="todo-list"
-          :class="{ 'drag-over': dragOverPending }"
-          @dragover.prevent="dragOverPending = true"
-          @dragleave.prevent="dragOverPending = false"
-          @drop.prevent="handleDropOnPending"
-        >
+        <div class="todo-list">
           <div
             v-for="task in filteredPendingTasks"
             :key="task.id"
             class="todo-item"
-            draggable="true"
-            @dragstart.stop="handleDragStart($event, 'pending', task.id || '')"
           >
-            <input
-              type="checkbox"
-              :checked="task.status === 'completed'"
-              @change="toggleTaskCompletion(task)"
-              class="task-checkbox"
-              @click.stop
-            />
             <div class="todo-color" :style="{ background: 'var(--color-primary-accent)' }"></div>
             <span class="todo-name">{{ task.name }}</span>
-            <span class="todo-subject">{{ task.subject }}</span>
-            <span class="drag-handle" title="拖拽至时间轴">⠿</span>
+            <span v-if="task.dueAt" class="todo-due-badge" :class="{ 'is-overdue': isTaskOverdue(task) }">
+              {{ formatTaskDue(task.dueAt) }}
+            </span>
+            <span class="todo-subject" v-if="task.subject">{{ task.subject }}</span>
           </div>
           <div v-if="filteredPendingTasks.length === 0" class="empty-pending">
-            <span>🎉 所有任务已排期或完成</span>
+            <span class="empty-pending-content">
+              <IconCircleCheck :size="15" :stroke-width="1.8" class="empty-pending-icon" />
+              所有任务已完成
+            </span>
           </div>
         </div>
       </section>
@@ -269,12 +256,9 @@
         </div>
         <!-- 主标题 (Title)：大字号，加粗，深灰色 #333333，严格左对齐 -->
         <h2 class="hero-main-title">{{ selectedBlock?.title }}</h2>
-        <!-- 时间信息 (Metadata)：简洁线性时钟图标 + 中灰色文字 -->
+        <!-- 时间信息 (Metadata)：简洁线性历史足迹图标 + 中灰色文字 -->
         <div class="hero-time-text">
-          <svg class="hero-clock-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
+          <IconHistory class="hero-clock-icon" :size="14" :stroke-width="1.6" />
           <span>记于 {{ selectedBlock?.time }}</span>
         </div>
       </div>
@@ -387,8 +371,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
@@ -398,28 +382,50 @@ import 'element-plus/theme-chalk/el-notification.css'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { useTaskStore, type Task, DAY_CODES } from '@/store/useTaskStore'
-import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask } from '@/services/taskViewRules'
+import { useTaskStore, type Task, type TaskPresentationStatus, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
+import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, isCompletedTask, isScheduledCompletionLocked, comparePendingTasks } from '@/services/taskViewRules'
+import { IconLayoutGrid, IconHistory, IconCircleCheck, IconChevronRight } from '@tabler/icons-vue'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 
 marked.setOptions({ breaks: true, gfm: true })
-const SUBJECT_THEME_COLOR = '#7D9372'
+const SUBJECT_THEME_COLOR = '#8B9A6E'
 const renderMarkdown = (content: string) => {
   if (!content) return ''
   return DOMPurify.sanitize(marked.parse(content) as string)
 }
 
 const router = useRouter()
+const route = useRoute()
 const knowledgeStore = useKnowledgeStore()
 const { recentBlocks } = storeToRefs(knowledgeStore)
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
-const { pendingTasks, allTasks, timeSlots, selectedDay } = storeToRefs(taskStore)
+const { pendingTasks, allTasks, selectedDay } = storeToRefs(taskStore)
 const authStore = useAuthStore()
 
 const dashboardViewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays(taskStore.currentNow))
 const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
+
+const resetToToday = () => {
+  taskStore.setSelectedDay(getTodayDayCode())
+}
+
+const setDashboardViewMode = (mode: 'day' | 'week') => {
+  dashboardViewMode.value = mode
+  if (mode === 'day') {
+    resetToToday()
+  }
+}
+
+watch(
+  () => route.path,
+  (newPath) => {
+    if (newPath === '/') {
+      resetToToday()
+    }
+  }
+)
 
 const selectDay = (day: string) => {
   taskStore.setSelectedDay(day)
@@ -548,6 +554,18 @@ const timeAgo = (isoString: string): string => {
   return `${Math.floor(hours / 24)}天前`
 }
 
+const isTaskOverdue = (task: Task): boolean => {
+  if (!task.dueAt) return false
+  return new Date(task.dueAt).getTime() < taskStore.currentNow.getTime()
+}
+
+const formatTaskDue = (dueAt?: string): string => {
+  if (!dueAt) return ''
+  const d = new Date(dueAt)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getMonth() + 1}/${d.getDate()} 截止`
+}
+
 // ===== Task Creation =====
 const showTaskModal = ref(false)
 const taskForm = ref({
@@ -633,38 +651,32 @@ const handleAddTask = async () => {
 }
 
 const filteredPendingTasks = computed(() => {
-  return pendingTasks.value
+  return [...pendingTasks.value].sort(comparePendingTasks)
 })
 
-const filteredTimeSlots = computed(() => {
-  return timeSlots.value
+const dayScheduledTasks = computed(() => {
+  const tasks = getScheduledTasksForDay(selectedDay.value)
+  return [...tasks].sort((a, b) => {
+    const timeA = a.startTime ? getTaskTimeStr(a.startTime) : '99:99'
+    const timeB = b.startTime ? getTaskTimeStr(b.startTime) : '99:99'
+    return timeA.localeCompare(timeB)
+  })
 })
 
-const TIMELINE_SLOT_HEIGHT = 52
-
-const getTaskHeight = (duration?: number) => {
-  const d = duration || 30
-  const slots = d / 30
-  return `${slots * TIMELINE_SLOT_HEIGHT}px`
-}
-
-const isSlotCovered = (slotTime: string) => {
-  const targetSlot = filteredTimeSlots.value.find(s => s.time === slotTime)
-  if (targetSlot?.task) return false
-
-  const [slotHour, slotMinute] = slotTime.split(':').map(Number)
-  const currentMinutes = slotHour * 60 + slotMinute
-  for (const slot of filteredTimeSlots.value) {
-    if (slot.task && slot.time !== slotTime) {
-      const [taskHour, taskMinute] = slot.time.split(':').map(Number)
-      const taskStartMinutes = taskHour * 60 + taskMinute
-      const taskEndMinutes = taskStartMinutes + slot.task.duration
-      if (currentMinutes >= taskStartMinutes && currentMinutes < taskEndMinutes) {
-        return true
-      }
+const handleRemoveSchedule = async (task: Task) => {
+  if (!task.id) return
+  try {
+    await taskStore.unscheduleTask(task.id)
+    ElNotification({ title: '已移出日程', type: 'success', position: 'top-right', duration: 2000 })
+  } catch (error: any) {
+    if (error?.message === '已完成的排期任务已固定') {
+      ElNotification({ title: '已完成的排期任务已固定', type: 'warning', position: 'top-right', duration: 2000 })
+    } else {
+      console.error('移出日程失败', error)
+      const detail = error instanceof Error ? error.message : '移出日程失败，请重试'
+      ElNotification({ title: '移出日程失败', message: detail, type: 'error', position: 'top-right', duration: 2500 })
     }
   }
-  return false
 }
 
 // ===== Block Detail =====
@@ -676,94 +688,38 @@ const openBlockDetail = (block: any) => {
   blockDialogVisible.value = true
 }
 
-// ===== Drag & Drop =====
-const draggedItem = ref<{ type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string } | null>(null)
-const dragOverSlot = ref<string | null>(null)
-const dragOverPending = ref(false)
-
-const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string) => {
-  const dragPayload = { type, taskId, sourceSlotTime }
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload))
-  }
-  draggedItem.value = dragPayload
-}
-
-const handleDragOver = (slotTime: string) => {
-  const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
-  if (targetTask && isCompletedScheduledTask(targetTask)) {
-    dragOverSlot.value = null
-    return
-  }
-  if (!(draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime === slotTime)) {
-    dragOverSlot.value = slotTime
-  } else {
-    dragOverSlot.value = null
-  }
-}
-
-const handleDragLeave = () => { dragOverSlot.value = null }
-
-const reportDragFailure = (error: unknown) => {
-  ElNotification({
-    title: '排期未保存',
-    message: error instanceof Error ? error.message : '本地保存失败，请重试。',
-    type: 'error',
-    position: 'top-right',
-  })
-}
-
-const handleDrop = async (slotTime: string) => {
-  try {
-    const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
-    if (targetTask && isCompletedScheduledTask(targetTask)) return
-    if (draggedItem.value) {
-      if (draggedItem.value.type === 'pending') {
-        await taskStore.scheduleTask(draggedItem.value.taskId, slotTime)
-      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.sourceSlotTime && draggedItem.value.sourceSlotTime !== slotTime) {
-        await taskStore.rescheduleTask(draggedItem.value.sourceSlotTime, slotTime)
-      }
-    }
-  } catch (error) {
-    reportDragFailure(error)
-  } finally {
-    draggedItem.value = null
-    dragOverSlot.value = null
-    dragOverPending.value = false
-  }
-}
-
-const handleDropOnPending = async () => {
-  try {
-    if (draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime) {
-      await taskStore.unscheduleTask(draggedItem.value.sourceSlotTime)
-    }
-  } catch (error) {
-    reportDragFailure(error)
-  } finally {
-    draggedItem.value = null
-    dragOverPending.value = false
-  }
-}
-
-const handleDeleteScheduledTask = async (slot: any) => {
-  if (slot.task && slot.task.id) {
-    await taskStore.unscheduleTask(slot.time)
-    ElNotification({ title: '已移出排期', type: 'success', position: 'top-right', duration: 2000 })
-  }
-}
-
 const toggleTaskCompletion = async (task: Task) => {
   if (!task.id) return
-  const newStatus = task.status === 'completed' ? 'pending' : 'completed'
-  await taskStore.updateTaskStatus(task.id, newStatus)
+  if (isScheduledCompletionLocked(task, taskStore.currentNow)) return
+  const isCurrentlyCompleted = isCompletedScheduledTask(task) || isCompletedTask(task)
+  const newStatus: TaskPresentationStatus = isCurrentlyCompleted
+    ? (task.scheduledAt ? 'scheduled' : 'pending')
+    : 'completed'
+  try {
+    await taskStore.updateTaskStatus(task.id, newStatus)
+  } catch (error) {
+    console.error('更新任务状态失败', error)
+    if (event?.target && 'checked' in event.target) {
+      (event.target as HTMLInputElement).checked = isCurrentlyCompleted
+    }
+    ElNotification({
+      title: '更新任务状态失败',
+      message: error instanceof Error ? error.message : '更新状态失败，请重试',
+      type: 'error',
+      position: 'top-right'
+    })
+  }
 }
 
 onMounted(async () => {
+  resetToToday()
   await knowledgeStore.fetchBlocks()
   await taskStore.fetchTasks()
   await subjectStore.loadSubjects()
+})
+
+onActivated(() => {
+  resetToToday()
 })
 </script>
 
@@ -774,22 +730,24 @@ onMounted(async () => {
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: #F5F7F5; /* 极浅灰绿色大背景，拉开卡片层次 */
+  background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
   padding: 14px;
   gap: 14px;
 
   /* Zen Minimalist Theme override */
-  --color-primary-accent: #7D9372;
-  --color-primary-accent-hover: #687F5D;
-  --color-primary-light: rgba(163, 177, 155, 0.18);
-  --color-primary-glow: rgba(125, 147, 114, 0.28);
-  --accent-gradient: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
-  --bg-card: #FFFFFF;
+  --color-primary-accent: #8B9A6E;
+  --color-primary-accent-hover: #76855B;
+  --color-primary-light: rgba(139, 154, 110, 0.18);
+  --color-primary-glow: rgba(139, 154, 110, 0.28);
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
+  --bg-card: #F7F2EB; /* 主内容底色 */
+  --dashboard-card-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .dashboard-container {
   background: #111411;
   --bg-card: #181C18;
+  --dashboard-card-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
 }
 
 /* ===== Splitters ===== */
@@ -830,11 +788,11 @@ html.dark .dashboard-container {
   background: var(--bg-card, #FFFFFF);
   border-radius: 16px;
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
+  box-shadow: var(--dashboard-card-shadow);
 }
 
 html.dark .subject-index {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--dashboard-card-shadow);
 }
 
 .index-header {
@@ -862,7 +820,7 @@ html.dark .subject-index {
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
-  background: var(--bg-card);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   cursor: pointer;
@@ -877,7 +835,7 @@ html.dark .global-view-card {
 
 .global-view-card:hover {
   border-color: var(--color-primary-accent);
-  box-shadow: 0 4px 12px rgba(125, 147, 114, 0.1);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.12);
   transform: translateY(-1px);
 }
 
@@ -1066,11 +1024,11 @@ html.dark .manage-subjects-btn:hover {
   background: var(--bg-card, #FFFFFF);
   border-radius: 16px;
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
+  box-shadow: var(--dashboard-card-shadow);
 }
 
 html.dark .content-stream {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--dashboard-card-shadow);
 }
 
 .stream-header {
@@ -1108,7 +1066,7 @@ html.dark .content-stream {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-right: 4px;
+  padding: 4px 4px 12px 2px;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE/Edge */
 }
@@ -1122,16 +1080,24 @@ html.dark .content-stream {
   padding: 18px 22px;
   border-radius: 14px;
   border: 1px solid var(--border-subtle);
-  background: var(--color-bg-primary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.015);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
 .stream-row:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
-  border-color: rgba(163, 177, 155, 0.45);
+  box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.08), 0 4px 8px -2px rgba(0, 0, 0, 0.04);
+  border-color: rgba(139, 154, 110, 0.45);
+}
+
+html.dark .stream-row {
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.35), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .stream-row:hover {
+  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.45), 0 4px 8px -2px rgba(0, 0, 0, 0.25);
 }
 
 .row-title {
@@ -1256,11 +1222,11 @@ html.dark .row-preview :deep(code) {
   min-height: 0;
   border-radius: 16px;
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.035);
+  box-shadow: var(--dashboard-card-shadow);
 }
 
 html.dark .dashboard-right {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--dashboard-card-shadow);
 }
 
 /* ===== Compact Timeline (top 70%) ===== */
@@ -1290,7 +1256,7 @@ html.dark .dashboard-right {
 }
 
 .new-task-btn {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  background: var(--accent-gradient);
   color: white;
   border: none;
   padding: 5px 14px;
@@ -1299,13 +1265,13 @@ html.dark .dashboard-right {
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition-fast);
-  box-shadow: 0 3px 10px rgba(125, 147, 114, 0.25);
+  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.25);
 }
 
 .new-task-btn:hover {
   opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 5px 14px rgba(125, 147, 114, 0.35);
+  box-shadow: 0 5px 14px rgba(139, 154, 110, 0.35);
 }
 
 .dashboard-time-actions {
@@ -1345,10 +1311,10 @@ html.dark .dashboard-right {
 }
 
 .db-view-toggle-btn.is-active {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  background: var(--accent-gradient);
   color: white;
   font-weight: 700;
-  box-shadow: 0 2px 6px rgba(125, 147, 114, 0.28);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.28);
 }
 
 .db-day-selector {
@@ -1515,90 +1481,101 @@ html.dark .dashboard-right {
   padding: 2px 0;
 }
 
-.timeline-scroll {
+/* ===== Scheduled Task List (Linear Tasks, No timeline slots) ===== */
+.scheduled-task-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-
-.timeline-scroll::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
-}
-
-.tl-slot {
-  display: flex;
-  align-items: flex-start;
   gap: 8px;
-  min-height: 52px;
-  position: relative;
-  transition: background var(--transition-fast);
-  padding: 0 4px;
-  box-sizing: border-box;
+  padding: 2px 2px 8px;
 }
 
-.tl-slot.has-task {
-  padding: 0 4px;
+.scheduled-task-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid rgba(163, 177, 155, 0.3);
+  border-left: 3.5px solid var(--color-primary-accent, #7D9372);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  transition: all var(--transition-fast, 0.2s ease);
 }
 
-.tl-time {
-  width: 36px;
-  font-size: 9.5px;
+.scheduled-task-card:hover {
+  background: rgba(163, 177, 155, 0.12);
+  border-color: rgba(163, 177, 155, 0.5);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(125, 147, 114, 0.1);
+}
+
+html.dark .scheduled-task-card {
+  background: #1F241F;
+  border-color: rgba(163, 177, 155, 0.22);
+}
+
+html.dark .scheduled-task-card:hover {
+  background: #272D27;
+  border-color: rgba(163, 177, 155, 0.45);
+}
+
+.scheduled-task-card.is-completed {
+  opacity: 0.55;
+  filter: grayscale(100%);
+}
+
+.scheduled-task-card.is-completed .scheduled-task-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.scheduled-task-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.scheduled-task-content.is-completion-locked {
+  cursor: not-allowed;
+}
+
+.scheduled-task-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.scheduled-task-time {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-primary-accent, #7D9372);
+  background: rgba(125, 147, 114, 0.12);
+  padding: 1px 6px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+}
+
+.scheduled-task-subject {
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
-  text-align: right;
-  flex-shrink: 0;
-  letter-spacing: -0.2px;
-  opacity: 0.8;
-  margin-top: 6px;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 1px 6px;
+  border-radius: 6px;
 }
 
-.tl-slot.is-current .tl-time {
-  color: #7D9372;
-  font-weight: 800;
-  opacity: 1;
+html.dark .scheduled-task-subject {
+  background: rgba(255, 255, 255, 0.06);
 }
 
-.tl-dash {
-  flex: 1;
-  height: 0;
-  border-top: 1px dashed rgba(0, 0, 0, 0.08);
-  flex-shrink: 1;
-  min-width: 0;
-  margin-top: 11px;
-}
-
-.tl-slot.has-task .tl-dash {
-  display: none;
-}
-
-.tl-task {
-  flex: 1;
-  padding: 6px 10px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-left: 3px solid;
-  border-radius: var(--radius-sm);
-  cursor: grab;
-  transition: all var(--transition-fast);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-2);
-  box-sizing: border-box;
-  margin: 0;
-}
-
-.tl-task:hover {
-  border-color: var(--border-strong);
-}
-
-.tl-task-name {
-  font-size: 11px;
+.scheduled-task-title {
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1607,58 +1584,40 @@ html.dark .dashboard-right {
   min-width: 0;
 }
 
-.task-delete-btn {
+.scheduled-task-remove-btn {
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 11px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--transition-fast);
-  padding: 2px;
+  transition: all var(--transition-fast, 0.2s ease);
+  padding: 4px;
+  border-radius: 4px;
   flex-shrink: 0;
-}
-
-.tl-task:hover .task-delete-btn { opacity: 0.8; }
-.task-delete-btn:hover { color: #ef4444; }
-
-.tl-empty {
-  flex: 1;
-}
-
-.tl-slot.drag-over {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.tl-slot.drag-over .tl-dash {
-  border-top-color: var(--border-accent);
-}
-
-.current-indicator {
-  position: absolute;
-  left: 44px;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
   display: flex;
   align-items: center;
-  pointer-events: none;
-  z-index: 5;
+  justify-content: center;
 }
 
-.current-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #7D9372;
-  box-shadow: 0 0 6px rgba(125, 147, 114, 0.6);
-  z-index: 1;
+.scheduled-task-card:hover .scheduled-task-remove-btn {
+  opacity: 0.7;
 }
 
-.current-line {
-  flex: 1;
-  height: 1.5px;
-  background: linear-gradient(to right, #7D9372, rgba(125, 147, 114, 0.1));
+.scheduled-task-remove-btn:hover {
+  opacity: 1;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.empty-scheduled-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 /* ===== Right Divider ===== */
@@ -1687,7 +1646,7 @@ html.dark .dashboard-right {
 }
 
 .todo-fab-add-btn {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  background: var(--accent-gradient);
   color: #FFFFFF;
   border: none;
   border-radius: 50%;
@@ -1699,13 +1658,13 @@ html.dark .dashboard-right {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.35);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .todo-fab-add-btn:hover {
   transform: translateY(-2px) scale(1.08);
-  box-shadow: 0 4px 12px rgba(125, 147, 114, 0.45);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.45);
 }
 
 .todo-title {
@@ -1717,6 +1676,42 @@ html.dark .dashboard-right {
   margin: 0;
 }
 
+.todo-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-primary-accent, #7D9372);
+  background: rgba(163, 177, 155, 0.12);
+  border: 1px solid rgba(163, 177, 155, 0.28);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.todo-jump-btn:hover {
+  background: rgba(163, 177, 155, 0.24);
+  border-color: rgba(163, 177, 155, 0.5);
+  color: #2D3E25;
+  transform: translateX(1px);
+}
+
+html.dark .todo-jump-btn {
+  color: #A3B19B;
+  background: rgba(163, 177, 155, 0.15);
+  border-color: rgba(163, 177, 155, 0.3);
+}
+
+html.dark .todo-jump-btn:hover {
+  color: #E2E8DE;
+  background: rgba(163, 177, 155, 0.28);
+  border-color: rgba(163, 177, 155, 0.5);
+}
+
 .todo-list {
   flex: 1;
   overflow-y: auto;
@@ -1726,21 +1721,16 @@ html.dark .dashboard-right {
   padding: 2px 2px 8px;
 }
 
-.todo-list.drag-over {
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: var(--radius-sm);
-}
-
 /* 待办事件胶囊化包裹 (Capsule/Pill shape) */
 .todo-item {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 14px;
-  cursor: grab;
+  cursor: default;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   border-radius: 9999px; /* 胶囊圆角 */
-  background: var(--color-bg-tertiary, #F5F7F5);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid rgba(163, 177, 155, 0.32);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.018);
 }
@@ -1762,6 +1752,16 @@ html.dark .todo-item:hover {
   border-color: rgba(163, 177, 155, 0.45);
 }
 
+.todo-item.is-completed {
+  opacity: 0.55;
+  filter: grayscale(100%);
+}
+
+.todo-item.is-completed .todo-name {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
 .task-checkbox {
   width: 15px;
   height: 15px;
@@ -1769,6 +1769,10 @@ html.dark .todo-item:hover {
   cursor: pointer;
   flex-shrink: 0;
   accent-color: #7D9372;
+}
+
+.task-checkbox:disabled {
+  cursor: not-allowed;
 }
 
 .todo-color {
@@ -1809,21 +1813,48 @@ html.dark .todo-subject {
   color: #E2E8DE;
 }
 
-.drag-handle {
+.todo-due-badge {
+  font-size: 9.5px;
   color: var(--text-muted);
-  font-size: 12px;
-  opacity: 0.3;
-  cursor: grab;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 
-.todo-item:hover .drag-handle { opacity: 0.7; }
+.todo-due-badge.is-overdue {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  font-weight: 600;
+}
+
+html.dark .todo-due-badge {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .todo-due-badge.is-overdue {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.2);
+}
 
 .empty-pending {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   text-align: center;
-  padding: 20px 0;
+  padding: 24px 0;
+}
+
+.empty-pending-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.empty-pending-icon {
+  color: var(--color-primary-accent, #7D9372);
+  flex-shrink: 0;
 }
 
 /* ===== Form Styles ===== */
@@ -2386,7 +2417,7 @@ html.dark .duration-bar-thumb {
 }
 
 .task-btn-submit {
-  background: #7D9372;
+  background: var(--accent-gradient);
   color: #FFFFFF;
   border: none;
   border-radius: 9999px;
@@ -2395,13 +2426,13 @@ html.dark .duration-bar-thumb {
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
 }
 
 .task-btn-submit:hover:not(:disabled) {
-  background: #6E8364;
+  opacity: 0.92;
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45);
 }
 
 .task-btn-submit:disabled {

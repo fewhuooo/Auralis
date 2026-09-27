@@ -7,12 +7,12 @@ import com.auralis.app.ai.EmbeddingProviderPort;
 import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionJobService;
+import com.auralis.app.ai.ingestion.IngestionCompletionService;
+import com.auralis.app.ai.ingestion.IngestionClaim;
 import com.auralis.app.ai.ingestion.IngestionWorker;
 import com.auralis.app.ai.ingestion.SourceParser;
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
-import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
-import com.auralis.app.ai.retrieval.SourceChunkService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.source.SourceIngestionStatus;
 import com.auralis.app.source.ParsedDocumentReadView;
@@ -39,16 +39,17 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 
 @ExtendWith(MockitoExtension.class)
 class AiIngestionWorkerTests {
 
     @Mock
-    private IngestionJobRepository jobRepository;
-    @Mock
     private IngestionJobService jobService;
+    @Mock
+    private IngestionCompletionService completionService;
     @Mock
     private SourceService sourceService;
     @Mock
@@ -57,8 +58,6 @@ class AiIngestionWorkerTests {
     private AiSettingsService settingsService;
     @Mock
     private EmbeddingProviderRegistry embeddingProviderRegistry;
-    @Mock
-    private SourceChunkService chunkService;
     @Mock
     private ParsedDocumentService parsedDocumentService;
     @Mock
@@ -71,18 +70,20 @@ class AiIngestionWorkerTests {
     private UUID userId;
     private UUID sourceId;
     private UUID generation;
+    private UUID revision;
 
     @BeforeEach
     void setUp() {
         userId = UUID.randomUUID();
         sourceId = UUID.randomUUID();
         generation = UUID.randomUUID();
+        revision = UUID.randomUUID();
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.ingestionLeaseMillis()).thenReturn(300_000L);
         when(aiProperties.ingestionMaxAttempts()).thenReturn(3);
         worker = new IngestionWorker(
-                jobRepository, jobService, sourceService, List.of(parser), settingsService,
-                embeddingProviderRegistry, chunkService, parsedDocumentService, clock, properties);
+                jobService, completionService, sourceService, List.of(parser), settingsService,
+                embeddingProviderRegistry, parsedDocumentService, clock, properties);
     }
 
     @Test
@@ -90,15 +91,16 @@ class AiIngestionWorkerTests {
         IngestionJobEntity job = claimedJob(1);
         SourceView source = source();
         when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
-        when(sourceService.markParsing(userId, sourceId)).thenReturn(source);
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
         when(parser.supports(SourceType.TEXT)).thenReturn(true);
         when(parser.parse(userId, source)).thenThrow(new IllegalStateException("temporary parser failure"));
 
         assertThat(worker.processNext()).isTrue();
 
-        verify(sourceService).markPending(userId, sourceId);
-        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PENDING);
-        verify(jobRepository).saveAndFlush(job);
+        verify(completionService).fail(
+                eq(IngestionClaim.from(job)), eq(revision), eq(clock.instant()), eq(3),
+                eq("INGESTION_FAILED"), any());
     }
 
     @Test
@@ -106,15 +108,16 @@ class AiIngestionWorkerTests {
         IngestionJobEntity job = claimedJob(3);
         SourceView source = source();
         when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
-        when(sourceService.markParsing(userId, sourceId)).thenReturn(source);
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
         when(parser.supports(SourceType.TEXT)).thenReturn(true);
         when(parser.parse(userId, source)).thenThrow(new IllegalStateException("permanent parser failure"));
 
         assertThat(worker.processNext()).isTrue();
 
-        verify(sourceService).markFailed(eq(userId), eq(sourceId), eq("INGESTION_FAILED"), any());
-        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
-        verify(jobRepository).saveAndFlush(job);
+        verify(completionService).fail(
+                eq(IngestionClaim.from(job)), eq(revision), eq(clock.instant()), eq(3),
+                eq("INGESTION_FAILED"), any());
     }
 
     @Test
@@ -123,35 +126,38 @@ class AiIngestionWorkerTests {
         SourceView source = source();
         EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
         when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
-        when(sourceService.markParsing(userId, sourceId)).thenReturn(source);
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
         when(parser.supports(SourceType.TEXT)).thenReturn(true);
         when(parser.parse(userId, source)).thenReturn("source text");
-        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW))
+        when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
                         AiProviderType.SILICONFLOW, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of(vector())));
-        when(sourceService.markIndexing(userId, sourceId)).thenReturn(source);
-        when(sourceService.markReady(userId, sourceId)).thenReturn(source);
+        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(completionService.complete(any(), eq(revision), anyList(), anyList(), eq(clock.instant())))
+                .thenReturn(true);
 
         assertThat(worker.processNext()).isTrue();
 
-        verify(chunkService).replace(eq(userId), eq(sourceId), eq(generation), anyList(), anyList());
-        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.READY);
+        verify(completionService).complete(
+                eq(IngestionClaim.from(job)), eq(revision), anyList(), anyList(), eq(clock.instant()));
+        verify(sourceService, never()).markReady(any(), any());
     }
 
     @Test
     void acceptedParsedDocumentJobBypassesOriginalFileParser() {
         UUID parsedDocumentId = UUID.randomUUID();
-        UUID revision = UUID.randomUUID();
+        UUID parsedRevision = revision;
         IngestionJobEntity job = new IngestionJobEntity(
-                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
-        job.attachParsedDocument(parsedDocumentId, revision);
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation, parsedRevision);
+        job.attachParsedDocument(parsedDocumentId, parsedRevision);
         job.claim(clock.instant(), clock.instant().plusSeconds(300));
         SourceView source = new SourceView(
                 sourceId, UUID.randomUUID(), SourceType.FILE, "scan.pdf", UUID.randomUUID(), null, null, null,
-                SourceIngestionStatus.INDEXING, revision, null, null, 0, clock.instant(), clock.instant(), null, null);
+                SourceIngestionStatus.INDEXING, parsedRevision, null, null, 0, clock.instant(), clock.instant(), null, null);
         when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
         when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
         when(parsedDocumentService.readAccepted(userId, sourceId, parsedDocumentId))
@@ -159,15 +165,16 @@ class AiIngestionWorkerTests {
                         parsedDocumentId, sourceId, revision, generation,
                         List.of(new ParsedDocumentValidator.ValidatedBlock(0, "page", "OCR text"))));
         configureEmbeddingProvider();
-        when(sourceService.markIndexing(userId, sourceId)).thenReturn(source);
-        when(sourceService.markReady(userId, sourceId)).thenReturn(source);
+        when(sourceService.markIndexingIfRevision(userId, sourceId, parsedRevision)).thenReturn(true);
+        when(completionService.complete(any(), eq(parsedRevision), anyList(), anyList(), eq(clock.instant())))
+                .thenReturn(true);
 
         assertThat(worker.processNext()).isTrue();
 
         verify(parsedDocumentService).readAccepted(userId, sourceId, parsedDocumentId);
         verifyNoInteractions(parser);
-        verify(chunkService).replace(eq(userId), eq(sourceId), eq(generation), anyList(), anyList());
-        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.READY);
+        verify(completionService).complete(
+                eq(IngestionClaim.from(job)), eq(parsedRevision), anyList(), anyList(), eq(clock.instant()));
     }
 
     @Test
@@ -188,16 +195,16 @@ class AiIngestionWorkerTests {
 
         assertThat(worker.processNext()).isTrue();
 
-        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
-        assertThat(job.getErrorCode()).isEqualTo("INGESTION_REVISION_STALE");
         verify(sourceService).requireActiveSource(userId, sourceId);
-        verify(sourceService, org.mockito.Mockito.never()).markFailed(any(), any(), any(), any());
-        verifyNoInteractions(parsedDocumentService, chunkService, parser);
+        verify(completionService).fail(
+                eq(IngestionClaim.from(job)), eq(jobRevision), eq(clock.instant()), eq(3),
+                eq("INGESTION_REVISION_STALE"), any());
+        verifyNoInteractions(parsedDocumentService, parser);
     }
 
     private void configureEmbeddingProvider() {
         EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
-        when(settingsService.resolve(userId, AiProviderType.SILICONFLOW))
+        when(settingsService.resolveServerManagedEmbedding())
                 .thenReturn(new AiSettingsService.ResolvedSettings(
                         AiProviderType.SILICONFLOW, "embedding-model",
                         new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
@@ -207,7 +214,7 @@ class AiIngestionWorkerTests {
 
     private IngestionJobEntity claimedJob(int attempts) {
         IngestionJobEntity job = new IngestionJobEntity(
-                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation);
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation, revision);
         Instant now = clock.instant();
         for (int attempt = 0; attempt < attempts; attempt++) {
             job.claim(now, now.plusSeconds(300));
@@ -219,7 +226,7 @@ class AiIngestionWorkerTests {
         Instant now = clock.instant();
         return new SourceView(
                 sourceId, UUID.randomUUID(), SourceType.TEXT, "Notes", null, null, "text", null,
-                SourceIngestionStatus.PARSING, null, null, 0, now, now, null);
+                SourceIngestionStatus.PARSING, revision, null, null, 0, now, now, null, null);
     }
 
     private static List<Double> vector() {

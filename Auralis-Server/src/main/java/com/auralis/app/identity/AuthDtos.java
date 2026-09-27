@@ -2,6 +2,7 @@ package com.auralis.app.identity;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.time.Instant;
@@ -39,6 +40,23 @@ public final class AuthDtos {
     }
 
     public record RefreshRequest(@NotBlank String refreshToken) {
+    }
+
+    public record ProfileUpdateRequest(
+            @NotNull @PositiveOrZero Long baseVersion,
+            @NotBlank @Size(max = 120) String displayName) {
+    }
+
+    public record PasswordChangeRequest(
+            @NotNull @PositiveOrZero Long baseVersion,
+            @NotBlank String currentPassword,
+            @NotBlank @Size(min = 12, max = 200) String newPassword) {
+    }
+
+    public record AccountDeletionRequest(@NotBlank String password) {
+    }
+
+    public record AccountDeletionResponse(UUID id, String status, Instant requestedAt) {
     }
 
     public record SessionListResponse(List<SessionResponse> items, String nextCursor, boolean hasMore) {

@@ -1,0 +1,2 @@
+# Ensure OCR dictionary preserves LF line endings across platforms
+Auralis-PC/ocr-sidecar/resources/ppocr_keys_v1.txt text eol=lf

@@ -769,6 +769,15 @@ test('overview API maps the two authenticated stateless endpoints exactly', asyn
   assert.doesNotMatch(api, /userId|serverDeviceId|conversation|localStorage/)
 })
 
+test('overview HTTP timeout exceeds the server provider response limit for both endpoints', async () => {
+  const api = await source('src/api/useOverviewApi.ts')
+  const timeoutLiteral = api.match(/OVERVIEW_REQUEST_TIMEOUT_MS\s*=\s*([\d_]+)/)?.[1]
+  const timeout = Number(timeoutLiteral?.replaceAll('_', ''))
+  assert.ok(timeout > 120_000, 'PC must allow the server Overview provider response window plus transport overhead')
+  assert.equal((api.match(/timeout:\s*OVERVIEW_REQUEST_TIMEOUT_MS/g) ?? []).length, 2,
+    'Source and Subject Overview requests must both use the extended timeout')
+})
+
 test('overview generation requests carry a per-attempt request id and server stages expose a generation id', async () => {
   const api = await source('src/api/useOverviewApi.ts')
   const server = await readFile(path.resolve(import.meta.dirname, '..', '..', 'Auralis-Server/src/main/java/com/auralis/app/ai/OverviewGenerationService.java'), 'utf8')

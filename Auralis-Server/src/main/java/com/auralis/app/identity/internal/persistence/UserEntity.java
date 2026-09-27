@@ -104,8 +104,16 @@ public class UserEntity {
         return passwordHash;
     }
 
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public String getDisplayName() {
         return displayName;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
     }
 
     public String getAvatarUrl() {
@@ -114,6 +122,10 @@ public class UserEntity {
 
     public UserStatus getStatus() {
         return status;
+    }
+
+    public void disable() {
+        status = UserStatus.DISABLED;
     }
 
     public long getVersion() {

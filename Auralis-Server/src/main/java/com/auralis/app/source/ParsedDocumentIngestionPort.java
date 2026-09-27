@@ -8,6 +8,9 @@ import java.util.UUID;
  */
 public interface ParsedDocumentIngestionPort {
 
+    IngestionJobReference enqueueServerOwnedSource(
+            UUID userId, UUID sourceId, UUID ingestionRevision);
+
     IngestionJobReference enqueueParsedDocument(
             UUID userId, UUID sourceId, UUID parsedDocumentId,
             UUID ingestionRevision, UUID generation);

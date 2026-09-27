@@ -5,7 +5,7 @@
       <div class="panel-header">
         <span class="panel-title">资产库</span>
         <button class="icon-btn" title="导入文件" @click="showRegisterModal = true">
-          <Plus :size="16" />
+          <IconPlus :size="16" :stroke-width="2" />
         </button>
       </div>
 
@@ -15,10 +15,10 @@
       </div>
 
       <!-- Upload Progress -->
-      <div v-if="isUploading" class="upload-progress-wrapper" style="margin: 0 20px 16px; padding: 12px; background: var(--bg-modifier-hover); border-radius: var(--radius-md);">
+      <div v-if="isUploading" class="upload-progress-wrapper" style="margin: 0 20px 16px; padding: 12px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);">
         <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
           <span aria-live="polite" style="font-weight: 500;">{{ uploadStatusText || '正在上传文件' }}</span>
-          <span style="font-weight: 600; color: var(--color-zen-sage);">{{ uploadProgress }}%</span>
+          <span style="font-weight: 600; color: var(--color-primary-accent, #8B9A6E);">{{ uploadProgress }}%</span>
         </div>
         <div style="height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; position: relative;">
           <div :style="{ width: uploadProgress + '%', height: '100%', background: 'var(--accent-gradient)', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)', borderRadius: '2px' }"></div>
@@ -34,7 +34,7 @@
           <span class="loading-spinner"></span> 加载中...
         </div>
         <div v-else-if="filteredGroups.length === 0" class="tree-empty">
-          <Archive :size="24" class="empty-tree-icon" />
+          <IconArchive :size="24" :stroke-width="1.6" class="empty-tree-icon" />
           <p>暂无数据</p>
         </div>
         <template v-else>
@@ -45,7 +45,7 @@
               <component :is="group.lucideIcon" :size="13" class="group-icon" />
               <span class="group-name">{{ group.name }}</span>
               <button v-if="group.id !== 'all'" class="header-action-btn" title="上传资产" @click.stop="openUploadForGroup(group.id)">
-                <Plus :size="12" />
+                <IconPlus :size="12" :stroke-width="2" />
               </button>
             </div>
             
@@ -88,7 +88,7 @@
                             <span v-else-if="subitem.type === 'task'" class="item-meta">截止: {{ subitem.due || '未设置' }}</span>
                           </div>
                           <span v-if="subitem.type === 'file'" class="status-dot" :class="subitem.status"></span>
-                          <span v-if="subitem.type === 'task' && subitem.done" class="task-done-icon"><Check :size="12" /></span>
+                          <span v-if="subitem.type === 'task' && subitem.done" class="task-done-icon"><IconCheck :size="12" :stroke-width="2" /></span>
                         </div>
                         <div v-if="!item.children?.length" class="tree-empty-folder tree-subitem-empty">无内容</div>
                       </div>
@@ -106,7 +106,7 @@
                         <span v-else-if="item.type === 'task'" class="item-meta">截止: {{ item.due || '未设置' }}</span>
                       </div>
                       <span v-if="item.type === 'file'" class="status-dot" :class="item.status"></span>
-                      <span v-if="item.type === 'task' && item.done" class="task-done-icon"><Check :size="12" /></span>
+                      <span v-if="item.type === 'task' && item.done" class="task-done-icon"><IconCheck :size="12" :stroke-width="2" /></span>
                     </div>
                   </template>
                   <div v-if="!folder.children?.length" class="tree-empty-folder">无内容</div>
@@ -126,7 +126,7 @@
         @drop.prevent="handleDrop"
         @click="showRegisterModal = true"
       >
-        <UploadCloud :size="16" class="drop-icon" />
+        <IconCloudUpload :size="16" :stroke-width="1.8" class="drop-icon" />
         <span class="drop-text">拖拽文件或点击此处上传</span>
       </div>
     </aside>
@@ -134,31 +134,74 @@
     <!-- COLUMN 2: MIDDLE Dynamic Viewer (File / Block / Task) -->
     <main class="studio-middle">
       <div v-if="!selected" class="empty-state">
-        <LayoutDashboard :size="48" class="empty-icon" />
+        <IconLayoutDashboard :size="48" :stroke-width="1.6" class="empty-icon" />
         <h2 class="empty-title">资产阅览区</h2>
         <p class="empty-desc">在左侧树状目录中选择文件、知识块或任务以开始沉浸式工作</p>
       </div>
       <template v-else>
         <!-- Dynamic Header based on Type -->
         <div class="detail-header">
-          <div class="detail-title-row">
-            <component :is="selected.lucideIcon" :size="28" class="detail-icon" />
-            <div>
-              <h1 class="detail-name" :class="{'is-done': selected.type === 'task' && selected.done}">{{ selected.name }}</h1>
-              <p v-if="selected.type === 'file'" class="detail-path">上传于 {{ selected.time }} · {{ selected.pages }} 页 · {{ selected.size }}</p>
-              <p v-else-if="selected.type === 'block'" class="detail-path">知识块 · 所属学科: {{ getSubjectName(selected.groupId) }}</p>
-              <p v-else-if="selected.type === 'task'" class="detail-path">生成任务 · 预计用时: {{ formatDuration(selected.durationMinutes || 30) }} · 截止: {{ selected.due || '未设置' }}</p>
+          <!-- File View Header -->
+          <div v-if="selected.type === 'file'" class="detail-title-row">
+            <component :is="selected.lucideIcon" :size="24" class="detail-icon" />
+            <div class="detail-main-info">
+              <h1 class="detail-name">{{ selected.name }}</h1>
+              <p class="detail-path">上传于 {{ selected.time }} · {{ selected.pages }} 页 · {{ selected.size }}</p>
             </div>
-            <span v-if="selected.type === 'file'" class="status-badge" :class="selected.status">{{ selected.statusText }}</span>
-            <button v-if="selected.type === 'task'" class="btn-primary sm-btn" style="margin-left:auto;" @click="saveTaskEdit(selected)">
-              保存修改
-            </button>
-            <button v-if="selected.type === 'task'" class="btn-primary sm-btn" @click="toggleTaskDone(selected)">
-              {{ selected.done ? '标记为未完成' : '标记为完成' }}
-            </button>
-            <button v-if="selected.type === 'block'" class="btn-primary sm-btn" style="margin-left:auto;" @click="saveBlockEdit(selected)">
-              保存修改
-            </button>
+            <span class="status-badge" :class="selected.status">{{ selected.statusText }}</span>
+          </div>
+
+          <!-- Knowledge Block View Header -->
+          <div v-else-if="selected.type === 'block'" class="detail-title-row editor-bar-row">
+            <div class="editor-bar-left">
+              <div class="header-icon-badge">
+                <IconNotes :size="18" :stroke-width="1.8" />
+              </div>
+              <div class="header-breadcrumb">
+                <span class="crumb-parent">知识库</span>
+                <span class="crumb-sep">/</span>
+                <span class="crumb-subject">{{ getSubjectName(selected.groupId) }}</span>
+              </div>
+            </div>
+            <div class="editor-bar-right">
+              <span class="editor-stats-hint">{{ (selected.preview || '').length }} 字符</span>
+              <button class="btn-primary sm-btn header-save-btn" @click="saveBlockEdit(selected)">
+                <IconCheck :size="14" :stroke-width="2.2" />
+                <span>保存知识块</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Task View Header -->
+          <div v-else-if="selected.type === 'task'" class="detail-title-row editor-bar-row">
+            <div class="editor-bar-left">
+              <div class="header-icon-badge task-icon-badge">
+                <IconListCheck :size="18" :stroke-width="1.8" />
+              </div>
+              <div class="header-breadcrumb">
+                <span class="crumb-parent">任务库</span>
+                <span class="crumb-sep">/</span>
+                <span class="crumb-subject">{{ getSubjectName(selected.groupId) }}</span>
+              </div>
+              <button
+                class="header-status-pill"
+                :class="{ 'is-done': selected.done }"
+                  :disabled="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow)"
+                @click="toggleTaskDone(selected)"
+                  :title="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : selected.done ? '点击标记为待处理' : '点击标记为已完成'"
+              >
+                <component :is="selected.done ? IconCircleCheck : IconCircleDot" :size="14" :stroke-width="2" />
+                <span>{{ selected.done ? '已完成' : '待处理' }}</span>
+              </button>
+            </div>
+            <div class="editor-bar-right">
+              <span v-if="selected.due" class="header-meta-pill">截止: {{ selected.due }}</span>
+              <span class="header-meta-pill">预计: {{ formatDuration(selected.durationMinutes || 30) }}</span>
+              <button class="btn-primary sm-btn header-save-btn" @click="saveTaskEdit(selected)">
+                <IconCheck :size="14" :stroke-width="2.2" />
+                <span>保存任务</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -169,74 +212,172 @@
           </div>
 
           <!-- View: BLOCK -->
-          <div v-else-if="selected.type === 'block'" class="block-editor-view">
-            <div class="editor-header">
-              <div class="editor-title-row">
-                <div class="editor-icon-wrapper"><Blocks class="editor-icon" /></div>
-                <div class="editor-meta">
-                  <span class="editor-type">知识块编辑</span>
-                  <span class="editor-subject">{{ getSubjectName(selected.groupId) }}</span>
+          <div v-else-if="selected.type === 'block'" class="editor-canvas-view">
+            <div class="editor-paper-card">
+              <!-- Paper Meta Top -->
+              <div class="paper-meta-header">
+                <div class="paper-meta-left">
+                  <span class="paper-subject-pill">{{ getSubjectName(selected.groupId) }}</span>
+                </div>
+                <div class="paper-meta-right">
+                  <span class="paper-hint-text">Markdown 实时笔记</span>
                 </div>
               </div>
-              <button class="editor-save-btn" @click="saveBlockEdit(selected)">
-                <Check class="btn-icon" />保存修改
-              </button>
-            </div>
-            
-            <div class="block-editor-container">
-              <input v-model="selected.name" class="editor-title-input" placeholder="输入知识块标题..." />
-              
-              <div class="editor-content-wrapper">
-                <textarea v-model="selected.preview" class="editor-textarea" placeholder="在此编写知识块的核心内容（支持 Markdown）..."></textarea>
+
+              <!-- Title Input -->
+              <div class="paper-title-row">
+                <input
+                  v-model="selected.name"
+                  class="paper-title-input"
+                  placeholder="输入知识块标题..."
+                />
+              </div>
+
+              <!-- Editor Divider -->
+              <div class="paper-divider"></div>
+
+              <!-- Markdown Writing Area -->
+              <div class="paper-editor-section">
+                <div class="editor-micro-toolbar">
+                  <span class="micro-tip">支持 Markdown 语法、公式与代码排版</span>
+                  <span class="micro-count">{{ (selected.preview || '').length }} 字</span>
+                </div>
+                <textarea
+                  v-model="selected.preview"
+                  class="paper-textarea"
+                  placeholder="在此编写知识块的核心内容、知识点脉络或关键定理（支持 Markdown 语法与代码块）..."
+                  rows="18"
+                ></textarea>
               </div>
             </div>
           </div>
 
           <!-- View: TASK -->
-          <div v-else-if="selected.type === 'task'" class="task-editor-view">
-             <div class="block-editor-container">
-              <!-- Task Title -->
-              <input v-model="selected.name" class="editor-title-input" placeholder="输入任务描述..." />
-              
-              <!-- Notion-like Property Grid -->
-              <div class="property-grid">
-                <div class="property-row">
-                  <div class="property-label">
-                    <Calendar :size="14" />
-                    <span>截止日期</span>
-                  </div>
-                  <div class="property-value">
-                    <el-date-picker 
-                      v-model="selected.due" 
-                      type="date" 
-                      placeholder="选择截止日期"
-                      format="YYYY-MM-DD"
-                      value-format="YYYY-MM-DD"
-                      class="zen-date-picker"
-                      popper-class="zen-date-popper"
-                      style="width: 220px;"
-                    />
-                  </div>
+          <div v-else-if="selected.type === 'task'" class="editor-canvas-view">
+            <div class="editor-paper-card">
+              <!-- Paper Meta Top -->
+              <div class="paper-meta-header">
+                <div class="paper-meta-left">
+                  <span class="paper-subject-pill">{{ getSubjectName(selected.groupId) }}</span>
+                  <button
+                    class="paper-status-pill"
+                    :class="{ 'is-done': selected.done }"
+                    :disabled="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow)"
+                    @click="toggleTaskDone(selected)"
+                    :title="isScheduledCompletionLocked(selected.originalData, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : selected.done ? '点击标记为待处理' : '点击标记为已完成'"
+                  >
+                    <component :is="selected.done ? IconCircleCheck : IconCircleDot" :size="13" :stroke-width="2" />
+                    <span>{{ selected.done ? '已完成' : '待处理' }}</span>
+                  </button>
                 </div>
+                <div class="paper-meta-right">
+                  <span v-if="selected.originalData?.scheduledAt" class="scheduled-indicator">
+                    <IconCalendar :size="12" /> 已安排在日程
+                  </span>
+                  <span v-else class="unscheduled-indicator">
+                    未排期
+                  </span>
+                </div>
+              </div>
 
-                <div class="property-row">
-                  <div class="property-label">
-                    <Clock :size="14" />
-                    <span>预计用时</span>
+              <!-- Task Title Input -->
+              <div class="paper-title-row">
+                <input
+                  v-model="selected.name"
+                  class="paper-title-input"
+                  :class="{ 'is-done': selected.done }"
+                  placeholder="输入任务名称或行动事项..."
+                />
+              </div>
+
+              <!-- Notion-like Property Panel -->
+              <div class="paper-property-panel">
+                <div class="property-grid">
+                  <!-- Due Date Row -->
+                  <div class="property-item">
+                    <div class="property-label">
+                      <IconCalendar :size="14" :stroke-width="1.8" />
+                      <span>截止日期</span>
+                    </div>
+                    <div class="property-control">
+                      <el-date-picker
+                        v-model="selected.due"
+                        type="date"
+                        placeholder="设置截止日期"
+                        format="YYYY-MM-DD"
+                        value-format="YYYY-MM-DD"
+                        class="zen-date-picker"
+                        popper-class="zen-date-popper"
+                      />
+                    </div>
                   </div>
-                  <div class="property-value">
-                    <select v-model.number="selected.durationMinutes" class="duration-select" aria-label="预计用时">
-                      <option v-for="minutes in durationOptions" :key="minutes" :value="minutes">
-                        {{ formatDuration(minutes) }}
-                      </option>
-                    </select>
+
+                  <!-- Duration Row -->
+                  <div class="property-item">
+                    <div class="property-label">
+                      <IconClock :size="14" :stroke-width="1.8" />
+                      <span>预计用时</span>
+                    </div>
+                    <div class="property-control">
+                      <el-select
+                        v-model="selected.durationMinutes"
+                        placeholder="选择预计用时"
+                        class="zen-select"
+                        popper-class="zen-select-popper"
+                        style="width: 220px;"
+                        aria-label="预计用时"
+                      >
+                        <el-option
+                          v-for="minutes in durationOptions"
+                          :key="minutes"
+                          :label="formatDuration(minutes)"
+                          :value="minutes"
+                        />
+                      </el-select>
+                    </div>
+                  </div>
+
+                  <!-- Subject Row -->
+                  <div class="property-item">
+                    <div class="property-label">
+                      <IconFolder :size="14" :stroke-width="1.8" />
+                      <span>所属学科</span>
+                    </div>
+                    <div class="property-control">
+                      <el-select
+                        v-model="selected.groupId"
+                        placeholder="选择所属学科"
+                        class="zen-select"
+                        popper-class="zen-select-popper"
+                        style="width: 220px;"
+                      >
+                        <el-option
+                          v-for="subj in subjectStore.subjects"
+                          :key="subj.id"
+                          :label="subj.name"
+                          :value="subj.id"
+                        />
+                      </el-select>
+                    </div>
                   </div>
                 </div>
               </div>
-              
-              <!-- Task Notes -->
-              <div class="editor-content-wrapper">
-                <textarea v-model="selected.preview" class="editor-textarea" placeholder="在此编写任务备注或细节说明..."></textarea>
+
+              <!-- Divider -->
+              <div class="paper-divider"></div>
+
+              <!-- Task Notes Section -->
+              <div class="paper-notes-section">
+                <div class="section-label-row">
+                  <IconFileText :size="14" :stroke-width="1.8" />
+                  <span>任务备注与详细说明</span>
+                </div>
+                <textarea
+                  v-model="selected.preview"
+                  class="paper-textarea task-notes-textarea"
+                  placeholder="记录该任务的详细要求、执行要点或参考资料..."
+                  rows="10"
+                ></textarea>
               </div>
             </div>
           </div>
@@ -245,13 +386,13 @@
     </main>
 
     <!-- COLUMN 3: RIGHT Context (Only Graph) -->
-    <aside class="studio-right-context" style="width: 450px;">
+    <aside class="studio-right-context">
       <div v-if="!selected" class="graph-empty-state">
-        <Network :size="40" class="empty-graph-icon" />
+        <IconNetwork :size="40" :stroke-width="1.6" class="empty-graph-icon" />
         <p class="empty-graph-desc">选择项目以加载上下文星空图</p>
       </div>
       <template v-else>
-        <div class="panel-header" style="background: var(--color-bg-secondary);">
+        <div class="panel-header">
           <span class="panel-title">关系星图</span>
         </div>
         <div class="context-body">
@@ -260,7 +401,11 @@
               v-if="selectedGroupForGraph"
               :subjectId="selectedGroupForGraph.id"
               :blocks="graphBlocks"
+              :sources="graphSources"
+              :subjects="graphSubjects"
               :subjectName="selectedGroupForGraph.name"
+              :selectedAsset="selectedGraphAsset"
+              @select-node="selectGraphNode"
             />
           </div>
         </div>
@@ -281,7 +426,7 @@
           @drop.prevent="handleDrop"
         >
           <div class="drag-drop-zone" :class="{ 'is-active': isDragover }" @click="triggerFileSelect">
-            <UploadCloud :size="24" style="margin-bottom: 8px; color: var(--text-muted);" />
+            <IconCloudUpload :size="24" :stroke-width="1.8" style="margin-bottom: 8px; color: var(--text-muted);" />
             <div class="drag-text">{{ selectedFileToUpload ? selectedFileToUpload.name : '拖拽文件或点击此处上传' }}</div>
           </div>
           <input type="file" ref="dialogFileInput" style="display: none" @change="handleDialogFileChange" />
@@ -318,15 +463,41 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
+import 'element-plus/theme-chalk/el-select.css'
+import 'element-plus/theme-chalk/el-option.css'
 
-import { Plus, Archive, FileText, UploadCloud, LayoutDashboard, Network, Check, BookOpen, Blocks, File, PieChart, ImageIcon, Mic, Folder, ListTodo, Calendar, Clock } from 'lucide-vue-next'
+import {
+  IconPlus,
+  IconArchive,
+  IconFileText,
+  IconCloudUpload,
+  IconLayoutDashboard,
+  IconNetwork,
+  IconCheck,
+  IconFile,
+  IconChartPie,
+  IconPhoto,
+  IconMicrophone,
+  IconFolder,
+  IconListCheck,
+  IconCalendar,
+  IconClock,
+  IconFiles,
+  IconChecklist,
+  IconInbox,
+  IconCircleDot,
+  IconCircleCheck,
+  IconNotes,
+  IconNote
+} from '@tabler/icons-vue'
+import { getSubjectIconComponent } from '@/utils/subjectIcon'
 import FilePreview from '@/components/FilePreview.vue'
 import type { SourceFileModel } from '@/services/domainMappers'
 import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useSourceStore } from '@/store/useSourceStore'
-import { getTasksForAssetGroups, type AssetTaskGroups } from '@/services/taskViewRules'
+import { getTasksForAssetGroups, isCompletedTask, isScheduledCompletionLocked, type AssetTaskGroups } from '@/services/taskViewRules'
 
 // ---- Layout States ----
 const showRegisterModal = ref(false)
@@ -346,6 +517,7 @@ interface TreeNode {
   id: string
   name: string
   type: TreeNodeType
+  icon?: any
   lucideIcon?: any
   open?: boolean
   children?: TreeNode[]
@@ -390,11 +562,11 @@ const focusUnassigned = ref(false)
 
 function getIconForSource(source: string): any {
   const lower = source.toLowerCase()
-  if (lower.includes('pdf')) return FileText
-  if (lower.includes('ppt') || lower.includes('课件')) return PieChart
-  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return ImageIcon
-  if (lower.includes('voice') || lower.includes('语音')) return Mic
-  return File
+  if (lower.includes('pdf')) return IconFileText
+  if (lower.includes('ppt') || lower.includes('课件')) return IconChartPie
+  if (lower.includes('手写') || lower.includes('扫描') || lower.includes('image')) return IconPhoto
+  if (lower.includes('voice') || lower.includes('语音')) return IconMicrophone
+  return IconFile
 }
 
 const durationOptions = Array.from({ length: 16 }, (_, index) => (index + 1) * 30)
@@ -434,23 +606,25 @@ function taskTreeNode(task: any, groupId: string): TreeNode {
   return {
     id: `t-${task.id}`,
     type: 'task',
-    groupId,
+    groupId: task.subjectId || groupId,
     name: task.title || task.name || '未命名任务',
-    lucideIcon: ListTodo,
+    icon: IconListCheck,
+    lucideIcon: IconListCheck,
     due: formatDateInput(task.dueAt),
     durationMinutes: normalizeDuration(task.durationMinutes ?? task.duration),
     preview: task.description ?? task.desc ?? '',
-    done: task.status === 'completed',
+    done: isCompletedTask(task),
     originalData: task,
   }
 }
 
-function taskGroupFolder(id: string, name: string, tasks: any[], groupId: string, open = false): TreeNode {
+function taskGroupFolder(id: string, name: string, tasks: any[], groupId: string, open = false, icon = IconFolder): TreeNode {
   return {
     id,
     name,
     type: 'folder',
-    lucideIcon: Folder,
+    icon,
+    lucideIcon: icon,
     open,
     children: tasks.map((task) => taskTreeNode(task, groupId)),
   }
@@ -459,13 +633,14 @@ function taskGroupFolder(id: string, name: string, tasks: any[], groupId: string
 function taskGroupFolders(tasks: any[], groupId: string, openUnassigned = false): TreeNode[] {
   const groups: AssetTaskGroups = getTasksForAssetGroups(tasks)
   return [
-    taskGroupFolder(`${groupId}-tasks-unassigned`, '未排期', groups.unassigned, groupId, openUnassigned),
-    taskGroupFolder(`${groupId}-tasks-pending`, '未完成', groups.pending, groupId),
-    taskGroupFolder(`${groupId}-tasks-completed`, '已完成', groups.completed, groupId),
+    taskGroupFolder(`${groupId}-tasks-unassigned`, '未排期', groups.unassigned, groupId, openUnassigned, IconInbox),
+    taskGroupFolder(`${groupId}-tasks-pending`, '未完成', groups.pending, groupId, false, IconCircleDot),
+    taskGroupFolder(`${groupId}-tasks-completed`, '已完成', groups.completed, groupId, false, IconCircleCheck),
   ]
 }
 
 function rebuildAssetTree(): void {
+  const selectedId = selected.value?.id
   const openStates = new Set<string>()
   try {
     const collectOpenStates = (nodes: TreeNode[] | undefined) => {
@@ -487,23 +662,25 @@ function rebuildAssetTree(): void {
     // --- 1. 汇总 (All) Group ---
     const allFilesRaw = sourceStore.sources
     
-    const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-    const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
+    const allFilesFolder: TreeNode = { id: 'all-files', name: '全部文件', type: 'folder', icon: IconFiles, lucideIcon: IconFiles, open: false, children: [] }
+    const allBlocksFolder: TreeNode = { id: 'all-blocks', name: '全部知识块', type: 'folder', icon: IconNotes, lucideIcon: IconNotes, open: false, children: [] }
     const shouldFocusUnassigned = route.query.focus === 'unassigned-tasks'
     const allTasksFolder: TreeNode = {
       id: 'all-tasks',
       name: '全部任务',
       type: 'folder',
-      lucideIcon: Folder,
+      icon: IconChecklist,
+      lucideIcon: IconChecklist,
       open: true,
       children: taskGroupFolders(taskStore.allTasks, 'all', shouldFocusUnassigned),
     }
 
     // Map all files
     allFilesRaw.forEach(file => {
+      const srcIcon = getIconForSource(file.name)
       allFilesFolder.children!.push({
         id: `f-${file.id}`, sourceId: file.id, type: 'file', groupId: 'all', name: file.name,
-        assetId: file.assetId, fileType: file.fileType, lucideIcon: getIconForSource(file.name),
+        assetId: file.assetId, fileType: file.fileType, icon: srcIcon, lucideIcon: srcIcon,
         status: 'success', statusText: '正常', time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
         size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, originalData: file
       })
@@ -512,13 +689,13 @@ function rebuildAssetTree(): void {
     // Map all blocks
     blockStore.recentBlocks.forEach(b => {
       allBlocksFolder.children!.push({
-        id: `b-${b.id}`, type: 'block', groupId: 'all', name: b.title || '无标题块', lucideIcon: Blocks,
+        id: `b-${b.id}`, type: 'block', groupId: 'all', name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
         preview: b.preview, tags: b.tags || [b.subject], originalData: b
       })
     })
 
     newRoots.push({
-      id: 'all', name: '汇总分类', type: 'group', lucideIcon: Archive, open: shouldFocusUnassigned,
+      id: 'all', name: '汇总分类', type: 'group', icon: IconArchive, lucideIcon: IconArchive, open: shouldFocusUnassigned,
       children: [allFilesFolder, allBlocksFolder, allTasksFolder]
     })
 
@@ -528,14 +705,15 @@ function rebuildAssetTree(): void {
       const blocks = blockStore.recentBlocks.filter(b => b.subjectId === subj.id)
       const tasks = taskStore.allTasks.filter(t => t.subjectId === subj.id)
 
-      const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-      const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: '知识块', type: 'folder', lucideIcon: Folder, open: false, children: [] }
-      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: '任务', type: 'folder', lucideIcon: Folder, open: false, children: taskGroupFolders(tasks, subj.id) }
+      const subjFilesFolder: TreeNode = { id: `sf-${subj.id}`, name: '文件', type: 'folder', icon: IconFiles, lucideIcon: IconFiles, open: false, children: [] }
+      const subjBlocksFolder: TreeNode = { id: `sb-${subj.id}`, name: '知识块', type: 'folder', icon: IconNotes, lucideIcon: IconNotes, open: false, children: [] }
+      const subjTasksFolder: TreeNode = { id: `st-${subj.id}`, name: '任务', type: 'folder', icon: IconChecklist, lucideIcon: IconChecklist, open: false, children: taskGroupFolders(tasks, subj.id) }
 
       files.forEach(file => {
+        const srcIcon = getIconForSource(file.name)
         subjFilesFolder.children!.push({
           id: `f-${file.id}`, sourceId: file.id, type: 'file', groupId: subj.id, name: file.name,
-          assetId: file.assetId, fileType: file.fileType, lucideIcon: getIconForSource(file.name),
+          assetId: file.assetId, fileType: file.fileType, icon: srcIcon, lucideIcon: srcIcon,
           status: 'success', statusText: '正常', time: new Date(file.createdAt || Date.now()).toLocaleDateString(),
           size: (file.fileSize / (1024 * 1024)).toFixed(2) + ' MB', pages: 1, originalData: file
         })
@@ -543,13 +721,14 @@ function rebuildAssetTree(): void {
 
       blocks.forEach(b => {
         subjBlocksFolder.children!.push({
-          id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || '无标题块', lucideIcon: Blocks,
+          id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
           preview: b.preview, tags: b.tags || [b.subject], originalData: b
         })
       })
 
+      const subjIcon = getSubjectIconComponent(subj.icon)
       newRoots.push({
-        id: subj.id, name: subj.name, type: 'group', lucideIcon: BookOpen, open: false,
+        id: subj.id, name: subj.name, type: 'group', icon: subjIcon, lucideIcon: subjIcon, open: false,
         children: [subjFilesFolder, subjBlocksFolder, subjTasksFolder]
       })
     }
@@ -578,6 +757,7 @@ function rebuildAssetTree(): void {
   }
 
   rootNodes.value = newRoots
+  if (selectedId) selected.value = findTreeNode(newRoots, selectedId) ?? selected.value
   focusUnassigned.value = shouldFocusUnassigned
 }
 
@@ -673,10 +853,16 @@ const getSubjectName = (id?: string) => {
 }
 
 const toggleTaskDone = async (task: TreeNode) => {
-  task.done = !task.done
-  if (task.originalData) {
-    const newStatus = task.done ? 'completed' : 'pending'
-    await taskStore.updateTaskStatus(task.originalData.id, newStatus)
+  if (!task.originalData?.id || isScheduledCompletionLocked(task.originalData, taskStore.currentNow)) return
+  const previousDone = task.done
+  const nextDone = !previousDone
+  try {
+    await taskStore.updateTaskStatus(task.originalData.id, nextDone ? 'completed' : 'pending')
+    task.done = nextDone
+    task.originalData = { ...task.originalData, status: nextDone ? 'completed' : 'pending' }
+  } catch (err) {
+    task.done = previousDone
+    ElNotification({ title: '更新任务状态失败', message: err instanceof Error ? err.message : '请稍后重试', type: 'error' })
   }
 }
 
@@ -684,6 +870,7 @@ const saveTaskEdit = async (task: TreeNode) => {
   if (!task.originalData?.id) return
   try {
     await taskStore.updateTaskDetails(task.originalData.id, {
+      subjectId: task.groupId && task.groupId !== 'all' ? task.groupId : task.originalData.subjectId,
       title: task.name.trim() || '未命名任务',
       description: task.preview ?? '',
       dueAt: toDueAtValue(task.due),
@@ -728,6 +915,35 @@ const graphBlocks = computed(() => {
   if (selectedGroupForGraph.value.id === 'all') return blockStore.recentBlocks
   return blockStore.recentBlocks.filter(b => b.subjectId === selectedGroupForGraph.value!.id)
 })
+
+const graphSources = computed(() => {
+  if (!selectedGroupForGraph.value) return []
+  if (selectedGroupForGraph.value.id === 'all') return sourceStore.sources
+  return sourceStore.sources.filter(source => source.subjectId === selectedGroupForGraph.value!.id)
+})
+
+const graphSubjects = computed(() => {
+  if (!selectedGroupForGraph.value) return []
+  if (selectedGroupForGraph.value.id === 'all') return subjectStore.subjects
+  return subjectStore.subjects.filter(subject => subject.id === selectedGroupForGraph.value!.id)
+})
+
+const selectedGraphAsset = computed(() => {
+  if (selected.value?.type === 'file') {
+    return { type: 'file' as const, id: selected.value.sourceId || selected.value.id.replace(/^f-/, '') }
+  }
+  if (selected.value?.type === 'block') {
+    return { type: 'block' as const, id: selected.value.id.replace(/^b-/, '') }
+  }
+  return null
+})
+
+const selectGraphNode = (node: { type: 'file' | 'block'; id: string; subjectId: string }) => {
+  const group = rootNodes.value.find(root => root.id === selectedGroupForGraph.value?.id)
+  const item = findTreeNode(group ? [group] : rootNodes.value, `${node.type === 'file' ? 'f' : 'b'}-${node.id}`)
+  if (!item) return
+  selectItem(item)
+}
 
 
 const openUploadForGroup = (groupId: string) => {
@@ -804,16 +1020,16 @@ onUnmounted(() => undefined)
   height: 100%;
   width: 100%;
   overflow: hidden;
-  background: var(--color-zen-ivory); /* Zen Ivory base */
+  background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
   padding: 8px;
   gap: 8px;
 
   /* Zen Minimalist Theme override */
-  --color-primary-accent: #7D9372;
-  --color-primary-accent-hover: #6c8062;
-  --color-primary-light: rgba(163, 177, 155, 0.12);
-  --color-primary-glow: rgba(163, 177, 155, 0.25);
-  --accent-gradient: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  --color-primary-accent: #8B9A6E;
+  --color-primary-accent-hover: #76855B;
+  --color-primary-light: rgba(139, 154, 110, 0.16);
+  --color-primary-glow: rgba(139, 154, 110, 0.28);
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
 }
 
 html.dark .asset-studio {
@@ -834,13 +1050,17 @@ html.dark .asset-studio {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3);
 }
-.btn-primary:hover:not(:disabled) { box-shadow: var(--accent-glow); transform: scale(1.02); }
-.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary:hover:not(:disabled) {
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45);
+  transform: translateY(-1px);
+}
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; transform: none; }
 
 .btn-secondary {
-  background: var(--color-bg-tertiary);
-  color: var(--text-primary);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  color: var(--text-secondary);
   border: 1px solid var(--border-default);
   padding: 8px 16px;
   border-radius: var(--radius-md);
@@ -848,8 +1068,15 @@ html.dark .asset-studio {
   font-size: 13px;
   cursor: pointer;
   transition: all var(--transition-fast);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
 }
-.btn-secondary:hover { background: var(--border-subtle); }
+.btn-secondary:hover {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(139, 154, 110, 0.12);
+}
 
 .sm-btn { padding: 6px 12px; font-size: 12px; }
 
@@ -860,15 +1087,15 @@ html.dark .asset-studio {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .studio-left {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .panel-header {
@@ -877,6 +1104,7 @@ html.dark .studio-left {
   justify-content: space-between;
   padding: 16px 16px 12px;
   border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
 }
 
 .panel-title {
@@ -887,10 +1115,10 @@ html.dark .studio-left {
 }
 
 .drop-zone {
-  margin: 16px;
-  border: 2px dashed var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 24px 16px;
+  margin: 12px 14px;
+  border: 1.5px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 16px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -898,46 +1126,49 @@ html.dark .studio-left {
   gap: 8px;
   color: var(--text-secondary);
   transition: all var(--transition-fast);
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   cursor: pointer;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 .drop-zone:hover {
-  border-color: var(--color-primary-accent);
-  color: var(--color-primary-accent);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  color: var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.08);
 }
 .drop-zone.is-over {
-  border-color: var(--color-primary-accent);
-  background: var(--color-primary-light);
-  color: var(--color-primary-accent);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.14);
+  color: var(--color-primary-accent, #8B9A6E);
 }
-.drop-icon { opacity: 0.6; }
-.drop-text { font-size: 13px; font-weight: 500; text-align: center; }
+.drop-icon { opacity: 0.8; color: var(--color-primary-accent, #8B9A6E); }
+.drop-text { font-size: 12px; font-weight: 500; text-align: center; }
 
 .icon-btn {
   width: 26px; height: 26px;
   border-radius: var(--radius-md);
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   color: var(--text-secondary);
   font-size: 16px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   transition: all var(--transition-fast);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.icon-btn:hover { background: var(--accent-gradient); color: white; border-color: transparent; }
+.icon-btn:hover { background: var(--accent-gradient); color: white; border-color: transparent; box-shadow: 0 2px 6px rgba(139, 154, 110, 0.28); }
 
 .tree-search { padding: 10px 12px; position: relative; z-index: 10; background: transparent; }
 .search-input {
-  width: 100%; padding: 6px 10px;
-  background: var(--color-bg-tertiary);
+  width: 100%; padding: 7px 12px;
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   color: var(--text-primary); font-family: inherit; font-size: 12px; outline: none;
   transition: all var(--transition-fast);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
 }
 html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
-.search-input:focus { border-color: var(--border-accent); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); }
+.search-input:focus { border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18); }
 .search-input::placeholder { color: var(--text-muted); }
 
 /* Inline Upload Panel */
@@ -979,8 +1210,19 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 .mini-bar-bg { height: 3px; background: var(--border-default); border-radius: var(--radius-full); overflow: hidden; }
 .mini-bar-fill { height: 100%; background: var(--accent-gradient); transition: width 0.3s; }
 
-/* Tree */
-.tree-body { flex: 1; overflow-y: auto; margin-top: -46px; padding: 54px 0 8px 0; }
+.tree-body {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: -46px;
+  padding: 54px 0 8px 0;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.tree-body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
 .tree-empty {
   padding: 24px; text-align: center; color: var(--text-muted); font-size: 12px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -992,7 +1234,7 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
   padding: 6px 6px; margin: 1px 8px; border-radius: 10px; cursor: pointer;
   user-select: none; transition: background var(--transition-fast);
 }
-.tree-group-header:hover { background: rgba(255,255,255,0.03); }
+.tree-group-header:hover { background: rgba(139, 154, 110, 0.08); }
 .group-arrow { font-size: 10px; color: var(--text-primary); width: 10px; }
 .group-icon { font-size: 13px; color: var(--text-primary); }
 .group-name { font-size: 13px; font-weight: 700; color: var(--text-primary); flex: 1; }
@@ -1003,12 +1245,12 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
   padding: 6px 6px 6px 20px; margin: 1px 8px; border-radius: 10px; cursor: pointer;
   user-select: none; transition: background var(--transition-fast);
 }
-.tree-folder-header:hover { background: rgba(255,255,255,0.03); }
-.tree-folder-header.is-focus { background: rgba(125, 147, 114, 0.16); color: var(--color-primary-accent); box-shadow: inset 0 0 0 1px var(--color-primary-accent); }
+.tree-folder-header:hover { background: rgba(139, 154, 110, 0.08); }
+.tree-folder-header.is-focus { background: rgba(139, 154, 110, 0.14); color: var(--color-primary-accent, #8B9A6E); box-shadow: inset 0 0 0 1.5px var(--color-primary-accent, #8B9A6E); }
 .folder-arrow { font-size: 10px; color: var(--text-muted); width: 10px; }
 .folder-icon { font-size: 13px; color: var(--text-primary); }
 .folder-name { font-size: 12px; font-weight: 600; color: var(--text-primary); flex: 1; }
-.folder-count { font-size: 10px; background: var(--color-bg-tertiary); color: var(--text-muted); padding: 1px 5px; border-radius: var(--radius-full); }
+.folder-count { font-size: 10px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); color: var(--text-muted); padding: 1px 5px; border-radius: var(--radius-full); }
 
 .tree-empty-folder { padding: 4px 6px 4px 36px; font-size: 10px; color: var(--text-muted); }
 
@@ -1022,8 +1264,9 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
   padding: 8px 6px 8px 36px; margin: 1px 8px; cursor: pointer;
   transition: all var(--transition-fast); border-radius: 10px;
 }
-.tree-item:hover { background: rgba(255,255,255,0.03); }
-.tree-item.is-active { background: rgba(125, 147, 114, 0.16); box-shadow: inset 0 0 0 1px var(--color-primary-accent); }\n.tree-item.is-active .item-name, .tree-item.is-active .item-icon { color: var(--color-primary-accent); font-weight: 600; }
+.tree-item:hover { background: rgba(139, 154, 110, 0.08); }
+.tree-item.is-active { background: rgba(139, 154, 110, 0.14); box-shadow: inset 0 0 0 1.5px var(--color-primary-accent, #8B9A6E); }
+.tree-item.is-active .item-name, .tree-item.is-active .item-icon { color: var(--color-primary-accent, #8B9A6E); font-weight: 600; }
 .item-icon { font-size: 14px; flex-shrink: 0; color: var(--text-secondary); }
 .item-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .item-name { font-size: 11.5px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1035,41 +1278,35 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 .task-done-icon { color: #22c55e; flex-shrink: 0; margin-right: 6px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
-/* Drop Zone */
-.drop-zone {
-  margin: 8px 10px 10px;
-  border: 1.5px dashed var(--border-default);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  cursor: pointer; transition: all var(--transition-normal);
-}
-.drop-zone:hover, .drop-zone.is-over { border-color: var(--border-accent); background: var(--border-subtle); }
-.drop-icon { font-size: 16px; color: var(--text-accent); }
-.drop-text { font-size: 12px; color: var(--text-muted); }
-
 /* ===== MIDDLE PANEL ===== */
 .studio-middle {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
   overflow: hidden;
 }
 
 html.dark .studio-middle {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .middle-content-scroll {
   flex: 1;
   overflow-y: auto;
   position: relative;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-primary, #F7F2EB);
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.middle-content-scroll::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Empty */
@@ -1082,72 +1319,389 @@ html.dark .studio-middle {
 .empty-desc { font-size: 13px; color: var(--text-muted); max-width: 320px; line-height: 1.7; }
 
 /* Detail */
-.detail-header { padding: 16px 20px; border-bottom: 1px solid var(--border-subtle); background: var(--color-bg-primary); }
-.detail-title-row { display: flex; align-items: center; gap: 14px; }
-.detail-icon { font-size: 32px; flex-shrink: 0; }
-.detail-name { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 2px; }
-.detail-name.is-done { text-decoration: line-through; opacity: 0.6; }
-.detail-path { font-size: 11px; color: var(--text-muted); }
+.detail-header {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+}
+.detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+.detail-icon {
+  font-size: 26px;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+.detail-main-info {
+  flex: 1;
+  min-width: 0;
+}
+.detail-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-path {
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .status-badge {
-  margin-left: auto; font-size: 11px; font-weight: 600;
-  padding: 3px 10px; border-radius: var(--radius-full); flex-shrink: 0;
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 .status-badge.success { background: rgba(34,197,94,0.12); color: #22c55e; }
 .status-badge.processing { background: var(--border-subtle); color: var(--text-accent); }
 
+/* Editor Top Bar in Detail Header */
+.editor-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+}
+.editor-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.header-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(139, 154, 110, 0.12);
+  color: #8B9A6E;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.header-icon-badge.task-icon-badge {
+  background: rgba(139, 154, 110, 0.14);
+}
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.crumb-parent {
+  color: var(--text-muted);
+}
+.crumb-sep {
+  color: var(--border-default);
+  font-size: 10px;
+}
+.crumb-subject {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.crumb-type-pill {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
+  color: #8B9A6E;
+  margin-left: 2px;
+}
+.header-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--border-default);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+.header-status-pill:hover:not(:disabled) {
+  border-color: #8B9A6E;
+  color: #8B9A6E;
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.15);
+}
+.header-status-pill:disabled { cursor: not-allowed; opacity: 0.72; }
+.header-status-pill.is-done {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #16a34a;
+}
+.editor-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.editor-stats-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.header-meta-pill {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
+  padding: 3px 9px;
+  border-radius: 9999px;
+}
+.header-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3);
+}
+
 .full-height-viewer { height: 100%; display: flex; flex-direction: column; }
-.block-editor-view, .task-editor-view { padding: 40px 60px; max-width: 900px; margin: 0 auto; }
 
-/* Editor Header */
-.editor-header {
-  display: flex; justify-content: space-between; align-items: flex-end;
-  margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle);
+/* ===== Unified Paper Canvas View (Block & Task) ===== */
+.editor-canvas-view {
+  padding: 28px 36px 44px;
+  max-width: 860px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
-.editor-title-row { display: flex; align-items: center; gap: 16px; }
-.editor-icon-wrapper {
-  width: 48px; height: 48px; border-radius: 12px;
-  background: var(--color-primary-light);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--color-primary-accent);
+.editor-paper-card {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-radius: 20px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.04), 0 2px 8px -2px rgba(0, 0, 0, 0.02);
+  padding: 32px 38px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  transition: all var(--transition-fast);
 }
-.editor-icon { width: 24px; height: 24px; }
-.editor-meta { display: flex; flex-direction: column; gap: 4px; }
-.editor-type { font-size: 18px; font-weight: 700; color: var(--text-primary); }
-.editor-subject { font-size: 12px; font-weight: 600; color: var(--text-muted); background: var(--color-bg-tertiary); padding: 2px 8px; border-radius: 4px; display: inline-block; width: fit-content; }
-.editor-save-btn {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--color-primary-accent); color: #fff;
-  padding: 8px 16px; border-radius: var(--radius-full); font-size: 13px; font-weight: 600;
-  border: none; cursor: pointer; transition: all var(--transition-fast);
+html.dark .editor-paper-card {
+  background: #181D18;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
-.editor-save-btn:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 4px 12px var(--color-primary-glow); }
-.editor-save-btn .btn-icon { width: 14px; height: 14px; }
 
-/* Editor Body */
-.block-editor-container { display: flex; flex-direction: column; gap: 16px; }
-.editor-title-input {
-  font-size: 28px; font-weight: 800; color: var(--text-primary);
-  width: 100%; border: none; background: transparent; padding: 0; outline: none;
+/* Paper Meta Header */
+.paper-meta-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.paper-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.paper-subject-pill {
+  font-size: 12px;
+  font-weight: 600;
+  color: #8B9A6E;
+  background: rgba(139, 154, 110, 0.12);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  border: 1px solid rgba(139, 154, 110, 0.25);
+}
+.paper-tag-pill {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.03);
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+html.dark .paper-tag-pill {
+  background: rgba(255, 255, 255, 0.04);
+}
+.paper-hint-text {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.paper-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border: 1px solid var(--border-default);
+  background: var(--color-bg-primary, #F7F2EB);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.paper-status-pill:hover:not(:disabled) {
+  border-color: #8B9A6E;
+  color: #8B9A6E;
+}
+.paper-status-pill:disabled { cursor: not-allowed; opacity: 0.72; }
+.paper-status-pill.is-done {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #16a34a;
+}
+.paper-meta-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.scheduled-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #8B9A6E;
+  background: rgba(139, 154, 110, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.unscheduled-indicator {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Paper Title Input */
+.paper-title-row {
+  width: 100%;
+}
+.paper-title-input {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 4px 0 8px 0;
+  outline: none;
   font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: border-color var(--transition-fast);
+  line-height: 1.4;
+  letter-spacing: -0.3px;
 }
-.editor-title-input::placeholder { color: var(--text-muted); font-weight: 600; }
-
-.editor-content-wrapper {
-  background: var(--color-bg-primary); border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle); padding: 24px; min-height: 400px;
-  display: flex; flex-direction: column;
+.paper-title-input:focus {
+  border-bottom-color: rgba(139, 154, 110, 0.35);
+}
+.paper-title-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.55;
+  font-weight: 500;
+}
+.paper-title-input.is-done {
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
-/* Task Property Grid (Notion/Linear style) */
+/* Divider */
+.paper-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 2px 0 4px 0;
+}
+
+/* Markdown Editor Section */
+.paper-editor-section {
+  display: flex;
+  flex-direction: column;
+}
+.editor-micro-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+.micro-tip {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.micro-count {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.paper-textarea {
+  width: 100%;
+  min-height: 380px;
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-primary, #F7F2EB);
+  border-radius: 12px;
+  padding: 16px 18px;
+  outline: none;
+  resize: vertical;
+  font-size: 14px;
+  font-weight: 400;
+  font-family: inherit;
+  color: var(--text-primary);
+  line-height: 1.8;
+  box-sizing: border-box;
+  transition: all var(--transition-fast);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.paper-textarea::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+.paper-textarea:focus {
+  border-color: #8B9A6E;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15), inset 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.paper-textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+html.dark .paper-textarea {
+  background: #131713;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+/* Task Property Panel */
+.paper-property-panel {
+  background: var(--color-bg-primary, #F7F2EB);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  padding: 14px 18px;
+  margin: 2px 0;
+}
+html.dark .paper-property-panel {
+  background: #131713;
+  border-color: rgba(255, 255, 255, 0.08);
+}
 .property-grid {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin: 16px 0 32px 0;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--border-subtle);
+  gap: 12px;
 }
-.property-row {
+.property-item {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -1158,8 +1712,45 @@ html.dark .studio-middle {
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
-  width: 120px;
+  font-weight: 500;
+  width: 100px;
   flex-shrink: 0;
+}
+.property-control {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+.property-value-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Task Notes Section */
+.paper-notes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.section-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.task-notes-textarea {
+  min-height: 180px;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.task-notes-textarea::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Zen Date Picker overriding Element Plus */
@@ -1171,38 +1762,40 @@ html.dark .studio-middle {
   --el-input-focus-border-color: transparent;
 }
 :deep(.zen-date-picker .el-input__wrapper) {
-  background-color: transparent !important;
-  box-shadow: none !important;
-  border: 1px solid #7D9372 !important; /* Theme color stroke */
-  border-radius: 9999px !important; /* Fully rounded pill shape */
+  background-color: var(--color-bg-tertiary, #FAF7F2) !important;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: 9999px !important;
   transition: all var(--transition-fast) !important;
   padding-left: 12px;
 }
 :deep(.zen-date-picker:hover .el-input__wrapper),
 :deep(.zen-date-picker .el-input__wrapper:hover) {
-  background-color: var(--color-bg-secondary) !important;
-  border-color: #65775c !important;
+  background-color: var(--color-bg-tertiary, #FAF7F2) !important;
+  border-color: rgba(139, 154, 110, 0.4) !important;
 }
 :deep(.zen-date-picker.is-active .el-input__wrapper),
 :deep(.zen-date-picker.is-focus .el-input__wrapper),
 :deep(.zen-date-picker .el-input__wrapper.is-focus) {
-  background-color: var(--color-bg-primary) !important;
-  border-color: #A3B19B !important;
-  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.2) !important;
+  background-color: var(--color-bg-tertiary, #FAF7F2) !important;
+  border-color: #8B9A6E !important;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18) !important;
 }
 
 /* Zen Date Popper overriding Element Plus */
 :global(.zen-date-popper.el-popper) {
-  border: 1px solid #7D9372 !important; /* Theme color stroke */
-  border-radius: 12px !important; /* Rounded corners */
-  box-shadow: 0 4px 16px rgba(125, 147, 114, 0.15) !important;
+  border: 1px solid #8B9A6E !important;
+  border-radius: 12px !important;
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
+  box-shadow: 0 8px 24px rgba(139, 154, 110, 0.18) !important;
 }
 :global(.zen-date-popper .el-picker-panel) {
   border: none !important;
   border-radius: 12px !important;
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
 }
 :global(.zen-date-popper .el-popper__arrow::before) {
-  border-color: #7D9372 !important;
+  border-color: #8B9A6E !important;
 }
 
 .property-value {
@@ -1210,20 +1803,173 @@ html.dark .studio-middle {
   display: flex;
   align-items: center;
 }
-.duration-select {
+.duration-select,
+.subject-select {
   min-width: 150px;
   padding: 8px 32px 8px 12px;
-  border: 1px solid #7D9372;
+  border: 1px solid var(--border-default);
   border-radius: 9999px;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   color: var(--text-primary);
   font: inherit;
+  font-size: 13px;
   cursor: pointer;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  transition: all var(--transition-fast);
 }
-.duration-select:focus {
+.duration-select:hover,
+.subject-select:hover {
+  border-color: rgba(139, 154, 110, 0.4);
+}
+.duration-select:focus,
+.subject-select:focus {
   outline: none;
-  border-color: #65775c;
-  box-shadow: 0 0 0 2px rgba(125, 147, 114, 0.2);
+  border-color: #8B9A6E;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+}
+
+/* Zen Select overriding Element Plus */
+:deep(.zen-select) {
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 9999px !important;
+}
+:deep(.zen-select .el-select__wrapper) {
+  background-color: #FAF7F2 !important;
+  box-shadow: 0 0 0 1px var(--border-default, rgba(0, 0, 0, 0.10)) inset, 0 2px 6px -1px rgba(0, 0, 0, 0.04) !important;
+  border: none !important;
+  border-radius: 9999px !important;
+  padding: 3px 14px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  transition: all var(--transition-fast) !important;
+}
+:deep(.zen-select:hover .el-select__wrapper),
+:deep(.zen-select .el-select__wrapper:hover) {
+  background-color: #FAF7F2 !important;
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.45) inset, 0 3px 8px -1px rgba(139, 154, 110, 0.1) !important;
+}
+:deep(.zen-select.is-focused .el-select__wrapper),
+:deep(.zen-select .el-select__wrapper.is-focused) {
+  background-color: #FAF7F2 !important;
+  box-shadow: 0 0 0 1px #8B9A6E inset, 0 0 0 3px rgba(139, 154, 110, 0.18) !important;
+}
+:deep(.zen-select .el-select__placeholder),
+:deep(.zen-select .el-select__selected-item) {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: #1C1C1A !important;
+}
+:deep(.zen-select .el-select__caret) {
+  color: #7A7A75 !important;
+}
+
+/* Zen Select Popper (Dropdown Panel) - Fully Rounded Zen Design */
+:global(.zen-select-popper),
+:global(.zen-select-popper.el-popper) {
+  border: 1px solid rgba(139, 154, 110, 0.35) !important;
+  border-radius: 16px !important;
+  background-color: #FAF7F2 !important;
+  background: #FAF7F2 !important;
+  box-shadow: 0 12px 32px rgba(139, 154, 110, 0.15), 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+  padding: 6px !important;
+  overflow: hidden !important;
+}
+:global(.zen-select-popper .el-select-dropdown),
+:global(.zen-select-popper .el-scrollbar),
+:global(.zen-select-popper .el-select-dropdown__wrap) {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 14px !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+:global(.zen-select-popper .el-scrollbar__bar) {
+  display: none !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
+:global(.zen-select-popper .el-scrollbar__thumb) {
+  display: none !important;
+}
+:global(.zen-select-popper *::-webkit-scrollbar) {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+:global(.zen-select-popper .el-select-dropdown__list) {
+  padding: 2px !important;
+}
+:global(.zen-select-popper .el-select-dropdown__item) {
+  border-radius: 10px !important;
+  margin: 3px 0 !important;
+  font-size: 13px !important;
+  color: #1C1C1A !important;
+  transition: all var(--transition-fast) !important;
+  padding: 7px 12px !important;
+  line-height: 1.4 !important;
+  height: auto !important;
+}
+:global(.zen-select-popper .el-select-dropdown__item.is-hovering),
+:global(.zen-select-popper .el-select-dropdown__item:hover) {
+  background: rgba(139, 154, 110, 0.12) !important;
+  color: #8B9A6E !important;
+}
+:global(.zen-select-popper .el-select-dropdown__item.is-selected),
+:global(.zen-select-popper .el-select-dropdown__item.selected) {
+  background: rgba(139, 154, 110, 0.18) !important;
+  color: #8B9A6E !important;
+  font-weight: 700 !important;
+}
+:global(.zen-select-popper .el-popper__arrow::before) {
+  border-color: rgba(139, 154, 110, 0.35) !important;
+  background-color: #FAF7F2 !important;
+  background: #FAF7F2 !important;
+}
+
+/* Dark mode for zen-select (using :global to preserve html.dark ancestor selector) */
+:global(html.dark .zen-select .el-select__wrapper) {
+  background-color: #242622 !important;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12) inset !important;
+}
+:global(html.dark .zen-select:hover .el-select__wrapper),
+:global(html.dark .zen-select .el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px rgba(154, 176, 143, 0.4) inset !important;
+}
+:global(html.dark .zen-select.is-focused .el-select__wrapper),
+:global(html.dark .zen-select .el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px #9AB08F inset, 0 0 0 3px rgba(154, 176, 143, 0.2) !important;
+}
+:global(html.dark .zen-select .el-select__placeholder),
+:global(html.dark .zen-select .el-select__selected-item) {
+  color: #e6dfd8 !important;
+}
+:global(html.dark .zen-select-popper),
+:global(html.dark .zen-select-popper.el-popper) {
+  background-color: #242622 !important;
+  background: #242622 !important;
+  border-color: rgba(154, 176, 143, 0.3) !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
+}
+:global(html.dark .zen-select-popper .el-popper__arrow::before) {
+  background-color: #242622 !important;
+  background: #242622 !important;
+  border-color: rgba(154, 176, 143, 0.3) !important;
+}
+:global(html.dark .zen-select-popper .el-select-dropdown__item) {
+  color: #e6dfd8 !important;
+}
+:global(html.dark .zen-select-popper .el-select-dropdown__item.is-hovering),
+:global(html.dark .zen-select-popper .el-select-dropdown__item:hover) {
+  background: rgba(154, 176, 143, 0.16) !important;
+  color: #9AB08F !important;
+}
+:global(html.dark .zen-select-popper .el-select-dropdown__item.is-selected),
+:global(html.dark .zen-select-popper .el-select-dropdown__item.selected) {
+  background: rgba(154, 176, 143, 0.24) !important;
+  color: #9AB08F !important;
 }
 .prop-input {
   font-size: 13px;
@@ -1283,11 +2029,12 @@ html.dark .studio-middle {
 /* Custom View Toggle (Pill Segmented Control) */
 .view-toggle {
   display: flex;
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-subtle);
   border-radius: 9999px;
   padding: 4px;
   gap: 4px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 .toggle-btn {
   background: none;
@@ -1305,13 +2052,13 @@ html.dark .studio-middle {
 }
 .toggle-btn:hover {
   color: var(--text-primary);
-  background: var(--color-bg-secondary);
+  background: rgba(139, 154, 110, 0.12);
 }
 .toggle-btn.is-active {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  background: var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   color: white;
   font-weight: 600;
-  box-shadow: 0 2px 6px rgba(125, 147, 114, 0.28);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.28);
 }
 .editor-textarea {
   width: 100%; height: 100%; min-height: 350px;
@@ -1341,19 +2088,19 @@ html.dark .studio-middle {
 
 /* ===== RIGHT CONTEXT PANEL ===== */
 .studio-right-context {
-  width: 450px;
+  width: 620px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
   overflow: hidden;
 }
 html.dark .studio-right-context {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .graph-empty-state {
@@ -1366,7 +2113,7 @@ html.dark .studio-right-context {
 .context-tabs {
   display: flex;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-primary, #F7F2EB);
 }
 .ctx-tab {
   flex: 1;
@@ -1376,13 +2123,20 @@ html.dark .studio-right-context {
   cursor: pointer; transition: all var(--transition-fast);
 }
 .ctx-tab:hover { color: var(--text-primary); }
-.ctx-tab.active { color: var(--text-primary); border-bottom-color: var(--text-accent); }
+.ctx-tab.active { color: var(--text-primary); border-bottom-color: var(--color-primary-accent, #8B9A6E); }
 
 .context-body {
   flex: 1;
   overflow-y: auto;
   position: relative;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.context-body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* Blocks Tab */
@@ -1391,23 +2145,24 @@ html.dark .studio-right-context {
 .new-block-btn { width: 100%; }
 
 .inline-block-editor {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--border-accent);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 .inline-input {
   width: 100%; padding: 8px;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   color: var(--text-primary); font-size: 12px; font-family: inherit;
   resize: vertical;
 }
-.inline-input:focus { outline: none; border-color: var(--text-accent); }
+.inline-input:focus { outline: none; border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18); }
 .title-input { font-weight: 600; }
 .tag-input { font-size: 11px; }
 .inline-actions { display: flex; justify-content: flex-end; gap: 6px; }
@@ -1415,12 +2170,17 @@ html.dark .studio-right-context {
 .blocks-list { display: flex; flex-direction: column; gap: 10px; }
 .block-row {
   display: flex; gap: 10px; align-items: flex-start;
-  background: var(--color-bg-secondary); border: 1px solid var(--border-subtle);
+  background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md); padding: 12px;
   transition: all var(--transition-normal);
   position: relative;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
-.block-row:hover { border-color: var(--border-accent); }
+.block-row:hover {
+  border-color: var(--color-primary-accent, #8B9A6E);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(139, 154, 110, 0.12);
+}
 .block-num {
   width: 20px; height: 20px; background: var(--color-bg-tertiary);
   border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
@@ -1431,7 +2191,7 @@ html.dark .studio-right-context {
 .block-preview { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
 .block-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .block-tag {
-  font-size: 9px; color: var(--text-accent); background: var(--border-subtle);
+  font-size: 9px; color: var(--color-primary-accent, #8B9A6E); background: rgba(139, 154, 110, 0.12);
   padding: 2px 6px; border-radius: var(--radius-sm);
 }
 .block-actions {
@@ -1474,6 +2234,16 @@ html.dark .studio-right-context {
 .ctx-graph {
   height: 100%;
   width: 100%;
+  min-height: 480px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex: 1;
+}
+.ctx-graph :deep(.knowledge-graph-wrapper) {
+  border: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
 }
 
 .tree-loading {
@@ -1514,43 +2284,119 @@ html.dark .studio-right-context {
 .tree-group-header:hover .header-action-btn { opacity: 1; }
 .header-action-btn:hover { background: var(--accent-gradient); color: white; border-color: transparent; }
 /* Drag and Drop Zone (Copied from SubjectWorkspace) */
-.drag-drop-zone { border: 2px dashed rgba(0,0,0,0.1); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(255,255,255,0.4); margin-bottom: 8px; }
-.drag-drop-zone:hover { border-color: rgba(0,0,0,0.2); background: rgba(255,255,255,0.8); }
-.drag-drop-zone.is-active { border-color: #7D9372; background: rgba(125, 147, 114, 0.05); }
+.drag-drop-zone {
+  border: 2px dashed var(--border-default);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  margin-bottom: 8px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+}
+.drag-drop-zone:hover {
+  border-color: rgba(139, 154, 110, 0.4);
+  background: rgba(139, 154, 110, 0.04);
+}
+.drag-drop-zone.is-active {
+  border-color: #8B9A6E;
+  background: rgba(139, 154, 110, 0.08);
+}
 .drag-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
 html.dark .drag-drop-zone { border-color: rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
 html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); }
 html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }
 
 /* Home Modal Styles for Register Modal (Copied from SubjectWorkspace) */
-.modal-container { width: 90%; max-width: 520px; background: #FFFFFF; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-container {
+  width: 90%; max-width: 520px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-subtle);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
 @keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
 .modal-container .modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
 .close-btn { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all var(--transition-fast); }
-.close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
+.close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08); }
 html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
 .modal-container .modal-body { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; max-height: 70vh; overflow-y: auto; }
 .form-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
-.styled-input:focus, .styled-textarea:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
-html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
+.styled-input, .styled-textarea {
+  width: 100%; padding: 12px 14px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default);
+  border-radius: 12px; font-size: 13.5px; color: var(--text-primary);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+}
+.styled-input:focus, .styled-textarea:focus {
+  border-color: #8B9A6E;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+}
+html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.2); }
 .styled-textarea { resize: vertical; line-height: 1.6; min-height: 100px; }
 .modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--border-subtle); background: transparent; }
-.btn-secondary { background: transparent; border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-.btn-secondary:hover { background: var(--color-bg-secondary); color: var(--text-primary); }
-.btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #A3B19B 0%, #7D9372 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3); }
-.btn-primary:hover:not(:disabled) { background: #6E8364; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45); }
-.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+.btn-secondary {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+}
+.btn-secondary:hover {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: #8B9A6E;
+  color: var(--text-primary);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+}
+.btn-primary {
+  background: var(--btn-primary-bg, var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)));
+  border: none; color: #FFFFFF;
+  padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3);
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45);
+}
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; transform: none; }
 html.dark .btn-primary { background: #9AB08F; color: #1a1a1a; }
 html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(154, 176, 143, 0.2); }
 
 /* Subject Capsule Grid */
 .subject-capsule-grid { display: flex; flex-wrap: wrap; gap: 8px; }
-.subject-capsule-item { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-bg-secondary); border: 1.5px solid transparent; border-radius: 9999px; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-.subject-capsule-item:hover { transform: translateY(-1px); background: var(--color-bg-tertiary); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); border-color: rgba(125,147,114,0.3); color: #7D9372; }
-.subject-capsule-item.is-active { background: rgba(125, 147, 114, 0.1) !important; border-color: #7D9372 !important; color: #7D9372 !important; box-shadow: 0 2px 8px rgba(125, 147, 114, 0.15); }
+.subject-capsule-item {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1.5px solid var(--border-default);
+  border-radius: 9999px; font-size: 13px; font-weight: 600; color: var(--text-primary);
+  cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 5px -1px rgba(0, 0, 0, 0.03);
+}
+.subject-capsule-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(139, 154, 110, 0.35);
+  box-shadow: 0 3px 8px rgba(139, 154, 110, 0.12);
+}
+.subject-capsule-item.is-active {
+  background: rgba(139, 154, 110, 0.12) !important;
+  border-color: #8B9A6E !important;
+  color: #8B9A6E !important;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.22);
+}
 html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15) !important; border-color: #9AB08F !important; color: #9AB08F !important; }
 .subj-capsule-name { font-size: 13px; }
 </style>

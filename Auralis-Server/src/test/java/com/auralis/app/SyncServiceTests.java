@@ -14,6 +14,9 @@ import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
+import com.auralis.app.task.TaskCommand;
+import com.auralis.app.task.TaskService;
+import com.auralis.app.task.TaskStatus;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +52,9 @@ class SyncServiceTests {
 
     @Autowired
     private SubjectService subjectService;
+
+    @Autowired
+    private TaskService taskService;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -167,6 +173,31 @@ class SyncServiceTests {
     }
 
     @Test
+    void syncTaskCreateRejectsScheduleOverlapAndPersistsRejectedMutation() {
+        AuthResult auth = register("sync-task-overlap");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule", null, null, "001")).id();
+        java.time.Instant start = java.time.Instant.parse("2026-09-25T08:00:00Z");
+        taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "First", null, TaskStatus.TODO, start, null, null, "001"));
+        UUID conflictingTaskId = UUID.randomUUID();
+        var payload = objectMapper.createObjectNode()
+                .put("subjectId", subjectId.toString())
+                .put("title", "Overlap")
+                .put("status", "TODO")
+                .put("scheduledAt", "2026-09-25T08:15:00Z")
+                .put("durationMinutes", 30);
+        SyncMutation mutation = new SyncMutation("sync-task-overlap-create", SyncResourceType.TASK,
+                conflictingTaskId, SyncMutationType.CREATE, 0, payload);
+
+        var result = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+
+        assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
+        assertThat(result.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(taskService.list(auth.user().id())).hasSize(1);
+    }
+
+    @Test
     void concurrentReplayOfOneMutationAppliesTheDomainWriteOnce() throws Exception {
         AuthResult auth = register("sync-concurrent-push");
         UUID resourceId = UUID.randomUUID();
@@ -205,6 +236,66 @@ class SyncServiceTests {
                 SyncMutationType.CREATE, 0, null, new Payload("after"));
 
         assertThat(afterCleanup.cursor()).isEqualTo(2L);
+    }
+
+    @Test
+    void pullWithoutCursorDoesNotResetForEmptyOwnerOrCompleteOwnerHistory() {
+        UUID otherUserId = insertUser("sync-initial-cursor-other-" + UUID.randomUUID());
+        changeLogService.record(otherUserId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("other-owner-first"));
+        UUID userId = insertUser("sync-initial-cursor-owner-" + UUID.randomUUID());
+        changeLogService.record(userId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("owner-first"));
+
+        ChangeLogPage page = syncService.pull(userId, null, 10);
+        UUID emptyUserId = insertUser("sync-initial-cursor-empty-" + UUID.randomUUID());
+        ChangeLogPage emptyPage = syncService.pull(emptyUserId, null, 10);
+
+        assertThat(changeLogService.latestCursor(userId).value()).isEqualTo(1L);
+        assertThat(page.resetRequired()).isFalse();
+        assertThat(page.changes()).hasSize(1);
+        assertThat(page.changes().getFirst().cursor()).isEqualTo(1L);
+        assertThat(emptyPage.resetRequired()).isFalse();
+        assertThat(emptyPage.changes()).isEmpty();
+    }
+
+    @Test
+    void pullWithoutCursorRequiresSnapshotWhenRetentionRemovedPartOfOwnerHistory() {
+        AuthResult auth = register("sync-reset-initial-cursor");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Expired subject", null, null, "001")).id();
+        subjectService.delete(auth.user().id(), subjectId, 0);
+        jdbcTemplate.update("update change_log set created_at = ? where user_id = ? and cursor = 1",
+                java.time.Instant.parse("2020-01-01T00:00:00Z"), auth.user().id());
+        syncRetentionService.purgeExpired();
+
+        ChangeLogPage page = syncService.pull(auth.user().id(), null, 10);
+        var snapshot = syncService.snapshot(auth.user().id());
+
+        assertThat(page.resetRequired()).isTrue();
+        assertThat(page.changes()).isEmpty();
+        assertThat(snapshot.snapshotCursor()).isEqualTo(changeLogService.latestCursor(auth.user().id()).encode());
+        assertThat(snapshot.subjects()).anySatisfy(subject -> {
+            var view = (com.auralis.app.subject.SubjectView) subject;
+            assertThat(view.id()).isEqualTo(subjectId);
+            assertThat(view.deletedAt()).isNotNull();
+        });
+    }
+
+    @Test
+    void pullWithoutCursorRequiresSnapshotWhenAllOwnerHistoryWasPurged() {
+        UUID userId = insertUser("sync-purged-" + UUID.randomUUID());
+        changeLogService.record(userId, SyncResourceType.TASK, UUID.randomUUID(),
+                SyncMutationType.CREATE, 0, null, new Payload("expired"));
+        jdbcTemplate.update("update change_log set created_at = ? where user_id = ?",
+                java.time.Instant.parse("2020-01-01T00:00:00Z"), userId);
+        syncRetentionService.purgeExpired();
+
+        ChangeLogPage page = syncService.pull(userId, null, 10);
+
+        assertThat(changeLogService.latestCursor(userId).value()).isEqualTo(1L);
+        assertThat(page.resetRequired()).isTrue();
+        assertThat(page.changes()).isEmpty();
     }
 
     @Test

@@ -72,11 +72,22 @@ public class IngestionJobEntity {
 
     public IngestionJobEntity(
             UUID id, UUID userId, UUID sourceId, IngestionJobStatus status, UUID generation) {
+        this(id, userId, sourceId, status, generation, null);
+    }
+
+    public IngestionJobEntity(
+            UUID id,
+            UUID userId,
+            UUID sourceId,
+            IngestionJobStatus status,
+            UUID generation,
+            UUID ingestionRevision) {
         this.id = id;
         this.userId = userId;
         this.sourceId = sourceId;
         this.status = status;
         this.generation = generation;
+        this.ingestionRevision = ingestionRevision;
     }
 
     @PrePersist
@@ -113,6 +124,13 @@ public class IngestionJobEntity {
         return status == IngestionJobStatus.PENDING
                 || status == IngestionJobStatus.PARSING
                 || status == IngestionJobStatus.INDEXING;
+    }
+
+    public boolean ownsClaim(int claimedAttempt, Instant now) {
+        return (status == IngestionJobStatus.PARSING || status == IngestionJobStatus.INDEXING)
+                && attemptCount == claimedAttempt
+                && leaseUntil != null
+                && leaseUntil.isAfter(now);
     }
 
     public void attachParsedDocument(UUID parsedDocumentId, UUID ingestionRevision) {
@@ -152,15 +170,4 @@ public class IngestionJobEntity {
         updatedAt = now;
     }
 
-    public void requeueParsedDocument(UUID parsedDocumentId, UUID ingestionRevision, UUID generation) {
-        attachParsedDocument(parsedDocumentId, ingestionRevision);
-        this.generation = generation;
-        status = IngestionJobStatus.PENDING;
-        attemptCount = 0;
-        leaseUntil = null;
-        startedAt = null;
-        completedAt = null;
-        errorCode = null;
-        errorDetail = null;
-    }
 }

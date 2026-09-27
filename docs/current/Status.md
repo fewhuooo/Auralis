@@ -1,6 +1,204 @@
 # Auralis 当前状态
 
-2026-09-21 Server + PC 功能问题登记（附件 2–7）：新增 6 项待核实问题，其中 P1 为删除 Source 后 chunk 可能污染 RAG TopK、PC 同步/连接状态无法反映真实错误、Overview 手动重新生成静默 no-op；P2 为 FilePreview 重复加载、DocumentProcessingStore 暴露 Runner 直接入口、SourceService/Retrieval N+1 查询。当前仅登记用户报告与验收方向，尚未确认根因、修改代码或完成自动/真实 Server/PC/Tauri 验收；各项需分别实施和关闭。
+2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复（代码与门禁验证通过，GUI 待验收）：排查并彻底解决点击侧栏下周排期时当周任务被误关联至下周的根因：在 `useTaskStore.ts` 中增强 `dateForDay` 与 `rebuildSchedule` 支持 `YYYY-MM-DD` 格式的 `dateKey` 精确比对，打破原有仅依赖单周 `DayCode` ('Mon'~'Sun') 导致的跨周模糊匹配；更新 `setSelectedDay` 与 `insertTaskAtSlot` 支持 `dateKey` 级传递；并在 `Timeline/index.vue` 中由 `selectedTimelineDay.dateKey` 精确驱动中间“时间流细节”各槽位任务与当前点渲染，确保选中下周某一天时只精确呈现下周该天的实际排期任务。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
+
+2026-09-27 PC 任务编排中心侧栏下周排期概览实现（代码与门禁验证通过，GUI 待验收）：在任务编排中心（`Timeline/index.vue`）侧栏中，直接于“本周排期概览”下方新增“下周排期概览”区块，与本周排期呈现样式 100% 同款对齐（无需 Tab 切换，自适应铺满侧栏并支持纵向平滑滚动）。基于 `getTimelineDays` 与 `dateKey` 实现精确的下周 7 天时间轮播与下周各日任务排期筛选；点击下周任意一天，高亮自适应切至目标项，中间“时间流细节”标题与半小时槽位排期自动联动切换为选中日期。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
+
+2026-09-27 PC/Service 风险定向修复（代码及自动验证，真实运行待验收）：PC 暂不暴露 Suggestions 调用入口，服务端基线接口保留；Timeline 两项交换改为本地单事务批量写入，失败后保留 cursor/outbox 并拉取服务端结果恢复。Server Sync pull 对省略/零 cursor 检测日志清理缺口；Subject Overview 先建立全量 Source 别名；Source Overview 同实例按含标题的键合并进行中请求。TEXT/URL 解析输入改变轮换 ingestion revision，Source 与 job 同事务持久化且入队失败整体回滚；恢复处理中的 Source 时补建或复用 job；worker 以 revision、job/generation、attempt 和锁后有效 lease 栅栏化完成/失败，Source/chunks/job 成功在同一短事务提交。PC 全量 433/433、type-check，Server clean 聚焦 114/114、PostgreSQL pgvector 2/2 通过；`check:r4-pc` 仍受既有 Rust 测试 loopback 地址扫描误报阻断。跨 Server 实例 Overview 去重、真实 Provider/双设备/Tauri GUI 尚未验收。
+
+2026-09-26 PC 同步、AI 参考范围与连接/预览问题定向修复（代码与自动验证，GUI/真实服务待验收）：新设备本地 `cursor=null` 时先取完整 Sync snapshot，沿用保留未解决本地 mutation 的替换路径，并通知五类资源投影刷新；Tauri 原生替换现同时保护 `inflight` 写入，已有 cursor 仍增量拉取。学科工作区的显式多文件选择现随聊天请求传入，Server 限定到同一活动学科内、当前用户拥有且 READY 的 Source；显式集合最多 100 份（含当前文件），全学科检索仅在用户显式选择时启用，原 `AUTO` 保持兼容。PC Overview 单次 HTTP 超时设为 300 秒；文件仅改显示名不再重载预览；通用请求的服务错误与网络错误进入侧栏连接状态，并按请求先后防止旧响应覆盖新状态；个人空间准确描述 JSON 导出范围、密码单向哈希和 AI 经服务端转发。PC 全量回归 430/430、type-check、build 通过；Tauri snapshot 定向 1/1、`cargo fmt --check` 通过；Server clean `AiRetrievalTests` 12/12、`ArchitectureTests` 1/1；OpenAPI runtime artifact 8/8、双端 SDK 生成和 `check-openapi.ps1` 通过。`check:r4-pc` 仍因未修改的 `local_asset_store.rs` 测试固定地址规则退出 1。真实 PostgreSQL/Provider、双设备、Tauri/GUI 行为仍待验收。
+
+2026-09-26 PC 排期未完成划掉样式修复（代码与门禁验证通过，GUI 待验收）：彻底修复时间轴（Timeline）视图中过去时间的未完成排期任务被误加上划线（`text-decoration: line-through`）的问题。移除了 `Timeline/index.vue` 中对 `.is-past` 的 `line-through` 强制规则，确保仅真正勾选完成的已完成任务（`is-completed`）才具有划线删除样式与置灰半透明效果；勾选框与完成状态保持由 `isCompletedTask` / `isCompletedScheduledTask` 统一掌控。PC 全量回归测试 `npm.cmd run test:r4-pc`（423/423 全量通过）、`npm.cmd run type-check` 退出 0。
+
+2026-09-26 Source/RAG 与文档处理入口优化（Issue 2/6/7，代码及定向验证）：PostgreSQL 检索原已在 TopK 前排除软删除 Source；H2/fallback 路径已改为先按用户批量解析活动 Source 再排序取 TopK，避免已删除 Source 的旧 chunk 占名额。Source 列表/分页/含删除项列表与 Retrieval citation 使用 owner-scoped Source/Asset 批量读取，保留排序、大小与引用语义；两条 FILE Source 列表验证为 1 次 Source 查询加 1 次 Asset 批量查询。PC `DocumentProcessingStore.start/resumePending` 现经 `SourceJobScheduler`，重启/重试与现有 UI 入口继续由 Scheduler 处理。Server focused clean 8/8、PostgreSQL 17/pgvector 2/2；PC focused 66/66、type-check 与 build 通过。`check:r4-pc` 仍因未修改的 `src-tauri/src/local_asset_store.rs: fixed local address` 失败；真实 Tauri/Server/RAG 业务链路及性能负载未验收，运行服务未部署本轮变更。
+
+2026-09-26 注销账户运行验收：用户自行重建前后端并提交一次注销后，按该账号已关联的精确作业只读查询，`requested_at=06:43:18.077669 UTC`、`not_before=06:49:18.077669 UTC`、`completed_at=06:50:10.172777 UTC`，作业为 `COMPLETED`、`last_error=NULL`、用户行已删除。该用户归属的 21 张清理表及本作业对象键记录均为 0 行；运行中前后端容器镜像分别匹配当前本地 tag，backend healthy。数据库证据确认这次注销受理并完成物理清理；未单独检查 MinIO 对象，也没有从缺少请求日志的服务中恢复当时 HTTP 状态或 GUI 提示原文。
+
+2026-09-26 账户注销链路复核与 PC 401 修复：只读数据库按登录使用的规范化用户名检查指定测试账号，当前为 `ACTIVE`、关联注销作业 0；因此此前无法登录不等于注销受理成功。运行中 backend JAR 的 `requestAccountDeletion()` 字节码已核实两个 `timestamptz` INSERT 参数均调用 UTC `OffsetDateTime.ofInstant`，V25 已安装。PC 在确认密码错误返回 `401 UNAUTHENTICATED / Invalid credentials` 时，现仅显示原有错误通知，不触发全局 access token 刷新、DELETE 重放或登录跳转；真正的 Bearer 失效仍按 `Authentication is required` 走原刷新流程。PC 定向回归 6/6、type-check 与生产构建通过；独立 PostgreSQL 17/pgvector 的注销受理→到期清理、错误密码回滚等定向回归 4/4 通过。`check:r4-pc` 因本次未修改的 `src-tauri/src/local_asset_store.rs: fixed local address` 报 1 项失败。`docker compose build frontend` 成功，新镜像 `428f946d`，现运行 frontend 容器仍为 `f937324a`；未对真实账号执行 DELETE 或完成 GUI 验收，且缺少现场 HTTP 响应，仍不能确定先前请求实际返回的是 401 还是其他错误。
+
+2026-09-26 注销账户受理入口 PostgreSQL 时间参数：现场 `DELETE /api/auth/me` 日志在 `IdentityService.requestAccountDeletion()` 的作业 INSERT 报 pgJDBC 无法推断 `Instant` 类型。已把 `requested_at`、`not_before` 两个 JDBC 参数转为 UTC `OffsetDateTime`，业务时刻和响应保持 `Instant`。285 个主源码 clean compile 通过；独立 Testcontainers PostgreSQL 17/pgvector + Flyway V1–V25 异时区定向回归 2/2，覆盖入口作业写入与清理任务；`docker compose build backend` 成功。Maven 全量测试编译仍受其他工作树测试源码不匹配阻断；现运行容器镜像 ID `00c3eaa2` 与新构建镜像 ID `a30cdbe6` 不同，本次入口修复尚未部署，未对真实账户执行 DELETE。
+
+2026-09-25 注销账户清理任务 PostgreSQL 参数修复（代码与隔离数据库回归通过，运行中服务待更新）：现场日志表明 `AccountDeletionCleanupService.claimNext` 将 `Instant` 直接交给 pgJDBC，驱动无法推断 SQL 参数类型。清理服务内同类 JDBC 时间参数已统一改为 UTC `OffsetDateTime`，匹配 V25 的带时区列；原有状态机、数据删除顺序及公开 API 不变。独立 Testcontainers PostgreSQL 17/pgvector 完成 Flyway V1–V25 并运行合成作业回归 1/1，覆盖领取、租约、对象标记、完成及复扫，JVM 与 PostgreSQL 会话使用不同时区验证绝对时刻。仓库当前全量 `testCompile` 被其他未提交测试与生产接口不匹配阻断，未据此声称全量测试通过；`docker compose build backend` 已成功构建新镜像，但当前 Compose 容器仍运行旧镜像，未对真实账户执行清理。
+
+2026-09-25 AI 通用聊天 Provider（代码与自动验证完成，真实 Provider/GUI 待验收）：用户设置只提交聊天 Provider、Base URL、聊天模型及可选 API Key，设置响应不再提供 Embedding 模型；索引及 RAG Embedding 固定读取服务端 SiliconFlow 配置。`OPENAI_COMPATIBLE` 支持经公网地址校验的 HTTPS host，命名 Provider 保持 allowlist；本地/内网和 NAT64、6to4、Teredo 转换前缀被拒绝。连接测试用已保存模型发起最小聊天请求，不再依赖 `/models`。Server clean 定向 45/45、安全专项 clean 18/18、OpenAPI artifact 8/8、双端 SDK 一致性检查、PC 定向 5/5 与 PC type-check 均通过。真实服务商协议差异、网络与 GUI 尚未验收；Mobile type-check 因既有 `assetUpload.ts` 未传 `clientImportId` 失败，此字段在本次修改前的 HEAD schema 已为必填，与本轮 AI 改动无关。
+
+2026-09-25 PC 顶栏头像真实映射与状态指示点移除（代码与回归测试通过，GUI 已验证）：
+1. 真实头像映射与响应式全站同步：在 `useAuthStore.ts` 中引入全局 `avatarUrl` 状态与 `loadAvatar()` / `setAvatarUrl()`，在登录（`setSession`）与顶栏组件挂载（`onMounted`）时通过 `useAuthApi.getAvatarBlob()` 拉取头像 Blob 并构建安全 ObjectURL，无头像或 404 时静默降级展示首字母；在退出登录（`clearSession`）时妥善释放（`URL.revokeObjectURL`）；
+2. 个人中心实时联动闭环：`Profile/index.vue` 在头像上传（`uploadAvatar`）、重新拉取（`loadAvatar`）及重置头像（`resetAvatar`）时，同步更新 `authStore.setAvatarUrl`，页面内修改头像即时反映至全局顶栏，且避免组件卸载时误注销跨页面共享的 ObjectURL；
+3. 彻底移除右上角状态圆点：在 `AppHeader.vue` 模板与样式中彻底移除 `.avatar-status` 绿色状态圆点元素与样式，保持纯净禅意头像视觉；
+4. 门禁验证与浏览器检查：`npm.cmd run test:r4-pc`（420/420 pass）、`npm.cmd run type-check`（0 error）与 `git diff --check` 全部通过；浏览器端界面检查确认右上角状态圆点已移除且首字母/头像渲染正常。
+
+2026-09-25 PC 首页已完成勾选状态全链路修复（代码与全量回归通过，GUI 待验收）：排查并彻底解决首页已结束排期任务无法打勾和待办任务规范状态穿透的问题：
+1. 离线写屏障豁免已完成任务历史排期校验：在 `useTaskStore.ts` 的 `persistOffline` 中豁免已完成任务（`model.status !== 'DONE'`）执行过去的排期拦截（`assertScheduledAtIsNotPast`），消除由于时间细微精度差异或历史时间导致自动完成（`recoverOverdueTasks`）静默崩溃及手动勾选报错“不能排期到过去的时间”的问题；引入 `isSameScheduleTime` 时间戳规整比对；
+2. 规范状态全域收敛：在 `taskViewRules.ts` 中修正 `isActionableTask` 与 `isSchedulableTask`，统一使用 `!isCompletedTask(task)`，杜绝服务端与本地规范状态 `'DONE'` 的已完成任务被误当作活动待办或可调度项；
+3. 首页指标统计与待办清单纯粹化：`useTaskStore.ts` 的 `completedCount` 与 `totalFocusHours` 统一采用 `isCompletedTask(task)`，首页顶部“已完成 X 项”统计准确恢复；待办清单 `.todo-item` 移除复选框与点击完成，聚焦纯净待排期信息展示；
+4. 全量自动化门禁：更新 `scripts/r4-dashboard-timeline.test.mjs`，PC 全量回归测试 `npm.cmd run test:r4-pc`（420/420 全量通过），`npm.cmd run type-check` 与 `git diff --check` 全部通过。真实 GUI 行为待验收。
+
+
+2026-09-25 PC 头像读取 406 修复（实现与定向验证完成，真实 HTTP/GUI 待验收）：个人空间头像 GET 请求显式接受 `image/png` 和 `application/problem+json`，覆盖 PC 通用请求客户端的 `Accept: application/json` 默认值；继续使用 Blob 响应。服务端头像读取与 OpenAPI 原本均声明 `image/png`，本次不改接口或 multipart 上传限制。Profile 定向测试 5/5、PC type-check 与相关 diff-check 通过；Axios mock adapter 验证最终请求头覆盖默认值。
+
+2026-09-25 PC 完成任务分组与首页日程自动勾选补充修复（定向测试通过，GUI 待验收）：资产库任务分组先识别完成状态，再判断有无排期，已完成且未设置截止/排期的任务进入“已完成”；任务树节点的勾选标记复用同一完成状态规则。Task Store 在 TASK 投影刷新后立即重新检查已结束的排期任务，补上同步或本地写入期间跳过检查后的重试时机。已结束且已完成的排期任务禁止取消完成，避免首页与资产库按钮的手动操作被下一轮自动恢复立即覆盖；资产库树刷新同步更新选中任务状态。仓储写入与同步拉取后规范状态 `DONE` 映射至展示状态 `completed`，首页日程勾选谓词的动态测试均通过；原始首页 DOM 故障尚未在 GUI 中复现。任务规则 14/14、资产库 2/2、首页/时间轴 15/15、Store 排期 25/25、PC type-check 和相关 diff-check 均通过。
+
+2026-09-25 PC 时间轴排期任务自动完成修复（代码与定向测试完成，GUI/跨设备待验收）：自动完成以 `scheduledAt + durationMinutes` 的任务结束时刻为准；任务本地加载后立即检查，并在应用打开期间每分钟检查。单项保存失败记录错误且不阻断其他任务；自动写入与手动改期/编辑共用任务变更队列，在写入前重读当前本地 TASK 行，并以可选的仓储版本及 outbox 状态条件原子提交；增量 pull 对同资源未解决本地写入也进行原子跳过。任务规则与 Store 定向 35/35、本地仓储 18/18、同步 12/12、PC type-check 通过。未更改 Task API、数据库字段或同步协议。
+
+2026-09-25 PC 个人空间清除离线数据底层持久化与 AI 脏配置自动持久化测试（已修复）：
+1. 离线数据重置底层贯通：在 `localRepository.ts` 实现 `resetOfflineStorage()`，清空 `local_mutations` 与 `local_resource_records`，原子写入 `cursor = NULL, reset_required = 1`；在 `useSyncStore.ts` 暴露 `resetOfflineData()` 统一调度，触发全量快照拉取；`Profile/index.vue` 的“清除本地离线数据”操作真实清空本地仓储并重启同步；
+2. AI 脏配置自动保存后再测试：在 `Profile/index.vue` 引入 `ensureAiSettingsSavedForTest()`，在用户点击“自动检测”或“测试连接”前自动比对未保存的新 Base URL、模型或 API Key，先静默持久化至服务端托管库，避免后端用已有旧凭证测试导致误报成功；补齐了 `handleTestConnection` 与 `testingConnection` 连通性测试加载态与反馈；
+3. 全量自动化验证：`scripts/r4-profile-live-links.test.mjs`，`npm.cmd run test:r4-pc`（408/408 全量通过），`npm.cmd run type-check` 与 `git diff --check` 全部退出 0。真实外部服务连通性与 GUI 待验收。
+
+2026-09-25 PC 首页已完成任务勾选状态与完成切换修复（已修复）：
+1. 勾选状态识别增强：在 `taskViewRules.ts` 中增强 `isCompletedTask` 与 `isCompletedScheduledTask`，同时支持展示层 `'completed'` 与规范数据枚举 `'DONE'`，解决后端同步或原始状态下已完成任务渲染为空心复选框的问题；
+2. 首页状态流转与交互完善：`Dashboard/index.vue` 的 `toggleTaskCompletion` 升级为智能识别，排期任务解勾选后返回 `'scheduled'`，无排期任务返回 `'pending'`，未完成任务推进至 `'completed'`；增加了 `try...catch` 异常提示；为任务卡片内容区增加点击勾选与手势指针，为待办清单 `.todo-item` 补充复选框控件，支持直接在首页勾选完成待办；
+3. 全量自动化门禁：更新 `scripts/r4-dashboard-timeline.test.mjs`，`npm.cmd run test:r4-pc`（407/407 全量通过），`npm.cmd run type-check` 与 `git diff --check` 全部退出 0。真实 GUI 行为待验收。
+
+2026-09-25 头像上传 multipart 接收上限：Spring 单文件上限设为 5 MiB，整个请求上限设为 6 MiB，避免框架默认 1 MiB 先于头像业务校验拒绝上传。配置位于共享服务端 profile，适用于 local/test/prod。`mvnw.cmd -B -ntp clean -Dtest=ConfigurationTests test` 退出 0，3/3 通过；测试确认配置绑定，实际 Servlet 容器 HTTP 上传尚未验证。
+
+2026-09-25 PC 个人空间与设置页 10 类前端缺口真实链路打通（实现与测试完成，GUI 验收待办）：
+PC 设置页面（`Profile/index.vue`）已全面打通真实服务端与数据链路，消除所有 mock 与伪逻辑：
+1. 账户资料（3 类）：昵称接入 `PUT /api/auth/me`（带版本防并发覆写）；头像通过 `GET /api/auth/me/avatar` 获取真实私有 Blob 并通过 `POST /api/auth/me/avatar`（≤5MB PNG/JPEG 校验）与 `DELETE` 实现云端流转，彻底移除 localStorage 缓存；修改密码升级至 12~200 位校验并接入 `PUT /api/auth/password`；
+2. AI 设置（3 类）：Provider 引入 `normalizeProvider`，将自由输入与非标准服务商映射为 `OPENAI_COMPATIBLE`；模型自动检测接入真实 `GET /api/ai/settings/{provider}/models` 探测候选模型；连接测试接入真实 `POST /api/ai/settings/{provider}/test-connection` 反馈聊天模型的可达状态；
+3. 数据与状态（4 类）：数据导出打包完整知识库块与任务排期；两级清理分层解耦为视图缓存清理与高危离线重置（触发全量拉取）；注销账户接入 `DELETE /api/auth/me` 处理 202 Accepted 异步受理并清空会话；同步状态动态响应 `syncStore` 的 `isSyncing`、`lastSyncError` 与 `resetRequired` 状态。
+全量自动化验证：新增定向门禁 `scripts/r4-profile-live-links.test.mjs`，PC 全量回归 `npm.cmd run test:r4-pc`（406/406 全量通过），`npm.cmd run type-check` 与 `git diff --check` 全部退出 0。真实外部模型与人工 GUI 体验待验收。
+
+2026-09-24 PC 个人中心与系统设置（Profile / Settings）左栏精简与账号卡片高级重构收口：
+根据可用性与视觉呼吸感要求，对左侧概览与账户卡片实施进一步打磨：
+1. 移除每周专注时长柱状图：从核心学习指标卡片（`.study-stats-card`）中彻底移除原本拥挤的 7 日迷你柱状走势图，使核心指标卡片回归纯粹的 4 宫格数据微胶囊，大幅释放纵向空间并提升呼吸感；
+2. 彻底重构账号与安全凭证卡片（`.account-card`）：
+   - 消除昵称重复：移除底部卡片内与顶部用户资料卡重复的昵称修改行；
+   - 引入精致单元格体系（`.account-cell`）：账号绑定、登录密码、当前授权设备均采用独立的温润燕麦米白（`#F7F2EB`）圆角单元格，配有细致字距与状态徽标（`已认证`、`当前授权`）；
+   - 顶部状态徽标：集成柔和绿点呼吸状态（`安全运行中`）；
+   - 底部双操作按钮重绘（`.account-card-actions`）：`切换账号`（次级优雅按钮）与 `退出登录`（低饱和温润柔红边框告警按钮，严格保留 `@click="handleLogout"` 交互契约）；
+3. 全量自动化门禁：`npm.cmd run test:r4-pc`（403/403 pass）、`npm.cmd run type-check`（0 error）、`git diff --check` 全部通过。
+
+2026-09-24 PC 任务编排中心（Timeline）配色三层级对齐、待安排栏加宽与全卡片按钮立体微阴影收口（主内容 #F7F2EB、卡片模块 #FAF7F2、页面背景 #EEEEEE、任务栏 400px、全卡片按钮底影）：
+依据极简禅意三层级配色系统规范与空间可用性，全面对齐 PC 任务编排中心（`Timeline/index.vue`）的层级对比关系、交互色彩、列宽布局与立体阴影：
+1. 页面大背景（#EEEEEE，rgb(238, 238, 238)）：外层页面容器 `.timeline-page` 采用清爽冷灰底板 `var(--color-bg-secondary, #EEEEEE)`；
+2. 主内容大容器（#F7F2EB，rgb(247, 242, 235)）：顶栏卡片 `.timeline-header-card`、日视图时间轴列 `.timeline-column`、待安排任务列 `.tasks-column`、周视图概览列 `.weekly-overview-column`、各星期列 `.weekly-column`、周视图底部坞 `.weekly-bottom-dock` 与看板列 `.kanban-column` 全部统一为沉稳温润的浅燕麦米白底板 `var(--color-bg-primary, #F7F2EB)`，并配置沉降分层阴影；
+3. 待安排任务栏（`.tasks-column`）加宽扩展：`.timeline-body` 网格列由原本的 `280px 1fr 340px` 调整为 `280px 1fr 400px`，右侧待安排任务块宽度增加 60px，彻底解除长任务名称、学科标签、知识关联胶囊与截止日期提醒徽标在待安排卡片内的排版拥挤感；
+4. 全卡片与模块底部立体阴影：时间轴任务卡片 `.slot-task`、待安排卡片 `.pending-card`、周视图任务卡片 `.weekly-task-card`、周概览行 `.weekly-overview-row`、周底坞胶囊 `.pending-pill`、看板卡片 `.kanban-task-card`、学科胶囊 `.subject-capsule-item`、统计胶囊 `.stat-pill` 及知识块关联徽标 `.kb-relation-badge` 统一配置分层立体微阴影（基础态 `box-shadow: 0 2~4px ...`，悬浮态 `transform: translateY(-1~2px)` 并扩散至 `0 6~8px ...`），实现如宣纸般在底板上自然立体浮起；
+5. 全操作按钮底部立体阴影：主按钮 `.btn-primary`、次级按钮 `.btn-secondary`、视图切换栏 `.view-toggle` 与激活切换胶囊 `.toggle-btn`、日期按钮 `.day-btn`、智能顺延按钮 `.btn-auto-delay`、弹窗确定/取消按钮 `.task-btn-submit`/`.task-btn-cancel`、时长交互条 `.duration-long-bar-btn`、关闭与删除按钮 `.modal-close`/`.task-delete-btn` 底层全量补齐微阴影与高亮悬浮投影，彻底消除死白无边界扁平感。
+全量自动化验证：`npm.cmd run test:r4-pc`（401/401 全量通过）、`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 全部退出 0。
+
+2026-09-24 PC 个人中心（Profile）左栏布局调优、头像更换、多模型自动检测与账号操作精简：
+全面落实个人中心（Profile）左右分区结构与 AI BYOK 自由配置：
+1. 左右功能边界清晰化：左侧明确为个人账户与学习概览（用户资料卡、核心学习指标、TOP 5 学科知识块统计、文件解析进度中心、账号与安全凭证管理卡片）；右侧明确为应用偏好设置（外观与显示、提醒与自动化、同步与数据、AI 模型与服务、数据与安全、登录设备会话）；
+2. 账号与头像操作重构：顶部用户资料卡支持点击头像直接上传更换；下侧账号与安全凭证卡片聚合排列「用户头像、用户昵称、登录密码」三个可交互修改项于上部，随后呈现「登录账号、当前设备」两项只读认证信息，结构层次清晰；精简去除了与「退出登录」功能重复的「切换账号」多余操作，操作更纯粹清爽；
+3. 设置项精简降噪：按要求移除不必要的「AI 学科归类」与「每周学习报告」开关配置，避免多余概念干扰；
+4. 数据与隐私设置项归类：将具备主动交互按钮的「数据备份导出」与「清理本地缓存」聚合排列在数据与隐私区块前列，其后承接开关项与加密说明，操作体验更为聚焦；
+5. 学科分布真实统计：仅统计真实知识块数（Block Count），降序排列并严格仅展示 TOP 5 学科，胶囊徽标对齐 `{{ sub.count }} 块` 格式；
+6. AI 配置自由输入与多候选模型自动检测：完全去除原嵌入模型输入，开放服务商（Provider）、对话模型（Chat Model）、Base URL、API Key 供用户自由文本输入；对话模型集成「自动检测」按钮与多模型候选托盘（`detected-models-tray`），检测成功后渲染多个模型选择标签（Model Chips），支持一键点击填入或手动自定义输入；
+7. 全量自动化门禁：`npm.cmd run test:r4-pc`（403/403 pass）、`npm.cmd run type-check`（0 error）、`git diff --check` 全部通过。
+
+2026-09-24 PC 学科中心与总览视图配色三层级修正（主内容 #F7F2EB、卡片模块 #FAF7F2、页面背景 #EEEEEE）：
+依据禅意温润米白视觉系统规范，彻底修复学科中心（`SubjectHall`）与学科工作区（`SubjectWorkspace`）的层级对比关系：
+1. 页面大背景（#EEEEEE，rgb(238, 238, 238)）：外层容器 `.hall-container` 与 `.workspace-container` 维持冷灰底板；
+2. 主内容大容器（#F7F2EB，rgb(247, 242, 235)）：纠正此前 `SubjectHall/index.vue` 中 `.hall-content` 误设为 `#FAF7F2` 的问题，恢复为 `var(--color-bg-primary, #F7F2EB)`；同时同步纠正 `OverviewSummaryView.vue` 根容器与头部背景以及 `FilePreview.vue` 在 bare 模式下的 body 背景为 `#F7F2EB`；
+3. 卡片模块（#FAF7F2，rgb(250, 247, 242)）：学科卡片 `.subject-card`、新建卡片 `.add-card`、搜索框 `.search-input`、操作按钮、知识块卡片 `.block-card`、总结卡片 `article`、阅读器纸张底板 `.file-preview-renderer-shell` 统一呈现暖米白宣纸质感，在 `#F7F2EB` 主内容底板上轻柔浮起，恢复清晰舒适的界面视觉纵深。
+全量自动化验证：`npm.cmd run test:r4-pc`（401/401 全量通过）、`npm.cmd run type-check`、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 全绿无报错。
+
+1. Asset 关系星图以真实 Subject、Source、KnowledgeBlock 投影建图。Source 连接所属 Subject；KnowledgeBlock 在 `sourceFileId` 指向同学科现存 Source 时连接该 Source，否则连接所属 Subject，不补造关系。
+2. 力导向布局使用对称节点互斥、按关系类型设目标长度的弹簧吸引、弱重力回中与速度阻尼。初始坐标由稳定 ID 决定；同范围刷新保留现存节点坐标与镜头，切换 Subject/全局范围重置并适配。初始模拟最多运行 180 帧，并在收敛时提前停止。
+3. 鼠标、触控和触控笔通过 Pointer Events 拖动所有节点；空白区域拖动平移。达到拖动阈值时暂停初始布局 RAF，正在拖动的节点锁定在指针坐标，实时力帧推动关联邻居并重画连线；拖动响应每段最多 36 帧并在收敛时提前停止，释放后最多 30 帧低强度松弛，让节点轻微调整。用户摆放在同范围更新中保留，切换范围后重新布局。点击 Source/KnowledgeBlock 仍选择资产树对应项并在中栏打开 `FilePreview` 或知识块编辑器；Home 继续触发 `open-block-detail`。
+验证：力计算、拖动邻居响应与释放松弛专项 6/6，`npm.cmd run test:r4-pc` 403/403、`npm.cmd run type-check`、`npm.cmd run build`、根目录 `git diff --check` 均退出 0。生产构建仍有既有模块外置、dynamic import、插件耗时与大 chunk 警告。浏览器/Tauri GUI 的实际拖动手感、鼠标离开画布后的捕获及触控设备行为仍待人工验收。
+
+2026-09-24 PC 学科中心小卡片/模块/宣纸底全层级统一与文件总览选中态顶栏高亮去除收口：
+全面响应学科中心视觉细化要求，对齐温润米白宣纸底板色（`#FAF7F2`，对应 CSS 令牌 `var(--color-bg-tertiary, #FAF7F2)` / `var(--bg-card)`）：
+1. 模块底板与纸张渲染底统一：`SubjectWorkspace` 抽屉卡片、状态栏、主工作区、右侧面板与所有文件阅读器容器（`.pdf-workspace`、`.blocks-workspace`、`.onboarding-workspace`、`FilePreview`、`FileViewerRenderer` 内部纸张底板）全部统一为 `#FAF7F2`；
+2. 输入框、状态胶囊与学科 AI 控件统一：弹窗与抽屉内输入框（常态与 focus）、下拉选择、学科状态胶囊、未就绪发送圆钮、AI 清空按钮、报错重试按钮、划词工具条全部收敛为 `#FAF7F2`；
+3. 总览卡片纯净底色与选中态顶栏去高亮：彻底去除 `FileOutlineList` 文件总览卡片在被选中状态（`is-selected`）下顶栏的渐变绿铺色，保持统一纯净的 `#FAF7F2` 顶栏底色；同时去除 `SubjectOverviewSection` 学科总览顶栏的 `linear-gradient` 绿晕，使所有总览卡片在常态与选中态下均融入宣纸底板，选中态完全交由细致发丝边框、微立体阴影与文字强调色表达。
+全量自动化验证：`npm.cmd run test:r4-pc`（397/397 通过）、`npm.cmd run type-check`、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 全绿无报错。
+
+2026-09-24 PC 专注时钟（Pomodoro）温润极简配色重构、时间轴智能感知与版面尺度调优收口：
+针对番茄专注时钟原配色刺眼、任务混杂及视觉版面尺度进行系统性优化收口：
+1. 温润极简禅意配色全面对齐：大页面统一为浅中性底色 `#EEEEEE`，左右双栏采用温润燕麦米白大容器卡片（`#F7F2EB`）、24px 大圆角与柔和微质感阴影；圆环轨道由原本刺眼高饱和纯橙色（`#E85D04`）重构为专注态禅意鼠尾草绿（`#8B9A6E`），茶歇阶段升级为温润琥珀茶色（`#C89B6D`），底轨采用半透明发丝柔光，中央开始/暂停大圆钮采用品牌渐变配合柔和绿晕（茶歇态切为茶金渐变），重置/跳过按钮采用全圆角米白宣纸胶囊（`#FAF7F2`）；
+2. 任务选择器专属过滤与时间轴深度联动：彻底移除无排期待办的混杂展示，严格仅过滤已在时间轴上拥有明确排期（`Boolean(task.scheduledAt)`）、处于未完成且未取消状态的有效排期任务，并按排期时间由近及远升序排列；补充内置「自由学习」（`free-study`）专属任务项；
+3. 智能时间感知默认任务定位：初次进入或时间轴更新时，自动识别当前时刻正处于执行区间（`[start, end)`）或即将在 10 分钟内开始的任务并默认选中；当前无任务时默认落入「自由学习」心流模式；用户手动自选后锁定选择，不被后台刷新篡改；
+4. 视觉排版降噪与纯粹文字化：移除选择器多余的「时间轴联动」徽标，移除当前专注横幅内的所有装饰图标，保留纯净文本与学科徽标排版；修复横幅由于长任务名称挤压导致「已排期」胶囊纵向折行（`已排\n期`）及文字过度截断的排版缺陷，将标题与状态信息拆分为独立双层结构，标题独占上层（支持两行优雅换行），下层状态胶囊强制单行不折行紧贴排期时间；
+5. 空间尺度开阔度与圆环字号提升：左侧时钟区比例加宽至 `flex: 6.4`（右侧 `flex: 3.6`，间隙 `64px`，容器最大宽度 `1240px`）；时钟圆环尺寸扩大至 `440px × 440px`，时间数字字号扩大至 `clamp(76px, 8.5vw, 92px)`（700 粗体，`-2px` 字距）；
+6. 内嵌小圆点胶囊平衡抬升：将圆环内部的状态指示小圆点胶囊（`.ring-pill`）位置调高（`bottom: 64px`），消除原先贴近底部进度圆弧的局促下沉感，整体视觉居中舒展；
+7. 全量自动化门禁：`npm.cmd run test:r4-pc`（403/403 pass）、`npm.cmd run type-check`（0 error）、`git diff --check` 全部通过。
+
+
+2026-09-24 PC 关系星图（KnowledgeGraph）中间圆角边框消除与星空动效升级：
+针对资产库（Asset Studio）与全局关系星图右侧视口中间存在的嵌套圆角边框及静态感问题进行全面设计重构：
+1. 消除中间嵌套圆角边框并进一步拓宽画幅：彻底去除 `KnowledgeGraph.vue` 内部容器 `.knowledge-graph-wrapper` 的独立边框、圆角（原 20px）和硬编码背景色，使其完全融入宿主容器；在 `Asset/index.vue` 中将 `.ctx-graph` 设置为弹性占满且穿透去除内层包裹边框，实现真正浑然一体的无界画布；右侧星图面板宽度进一步由 540px 拓宽至 620px，赋予星空网络更开阔通透的展示画幅；
+2. 极简毛玻璃 HUD 图例胶囊：废除原有遮挡星图的顶部粗重长条形卡片，升级为悬浮于顶部的毛玻璃胶囊（`border-radius: 9999px; backdrop-filter: blur(8px)`），呈现精致的“学科空间 / 关联文件 / 知识点”类型图例，右侧集成上浮微发光的“适配画幅”圆形按钮；
+3. 动态星空与呼吸光晕体系：引入 60fps 连续渲染管线，将力导向物理布局计算（180 帧收敛后完全休眠，0 CPU 额外开销）与微动效渲染解耦；深层视野布设 28 颗带有正弦闪烁周期的微尘星芒；连线间流动着平滑滑行的能量光子（Energy Photons）；核心学科天体具备外层扩散光晕与纯色实体天体（去除中间小白点，保持纯净禅意质感），所有节点呈现有机呼吸节律；
+4. 交互焦点聚焦模式：鼠标悬停在特定天体节点时，高亮关联的链路与邻接节点，其余无关节点柔和降淡至 0.28 透明度，大幅提升复杂星图的可读性与沉浸感；
+5. 全量自动化门禁：`npm.cmd run test:r4-pc`（403/403 pass）、`npm.cmd run type-check`（0 error）、`git diff --check` 全部通过。
+
+2026-09-24 PC 资产库（Asset Studio）知识块与任务编辑排版重构、标签精简与任务所属学科自选收口：
+根据沉浸式现代笔记与任务工坊交互体验，全面重构 `Asset/index.vue` 中栏知识块与任务编辑区域排版：
+1. 消除标题冲突与冗余操作栏：重构中栏顶栏 `.detail-header`，移除原有与正文编辑输入框重复展示的标题文字及双重保存按钮，升级为自适应顶部工作条；文件呈现信息概览，知识块精简顶栏展示纯净面包屑（`知识库 / 学科`）与字数统计及保存按钮，任务呈现状态切换胶囊（待处理/已完成）、排期元数据与保存按钮；
+2. 知识块顶部标签精简：去除知识块纸张卡片顶部多余的 `# {{ tag }}` 标签徽标，保持纯净学科胶囊与沉浸式笔记排版；
+3. 任务所属学科与预计用时支持自选与全圆角化：在任务属性工坊中，将所属学科与预计用时均升级为定制胶囊圆角的 `el-select`（`.zen-select`，配合 `popper-class="zen-select-popper"` 实现触发框 9999px 胶囊圆角与弹出下拉面板 16px 大圆角设计，选项项 10px 圆角与柔和微阴影）；修正 Vue scoped 样式下 `html.dark` 祖先选择器被编译器脱落导致的浮层底色异常，确保浅色模式下稳定呈现米白宣纸底色 `#FAF7F2`；在 `useTaskStore.ts` 的 `updateTaskDetails` 中支持 `subjectId` 字段流转与离线持久化同步，用户可在编辑任务时自由切换归属学科并持久化保存；
+4. 统一温润纸张画布（Paper Canvas）与无滚动条纯净视图：知识块与任务正文编辑区采用统一定制纸张卡片 `.editor-paper-card`（`#FAF7F2` 宣纸底色、圆角 20px、微质感边框与柔和浮起阴影），居中最大宽度 860px，彻底消除原标题浮于大底板、内容孤立卡片的破碎感；中栏滚动区、左右侧栏、文本域与弹出下拉列表全量隐藏滚动条外观，保留平滑流畅滚轮交互；
+5. 全量自动化验证通过：`npm.cmd run test:r4-pc`（403/403 pass）、`npm.cmd run type-check`（0 error）、`git diff --check` 全部通过。
+
+2026-09-24 PC 资产库（Asset Studio）温润配色全面对齐与关系星图拓宽收口：
+根据温润浅燕麦米白规范（页面底色 #EEEEEE、大容器/主底板 #F7F2EB、卡片/模块 #FAF7F2、主强调色 #8B9A6E）对齐 `Asset/index.vue` 配色，并扩大右侧关系星图：
+1. 拓宽关系星图并清理旧内联样式：移除 `<aside class="studio-right-context">` 原写死的内联 `style="width: 450px;"`，将 CSS 宽度提升至 `540px`（+90px，拓宽 20%），为力导向节点与文件名展示提供充足空间；移除子标题栏写死的 `style="background: var(--color-bg-secondary);"`，统一由 CSS 控制；
+2. 三栏容器与头部底色对齐：`.studio-left`、`.studio-middle`、`.studio-right-context` 三栏背景统一为 `var(--color-bg-primary, #F7F2EB)`，添加 `0 10px 24px -4px rgba(0,0,0,0.05)` 柔和阴影与边框；修复 `.middle-content-scroll` 误用 `#EEEEEE` 导致的中间断层色差；
+3. 卡片、输入框与模态框底色对齐：`.search-input`、`.editor-content-wrapper`、`.block-row`、`.task-row`、`.inline-block-editor`、`.modal-container`、`.styled-input`、`.styled-textarea`、`.subject-capsule-item` 统一对齐为 `#FAF7F2`，并添加微阴影；聚焦轮廓收敛为 `#8B9A6E` 发光；
+4. 按钮与组件库主题收拢：主按钮 `.btn-primary` 与保存按钮采用 `#8B9A6E` 渐变及阴影，次级按钮采用 `#FAF7F2`；统一 Element Plus 日期选择器与弹出层的 hover/focus/selected 强调色；
+5. 类型定义与全量测试守卫：修复 `KnowledgeGraph.vue` 中 `down` 交互状态缺失 `pointerId`、`startX`、`startY` 的 TypeScript 检查报错。全量 `npm.cmd run test:r4-pc`（401/401 pass）、`npm.cmd run type-check`（0 error）、`git diff --check` 全部通过。
+
+2026-09-24 紧邻任务交换逻辑调整：顶部交互栏交换两个原排期首尾相接的任务时，按交换后的顺序紧凑排在两项原共同时间窗口内，窗口起止不变；其他交换保持原规则。PC 移除会误拒绝不同时长紧邻任务的“互换开始时间”预检，以服务端原子校验和返回时间为准。PC 全量回归 397/397、类型检查与构建通过；Server clean 聚焦 3/3。本机只重建并重启 backend，health/readiness HTTP 200、Flyway 23，db/minio 容器未变化；真实 GUI 拖放及认证业务请求待验收。
+
+2026-09-24 Timeline 卡片主体放置规则调整：主体 drop 携带目标任务 ID，被拖任务接在目标结束后的首个半小时槽；目标及其他任务不移动，若占用后续排期则整笔拒绝。普通空白槽位维持原有插入顺延，仅顶部交互栏交换。PC 完整回归 397/397、类型检查和构建通过；Server 严格主体放置/普通插入聚焦 5/5，OpenAPI artifact 校验与双端 SDK 生成检查通过。本机只重建并重启 backend，health/readiness UP，Flyway V23 成功，db/minio 容器未重建；真实 GUI 拖拽与认证后的业务请求仍待验收。
+
+2026-09-24 PC Timeline 日视图固定刻度轴与卡片网格跨越编排收口：日视图固定呈现 08:00–22:30 全部 30 个半小时刻度槽位行，彻底移除基于任务覆盖隐藏整行刻度的旧逻辑（`v-show="!isSlotCovered(slot.time)"`）；刻度行保持定高 80px 与 4px 垂直间隙，不随任务存在而压缩或隐藏；任务卡片自起始槽位绝对定位跨越网格，左侧时间标尺所有半小时刻度完整可见；交互分流保持不变：卡片顶部 `.task-header` 用于原子交换，主体（按垂直偏移计算落点）与普通空白槽位用于单事务插入顺延。PC 全量回归 `npm.cmd run test:r4-pc` 397/397 全量通过，`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 全部退出 0。
+
+2026-09-23 Server 排期截止时间门禁修复：`dueAt` 作为纯提醒/排序字段，服务端 create/update/swap/schedule-insertion 允许排期晚于截止时间且保留原始 `dueAt`；V23 移除 `ck_tasks_schedule_order`，不改写现有行。排期重叠、固定完成任务和可用窗口检查不变。Server `CoreDomainServiceTests` + `CoreDomainControllerTests` fresh 聚焦 26/26，`mvnw -B -ntp -DskipTests package` 退出 0；真实 PostgreSQL migration、Docker 部署与 GUI 验收待执行。V18 历史迁移清空的 `scheduled_at` 不会自动恢复。
+
+2026-09-23 排期插入运行恢复：backend 日志证实旧容器镜像对 `POST /api/tasks/schedule-insertions` 抛 `HttpRequestMethodNotSupportedException`，通用处理器将其包装为 HTTP 500 `An unexpected error occurred`。重建 Docker image 后仅重启 backend，容器 healthy、readiness HTTP 200；容器 Created 2026-09-23，backend 无数据挂载。为适配 Windows CRLF Maven wrapper，Dockerfile build stage 先转 LF。默认 prod profile 关闭运行时 OpenAPI（`/v3/api-docs` HTTP 404）；仓库 OpenAPI artifact 包含此 POST。db/minio 为恢复 backend 临时启动现有容器，未重建服务或卷。此运行证据尚未包含 GUI 拖动或认证后的业务请求复验。
+
+2026-09-24 知识块资源清理与纯结构化知识块规范（杜绝上传态假文件）：针对测试账号（`pc-ai-test-20260918@example.com`）全面清理先前注入的 20 个测试 Source 以及 MinIO 中 8 个虚假文件资产（彻底消除 `invalid-fixture-*` 等处于 `AWAITING_CLIENT` 上传态/解析失败态的假文件），保留用户真实上传的文件；所有 32 个结构化知识块（`knowledge_blocks`）与假文件解耦（`source_id = NULL`），覆盖 12 个学科空间作为自包含的核心考点卡片展示。注入脚本 `scripts/seed-knowledge-blocks.mjs` 同步重构，严格收敛为仅注入纯知识块，绝不生成上传态假文件或假 Source。PC 端本地 SQLite 同步完成状态清理，全量回归 `npm.cmd run test:r4-pc` 397/397 全部通过。
+
+2026-09-23 PC Timeline 插入顺延与顶部交换：日视图普通槽位、任务卡片主体落点现在通过 `POST /api/tasks/schedule-insertions` 由 Server 单事务插入并连锁顺延发生冲突的后续任务，保留原有空档；仅卡片顶部 `.task-header` 落点调用双任务原子交换。顺延按半小时网格对齐，已完成任务固定，越出当天 08:00–22:30 起始槽窗口时整组拒绝；`dueAt` 不再限制排期。Server 只顺延当日开始的任务；前一日开始且跨入窗口的长任务保持原状，若阻挡落点则整组拒绝。PC 成功后缓存返回的任务并请求 read sync；目标日有未解决本地写入时拒绝在线操作。原完整 PC 回归 395/395、type-check、build、OpenAPI/PC/Mobile SDK 契约检查退出 0；Server 服务/控制器/OpenAPI 定向测试最终 32/32。Mobile type-check 被既有 `assetUpload.ts:47` 缺少 `clientImportId` 阻断；Server 全量 testCompile 受本机 IDE 写入的错误 class stub 干扰。真实 PostgreSQL 并发、跨设备 Sync 与 GUI 拖放尚未验收。
+
+2026-09-23 PC 首页待办清单与排期副驾待安排队列多级排序收口（分支 `agy/deadline-as-reminder`）：
+在 `taskViewRules.ts` 中实现并导出纯函数 `comparePendingTasks`，待办清单严格按照「有 DDL 时间优先 → DDL 时间较近优先（时间戳升序） → 持续时间较短优先（时长升序） → 名称兜底稳定排序」的规则排序；在 `Dashboard/index.vue`（首页待办清单）与 `Timeline/index.vue`（排期副驾待安排队列）中统一应用该排序规则；在 `r4-task-view-rules.test.mjs` 中添加针对多级排序规则的单元测试。PC 全量回归 `npm.cmd run test:r4-pc` 为 393/393 全部通过，`npm.cmd run type-check` 与 `git diff --check` 退出 0。
+
+2026-09-23 PC 与 Server 排期区间重叠防护：根因是时间轴以半小时槽位定位任务，但 Store 只校验起始槽位，没有按 `durationMinutes` 判断完整任务区间；PC 的 `mapTaskView` 还将远端空时长映射为 25 分钟，与 Server 的 30 分钟有效默认值不一致。现已在 PC 本地持久化入口对新增/变化的非取消排期区间按 `[scheduledAt, scheduledAt + durationMinutes)` 检查，按天排期逐 30 分钟寻找可用槽位；本端相关操作由 Store 队列串行执行。未排期任务落入占用槽被拒绝，避免分两次本地写入导致原任务排期丢失。`mapTaskView` 现将 null/缺失、非整数、负数或超出 Java Integer 范围的时长统一映射为 30 分钟，API 合法的 0 保持原值。Server 的 REST 与 Sync 共用 TaskService 校验，create/update/restore/swap 在事务内按 User→Subject→Task 锁序串行化同用户写入；空时长按 30 分钟处理，首尾相接允许。PC 排期、任务视图及 DTO 映射定向回归 40/40、type-check、build 及 diff-check 退出 0；Server 聚焦 29 项测试与 diff-check 退出 0。既存重叠数据不会被自动迁移；真实 PostgreSQL 并发、跨设备同步和 GUI 业务验收尚未执行。PC 构建仍有既有模块 externalization、chunk size、dynamic import 警告。
+
+同一最终工作树的完整 PC 回归 `npm.cmd run test:r4-pc` 为 393/393，通过且无跳过；该结果仅证明自动测试，不代表真实 GUI 或跨设备验收。
+
+2026-09-23 PC 学科工作区生命周期、会话清理防 ABA 覆盖与阅读会话竞态收口（分支 `agy/deadline-as-reminder`）：
+1. 解决旧阅读会话晚于新会话完成导致覆盖问题：在 `onMounted`、`watch(subjectId)` 与 `selectFile` 的 `await chatStore.startReadingSession(...)` 后均严格加入后置代次、卸载态与学科/文件匹配守卫；
+2. 解决旧会话清理误清空新活动会话的 ABA 竞态：在 `useChatStore.ts` 的 `endActiveSession()` 中记录目标会话 ID，`finally` 块仅在 `activeSessionId === targetSessionId` 时才清空活动会话；同时在 `useChatStore.ts` 中新增并导出 `endSessionById(sessionId)`，`SubjectWorkspace` 在代次失效时直接调用 `endSessionById(readingSessionId)` 精准回收特定会话，杜绝误杀已经接管的新学科会话；
+3. 解决组件卸载后定时器与会话泄漏问题：引入 `isComponentMounted` 挂载标记，在 `onUnmounted` 时立即递增 `currentSubjectSwitchGen` 并标记组件卸载，彻底阻断异步挂载流程在卸载后的恢复执行，并安全停止定时器与结束会话；
+4. 解决首次加载切学科导致文件处理轮询定时器丢失问题：将后台文档处理状态刷新提取为幂等函数 `startProcessingRefresh()` 与 `stopProcessingRefresh()`，并在 `onMounted` 挂载入口立即启动，与特定学科的异步加载链路解耦。
+自动化测试与门禁验证：`npm.cmd run test:r4-pc` 387/387 全量通过，`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 全部通过。
+
+2026-09-24 PC 学科中心与学科工作区（SubjectWorkspace）配色系统全层级对齐与预览栏底色收口：
+根据温润浅燕麦米白配色方案（大页面底色 #EEEEEE、大容器/主底板 #F7F2EB、小卡片/模块色 #FAF7F2、主强调色 #8B9A6E）全面对齐 PC 学科中心、学科工作区、预览栏与各功能模块：
+1. 修复预览栏全层级背景：统一 `workspace-center`、`.center-status-bar`、`.center-body`、`.preview-page-footer` 以及 `.pdf-workspace`、`.blocks-workspace`、`.onboarding-workspace` 为 `var(--color-bg-primary, #F7F2EB)`；彻底解决预览栏与子区域冷灰或死白不协调问题；
+2. 修复 `FilePreview.vue` 与阅读器画布：`FilePreview` 在 bare 模式下 body 背景设为 `#F7F2EB`，渲染器外壳 `.file-preview-renderer-shell` 与 `UnsupportedPreview.vue` 设为温润宣纸底色 `#FAF7F2`；在 `FileViewerRenderer.vue` 中显式设置并 deep 覆盖第三方 `@file-viewer/vue3` 的 `--file-viewer-bg` 与 `--file-viewer-render-surface-background` 为 `var(--color-bg-tertiary, #FAF7F2)`，彻底消除第三方阅读器默认纯白/冷灰底板；
+3. 修复 AI 总结面板（`OverviewSummaryView.vue`）：将根容器与头部背景对齐为 `#F7F2EB`，总结内容卡片对齐为 `#FAF7F2`，补全 `index.css` 的 `--bg-primary`、`--bg-secondary`、`--bg-card` 别名变量映射；
+4. 按钮与微交互色彩统一：抽屉 `.drawer-action`（学习文件按钮）与总览加号按钮统一采用 `#8B9A6E` 渐变圆角及柔和立体阴影（`box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35)`），预览栏顶部缩放/旋转/重置按钮组与 AI 栏顶底控制（清空按钮、发送圆钮、模型胶囊）全部应用统一主色微质感与悬浮高亮；
+5. 全量测试与类型构建通过：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（397/397 pass）、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 及生产打包 `npm.cmd run build` 全绿，所有针对布局与文件预览的断言完全保持一致。
+
+2026-09-23 测试数据与数据库全量重置并按新待办约束完成重新注入：执行本机 PostgreSQL `public` schema 重建与 Flyway v1~v22 全量迁移，清空 MinIO 历史测试对象，并按规定安全移除本地旧 SQLite 缓存（`auralis.db*`）。重构注入约束与脚本（`scripts/seed-test-account.mjs` 及 `docs/operations/TestAccountDataResetAndSeed.md`）：
+1. 任务时长严格约束为整半小时（30、60、90、120 分钟），严格杜绝 45 分钟或任何非 30 分钟整倍数任务；
+2. 严格不注入知识块（保持 0 知识块）；
+3. 标准 240 项任务中，合理保留 48 项为时间轴合法白天槽位任务（每个学科 4 项，槽位唯一无重叠）；将 144 项设为未排期活跃任务（`scheduledAt: null`，每个学科 12 项），其中 72 项为无截止日期纯待办任务（`dueAt: null`），72 项带未来截止日期，供首页看盘与排期副驾充分验证无 DDL 待办与 DDL 徽标提醒；其余 24 项为已完成，24 项为已取消。
+数据库重新注入校验结果：`total_users=1`、`total_subjects=12`、`total_tasks=240`、`invalid_durations=0`（时长为 30m:60, 60m:60, 90m:60, 120m:60）、`knowledge_blocks=0`、`active_scheduled=48`、未排期活跃任务 `active_unscheduled=144`（`no_due=72`，`has_due=72`）、重复排期槽位为 0。
+
+2026-09-24 PC Timeline 日视图固定刻度轴与卡片网格跨越编排收口：日视图固定呈现 08:00–22:30 全部 30 个半小时刻度槽位行，彻底消除长任务导致后续刻度断档隐藏的问题；网格行定高 80px 防压缩；任务卡片 `.slot-task` 改为绝对定位跨格，视觉高度匹配任务时长。交互分流精准锁定：卡片最顶部文字标题栏（`.task-header`，收敛为 `fit-content` 且文字子节点设为 `pointer-events: none` 阻断误清除）作为双任务交换落点（`swapScheduledTasks`）；离开顶部文字区域的卡片主体与空白区域按垂直偏移进入插入顺延（`insertTaskAtSlot`），杜绝主体误触发交换。全量 `npm.cmd run test:r4-pc` 397/397、`npm.cmd run type-check`、`npm.cmd run build` 及 `git diff --check` 全部通过。
+
+2026-09-23 PC 截止日期（dueAt）与排期门禁解耦为纯 DDL 提醒特性收口（独立分支 `agy/deadline-as-reminder`）：全面将截止日期从排期/待办资格限制中解耦，任务无需截止日期即可进入待办清单与排期副驾待安排队列，`dueAt` 仅作为到期提醒与排序参考。移除 `recoverOverdueTasks` 中清空逾期未排期任务 `dueAt` 的逻辑，永久保留用户的真实截止日期；首页待办清单标题行最右侧补充「前往排期」微胶囊跳转按钮；首页待办卡片与 Timeline 待安排卡片均新增截止日期徽标（`todo-due-badge`、`pending-due-badge`），逾期时低饱和暖红高亮告警；更新 `r4-task-view-rules.test.mjs` 与 `r4-task-store-schedule.test.mjs` 自动化测试守卫，确保无 DDL 任务可排期、真实 DDL 不被抹除或篡改、`unscheduleTask` 绝不捏造假 `dueAt`。同步修复学科工作区 `saveCurrentOutline` 保存返回后校验目标学科 ID 防止大纲跨学科污染，在 `onMounted`/`watch(subjectId)` 中引入递增序号 `currentSubjectSwitchGen` 与路由 ID 守卫彻底消除快速连续切换学科时的异步覆盖竞态，并在切换学科时同步重置总览过期标记（`isSubjectOverviewStale`）、手动错误（`subjectOverviewManualError`、`fileOverviewManualErrors`）与生成中状态。全量 `npm.cmd run test:r4-pc` 386/386、`npm.cmd run type-check`、`npm.cmd run build` 全部通过。
+
+2026-09-23 PC 学科大纲保存数据保留、消除切换异步残留、彻底消除伪轮转覆写、首页移出日程按 ID 寻址、严禁捏造 dueAt、学科切换 AI 请求旧文件隔离与测试脚本一致性收口：修复学科工作区（`SubjectWorkspace/index.vue`）大纲手工编排保存时覆盖丢失小节 `summary`、多文件 `sourceIds` 及 `locator` 的问题，UI 扩展支持每小节展示多文件胶囊与独立解除关联；彻底移除早期原型遗留的 `syncOutlineFileLinks` 及其在 `onMounted`/`watch(subjectId)` 的覆写调用，确保真实文件关联不受伪轮转破坏；在 `watch(subjectId)` 入口第一行立即同步调用 `chatStore.abortStream()`、`chatStore.clearActiveConversation()`、清空 `selectedFileId`、`selectedAiSourceIds`、`sourceStore.clearActiveSourceFiles()`、`subjectOutline` 与草稿并为 `saveCurrentOutline` 加入非空守卫，彻底消灭切换学科等待期间旧大纲被保存进新学科及 AI 请求携带旧学科文件 ID 的异步竞态窗口；在 `sendChat`、`retryChat`、`sendSelectionQuestion` 与 `saveKnowledgeBlock` 中严格增加跨学科文件归属校验，非当前学科文件 ID 一律过滤置空；扩展 `useTaskStore.ts` 的 `unscheduleTask` 优先通过唯一任务 ID 匹配，避免 `Dashboard/index.vue` 移出日程在同槽多任务时的串操作，并在发生异常时通过 `ElNotification` 弹出清晰错误提示；严格禁止在 `unscheduleTask` 中为未设置截止日期的任务捏造并持久化假 `dueAt`，任务移出日程仅清除 `scheduledAt` 与 `startTime`，首页“待办清单”展示由 `Dashboard/index.vue` 纯 UI 计算属性安全投影未排期活跃任务；同步清理 `scripts/seed-test-account.mjs` 中多余注册第二个 companion 账号的逻辑，严格维持单一测试账号 `users=1` 基准。全量 `npm.cmd run test:r4-pc` 386/386、`npm.cmd run type-check`、`npm.cmd run check:subject-workspace`、`npm.cmd run check:subject-icons` 及 `git diff --check` 全部通过。
+
+2026-09-22 测试注入数据已按新时间轴规范全量重置并注入完成：执行本机 PostgreSQL `public` schema 重建与 Flyway v1~v22 全量迁移，清空 MinIO 历史测试对象。通过标准 REST API 重新为测试账号 `pc-ai-test-20260918@example.com` 注入 12 个学科空间与 240 个类真实任务。排期严格限定在时间轴合法可视窗口（`08:00 ~ 22:30`）内的 6 个标准半小时槽位（`08:30`、`10:30`、`14:00`、`16:00`、`19:00`、`21:00`），从次日起按日均分（每日 6 项），彻底消除凌晨与深夜排期。数据库校验结果：`users=1`、`subjects=12`、`tasks=240`、`active_scheduled=192`、重复槽位为 0、非法时段排期为 0。PC 端 `npm.cmd run test:r4-pc` 382/382 全部通过。
+
+2026-09-22 PC 首页看盘时间轴简化为纯任务排列：重构首页看盘（`Dashboard/index.vue`）右侧面板，采用上下双卡片分区架构。上半部移除 06:00~23:30 垂直网格刻度槽位、当前时间指示红线及拖拽换槽改期逻辑，改为「日程任务」简单线性排列，按任务开始时间升序排列卡片，展示时间微胶囊、学科标签、标题及即时完成复选框和移出日程按钮；保留顶部日视图/周视图胶囊切换与 7 天日期快捷选择；下半部「待办清单」移除拖动手柄与拖动属性，纯列表展示未排期任务并支持直接勾选完成。时间轴复杂拖拽与全天半小时网格编排完全收敛至 `/timeline`（排期副驾）。`r4-dashboard-timeline.test.mjs` 测试对齐完成，PC 全量测试 `npm.cmd run test:r4-pc` 382/382、`npm.cmd run type-check` 与 `npm.cmd run build` 全部退出 0。
+
+2026-09-22 PC 学科中心知识块布局微调与底部立体阴影优化：将学科工作区（`SubjectWorkspace/index.vue`）知识库网格（`.blocks-grid`）与上方微状态栏及操作条（`.blocks-top-bar`）之间增加缓冲下移距离，`.blocks-workspace` 调整为 `padding: 24px 28px 20px`，`.blocks-top-bar` 调整为 `margin-bottom: 24px`，`.blocks-grid` 引入 `padding: 8px 6px 24px 6px` 与 `margin: 0 -6px`，整体视觉向下自然沉降 16px，彻底消除卡片鼠标悬浮态（`transform: translateY(-3px)`）被滚动容器顶边界及上方状态栏/操作条遮挡裁切的问题。同时为知识块卡片（`.block-card`）、学科空间卡片（`.subject-card`）及搜索输入框（`.search-input`）加入双层立体底部微阴影与暗色模式适配，悬浮态提升至 `z-index: 2` 并扩展投影。PC `npm.cmd run test:r4-pc` 382/382、`npm.cmd run type-check`、`npm.cmd run build` 及 `git diff --check` 全部通过。
+
+2026-09-22 PC 总览栏展现与交互优化：移除抽屉顶栏“AI 梳理”按钮，保留总览标题与大纲编排入口；大纲编排加号按钮在激活编辑状态时支持平滑旋转 45° 转换为灰色 `×`；重构 `SubjectOverviewSection.vue`，将学科总览卡片边框加粗为 2px 灰绿边框以凸显主次，顶栏错误集成“遇到意外错误，请重试”与操作一体化胶囊，一键生成换为纯文本胶囊与上下居中排版；文件总结按钮升级为圆角胶囊；“...”弹出菜单与菜单项全面升级为圆角微质感风格；大纲展现彻底移除生硬折线分支，重构为现代极简导轨与微圆点对齐风格。同时完整保留学科总览生成、大纲重新生成、查看总结、资料更新提示与错误重试全部功能。全量 `npm.cmd run test:r4-pc` 382/382、`npm.cmd run type-check`、`npm.cmd run build` 及 `git diff --check` 全部通过。
+
 
 2026-09-21 Issue 3/4 前端实现与自动验证已收口：PC 连接状态 projection 按错误、离线、Realtime 重连、同步中、已同步的优先级展示，问答错误在聊天区域保持可见并可重试；Overview 手动重生成返回 `STARTED`/`SKIPPED`/`FAILED` 结构化结果，自动触发静默处理，失败/跳过保留既有缓存，并以 generation/abort/Source 状态 fence 阻止删除或修订后的晚到 Subject 结果写回。最终 focused 68/68，`npm.cmd run test:r4-pc` 382/382，`npm.cmd run type-check`、`npm.cmd run build`、`git diff --check` 均通过。自动证据不等价于真实 WebSocket、浏览器 online/offline、Tauri/GUI 文件预览或真实 Provider 验收；SQLite experimental、Vite externalized/dynamic-import/chunk size 警告仍存在。Issue 2（删除 Source 后 Chunk/RAG TopK）仍为计划未实现，Issue 5–7 仍待分别核实；本轮未改 API 或数据库契约。
 
@@ -336,7 +534,7 @@ Tablet 手写、更多 AI 体验和更多平台构建在主线稳定后推进。
 - 自动测试：R1-03 定向测试 11/11、R1-04 定向 AI 流式/Provider/Controller 测试 16/16、R1-05 定向套件 16/16 通过；`PgVectorIntegrationTests` 使用 PostgreSQL 17.11 + pgvector 容器通过 1/1，覆盖 Flyway V1→V11、HNSW、vector 写入、用户隔离、失败回滚和 Source 删除过滤；`mvn -B -ntp clean test` 通过 126 个测试，失败/错误 0，默认跳过 1 个需显式 PostgreSQL 参数启用的集成测试。
 - 已修复问题：默认 local profile 缺少 `auralis.ai.encryption-key` 会使 AI 未启用的上下文也启动失败；已加入仅 local profile 使用的 32 字节开发占位值，生产仍要求 `AURALIS_AI_ENCRYPTION_KEY`，并保留空值拒绝。
 - 未完成验收：全量 PostgreSQL/Compose、MinIO、外部 DeepSeek/SiliconFlow/BYOK Provider 网络/证书/限流、真实 token 流式、生产网络策略与 secret rotation、性能、前端联调和人工业务验收。受控安全测试和隔离 pgvector 容器不替代完整生产网络专项。
-- 实现边界：chunk generation 原子切换和 Source 删除过滤已完成；ingestion lease fencing、Suggestions 真实 LLM/citations、文件解析边界（当前仅文本型 MIME）和端到端 AI 质量仍未完成并继续登记为未关闭风险。
+- 实现边界：chunk generation 原子切换、Source 删除过滤和 2026-09-27 的 ingestion 同事务入队及 revision/lease/attempt fencing 已完成代码与聚焦验证；Suggestions 真实 LLM/citations、文件解析边界（当前仅文本型 MIME）和端到端 AI 质量仍登记为未关闭风险。
 
 以上结果只证明对应命令的执行范围，不替代 GUI、真机、真实基础设施或外部 AI 服务验收。
 

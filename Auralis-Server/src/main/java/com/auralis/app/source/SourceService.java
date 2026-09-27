@@ -3,7 +3,6 @@ package com.auralis.app.source;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceType;
-import com.auralis.app.shared.domain.SourceIngestionRequestedEvent;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.internal.persistence.AssetEntity;
 import com.auralis.app.source.internal.persistence.AssetRepository;
@@ -21,14 +20,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 @Service
 public class SourceService {
@@ -69,11 +73,12 @@ public class SourceService {
         SourceIngestionStatus initialStatus = data.type() == SourceType.FILE
                 ? SourceIngestionStatus.AWAITING_CLIENT
                 : SourceIngestionStatus.PENDING;
-        SourceView result = view(sourceRepository.save(new SourceEntity(
+        SourceEntity entity = sourceRepository.saveAndFlush(new SourceEntity(
                 sourceId, userId, data.type(), command.subjectId(), requiredTitle(command.title()),
-                data.assetId(), data.originUrl(), data.rawText(), command.outline(), initialStatus)));
+                data.assetId(), data.originUrl(), data.rawText(), command.outline(), initialStatus));
+        SourceView result = view(entity);
+        enqueueServerOwnedIngestionJob(userId, result);
         publishChange(userId, result, "CREATE");
-        publishIngestionRequestIfServerOwned(userId, result);
         log.info("SOURCE_CREATED userId={} sourceId={} type={} subjectId={} assetId={}",
                 userId, result.id(), result.type(), result.subjectId(), result.assetId());
         return result;
@@ -81,8 +86,7 @@ public class SourceService {
 
     @Transactional(readOnly = true)
     public List<SourceView> list(UUID userId) {
-        return sourceRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId)
-                .stream().map(this::view).toList();
+        return views(sourceRepository.findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(userId));
     }
 
     @Transactional(readOnly = true)
@@ -101,13 +105,20 @@ public class SourceService {
         String nextCursor = hasMore
                 ? CursorCodec.encode("sources", "", page.getLast().getUpdatedAt(), page.getLast().getId())
                 : null;
-        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
+        return new CursorPage<>(views(page), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
     public List<SourceView> listIncludingDeleted(UUID userId) {
-        return sourceRepository.findAllByUserIdOrderByUpdatedAtDescIdAsc(userId)
-                .stream().map(this::view).toList();
+        return views(sourceRepository.findAllByUserIdOrderByUpdatedAtDescIdAsc(userId));
+    }
+
+    @Transactional(readOnly = true)
+    public List<SourceView> findActiveViewsByIds(UUID userId, Collection<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return views(sourceRepository.findAllByUserIdAndIdInAndDeletedAtIsNull(userId, ids));
     }
 
     @Transactional(readOnly = true)
@@ -164,6 +175,11 @@ public class SourceService {
         boolean typeChanged = previousType != data.type();
         boolean fileAssetChanged = data.type() == SourceType.FILE
                 && !Objects.equals(previousAssetId, data.assetId());
+        boolean ingestionInputChanged = typeChanged || switch (data.type()) {
+            case FILE -> fileAssetChanged;
+            case TEXT -> !Objects.equals(entity.getRawText(), data.rawText());
+            case URL -> !Objects.equals(entity.getOriginUrl(), data.originUrl());
+        };
         boolean requiresClientParsing = data.type() == SourceType.FILE
                 && (typeChanged || fileAssetChanged);
         if (requiresClientParsing) {
@@ -175,10 +191,10 @@ public class SourceService {
         entity.update(
                 data.type(), command.subjectId(), requiredTitle(command.title()), data.assetId(),
                 data.originUrl(), data.rawText(), command.outline(), nextStatus,
-                typeChanged || fileAssetChanged);
+                ingestionInputChanged);
         SourceView result = view(sourceRepository.saveAndFlush(entity));
+        enqueueServerOwnedIngestionJob(userId, result);
         publishChange(userId, result, "UPDATE");
-        publishIngestionRequestIfServerOwned(userId, result);
         return result;
     }
 
@@ -229,6 +245,13 @@ public class SourceService {
         }
         entity.restore();
         SourceView result = view(sourceRepository.saveAndFlush(entity));
+        SourceIngestionStatus ingestionStatus = entity.getIngestionStatus();
+        if (entity.getType() != SourceType.FILE
+                && (ingestionStatus == SourceIngestionStatus.PENDING
+                        || ingestionStatus == SourceIngestionStatus.PARSING
+                        || ingestionStatus == SourceIngestionStatus.INDEXING)) {
+            ingestionJobService.enqueueServerOwnedSource(userId, id, entity.getIngestionRevision());
+        }
         publishChange(userId, result, "RESTORE");
         return result;
     }
@@ -256,8 +279,8 @@ public class SourceService {
         boolean requiresClientParsing = entity.getType() == SourceType.FILE;
         entity.requestReingest(requiresClientParsing);
         SourceView result = view(sourceRepository.saveAndFlush(entity));
+        enqueueServerOwnedIngestionJob(userId, result);
         publishChange(userId, result, "UPDATE");
-        publishIngestionRequestIfServerOwned(userId, result);
         return result;
     }
 
@@ -286,6 +309,40 @@ public class SourceService {
         return transitionIngestion(userId, id, entity -> entity.markFailed(safeErrorCode, safeErrorDetail));
     }
 
+    @Transactional
+    public Optional<SourceView> markParsingIfRevision(UUID userId, UUID id, UUID ingestionRevision) {
+        return transitionIngestionIfRevision(userId, id, ingestionRevision, SourceEntity::markParsing);
+    }
+
+    @Transactional
+    public boolean lockIngestionRevision(UUID userId, UUID id, UUID ingestionRevision) {
+        SourceEntity entity = lockForIngestion(userId, id);
+        return entity != null && Objects.equals(entity.getIngestionRevision(), ingestionRevision);
+    }
+
+    @Transactional
+    public boolean markIndexingIfRevision(UUID userId, UUID id, UUID ingestionRevision) {
+        return transitionIngestionIfRevision(userId, id, ingestionRevision, SourceEntity::markIndexing).isPresent();
+    }
+
+    @Transactional
+    public boolean markReadyIfRevision(UUID userId, UUID id, UUID ingestionRevision) {
+        return transitionIngestionIfRevision(userId, id, ingestionRevision, SourceEntity::markReady).isPresent();
+    }
+
+    @Transactional
+    public boolean markPendingIfRevision(UUID userId, UUID id, UUID ingestionRevision) {
+        return transitionIngestionIfRevision(userId, id, ingestionRevision, SourceEntity::markPending).isPresent();
+    }
+
+    @Transactional
+    public boolean markFailedIfRevision(
+            UUID userId, UUID id, UUID ingestionRevision, String safeErrorCode, String safeErrorDetail) {
+        return transitionIngestionIfRevision(
+                userId, id, ingestionRevision,
+                entity -> entity.markFailed(safeErrorCode, safeErrorDetail)).isPresent();
+    }
+
     private SourceView transitionIngestion(UUID userId, UUID id, Consumer<SourceEntity> transition) {
         UUID subjectId = ownerSubjectIdForMutation(userId, id);
         subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
@@ -305,6 +362,35 @@ public class SourceService {
         SourceView result = view(sourceRepository.saveAndFlush(entity));
         publishChange(userId, result, "UPDATE");
         return result;
+    }
+
+    private Optional<SourceView> transitionIngestionIfRevision(
+            UUID userId, UUID id, UUID ingestionRevision, Consumer<SourceEntity> transition) {
+        SourceEntity entity = lockForIngestion(userId, id);
+        if (entity == null || !Objects.equals(entity.getIngestionRevision(), ingestionRevision)) {
+            return Optional.empty();
+        }
+        SourceIngestionStatus previousStatus = entity.getIngestionStatus();
+        String previousErrorCode = entity.getSafeErrorCode();
+        String previousErrorDetail = entity.getSafeErrorDetail();
+        transition.accept(entity);
+        if (previousStatus == entity.getIngestionStatus()
+                && Objects.equals(previousErrorCode, entity.getSafeErrorCode())
+                && Objects.equals(previousErrorDetail, entity.getSafeErrorDetail())) {
+            return Optional.of(view(entity));
+        }
+        SourceView result = view(sourceRepository.saveAndFlush(entity));
+        publishChange(userId, result, "UPDATE");
+        return Optional.of(result);
+    }
+
+    private SourceEntity lockForIngestion(UUID userId, UUID id) {
+        var subjectId = sourceRepository.findSubjectIdByIdAndUserId(id, userId);
+        if (subjectId.isEmpty()) {
+            return null;
+        }
+        subjectLockCoordinator.lockSubjects(userId, List.of(subjectId.get()));
+        return sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(id, userId).orElse(null);
     }
 
     private ValidatedSource validate(UUID userId, SourceCommand command) {
@@ -406,9 +492,42 @@ public class SourceService {
                 entity.getUpdatedAt(), entity.getDeletedAt(), assetSizeBytes);
     }
 
-    private void publishIngestionRequestIfServerOwned(UUID userId, SourceView view) {
+    private List<SourceView> views(List<SourceEntity> entities) {
+        if (entities.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> assetIds = entities.stream()
+                .map(SourceEntity::getAssetId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, Long> assetSizes = assetIds.isEmpty()
+                ? Map.of()
+                : assetRepository.findAllByUserIdAndIdIn(entities.getFirst().getUserId(), assetIds)
+                        .stream()
+                        .collect(Collectors.toMap(AssetEntity::getId, AssetEntity::getSizeBytes));
+        return entities.stream().map(entity -> view(entity, assetSizes)).toList();
+    }
+
+    private SourceView view(SourceEntity entity, Map<UUID, Long> assetSizes) {
+        Long assetSizeBytes = entity.getAssetId() == null ? null : assetSizes.get(entity.getAssetId());
+        return new SourceView(
+                entity.getId(), entity.getSubjectId(), entity.getType(), entity.getTitle(), entity.getAssetId(),
+                entity.getOriginUrl(), entity.getRawText(), entity.getOutline(), entity.getIngestionStatus(),
+                entity.getIngestionRevision(), entity.getSafeErrorCode(), entity.getSafeErrorDetail(), entity.getVersion(),
+                entity.getCreatedAt(), entity.getUpdatedAt(), entity.getDeletedAt(), assetSizeBytes);
+    }
+
+    private void enqueueServerOwnedIngestionJob(UUID userId, SourceView view) {
         if (view.type() != SourceType.FILE) {
-            eventPublisher.publishEvent(new SourceIngestionRequestedEvent(userId, view.id(), view.version()));
+            // Insert the durable job in the Source transaction so a committed PENDING revision is always recoverable.
+            try {
+                ingestionJobService.enqueueServerOwnedSource(userId, view.id(), view.ingestionRevision());
+            } catch (DomainException exception) {
+                // create/update allow domain errors to commit by default; enqueue failure must still roll back Source.
+                TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+                throw exception;
+            }
         }
     }
 

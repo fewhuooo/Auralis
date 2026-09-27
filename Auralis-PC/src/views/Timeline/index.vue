@@ -11,7 +11,7 @@
         <!-- Pill stats in the middle -->
         <div class="header-middle-stats">
           <div v-for="stat in stats" :key="stat.label" class="stat-pill">
-            <component :is="stat.icon" class="stat-icon" :size="15" :stroke-width="2.5" />
+            <component :is="stat.icon" class="stat-icon" :size="15" :stroke-width="2" />
             <span class="stat-value">{{ stat.value }}</span>
             <span class="stat-label">{{ stat.label }}</span>
           </div>
@@ -36,10 +36,10 @@
             </button>
           </div>
           <button class="btn-secondary" @click="triggerImport">
-            <Inbox :size="15" :stroke-width="2.5" /> 导入任务
+            <IconInbox :size="15" :stroke-width="2" /> 导入任务
           </button>
           <button class="btn-primary" @click="triggerCreate">
-            <Plus :size="16" :stroke-width="2.5" /> 新建任务
+            <IconPlus :size="16" :stroke-width="2" /> 新建任务
           </button>
         </div>
       </div>
@@ -56,24 +56,51 @@
             v-for="day in timelineDays"
             :key="day.dateKey"
             class="weekly-overview-row"
-            :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
-            @click="selectDay(day.dayCode)"
+            :class="{ 'is-active': selectedTimelineDay.dateKey === day.dateKey, 'is-today': day.isToday }"
+            @click="selectDay(day.dayCode, day.dateKey)"
           >
             <div class="weekly-overview-row-header">
               <span class="day-dot" v-if="day.isToday">今</span>
               <span class="weekly-overview-day-name" :class="{ 'is-today-text': day.isToday }">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
-              <span class="weekly-overview-task-count">{{ getScheduledTasksForDay(day.dayCode).length }} 项任务</span>
+              <span class="weekly-overview-task-count">{{ getScheduledTasksForDateKey(day.dateKey).length }} 项任务</span>
             </div>
             <div class="weekly-overview-tasks-timeline">
               <div 
-                v-for="task in getScheduledTasksForDay(day.dayCode).slice(0, 3)"
+                v-for="task in getScheduledTasksForDateKey(day.dateKey).slice(0, 3)"
                 :key="task.id" 
                 class="weekly-overview-task-dot"
                 :style="{ backgroundColor: 'var(--color-primary-accent)' }"
                 :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
               ></div>
-              <span v-if="getScheduledTasksForDay(day.dayCode).length > 3" class="weekly-overview-more">+{{ getScheduledTasksForDay(day.dayCode).length - 3 }}</span>
-              <span v-if="getScheduledTasksForDay(day.dayCode).length === 0" class="weekly-overview-empty">空闲</span>
+              <span v-if="getScheduledTasksForDateKey(day.dateKey).length > 3" class="weekly-overview-more">+{{ getScheduledTasksForDateKey(day.dateKey).length - 3 }}</span>
+              <span v-if="getScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">空闲</span>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="column-title next-week-title">下周排期概览</h3>
+        <div class="weekly-overview-list">
+          <div 
+            v-for="day in nextWeekTimelineDays"
+            :key="day.dateKey"
+            class="weekly-overview-row"
+            :class="{ 'is-active': selectedTimelineDay.dateKey === day.dateKey }"
+            @click="selectDay(day.dayCode, day.dateKey)"
+          >
+            <div class="weekly-overview-row-header">
+              <span class="weekly-overview-day-name">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
+              <span class="weekly-overview-task-count">{{ getScheduledTasksForDateKey(day.dateKey).length }} 项任务</span>
+            </div>
+            <div class="weekly-overview-tasks-timeline">
+              <div 
+                v-for="task in getScheduledTasksForDateKey(day.dateKey).slice(0, 3)"
+                :key="task.id" 
+                class="weekly-overview-task-dot"
+                :style="{ backgroundColor: 'var(--color-primary-accent)' }"
+                :title="`${getTaskTimeStr(task.startTime)} ${task.name}`"
+              ></div>
+              <span v-if="getScheduledTasksForDateKey(day.dateKey).length > 3" class="weekly-overview-more">+{{ getScheduledTasksForDateKey(day.dateKey).length - 3 }}</span>
+              <span v-if="getScheduledTasksForDateKey(day.dateKey).length === 0" class="weekly-overview-empty">空闲</span>
             </div>
           </div>
         </div>
@@ -87,7 +114,7 @@
             v-for="slot in timeSlots"
             :key="slot.time"
             class="time-slot"
-            :class="{ 'has-task': slot.task, 'is-current': slot.isCurrent, 'drag-over': dragOverSlot === slot.time }"
+            :class="{ 'has-task': slot.task, 'is-covered': isSlotCovered(slot.time), 'is-current': slot.isCurrent, 'drag-over': dragOverSlot === slot.time }"
             @dragover.prevent="handleDragOver(slot.time)"
             @dragleave.prevent="handleDragLeave"
             @drop.prevent="handleDrop(slot.time)"
@@ -98,22 +125,37 @@
               <div 
                 v-if="slot.task" 
                 class="slot-task" 
-                :class="{ 'is-past': isPastTask(slot.task), 'is-completed': isCompletedScheduledTask(slot.task) }"
+                :class="{ 'is-past': isPastTask(slot.task), 'is-completed': isCompletedScheduledTask(slot.task), 'is-insert-drop-target': dragOverBodyTaskId === slot.task.id }"
                 :style="{ 
                   borderLeftColor: 'var(--color-primary-accent)',
                   height: getTaskHeight(slot.task.duration)
                 }"
                 :draggable="!isCompletedScheduledTask(slot.task)"
                 @dragstart.stop="handleDragStart($event, 'scheduled', slot.task.id || '', slot.time)"
+                @dragover.stop.prevent="handleTaskBodyDragOver(slot.task, slot.time)"
+                @dragleave.stop.prevent="handleTaskBodyDragLeave"
+                @drop.stop.prevent="handleDropOnTaskBody(slot.task, slot.time)"
               >
-                <div class="task-header">
+                <div
+                  class="task-header"
+                  :class="{ 'is-drop-target': dragOverHeaderTaskId === slot.task.id }"
+                  @dragover.stop.prevent="handleHeaderDragOver(slot.task)"
+                  @dragleave.stop.prevent="handleHeaderDragLeave($event)"
+                  @drop.stop.prevent="handleDropOnHeader(slot.task)"
+                >
                   <span class="task-name">{{ slot.task.name }}</span>
                   <span class="task-tag">
                     {{ slot.task.subject }}
                   </span>
-                  <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)" title="删除任务">✕</button>
+                  <button class="task-delete-btn" @click.stop="handleDeleteScheduledTask(slot)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
                 </div>
                 <div class="task-detail">{{ getCleanDesc(slot.task.desc) }}</div>
+                <span v-if="dragOverHeaderTaskId === slot.task.id" class="task-body-drop-hint">
+                  交换排期
+                </span>
+                <span v-else-if="dragOverBodyTaskId === slot.task.id" class="task-body-drop-hint">
+                  {{ isCompletedScheduledTask(slot.task) ? '已完成任务不可移动' : `插入至 ${dragOverBodySlotTime}` }}
+                </span>
                 
                 <!-- Bidirectional knowledge block badge -->
                 <div 
@@ -146,7 +188,7 @@
           @drop.prevent="handleDropOnPending"
         >
           <div v-if="filteredTimelinePendingTasks.length === 0" class="pending-empty-state">
-            <span class="empty-icon">🍃</span>
+            <span class="empty-icon"><IconCalendarCheck :size="36" :stroke-width="1.5" /></span>
             <p>目前没有待排期任务<br>快去新建吧</p>
           </div>
           <div
@@ -173,6 +215,9 @@
 
               <div class="pending-meta">
                 <span>预计 {{ task.duration }}min</span>
+                <span v-if="task.dueAt" class="pending-due-badge" :class="{ 'is-overdue': isTaskOverdue(task.dueAt) }">
+                  {{ formatTaskDue(task.dueAt) }}
+                </span>
               </div>
             </div>
             <span class="drag-handle">⠿</span>
@@ -214,10 +259,10 @@
             >
               <div class="weekly-task-header">
                 <span class="weekly-task-name">{{ task.name }}</span>
-                <button class="card-delete-btn" @click.stop="handleDeleteTaskById(task.id!)" title="删除任务">✕</button>
+                <button class="card-delete-btn" @click.stop="handleDeleteTaskById(task.id!)" title="删除任务"><IconX :size="12" :stroke-width="1.8" /></button>
               </div>
               <div class="weekly-task-meta">
-                <span class="weekly-task-time">⏰ {{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
+                <span class="weekly-task-time"><IconClock :size="12" :stroke-width="1.8" style="vertical-align: -1.5px; margin-right: 2px;" />{{ getTaskTimeStr(task.startTime) }} ({{ task.duration }}m)</span>
                 <span class="weekly-task-tag">
                   {{ task.subject }}
                 </span>
@@ -235,7 +280,7 @@
            @drop.prevent="handleDropOnPending">
         
         <div v-if="filteredTimelinePendingTasks.length === 0" class="dock-empty">
-          🎉 太棒了，本周待排期任务已全部安排妥当！
+          <IconCalendarCheck :size="16" :stroke-width="1.8" style="vertical-align: -3px; margin-right: 4px;" />本周待排期任务已全部安排妥当！
         </div>
         
         <div class="dock-tasks-container" v-else>
@@ -361,11 +406,11 @@
             来源: {{ selectedBlock?.source }}
           </span>
         </div>
-        <button class="modal-close" @click="blockDialogVisible = false">✕</button>
+        <button class="modal-close" @click="blockDialogVisible = false"><IconX :size="16" :stroke-width="1.8" /></button>
       </div>
       <div class="modal-body">
         <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
-        <div class="modal-time">⏰ 记于 {{ selectedBlock?.time }}</div>
+        <div class="modal-time"><IconHistory :size="14" :stroke-width="1.6" style="vertical-align: -2px; margin-right: 4px;" />记于 {{ selectedBlock?.time }}</div>
         <div class="modal-divider"></div>
         <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
       </div>
@@ -386,15 +431,24 @@ import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ListTodo, CheckCircle, Clock, Inbox, Plus } from 'lucide-vue-next'
+import {
+  IconListCheck,
+  IconCircleCheck,
+  IconClock,
+  IconInbox,
+  IconPlus,
+  IconCalendarCheck,
+  IconX,
+  IconHistory
+} from '@tabler/icons-vue'
 
-import { useTaskStore, DAY_CODES } from '@/store/useTaskStore'
-import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask } from '@/services/taskViewRules'
+import { useTaskStore, DAY_CODES, type Task } from '@/store/useTaskStore'
+import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, comparePendingTasks } from '@/services/taskViewRules'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 
-const SUBJECT_THEME_COLOR = '#7D9372'
+const SUBJECT_THEME_COLOR = '#8B9A6E'
 
 const taskStore = useTaskStore()
 const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
@@ -406,14 +460,53 @@ const { recentBlocks } = storeToRefs(knowledgeStore)
 // Core timeline states
 const viewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays(taskStore.currentNow))
-const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
-const selectDay = async (day: string) => {
-  taskStore.selectedDay = day
+const nextWeekNow = computed(() => {
+  const d = new Date(taskStore.currentNow)
+  d.setDate(d.getDate() + 7)
+  return d
+})
+const nextWeekTimelineDays = computed(() => getTimelineDays(nextWeekNow.value))
+const allTimelineDays = computed(() => [...timelineDays.value, ...nextWeekTimelineDays.value])
+
+const selectedDateKey = ref<string>('')
+
+const selectedTimelineDay = computed(() => {
+  if (selectedDateKey.value) {
+    const found = allTimelineDays.value.find((day) => day.dateKey === selectedDateKey.value)
+    if (found) return found
+  }
+  return timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0]
+})
+
+const selectDay = async (dayCode: string, dateKey?: string) => {
+  taskStore.setSelectedDay(dayCode, dateKey)
+  if (dateKey) {
+    selectedDateKey.value = dateKey
+  } else {
+    const match = timelineDays.value.find((d) => d.dayCode === dayCode)
+    selectedDateKey.value = match ? match.dateKey : ''
+  }
   await taskStore.loadLocalTasks()
 }
 
+const getScheduledTasksForDateKey = (dateKey: string) => {
+  return allTasks.value.filter((task) => {
+    if (!task.scheduledAt) return false
+    const d = new Date(task.scheduledAt)
+    if (Number.isNaN(d.getTime())) return false
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    const key = `${d.getFullYear()}-${month}-${day}`
+    return key === dateKey
+  })
+}
+
 const getScheduledTasksForDay = (day: string) => {
+  const targetDayObj = timelineDays.value.find(d => d.dayCode === day)
+  if (targetDayObj) {
+    return getScheduledTasksForDateKey(targetDayObj.dateKey)
+  }
   return getTasksForTimeline(allTasks.value).filter((task) => {
     if (!task.scheduledAt) return false
     return DAY_CODES[new Date(task.scheduledAt).getDay()] === day
@@ -436,11 +529,12 @@ const isPastTask = (task: { scheduledAt?: string } | null | undefined): boolean 
 
 const TIMELINE_SLOT_HEIGHT = 80
 const TIMELINE_SLOT_GAP = 4
+const TIMELINE_TASK_BOTTOM_GAP = 6
 
 const getTaskHeight = (duration?: number) => {
   const d = duration || 30
-  const slots = d / 30
-  return `${slots * TIMELINE_SLOT_HEIGHT + (slots - 1) * TIMELINE_SLOT_GAP}px`
+  const slots = Math.max(1, d / 30)
+  return `${slots * TIMELINE_SLOT_HEIGHT + (slots - 1) * TIMELINE_SLOT_GAP - TIMELINE_TASK_BOTTOM_GAP}px`
 }
 
 const isSlotCovered = (slotTime: string) => {
@@ -462,6 +556,25 @@ const isSlotCovered = (slotTime: string) => {
   return false
 }
 
+const getCoveringTask = (slotTime: string): Task | null => {
+  const direct = timeSlots.value.find((s) => s.time === slotTime)?.task
+  if (direct) return direct
+
+  const [slotHour, slotMinute] = slotTime.split(':').map(Number)
+  const currentMinutes = slotHour * 60 + slotMinute
+  for (const slot of timeSlots.value) {
+    if (slot.task) {
+      const [taskHour, taskMinute] = slot.time.split(':').map(Number)
+      const taskStartMinutes = taskHour * 60 + taskMinute
+      const taskEndMinutes = taskStartMinutes + (slot.task.duration || 30)
+      if (currentMinutes >= taskStartMinutes && currentMinutes < taskEndMinutes) {
+        return slot.task
+      }
+    }
+  }
+  return null
+}
+
 onMounted(async () => {
   pastTaskRefreshTimer = window.setInterval(() => {
     nowTimestamp.value = Date.now()
@@ -477,14 +590,14 @@ onUnmounted(() => {
 })
 
 const stats = computed(() => [
-  { icon: ListTodo, value: pendingCount.value.toString(), label: '待排期' },
-  { icon: CheckCircle, value: completedCount.value.toString(), label: '已完成' },
-  { icon: Clock, value: totalFocusHours.value, label: '专注时长' }
+  { icon: IconListCheck, value: pendingCount.value.toString(), label: '待排期' },
+  { icon: IconCircleCheck, value: completedCount.value.toString(), label: '已完成' },
+  { icon: IconClock, value: totalFocusHours.value, label: '专注时长' }
 ])
 
 // Filter pending tasks (without subject filter)
 const filteredPendingTasks = computed(() => {
-  return pendingTasks.value
+  return [...pendingTasks.value].sort(comparePendingTasks)
 })
 
 // Filter pending tasks displayed on the Timeline right-sidebar (exclude non-pending ones)
@@ -495,6 +608,9 @@ const filteredTimelinePendingTasks = computed(() => {
 // Timeline drag/drop logic
 const draggedItem = ref<{ type: 'pending' | 'scheduled', taskId: string, sourceSlotTime?: string } | null>(null)
 const dragOverSlot = ref<string | null>(null)
+const dragOverHeaderTaskId = ref<string | null>(null)
+const dragOverBodyTaskId = ref<string | null>(null)
+const dragOverBodySlotTime = ref<string | null>(null)
 const dragOverPending = ref(false)
 const dragOverDay = ref<string | null>(null)
 
@@ -508,7 +624,7 @@ const handleDragStart = (e: DragEvent, type: 'pending' | 'scheduled', taskId: st
 }
 
 const handleDragOver = (slotTime: string) => {
-  const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
+  const targetTask = getCoveringTask(slotTime) || timeSlots.value.find((slot) => slot.time === slotTime)?.task
   if (targetTask && isCompletedScheduledTask(targetTask)) {
     dragOverSlot.value = null
     return
@@ -524,6 +640,65 @@ const handleDragLeave = () => {
   dragOverSlot.value = null
 }
 
+const clearTaskBodyDropTarget = () => {
+  dragOverBodyTaskId.value = null
+  dragOverBodySlotTime.value = null
+}
+
+const taskEndSlotTime = (task: Task, startSlotTime: string): string => {
+  const [hour, minute] = startSlotTime.split(':').map(Number)
+  const endMinutes = Math.ceil((hour * 60 + minute + (task.duration ?? 30)) / 30) * 30
+  const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
+  if (!timeSlots.value.some((slot) => slot.time === endTime)) {
+    throw new Error('任务结束后已没有可用时间槽')
+  }
+  return endTime
+}
+
+const handleTaskBodyDragOver = (task: Task, startSlotTime: string) => {
+  if (!draggedItem.value) {
+    clearTaskBodyDropTarget()
+    return
+  }
+  if (draggedItem.value.type === 'scheduled' && draggedItem.value.taskId === task.id) {
+    clearTaskBodyDropTarget()
+    return
+  }
+
+  // 主体落点接在目标任务后；顶部文字区域单独交换。
+  dragOverHeaderTaskId.value = null
+  try {
+    dragOverBodyTaskId.value = task.id
+    dragOverBodySlotTime.value = taskEndSlotTime(task, startSlotTime)
+  } catch {
+    clearTaskBodyDropTarget()
+  }
+}
+
+const handleTaskBodyDragLeave = () => {
+  clearTaskBodyDropTarget()
+}
+
+const handleHeaderDragOver = (targetTask: Task) => {
+  clearTaskBodyDropTarget()
+  dragOverHeaderTaskId.value = draggedItem.value?.type === 'scheduled'
+    && draggedItem.value.taskId !== targetTask.id
+    && !isCompletedScheduledTask(targetTask)
+    ? targetTask.id
+    : null
+}
+
+const handleHeaderDragLeave = (event?: DragEvent) => {
+  if (event) {
+    const currentTarget = event.currentTarget as HTMLElement | null
+    const relatedTarget = event.relatedTarget as Node | null
+    if (currentTarget && relatedTarget && currentTarget.contains(relatedTarget)) {
+      return
+    }
+  }
+  dragOverHeaderTaskId.value = null
+}
+
 const reportDragFailure = (error: unknown) => {
   ElNotification({
     title: '排期未保存',
@@ -533,24 +708,82 @@ const reportDragFailure = (error: unknown) => {
   })
 }
 
+const reportScheduleRefreshPending = () => {
+  ElNotification({
+    title: '排期已保存',
+    message: '排期已在服务端保存，本地刷新中。',
+    type: 'warning',
+    position: 'top-right',
+  })
+}
+
 const handleDrop = async (slotTime: string) => {
+  await handleDropAtSlot(slotTime)
+}
+
+const clearDragState = () => {
+  draggedItem.value = null
+  dragOverSlot.value = null
+  dragOverHeaderTaskId.value = null
+  clearTaskBodyDropTarget()
+  dragOverPending.value = false
+  dragOverDay.value = null
+}
+
+const handleDropAtSlot = async (slotTime: string, targetTaskId?: string) => {
   try {
-    const targetTask = timeSlots.value.find((slot) => slot.time === slotTime)?.task
-    if (targetTask && isCompletedScheduledTask(targetTask)) return
+    const targetTask = getCoveringTask(slotTime) || timeSlots.value.find((slot) => slot.time === slotTime)?.task
+    if (!targetTaskId) {
+      if (targetTask && isCompletedScheduledTask(targetTask)) throw new Error('已完成的排期任务已固定')
+    }
     if (draggedItem.value) {
       if (draggedItem.value.type === 'pending') {
-        await taskStore.scheduleTask(draggedItem.value.taskId, slotTime)
-      } else if (draggedItem.value.type === 'scheduled' && draggedItem.value.sourceSlotTime && draggedItem.value.sourceSlotTime !== slotTime) {
-        await taskStore.rescheduleTask(draggedItem.value.sourceSlotTime, slotTime)
+        const result = await taskStore.scheduleTask(draggedItem.value.taskId, slotTime, targetTaskId)
+        if (result === 'refreshing') reportScheduleRefreshPending()
+      } else if (draggedItem.value.type === 'scheduled') {
+        if (!draggedItem.value.sourceSlotTime) throw new Error('无法识别原排期任务，请从日程卡片拖动')
+        if (draggedItem.value.sourceSlotTime !== slotTime) {
+          const result = await taskStore.rescheduleTask(draggedItem.value.taskId, slotTime, targetTaskId)
+          if (result === 'refreshing') reportScheduleRefreshPending()
+        }
       }
     }
   } catch (error) {
     reportDragFailure(error)
   } finally {
-    draggedItem.value = null
-    dragOverSlot.value = null
-    dragOverPending.value = false
-    dragOverDay.value = null
+    clearDragState()
+  }
+}
+
+const handleDropOnTaskBody = async (task: Task, startSlotTime: string) => {
+  try {
+    if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+    if (draggedItem.value?.taskId === task.id) return
+    await handleDropAtSlot(taskEndSlotTime(task, startSlotTime), task.id)
+  } catch (error) {
+    reportDragFailure(error)
+    clearDragState()
+  }
+}
+
+const handleDropOnHeader = async (targetTask: Task) => {
+  try {
+    if (!draggedItem.value) return
+    if (draggedItem.value.type === 'pending') {
+      throw new Error('待排期任务请拖到任务主体或空槽进行插入')
+    }
+    if (!draggedItem.value.sourceSlotTime) {
+      throw new Error('无法识别原排期任务，请从日程卡片拖动')
+    }
+    if (targetTask && isCompletedScheduledTask(targetTask)) throw new Error('已完成的排期任务已固定')
+    if (draggedItem.value.taskId !== targetTask.id) {
+      const result = await taskStore.swapScheduledTasks(draggedItem.value.taskId, targetTask.id)
+      if (result === 'refreshing') reportScheduleRefreshPending()
+    }
+  } catch (error) {
+    reportDragFailure(error)
+  } finally {
+    clearDragState()
   }
 }
 
@@ -562,22 +795,20 @@ const handleDropOnDay = async (day: string) => {
   } catch (error) {
     reportDragFailure(error)
   } finally {
-    draggedItem.value = null
-    dragOverDay.value = null
-    dragOverPending.value = false
+    clearDragState()
   }
 }
 
 const handleDropOnPending = async () => {
   try {
-    if (draggedItem.value?.type === 'scheduled' && draggedItem.value.sourceSlotTime) {
-      await taskStore.unscheduleTask(draggedItem.value.sourceSlotTime)
+    if (draggedItem.value?.type === 'scheduled') {
+      const targetId = draggedItem.value.taskId || draggedItem.value.sourceSlotTime
+      if (targetId) await taskStore.unscheduleTask(targetId)
     }
   } catch (error) {
     reportDragFailure(error)
   } finally {
-    draggedItem.value = null
-    dragOverPending.value = false
+    clearDragState()
   }
 }
 
@@ -596,6 +827,18 @@ const getCleanDesc = (desc?: string): string => {
 const getBlockTitle = (blockId: string): string => {
   const block = recentBlocks.value.find(b => b.id === blockId)
   return block ? block.title : '已删除知识点'
+}
+
+const isTaskOverdue = (dueAt?: string): boolean => {
+  if (!dueAt) return false
+  return new Date(dueAt).getTime() < taskStore.currentNow.getTime()
+}
+
+const formatTaskDue = (dueAt?: string): string => {
+  if (!dueAt) return ''
+  const d = new Date(dueAt)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getMonth() + 1}/${d.getDate()} 截止`
 }
 
 // Spaced Repetition Daily reminder checks
@@ -828,14 +1071,14 @@ const handleDeleteTaskById = async (id: string) => {
   height: 100%;
   overflow: hidden; /* Prevent page scroll to avoid width shifts */
   box-sizing: border-box;
-  background: var(--color-zen-ivory); /* Zen Ivory base */
+  background: var(--color-bg-secondary, #EEEEEE); /* 页面大背景 / 次级中性底 */
 
   /* Zen Minimalist Theme override */
-  --color-primary-accent: #7D9372;
-  --color-primary-accent-hover: #6c8062;
-  --color-primary-light: rgba(163, 177, 155, 0.12);
-  --color-primary-glow: rgba(163, 177, 155, 0.25);
-  --accent-gradient: var(--color-zen-sage);
+  --color-primary-accent: #8B9A6E;
+  --color-primary-accent-hover: #76855B;
+  --color-primary-light: rgba(139, 154, 110, 0.16);
+  --color-primary-glow: rgba(139, 154, 110, 0.28);
+  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
 }
 
 html.dark .timeline-page {
@@ -843,10 +1086,10 @@ html.dark .timeline-page {
 }
 
 .timeline-header-card {
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
   padding: 20px 24px;
   display: flex;
   flex-direction: column;
@@ -855,7 +1098,7 @@ html.dark .timeline-page {
 
 html.dark .timeline-header-card {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 /* Page header */
@@ -886,11 +1129,12 @@ html.dark .timeline-header-card {
 /* View switcher styling */
 .view-toggle {
   display: flex;
-  background: var(--color-bg-tertiary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   border-radius: 9999px;
   padding: 3px;
   gap: 2px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .toggle-btn {
@@ -910,14 +1154,14 @@ html.dark .timeline-header-card {
 
 .toggle-btn:hover {
   color: var(--text-primary);
-  background: rgba(163, 177, 155, 0.15);
+  background: rgba(139, 154, 110, 0.15);
 }
 
 .toggle-btn.is-active {
-  background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
+  background: var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   color: white;
   font-weight: 700;
-  box-shadow: 0 2px 6px rgba(125, 147, 114, 0.28);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.28);
 }
 
 .btn-primary,
@@ -938,21 +1182,26 @@ html.dark .timeline-header-card {
   background: var(--accent-gradient);
   color: white;
   border: none;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3);
 }
 
 .btn-primary:hover {
   transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45);
 }
 
 .btn-secondary {
-  background: transparent;
+  background: var(--color-bg-tertiary, #FAF7F2);
   color: var(--text-secondary);
   border: 1px solid var(--border-default);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .btn-secondary:hover {
-  border-color: var(--border-accent);
+  transform: translateY(-1px);
+  border-color: var(--color-primary-accent, #8B9A6E);
   color: var(--text-primary);
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(139, 154, 110, 0.12);
 }
 
 /* Filter Bar */
@@ -999,17 +1248,19 @@ html.dark .timeline-header-card {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 9999px;
   border: 1px solid var(--border-default);
   font-size: 13px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
   transition: all var(--transition-fast);
 }
 
 .stat-pill:hover {
-  background: var(--color-bg-tertiary);
-  border-color: rgba(125, 147, 114, 0.3);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: rgba(139, 154, 110, 0.35);
   transform: translateY(-1px);
+  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.06), 0 2px 4px -1px rgba(139, 154, 110, 0.12);
 }
 
 .stat-icon {
@@ -1082,28 +1333,31 @@ html.dark .timeline-header-card {
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
   transition: all var(--transition-fast);
 }
 
 .btn-auto-delay:hover {
+  transform: translateY(-1px);
   background: var(--accent-gradient);
   color: white;
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.28);
 }
 
 /* Timeline body */
 .timeline-body {
   display: grid;
-  grid-template-columns: 280px 1fr 340px;
+  grid-template-columns: 280px 1fr 400px;
   gap: 8px;
   flex: 1;
   min-height: 0;
 }
 
 .timeline-column, .tasks-column, .weekly-overview-column {
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
-  border: 1.5px solid var(--border-default);
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -1111,9 +1365,22 @@ html.dark .timeline-header-card {
   overflow: hidden;
 }
 
+.weekly-overview-column {
+  overflow-y: auto;
+}
+
+.weekly-overview-column .weekly-overview-list {
+  flex: none;
+  overflow-y: visible;
+}
+
+.next-week-title {
+  margin-top: 16px;
+}
+
 html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-column {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 /* Weekly Overview Column List */
@@ -1131,22 +1398,26 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition-fast);
+  box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .weekly-overview-row:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: var(--border-strong);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: rgba(139, 154, 110, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(139, 154, 110, 0.12);
 }
 
 .weekly-overview-row.is-active {
-  border-color: var(--color-primary-accent, #7D9372);
-  border-left: 3px solid var(--color-primary-accent, #7D9372);
-  background: rgba(163, 177, 155, 0.08);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  border-left: 3px solid var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.12);
+  box-shadow: 0 4px 12px -2px rgba(139, 154, 110, 0.18), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .weekly-overview-row.is-active .weekly-overview-day-name {
@@ -1178,7 +1449,7 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 }
 
 .day-dot {
-  background: var(--color-primary-accent, #7D9372);
+  background: var(--color-primary-accent, #8B9A6E);
   color: white;
   font-size: 9px;
   font-weight: 800;
@@ -1187,7 +1458,7 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
 }
 
 .is-today-text {
-  color: var(--color-primary-accent, #7D9372);
+  color: var(--color-primary-accent, #8B9A6E);
 }
 
 .weekly-overview-task-dot {
@@ -1230,8 +1501,9 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   display: flex;
   align-items: stretch;
   gap: 12px;
+  height: 80px;
   min-height: 80px;
-  height: auto;
+  flex-shrink: 0;
   position: relative;
 }
 
@@ -1243,11 +1515,14 @@ html.dark .timeline-column, html.dark .tasks-column, html.dark .weekly-overview-
   padding-top: 6px;
   flex-shrink: 0;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
 }
 
 .slot-right-container {
   flex: 1;
   position: relative;
+  height: 100%;
 }
 
 .slot-grid-line {
@@ -1266,46 +1541,89 @@ html.dark .slot-grid-line {
 }
 
 .slot-task {
-  position: relative;
-  width: 100%;
-  padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-left: 3px solid;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 10px 14px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
+  border-left: 3.5px solid;
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
   cursor: grab;
-  transition: all var(--transition-normal);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
   display: flex;
   flex-direction: column;
   gap: 4px;
   z-index: 10;
   box-sizing: border-box;
+  overflow: hidden;
+}
+
+html.dark .slot-task {
+  background: var(--color-bg-secondary);
+  border-color: var(--border-subtle);
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.3);
 }
 
 .slot-task:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 22px -3px rgba(0, 0, 0, 0.07), 0 3px 8px -1px rgba(139, 154, 110, 0.16);
+  border-color: var(--border-strong);
 }
 
-.is-past .task-name,
-.is-past .task-detail,
-.is-past .weekly-task-name,
-.is-past .weekly-task-time {
-  text-decoration: line-through;
-  text-decoration-thickness: 1.5px;
+.slot-task.is-insert-drop-target {
+  outline: 2px dashed var(--color-primary-accent);
+  outline-offset: -3px;
 }
+
+.task-body-drop-hint {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  max-width: calc(100% - 20px);
+  padding: 2px 7px;
+  border-radius: 5px;
+  color: var(--text-primary);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.3;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+html.dark .task-body-drop-hint {
+  background: var(--color-bg-secondary);
+  border-color: var(--border-subtle);
+}
+
 
 .task-header {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  border-radius: 7px;
+  padding: 3px 6px;
+  margin: -3px -6px;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+  cursor: grab;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.task-header.is-drop-target {
+  background: rgba(139, 154, 110, 0.2);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.38);
 }
 
 .task-name {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
+  pointer-events: none;
 }
 
 .task-tag {
@@ -1316,6 +1634,7 @@ html.dark .slot-grid-line {
   border-radius: 10px;
   font-size: 10px;
   font-weight: 700;
+  pointer-events: none;
 }
 
 html.dark .task-tag {
@@ -1343,12 +1662,14 @@ html.dark .task-tag {
   border-radius: var(--radius-sm, 4px);
   cursor: pointer;
   margin-top: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   transition: all 0.2s;
 }
 
 .kb-relation-badge:hover {
   background: rgba(197, 168, 128, 0.28);
   transform: scale(1.02);
+  box-shadow: 0 2px 6px rgba(197, 168, 128, 0.2);
 }
 
 .kb-relation-badge.mini {
@@ -1360,12 +1681,13 @@ html.dark .task-tag {
 .slot-empty {
   height: 100%;
   width: 100%;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
 }
 
 .time-slot.drag-over .slot-empty {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px dashed var(--border-accent);
-  border-radius: var(--radius-md);
+  background: rgba(139, 154, 110, 0.08);
+  border: 1.5px dashed var(--color-primary-accent, #8B9A6E);
 }
 
 .time-slot.drag-over .slot-task {
@@ -1374,7 +1696,7 @@ html.dark .task-tag {
 
 /* Current time indicator */
 .is-current .slot-time {
-  color: var(--color-primary-accent, #7D9372);
+  color: var(--color-primary-accent, #8B9A6E);
   font-weight: 800;
 }
 
@@ -1393,7 +1715,7 @@ html.dark .task-tag {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--color-primary-accent, #7D9372);
+  background: var(--color-primary-accent, #8B9A6E);
   flex-shrink: 0;
   margin-left: -4px;
 }
@@ -1401,7 +1723,7 @@ html.dark .task-tag {
 .current-line {
   flex: 1;
   height: 1.5px;
-  background: var(--color-primary-accent, #7D9372);
+  background: var(--color-primary-accent, #8B9A6E);
   opacity: 0.6;
 }
 
@@ -1437,7 +1759,10 @@ html.dark .task-tag {
 }
 
 .empty-icon {
-  font-size: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
   opacity: 0.6;
 }
 
@@ -1448,18 +1773,20 @@ html.dark .task-tag {
   gap: 12px;
   align-items: center;
   padding: 12px;
-  background: var(--surface-1);
-  border: 1px solid var(--border-default);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   cursor: grab;
   position: relative;
   overflow: hidden;
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
 }
 
 .pending-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 8px 22px -3px rgba(0, 0, 0, 0.07), 0 3px 8px -1px rgba(139, 154, 110, 0.16);
 }
 
 .pending-card.is-dragging {
@@ -1520,6 +1847,30 @@ html.dark .pending-subject {
   color: var(--text-muted);
 }
 
+.pending-due-badge {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.04);
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.pending-due-badge.is-overdue {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  font-weight: 600;
+}
+
+html.dark .pending-due-badge {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html.dark .pending-due-badge.is-overdue {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.2);
+}
+
 .drag-handle {
   color: var(--text-muted);
   font-size: 16px;
@@ -1539,8 +1890,8 @@ html.dark .pending-subject {
 }
 
 .kanban-column {
-  background: var(--color-bg-primary);
-  border: 1.5px solid var(--border-default);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 16px;
   min-height: 480px;
@@ -1548,12 +1899,12 @@ html.dark .pending-subject {
   flex-direction: column;
   gap: 12px;
   transition: all 0.25s;
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 4px 12px;
+  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .kanban-column {
   background: var(--color-bg-secondary);
-  border: 1.5px solid var(--border-subtle);
+  border: 1px solid var(--border-subtle);
 }
 
 .kanban-column.drag-over {
@@ -1590,8 +1941,8 @@ html.dark .kanban-column {
 }
 
 .weekly-column.drag-over-column {
-  background: rgba(125, 147, 114, 0.08) !important;
-  border-color: var(--color-primary-accent, #7D9372);
+  background: rgba(139, 154, 110, 0.08) !important;
+  border-color: var(--color-primary-accent, #8B9A6E);
 }
 
 .weekly-view-container {
@@ -1608,10 +1959,10 @@ html.dark .kanban-column {
 }
 
 .weekly-bottom-dock {
-  background: var(--color-bg-primary);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-lg);
   padding: 16px;
-  box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+  box-shadow: 0 10px 24px -4px rgba(0,0,0,0.05);
   flex: 1; /* roughly 25% */
   min-height: 140px;
   display: flex;
@@ -1627,8 +1978,8 @@ html.dark .weekly-bottom-dock {
 }
 
 .weekly-bottom-dock.drag-over {
-  border-color: var(--color-primary-accent, #7D9372);
-  background: rgba(125, 147, 114, 0.04);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.08);
 }
 
 .dock-empty {
@@ -1649,19 +2000,21 @@ html.dark .weekly-bottom-dock {
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  background: var(--surface-2);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   border-radius: 9999px;
   cursor: grab;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s;
 }
 
 .pending-pill:hover {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.2), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .pending-pill.is-dragging {
@@ -1694,18 +2047,20 @@ html.dark .weekly-bottom-dock {
 }
 
 .kanban-task-card {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle);
   border-radius: 12px;
   position: relative;
   overflow: hidden;
   cursor: grab;
+  box-shadow: 0 3px 10px -2px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.02);
   transition: all var(--transition-normal);
 }
 
 .kanban-task-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 8px 20px -3px rgba(139, 154, 110, 0.18), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .card-color-indicator {
@@ -1746,11 +2101,14 @@ html.dark .weekly-bottom-dock {
   font-size: 9px;
   padding: 2px 4px;
   border-radius: 4px;
+  pointer-events: auto;
+  transition: all var(--transition-fast);
 }
 .card-delete-btn:hover,
 .task-delete-btn:hover {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.2);
 }
 
 .card-desc {
@@ -1820,7 +2178,7 @@ html.dark .weekly-bottom-dock {
   transform: translate(-50%, -50%);
   width: 90%;
   max-width: 520px;
-  background: #FFFFFF;
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
   border: 1px solid var(--border-subtle);
@@ -1887,6 +2245,14 @@ html.dark .modal-container {
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 6px;
+  transition: all var(--transition-fast);
+}
+
+.modal-close:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .modal-body {
@@ -1943,9 +2309,9 @@ html.dark .modal-container {
 .close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
 html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
 
-.styled-input, .styled-textarea, .styled-select { width: 100%; padding: 12px 14px; background: var(--color-bg-secondary); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
-.styled-input:focus, .styled-textarea:focus, .styled-select:focus { border-color: #7D9372; background: var(--color-bg-primary); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15); }
-html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styled-select:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2); }
+.styled-input, .styled-textarea, .styled-select { width: 100%; padding: 12px 14px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input:focus, .styled-textarea:focus, .styled-select:focus { border-color: #8B9A6E; background: var(--color-bg-tertiary, #FAF7F2); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18); }
+html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styled-select:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.2); }
 
 /* Day Selector Bar */
 .day-selector-bar {
@@ -1958,7 +2324,7 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styl
 }
 
 .day-btn {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   padding: 6px 14px;
   border-radius: var(--radius-md);
@@ -1968,13 +2334,16 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styl
   display: flex;
   align-items: center;
   gap: 6px;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
   transition: all var(--transition-fast);
 }
 
 .day-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: var(--border-strong);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: rgba(139, 154, 110, 0.4);
   color: var(--text-primary);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px -1px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(139, 154, 110, 0.12);
 }
 
 .day-btn.is-active {
@@ -1982,6 +2351,7 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styl
   color: white;
   border-color: transparent;
   font-weight: 700;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.32);
 }
 
 /* Weekly View Body */
@@ -1993,14 +2363,15 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus, html.dark .styl
 }
 
 .weekly-column {
-  background: var(--color-bg-primary);
-  border: 1px solid var(--border-default);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 480px;
+  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
   transition: all 0.3s ease;
   box-sizing: border-box;
 }
@@ -2011,14 +2382,14 @@ html.dark .weekly-column {
 }
 
 .weekly-column.is-today {
-  border-color: var(--color-primary-accent, #7D9372);
-  background: var(--color-bg-primary);
-  box-shadow: 0 0 16px rgba(125, 147, 114, 0.12), inset 0 0 0 1px var(--color-primary-accent, #7D9372);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  background: var(--color-bg-primary, #F7F2EB);
+  box-shadow: 0 10px 24px -4px rgba(139, 154, 110, 0.18), 0 2px 6px -1px rgba(0, 0, 0, 0.03), inset 0 0 0 1px var(--color-primary-accent, #8B9A6E);
 }
 
 html.dark .weekly-column.is-today {
   background: var(--surface-1);
-  box-shadow: 0 0 16px rgba(125, 147, 114, 0.15), inset 0 0 0 1px var(--color-primary-accent, #7D9372);
+  box-shadow: 0 0 16px rgba(139, 154, 110, 0.15), inset 0 0 0 1px var(--color-primary-accent, #8B9A6E);
 }
 
 .weekly-column-header {
@@ -2055,7 +2426,7 @@ html.dark .weekly-column.is-today {
 
 .weekly-task-card {
   flex-shrink: 0;
-  background: var(--color-bg-tertiary, rgba(255, 255, 255, 0.01));
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-subtle);
   border-left: 3px solid;
   border-radius: var(--radius-md);
@@ -2063,12 +2434,14 @@ html.dark .weekly-column.is-today {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
   transition: all var(--transition-fast);
 }
 
 .weekly-task-card:hover {
   transform: translateY(-1px);
-  border-color: var(--border-strong);
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 6px 14px rgba(139, 154, 110, 0.16), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 .weekly-task-header {
@@ -2133,7 +2506,7 @@ html.dark .weekly-task-tag {
 /* ===== 新建学习任务弹窗 (复刻 Dashboard) ===== */
 .task-create-modal {
   width: 520px;
-  background: #FFFFFF;
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
   border: 1px solid var(--border-subtle);
@@ -2158,9 +2531,8 @@ html.dark .task-create-modal {
   margin: 0;
   font-size: 19px;
   font-weight: 850;
-  color: var(--color-primary-accent, #7D9372);
+  color: var(--color-primary-accent, #8B9A6E);
   letter-spacing: -0.4px;
-  -webkit-text-stroke: 0.35px rgba(90, 111, 80, 0.65);
 }
 
 .task-modal-body {
@@ -2185,7 +2557,7 @@ html.dark .task-create-modal {
 }
 
 .task-form-input {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default);
   border-radius: 10px;
   padding: 10px 14px;
@@ -2196,9 +2568,9 @@ html.dark .task-create-modal {
 }
 
 .task-form-input:focus {
-  border-color: #7D9372;
-  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15);
-  background: var(--color-bg-primary);
+  border-color: #8B9A6E;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+  background: var(--color-bg-tertiary, #FAF7F2);
 }
 
 /* 学科选择网格胶囊 */
@@ -2213,23 +2585,29 @@ html.dark .task-create-modal {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  background: var(--color-bg-secondary);
-  border: 1.5px solid transparent;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1.5px solid var(--border-default);
   border-radius: 9999px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-primary);
   cursor: pointer;
+  box-shadow: 0 2px 5px -1px rgba(0, 0, 0, 0.03);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .subject-capsule-item:hover {
   transform: translateY(-1px);
   background: var(--color-bg-tertiary);
+  border-color: rgba(139, 154, 110, 0.35);
+  box-shadow: 0 3px 8px rgba(139, 154, 110, 0.12);
 }
 
 .subject-capsule-item.active {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: rgba(139, 154, 110, 0.12) !important;
+  border-color: #8B9A6E !important;
+  color: #8B9A6E !important;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.22);
   font-weight: 700;
 }
 
@@ -2247,8 +2625,8 @@ html.dark .task-create-modal {
 .duration-badge {
   font-size: 12px;
   font-weight: 700;
-  color: #7D9372;
-  background: rgba(125, 147, 114, 0.12);
+  color: #8B9A6E;
+  background: rgba(139, 154, 110, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
 }
@@ -2258,7 +2636,7 @@ html.dark .task-create-modal {
   position: relative;
   width: 100%;
   height: 48px;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border: 1.5px solid var(--border-default);
   border-radius: 9999px;
   cursor: pointer;
@@ -2266,12 +2644,13 @@ html.dark .task-create-modal {
   overflow: hidden;
   display: flex;
   align-items: center;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04), 0 2px 6px rgba(0, 0, 0, 0.03);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .duration-long-bar-btn:hover {
-  border-color: #7D9372;
-  box-shadow: 0 4px 16px rgba(125, 147, 114, 0.15);
+  border-color: #8B9A6E;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(139, 154, 110, 0.22);
 }
 
 .duration-bar-fill {
@@ -2279,7 +2658,7 @@ html.dark .task-create-modal {
   top: 0;
   left: 0;
   height: 100%;
-  background: linear-gradient(to right, rgba(125, 147, 114, 0.25), #7D9372);
+  background: linear-gradient(to right, rgba(139, 154, 110, 0.25), #8B9A6E);
   border-radius: 9999px;
   transition: width 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 1;
@@ -2316,13 +2695,13 @@ html.dark .task-create-modal {
   transform: translate(-50%, -50%);
   z-index: 3;
   background: #FFFFFF;
-  border: 2.5px solid #7D9372;
+  border: 2.5px solid #8B9A6E;
   border-radius: 9999px;
   padding: 2px 8px;
   font-size: 11px;
   font-weight: 800;
-  color: #7D9372;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  color: #8B9A6E;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.25);
   pointer-events: none;
   transition: left 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2352,27 +2731,30 @@ html.dark .duration-bar-thumb {
 }
 
 .task-btn-cancel {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary, #FAF7F2);
   color: var(--text-secondary);
   border: 1px solid var(--border-default);
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .task-btn-cancel:hover {
-  background: var(--color-bg-tertiary);
+  transform: translateY(-1px);
+  background: rgba(0, 0, 0, 0.05);
   color: var(--text-primary);
   border-color: var(--border-strong);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
 }
 
 .task-btn-submit {
   background: var(--accent-gradient);
   color: white;
   border: none;
-  box-shadow: 0 4px 14px rgba(125, 147, 114, 0.25);
+  box-shadow: 0 2px 10px rgba(139, 154, 110, 0.35);
 }
 
 .task-btn-submit:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 6px 20px rgba(125, 147, 114, 0.35);
+  box-shadow: 0 6px 18px rgba(139, 154, 110, 0.48);
 }
 
 .task-btn-submit:disabled {

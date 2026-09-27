@@ -11,9 +11,23 @@ export type ConversationView = components['schemas']['ConversationView']
 export type ConversationCommand = components['schemas']['ConversationCommand']
 export type MessageView = components['schemas']['MessageView']
 export type AiMessageCommand = components['schemas']['AiMessageCommand']
-export type SuggestionCommand = components['schemas']['SuggestionCommand']
-export type SuggestionView = components['schemas']['SuggestionView']
 export type CitationView = components['schemas']['CitationView']
+
+export type CanonicalAiProvider = 'DEEPSEEK' | 'OPENAI_COMPATIBLE' | 'SILICONFLOW'
+
+export interface AiModelListView {
+  provider: CanonicalAiProvider
+  models: string[]
+}
+
+export type AiConnectionTestView = components['schemas']['AiConnectionTestView']
+
+export function normalizeProvider(provider: string): CanonicalAiProvider {
+  const p = (provider || '').trim().toLowerCase()
+  if (p.includes('deepseek')) return 'DEEPSEEK'
+  if (p.includes('silicon') || p.includes('硅基')) return 'SILICONFLOW'
+  return 'OPENAI_COMPATIBLE'
+}
 
 export async function checkHealth(): Promise<boolean> {
   try {
@@ -33,6 +47,14 @@ export function updateAiSettings(data: AiSettingsCommand): Promise<AiSettingsVie
   return request.put('/api/ai/settings', data) as unknown as Promise<AiSettingsView>
 }
 
+export function listAiModels(provider: CanonicalAiProvider): Promise<AiModelListView> {
+  return request.get(`/api/ai/settings/${encodeURIComponent(provider)}/models`) as unknown as Promise<AiModelListView>
+}
+
+export function testAiConnection(provider: CanonicalAiProvider): Promise<AiConnectionTestView> {
+  return request.post(`/api/ai/settings/${encodeURIComponent(provider)}/test-connection`) as unknown as Promise<AiConnectionTestView>
+}
+
 export function listConversations(): Promise<ConversationView[]> {
   return request.get('/api/ai/conversations') as unknown as Promise<ConversationView[]>
 }
@@ -49,10 +71,6 @@ export function deleteConversation(conversationId: string, baseVersion: number):
   return request.delete(`/api/ai/conversations/${encodeURIComponent(conversationId)}`, {
     params: { baseVersion },
   }) as unknown as Promise<void>
-}
-
-export function getSuggestions(data: SuggestionCommand): Promise<SuggestionView> {
-  return request.post('/api/ai/suggestions', data) as unknown as Promise<SuggestionView>
 }
 
 /**
@@ -100,11 +118,13 @@ export const useAiApi = {
   checkHealth,
   getAiSettings,
   updateAiSettings,
+  listAiModels,
+  testAiConnection,
+  normalizeProvider,
   listConversations,
   createConversation,
   getConversation,
   deleteConversation,
-  getSuggestions,
   streamAiMessage,
 }
 

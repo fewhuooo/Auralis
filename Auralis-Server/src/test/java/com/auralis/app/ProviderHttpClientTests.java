@@ -58,6 +58,60 @@ class ProviderHttpClientTests {
     }
 
     @Test
+    void getsJsonThroughResolvedEndpointWithTimeoutsAndResponseLimit() throws Exception {
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "provider.test", 443, List.of(InetAddress.getByName("93.184.216.34")), "/v1");
+        AtomicLong connectTimeout = new AtomicLong();
+        AtomicLong responseTimeout = new AtomicLong();
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override
+            public byte[] post(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] requestBody) {
+                throw new AssertionError("Expected GET");
+            }
+
+            @Override
+            public byte[] get(ResolvedProviderEndpoint resolved, String path, String apiKey,
+                    long connectTimeoutMillis, long responseTimeoutMillis) {
+                assertThat(resolved).isSameAs(endpoint);
+                assertThat(path).isEqualTo("/models");
+                assertThat(apiKey).isEqualTo("private-key");
+                connectTimeout.set(connectTimeoutMillis);
+                responseTimeout.set(responseTimeoutMillis);
+                return "{\"data\":[]}".getBytes(StandardCharsets.UTF_8);
+            }
+        };
+
+        JsonNode response = new ProviderHttpClient(new ObjectMapper(), transport, 1024, 400, 800)
+                .getJson(endpoint, "/models", "private-key", JsonNode.class);
+
+        assertThat(response.path("data").isArray()).isTrue();
+        assertThat(connectTimeout).hasValue(400);
+        assertThat(responseTimeout).hasValue(800);
+    }
+
+    @Test
+    void rejectsOversizedGetResponse() {
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override
+            public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] body) {
+                throw new AssertionError("Expected GET");
+            }
+
+            @Override
+            public byte[] get(ResolvedProviderEndpoint endpoint, String path, String apiKey,
+                    long connectTimeoutMillis, long responseTimeoutMillis) {
+                return "0123456789".getBytes(StandardCharsets.UTF_8);
+            }
+        };
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "provider.test", 443, List.of(), "/");
+
+        assertThatThrownBy(() -> new ProviderHttpClient(new ObjectMapper(), transport, 4)
+                .getJson(endpoint, "/models", "secret", JsonNode.class))
+                .isInstanceOf(ProviderResponseTooLargeException.class);
+    }
+
+    @Test
     void logsProviderHttpLifecycleWithoutApiKey(CapturedOutput output) throws Exception {
         ProviderHttpTransport transport = (endpoint, path, apiKey, requestBody) ->
                 "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);

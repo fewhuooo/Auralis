@@ -27,7 +27,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '首页看盘', desc: '日程 · 知识块速览' })"
         @mouseleave="handleMouseLeave"
       >
-        <el-icon class="nav-icon"><LayoutDashboard /></el-icon>
+        <span class="nav-icon"><IconLayoutDashboard :size="20" :stroke-width="1.6" /></span>
       </router-link>
 
       <!-- Subject Hall -->
@@ -35,7 +35,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '学科大厅', desc: '管理与浏览所有学科' })"
         @mouseleave="handleMouseLeave"
       >
-        <el-icon class="nav-icon"><Compass /></el-icon>
+        <span class="nav-icon"><IconBooks :size="20" :stroke-width="1.6" /></span>
       </router-link>
 
       <!-- Timeline -->
@@ -43,7 +43,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '排期副驾', desc: '任务排期 · 拖拽看板' })"
         @mouseleave="handleMouseLeave"
       >
-        <el-icon class="nav-icon"><CalendarClock /></el-icon>
+        <span class="nav-icon"><IconCalendarTime :size="20" :stroke-width="1.6" /></span>
       </router-link>
 
       <!-- Asset -->
@@ -51,7 +51,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '资产编排', desc: '材料管理 · 本地文件登记' })"
         @mouseleave="handleMouseLeave"
       >
-        <el-icon class="nav-icon"><Database /></el-icon>
+        <span class="nav-icon"><IconDatabase :size="20" :stroke-width="1.6" /></span>
       </router-link>
 
       <!-- Pomodoro -->
@@ -59,7 +59,7 @@
         @mouseenter="handleMouseEnter($event, 'nav', { title: '专注时钟', desc: '番茄钟 · 沉浸学习' })"
         @mouseleave="handleMouseLeave"
       >
-        <el-icon class="nav-icon"><Timer /></el-icon>
+        <span class="nav-icon"><IconStopwatch :size="20" :stroke-width="1.6" /></span>
       </router-link>
 
       <!-- Divider -->
@@ -131,7 +131,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { LayoutDashboard, Compass, CalendarClock, Database, Timer } from 'lucide-vue-next'
+import { IconLayoutDashboard, IconBooks, IconCalendarTime, IconDatabase, IconStopwatch } from '@tabler/icons-vue'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import type { ConnectionProjection } from '@/services/connectionStatusProjection'
@@ -214,10 +214,8 @@ onUnmounted(() => {
 .sidebar {
   width: var(--sidebar-width);
   height: 100vh;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border-right: 1px solid var(--glass-border);
+  background: var(--color-bg-primary, #F7F2EB);
+  border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   position: relative;
@@ -273,7 +271,7 @@ onUnmounted(() => {
 }
 
 .nav-item:hover {
-  background: rgba(163, 177, 155, 0.15);
+  background: rgba(139, 154, 110, 0.16);
   color: var(--text-primary);
 }
 

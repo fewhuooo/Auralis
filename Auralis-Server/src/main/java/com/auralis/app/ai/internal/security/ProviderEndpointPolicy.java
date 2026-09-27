@@ -61,7 +61,8 @@ public class ProviderEndpointPolicy {
         }
         String host = normalizeHost(uri.getHost());
         if (host.equals("localhost") || host.endsWith(".localhost") || host.endsWith(".local")
-                || !allowedProviderHosts.contains(host)) {
+                || host.endsWith(".internal")
+                || (provider != AiProviderType.OPENAI_COMPATIBLE && !allowedProviderHosts.contains(host))) {
             throw invalidUrl();
         }
         if (isIpLiteral(host)) {
@@ -166,12 +167,31 @@ public class ProviderEndpointPolicy {
         if (bytes.length != 16) {
             return false;
         }
+        // Reject well-known and local-use NAT64 prefixes: they can route an embedded private IPv4 target.
+        if (hasIpv6Prefix(bytes, 0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0)
+                || hasIpv6Prefix(bytes, 0x00, 0x64, 0xff, 0x9b, 0, 1)) {
+            return true;
+        }
+        // Reject transition prefixes that encapsulate IPv4 addresses and can tunnel to non-public targets.
+        if (hasIpv6Prefix(bytes, 0x20, 0x02) // 6to4
+                || hasIpv6Prefix(bytes, 0x20, 0x01, 0, 0)) { // Teredo
+            return true;
+        }
         int first = bytes[0] & 0xff;
         int second = bytes[1] & 0xff;
         return (first & 0xfe) == 0xfc
                 || (first == 0xfe && (second & 0xc0) == 0x80)
                 || (first == 0x20 && second == 0x01
                 && (bytes[2] & 0xff) == 0x0d && (bytes[3] & 0xff) == 0xb8);
+    }
+
+    private boolean hasIpv6Prefix(byte[] address, int... prefix) {
+        for (int index = 0; index < prefix.length; index++) {
+            if ((address[index] & 0xff) != prefix[index]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isIpLiteral(String host) {

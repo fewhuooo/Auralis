@@ -505,6 +505,109 @@
         } ]
       }
     },
+    "/api/auth/password" : {
+      "put" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "changePassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/auth/me" : {
+      "get" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "me",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "put" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "updateProfile",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ProfileUpdateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "delete" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "deleteAccount",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AccountDeletionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "202" : {
+            "description" : "Accepted",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AccountDeletionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/ai/settings" : {
       "get" : {
         "tags" : [ "ai-controller" ],
@@ -688,6 +791,37 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ScheduleSwapResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/tasks/schedule-insertions" : {
+      "post" : {
+        "tags" : [ "task-controller" ],
+        "operationId" : "insertSchedule",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ScheduleInsertionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ScheduleInsertionResponse"
                 }
               }
             }
@@ -1411,6 +1545,68 @@
         }
       }
     },
+    "/api/auth/me/avatar" : {
+      "get" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "avatar",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "image/png" : {
+                "schema" : {
+                  "type" : "string",
+                  "format" : "byte"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "post" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "uploadAvatar",
+        "requestBody" : {
+          "content" : {
+            "multipart/form-data" : {
+              "schema" : {
+                "type" : "object",
+                "properties" : {
+                  "file" : {
+                    "type" : "string",
+                    "format" : "binary"
+                  }
+                },
+                "required" : [ "file" ]
+              }
+            }
+          }
+        },
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "delete" : {
+        "tags" : [ "auth-controller" ],
+        "operationId" : "resetAvatar",
+        "responses" : {
+          "204" : {
+            "description" : "No Content"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/auth/logout" : {
       "post" : {
         "tags" : [ "auth-controller" ],
@@ -1643,6 +1839,36 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/OverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/settings/{provider}/test-connection" : {
+      "post" : {
+        "tags" : [ "ai-controller" ],
+        "operationId" : "testConnection",
+        "parameters" : [ {
+          "name" : "provider",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "DEEPSEEK", "OPENAI_COMPATIBLE", "SILICONFLOW" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AiConnectionTestView"
                 }
               }
             }
@@ -1964,17 +2190,26 @@
         } ]
       }
     },
-    "/api/auth/me" : {
+    "/api/ai/settings/{provider}/models" : {
       "get" : {
-        "tags" : [ "auth-controller" ],
-        "operationId" : "me",
+        "tags" : [ "ai-controller" ],
+        "operationId" : "models",
+        "parameters" : [ {
+          "name" : "provider",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "DEEPSEEK", "OPENAI_COMPATIBLE", "SILICONFLOW" ]
+          }
+        } ],
         "responses" : {
           "200" : {
             "description" : "OK",
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/UserView"
+                  "$ref" : "#/components/schemas/AiModelListView"
                 }
               }
             }
@@ -2289,6 +2524,59 @@
           }
         }
       },
+      "PasswordChangeRequest" : {
+        "type" : "object",
+        "properties" : {
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "currentPassword" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "newPassword" : {
+            "type" : "string",
+            "maxLength" : 200,
+            "minLength" : 12
+          }
+        },
+        "required" : [ "baseVersion", "currentPassword", "newPassword" ]
+      },
+      "ProfileUpdateRequest" : {
+        "type" : "object",
+        "properties" : {
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "displayName" : {
+            "type" : "string",
+            "maxLength" : 120,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "baseVersion", "displayName" ]
+      },
+      "UserView" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "username" : {
+            "type" : "string"
+          },
+          "displayName" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
       "AiSettingsCommand" : {
         "type" : "object",
         "properties" : {
@@ -2302,11 +2590,6 @@
             "minLength" : 0
           },
           "chatModel" : {
-            "type" : "string",
-            "maxLength" : 240,
-            "minLength" : 0
-          },
-          "embeddingModel" : {
             "type" : "string",
             "maxLength" : 240,
             "minLength" : 0
@@ -2334,9 +2617,6 @@
             "type" : "string"
           },
           "chatModel" : {
-            "type" : "string"
-          },
-          "embeddingModel" : {
             "type" : "string"
           },
           "hasApiKey" : {
@@ -2436,6 +2716,48 @@
           }
         }
       },
+      "ScheduleInsertionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "taskId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "scheduledAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "windowStartAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "windowLastStartAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "targetTaskId" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        },
+        "required" : [ "baseVersion", "scheduledAt", "taskId", "windowLastStartAt", "windowStartAt" ]
+      },
+      "ScheduleInsertionResponse" : {
+        "type" : "object",
+        "properties" : {
+          "tasks" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Response"
+            }
+          }
+        },
+        "required" : [ "tasks" ]
+      },
       "JsonNode" : {
         "type" : "object",
         "properties" : {
@@ -2451,34 +2773,19 @@
           "float" : {
             "type" : "boolean"
           },
+          "container" : {
+            "type" : "boolean"
+          },
           "missingNode" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
           "object" : {
             "type" : "boolean"
           },
-          "container" : {
-            "type" : "boolean"
-          },
           "double" : {
-            "type" : "boolean"
-          },
-          "number" : {
-            "type" : "boolean"
-          },
-          "pojo" : {
-            "type" : "boolean"
-          },
-          "long" : {
-            "type" : "boolean"
-          },
-          "short" : {
-            "type" : "boolean"
-          },
-          "string" : {
-            "type" : "boolean"
-          },
-          "int" : {
             "type" : "boolean"
           },
           "textual" : {
@@ -2491,13 +2798,28 @@
           "binary" : {
             "type" : "boolean"
           },
+          "short" : {
+            "type" : "boolean"
+          },
+          "string" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "int" : {
+            "type" : "boolean"
+          },
+          "long" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "type" : "boolean"
+          },
           "valueNode" : {
             "type" : "boolean"
           },
           "bigDecimal" : {
-            "type" : "boolean"
-          },
-          "bigInteger" : {
             "type" : "boolean"
           },
           "nodeType" : {
@@ -2507,7 +2829,7 @@
           "integralNumber" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
+          "bigInteger" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -3042,21 +3364,6 @@
           }
         }
       },
-      "UserView" : {
-        "type" : "object",
-        "properties" : {
-          "id" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "username" : {
-            "type" : "string"
-          },
-          "displayName" : {
-            "type" : "string"
-          }
-        }
-      },
       "RefreshRequest" : {
         "type" : "object",
         "properties" : {
@@ -3474,6 +3781,21 @@
         },
         "required" : [ "mode", "sourceId" ]
       },
+      "AiConnectionTestView" : {
+        "type" : "object",
+        "properties" : {
+          "provider" : {
+            "type" : "string",
+            "enum" : [ "DEEPSEEK", "OPENAI_COMPATIBLE", "SILICONFLOW" ]
+          },
+          "reachable" : {
+            "type" : "boolean"
+          },
+          "chatModel" : {
+            "type" : "string"
+          }
+        }
+      },
       "AiMessageCommand" : {
         "type" : "object",
         "properties" : {
@@ -3523,7 +3845,16 @@
           },
           "retrievalMode" : {
             "type" : "string",
-            "enum" : [ "AUTO" ]
+            "enum" : [ "AUTO", "SELECTED_SOURCES", "SUBJECT" ]
+          },
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            },
+            "maxItems" : 100,
+            "minItems" : 0
           },
           "selectionText" : {
             "type" : "string",
@@ -3531,7 +3862,7 @@
             "minLength" : 0
           }
         },
-        "required" : [ "currentSourceId", "retrievalMode", "subjectId" ]
+        "required" : [ "retrievalMode", "subjectId" ]
       },
       "StreamingResponseBody" : { },
       "ConversationCommand" : {
@@ -3869,6 +4200,47 @@
           },
           "current" : {
             "type" : "boolean"
+          }
+        }
+      },
+      "AiModelListView" : {
+        "type" : "object",
+        "properties" : {
+          "provider" : {
+            "type" : "string",
+            "enum" : [ "DEEPSEEK", "OPENAI_COMPATIBLE", "SILICONFLOW" ]
+          },
+          "models" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
+      "AccountDeletionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "password" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "password" ]
+      },
+      "AccountDeletionResponse" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "requestedAt" : {
+            "type" : "string",
+            "format" : "date-time"
           }
         }
       }

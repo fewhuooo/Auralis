@@ -8,18 +8,31 @@ import com.auralis.app.identity.internal.persistence.UserEntity;
 import com.auralis.app.identity.internal.persistence.UserRepository;
 import com.auralis.app.identity.internal.security.RefreshTokenHasher;
 import com.auralis.app.identity.internal.security.TokenService;
+import com.auralis.app.shared.error.DomainException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Iterator;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.image.BufferedImage;
 
 @Service
 public class IdentityService {
@@ -34,6 +47,8 @@ public class IdentityService {
     private final TokenService tokenService;
     private final RefreshTokenHasher refreshTokenHasher;
     private final Clock clock;
+    private final JdbcTemplate jdbcTemplate;
+    private final long uploadIntentTtlSeconds;
     public IdentityService(
             UserRepository userRepository,
             DeviceRepository deviceRepository,
@@ -41,7 +56,9 @@ public class IdentityService {
             PasswordEncoder passwordEncoder,
             TokenService tokenService,
             RefreshTokenHasher refreshTokenHasher,
-            Clock clock) {
+            Clock clock,
+            JdbcTemplate jdbcTemplate,
+            @Value("${auralis.upload.storage.presign-ttl-seconds:300}") long uploadIntentTtlSeconds) {
         this.userRepository = userRepository;
         this.deviceRepository = deviceRepository;
         this.refreshSessionRepository = refreshSessionRepository;
@@ -49,6 +66,26 @@ public class IdentityService {
         this.tokenService = tokenService;
         this.refreshTokenHasher = refreshTokenHasher;
         this.clock = clock;
+        this.jdbcTemplate = jdbcTemplate;
+        this.uploadIntentTtlSeconds = Math.max(0, uploadIntentTtlSeconds);
+    }
+
+    /**
+     * Serializes mutations that enforce a user-wide invariant. Callers must acquire
+     * this lock before Subject/resource locks and keep the surrounding transaction
+     * open for the complete mutation.
+     */
+    @Transactional
+    public void lockUserForScheduling(UUID userId) {
+        userRepository.findForUpdateById(userId)
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "User was not found"));
+    }
+
+    @Transactional
+    public void lockActiveUserForStorage(UUID userId) {
+        userRepository.findForUpdateById(userId)
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(this::unauthenticated);
     }
 
     @Transactional
@@ -70,7 +107,7 @@ public class IdentityService {
 
     @Transactional
     public AuthResult login(String username, String password, DeviceCommand device) {
-        UserEntity user = userRepository.findByNormalizedUsername(normalizeUsername(username)).orElse(null);
+        UserEntity user = userRepository.findForUpdateByNormalizedUsername(normalizeUsername(username)).orElse(null);
         if (user == null || user.getStatus() != UserStatus.ACTIVE
                 || !passwordEncoder.matches(password, user.getPasswordHash())) {
             throw invalidCredentials();
@@ -82,8 +119,16 @@ public class IdentityService {
     public AuthResult refresh(String rawRefreshToken) {
         Instant now = clock.instant();
         String tokenHash = refreshTokenHasher.hash(rawRefreshToken);
+        UUID userId = refreshSessionRepository.findUserIdByTokenHash(tokenHash)
+                .orElseThrow(this::invalidCredentials);
+        UserEntity user = userRepository.findForUpdateById(userId)
+                .filter(found -> found.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(this::invalidCredentials);
         RefreshSessionEntity current = refreshSessionRepository.findByTokenHashForUpdate(tokenHash)
                 .orElseThrow(this::invalidCredentials);
+        if (!userId.equals(current.getUserId())) {
+            throw invalidCredentials();
+        }
         if (current.isRotatedOrRevoked()) {
             refreshSessionRepository.revokeFamily(current.getRotationFamilyId(), now);
             throw invalidCredentials();
@@ -92,7 +137,6 @@ public class IdentityService {
             current.revoke(now);
             throw invalidCredentials();
         }
-        UserEntity user = userRepository.findById(current.getUserId()).orElseThrow(this::invalidCredentials);
         DeviceEntity device = deviceRepository.findById(current.getServerDeviceId()).orElseThrow(this::invalidCredentials);
         if (user.getStatus() != UserStatus.ACTIVE || device.getRevokedAt() != null) {
             throw invalidCredentials();
@@ -131,6 +175,117 @@ public class IdentityService {
             throw unauthenticated();
         }
         return toUserView(user);
+    }
+
+    @Transactional
+    public UserView updateDisplayName(UUID userId, long baseVersion, String displayName) {
+        UserEntity user = userRepository.findForUpdateById(userId)
+                .filter(found -> found.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(this::unauthenticated);
+        requireVersion(user, baseVersion);
+        String normalizedDisplayName = displayName == null ? "" : displayName.trim();
+        if (normalizedDisplayName.isEmpty() || normalizedDisplayName.length() > 120) {
+            throw new IdentityException("VALIDATION_FAILED", "Display name must contain 1 to 120 characters");
+        }
+        user.setDisplayName(normalizedDisplayName);
+        userRepository.flush();
+        return toUserView(user);
+    }
+
+    @Transactional
+    public void changePassword(UUID userId, long baseVersion, String currentPassword, String newPassword) {
+        UserEntity user = userRepository.findForUpdateById(userId)
+                .filter(found -> found.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(this::unauthenticated);
+        requireVersion(user, baseVersion);
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw invalidCredentials();
+        }
+        if (newPassword == null || newPassword.length() < 12 || newPassword.length() > 200) {
+            throw new IdentityException("VALIDATION_FAILED", "Password must contain 12 to 200 characters");
+        }
+        if (passwordEncoder.matches(newPassword, user.getPasswordHash())) {
+            throw new IdentityException("VALIDATION_FAILED", "New password must differ from the current password");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        Instant now = clock.instant();
+        refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId)
+                .forEach(session -> session.revoke(now));
+    }
+
+    @Transactional
+    public void putAvatar(UUID userId, byte[] imageBytes) {
+        UserEntity user = userRepository.findForUpdateById(userId)
+                .filter(found -> found.getStatus() == UserStatus.ACTIVE)
+                .orElseThrow(this::unauthenticated);
+        byte[] safePng = validateAndNormalizeAvatar(imageBytes);
+        int updated = jdbcTemplate.update(
+                "update user_avatars set content_type = 'image/png', image_bytes = ?, updated_at = CURRENT_TIMESTAMP where user_id = ?",
+                safePng, user.getId());
+        if (updated == 0) {
+            jdbcTemplate.update(
+                    "insert into user_avatars (user_id, content_type, image_bytes) values (?, 'image/png', ?)",
+                    user.getId(), safePng);
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public AvatarContent getAvatar(UUID userId) {
+        activeUser(userId);
+        return jdbcTemplate.query("select content_type, image_bytes from user_avatars where user_id = ?",
+                resultSet -> resultSet.next()
+                        ? new AvatarContent(resultSet.getString("content_type"), resultSet.getBytes("image_bytes"))
+                        : null,
+                userId);
+    }
+
+    @Transactional
+    public void resetAvatar(UUID userId) {
+        activeUser(userId);
+        jdbcTemplate.update("delete from user_avatars where user_id = ?", userId);
+    }
+
+    @Transactional
+    public AuthDtos.AccountDeletionResponse requestAccountDeletion(UUID userId, String password) {
+        UserEntity user = userRepository.findForUpdateById(userId)
+                .orElseThrow(this::unauthenticated);
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw invalidCredentials();
+        }
+        var existing = jdbcTemplate.query(
+                "select id, status, requested_at, completed_at from account_deletion_jobs where user_id = ?",
+                resultSet -> resultSet.next()
+                        ? new AuthDtos.AccountDeletionResponse(
+                                resultSet.getObject("id", UUID.class), resultSet.getString("status"),
+                                resultSet.getTimestamp("requested_at").toInstant())
+                        : null,
+                userId);
+        if (existing != null) {
+            return existing;
+        }
+        UUID jobId = UUID.randomUUID();
+        Instant now = clock.instant();
+        Instant notBefore = now.plusSeconds(uploadIntentTtlSeconds + 60);
+        user.disable();
+        refreshSessionRepository.findAllByUserIdOrderByLastUsedAtDesc(userId)
+                .forEach(session -> session.revoke(now));
+        jdbcTemplate.update(
+                "insert into account_deletion_jobs (id, user_id, status, requested_at, not_before) "
+                        + "values (?, ?, 'PENDING', ?, ?)",
+                jobId, userId,
+                OffsetDateTime.ofInstant(now, ZoneOffset.UTC),
+                OffsetDateTime.ofInstant(notBefore, ZoneOffset.UTC));
+        Set<String> objectKeys = new HashSet<>(jdbcTemplate.query(
+                "select object_key from assets where user_id = ?",
+                (resultSet, rowNum) -> resultSet.getString("object_key"), userId));
+        objectKeys.addAll(jdbcTemplate.query(
+                "select object_key from parsed_documents where user_id = ?",
+                (resultSet, rowNum) -> resultSet.getString("object_key"), userId));
+        for (String objectKey : objectKeys) {
+            jdbcTemplate.update("insert into account_deletion_objects (job_id, object_key) values (?, ?)",
+                    jobId, objectKey);
+        }
+        return new AuthDtos.AccountDeletionResponse(jobId, "PENDING", now);
     }
 
     @Transactional(readOnly = true)
@@ -217,7 +372,67 @@ public class IdentityService {
     }
 
     private UserView toUserView(UserEntity user) {
-        return new UserView(user.getId(), user.getUsername(), user.getDisplayName());
+        return new UserView(user.getId(), user.getUsername(), user.getDisplayName(), user.getVersion());
+    }
+
+    private void requireVersion(UserEntity user, long baseVersion) {
+        if (user.getVersion() != baseVersion) {
+            throw new IdentityException("RESOURCE_VERSION_CONFLICT", "User profile changed since it was read");
+        }
+    }
+
+    private UserEntity activeUser(UUID userId) {
+        UserEntity user = userRepository.findById(userId)
+                .orElseThrow(this::unauthenticated);
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            throw unauthenticated();
+        }
+        return user;
+    }
+
+    private byte[] validateAndNormalizeAvatar(byte[] imageBytes) {
+        if (imageBytes == null || imageBytes.length == 0 || imageBytes.length > 5 * 1024 * 1024) {
+            throw new IdentityException("UPLOAD_VALIDATION_FAILED", "Avatar must be an image no larger than 5 MiB");
+        }
+        try (ImageInputStream input = ImageIO.createImageInputStream(new ByteArrayInputStream(imageBytes))) {
+            if (input == null) {
+                throw invalidAvatar();
+            }
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) {
+                throw invalidAvatar();
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(input, true, true);
+                String format = reader.getFormatName();
+                if (!"png".equalsIgnoreCase(format) && !"jpeg".equalsIgnoreCase(format) && !"jpg".equalsIgnoreCase(format)) {
+                    throw invalidAvatar();
+                }
+                int width = reader.getWidth(0);
+                int height = reader.getHeight(0);
+                if (width < 1 || height < 1 || width > 4096 || height > 4096 || (long) width * height > 16_000_000L) {
+                    throw invalidAvatar();
+                }
+                BufferedImage image = reader.read(0);
+                if (image == null) {
+                    throw invalidAvatar();
+                }
+                ByteArrayOutputStream output = new ByteArrayOutputStream();
+                if (!ImageIO.write(image, "png", output) || output.size() > 5 * 1024 * 1024) {
+                    throw invalidAvatar();
+                }
+                return output.toByteArray();
+            } finally {
+                reader.dispose();
+            }
+        } catch (IOException exception) {
+            throw invalidAvatar();
+        }
+    }
+
+    private IdentityException invalidAvatar() {
+        return new IdentityException("UPLOAD_VALIDATION_FAILED", "Avatar must be a valid PNG or JPEG image");
     }
 
     private String normalizeUsername(String username) {
@@ -237,5 +452,12 @@ public class IdentityService {
 
     private IdentityException resourceNotFound() {
         return new IdentityException("RESOURCE_NOT_FOUND", "Session was not found");
+    }
+
+    public record AvatarContent(String contentType, byte[] bytes) {
+        public AvatarContent {
+            bytes = bytes.clone();
+        }
+        @Override public byte[] bytes() { return bytes.clone(); }
     }
 }

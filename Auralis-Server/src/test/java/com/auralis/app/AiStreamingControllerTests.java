@@ -65,6 +65,7 @@ class AiStreamingControllerTests {
         }).when(streamingService).stream(eq(userId), eq(command), any(AiStreamSink.class));
         AiController controller = new AiController(
                 mock(AiSettingsService.class),
+                mock(com.auralis.app.ai.AiProviderDiscoveryService.class),
                 mock(ConversationService.class),
                 streamingService,
                 mock(SuggestionService.class),

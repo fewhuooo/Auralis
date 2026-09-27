@@ -4,6 +4,7 @@ import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
+import com.auralis.app.identity.IdentityService;
 import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.shared.pagination.CursorCodec;
 import com.auralis.app.shared.pagination.CursorPage;
@@ -16,8 +17,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -25,14 +30,17 @@ public class TaskService {
 
     private final TaskRepository taskRepository;
     private final SubjectLockCoordinator subjectLockCoordinator;
+    private final IdentityService identityService;
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(
             TaskRepository taskRepository,
             SubjectLockCoordinator subjectLockCoordinator,
+            IdentityService identityService,
             ApplicationEventPublisher eventPublisher) {
         this.taskRepository = taskRepository;
         this.subjectLockCoordinator = subjectLockCoordinator;
+        this.identityService = identityService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -43,8 +51,10 @@ public class TaskService {
 
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView create(UUID userId, UUID taskId, TaskCommand command) {
+        identityService.lockUserForScheduling(userId);
         subjectLockCoordinator.lockSubjects(userId, List.of(command.subjectId()));
-        validateSchedule(command);
+        validateTaskCommand(command);
+        validateScheduleIntervals(userId, List.of(candidate(command)), Set.of());
         TaskEntity entity = new TaskEntity(
                 taskId, userId, command.subjectId(), required(command.title()), command.description(),
                 status(command.status()), command.scheduledAt(), command.dueAt(), command.durationMinutes(),
@@ -115,6 +125,7 @@ public class TaskService {
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView update(UUID userId, UUID id, long baseVersion, TaskCommand command) {
         UUID currentSubjectId = ownerSubjectIdForMutation(userId, id);
+        identityService.lockUserForScheduling(userId);
         List<UUID> ownerSubjectIds = new ArrayList<>();
         ownerSubjectIds.add(currentSubjectId);
         ownerSubjectIds.add(command.subjectId());
@@ -124,7 +135,8 @@ public class TaskService {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being updated");
         }
         requireVersion(entity, baseVersion);
-        validateSchedule(command);
+        validateTaskCommand(command);
+        validateScheduleIntervals(userId, List.of(candidate(command)), Set.of(id));
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
                 command.scheduledAt(), command.dueAt(), command.durationMinutes(),
                 defaultSortKey(command.sortKey()));
@@ -151,6 +163,7 @@ public class TaskService {
 
         UUID sourceSubjectId = ownerSubjectIdForMutation(userId, sourceTaskId);
         UUID targetSubjectId = ownerSubjectIdForMutation(userId, targetTaskId);
+        identityService.lockUserForScheduling(userId);
         subjectLockCoordinator.lockSubjects(userId, List.of(sourceSubjectId, targetSubjectId));
 
         TaskEntity[] locked = lockActivePair(userId, sourceTaskId, targetTaskId);
@@ -161,17 +174,41 @@ public class TaskService {
         }
         requireVersion(source, sourceBaseVersion);
         requireVersion(target, targetBaseVersion);
+        if (source.getStatus() == TaskStatus.DONE || source.getStatus() == TaskStatus.CANCELLED
+                || target.getStatus() == TaskStatus.DONE || target.getStatus() == TaskStatus.CANCELLED) {
+            throw new DomainException("VALIDATION_FAILED", "Completed or cancelled tasks cannot be rescheduled");
+        }
 
         Instant sourceSchedule = source.getScheduledAt();
         Instant targetSchedule = target.getScheduledAt();
         if (sourceSchedule == null || targetSchedule == null) {
             throw new DomainException("VALIDATION_FAILED", "Both tasks must be scheduled before they can be swapped");
         }
-        validateSchedule(targetSchedule, source.getDueAt());
-        validateSchedule(sourceSchedule, target.getDueAt());
+        Instant newSourceSchedule = targetSchedule;
+        Instant newTargetSchedule = sourceSchedule;
+        int sourceDuration = effectiveDurationMinutes(source.getDurationMinutes());
+        int targetDuration = effectiveDurationMinutes(target.getDurationMinutes());
+        boolean sourceImmediatelyBeforeTarget = sourceDuration > 0
+                && sourceSchedule.plus(Duration.ofMinutes(sourceDuration)).equals(targetSchedule);
+        boolean targetImmediatelyBeforeSource = targetDuration > 0
+                && targetSchedule.plus(Duration.ofMinutes(targetDuration)).equals(sourceSchedule);
+        if (sourceImmediatelyBeforeTarget || targetImmediatelyBeforeSource) {
+            Instant windowStart = sourceImmediatelyBeforeTarget ? sourceSchedule : targetSchedule;
+            if (sourceImmediatelyBeforeTarget) {
+                newTargetSchedule = windowStart;
+                newSourceSchedule = windowStart.plus(Duration.ofMinutes(targetDuration));
+            } else {
+                newSourceSchedule = windowStart;
+                newTargetSchedule = windowStart.plus(Duration.ofMinutes(sourceDuration));
+            }
+        }
+        validateScheduleIntervals(userId, List.of(
+                new ScheduleCandidate(newSourceSchedule, source.getDurationMinutes(), source.getStatus()),
+                new ScheduleCandidate(newTargetSchedule, target.getDurationMinutes(), target.getStatus())),
+                Set.of(sourceTaskId, targetTaskId));
 
-        source.reschedule(targetSchedule);
-        target.reschedule(sourceSchedule);
+        source.reschedule(newSourceSchedule);
+        target.reschedule(newTargetSchedule);
         taskRepository.saveAndFlush(source);
         taskRepository.saveAndFlush(target);
 
@@ -180,6 +217,166 @@ public class TaskService {
         publishChange(userId, sourceView, "UPDATE");
         publishChange(userId, targetView, "UPDATE");
         return new ScheduleSwapResult(sourceView, targetView);
+    }
+
+    @Transactional
+    public List<TaskView> insertSchedule(
+            UUID userId,
+            UUID taskId,
+            long baseVersion,
+            Instant requestedAt,
+            Instant windowStartAt,
+            Instant windowLastStartAt) {
+        return insertSchedule(userId, taskId, baseVersion, requestedAt, windowStartAt, windowLastStartAt, null);
+    }
+
+    @Transactional
+    public List<TaskView> insertSchedule(
+            UUID userId,
+            UUID taskId,
+            long baseVersion,
+            Instant requestedAt,
+            Instant windowStartAt,
+            Instant windowLastStartAt,
+            UUID targetTaskId) {
+        if (requestedAt == null || windowStartAt == null || windowLastStartAt == null
+                || !Duration.between(windowStartAt, windowLastStartAt).equals(Duration.ofMinutes(14 * 60 + 30))) {
+            throw new DomainException("VALIDATION_FAILED", "A valid schedule window is required");
+        }
+        UUID targetSubjectId = ownerSubjectIdForMutation(userId, taskId);
+        UUID bodyTargetSubjectId = targetTaskId == null ? null : ownerSubjectIdForMutation(userId, targetTaskId);
+        identityService.lockUserForScheduling(userId);
+
+        List<TaskEntity> discovered = taskRepository
+                .findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNullOrderByIdAsc(userId);
+        Set<UUID> subjectIds = new HashSet<>();
+        subjectIds.add(targetSubjectId);
+        if (bodyTargetSubjectId != null) {
+            subjectIds.add(bodyTargetSubjectId);
+        }
+        discovered.stream().map(TaskEntity::getSubjectId).forEach(subjectIds::add);
+        subjectLockCoordinator.lockSubjects(userId, subjectIds);
+
+        List<TaskEntity> locked = taskRepository.findScheduleForUpdateByUserId(userId, taskId);
+        TaskEntity inserted = locked.stream().filter(task -> task.getId().equals(taskId)).findFirst()
+                .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
+        if (!inserted.getSubjectId().equals(targetSubjectId)) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Task subject changed while being scheduled");
+        }
+        requireVersion(inserted, baseVersion);
+        if (inserted.getStatus() == TaskStatus.DONE || inserted.getStatus() == TaskStatus.CANCELLED) {
+            throw new DomainException("VALIDATION_FAILED", "Completed or cancelled tasks cannot be rescheduled");
+        }
+
+        Instant roundedTarget = ceilToSlot(requestedAt, windowStartAt);
+        if (requestedAt.isBefore(windowStartAt) || requestedAt.isAfter(windowLastStartAt)
+                || roundedTarget.isAfter(windowLastStartAt)) {
+            throw new DomainException("VALIDATION_FAILED", "The requested schedule is outside the available window");
+        }
+
+        if (targetTaskId != null) {
+            TaskEntity bodyTarget = locked.stream().filter(task -> task.getId().equals(targetTaskId)).findFirst()
+                    .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Target task was not found"));
+            if (!bodyTarget.getSubjectId().equals(bodyTargetSubjectId)) {
+                throw new DomainException("RESOURCE_VERSION_CONFLICT", "Target task subject changed while being scheduled");
+            }
+            if (targetTaskId.equals(taskId)) {
+                throw new DomainException("VALIDATION_FAILED", "A task cannot be inserted into itself");
+            }
+            if (bodyTarget.getStatus() == TaskStatus.DONE || bodyTarget.getStatus() == TaskStatus.CANCELLED
+                    || bodyTarget.getScheduledAt() == null) {
+                throw new DomainException("VALIDATION_FAILED", "The target task is not an active scheduled task");
+            }
+            Instant targetStart = bodyTarget.getScheduledAt();
+            if (targetStart.isBefore(windowStartAt) || targetStart.isAfter(windowLastStartAt)) {
+                throw new DomainException("VALIDATION_FAILED", "The target task is outside the available window");
+            }
+            Instant targetEnd = targetStart.plus(
+                    Duration.ofMinutes(effectiveDurationMinutes(bodyTarget.getDurationMinutes())));
+            Instant afterTarget = ceilToSlot(targetEnd, windowStartAt);
+            if (afterTarget.isAfter(windowLastStartAt)) {
+                throw new DomainException("VALIDATION_FAILED", "The target task leaves no available following slot");
+            }
+            if (!requestedAt.equals(afterTarget)) {
+                throw new DomainException("RESOURCE_VERSION_CONFLICT", "The target task changed while being scheduled");
+            }
+
+            ScheduleCandidate proposed = new ScheduleCandidate(
+                    afterTarget, inserted.getDurationMinutes(), inserted.getStatus());
+            validateScheduleIntervals(userId, List.of(proposed), Set.of(taskId));
+            if (afterTarget.equals(inserted.getScheduledAt())) {
+                return List.of();
+            }
+            inserted.reschedule(afterTarget);
+            TaskView result = view(taskRepository.saveAndFlush(inserted));
+            publishChange(userId, result, "UPDATE");
+            return List.of(result);
+        }
+
+        Instant windowEnd = windowLastStartAt.plusSeconds(30 * 60L);
+        List<TaskEntity> ordered = locked.stream()
+                .filter(task -> task.getId().equals(taskId)
+                        || task.getScheduledAt() != null
+                        && !task.getScheduledAt().isBefore(windowStartAt)
+                        && task.getScheduledAt().isBefore(windowEnd))
+                .sorted(Comparator
+                        .comparingInt((TaskEntity task) -> task.getId().equals(taskId) ? 1
+                                : task.getScheduledAt().plus(Duration.ofMinutes(
+                                        effectiveDurationMinutes(task.getDurationMinutes())))
+                                        .isAfter(roundedTarget) ? 2 : 0)
+                        .thenComparing(task -> task.getId().equals(taskId) ? roundedTarget : task.getScheduledAt())
+                        .thenComparing(TaskEntity::getId))
+                .toList();
+
+        Instant previousEnd = null;
+        List<TaskEntity> changed = new ArrayList<>();
+        for (TaskEntity task : ordered) {
+            if (task.getStatus() == TaskStatus.CANCELLED) {
+                continue;
+            }
+            Instant proposedStart = task.getId().equals(taskId) ? roundedTarget : task.getScheduledAt();
+            Instant actualStart = proposedStart;
+            if (previousEnd != null && proposedStart.isBefore(previousEnd)) {
+                if (task.getStatus() == TaskStatus.DONE) {
+                    throw scheduleConflict();
+                }
+                actualStart = ceilToSlot(previousEnd, windowStartAt);
+            }
+            if (actualStart.isAfter(windowLastStartAt)) {
+                throw new DomainException("VALIDATION_FAILED", "Rescheduled tasks exceed the available window");
+            }
+            if (!actualStart.equals(task.getScheduledAt())) {
+                task.reschedule(actualStart);
+                changed.add(task);
+            }
+            previousEnd = actualStart.plus(Duration.ofMinutes(effectiveDurationMinutes(task.getDurationMinutes())));
+        }
+
+        if (changed.isEmpty()) {
+            return List.of();
+        }
+        validateScheduleIntervals(userId, changed.stream()
+                .map(task -> new ScheduleCandidate(task.getScheduledAt(), task.getDurationMinutes(), task.getStatus()))
+                .toList(), changed.stream().map(TaskEntity::getId).collect(java.util.stream.Collectors.toSet()));
+
+        List<TaskView> results = new ArrayList<>(changed.size());
+        for (TaskEntity task : changed) {
+            results.add(view(taskRepository.saveAndFlush(task)));
+        }
+        results.sort(Comparator.comparing(TaskView::scheduledAt).thenComparing(TaskView::id));
+        results.forEach(result -> publishChange(userId, result, "UPDATE"));
+        return List.copyOf(results);
+    }
+
+    private Instant ceilToSlot(Instant instant, Instant windowStartAt) {
+        Duration offset = Duration.between(windowStartAt, instant);
+        long seconds = offset.getSeconds();
+        long remainder = Math.floorMod(seconds, 30 * 60L);
+        if (remainder == 0 && offset.getNano() == 0) {
+            return instant;
+        }
+        long slots = Math.floorDiv(seconds, 30 * 60L) + 1;
+        return windowStartAt.plusSeconds(slots * 30 * 60L);
     }
 
     @Transactional(noRollbackFor = DomainException.class)
@@ -214,6 +411,7 @@ public class TaskService {
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView restore(UUID userId, UUID id, long baseVersion) {
         UUID subjectId = ownerSubjectIdForMutation(userId, id);
+        identityService.lockUserForScheduling(userId);
         subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
         TaskEntity entity = taskRepository.findForUpdate(id, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
@@ -224,6 +422,8 @@ public class TaskService {
             throw new DomainException("MUTATION_REJECTED", "Task is not deleted");
         }
         requireVersion(entity, baseVersion);
+        validateScheduleIntervals(userId, List.of(new ScheduleCandidate(
+                entity.getScheduledAt(), entity.getDurationMinutes(), entity.getStatus())), Set.of(id));
         entity.restore();
         TaskView result = view(taskRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");
@@ -279,17 +479,66 @@ public class TaskService {
         return sortKey == null ? "" : sortKey;
     }
 
-    private void validateSchedule(TaskCommand command) {
+    private void validateTaskCommand(TaskCommand command) {
         if (command.durationMinutes() != null && command.durationMinutes() < 0) {
             throw new DomainException("VALIDATION_FAILED", "durationMinutes cannot be negative");
         }
-        validateSchedule(command.scheduledAt(), command.dueAt());
     }
 
-    private void validateSchedule(Instant scheduledAt, Instant dueAt) {
-        if (scheduledAt != null && dueAt != null && dueAt.isBefore(scheduledAt)) {
-            throw new DomainException("VALIDATION_FAILED", "dueAt cannot be before scheduledAt");
+    private ScheduleCandidate candidate(TaskCommand command) {
+        return new ScheduleCandidate(command.scheduledAt(), command.durationMinutes(), status(command.status()));
+    }
+
+    private void validateScheduleIntervals(
+            UUID userId, List<ScheduleCandidate> candidates, Set<UUID> excludedTaskIds) {
+        List<ScheduleCandidate> proposed = candidates.stream()
+                .filter(candidate -> candidate.scheduledAt() != null)
+                .filter(candidate -> candidate.status() != TaskStatus.CANCELLED)
+                .toList();
+        if (proposed.isEmpty()) {
+            return;
         }
+
+        List<TaskEntity> existing = taskRepository.findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNull(userId);
+        for (ScheduleCandidate candidate : proposed) {
+            for (TaskEntity task : existing) {
+                if (excludedTaskIds.contains(task.getId()) || task.getStatus() == TaskStatus.CANCELLED) {
+                    continue;
+                }
+                if (overlaps(candidate, new ScheduleCandidate(
+                        task.getScheduledAt(), task.getDurationMinutes(), task.getStatus()))) {
+                    throw scheduleConflict();
+                }
+            }
+        }
+
+        for (int i = 0; i < proposed.size(); i++) {
+            for (int j = i + 1; j < proposed.size(); j++) {
+                if (overlaps(proposed.get(i), proposed.get(j))) {
+                    throw scheduleConflict();
+                }
+            }
+        }
+    }
+
+    private boolean overlaps(ScheduleCandidate left, ScheduleCandidate right) {
+        Instant leftStart = left.scheduledAt();
+        Instant rightStart = right.scheduledAt();
+        Instant leftEnd = leftStart.plus(Duration.ofMinutes(effectiveDurationMinutes(left.durationMinutes())));
+        Instant rightEnd = rightStart.plus(Duration.ofMinutes(effectiveDurationMinutes(right.durationMinutes())));
+        return leftStart.isBefore(leftEnd) && rightStart.isBefore(rightEnd)
+                && leftStart.isBefore(rightEnd) && rightStart.isBefore(leftEnd);
+    }
+
+    private int effectiveDurationMinutes(Integer durationMinutes) {
+        return durationMinutes == null ? 30 : durationMinutes;
+    }
+
+    private DomainException scheduleConflict() {
+        return new DomainException("VALIDATION_FAILED", "Task schedule overlaps another active task");
+    }
+
+    private record ScheduleCandidate(Instant scheduledAt, Integer durationMinutes, TaskStatus status) {
     }
 
     private TaskView view(TaskEntity entity) {

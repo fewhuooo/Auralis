@@ -25,6 +25,7 @@ const {
 const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts');
 const { serializeLocalSqlDatabase } = await import('../src/services/localSqlQueue.ts');
 const { LocalDatabaseRuntime } = await import('../src/services/localDatabaseRuntime.ts');
+const { runSyncCycle } = await import('../src/services/syncCycle.ts');
 const {
   backupLegacyUnassignedData,
   getLegacyUnassignedBackup,
@@ -310,6 +311,131 @@ test('coalesces pending local writes per resource without changing their server 
   }]);
 });
 
+test('server swap batch rolls back the first task when the second write fails, then cursor pull repairs both', async () => {
+  const sqlite = new TemporarySqlite();
+  try {
+    const repository = new LocalRepository('user-a', 'device-1', { sql: sqlite });
+    const originalSource = { id: 'source-task', title: 'Source', status: 'TODO', scheduledAt: '2026-09-27T09:00:00.000Z' };
+    const originalTarget = { id: 'target-task', title: 'Target', status: 'TODO', scheduledAt: '2026-09-27T10:00:00.000Z' };
+    const swappedSource = { ...originalSource, scheduledAt: originalTarget.scheduledAt, version: 4 };
+    const swappedTarget = { ...originalTarget, scheduledAt: originalSource.scheduledAt, version: 5 };
+    await repository.upsert('TASK', originalSource.id, originalSource, { version: 3 });
+    await repository.upsert('TASK', originalTarget.id, originalTarget, { version: 4 });
+    await repository.upsert('TASK', 'unrelated-task', { id: 'unrelated-task', title: 'Keep local conflict' }, { version: 2 });
+    await repository.saveCursor('cursor-before-swap');
+    await repository.enqueueMutation({
+      clientMutationId: 'unrelated-conflict', resourceType: 'TASK', resourceId: 'unrelated-task',
+      mutationType: 'UPDATE', baseVersion: 2, payload: { title: 'Local conflict' },
+    });
+    await repository.settleMutation({
+      clientMutationId: 'unrelated-conflict', status: 'conflict', error: 'RESOURCE_VERSION_CONFLICT', remoteVersion: 3,
+    });
+    const unresolvedBefore = await repository.listUnresolved();
+
+    sqlite.database.exec(`
+      CREATE TRIGGER fail_second_task_upsert
+      BEFORE INSERT ON local_resource_records
+      WHEN NEW.resource_type = 'TASK' AND NEW.resource_id = 'target-task'
+      BEGIN SELECT RAISE(ABORT, 'injected second task write failure'); END;
+    `);
+    await assert.rejects(repository.upsertSyncedBatch([
+      { resourceType: 'TASK', resourceId: originalSource.id, version: 4, deletedAt: null, value: swappedSource },
+      { resourceType: 'TASK', resourceId: originalTarget.id, version: 5, deletedAt: null, value: swappedTarget },
+    ]), /injected second task write failure/);
+
+    assert.equal((await repository.read('TASK', originalSource.id)).value.scheduledAt, originalSource.scheduledAt);
+    assert.equal((await repository.read('TASK', originalTarget.id)).value.scheduledAt, originalTarget.scheduledAt);
+    assert.equal((await repository.getSyncState()).cursor, 'cursor-before-swap');
+    assert.deepEqual(await repository.listUnresolved(), unresolvedBefore, 'failed local persistence must leave the outbox untouched');
+
+    sqlite.database.exec('DROP TRIGGER fail_second_task_upsert');
+    const changes = [
+      { cursor: 'cursor-swap-1', resourceType: 'TASK', resourceId: originalSource.id, mutationType: 'UPDATE', version: 4, deletedAt: null, payload: swappedSource, createdAt: null },
+      { cursor: 'cursor-swap-2', resourceType: 'TASK', resourceId: originalTarget.id, mutationType: 'UPDATE', version: 5, deletedAt: null, payload: swappedTarget, createdAt: null },
+    ];
+    await runSyncCycle({
+      repository,
+      serverDeviceId: 'device-1',
+      api: {
+        async pushChanges() { return { results: [], serverCursor: 'cursor-swap-2' }; },
+        async pullChanges(input) {
+          assert.equal(input.cursor, 'cursor-before-swap');
+          return { changes, nextCursor: 'cursor-after-swap', hasMore: false, resetRequired: false };
+        },
+        async getSnapshot() { assert.fail('existing cursor should recover through incremental pull'); },
+      },
+    });
+
+    assert.equal((await repository.read('TASK', originalSource.id)).value.scheduledAt, swappedSource.scheduledAt);
+    assert.equal((await repository.read('TASK', originalTarget.id)).value.scheduledAt, swappedTarget.scheduledAt);
+    assert.equal((await repository.getSyncState()).cursor, 'cursor-after-swap');
+    assert.deepEqual((await repository.listUnresolved()).map(({ clientMutationId, status }) => ({ clientMutationId, status })), [
+      { clientMutationId: 'unrelated-conflict', status: 'conflict' },
+    ]);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('server batch refuses to overwrite either task when either has an unresolved outbox mutation', async () => {
+  const sqlite = new TemporarySqlite();
+  try {
+    const repository = new LocalRepository('user-a', 'device-1', { sql: sqlite });
+    const source = { id: 'source-task', scheduledAt: '2026-09-27T09:00:00.000Z' };
+    const target = { id: 'target-task', scheduledAt: '2026-09-27T10:00:00.000Z' };
+    await repository.upsert('TASK', source.id, source, { version: 3 });
+    await repository.upsert('TASK', target.id, target, { version: 4 });
+    await repository.saveCursor('cursor-before-swap');
+    await repository.enqueueMutation({
+      clientMutationId: 'target-edit', resourceType: 'TASK', resourceId: target.id,
+      mutationType: 'UPDATE', baseVersion: 4, payload: { title: 'Offline edit' },
+    });
+
+    const persisted = await repository.upsertSyncedBatch([
+      { resourceType: 'TASK', resourceId: source.id, version: 4, deletedAt: null, value: { ...source, scheduledAt: target.scheduledAt } },
+      { resourceType: 'TASK', resourceId: target.id, version: 5, deletedAt: null, value: { ...target, scheduledAt: source.scheduledAt } },
+    ]);
+
+    assert.equal(persisted, false);
+    assert.equal((await repository.read('TASK', source.id)).value.scheduledAt, source.scheduledAt);
+    assert.equal((await repository.read('TASK', target.id)).value.scheduledAt, target.scheduledAt);
+    assert.equal((await repository.getSyncState()).cursor, 'cursor-before-swap');
+    assert.deepEqual((await repository.listUnresolved()).map(({ clientMutationId, status }) => ({ clientMutationId, status })), [
+      { clientMutationId: 'target-edit', status: 'pending' },
+    ]);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('browser storage applies a server batch through one state write', async () => {
+  const storage = createMemoryStorage();
+  const repository = new LocalRepository('user-a', 'device-1', { storage });
+  const source = { id: 'source-task', scheduledAt: '2026-09-27T09:00:00.000Z' };
+  const target = { id: 'target-task', scheduledAt: '2026-09-27T10:00:00.000Z' };
+  await repository.upsert('TASK', source.id, source, { version: 3 });
+  await repository.upsert('TASK', target.id, target, { version: 4 });
+  const stateKey = storage.key(0);
+  const originalState = storage.getItem(stateKey);
+  const originalSetItem = storage.setItem.bind(storage);
+  let writeCount = 0;
+  storage.setItem = (key, value) => {
+    if (key === stateKey) writeCount += 1;
+    if (writeCount === 1) throw new Error('injected state commit failure');
+    originalSetItem(key, value);
+  };
+
+  await assert.rejects(repository.upsertSyncedBatch([
+    { resourceType: 'TASK', resourceId: source.id, version: 4, deletedAt: null, value: { ...source, scheduledAt: target.scheduledAt } },
+    { resourceType: 'TASK', resourceId: target.id, version: 5, deletedAt: null, value: { ...target, scheduledAt: source.scheduledAt } },
+  ]), /injected state commit failure/);
+
+  storage.setItem = originalSetItem;
+  assert.equal(storage.getItem(stateKey), originalState);
+  assert.equal((await repository.read('TASK', source.id)).value.scheduledAt, source.scheduledAt);
+  assert.equal((await repository.read('TASK', target.id)).value.scheduledAt, target.scheduledAt);
+});
+
 test('commitMutation writes the resource projection and outbox row together', async () => {
   const { first } = createRepositories();
 
@@ -331,6 +457,111 @@ test('commitMutation writes the resource projection and outbox row together', as
 
   assert.equal((await first.read('TASK', 'task-1'))?.syncStatus, 'pending');
   assert.deepEqual((await first.listPending()).map((item) => item.clientMutationId), ['task-create-1']);
+});
+
+test('commitMutation can fence an automatic completion against a newer local projection', async () => {
+  const sqlite = new TemporarySqlite();
+  const repositories = [
+    new LocalRepository('user-a', 'device-memory', { storage: createMemoryStorage() }),
+    new LocalRepository('user-a', 'device-sqlite', { sql: sqlite }),
+  ];
+
+  try {
+    for (const repository of repositories) {
+      await repository.upsert('TASK', 'task-1', { id: 'task-1', status: 'TODO', scheduledAt: '2026-09-25T09:00:00.000Z' }, {
+        version: 5,
+        syncStatus: 'synced',
+      });
+
+      await assert.rejects(repository.commitMutation({
+        resourceType: 'TASK',
+        resourceId: 'task-1',
+        value: { id: 'task-1', status: 'DONE', scheduledAt: '2026-09-25T09:00:00.000Z' },
+        version: 4,
+        deletedAt: null,
+        expectedLocalVersion: 4,
+        mutation: {
+          clientMutationId: 'stale-auto-completion',
+          resourceType: 'TASK',
+          resourceId: 'task-1',
+          mutationType: 'UPDATE',
+          baseVersion: 4,
+          payload: { status: 'DONE' },
+        },
+      }), LocalConflictError);
+
+      assert.equal((await repository.read('TASK', 'task-1'))?.version, 5);
+      assert.equal((await repository.listPending('TASK')).length, 0);
+    }
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('commitMutation atomically rejects auto completion after its pending mutation becomes inflight', async () => {
+  const sqlite = new TemporarySqlite();
+  const repositories = [
+    new LocalRepository('user-a', 'device-memory-claim', { storage: createMemoryStorage() }),
+    new LocalRepository('user-a', 'device-sqlite-claim', { sql: sqlite }),
+  ];
+
+  try {
+    for (const repository of repositories) {
+      await repository.upsert('TASK', 'task-1', { id: 'task-1', status: 'TODO', title: 'Local edit' }, { version: 4 });
+      await repository.commitMutation({
+        resourceType: 'TASK', resourceId: 'task-1', value: { id: 'task-1', status: 'TODO', title: 'Local edit' },
+        version: 4, deletedAt: null,
+        mutation: { clientMutationId: 'user-edit', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 4, payload: { title: 'Local edit' } },
+      });
+      assert.deepEqual((await repository.claimPending(1)).map((item) => item.status), ['inflight']);
+
+      await assert.rejects(repository.commitMutation({
+        resourceType: 'TASK', resourceId: 'task-1', value: { id: 'task-1', status: 'DONE', title: 'Local edit' },
+        version: 4, deletedAt: null,
+        expectedLocalVersion: 4,
+        rejectIfNonPendingMutation: true,
+        mutation: { clientMutationId: 'automatic-completion', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 4, payload: { status: 'DONE' } },
+      }), LocalConflictError);
+
+      assert.equal((await repository.read('TASK', 'task-1'))?.value.status, 'TODO');
+      assert.deepEqual((await repository.listUnresolved('TASK')).map((item) => item.clientMutationId), ['user-edit']);
+    }
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('upsertFromSync preserves a local mutation that appears after pull preflight', async () => {
+  const sqlite = new TemporarySqlite();
+  const repositories = [
+    new LocalRepository('user-a', 'device-memory-pull', { storage: createMemoryStorage() }),
+    new LocalRepository('user-a', 'device-sqlite-pull', { sql: sqlite }),
+  ];
+
+  try {
+    for (const repository of repositories) {
+      await repository.upsert('TASK', 'task-1', { id: 'task-1', status: 'TODO', title: 'Remote v4' }, { version: 4, syncStatus: 'synced' });
+      const applied = await repository.upsertFromSync('TASK', 'task-1', { id: 'task-1', status: 'TODO', title: 'Remote v5' }, {
+        version: 5, deletedAt: null, syncStatus: 'synced',
+      });
+      assert.equal(applied, true);
+
+      await repository.commitMutation({
+        resourceType: 'TASK', resourceId: 'task-1', value: { id: 'task-1', status: 'DONE', title: 'Local v5' },
+        version: 5, deletedAt: null,
+        mutation: { clientMutationId: 'local-auto', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'UPDATE', baseVersion: 5, payload: { status: 'DONE' } },
+      });
+      const pulledAgain = await repository.upsertFromSync('TASK', 'task-1', { id: 'task-1', status: 'TODO', title: 'Stale remote' }, {
+        version: 6, deletedAt: null, syncStatus: 'synced',
+      });
+
+      assert.equal(pulledAgain, false);
+      assert.equal((await repository.read('TASK', 'task-1'))?.value.status, 'DONE');
+      assert.equal((await repository.read('TASK', 'task-1'))?.value.title, 'Local v5');
+    }
+  } finally {
+    sqlite.close();
+  }
 });
 
 test('a new local edit remains pending when an older claimed mutation is acknowledged', async () => {

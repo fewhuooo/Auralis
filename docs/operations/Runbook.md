@@ -1,5 +1,13 @@
 # Auralis 运维与应急 Runbook
 
+2026-09-24 紧邻任务交换运行记录：本机 backend 已单独重建并重启，镜像 `sha256:bf8e7bb72f0c…`，health/readiness HTTP 200、Flyway 23；db/minio 未动。若顶部交换仍按旧的“直接互换开始时间”表现，先核对运行容器镜像及 PC 是否加载新前端，再检查 `POST /api/tasks/schedule-swaps` 的响应时间；不要重置数据库。
+
+2026-09-24 运行记录：Timeline 主体放置修复已通过单独重建/重启 `backend` 部署到本机 Compose；health/readiness UP，Flyway V23 `success=true`，db/minio 容器保持原样。若 PC 仍呈现旧主体行为，先核对请求是否包含 `targetTaskId`、运行镜像是否为 `sha256:80d303401599…`，再查看返回的 `VALIDATION_FAILED`/`RESOURCE_VERSION_CONFLICT`；不应通过重置数据库处理拖放冲突。
+
+## 排期插入接口返回 unexpected error
+
+如果 backend 日志显示 `POST /api/tasks/schedule-insertions` 的 `HttpRequestMethodNotSupportedException`，先核对运行镜像是否早于包含 `TaskController.insertSchedule` 的当前版本。该接口在当前代码和 OpenAPI artifact 中使用 POST；旧镜像不含映射时客户端只看到通用 500。已验证恢复流程为单独重建并重启 backend，确认容器 healthy 和 readiness HTTP 200。若需启动数据库依赖，只启动现有 db/minio 容器，不重建或清除数据卷。默认 prod profile 关闭 `/v3/api-docs`，HTTP 404 是预期配置。
+
 更新时间：2026-09-10
 
 文档状态：现行，部分流程待生产演练

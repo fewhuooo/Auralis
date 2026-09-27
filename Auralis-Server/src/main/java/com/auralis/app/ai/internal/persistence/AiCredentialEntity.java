@@ -101,4 +101,10 @@ public class AiCredentialEntity {
         this.embeddingModel = embeddingModel;
         this.encryptedApiKey = encryptedApiKey;
     }
+
+    public void updateChatSettings(String baseUrl, String chatModel, String encryptedApiKey) {
+        this.baseUrl = baseUrl;
+        this.chatModel = chatModel;
+        this.encryptedApiKey = encryptedApiKey;
+    }
 }

@@ -30,6 +30,7 @@ import static org.springframework.http.HttpStatus.NO_CONTENT;
 public class AiController {
 
     private final AiSettingsService settingsService;
+    private final AiProviderDiscoveryService providerDiscoveryService;
     private final ConversationService conversationService;
     private final AiStreamingService streamingService;
     private final SuggestionService suggestionService;
@@ -38,12 +39,14 @@ public class AiController {
 
     public AiController(
             AiSettingsService settingsService,
+            AiProviderDiscoveryService providerDiscoveryService,
             ConversationService conversationService,
             AiStreamingService streamingService,
             SuggestionService suggestionService,
             OverviewGenerationService overviewGenerationService,
             ObjectMapper objectMapper) {
         this.settingsService = settingsService;
+        this.providerDiscoveryService = providerDiscoveryService;
         this.conversationService = conversationService;
         this.streamingService = streamingService;
         this.suggestionService = suggestionService;
@@ -61,6 +64,20 @@ public class AiController {
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AiSettingsCommand command) {
         return settingsService.upsert(principal.userId(), command);
+    }
+
+    @GetMapping("/settings/{provider}/models")
+    public AiProviderDiscoveryService.AiModelListView models(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable AiProviderType provider) {
+        return providerDiscoveryService.listModels(principal.userId(), provider);
+    }
+
+    @PostMapping("/settings/{provider}/test-connection")
+    public AiProviderDiscoveryService.AiConnectionTestView testConnection(
+            @AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable AiProviderType provider) {
+        return providerDiscoveryService.testConnection(principal.userId(), provider);
     }
 
     @GetMapping("/conversations")

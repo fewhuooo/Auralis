@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 import path from 'node:path'
+import { createPinia, setActivePinia } from 'pinia'
+import { useDocumentProcessingStore } from '../src/store/useDocumentProcessingStore.ts'
 import { sourceDetailLabel, sourcePhaseLabel } from '../src/utils/documentProcessingStatus.ts'
 import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback } from '../src/utils/ocrDiagnostics.ts'
 
@@ -73,6 +75,43 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(workspace, /DocumentProcessingDot/)
   assert.match(workspace, /DocumentNotReadyDialog/)
   assert.match(workspace, /showProcessingRequired/)
+})
+
+test('DocumentProcessingStore.start schedules by Source instead of starting the Runner directly', async () => {
+  setActivePinia(createPinia())
+  const store = useDocumentProcessingStore()
+  const calls = []
+  store.attachRunner({
+    list: async () => [{ jobId: 'job-1', sourceId: 'source-1', phase: 'QUEUED' }],
+    start: async () => { calls.push('runner.start') },
+  })
+  store.attachScheduler({
+    schedule: async (sourceId) => { calls.push(`scheduler.schedule:${sourceId}`) },
+  })
+
+  await store.start('job-1')
+
+  assert.deepEqual(calls, ['scheduler.schedule:source-1'])
+})
+
+test('DocumentProcessingStore.resumePending routes recoverable jobs through the Source scheduler', async () => {
+  setActivePinia(createPinia())
+  const store = useDocumentProcessingStore()
+  const calls = []
+  store.attachRunner({
+    list: async () => [
+      { jobId: 'job-1', sourceId: 'source-1', phase: 'QUEUED' },
+      { jobId: 'job-2', sourceId: 'source-2', phase: 'FAILED_LOCAL' },
+    ],
+    resumePending: async () => { calls.push('runner.resumePending') },
+  })
+  store.attachScheduler({
+    resume: async (sourceIds) => { calls.push(`scheduler.resume:${sourceIds.join(',')}`) },
+  })
+
+  await store.resumePending()
+
+  assert.deepEqual(calls, ['scheduler.resume:source-1'])
 })
 
 test('Source row prefers local OCR page progress and falls back to its existing detail label', async () => {

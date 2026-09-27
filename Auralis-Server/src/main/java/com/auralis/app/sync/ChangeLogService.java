@@ -74,7 +74,7 @@ public class ChangeLogService {
         int limit = Math.max(1, Math.min(requestedLimit, MAX_PULL_LIMIT));
         Instant cutoff = clock.instant().minus(RETENTION);
         long latest = latestCursor(userId).value();
-        boolean resetRequired = after.value() > 0 && after.value() < latest
+        boolean resetRequired = after.value() < latest
                 && changeLogRepository.findFirstByUserIdAndCreatedAtGreaterThanEqualOrderByCursorAsc(
                 userId, cutoff)
                 .map(first -> after.value() < first.getCursor() - 1)

@@ -70,6 +70,35 @@ test('FilePreview can render preview-only image, text, and CSV sources', () => {
   }
 })
 
+test('preview source identity ignores a display-name rename while tracking asset and renderer changes', async () => {
+  const filePreview = await import('../src/utils/filePreview.ts')
+  const getPreviewSourceIdentity = filePreview.getPreviewSourceIdentity
+  assert.equal(typeof getPreviewSourceIdentity, 'function', 'Must expose a stable source identity for preview reloads')
+
+  const original = { id: 'source-1', assetId: 'asset-1', fileType: 'application/pdf', name: 'Before.pdf' }
+  assert.equal(
+    getPreviewSourceIdentity(original),
+    getPreviewSourceIdentity({ ...original, name: 'After.pdf' }),
+    'Changing only the displayed filename must not fetch the same asset again',
+  )
+  assert.notEqual(
+    getPreviewSourceIdentity(original),
+    getPreviewSourceIdentity({ ...original, assetId: 'asset-2' }),
+    'Replacing the underlying asset must reload the preview',
+  )
+  assert.notEqual(
+    getPreviewSourceIdentity(original),
+    getPreviewSourceIdentity({ ...original, name: 'Before.docx' }),
+    'Changing the extension must reload so the renderer stays correct',
+  )
+
+  const component = fs.readFileSync(path.resolve('src/components/FilePreview.vue'), 'utf8')
+  const watchedSources = component.match(/watch\(\s*\[([\s\S]*?)\]\s*,\s*\(\) => \{ void loadPreview\(\) \}/)?.[1]
+  assert.ok(watchedSources, 'FilePreview must watch a source identity for reloads')
+  assert.match(watchedSources, /getPreviewSourceIdentity/)
+  assert.doesNotMatch(watchedSources, /props\.file\.name/)
+})
+
 test('keeps PowerPoint compatible with the Office renderer', () => {
   assert.equal(resolveFileCapability({ name: 'slides.pptx', type: '' }).kind, 'office')
   assert.equal(resolveFileCapability({ name: 'slides.ppt', type: '' }).kind, 'office')

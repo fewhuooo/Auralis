@@ -7,9 +7,8 @@
         cy="50"
         r="44"
         fill="none"
-        stroke="var(--text-primary)"
-        stroke-width="3"
-        opacity="0.05"
+        stroke="rgba(139, 154, 110, 0.14)"
+        stroke-width="3.5"
       />
       <!-- Progress indicator -->
       <circle
@@ -18,7 +17,7 @@
         r="44"
         fill="none"
         :stroke="color"
-        stroke-width="3"
+        stroke-width="3.8"
         stroke-linecap="round"
         :stroke-dasharray="circumference"
         :stroke-dashoffset="dashOffset"
@@ -66,8 +65,11 @@ const formattedTime = computed(() => {
 <style scoped>
 .pomodoro-ring {
   position: relative;
-  width: 320px;
-  height: 320px;
+  width: 440px;
+  height: 440px;
+  max-width: 85vw;
+  max-height: 55vh;
+  aspect-ratio: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -78,7 +80,7 @@ const formattedTime = computed(() => {
   transform: rotate(-90deg);
 }
 .progress-circle {
-  transition: stroke-dashoffset 1s linear;
+  transition: stroke-dashoffset 1s linear, stroke 0.3s ease;
 }
 .time-display {
   position: absolute;
@@ -97,14 +99,14 @@ const formattedTime = computed(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  margin-top: -10px;
+  margin-top: -16px;
 }
 .time-text {
-  font-size: var(--font-size-display);
-  font-weight: 600;
+  font-size: clamp(76px, 8.5vw, 92px);
+  font-weight: 700;
   font-family: var(--font-family-base);
   color: var(--text-primary);
-  letter-spacing: -1px;
+  letter-spacing: -2px;
   line-height: 1;
   transition: color 0.3s;
 }
@@ -112,20 +114,29 @@ const formattedTime = computed(() => {
 /* The small pill switch at the bottom of the ring */
 .ring-pill {
   position: absolute;
-  bottom: 30px;
-  width: 30px;
-  height: 15px;
-  border-radius: 10px;
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary);
+  bottom: 64px;
+  width: 38px;
+  height: 20px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-subtle, #E6E6E4);
+  background: var(--color-bg-tertiary, #FAF7F2);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
 }
 .pill-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
+  transition: background-color 0.3s ease;
+}
+
+html.dark .ring-pill {
+  background: #212621;
+  border-color: rgba(163, 177, 155, 0.25);
+}
+html.dark .time-text {
+  color: #FAF7F2;
 }
 </style>

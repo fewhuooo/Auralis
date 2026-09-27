@@ -30,6 +30,16 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
 
     List<TaskEntity> findAllByUserIdAndDeletedAtIsNullOrderByUpdatedAtDescIdAsc(UUID userId);
 
+    List<TaskEntity> findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNull(UUID userId);
+
+    List<TaskEntity> findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNullOrderByIdAsc(UUID userId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select task from TaskEntity task where task.userId = :userId and task.deletedAt is null "
+            + "and (task.scheduledAt is not null or task.id = :targetTaskId) order by task.id asc")
+    List<TaskEntity> findScheduleForUpdateByUserId(
+            @Param("userId") UUID userId, @Param("targetTaskId") UUID targetTaskId);
+
     List<TaskEntity> findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(UUID userId, UUID subjectId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

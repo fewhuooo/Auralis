@@ -24,9 +24,9 @@ withDefaults(defineProps<{
   padding: 32px;
   color: var(--text-secondary, #656560);
   text-align: center;
-  border: 1px dashed var(--hairline, #e6e6e4);
+  border: 1px dashed var(--border-subtle);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--color-bg-tertiary, #FAF7F2);
 }
 
 .unsupported-preview-icon {

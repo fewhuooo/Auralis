@@ -8,7 +8,6 @@ public record AiSettingsView(
         AiProviderType provider,
         String baseUrl,
         String chatModel,
-        String embeddingModel,
         boolean hasApiKey,
         Instant updatedAt) {
 }

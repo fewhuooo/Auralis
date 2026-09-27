@@ -41,6 +41,7 @@ import { useChatStore } from '@/store/useChatStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { realtimeController, type RealtimeStatus } from '@/services/realtimeController'
 import { projectConnectionStatus, type ConnectionProjection } from '@/services/connectionStatusProjection'
+import { serviceUnavailable } from '@/services/serviceAvailability'
 import { documentProcessingRuntime } from '@/services/documentProcessing/runtime'
 import { setBackgroundParserHost } from '@/services/documentParser/backgroundParserHost'
 import type { BackgroundParserHostHandle } from '@/services/documentParser/fileViewerBridge'
@@ -59,7 +60,7 @@ const connectionProjection = computed<ConnectionProjection>(() => projectConnect
   online: browserOnline.value,
   syncError: syncStore.lastSyncError,
   syncErrorCode: syncStore.lastSyncErrorCode,
-  serviceUnavailable: false,
+  serviceUnavailable: serviceUnavailable.value,
   realtime: realtimeStatus.value,
   syncing: syncStore.isSyncing,
   chatError: chatStore.lastError,
@@ -136,7 +137,7 @@ onUnmounted(() => {
   height: 100vh;
   overflow: hidden;
   position: relative;
-  background: var(--color-bg-primary);
+  background: var(--color-bg-secondary);
   flex-direction: row;
 }
 
@@ -173,7 +174,7 @@ onUnmounted(() => {
 .bg-glow--1 {
   width: 600px;
   height: 600px;
-  background: rgba(163, 177, 155, 0.18);
+  background: rgba(139, 154, 110, 0.18);
   top: -200px;
   right: -100px;
 }
@@ -181,7 +182,7 @@ onUnmounted(() => {
 .bg-glow--2 {
   width: 400px;
   height: 400px;
-  background: rgba(163, 177, 155, 0.12);
+  background: rgba(139, 154, 110, 0.12);
   bottom: -100px;
   left: 20%;
 }

@@ -3,6 +3,8 @@ import type { DocumentProcessingJob } from '@/types/documentProcessing'
 import type { DocumentJobRunner } from '@/services/documentProcessing/DocumentJobRunner'
 
 interface DocumentSourceScheduler {
+  schedule(sourceId: string): Promise<unknown>
+  resume(sourceIds: string[]): Promise<unknown>
   retry(jobId: string): Promise<unknown>
 }
 
@@ -165,10 +167,13 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     },
     async start(jobId: string): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
+      if (!this.scheduler) throw new Error('DOCUMENT_JOB_SCHEDULER_UNAVAILABLE')
       this.loading = true
       this.lastError = null
       try {
-        await this.runner.start(jobId)
+        const job = (await this.runner.list()).find((item) => item.jobId === jobId)
+        if (!job) throw new Error('DOCUMENT_JOB_NOT_FOUND')
+        await this.scheduler.schedule(job.sourceId)
       } catch (error) {
         this.lastError = error instanceof Error ? error.message : String(error)
         throw error
@@ -178,7 +183,13 @@ export const useDocumentProcessingStore = defineStore('document-processing', {
     },
     async resumePending(): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
-      await this.runner.resumePending()
+      if (!this.scheduler) throw new Error('DOCUMENT_JOB_SCHEDULER_UNAVAILABLE')
+      const resumablePhases = new Set(['PAUSED_NETWORK', 'QUEUED', 'EXTRACTING', 'OCR_RUNNING'])
+      const jobs = await this.runner.list()
+      const sourceIds = [...new Set(jobs
+        .filter((job) => resumablePhases.has(job.phase))
+        .map((job) => job.sourceId))]
+      await this.scheduler.resume(sourceIds)
     },
     async pauseForNetwork(jobId: string): Promise<void> {
       if (!this.runner) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')

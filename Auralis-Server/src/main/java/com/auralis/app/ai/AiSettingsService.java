@@ -18,6 +18,7 @@ import java.util.UUID;
 public class AiSettingsService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AiSettingsService.class);
+    private static final String SERVER_MANAGED_EMBEDDING_MARKER = "server-managed";
 
     private final AiCredentialRepository credentialRepository;
     private final AiKeyCipher keyCipher;
@@ -50,7 +51,7 @@ public class AiSettingsService {
                 .findByUserIdAndProvider(userId, command.provider())
                 .orElseGet(() -> new AiCredentialEntity(
                         UUID.randomUUID(), userId, command.provider(),
-                        baseUrl, command.chatModel(), command.embeddingModel(), null));
+                        baseUrl, command.chatModel(), SERVER_MANAGED_EMBEDDING_MARKER, null));
         String encryptedApiKey = entity.getEncryptedApiKey();
         if (command.apiKey() != null && !command.apiKey().isBlank()) {
             encryptedApiKey = keyCipher.encrypt(command.apiKey().trim());
@@ -58,7 +59,7 @@ public class AiSettingsService {
         if (encryptedApiKey == null || encryptedApiKey.isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "apiKey is required when configuring a provider");
         }
-        entity.update(baseUrl, command.chatModel(), command.embeddingModel(), encryptedApiKey);
+        entity.updateChatSettings(baseUrl, command.chatModel(), encryptedApiKey);
         return toView(credentialRepository.save(entity));
     }
 
@@ -66,14 +67,12 @@ public class AiSettingsService {
     public ResolvedSettings resolve(UUID userId, AiProviderType provider) {
         AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
         if (entity != null && entity.getEncryptedApiKey() != null && !entity.getEncryptedApiKey().isBlank()) {
-            LOGGER.info(
-                    "AI_SETTINGS_RESOLVED userId={} provider={} source=BYOK endpointHost={} chatModel={} embeddingModel={}",
-                    userId, provider, safeHost(entity.getBaseUrl()), entity.getChatModel(), entity.getEmbeddingModel());
+            LOGGER.info("AI_SETTINGS_RESOLVED userId={} provider={} source=BYOK endpointHost={} chatModel={}",
+                    userId, provider, safeHost(entity.getBaseUrl()), entity.getChatModel());
             return new ResolvedSettings(
                     entity.getProvider(),
                     entity.getChatModel(),
-                    new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey()),
-                            entity.getEmbeddingModel()));
+                    new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())));
         }
 
         AuralisProperties.Provider defaults = defaultProvider(provider);
@@ -81,12 +80,35 @@ public class AiSettingsService {
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
         }
 
-        LOGGER.info(
-                "AI_SETTINGS_RESOLVED userId={} provider={} source=ENV_DEFAULT endpointHost={} chatModel={} embeddingModel={}",
-                userId, provider, safeHost(defaults.baseUrl()), defaults.chatModel(), defaults.embeddingModel());
+        LOGGER.info("AI_SETTINGS_RESOLVED userId={} provider={} source=ENV_DEFAULT endpointHost={} chatModel={}",
+                userId, provider, safeHost(defaults.baseUrl()), defaults.chatModel());
         return new ResolvedSettings(
                 provider,
                 defaults.chatModel(),
+                new AiCredential(defaults.baseUrl(), defaults.apiKey()));
+    }
+
+    @Transactional(readOnly = true)
+    public ResolvedSettings requireSavedByok(UUID userId, AiProviderType provider) {
+        AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider)
+                .filter(saved -> saved.getEncryptedApiKey() != null && !saved.getEncryptedApiKey().isBlank())
+                .orElseThrow(() -> new DomainException("MODEL_UNAVAILABLE", "Saved AI provider settings are required"));
+        LOGGER.info("AI_SETTINGS_RESOLVED userId={} provider={} source=BYOK endpointHost={} chatModel={}",
+                userId, provider, safeHost(entity.getBaseUrl()), entity.getChatModel());
+        return new ResolvedSettings(entity.getProvider(), entity.getChatModel(),
+                new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())));
+    }
+
+    @Transactional(readOnly = true)
+    public ResolvedSettings resolveServerManagedEmbedding() {
+        AuralisProperties.Provider defaults = defaultProvider(AiProviderType.SILICONFLOW);
+        if (defaults == null || blank(defaults.baseUrl()) || blank(defaults.apiKey())
+                || blank(defaults.embeddingModel())) {
+            throw new DomainException("MODEL_UNAVAILABLE", "Server-managed embedding provider is not configured");
+        }
+        LOGGER.info("AI_EMBEDDING_SETTINGS_RESOLVED provider={} source=SERVER_DEFAULT endpointHost={} model={}",
+                AiProviderType.SILICONFLOW, safeHost(defaults.baseUrl()), defaults.embeddingModel());
+        return new ResolvedSettings(AiProviderType.SILICONFLOW, null,
                 new AiCredential(defaults.baseUrl(), defaults.apiKey(), defaults.embeddingModel()));
     }
 
@@ -108,9 +130,6 @@ public class AiSettingsService {
         if (command.chatModel() == null || command.chatModel().isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "chatModel is required");
         }
-        if (command.embeddingModel() == null || command.embeddingModel().isBlank()) {
-            throw new DomainException("VALIDATION_FAILED", "embeddingModel is required");
-        }
         return endpointPolicy.validate(command.provider(), command.baseUrl());
     }
 
@@ -120,9 +139,12 @@ public class AiSettingsService {
                 entity.getProvider(),
                 entity.getBaseUrl(),
                 entity.getChatModel(),
-                entity.getEmbeddingModel(),
                 entity.getEncryptedApiKey() != null && !entity.getEncryptedApiKey().isBlank(),
                 entity.getUpdatedAt());
+    }
+
+    private boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 
     private String safeHost(String baseUrl) {

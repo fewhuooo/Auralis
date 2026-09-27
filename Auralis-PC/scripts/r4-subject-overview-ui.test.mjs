@@ -52,10 +52,11 @@ test('middle summary view preserves old content during regeneration or error', a
   assert.match(source, /2000/)
 })
 
-test('SubjectWorkspace integrates overview UI without moving the existing AI action', async () => {
+test('SubjectWorkspace integrates overview UI with outline composer and unified overview cards', async () => {
   const source = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(source, /<h3 class="drawer-title">总览<\/h3>/)
-  assert.match(source, /<button class="outline-ai-button" @click="handleOutlineAi">AI 梳理<\/button>\s*<button class="outline-add-button"/)
+  assert.doesNotMatch(source, /<button class="outline-ai-button"[^>]*>AI 梳理<\/button>/)
+  assert.match(source, /<button[\s\S]*?class="outline-add-button"[\s\S]*?:class="\{\s*'is-active':\s*isOutlineComposer\s*\}"/)
   assert.match(source, /<SubjectOverviewSection/)
   assert.match(source, /<FileOutlineList/)
   assert.match(source, /<OverviewSummaryView/)
@@ -126,5 +127,42 @@ test('overview summary view guarantees exactly one retry action on failure and d
   assert.match(source, /summary-notice--error[\s\S]*?<button[\s\S]*?class="summary-notice__retry"[\s\S]*?:disabled="isGenerating"[\s\S]*?@click="emit\('regenerate'\)"[\s\S]*?>重新生成<\/button>/)
   assert.doesNotMatch(source, /summary-empty__retry/)
   assert.doesNotMatch(source, /class="summary-empty"[\s\S]*?重新生成/)
+})
+
+test('subject outline composer preserves section summary, sourceIds, locator and isolates drafts on subject switch', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  assert.match(workspace, /summary:\s*sec\.summary\s*\?\?\s*null/)
+  assert.match(workspace, /locator:\s*sec\.locator\s*\?\?\s*null/)
+  assert.match(workspace, /sourceIds:\s*Array\.isArray\(sec\.sourceIds\)/)
+  assert.match(workspace, /watch\(subjectId,\s*async\s*\(newId\)\s*=>\s*\{[\s\S]*?subjectOutline\.value\s*=\s*\[\][\s\S]*?await startFreshChatSession/)
+  assert.match(workspace, /const saveCurrentOutline = async \(\) => \{[\s\S]*?!subjectOutline\.value\.length/)
+  assert.match(workspace, /if\s*\(subjectId\.value\s*!==\s*targetSubjectId\)\s*return/)
+  assert.doesNotMatch(workspace, /syncOutlineFileLinks/)
+})
+
+test('subject switch synchronously clears selectedFileId and chat guards against cross-subject file IDs', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  assert.match(workspace, /watch\(subjectId,\s*async\s*\(newId\)\s*=>\s*\{[\s\S]*?selectedFileId\.value\s*=\s*null[\s\S]*?await startFreshChatSession/)
+  assert.ok(workspace.includes("file.id === selectedFileId.value && file.subjectId === subjectId.value && file.ingestionStatus === 'READY'"),
+    'current-file chat context must be limited to a READY source in the active subject')
+  assert.ok(workspace.includes("file.id === id && file.subjectId === subjectId.value && file.ingestionStatus === 'READY'"),
+    'explicit source IDs must be filtered to READY sources in the active subject')
+  assert.match(workspace, /sourceStore\.clearActiveSourceFiles\(\)/)
+  assert.match(workspace, /currentSubjectSwitchGen\s*!==\s*switchGen\s*\|\|\s*subjectId\.value\s*!==\s*newId/)
+  assert.match(workspace, /isSubjectOverviewStale\.value\s*=\s*false/)
+  assert.match(workspace, /subjectOverviewManualError\.value\s*=\s*null/)
+  assert.match(workspace, /fileOverviewManualErrors\.value\s*=\s*\{\}/)
+})
+
+test('subject workspace lifecycle guards against session race, unmount leakage, and starts refresh timer immediately on mount', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  // 1. 立即在 onMounted 启动轮询，解耦于特定学科异步链路
+  assert.match(workspace, /onMounted\(async \(\) => \{[\s\S]*?isComponentMounted = true[\s\S]*?startProcessingRefresh\(\)/)
+  // 2. 组件卸载时使代次失效并清理定时器
+  assert.match(workspace, /onUnmounted\(\(\) => \{[\s\S]*?isComponentMounted = false[\s\S]*?currentSubjectSwitchGen\+\+[\s\S]*?stopProcessingRefresh\(\)[\s\S]*?chatStore\.endActiveSession\(\)/)
+  // 3. 阅读会话启动后的后置代次与组件存活保护（onMounted 与 watch）
+  assert.match(workspace, /const readingSessionId = await chatStore\.startReadingSession\(firstFile\.id,\s*newId,\s*firstFile\.name\)\.catch\(\(\) => undefined\)[\s\S]*?if\s*\(!isComponentMounted\s*\|\|\s*currentSubjectSwitchGen\s*!==\s*switchGen\s*\|\|\s*subjectId\.value\s*!==\s*newId\s*\|\|\s*selectedFileId\.value\s*!==\s*firstFile\.id\)[\s\S]*?chatStore\.endSessionById\(readingSessionId\)/)
+  // 4. selectFile 中的代次与阅读会话保护
+  assert.match(workspace, /const selectFile = async \(id: string\) => \{[\s\S]*?\+\+currentSubjectSwitchGen[\s\S]*?const readingSessionId = await chatStore\.startReadingSession\(id,\s*targetSubjectId,\s*file\.name\)\.catch\(\(\) => undefined\)[\s\S]*?if\s*\(!isComponentMounted\s*\|\|\s*currentSubjectSwitchGen\s*!==\s*fileSelectGen[\s\S]*?chatStore\.endSessionById\(readingSessionId\)/)
 })
 

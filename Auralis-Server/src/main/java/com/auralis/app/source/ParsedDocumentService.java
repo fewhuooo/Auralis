@@ -2,6 +2,7 @@ package com.auralis.app.source;
 
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.identity.IdentityService;
 import com.auralis.app.source.internal.persistence.ParsedDocumentEntity;
 import com.auralis.app.source.internal.persistence.ParsedDocumentRepository;
 import com.auralis.app.source.internal.persistence.SourceEntity;
@@ -21,6 +22,7 @@ public class ParsedDocumentService {
     private static final String PARSED_DOCUMENT_MIME = "application/gzip";
 
     private final SourceRepository sourceRepository;
+    private final IdentityService identityService;
     private final ParsedDocumentRepository parsedDocumentRepository;
     private final AssetStoragePort assetStorage;
     private final AuralisProperties properties;
@@ -32,6 +34,7 @@ public class ParsedDocumentService {
 
     public ParsedDocumentService(
             SourceRepository sourceRepository,
+            IdentityService identityService,
             ParsedDocumentRepository parsedDocumentRepository,
             AssetStoragePort assetStorage,
             AuralisProperties properties,
@@ -41,6 +44,7 @@ public class ParsedDocumentService {
             SourceService sourceService,
             SubjectLockCoordinator subjectLockCoordinator) {
         this.sourceRepository = sourceRepository;
+        this.identityService = identityService;
         this.parsedDocumentRepository = parsedDocumentRepository;
         this.assetStorage = assetStorage;
         this.properties = properties;
@@ -54,6 +58,7 @@ public class ParsedDocumentService {
     @Transactional
     public ParsedDocumentUploadIntentView createUploadIntent(
             UUID userId, UUID sourceId, ParsedDocumentUploadCommand command) {
+        identityService.lockActiveUserForStorage(userId);
         UUID subjectId = sourceRepository.findSubjectIdByIdAndUserId(sourceId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Source was not found"));
         subjectLockCoordinator.lockSubjects(userId, java.util.List.of(subjectId));
