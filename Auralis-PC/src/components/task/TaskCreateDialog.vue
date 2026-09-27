@@ -1,20 +1,26 @@
 <template>
   <ModalShell
     :model-value="modelValue"
-    :title="title"
     size="md"
     custom-class="task-create-modal"
     @update:model-value="$emit('update:modelValue', $event)"
     @close="handleClose"
   >
+    <template #title>
+      <div class="task-dialog-title">
+        <IconCalendarPlus :size="18" :stroke-width="2" class="task-title-icon" />
+        <span>{{ title }}</span>
+      </div>
+    </template>
+
     <div class="task-modal-body">
       <!-- 任务名称 -->
-      <div class="task-form-group">
-        <label class="task-form-label">任务名称 <span class="required">*</span></label>
+      <div class="modal-form-group">
+        <label class="modal-form-label">任务名称 <span class="required">*</span></label>
         <input
           ref="nameInputRef"
           v-model="form.name"
-          class="task-form-input"
+          class="modal-form-input"
           placeholder="请输入学习或专注任务名称..."
           autofocus
           @keyup.enter="handleSubmit"
@@ -22,8 +28,8 @@
       </div>
 
       <!-- 所属学科（有固定学科时可隐藏或仅展示标签） -->
-      <div v-if="!fixedSubjectId" class="task-form-group">
-        <label class="task-form-label">所属学科 <span class="required">*</span></label>
+      <div v-if="!fixedSubjectId" class="modal-form-group">
+        <label class="modal-form-label">所属学科 <span class="required">*</span></label>
         <div class="subject-capsule-grid">
           <div
             v-for="subj in resolvedSubjects"
@@ -48,17 +54,17 @@
           </div>
         </div>
       </div>
-      <div v-else-if="fixedSubjectName" class="task-form-group">
-        <label class="task-form-label">所属学科</label>
+      <div v-else-if="fixedSubjectName" class="modal-form-group">
+        <label class="modal-form-label">所属学科</label>
         <div class="fixed-subject-badge">
           <span>📘 {{ fixedSubjectName }}</span>
         </div>
       </div>
 
       <!-- 专注时长 -->
-      <div class="task-form-group">
+      <div class="modal-form-group">
         <div class="duration-header">
-          <label class="task-form-label">专注时长</label>
+          <label class="modal-form-label">专注时长</label>
           <span class="duration-badge">{{ form.duration }} 分钟 ({{ (form.duration / 60).toFixed(1) }}h)</span>
         </div>
         <div
@@ -114,6 +120,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, watch, nextTick } from 'vue'
+import { IconCalendarPlus } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
@@ -279,45 +286,22 @@ const handleSubmit = () => {
 </script>
 
 <style scoped>
+.task-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.task-title-icon {
+  color: var(--color-zen-sage, #8B9A6E);
+}
+
 .task-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.task-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.task-form-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.required {
-  color: #ef4444;
-  margin-left: 2px;
-}
-
-.task-form-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 10px 14px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-primary);
-  font-size: 14px;
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.task-form-input:focus {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15);
 }
 
 /* Subject capsule grid */
@@ -333,44 +317,49 @@ const handleSubmit = () => {
 .subject-capsule-item {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-primary, #FFFFFF);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .subject-capsule-item:hover {
   border-color: var(--color-zen-sage, #8B9A6E);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .subject-capsule-item.active {
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.2);
 }
 
 .subj-capsule-icon {
   display: inline-flex;
   align-items: center;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .fixed-subject-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
-  font-size: 12px;
-  color: var(--text-primary);
+  padding: 7px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  background: rgba(139, 154, 110, 0.1);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-zen-sage, #76855B);
   width: fit-content;
 }
 
@@ -385,23 +374,27 @@ const handleSubmit = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 2px;
 }
 
 .duration-badge {
   font-size: 12px;
-  font-weight: 600;
-  color: var(--color-zen-sage, #8B9A6E);
-  background: rgba(139, 154, 110, 0.12);
-  padding: 2px 8px;
-  border-radius: 6px;
+  font-weight: 700;
+  color: var(--color-zen-sage, #76855B);
+  background: rgba(139, 154, 110, 0.14);
+  padding: 3px 10px;
+  border-radius: 9999px;
+  border: 1px solid rgba(139, 154, 110, 0.2);
+  font-feature-settings: "tnum";
 }
 
 .duration-long-bar-btn {
   position: relative;
-  height: 38px;
-  border-radius: 19px;
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-default);
+  height: 42px;
+  border-radius: 21px;
+  background: var(--color-bg-primary, #FFFFFF);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
   cursor: pointer;
   overflow: visible;
   user-select: none;
@@ -414,10 +407,10 @@ const handleSubmit = () => {
   top: 0;
   left: 0;
   bottom: 0;
-  background: rgba(139, 154, 110, 0.22);
-  border-radius: 19px;
+  background: linear-gradient(90deg, rgba(158, 173, 128, 0.35) 0%, rgba(139, 154, 110, 0.5) 100%);
+  border-radius: 21px;
   pointer-events: none;
-  transition: width 0.1s linear;
+  transition: width 0.12s linear;
 }
 
 .duration-bar-steps {
@@ -425,12 +418,12 @@ const handleSubmit = () => {
   width: 100%;
   display: flex;
   justify-content: space-between;
-  padding: 0 14px;
+  padding: 0 16px;
   z-index: 1;
 }
 
 .duration-step-item {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-muted);
   transition: color 0.15s ease;
@@ -438,39 +431,43 @@ const handleSubmit = () => {
 
 .duration-step-item.active {
   color: var(--text-primary);
+  font-weight: 700;
 }
 
 .duration-bar-thumb {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 32px;
-  height: 24px;
-  border-radius: 12px;
-  background: var(--color-zen-sage, #8B9A6E);
+  width: 36px;
+  height: 26px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #9CAD7D 0%, #839366 100%);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  font-size: 10.5px;
+  font-weight: 750;
+  box-shadow: 0 2px 8px rgba(131, 147, 102, 0.45);
   pointer-events: none;
   z-index: 2;
 }
 
-html.dark .task-form-input {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
-}
-
 html.dark .subject-capsule-item {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
 }
 
 html.dark .duration-long-bar-btn {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+html.dark .duration-badge {
+  background: rgba(163, 177, 155, 0.18);
+  color: #B4C4AA;
+  border-color: rgba(163, 177, 155, 0.3);
 }
 </style>

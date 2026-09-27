@@ -142,32 +142,35 @@ const handleSave = () => {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 16px;
-  background: var(--color-bg-tertiary, #FAF7F2);
+  padding: 16px 18px;
+  background: linear-gradient(135deg, rgba(139, 154, 110, 0.12) 0%, rgba(139, 154, 110, 0.04) 100%);
   border-radius: 16px;
-  border: 1px solid var(--border-default);
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  margin-bottom: 20px;
 }
 
 html.dark .subject-preview-section {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.04);
+  background: linear-gradient(135deg, rgba(163, 177, 155, 0.12) 0%, rgba(163, 177, 155, 0.03) 100%);
+  border-color: rgba(163, 177, 155, 0.22);
 }
 
 .preview-card {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 28px;
-  box-shadow: 0 6px 16px rgba(125, 147, 114, 0.2);
-  transition: all 0.3s ease;
+  font-size: 26px;
+  background: linear-gradient(135deg, #9CAD7D 0%, #76855B 100%) !important;
+  color: #fff !important;
+  box-shadow: 0 4px 14px rgba(118, 133, 91, 0.35);
+  transition: all 0.25s ease;
   flex-shrink: 0;
 }
 
 html.dark .preview-card {
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
 }
 
 .preview-meta {
@@ -177,12 +180,13 @@ html.dark .preview-card {
 }
 
 .preview-title {
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 700;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  letter-spacing: -0.2px;
 }
 
 .preview-desc {
@@ -203,9 +207,9 @@ html.dark .preview-card {
 }
 
 .icon-btn {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1.5px solid var(--border-default);
-  border-radius: 10px;
+  background: var(--color-bg-primary, #FFFFFF);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
   height: 44px;
   font-size: 20px;
   color: var(--text-secondary);
@@ -214,23 +218,34 @@ html.dark .preview-card {
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .icon-btn:hover {
   background: rgba(139, 154, 110, 0.1);
-  border-color: rgba(139, 154, 110, 0.35);
-  transform: translateY(-1px);
+  border-color: rgba(139, 154, 110, 0.4);
+  transform: translateY(-1.5px);
+  box-shadow: 0 3px 8px rgba(139, 154, 110, 0.15);
 }
 
 .icon-btn.is-selected {
-  background: rgba(139, 154, 110, 0.14);
-  border-color: #8B9A6E;
-  color: #8B9A6E;
+  background: rgba(139, 154, 110, 0.16);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #76855B);
   font-weight: 700;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.35);
+  transform: scale(1.04);
+}
+
+html.dark .icon-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 html.dark .icon-btn.is-selected {
-  background: rgba(125, 147, 114, 0.2);
+  background: rgba(163, 177, 155, 0.22);
+  border-color: #A3B584;
+  color: #B4C4AA;
+  box-shadow: 0 0 0 2px rgba(163, 177, 155, 0.4);
 }
 </style>

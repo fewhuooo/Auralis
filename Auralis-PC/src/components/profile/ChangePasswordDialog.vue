@@ -1,19 +1,30 @@
 <template>
   <ModalShell
     :model-value="modelValue"
-    title="修改登录密码"
     size="sm"
     @update:model-value="$emit('update:modelValue', $event)"
     @close="handleClose"
   >
+    <template #title>
+      <div class="password-dialog-title">
+        <IconShieldLock :size="18" :stroke-width="2" class="shield-icon" />
+        <span>修改登录密码</span>
+      </div>
+    </template>
+
     <div class="change-password-form">
+      <div class="security-tip-banner">
+        <IconKey :size="15" :stroke-width="1.8" />
+        <span>建议设置 12 位以上包含字母与数字的高强度密码</span>
+      </div>
+
       <div class="modal-form-group">
         <label class="modal-form-label">原密码 <span class="required">*</span></label>
         <input
           v-model="form.oldPassword"
           type="password"
           class="modal-form-input"
-          placeholder="请输入当前使用的密码"
+          placeholder="请输入当前正在使用的密码"
           autofocus
           @input="clearError"
         />
@@ -36,13 +47,16 @@
           v-model="form.confirmPassword"
           type="password"
           class="modal-form-input"
-          placeholder="再次输入新密码"
+          placeholder="请再次输入新密码核对"
           @keydown.enter="handleSubmit"
           @input="clearError"
         />
       </div>
 
-      <div v-if="displayError" class="modal-error-tip">{{ displayError }}</div>
+      <div v-if="displayError" class="modal-error-tip">
+        <IconAlertCircle :size="14" :stroke-width="2" />
+        <span>{{ displayError }}</span>
+      </div>
     </div>
 
     <template #footer>
@@ -61,6 +75,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue'
+import { IconShieldLock, IconKey, IconAlertCircle } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 
 const props = withDefaults(
@@ -145,14 +160,54 @@ const handleSubmit = () => {
 </script>
 
 <style scoped>
+.password-dialog-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.shield-icon {
+  color: var(--color-zen-sage, #8B9A6E);
+}
+
+.security-tip-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(139, 154, 110, 0.1);
+  border: 1px solid rgba(139, 154, 110, 0.2);
+  color: var(--color-zen-sage, #76855B);
+  font-size: 12px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
+html.dark .security-tip-banner {
+  background: rgba(163, 177, 155, 0.1);
+  border-color: rgba(163, 177, 155, 0.2);
+  color: #B4C4AA;
+}
+
 .change-password-form {
   display: flex;
   flex-direction: column;
 }
 
 .modal-error-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: #C2413E;
   margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(194, 65, 62, 0.08);
 }
 </style>

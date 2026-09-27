@@ -135,32 +135,33 @@ const handleCopy = () => {
 }
 
 .view-subject-pill {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 6px;
-  background: var(--color-sage-subtle, rgba(139, 154, 110, 0.15));
-  color: var(--color-sage-dark, #2D3E25);
-  border: 1px solid var(--color-sage-border, rgba(139, 154, 110, 0.35));
+  padding: 3px 12px;
+  border-radius: 9999px;
+  background: rgba(139, 154, 110, 0.14);
+  color: var(--color-zen-sage, #76855B);
+  border: 1px solid rgba(139, 154, 110, 0.28);
 }
 
 html.dark .view-subject-pill {
-  color: #D6E2D0;
-  background: rgba(139, 154, 110, 0.22);
+  color: #B4C4AA;
+  background: rgba(163, 177, 155, 0.16);
+  border-color: rgba(163, 177, 155, 0.3);
 }
 
 .view-source-text {
   font-size: 12px;
-  color: var(--text-muted, #888888);
+  color: var(--text-muted);
   font-weight: 500;
 }
 
 .view-main-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--text-primary, #333333);
-  line-height: 1.4;
+  font-size: 18.5px;
+  font-weight: 750;
+  color: var(--text-primary);
+  line-height: 1.35;
   letter-spacing: -0.3px;
   word-break: break-word;
 }
@@ -170,26 +171,25 @@ html.dark .view-subject-pill {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--text-muted, #888888);
+  color: var(--text-muted);
 }
 
 .view-time-icon {
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 .knowledge-view-card {
-  background: var(--bg-primary, #ffffff);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
-  padding: 18px 20px;
-  max-height: 56vh;
-  overflow-y: auto;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  background: var(--color-bg-primary, #ffffff);
+  border: 1px solid rgba(0, 0, 0, 0.07);
+  border-radius: 16px;
+  padding: 22px 24px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
 }
 
 html.dark .knowledge-view-card {
-  background: var(--bg-secondary, #1a1e1b);
-  border-color: var(--border-subtle, rgba(255, 255, 255, 0.08));
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 
 .knowledge-view-markdown {

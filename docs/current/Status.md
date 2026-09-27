@@ -1,21 +1,28 @@
 # Auralis 当前状态
 
-2026-09-27 PC 全局弹窗布局重构、模态层组件化规范与焦点/无障碍修复（代码与门禁验证通过，GUI 待验收）：
-1. 统一模态基础设施建设与管理器：新增 `src/components/modal/modalManager.ts` 与 `src/components/modal/modal.css`（建立 Zen Sage 禅意配色体系、五档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、标准输入与 `.modal-btn` 胶囊按钮体系、`.modal-markdown-body` 排版规范）与基础模态壳 `src/components/modal/ModalShell.vue`；
+2026-09-27 PC 全局弹窗 UI 视觉重构、三层布局规范与焦点/无障碍交互修复（代码与门禁验证通过，GUI 待验收）：
+1. 统一模态基础设施建设与 Zen Sage 雅致美学规范：
+   - 新增 `src/components/modal/modal.css` 与 `src/components/modal/modalManager.ts`；
+   - 视觉体系重构：遮罩升级为深度毛玻璃 `backdrop-filter: blur(14px) saturate(160%)` 沉浸微光滤镜；弹窗卡片采用 22px 雅致大圆角、多层微弥散立体高阶阴影（`0 28px 72px -16px rgba(...)`）、顶部环境微光丝（`::before` 发丝高光渐变）与弹簧入场动效（`cubic-bezier(0.16, 1, 0.3, 1)`）；
+   - 控件与微交互规范：关闭圆钮配备悬浮 90° 旋转动效，全站弹窗统一配备 6px 定制圆润滚动条；建立 `.modal-btn` 触觉胶囊按钮（主操作为 Sage 渐变微凸起、次操作为温润白微投影药丸、危险操作为陶土红）、`.modal-hero-badge` 顶层光晕图标徽章、`.modal-form-group` / `.modal-form-label` / `.modal-form-input` / `.modal-form-textarea`（12px 圆角与鼠尾草焦点光环）及五档尺寸规范 `sm`(420px)/`md`(540px)/`lg`(700px)/`xl`(860px)/`auto`；
 2. 基础模态壳统一三层布局重构：
    - 顶部吸顶常驻标题栏（`.modal-shell-header`）：统一支持 `#header` 自定义或 `#title` 标题插槽，右侧紧贴优雅关闭圆钮，保证长内容滚动时标题始终可见；
-   - 中间独立纵向滚动内容区（`.modal-shell-body`）：自适应父级最大高度与视口限制（`max-height: calc(100vh - 48px)`），避免内容溢出或视口整体被拉长；
+   - 中间独立纵向平滑滚动内容区（`.modal-shell-body`）：自适应父级最大高度与视口限制（`max-height: calc(100vh - 48px)`），并彻底消除卡片内层嵌套 `max-height` 造成的“双重滚动条”恶劣体验；
    - 底部吸底停靠操作区（`.modal-shell-footer`）：统一支持 `#footer` 插槽，规范化右对齐主要与次要操作按钮（左侧支持危险操作或自定义扩展），保持全站各业务弹窗操作区位置与视觉一致；
-3. 5 项核心交互与焦点/无障碍问题修复：
+3. 业务弹窗系统化提取、布局重构与 UI 美学升级：
+   - `ConfirmDialog.vue`：全面接入统一 `ModalShell`，重构为双栏 Hero 徽标卡片布局（危险警告与说明两种光晕徽章），排版层次分明，呈现如 Linear 般现代质感；
+   - `ChangePasswordDialog.vue`：增加 `IconShieldLock` 顶栏图标、高强度安全建议横幅与带图标的错误提示条；
+   - `SummaryInstructionDialog.vue`：增加 `IconSparkles` AI 顶栏、4 组高频预设提示词胶囊按钮组（一键点击追加/填入）与字数统计；
+   - `TaskCreateDialog.vue`：增加日历图标顶栏、全圆角学科胶囊（悬浮上浮与激活阴影）、精致专注时长滑条与圆角渐变手柄；
+   - `FileRegisterDialog.vue`：重构拖拽区域为 16px 圆角柔和虚线框与悬浮微动效图标，上传中启用动态呼吸绿点（`pulse-indicator`）与渐变进度填充，上传失败保留表单；
+   - `KnowledgeBlockViewDialog.vue` 与 `WorkspaceKnowledgeBlockDialog.vue`：常驻标题栏、卡片式 Markdown 独立滚动内容区，彻底消除双重滚动条，工作区调色盘升级为光晕外圈悬浮圆点；
+   - `SubjectCreateModal.vue`：重构顶层预览卡片为 Sage 渐变悬浮卡片，8 列图标选择网格升级为微立体微动效按键；
+4. 5 项核心交互与焦点/无障碍问题修复：
    - 上传关闭守卫前置：`ModalShell` 在任何状态变更或关闭事件触发前严格先执行 `preventClose` / `beforeClose` 守卫判定；`FileRegisterDialog` 绑定上传状态守卫，并在上传失败时不重置表单，允许用户保留文件与文件名立即重试；
    - 共享引用计数解决多层滚动锁：使用 `lockBodyScroll()` 与 `unlockBodyScroll()` 全局引用计数管理 `document.body.style.overflow`，彻底解决多层弹窗任意顺序关闭时提前解锁或残留 `hidden` 的问题；
    - LIFO 弹窗栈与单层 Escape 拦截：通过全局活动栈仅允许最顶层弹窗响应 Escape，并配合 `e.stopImmediatePropagation()` 阻止下层弹窗同时被关闭；
    - 焦点闭环与智能入场聚焦：入场时优先保持已有聚焦、检测 `[autofocus]` 与第一表单输入框，避免强制聚焦覆盖任务名称等组件的原生自动聚焦；弹窗激活期间通过全局与容器 `trapTabKey` 实现 Tab/Shift+Tab 弹窗内闭环循环；弹窗关闭或销毁后自动将焦点还给触发元素（opener）；
    - 无障碍名称绑定修复：`ModalShell` 智能区分 `effectiveAriaLabelledBy`（仅在有明确标题时绑定 `titleId`）与 `effectiveAriaLabel`（自适应绑定传入的 `aria-label`），彻底解决知识块查看弹窗与工作区弹窗在未传 `title` 时指向空标题 ID 的缺陷；
-4. 业务弹窗系统化提取、布局重构与全域接入：
-   - 解耦并提取 6 大独立业务弹窗——`ChangePasswordDialog.vue`、`SummaryInstructionDialog.vue`、`TaskCreateDialog.vue`、`FileRegisterDialog.vue`、`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`；
-   - 将 `SubjectCreateModal.vue`（清理双重标题栏冗余，对齐统一表单项与操作按钮）与 `ConfirmDialog.vue`（全局确认框）全面接入统一 `ModalShell` 容器，消除散落的手写遮罩与容器样式；
-   - 全面推行 `.modal-btn`、`.modal-form-group`、`.modal-form-label`、`.modal-form-input`、`.modal-form-textarea` 规范控件；
 5. 严格保护既有契约与测试回归：宿主视图状态与数据流保持原有闭环，既有正则断言（学科版本 `version: props.subjectData.version`、线条图标映射、密码长度、提炼限制、排期时长、文件登记前置校验等）100% 保持满足；PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check`（0 error）、`check:subject-icons`、`check:subject-workspace` 与 `npm.cmd run build` 生产构建均顺利通过。真实外部环境与人工 GUI 体验待验收。
 
 2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复（代码与门禁验证通过，GUI 待验收）：排查并彻底解决点击侧栏下周排期时当周任务被误关联至下周的根因：在 `useTaskStore.ts` 中增强 `dateForDay` 与 `rebuildSchedule` 支持 `YYYY-MM-DD` 格式的 `dateKey` 精确比对，打破原有仅依赖单周 `DayCode` ('Mon'~'Sun') 导致的跨周模糊匹配；更新 `setSelectedDay` 与 `insertTaskAtSlot` 支持 `dateKey` 级传递；并在 `Timeline/index.vue` 中由 `selectedTimelineDay.dateKey` 精确驱动中间“时间流细节”各槽位任务与当前点渲染，确保选中下周某一天时只精确呈现下周该天的实际排期任务。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。

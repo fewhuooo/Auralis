@@ -7,8 +7,17 @@
     @update:model-value="handleOverlayUpdate"
     @close="handleCancel"
   >
-    <div class="confirm-body">
-      <p class="confirm-message">{{ message }}</p>
+    <div class="confirm-content-layout">
+      <div
+        class="modal-hero-badge"
+        :class="type === 'danger' ? 'hero-danger' : 'hero-sage'"
+      >
+        <IconAlertTriangle v-if="type === 'danger'" :size="24" :stroke-width="1.8" />
+        <IconHelpCircle v-else :size="24" :stroke-width="1.8" />
+      </div>
+      <div class="confirm-text-wrap">
+        <p class="confirm-message">{{ message }}</p>
+      </div>
     </div>
 
     <template #footer>
@@ -28,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import { IconAlertTriangle, IconHelpCircle } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 
 withDefaults(defineProps<{
@@ -68,14 +78,24 @@ const handleConfirm = () => {
 </script>
 
 <style scoped>
-.confirm-body {
-  padding: 8px 4px 12px;
+.confirm-content-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 6px 2px 10px;
+}
+
+.confirm-text-wrap {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
 }
 
 .confirm-message {
   font-size: 14px;
-  color: var(--text-secondary, #4b5563);
+  color: var(--text-primary);
   line-height: 1.6;
   margin: 0;
+  letter-spacing: -0.1px;
 }
 </style>

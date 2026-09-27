@@ -24,12 +24,15 @@
         :class="{ 'is-active': isDragover, 'has-file': !!selectedFile }"
         @click="triggerFileInput"
       >
-        <IconCloudUpload :size="28" :stroke-width="1.8" class="drag-icon" />
+        <div class="drag-icon-circle" :class="{ 'is-success': !!selectedFile }">
+          <IconFileCheck v-if="selectedFile" :size="24" :stroke-width="2" />
+          <IconCloudUpload v-else :size="24" :stroke-width="1.8" />
+        </div>
         <div class="drag-text">
           {{ selectedFile ? selectedFile.name : '拖拽文件到此处自动识别，或点击选择' }}
         </div>
         <div class="drag-hint">
-          {{ hintText }}
+          {{ selectedFile ? '点击可更换其他参考文件' : hintText }}
         </div>
       </div>
 
@@ -44,7 +47,10 @@
       <!-- In-dialog Upload Progress -->
       <div v-if="isUploading" class="upload-progress-wrapper">
         <div class="upload-progress-header">
-          <span aria-live="polite" class="upload-stage-text">{{ uploadStage || '正在上传文件...' }}</span>
+          <div class="upload-stage-group">
+            <span class="pulse-indicator"></span>
+            <span aria-live="polite" class="upload-stage-text">{{ uploadStage || '正在上传文件...' }}</span>
+          </div>
           <span class="upload-percent-text">{{ uploadProgress }}%</span>
         </div>
         <div class="progress-bar-track">
@@ -114,7 +120,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { IconCloudUpload } from '@tabler/icons-vue'
+import { IconCloudUpload, IconFileCheck } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 import { useSubjectStore } from '@/store/useSubjectStore'
 
@@ -256,18 +262,18 @@ const handleSubmit = () => {
 .file-register-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 /* Drag drop area */
 .drag-drop-zone {
-  border: 1.5px dashed var(--border-default);
-  border-radius: var(--radius-md, 12px);
-  padding: 24px 16px;
+  border: 2px dashed rgba(139, 154, 110, 0.35);
+  border-radius: 16px;
+  padding: 26px 20px;
   text-align: center;
-  background: var(--color-bg-primary, #F7F2EB);
+  background: rgba(255, 255, 255, 0.55);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -278,73 +284,119 @@ const handleSubmit = () => {
 .drag-drop-zone.is-active {
   border-color: var(--color-zen-sage, #8B9A6E);
   background: rgba(139, 154, 110, 0.08);
+  transform: translateY(-1px);
 }
 
 .drag-drop-zone.has-file {
   border-color: var(--color-zen-sage, #8B9A6E);
+  background: rgba(139, 154, 110, 0.06);
 }
 
-.drag-icon {
-  margin-bottom: 8px;
-  color: var(--text-muted);
+.drag-icon-circle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--color-zen-sage, #8B9A6E);
+  margin-bottom: 10px;
+  transition: all 0.2s ease;
+}
+
+.drag-icon-circle.is-success {
+  background: rgba(139, 154, 110, 0.2);
+  color: var(--color-zen-sage, #76855B);
+  box-shadow: 0 0 0 4px rgba(139, 154, 110, 0.15);
+}
+
+.drag-drop-zone:hover .drag-icon-circle {
+  transform: scale(1.08);
 }
 
 .drag-text {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 13.5px;
+  font-weight: 650;
   color: var(--text-primary);
   word-break: break-all;
+  line-height: 1.4;
 }
 
 .drag-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 5px;
 }
 
 /* Progress area */
 .upload-progress-wrapper {
-  padding: 12px;
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.03));
-  border-radius: var(--radius-md, 8px);
+  padding: 14px 16px;
+  background: rgba(139, 154, 110, 0.08);
+  border: 1px solid rgba(139, 154, 110, 0.2);
+  border-radius: 12px;
 }
 
 .upload-progress-header {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
+  align-items: center;
+  font-size: 12.5px;
   color: var(--text-secondary);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+}
+
+.upload-stage-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-zen-sage, #8B9A6E);
+  box-shadow: 0 0 0 0 rgba(139, 154, 110, 0.7);
+  animation: pulse-dot 1.5s infinite;
+}
+
+@keyframes pulse-dot {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139, 154, 110, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(139, 154, 110, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 154, 110, 0);
+  }
 }
 
 .upload-stage-text {
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .upload-percent-text {
-  font-weight: 600;
-  color: var(--color-zen-sage, #8B9A6E);
+  font-weight: 700;
+  color: var(--color-zen-sage, #76855B);
+  font-feature-settings: "tnum";
 }
 
 .progress-bar-track {
-  height: 4px;
-  background: var(--border-subtle);
-  border-radius: 2px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 9999px;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
-  background: var(--color-zen-sage, #8B9A6E);
-  transition: width 0.3s ease;
-  border-radius: 2px;
-}
-
-/* Form inputs */
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  background: linear-gradient(90deg, #9CAD7D 0%, #839366 100%);
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 9999px;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.4);
 }
 
 /* Subject capsule grid */
@@ -352,7 +404,7 @@ const handleSubmit = () => {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  max-height: 120px;
+  max-height: 130px;
   overflow-y: auto;
   padding: 2px;
 }
@@ -360,27 +412,31 @@ const handleSubmit = () => {
 .subject-capsule-item {
   display: inline-flex;
   align-items: center;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  background: var(--color-bg-primary, #FFFFFF);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .subject-capsule-item:hover {
   border-color: var(--color-zen-sage, #8B9A6E);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .subject-capsule-item.is-active {
   border-color: var(--color-zen-sage, #8B9A6E);
-  background: rgba(139, 154, 110, 0.15);
-  font-weight: 600;
-  color: var(--text-primary);
+  background: rgba(139, 154, 110, 0.14);
+  font-weight: 650;
+  color: var(--color-zen-sage, #76855B);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.22);
 }
 
 .subject-empty-hint {
@@ -390,12 +446,23 @@ const handleSubmit = () => {
 }
 
 html.dark .drag-drop-zone {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(163, 177, 155, 0.22);
+}
+
+html.dark .drag-drop-zone:hover {
+  background: rgba(163, 177, 155, 0.08);
 }
 
 html.dark .subject-capsule-item {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+}
+
+html.dark .subject-capsule-item.is-active {
+  background: rgba(163, 177, 155, 0.2);
+  border-color: #A3B584;
+  color: #B4C4AA;
 }
 </style>

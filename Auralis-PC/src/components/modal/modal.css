@@ -1,27 +1,33 @@
 /* ==========================================================================
-   Auralis Modal Design System Tokens & Base Styles
+   Auralis Modal Design System Tokens & Base Styles (Zen Minimalist Premium)
    ========================================================================== */
 
 :root {
-  --modal-backdrop-bg: rgba(28, 31, 27, 0.42);
-  --modal-backdrop-blur: 4px;
+  --modal-backdrop-bg: rgba(18, 22, 19, 0.48);
+  --modal-backdrop-blur: 14px;
   --modal-bg: var(--color-bg-tertiary, #FAF7F2);
-  --modal-border: var(--border-default, rgba(0, 0, 0, 0.08));
-  --modal-radius: 18px;
-  --modal-shadow: 0 20px 60px rgba(24, 32, 28, 0.18), 0 4px 16px rgba(0, 0, 0, 0.04);
-  --modal-header-padding: 18px 24px;
-  --modal-body-padding: 20px 24px;
-  --modal-footer-padding: 16px 24px 20px;
+  --modal-border: rgba(139, 154, 110, 0.22);
+  --modal-radius: 22px;
+  --modal-shadow: 0 28px 72px -16px rgba(24, 32, 26, 0.24),
+    0 10px 30px -6px rgba(24, 32, 26, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
+  --modal-header-padding: 20px 26px 18px;
+  --modal-body-padding: 22px 26px;
+  --modal-footer-padding: 16px 26px 20px;
 }
 
 html.dark {
-  --modal-backdrop-bg: rgba(0, 0, 0, 0.68);
+  --modal-backdrop-bg: rgba(8, 10, 8, 0.72);
   --modal-bg: #1B211C;
-  --modal-border: rgba(163, 177, 155, 0.2);
-  --modal-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 4px 20px rgba(0, 0, 0, 0.3);
+  --modal-border: rgba(163, 177, 155, 0.18);
+  --modal-shadow: 0 32px 84px -16px rgba(0, 0, 0, 0.75),
+    0 12px 36px -6px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
 }
 
-/* Backdrop Overlay */
+/* Backdrop Overlay with deep glassmorphism */
 .modal-shell-overlay {
   position: fixed;
   inset: 0;
@@ -29,10 +35,11 @@ html.dark {
   align-items: center;
   justify-content: center;
   background: var(--modal-backdrop-bg);
-  backdrop-filter: blur(var(--modal-backdrop-blur));
-  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur));
-  padding: 16px;
+  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
+  padding: 20px;
   box-sizing: border-box;
+  z-index: 1000;
 }
 
 /* Modal Dialog Card */
@@ -52,21 +59,50 @@ html.dark {
   outline: none;
 }
 
+/* Top ambient light sheen */
+.modal-shell-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(139, 154, 110, 0.4) 30%,
+    rgba(158, 173, 128, 0.8) 50%,
+    rgba(139, 154, 110, 0.4) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+html.dark .modal-shell-card::before {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(163, 177, 155, 0.3) 30%,
+    rgba(180, 196, 170, 0.6) 50%,
+    rgba(163, 177, 155, 0.3) 70%,
+    transparent 100%
+  );
+}
+
 /* Width Tiers */
 .modal-shell-card.modal-size-sm {
-  max-width: 400px;
+  max-width: 420px;
 }
 
 .modal-shell-card.modal-size-md {
-  max-width: 520px;
+  max-width: 540px;
 }
 
 .modal-shell-card.modal-size-lg {
-  max-width: 680px;
+  max-width: 700px;
 }
 
 .modal-shell-card.modal-size-xl {
-  max-width: 840px;
+  max-width: 860px;
 }
 
 .modal-shell-card.modal-size-auto {
@@ -78,10 +114,18 @@ html.dark {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
   padding: var(--modal-header-padding);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.15) 100%);
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+html.dark .modal-shell-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
 }
 
 .modal-shell-header-main {
@@ -94,32 +138,32 @@ html.dark {
 
 .modal-shell-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.2px;
-  line-height: 1.4;
+  letter-spacing: -0.3px;
+  line-height: 1.35;
 }
 
 .modal-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: 5px;
+  padding: 3px 11px;
   border-radius: 9999px;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 650;
   line-height: 1.3;
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.1));
-  background: var(--color-bg-tertiary, #FAF7F2);
-  color: var(--text-secondary);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  background: rgba(139, 154, 110, 0.1);
+  color: var(--color-zen-sage, #76855B);
   white-space: nowrap;
 }
 
 html.dark .modal-pill {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--text-secondary);
+  background: rgba(163, 177, 155, 0.12);
+  border-color: rgba(163, 177, 155, 0.22);
+  color: #B4C4AA;
 }
 
 .modal-meta-text {
@@ -128,29 +172,45 @@ html.dark .modal-pill {
   white-space: nowrap;
 }
 
+/* Close Button with circular hover & rotation effect */
 .modal-shell-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.035);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1;
-  transition: all 0.15s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   padding: 0;
+  flex-shrink: 0;
 }
 
 .modal-shell-close:hover {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.05));
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: var(--text-primary);
+  transform: rotate(90deg) scale(1.06);
+}
+
+html.dark .modal-shell-close {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+html.dark .modal-shell-close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.18);
   color: var(--text-primary);
 }
 
-/* Modal Body */
+/* Modal Body with refined custom scrollbar */
 .modal-shell-body {
   padding: var(--modal-body-padding);
   overflow-y: auto;
@@ -158,16 +218,48 @@ html.dark .modal-pill {
   flex: 1 1 auto;
 }
 
+.modal-shell-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-shell-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-shell-body::-webkit-scrollbar-thumb {
+  background: rgba(139, 154, 110, 0.28);
+  border-radius: 9999px;
+}
+
+.modal-shell-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 154, 110, 0.5);
+}
+
+html.dark .modal-shell-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
 /* Modal Footer */
 .modal-shell-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 12px;
   padding: var(--modal-footer-padding);
-  border-top: 1px solid var(--border-subtle);
-  background: transparent;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.015) 100%);
   flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+html.dark .modal-shell-footer {
+  border-top-color: rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
 }
 
 /* Responsive Handling */
@@ -184,15 +276,15 @@ html.dark .modal-pill {
   }
 }
 
-/* Fade + Scale Micro-transition */
+/* Fade + Spring Scale Entrance */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.22s ease;
+  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-fade-enter-active .modal-shell-card,
 .modal-fade-leave-active .modal-shell-card {
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
 }
 
 .modal-fade-enter-from,
@@ -202,12 +294,12 @@ html.dark .modal-pill {
 
 .modal-fade-enter-from .modal-shell-card {
   opacity: 0;
-  transform: scale(0.96) translateY(6px);
+  transform: scale(0.95) translateY(10px);
 }
 
 .modal-fade-leave-to .modal-shell-card {
   opacity: 0;
-  transform: scale(0.97) translateY(4px);
+  transform: scale(0.97) translateY(6px);
 }
 
 /* ==========================================================================
@@ -217,82 +309,151 @@ html.dark .modal-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 18px;
+  gap: 7px;
+  height: 38px;
+  padding: 0 20px;
   border-radius: 9999px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: -0.1px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
   line-height: 1;
   white-space: nowrap;
   box-sizing: border-box;
+  user-select: none;
 }
 
 .modal-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.3);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.35);
 }
 
 .modal-btn-secondary {
-  background: var(--color-bg-secondary, rgba(0, 0, 0, 0.04));
-  border-color: var(--border-default, rgba(0, 0, 0, 0.1));
+  background: var(--color-bg-primary, #FFFFFF);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.1));
   color: var(--text-secondary, #4a5568);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 
 html.dark .modal-btn-secondary {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
   color: var(--text-secondary, #cbd5e1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .modal-btn-secondary:hover:not(:disabled) {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.08));
+  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.035));
   color: var(--text-primary, #1a202c);
   border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
 }
 
 html.dark .modal-btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.1);
   color: var(--text-primary, #f1f5f9);
+  border-color: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.modal-btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 .modal-btn-primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9CAD7D 0%, #839366 100%));
   color: #FFFFFF;
-  border: none;
-  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.32);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 3px 12px rgba(131, 147, 102, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .modal-btn-primary:hover:not(:disabled) {
-  opacity: 0.93;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.42);
+  opacity: 0.96;
+  transform: translateY(-1.5px);
+  box-shadow: 0 6px 18px rgba(131, 147, 102, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .modal-btn-primary:active:not(:disabled) {
   transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(131, 147, 102, 0.3);
 }
 
 .modal-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
-  box-shadow: none;
+  transform: none !important;
+  box-shadow: none !important;
 }
 
 .modal-btn-danger {
-  background: #ef4444;
+  background: linear-gradient(135deg, #E05252 0%, #C43838 100%);
   color: #ffffff;
-  border: none;
-  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 3px 12px rgba(196, 56, 56, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .modal-btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.38);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #E55C5C 0%, #CC3F3F 100%);
+  box-shadow: 0 6px 18px rgba(196, 56, 56, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transform: translateY(-1.5px);
+}
+
+.modal-btn-danger:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(196, 56, 56, 0.3);
+}
+
+/* ==========================================================================
+   Hero Badges for Dialogs (Confirm, Alert, Success)
+   ========================================================================== */
+.modal-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+}
+
+.modal-hero-badge.hero-danger {
+  background: rgba(224, 82, 82, 0.12);
+  color: #C43838;
+  border: 1px solid rgba(224, 82, 82, 0.22);
+}
+
+.modal-hero-badge.hero-sage {
+  background: rgba(139, 154, 110, 0.14);
+  color: var(--color-zen-sage, #76855B);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+}
+
+.modal-hero-badge.hero-amber {
+  background: rgba(217, 119, 6, 0.12);
+  color: #B45309;
+  border: 1px solid rgba(217, 119, 6, 0.22);
+}
+
+html.dark .modal-hero-badge.hero-danger {
+  background: rgba(224, 82, 82, 0.2);
+  color: #F87171;
+  border-color: rgba(224, 82, 82, 0.35);
+}
+
+html.dark .modal-hero-badge.hero-sage {
+  background: rgba(163, 177, 155, 0.18);
+  color: #B4C4AA;
+  border-color: rgba(163, 177, 155, 0.3);
 }
 
 /* ==========================================================================
@@ -302,7 +463,7 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .modal-form-group:last-child {
@@ -311,15 +472,17 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
 
 .modal-form-label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary, #2d3748);
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  letter-spacing: -0.15px;
 }
 
 .modal-form-label .required {
   color: #e53e3e;
+  font-weight: 700;
 }
 
 .modal-form-input,
@@ -327,15 +490,16 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
 .modal-form-select {
   width: 100%;
   box-sizing: border-box;
-  padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.12));
+  padding: 11px 15px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
   background: var(--color-bg-primary, #ffffff);
   color: var(--text-primary, #2d3748);
   font-size: 13.5px;
   font-family: inherit;
   outline: none;
-  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.dark .modal-form-input,
@@ -344,13 +508,44 @@ html.dark .modal-form-select {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.12);
   color: var(--text-primary, #f1f5f9);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .modal-form-input:focus,
 .modal-form-textarea:focus,
 .modal-form-select:focus {
   border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.22),
+    0 1px 3px rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+}
+
+html.dark .modal-form-input:focus,
+html.dark .modal-form-textarea:focus,
+html.dark .modal-form-select:focus {
+  border-color: #A3B584;
+  box-shadow: 0 0 0 3px rgba(163, 177, 155, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.modal-form-input::placeholder,
+.modal-form-textarea::placeholder {
+  color: var(--text-muted, #a0aec0);
+}
+
+/* Card Inset for nested structured content */
+.modal-card-inset {
+  background: var(--color-bg-primary, #FFFFFF);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+}
+
+html.dark .modal-card-inset {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 /* ==========================================================================
