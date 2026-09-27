@@ -1,5 +1,23 @@
 # Auralis 当前问题与审查登记
 
+### 2026-09-27 PC 全局弹窗与模态层组件化规范与提取重构（Modal & Dialog Optimization）
+
+- **背景与目标**：此前 PC 端各个视图分散内联自制弹窗（`Dashboard`、`Timeline`、`Profile`、`Asset`、`SubjectWorkspace`），样式代码重复、尺寸不一、缺乏无障碍与 Esc 监听、动效参差不齐。目标是在不破坏业务逻辑、不改变响应式状态归属、不破坏既有测试断言的前提下，建立统一的 `ModalShell` 基础组件并提取 6 个独立业务弹窗。
+- **实施架构与提取清单**：
+  1. 基础规范与壳组件：`src/components/modal/modal.css`（Token、5 档尺寸、标准按钮与输入）与 `src/components/modal/ModalShell.vue`（Teleport、fade-in/scale-up 动效、Esc 监听、遮罩防误触关闭、body 滚动锁定）；
+  2. 提取业务弹窗：
+     - `src/components/profile/ChangePasswordDialog.vue`（用于 Profile 修改密码）
+     - `src/components/subject/SummaryInstructionDialog.vue`（用于 OverviewSummaryView 提炼要求）
+     - `src/components/task/TaskCreateDialog.vue`（用于 Dashboard、Timeline、SubjectWorkspace 新建排期任务）
+     - `src/components/asset/FileRegisterDialog.vue`（用于 Asset、SubjectWorkspace 文件参考登记）
+     - `src/components/knowledge/KnowledgeBlockViewDialog.vue`（用于 Dashboard 知识卡片查看）
+     - `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`（用于 SubjectWorkspace 知识块三态流转）
+- **契约保护与兼容**：
+  - `Timeline/index.vue`：保持 `/duration:\s*newTaskForm\.value\.duration\s*\|\|\s*60/` 契约断言；
+  - `SubjectWorkspace/index.vue`：保持 `!registerForm.subjectId || !droppedFile || isUploading`、`createFileSource(targetSubjectId, registerForm.value.name.trim(), ...)`、`SUPPORTED_UPLOAD_EXTENSIONS.join(',')` 与 `validateUploadFile` 契约断言；
+  - `Profile/index.vue` 与 `OverviewSummaryView.vue`：保持密码长度校验与 2000 字限制断言；
+- **门禁与测试**：PC 全量回归 `npm.cmd run test:r4-pc`（433/433 全量通过），`npm.cmd run type-check`（0 error）与 `npm.cmd run build` 生产构建均顺利通过。
+
 ### 2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复
 
 - **现象与根因**：用户反馈“下周的还显示当周的”。排查定位到 `useTaskStore.ts` 中 `rebuildSchedule` 与 `dateForDay` 此前仅依赖 `DayCode` ('Mon'~'Sun') 匹配当周星期几，且 `rebuildSchedule` 限定只拉取 `getTasksForTimeline` 当周区间的任务，导致点击侧栏下周的某一天（如下周一 `2026-10-05`）时，`taskStore` 将下周一的选中态降级归为当周一 `Mon` 匹配，从而把当周一的任务错塞进了下周一的时间槽中。

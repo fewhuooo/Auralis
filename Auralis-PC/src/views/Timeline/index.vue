@@ -300,99 +300,12 @@
     </div>
 
     <!-- Task Creation Modal -->
-    <div class="modal-overlay" v-if="taskDialogVisible" @click="taskDialogVisible = false"></div>
-    <div class="modal-container task-create-modal" v-if="taskDialogVisible">
-      <div class="modal-header">
-        <h3 class="task-modal-title">新建学习任务</h3>
-        <button class="modal-close" @click="taskDialogVisible = false">×</button>
-      </div>
-      <div class="task-modal-body">
-        <!-- 任务名称 -->
-        <div class="task-form-group">
-          <label class="task-form-label">任务名称</label>
-          <input v-model="newTaskForm.name" class="task-form-input" placeholder="请输入学习或专注任务名称..." autofocus @keyup.enter="handleCreateTask" />
-        </div>
-
-        <!-- 所属学科（胶囊网格选择，直观清晰） -->
-        <div class="task-form-group">
-          <label class="task-form-label">所属学科</label>
-          <div class="subject-capsule-grid">
-            <div
-              v-for="subj in subjectStore.subjects"
-              :key="subj.id"
-              class="subject-capsule-item"
-              :class="{ active: newTaskForm.subjectId === subj.id }"
-              :style="newTaskForm.subjectId === subj.id ? { borderColor: SUBJECT_THEME_COLOR, background: SUBJECT_THEME_COLOR + '22' } : {}"
-              @click="newTaskForm.subjectId = subj.id"
-            >
-              <span class="subj-capsule-icon">
-                <component
-                  v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
-                  :is="getSubjectIconComponent(subj.icon)"
-                  style="width: 1em; height: 1em;"
-                />
-                <span v-else>{{ getLegacySubjectIcon(subj.icon) || '📘' }}</span>
-              </span>
-              <span class="subj-capsule-name">{{ subj.name }}</span>
-            </div>
-            <div v-if="subjectStore.subjects.length === 0" class="subject-capsule-item">暂无学科，请先创建</div>
-          </div>
-        </div>
-
-        <!-- 专注时长（在长条按钮交互条上拖动选择） -->
-        <div class="task-form-group">
-          <div class="duration-header">
-            <label class="task-form-label">专注时长</label>
-            <span class="duration-badge">{{ newTaskForm.duration }} 分钟 ({{ (newTaskForm.duration / 60).toFixed(1) }}h)</span>
-          </div>
-          <div 
-            class="duration-long-bar-btn" 
-            ref="durationBarRef"
-            @mousedown="startDurationDrag"
-            @mousemove="onDurationDrag"
-            @mouseup="endDurationDrag"
-            @mouseleave="endDurationDrag"
-            @click="onDurationBarClick"
-          >
-            <!-- 绿色进度填充 -->
-            <div 
-              class="duration-bar-fill" 
-              :style="{ width: Math.min(100, Math.max(0, ((newTaskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
-            ></div>
-            <!-- 长条刻度与选项文字 -->
-            <div class="duration-bar-steps">
-              <span 
-                v-for="step in [30, 60, 90, 120, 180, 240]" 
-                :key="step"
-                class="duration-step-item"
-                :class="{ active: newTaskForm.duration >= step }"
-                @click.stop="newTaskForm.duration = step"
-              >
-                {{ step < 60 ? step + 'm' : (step / 60) + 'h' }}
-              </span>
-            </div>
-            <!-- 拖动圆角手柄反馈 -->
-            <div 
-              class="duration-bar-thumb"
-              :style="{ left: Math.min(100, Math.max(0, ((newTaskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
-            >
-              <span>{{ newTaskForm.duration }}m</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="task-modal-footer">
-        <button class="task-btn-cancel" @click="taskDialogVisible = false">取消</button>
-        <button
-          class="task-btn-submit"
-          :disabled="!newTaskForm.name.trim() || !newTaskForm.subjectId"
-          @click="handleCreateTask"
-        >
-          添加到待办
-        </button>
-      </div>
-    </div>
+    <TaskCreateDialog
+      v-model="taskDialogVisible"
+      :related-block-id="newTaskForm.relatedBlockId"
+      :initial-desc="newTaskForm.desc"
+      @submit="handleCreateTask"
+    />
 
     <!-- Related Knowledge Block Preview Dialog -->
     <div class="modal-overlay" v-if="blockDialogVisible" @click="blockDialogVisible = false"></div>
@@ -445,10 +358,8 @@ import {
 import { useTaskStore, DAY_CODES, type Task } from '@/store/useTaskStore'
 import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, comparePendingTasks } from '@/services/taskViewRules'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
-
-const SUBJECT_THEME_COLOR = '#8B9A6E'
+import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
 
 const taskStore = useTaskStore()
 const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
@@ -931,37 +842,6 @@ const newTaskForm = ref({
 
 
 
-const durationBarRef = ref<HTMLElement | null>(null)
-const isDraggingDuration = ref(false)
-
-const calculateDurationFromEvent = (e: MouseEvent) => {
-  if (!durationBarRef.value) return
-  const rect = durationBarRef.value.getBoundingClientRect()
-  const offsetX = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
-  const ratio = offsetX / rect.width
-  const rawDuration = 30 + ratio * (240 - 30)
-  const rounded = Math.round(rawDuration / 30) * 30
-  newTaskForm.value.duration = Math.max(30, Math.min(240, rounded))
-}
-
-const startDurationDrag = (e: MouseEvent) => {
-  isDraggingDuration.value = true
-  calculateDurationFromEvent(e)
-}
-
-const onDurationDrag = (e: MouseEvent) => {
-  if (!isDraggingDuration.value) return
-  calculateDurationFromEvent(e)
-}
-
-const endDurationDrag = () => {
-  isDraggingDuration.value = false
-}
-
-const onDurationBarClick = (e: MouseEvent) => {
-  calculateDurationFromEvent(e)
-}
-
 const triggerImport = () => {
   router.push('/asset?focus=unassigned-tasks')
 }
@@ -977,32 +857,31 @@ const triggerCreate = () => {
   taskDialogVisible.value = true
 }
 
-const handleCreateTask = async () => {
-  if (!newTaskForm.value.name.trim() || !newTaskForm.value.subjectId) {
-    ElNotification({
-      title: '⚠️ 无法创建任务',
-      message: '请完整填写任务名称并选择所属学科！',
-      type: 'warning',
-      position: 'top-right'
-    })
-    return
-  }
+const handleCreateTask = async (taskData: {
+  name: string
+  subjectId: string
+  subjectName: string
+  duration: number
+  desc?: string
+  relatedBlockId?: string
+}) => {
+  newTaskForm.value.name = taskData.name
+  newTaskForm.value.subjectId = taskData.subjectId
+  newTaskForm.value.duration = taskData.duration
+  newTaskForm.value.desc = taskData.desc || ''
 
-  const selectedSubj = subjectStore.subjects.find(s => s.id === newTaskForm.value.subjectId)
-  if (!selectedSubj) return
-
-  let finalDesc = newTaskForm.value.desc.trim()
-  if (newTaskForm.value.relatedBlockId) {
-    finalDesc += `\n[KB_ID:${newTaskForm.value.relatedBlockId}]`
+  let finalDesc = (taskData.desc || '').trim()
+  if (taskData.relatedBlockId) {
+    finalDesc += `\n[KB_ID:${taskData.relatedBlockId}]`
   }
 
   const newTask = {
-    name: newTaskForm.value.name.trim(),
-    subject: selectedSubj.name,
+    name: taskData.name,
+    subject: taskData.subjectName,
     duration: newTaskForm.value.duration || 60,
     desc: finalDesc,
     status: 'pending' as const,
-    subjectId: selectedSubj.id
+    subjectId: taskData.subjectId
   }
 
   await taskStore.addTask(newTask)

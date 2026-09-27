@@ -1,5 +1,21 @@
 # PC 前端模块
 
+### 2026-09-27 PC 全局弹窗与模态层组件化规范与提取重构（Modal & Dialog Optimization）
+
+- **统一模态基础设施建设（Modal Architecture & Design Tokens）**：
+  - 新增设计系统模态样式规范 `src/components/modal/modal.css`：建立禅意雅致（Zen Sage `#8B9A6E`、`#FAF7F2`、深色微光 `#181D18`）全局 Token，提供 `sm`(400px)、`md`(520px)、`lg`(640px)、`xl`(800px)、`auto` 五档尺寸规范与统一的 `modal-btn` / `modal-input` / `modal-markdown-body` 控件规范；
+  - 新增基础模态壳 `src/components/modal/ModalShell.vue`：标准化支持 `Teleport to body`、淡入轻缩放进出动效（`fade-in` / `scale-up`）、Esc 快捷键监听、遮罩点击安全关闭、`aria-modal="true"` 可访问性以及多层嵌套弹窗的 `body` 滚动穿透锁定；
+- **业务弹窗系统化提取与解耦（Zero Regression Business Components）**：
+  - **修改密码**：提取 `src/components/profile/ChangePasswordDialog.vue`，保留 `12~200` 位强密码校验与服务端会话边界提示；
+  - **提炼指令定制**：提取 `src/components/subject/SummaryInstructionDialog.vue`，保留 2000 字限制与预设提示词；
+  - **排期任务创建**：提取 `src/components/task/TaskCreateDialog.vue`，供 `Dashboard`、`Timeline`、`SubjectWorkspace` 统一复用；支持开放学科下拉选择与锁定当前学科上下文（`fixedSubjectId` / `fixedSubjectName`），预设 30~240 分钟时长；
+  - **文件资产登记**：提取 `src/components/asset/FileRegisterDialog.vue`，供 `Asset` 资产库与 `SubjectWorkspace` 学科工作区复用；支持文件拖拽、格式与 50MB 尺寸安全校验、学科胶囊选择与上传进度感知；
+  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，供 `Dashboard` 等页面查看知识块详情，呈现头部元数据胶囊、卡片式 Markdown 渲染与剪贴板快速复制；
+  - **工作区知识块流转**：提取 `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`，供 `SubjectWorkspace` 完整管理知识块查看、编辑与新建三态流转，内置色彩调色盘与危险删除确认；
+- **测试与契约兼容（Compatibility & Guardrails）**：
+  - 严格保持各宿主页面对外 props、emits 与既有测试断言正则完全兼容；
+  - 全量自动化测试回归（433/433 测试通过），`npm run type-check` 0 错误，`npm run build` 生产构建成功。
+
 ### 2026-09-27 时间轴交换与 Suggestions 入口
 
 - 时间轴双任务交换成功后，本地 SQLite 在同一事务中写入两条服务端返回的 TASK；浏览器存储一次提交完整状态。遇到未解决的本地 mutation 时整批拒写并刷新本地投影；本地事务失败后对两项服务端结果一次更新内存投影，触发增量同步恢复，避免半交换持久化。真实 Tauri GUI 与双设备联调待验收。

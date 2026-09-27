@@ -413,48 +413,11 @@
     </aside>
 
     <!-- Register File Modal -->
-    <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-      <div class="modal-container register-modal">
-        <div class="modal-header">
-          <h3>上传参考文件</h3>
-          <button class="close-btn" @click="showRegisterModal = false">×</button>
-        </div>
-        <div 
-          class="modal-body" 
-          @dragover.prevent="isDragover = true"
-          @dragleave.prevent="isDragover = false"
-          @drop.prevent="handleDrop"
-        >
-          <div class="drag-drop-zone" :class="{ 'is-active': isDragover }" @click="triggerFileSelect">
-            <IconCloudUpload :size="24" :stroke-width="1.8" style="margin-bottom: 8px; color: var(--text-muted);" />
-            <div class="drag-text">{{ selectedFileToUpload ? selectedFileToUpload.name : '拖拽文件或点击此处上传' }}</div>
-          </div>
-          <input type="file" ref="dialogFileInput" style="display: none" @change="handleDialogFileChange" />
-          
-          <div class="form-group" style="margin-top: 12px;">
-            <label>文件名称<span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
-            <input type="text" v-model="inputFileName" class="styled-input" placeholder="输入文件的显示名称" />
-          </div>
-          
-          <div class="form-group"><label>归档到<span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
-            <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
-              <div
-                v-for="subj in subjectStore.subjects"
-                :key="subj.id"
-                class="subject-capsule-item"
-                :class="{ 'is-active': selectedSubjectId === subj.id }"
-                @click="selectedSubjectId = subj.id"
-              >
-                <span class="subj-capsule-name">{{ subj.name }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer" style="justify-content: flex-end">
-          <button class="btn-primary" :disabled="!selectedSubjectId || !selectedFileToUpload" @click="confirmUpload">确定登记</button>
-        </div>
-      </div>
-    </div>
+    <FileRegisterDialog
+      v-model="showRegisterModal"
+      :default-subject-id="selectedSubjectId"
+      @submit="handleRegisterSubmit"
+    />
   </div>
 </template>
 
@@ -465,6 +428,7 @@ import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
+import FileRegisterDialog from '@/components/asset/FileRegisterDialog.vue'
 
 import {
   IconPlus,
@@ -543,9 +507,6 @@ interface TreeNode {
 }
 
 const selectedSubjectId = ref('')
-const selectedFileToUpload = ref<File | null>(null)
-const inputFileName = ref('')
-const dialogFileInput = ref<HTMLInputElement | null>(null)
 
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
@@ -946,42 +907,26 @@ const selectGraphNode = (node: { type: 'file' | 'block'; id: string; subjectId: 
 }
 
 
-const openUploadForGroup = (groupId: string) => {
-  selectedSubjectId.value = groupId === 'all' ? (subjectStore.subjects[0]?.id || '') : groupId
-  selectedFileToUpload.value = null
-  inputFileName.value = ''
-  showRegisterModal.value = true
-}
-
-const triggerFileSelect = () => {
-  dialogFileInput.value?.click()
-}
-const handleDialogFileChange = (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (file) {
-    selectedFileToUpload.value = file
-    inputFileName.value = file.name
-  }
-}
-const confirmUpload = () => {
-  if (selectedFileToUpload.value && selectedSubjectId.value) {
-    const finalName = inputFileName.value.trim() || selectedFileToUpload.value.name
-    const finalFile = new window.File([selectedFileToUpload.value], finalName, { type: selectedFileToUpload.value.type })
-    handleFileUpload(finalFile, selectedSubjectId.value)
-    showRegisterModal.value = false
-    inputFileName.value = ''
-  }
-}
 const handleDrop = (e: DragEvent) => {
   isDragover.value = false
   const f = e.dataTransfer?.files?.[0]
   if (f) {
-    selectedFileToUpload.value = f
-    inputFileName.value = f.name
     if (!selectedSubjectId.value) {
       selectedSubjectId.value = subjectStore.subjects[0]?.id || ''
     }
+    showRegisterModal.value = true
   }
+}
+
+const openUploadForGroup = (groupId: string) => {
+  selectedSubjectId.value = groupId === 'all' ? (subjectStore.subjects[0]?.id || '') : groupId
+  showRegisterModal.value = true
+}
+
+const handleRegisterSubmit = ({ file, name, subjectId }: { file: File; name: string; subjectId: string }) => {
+  const finalFile = new window.File([file], name, { type: file.type })
+  handleFileUpload(finalFile, subjectId)
+  showRegisterModal.value = false
 }
 
 const handleFileUpload = async (file: File, subjectId: string) => {

@@ -1,0 +1,176 @@
+/* ==========================================================================
+   Auralis Modal Design System Tokens & Base Styles
+   ========================================================================== */
+
+:root {
+  --modal-backdrop-bg: rgba(28, 31, 27, 0.42);
+  --modal-backdrop-blur: 4px;
+  --modal-bg: var(--color-bg-tertiary, #FAF7F2);
+  --modal-border: var(--border-default, rgba(0, 0, 0, 0.08));
+  --modal-radius: 18px;
+  --modal-shadow: 0 20px 60px rgba(24, 32, 28, 0.18), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --modal-header-padding: 18px 24px;
+  --modal-body-padding: 20px 24px;
+  --modal-footer-padding: 16px 24px 20px;
+}
+
+html.dark {
+  --modal-backdrop-bg: rgba(0, 0, 0, 0.68);
+  --modal-bg: #1B211C;
+  --modal-border: rgba(163, 177, 155, 0.2);
+  --modal-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+/* Backdrop Overlay */
+.modal-shell-overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--modal-backdrop-bg);
+  backdrop-filter: blur(var(--modal-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur));
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+/* Modal Dialog Card */
+.modal-shell-card {
+  position: relative;
+  width: 100%;
+  max-height: calc(100vh - 48px);
+  background: var(--modal-bg);
+  border: 1px solid var(--modal-border);
+  border-radius: var(--modal-radius);
+  box-shadow: var(--modal-shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* Width Tiers */
+.modal-shell-card.modal-size-sm {
+  max-width: 400px;
+}
+
+.modal-shell-card.modal-size-md {
+  max-width: 520px;
+}
+
+.modal-shell-card.modal-size-lg {
+  max-width: 680px;
+}
+
+.modal-shell-card.modal-size-xl {
+  max-width: 840px;
+}
+
+.modal-shell-card.modal-size-auto {
+  max-width: max-content;
+}
+
+/* Modal Header */
+.modal-shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: var(--modal-header-padding);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.modal-shell-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+  line-height: 1.4;
+}
+
+.modal-shell-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.modal-shell-close:hover {
+  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.05));
+  color: var(--text-primary);
+}
+
+/* Modal Body */
+.modal-shell-body {
+  padding: var(--modal-body-padding);
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+}
+
+/* Modal Footer */
+.modal-shell-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: var(--modal-footer-padding);
+  border-top: 1px solid var(--border-subtle);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+/* Responsive Handling */
+@media (max-width: 640px) {
+  .modal-shell-overlay {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .modal-shell-card {
+    max-height: calc(100vh - 24px);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
+
+/* Fade + Scale Micro-transition */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.modal-fade-enter-active .modal-shell-card,
+.modal-fade-leave-active .modal-shell-card {
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+  opacity: 0;
+}
+
+.modal-fade-enter-from .modal-shell-card {
+  opacity: 0;
+  transform: scale(0.96) translateY(6px);
+}
+
+.modal-fade-leave-to .modal-shell-card {
+  opacity: 0;
+  transform: scale(0.97) translateY(4px);
+}

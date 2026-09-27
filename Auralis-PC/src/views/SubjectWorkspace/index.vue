@@ -832,120 +832,42 @@
     />
 
     <!-- Register File Modal -->
-    <div class="modal-overlay" v-if="showRegisterModal" @click.self="showRegisterModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-      <div class="modal-container register-modal">
-        <div class="modal-header">
-          <h3>登记本地参考文件</h3>
-          <button class="close-btn" @click="showRegisterModal = false">✕</button>
-        </div>
-        <div 
-          class="modal-body" 
-          @dragover.prevent="isDraggingFile = true"
-          @dragleave.prevent="isDraggingFile = false"
-          @drop.prevent="handleFileDrop"
-        >
-          <div class="drag-drop-zone" :class="{ 'is-active': isDraggingFile }" @click="triggerFileInput">
-            <IconUpload :size="24" :stroke-width="2" style="margin-bottom: 8px; color: var(--text-muted);" />
-            <div class="drag-text">拖拽文件到此处自动识别，或点击选择</div>
-            <div class="drag-hint">支持 PDF、DOC、DOCX、PPT、PPTX；图片和文本仅可预览</div>
-          </div>
-          <input type="file" ref="hiddenFileInput" style="display: none" :accept="SUPPORTED_UPLOAD_EXTENSIONS.join(',')" @change="handleFileSelect" />
-          <div v-if="isUploading" class="upload-progress-wrapper" style="margin-top: 12px; padding: 12px; background: var(--bg-modifier-hover); border-radius: var(--radius-md);">
-            <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-              <span aria-live="polite" style="font-weight: 500;">{{ uploadStage || '正在上传文件' }}</span>
-              <span style="font-weight: 600; color: var(--color-zen-sage);">{{ uploadProgress }}%</span>
-            </div>
-            <div style="height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; position: relative;">
-              <div :style="{ width: uploadProgress + '%', height: '100%', background: 'var(--accent-gradient)', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)', borderRadius: '2px' }"></div>
-              <div v-if="uploadProgress < 100" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 1.5s infinite; transform: translateX(-100%);"></div>
-            </div>
-          </div>
-          <div class="form-group"><label>文件名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="registerForm.name" class="styled-input" placeholder="例如: 计算机网络.pdf" /></div>
-          <div class="form-group"><label>归档至 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label>
-            <div class="subject-capsule-grid" style="margin-top: 4px; max-height: 120px; overflow-y: auto; padding: 2px;">
-              <div
-                v-for="subj in subjectStore.subjects"
-                :key="subj.id"
-                class="subject-capsule-item"
-                :class="{ 'is-active': registerForm.subjectId === subj.id }"
-                @click="registerForm.subjectId = subj.id"
-              >
-                <span class="subj-capsule-name">{{ subj.name }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer" style="justify-content: flex-end">
-          <button class="btn-secondary" @click="showRegisterModal = false">取消</button>
-          <button class="btn-primary" :disabled="!registerForm.name.trim() || !registerForm.subjectId || !droppedFile || isUploading" @click="handleRegisterFile">{{ isUploading ? `${uploadStage || '上传中'} ${uploadProgress}%` : '确认登记' }}</button>
-        </div>
-      </div>
-    </div>
+    <FileRegisterDialog
+      v-model="showRegisterModal"
+      title="登记本地参考文件"
+      :is-uploading="isUploading"
+      :upload-progress="uploadProgress"
+      :upload-stage="uploadStage"
+      :default-subject-id="subjectId"
+      :accepted-extensions="SUPPORTED_UPLOAD_EXTENSIONS"
+      :accept="SUPPORTED_UPLOAD_EXTENSIONS.join(',')"
+      :disabled="!registerForm.subjectId || !droppedFile || isUploading"
+      @submit="handleRegisterFile"
+    />
 
     <!-- Create Task Modal -->
-    <div class="modal-overlay" v-if="showTaskModal" @click.self="showTaskModal = false" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-      <div class="modal-container">
-        <div class="modal-header">
-          <h3>创建学习任务</h3>
-          <button class="close-btn" @click="showTaskModal = false">✕</button>
-        </div>
-        <div class="modal-body" style="display:flex; flex-direction:column; gap:14px;">
-          <div class="form-group"><label>任务名称 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="taskForm.name" class="styled-input" /></div>
-          <div class="form-group"><label>预计时长</label><select v-model.number="taskForm.duration" class="styled-input"><option :value="30">0.5 小时 (30分钟)</option><option :value="60">1.0 小时 (60分钟)</option><option :value="90">1.5 小时 (90分钟)</option><option :value="120">2.0 小时 (120分钟)</option><option :value="150">2.5 小时 (150分钟)</option><option :value="180">3.0 小时 (180分钟)</option><option :value="240">4.0 小时 (240分钟)</option></select></div>
-        </div>
-        <div class="modal-footer" style="justify-content: flex-end">
-          <button class="btn-secondary" @click="showTaskModal = false">取消</button>
-          <button class="btn-primary" :disabled="!taskForm.name.trim()" @click="handleAddTask">加入排期</button>
-        </div>
-      </div>
-    </div>
+    <TaskCreateDialog
+      v-model="showTaskModal"
+      title="创建学习任务"
+      submit-text="加入排期"
+      :fixed-subject-id="activeSubject?.id"
+      :fixed-subject-name="activeSubject?.name"
+      @submit="handleAddTask"
+    />
 
     <!-- Block Detail / Edit Modal -->
-    <div class="modal-overlay" v-if="blockDialogVisible" @click.self="closeBlockDialog" style="display: flex; align-items: center; justify-content: center; z-index: 1000; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px);">
-      <div class="modal-container">
-        <div class="modal-header">
-          <div class="modal-tags" v-if="!isEditMode">
-            <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--border-subtle)' }">{{ selectedBlock?.subject }}</span>
-            <span class="modal-source-tag">来源: {{ selectedBlock?.source }}</span>
-          </div>
-          <h3 v-else>{{ isCreateMode ? '录入新知识块' : '编辑知识内容' }}</h3>
-          <button class="close-btn" @click="closeBlockDialog">✕</button>
-        </div>
-        <div class="modal-body" v-if="isEditMode" style="display:flex; flex-direction:column; gap:14px;">
-          <div class="form-group"><label>标题 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><input v-model="editForm.title" class="styled-input" /></div>
-          <div class="form-group"><label>色彩</label><div class="color-options"><span v-for="c in themeColors" :key="c.value" class="color-dot" :class="{ 'is-selected': editForm.color === c.value }" :style="{ background: c.value }" @click="editForm.color = c.value"></span></div></div>
-          <div class="form-group"><label>内容 <span class="required" style="color: #ef4444; margin-left: 4px;">*</span></label><textarea v-model="editForm.preview" class="styled-textarea" rows="8" placeholder="支持 Markdown"></textarea></div>
-        </div>
-        <div class="modal-body" v-else>
-          <div class="block-read-header">
-            <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
-            <div class="modal-meta-row">
-              <span class="modal-time-badge">
-                <IconClock :size="14" :stroke-width="1.6" style="margin-right:4px;" />
-                {{ selectedBlock?.time }}
-              </span>
-              <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--color-bg-tertiary, #FAF7F2)' }">{{ selectedBlock?.subject }}</span>
-            </div>
-          </div>
-          <div class="modal-divider"></div>
-          <div class="modal-content summary-markdown" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
-        </div>
-        <div class="modal-footer" :style="{ justifyContent: isEditMode ? 'flex-end' : 'space-between' }">
-          <template v-if="isEditMode">
-            <button class="btn-secondary" @click="cancelEdit">取消</button>
-            <button class="btn-primary" @click="handleSaveBlock">{{ isCreateMode ? '创建' : '保存' }}</button>
-          </template>
-          <template v-else>
-            <button class="btn-secondary" style="color: #ef4444; border-color: rgba(239,68,68,0.3);" @click="handleDeleteBlock(selectedBlock?.id)">删除</button>
-            <div class="footer-right" style="display: flex; gap: 12px;">
-              <button class="btn-secondary" @click="handleCopyBlockContent(selectedBlock?.preview)">复制</button>
-              <button class="btn-secondary" @click="startEdit">编辑</button>
-              <button class="btn-primary" @click="closeBlockDialog">确定</button>
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
+    <WorkspaceKnowledgeBlockDialog
+      v-model="blockDialogVisible"
+      :mode="blockDialogMode"
+      :block="selectedBlock"
+      :active-subject-name="activeSubject?.name"
+      :theme-colors="themeColors"
+      @update:mode="blockDialogMode = $event"
+      @save="handleSaveBlockFromDialog"
+      @delete="handleDeleteBlock"
+      @copy="handleCopyBlockContent"
+      @close="closeBlockDialog"
+    />
   </div>
 </template>
 
@@ -972,7 +894,6 @@ import {
   IconUpload,
   IconRotate,
   IconArrowUp,
-  IconClock,
   IconPlus,
   IconNotes,
   IconSparkles,
@@ -993,9 +914,12 @@ import FilePreview from '@/components/FilePreview.vue'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
+import WorkspaceKnowledgeBlockDialog from '@/components/knowledge/WorkspaceKnowledgeBlockDialog.vue'
 import SubjectOverviewSection from '@/components/subject/SubjectOverviewSection.vue'
 import FileOutlineList, { type FileOverviewItem } from '@/components/subject/FileOutlineList.vue'
 import OverviewSummaryView from '@/components/subject/OverviewSummaryView.vue'
+import FileRegisterDialog from '@/components/asset/FileRegisterDialog.vue'
+import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
@@ -1815,8 +1739,6 @@ const filteredBlocks = computed(() => {
 // ===== Register Files =====
 const showRegisterModal = ref(false)
 const registerForm = ref({ name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' })
-const isDraggingFile = ref(false)
-const hiddenFileInput = ref<HTMLInputElement | null>(null)
 const droppedFile = ref<File | null>(null)
 const uploadProgress = ref(0)
 const uploadStage = ref('')
@@ -1824,55 +1746,18 @@ const uploadStage = ref('')
 const openRegisterModal = () => {
   registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: subjectId.value || '' }
   droppedFile.value = null
-  isDraggingFile.value = false
   uploadProgress.value = 0
   uploadStage.value = ''
   showRegisterModal.value = true
 }
 
-const parseFileMetadata = (file: File & { path?: string }) => {
-  try {
-    validateUploadFile(file)
-  } catch (error) {
-    ElMessage.error('文件上传失败，请检查格式和大小')
-    return false
-  }
-
-  droppedFile.value = file
-  uploadProgress.value = 0
-  uploadStage.value = ''
-  registerForm.value.name = file.name
-  if (file.path) registerForm.value.filePath = file.path
-  else registerForm.value.filePath = file.name
-  registerForm.value.fileSize = Number((file.size / (1024 * 1024)).toFixed(2))
-  
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  if (ext === 'pdf') registerForm.value.fileType = 'PDF'
-  else if (ext === 'md') registerForm.value.fileType = 'Markdown'
-  else if (['ppt', 'pptx'].includes(ext)) registerForm.value.fileType = 'PPT'
-  else if (['doc', 'docx'].includes(ext)) registerForm.value.fileType = 'Word'
-  else registerForm.value.fileType = 'Other'
-  return true
-}
-
-const handleFileDrop = (e: DragEvent) => {
-  isDraggingFile.value = false
-  const file = e.dataTransfer?.files[0] as (File & { path?: string }) | undefined
-  if (file) parseFileMetadata(file)
-}
-
-const handleFileSelect = (e: Event) => {
-  const target = e.target as HTMLInputElement
-  const file = target.files?.[0] as (File & { path?: string }) | undefined
-  if (file) parseFileMetadata(file)
-  if (hiddenFileInput.value) hiddenFileInput.value.value = ''
-}
-
-const triggerFileInput = () => hiddenFileInput.value?.click()
-
 const isUploading = ref(false)
 
-const handleRegisterFile = async () => {
+const handleRegisterFile = async (data: { file: File; name: string; subjectId: string }) => {
+  droppedFile.value = data.file
+  registerForm.value.name = data.name
+  registerForm.value.subjectId = data.subjectId
+
   const targetSubjectId = registerForm.value.subjectId
   if (!registerForm.value.name.trim() || !targetSubjectId || !droppedFile.value || isUploading.value) {
     if (!droppedFile.value) ElMessage.warning('请先选择或拖拽文件')
@@ -1882,6 +1767,12 @@ const handleRegisterFile = async () => {
   }
 
   const currentFile = droppedFile.value
+  try {
+    validateUploadFile(currentFile)
+  } catch {
+    ElMessage.error('文件上传失败，请检查格式和大小')
+    return
+  }
   isUploading.value = true
   uploadProgress.value = 0
   uploadStage.value = '准备上传'
@@ -1920,12 +1811,11 @@ const handleRegisterFile = async () => {
 
 // ===== Task Creation =====
 const showTaskModal = ref(false)
-const taskForm = ref({ name: '', duration: 60 })
 
-const handleAddTask = async () => {
-  if (!taskForm.value.name.trim() || !activeSubject.value) return
+const handleAddTask = async (taskData: { name: string; duration: number }) => {
+  if (!taskData.name.trim() || !activeSubject.value) return
   const s = activeSubject.value
-  await taskStore.addTask({ name: taskForm.value.name.trim(), subject: s.name, desc: '从学科工作区', duration: taskForm.value.duration, status: 'pending', subjectId: s.id })
+  await taskStore.addTask({ name: taskData.name.trim(), subject: s.name, desc: '从学科工作区', duration: taskData.duration, status: 'pending', subjectId: s.id })
   showTaskModal.value = false
   ElNotification({ title: '已生成', type: 'success', position: 'top-right' })
 }
@@ -1950,9 +1840,39 @@ const themeColors = [
 ]
 
 const handleBlockClick = (b: any) => { selectedBlock.value = b; isEditMode.value = false; blockDialogVisible.value = true }
-const startEdit = () => { isEditMode.value = true; isCreateMode.value = false; if (selectedBlock.value) editForm.value = { id: selectedBlock.value.id, subject: selectedBlock.value.subject, title: selectedBlock.value.title, color: selectedBlock.value.color, preview: selectedBlock.value.preview, source: selectedBlock.value.source } }
 const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; editForm.value = { id: '', subject: activeSubject.value?.name || '', title: '', color: 'rgba(181,196,177,0.4)', preview: '', source: '手动创建' }; blockDialogVisible.value = true }
-const cancelEdit = () => { isCreateMode.value ? (blockDialogVisible.value = false) : (isEditMode.value = false) }
+const blockDialogMode = computed<'view' | 'edit' | 'create'>({
+  get: () => {
+    if (isCreateMode.value) return 'create'
+    if (isEditMode.value) return 'edit'
+    return 'view'
+  },
+  set: (val) => {
+    if (val === 'create') {
+      isCreateMode.value = true
+      isEditMode.value = true
+    } else if (val === 'edit') {
+      isCreateMode.value = false
+      isEditMode.value = true
+    } else {
+      isCreateMode.value = false
+      isEditMode.value = false
+    }
+  }
+})
+
+const handleSaveBlockFromDialog = async (data: { id?: string; subject: string; title: string; color: string; preview: string; source: string }) => {
+  editForm.value = {
+    id: data.id || '',
+    subject: data.subject,
+    title: data.title,
+    color: data.color,
+    preview: data.preview,
+    source: data.source
+  }
+  await handleSaveBlock()
+}
+
 const closeBlockDialog = () => { blockDialogVisible.value = false; isEditMode.value = false; isCreateMode.value = false }
 
 const handleSaveBlock = async () => {

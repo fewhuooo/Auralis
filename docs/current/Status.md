@@ -1,5 +1,10 @@
 # Auralis 当前状态
 
+2026-09-27 PC 全局弹窗与模态层组件化规范与提取重构（代码与门禁验证通过，GUI 待验收）：
+1. 统一模态基础设施建设：新增 `src/components/modal/modal.css`（建立 Zen Sage 禅意配色体系、五档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、标准输入与按钮样式规范）与基础模态壳 `src/components/modal/ModalShell.vue`（标准化 `Teleport`、淡入轻缩放进出动效、`Esc` 快捷退出、遮罩防误触安全关闭、`aria-modal` 无障碍属性及多层嵌套 `body` 滚动穿透锁定）；
+2. 业务弹窗系统化提取：解耦并提取 6 大独立业务弹窗——`ChangePasswordDialog.vue`（修改密码）、`SummaryInstructionDialog.vue`（提炼指令定制）、`TaskCreateDialog.vue`（排期任务创建，服务于 Dashboard/Timeline/Workspace）、`FileRegisterDialog.vue`（文件参考登记，服务于 Asset/Workspace）、`KnowledgeBlockViewDialog.vue`（Dashboard 知识卡片详情查看）与 `WorkspaceKnowledgeBlockDialog.vue`（Workspace 知识块三态流转）；
+3. 严格保护既有契约与测试回归：宿主视图状态与数据流保持原有闭环，既有正则断言（密码长度、提炼限制、排期时长、文件登记前置校验等）100% 保持满足；PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check`（0 error）与 `npm.cmd run build` 生产构建均顺利通过。真实外部环境与人工 GUI 体验待验收。
+
 2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复（代码与门禁验证通过，GUI 待验收）：排查并彻底解决点击侧栏下周排期时当周任务被误关联至下周的根因：在 `useTaskStore.ts` 中增强 `dateForDay` 与 `rebuildSchedule` 支持 `YYYY-MM-DD` 格式的 `dateKey` 精确比对，打破原有仅依赖单周 `DayCode` ('Mon'~'Sun') 导致的跨周模糊匹配；更新 `setSelectedDay` 与 `insertTaskAtSlot` 支持 `dateKey` 级传递；并在 `Timeline/index.vue` 中由 `selectedTimelineDay.dateKey` 精确驱动中间“时间流细节”各槽位任务与当前点渲染，确保选中下周某一天时只精确呈现下周该天的实际排期任务。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 
 2026-09-27 PC 任务编排中心侧栏下周排期概览实现（代码与门禁验证通过，GUI 待验收）：在任务编排中心（`Timeline/index.vue`）侧栏中，直接于“本周排期概览”下方新增“下周排期概览”区块，与本周排期呈现样式 100% 同款对齐（无需 Tab 切换，自适应铺满侧栏并支持纵向平滑滚动）。基于 `getTimelineDays` 与 `dateKey` 实现精确的下周 7 天时间轮播与下周各日任务排期筛选；点击下周任意一天，高亮自适应切至目标项，中间“时间流细节”标题与半小时槽位排期自动联动切换为选中日期。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。

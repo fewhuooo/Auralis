@@ -494,51 +494,12 @@
       </main>
 
     <!-- Password Change Modal (修改密码弹窗) -->
-    <div v-if="showPasswordModal" class="modal-overlay" @click.self="closePasswordModal">
-      <div class="zen-modal-card">
-        <div class="zen-modal-header">
-          <h3 class="zen-modal-title">修改登录密码</h3>
-          <button class="zen-modal-close" @click="closePasswordModal">✕</button>
-        </div>
-        <div class="zen-modal-body">
-          <div class="modal-form-item">
-            <label class="modal-form-label">原密码</label>
-            <input
-              v-model="pwdForm.oldPassword"
-              type="password"
-              class="settings-input modal-input"
-              placeholder="请输入当前使用的密码"
-            />
-          </div>
-          <div class="modal-form-item">
-            <label class="modal-form-label">新密码</label>
-            <input
-              v-model="pwdForm.newPassword"
-              type="password"
-              class="settings-input modal-input"
-              placeholder="12 至 200 位安全新密码"
-            />
-          </div>
-          <div class="modal-form-item">
-            <label class="modal-form-label">确认新密码</label>
-            <input
-              v-model="pwdForm.confirmPassword"
-              type="password"
-              class="settings-input modal-input"
-              placeholder="再次输入新密码"
-              @keydown.enter="submitPasswordChange"
-            />
-          </div>
-          <div v-if="pwdError" class="modal-error-tip">{{ pwdError }}</div>
-        </div>
-        <div class="zen-modal-footer">
-          <button class="action-btn" @click="closePasswordModal">取消</button>
-          <button class="action-btn primary" :disabled="pwdSubmitting" @click="submitPasswordChange">
-            {{ pwdSubmitting ? '保存中...' : '确认修改' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <ChangePasswordDialog
+      v-model="showPasswordModal"
+      :submitting="pwdSubmitting"
+      :error-message="pwdError"
+      @submit="submitPasswordChange"
+    />
 
     <!-- 隐藏的头像文件上传 input -->
     <input
@@ -583,6 +544,7 @@ import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
 import DocumentProcessingCenter from '@/components/documentProcessing/DocumentProcessingCenter.vue'
+import ChangePasswordDialog from '@/components/profile/ChangePasswordDialog.vue'
 
 const settingsStore = useSettingsStore()
 const knowledgeStore = useKnowledgeStore()
@@ -796,53 +758,27 @@ const saveNickname = async () => {
 const showPasswordModal = ref(false)
 const pwdSubmitting = ref(false)
 const pwdError = ref('')
-const pwdForm = reactive({
-  oldPassword: '',
-  newPassword: '',
-  confirmPassword: '',
-})
 
 const openPasswordModal = () => {
-  pwdForm.oldPassword = ''
-  pwdForm.newPassword = ''
-  pwdForm.confirmPassword = ''
   pwdError.value = ''
   showPasswordModal.value = true
 }
 
-const closePasswordModal = () => {
-  showPasswordModal.value = false
+const submitPasswordChange = async ({ oldPassword, newPassword }: { oldPassword: string; newPassword: string }) => {
   pwdError.value = ''
-}
-
-const submitPasswordChange = async () => {
-  pwdError.value = ''
-  if (!pwdForm.oldPassword) {
-    pwdError.value = '请输入原密码'
-    return
-  }
-  if (!pwdForm.newPassword || pwdForm.newPassword.length < 12 || pwdForm.newPassword.length > 200) {
+  if (!newPassword || newPassword.length < 12 || newPassword.length > 200) {
     pwdError.value = '新密码长度必须在 12 至 200 位之间'
     return
   }
-  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
-    pwdError.value = '两次输入的新密码不一致'
-    return
-  }
-  if (pwdForm.oldPassword === pwdForm.newPassword) {
-    pwdError.value = '新密码不能与原密码相同'
-    return
-  }
-
   pwdSubmitting.value = true
   try {
     const baseVersion = authStore.user?.version ?? 0
     await useAuthApi.changePassword({
       baseVersion,
-      currentPassword: pwdForm.oldPassword,
-      newPassword: pwdForm.newPassword,
+      currentPassword: oldPassword,
+      newPassword: newPassword,
     })
-    closePasswordModal()
+    showPasswordModal.value = false
     ElNotification({
       title: '修改成功',
       message: '账号登录密码已成功更新。其他设备的登录会话已安全撤销。',

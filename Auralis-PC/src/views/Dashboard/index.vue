@@ -237,136 +237,17 @@
     </div>
 
     <!-- Block Detail Modal -->
-    <div class="modal-overlay" v-if="blockDialogVisible" @click="blockDialogVisible = false"></div>
-    <div class="block-detail-modal" v-if="blockDialogVisible">
-      <!-- 1. 头部信息区 (直接在外层极浅鼠尾草绿背景 #F2F5F3 上，绝对左对齐) -->
-      <div class="block-detail-header">
-        <!-- 标签行 (Top Row) -->
-        <div class="hero-header-row">
-          <div class="hero-tags">
-            <!-- 微标签 (Badge)：浅绿色背景+深绿色文字，圆角处理 -->
-            <span class="hero-subj-pill">
-              {{ selectedBlock?.subject || '人工智能导论与大模型' }}
-            </span>
-            <!-- 辅助文字：中灰色字 #888888 -->
-            <span class="hero-source-text">来源: {{ selectedBlock?.source }}</span>
-          </div>
-          <!-- 极简的中灰色“X”关闭图标 (不需要圆形底色) -->
-          <button class="hero-close-btn" @click="blockDialogVisible = false" title="关闭">×</button>
-        </div>
-        <!-- 主标题 (Title)：大字号，加粗，深灰色 #333333，严格左对齐 -->
-        <h2 class="hero-main-title">{{ selectedBlock?.title }}</h2>
-        <!-- 时间信息 (Metadata)：简洁线性历史足迹图标 + 中灰色文字 -->
-        <div class="hero-time-text">
-          <IconHistory class="hero-clock-icon" :size="14" :stroke-width="1.6" />
-          <span>记于 {{ selectedBlock?.time }}</span>
-        </div>
-      </div>
+    <KnowledgeBlockViewDialog
+      v-model="blockDialogVisible"
+      :block="selectedBlock"
+    />
 
-      <!-- 2. 核心内容区 (物理分隔的独立纯白色 #FFFFFF 嵌套卡片，留白至少 24px) -->
-      <div class="block-detail-card">
-        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
-      </div>
-
-      <!-- 3. 底部操作区 (右下角对齐 + 偏深鼠尾草绿 #849C8A 实心“确定”按钮) -->
-      <div class="block-detail-footer">
-        <button class="sage-primary-btn" @click="blockDialogVisible = false">确定</button>
-      </div>
-    </div>
-
-    <!-- Create Task Modal (借鉴移动端现代卡片化任务创建设计) -->
-    <div class="modal-overlay" v-if="showTaskModal" @click="showTaskModal = false"></div>
-    <div class="block-modal task-create-modal" v-if="showTaskModal">
-      <div class="modal-header">
-        <h3 class="task-modal-title">新建学习任务</h3>
-        <button class="modal-close" @click="showTaskModal = false">×</button>
-      </div>
-      <div class="task-modal-body">
-        <!-- 任务名称 -->
-        <div class="task-form-group">
-          <label class="task-form-label">任务名称</label>
-          <input v-model="taskForm.name" class="task-form-input" placeholder="请输入学习或专注任务名称..." autofocus />
-        </div>
-
-        <!-- 所属学科（胶囊网格选择，直观清晰） -->
-        <div class="task-form-group">
-          <label class="task-form-label">所属学科</label>
-          <div class="subject-capsule-grid">
-            <div
-              v-for="subj in availableSubjectsForTask"
-              :key="subj.id"
-              class="subject-capsule-item"
-              :class="{ active: taskForm.subjectId === subj.id }"
-              :style="taskForm.subjectId === subj.id ? { borderColor: SUBJECT_THEME_COLOR, background: SUBJECT_THEME_COLOR + '22' } : {}"
-              @click="taskForm.subjectId = subj.id"
-            >
-              <span class="subj-capsule-icon">
-                <component
-                  v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
-                  :is="getSubjectIconComponent(subj.icon)"
-                  style="width: 1em; height: 1em;"
-                />
-                <span v-else>{{ getLegacySubjectIcon(subj.icon) || '📘' }}</span>
-              </span>
-              <span class="subj-capsule-name">{{ subj.name }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 专注时长（在长条按钮交互条上拖动选择） -->
-        <div class="task-form-group">
-          <div class="duration-header">
-            <label class="task-form-label">专注时长</label>
-            <span class="duration-badge">{{ taskForm.duration }} 分钟 ({{ (taskForm.duration / 60).toFixed(1) }}h)</span>
-          </div>
-          <div 
-            class="duration-long-bar-btn" 
-            ref="durationBarRef"
-            @mousedown="startDurationDrag"
-            @mousemove="onDurationDrag"
-            @mouseup="endDurationDrag"
-            @mouseleave="endDurationDrag"
-            @click="onDurationBarClick"
-          >
-            <!-- 绿色进度填充 -->
-            <div 
-              class="duration-bar-fill" 
-              :style="{ width: Math.min(100, Math.max(0, ((taskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
-            ></div>
-            <!-- 长条刻度与选项文字 -->
-            <div class="duration-bar-steps">
-              <span 
-                v-for="step in [30, 60, 90, 120, 180, 240]" 
-                :key="step"
-                class="duration-step-item"
-                :class="{ active: taskForm.duration >= step }"
-                @click.stop="taskForm.duration = step"
-              >
-                {{ step < 60 ? step + 'm' : (step / 60) + 'h' }}
-              </span>
-            </div>
-            <!-- 拖动圆角手柄反馈 -->
-            <div 
-              class="duration-bar-thumb"
-              :style="{ left: Math.min(100, Math.max(0, ((taskForm.duration - 30) / (240 - 30)) * 100)) + '%' }"
-            >
-              <span>{{ taskForm.duration }}m</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="task-modal-footer">
-        <button class="task-btn-cancel" @click="showTaskModal = false">取消</button>
-        <button
-          class="task-btn-submit"
-          :disabled="!taskForm.name.trim() || !taskForm.subjectId"
-          @click="handleAddTask"
-        >
-          添加到待办
-        </button>
-      </div>
-    </div>
+    <!-- Create Task Modal -->
+    <TaskCreateDialog
+      v-model="showTaskModal"
+      :subjects="availableSubjectsForTask"
+      @submit="handleAddTask"
+    />
   </div>
 </template>
 
@@ -386,6 +267,8 @@ import { useTaskStore, type Task, type TaskPresentationStatus, DAY_CODES, getTod
 import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, isCompletedTask, isScheduledCompletionLocked, comparePendingTasks } from '@/services/taskViewRules'
 import { IconLayoutGrid, IconHistory, IconCircleCheck, IconChevronRight } from '@tabler/icons-vue'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
+import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
+import KnowledgeBlockViewDialog from '@/components/knowledge/KnowledgeBlockViewDialog.vue'
 
 marked.setOptions({ breaks: true, gfm: true })
 const SUBJECT_THEME_COLOR = '#8B9A6E'
@@ -568,80 +451,29 @@ const formatTaskDue = (dueAt?: string): string => {
 
 // ===== Task Creation =====
 const showTaskModal = ref(false)
-const taskForm = ref({
-  name: '',
-  subjectId: '',
-  duration: 60,
-
-
-})
 
 const availableSubjectsForTask = computed(() => {
   return subjectStore.subjects
 })
 
-const durationBarRef = ref<HTMLElement | null>(null)
-const isDraggingDuration = ref(false)
-
-const calculateDurationFromEvent = (e: MouseEvent) => {
-  if (!durationBarRef.value) return
-  const rect = durationBarRef.value.getBoundingClientRect()
-  const offsetX = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
-  const ratio = offsetX / rect.width
-  const rawDuration = 30 + ratio * (240 - 30)
-  const rounded = Math.round(rawDuration / 30) * 30
-  taskForm.value.duration = Math.max(30, Math.min(240, rounded))
-}
-
-const startDurationDrag = (e: MouseEvent) => {
-  isDraggingDuration.value = true
-  calculateDurationFromEvent(e)
-}
-
-const onDurationDrag = (e: MouseEvent) => {
-  if (!isDraggingDuration.value) return
-  calculateDurationFromEvent(e)
-}
-
-const endDurationDrag = () => {
-  isDraggingDuration.value = false
-}
-
-const onDurationBarClick = (e: MouseEvent) => {
-  calculateDurationFromEvent(e)
-}
-
 const openCreateTaskDialog = () => {
-  taskForm.value = {
-    name: '',
-    subjectId: availableSubjectsForTask.value[0]?.id || '',
-    duration: 60,
-
-
-  }
   showTaskModal.value = true
 }
 
-
-const handleAddTask = async () => {
-  const subjObj = availableSubjectsForTask.value.find(s => s.id === taskForm.value.subjectId)
-  if (!taskForm.value.name.trim() || !subjObj) return
-
+const handleAddTask = async (taskData: { name: string; subjectId: string; subjectName: string; duration: number }) => {
   try {
     await taskStore.addTask({
-      name: taskForm.value.name.trim(),
-      subject: subjObj.name,
+      name: taskData.name,
+      subject: taskData.subjectName,
       desc: '从看板创建',
-      duration: taskForm.value.duration,
-
-
+      duration: taskData.duration,
       status: 'pending',
-      subjectId: subjObj.id
+      subjectId: taskData.subjectId
     })
     showTaskModal.value = false
     ElNotification({
       title: '🎯 任务已生成',
-      message: `"${taskForm.value.name}" 已加入待安排列表。`,
+      message: `"${taskData.name}" 已加入待安排列表。`,
       type: 'success',
       position: 'top-right'
     })
