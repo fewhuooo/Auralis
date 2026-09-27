@@ -308,30 +308,11 @@
     />
 
     <!-- Related Knowledge Block Preview Dialog -->
-    <div class="modal-overlay" v-if="blockDialogVisible" @click="blockDialogVisible = false"></div>
-    <div class="block-modal" v-if="blockDialogVisible">
-      <div class="modal-header">
-        <div class="modal-tags">
-          <span class="modal-tag" :style="{ background: selectedBlock?.color || 'var(--border-subtle)' }">
-            {{ selectedBlock?.subject || '知识片' }}
-          </span>
-          <span class="modal-source-tag">
-            来源: {{ selectedBlock?.source }}
-          </span>
-        </div>
-        <button class="modal-close" @click="blockDialogVisible = false"><IconX :size="16" :stroke-width="1.8" /></button>
-      </div>
-      <div class="modal-body">
-        <h2 class="modal-title">{{ selectedBlock?.title }}</h2>
-        <div class="modal-time"><IconHistory :size="14" :stroke-width="1.6" style="vertical-align: -2px; margin-right: 4px;" />记于 {{ selectedBlock?.time }}</div>
-        <div class="modal-divider"></div>
-        <div class="modal-content" v-html="renderMarkdown(selectedBlock?.content || selectedBlock?.preview || '')"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="footer-btn secondary-btn" @click="copyBlockContent(selectedBlock?.content || selectedBlock?.preview)">复制内容</button>
-        <button class="footer-btn primary-btn" @click="blockDialogVisible = false">确定</button>
-      </div>
-    </div>
+    <KnowledgeBlockViewDialog
+      v-model="blockDialogVisible"
+      :block="selectedBlock"
+      @copy="copyBlockContent"
+    />
   </div>
 </template>
 
@@ -342,8 +323,6 @@ import { storeToRefs } from 'pinia'
 import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
 import {
   IconListCheck,
   IconCircleCheck,
@@ -351,8 +330,7 @@ import {
   IconInbox,
   IconPlus,
   IconCalendarCheck,
-  IconX,
-  IconHistory
+  IconX
 } from '@tabler/icons-vue'
 
 import { useTaskStore, DAY_CODES, type Task } from '@/store/useTaskStore'
@@ -360,6 +338,7 @@ import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, compare
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
+import KnowledgeBlockViewDialog from '@/components/knowledge/KnowledgeBlockViewDialog.vue'
 
 const taskStore = useTaskStore()
 const { pendingTasks, allTasks, timeSlots, selectedDay, completedCount, pendingCount, totalFocusHours } = storeToRefs(taskStore)
@@ -812,10 +791,6 @@ const openRelatedBlock = (blockId: string) => {
       position: 'top-right'
     })
   }
-}
-
-const renderMarkdown = (text: string) => {
-  return DOMPurify.sanitize(marked.parse(text) as string)
 }
 
 const copyBlockContent = (text: string) => {

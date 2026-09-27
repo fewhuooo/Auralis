@@ -1,9 +1,15 @@
 <template>
-  <div class="modal-overlay" @click.self="$emit('close')">
-    <div class="modal-container">
+  <ModalShell
+    :model-value="true"
+    size="md"
+    :title="isEdit ? '编辑学科空间' : '创建学科空间'"
+    :aria-label="isEdit ? '编辑学科空间' : '创建学科空间'"
+    @update:model-value="$emit('close')"
+  >
+    <div class="subject-create-modal">
       <div class="modal-header">
         <h3>{{ isEdit ? '编辑学科空间' : '创建学科空间' }}</h3>
-        <button class="close-btn" @click="$emit('close')">✕</button>
+        <button class="close-btn" @click="$emit('close')" title="关闭" aria-label="关闭">✕</button>
       </div>
 
       <div class="modal-body">
@@ -79,12 +85,13 @@
         </button>
       </div>
     </div>
-  </div>
+  </ModalShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElIcon } from 'element-plus'
+import ModalShell from '@/components/modal/ModalShell.vue'
 import {
   getLegacySubjectIcon,
   getSubjectIconComponent,
@@ -130,46 +137,9 @@ const handleSave = () => {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 999;
-  animation: fade-in 0.25s ease-out;
-}
-
-.modal-container {
-  width: 90%;
-  max-width: 520px;
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--border-subtle);
+.subject-create-modal {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-html.dark .modal-container {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.25);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-}
-
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes scale-up {
-  from { transform: scale(0.95); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
 }
 
 .modal-header {

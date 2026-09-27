@@ -10,8 +10,11 @@
      - `src/components/subject/SummaryInstructionDialog.vue`（用于 OverviewSummaryView 提炼要求）
      - `src/components/task/TaskCreateDialog.vue`（用于 Dashboard、Timeline、SubjectWorkspace 新建排期任务）
      - `src/components/asset/FileRegisterDialog.vue`（用于 Asset、SubjectWorkspace 文件参考登记）
-     - `src/components/knowledge/KnowledgeBlockViewDialog.vue`（用于 Dashboard 知识卡片查看）
+     - `src/components/knowledge/KnowledgeBlockViewDialog.vue`（用于 Dashboard 与 Timeline 知识卡片查看，彻底消除 Timeline 原内联 block-modal）
      - `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`（用于 SubjectWorkspace 知识块三态流转）
+  3. 统一外壳改造：
+     - `src/components/subject/SubjectCreateModal.vue`（学科空间创建/编辑）全面接入统一 `ModalShell`（`size="md"`），消除手写遮罩/容器样式，保留 `version: props.subjectData.version` 契约断言；
+     - `src/components/ConfirmDialog.vue`（通用确认对话框）全面接入统一 `ModalShell`（`size="sm"`），统一标题、遮罩与确认/取消按钮层级；
 - **契约保护与兼容**：
   - `Timeline/index.vue`：保持 `/duration:\s*newTaskForm\.value\.duration\s*\|\|\s*60/` 契约断言；
   - `SubjectWorkspace/index.vue`：保持 `!registerForm.subjectId || !droppedFile || isUploading`、`createFileSource(targetSubjectId, registerForm.value.name.trim(), ...)`、`SUPPORTED_UPLOAD_EXTENSIONS.join(',')` 与 `validateUploadFile` 契约断言；

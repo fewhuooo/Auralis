@@ -10,8 +10,10 @@
   - **提炼指令定制**：提取 `src/components/subject/SummaryInstructionDialog.vue`，保留 2000 字限制与预设提示词；
   - **排期任务创建**：提取 `src/components/task/TaskCreateDialog.vue`，供 `Dashboard`、`Timeline`、`SubjectWorkspace` 统一复用；支持开放学科下拉选择与锁定当前学科上下文（`fixedSubjectId` / `fixedSubjectName`），预设 30~240 分钟时长；
   - **文件资产登记**：提取 `src/components/asset/FileRegisterDialog.vue`，供 `Asset` 资产库与 `SubjectWorkspace` 学科工作区复用；支持文件拖拽、格式与 50MB 尺寸安全校验、学科胶囊选择与上传进度感知；
-  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，供 `Dashboard` 等页面查看知识块详情，呈现头部元数据胶囊、卡片式 Markdown 渲染与剪贴板快速复制；
+  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，供 `Dashboard` 与 `Timeline` 统一查看知识块卡片详情，呈现头部元数据胶囊、卡片式 Markdown 渲染与剪贴板快速复制；
   - **工作区知识块流转**：提取 `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`，供 `SubjectWorkspace` 完整管理知识块查看、编辑与新建三态流转，内置色彩调色盘与危险删除确认；
+  - **学科空间创建/编辑弹窗升级**：`src/components/subject/SubjectCreateModal.vue` 接入统一外壳 `ModalShell`（`size="md"`），去除手写 overlay 与容器样式，完整保留 `version: props.subjectData.version` 版本契约；
+  - **通用确认弹窗升级**：`src/components/ConfirmDialog.vue` 接入统一外壳 `ModalShell`（`size="sm"`），统一标题栏、遮罩滤镜与确认/取消按钮层级；
 - **测试与契约兼容（Compatibility & Guardrails）**：
   - 严格保持各宿主页面对外 props、emits 与既有测试断言正则完全兼容；
   - 全量自动化测试回归（433/433 测试通过），`npm run type-check` 0 错误，`npm run build` 生产构建成功。
