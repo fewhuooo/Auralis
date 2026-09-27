@@ -4,13 +4,13 @@
    ========================================================================== */
 
 :root {
-  --modal-backdrop-bg: rgba(18, 22, 19, 0.48);
-  --modal-backdrop-blur: 16px;
+  --modal-backdrop-bg: rgba(28, 28, 26, 0.42);
+  --modal-backdrop-blur: 14px;
   --modal-bg: var(--color-bg-tertiary, #FAF7F2);
-  --modal-border: rgba(139, 154, 110, 0.18);
+  --modal-border: var(--border-default, #DDD5C7);
   --modal-radius: 24px;
-  --modal-shadow: 0 30px 80px -16px rgba(20, 28, 22, 0.22),
-    0 12px 32px -6px rgba(20, 28, 22, 0.08),
+  --modal-shadow: 0 24px 60px -12px rgba(28, 28, 26, 0.16),
+    0 8px 24px -4px rgba(28, 28, 26, 0.06),
     inset 0 1px 0 rgba(255, 255, 255, 0.85);
   --modal-header-padding: 30px 36px 14px 36px;
   --modal-body-padding: 14px 36px 24px 36px;
@@ -18,15 +18,15 @@
 }
 
 html.dark {
-  --modal-backdrop-bg: rgba(6, 8, 7, 0.75);
-  --modal-bg: #1B211C;
-  --modal-border: rgba(163, 177, 155, 0.16);
-  --modal-shadow: 0 32px 84px -16px rgba(0, 0, 0, 0.8),
-    0 12px 36px -6px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --modal-backdrop-bg: rgba(15, 14, 13, 0.72);
+  --modal-bg: var(--color-bg-elevated, #3d3b38);
+  --modal-border: var(--border-default, rgba(230, 223, 216, 0.12));
+  --modal-shadow: 0 28px 70px -12px rgba(0, 0, 0, 0.75),
+    0 10px 28px -4px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* Backdrop Overlay with deep glassmorphism */
+/* Backdrop Overlay with warm glassmorphism */
 .modal-shell-overlay {
   position: fixed;
   inset: 0;
@@ -34,8 +34,8 @@ html.dark {
   align-items: center;
   justify-content: center;
   background: var(--modal-backdrop-bg);
-  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
+  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(140%);
   padding: 24px;
   box-sizing: border-box;
   z-index: 1000;
@@ -54,7 +54,7 @@ html.dark {
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   outline: none;
 }
 
@@ -105,7 +105,7 @@ html.dark {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
-  color: var(--text-primary, #1e241f);
+  color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
   line-height: 1.35;
   display: flex;
@@ -123,21 +123,21 @@ html.dark {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
-  border: 1px solid rgba(139, 154, 110, 0.22);
-  background: rgba(139, 154, 110, 0.12);
-  color: var(--color-zen-sage, #6e7f52);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
+  color: var(--color-zen-sage, #76855B);
   white-space: nowrap;
 }
 
 html.dark .modal-pill {
   background: rgba(163, 177, 155, 0.14);
-  border-color: rgba(163, 177, 155, 0.22);
+  border-color: rgba(163, 177, 155, 0.25);
   color: #B4C4AA;
 }
 
 .modal-meta-text {
   font-size: 13px;
-  color: var(--text-muted, #7c887e);
+  color: var(--text-muted, #7A7A75);
   white-space: nowrap;
 }
 
@@ -149,9 +149,9 @@ html.dark .modal-pill {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  background: rgba(0, 0, 0, 0.035);
-  color: var(--text-muted, #859187);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted, #7A7A75);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
@@ -161,22 +161,18 @@ html.dark .modal-pill {
 }
 
 .modal-shell-close:hover {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: var(--text-primary, #1e241f);
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary, #1C1C1A);
   transform: scale(1.06);
 }
 
 html.dark .modal-shell-close {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: var(--text-muted);
+  color: var(--text-muted, #8a867e);
 }
 
 html.dark .modal-shell-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary, #e6dfd8);
 }
 
 /* Modal Body with refined custom scrollbar */
@@ -296,31 +292,31 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
 
 /* Secondary Button - Soft Rounded Pill */
 .modal-btn-secondary {
-  background: var(--color-bg-primary, #FFFFFF);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.09));
-  color: var(--text-secondary, #4a554d);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-default, #DDD5C7);
+  color: var(--text-primary, #1C1C1A);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 html.dark .modal-btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--text-secondary, #cbd5e1);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  color: var(--text-primary, #e6dfd8);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .modal-btn-secondary:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--text-primary, #1e241f);
-  border-color: rgba(0, 0, 0, 0.15);
+  background: #FFFFFF;
+  color: var(--text-primary, #1C1C1A);
+  border-color: var(--color-zen-sage, #8B9A6E);
   transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
 html.dark .modal-btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: #f1f5f9;
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--color-bg-secondary, #292825);
+  color: #FFFFFF;
+  border-color: var(--color-zen-sage, #8B9A6E);
   transform: translateY(-1px);
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
 }
@@ -329,18 +325,18 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
   transform: translateY(0);
 }
 
-/* Primary Button - Warm Zen Sage Pill */
+/* Primary Button - Canonical Warm Zen Sage Pill */
 .modal-btn-primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9CAD7D 0%, #839366 100%));
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   color: #FFFFFF;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 3px 12px rgba(131, 147, 102, 0.35),
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .modal-btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 5px 16px rgba(131, 147, 102, 0.45),
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
@@ -357,16 +353,16 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
 
 /* Danger Button - Warm Terracotta Pill */
 .modal-btn-danger {
-  background: linear-gradient(135deg, #E05252 0%, #C43838 100%);
+  background: linear-gradient(135deg, #D9534F 0%, #C2413E 100%);
   color: #FFFFFF;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 3px 12px rgba(196, 56, 56, 0.32),
+  box-shadow: 0 2px 8px rgba(194, 65, 62, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 .modal-btn-danger:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 5px 16px rgba(196, 56, 56, 0.42);
+  box-shadow: 0 4px 14px rgba(194, 65, 62, 0.38);
 }
 
 .modal-btn-danger:active:not(:disabled) {
@@ -387,28 +383,33 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
 }
 
 .modal-hero-badge.hero-danger {
-  background: rgba(224, 82, 82, 0.12);
-  color: #C43838;
+  background: rgba(217, 83, 79, 0.08);
+  color: #C2413E;
+  border: 1px solid rgba(217, 83, 79, 0.2);
 }
 
 .modal-hero-badge.hero-sage {
-  background: rgba(139, 154, 110, 0.14);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
   color: var(--color-zen-sage, #76855B);
+  border: 1px solid rgba(139, 154, 110, 0.2);
 }
 
 .modal-hero-badge.hero-amber {
-  background: rgba(217, 119, 6, 0.12);
-  color: #B45309;
+  background: rgba(217, 197, 178, 0.25);
+  color: #8C6D4F;
+  border: 1px solid rgba(217, 197, 178, 0.4);
 }
 
 html.dark .modal-hero-badge.hero-danger {
-  background: rgba(224, 82, 82, 0.2);
+  background: rgba(217, 83, 79, 0.18);
   color: #F87171;
+  border-color: rgba(217, 83, 79, 0.3);
 }
 
 html.dark .modal-hero-badge.hero-sage {
   background: rgba(163, 177, 155, 0.18);
   color: #B4C4AA;
+  border-color: rgba(163, 177, 155, 0.3);
 }
 
 /* ==========================================================================
@@ -428,15 +429,19 @@ html.dark .modal-hero-badge.hero-sage {
 .modal-form-label {
   font-size: 13.5px;
   font-weight: 600;
-  color: var(--text-primary, #2d3748);
+  color: var(--text-primary, #1C1C1A);
   display: flex;
   align-items: center;
   gap: 5px;
   letter-spacing: -0.1px;
 }
 
+html.dark .modal-form-label {
+  color: var(--text-primary, #e6dfd8);
+}
+
 .modal-form-label .required {
-  color: #E05252;
+  color: #C2413E;
   font-weight: 700;
 }
 
@@ -447,22 +452,22 @@ html.dark .modal-hero-badge.hero-sage {
   box-sizing: border-box;
   padding: 12px 16px;
   border-radius: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: var(--color-bg-primary, #FFFFFF);
-  color: var(--text-primary, #2d3748);
+  border: 1px solid var(--border-default, #DDD5C7);
+  background: var(--color-bg-primary, #F7F2EB);
+  color: var(--text-primary, #1C1C1A);
   font-size: 14px;
   font-family: inherit;
   outline: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.dark .modal-form-input,
 html.dark .modal-form-textarea,
 html.dark .modal-form-select {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary, #f1f5f9);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  color: var(--text-primary, #e6dfd8);
   box-shadow: none;
 }
 
@@ -470,42 +475,48 @@ html.dark .modal-form-select {
 .modal-form-textarea:focus,
 .modal-form-select:focus {
   border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.22);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
   background: #FFFFFF;
 }
 
 html.dark .modal-form-input:focus,
 html.dark .modal-form-textarea:focus,
 html.dark .modal-form-select:focus {
-  border-color: #A3B584;
-  box-shadow: 0 0 0 3.5px rgba(163, 177, 155, 0.25);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.25);
+  background: var(--color-bg-secondary, #292825);
 }
 
 .modal-form-input::placeholder,
 .modal-form-textarea::placeholder {
-  color: var(--text-muted, #9eaba0);
+  color: var(--text-muted, #A8A8A5);
 }
 
 /* Card Inset for nested structured content */
 .modal-card-inset {
-  background: rgba(0, 0, 0, 0.025);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-subtle, #E6E6E4);
   border-radius: 16px;
   padding: 18px 20px;
 }
 
 html.dark .modal-card-inset {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-subtle, rgba(230, 223, 216, 0.06));
 }
 
 /* ==========================================================================
    Modal Markdown Typography
    ========================================================================== */
 .modal-markdown-body {
-  color: var(--text-primary, #2A332C);
+  color: var(--text-primary, #1C1C1A);
   font-size: 14.5px;
   line-height: 1.72;
   word-break: break-word;
+}
+
+html.dark .modal-markdown-body {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .modal-markdown-body :deep(h1),
@@ -514,8 +525,14 @@ html.dark .modal-card-inset {
   margin-top: 1em;
   margin-bottom: 0.5em;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
+}
+
+html.dark .modal-markdown-body :deep(h1),
+html.dark .modal-markdown-body :deep(h2),
+html.dark .modal-markdown-body :deep(h3) {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .modal-markdown-body :deep(p) {
@@ -523,15 +540,17 @@ html.dark .modal-card-inset {
 }
 
 .modal-markdown-body :deep(pre) {
-  background: rgba(0, 0, 0, 0.035);
+  background: var(--color-bg-primary, #F7F2EB);
   padding: 14px 16px;
   border-radius: 12px;
   overflow-x: auto;
   font-size: 13.5px;
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-default, #DDD5C7);
+  color: var(--text-primary, #1C1C1A);
 }
 
 html.dark .modal-markdown-body :deep(pre) {
-  background: #141715;
-  border-color: rgba(255, 255, 255, 0.08);
+  background: #1f1e1c;
+  border-color: rgba(230, 223, 216, 0.1);
+  color: #e6dfd8;
 }

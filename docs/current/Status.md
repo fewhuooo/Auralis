@@ -27,12 +27,13 @@
 
 2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复（代码与门禁验证通过，GUI 待验收）：排查并彻底解决点击侧栏下周排期时当周任务被误关联至下周的根因：在 `useTaskStore.ts` 中增强 `dateForDay` 与 `rebuildSchedule` 支持 `YYYY-MM-DD` 格式的 `dateKey` 精确比对，打破原有仅依赖单周 `DayCode` ('Mon'~'Sun') 导致的跨周模糊匹配；更新 `setSelectedDay` 与 `insertTaskAtSlot` 支持 `dateKey` 级传递；并在 `Timeline/index.vue` 中由 `selectedTimelineDay.dateKey` 精确驱动中间“时间流细节”各槽位任务与当前点渲染，确保选中下周某一天时只精确呈现下周该天的实际排期任务。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 
-2026-09-27 PC 弹窗透气度与圆润禅意视觉深度重构（代码、自动化测试与构建全部通过，GUI 待验收）：
-针对弹窗过于紧凑、直角偏硬及硬线切割的问题，全面对齐 Auralis 温润圆润设计语言：
-1. 容器圆角与呼吸感拓宽：模态弹窗外层卡片升级为 `border-radius: 24px`，彻底移除头部/底部硬线条分割，构建一体化无缝画布；宽度梯度放宽（`sm: 480px`、`md: 580px`、`lg: 760px`、`xl: 920px`）；内边距扩展（头部 `30px 36px 14px`、内容区 `14px 36px 24px`、底部 `16px 36px 32px`），释放充裕呼吸感；
-2. 控件全域圆润一致性：操作按钮统一升级为 `border-radius: 9999px` Zen 胶囊按钮（高度 40px，Zen Sage 绿与陶土红渐变）；表单输入框统一采用 14px 舒适圆角；关闭按钮升级为 32px 纯圆交互靶点；单选芯片、学科标签与时间滑块统一采用全圆角胶囊形态；
-3. 业务弹窗全面适配：覆盖确认对话框（`ConfirmDialog.vue`）、修改密码（`ChangePasswordDialog.vue`）、AI 总结指令（`SummaryInstructionDialog.vue`）、文件登记（`FileRegisterDialog.vue`）、任务创建（`TaskCreateDialog.vue`）、学科新建（`SubjectCreateModal.vue`）与知识块阅读/编辑（`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`）全量业务弹窗；
-4. 门禁验证：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（433/433 全部通过）、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 全部退出 0。真实 GUI 视觉体验待人工确认。
+2026-09-27 PC 弹窗透气度、圆润禅意视觉与色彩体系全站统一（代码、自动化测试与构建全部通过，GUI 待验收）：
+针对弹窗过于紧凑、直角偏硬及配色与主页面存在脱节的问题，全面对齐 Auralis 极简禅意温润设计语言与色彩令牌：
+1. 界面配色深度统一：弹窗底板采用宣纸暖米白 `var(--color-bg-tertiary, #FAF7F2)` 搭配浅发丝边框 `var(--border-default, #DDD5C7)` 与暖炭黑毛玻璃遮罩（`rgba(28, 28, 26, 0.42)`），深色模式统一对齐暖炭高阶底板 `var(--color-bg-elevated, #3d3b38)`；输入控件、单选芯片、拖拽区与内嵌卡片底色采用燕麦米白 `var(--color-bg-primary, #F7F2EB)`，形成双层宣纸/燕麦纸层次，输入聚焦切换为白底；文字严格对齐 Zen Graphite `var(--text-primary, #1C1C1A)` 与 `var(--text-secondary, #2C2C28)`；
+2. 容器圆角与呼吸感拓宽：模态弹窗外层卡片升级为 `border-radius: 24px`，彻底移除头部/底部硬线条分割，构建一体化无缝画布；宽度梯度放宽（`sm: 480px`、`md: 580px`、`lg: 760px`、`xl: 920px`）；内边距扩展（头部 `30px 36px 14px`、内容区 `14px 36px 24px`、底部 `16px 36px 32px`），释放充裕呼吸感；
+3. 控件全域圆润一致性：操作按钮统一升级为 `border-radius: 9999px` Zen 胶囊按钮（高度 40px，主操作对齐全站 `Primary Gradient` 禅绿渐变 `linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)`，次操作为燕麦米白底板配发丝边框，危险操作为陶土红渐变）；表单输入框统一采用 14px 舒适圆角；关闭按钮升级为 32px 纯圆交互靶点；单选芯片、学科标签与时间滑块统一采用全圆角胶囊形态；
+4. 业务弹窗全面适配：覆盖确认对话框（`ConfirmDialog.vue`）、修改密码（`ChangePasswordDialog.vue`）、AI 总结指令（`SummaryInstructionDialog.vue`）、文件登记（`FileRegisterDialog.vue`）、任务创建（`TaskCreateDialog.vue`）、学科新建（`SubjectCreateModal.vue`）与知识块阅读/编辑（`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`）全量业务弹窗；
+5. 门禁验证：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（433/433 全部通过）、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 全部退出 0。真实 GUI 视觉体验待人工确认。
 
 2026-09-27 PC 任务编排中心侧栏下周排期概览实现（代码与门禁验证通过，GUI 待验收）：在任务编排中心（`Timeline/index.vue`）侧栏中，直接于“本周排期概览”下方新增“下周排期概览”区块，与本周排期呈现样式 100% 同款对齐（无需 Tab 切换，自适应铺满侧栏并支持纵向平滑滚动）。基于 `getTimelineDays` 与 `dateKey` 实现精确的下周 7 天时间轮播与下周各日任务排期筛选；点击下周任意一天，高亮自适应切至目标项，中间“时间流细节”标题与半小时槽位排期自动联动切换为选中日期。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 

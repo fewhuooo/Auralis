@@ -114,11 +114,15 @@ const handleSubmit = () => {
   gap: 10px;
   font-size: 18px;
   font-weight: 700;
-  color: var(--text-primary, #1e241f);
+  color: var(--text-primary, #1C1C1A);
+}
+
+html.dark .summary-dialog-title {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .sparkle-icon {
-  color: var(--color-zen-sage, #76855B);
+  color: var(--color-zen-sage, #8B9A6E);
   flex-shrink: 0;
 }
 
@@ -129,9 +133,13 @@ const handleSubmit = () => {
 
 .instruction-hint {
   margin: 0 0 12px;
-  color: var(--text-secondary, #4a554d);
+  color: var(--text-secondary, #2C2C28);
   font-size: 13.5px;
   line-height: 1.5;
+}
+
+html.dark .instruction-hint {
+  color: var(--text-secondary, #b0aca5);
 }
 
 .instruction-preset-chips {
@@ -144,37 +152,40 @@ const handleSubmit = () => {
 .preset-chip {
   padding: 6px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.2);
-  background: rgba(139, 154, 110, 0.1);
-  color: var(--color-zen-sage, #6e7f52);
+  border: 1px solid var(--border-default, #DDD5C7);
+  background: var(--color-bg-primary, #F7F2EB);
+  color: var(--text-primary, #1C1C1A);
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
-}
-
-html.dark .preset-chip {
-  background: rgba(163, 177, 155, 0.12);
-  border-color: rgba(163, 177, 155, 0.22);
-  color: #b4c4aa;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .preset-chip:hover {
-  background: rgba(139, 154, 110, 0.2);
-  color: #3f4e2d;
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.14));
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #76855B);
   transform: translateY(-1px);
 }
 
+html.dark .preset-chip {
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  color: var(--text-primary, #e6dfd8);
+}
+
 html.dark .preset-chip:hover {
-  background: rgba(163, 177, 155, 0.25);
-  color: #f1f5f9;
+  background: var(--color-bg-secondary, #292825);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: #FFFFFF;
 }
 
 .char-count {
   display: block;
   margin: 8px 0 0;
-  color: var(--text-muted, #7c887e);
+  color: var(--text-muted, #7A7A75);
   font-size: 12px;
   text-align: right;
 }

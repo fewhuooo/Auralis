@@ -271,7 +271,7 @@ const handleSubmit = () => {
   border-radius: 16px;
   padding: 26px 20px;
   text-align: center;
-  background: rgba(255, 255, 255, 0.55);
+  background: var(--color-bg-primary, #F7F2EB);
   cursor: pointer;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
@@ -283,13 +283,13 @@ const handleSubmit = () => {
 .drag-drop-zone:hover,
 .drag-drop-zone.is-active {
   border-color: var(--color-zen-sage, #8B9A6E);
-  background: rgba(139, 154, 110, 0.08);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.1));
   transform: translateY(-1px);
 }
 
 .drag-drop-zone.has-file {
   border-color: var(--color-zen-sage, #8B9A6E);
-  background: rgba(139, 154, 110, 0.06);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.08));
 }
 
 .drag-icon-circle {
@@ -299,7 +299,7 @@ const handleSubmit = () => {
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(139, 154, 110, 0.12);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
   color: var(--color-zen-sage, #76855B);
   margin-bottom: 12px;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -307,7 +307,7 @@ const handleSubmit = () => {
 
 .drag-icon-circle.is-success {
   background: rgba(139, 154, 110, 0.22);
-  color: #556641;
+  color: var(--color-zen-sage, #8B9A6E);
 }
 
 .drag-drop-zone:hover .drag-icon-circle {
@@ -317,21 +317,22 @@ const handleSubmit = () => {
 .drag-text {
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   word-break: break-all;
   line-height: 1.4;
 }
 
 .drag-hint {
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
   margin-top: 6px;
 }
 
 /* Progress area */
 .upload-progress-wrapper {
   padding: 16px 18px;
-  background: rgba(139, 154, 110, 0.08);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-subtle, #E6E6E4);
   border-radius: 16px;
 }
 
@@ -340,7 +341,7 @@ const handleSubmit = () => {
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--text-secondary, #2C2C28);
   margin-bottom: 10px;
 }
 
@@ -354,7 +355,7 @@ const handleSubmit = () => {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--color-zen-sage, #76855B);
+  background: var(--color-zen-sage, #8B9A6E);
   animation: pulse-dot 1.5s infinite;
 }
 
@@ -372,7 +373,7 @@ const handleSubmit = () => {
 
 .upload-stage-text {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
 }
 
 .upload-percent-text {
@@ -390,7 +391,7 @@ const handleSubmit = () => {
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #9CAD7D 0%, #839366 100%);
+  background: var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   border-radius: 9999px;
 }
@@ -410,9 +411,9 @@ const handleSubmit = () => {
   align-items: center;
   padding: 6px 16px;
   border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: var(--color-bg-primary, #FFFFFF);
-  color: var(--text-secondary, #4a554d);
+  border: 1px solid var(--border-default, #DDD5C7);
+  background: var(--color-bg-primary, #F7F2EB);
+  color: var(--text-primary, #1C1C1A);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -422,43 +423,49 @@ const handleSubmit = () => {
 }
 
 .subject-capsule-item:hover {
-  border-color: rgba(139, 154, 110, 0.4);
-  color: var(--text-primary);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #76855B);
   transform: translateY(-1px);
 }
 
 .subject-capsule-item.is-active {
-  border-color: rgba(139, 154, 110, 0.3);
-  background: rgba(139, 154, 110, 0.16);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.14));
   font-weight: 600;
-  color: var(--color-zen-sage, #6e7f52);
+  color: var(--color-zen-sage, #76855B);
   box-shadow: 0 2px 6px rgba(139, 154, 110, 0.15);
 }
 
 .subject-empty-hint {
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
   padding: 6px 0;
 }
 
 html.dark .drag-drop-zone {
-  background: rgba(255, 255, 255, 0.02);
-  border-color: rgba(163, 177, 155, 0.16);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: rgba(163, 177, 155, 0.3);
 }
 
 html.dark .drag-drop-zone:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-bg-secondary, #292825);
+  border-color: var(--color-zen-sage, #8B9A6E);
+}
+
+html.dark .upload-progress-wrapper {
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-subtle, rgba(230, 223, 216, 0.06));
 }
 
 html.dark .subject-capsule-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  color: var(--text-primary, #e6dfd8);
 }
 
 html.dark .subject-capsule-item.is-active {
   background: rgba(163, 177, 155, 0.2);
-  border-color: rgba(163, 177, 155, 0.35);
+  border-color: var(--color-zen-sage, #8B9A6E);
   color: #B4C4AA;
 }
 </style>

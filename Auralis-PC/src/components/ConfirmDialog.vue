@@ -83,17 +83,21 @@ const handleConfirm = () => {
   gap: 10px;
   font-size: 17px;
   font-weight: 700;
-  color: var(--text-primary, #1e241f);
+  color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
 }
 
+html.dark .confirm-title-wrap {
+  color: var(--text-primary, #e6dfd8);
+}
+
 .title-icon {
-  color: var(--color-zen-sage, #76855B);
+  color: var(--color-zen-sage, #8B9A6E);
   flex-shrink: 0;
 }
 
 .title-icon.danger {
-  color: #E05252;
+  color: var(--color-danger, #C2413E);
 }
 
 .confirm-body {
@@ -102,8 +106,12 @@ const handleConfirm = () => {
 
 .confirm-message {
   font-size: 14.5px;
-  color: var(--text-secondary, #4a554d);
+  color: var(--text-secondary, #2C2C28);
   line-height: 1.68;
   margin: 0;
+}
+
+html.dark .confirm-message {
+  color: var(--text-secondary, #b0aca5);
 }
 </style>

@@ -247,10 +247,11 @@
 - **模态基础设施与管理器**：
   - `src/components/modal/modalManager.ts`：实现全局活动弹窗管理、引用计数级 `body` 滚动穿透锁定（`lockBodyScroll` / `unlockBodyScroll`）、LIFO 弹窗栈（`modalStack`）、顶层 `Escape` 拦截机制（`stopImmediatePropagation`）与全局焦点循环管理（`trapTabKey`）。
   - `src/components/modal/ModalShell.vue`：统一作为所有 PC 模态弹窗的基础容器，实现标准化 `Teleport`、淡入缩放微动效、`role="dialog"` 可访问性名称计算（`effectiveAriaLabelledBy` 与 `effectiveAriaLabel`）、入场智能聚焦（保持已有聚焦、检测 `[autofocus]`、优先聚焦首个输入控件）、退场焦点归还触发元素（`previousActiveElement`）以及 `preventClose` / `beforeClose` 关闭守卫。
-  - `src/components/modal/modal.css`：全面对齐 Auralis 极简禅意温润设计规范：
+  - `src/components/modal/modal.css`：全面对齐 Auralis 极简禅意温润设计规范与色彩体系：
+    - 色彩与质感全面统一：弹窗浅色底板采用宣纸暖米白 `var(--color-bg-tertiary, #FAF7F2)` 搭配浅发丝边框 `var(--border-default, #DDD5C7)` 与暖炭黑毛玻璃遮罩（`rgba(28, 28, 26, 0.42)`），深色模式统一采用暖炭高阶底板 `var(--color-bg-elevated, #3d3b38)`，杜绝偏色；输入框、芯片与内嵌卡片采用燕麦米白 `var(--color-bg-primary, #F7F2EB)`，形成双层宣纸/燕麦纸层次，输入聚焦切换为白底；文字严格对齐 Zen Graphite `var(--text-primary, #1C1C1A)`；
     - 大圆角无缝画布：弹窗主体采用 `24px` 大圆角（`--radius-xl`）与柔和阴影，移除头部与底部硬性 1px 线条切割，构建浑然一体的温润底板；
     - 呼吸感尺寸体系：宽度层级放宽（`sm: 480px`、`md: 580px`、`lg: 760px`、`xl: 920px`）；内边距统一放宽（头部 `30px 36px 14px`、内容 `14px 36px 24px`、底部 `16px 36px 32px`）；
-    - 全圆角 Zen 胶囊按钮（`border-radius: 9999px`，高度 40px，Zen Sage 渐变与陶土红危险渐变）、32px 纯圆交互关闭按钮、14px 舒适圆角表单控件与 `.modal-markdown-body` 排版规范。
+    - 全圆角 Zen 胶囊按钮（`border-radius: 9999px`，高度 40px，统一采用全站 `Primary Gradient` 禅绿渐变 `linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)` 与陶土红渐变）、32px 纯圆交互关闭按钮、14px 舒适圆角表单控件与 `.modal-markdown-body` 排版规范。
 - **5 项核心交互与焦点/无障碍问题修复**：
   1. 上传关闭守卫前置：`ModalShell` 在触发任何状态变更前执行关闭守卫；`FileRegisterDialog` 绑定上传状态守卫，并在上传失败时不重置表单，允许用户保留所选文件与文件名立即重试。
   2. 共享引用计数滚动锁：使用全局引用计数管理 `document.body.style.overflow`，彻底解决多层弹窗以任意顺序关闭时的提早解锁或残留 `overflow: hidden` 问题。

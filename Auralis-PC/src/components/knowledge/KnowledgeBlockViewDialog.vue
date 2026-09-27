@@ -139,9 +139,9 @@ const handleCopy = () => {
   font-weight: 600;
   padding: 4px 14px;
   border-radius: 9999px;
-  background: rgba(139, 154, 110, 0.12);
-  color: var(--color-zen-sage, #6e7f52);
-  border: 1px solid rgba(139, 154, 110, 0.22);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
+  color: var(--color-zen-sage, #76855B);
+  border: 1px solid rgba(139, 154, 110, 0.25);
 }
 
 html.dark .view-subject-pill {
@@ -152,7 +152,7 @@ html.dark .view-subject-pill {
 
 .view-source-text {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
   font-weight: 500;
 }
 
@@ -160,10 +160,14 @@ html.dark .view-subject-pill {
   margin: 2px 0 0;
   font-size: 20px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   line-height: 1.35;
   letter-spacing: -0.2px;
   word-break: break-word;
+}
+
+html.dark .view-main-title {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .view-time-meta {
@@ -171,7 +175,7 @@ html.dark .view-subject-pill {
   align-items: center;
   gap: 6px;
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
 }
 
 .view-time-icon {
@@ -184,10 +188,14 @@ html.dark .view-subject-pill {
 }
 
 .knowledge-view-markdown {
-  color: var(--text-primary, #2A332C);
+  color: var(--text-primary, #1C1C1A);
   font-size: 13.5px;
   line-height: 1.68;
   word-break: break-word;
+}
+
+html.dark .knowledge-view-markdown {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .knowledge-view-markdown :deep(h1),
@@ -196,8 +204,14 @@ html.dark .view-subject-pill {
   margin-top: 0.9em;
   margin-bottom: 0.4em;
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.015em;
+}
+
+html.dark .knowledge-view-markdown :deep(h1),
+html.dark .knowledge-view-markdown :deep(h2),
+html.dark .knowledge-view-markdown :deep(h3) {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .knowledge-view-markdown :deep(p) {
@@ -205,16 +219,18 @@ html.dark .view-subject-pill {
 }
 
 .knowledge-view-markdown :deep(pre) {
-  background: rgba(0, 0, 0, 0.035);
+  background: var(--color-bg-primary, #F7F2EB);
   padding: 12px;
-  border-radius: 8px;
+  border-radius: 12px;
   overflow-x: auto;
   font-size: 13px;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border-default, #DDD5C7);
+  color: var(--text-primary, #1C1C1A);
 }
 
 html.dark .knowledge-view-markdown :deep(pre) {
-  background: #141715;
-  border-color: rgba(255, 255, 255, 0.08);
+  background: #1f1e1c;
+  border-color: rgba(230, 223, 216, 0.1);
+  color: #e6dfd8;
 }
 </style>

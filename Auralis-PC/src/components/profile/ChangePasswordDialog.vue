@@ -166,11 +166,15 @@ const handleSubmit = () => {
   gap: 10px;
   font-size: 18px;
   font-weight: 700;
-  color: var(--text-primary, #1e241f);
+  color: var(--text-primary, #1C1C1A);
+}
+
+html.dark .password-dialog-title {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .shield-icon {
-  color: var(--color-zen-sage, #76855B);
+  color: var(--color-zen-sage, #8B9A6E);
   flex-shrink: 0;
 }
 
@@ -180,8 +184,9 @@ const handleSubmit = () => {
   gap: 10px;
   padding: 12px 16px;
   border-radius: 14px;
-  background: rgba(139, 154, 110, 0.12);
-  color: var(--color-zen-sage, #6e7f52);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  color: var(--color-zen-sage, #76855B);
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 20px;
@@ -190,6 +195,7 @@ const handleSubmit = () => {
 
 html.dark .security-tip-banner {
   background: rgba(163, 177, 155, 0.14);
+  border-color: rgba(163, 177, 155, 0.25);
   color: #B4C4AA;
 }
 
@@ -203,10 +209,17 @@ html.dark .security-tip-banner {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #E05252;
+  color: #C2413E;
   margin-top: 8px;
   padding: 10px 14px;
   border-radius: 12px;
-  background: rgba(224, 82, 82, 0.1);
+  background: rgba(217, 83, 79, 0.08);
+  border: 1px solid rgba(217, 83, 79, 0.2);
+}
+
+html.dark .modal-error-tip {
+  background: rgba(217, 83, 79, 0.16);
+  border-color: rgba(217, 83, 79, 0.28);
+  color: #F87171;
 }
 </style>

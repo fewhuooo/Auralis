@@ -354,9 +354,9 @@ const handleCopy = () => {
   font-weight: 600;
   padding: 4px 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.22);
-  background: rgba(139, 154, 110, 0.12);
-  color: var(--color-zen-sage, #6e7f52);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
+  color: var(--color-zen-sage, #76855B);
 }
 
 html.dark .block-subject-pill {
@@ -387,9 +387,13 @@ html.dark .block-subject-pill {
   margin: 0;
   font-size: 20px;
   font-weight: 700;
-  color: var(--text-primary, #1e241f);
+  color: var(--text-primary, #1C1C1A);
   line-height: 1.35;
   letter-spacing: -0.2px;
+}
+
+html.dark .block-title {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .block-meta-row {
@@ -403,7 +407,7 @@ html.dark .block-subject-pill {
   align-items: center;
   gap: 5px;
   font-size: 12.5px;
-  color: var(--text-muted, #7c887e);
+  color: var(--text-muted, #7A7A75);
 }
 
 .block-color-badge {
@@ -431,9 +435,13 @@ html.dark .block-content-card {
 }
 
 .summary-markdown {
-  color: var(--text-primary, #2A332C);
+  color: var(--text-primary, #1C1C1A);
   font-size: 14.5px;
   line-height: 1.72;
+}
+
+html.dark .summary-markdown {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .block-edit-body {
@@ -454,7 +462,7 @@ html.dark .block-content-card {
   border-radius: 50%;
   cursor: pointer;
   border: 2.5px solid var(--modal-bg, #FAF7F2);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 0 0 1px var(--border-default, #DDD5C7);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 

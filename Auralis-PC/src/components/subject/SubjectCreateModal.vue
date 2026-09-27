@@ -143,13 +143,15 @@ const handleSave = () => {
   align-items: center;
   gap: 16px;
   padding: 16px 20px;
-  background: rgba(139, 154, 110, 0.1);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-subtle, #E6E6E4);
   border-radius: 16px;
   margin-bottom: 20px;
 }
 
 html.dark .subject-preview-section {
-  background: rgba(163, 177, 155, 0.12);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-subtle, rgba(230, 223, 216, 0.06));
 }
 
 .preview-card {
@@ -160,9 +162,9 @@ html.dark .subject-preview-section {
   align-items: center;
   justify-content: center;
   font-size: 26px;
-  background: linear-gradient(135deg, #9CAD7D 0%, #839366 100%) !important;
+  background: var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)) !important;
   color: #fff !important;
-  box-shadow: 0 3px 10px rgba(131, 147, 102, 0.3);
+  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.3);
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
@@ -180,15 +182,19 @@ html.dark .preview-card {
 .preview-title {
   font-size: 16px;
   font-weight: 700;
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+html.dark .preview-title {
+  color: var(--text-primary, #e6dfd8);
+}
+
 .preview-desc {
   font-size: 13px;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
   margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -204,12 +210,12 @@ html.dark .preview-card {
 }
 
 .icon-btn {
-  background: var(--color-bg-primary, #FFFFFF);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-default, #DDD5C7);
   border-radius: 12px;
   height: 44px;
   font-size: 20px;
-  color: var(--text-secondary);
+  color: var(--text-secondary, #2C2C28);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -219,14 +225,15 @@ html.dark .preview-card {
 }
 
 .icon-btn:hover {
-  background: rgba(139, 154, 110, 0.1);
-  border-color: rgba(139, 154, 110, 0.3);
+  background: #FFFFFF;
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: var(--text-primary, #1C1C1A);
   transform: translateY(-1px);
 }
 
 .icon-btn.is-selected {
-  background: rgba(139, 154, 110, 0.16);
-  border-color: rgba(139, 154, 110, 0.4);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.16));
+  border-color: var(--color-zen-sage, #8B9A6E);
   color: var(--color-zen-sage, #76855B);
   font-weight: 700;
   box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.35);
@@ -234,12 +241,20 @@ html.dark .preview-card {
 }
 
 html.dark .icon-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  color: var(--text-primary, #e6dfd8);
+}
+
+html.dark .icon-btn:hover {
+  background: var(--color-bg-secondary, #292825);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: #FFFFFF;
 }
 
 html.dark .icon-btn.is-selected {
   background: rgba(163, 177, 155, 0.2);
+  border-color: var(--color-zen-sage, #8B9A6E);
   color: #B4C4AA;
   box-shadow: 0 0 0 2px rgba(163, 177, 155, 0.4);
 }

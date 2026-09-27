@@ -292,11 +292,15 @@ const handleSubmit = () => {
   gap: 10px;
   font-size: 18px;
   font-weight: 700;
-  color: var(--text-primary, #1e241f);
+  color: var(--text-primary, #1C1C1A);
+}
+
+html.dark .task-dialog-title {
+  color: var(--text-primary, #e6dfd8);
 }
 
 .task-title-icon {
-  color: var(--color-zen-sage, #76855B);
+  color: var(--color-zen-sage, #8B9A6E);
   flex-shrink: 0;
 }
 
@@ -321,9 +325,9 @@ const handleSubmit = () => {
   gap: 7px;
   padding: 6px 16px;
   border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: var(--color-bg-primary, #FFFFFF);
-  color: var(--text-secondary, #4a554d);
+  border: 1px solid var(--border-default, #DDD5C7);
+  background: var(--color-bg-primary, #F7F2EB);
+  color: var(--text-primary, #1C1C1A);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -333,16 +337,16 @@ const handleSubmit = () => {
 }
 
 .subject-capsule-item:hover {
-  border-color: rgba(139, 154, 110, 0.4);
-  color: var(--text-primary);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #76855B);
   transform: translateY(-1px);
 }
 
 .subject-capsule-item.active {
   font-weight: 600;
-  color: var(--color-zen-sage, #6e7f52);
-  background: rgba(139, 154, 110, 0.16);
-  border-color: rgba(139, 154, 110, 0.3);
+  color: var(--color-zen-sage, #76855B);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.14));
+  border-color: var(--color-zen-sage, #8B9A6E);
   box-shadow: 0 2px 6px rgba(139, 154, 110, 0.15);
 }
 
@@ -359,16 +363,16 @@ const handleSubmit = () => {
   padding: 6px 16px;
   border-radius: 9999px;
   border: 1px solid rgba(139, 154, 110, 0.25);
-  background: rgba(139, 154, 110, 0.12);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
   font-size: 13px;
   font-weight: 600;
-  color: var(--color-zen-sage, #6e7f52);
+  color: var(--color-zen-sage, #76855B);
   width: fit-content;
 }
 
 .subject-empty-hint {
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
   padding: 6px 0;
 }
 
@@ -383,11 +387,11 @@ const handleSubmit = () => {
 .duration-badge {
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-zen-sage, #6e7f52);
-  background: rgba(139, 154, 110, 0.14);
+  color: var(--color-zen-sage, #76855B);
+  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
   padding: 3px 12px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  border: 1px solid rgba(139, 154, 110, 0.22);
   font-feature-settings: "tnum";
 }
 
@@ -395,8 +399,8 @@ const handleSubmit = () => {
   position: relative;
   height: 42px;
   border-radius: 9999px;
-  background: var(--color-bg-primary, #FFFFFF);
-  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-default, #DDD5C7);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.03);
   cursor: pointer;
   overflow: hidden;
@@ -410,7 +414,7 @@ const handleSubmit = () => {
   top: 0;
   left: 0;
   bottom: 0;
-  background: rgba(139, 154, 110, 0.22);
+  background: rgba(139, 154, 110, 0.2);
   border-radius: 9999px;
   pointer-events: none;
   transition: width 0.15s linear;
@@ -428,12 +432,12 @@ const handleSubmit = () => {
 .duration-step-item {
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-muted, #7c887e);
+  color: var(--text-muted, #7A7A75);
   transition: color 0.15s ease;
 }
 
 .duration-step-item.active {
-  color: var(--text-primary);
+  color: var(--text-primary, #1C1C1A);
   font-weight: 700;
 }
 
@@ -444,31 +448,42 @@ const handleSubmit = () => {
   width: 36px;
   height: 26px;
   border-radius: 13px;
-  background: linear-gradient(135deg, #9CAD7D 0%, #839366 100%);
+  background: var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 10.5px;
   font-weight: 700;
-  box-shadow: 0 2px 8px rgba(131, 147, 102, 0.35);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
   pointer-events: none;
   z-index: 2;
 }
 
 html.dark .subject-capsule-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  color: var(--text-primary, #e6dfd8);
+}
+
+html.dark .subject-capsule-item.active {
+  background: rgba(163, 177, 155, 0.2);
+  border-color: var(--color-zen-sage, #8B9A6E);
+  color: #B4C4AA;
 }
 
 html.dark .duration-long-bar-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--color-bg-tertiary, #33312e);
+  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
 }
 
 html.dark .duration-badge {
   background: rgba(163, 177, 155, 0.18);
+  border-color: rgba(163, 177, 155, 0.25);
   color: #B4C4AA;
+}
+
+html.dark .duration-step-item.active {
+  color: var(--text-primary, #e6dfd8);
 }
 </style>
