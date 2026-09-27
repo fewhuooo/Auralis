@@ -27,6 +27,13 @@
 
 2026-09-27 PC 任务编排中心下周排期精确自然日比对与槽位计算修复（代码与门禁验证通过，GUI 待验收）：排查并彻底解决点击侧栏下周排期时当周任务被误关联至下周的根因：在 `useTaskStore.ts` 中增强 `dateForDay` 与 `rebuildSchedule` 支持 `YYYY-MM-DD` 格式的 `dateKey` 精确比对，打破原有仅依赖单周 `DayCode` ('Mon'~'Sun') 导致的跨周模糊匹配；更新 `setSelectedDay` 与 `insertTaskAtSlot` 支持 `dateKey` 级传递；并在 `Timeline/index.vue` 中由 `selectedTimelineDay.dateKey` 精确驱动中间“时间流细节”各槽位任务与当前点渲染，确保选中下周某一天时只精确呈现下周该天的实际排期任务。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 
+2026-09-27 PC 弹窗透气度与圆润禅意视觉深度重构（代码、自动化测试与构建全部通过，GUI 待验收）：
+针对弹窗过于紧凑、直角偏硬及硬线切割的问题，全面对齐 Auralis 温润圆润设计语言：
+1. 容器圆角与呼吸感拓宽：模态弹窗外层卡片升级为 `border-radius: 24px`，彻底移除头部/底部硬线条分割，构建一体化无缝画布；宽度梯度放宽（`sm: 480px`、`md: 580px`、`lg: 760px`、`xl: 920px`）；内边距扩展（头部 `30px 36px 14px`、内容区 `14px 36px 24px`、底部 `16px 36px 32px`），释放充裕呼吸感；
+2. 控件全域圆润一致性：操作按钮统一升级为 `border-radius: 9999px` Zen 胶囊按钮（高度 40px，Zen Sage 绿与陶土红渐变）；表单输入框统一采用 14px 舒适圆角；关闭按钮升级为 32px 纯圆交互靶点；单选芯片、学科标签与时间滑块统一采用全圆角胶囊形态；
+3. 业务弹窗全面适配：覆盖确认对话框（`ConfirmDialog.vue`）、修改密码（`ChangePasswordDialog.vue`）、AI 总结指令（`SummaryInstructionDialog.vue`）、文件登记（`FileRegisterDialog.vue`）、任务创建（`TaskCreateDialog.vue`）、学科新建（`SubjectCreateModal.vue`）与知识块阅读/编辑（`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`）全量业务弹窗；
+4. 门禁验证：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（433/433 全部通过）、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 全部退出 0。真实 GUI 视觉体验待人工确认。
+
 2026-09-27 PC 任务编排中心侧栏下周排期概览实现（代码与门禁验证通过，GUI 待验收）：在任务编排中心（`Timeline/index.vue`）侧栏中，直接于“本周排期概览”下方新增“下周排期概览”区块，与本周排期呈现样式 100% 同款对齐（无需 Tab 切换，自适应铺满侧栏并支持纵向平滑滚动）。基于 `getTimelineDays` 与 `dateKey` 实现精确的下周 7 天时间轮播与下周各日任务排期筛选；点击下周任意一天，高亮自适应切至目标项，中间“时间流细节”标题与半小时槽位排期自动联动切换为选中日期。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 
 2026-09-27 PC/Service 风险定向修复（代码及自动验证，真实运行待验收）：PC 暂不暴露 Suggestions 调用入口，服务端基线接口保留；Timeline 两项交换改为本地单事务批量写入，失败后保留 cursor/outbox 并拉取服务端结果恢复。Server Sync pull 对省略/零 cursor 检测日志清理缺口；Subject Overview 先建立全量 Source 别名；Source Overview 同实例按含标题的键合并进行中请求。TEXT/URL 解析输入改变轮换 ingestion revision，Source 与 job 同事务持久化且入队失败整体回滚；恢复处理中的 Source 时补建或复用 job；worker 以 revision、job/generation、attempt 和锁后有效 lease 栅栏化完成/失败，Source/chunks/job 成功在同一短事务提交。PC 全量 433/433、type-check，Server clean 聚焦 114/114、PostgreSQL pgvector 2/2 通过；`check:r4-pc` 仍受既有 Rust 测试 loopback 地址扫描误报阻断。跨 Server 实例 Overview 去重、真实 Provider/双设备/Tauri GUI 尚未验收。

@@ -163,34 +163,33 @@ const handleSubmit = () => {
 .password-dialog-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary, #1c221d);
-  letter-spacing: -0.01em;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary, #1e241f);
 }
 
 .shield-icon {
-  color: var(--color-zen-sage, #5b6c47);
+  color: var(--color-zen-sage, #76855B);
   flex-shrink: 0;
 }
 
 .security-tip-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  border-radius: 8px;
-  background: rgba(110, 129, 84, 0.08);
-  color: #53643D;
-  font-size: 12px;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--color-zen-sage, #6e7f52);
+  font-size: 13px;
   font-weight: 500;
-  margin-bottom: 16px;
-  line-height: 1.4;
+  margin-bottom: 20px;
+  line-height: 1.5;
 }
 
 html.dark .security-tip-banner {
-  background: rgba(163, 177, 155, 0.12);
+  background: rgba(163, 177, 155, 0.14);
   color: #B4C4AA;
 }
 
@@ -202,12 +201,12 @@ html.dark .security-tip-banner {
 .modal-error-tip {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #D93838;
-  margin-top: 6px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: rgba(220, 56, 56, 0.08);
+  gap: 8px;
+  font-size: 13px;
+  color: #E05252;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: rgba(224, 82, 82, 0.1);
 }
 </style>

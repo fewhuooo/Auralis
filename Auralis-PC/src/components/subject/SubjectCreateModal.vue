@@ -134,41 +134,41 @@ const handleSave = () => {
 .subject-create-modal {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 /* Subject Preview */
 .subject-preview-section {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
-  background: rgba(110, 129, 84, 0.07);
-  border-radius: 8px;
-  margin-bottom: 16px;
+  gap: 16px;
+  padding: 16px 20px;
+  background: rgba(139, 154, 110, 0.1);
+  border-radius: 16px;
+  margin-bottom: 20px;
 }
 
 html.dark .subject-preview-section {
-  background: rgba(163, 177, 155, 0.1);
+  background: rgba(163, 177, 155, 0.12);
 }
 
 .preview-card {
-  width: 42px;
-  height: 42px;
-  border-radius: 8px;
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
-  background: #5B6C47 !important;
+  font-size: 26px;
+  background: linear-gradient(135deg, #9CAD7D 0%, #839366 100%) !important;
   color: #fff !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 3px 10px rgba(131, 147, 102, 0.3);
   transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 html.dark .preview-card {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .preview-meta {
@@ -178,19 +178,18 @@ html.dark .preview-card {
 }
 
 .preview-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 700;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: -0.01em;
 }
 
 .preview-desc {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
-  margin-top: 2px;
+  margin-top: 3px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -201,43 +200,46 @@ html.dark .preview-card {
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 6px;
+  gap: 8px;
 }
 
 .icon-btn {
   background: var(--color-bg-primary, #FFFFFF);
   border: 1px solid rgba(0, 0, 0, 0.08);
-  border-radius: 8px;
-  height: 38px;
-  font-size: 18px;
+  border-radius: 12px;
+  height: 44px;
+  font-size: 20px;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .icon-btn:hover {
-  background: rgba(110, 129, 84, 0.08);
-  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(139, 154, 110, 0.1);
+  border-color: rgba(139, 154, 110, 0.3);
+  transform: translateY(-1px);
 }
 
 .icon-btn.is-selected {
-  background: rgba(110, 129, 84, 0.12);
-  border-color: transparent;
-  color: #5B6C47;
-  font-weight: 600;
-  box-shadow: 0 0 0 2px rgba(110, 129, 84, 0.3);
+  background: rgba(139, 154, 110, 0.16);
+  border-color: rgba(139, 154, 110, 0.4);
+  color: var(--color-zen-sage, #76855B);
+  font-weight: 700;
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.35);
+  transform: scale(1.04);
 }
 
 html.dark .icon-btn {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 html.dark .icon-btn.is-selected {
-  background: rgba(163, 177, 155, 0.18);
+  background: rgba(163, 177, 155, 0.2);
   color: #B4C4AA;
   box-shadow: 0 0 0 2px rgba(163, 177, 155, 0.4);
 }

@@ -80,31 +80,30 @@ const handleConfirm = () => {
 .confirm-title-wrap {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary, #1c221d);
-  letter-spacing: -0.01em;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary, #1e241f);
+  letter-spacing: -0.2px;
 }
 
 .title-icon {
-  color: var(--color-zen-sage, #5b6c47);
+  color: var(--color-zen-sage, #76855B);
   flex-shrink: 0;
 }
 
 .title-icon.danger {
-  color: #d93838;
+  color: #E05252;
 }
 
 .confirm-body {
-  padding: 4px 0 10px;
+  padding: 8px 0 14px;
 }
 
 .confirm-message {
-  font-size: 13.5px;
-  color: var(--text-secondary, #4b564d);
-  line-height: 1.62;
+  font-size: 14.5px;
+  color: var(--text-secondary, #4a554d);
+  line-height: 1.68;
   margin: 0;
-  letter-spacing: -0.01em;
 }
 </style>

@@ -124,62 +124,63 @@ const handleCopy = () => {
 .knowledge-view-header-title {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .view-tags {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .view-subject-pill {
-  font-size: 11.5px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: rgba(110, 129, 84, 0.1);
-  color: var(--color-zen-sage, #556641);
-  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 9999px;
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--color-zen-sage, #6e7f52);
+  border: 1px solid rgba(139, 154, 110, 0.22);
 }
 
 html.dark .view-subject-pill {
   color: #B4C4AA;
-  background: rgba(163, 177, 155, 0.14);
+  background: rgba(163, 177, 155, 0.16);
+  border-color: rgba(163, 177, 155, 0.25);
 }
 
 .view-source-text {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-muted);
-  font-weight: 400;
+  font-weight: 500;
 }
 
 .view-main-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--text-primary);
   line-height: 1.35;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.2px;
   word-break: break-word;
 }
 
 .view-time-meta {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 12.5px;
   color: var(--text-muted);
 }
 
 .view-time-icon {
-  opacity: 0.7;
+  opacity: 0.75;
 }
 
 .knowledge-view-card {
   background: transparent;
-  padding: 4px 0 8px;
+  padding: 8px 0 16px;
 }
 
 .knowledge-view-markdown {

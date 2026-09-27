@@ -111,15 +111,14 @@ const handleSubmit = () => {
 .summary-dialog-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary, #1c221d);
-  letter-spacing: -0.01em;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary, #1e241f);
 }
 
 .sparkle-icon {
-  color: var(--color-zen-sage, #5b6c47);
+  color: var(--color-zen-sage, #76855B);
   flex-shrink: 0;
 }
 
@@ -129,52 +128,54 @@ const handleSubmit = () => {
 }
 
 .instruction-hint {
-  margin: 0 0 10px;
-  color: var(--text-secondary, #4a564c);
-  font-size: 12.5px;
+  margin: 0 0 12px;
+  color: var(--text-secondary, #4a554d);
+  font-size: 13.5px;
   line-height: 1.5;
 }
 
 .instruction-preset-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .preset-chip {
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: rgba(110, 129, 84, 0.08);
-  color: #556641;
-  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(139, 154, 110, 0.2);
+  background: rgba(139, 154, 110, 0.1);
+  color: var(--color-zen-sage, #6e7f52);
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
 
 html.dark .preset-chip {
   background: rgba(163, 177, 155, 0.12);
+  border-color: rgba(163, 177, 155, 0.22);
   color: #b4c4aa;
 }
 
 .preset-chip:hover {
-  background: rgba(110, 129, 84, 0.16);
+  background: rgba(139, 154, 110, 0.2);
   color: #3f4e2d;
+  transform: translateY(-1px);
 }
 
 html.dark .preset-chip:hover {
-  background: rgba(163, 177, 155, 0.22);
-  color: #d1ded8;
+  background: rgba(163, 177, 155, 0.25);
+  color: #f1f5f9;
 }
 
 .char-count {
   display: block;
-  margin: 6px 0 0;
-  color: var(--text-muted, #859187);
-  font-size: 11.5px;
+  margin: 8px 0 0;
+  color: var(--text-muted, #7c887e);
+  font-size: 12px;
   text-align: right;
 }
 </style>
