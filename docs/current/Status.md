@@ -1,22 +1,22 @@
 # Auralis 当前状态
 
-2026-09-27 PC 全局弹窗 UI 视觉重构、三层布局规范与焦点/无障碍交互修复（代码与门禁验证通过，GUI 待验收）：
-1. 统一模态基础设施建设与 Zen Sage 雅致美学规范：
+2026-09-27 PC 全局弹窗无缝流式 UI 重构、8px 工程化按钮系统与无障碍修复（代码与门禁验证通过，GUI 待验收）：
+1. 统一模态基础设施建设与 Linear 极简雅致规范：
    - 新增 `src/components/modal/modal.css` 与 `src/components/modal/modalManager.ts`；
-   - 视觉体系重构：遮罩升级为深度毛玻璃 `backdrop-filter: blur(14px) saturate(160%)` 沉浸微光滤镜；弹窗卡片采用 22px 雅致大圆角、多层微弥散立体高阶阴影（`0 28px 72px -16px rgba(...)`）、顶部环境微光丝（`::before` 发丝高光渐变）与弹簧入场动效（`cubic-bezier(0.16, 1, 0.3, 1)`）；
-   - 控件与微交互规范：关闭圆钮配备悬浮 90° 旋转动效，全站弹窗统一配备 6px 定制圆润滚动条；建立 `.modal-btn` 触觉胶囊按钮（主操作为 Sage 渐变微凸起、次操作为温润白微投影药丸、危险操作为陶土红）、`.modal-hero-badge` 顶层光晕图标徽章、`.modal-form-group` / `.modal-form-label` / `.modal-form-input` / `.modal-form-textarea`（12px 圆角与鼠尾草焦点光环）及五档尺寸规范 `sm`(420px)/`md`(540px)/`lg`(700px)/`xl`(860px)/`auto`；
-2. 基础模态壳统一三层布局重构：
-   - 顶部吸顶常驻标题栏（`.modal-shell-header`）：统一支持 `#header` 自定义或 `#title` 标题插槽，右侧紧贴优雅关闭圆钮，保证长内容滚动时标题始终可见；
-   - 中间独立纵向平滑滚动内容区（`.modal-shell-body`）：自适应父级最大高度与视口限制（`max-height: calc(100vh - 48px)`），并彻底消除卡片内层嵌套 `max-height` 造成的“双重滚动条”恶劣体验；
-   - 底部吸底停靠操作区（`.modal-shell-footer`）：统一支持 `#footer` 插槽，规范化右对齐主要与次要操作按钮（左侧支持危险操作或自定义扩展），保持全站各业务弹窗操作区位置与视觉一致；
+   - 消除硬线条分割与断层：移除 Header 与 Footer 处的 `1px solid` 硬线条切块，整体卡片形成一体化无缝呼吸画布；遮罩升级为 `backdrop-filter: blur(16px) saturate(160%)` 沉浸微光滤镜；弹窗卡片采用 16px 精确工程圆角（对齐 Linear / macOS）、低反差双层环境漫反射阴影（`0 24px 64px -12px rgba(...)`）；
+   - 告别卡通感药丸圆角，全面推行 8px 精确工程圆角矩形控件：主操作为哑光 Zen Sage 绿 `#5B6C47`（36px 高、内嵌顶边微发丝高光、13px/500、微触觉缩放 `scale(0.985)`）；次操作为现代极简幽灵灰 `rgba(0, 0, 0, 0.035)`；危险操作为纯正克制陶土绯红 `#D93838`；关闭按钮采用 28px × 28px 极简微圆角（6px）幽灵按钮；
+2. 基础模态壳统一无缝三层布局重构：
+   - 顶部无缝吸顶标题栏（`.modal-shell-header`）：统一支持 `#header` 自定义或 `#title` 标题插槽，标题采用 16px/600/`-0.015em` 负字间距精密排版，长内容滚动时标题与关闭按钮恒定可见；
+   - 中间独立纵向平滑滚动内容区（`.modal-shell-body`）：自适应父级最大高度与视口限制（`max-height: calc(100vh - 48px)`），彻底消除卡片内层嵌套 `max-height` 造成的“双重滚动条”恶劣体验；
+   - 底部无缝吸底停靠操作区（`.modal-shell-footer`）：统一支持 `#footer` 插槽，规范化右对齐主要与次要操作按钮（左侧支持危险操作或自定义扩展），保持全站各业务弹窗操作区位置与视觉一致；
 3. 业务弹窗系统化提取、布局重构与 UI 美学升级：
-   - `ConfirmDialog.vue`：全面接入统一 `ModalShell`，重构为双栏 Hero 徽标卡片布局（危险警告与说明两种光晕徽章），排版层次分明，呈现如 Linear 般现代质感；
-   - `ChangePasswordDialog.vue`：增加 `IconShieldLock` 顶栏图标、高强度安全建议横幅与带图标的错误提示条；
-   - `SummaryInstructionDialog.vue`：增加 `IconSparkles` AI 顶栏、4 组高频预设提示词胶囊按钮组（一键点击追加/填入）与字数统计；
-   - `TaskCreateDialog.vue`：增加日历图标顶栏、全圆角学科胶囊（悬浮上浮与激活阴影）、精致专注时长滑条与圆角渐变手柄；
-   - `FileRegisterDialog.vue`：重构拖拽区域为 16px 圆角柔和虚线框与悬浮微动效图标，上传中启用动态呼吸绿点（`pulse-indicator`）与渐变进度填充，上传失败保留表单；
-   - `KnowledgeBlockViewDialog.vue` 与 `WorkspaceKnowledgeBlockDialog.vue`：常驻标题栏、卡片式 Markdown 独立滚动内容区，彻底消除双重滚动条，工作区调色盘升级为光晕外圈悬浮圆点；
-   - `SubjectCreateModal.vue`：重构顶层预览卡片为 Sage 渐变悬浮卡片，8 列图标选择网格升级为微立体微动效按键；
+   - `ConfirmDialog.vue`：全面接入统一 `ModalShell`，移除笨重矩形徽章与内部多重边框，标题栏内嵌精致图标与字号微调（15px/600/-0.01em），正文舒展呈现，搭配次要幽灵按钮与危险/主要 8px 圆角确认按键；
+   - `ChangePasswordDialog.vue`：增加 `IconShieldLock` 顶栏图标、去边框柔和安全建议横幅与带图标的错误提示条；
+   - `SummaryInstructionDialog.vue`：增加 `IconSparkles` AI 顶栏、6px 轻量无边框提示词胶囊按钮组（一键点击追加/填入）与字数统计；
+   - `TaskCreateDialog.vue`：增加日历图标顶栏、6px 圆角学科微标签（激活态微浮）、现代紧凑时长滑条与圆角手柄；
+   - `FileRegisterDialog.vue`：重构拖拽区域为轻柔虚线框与 8px 方圆图标，上传中启用动态呼吸绿点（`pulse-indicator`）与轻薄进度条，上传失败保留表单；
+   - `KnowledgeBlockViewDialog.vue` 与 `WorkspaceKnowledgeBlockDialog.vue`：常驻标题栏、卡片式 Markdown 独立滚动内容区，彻底消除双重滚动条，工作区调色盘升级为现代微圆点；
+   - `SubjectCreateModal.vue`：重构顶层预览卡片为现代紧凑微卡片，8 列图标选择网格升级为 8px 圆角轻触按键；
 4. 5 项核心交互与焦点/无障碍问题修复：
    - 上传关闭守卫前置：`ModalShell` 在任何状态变更或关闭事件触发前严格先执行 `preventClose` / `beforeClose` 守卫判定；`FileRegisterDialog` 绑定上传状态守卫，并在上传失败时不重置表单，允许用户保留文件与文件名立即重试；
    - 共享引用计数解决多层滚动锁：使用 `lockBodyScroll()` 与 `unlockBodyScroll()` 全局引用计数管理 `document.body.style.overflow`，彻底解决多层弹窗任意顺序关闭时提前解锁或残留 `hidden` 的问题；

@@ -7,17 +7,16 @@
     @update:model-value="handleOverlayUpdate"
     @close="handleCancel"
   >
-    <div class="confirm-content-layout">
-      <div
-        class="modal-hero-badge"
-        :class="type === 'danger' ? 'hero-danger' : 'hero-sage'"
-      >
-        <IconAlertTriangle v-if="type === 'danger'" :size="24" :stroke-width="1.8" />
-        <IconHelpCircle v-else :size="24" :stroke-width="1.8" />
+    <template #title>
+      <div class="confirm-title-wrap">
+        <IconAlertTriangle v-if="type === 'danger'" :size="18" :stroke-width="2" class="title-icon danger" />
+        <IconHelpCircle v-else :size="18" :stroke-width="2" class="title-icon" />
+        <span>{{ title }}</span>
       </div>
-      <div class="confirm-text-wrap">
-        <p class="confirm-message">{{ message }}</p>
-      </div>
+    </template>
+
+    <div class="confirm-body">
+      <p class="confirm-message">{{ message }}</p>
     </div>
 
     <template #footer>
@@ -78,24 +77,34 @@ const handleConfirm = () => {
 </script>
 
 <style scoped>
-.confirm-content-layout {
+.confirm-title-wrap {
   display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  padding: 6px 2px 10px;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #1c221d);
+  letter-spacing: -0.01em;
 }
 
-.confirm-text-wrap {
-  flex: 1;
-  min-width: 0;
-  padding-top: 2px;
+.title-icon {
+  color: var(--color-zen-sage, #5b6c47);
+  flex-shrink: 0;
+}
+
+.title-icon.danger {
+  color: #d93838;
+}
+
+.confirm-body {
+  padding: 4px 0 10px;
 }
 
 .confirm-message {
-  font-size: 14px;
-  color: var(--text-primary);
-  line-height: 1.6;
+  font-size: 13.5px;
+  color: var(--text-secondary, #4b564d);
+  line-height: 1.62;
   margin: 0;
-  letter-spacing: -0.1px;
+  letter-spacing: -0.01em;
 }
 </style>

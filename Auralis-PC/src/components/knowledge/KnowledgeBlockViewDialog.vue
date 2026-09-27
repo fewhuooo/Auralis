@@ -131,95 +131,89 @@ const handleCopy = () => {
 .view-tags {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .view-subject-pill {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 3px 12px;
-  border-radius: 9999px;
-  background: rgba(139, 154, 110, 0.14);
-  color: var(--color-zen-sage, #76855B);
-  border: 1px solid rgba(139, 154, 110, 0.28);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(110, 129, 84, 0.1);
+  color: var(--color-zen-sage, #556641);
+  border: none;
 }
 
 html.dark .view-subject-pill {
   color: #B4C4AA;
-  background: rgba(163, 177, 155, 0.16);
-  border-color: rgba(163, 177, 155, 0.3);
+  background: rgba(163, 177, 155, 0.14);
 }
 
 .view-source-text {
   font-size: 12px;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .view-main-title {
   margin: 0;
-  font-size: 18.5px;
-  font-weight: 750;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text-primary);
   line-height: 1.35;
-  letter-spacing: -0.3px;
+  letter-spacing: -0.015em;
   word-break: break-word;
 }
 
 .view-time-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   font-size: 12px;
   color: var(--text-muted);
 }
 
 .view-time-icon {
-  opacity: 0.75;
+  opacity: 0.7;
 }
 
 .knowledge-view-card {
-  background: var(--color-bg-primary, #ffffff);
-  border: 1px solid rgba(0, 0, 0, 0.07);
-  border-radius: 16px;
-  padding: 22px 24px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
-}
-
-html.dark .knowledge-view-card {
-  background: rgba(255, 255, 255, 0.035);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  background: transparent;
+  padding: 4px 0 8px;
 }
 
 .knowledge-view-markdown {
-  color: var(--text-primary, #2d3748);
-  font-size: 14px;
-  line-height: 1.7;
+  color: var(--text-primary, #2A332C);
+  font-size: 13.5px;
+  line-height: 1.68;
   word-break: break-word;
 }
 
 .knowledge-view-markdown :deep(h1),
 .knowledge-view-markdown :deep(h2),
 .knowledge-view-markdown :deep(h3) {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-  font-weight: 700;
+  margin-top: 0.9em;
+  margin-bottom: 0.4em;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.015em;
 }
 
 .knowledge-view-markdown :deep(p) {
-  margin: 0.6em 0;
+  margin: 0.5em 0;
 }
 
 .knowledge-view-markdown :deep(pre) {
-  background: var(--bg-tertiary, #f7f9f6);
+  background: rgba(0, 0, 0, 0.035);
   padding: 12px;
   border-radius: 8px;
   overflow-x: auto;
   font-size: 13px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 html.dark .knowledge-view-markdown :deep(pre) {
   background: #141715;
+  border-color: rgba(255, 255, 255, 0.08);
 }
 </style>

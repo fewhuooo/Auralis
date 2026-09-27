@@ -2,20 +2,23 @@
 
 ### 2026-09-27 PC 模态弹窗与浮层设计系统（Modal & Dialog Design System）
 
-1. **禅意雅致视觉基底与材质（Zen Aesthetic Tokens & Materials）**：
-   - 遮罩升级为深度毛玻璃滤镜 `backdrop-filter: blur(14px) saturate(160%)` 与沉浸深色背景 `rgba(18, 22, 19, 0.48)`，营造聚焦沉浸的悬浮层次；
-   - 弹窗卡片采用 22px 优雅大圆角与宣纸温润白底色 `--color-bg-tertiary, #FAF7F2`（深色模式下使用深灰沉浸微光 `#1B211C`），边框统一使用低饱和鼠尾草发丝线 `--color-sage-border, rgba(139, 154, 110, 0.22)`；
-   - 采用多层微弥散立体高阶阴影 `0 28px 72px -16px rgba(15, 23, 17, 0.22), 0 12px 28px -8px rgba(15, 23, 17, 0.12)` 与顶部环境微光丝（`::before` 发丝高光微渐变），质感通透轻盈；
-   - 关闭圆钮配备 `30px × 30px` 圆形悬浮背景与 hover 态 90° 旋转微缩放交互，全站弹窗统一配备 6px 定制圆润滚动条；
+1. **禅意与工程化无缝基底（Linear-Style Seamless Canvas & Tokens）**：
+   - 彻底消除生硬线条分割：移除 Header 与 Footer 处的 `1px solid` 硬横线切块，全弹窗卡片呈一体化无缝呼吸画布（Header、Body、Footer 依靠精准留白与层级自然过渡）；
+   - 遮罩采用 `backdrop-filter: blur(16px) saturate(160%)` 与沉浸微光背景 `rgba(16, 20, 17, 0.45)`；
+   - 弹窗卡片采用 16px 精确工程圆角（对齐 Linear / macOS 桌面系统体验）、宣纸温润白底色 `--color-bg-tertiary, #FAF8F5`（深色模式下使用 `#1A1F1B`），边框统一使用极浅发丝线 `rgba(0, 0, 0, 0.08)`（深色 `rgba(255, 255, 255, 0.08)`）；
+   - 阴影体系：采用低反差平滑双层环境漫反射阴影 `0 24px 64px -12px rgba(16, 22, 17, 0.18), 0 8px 24px -4px rgba(16, 22, 17, 0.08)`，消除顶部生硬发光条，质感通透纯粹；
+   - 关闭按钮：采用 28px × 28px 极简微圆角（6px）幽灵按钮，hover 平滑半透明微背景，消除浮夸旋转；
 2. **三层结构与尺寸档位层次（3-Tier Layout & Size Hierarchy）**：
-   - 统一三层布局结构：顶部吸顶常驻标题栏（`.modal-shell-header`，保证长内容滚动时标题与关闭按钮恒定可见）、中间独立纵向平滑滚动内容区（`.modal-shell-body`，彻底杜绝内层卡片双重滚动条）、底部吸底停靠操作区（`.modal-shell-footer`，主次操作按钮统一定位）；
-   - 提供五档标准化尺寸宽度：`sm` (420px - 确认对话框/修改密码)、`md` (540px - 标准表单/任务创建/学科空间)、`lg` (700px - 知识块卡片查看/文件登记)、`xl` (860px - 工作区三态流转/宽幅复合内容)、`auto`；
-   - 最大高度统一限制在视口 `calc(100vh - 48px)` 内，内部卡片平滑滚动，杜绝视口被拉伸溢出；
-3. **交互反馈、控件系统与无障碍（Controls, Micro-interactions & A11y）**：
-   - 标准控件库：`.modal-btn` 胶囊按钮（主操作为 Sage 渐变微凸起 `#9CAD7D` -> `#839366`、次操作为温润白微投影药丸、危险操作为陶土红微渐变）、`.modal-hero-badge` 顶层光晕图标徽章、`.modal-form-input` / `.modal-form-textarea` 带有 12px 圆角与低饱和鼠尾草焦点光环；
-   - 业务微交互：提炼指令快捷提示词胶囊芯片、文件拖拽区域 16px 圆角虚线配合呼吸绿点指示器、学科创建即时渐变预览卡片与微立体按键网格、任务创建平滑渐变时长滑条；
-   - 进场支持 `0.26s cubic-bezier(0.16, 1, 0.3, 1)` 弹簧微缩放（0.95 -> 1.0）与平滑淡入；
-   - 多层滚动锁基于引用计数管理 `document.body` 滚动条；顶层 LIFO 栈拦截单次 Escape；智能 Tab/Shift+Tab 焦点陷阱并在关闭后归还焦点给触发元素。
+   - 无缝三层布局：顶部常驻吸顶标题区（`.modal-shell-header`，padding: 24px 28px 8px 28px）、中间独立纵向平滑滚动内容区（`.modal-shell-body`，padding: 8px 28px 18px 28px，5px 定制轻薄圆角滚动条）、底部吸底停靠操作区（`.modal-shell-footer`，padding: 8px 28px 24px 28px）；
+   - 提供五档标准化尺寸宽度：`sm` (420px)、`md` (520px)、`lg` (680px)、`xl` (840px)、`auto`；
+   - 彻底消除弹窗内部卡片（如知识块详情、确认框）的二级框中框嵌套边框，内容直接在卡片画布上舒展呈现；
+3. **现代工程化 8px 控件系统与微排版（Engineered 8px Controls & Typography）**：
+   - 告别卡通感药丸圆角，全面推行 8px 精确圆角矩形控件：
+     - **主按钮（Primary）**：哑光纯粹 Zen Sage 绿 `#5B6C47`，8px 圆角，高度 36px，内嵌顶边发丝微光，文字 13px weight 500；hover 加深为 `#4F5E3C`，active 触发 `scale(0.985)` 微触觉反馈；
+     - **次按钮（Secondary）**：现代极简扁平幽灵灰 `rgba(0, 0, 0, 0.035)`，微边框 `rgba(0, 0, 0, 0.08)`，文字沉稳深灰 `#3F4A41`；
+     - **危险按钮（Danger）**：纯正克制陶土绯红 `#D93838`；
+   - 标题与文本微排版：标题采用 16px、font-weight 600、负字间距 `letter-spacing: -0.015em`；说明文案收敛为 13.5px、行高 1.62、次要灰度 `#4B564D`；
+   - 标签与芯片：学科选择与预设提示词芯片全面收敛为 6px 圆角幽灵微胶囊，消除沉重黑边框；输入框采用 8px 圆角与柔和鼠尾草聚焦环。
 
 ### 2026-09-27 PC Suggestions 入口
 

@@ -288,36 +288,35 @@ const handleSubmit = () => {
 }
 
 .drag-drop-zone.has-file {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  background: rgba(139, 154, 110, 0.06);
+  border-color: var(--color-zen-sage, #5b6c47);
+  background: rgba(110, 129, 84, 0.05);
 }
 
 .drag-icon-circle {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: rgba(139, 154, 110, 0.12);
-  color: var(--color-zen-sage, #8B9A6E);
-  margin-bottom: 10px;
-  transition: all 0.2s ease;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(110, 129, 84, 0.1);
+  color: var(--color-zen-sage, #5b6c47);
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
 }
 
 .drag-icon-circle.is-success {
-  background: rgba(139, 154, 110, 0.2);
-  color: var(--color-zen-sage, #76855B);
-  box-shadow: 0 0 0 4px rgba(139, 154, 110, 0.15);
+  background: rgba(110, 129, 84, 0.18);
+  color: #485736;
 }
 
 .drag-drop-zone:hover .drag-icon-circle {
-  transform: scale(1.08);
+  transform: scale(1.04);
 }
 
 .drag-text {
-  font-size: 13.5px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-primary);
   word-break: break-all;
   line-height: 1.4;
@@ -326,24 +325,23 @@ const handleSubmit = () => {
 .drag-hint {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 5px;
+  margin-top: 4px;
 }
 
 /* Progress area */
 .upload-progress-wrapper {
-  padding: 14px 16px;
-  background: rgba(139, 154, 110, 0.08);
-  border: 1px solid rgba(139, 154, 110, 0.2);
-  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(110, 129, 84, 0.06);
+  border-radius: 8px;
 }
 
 .upload-progress-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--text-secondary);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .upload-stage-group {
@@ -353,90 +351,86 @@ const handleSubmit = () => {
 }
 
 .pulse-indicator {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 0 rgba(139, 154, 110, 0.7);
+  background: var(--color-zen-sage, #5b6c47);
   animation: pulse-dot 1.5s infinite;
 }
 
 @keyframes pulse-dot {
   0% {
-    box-shadow: 0 0 0 0 rgba(139, 154, 110, 0.7);
+    box-shadow: 0 0 0 0 rgba(110, 129, 84, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(139, 154, 110, 0);
+    box-shadow: 0 0 0 5px rgba(110, 129, 84, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(139, 154, 110, 0);
+    box-shadow: 0 0 0 0 rgba(110, 129, 84, 0);
   }
 }
 
 .upload-stage-text {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary);
 }
 
 .upload-percent-text {
-  font-weight: 700;
-  color: var(--color-zen-sage, #76855B);
+  font-weight: 600;
+  color: var(--color-zen-sage, #5b6c47);
   font-feature-settings: "tnum";
 }
 
 .progress-bar-track {
-  height: 6px;
+  height: 4px;
   background: rgba(0, 0, 0, 0.06);
-  border-radius: 9999px;
+  border-radius: 4px;
   overflow: hidden;
 }
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #9CAD7D 0%, #839366 100%);
+  background: #5b6c47;
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  border-radius: 9999px;
-  box-shadow: 0 0 8px rgba(139, 154, 110, 0.4);
+  border-radius: 4px;
 }
 
 /* Subject capsule grid */
 .subject-capsule-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   max-height: 130px;
   overflow-y: auto;
-  padding: 2px;
+  padding: 2px 0;
 }
 
 .subject-capsule-item {
   display: inline-flex;
   align-items: center;
-  padding: 6px 14px;
-  border-radius: 9999px;
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   background: var(--color-bg-primary, #FFFFFF);
-  color: var(--text-secondary);
-  font-size: 12.5px;
+  color: var(--text-secondary, #444E45);
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s ease;
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .subject-capsule-item:hover {
-  border-color: var(--color-zen-sage, #8B9A6E);
+  border-color: rgba(0, 0, 0, 0.16);
   color: var(--text-primary);
-  transform: translateY(-1px);
+  background: rgba(0, 0, 0, 0.02);
 }
 
 .subject-capsule-item.is-active {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  background: rgba(139, 154, 110, 0.14);
-  font-weight: 650;
-  color: var(--color-zen-sage, #76855B);
-  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.22);
+  border-color: transparent;
+  background: rgba(110, 129, 84, 0.12);
+  font-weight: 600;
+  color: #485736;
 }
 
 .subject-empty-hint {
@@ -446,23 +440,22 @@ const handleSubmit = () => {
 }
 
 html.dark .drag-drop-zone {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(163, 177, 155, 0.22);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: rgba(255, 255, 255, 0.12);
 }
 
 html.dark .drag-drop-zone:hover {
-  background: rgba(163, 177, 155, 0.08);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 html.dark .subject-capsule-item {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
 }
 
 html.dark .subject-capsule-item.is-active {
-  background: rgba(163, 177, 155, 0.2);
-  border-color: #A3B584;
+  background: rgba(163, 177, 155, 0.18);
   color: #B4C4AA;
 }
 </style>

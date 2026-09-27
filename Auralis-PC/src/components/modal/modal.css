@@ -1,30 +1,29 @@
 /* ==========================================================================
-   Auralis Modal Design System Tokens & Base Styles (Zen Minimalist Premium)
+   Auralis Modal Design System Tokens & Base Styles (Linear & Zen Minimalist)
+   Seamless, borderless flow, engineered typography, precision 8px controls
    ========================================================================== */
 
 :root {
-  --modal-backdrop-bg: rgba(18, 22, 19, 0.48);
-  --modal-backdrop-blur: 14px;
-  --modal-bg: var(--color-bg-tertiary, #FAF7F2);
-  --modal-border: rgba(139, 154, 110, 0.22);
-  --modal-radius: 22px;
-  --modal-shadow: 0 28px 72px -16px rgba(24, 32, 26, 0.24),
-    0 10px 30px -6px rgba(24, 32, 26, 0.10),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.03);
-  --modal-header-padding: 20px 26px 18px;
-  --modal-body-padding: 22px 26px;
-  --modal-footer-padding: 16px 26px 20px;
+  --modal-backdrop-bg: rgba(16, 20, 17, 0.45);
+  --modal-backdrop-blur: 16px;
+  --modal-bg: var(--color-bg-tertiary, #FAF8F5);
+  --modal-border: rgba(0, 0, 0, 0.08);
+  --modal-radius: 16px;
+  --modal-shadow: 0 24px 64px -12px rgba(16, 22, 17, 0.18),
+    0 8px 24px -4px rgba(16, 22, 17, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --modal-header-padding: 24px 28px 8px 28px;
+  --modal-body-padding: 8px 28px 18px 28px;
+  --modal-footer-padding: 8px 28px 24px 28px;
 }
 
 html.dark {
-  --modal-backdrop-bg: rgba(8, 10, 8, 0.72);
-  --modal-bg: #1B211C;
-  --modal-border: rgba(163, 177, 155, 0.18);
-  --modal-shadow: 0 32px 84px -16px rgba(0, 0, 0, 0.75),
-    0 12px 36px -6px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  --modal-backdrop-bg: rgba(6, 8, 7, 0.72);
+  --modal-bg: #1A1F1B;
+  --modal-border: rgba(255, 255, 255, 0.08);
+  --modal-shadow: 0 28px 72px -12px rgba(0, 0, 0, 0.75),
+    0 10px 28px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Backdrop Overlay with deep glassmorphism */
@@ -37,7 +36,7 @@ html.dark {
   background: var(--modal-backdrop-bg);
   backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
   -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
-  padding: 20px;
+  padding: 24px;
   box-sizing: border-box;
   z-index: 1000;
 }
@@ -59,155 +58,116 @@ html.dark {
   outline: none;
 }
 
-/* Top ambient light sheen */
-.modal-shell-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(139, 154, 110, 0.4) 30%,
-    rgba(158, 173, 128, 0.8) 50%,
-    rgba(139, 154, 110, 0.4) 70%,
-    transparent 100%
-  );
-  pointer-events: none;
-  z-index: 2;
-}
-
-html.dark .modal-shell-card::before {
-  background: linear-gradient(90deg,
-    transparent 0%,
-    rgba(163, 177, 155, 0.3) 30%,
-    rgba(180, 196, 170, 0.6) 50%,
-    rgba(163, 177, 155, 0.3) 70%,
-    transparent 100%
-  );
-}
-
 /* Width Tiers */
 .modal-shell-card.modal-size-sm {
   max-width: 420px;
 }
 
 .modal-shell-card.modal-size-md {
-  max-width: 540px;
+  max-width: 520px;
 }
 
 .modal-shell-card.modal-size-lg {
-  max-width: 700px;
+  max-width: 680px;
 }
 
 .modal-shell-card.modal-size-xl {
-  max-width: 860px;
+  max-width: 840px;
 }
 
 .modal-shell-card.modal-size-auto {
   max-width: max-content;
 }
 
-/* Modal Header */
+/* Modal Header - Seamless, borderless flow into body */
 .modal-shell-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 14px;
+  gap: 16px;
   padding: var(--modal-header-padding);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.15) 100%);
+  border-bottom: none;
+  background: transparent;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
 }
 
-html.dark .modal-shell-header {
-  border-bottom-color: rgba(255, 255, 255, 0.06);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
-}
-
 .modal-shell-header-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
 .modal-shell-title {
   margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.3px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary, #1c221d);
+  letter-spacing: -0.015em;
   line-height: 1.35;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .modal-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 11px;
-  border-radius: 9999px;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: 11.5px;
-  font-weight: 650;
+  font-weight: 500;
   line-height: 1.3;
-  border: 1px solid rgba(139, 154, 110, 0.25);
-  background: rgba(139, 154, 110, 0.1);
-  color: var(--color-zen-sage, #76855B);
+  border: none;
+  background: rgba(110, 129, 84, 0.1);
+  color: #556641;
   white-space: nowrap;
 }
 
 html.dark .modal-pill {
-  background: rgba(163, 177, 155, 0.12);
-  border-color: rgba(163, 177, 155, 0.22);
+  background: rgba(163, 177, 155, 0.14);
   color: #B4C4AA;
 }
 
 .modal-meta-text {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-muted, #788479);
   white-space: nowrap;
 }
 
-/* Close Button with circular hover & rotation effect */
+/* Close Button - Refined minimal ghost button */
 .modal-shell-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  background: rgba(0, 0, 0, 0.035);
-  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #8A968B);
   cursor: pointer;
-  font-size: 17px;
+  font-size: 13.5px;
   line-height: 1;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 0.15s ease, color 0.15s ease;
   padding: 0;
   flex-shrink: 0;
+  margin-top: -2px;
+  margin-right: -4px;
 }
 
 .modal-shell-close:hover {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: var(--text-primary);
-  transform: rotate(90deg) scale(1.06);
-}
-
-html.dark .modal-shell-close {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.08);
-  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary, #1C221D);
 }
 
 html.dark .modal-shell-close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  color: #F0F4F0;
 }
 
 /* Modal Body with refined custom scrollbar */
@@ -219,7 +179,7 @@ html.dark .modal-shell-close:hover {
 }
 
 .modal-shell-body::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 .modal-shell-body::-webkit-scrollbar-track {
@@ -227,39 +187,34 @@ html.dark .modal-shell-close:hover {
 }
 
 .modal-shell-body::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.28);
-  border-radius: 9999px;
+  background: rgba(110, 129, 84, 0.22);
+  border-radius: 6px;
 }
 
 .modal-shell-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 154, 110, 0.5);
+  background: rgba(110, 129, 84, 0.4);
 }
 
 html.dark .modal-shell-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.25);
 }
 
-/* Modal Footer */
+/* Modal Footer - Seamless, borderless dock */
 .modal-shell-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
   padding: var(--modal-footer-padding);
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
-  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.015) 100%);
+  border-top: none;
+  background: transparent;
   flex-shrink: 0;
   position: relative;
   z-index: 1;
-}
-
-html.dark .modal-shell-footer {
-  border-top-color: rgba(255, 255, 255, 0.06);
-  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
 }
 
 /* Responsive Handling */
@@ -279,12 +234,12 @@ html.dark .modal-shell-footer {
 /* Fade + Spring Scale Entrance */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-fade-enter-active .modal-shell-card,
 .modal-fade-leave-active .modal-shell-card {
-  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
 }
 
 .modal-fade-enter-from,
@@ -294,31 +249,31 @@ html.dark .modal-shell-footer {
 
 .modal-fade-enter-from .modal-shell-card {
   opacity: 0;
-  transform: scale(0.95) translateY(10px);
+  transform: scale(0.96) translateY(8px);
 }
 
 .modal-fade-leave-to .modal-shell-card {
   opacity: 0;
-  transform: scale(0.97) translateY(6px);
+  transform: scale(0.98) translateY(4px);
 }
 
 /* ==========================================================================
-   Unified Zen Minimalist Button System
+   Precision 8px Button System (Modern Engineered Aesthetics)
    ========================================================================== */
 .modal-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  height: 38px;
-  padding: 0 20px;
-  border-radius: 9999px;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 650;
-  letter-spacing: -0.1px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
   line-height: 1;
   white-space: nowrap;
@@ -327,89 +282,83 @@ html.dark .modal-shell-footer {
 }
 
 .modal-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.35);
+  box-shadow: 0 0 0 3px rgba(110, 129, 84, 0.28);
 }
 
+/* Secondary Button - Subtle flat neutral */
 .modal-btn-secondary {
-  background: var(--color-bg-primary, #FFFFFF);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.1));
-  color: var(--text-secondary, #4a5568);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  color: var(--text-secondary, #3F4A41);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 html.dark .modal-btn-secondary {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--text-secondary, #cbd5e1);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary, #CBD5E1);
+  box-shadow: none;
 }
 
 .modal-btn-secondary:hover:not(:disabled) {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.035));
-  color: var(--text-primary, #1a202c);
-  border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
-  transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary, #1A211B);
+  border-color: rgba(0, 0, 0, 0.13);
 }
 
 html.dark .modal-btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary, #f1f5f9);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.09);
+  color: #F8FAFC;
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .modal-btn-secondary:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transform: scale(0.985);
 }
 
+/* Primary Button - Refined Matte Zen Sage */
 .modal-btn-primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9CAD7D 0%, #839366 100%));
+  background: #5B6C47;
   color: #FFFFFF;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 3px 12px rgba(131, 147, 102, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 1px 2px rgba(18, 26, 17, 0.1);
 }
 
 .modal-btn-primary:hover:not(:disabled) {
-  opacity: 0.96;
-  transform: translateY(-1.5px);
-  box-shadow: 0 6px 18px rgba(131, 147, 102, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  background: #4F5E3C;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 6px -1px rgba(28, 38, 22, 0.16);
 }
 
 .modal-btn-primary:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(131, 147, 102, 0.3);
+  transform: scale(0.985);
 }
 
 .modal-btn:disabled {
-  opacity: 0.42;
+  opacity: 0.45;
   cursor: not-allowed;
   transform: none !important;
   box-shadow: none !important;
 }
 
+/* Danger Button - Clean Crimson */
 .modal-btn-danger {
-  background: linear-gradient(135deg, #E05252 0%, #C43838 100%);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 3px 12px rgba(196, 56, 56, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: #D93838;
+  color: #FFFFFF;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 2px rgba(180, 40, 40, 0.15);
 }
 
 .modal-btn-danger:hover:not(:disabled) {
-  background: linear-gradient(135deg, #E55C5C 0%, #CC3F3F 100%);
-  box-shadow: 0 6px 18px rgba(196, 56, 56, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  transform: translateY(-1.5px);
+  background: #C72929;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25),
+    0 2px 6px -1px rgba(180, 40, 40, 0.25);
 }
 
 .modal-btn-danger:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(196, 56, 56, 0.3);
+  transform: scale(0.985);
 }
 
 /* ==========================================================================
@@ -419,51 +368,45 @@ html.dark .modal-btn-secondary:hover:not(:disabled) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 46px;
-  border-radius: 16px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }
 
 .modal-hero-badge.hero-danger {
-  background: rgba(224, 82, 82, 0.12);
-  color: #C43838;
-  border: 1px solid rgba(224, 82, 82, 0.22);
+  background: rgba(220, 56, 56, 0.1);
+  color: #D93838;
 }
 
 .modal-hero-badge.hero-sage {
-  background: rgba(139, 154, 110, 0.14);
-  color: var(--color-zen-sage, #76855B);
-  border: 1px solid rgba(139, 154, 110, 0.25);
+  background: rgba(110, 129, 84, 0.1);
+  color: #556641;
 }
 
 .modal-hero-badge.hero-amber {
-  background: rgba(217, 119, 6, 0.12);
+  background: rgba(217, 119, 6, 0.1);
   color: #B45309;
-  border: 1px solid rgba(217, 119, 6, 0.22);
 }
 
 html.dark .modal-hero-badge.hero-danger {
-  background: rgba(224, 82, 82, 0.2);
+  background: rgba(220, 56, 56, 0.18);
   color: #F87171;
-  border-color: rgba(224, 82, 82, 0.35);
 }
 
 html.dark .modal-hero-badge.hero-sage {
-  background: rgba(163, 177, 155, 0.18);
+  background: rgba(163, 177, 155, 0.16);
   color: #B4C4AA;
-  border-color: rgba(163, 177, 155, 0.3);
 }
 
 /* ==========================================================================
-   Unified Zen Minimalist Form Controls
+   Unified Zen Minimalist Form Controls (Precision 8px Radius)
    ========================================================================== */
 .modal-form-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: 6px;
+  margin-bottom: 16px;
 }
 
 .modal-form-group:last-child {
@@ -471,18 +414,18 @@ html.dark .modal-hero-badge.hero-sage {
 }
 
 .modal-form-label {
-  font-size: 13px;
-  font-weight: 650;
-  color: var(--text-primary, #2d3748);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-secondary, #4B564C);
   display: flex;
   align-items: center;
-  gap: 5px;
-  letter-spacing: -0.15px;
+  gap: 4px;
+  letter-spacing: -0.01em;
 }
 
 .modal-form-label .required {
-  color: #e53e3e;
-  font-weight: 700;
+  color: #DC3838;
+  font-weight: 600;
 }
 
 .modal-form-input,
@@ -490,94 +433,92 @@ html.dark .modal-hero-badge.hero-sage {
 .modal-form-select {
   width: 100%;
   box-sizing: border-box;
-  padding: 11px 15px;
-  border-radius: 12px;
+  padding: 9px 13px;
+  border-radius: 8px;
   border: 1px solid rgba(0, 0, 0, 0.1);
-  background: var(--color-bg-primary, #ffffff);
-  color: var(--text-primary, #2d3748);
+  background: var(--color-bg-primary, #FFFFFF);
+  color: var(--text-primary, #1E231F);
   font-size: 13.5px;
   font-family: inherit;
   outline: none;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 html.dark .modal-form-input,
 html.dark .modal-form-textarea,
 html.dark .modal-form-select {
   background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: var(--text-primary, #f1f5f9);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary, #F1F5F9);
+  box-shadow: none;
 }
 
 .modal-form-input:focus,
 .modal-form-textarea:focus,
 .modal-form-select:focus {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.22),
-    0 1px 3px rgba(0, 0, 0, 0.04);
-  background: #ffffff;
+  border-color: #6E8154;
+  box-shadow: 0 0 0 3px rgba(110, 129, 84, 0.16);
+  background: #FFFFFF;
 }
 
 html.dark .modal-form-input:focus,
 html.dark .modal-form-textarea:focus,
 html.dark .modal-form-select:focus {
-  border-color: #A3B584;
-  box-shadow: 0 0 0 3px rgba(163, 177, 155, 0.25);
+  border-color: #92A578;
+  box-shadow: 0 0 0 3px rgba(146, 165, 120, 0.22);
   background: rgba(255, 255, 255, 0.06);
 }
 
 .modal-form-input::placeholder,
 .modal-form-textarea::placeholder {
-  color: var(--text-muted, #a0aec0);
+  color: var(--text-muted, #94A096);
 }
 
 /* Card Inset for nested structured content */
 .modal-card-inset {
-  background: var(--color-bg-primary, #FFFFFF);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 14px;
-  padding: 18px 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  background: rgba(0, 0, 0, 0.025);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+  padding: 16px 18px;
 }
 
 html.dark .modal-card-inset {
-  background: rgba(255, 255, 255, 0.035);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 /* ==========================================================================
    Modal Markdown Typography
    ========================================================================== */
 .modal-markdown-body {
-  color: var(--text-primary, #2d3748);
+  color: var(--text-primary, #2A332C);
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.68;
   word-break: break-word;
 }
 
 .modal-markdown-body :deep(h1),
 .modal-markdown-body :deep(h2),
 .modal-markdown-body :deep(h3) {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-  font-weight: 700;
+  margin-top: 0.9em;
+  margin-bottom: 0.4em;
+  font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: -0.015em;
 }
 
 .modal-markdown-body :deep(p) {
-  margin: 0.6em 0;
+  margin: 0.5em 0;
 }
 
 .modal-markdown-body :deep(pre) {
-  background: var(--bg-tertiary, #f7f9f6);
+  background: rgba(0, 0, 0, 0.035);
   padding: 12px;
   border-radius: 8px;
   overflow-x: auto;
   font-size: 13px;
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
 html.dark .modal-markdown-body :deep(pre) {

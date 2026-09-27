@@ -134,43 +134,41 @@ const handleSave = () => {
 .subject-create-modal {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 /* Subject Preview */
 .subject-preview-section {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 18px;
-  background: linear-gradient(135deg, rgba(139, 154, 110, 0.12) 0%, rgba(139, 154, 110, 0.04) 100%);
-  border-radius: 16px;
-  border: 1px solid rgba(139, 154, 110, 0.22);
-  margin-bottom: 20px;
+  gap: 14px;
+  padding: 12px 14px;
+  background: rgba(110, 129, 84, 0.07);
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
 
 html.dark .subject-preview-section {
-  background: linear-gradient(135deg, rgba(163, 177, 155, 0.12) 0%, rgba(163, 177, 155, 0.03) 100%);
-  border-color: rgba(163, 177, 155, 0.22);
+  background: rgba(163, 177, 155, 0.1);
 }
 
 .preview-card {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26px;
-  background: linear-gradient(135deg, #9CAD7D 0%, #76855B 100%) !important;
+  font-size: 22px;
+  background: #5B6C47 !important;
   color: #fff !important;
-  box-shadow: 0 4px 14px rgba(118, 133, 91, 0.35);
-  transition: all 0.25s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  transition: all 0.2s ease;
   flex-shrink: 0;
 }
 
 html.dark .preview-card {
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .preview-meta {
@@ -180,19 +178,19 @@ html.dark .preview-card {
 }
 
 .preview-title {
-  font-size: 15.5px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.01em;
 }
 
 .preview-desc {
   font-size: 12px;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -203,48 +201,43 @@ html.dark .preview-card {
 .icon-grid {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  gap: 8px;
+  gap: 6px;
 }
 
 .icon-btn {
   background: var(--color-bg-primary, #FFFFFF);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
-  height: 44px;
-  font-size: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  height: 38px;
+  font-size: 18px;
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease;
 }
 
 .icon-btn:hover {
-  background: rgba(139, 154, 110, 0.1);
-  border-color: rgba(139, 154, 110, 0.4);
-  transform: translateY(-1.5px);
-  box-shadow: 0 3px 8px rgba(139, 154, 110, 0.15);
+  background: rgba(110, 129, 84, 0.08);
+  border-color: rgba(0, 0, 0, 0.15);
 }
 
 .icon-btn.is-selected {
-  background: rgba(139, 154, 110, 0.16);
-  border-color: var(--color-zen-sage, #8B9A6E);
-  color: var(--color-zen-sage, #76855B);
-  font-weight: 700;
-  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.35);
-  transform: scale(1.04);
+  background: rgba(110, 129, 84, 0.12);
+  border-color: transparent;
+  color: #5B6C47;
+  font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(110, 129, 84, 0.3);
 }
 
 html.dark .icon-btn {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 html.dark .icon-btn.is-selected {
-  background: rgba(163, 177, 155, 0.22);
-  border-color: #A3B584;
+  background: rgba(163, 177, 155, 0.18);
   color: #B4C4AA;
   box-shadow: 0 0 0 2px rgba(163, 177, 155, 0.4);
 }

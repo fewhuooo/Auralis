@@ -3,19 +3,19 @@
 ### 2026-09-27 PC 全局弹窗与模态层组件化规范与 UI 视觉/布局重构（Modal & Dialog Optimization）
 
 - **统一模态基础设施建设（Modal Architecture & Design Tokens）**：
-  - 新增设计系统模态样式规范 `src/components/modal/modal.css`：建立禅意雅致（Zen Sage `#8B9A6E`、宣纸米白 `#FAF7F2`、深色微光 `#1B211C`）全局 Token，提供 `sm`(420px)、`md`(540px)、`lg`(700px)、`xl`(860px)、`auto` 五档尺寸规范与统一的 `.modal-btn`、`.modal-hero-badge`、`.modal-form-group`、`.modal-form-label`、`.modal-form-input`、`.modal-form-textarea`、`.modal-pill`、`.modal-card-inset` 与 `.modal-markdown-body` 控件规范；
-  - 遮罩与卡片视觉革命：遮罩升级为 `blur(14px) saturate(160%)` 高级毛玻璃深色质感；弹窗卡片采用 22px 优雅大圆角、多层微弥散立体阴影（`0 28px 72px -16px rgba(...)`）、顶部环境微光丝（`::before` 发丝高光渐变）与弹簧入场动效（`cubic-bezier(0.16, 1, 0.3, 1)`）；关闭圆钮配备悬浮 90 度旋转动效与 6px 定制圆润滚动条；
+  - 新增设计系统模态样式规范 `src/components/modal/modal.css`：建立现代极简禅意（Zen Sage `#5B6C47`、宣纸米白 `#FAF8F5`、深色微光 `#1A1F1B`）全局 Token，提供 `sm`(420px)、`md`(520px)、`lg`(680px)、`xl`(840px)、`auto` 五档尺寸规范与统一的 8px 圆角 `.modal-btn`、`.modal-form-group`、`.modal-form-label`、`.modal-form-input`、`.modal-form-textarea`、`.modal-pill`、`.modal-card-inset` 与 `.modal-markdown-body` 控件规范；
+  - 彻底消除生硬线条分割与视觉断层：Header 与 Footer 移除 `border-bottom` / `border-top` 硬线条切块，整体卡片形成一体化无缝呼吸画布；弹窗卡片采用 16px 精确工程圆角（对齐 Linear / macOS）、低反差双层环境漫反射阴影（`0 24px 64px -12px rgba(...)`）；关闭按钮采用 28px × 28px 极简微圆角（6px）幽灵按钮与 5px 定制轻薄圆角滚动条；
   - 新增全局模态状态管理器 `src/components/modal/modalManager.ts`：实现基于引用计数的全局多层滚动穿透锁（`lockBodyScroll` / `unlockBodyScroll`）、后进先出栈（LIFO `modalStack`）的顶层 Escape 捕获（`stopImmediatePropagation`）与焦点闭环陷阱（`trapTabKey` / `focusInitialElement`）；
-  - 基础模态壳 `src/components/modal/ModalShell.vue` 布局重构：统一卡片容器结构，顶部常驻吸顶标题栏（`#header` / `#title` 与关闭圆钮）、中间自适应纵向独立滚动内容区（`.modal-shell-body`）、底部吸底停靠操作栏（`#footer`）；集成入场自动聚焦（优先 autofocus/input/primary btn）、焦点返回触发元素、上传防关守卫（`preventClose` / `beforeClose`）与非空可访问性绑定（`aria-label` / `aria-labelledby`）；
-- **业务弹窗系统化提取与 UI 美化（Elevated Business Dialog UIs）**：
-  - **修改密码**：提取 `src/components/profile/ChangePasswordDialog.vue`，增加 `IconShieldLock` 顶栏图标、高强度安全建议横幅与带图标的错误提示条；
-  - **提炼指令定制**：提取 `src/components/subject/SummaryInstructionDialog.vue`，增加 `IconSparkles` AI 顶栏、预设提示词胶囊按钮组（一键点击追加/填入）与字数进度指示；
-  - **排期任务创建**：提取 `src/components/task/TaskCreateDialog.vue`，供 `Dashboard`、`Timeline`、`SubjectWorkspace` 统一复用；增加日历图标顶栏、全圆角学科胶囊（悬浮上浮与激活阴影）、精致专注时长滑条与圆角渐变手柄；
-  - **文件资产登记**：提取 `src/components/asset/FileRegisterDialog.vue`，供 `Asset` 资产库与 `SubjectWorkspace` 学科工作区复用；重构拖拽区域为 16px 圆角柔和虚线框与悬浮微动效图标，上传中启用动态呼吸绿点（`pulse-indicator`）与渐变进度填充，上传失败保留表单；
-  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，消除内层多重嵌套滚动条，改为常驻标题栏、卡片式 Markdown 独立滚动内容区与底部复制/确定操作栏；
-  - **工作区知识块流转**：提取 `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`，供 `SubjectWorkspace` 完整管理知识块三态流转，重构色彩调色盘为光晕外圈悬浮圆点，消除浏览态嵌套滚动条；
-  - **学科空间创建/编辑弹窗升级**：`src/components/subject/SubjectCreateModal.vue` 接入统一外壳 `ModalShell`，重构顶层预览卡片为 Sage 渐变悬浮卡片，8 列图标选择网格升级为微立体微动效按键；
-  - **通用确认弹窗升级**：`src/components/ConfirmDialog.vue` 接入统一外壳 `ModalShell`，增加顶层 Hero 图标徽标（警告危险与说明两种配色徽章），排版层次分明，呈现如 Linear / macOS 般高级质感；
+  - 基础模态壳 `src/components/modal/ModalShell.vue` 布局重构：统一卡片容器结构，顶部无缝吸顶标题栏（`#header` / `#title` 与关闭幽灵圆钮）、中间自适应纵向独立平滑滚动内容区（`.modal-shell-body`）、底部无缝吸底停靠操作栏（`#footer`）；集成入场自动聚焦（优先 autofocus/input/primary btn）、焦点返回触发元素、上传防关守卫（`preventClose` / `beforeClose`）与非空可访问性绑定（`aria-label` / `aria-labelledby`）；
+- **业务弹窗系统化提取、UI 视觉与排版重塑（Elevated Business Dialog UIs & Typography）**：
+  - **通用确认弹窗**：`src/components/ConfirmDialog.vue` 接入统一外壳 `ModalShell`，移除笨重矩形徽章与内部多重边框，标题栏内嵌精致图标与字号微调（15px/600/-0.01em），正文舒展呈现，搭配次要幽灵按钮与危险/主要 8px 圆角确认按键；
+  - **修改密码**：提取 `src/components/profile/ChangePasswordDialog.vue`，增加 `IconShieldLock` 顶栏图标、去边框柔和安全建议横幅与带图标的错误提示条；
+  - **提炼指令定制**：提取 `src/components/subject/SummaryInstructionDialog.vue`，增加 `IconSparkles` AI 顶栏、6px 轻量无边框提示词胶囊按钮组（一键点击追加/填入）与字数统计；
+  - **排期任务创建**：提取 `src/components/task/TaskCreateDialog.vue`，供 `Dashboard`、`Timeline`、`SubjectWorkspace` 统一复用；增加日历图标顶栏、6px 圆角学科微标签（激活态微浮）、现代紧凑时长滑条与圆角手柄；
+  - **文件资产登记**：提取 `src/components/asset/FileRegisterDialog.vue`，供 `Asset` 资产库与 `SubjectWorkspace` 学科工作区复用；重构拖拽区域为轻柔虚线框与 8px 方圆图标，上传中启用动态呼吸绿点（`pulse-indicator`）与轻薄进度条，上传失败保留表单；
+  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，消除内层多重嵌套滚动条与卡片框中框，内容直接在卡片无缝流转，底部配置优雅复制与确定按钮；
+  - **工作区知识块流转**：提取 `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`，消除浏览态嵌套滚动条与硬横线，调色盘升级为现代微圆点；
+  - **学科空间创建/编辑弹窗升级**：`src/components/subject/SubjectCreateModal.vue` 接入统一外壳 `ModalShell`，顶层预览收敛为现代紧凑微卡片，8 列图标选择网格升级为 8px 圆角轻触按键；
 - **测试与契约兼容（Compatibility & Guardrails）**：
   - 严格保持各宿主页面对外 props、emits 与既有测试断言正则完全兼容；
   - 全量自动化测试回归（433/433 测试通过），`npm run type-check` 0 错误，`check:subject-icons` 与 `check:subject-workspace` 全绿，`npm run build` 生产构建成功。

@@ -1,20 +1,20 @@
 # Auralis 当前问题与审查登记
 
-### 2026-09-27 PC 全局弹窗与模态层 UI 视觉重构、三层布局规范与组件化提取（Modal & Dialog Refactoring）
+### 2026-09-27 PC 全局弹窗无缝流式 UI 重构、8px 工程化按钮系统与组件化提取（Modal & Dialog Refactoring）
 
-- **背景与目标**：此前 PC 端各个视图分散内联自制弹窗（`Dashboard`、`Timeline`、`Profile`、`Asset`、`SubjectWorkspace`），样式代码重复、尺寸不一、UI 视觉较为简陋陈旧、缺乏全局设计美学规范与焦点无障碍管理。目标是在不破坏业务逻辑、不改变响应式状态归属、不破坏既有测试断言的前提下，彻底重构弹窗 UI 美学（Zen Sage 禅意配色、毛玻璃背景滤镜、22px 雅致圆角卡片、多层立体弥散阴影、微光丝高光与定制交互控件），建立统一的 `ModalShell` 基础组件并提取 6 个独立业务弹窗。
+- **背景与目标**：此前 PC 端各个视图分散内联自制弹窗（`Dashboard`、`Timeline`、`Profile`、`Asset`、`SubjectWorkspace`），样式代码重复、尺寸不一、硬线条切块生硬、按钮缺乏工程质感、缺乏全局设计美学规范与焦点无障碍管理。目标是在不破坏业务逻辑、不改变响应式状态归属、不破坏既有测试断言的前提下，彻底重构弹窗 UI 美学（参考 Linear、Vercel 及 macOS 设计语言：一体化无缝呼吸画布、彻底消除硬横线分割、16px 精确工程圆角、低反差双层环境漫反射阴影、8px 精准圆角矩形按钮体系与精密负字间距标题排版），建立统一的 `ModalShell` 基础组件并提取 6 个独立业务弹窗。
 - **实施架构与视觉重构清单**：
-  1. 基础规范与设计系统：`src/components/modal/modal.css`（Token、5 档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、`.modal-btn` 胶囊按钮、`.modal-hero-badge` 图标徽章、12px 圆角表单控件与 6px 定制滚动条）与 `src/components/modal/ModalShell.vue`（Teleport、常驻吸顶标题栏、独立平滑滚动内容区、停靠吸底操作栏、毛玻璃滤镜与弹簧进退场动效）；
+  1. 基础规范与设计系统：`src/components/modal/modal.css`（Token、5 档尺寸规范 `sm`/`md`/`lg`/`xl`/`auto`、8px 精准圆角 `.modal-btn`、8px 圆角表单控件与 5px 轻薄定制滚动条）与 `src/components/modal/ModalShell.vue`（Teleport、无缝吸顶标题栏、独立平滑滚动内容区、无缝吸底停靠操作栏、毛玻璃滤镜与微缩放动效）；
   2. 提取业务弹窗并深度美化：
-     - `src/components/profile/ChangePasswordDialog.vue`（增加盾牌图标顶栏、安全建议横幅与带图标错误提示条）
-     - `src/components/subject/SummaryInstructionDialog.vue`（增加 AI 星光顶栏、4 组高频预设提示词胶囊按钮组与字数统计）
-     - `src/components/task/TaskCreateDialog.vue`（增加日历顶栏、全圆角学科微动效胶囊、专注时长平滑渐变滑条与圆角渐变手柄）
-     - `src/components/asset/FileRegisterDialog.vue`（16px 圆角虚线拖拽区域、微动效悬浮图标、上传状态动态呼吸绿点与渐变进度条）
-     - `src/components/knowledge/KnowledgeBlockViewDialog.vue`（常驻标题栏、卡片式 Markdown 独立滚动区，彻底消除双重滚动条，优雅复制/确定按钮）
-     - `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`（消除浏览态双重滚动条，将调色盘重构为光晕外圈悬浮圆点）
+     - `src/components/profile/ChangePasswordDialog.vue`（增加盾牌图标顶栏、无边框柔和安全建议横幅与带图标错误提示条）
+     - `src/components/subject/SummaryInstructionDialog.vue`（增加 AI 星光顶栏、6px 轻量无边框提示词胶囊按钮组与字数统计）
+     - `src/components/task/TaskCreateDialog.vue`（增加日历顶栏、6px 圆角学科微标签、紧凑现代专注时长滑条与圆角手柄）
+     - `src/components/asset/FileRegisterDialog.vue`（轻柔虚线拖拽区域、8px 方圆图标、上传状态动态呼吸绿点与轻薄进度条）
+     - `src/components/knowledge/KnowledgeBlockViewDialog.vue`（常驻标题栏、无框流式 Markdown 独立滚动区，彻底消除双重滚动条与框中框，优雅复制/确定按钮）
+     - `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`（消除浏览态双重滚动条与硬线条分割，将调色盘重构为现代微圆点）
   3. 统一外壳改造：
-     - `src/components/subject/SubjectCreateModal.vue`（学科空间创建/编辑）全面接入统一 `ModalShell`（`size="md"`），顶层卡片升级为 Sage 渐变悬浮卡片，8 列图标选择网格升级为微立体按键，保留 `version: props.subjectData.version` 契约断言；
-     - `src/components/ConfirmDialog.vue`（通用确认对话框）全面接入统一 `ModalShell`（`size="sm"`），升级为双栏 Hero 徽章卡片布局（危险警告与说明两种光晕徽章），呈现现代高端质感；
+     - `src/components/subject/SubjectCreateModal.vue`（学科空间创建/编辑）全面接入统一 `ModalShell`（`size="md"`），顶层卡片升级为现代紧凑微卡片，8 列图标选择网格升级为 8px 圆角轻触按键，保留 `version: props.subjectData.version` 契约断言；
+     - `src/components/ConfirmDialog.vue`（通用确认对话框）全面接入统一 `ModalShell`（`size="sm"`），移除笨重徽章，标题栏内嵌精致图标与字号微调（15px/600/-0.01em），正文舒展呈现，搭配次要幽灵按钮与危险/主要 8px 圆角确认按键；
 - **契约保护与兼容**：
   - `Timeline/index.vue`：保持 `/duration:\s*newTaskForm\.value\.duration\s*\|\|\s*60/` 契约断言；
   - `SubjectWorkspace/index.vue`：保持 `!registerForm.subjectId || !droppedFile || isUploading`、`createFileSource(targetSubjectId, registerForm.value.name.trim(), ...)`、`SUPPORTED_UPLOAD_EXTENSIONS.join(',')` 与 `validateUploadFile` 契约断言；

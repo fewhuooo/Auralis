@@ -164,24 +164,25 @@ const handleSubmit = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #1c221d);
+  letter-spacing: -0.01em;
 }
 
 .shield-icon {
-  color: var(--color-zen-sage, #8B9A6E);
+  color: var(--color-zen-sage, #5b6c47);
+  flex-shrink: 0;
 }
 
 .security-tip-banner {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: rgba(139, 154, 110, 0.1);
-  border: 1px solid rgba(139, 154, 110, 0.2);
-  color: var(--color-zen-sage, #76855B);
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(110, 129, 84, 0.08);
+  color: #53643D;
   font-size: 12px;
   font-weight: 500;
   margin-bottom: 16px;
@@ -189,8 +190,7 @@ const handleSubmit = () => {
 }
 
 html.dark .security-tip-banner {
-  background: rgba(163, 177, 155, 0.1);
-  border-color: rgba(163, 177, 155, 0.2);
+  background: rgba(163, 177, 155, 0.12);
   color: #B4C4AA;
 }
 
@@ -204,10 +204,10 @@ html.dark .security-tip-banner {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #C2413E;
-  margin-top: 4px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(194, 65, 62, 0.08);
+  color: #D93838;
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(220, 56, 56, 0.08);
 }
 </style>
