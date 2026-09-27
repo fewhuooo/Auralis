@@ -3,60 +3,53 @@
     :model-value="modelValue"
     size="lg"
     :aria-label="dialogAriaLabel"
-    :show-close-button="false"
     @update:model-value="emit('update:modelValue', $event)"
     @close="close"
   >
-    <div class="knowledge-view-container">
-      <!-- 头部信息区 -->
-      <div class="knowledge-view-header">
-        <div class="view-header-top">
-          <div class="view-tags">
-            <span class="view-subject-pill" :style="block?.color ? { borderColor: block.color } : undefined">
-              {{ block?.subject || '知识要点' }}
-            </span>
-            <span v-if="block?.source" class="view-source-text">来源: {{ block.source }}</span>
-          </div>
-          <button class="view-close-btn" @click="close" title="关闭" aria-label="关闭">×</button>
+    <template #title>
+      <div class="knowledge-view-header-title">
+        <div class="view-tags">
+          <span class="view-subject-pill" :style="block?.color ? { borderColor: block.color } : undefined">
+            {{ block?.subject || '知识要点' }}
+          </span>
+          <span v-if="block?.source" class="view-source-text">来源: {{ block.source }}</span>
         </div>
-
-        <h2 class="view-main-title">{{ block?.title || '未命名知识块' }}</h2>
-
+        <h3 class="view-main-title">{{ block?.title || '未命名知识块' }}</h3>
         <div v-if="block?.time" class="view-time-meta">
-          <IconHistory class="view-time-icon" :size="14" :stroke-width="1.6" />
+          <IconHistory class="view-time-icon" :size="13" :stroke-width="1.6" />
           <span>记于 {{ block.time }}</span>
         </div>
       </div>
+    </template>
 
-      <!-- 核心内容区 -->
-      <div class="knowledge-view-card">
-        <div
-          class="knowledge-view-markdown modal-markdown-body"
-          v-html="renderedMarkdown"
-        ></div>
-      </div>
-
-      <!-- 底部操作区 -->
-      <div class="knowledge-view-footer">
-        <button
-          v-if="rawContent"
-          type="button"
-          class="modal-btn modal-btn-secondary"
-          @click="handleCopy"
-        >
-          <IconCopy :size="15" :stroke-width="1.8" />
-          <span>{{ copied ? '已复制' : '复制内容' }}</span>
-        </button>
-        <div style="flex: 1"></div>
-        <button
-          type="button"
-          class="modal-btn modal-btn-primary"
-          @click="close"
-        >
-          确定
-        </button>
-      </div>
+    <!-- Main Content Area -->
+    <div class="knowledge-view-card">
+      <div
+        class="knowledge-view-markdown modal-markdown-body"
+        v-html="renderedMarkdown"
+      ></div>
     </div>
+
+    <!-- Footer Actions -->
+    <template #footer>
+      <button
+        v-if="rawContent"
+        type="button"
+        class="modal-btn modal-btn-secondary"
+        @click="handleCopy"
+      >
+        <IconCopy :size="15" :stroke-width="1.8" />
+        <span>{{ copied ? '已复制' : '复制内容' }}</span>
+      </button>
+      <div style="flex: 1"></div>
+      <button
+        type="button"
+        class="modal-btn modal-btn-primary"
+        @click="close"
+      >
+        确定
+      </button>
+    </template>
   </ModalShell>
 </template>
 
@@ -128,23 +121,11 @@ const handleCopy = () => {
 </script>
 
 <style scoped>
-.knowledge-view-container {
+.knowledge-view-header-title {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 4px;
-}
-
-.knowledge-view-header {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.view-header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
 }
 
 .view-tags {
@@ -174,30 +155,14 @@ html.dark .view-subject-pill {
   font-weight: 500;
 }
 
-.view-close-btn {
-  background: transparent;
-  border: none;
-  font-size: 20px;
-  line-height: 1;
-  color: var(--text-muted, #888888);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all var(--transition-fast, 0.15s ease);
-}
-
-.view-close-btn:hover {
-  color: var(--text-primary, #333333);
-  background: var(--bg-hover, rgba(0, 0, 0, 0.05));
-}
-
 .view-main-title {
   margin: 0;
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 18px;
+  font-weight: 700;
   color: var(--text-primary, #333333);
   line-height: 1.4;
   letter-spacing: -0.3px;
+  word-break: break-word;
 }
 
 .view-time-meta {
@@ -216,8 +181,8 @@ html.dark .view-subject-pill {
   background: var(--bg-primary, #ffffff);
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 12px;
-  padding: 20px 24px;
-  max-height: 52vh;
+  padding: 18px 20px;
+  max-height: 56vh;
   overflow-y: auto;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
 }
@@ -256,12 +221,5 @@ html.dark .knowledge-view-card {
 
 html.dark .knowledge-view-markdown :deep(pre) {
   background: #141715;
-}
-
-.knowledge-view-footer {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 4px;
 }
 </style>

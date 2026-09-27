@@ -1,22 +1,23 @@
 # PC 前端模块
 
-### 2026-09-27 PC 全局弹窗与模态层组件化规范与提取重构（Modal & Dialog Optimization）
+### 2026-09-27 PC 全局弹窗与模态层组件化规范与布局重构（Modal & Dialog Optimization）
 
 - **统一模态基础设施建设（Modal Architecture & Design Tokens）**：
-  - 新增设计系统模态样式规范 `src/components/modal/modal.css`：建立禅意雅致（Zen Sage `#8B9A6E`、`#FAF7F2`、深色微光 `#181D18`）全局 Token，提供 `sm`(400px)、`md`(520px)、`lg`(640px)、`xl`(800px)、`auto` 五档尺寸规范与统一的 `modal-btn` / `modal-input` / `modal-markdown-body` 控件规范；
-  - 新增基础模态壳 `src/components/modal/ModalShell.vue`：标准化支持 `Teleport to body`、淡入轻缩放进出动效（`fade-in` / `scale-up`）、Esc 快捷键监听、遮罩点击安全关闭、`aria-modal="true"` 可访问性以及多层嵌套弹窗的 `body` 滚动穿透锁定；
-- **业务弹窗系统化提取与解耦（Zero Regression Business Components）**：
-  - **修改密码**：提取 `src/components/profile/ChangePasswordDialog.vue`，保留 `12~200` 位强密码校验与服务端会话边界提示；
-  - **提炼指令定制**：提取 `src/components/subject/SummaryInstructionDialog.vue`，保留 2000 字限制与预设提示词；
-  - **排期任务创建**：提取 `src/components/task/TaskCreateDialog.vue`，供 `Dashboard`、`Timeline`、`SubjectWorkspace` 统一复用；支持开放学科下拉选择与锁定当前学科上下文（`fixedSubjectId` / `fixedSubjectName`），预设 30~240 分钟时长；
-  - **文件资产登记**：提取 `src/components/asset/FileRegisterDialog.vue`，供 `Asset` 资产库与 `SubjectWorkspace` 学科工作区复用；支持文件拖拽、格式与 50MB 尺寸安全校验、学科胶囊选择与上传进度感知；
-  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，供 `Dashboard` 与 `Timeline` 统一查看知识块卡片详情，呈现头部元数据胶囊、卡片式 Markdown 渲染与剪贴板快速复制；
-  - **工作区知识块流转**：提取 `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`，供 `SubjectWorkspace` 完整管理知识块查看、编辑与新建三态流转，内置色彩调色盘与危险删除确认；
-  - **学科空间创建/编辑弹窗升级**：`src/components/subject/SubjectCreateModal.vue` 接入统一外壳 `ModalShell`（`size="md"`），去除手写 overlay 与容器样式，完整保留 `version: props.subjectData.version` 版本契约；
+  - 新增设计系统模态样式规范 `src/components/modal/modal.css`：建立禅意雅致（Zen Sage `#8B9A6E`、宣纸米白 `#FAF7F2`、深色微光 `#1B211C`）全局 Token，提供 `sm`(400px)、`md`(520px)、`lg`(680px)、`xl`(840px)、`auto` 五档尺寸规范与统一的 `.modal-btn`（`.modal-btn-primary`、`.modal-btn-secondary`、`.modal-btn-danger`）、`.modal-form-group`、`.modal-form-label`、`.modal-form-input`、`.modal-form-textarea`、`.modal-pill` 与 `.modal-markdown-body` 控件规范；
+  - 新增全局模态状态管理器 `src/components/modal/modalManager.ts`：实现基于引用计数的全局多层滚动穿透锁（`lockBodyScroll` / `unlockBodyScroll`）、后进先出栈（LIFO `modalStack`）的顶层 Escape 捕获（`stopImmediatePropagation`）与焦点闭环陷阱（`trapTabKey` / `focusInitialElement`）；
+  - 基础模态壳 `src/components/modal/ModalShell.vue` 布局重构：统一卡片容器结构，顶部常驻吸顶标题栏（`#header` / `#title` 与关闭圆钮）、中间自适应纵向独立滚动内容区（`.modal-shell-body`）、底部吸底停靠操作栏（`#footer`）；集成入场自动聚焦（优先 autofocus/input/primary btn）、焦点返回触发元素、上传防关守卫（`preventClose` / `beforeClose`）与非空可访问性绑定（`aria-label` / `aria-labelledby`）；
+- **业务弹窗系统化提取与布局对齐（Standardized Business Dialogs）**：
+  - **修改密码**：提取 `src/components/profile/ChangePasswordDialog.vue`，对齐 `.modal-form-group` / `.modal-form-input` 与 `.modal-btn`，保留强密码校验；
+  - **提炼指令定制**：提取 `src/components/subject/SummaryInstructionDialog.vue`，对齐 `.modal-form-textarea` 与 `.modal-btn`，保留字数计数与提示词；
+  - **排期任务创建**：提取 `src/components/task/TaskCreateDialog.vue`，供 `Dashboard`、`Timeline`、`SubjectWorkspace` 统一复用；对齐 `.modal-form-group` / `.modal-form-input` 与底部操作按钮，保留时长拖拽滑条与学科图标渲染；
+  - **文件资产登记**：提取 `src/components/asset/FileRegisterDialog.vue`，供 `Asset` 资产库与 `SubjectWorkspace` 学科工作区复用；对齐统一表单项与操作按钮，上传中启用防关闭守卫与进度条呈现，上传失败保留表单；
+  - **知识块卡片查看**：提取 `src/components/knowledge/KnowledgeBlockViewDialog.vue`，供 `Dashboard` 与 `Timeline` 统一查看；重构为常驻标题栏、卡片式 Markdown 独立滚动内容区与底部复制/确定操作栏；
+  - **工作区知识块流转**：提取 `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`，供 `SubjectWorkspace` 完整管理知识块查看、编辑与新建三态流转，浏览态与编辑态彻底对齐吸顶标题栏、滚动内容区与吸底操作区；
+  - **学科空间创建/编辑弹窗升级**：`src/components/subject/SubjectCreateModal.vue` 接入统一外壳 `ModalShell`（`size="md"`），对齐 `.modal-form-group` 与吸底操作按钮，完整保留 `version: props.subjectData.version` 版本契约；
   - **通用确认弹窗升级**：`src/components/ConfirmDialog.vue` 接入统一外壳 `ModalShell`（`size="sm"`），统一标题栏、遮罩滤镜与确认/取消按钮层级；
 - **测试与契约兼容（Compatibility & Guardrails）**：
   - 严格保持各宿主页面对外 props、emits 与既有测试断言正则完全兼容；
-  - 全量自动化测试回归（433/433 测试通过），`npm run type-check` 0 错误，`npm run build` 生产构建成功。
+  - 全量自动化测试回归（433/433 测试通过），`npm run type-check` 0 错误，`check:subject-icons` 与 `check:subject-workspace` 全绿，`npm run build` 生产构建成功。
 
 ### 2026-09-27 时间轴交换与 Suggestions 入口
 

@@ -3,140 +3,135 @@
     :model-value="modelValue"
     size="lg"
     :aria-label="dialogTitle"
-    :show-close-button="false"
     @update:model-value="handleOverlayClose"
     @close="handleClose"
   >
-    <div class="workspace-block-dialog">
-      <!-- 弹窗顶部栏 -->
-      <div class="block-dialog-header">
-        <template v-if="currentMode === 'view'">
-          <div class="header-tags">
-            <span class="block-subject-pill" :style="{ background: block?.color || 'var(--color-bg-tertiary, #FAF7F2)' }">
-              {{ block?.subject || activeSubjectName || '知识块' }}
-            </span>
-            <span v-if="block?.source" class="block-source-text">来源: {{ block.source }}</span>
-          </div>
-        </template>
-        <template v-else>
-          <h3 class="header-edit-title">{{ currentMode === 'create' ? '录入新知识块' : '编辑知识内容' }}</h3>
-        </template>
-        <button class="header-close-btn" @click="handleClose" title="关闭" aria-label="关闭">✕</button>
+    <template #title>
+      <div v-if="currentMode === 'view'" class="workspace-block-header-tags">
+        <span class="block-subject-pill" :style="{ background: block?.color || 'var(--color-bg-tertiary, #FAF7F2)' }">
+          {{ block?.subject || activeSubjectName || '知识块' }}
+        </span>
+        <span v-if="block?.source" class="block-source-text">来源: {{ block.source }}</span>
       </div>
+      <h3 v-else class="modal-shell-title">
+        {{ currentMode === 'create' ? '录入新知识块' : '编辑知识内容' }}
+      </h3>
+    </template>
 
-      <!-- 浏览模式内容区 -->
-      <div v-if="currentMode === 'view'" class="block-view-body">
-        <div class="block-read-header">
-          <h2 class="block-title">{{ block?.title || '未命名知识块' }}</h2>
-          <div class="block-meta-row">
-            <span v-if="block?.time" class="block-time-badge">
-              <IconClock :size="14" :stroke-width="1.6" />
-              <span>{{ block.time }}</span>
-            </span>
-            <span class="block-color-badge" :style="{ background: block?.color || 'var(--color-bg-tertiary, #FAF7F2)' }">
-              {{ block?.subject }}
-            </span>
-          </div>
-        </div>
-
-        <div class="block-divider"></div>
-
-        <div class="block-content-card">
-          <div class="summary-markdown modal-markdown-body" v-html="renderedMarkdown"></div>
+    <!-- 浏览模式内容区 -->
+    <div v-if="currentMode === 'view'" class="block-view-body">
+      <div class="block-read-header">
+        <h2 class="block-title">{{ block?.title || '未命名知识块' }}</h2>
+        <div class="block-meta-row">
+          <span v-if="block?.time" class="block-time-badge">
+            <IconClock :size="13" :stroke-width="1.6" />
+            <span>{{ block.time }}</span>
+          </span>
+          <span class="block-color-badge" :style="{ background: block?.color || 'var(--color-bg-tertiary, #FAF7F2)' }">
+            {{ block?.subject || activeSubjectName || '知识块' }}
+          </span>
         </div>
       </div>
 
-      <!-- 编辑 / 创建模式表单 -->
-      <div v-else class="block-edit-body">
-        <div class="form-group">
-          <label>
-            标题 <span class="required">*</span>
-          </label>
-          <input
-            v-model="formData.title"
-            class="styled-input"
-            placeholder="输入知识块标题"
-            maxlength="120"
-          />
-        </div>
+      <div class="block-divider"></div>
 
-        <div class="form-group">
-          <label>色彩</label>
-          <div class="color-options">
-            <span
-              v-for="c in colorList"
-              :key="c.value"
-              class="color-dot"
-              :class="{ 'is-selected': formData.color === c.value }"
-              :style="{ background: c.value }"
-              :title="c.name"
-              @click="formData.color = c.value"
-            ></span>
-          </div>
-        </div>
+      <div class="block-content-card">
+        <div class="summary-markdown modal-markdown-body" v-html="renderedMarkdown"></div>
+      </div>
+    </div>
 
-        <div class="form-group">
-          <label>
-            内容 <span class="required">*</span>
-          </label>
-          <textarea
-            v-model="formData.preview"
-            class="styled-textarea"
-            rows="8"
-            placeholder="支持 Markdown 格式..."
-          ></textarea>
+    <!-- 编辑 / 创建模式表单 -->
+    <div v-else class="block-edit-body">
+      <div class="modal-form-group">
+        <label class="modal-form-label">
+          标题 <span class="required">*</span>
+        </label>
+        <input
+          v-model="formData.title"
+          class="modal-form-input"
+          placeholder="输入知识块标题"
+          maxlength="120"
+          autofocus
+        />
+      </div>
+
+      <div class="modal-form-group">
+        <label class="modal-form-label">色彩标记</label>
+        <div class="color-options">
+          <span
+            v-for="c in colorList"
+            :key="c.value"
+            class="color-dot"
+            :class="{ 'is-selected': formData.color === c.value }"
+            :style="{ background: c.value }"
+            :title="c.name"
+            @click="formData.color = c.value"
+          ></span>
         </div>
       </div>
 
-      <!-- 底部操作区 -->
-      <div class="block-dialog-footer" :class="{ 'is-edit-footer': currentMode !== 'view' }">
-        <template v-if="currentMode !== 'view'">
-          <button type="button" class="modal-btn modal-btn-secondary" @click="handleCancelEdit">
-            取消
+      <div class="modal-form-group">
+        <label class="modal-form-label">
+          内容 <span class="required">*</span>
+        </label>
+        <textarea
+          v-model="formData.preview"
+          class="modal-form-textarea"
+          rows="8"
+          placeholder="支持 Markdown 格式..."
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- 底部操作区 -->
+    <template #footer>
+      <template v-if="currentMode !== 'view'">
+        <button type="button" class="modal-btn modal-btn-secondary" @click="handleCancelEdit">
+          取消
+        </button>
+        <button
+          type="button"
+          class="modal-btn modal-btn-primary"
+          :disabled="!formData.title.trim() || !formData.preview.trim()"
+          @click="handleSave"
+        >
+          {{ currentMode === 'create' ? '创建' : '保存' }}
+        </button>
+      </template>
+      <template v-else>
+        <button
+          type="button"
+          class="modal-btn modal-btn-danger"
+          @click="handleDelete"
+        >
+          删除
+        </button>
+        <div style="flex: 1"></div>
+        <div class="footer-right-actions">
+          <button
+            type="button"
+            class="modal-btn modal-btn-secondary"
+            @click="handleCopy"
+          >
+            复制
+          </button>
+          <button
+            type="button"
+            class="modal-btn modal-btn-secondary"
+            @click="handleStartEdit"
+          >
+            编辑
           </button>
           <button
             type="button"
             class="modal-btn modal-btn-primary"
-            :disabled="!formData.title.trim() || !formData.preview.trim()"
-            @click="handleSave"
+            @click="handleClose"
           >
-            {{ currentMode === 'create' ? '创建' : '保存' }}
+            确定
           </button>
-        </template>
-        <template v-else>
-          <button
-            type="button"
-            class="modal-btn modal-btn-danger"
-            @click="handleDelete"
-          >
-            删除
-          </button>
-          <div class="footer-right-actions">
-            <button
-              type="button"
-              class="modal-btn modal-btn-secondary"
-              @click="handleCopy"
-            >
-              复制
-            </button>
-            <button
-              type="button"
-              class="modal-btn modal-btn-secondary"
-              @click="handleStartEdit"
-            >
-              编辑
-            </button>
-            <button
-              type="button"
-              class="modal-btn modal-btn-primary"
-              @click="handleClose"
-            >
-              确定
-            </button>
-          </div>
-        </template>
-      </div>
-    </div>
+        </div>
+      </template>
+    </template>
   </ModalShell>
 </template>
 
@@ -368,32 +363,10 @@ html.dark .block-subject-pill {
   color: #E2E8F0;
 }
 
-.block-source-text {
-  font-size: 12px;
-  color: var(--text-muted, #888888);
-}
-
-.header-edit-title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary, #333333);
-}
-
-.header-close-btn {
-  background: transparent;
-  border: none;
-  font-size: 18px;
-  color: var(--text-muted, #888888);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all var(--transition-fast, 0.15s ease);
-}
-
-.header-close-btn:hover {
-  color: var(--text-primary, #333333);
-  background: var(--bg-hover, rgba(0, 0, 0, 0.05));
+.workspace-block-header-tags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .block-view-body {
@@ -539,18 +512,6 @@ html.dark .styled-textarea {
 .styled-textarea {
   resize: vertical;
   min-height: 120px;
-}
-
-.block-dialog-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 8px;
-  gap: 12px;
-}
-
-.block-dialog-footer.is-edit-footer {
-  justify-content: flex-end;
 }
 
 .footer-right-actions {

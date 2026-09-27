@@ -78,15 +78,4 @@ const handleConfirm = () => {
   line-height: 1.6;
   margin: 0;
 }
-
-.modal-btn-danger {
-  background: #ef4444;
-  color: white;
-  border: 1px solid transparent;
-}
-
-.modal-btn-danger:hover {
-  background: #dc2626;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.35);
-}
 </style>

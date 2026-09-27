@@ -56,22 +56,22 @@
       </div>
 
       <!-- File Name Input -->
-      <div class="form-group">
-        <label class="form-label">
+      <div class="modal-form-group">
+        <label class="modal-form-label">
           文件名称 <span class="required">*</span>
         </label>
         <input
           v-model="fileName"
           type="text"
-          class="styled-input"
+          class="modal-form-input"
           placeholder="例如: 计算机网络.pdf"
           :disabled="isUploading"
         />
       </div>
 
       <!-- Subject Capsule Selection -->
-      <div class="form-group">
-        <label class="form-label">
+      <div class="modal-form-group">
+        <label class="modal-form-label">
           归档至 <span class="required">*</span>
         </label>
         <div class="subject-capsule-grid">
@@ -94,7 +94,7 @@
     <template #footer>
       <button
         type="button"
-        class="btn-secondary"
+        class="modal-btn modal-btn-secondary"
         :disabled="isUploading"
         @click="handleClose"
       >
@@ -102,7 +102,7 @@
       </button>
       <button
         type="button"
-        class="btn-primary"
+        class="modal-btn modal-btn-primary"
         :disabled="!isSubmitEnabled || isUploading"
         @click="handleSubmit"
       >
@@ -347,35 +347,6 @@ const handleSubmit = () => {
   gap: 6px;
 }
 
-.form-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.required {
-  color: #ef4444;
-  margin-left: 2px;
-}
-
-.styled-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 10px 14px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-primary);
-  font-size: 13px;
-  outline: none;
-  transition: all 0.15s ease;
-}
-
-.styled-input:focus {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15);
-}
-
 /* Subject capsule grid */
 .subject-capsule-grid {
   display: flex;
@@ -418,63 +389,12 @@ const handleSubmit = () => {
   padding: 4px 0;
 }
 
-/* Footer buttons */
-.btn-secondary {
-  padding: 8px 16px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.04));
-  border-color: var(--border-strong);
-}
-
-.btn-primary {
-  padding: 8px 18px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-zen-sage, #8B9A6E);
-  background: var(--color-zen-sage, #8B9A6E);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--color-sage-dark, #76855B);
-  border-color: var(--color-sage-dark, #76855B);
-}
-
-.btn-primary:disabled,
-.btn-secondary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 html.dark .drag-drop-zone {
   background: var(--color-bg-card, #232A24);
   border-color: rgba(163, 177, 155, 0.25);
 }
 
-html.dark .styled-input {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
-}
-
 html.dark .subject-capsule-item {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
-}
-
-html.dark .btn-secondary {
   background: var(--color-bg-card, #232A24);
   border-color: rgba(163, 177, 155, 0.25);
 }

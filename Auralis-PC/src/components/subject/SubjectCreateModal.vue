@@ -26,8 +26,8 @@
       </div>
 
       <!-- Name Input -->
-      <div class="form-group">
-        <label for="subj-name">学科名称 <span class="required">*</span></label>
+      <div class="modal-form-group">
+        <label for="subj-name" class="modal-form-label">学科名称 <span class="required">*</span></label>
         <input
           type="text"
           id="subj-name"
@@ -36,26 +36,26 @@
           maxlength="20"
           required
           autofocus
-          class="styled-input"
+          class="modal-form-input"
         />
       </div>
 
       <!-- Description Input -->
-      <div class="form-group">
-        <label for="subj-desc">学科简述</label>
+      <div class="modal-form-group">
+        <label for="subj-desc" class="modal-form-label">学科简述</label>
         <textarea
           id="subj-desc"
           v-model="form.description"
           placeholder="简短描述这个学科的研究方向或课程定位..."
           maxlength="100"
           rows="3"
-          class="styled-textarea"
+          class="modal-form-textarea"
         ></textarea>
       </div>
 
       <!-- Icon Selector -->
-      <div class="form-group">
-        <label>选择空间图标</label>
+      <div class="modal-form-group">
+        <label class="modal-form-label">选择空间图标</label>
         <div class="icon-grid">
           <button
             v-for="option in subjectIconOptions"
@@ -74,8 +74,8 @@
     </div>
 
     <template #footer>
-      <button type="button" class="btn-secondary" @click="$emit('close')">取消</button>
-      <button type="button" class="btn-primary" :disabled="!form.name.trim()" @click="handleSave">
+      <button type="button" class="modal-btn modal-btn-secondary" @click="$emit('close')">取消</button>
+      <button type="button" class="modal-btn modal-btn-primary" :disabled="!form.name.trim()" @click="handleSave">
         {{ isEdit ? '保存修改' : '确认创建' }}
       </button>
     </template>
@@ -195,50 +195,6 @@ html.dark .preview-card {
   line-height: 1.4;
 }
 
-/* Form Styles */
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.form-group label {
-  font-size: 12px;
-  font-weight: 650;
-  color: var(--text-secondary);
-}
-
-.required {
-  color: #ff453a;
-}
-
-.styled-input, .styled-textarea {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-default);
-  border-radius: 10px;
-  padding: 10px 14px;
-  font-size: 13px;
-  color: var(--text-primary);
-  outline: none;
-  font-family: inherit;
-  transition: all 0.2s ease;
-}
-
-.styled-input:focus, .styled-textarea:focus {
-  border-color: #8B9A6E;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
-  background: var(--color-bg-tertiary, #FAF7F2);
-}
-
-html.dark .styled-input:focus, html.dark .styled-textarea:focus {
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.2);
-}
-
-.styled-textarea {
-  resize: none;
-}
-
 /* Icon Grid */
 .icon-grid {
   display: grid;
@@ -276,48 +232,5 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus {
 
 html.dark .icon-btn.is-selected {
   background: rgba(125, 147, 114, 0.2);
-}
-
-/* Action buttons */
-.btn-secondary {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  padding: 8px 20px;
-  border-radius: 9999px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--text-primary);
-}
-
-.btn-primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
-  border: none;
-  color: #FFFFFF;
-  padding: 8px 26px;
-  border-radius: 9999px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 8px rgba(125, 147, 114, 0.3);
-}
-
-.btn-primary:hover:not(:disabled) {
-  opacity: 0.92;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(125, 147, 114, 0.45);
-}
-
-.btn-primary:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
 }
 </style>

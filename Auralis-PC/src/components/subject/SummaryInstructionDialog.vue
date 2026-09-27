@@ -12,16 +12,16 @@
         v-model="instruction"
         :maxlength="maxlength"
         rows="5"
-        class="styled-textarea instruction-textarea"
-        placeholder="填写可选要求"
+        class="modal-form-textarea"
+        placeholder="填写可选要求..."
         autofocus
       ></textarea>
       <div class="char-count">{{ instruction.length }} / {{ maxlength }}</div>
     </form>
 
     <template #footer>
-      <button type="button" class="btn-cancel" @click="handleCancel">取消</button>
-      <button type="button" class="btn-submit" @click="handleSubmit">生成新总结</button>
+      <button type="button" class="modal-btn modal-btn-secondary" @click="handleCancel">取消</button>
+      <button type="button" class="modal-btn modal-btn-primary" @click="handleSubmit">生成新总结</button>
     </template>
   </ModalShell>
 </template>
@@ -77,29 +77,8 @@ const handleSubmit = () => {
 .instruction-hint {
   margin: 0 0 10px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
-}
-
-.instruction-textarea {
-  box-sizing: border-box;
-  width: 100%;
-  resize: vertical;
-  padding: 10px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-primary);
-  font: inherit;
-  line-height: 1.5;
-  outline: none;
-  min-height: 110px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.instruction-textarea:focus {
-  border-color: var(--color-primary-accent, #7D9372);
-  box-shadow: 0 0 0 3px rgba(125, 147, 114, 0.15);
 }
 
 .char-count {
@@ -108,49 +87,5 @@ const handleSubmit = () => {
   color: var(--text-muted);
   font-size: 11px;
   text-align: right;
-}
-
-.btn-cancel {
-  padding: 7px 14px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-cancel:hover {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.05));
-  border-color: var(--border-strong);
-}
-
-.btn-submit {
-  padding: 7px 14px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md, 8px);
-  background: var(--color-primary-light, rgba(125, 147, 114, 0.2));
-  color: var(--color-primary-accent, #7D9372);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.btn-submit:hover {
-  background: var(--color-primary-accent, #7D9372);
-  color: #fff;
-}
-
-html.dark .instruction-textarea {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
-}
-
-html.dark .btn-cancel {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
 }
 </style>

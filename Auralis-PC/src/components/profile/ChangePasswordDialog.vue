@@ -7,34 +7,35 @@
     @close="handleClose"
   >
     <div class="change-password-form">
-      <div class="modal-form-item">
-        <label class="modal-form-label">原密码</label>
+      <div class="modal-form-group">
+        <label class="modal-form-label">原密码 <span class="required">*</span></label>
         <input
           v-model="form.oldPassword"
           type="password"
-          class="settings-input modal-input"
+          class="modal-form-input"
           placeholder="请输入当前使用的密码"
+          autofocus
           @input="clearError"
         />
       </div>
 
-      <div class="modal-form-item">
-        <label class="modal-form-label">新密码</label>
+      <div class="modal-form-group">
+        <label class="modal-form-label">新密码 <span class="required">*</span></label>
         <input
           v-model="form.newPassword"
           type="password"
-          class="settings-input modal-input"
+          class="modal-form-input"
           placeholder="12 至 200 位安全新密码"
           @input="clearError"
         />
       </div>
 
-      <div class="modal-form-item">
-        <label class="modal-form-label">确认新密码</label>
+      <div class="modal-form-group">
+        <label class="modal-form-label">确认新密码 <span class="required">*</span></label>
         <input
           v-model="form.confirmPassword"
           type="password"
-          class="settings-input modal-input"
+          class="modal-form-input"
           placeholder="再次输入新密码"
           @keydown.enter="handleSubmit"
           @input="clearError"
@@ -45,10 +46,10 @@
     </div>
 
     <template #footer>
-      <button type="button" class="action-btn" @click="handleClose">取消</button>
+      <button type="button" class="modal-btn modal-btn-secondary" @click="handleClose">取消</button>
       <button
         type="button"
-        class="action-btn primary"
+        class="modal-btn modal-btn-primary"
         :disabled="submitting"
         @click="handleSubmit"
       >
@@ -147,87 +148,11 @@ const handleSubmit = () => {
 .change-password-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-}
-
-.modal-form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.modal-form-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary, #1C1C1A);
-}
-
-.modal-input {
-  width: 100% !important;
-  box-sizing: border-box;
 }
 
 .modal-error-tip {
-  font-size: 11.5px;
-  color: #C2413E;
-  margin-top: 2px;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
   font-size: 12px;
-  font-weight: 600;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.10));
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-primary, #1C1C1A);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.action-btn:hover {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.04));
-  border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
-}
-
-.action-btn.primary {
-  background: var(--color-zen-sage, #8B9A6E);
-  border-color: var(--color-zen-sage, #8B9A6E);
-  color: var(--color-white, #FFFFFF);
-}
-
-.action-btn.primary:hover:not(:disabled) {
-  background: var(--color-sage-dark, #76855B);
-  border-color: var(--color-sage-dark, #76855B);
-}
-
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-html.dark .action-btn {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
-  color: var(--text-primary, #E0DFDC);
-}
-
-html.dark .action-btn:hover {
-  background: rgba(163, 177, 155, 0.15);
-}
-
-html.dark .action-btn.primary {
-  background: var(--color-zen-sage, #8B9A6E);
-  border-color: var(--color-zen-sage, #8B9A6E);
-  color: #121612;
-}
-
-html.dark .action-btn.primary:hover:not(:disabled) {
-  background: #9DB07E;
-  border-color: #9DB07E;
+  color: #C2413E;
+  margin-top: 4px;
 }
 </style>

@@ -22,9 +22,13 @@
           tabindex="-1"
         >
           <!-- Header slot or default header -->
-          <slot name="header" :close="requestClose">
-            <div v-if="title || showCloseButton" class="modal-shell-header" :class="headerClass">
-              <h3 v-if="title" :id="titleId" class="modal-shell-title">{{ title }}</h3>
+          <div v-if="$slots.header || title || showCloseButton" class="modal-shell-header" :class="headerClass">
+            <slot name="header" :close="requestClose">
+              <div class="modal-shell-header-main">
+                <slot name="title">
+                  <h3 v-if="title" :id="titleId" class="modal-shell-title">{{ title }}</h3>
+                </slot>
+              </div>
               <button
                 v-if="showCloseButton"
                 type="button"
@@ -35,8 +39,8 @@
               >
                 ✕
               </button>
-            </div>
-          </slot>
+            </slot>
+          </div>
 
           <!-- Main Body slot -->
           <div class="modal-shell-body" :class="bodyClass">

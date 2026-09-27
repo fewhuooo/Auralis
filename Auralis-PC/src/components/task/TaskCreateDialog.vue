@@ -99,10 +99,10 @@
     </div>
 
     <template #footer>
-      <button type="button" class="task-btn-cancel" @click="handleClose">取消</button>
+      <button type="button" class="modal-btn modal-btn-secondary" @click="handleClose">取消</button>
       <button
         type="button"
-        class="task-btn-submit"
+        class="modal-btn modal-btn-primary"
         :disabled="!isSubmitEnabled"
         @click="handleSubmit"
       >
@@ -459,46 +459,6 @@ const handleSubmit = () => {
   z-index: 2;
 }
 
-/* Footer buttons */
-.task-btn-cancel {
-  padding: 8px 16px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.task-btn-cancel:hover {
-  background: var(--bg-modifier-hover, rgba(0, 0, 0, 0.04));
-  border-color: var(--border-strong);
-}
-
-.task-btn-submit {
-  padding: 8px 18px;
-  border-radius: var(--radius-md, 8px);
-  border: 1px solid var(--color-zen-sage, #8B9A6E);
-  background: var(--color-zen-sage, #8B9A6E);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.task-btn-submit:hover:not(:disabled) {
-  background: var(--color-sage-dark, #76855B);
-  border-color: var(--color-sage-dark, #76855B);
-}
-
-.task-btn-submit:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 html.dark .task-form-input {
   background: var(--color-bg-card, #232A24);
   border-color: rgba(163, 177, 155, 0.25);
@@ -510,11 +470,6 @@ html.dark .subject-capsule-item {
 }
 
 html.dark .duration-long-bar-btn {
-  background: var(--color-bg-card, #232A24);
-  border-color: rgba(163, 177, 155, 0.25);
-}
-
-html.dark .task-btn-cancel {
   background: var(--color-bg-card, #232A24);
   border-color: rgba(163, 177, 155, 0.25);
 }

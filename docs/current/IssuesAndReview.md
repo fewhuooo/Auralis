@@ -718,6 +718,8 @@ PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home
 
 ## 审查结论
 
+- 2026-09-27：PC 全局弹窗重构与模态层优化已落地：基础壳组件 `ModalShell.vue` 布局重写为统一的吸顶常驻标题栏、自适应纵向独立滚动卡片内容区和吸底停靠操作栏；统一接入全局管理器 `modalManager.ts`（支持引用计数多层滚动穿透锁、LIFO 顶层 Escape 捕获、自动入场聚焦与焦点闭环陷阱）与 `modal.css` 令牌系统（Sage `#8B9A6E` 主色调、5 档尺寸与统一按钮/表单控件）；已将 `KnowledgeBlockViewDialog`、`WorkspaceKnowledgeBlockDialog`、`TaskCreateDialog`、`FileRegisterDialog`、`SubjectCreateModal`、`ConfirmDialog`、`ChangePasswordDialog`、`SummaryInstructionDialog` 全部对齐到统一结构与样式；自动化套件 433/433、TypeScript 类型检查、学科图标契约检查、工作区契约检查以及生产打包均全绿通过。P2-PC-Modal-Consistency 风险已通过代码与自动化验证闭环，保留浏览器/Tauri 人工 GUI 走查。
+
 - 2026-09-06：PC 文档调度递归、上传阶段本地失败转换和 Office 文本提取时序已通过 focused Node 42/42；OCR 使用受控 1×1 PNG 走现有 sidecar 协议完成模型预热，Rust 有界诊断通过 OCR 单元测试 7/7，Python sidecar 回归 11/11，`cargo check --lib` 通过。真实 Tauri 中图片 PDF、混合/文字 PDF、DOCX、PPTX 首次处理耗时与最终服务端 READY 尚未重新验收，因此 P2-PC-File-Viewer-Validation 与 P2-PC-Document-Processing-Validation 保持开放；纯图片 Office 在 renderer 无可靠页数时当前明确不支持 OCR fallback。
 
 - 2026-09-01：PC 已将 File Viewer 与离线 PDF/OCR adapter 统一到 `pdfjs-dist@5.4.624`，lockfile 已去除 renderer 的嵌套副本；扫描样本的同版本加载、无 text layer 识别和位图绘制通过。FILE 处理从本地 OCR block、加密包、upload-intent、PUT、complete 到本地 `READY` 的组合自动测试已通过；恢复批次会隔离单项异常，Profile 可对没有本地 job 的 `AWAITING_CLIENT` 文件手动开始本机处理。手动入口会先确认 Source 已同步到服务端，未确认时显示同步状态，避免将未创建的 Source 调度为原始 404；运行时会刷新 Source，状态点继续展示服务器 `VALIDATING/PARSING/INDEXING`，直至真正可提问的 Source `READY`。未挂载 Tauri runner 会显示明确限制。本机 `docker compose ps` 因 Docker 配置和 `docker_engine` 命名管道拒绝访问而无法启动真实 Server/MinIO 验证。P2-PC-File-Viewer-Validation 与 P2-PC-Document-Processing-Validation 继续开放，关闭仍需要 Windows Tauri + OCR sidecar + 真实 Server/MinIO 的扫描 PDF 预览、解析状态、索引和可提问 GUI 证据。
