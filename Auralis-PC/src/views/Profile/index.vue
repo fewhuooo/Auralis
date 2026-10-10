@@ -18,7 +18,7 @@
             <div class="user-badges">
               <span class="user-streak-pill">
                 <IconFlame :size="13" :stroke-width="2.2" class="streak-icon" />
-                连续专注 <strong>{{ continuousStudyDays }}</strong> 天
+                本周专注天数 <strong>{{ continuousStudyDays }}</strong>
               </span>
               <span class="device-pill">{{ deviceName }}</span>
             </div>
@@ -540,6 +540,7 @@ import { useStatsStore } from '@/store/useStatsStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore } from '@/store/useTaskStore'
+import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { ElNotification, ElMessageBox } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message-box.css'
@@ -552,6 +553,7 @@ const statsStore = useStatsStore()
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
 const taskStore = useTaskStore()
+const pomodoroStore = usePomodoroStore()
 const router = useRouter()
 
 const sessions = ref<SessionResponse[]>([])
@@ -798,6 +800,7 @@ const coreStats = ref([
   { label: '知识块', value: '0', accent: false, icon: IconNotes },
   { label: '完成任务', value: '0', accent: false, icon: IconChecklist },
   { label: '总专注时长', value: '0h', accent: true, icon: IconClock },
+  { label: '完成番茄', value: '0', accent: false, icon: IconFlame },
   { label: '本周新增', value: '0', accent: false, icon: IconTrendingUp },
 ])
 
@@ -1099,20 +1102,21 @@ const loadStats = async () => {
     const overview = statsStore.overview
     const weekly = statsStore.weekly
 
-    const activeDays = weekly.days.filter((day) => day.studySeconds > 0)
+    const activeDays = weekly.days.filter((day) => day.focusSeconds > 0)
     continuousStudyDays.value = activeDays.length || 0
     
     coreStats.value[0].value = String(overview.activeKnowledgeBlocks)
     coreStats.value[1].value = String(overview.activeTasks)
-    coreStats.value[2].value = (weekly.days.reduce((sum, day) => sum + day.studySeconds, 0) / 3600).toFixed(1) + 'h'
-    coreStats.value[3].value = String(weekly.days.reduce((sum, day) => sum + day.createdKnowledgeCount, 0))
+    coreStats.value[2].value = (overview.focusSeconds / 3600).toFixed(1) + 'h'
+    coreStats.value[3].value = String(overview.focusCompletedCount)
+    coreStats.value[4].value = String(weekly.days.reduce((sum, day) => sum + day.createdKnowledgeCount, 0))
 
     // Map week bars
-    const maxSeconds = Math.max(...weekly.days.map((day) => day.studySeconds), 3600)
+    const maxSeconds = Math.max(...weekly.days.map((day) => day.focusSeconds), 3600)
     const todayStr = new Date().toISOString().slice(0, 10)
     weekBars.value = weekly.days.map((day) => ({
       day: dayMapping[new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short' })] || day.date.slice(5),
-      pct: Math.round((day.studySeconds * 100) / maxSeconds),
+      pct: Math.round((day.focusSeconds * 100) / maxSeconds),
       today: day.date === todayStr
     }))
 
@@ -1347,10 +1351,15 @@ const handleInputBlur = (_item: SettingItem) => {
 }
 
 onMounted(async () => {
+  void pomodoroStore.initialize().catch((error) => console.error('Failed to initialize focus sessions:', error))
   await loadAvatar()
   await loadStats()
   await loadSessions()
   await loadAiSettings()
+})
+
+watch(() => pomodoroStore.syncRevision, (revision, previous) => {
+  if (revision > previous) void loadStats()
 })
 
 onUnmounted(() => {
@@ -1780,6 +1789,10 @@ const handleDeleteAccount = async () => {
   gap: 6px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   transition: all 0.2s ease;
+}
+
+.stat-cell:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .stat-cell:hover {

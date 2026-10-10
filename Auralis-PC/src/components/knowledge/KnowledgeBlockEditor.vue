@@ -1,53 +1,217 @@
 <template>
-  <div v-if="modelValue" class="knowledge-editor-backdrop" role="dialog" aria-modal="true" aria-labelledby="knowledge-editor-title" @click.self="$emit('cancel')">
-    <form class="knowledge-editor" @submit.prevent="submit">
-      <div class="knowledge-editor-header">
-        <h3 id="knowledge-editor-title">保存为知识块</h3>
-        <button type="button" class="close" aria-label="关闭" @click="$emit('cancel')">×</button>
+  <ModalShell
+    :model-value="modelValue"
+    title="保存为知识块"
+    aria-label="保存为知识块"
+    size="md"
+    custom-class="knowledge-editor-modal"
+    @update:model-value="handleModelValueUpdate"
+    @close="$emit('cancel')"
+  >
+    <form id="knowledge-editor-form" class="knowledge-editor-body" @submit.prevent="submit">
+      <div class="modal-form-group">
+        <label class="modal-form-label">标题 <span class="required">*</span></label>
+        <input
+          ref="titleInputRef"
+          v-model="title"
+          class="modal-form-input"
+          maxlength="120"
+          placeholder="例如：牛顿第二定律"
+          autofocus
+        />
       </div>
-      <label>标题<input v-model="title" maxlength="120" placeholder="例如：牛顿第二定律" /></label>
-      <label>内容<textarea v-model="content" rows="7" maxlength="10000" /></label>
-      <label>标签（可选）<input v-model="tagsText" maxlength="200" placeholder="用逗号分隔" /></label>
-      <div class="knowledge-editor-actions">
-        <button type="button" class="secondary" @click="$emit('cancel')">取消</button>
-        <button type="submit" class="primary" :disabled="!title.trim() || !content.trim()">保存</button>
+
+      <div class="modal-form-group">
+        <div class="editor-label-row">
+          <label class="modal-form-label">内容 <span class="required">*</span></label>
+          <div class="preview-toggle-group">
+            <button
+              type="button"
+              class="preview-toggle-btn"
+              :class="{ 'is-active': !isPreviewMode }"
+              @click="isPreviewMode = false"
+            >
+              编写
+            </button>
+            <button
+              type="button"
+              class="preview-toggle-btn"
+              :class="{ 'is-active': isPreviewMode }"
+              @click="isPreviewMode = true"
+            >
+              实时预览
+            </button>
+          </div>
+        </div>
+        <template v-if="isPreviewMode">
+          <div
+            v-if="renderedPreview"
+            class="edit-preview-card modal-markdown-body"
+            v-html="renderedPreview"
+          ></div>
+          <div v-else class="edit-preview-card empty-preview-tip">
+            在此实时预览 Markdown 排版与 LaTeX 数学公式...
+          </div>
+        </template>
+        <textarea
+          v-else
+          v-model="content"
+          class="modal-form-textarea"
+          rows="8"
+          maxlength="10000"
+          placeholder="输入知识块的核心概念、解析或笔记（支持 Markdown 语法与 LaTeX 数学公式）..."
+        ></textarea>
       </div>
     </form>
-  </div>
+
+    <template #footer>
+      <button type="button" class="modal-btn modal-btn-secondary" @click="$emit('cancel')">取消</button>
+      <button
+        type="submit"
+        form="knowledge-editor-form"
+        class="modal-btn modal-btn-primary"
+        :disabled="!isSubmitEnabled"
+      >
+        保存
+      </button>
+    </template>
+  </ModalShell>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
+import ModalShell from '@/components/modal/ModalShell.vue'
+import { renderMarkdown } from '@/utils/markdown'
 
-const props = defineProps<{ modelValue: boolean; initialContent: string }>()
-const emit = defineEmits<{ (event: 'cancel'): void; (event: 'save', value: { title: string; content: string; tags: string[] }): void }>()
+const props = defineProps<{
+  modelValue: boolean
+  initialContent: string
+}>()
+
+const emit = defineEmits<{
+  (event: 'cancel'): void
+  (event: 'save', value: { title: string; content: string }): void
+}>()
+
+const titleInputRef = ref<HTMLInputElement | null>(null)
 const title = ref('')
 const content = ref(props.initialContent)
-const tagsText = ref('')
-watch(() => props.modelValue, (visible) => {
-  if (visible) {
-    title.value = ''
-    content.value = props.initialContent
-    tagsText.value = ''
-  }
+const isPreviewMode = ref(false)
+
+const isSubmitEnabled = computed(() => {
+  return title.value.trim().length > 0 && content.value.trim().length > 0
 })
+
+const renderedPreview = computed(() => {
+  const text = content.value.trim()
+  if (!text) return ''
+  return renderMarkdown(text)
+})
+
+const handleModelValueUpdate = (visible: boolean) => {
+  if (!visible) {
+    emit('cancel')
+  }
+}
+
+watch(
+  () => props.modelValue,
+  (visible) => {
+    if (visible) {
+      title.value = ''
+      content.value = props.initialContent || ''
+      isPreviewMode.value = false
+      nextTick(() => {
+        titleInputRef.value?.focus()
+      })
+    }
+  }
+)
+
 const submit = () => {
-  if (!title.value.trim() || !content.value.trim()) return
-  emit('save', { title: title.value.trim(), content: content.value.trim(), tags: tagsText.value.split(',').map((tag) => tag.trim()).filter(Boolean) })
+  if (!isSubmitEnabled.value) return
+  emit('save', {
+    title: title.value.trim(),
+    content: content.value.trim()
+  })
 }
 </script>
 
 <style scoped>
-.knowledge-editor-backdrop { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; background: rgba(28, 31, 27, .28); backdrop-filter: blur(3px); }
-.knowledge-editor { width: min(520px, calc(100vw - 36px)); padding: 22px; border-radius: 16px; background: var(--color-zen-ivory, #faf8f3); box-shadow: 0 18px 46px rgba(37, 42, 34, .2); }
-.knowledge-editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.knowledge-editor h3 { margin: 0; font-size: 17px; color: var(--text-primary); }
-.knowledge-editor .close { border: 0; background: transparent; color: var(--text-muted); font-size: 22px; cursor: pointer; }
-.knowledge-editor label { display: grid; gap: 6px; margin-top: 12px; color: var(--text-secondary); font-size: 12px; }
-.knowledge-editor input, .knowledge-editor textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 9px 10px; background: rgba(255,255,255,.55); color: var(--text-primary); font: inherit; resize: vertical; }
-.knowledge-editor-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
-.knowledge-editor-actions button { border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; font-size: 13px; }
-.knowledge-editor-actions .secondary { background: rgba(127, 147, 114, .1); color: var(--text-secondary); }
-.knowledge-editor-actions .primary { background: var(--color-primary-accent, #7d9372); color: white; }
-.knowledge-editor-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.knowledge-editor-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.editor-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.editor-label-row .modal-form-label {
+  margin-bottom: 0;
+}
+
+.preview-toggle-group {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
+  padding: 2px;
+  gap: 2px;
+}
+
+html.dark .preview-toggle-group {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.preview-toggle-btn {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #7A7A75);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.preview-toggle-btn:hover {
+  color: var(--text-primary, #1C1C1A);
+}
+
+.preview-toggle-btn.is-active {
+  background: var(--modal-bg, #F7F2EB);
+  color: var(--color-zen-sage, #8B9A6E);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+html.dark .preview-toggle-btn.is-active {
+  background: #242924;
+  color: #a3b386;
+}
+
+.edit-preview-card {
+  min-height: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: var(--modal-inset-bg, #FAF7F2);
+  border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
+  border-radius: var(--radius-md, 10px);
+}
+
+html.dark .edit-preview-card {
+  background: #181D18;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.empty-preview-tip {
+  color: var(--text-muted, #7A7A75);
+  font-style: italic;
+  font-size: 13px;
+  margin: 0;
+}
 </style>

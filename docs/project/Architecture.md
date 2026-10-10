@@ -1,6 +1,6 @@
 # Auralis 系统架构
 
-更新时间：2026-09-15
+更新时间：2026-10-09
 
 文档状态：现行
 
@@ -9,6 +9,16 @@
 事实来源：当前 PC/Mobile/Server 代码、应用配置与 Docker Compose
 
 ## 总体结构
+
+2026-10-09 本地范围更新（代码与自动验证通过，真实环境待验收）：PC Review/Stats 从本机读取，正式状态、历史和独立 outbox 与当前进程内轮次分开。沿现行 Tauri 单连接/JS 串行事务保存本地投影及命令意图，核心 KB 收敛后通过现有 lifecycle API 按 KB FIFO 补传，再导入权威状态/历史。真实操作时间用于调度与本地日统计，HTTP 载荷首次派发前固化，失败原样重试；后继仅由实际ACK前缀推进，未知首学需protocol2空历史证明。冲突保留，账号/设备/session 代际围栏沿现行票据，Review不读取无账号隔离旧缓存。Core Sync 白名单不扩展，Rust core snapshot 不触碰独立 Review 表。详细边界、实际命令与审查见 [本地计划](../plans/2026-10-09-review-stats-local-first.md)；以下 2026-10-08 outboxless 说明仅为此前范围。
+
+2026-10-08 学科复习与学习生命周期：PC SubjectWorkspace 在同一路由提供Review/Stats中栏。Review Store按账号/设备/会话/学科在内存保存轮次、3R阶段、一次性巩固标记与冻结请求，切页继续，刷新/重启和会话变化清除。学习完成、初选、确认、纠正及重学调用独立Review lifecycle命令；Service沿Subject→KB→state锁序核对资源版本与正文hash，持久保存业务状态、不可变回执及同次最终结果投影。稳定阶段与mastered明确存储，旧events/history保留独立调用与精确回放；临时轮次不扩核心Sync，不写本地Review outbox。正文变化通过共享事件在原事务内失效资格，元信息保持。状态经owner cursor完整读取，Stats可重复读事务独立聚合三态、有效复习与学习完成。Focus独立链路仍只在个人页显示；当前代码/自动证据与真实环境边界见 [本轮实施](../plans/2026-10-08-review-learning-mastery-implementation.md)。
+
+2026-10-01 学习数据补充：PC 专注运行时把实际耗时与最终事件原子保存到账号/设备隔离的本地表，稳定 session ID 上传至独立 `focus` 模块，Stats 聚合历史专注秒数与自然完成轮次。专注不生成 ReviewEvent。Profile 显示服务器权威聚合，避免提交超时后把本机 pending 再加一次。
+
+AI Overview 生成边界继续无状态。PC 只将完整成功成果提交至 ai 模块中的独立结果表与写入回执表；GET/PUT 使用 owner、Source READY/revision、Subject 当前来源 manifest 和整体版本作围栏。PC durable outbox 的缓存与 intent 同事务保存，HTTP 载荷固化后按相同 clientWriteId 原样重试；文件成果先收敛再上传学科成果。此链路不扩展五类 core Sync 资源，提交后通过 `OVERVIEW_UPDATED` 提示重拉。
+
+PC Tauri SQL 插件加载后先由内部初始化命令固定单连接池（max/min 1，无正常 idle/lifetime 回收），再交给既有 JS 串行 SQL 队列。跨调用的 BEGIN/COMMIT 使用同一连接，完整缓存/intent 和专注状态/事件的本地原子提交因此不依赖默认多连接池的偶然分配；native snapshot 事务保持独立实现。
 
 ```mermaid
 flowchart LR
@@ -46,7 +56,7 @@ Task 4 当前增量编译产物下的标准聚焦 Maven 命令实际为 40/40、
 
 ### PC
 
-- Vue Router 管理 7 条当前路由。
+- Vue Router 管理 8 条当前路由：Login、Dashboard、SubjectHall、SubjectWorkspace、Asset、Timeline、Profile、Pomodoro。无入口的 Home/Settings 已删除。
 - Pinia 管理账号、知识块、任务、学科、同步、聊天和设置。
 - API 层封装鉴权、同步、资产、统计和 AI。
 - Tauri 提供桌面容器与 SQL 插件能力。

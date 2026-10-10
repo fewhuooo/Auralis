@@ -178,6 +178,9 @@ public class AccountDeletionCleanupService {
         jdbcTemplate.update("delete from source_chunks where user_id = ?", userId);
         jdbcTemplate.update("delete from review_events where user_id = ?", userId);
         jdbcTemplate.update("delete from review_states where user_id = ?", userId);
+        jdbcTemplate.update("delete from focus_sessions where user_id = ?", userId);
+        jdbcTemplate.update("delete from overview_write_receipts where user_id = ?", userId);
+        jdbcTemplate.update("delete from overview_results where user_id = ?", userId);
         jdbcTemplate.update("delete from messages where user_id = ?", userId);
         jdbcTemplate.update("delete from conversations where user_id = ?", userId);
         jdbcTemplate.update("delete from relations where user_id = ?", userId);

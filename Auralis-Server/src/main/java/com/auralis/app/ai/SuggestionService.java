@@ -27,17 +27,13 @@ public class SuggestionService {
         }
         KnowledgeBlockView block = knowledgeBlockService.get(userId, command.knowledgeBlockId());
         String body = switch (command.type()) {
-            case SUMMARY -> firstNonBlank(block.summary(), block.content());
+            case SUMMARY -> block.content().trim();
             case QUESTIONS -> "What are the key questions raised by " + block.title() + "?";
             case NEXT_STEPS -> "Review the main idea in " + block.title() + " and write one concrete example.";
             case REVIEW_PROMPT -> "Explain " + block.title() + " in your own words and identify one uncertainty.";
         };
         return new SuggestionView(UUID.randomUUID(), command.type(), title(command.type()), bound(body, 2000),
                 List.of(), Instant.now());
-    }
-
-    private String firstNonBlank(String first, String fallback) {
-        return first != null && !first.isBlank() ? first.trim() : fallback.trim();
     }
 
     private String title(SuggestionType type) {

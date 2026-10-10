@@ -56,9 +56,96 @@ export interface OverviewCacheRecord {
   outline: OverviewChapter[] | null; summary: OverviewSummary | null
   outlineGeneratedAt: string | null; summaryGeneratedAt: string | null; inputFingerprint: string | null
   status: OverviewCacheStatus; errorCode: string | null; errorDetail: string | null; updatedAt: string
+  syncStatus?: 'LOCAL' | 'PENDING' | 'SYNCED' | 'CONFLICT' | 'ERROR' | 'STALE'
+  syncError?: string | null
 }
 export interface FileOverviewRecord extends OverviewCacheRecord { scopeType: 'FILE'; sourceId: string; ingestionRevision: string }
 export interface SubjectOverviewRecord extends OverviewCacheRecord { scopeType: 'SUBJECT'; subjectId: string }
 export interface FileFingerprintInput {
   sourceId: string; ingestionRevision: string; outline: OverviewChapter[] | null; summary: OverviewSummary | null
+}
+
+export interface OverviewSourceManifestEntry {
+  sourceId: string
+  ingestionRevision: string
+  outlineVersion: number | null
+  summaryVersion: number | null
+}
+
+export interface OverviewResultCommand {
+  baseVersion: number
+  clientWriteId: string
+  mode: OverviewMode
+  ingestionRevision?: string
+  sourceManifest?: OverviewSourceManifestEntry[]
+  inputFingerprint?: string
+  outlineGeneratedAt: string | null
+  summaryGeneratedAt: string | null
+  result: OverviewResponse
+}
+
+/** Current canonical result returned by the independent server Overview API. */
+export interface OverviewResultView {
+  id: string
+  scopeType: 'SOURCE' | 'SUBJECT'
+  sourceId: string | null
+  subjectId: string | null
+  ingestionRevision: string | null
+  version: number
+  outlineVersion: number
+  summaryVersion: number
+  schemaVersion: 1
+  title: string
+  outline: OverviewChapter[] | null
+  summary: OverviewSummary | null
+  outlineSourceManifest: OverviewSourceManifestEntry[] | null
+  summarySourceManifest: OverviewSourceManifestEntry[] | null
+  outlineInputFingerprint: string | null
+  summaryInputFingerprint: string | null
+  outlineGeneratedAt: string | null
+  summaryGeneratedAt: string | null
+  updatedAt: string
+}
+
+export type OverviewOutboxState = 'PREPARED' | 'PENDING' | 'INFLIGHT' | 'CONFLICT' | 'ERROR' | 'STALE'
+export type OverviewIntentOrigin = 'LOCAL_WRITE' | 'LEGACY_SEED'
+
+/** A prepared intent may be materialized only after its server baseline is known. */
+export interface OverviewOutboxRecord {
+  clientWriteId: string
+  scopeType: 'FILE' | 'SUBJECT'
+  scopeId: string
+  revisionKey: string
+  mode: OverviewMode
+  origin: OverviewIntentOrigin
+  result: OverviewResponse
+  inputFingerprint: string | null
+  outlineGeneratedAt: string | null
+  summaryGeneratedAt: string | null
+  state: OverviewOutboxState
+  requestBody: OverviewResultCommand | null
+  errorCode: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface OverviewSyncState {
+  scopeType: 'FILE' | 'SUBJECT'
+  scopeId: string
+  revisionKey: string
+  version: number
+  outlineVersion: number | null
+  summaryVersion: number | null
+  outlineSourceManifest: OverviewSourceManifestEntry[] | null
+  summarySourceManifest: OverviewSourceManifestEntry[] | null
+  outlineInputFingerprint: string | null
+  summaryInputFingerprint: string | null
+  updatedAt: string
+}
+
+export interface OverviewScopeSnapshot {
+  scopeType: 'FILE' | 'SUBJECT'
+  scopeId: string
+  revisionKey: string
+  record: OverviewCacheRecord
 }

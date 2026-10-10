@@ -92,7 +92,7 @@ class ReviewServiceTests {
         UUID subjectId = subjectService.create(owner.user().id(), new SubjectCommand(
                 "Review Subject", null, null, "001")).id();
         UUID blockId = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
-                subjectId, null, "Review block", null, "body", java.util.List.of(), null)).id();
+                subjectId, null, "Review block", "body", null)).id();
         return new Fixture(owner.user().id(), blockId);
     }
 

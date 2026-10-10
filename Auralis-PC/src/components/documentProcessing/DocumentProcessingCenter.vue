@@ -47,6 +47,14 @@
           <span v-else>{{ sourceDetail(source) }}</span>
           <div class="processing-actions">
             <button v-if="source.ingestionStatus === 'AWAITING_CLIENT'" type="button" @click="resumeSource(source.id)">开始本机处理</button>
+            <button
+              v-else-if="source.ingestionStatus === 'FAILED'"
+              type="button"
+              :disabled="retryingSourceIds.has(source.id)"
+              @click="retrySource(source.id)"
+            >
+              {{ retryingSourceIds.has(source.id) ? '正在重试...' : '重试' }}
+            </button>
           </div>
         </div>
       </article>
@@ -69,6 +77,7 @@ const serverProcessingSources = computed(() => sourceStore.sources
   .filter((source) => source.type === 'FILE' && source.ingestionStatus && source.ingestionStatus !== 'READY')
   .filter((source) => !jobs.value.some((job) => job.sourceId === source.id)))
 const sourceActionErrors = ref<Record<string, string>>({})
+const retryingSourceIds = ref<Set<string>>(new Set())
 const copyFeedback = ref<Record<string, string>>({})
 const jobViews = computed(() => new Map(store.jobs.map((job) => [job.jobId, formatOcrDiagnostics(job)])))
 let timer: ReturnType<typeof setInterval> | null = null
@@ -123,6 +132,24 @@ const resumeSource = async (sourceId: string) => {
       [sourceId]: error instanceof Error ? error.message : String(error),
     }
   } finally {
+    await refresh()
+  }
+}
+const retrySource = async (sourceId: string) => {
+  const { [sourceId]: _ignored, ...remaining } = sourceActionErrors.value
+  sourceActionErrors.value = remaining
+  retryingSourceIds.value = new Set(retryingSourceIds.value).add(sourceId)
+  try {
+    await sourceStore.retrySourceProcessing(sourceId)
+  } catch (error) {
+    sourceActionErrors.value = {
+      ...sourceActionErrors.value,
+      [sourceId]: error instanceof Error ? error.message : String(error),
+    }
+  } finally {
+    const next = new Set(retryingSourceIds.value)
+    next.delete(sourceId)
+    retryingSourceIds.value = next
     await refresh()
   }
 }

@@ -49,6 +49,8 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /sourceStore\.resumeDocumentProcessing/)
   assert.match(center, /store\.retry/)
   assert.match(center, /store\.cancel/)
+  assert.match(center, /v-else-if="source\.ingestionStatus === 'FAILED'"/)
+  assert.match(center, /retrySource\(source\.id\)/)
   assert.doesNotMatch(center, /blockOrdinal > 0|已处理 .*内容块/)
   assert.match(center, /准备中|正在处理/)
   const processingStore = await source('src/store/useDocumentProcessingStore.ts')
@@ -57,6 +59,9 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.doesNotMatch(processingStore, /return this\.runner\.retry\(jobId\)/)
   const sourceStore = await source('src/store/useSourceStore.ts')
   assert.match(sourceStore, /async function resumeDocumentProcessing\(sourceId: string\)/)
+  assert.match(sourceStore, /async function retrySourceProcessing\(sourceId: string\)/)
+  assert.match(sourceStore, /useSourceApi\.reingest\(sourceId, \{ baseVersion \}\)/)
+  assert.match(sourceStore, /retrySourceProcessing,/)
   assert.match(sourceStore, /DOCUMENT_JOB_RUNNER_UNAVAILABLE/)
   const resumeIndex = sourceStore.indexOf('async function resumeDocumentProcessing(sourceId: string)')
   const syncIndex = sourceStore.indexOf('await useSyncStore().flushNow()', resumeIndex)
@@ -75,6 +80,8 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(workspace, /DocumentProcessingDot/)
   assert.match(workspace, /DocumentNotReadyDialog/)
   assert.match(workspace, /showProcessingRequired/)
+  assert.match(workspace, /selectedFile\.ingestionStatus === 'FAILED'/)
+  assert.match(workspace, /handleRetryFileProcessing\(selectedFile\.id\)/)
 })
 
 test('DocumentProcessingStore.start schedules by Source instead of starting the Runner directly', async () => {

@@ -113,11 +113,19 @@ test('file overview failure notice and retry buttons enforce mutual exclusion an
   assert.match(source, /v-if="file\.error\s*&&\s*\(file\.outline\?\.length\s*\|\|\s*file\.summary\)"/)
   assert.doesNotMatch(source, /<p\s+v-if="file\.error"\s+class="file-outline__notice"/)
 
-  const retryButtons = source.match(/<button[\s\S]*?class="file-outline__retry"[\s\S]*?>/g) ?? []
+  const retryButtons = [...source.matchAll(/<button\b[\s\S]*?>/g)]
+    .map(([button]) => button)
+    .filter((button) => button.includes('class="file-outline__retry"') && button.includes("emit('regenerate'"))
   assert.equal(retryButtons.length, 2)
   for (const button of retryButtons) {
     assert.match(button, /:disabled="file\.isGenerating"/)
   }
+  const conflictButtons = [...source.matchAll(/<button\b[\s\S]*?>/g)]
+    .map(([button]) => button)
+    .filter((button) => button.includes('class="file-outline__retry"') && button.includes("emit('resolve-sync-conflict'"))
+  assert.equal(conflictButtons.length, 2)
+  assert.match(conflictButtons[0], /choice:\s*'LOCAL'/)
+  assert.match(conflictButtons[1], /choice:\s*'REMOTE'/)
   assert.match(source, /\.file-outline__retry:disabled/)
 })
 

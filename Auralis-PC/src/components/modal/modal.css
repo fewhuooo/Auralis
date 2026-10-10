@@ -1,32 +1,54 @@
 /* ==========================================================================
-   Auralis Modal Design System Tokens & Base Styles (Warm Zen Rounded System)
-   Seamless borderless flow, generous breathing space, organic rounded curves
+   Auralis Modal Design System — Zen Warm × Clean Simplicity
+   Large radius, warm palette, theme-color accents, soft shadows
+   Aligned with page-level tokens: --radius-lg/xl, --color-bg-tertiary, etc.
    ========================================================================== */
 
 :root {
-  --modal-backdrop-bg: rgba(28, 28, 26, 0.42);
-  --modal-backdrop-blur: 14px;
-  --modal-bg: var(--color-bg-tertiary, #FAF7F2);
-  --modal-border: var(--border-default, #DDD5C7);
-  --modal-radius: 24px;
-  --modal-shadow: 0 24px 60px -12px rgba(28, 28, 26, 0.16),
-    0 8px 24px -4px rgba(28, 28, 26, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.85);
-  --modal-header-padding: 30px 36px 14px 36px;
-  --modal-body-padding: 14px 36px 24px 36px;
-  --modal-footer-padding: 16px 36px 32px 36px;
+  /* Backdrop: warm immersive, moderate blur */
+  --modal-backdrop-bg: rgba(28, 28, 26, 0.38);
+  --modal-backdrop-blur: 8px;
+
+  /* Card: warm oatmeal primary, subtle border, soft shadow */
+  --modal-bg: var(--color-bg-primary, #F7F2EB);
+  --modal-border: var(--border-subtle, rgba(0, 0, 0, 0.06));
+  --modal-radius: var(--radius-xl, 20px);
+  --modal-shadow:
+    0 12px 48px -8px rgba(0, 0, 0, 0.10),
+    0 4px 14px -4px rgba(0, 0, 0, 0.05);
+
+  /* Inset controls and cards */
+  --modal-inset-bg: var(--color-bg-tertiary, #FAF7F2);
+  --modal-inset-border: var(--border-default, rgba(0, 0, 0, 0.08));
+
+  /* Layout padding */
+  --modal-header-padding: 24px 28px 10px 28px;
+  --modal-body-padding: 8px 28px 18px 28px;
+  --modal-footer-padding: 10px 28px 24px 28px;
+
+  /* Accent: Zen Sage */
+  --modal-accent: var(--color-zen-sage, #8B9A6E);
+  --modal-accent-hover: #7A8A5E;
+  --modal-accent-subtle: rgba(139, 154, 110, 0.12);
 }
 
 html.dark {
-  --modal-backdrop-bg: rgba(15, 14, 13, 0.72);
-  --modal-bg: var(--color-bg-elevated, #3d3b38);
-  --modal-border: var(--border-default, rgba(230, 223, 216, 0.12));
-  --modal-shadow: 0 28px 70px -12px rgba(0, 0, 0, 0.75),
-    0 10px 28px -4px rgba(0, 0, 0, 0.45),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --modal-backdrop-bg: rgba(0, 0, 0, 0.52);
+  --modal-bg: var(--color-bg-primary, #1f1e1c);
+  --modal-border: rgba(255, 255, 255, 0.06);
+  --modal-shadow:
+    0 16px 56px -12px rgba(0, 0, 0, 0.55),
+    0 6px 18px -6px rgba(0, 0, 0, 0.30);
+  --modal-inset-bg: var(--color-bg-tertiary, #2e2c29);
+  --modal-inset-border: rgba(255, 255, 255, 0.08);
+  --modal-accent: #A3B19B;
+  --modal-accent-hover: #8EA486;
+  --modal-accent-subtle: rgba(163, 177, 155, 0.14);
 }
 
-/* Backdrop Overlay with warm glassmorphism */
+/* ==========================================================================
+   Backdrop Overlay
+   ========================================================================== */
 .modal-shell-overlay {
   position: fixed;
   inset: 0;
@@ -34,14 +56,16 @@ html.dark {
   align-items: center;
   justify-content: center;
   background: var(--modal-backdrop-bg);
-  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(140%);
+  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
   padding: 24px;
   box-sizing: border-box;
   z-index: 1000;
 }
 
-/* Modal Dialog Card - Spacious & Beautifully Rounded */
+/* ==========================================================================
+   Modal Card — warm paper, large radius, subtle border
+   ========================================================================== */
 .modal-shell-card {
   position: relative;
   width: 100%;
@@ -58,33 +82,21 @@ html.dark {
   outline: none;
 }
 
-/* Width Tiers - Room to breathe */
-.modal-shell-card.modal-size-sm {
-  max-width: 480px;
-}
+/* Width tiers */
+.modal-shell-card.modal-size-sm { max-width: 420px; }
+.modal-shell-card.modal-size-md { max-width: 520px; }
+.modal-shell-card.modal-size-lg { max-width: 680px; }
+.modal-shell-card.modal-size-xl { max-width: 840px; }
+.modal-shell-card.modal-size-auto { max-width: max-content; }
 
-.modal-shell-card.modal-size-md {
-  max-width: 580px;
-}
-
-.modal-shell-card.modal-size-lg {
-  max-width: 760px;
-}
-
-.modal-shell-card.modal-size-xl {
-  max-width: 920px;
-}
-
-.modal-shell-card.modal-size-auto {
-  max-width: max-content;
-}
-
-/* Modal Header - Seamless, spacious flow into body without hard line dividers */
+/* ==========================================================================
+   Header — clean, no hard divider
+   ========================================================================== */
 .modal-shell-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   padding: var(--modal-header-padding);
   border-bottom: none;
   background: transparent;
@@ -96,74 +108,72 @@ html.dark {
 .modal-shell-header-main {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
 .modal-shell-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.2px;
-  line-height: 1.35;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
-/* Zen Capsule Pill */
+/* Pill — inline badge */
 .modal-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   padding: 4px 12px;
-  border-radius: 9999px;
+  border-radius: var(--radius-sm, 6px);
   font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
-  border: 1px solid rgba(139, 154, 110, 0.25);
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
-  color: var(--color-zen-sage, #76855B);
+  border: none;
+  background: var(--modal-accent-subtle);
+  color: var(--modal-accent);
   white-space: nowrap;
 }
 
 html.dark .modal-pill {
   background: rgba(163, 177, 155, 0.14);
-  border-color: rgba(163, 177, 155, 0.25);
   color: #B4C4AA;
 }
 
 .modal-meta-text {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-muted, #7A7A75);
   white-space: nowrap;
 }
 
-/* Close Button - Smooth circular button */
+/* Close button — subtle rounded, Zen style */
 .modal-shell-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid transparent;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md, 10px);
+  border: none;
   background: transparent;
   color: var(--text-muted, #7A7A75);
   cursor: pointer;
   font-size: 14px;
   line-height: 1;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: background 0.2s ease, color 0.2s ease;
   padding: 0;
   flex-shrink: 0;
 }
 
 .modal-shell-close:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.06);
   color: var(--text-primary, #1C1C1A);
-  transform: scale(1.06);
 }
 
 html.dark .modal-shell-close {
@@ -175,7 +185,9 @@ html.dark .modal-shell-close:hover {
   color: var(--text-primary, #e6dfd8);
 }
 
-/* Modal Body with refined custom scrollbar */
+/* ==========================================================================
+   Body — scrollable content
+   ========================================================================== */
 .modal-shell-body {
   padding: var(--modal-body-padding);
   overflow-y: auto;
@@ -183,37 +195,35 @@ html.dark .modal-shell-close:hover {
   flex: 1 1 auto;
 }
 
-.modal-shell-body::-webkit-scrollbar {
-  width: 6px;
-}
-
-.modal-shell-body::-webkit-scrollbar-track {
-  background: transparent;
-}
+/* Thin rounded scrollbar */
+.modal-shell-body::-webkit-scrollbar { width: 5px; }
+.modal-shell-body::-webkit-scrollbar-track { background: transparent; }
 
 .modal-shell-body::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.25);
+  background: rgba(0, 0, 0, 0.10);
   border-radius: 9999px;
 }
 
 .modal-shell-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 154, 110, 0.45);
+  background: rgba(0, 0, 0, 0.18);
 }
 
 html.dark .modal-shell-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.16);
 }
 
-/* Modal Footer - Seamless, spacious dock without hard dividing lines */
+/* ==========================================================================
+   Footer — bottom dock
+   ========================================================================== */
 .modal-shell-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 10px;
   padding: var(--modal-footer-padding);
   border-top: none;
   background: transparent;
@@ -222,7 +232,9 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
   z-index: 1;
 }
 
-/* Responsive Handling */
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
 @media (max-width: 640px) {
   .modal-shell-overlay {
     padding: 12px;
@@ -236,15 +248,18 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
   }
 }
 
-/* Fade + Spring Scale Entrance */
+/* ==========================================================================
+   Entrance / Exit — smooth spring animation
+   ========================================================================== */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-fade-enter-active .modal-shell-card,
 .modal-fade-leave-active .modal-shell-card {
-  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
 }
 
 .modal-fade-enter-from,
@@ -254,30 +269,29 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
 
 .modal-fade-enter-from .modal-shell-card {
   opacity: 0;
-  transform: scale(0.96) translateY(10px);
+  transform: scale(0.95) translateY(12px);
 }
 
 .modal-fade-leave-to .modal-shell-card {
   opacity: 0;
-  transform: scale(0.98) translateY(6px);
+  transform: scale(0.97) translateY(8px);
 }
 
 /* ==========================================================================
-   Zen Capsule Pill Button System (Matching Full App Rounded Styling)
+   Button System — pill capsule buttons with theme accent
    ========================================================================== */
 .modal-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 22px;
-  border-radius: 9999px;
-  font-size: 13.5px;
+  gap: 6px;
+  height: 36px;
+  padding: 0 20px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: -0.1px;
   cursor: pointer;
-  border: 1px solid transparent;
+  border: none;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
   line-height: 1;
@@ -287,139 +301,129 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
 }
 
 .modal-btn:focus-visible {
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.35);
+  box-shadow: 0 0 0 2px var(--modal-bg), 0 0 0 4px var(--modal-accent);
 }
 
-/* Secondary Button - Soft Rounded Pill */
+/* Secondary — ghost pill */
 .modal-btn-secondary {
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-default, #DDD5C7);
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.10));
   color: var(--text-primary, #1C1C1A);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.06), 0 0.5px 1.5px rgba(0, 0, 0, 0.04);
 }
 
 html.dark .modal-btn-secondary {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.10);
   color: var(--text-primary, #e6dfd8);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .modal-btn-secondary:hover:not(:disabled) {
-  background: #FFFFFF;
-  color: var(--text-primary, #1C1C1A);
-  border-color: var(--color-zen-sage, #8B9A6E);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 html.dark .modal-btn-secondary:hover:not(:disabled) {
-  background: var(--color-bg-secondary, #292825);
-  color: #FFFFFF;
-  border-color: var(--color-zen-sage, #8B9A6E);
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
 .modal-btn-secondary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: scale(0.985);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
-/* Primary Button - Canonical Warm Zen Sage Pill */
+/* Primary — solid sage capsule */
 .modal-btn-primary {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  background: var(--modal-accent);
   color: #FFFFFF;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.32), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .modal-btn-primary:hover:not(:disabled) {
+  background: var(--modal-accent-hover);
+  box-shadow: 0 5px 16px rgba(139, 154, 110, 0.42), 0 2px 5px rgba(0, 0, 0, 0.10);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .modal-btn-primary:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.985);
+  box-shadow: 0 1.5px 5px rgba(139, 154, 110, 0.25);
 }
 
 .modal-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
-  transform: none !important;
-  box-shadow: none !important;
+  box-shadow: none;
 }
 
-/* Danger Button - Warm Terracotta Pill */
+/* Danger — warm red capsule */
 .modal-btn-danger {
-  background: linear-gradient(135deg, #D9534F 0%, #C2413E 100%);
+  background: #D14343;
   color: #FFFFFF;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 2px 8px rgba(194, 65, 62, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  box-shadow: 0 3px 10px rgba(209, 67, 67, 0.28), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .modal-btn-danger:hover:not(:disabled) {
+  background: #BF3636;
+  box-shadow: 0 5px 16px rgba(209, 67, 67, 0.38), 0 2px 5px rgba(0, 0, 0, 0.10);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(194, 65, 62, 0.38);
 }
 
 .modal-btn-danger:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(0) scale(0.985);
+  box-shadow: 0 1.5px 5px rgba(209, 67, 67, 0.20);
 }
 
 /* ==========================================================================
-   Hero Badges for Dialogs
+   Hero Badges
    ========================================================================== */
 .modal-hero-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md, 10px);
   flex-shrink: 0;
 }
 
 .modal-hero-badge.hero-danger {
-  background: rgba(217, 83, 79, 0.08);
-  color: #C2413E;
-  border: 1px solid rgba(217, 83, 79, 0.2);
+  background: rgba(209, 67, 67, 0.10);
+  color: #D14343;
 }
 
 .modal-hero-badge.hero-sage {
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
-  color: var(--color-zen-sage, #76855B);
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  background: var(--modal-accent-subtle);
+  color: var(--modal-accent);
 }
 
 .modal-hero-badge.hero-amber {
-  background: rgba(217, 197, 178, 0.25);
+  background: rgba(200, 155, 109, 0.12);
   color: #8C6D4F;
-  border: 1px solid rgba(217, 197, 178, 0.4);
 }
 
 html.dark .modal-hero-badge.hero-danger {
-  background: rgba(217, 83, 79, 0.18);
+  background: rgba(209, 67, 67, 0.16);
   color: #F87171;
-  border-color: rgba(217, 83, 79, 0.3);
 }
 
 html.dark .modal-hero-badge.hero-sage {
-  background: rgba(163, 177, 155, 0.18);
+  background: rgba(163, 177, 155, 0.14);
   color: #B4C4AA;
-  border-color: rgba(163, 177, 155, 0.3);
 }
 
 /* ==========================================================================
-   Spacious Form Controls with 14px Rounded Corners
+   Form Controls — warm, rounded, theme-aware
    ========================================================================== */
 .modal-form-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .modal-form-group:last-child {
@@ -427,21 +431,20 @@ html.dark .modal-hero-badge.hero-sage {
 }
 
 .modal-form-label {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-primary, #1C1C1A);
+  color: var(--text-secondary, #2C2C28);
   display: flex;
   align-items: center;
-  gap: 5px;
-  letter-spacing: -0.1px;
+  gap: 4px;
 }
 
 html.dark .modal-form-label {
-  color: var(--text-primary, #e6dfd8);
+  color: var(--text-secondary, #b0aca5);
 }
 
 .modal-form-label .required {
-  color: #C2413E;
+  color: #D14343;
   font-weight: 700;
 }
 
@@ -450,68 +453,71 @@ html.dark .modal-form-label {
 .modal-form-select {
   width: 100%;
   box-sizing: border-box;
-  padding: 12px 16px;
-  border-radius: 14px;
-  border: 1px solid var(--border-default, #DDD5C7);
-  background: var(--color-bg-primary, #F7F2EB);
+  padding: 10px 14px;
+  border-radius: var(--radius-md, 10px);
+  border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.08));
+  background: var(--modal-inset-bg, #FAF7F2);
   color: var(--text-primary, #1C1C1A);
-  font-size: 14px;
+  font-size: 13.5px;
   font-family: inherit;
   outline: none;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05), 0 0.5px 1.5px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 html.dark .modal-form-input,
 html.dark .modal-form-textarea,
 html.dark .modal-form-select {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  background: var(--modal-inset-bg, #2e2c29);
+  border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
   color: var(--text-primary, #e6dfd8);
-  box-shadow: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 .modal-form-input:focus,
 .modal-form-textarea:focus,
 .modal-form-select:focus {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
-  background: #FFFFFF;
+  border-color: var(--modal-accent);
+  box-shadow: 0 0 0 3px var(--modal-accent-subtle), 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 html.dark .modal-form-input:focus,
 html.dark .modal-form-textarea:focus,
 html.dark .modal-form-select:focus {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.25);
-  background: var(--color-bg-secondary, #292825);
+  border-color: var(--modal-accent);
+  box-shadow: 0 0 0 3px var(--modal-accent-subtle), 0 3px 10px rgba(0, 0, 0, 0.45);
 }
 
 .modal-form-input::placeholder,
 .modal-form-textarea::placeholder {
-  color: var(--text-muted, #A8A8A5);
+  color: var(--text-muted, #7A7A75);
 }
 
-/* Card Inset for nested structured content */
+html.dark .modal-form-input::placeholder,
+html.dark .modal-form-textarea::placeholder {
+  color: var(--text-muted, #8a867e);
+}
+
+/* Card inset — nested section */
 .modal-card-inset {
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: 16px;
-  padding: 18px 20px;
+  background: var(--modal-inset-bg, #FAF7F2);
+  border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
+  border-radius: var(--radius-md, 10px);
+  padding: 14px 16px;
 }
 
 html.dark .modal-card-inset {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: var(--border-subtle, rgba(230, 223, 216, 0.06));
+  background: var(--modal-inset-bg, #2e2c29);
+  border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
 }
 
 /* ==========================================================================
-   Modal Markdown Typography
+   Markdown & Formula Typography (Zen Minimalist)
    ========================================================================== */
 .modal-markdown-body {
   color: var(--text-primary, #1C1C1A);
   font-size: 14.5px;
-  line-height: 1.72;
+  line-height: 1.78;
   word-break: break-word;
 }
 
@@ -519,38 +525,274 @@ html.dark .modal-markdown-body {
   color: var(--text-primary, #e6dfd8);
 }
 
-.modal-markdown-body :deep(h1),
-.modal-markdown-body :deep(h2),
-.modal-markdown-body :deep(h3) {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
+/* Headings */
+.modal-markdown-body h1,
+.modal-markdown-body h2,
+.modal-markdown-body h3,
+.modal-markdown-body h4,
+.modal-markdown-body h5,
+.modal-markdown-body h6 {
+  color: var(--text-primary, #1C1C1A);
   font-weight: 700;
-  color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.015em;
+  line-height: 1.35;
 }
 
-html.dark .modal-markdown-body :deep(h1),
-html.dark .modal-markdown-body :deep(h2),
-html.dark .modal-markdown-body :deep(h3) {
+.modal-markdown-body h1 {
+  font-size: 1.45rem;
+  margin: 1.4em 0 0.6em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+}
+
+.modal-markdown-body h2 {
+  font-size: 1.25rem;
+  margin: 1.3em 0 0.5em;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.05));
+}
+
+.modal-markdown-body h3 {
+  font-size: 1.1rem;
+  margin: 1.1em 0 0.4em;
+}
+
+.modal-markdown-body h4,
+.modal-markdown-body h5,
+.modal-markdown-body h6 {
+  font-size: 1rem;
+  margin: 0.9em 0 0.3em;
+}
+
+.modal-markdown-body > *:first-child {
+  margin-top: 0 !important;
+}
+
+html.dark .modal-markdown-body h1,
+html.dark .modal-markdown-body h2,
+html.dark .modal-markdown-body h3,
+html.dark .modal-markdown-body h4,
+html.dark .modal-markdown-body h5,
+html.dark .modal-markdown-body h6 {
   color: var(--text-primary, #e6dfd8);
+  border-bottom-color: var(--border-subtle, rgba(255, 255, 255, 0.08));
 }
 
-.modal-markdown-body :deep(p) {
-  margin: 0.65em 0;
+/* Paragraphs & Text */
+.modal-markdown-body p {
+  margin: 0.7em 0;
 }
 
-.modal-markdown-body :deep(pre) {
-  background: var(--color-bg-primary, #F7F2EB);
-  padding: 14px 16px;
-  border-radius: 12px;
-  overflow-x: auto;
-  font-size: 13.5px;
-  border: 1px solid var(--border-default, #DDD5C7);
+.modal-markdown-body strong {
+  font-weight: 600;
   color: var(--text-primary, #1C1C1A);
 }
 
-html.dark .modal-markdown-body :deep(pre) {
-  background: #1f1e1c;
-  border-color: rgba(230, 223, 216, 0.1);
+html.dark .modal-markdown-body strong {
+  color: #fff;
+}
+
+.modal-markdown-body em {
+  font-style: italic;
+}
+
+.modal-markdown-body del {
+  color: var(--text-muted, #7A7A75);
+  text-decoration: line-through;
+}
+
+/* Lists */
+.modal-markdown-body ul,
+.modal-markdown-body ol {
+  margin: 0.6em 0 0.8em;
+  padding-left: 24px;
+}
+
+.modal-markdown-body li {
+  margin: 0.35em 0;
+  line-height: 1.7;
+}
+
+.modal-markdown-body li::marker {
+  color: var(--color-zen-sage, #8B9A6E);
+}
+
+.modal-markdown-body ul ul,
+.modal-markdown-body ol ol,
+.modal-markdown-body ul ol,
+.modal-markdown-body ol ul {
+  margin: 0.2em 0 0.3em;
+  padding-left: 20px;
+}
+
+/* Blockquotes */
+.modal-markdown-body blockquote {
+  margin: 1em 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--color-zen-sage, #8B9A6E);
+  background: rgba(139, 154, 110, 0.08);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-secondary, #2C2C28);
+  font-size: 14px;
+}
+
+html.dark .modal-markdown-body blockquote {
+  background: rgba(139, 154, 110, 0.14);
+  color: #d1c8be;
+}
+
+.modal-markdown-body blockquote > p {
+  margin: 0.3em 0;
+}
+
+/* Code & Pre */
+.modal-markdown-body code {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--color-zen-sage, #8B9A6E);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  border: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+html.dark .modal-markdown-body code {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #a3b386;
+}
+
+.modal-markdown-body pre {
+  background: #1C1C1A;
+  color: #EDE8DF;
+  padding: 14px 16px;
+  border-radius: var(--radius-md, 10px);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 1em 0;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.04);
+}
+
+.modal-markdown-body pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-weight: 400;
+  border: none;
+  font-size: inherit;
+}
+
+html.dark .modal-markdown-body pre {
+  background: #141614;
+  border-color: rgba(255, 255, 255, 0.08);
   color: #e6dfd8;
+}
+
+/* Tables */
+.modal-markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 13.5px;
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+}
+
+.modal-markdown-body th,
+.modal-markdown-body td {
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  text-align: left;
+}
+
+.modal-markdown-body th {
+  background: rgba(0, 0, 0, 0.03);
+  font-weight: 600;
+  color: var(--text-primary, #1C1C1A);
+}
+
+html.dark .modal-markdown-body table {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .modal-markdown-body th,
+html.dark .modal-markdown-body td {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .modal-markdown-body th {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e6dfd8;
+}
+
+/* Horizontal Rule */
+.modal-markdown-body hr {
+  border: none;
+  height: 1px;
+  background: var(--border-subtle, rgba(0, 0, 0, 0.08));
+  margin: 1.5em 0;
+}
+
+html.dark .modal-markdown-body hr {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Links */
+.modal-markdown-body a {
+  color: var(--color-zen-sage, #8B9A6E);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(139, 154, 110, 0.5);
+  transition: all 0.2s ease;
+}
+
+.modal-markdown-body a:hover {
+  border-bottom-style: solid;
+  color: var(--color-sage-dark, #76855B);
+}
+
+/* Images */
+.modal-markdown-body img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.8em 0;
+}
+
+/* LaTeX Math Formulas (KaTeX) */
+.modal-markdown-body .katex-display-wrapper {
+  margin: 1.2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px 4px;
+  text-align: center;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.015);
+}
+
+html.dark .modal-markdown-body .katex-display-wrapper {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.modal-markdown-body .katex-display {
+  margin: 0 !important;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.modal-markdown-body .katex {
+  font-size: 1.05em;
+  line-height: 1.2;
+  text-rendering: auto;
+}
+
+.modal-markdown-body .katex-error-fallback {
+  color: var(--color-danger, #d4a3a3);
+  font-size: 13px;
+  background: rgba(212, 163, 163, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
 }

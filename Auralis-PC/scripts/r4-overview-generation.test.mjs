@@ -1037,6 +1037,50 @@ test('discard fences only the deleted Source ID and rejects a late response with
   assert.deepEqual(repository.removedOverviewSources, ['source-1'])
 })
 
+test('a restored active Source can resume generation after its scope reactivates while the aborted old request stays discarded', async () => {
+  const repository = new FakeOverviewRepository()
+  let lifecycle = 'ACTIVE'
+  let generation = 0
+  repository.captureScopeFenceToken = () => ({ generation })
+  repository.isScopeFenceTokenCurrent = token => lifecycle === 'ACTIVE' && token.generation === generation
+  let canRestore = false
+  let releaseOldResponse
+  let signal
+  let apiCalls = 0
+  const oldResponseGate = new Promise(resolve => { releaseOldResponse = resolve })
+  const service = new OverviewGenerationService({
+    api: { async generateSourceOverview(_request, context) {
+      apiCalls += 1
+      if (apiCalls === 1) { signal = context.signal; await oldResponseGate }
+      return response('ALL')
+    } },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    isFileScopeRestorable: async () => canRestore,
+  })
+  const oldAttempt = service.generateReadyFileOverview('source-1', 'rev-1', 'JOB_CHANGED')
+  await new Promise(resolve => setImmediate(resolve))
+  await service.discardFileOverview('source-1')
+  lifecycle = 'DELETED'
+  generation += 1
+  assert.equal(await service.restoreFileOverview('source-1'), false)
+
+  lifecycle = 'ACTIVE'
+  generation += 1
+  canRestore = true
+  assert.equal(await service.restoreFileOverview('source-1'), true)
+  releaseOldResponse()
+  await oldAttempt
+  assert.equal(signal.aborted, true)
+  assert.equal(repository.files.size, 0)
+
+  const retry = await service.generateReadyFileOverview('source-1', 'rev-1', 'MANUAL_RETRY')
+  assert.equal(retry.status, 'STARTED')
+  assert.equal(apiCalls, 2)
+  assert.ok(repository.files.has('source-1:rev-1'))
+})
+
 test('discarded late API rejection does not mark a file overview failed', async () => {
   const repository = new FakeOverviewRepository()
   let rejectLateResponse

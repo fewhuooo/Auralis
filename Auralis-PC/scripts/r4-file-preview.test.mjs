@@ -287,37 +287,49 @@ test('useSourceStore deletes files locally before background sync', () => {
   assert.match(source, /mutationType: 'DELETE'/)
   assert.match(source, /scheduleSync\(\)/)
   assert.doesNotMatch(source, /await useSourceApi\.delete/)
-  assert.match(source, /documentScheduler\?\.discard\(id\)/)
+  assert.match(source, /documentScheduler\?\.discard\(row\.id\)/)
 })
 
-test('useSourceStore removes a deleted file from the projection before slow document cleanup', () => {
+test('useSourceStore removes a deleted file from the projection only after durable tombstone commit', () => {
   const storePath = path.resolve('src/store/useSourceStore.ts')
   const source = fs.readFileSync(storePath, 'utf8')
   const deleteStart = source.indexOf('async function deleteSourceFile')
+  const deletionTicket = source.indexOf("beginOverviewScopeDeletion(userId,serverDeviceId,'FILE',id)", deleteStart)
+  const firstAwait = source.indexOf('await ', deleteStart)
+  const tombstoneCommitted = source.indexOf('tombstoneCommitted = true', deleteStart)
   const projectionRemove = source.indexOf('sources.value = sources.value.filter', deleteStart)
-  const schedulerCleanup = source.indexOf('documentScheduler?.discard(id)', deleteStart)
+  const cleanupCall = source.indexOf('await cleanupDeletedSourceAssets().catch', deleteStart)
 
-  assert.ok(projectionRemove > deleteStart, 'deletion must remove the file from the current projection')
-  assert.ok(schedulerCleanup > projectionRemove, 'slow parser/cache cleanup must not delay the deleted file leaving the UI')
-  assert.doesNotMatch(source.slice(projectionRemove, schedulerCleanup), /await\s+documentScheduler\?\.discard/)
+  assert.ok(deletionTicket > deleteStart && deletionTicket < firstAwait, 'the deletion fence must start before the first await')
+  assert.ok(tombstoneCommitted > firstAwait && projectionRemove > tombstoneCommitted,
+    'the file must remain visible until its durable Source tombstone commits')
+  assert.ok(cleanupCall > projectionRemove, 'slow document/cache cleanup must follow the committed deletion projection')
+  const cleanupStart = source.indexOf('async function cleanupDeletedSourceAssets')
+  const cleanupEnd = source.indexOf('\n  async function loadSources', cleanupStart)
+  const cleanup = source.slice(cleanupStart, cleanupEnd)
+  assert.match(cleanup, /fileOverviewGenerator\?\.discardFileOverview\(row\.id\)/)
+  assert.match(cleanup, /documentScheduler\?\.discard\(row\.id\)/)
 })
 
-test('useSourceStore removes the projection, fences local consumers, then schedules Source sync', () => {
+test('useSourceStore fences first, commits the Source tombstone, then removes the projection and cleans local consumers', () => {
   const storePath = path.resolve('src/store/useSourceStore.ts')
   const source = fs.readFileSync(storePath, 'utf8')
   const deleteStart = source.indexOf('async function deleteSourceFile')
+  const deletionTicket = source.indexOf("beginOverviewScopeDeletion(userId,serverDeviceId,'FILE',id)", deleteStart)
+  const firstAwait = source.indexOf('await ', deleteStart)
+  const tombstoneCommitted = source.indexOf('tombstoneCommitted = true', deleteStart)
   const projectionRemove = source.indexOf('sources.value = sources.value.filter', deleteStart)
-  const overviewFence = source.indexOf('fileOverviewGenerator?.discardFileOverview(id)', deleteStart)
   const sync = source.indexOf('scheduleSync()', deleteStart)
-  const schedulerCleanup = source.indexOf('documentScheduler?.discard(id)', deleteStart)
+  const cleanupCall = source.indexOf('await cleanupDeletedSourceAssets().catch', deleteStart)
   const deleteEnd = source.indexOf('\n  async function saveSourceFileCatalog', deleteStart)
 
   const tombstone = source.indexOf("mutationType: 'DELETE'", deleteStart)
 
-  assert.ok(overviewFence > projectionRemove, 'Overview fence must follow local projection removal')
-  assert.ok(schedulerCleanup > overviewFence, 'document cleanup must follow the Overview fence')
-  assert.ok(tombstone > schedulerCleanup, 'durable tombstone must follow local consumer fences')
-  assert.ok(sync > tombstone, 'sync must be scheduled after the durable tombstone')
+  assert.ok(deletionTicket > deleteStart && deletionTicket < firstAwait, 'delete lifecycle fence must precede all asynchronous work')
+  assert.ok(tombstone > firstAwait && tombstoneCommitted > tombstone, 'the durable mutation must complete before cleanup')
+  assert.ok(projectionRemove > tombstoneCommitted, 'visible rows are removed only after durable commit')
+  assert.ok(sync > tombstoneCommitted && cleanupCall > tombstoneCommitted,
+    'sync and irreversible local cleanup must follow durable commit')
   assert.doesNotMatch(source.slice(deleteStart, deleteEnd), /console\.warn\([^\n]*,\s*error\)/)
 })
 
@@ -357,14 +369,19 @@ test('PdfViewer component does not exist', () => {
   assert.equal(fs.existsSync(pdfViewerPath), false, 'PdfViewer.vue must be deleted')
 })
 
-test('Home view has no PdfViewer or pdf companion references', () => {
-  const homePath = path.resolve('src/views/Home/index.vue')
-  const homeSource = fs.readFileSync(homePath, 'utf8')
-  assert.doesNotMatch(homeSource, /PdfViewer/)
-  assert.doesNotMatch(homeSource, /activeTab\s*===\s*['"]pdf['"]/)
-  assert.doesNotMatch(homeSource, /openPdfCompanion/)
-  assert.doesNotMatch(homeSource, /PDF伴读/)
-  assert.doesNotMatch(homeSource, /pdf-tab/)
+test('Dashboard has no legacy PDF companion references', () => {
+  const dashboardPath = path.resolve('src/views/Dashboard/index.vue')
+  const dashboardSource = fs.readFileSync(dashboardPath, 'utf8')
+  assert.doesNotMatch(dashboardSource, /PdfViewer/)
+  assert.doesNotMatch(dashboardSource, /activeTab/)
+  assert.doesNotMatch(dashboardSource, /openPdfCompanion/)
+  assert.doesNotMatch(dashboardSource, /PDF伴读/)
+  assert.doesNotMatch(dashboardSource, /pdf-tab/)
+})
+
+test('unused Home and Settings views are removed', () => {
+  assert.equal(fs.existsSync(path.resolve('src/views/Home/index.vue')), false)
+  assert.equal(fs.existsSync(path.resolve('src/views/Settings/index.vue')), false)
 })
 
 test('Asset view uses FilePreview with assetId and fileType and removes legacy preview branches', () => {

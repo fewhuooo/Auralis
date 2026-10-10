@@ -1,6 +1,261 @@
 # PC 前端模块
 
-### 2026-09-27 PC 全局弹窗与模态层组件化规范与 UI 视觉/布局重构（Modal & Dialog Optimization）
+### 2026-10-10 自测轮次启动校验与开发更新
+
+- 现行自测从当前学科全部活动知识块打乱取样，使用独立 `voluntarySize` 5/10；实际抽取数量为所选值与候选数量的较小值。常规复习仍只取到期块。
+- `useReviewStore.startLifecycleRound` 在发布轮次前拒绝空 queue；`SubjectReviewPane.startVoluntaryReview` 核对 returned round、queue/firstGroupCount/current ID 与所选候选，错误仅清除对应临时轮次。既存空轮次或当前卡片不可显示时呈现错误卡片。
+- `useReviewStore` 开发模块更新注册 HMR accept 并执行整页 reload，清除旧 setup Store 动作；正式本地记录/outbox 由现行仓储重载，临时轮次只切页恢复、刷新不恢复。没有新接口、数据字段或依赖。
+- 主树三脚本回归 107/107、force type-check 退出 0，源 hash 相同的隔离 Vite build 退出 0。真实 Tauri/SQLite GUI 待验收；命令与源 hash 在 `D:/Temp/auralis-voluntary-review-zero-fix-20261010/`。下方三个入口只读记录是当时的候选范围。
+
+- Pane 的 `localBlocksLoadedScope` 与读取失败状态绑定 subject/account；未成功加载当前 scope 时不判定空轮次、不 reconcile 暂时空活动列表。恢复有效轮次的失败读取保留进度并提供重试，更新/error 受原 request version/subject/account 围栏保护。三条 SFC 延迟读回归及唯一只读复核通过，最终 BLOCKER/IMPORTANT/OPTIONAL 均为 0。
+
+### 2026-10-10 复习页三个入口只读核对
+
+- 学习：新知识块和 `needsLearning` 内容进入阅读→隐藏回忆→核对；首次学习完成安排 3 天，有状态的重学完成安排 10 分钟。
+- 复习：当前学科未掌握且到期的知识块按 dueAt 进入轮次；认识/模糊/忘记初选接正式日期处理，核对记错按同 reviewId 修正为 AGAIN 并进入学习，模糊有组末巩固。
+- 主动复习：当时检查未到期及已掌握集合抽查，Store `VOLUNTARY` 模式接同一本地生命周期；成功提前练习不增加稳定次数、成功掌握抽查保留掌握，失败仍按 AGAIN 转学习。记录与 outbox 使用现行原子保存、后续补传机制，不建立独立云端依赖。
+- 最新三脚本专项 98/98 与 type-check 退出 0；临时动态探针实际点击主动入口并确认两类块的真实本地记录/outbox。只读代理因额度未运行，主 Agent 接手；核对期间外部页面更新保留，本轮没有修改复习源码。证据 `D:/Temp/auralis-review-three-entries-audit-20261010/`；GUI/Tauri/HTTP/双设备独立验收。
+
+### 2026-10-10 任务截止日期输入与排期 instant 一致性（代码与自动验证通过；GUI 待验收）
+
+- `taskViewRules.localDateEndOfDay` 只转换有效纯日期；`parseDueTimestamp` 对带时间值保持真实 instant。`TaskCreateDialog`、`useTaskStore.normalizeDueAtForApi` 和资产库日期编辑均按当地日末生成 UTC ISO。现有完整区间截止、放置/插入/交换及自动完成规则沿用同一解析。
+- 资产库任务日期按本地时区显示，临时 `dueDateTouched` 区分未编辑日期与 clear→reselect；未编辑日期保存保留原精确截止，显式清空仍转为现行 UPDATE 的 null。标记在任务树重建后清除，不新增持久化或接口字段。
+- 源码仅四文件，测试仅三文件；实际主树 HK95/95、UTC/LA各7/7、R4 669/669、type-check/build退出0。Luna 实施、根差分审查及一名只读 reviewer通过；Antigravity因地区失败未生成。GUI/Tauri/HTTP及C临时副本清理未完成，范围外静态扫描失败保留，证据见 [实施记录](../plans/2026-10-09-task-deadline-date-consistency.md)。
+
+### 2026-10-09 学科复习与统计本地读取、持久操作和独立补传（代码与自动验证通过；真实环境待验收）
+
+- 复用 `SubjectReviewPane`、`SubjectStatsPane` 及现行 Store。主树增加 `reviewRepository`、`reviewLifecycleEngine`、`localReviewService`、`localSubjectStats`、`reviewSyncService`，由当前 localDb v12 保存正式投影、历史和待同步意图；页面读取/反馈不等待 Review/Stats HTTP。
+- `useStatsStore` 仅学科路径改本地，个人页统计及 Focus 归属保持现行实现。学科本地聚合活动资源概况、适用墓碑历史、独立学习完成和按 reviewId 的有效复习，按 IANA 自然日补齐近7/30天。未知云端状态不计入确定的新学习数，导入完整度另行显示。
+- `useSyncStore` 在 core Sync 后唤醒独立 Review Sync，逐 KB FIFO，core mutation 未收敛先 defer。网络失败原载荷重试，409保留本地冲突；显式采用云端进度归档未采用意图。既有五类 core mutation 不增加 Review 类型。
+- 临时轮次仅 Pinia 内存切页恢复；刷新/重启清轮次，正式数据/outbox保留。结束本轮返回规划页只清临时轮次。账号/设备/session 代际、活动父/KB、实际正文 hash、版本与存在性约束贯穿提交/派发/结算。
+- 本地冲突按标准409识别；重新确认仅读取严格完整的本地历史，未知或资格变化安全结束卡片，正式记录/outbox保留。浏览器资源只读当前账号的现行 LocalRepository，忽略未隔离的旧缓存，不做隐式兼容或数据删除。
+- 本地排程对齐当前 Service：提前/短期 GOOD 不加稳定次数，最终到期且距上次练习满30天的确认才毕业；已有状态重学一律10分钟，手动重开清除旧核对ID。正式初选及后继保留相同 reviewId，只有实际 ACK 前缀能推进后继。
+- 最终主树 `test:r4-pc` 664/664、type-check、两项学科静态检查与 build 均exit0。Antigravity两次生成未完整通过，Luna按实际失败补修；唯一 reviewer完成初审后因额度中止，主Agent接手最终代码审查与必要修复。保留期间外部UI及时间轴修改。真实Tauri/GUI/HTTP与双设备未验收；命令、差分与范围见 [本地实施](../plans/2026-10-09-review-stats-local-first.md)。下方2026-10-08在线范围仅为当时记录。
+
+### 2026-10-09 学科统计布局与极简禅意 UI 重构（已通过自动化测试与类型检查）
+
+- `SubjectStatsPane.vue`：
+  - 彻底去除臃肿堆叠的灰框、沉重阴影与冗余辅助文本，建立空间感充裕（`1160px` 居中、`36px 48px 72px` 内边距、`32px` 模块间距）的三层极简仪表板（Hero 看板、近 7 天走势、资产与任务底座）；
+  - 核心 Hero 呈现清晰的大字掌握率（`52px` Zen Sage）与极简三态细轨（`8px`），右侧平铺三个层级分明的「当前行动」卡片（`待复习` 今日到期琥珀色高光突出、`待学习`、`已掌握`），行动意图明确；
+  - 走势面板将每日柱状图（`16px` 极简细柱与圆角平滑底槽）与今日/累计复习和完成学习指标并置，视觉节奏平稳克制；
+  - 底部双栏工整收纳资源沉淀与任务协同状态，消除过往 12 块分散卡片的杂乱视觉负担；
+  - 模板避免深层静态节点堆叠，消除 Vue compiler 触发 `createStaticVNode` 对自定义渲染器的潜在兼容影响；
+  - 同步清理 `SubjectReviewPane.vue` 顶层冗余的 `historyImportIncomplete`（「本机尚未导入完整的历史复习状态」）通知栏与未读计算属性，净化视觉噪音；
+  - 自动化门槛：`r4-subject-stats.test.mjs`（11/11）、`r4-subject-review.test.mjs`（48/48）、`npm run test:r4-pc`（659/659）、`npm run type-check` 全量通过。
+
+### 2026-10-09 学科复习与统计交互美学与布局深度重构（已通过自动化测试与类型检查）
+
+- `SubjectReviewPane.vue`：
+  - 复习最外层（规划仪表盘）彻底移除多余返回键，模块切换统一使用 Tier 1 侧边栏；
+  - 答题卡片毛玻璃拉长延展，卡片占页面 70%~80%；
+  - 彻底去除骨架屏灰条，正文与底端按钮间增设柔和严谨的提示词（「请在脑海中主动回忆该知识块的核心概念与要点，并依据提取的清晰度与完整性进行客观评估：」）；
+  - 底端平铺自适应三按钮（认识、模糊、忘记了），配备高质感立体阴影与悬停微光。
+- `SubjectStatsPane.vue`：
+  - 彻底移除顶层多余的返回键，保持学科内 Tier 1 侧边导航的层级一致性；
+  - 替换 Emoji 占位图标为专业 Tabler 矢量图标（`IconBook`、`IconBrain`、`IconClock`、`IconCircleCheck`、`IconFlame` 等）；
+  - 全量统一色板为 Auralis 禅意极简调色系统（Zen Sage、暖琥珀、灰岩），去除刺眼蓝橙与生硬顶部彩色边框；
+  - 重构散乱内容为四层规整布局：① 学科掌握度与三态入口卡片、② 学习记录与打卡日历（2x2 指标 + 连续打卡）、③ 近期学习走势与结构化活动沉淀面板（取代 9 颗杂乱药丸标签）、④ 任务协同状态网格；
+  - 容器尺寸自适应收敛（最大 1320px 居中），配备柔和悬浮卡片投影。
+- 自动化门槛：`r4-subject-stats.test.mjs`（16/16）、`r4-subject-review.test.mjs`（48/48）、`npm.cmd run test:r4-pc`（618/618 全量通过）、`npm.cmd run type-check` 全部通过 0 报错。
+
+### 2026-10-08 学习、复习纠正与掌握退出（代码、相关自动验证及只读审查通过）
+
+- 保留学科侧栏与`/subject/:id?view=review|stats`，ReviewPane调用现有Review Store内新增生命周期流程：标题回忆→认识/模糊/忘记初选即提交→正文核对确认或纠正；学习为阅读/隐藏回忆/核对，独立完成命令；HARD组末仅一次巩固。
+- Store以当前账号/设备/会话/学科隔离临时轮次、阶段、巩固标记与原命令，切页恢复且不写持久outbox；删除或移出KB清队列、未知提交原样重试、旧冻结state不能回退已读取的更高版本。按实际正文计算内容hash，未同步正文受正式操作校验。
+- 今日队列保留学习项原序、到期复习按dueAt升序；未来待复习项由独立“提前练习”入口选择，不进入自动今日队列。手动正向结果不推进有效跨天稳定次数，日期与进度使用服务端回执。
+- API接真实OpenAPI三值生命周期类型，legacy历史与新命令审计合并显示；统计接pendingLearning/reviewing/mastered互斥三态与实际掌握率，学习完成与有效复习分别计数。保留当前7天趋势/日历/任务布局，专注仅个人页。
+- Antigravity实际完成并经完整差分审核的两Pane配色已应用：Sage主操作/掌握/日历、warning模糊、danger失败、info待学习；仅替scoped style body，保留所有最新业务前后文与用户布局。无依赖、全局变量或跨模块写入。
+- 最终新机制专项63/63，type-check、subject-icons、subject-workspace与最终build均exit0；跨设备不同/相同reviewId推进、正文资格变化和legacy清空ID后的过期命令可清除并结束重开。history读取后复核最新状态/内容/当前ID，保留真正未提交的原commandID重试，避免覆盖另一设备新初选。唯一只读reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。GUI/Tauri/真实HTTP与双设备验收独立记录，完整命令、实际哈希和范围证明见 [本轮实施](../plans/2026-10-08-review-learning-mastery-implementation.md)。
+
+### 2026-10-08 复习卡片两项反馈
+
+- 先回忆标题，点击“展开内容”核对正文，再选择“下一个”（GOOD）或“记错了”（AGAIN）。展开不评分；首次反馈成功后推进，记错项回到本轮队尾，后续巩固只更新轮次内存。
+- 本次源码仅修改 ReviewPane 与现有复习专项，复用现行 Store/事件接口。历史值与待确认请求按原事件处理；当前计划卡片、遮罩和统计日历已按本轮基线保留。
+- 最终复习/统计专项 41/41，较早全量 R4 595/595，类型、两项学科静态与构建退出 0；唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。最终测试增强由随后专项覆盖；GUI/Tauri/真实 HTTP 待验收。完整命令、时序及当前快照见 [实施补充](../plans/2026-10-08-subject-review-stats-implementation.md)。
+
+### 2026-10-08 学科复习与统计体验重构（防剧透自测与计划打卡日历）
+
+- `SubjectReviewPane.vue` 重构为防剧透学习仪表盘：未开始轮次时默认不摊开各具体知识块标题与正文摘要，提供沉浸式“今日复习计划”卡片，展示学科名称、待复习总量、橙色进度条与“开始本轮”按钮；“新学习/待复习/已安排”列表收拢在折叠抽屉中，默认收起以防止记忆提取前提前剧透泄题。
+- 卡片未揭晓（`!round.revealed`）时采用骨架遮蔽线与温和微脉冲，先按标题回忆，再用单一“展开内容”操作核对正文；揭晓后仅提供“下一个”（GOOD）与“记错了”（AGAIN）两项反馈，沿用当前胶囊样式和 Store 提交路径。
+- `SubjectStatsPane.vue` 升级为现代学习 App 计划与统计布局：新增学科封面书本卡片、总进度条、三段掌握度图谱与状态跳转卡片；新增“签到日历”组件，计算连续打卡天数，以周一到周日（MON~SUN）矩阵展示本周每日打卡圆圈标记（今日标记为“今”）；保留近期走势圆角柱状图与四档评分分布。
+- 自动化门槛：`node --experimental-strip-types --test scripts/r4-subject-review.test.mjs scripts/r4-subject-stats.test.mjs` 40/40 通过；`npm.cmd run test:r4-pc` 594/594 通过；`type-check`、`check:subject-icons`、`check:subject-workspace` 与 `build` 均退出 0。
+
+### 2026-10-08 学科复习与统计基础框架
+
+- `SubjectWorkspace` 学科侧栏新增复习、统计；同一路由 `/subject/:id` 以 `view=review` / `view=stats` 切换中栏，统计状态入口可转到复习对应列表。原材料、总览、知识库及 AI 保留。
+- 新组件 `SubjectReviewPane.vue` / `SubjectStatsPane.vue` 仅使用基础控件和列表/表格，界面细节由用户后续调整；本轮由 Codex 执行 Agent 直接实现，未调用 Antigravity。build 自动生成 `components.d.ts` 中两项组件注册，未加依赖。
+- `useReviewApi` 增加 typed 学科 states 分页与作用域参数，`useReviewStore` 完整分页成功后分类，按账号/设备/会话及学科缓存轮次。5 / 10 分组、标题回忆、Markdown/math 展开与四档评分复用现行事件；首次非 SKIP 正式评分调度，后续弱反馈队尾巩固只改内存。
+- Review 保留原事件全载荷处理不确定结果重试，冲突先重读再明确确认。切页、换学科或卸载不清除有效轮次/pending；明确结束、删除/移出或会话变化失效，刷新/重启不恢复，不写持久 Review outbox。
+- `useSubjectStore.deleteSubject` 成功提交本地墓碑后，用发起时 Review 作用域票据调用 `clearDeletedSubject`；复习页已卸载也会清除该学科缓存并失效迟到评分/状态/历史写回。删除失败保留进度，失效旧会话不清新会话轮次。该最小钩子由最终审查的具体需求缺口授权，不重构原删除流程。
+- 本地知识读取捕获 owner/device 后直接读现行 LocalRepository，不经会无条件更新共享投影的旧读取调用写回其他账号。新调用复用现行 request scope ticket，Auth、Sync、Knowledge 核心保持既有实现。
+- `useStatsApi` / `useStatsStore` 增加学科统计模型、完整响应校验与作用域/请求序号围栏；StatsPane 展示资料、KB、任务和近 7 / 30 个本地自然日的正式复习指标，加载错误与真实零值区分。学科不显示专注字段，个人专注统计不变。
+- 正式评分及冲突重新确认成功都会失效同学科统计；停留统计页期间，同会话 Sync 从进行中转为完成时重新读取。单卡历史展示耗时，换卡关闭旧历史；组结果用基础列表显示首次评分分布、下次日期及仍需巩固项。
+- Timeline 仅退役旧 `checkSpacedRepetition` 调用和函数，历史普通任务与 `[KB_ID:...]` 跳转保留。完整功能、门槛与最终只读审查/真实环境边界见 [实施记录](../plans/2026-10-08-subject-review-stats-implementation.md)。
+
+### 2026-10-07 同步与文件导入会话隔离
+
+- `useSyncStore` 将周期固定到发起时的 userId、serverDeviceId、sessionId 和同步代际；身份变化同步失效旧票据。新会话可以独立 flush，旧周期的返回、错误和 finally 不能覆盖当前游标、同步状态或投影事件。
+- `useSyncApi` 把内部票据传到 Axios；`request` 在附加凭据、响应处理、401 刷新和重试前核验票据。普通 Axios/SSE 与核心同步按同一会话合并刷新，不同会话分开；刷新提交和失败处理也核验会话，避免迟到 A 结果更新或清除 B 的凭据。代际覆盖 A→B→A；正常同会话 token rotation 可继续使用。
+- `syncCycle` 在 push/pull/snapshot 和持久化边界检查票据；失效时释放 A 尚未结算的 inflight，保留待同步内容及幂等 ID。Repository 始终绑定原 owner/device，不能以新账号身份发送旧 mutation。
+- `useAssetStore.upload` 固定发起账号的 AssetRepository 与 LocalRepository。切换期间完成的文件和 PENDING 同步任务仍归 A，可在 A 后续同步；不能进入 B 的 ASSET 投影、assets、pendingUploads、错误或进度回调。
+- 上传队列通过既有 `options.api` 注入捕获会话的 `createUploadIntent` / `completeUpload` wrapper，后台首次创建队列同样固定票据；请求派发前或返回 401 后切换账号，旧请求不能使用新凭据或触发新会话刷新。
+- 当前会话刷新失败（包括缺失 refresh token）会进入重新认证并导航登录；导航资格在清理前捕获、执行前再核验失败会话，只执行一次。清理 A 后、错误返回前登录 B，不会清除 B 或将 B 导航登录。
+- Profile 徽标改为“本周专注天数”，数值仍是 weekly 中 focusSeconds>0 的日数，含隔日专注；布局与统计取数路径沿用现行实现。
+- 本轮最终自动验证：专项 107/107、`test:r4-pc` 554/554，类型、两项学科静态检查与构建退出 0。Profile 单行由 Antigravity Gemini 3.1 Pro High 生成；账号边界及实际回归由 Luna 执行。真实 Tauri/HTTP、GUI 和双设备需另行验收，审查与最终证据见 [实施记录](../plans/2026-10-07-priority-function-fixes.md)。
+
+### 2026-10-06 知识块 Markdown 渲染与 LaTeX 公式适配（代码、自动验证通过，真实 GUI 待验收）
+
+- **统一 Markdown + LaTeX 渲染器（`src/utils/markdown.ts`）**：
+  - 基于 `marked`、`katex`（v0.16.47）和 `dompurify` 统一全站 Markdown 与数学公式渲染逻辑；
+  - 支持块级数学公式 `$$...$$` 与 `\[...\]`（渲染为带横向平滑滚动的 `.katex-display-wrapper`），支持行内数学公式 `$...$` 与 `\(...\)`（渲染为 `.katex`）；
+  - 智能防误伤货币符号（如 `$100`, `$50.00`）及代码块变量（如 `$var`）；公式语法错误优雅容错降级（`throwOnError: false`），不白屏；
+  - DOMPurify 开启 MathML（`math`, `semantics`, `mrow`, `mfrac`, `msqrt` 等）及 SVG 路径与 `style` 属性放行，确保公式渲染结构完整；
+  - 提供 `extractMarkdownPreview` 工具函数，用于知识块列表卡片在纯文本截取时平滑剥离公式与 Markdown 标记。
+- **全局 Markdown 样式排版修复与升级（`src/components/modal/modal.css`）**：
+  - 根治全局 CSS 中误用 `:deep(...)` 导致标题、段落、代码块样式完全失效的缺陷，转用标准 CSS 选择器；
+  - 补全 h1~h6 层次排版、列表（ul, ol, li，抹茶绿标记点）、引用块（blockquote，3px 抹茶绿边框与浅底）、代码块（pre code，深炭黑背景与等宽字体）、表格（table，细线折叠与浅灰表头）、分割线与链接等系统化排版；
+  - 全面适配浅色宣纸风与深色模式（`html.dark`）。
+- **组件落地与实时编辑渲染**：
+  - `KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`、`Dashboard/index.vue`、`SubjectWorkspace/index.vue`、`Asset/index.vue` 均收敛接入统一 `renderMarkdown`；
+  - 在 `WorkspaceKnowledgeBlockDialog.vue`、`KnowledgeBlockEditor.vue` 和 `Asset/index.vue` 中为正文输入区域增加「编写 / 实时效果（预览）」胶囊切换控件，解决录入 LaTeX 时的盲写体验问题。
+- **全局顶栏（`AppHeader.vue`）番茄钟同步时间胶囊**：
+  - 顶栏深色模式切换按钮左侧接入番茄钟时间展示胶囊（`.header-pomodoro-pill`，88px × 36px，高度与右侧模式切换按钮齐平），在番茄钟开启运行或暂停未重置状态下平滑显示；
+  - 采用与主界面 `PomodoroRing.vue` 一致的跑道形宽边框进度条缩减动画（`3.8px` 粗体边框从顶部中心顺时针随时间 `1s linear` 逐渐缩减，底轨半透明）、主界面同款温润宣纸米白底（`#FAF7F2`，深色 `#212621`）、去除非时间文字仅保留居中等宽粗体跳秒数字（14px, 字重 800，`tabular-nums` 杜绝跳动抖动），底部增加双层立体柔和悬浮阴影（`box-shadow`）；点击可直接快捷跳转至 `/pomodoro` 专注时钟页面；
+  - 专项契约测试 `scripts/r4-header-pomodoro-pill.test.mjs` 通过。
+- **知识块弹窗顶栏规范统一（`WorkspaceKnowledgeBlockDialog.vue`）**：
+  - 浏览模式下顶栏对齐全局知识块详情弹窗（`KnowledgeBlockViewDialog.vue`），统一呈现「知识块详情」大标题与当前学科胶囊药丸，彻底消除旧版在顶栏渲染具体块标题导致与卡片大标题上下重复两次的问题。
+- **新建任务截止时间选择（复用资产页日期选择框规范）**：
+  - `TaskCreateDialog.vue`：在专注时长后增加可选「截止时间」表单项，复用资产页（`Asset/index.vue`）的 `.zen-date-picker` 与 `:global(.zen-date-popper)` 规范；
+  - 采用温润宣纸米白底色（`var(--color-bg-tertiary, #FAF7F2)`）、墨黑字（`#1C1C1A`）、抹茶绿边框与图标（`#8B9A6E`），彻底根除输入框或弹窗发黑问题，支持快捷一键清除；
+  - 提交时自动将日期格式化为 ISO 截止时间（`${due}T23:59:59.999Z`）；
+  - `Dashboard/index.vue`（首页）、`Timeline/index.vue`（排期页）与 `SubjectWorkspace/index.vue`（学科工作区）统一接收 `dueAt` 并转发至 `taskStore.addTask`，待办清单与排期面板实时展示截止标签；
+  - 新增专项测试 `scripts/r4-task-create-dialog-deadline.test.mjs`。
+- **依赖与门禁验证**：
+  - `package.json` 正式声明 `"katex": "^0.16.47"`，`main.ts` 引入 `katex/dist/katex.min.css`，构建自动打包 KaTeX 字体资产；
+  - 新增专项测试 `scripts/r4-knowledge-markdown-formula.test.mjs` 与 `scripts/r4-task-create-dialog-deadline.test.mjs`；
+  - `npm.cmd run test:r4-pc`（517/517 项全部通过）、`npm.cmd run type-check`（0 错误）、`npm.cmd run check:subject-workspace` 与 `npm.cmd run check:subject-icons` 通过。真实 GUI 待人工走查。
+
+### 2026-10-01 提问引用文本传递
+
+- Workspace 引用卡片、发送动作与布局沿用用户实现。`useChatStore` 将已有 selectionText（最多 4000 字符）独立写入 `/api/ai/messages/stream` 顶层，不再因 `NONE` 模式省略 readingContext 而丢失引用。
+- NONE 继续关闭资料检索；AUTO/SELECTED_SOURCES/SUBJECT 的范围和嵌套字段保持现行行为，用户问题 content 保持原文。移除引用后的请求不发送旧文本。
+- Antigravity 仅生成 Store 单行传递与既有 AI stream 脚本的真实请求回归。主树专项先 RED（4/5），应用补丁后 GREEN（5/5）；最终类型/构建与 SDK 验证以 [实施记录](../plans/2026-10-01-chat-selected-text.md) 为准。
+
+### 2026-10-01 学科编辑保存修复
+
+- `SubjectCreateModal` 只发出保存事件；`SubjectHall` 等待本地资源与 mutation 提交成功后关闭弹窗。保存失败显示通知并保留输入，可直接重试；目标学科已不在当前 Store 列表时显示错误且不提交 UPDATE。
+- 编辑表单优先读取 `iconKey`；保存时由当前完整 Subject 合并名称、描述和图标键，保留 `sortKey`、`createdAt` 与表单原版本。沿用既有 Store、同步和数据契约。
+- `isSavingSubject` 在首个 await 前阻止重复提交和切换表单，传给 Modal 的 `saving` 禁用保存/取消并接入 `ModalShell.preventClose`。失败在 finally 释放守卫；成功释放后关闭，避免旧保存关闭另一个学科弹窗。
+- `scripts/r4-subject-edit.test.mjs` 使用实际 SFC 回调及真实 Pinia/LocalRepository，覆盖等待提交、字段完整性、失败重试、目标缺失与创建成功跳转；自动验证与真实 GUI 状态见 [当前状态](../current/Status.md)。
+
+### 2026-10-01 当前功能调整（代码和自动验证通过，真实 GUI 待验收）
+
+- 删除 SearchPalette AI 快捷项及无入口 Home/Settings；正式八条路由保留，搜索跳转行为保留，详情事件由 Dashboard 接收。
+- KnowledgeBlock 只读写正文 content、标题、归属和颜色；摘要/标签输入与领域字段移除，短文本从正文计算。Task.description 与 Overview.summary 保留。
+- 专注统计采用实际秒数，暂停/休息不计，中断保存，自然结束才增加完成轮次。活动状态和事件在本机按账号/设备持久化；专注事件上传绑定 user/device/session 作用域，切换作用域后旧请求在 401 刷新或重试前失效，未确认事件保留在原 outbox；Profile 读取服务器历史专注聚合。
+- 完整成功 Overview 经独立持久化接口跨 PC 设备读取；失败/半成品保留本机。版本冲突保留候选结果并展示处理入口，不静默覆盖远端。服务端 API 可供其他端接入，Mobile/Tablet 本轮没有新增成果展示入口。
+- `overviewRepository` 保存缓存/写入意图，`overviewResultsSyncService` 对账及重放，`overviewSyncWakeup` 在成功提交新意图后唤醒当前账号后台同步。远端成功但本机 ACK 失败继续原 ID/body 重试；普通新候选保留已有 CONFLICT，用户显式选择后才上传。FILE/SUBJECT 删除用 owner/device 生命周期 ticket 与写边界 token 阻止迟到结果；现有拒绝删除恢复流程在确认活动投影且无未决 DELETE 后解封仓库和生成服务，旧 aborted generation 不能保存。
+- 文件处理状态入口仍在学科页，登录注册留待后续。自动化与真实环境验收状态以 [当前状态](../current/Status.md) 为准。
+- `localDb.init` 在 `Database.load` 后调用内部 Tauri 命令 `initialize_local_database_pool`，完成固定单连接、关闭旧池后才暴露数据库及执行 SQL；既有 JS 队列和 native snapshot 保留。实际 Rust 池事务测试 1/1、cargo fmt/check 退出 0，真实 Tauri 重启验收另行记录。
+- 最终 PC type-check、check:subject-icons、check:subject-workspace 与 build 均退出 0，test:r4-pc 470/470；失败恢复 focused 67/67。Source 清理在 resetRequired/snapshot 修复窗口保留本地草稿，清理边界重读当前墓碑；单个 reviewer 本任务 BLOCKER/IMPORTANT 均 0。
+
+#### 当前未接通业务效果的偏好（用户要求汇总，保留设置）
+
+| 类别 | 项目 | 实现情况 |
+| --- | --- | --- |
+| 显示 | 紧凑布局、基础字号、界面语言 | 有值保存或局部 class/style 设置，未形成全局布局、字号和语言切换效果 |
+| 提醒 | 任务提醒、专注结束提醒 | 保存选择；没有接通任务通知、声音或桌面通知 |
+| 自动化 | 自动生成概览、AI 自动标签、AI 自动总结 | 保存选择；现有业务没有消费这些开关 |
+| 同步 | 自动同步、仅 Wi-Fi 同步 | 保存选择；后台同步没有依这些设置启停或限制网络 |
+| AI/诊断 | RAG 语义搜索、诊断日志 | 保存选择；检索策略与日志输出没有消费这些设置 |
+
+共 12 项。深色模式与“立即同步”已有实际执行路径，不计入此表。
+
+### 2026-10-01 首页与学科工作区知识块内容展示全面重构与正文/摘要解耦（Knowledge Blocks Redesign & Content Decoupling）
+
+- **首页与学科知识块展示缺陷根治（Home & Subject Workspace Presentation Polish）**：
+  - **弹窗体系与大画布升级**：彻底弃用首页 `Home/index.vue` 原先写死的 520px 窄弹窗，重构接入系统级 `ModalShell size="lg"`（760px 大画布），与学科工作区弹窗 `WorkspaceKnowledgeBlockDialog.vue` 及全局弹窗 `KnowledgeBlockViewDialog.vue` 视觉统一；
+  - **杂志级排版（Article Layout）**：阅读模式构建 `.kb-article-container`，上设 `.kb-meta-card`（大标题、来源文件、友好的相对时间、学科微胶囊），下设内凹宣纸米白 `#FAF7F2` 底板的正文卡片 `.kb-content-card`，Markdown 渲染支持段落、代码块、引用及平滑滚动条，并配精致空状态；
+  - **交互与快捷操作增强**：弹窗底部左侧集成带成功对勾反馈的“复制内容”按钮，并新增“前往知识块界面”直达按钮（携带 `?view=blocks` 路由参数直接穿透跳转至对应学科的知识块工作区界面）；
+  - **卡片展示体验优化**：首页卡片与学科工作区（`SubjectWorkspace/index.vue`）知识块卡片正文预览统一使用 `block.preview || block.content || '暂无详细内容'`，配合 3 行平滑截断，杜绝空文本现象；
+- **全链路正文与摘要解耦（Content Decoupling）**：
+  - `useKnowledgeStore.ts`、`Home/index.vue`、`WorkspaceKnowledgeBlockDialog.vue`、`Asset/index.vue` 与 `KnowledgeBlockEditor.vue` 全链路将核心输入文本域与真正的正文内容 `content` 深度绑定，彻底解决此前误绑 `preview/summary` 导致的正文修改不生效、长文截断至 180 字符的缺陷；保存时自动派生 `preview`；
+- **学科关联与转移修复（Subject Reassignment）**：
+  - 首页知识块弹窗与资产页知识块工作台全面升级所属学科为 `<el-select>` 选项器，支持转移归属学科并正确同步目标 `subjectId` 与学科名称；
+- **移除摘要说明与标签展示（Form & Meta Streamlining）**：
+  - 遵循用户指令，全面移除表单中的“摘要说明 (Summary)”与“知识标签 (Tags)”输入框，正文编辑区（“知识内容”）自适应拓宽为主编辑视口；同时彻底移除查看态中的标签列表展示，界面更极简纯粹；
+- **门禁验证**：`npm.cmd run type-check`（0 error）、`npm.cmd run test:r4-pc`（433/433 全绿）与 `npm.cmd run build` 生产构建全部通过。
+
+### 2026-10-01 PC 页面切换与弹窗动效全面补齐（Page Transitions & Modal Motion Polish）
+
+- **顶层页面切换动效（Page Transitions）**：
+  - `src/App.vue` 顶层 `<router-view>` 与登录态/公共外壳转场均包裹 `<Transition mode="out-in">`；
+  - 采用阻尼弹簧曲线 `cubic-bezier(0.16, 1, 0.3, 1)` 与微位移 `transform: translateY(6px)` 组合，绑定 `will-change: opacity, transform`，消除切页闪烁；
+  - 二级工作区视图平滑过渡：`src/views/SubjectWorkspace/index.vue`（中心区概要/文件预览/知识块/空状态）与 `src/views/Asset/index.vue`（资产阅览中栏与右栏星图切换）统一接入 `workspace-view-fade` / `asset-view-fade` 缓动，杜绝视图生硬硬切。
+- **全局弹窗动效闭环（Modal & Overlay Motion）**：
+  - `src/components/modal/modal.css`：统一 `.modal-fade` 进退场遮罩与卡片时长为完全同步的 `0.24s`，消除遮罩提前销毁子卡片动画的截断缺陷，引入弹簧微缩放 `scale(0.96) translateY(12px) -> scale(1) translateY(0)`；
+  - `src/components/SearchPalette.vue`：解耦背景遮罩与容器卡片的 transform，避免遮罩撕裂并优化顶部微落效果；
+  - `src/components/documentProcessing/DocumentNotReadyDialog.vue`：包裹 `<Transition name="not-ready-fade">` 补齐进出场平滑缩放；
+  - `src/views/Home/index.vue`（Dashboard）：4 个内联弹窗（AI 提炼加载、文件登记、任务创建、知识块详情）统一收敛为标准 `modal-overlay` 结构并接入 `<Transition name="modal-fade">`；
+  - `src/components/modal/ModalShell.vue`：包裹 `<Transition name="modal-fade" appear>` 增强初始入场挂载弹簧动效；
+  - `src/components/subject/SubjectCreateModal.vue`：全面重构为标准 `v-model` 双向绑定模式，彻底消除原先外层 `v-if` 硬拔除导致的无退场过渡与内容跳动；
+  - `src/views/SubjectHall/index.vue` 与 `src/views/Home/index.vue`：改用 `v-model="showSubjectModal"`，关闭时平滑延迟清空编辑态，实现创建学科与编辑学科弹窗在进场和退场时的完整柔和缓动。
+- **验证与门禁**：`npm.cmd run type-check`（0 error）、`npm.cmd run test:r4-pc`（433/433 全绿）与 `npm.cmd run build` 生产构建通过。
+
+### 2026-10-01 全局弹窗配色对调与立体层次增强（Modal Color Scheme Inversion & Elevation）
+
+- **弹窗整体背景与框内底色全局对调（Background & Inset Color Inversion）**：
+  - `src/components/modal/modal.css`：弹窗大卡片容器 `--modal-bg` 对调为主内容底色 `var(--color-bg-primary, #F7F2EB)`（深色模式：`var(--color-bg-primary, #1f1e1c)`）；
+  - 新增统一框内令牌 `--modal-inset-bg`，将所有表单控件（`.modal-form-input, .modal-form-textarea, .modal-form-select`）、嵌套卡片（`.modal-card-inset`）、代码块（`pre`）对调为浅宣纸米白 `var(--color-bg-tertiary, #FAF7F2)`（深色模式：`var(--color-bg-tertiary, #2e2c29)`）；
+  - 业务弹窗组件全面对齐：
+    - `KnowledgeBlockViewDialog.vue`：元信息卡片 `.kb-meta-card` 与正文阅读卡片 `.kb-content-card` 统一使用 `--modal-inset-bg`；
+    - `TaskCreateDialog.vue`：专注时长分段滑轨 `.duration-segmented-track` 与学科胶囊 `.subject-chip` 对调为 `--modal-inset-bg`；
+    - `SummaryInstructionDialog.vue`：预设提示词胶囊 `.preset-chip` 对调为 `--modal-inset-bg`；
+    - `SubjectCreateModal.vue`：实时预览行 `.preview-row` 与图标按键网格 `.icon-btn` 对调为 `--modal-inset-bg`；
+    - `FileRegisterDialog.vue`：拖拽上传区域 `.drop-zone`、上传进度卡片 `.upload-progress` 与学科胶囊 `.subject-chip` 对调为 `--modal-inset-bg`；
+    - `WorkspaceKnowledgeBlockDialog.vue`：颜色圆点选择环自动对齐新的 `--modal-bg`。
+- **按钮与输入框底部立体阴影（Bottom Drop Shadows）**：
+  - 表单控件（输入框、多行文本域、下拉选择框）底部追加轻柔立体微阴影 `0 1.5px 4px rgba(0, 0, 0, 0.05), 0 0.5px 1.5px rgba(0, 0, 0, 0.03)`（深色模式：`0 2px 6px rgba(0, 0, 0, 0.35)`），聚焦态保持柔和 Sage 光晕并叠加底阴影；
+  - 次级按钮（`.modal-btn-secondary`）追加 `0 1.5px 4px rgba(0, 0, 0, 0.06)` 底阴影（悬浮强化至 `0 3px 8px`）；
+  - 主操作按钮（`.modal-btn-primary`）与危险按钮（`.modal-btn-danger`）加深立体漫反射底阴影，点击与上浮反馈更具按压触感；
+  - 弹窗内各学科/提示词芯片（`.subject-chip`、`.preset-chip`、`.icon-btn`）统一增加 `0 1.5px 4px rgba(0, 0, 0, 0.05)` 底阴影与悬浮微升，增强层次与微交互感。
+- **验证与门禁**：`npm.cmd run type-check`（0 error）、`npm.cmd run test:r4-pc`（433/433 全绿）与 `npm.cmd run build` 生产打包全部通过。
+
+### 2026-10-01 知识块卡片弹窗杂志级阅读体验重构（KnowledgeBlockViewDialog Redesign）
+
+- **结构与规范对齐（ModalShell Alignment）**：
+  - 彻底规范 Header 插槽：使用 `#header-icon` 展示 28px 圆角鼠尾草渐变图标（`IconNotes`），`#title` 展示紧凑单行主标题与学科胶囊微标签（`kb-dialog-subject-pill`），消除原先将大号标题与长串时间挤在插槽导致 Header 膨胀至 120px+ 与关闭按钮悬浮脱节的缺陷；
+  - 正文排版与元信息重塑：在 Body 内构建独立的卡片阅读容器 `.kb-article-container`，上部展示大标题（18px/700/-0.015em）、来源资料（带有文件图标）、人性化相对时间（如“10分钟前”，悬停展示精确到秒的时间戳），根据用户要求彻底去除了标签展示以保持极简温润视觉；下部嵌入内凹宣纸白底正文卡片 `.kb-content-card`，Markdown 渲染支持代码、段落、引用及细滚动条，并配精致空状态；
+- **交互与快捷操作增强**：
+  - 底部左侧支持一键“复制内容”（成功带绿色对勾状态反馈）；
+  - 新增“前往知识块界面”直达按钮（若有 `block.subjectId`，点击携带 `?view=blocks` 路由参数直接穿透跳转至对应学科的知识块工作区界面，`SubjectWorkspace` 挂载及监听路由 query 自动切换 `centerView = 'blocks'` 与 `tier2Open = false`）；
+  - 底部右侧配置统一的“完成阅读”胶囊药丸操作按钮；
+- **门禁与测试**：`npm.cmd run type-check`（0 error）、`npm.cmd run test:r4-pc`（433/433 全绿）与 `npm.cmd run build` 全部通过。
+
+### 2026-10-01 文件解析失败重试与就地处理机制（Document Processing Ingestion Retry）
+
+- **数据流与 Store 扩展**：
+  - `src/store/useSourceStore.ts` 新增并导出 `retrySourceProcessing(sourceId: string)`；
+  - 读取当前本地或内存 Source 的 `baseVersion`，调用后端现成的 `POST /api/sources/{id}/reingest` 接口重新发起服务端向量化（如 Embedding provider 恢复后重建索引）或重置为客户端处理；
+  - 接口返回更新后的 `SourceView` 后，使用 `repo.upsertFromSync` 同步写入本地持久层，更新响应式 `sources` 与 `activeSourceFiles` 投影，并在需要客户端重跑时自动调度 `documentScheduler.schedule`；
+- **UI 交互与重试入口**：
+  - `src/components/documentProcessing/DocumentProcessingCenter.vue`：在 `serverProcessingSources` 列表中，当 `source.ingestionStatus === 'FAILED'` 时展示“重试”按钮，引入 `retryingSourceIds` 响应式集合管理重试状态与“正在重试...”禁用反馈；
+  - `src/views/SubjectWorkspace/index.vue`：当选中的文件处于 `FAILED` 状态时，在主预览区顶部呈现 `.file-processing-alert-banner` 警示条，直接展示失败原因（如 `Embedding provider is unavailable`）与一键“重试解析”操作，无需用户切出工作区；
+- **门禁与测试**：更新 `scripts/r4-document-processing-ui.test.mjs`，`npm.cmd run type-check`（0 error）、`npm.cmd run test:r4-pc`（433/433 全绿）与 `npm.cmd run build` 生产打包全部通过。
+
+### 2026-09-30 弹窗温暖禅意大圆角重构
+
+- `src/components/modal/modal.css` 全面对齐页面级设计令牌：卡片采用 `--radius-xl (20px)` 大圆角与 `--color-bg-tertiary (#FAF7F2)` 宣纸米白底色（深色模式 `--color-bg-elevated (#33312e)`），阴影使用柔和漫反射 `0 12px 48px -8px rgba(0,0,0,0.10)`，遮罩 `rgba(28,28,26,0.38)` + `blur(8px)` + `saturate(160%)`，入场弹簧动画 `scale(0.96) + translateY(10px)` 持续 `0.25s`。
+- 按钮改为 `9999px` 胶囊药丸圆角，主操作 `#8B9A6E` 纯色 + 微阴影 + hover 上浮，次操作透明底 + 细微边框。表单输入 `--radius-md (10px)` 圆角 + `--color-bg-primary (#F7F2EB)` 燕麦底色 + sage 聚焦环。选择芯片、预设标签全部采用 `9999px` 胶囊形态与 `#F7F2EB` 底色。
+- 标题 `16px/700`、Header/Body/Footer 内边距 `24-28-10 / 8-28-18 / 10-28-24`，关闭按钮 `30px` `--radius-md (10px)` 圆角。
+- 8 个业务弹窗统一对齐新令牌：
+  - `TaskCreateDialog.vue` 重构为严格整半小时（30m、1h、1.5h、2h、2.5h、3h、4h 7档位）一体化磁吸分段滑轨，增加默认时长归一化，支持点选与拖拽吸附；学科网格放宽自适应高度至 240px 并配 5px 细滚动条；
+  - `FileRegisterDialog.vue` 限制文件选择范围与系统能力（`SUPPORTED_UPLOAD_EXTENSIONS`：PDF/Office）一致，资产页上传流程改为完成/失败后才关闭弹窗并透传进度，支持上传失败重试；
+  - `TaskCreateDialog`、`ChangePasswordDialog`、`SummaryInstructionDialog` 显式补齐无障碍名称绑定（`title` 与 `aria-label`），`ModalShell` 增强对自定义标题插槽的无障碍名称兜底；
+  - `KnowledgeBlockEditor.vue` 接入统一 `ModalShell`，补齐打开聚焦、Tab 循环、Escape 关闭与焦点恢复；
+  - PC `type-check` 退出 0、`test:r4-pc` 433/433、`check:subject-icons` 与 `check:subject-workspace` 退出 0、生产构建退出 0。浅色/深色/窄屏 GUI 视觉仍需验收。
+
+### 2026-09-27 PC 全局弹窗与模态层组件化规范与 UI 视觉/布局重构（历史阶段）
 
 - **统一模态基础设施建设（Modal Architecture & Design Tokens）**：
   - 新增设计系统模态样式规范 `src/components/modal/modal.css`：建立现代极简禅意（Zen Sage `#5B6C47`、宣纸米白 `#FAF8F5`、深色微光 `#1A1F1B`）全局 Token，提供 `sm`(420px)、`md`(520px)、`lg`(680px)、`xl`(840px)、`auto` 五档尺寸规范与统一的 8px 圆角 `.modal-btn`、`.modal-form-group`、`.modal-form-label`、`.modal-form-input`、`.modal-form-textarea`、`.modal-pill`、`.modal-card-inset` 与 `.modal-markdown-body` 控件规范；
@@ -66,6 +321,8 @@
 ### 2026-09-25 Timeline 排期任务结束后自动完成
 
 - `taskViewRules.isScheduledTaskPast` 使用 `scheduledAt + durationMinutes <= now` 判定结束，避免进行中提前完成；Task Store 在本地任务加载后立即恢复，运行中每分钟复查。单项保存失败不阻断其他任务；自动完成与手动编辑/改期共享变更队列，提交前重读本地 TASK 行并由仓储版本及 outbox 状态条件拒绝同步期间的旧快照；增量 pull 落库时再次核对未解决本地写入，保留已完成任务原排期。
+
+- 2026-10-06：同一恢复队列也处理无排期且有效 `dueAt <= now` 的待办/进行中任务。自动完成预读拒绝行墓碑，并独立设置可选 `requireActiveResource`；LocalRepository 在原 SQL 提交事务或 browser 同步读写段原子确认当前行存在且未删除，防止 Subject cascade 的同版本墓碑被旧 payload 清除。拒绝沿用 LocalConflictError 和本地重载。该选项只用于自动完成，其他调用、schema 和同步字段不扩展。
 
 ### 2026-09-25 PC 个人空间与设置页 10 类前端真实链路打通与闭环
 
@@ -203,11 +460,18 @@
 - `r4-task-store-schedule.test.mjs` 直接验证半开区间相邻、真实交叠、取消任务忽略和换位排除规则。
 - 现有已重叠数据不会被自动重写；后续读取仍保留原投影，用户调整到无冲突区间后即可正常保存。
 
+### 2026-10-06 任务完整排期截止上限
+
+- 有排期和截止时间时，新建、改期、调整有效时长/截止日期必须满足 `scheduledAt + effectiveDurationMinutes <= dueAt`，恰好结束允许，空时长按 30 分钟，无截止不限制。按天排期选择同时满足冲突和截止约束的槽位。
+- Task Store 在本地持久化和 outbox 写入前校验时间变更；插入顺延预检全部实际改期任务，头部换位预检双方新区间，失败沿用 Timeline 的错误反馈并保留原投影。服务端在事务内再次校验以处理远端变化。
+- 既存越界任务不批量改写；有效时间值未变化的标题、备注、状态和自动完成仍可保存，取消后重新进入活动排期必须校验。已验证的自动 DONE、版本/outbox 围栏及 Subject cascade 墓碑保护继续保留。
+- 代码、自动验证与业务验收分别记录于 [实施记录](../plans/2026-10-06-task-schedule-deadline-guard.md)。
+
 ### 2026-09-23 PC Timeline 插入顺延与头部交换分流
 
 - `Timeline/index.vue` 将日视图任务卡片主体及普通时间槽设为插入落点：待排期和已排期任务都调用 `useTaskApi.scheduleInsertions`，由服务端单事务将落点之后的任务连锁顺延。`.task-header` 单独处理 drop 并停止冒泡，只有从已有排期拖到另一个任务头部才调用 `schedule-swaps`；待排期任务拖到任务头部会明确提示需要已排期任务。
 - `useTaskStore.ts` 为插入请求提交源任务 `baseVersion`、目标 `scheduledAt` 与当天本地 08:00–22:30 的 UTC 窗口。发请求前检查源任务和目标日的本地 Repository/outbox；存在未同步、冲突或错误状态时拒绝，以免服务器批量更新覆盖本地未提交任务。过去时段、已完成任务及顺延会移动的已完成固定任务仍被拒绝。
-- 成功后将服务端返回的全部变化 Task 以 `synced` 状态安全 upsert 到本地 Repository，再更新内存投影并触发 read sync。若服务端已提交但本地 upsert 失败，仍显示服务端响应、触发 read sync，并提示“排期已在服务端保存，本地刷新中”；API 失败则不改本地状态。
+- 服务端成功后，返回的变化 Task 通过 `upsertSyncedBatch` 在同一 SQL 事务或 browser 状态提交中合并：保留未解决 mutation 的整批围栏，逐项跳过低于当前版本的响应及试图清除当前墓碑的活动响应。其他有效成员仍原子写入；版本 0 保留原值，不能用本地版本替换。Store 在合并成功、围栏拒绝和缓存异常后均重读当前 Repository 投影，再触发 read sync；缓存异常时保留可读取的本地数据并提示刷新，不直接安装响应模型。API 失败不改本地状态。
 - `r4-task-store-schedule.test.mjs` 覆盖插入和交换入口分离、落点日 pending outbox 防护、服务端响应缓存与 header 独立 drop/冒泡阻断。
 
 ### 2026-09-23 PC 学科大纲保存数据保留、大纲草稿生命周期、首页移出日程精准寻址与学科切换文件隔离
@@ -409,7 +673,7 @@ Auralis-PC/
 | `/profile` | Profile | `src/views/Profile/index.vue` | `requiresAuth` |
 | `/pomodoro` | Pomodoro | `src/views/Pomodoro/index.vue` | `requiresAuth` |
 
-`src/views/Home` 和 `src/views/Settings` 等目录不等于正式页面；未注册路由不得作为用户入口。
+2026-10-01 已删除无正式路由与运行引用的 `src/views/Home`、`src/views/Settings`。Dashboard 继续使用 `/`；个人设置仍在 Profile。搜索结果以一次性 `openBlock` query 携带知识块 ID，Dashboard 挂载/参数变化时加载本地正文并打开详情，再移除该参数，避免 out-in 动画期间事件丢失。原 `open-block-detail` 仍由 Dashboard 详情弹窗接收；SearchPalette 的 AI 快捷项已删除。
 
 ## 登录守卫现状
 
@@ -436,7 +700,7 @@ Auralis-PC/
 | `useReviewStore.ts` | Review queue/history/event 的 typed DTO 状态 |
 | `useStatsStore.ts` | Stats overview/weekly query 和展示模型 |
 | `useChatStore.ts` | 本地稳定会话/消息 ID、会话创建与消息请求幂等键、citation/SSE 状态及 online 顺序恢复；不把旧本地 chat 表当云端事实 |
-| `usePomodoroStore.ts` | 用户/设备隔离的番茄钟 UI 与每日完成计数 |
+| `usePomodoroStore.ts` | 用户/设备隔离的持久计时状态、实际秒数、自然完成轮次与离线专注事件重试；计时生命周期不依赖 TimerCore 挂载 |
 | `useSettingsStore.ts` | 主题和偏好 |
 
 修改 Store 字段前必须搜索页面、组件、持久化、同步和 API 使用方，禁止新增同职责 Store。
@@ -450,7 +714,10 @@ Auralis-PC/
 | `api/useAuthApi.ts` | 登录、注册、刷新、会话列表与撤销 |
 | `api/useAssetApi.ts` | upload-intent、对象存储直传、complete 与 download-url |
 | `api/useSourceApi.ts` | Source typed CRUD/reingest，以及 ParsedDocument upload-intent/complete |
-| `api/useStatsApi.ts` | 概览与周统计 |
+| `api/useStatsApi.ts` | 用户概览/周统计与独立个人专注字段；学科聚合及 7 / 30 天本地日趋势 |
+| `api/useReviewApi.ts` | 到期队列、完整学科 states 分页、不可变评分与单块历史；新调用支持会话票据 |
+| `api/useFocusSessionApi.ts` | 稳定 clientSessionId 的最终专注事件上传 |
+| `api/useOverviewResultsApi.ts` | 完整 Overview 独立 GET/PUT，与核心资源 Sync 分离 |
 
 Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 使用该字段填充资料大小，缺失时才回退为 `0`。文件登记的本地优先副本也保留上传完成时的 `asset.sizeBytes`，避免 Source 同步完成前短暂显示 `0.0 MB`。文件预览仍通过 Asset download-url 获取短期签名地址。
 
@@ -473,7 +740,8 @@ Source FILE 响应携带可选 `assetSizeBytes`；`domainMappers.mapSourceView` 
 
 | 文件 | 职责 |
 | --- | --- |
-| `services/localSchema.ts` | Tauri SQLite v9 schema、旧 key/value 表的可恢复改名、mutation inflight/远端诊断列与 snake_case 行转换；迁移时清洗 TASK 负载颜色键并保留无效 JSON 原文 |
+| `services/localSchema.ts` | 以 v9 为本轮起点，追加 v10 专注状态/事件和 v11 Overview 同步元数据/outbox；保留旧 key/value 备份、资源与不可变 mutation；迁移时清洗 TASK 负载颜色键并保留无效 JSON 原文 |
+| `services/focusSessionRepository.ts` / `pomodoroSessionRuntime.ts` | 活动阶段状态及最终专注事件原子保存，按用户/设备隔离；ACK 后保留本机历史供今日统计 |
 | `services/localRepository.ts` | Tauri `local_resource_records`/`local_mutations` 按用户隔离（浏览器 fallback namespace 另含 device）；Subject 删除后由 `tombstoneSubjectChildren()` 幂等隐藏所属 Source/KnowledgeBlock/Task/Relation 投影并清除子资源 outbox，不生成子 DELETE mutation |
 | `services/subjectDeletionCoordinator.ts` | Subject durable DELETE marker 之后的本地级联协调器；以 user/device Local Asset lifecycle lock 串行 draft queue release，启动/hydration 重放子投影、Subject/File Overview、文档任务，并在 APPLIED 后终结 Source draft 与最后引用 Local Asset；pending/rejected 保留可恢复 draft/bytes，按 user/device 作用域访问 drafts/assets/overviews/jobs，并保留其他 Subject 的资源和共享 Asset |
 | `services/localDatabaseRuntime.ts` | 单个应用生命周期内的 SQLite 初始化 Promise 与按用户/设备范围缓存的 repository |
@@ -504,16 +772,16 @@ C1/C2/C3 的本地解析任务、加密 cache 与可恢复 runner 已接入 C4 `
 ## 页面职责
 
 - Dashboard：日程任务、待办和快速创建；数据来自 `useTaskStore`、`useKnowledgeStore` 和 `useSubjectStore`，无静态演示数据兜底。右侧采用上下双卡片分区：上半部为「日程任务」（按时间先后顺序纯线性展示，不作时间轴槽位网格展示、不可拖拽调整时间，支持完成勾选与移出日程），下半部为「待办清单」（纯列表展示，移除拖动手柄，支持直接勾选完成）。待办条目在窄宽下优先保留任务名称，过长的学科徽标允许收缩并以省略号显示。复杂时间轴编排与半小时网格拖拽完全交由 `/timeline`（排期副驾）页面负责。Task 卡片外观统一由 Sage/design 语义 CSS 令牌派生，不依赖 Task 数据颜色。
-- SubjectHall：学科卡片、搜索、创建、编辑、删除和进入工作区；编辑表单保留服务端 `version` 并以 `baseVersion` 提交，确保名称、描述和图标修改可以保存；Subject 没有持久化颜色字段，Dashboard、Timeline 与 Home 统一使用 `#7D9372` 全局主题色；新用户注册后没有自动学科时展示真实空状态，历史遗留“未分类”学科也可正常删除。
-- SubjectWorkspace：文件、知识、任务、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。登记文件必须先选择文件、名称和归档学科，上传期间显示当前阶段/百分比并防重复提交；直传或 Source 创建失败会在弹层保留可重试状态并显示通知，成功后立即保存到本地并更新当前学科文件列表，后续同步不阻塞操作。文件选择器与拖拽入口共用 `src/utils/filePreview.ts` 的能力注册表，Excel/未知格式和超过 50 MB 的文件在创建 upload intent 前拦截；文件栏只显示真实 Source 文件，文件行删除操作默认悬停显示、键盘 focus-visible 保持可见，确认后通过 Subject Store 执行 Source 软删除并重算文件计数；本地仍有 `SOURCE/CREATE` outbox 时排队有序删除，知识块作为独立的总结/知识表面；删除取消、未登录、版本冲突、资源不存在和服务端异常均给出明确提示；选中文件后由 `FilePreview` 直接承载签名 URL、下载、加载/失败状态，当前优先使用自托管 File Viewer 渲染 DOC/DOCX、PPT/PPTX、PDF、图片及文本；较早的下载响应不得覆盖新选文件。学科页保持一个统一预览面板：现有文件名顶栏承载缩放与旋转，页码/总页数和前后页在预览底部独立占位；搜索、打印、下载、HTML 导出和主题切换不进入预览工具栏。
-- PC 阅读辅助当前已接入 `READING_SESSION` 生命周期、`readingContext` 当前 Source 检索与同学科确定性升级；未 READY 文件的 AI 操作只提示前往 `/profile` 查看解析进度。文件行通过 `DocumentProcessingDot` 显示所有非 READY 状态（失败保留红色静态点）；Profile 的 `DocumentProcessingCenter` 同时展示本地任务阶段和本地任务已经完成、但服务端仍为 `VALIDATING/PARSING/INDEXING` 的 Source 阶段，后者会低频刷新 Source 至 `READY`。未挂载 Tauri runner 时该中心明确说明“仅可在 Auralis 桌面端运行”，不把不可用误显示为暂无任务。Tauri runtime 的前置检查会在无可恢复加密 cache 时初始化原生 `auralis/master_key`；若 job 仍有 cache 或 receipt 而密钥缺失，则停止并报告恢复需要。无论前端生命周期是否已完成，Rust `document_package_begin` 都会在新建 package 时再次确保密钥存在；读取既有 cache 不会生成新密钥。预览原生选中文本最多 4000 字，可执行解释/追问或打开 `KnowledgeBlockEditor`，知识块只有确认后才写入当前 subject/source。
-- 左侧原“学科大纲”入口已改为“总览”，现有 header 中 `AI 梳理` 按钮和圆形“+”顺序、位置以及三栏宽度保持不变。“学科总览”默认折叠且只在用户点击后生成；下面按文件直接展开本地大纲，每个文件的“总结”入口把中栏从文件预览切换为本地总结。文件完成 READY 处理后后台请求一次 `ALL` 文件总览，结果按 user/device/source revision 写入本地 schema v7；失败保留旧大纲/总结。学科总览只组合当前学科已有本地文件结果，不上传新的原文，不进入 Sync。File Viewer 仅代表代码与构建已接入，DOC/DOCX 真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收；预览顶部/底部栏使用轻微投影和实体按钮，缩放与旋转各自放入同款简单圆角控制组，缩放显示为 `− / 倍率 / ＋`，旋转显示为左旋线条图标、角度、右旋线条图标，文档上下安全留白收窄为约 12–16px。宿主不再叠加会遮挡正文的“正在渲染文档”遮罩，首次宽度适配只持续到用户第一次交互；`FilePreview` 与 renderer 仅在组件 ref 尚未建立时暂存动作，基础 Vue 组件通过 `withFullViewerOptions` 接入 full preset，缩放调用 `zoomIn`/`zoomOut`/`resetZoom`，PDF/图片旋转走 `applyViewState`，图片 renderer 自带旋转栏隐藏，不支持视图旋转的 Office renderer 才使用外层回退。学习文件列表行不显示装饰性文件类型图案，直接从文件名开始布局。若真实文件兼容性不达标，保持 `FilePreview` 合约不变并替换为服务端转 PDF 渲染器。
+- SubjectHall：学科卡片、搜索、创建、编辑、删除和进入工作区；编辑表单保留服务端 `version` 并以 `baseVersion` 提交，确保名称、描述和图标修改可以保存；Subject 没有持久化颜色字段，Dashboard 与 Timeline 统一使用 `#7D9372` 全局主题色；新用户注册后没有自动学科时展示真实空状态，历史遗留“未分类”学科也可正常删除。
+- SubjectWorkspace：文件、知识、任务、图谱与 AI 上下文；学科图标经 `src/utils/subjectIcon.ts` 统一解析，新建学科保存语义键并渲染 Lucide Icons 线条图标，创建弹层不提供主题色选择，默认、左下角和全局功能侧栏图标底色统一为 `#7D9372`，已有 Emoji 值原样显示，空值或未知语义键回退书本线条图标。右侧 AI 伴读以页面内 SVG/CSS 复刻手机端四芒星、星环、消息气泡、输入中状态和纯文本胶囊输入；当前正式路径使用 typed `streamAiMessage` 和 `/api/ai/messages/stream`，不提供附件或麦克风入口；每次进入或切换学科都会开启新的伴读会话，不回溯旧消息。登记文件必须先选择文件、名称和归档学科，上传期间显示包含文件名、文件大小、三步指示节点和流光渐变的高级进度卡片并防重复提交；直传或 Source 创建失败会在弹层保留可重试状态并显示通知，成功后立即保存到本地并更新当前学科文件列表，后续同步不阻塞操作；抽屉顶部显示内嵌导入进度条，并在文件列表行显示解析状态徽标。文件选择器与拖拽入口共用 `src/utils/filePreview.ts` 的能力注册表，Excel/未知格式和超过 50 MB 的文件在创建 upload intent 前拦截；文件栏只显示真实 Source 文件，文件行删除操作默认悬停显示、键盘 focus-visible 保持可见，确认后通过 Subject Store 执行 Source 软删除并重算文件计数；本地仍有 `SOURCE/CREATE` outbox 时排队有序删除，知识块作为独立的总结/知识表面；删除取消、未登录、版本冲突、资源不存在和服务端异常均给出明确提示；选中文件后由 `FilePreview` 直接承载签名 URL、下载、加载/失败状态，当前优先使用自托管 File Viewer 渲染 DOC/DOCX、PPT/PPTX、PDF、图片及文本；较早的下载响应不得覆盖新选文件。学科页保持一个统一预览面板：现有文件名顶栏承载缩放与旋转，页码/总页数和前后页在预览底部独立占位；搜索、打印、下载、HTML 导出和主题切换不进入预览工具栏。
+- PC 阅读辅助当前已接入 `READING_SESSION` 生命周期、`readingContext` 当前 Source 检索与同学科确定性升级；未 READY 文件的 AI 操作只提示前往 `/profile` 查看解析进度。文件行通过 `DocumentProcessingDot` 与轻量状态微标签显示所有非 READY 状态（失败保留红色静态点与解析失败标签）；Profile 的 `DocumentProcessingCenter` 同时展示本地任务阶段和本地任务已经完成、但服务端仍为 `VALIDATING/PARSING/INDEXING` 的 Source 阶段，后者会低频刷新 Source 至 `READY`。未挂载 Tauri runner 时该中心明确说明“仅可在 Auralis 桌面端运行”，不把不可用误显示为暂无任务。Tauri runtime 的前置检查会在无可恢复加密 cache 时初始化原生 `auralis/master_key`；若 job 仍有 cache 或 receipt 而密钥缺失，则停止并报告恢复需要。无论前端生命周期是否已完成，Rust `document_package_begin` 都会在新建 package 时再次确保密钥存在；读取既有 cache 不会生成新密钥。预览原生选中文本最多 4000 字，可执行解释/追问或打开 `KnowledgeBlockEditor`，知识块只有确认后才写入当前 subject/source。
+- 左侧原“学科大纲”入口已改为“总览”，现有 header 中 `AI 梳理` 按钮和圆形“+”顺序、位置以及三栏宽度保持不变。“学科总览”默认折叠且只在用户点击后生成；下面按文件直接展开本地大纲，每个文件的“总结”入口把中栏从文件预览切换为本地总结。文件完成 READY 处理后后台请求一次 `ALL` 文件总览，结果按 user/device/source revision 写入本地 schema v7；失败保留旧大纲/总结；知识总览不再展示侵入性的“本机总览尚未同步”技术性提示条，大纲等待态带有旋转指示。学科总览只组合当前学科已有本地文件结果，不上传新的原文，不进入 Sync。File Viewer 仅代表代码与构建已接入，DOC/DOCX 真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收；预览顶部/底部栏使用轻微投影和实体按钮，缩放与旋转各自放入同款简单圆角控制组，缩放显示为 `− / 倍率 / ＋`，旋转显示为左旋线条图标、角度、右旋线条图标，文档上下安全留白收窄为约 12–16px。宿主不再叠加会遮挡正文的“正在渲染文档”遮罩，首次宽度适配只持续到用户第一次交互；`FilePreview` 与 renderer 仅在组件 ref 尚未建立时暂存动作，基础 Vue 组件通过 `withFullViewerOptions` 接入 full preset，缩放调用 `zoomIn`/`zoomOut`/`resetZoom`，PDF/图片旋转走 `applyViewState`，图片 renderer 自带旋转栏隐藏，不支持视图旋转的 Office renderer 才使用外层回退。学习文件列表行不显示装饰性文件类型图案，直接从文件名开始布局。若真实文件兼容性不达标，保持 `FilePreview` 合约不变并替换为服务端转 PDF 渲染器。
 - File Viewer 交互补充：不以 `load-complete` 作为执行硬门禁；同时避开 `@file-viewer/vue3-full@2.3.2` 包装组件在 Vue 父级 ref 上丢失公开方法的问题，改由 `@file-viewer/vue3@2.3.0` 基础组件承载相同 full 配置。Chrome 合成图片已验证缩放尺寸和 90° 旋转发生实际变化；真实样本、浏览器/Tauri GUI 布局和资源加载仍需人工验收。
 - Asset：上传、处理状态和资料组织；首屏并行读取 Subject、Source、KnowledgeBlock 与 Task 的本地 Store 投影，任一项读取失败仍构建其余本地树并关闭 loading。各 Store 随后独立刷新云端结果、通过其 repository cache 写回本地；资产页监听四类投影并重建树，不重新显示 loading。资产树的“全部任务”和各学科任务目录均来自 `useTaskStore` 的当前用户任务，不注入静态演示任务。任务按 `未排期`、`未完成`、`已完成` 三个并列分组，截止时间存在时按截止时间排序；任务完成切换回写 Task API/repository。任务编辑器不再提供认知负荷按钮，改为 30 分钟步进的预计用时，并可保存标题、备注、截止日期和时长。`/asset?focus=unassigned-tasks` 会展开并聚焦“未排期”。真实 Source 文件以 `FilePreview` 为唯一预览实现，TreeNode 透传 Source 的 `id`、`assetId`、`name` 和 `fileType`；旧 `PdfViewer`、首页 PDF 伴读入口和 Asset 的 `filePath`/Markdown 预览分支均不保留。
-- Asset 关系星图使用真实 Subject、Source 和 KnowledgeBlock 投影。Source 连接所属 Subject；KnowledgeBlock 的 `sourceFileId` 指向同学科现存 Source 时连接该 Source，否则连接所属 Subject，不补造关系。力导向计算包含对称节点互斥、按关系类型设目标长度的弹簧吸引、弱重力与速度阻尼；节点初始位置由稳定 ID 决定，初始 RAF 在收敛或 180 帧上限后停止。同范围数据刷新保留存活节点坐标与相机，切换全局/学科范围时重新适配视图。画布使用 ResizeObserver 与设备像素比绘制，提供适配视图、指针中心滚轮缩放、平移及任意节点拖动。鼠标、触控和触控笔共用 Pointer Events 与指针捕获；超过移动阈值后暂停初始模拟，被拖节点保持在指针坐标，关联邻居实时通过弹簧力响应并重画连线，每段响应最多 36 帧并在收敛时提前停止，释放后最多运行 30 帧低强度松弛。用户摆放在同范围更新中保留。点击文件节点选择树中 Source 并在中栏显示 `FilePreview`；点击知识块节点在中栏显示对应编辑器，同时保留 Home 的 `open-block-detail` 事件。拖动或 pointercancel 不触发预览。
-- Dashboard/Timeline：排期和任务时间管理，排期队列展示无 `scheduledAt` 且未完成/未取消的所有活跃任务，截止时间（`dueAt`）仅作为提醒与排序参考，不再作为进入排期的门禁条件。Task Store 以认证态的 `serverDeviceId` 访问用户隔离的本地 repository；首次加载先渲染本地任务，云端列表刷新在后台写回 Store，失败时保留当前投影。两页切换日期只调用 `setSelectedDay` 在内存中重建槽位，不重读 repository 或清空当前任务。Timeline 页面支持单任务与换位拖拽、半小时网格槽位渲染；Dashboard 首页看盘采用轻量线性卡片列表，无网格槽位，不作为可拖拽调时，按开始时间升序排列。启动 fetch 和运行中分钟级检查会执行到期转换：有 `scheduledAt` 的任务在 `scheduledAt + durationMinutes` 结束时刻到达后更新为完成并保留排期；无 `scheduledAt` 的任务不再因 `dueAt` 到期被清空截止时间，真实 `dueAt` 永久保留，卡片通过 due-badge 展示截止日期并在逾期时显示低饱和暖红醒目标记。转换失败保留原数据并记录错误。首页和独立时间轴统一展示当前/所选日期所在的完整自然周（周日至周六），避免只保存 `dayCode` 时跨周解析到下一周。首页日期格在日数字上方显示 `Sun` 至 `Sat` 英文星期缩写，选中日期使用固定约 `36px × 36px` 圆形绿色背景，顶栏以“时间轴 · X月”显示月份。日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记；已排期任务拖动到新槽位时以目标槽位覆盖旧 `scheduledAt`。时间轴“导入任务”进入资产库未排期分组，任务变化通过 `useTaskStore` 写入本地 repository/outbox 并在后台同步。
+- Asset 关系星图使用真实 Subject、Source 和 KnowledgeBlock 投影。Source 连接所属 Subject；KnowledgeBlock 的 `sourceFileId` 指向同学科现存 Source 时连接该 Source，否则连接所属 Subject，不补造关系。力导向计算包含对称节点互斥、按关系类型设目标长度的弹簧吸引、弱重力与速度阻尼；节点初始位置由稳定 ID 决定，初始 RAF 在收敛或 180 帧上限后停止。同范围数据刷新保留存活节点坐标与相机，切换全局/学科范围时重新适配视图。画布使用 ResizeObserver 与设备像素比绘制，提供适配视图、指针中心滚轮缩放、平移及任意节点拖动。鼠标、触控和触控笔共用 Pointer Events 与指针捕获；超过移动阈值后暂停初始模拟，被拖节点保持在指针坐标，关联邻居实时通过弹簧力响应并重画连线，每段响应最多 36 帧并在收敛时提前停止，释放后最多运行 30 帧低强度松弛。用户摆放在同范围更新中保留。点击文件节点选择树中 Source 并在中栏显示 `FilePreview`；点击知识块节点在中栏显示对应编辑器，通过 Dashboard 的 `open-block-detail` 事件打开详情。拖动或 pointercancel 不触发预览。
+- Dashboard/Timeline：排期和任务时间管理，排期队列展示无 `scheduledAt` 且未完成/未取消的所有活跃任务，截止时间（`dueAt`）用于提醒、排序及新排期完整结束上限；拖放、按天排期、换位与顺延必须保证每个新安排完整结束于各自截止时刻或之前，无截止不限制。Task Store 以认证态的 `serverDeviceId` 访问用户隔离的本地 repository；首次加载先渲染本地任务，后台 Sync read 更新 Store，读取失败时保留当前投影。Dashboard 切日调用 `setSelectedDay` 重建内存槽位；Timeline 切日保留现有 `await taskStore.loadLocalTasks()` 本地重读，不能清空已有任务。按槽排期和同日改期在进入写队列前捕获具体本地日期，提交窗口与来源校验使用该日期，等待期间切日不会改变已发起落点。周视图日期列传入完整 `dateKey`，按天入口支持活动的已有排期任务改日，沿用完整冲突、过去时间与截止校验。Timeline 重挂载从 Store 的完整选中日期初始化标题与日期栏，和任务槽位保持一致。Timeline 页面支持单任务与换位拖拽、半小时网格槽位渲染；Dashboard 首页看盘采用轻量线性卡片列表，无网格槽位，不作为可拖拽调时，按开始时间升序排列。启动 fetch 和运行中分钟级检查会执行到期转换：有 `scheduledAt` 的任务在 `scheduledAt + durationMinutes` 结束时刻到达后更新为完成并保留排期；无 `scheduledAt` 的 TODO/IN_PROGRESS 活动任务在有效 `dueAt <= now` 时自动完成并保留真实截止时间，DONE/CANCELLED、空或无效截止时间不产生完成写入；卡片继续通过 due-badge 展示截止日期。自动检查在 TASK 投影刷新时也会执行，应用关闭期间到期的任务在下次启动补处理。转换失败保留原数据并记录错误。首页和独立时间轴统一展示当前/所选日期所在的完整自然周（周日至周六），避免只保存 `dayCode` 时跨周解析到下一周。首页日期格在日数字上方显示 `Sun` 至 `Sat` 英文星期缩写，选中日期使用固定约 `36px × 36px` 圆形绿色背景，顶栏以“时间轴 · X月”显示月份。日视图以半小时槽位承接排期开始时间，已完成或已过去的排期仍保留，其中已过去任务以删除线标记；已排期任务拖动到新槽位时以目标槽位覆盖旧 `scheduledAt`。时间轴“导入任务”进入资产库未排期分组。普通任务更新、按天排期和取消排期通过 `useTaskStore` 写入本地 repository/outbox 并在后台同步；按槽插入与标题交换使用在线 REST，返回模型写入本地后请求 Sync read，正常在线动作不新增 outbox。2026-10-07 放置与交换修复：按天择槽覆盖 22:30；交换发 API 前校验双方实际新起点位于 08:00–22:30，紧邻 compact 以原共同窗口的本地日期为边界；越界保留整组数据。在线响应原子合并保护较新版本与墓碑，投影重读当前 Repository；专项 127/127、PC 542/542，类型/静态/构建和唯一只读审查通过；真实环境验收及完整证据见现行实施记录。
 - Profile：账号、user/device/session 状态、会话撤销、外观和设置；统计通过 `useStatsStore`，知识导出通过 `useKnowledgeStore`。登录会话列表使用服务端每设备一条活动会话视图，当前会话不可在页面中撤销；撤销其它设备会阻止其续期，已签发的 access token 按有效期自然失效。个人空间提供确认后的“退出登录”入口：调用当前会话 logout、始终清理本地会话并跳转 `/login`，服务端失败会给出明确提示。正式入口内嵌 BYOK 卡片：读取服务端脱敏设置，只显示 `hasApiKey`/Base URL，API Key 仅在 `PUT /api/ai/settings` 请求体内提交并在成功后清空，不使用浏览器存储或普通请求 header。
-- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和今日专注数据；计时 UI 通过 `usePomodoroStore`，任务同步与排期数据由 `useTaskStore` 负责；任务选择器深度联动时间轴，严格仅过滤已排期任务，并提供开箱即用的「自由学习」默认模式；圆环采用禅意鼠尾草绿与茶歇琥珀双态配色。
+- Pomodoro：宽屏专注计时、任务选择、开始/暂停/重置、休息阶段和本机今日专注数据；实际秒数排除暂停与休息，中断保存耗时但不增加完成轮次，自然结束才增加一次。使用时间戳与持久状态恢复，路由切换不重置。最终事件使用稳定 session ID 离线上传；Profile 学习时长/轮次读取服务端全设备历史专注聚合，未 ACK 的本机事件不盲目叠加到服务器总量。任务选择器与时间轴联动，只显示已排期任务，并提供「自由学习」。
 
 详细交互与视觉只在 [前端设计](../design/Frontend.md) 维护。
 

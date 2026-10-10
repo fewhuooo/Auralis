@@ -1,24 +1,30 @@
 <template>
-  <div v-if="isAuthenticatedRoute" class="app-shell">
-    <AppSidebar :connection-projection="connectionProjection" />
-    <div class="app-body">
-      <AppHeader />
-      <main class="app-content">
-        <router-view v-slot="{ Component }">
-          <transition name="page-fade" mode="out-in">
-            <component :is="Component" />
-          </transition>
-        </router-view>
-      </main>
-    </div>
+  <Transition name="shell-fade" mode="out-in">
+    <div v-if="isAuthenticatedRoute" key="auth-shell" class="app-shell">
+      <AppSidebar :connection-projection="connectionProjection" />
+      <div class="app-body">
+        <AppHeader />
+        <main class="app-content">
+          <router-view v-slot="{ Component }">
+            <transition name="page-fade" mode="out-in">
+              <component :is="Component" :key="route.path" />
+            </transition>
+          </router-view>
+        </main>
+      </div>
 
-    <!-- Subtle background glow effect -->
-    <div class="bg-glow bg-glow--1"></div>
-    <div class="bg-glow bg-glow--2"></div>
-  </div>
-  <div v-else class="public-shell">
-    <router-view />
-  </div>
+      <!-- Subtle background glow effect -->
+      <div class="bg-glow bg-glow--1"></div>
+      <div class="bg-glow bg-glow--2"></div>
+    </div>
+    <div v-else key="public-shell" class="public-shell">
+      <router-view v-slot="{ Component }">
+        <transition name="page-fade" mode="out-in">
+          <component :is="Component" :key="route.path" />
+        </transition>
+      </router-view>
+    </div>
+  </Transition>
 
   <!-- Global Command Palette -->
   <SearchPalette />
@@ -39,6 +45,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useTaskStore } from '@/store/useTaskStore'
+import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { realtimeController, type RealtimeStatus } from '@/services/realtimeController'
 import { projectConnectionStatus, type ConnectionProjection } from '@/services/connectionStatusProjection'
 import { serviceUnavailable } from '@/services/serviceAvailability'
@@ -52,6 +59,7 @@ const browserOnline = ref(typeof navigator === 'undefined' || navigator.onLine)
 const route = useRoute()
 const authStore = useAuthStore()
 const taskStore = useTaskStore()
+const pomodoroStore = usePomodoroStore()
 const syncStore = useSyncStore()
 const chatStore = useChatStore()
 const realtimeStatus = ref<RealtimeStatus>(realtimeController.getStatus())
@@ -77,6 +85,7 @@ const fetchTasksOnStartup = async () => {
 
 const startAuthenticatedRuntime = (): void => {
   realtimeController.start()
+  void pomodoroStore.initialize().catch((error) => console.warn('[App] Pomodoro runtime initialization deferred', error))
   void documentProcessingRuntime.start().catch((error) => console.warn('[App] document runtime start failed', error))
   void fetchTasksOnStartup()
   syncStore.requestBackgroundSync('startup')
@@ -187,10 +196,22 @@ onUnmounted(() => {
   left: 20%;
 }
 
-/* Page transition */
+/* Shell transition (between public login and authenticated app) */
+.shell-fade-enter-active,
+.shell-fade-leave-active {
+  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.shell-fade-enter-from,
+.shell-fade-leave-to {
+  opacity: 0;
+}
+
+/* Page transition — smooth spring with subtle lift */
 .page-fade-enter-active,
 .page-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
 }
 
 .page-fade-enter-from {

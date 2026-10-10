@@ -30,7 +30,8 @@ public class StatsQueryRepository {
 
     public long dueReviews(UUID userId, Instant at) {
         return count("select count(*) from review_states rs join knowledge_blocks kb on kb.id = rs.knowledge_block_id "
-                + "where rs.user_id = ? and rs.due_at <= ? and kb.user_id = ? and kb.deleted_at is null", userId, at, userId);
+                + "where rs.user_id = ? and rs.due_at <= ? and rs.needs_learning = false and rs.mastered = false "
+                + "and kb.user_id = ? and kb.deleted_at is null", userId, at, userId);
     }
 
     public long completedReviews(UUID userId, Instant at) {
@@ -45,6 +46,26 @@ public class StatsQueryRepository {
     public long studySeconds(UUID userId, Instant from, Instant to) {
         return count("select coalesce(sum(duration_seconds), 0) from review_events where user_id = ? and reviewed_at >= ? and reviewed_at < ?",
                 userId, from, to);
+    }
+
+    public long focusSeconds(UUID userId, Instant from, Instant to) {
+        return count("select coalesce(sum(duration_seconds), 0) from focus_sessions where user_id = ? and ended_at >= ? and ended_at < ?",
+                userId, from, to);
+    }
+
+    public long focusCompletedCount(UUID userId, Instant from, Instant to) {
+        return count("select count(*) from focus_sessions where user_id = ? and ended_at >= ? and ended_at < ? and completed = true",
+                userId, from, to);
+    }
+
+    public long focusSecondsUntil(UUID userId, Instant at) {
+        return count("select coalesce(sum(duration_seconds), 0) from focus_sessions where user_id = ? and ended_at <= ?",
+                userId, at);
+    }
+
+    public long focusCompletedCountUntil(UUID userId, Instant at) {
+        return count("select count(*) from focus_sessions where user_id = ? and ended_at <= ? and completed = true",
+                userId, at);
     }
 
     public long completedTasks(UUID userId, Instant from, Instant to) {

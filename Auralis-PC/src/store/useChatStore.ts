@@ -378,6 +378,7 @@ export const useChatStore = defineStore('chat', () => {
         topK: options.topK ?? 8,
         clientRequestId: message.clientRequestId,
         readingContext,
+        selectionText: options.selectionText ? options.selectionText.slice(0, 4000) : undefined,
       }, {
         onStarted: (data) => {
           const started = data as { messageId?: string } | undefined

@@ -2,6 +2,7 @@ package com.auralis.app.realtime;
 
 import com.auralis.app.shared.domain.ResourceChangeRecordedEvent;
 import com.auralis.app.shared.domain.ReviewChangedEvent;
+import com.auralis.app.shared.domain.OverviewResultChangedEvent;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -32,6 +33,16 @@ public class RealtimeDomainEventListener {
                 "KNOWLEDGE_BLOCK",
                 event.knowledgeBlockId(),
                 event.stateVersion(),
+                event.occurredAt()));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onOverviewResultChange(OverviewResultChangedEvent event) {
+        eventPublisher.publish(event.userId(), new RealtimeEventView(
+                RealtimeEventType.OVERVIEW_UPDATED,
+                event.scopeType(),
+                event.scopeId(),
+                event.version(),
                 event.occurredAt()));
     }
 }

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
-import { type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
+import { useSourceApi, type SourceCreateRequest, type SourceView } from '@/api/useSourceApi'
 import { getLocalRepository, getLocalAssetRepository } from '@/services/localDb'
 import { getOrCreateLocalAssetService } from '@/services/localAssetService'
 import { withLocalAssetLifecycleLock } from '@/services/localAssetLifecycleLock'
@@ -15,6 +15,10 @@ import { createStableMutation } from '@/services/offlineWritePolicy'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 import { shouldScheduleAwaitingClientDocument } from '@/utils/sourceSchedulingPolicy'
 import type { FileOverviewTrigger, OverviewRegenerationResult } from '@/types/overview'
+import {
+  beginOverviewScopeDeletion, cancelOverviewScopeDeletion, completeOverviewScopeDeletion,
+  reactivateRestoredOverviewScope,
+} from '@/services/overviewRepository'
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-7][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
@@ -38,6 +42,7 @@ interface SourceDocumentScheduler {
 interface FileOverviewGenerator {
   generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult>
   discardFileOverview(sourceId: string): Promise<void>
+  restoreFileOverview(sourceId: string): Promise<boolean>
 }
 
 let documentScheduler: SourceDocumentScheduler | null = null
@@ -66,6 +71,28 @@ export const useSourceStore = defineStore('source', () => {
       .map((row) => asSourceDto(row.value))
       .filter((value): value is SourceView => value !== null && (!subjectId || value.subjectId === subjectId))
       .map(mapSourceView))
+  }
+
+  async function reactivateRestoredOverviewScopes(models: SourceFileModel[]): Promise<void> {
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) return
+    const repo = await repository()
+    const [activeSubjects, unresolved] = await Promise.all([
+      repo.list('SUBJECT',{ includeDeleted: false }),
+      repo.listUnresolved(),
+    ])
+    if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) return
+    const activeSubjectIds = new Set(activeSubjects.map(item => item.id))
+    const unresolvedDeletes = new Set(unresolved.filter(item => item.mutationType === 'DELETE').map(item => `${item.resourceType}:${item.resourceId}`))
+    for (const source of models) {
+      if (!activeSubjectIds.has(source.subjectId) || unresolvedDeletes.has(`SOURCE:${source.id}`)
+        || unresolvedDeletes.has(`SUBJECT:${source.subjectId}`)) continue
+      if (reactivateRestoredOverviewScope(userId,serverDeviceId,'FILE',source.id)) {
+        await fileOverviewGenerator?.restoreFileOverview(source.id)
+      }
+    }
   }
 
   function scheduleAwaitingClientDocuments(models: SourceFileModel[]): void {
@@ -99,6 +126,7 @@ export const useSourceStore = defineStore('source', () => {
 
   async function hydrateSources(): Promise<SourceFileModel[]> {
     const local = await readLocal()
+    await reactivateRestoredOverviewScopes(local)
     replaceSources(local)
     scheduleAwaitingClientDocuments(local)
     // A restart may be the first opportunity to finish a physical delete
@@ -112,31 +140,56 @@ export const useSourceStore = defineStore('source', () => {
   async function cleanupDeletedSourceAssets(): Promise<void> {
     const authStore = useAuthStore()
     if (!authStore.user?.id || !authStore.serverDeviceId) return
-    const repo = await repository()
-    const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+    const userId = authStore.user.id
+    const serverDeviceId = authStore.serverDeviceId
+    const repo = await getLocalRepository(userId,serverDeviceId)
+    const assetRepo = await getLocalAssetRepository(userId,serverDeviceId)
     const assetService = getOrCreateLocalAssetService(assetRepo)
-    const pendingSubjectDeletes = new Set((await repo.listUnresolved('SUBJECT'))
-      .filter((mutation) => mutation.mutationType === 'DELETE')
-      .map((mutation) => mutation.resourceId))
     const tombstones = await repo.list<SourceView>('SOURCE', { includeDeleted: true })
     for (const row of tombstones) {
       if (!row.deletedAt) continue
-      const subjectId = typeof row.value?.subjectId === 'string' ? row.value.subjectId : null
-      // A Subject cascade keeps local-only draft metadata and bytes recoverable
-      // until the parent DELETE is APPLIED. The Subject coordinator owns that
-      // terminal cleanup; Source hydration must not race it.
-      if (subjectId && pendingSubjectDeletes.has(subjectId)) continue
-      const draft = await assetRepo.getSourceDraft(row.id)
-      if (draft && draft.state !== 'DELETED') {
-        // A crash can occur after the SOURCE tombstone commits but before the
-        // draft store is updated.  Repair that durable two-store gap before
-        // recounting references; the operation is idempotent.
-        await assetRepo.deleteSourceDraft(row.id)
-      }
-      const assetId = typeof row.value?.assetId === 'string' ? row.value.assetId : null
-      if (!assetId) continue
-      const localAsset = await assetRepo.getAssetFile(assetId) ?? await assetRepo.getAssetFileByServerId(assetId)
-      if (!localAsset) continue
+      if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) return
+      const localAsset = await withLocalAssetLifecycleLock(userId,serverDeviceId,async () => {
+        if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) return null
+        // A rejected Subject DELETE sets resetRequired before the authoritative
+        // snapshot arrives. Do not consume child tombstones from the pre-snapshot
+        // projection during that recovery window.
+        if ((await repo.getSyncState()).resetRequired) return null
+        const currentSource = await repo.read<SourceView>('SOURCE',row.id)
+        if (!currentSource?.deletedAt) return null
+        const subjectId = typeof currentSource.value?.subjectId === 'string' ? currentSource.value.subjectId : null
+        const [subject,unresolvedSubjectDeletes] = await Promise.all([
+          subjectId ? repo.read('SUBJECT',subjectId) : Promise.resolve(null),
+          repo.listUnresolved('SUBJECT'),
+        ])
+        if ((await repo.getSyncState()).resetRequired) return null
+        if (subjectId && (subject?.deletedAt || unresolvedSubjectDeletes.some((mutation) =>
+          mutation.resourceId === subjectId && mutation.mutationType === 'DELETE'))) return null
+        // Snapshot replacement can remove or restore the Source while the
+        // tombstone list above is being read. Recheck at the destructive boundary.
+        const freshSource = await repo.read<SourceView>('SOURCE',row.id)
+        if (!freshSource?.deletedAt || freshSource.value?.subjectId !== currentSource.value?.subjectId) return null
+        try {
+          await fileOverviewGenerator?.discardFileOverview(row.id)
+        } catch {
+          console.warn('[SourceStore] deleted Source Overview cleanup deferred')
+        }
+        try {
+          await documentScheduler?.discard(row.id)
+        } catch {
+          console.warn('[SourceStore] deleted Source document cleanup deferred')
+        }
+        const draft = await assetRepo.getSourceDraft(row.id)
+        if (draft && draft.state !== 'DELETED') {
+          // A crash can occur after the SOURCE tombstone commits but before the
+          // draft store is updated. Repair the durable gap before recounting refs.
+          await assetRepo.deleteSourceDraft(row.id)
+        }
+        const assetId = typeof freshSource.value?.assetId === 'string' ? freshSource.value.assetId : null
+        if (!assetId) return null
+        return await assetRepo.getAssetFile(assetId) ?? await assetRepo.getAssetFileByServerId(assetId)
+      })
+      if (!localAsset || authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) continue
       try {
         await assetService.deleteUnreferencedAsset(localAsset.localAssetId)
       } catch (error) {
@@ -332,23 +385,21 @@ export const useSourceStore = defineStore('source', () => {
   async function deleteSourceFile(id: string): Promise<void> {
     const source = sources.value.find((item) => item.id === id) || activeSourceFiles.value.find((item) => item.id === id)
     if (!source) return
-    const repo = await repository()
-    const existing = await repo.read<SourceView>('SOURCE', id)
     const authStore = useAuthStore()
-    const assetRepo = authStore.user?.id && authStore.serverDeviceId
-      ? await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
-      : null
-
-    // Remove the Source from the current projection immediately, then fence
-    // local work before the durable tombstone. Slow parser/cache cleanup must
-    // not keep an explicitly deleted file visible in the UI.
-    sources.value = sources.value.filter((item) => item.id !== id)
-    activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
-    await fileOverviewGenerator?.discardFileOverview(id)
-    await documentScheduler?.discard(id)
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) throw new Error('Sources require an authenticated user and device')
+    const deletionTicket = beginOverviewScopeDeletion(userId,serverDeviceId,'FILE',id)
+    let tombstoneCommitted = false
+    const isCurrentScope = (): boolean => authStore.user?.id === userId && authStore.serverDeviceId === serverDeviceId
+    try {
+    const repo = await getLocalRepository(userId,serverDeviceId)
+    const existing = await repo.read<SourceView>('SOURCE', id)
+    const assetRepo = await getLocalAssetRepository(userId,serverDeviceId)
     const draftBeforeDelete = await assetRepo?.getSourceDraft(id)
     const localOnlyDraft = Boolean(draftBeforeDelete && !draftBeforeDelete.serverSourceId)
     const now = new Date().toISOString()
+    if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) throw new Error('OVERVIEW_SCOPE_CHANGED')
     const localView: SourceView = {
       ...(existing?.value ?? { id, subjectId: source.subjectId, type: source.type, title: source.name }),
       id, version: source.version, updatedAt: now, deletedAt: now,
@@ -366,7 +417,13 @@ export const useSourceStore = defineStore('source', () => {
         }),
       })
     }
-    if (!localOnlyDraft) scheduleSync()
+    tombstoneCommitted = true
+    completeOverviewScopeDeletion(deletionTicket)
+    if (isCurrentScope()) {
+      sources.value = sources.value.filter((item) => item.id !== id)
+      activeSourceFiles.value = activeSourceFiles.value.filter((item) => item.id !== id)
+      if (!localOnlyDraft) scheduleSync()
+    }
 
     // The Source tombstone is now durable.  Mark the auxiliary draft after
     // it, so a failure before this line is repairable by startup cleanup.
@@ -375,11 +432,17 @@ export const useSourceStore = defineStore('source', () => {
     // For a local-only draft this can complete immediately.  For a server
     // Source the tombstone remains a reference until sync settles; startup
     // cleanup retries after acknowledgement.
-    await cleanupDeletedSourceAssets().catch((error) => {
-      if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) {
-        console.warn('[SourceStore] deleted Source asset cleanup deferred')
-      }
-    })
+    if (isCurrentScope()) {
+      await cleanupDeletedSourceAssets().catch((error) => {
+        if (!(error instanceof Error) || !error.message.includes('ASSET_HAS_ACTIVE_REFERENCES')) {
+          console.warn('[SourceStore] deleted Source asset cleanup deferred')
+        }
+      })
+    }
+    } catch (error) {
+      if (!tombstoneCommitted) cancelOverviewScopeDeletion(deletionTicket)
+      throw error
+    }
   }
 
   async function saveSourceFileCatalog(file: SourceFileModel): Promise<void> {
@@ -452,6 +515,38 @@ export const useSourceStore = defineStore('source', () => {
     }
   }
 
+  async function retrySourceProcessing(sourceId: string): Promise<SourceFileModel> {
+    if (!useAuthStore().isAuthenticated) throw new Error('AUTHENTICATION_REQUIRED')
+    const repo = await repository()
+    const local = await repo.read<SourceView>('SOURCE', sourceId)
+    const inMemory = sources.value.find((source) => source.id === sourceId)
+    const baseVersion = local?.version ?? inMemory?.version ?? 0
+
+    const updated = await useSourceApi.reingest(sourceId, { baseVersion })
+    await repo.upsertFromSync('SOURCE', sourceId, updated, {
+      version: updated.version ?? baseVersion,
+      deletedAt: updated.deletedAt ?? null,
+      syncStatus: 'synced',
+    })
+    const model = mapSourceView(updated)
+    replaceSources(sources.value.map((source) => (source.id === sourceId ? model : source)))
+
+    if (shouldScheduleAwaitingClientDocument(model) && documentScheduler) {
+      void documentScheduler.schedule(sourceId)
+        .then((result) => {
+          const status = result && typeof result === 'object' ? (result as { status?: unknown }).status : undefined
+          if (status === 'READY' && model.ingestionRevision && fileOverviewGenerator) {
+            void fileOverviewGenerator.generateReadyFileOverview(model.id, model.ingestionRevision, 'MANUAL_RETRY')
+              .catch(() => console.warn('[SourceStore] file overview generation failed'))
+          }
+        })
+        .catch((error) => console.warn('[SourceStore] document scheduling failed', error))
+    }
+
+    useSyncStore().requestBackgroundSync('read')
+    return model
+  }
+
   const currentSourceCount = computed(() => sources.value.length)
 
   return {
@@ -472,6 +567,7 @@ export const useSourceStore = defineStore('source', () => {
     attachDocumentScheduler,
     attachFileOverviewGenerator,
     resumeDocumentProcessing,
+    retrySourceProcessing,
   }
 })
 

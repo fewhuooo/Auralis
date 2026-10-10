@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -54,6 +55,7 @@ public class TaskService {
         identityService.lockUserForScheduling(userId);
         subjectLockCoordinator.lockSubjects(userId, List.of(command.subjectId()));
         validateTaskCommand(command);
+        validateScheduleDeadlines(List.of(candidate(command)));
         validateScheduleIntervals(userId, List.of(candidate(command)), Set.of());
         TaskEntity entity = new TaskEntity(
                 taskId, userId, command.subjectId(), required(command.title()), command.description(),
@@ -122,6 +124,11 @@ public class TaskService {
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Task was not found"));
     }
 
+    @Transactional(readOnly = true)
+    public boolean isOwnedTask(UUID userId, UUID id) {
+        return taskRepository.findByIdAndUserId(id, userId).isPresent();
+    }
+
     @Transactional(noRollbackFor = DomainException.class)
     public TaskView update(UUID userId, UUID id, long baseVersion, TaskCommand command) {
         UUID currentSubjectId = ownerSubjectIdForMutation(userId, id);
@@ -136,6 +143,12 @@ public class TaskService {
         }
         requireVersion(entity, baseVersion);
         validateTaskCommand(command);
+        if (scheduleDeadlineFieldsChanged(entity, command)
+                || entity.getStatus() == TaskStatus.CANCELLED
+                        && status(command.status()) != TaskStatus.CANCELLED
+                        && command.scheduledAt() != null) {
+            validateScheduleDeadlines(List.of(candidate(command)));
+        }
         validateScheduleIntervals(userId, List.of(candidate(command)), Set.of(id));
         entity.update(command.subjectId(), required(command.title()), command.description(), status(command.status()),
                 command.scheduledAt(), command.dueAt(), command.durationMinutes(),
@@ -203,9 +216,12 @@ public class TaskService {
             }
         }
         validateScheduleIntervals(userId, List.of(
-                new ScheduleCandidate(newSourceSchedule, source.getDurationMinutes(), source.getStatus()),
-                new ScheduleCandidate(newTargetSchedule, target.getDurationMinutes(), target.getStatus())),
+                new ScheduleCandidate(newSourceSchedule, source.getDueAt(), source.getDurationMinutes(), source.getStatus()),
+                new ScheduleCandidate(newTargetSchedule, target.getDueAt(), target.getDurationMinutes(), target.getStatus())),
                 Set.of(sourceTaskId, targetTaskId));
+        validateScheduleDeadlines(List.of(
+                new ScheduleCandidate(newSourceSchedule, source.getDueAt(), source.getDurationMinutes(), source.getStatus()),
+                new ScheduleCandidate(newTargetSchedule, target.getDueAt(), target.getDurationMinutes(), target.getStatus())));
 
         source.reschedule(newSourceSchedule);
         target.reschedule(newTargetSchedule);
@@ -302,11 +318,12 @@ public class TaskService {
             }
 
             ScheduleCandidate proposed = new ScheduleCandidate(
-                    afterTarget, inserted.getDurationMinutes(), inserted.getStatus());
+                    afterTarget, inserted.getDueAt(), inserted.getDurationMinutes(), inserted.getStatus());
             validateScheduleIntervals(userId, List.of(proposed), Set.of(taskId));
             if (afterTarget.equals(inserted.getScheduledAt())) {
                 return List.of();
             }
+            validateScheduleDeadlines(List.of(proposed));
             inserted.reschedule(afterTarget);
             TaskView result = view(taskRepository.saveAndFlush(inserted));
             publishChange(userId, result, "UPDATE");
@@ -356,8 +373,13 @@ public class TaskService {
             return List.of();
         }
         validateScheduleIntervals(userId, changed.stream()
-                .map(task -> new ScheduleCandidate(task.getScheduledAt(), task.getDurationMinutes(), task.getStatus()))
+                .map(task -> new ScheduleCandidate(task.getScheduledAt(), task.getDueAt(),
+                        task.getDurationMinutes(), task.getStatus()))
                 .toList(), changed.stream().map(TaskEntity::getId).collect(java.util.stream.Collectors.toSet()));
+        validateScheduleDeadlines(changed.stream()
+                .map(task -> new ScheduleCandidate(task.getScheduledAt(), task.getDueAt(),
+                        task.getDurationMinutes(), task.getStatus()))
+                .toList());
 
         List<TaskView> results = new ArrayList<>(changed.size());
         for (TaskEntity task : changed) {
@@ -423,7 +445,9 @@ public class TaskService {
         }
         requireVersion(entity, baseVersion);
         validateScheduleIntervals(userId, List.of(new ScheduleCandidate(
-                entity.getScheduledAt(), entity.getDurationMinutes(), entity.getStatus())), Set.of(id));
+                entity.getScheduledAt(), entity.getDueAt(), entity.getDurationMinutes(), entity.getStatus())), Set.of(id));
+        validateScheduleDeadlines(List.of(new ScheduleCandidate(
+                entity.getScheduledAt(), entity.getDueAt(), entity.getDurationMinutes(), entity.getStatus())));
         entity.restore();
         TaskView result = view(taskRepository.saveAndFlush(entity));
         publishChange(userId, result, "RESTORE");
@@ -486,7 +510,27 @@ public class TaskService {
     }
 
     private ScheduleCandidate candidate(TaskCommand command) {
-        return new ScheduleCandidate(command.scheduledAt(), command.durationMinutes(), status(command.status()));
+        return new ScheduleCandidate(command.scheduledAt(), command.dueAt(), command.durationMinutes(), status(command.status()));
+    }
+
+    private boolean scheduleDeadlineFieldsChanged(TaskEntity entity, TaskCommand command) {
+        return !Objects.equals(entity.getScheduledAt(), command.scheduledAt())
+                || !Objects.equals(entity.getDueAt(), command.dueAt())
+                || effectiveDurationMinutes(entity.getDurationMinutes())
+                        != effectiveDurationMinutes(command.durationMinutes());
+    }
+
+    private void validateScheduleDeadlines(List<ScheduleCandidate> candidates) {
+        for (ScheduleCandidate candidate : candidates) {
+            if (candidate.scheduledAt() == null || candidate.dueAt() == null) {
+                continue;
+            }
+            Instant scheduledEnd = candidate.scheduledAt().plus(
+                    Duration.ofMinutes(effectiveDurationMinutes(candidate.durationMinutes())));
+            if (scheduledEnd.isAfter(candidate.dueAt())) {
+                throw new DomainException("VALIDATION_FAILED", "Task schedule must end on or before its deadline");
+            }
+        }
     }
 
     private void validateScheduleIntervals(
@@ -506,7 +550,7 @@ public class TaskService {
                     continue;
                 }
                 if (overlaps(candidate, new ScheduleCandidate(
-                        task.getScheduledAt(), task.getDurationMinutes(), task.getStatus()))) {
+                        task.getScheduledAt(), task.getDueAt(), task.getDurationMinutes(), task.getStatus()))) {
                     throw scheduleConflict();
                 }
             }
@@ -538,7 +582,7 @@ public class TaskService {
         return new DomainException("VALIDATION_FAILED", "Task schedule overlaps another active task");
     }
 
-    private record ScheduleCandidate(Instant scheduledAt, Integer durationMinutes, TaskStatus status) {
+    private record ScheduleCandidate(Instant scheduledAt, Instant dueAt, Integer durationMinutes, TaskStatus status) {
     }
 
     private TaskView view(TaskEntity entity) {

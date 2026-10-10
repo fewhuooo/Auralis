@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useSubjectStore } from '@/store/useSubjectStore'
 import { type KnowledgeBlockCreateRequest, type KnowledgeBlockView } from '@/api/useKnowledgeApi'
 import type { SourceView } from '@/api/useSourceApi'
 import type { SubjectView } from '@/api/useSubjectApi'
@@ -87,14 +88,13 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   })
 
   async function addBlock(block: Partial<KnowledgeBlockModel> & { title: string; subjectId: string }): Promise<string> {
+    const content = block.content || ''
     const payload: KnowledgeBlockCreateRequest = {
       baseVersion: 0,
       subjectId: block.subjectId,
       sourceId: block.sourceFileId,
       title: block.title,
-      summary: block.preview || '',
-      content: block.content || block.preview || '',
-      tags: block.tags || [],
+      content,
       colorOverride: block.color,
     }
     const id = uuidv7()
@@ -114,21 +114,22 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         payload: localView as unknown as Record<string, unknown>,
       }),
     })
-    const model = mapKnowledgeBlockView(localView, block.source, block.subject)
+    const subjectStore = useSubjectStore()
+    const subjectName = subjectStore.subjects.find((s) => s.id === block.subjectId)?.name || block.subject
+    const model = mapKnowledgeBlockView(localView, block.source, subjectName)
     recentBlocks.value = [model, ...recentBlocks.value]
     scheduleSync()
     return id
   }
 
   async function updateBlock(block: KnowledgeBlockModel): Promise<void> {
+    const content = block.content || ''
     const payload: KnowledgeBlockCreateRequest = {
       baseVersion: block.version,
       subjectId: block.subjectId,
       sourceId: block.sourceFileId,
       title: block.title,
-      summary: block.preview,
-      content: block.content,
-      tags: block.tags,
+      content,
       colorOverride: block.color,
     }
     const repo = await repository()
@@ -147,7 +148,9 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         payload: payload as unknown as Record<string, unknown>,
       }),
     })
-    recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? mapKnowledgeBlockView(localView, block.source, block.subject) : item)
+    const subjectStore = useSubjectStore()
+    const updatedSubjectName = subjectStore.subjects.find((s) => s.id === block.subjectId)?.name || block.subject
+    recentBlocks.value = recentBlocks.value.map((item) => item.id === block.id ? mapKnowledgeBlockView(localView, block.source, updatedSubjectName) : item)
     scheduleSync()
   }
 

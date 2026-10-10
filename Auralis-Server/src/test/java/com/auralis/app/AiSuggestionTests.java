@@ -34,8 +34,8 @@ class AiSuggestionTests {
         UUID userId = UUID.randomUUID();
         UUID blockId = UUID.randomUUID();
         when(knowledgeBlockService.get(userId, blockId)).thenReturn(new KnowledgeBlockView(
-                blockId, UUID.randomUUID(), UUID.randomUUID(), "Loops", "Short summary",
-                "A loop repeats a bounded operation.", List.of("java"), null, 1,
+                blockId, UUID.randomUUID(), UUID.randomUUID(), "Loops",
+                "A loop repeats a bounded operation.", null, 1,
                 Instant.now(), Instant.now(), null));
 
         SuggestionView suggestion = suggestionService.generate(userId,
@@ -43,7 +43,7 @@ class AiSuggestionTests {
 
         assertThat(suggestion.type()).isEqualTo(SuggestionType.SUMMARY);
         assertThat(suggestion.title()).isNotBlank();
-        assertThat(suggestion.body()).isEqualTo("Short summary");
+        assertThat(suggestion.body()).isEqualTo("A loop repeats a bounded operation.");
         assertThat(suggestion.citations()).isEmpty();
     }
 

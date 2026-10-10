@@ -48,17 +48,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import PomodoroRing from './PomodoroRing.vue'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
 import { ElNotification } from 'element-plus'
 
 const emit = defineEmits(['center-click'])
+const props = defineProps<{ taskId?: string | null }>()
 
 const pomodoroStore = usePomodoroStore()
 
 const now = ref(new Date())
 let clockTimer: ReturnType<typeof setInterval> | null = null
+let suppressPhaseNotifications = true
 
 const currentTimeFormatted = computed(() => {
   const h = String(now.value.getHours()).padStart(2, '0')
@@ -75,93 +77,56 @@ const currentDateFormatted = computed(() => {
   return `${month}月${date}日 ${weekday}`
 })
 
-const FOCUS_MINS = 25
-const BREAK_MINS = 5
-const LONG_BREAK_MINS = 15
-
-const isRunning = ref(false)
-const isBreakPhase = ref(false)
-const currentPomodoro = ref(0)
-
-const totalSeconds = computed(() => {
-  if (isBreakPhase.value) {
-    return (currentPomodoro.value === 4 ? LONG_BREAK_MINS : BREAK_MINS) * 60
-  }
-  return FOCUS_MINS * 60
-})
-
-const remainingSeconds = ref(totalSeconds.value)
-let timer: ReturnType<typeof setInterval> | null = null
+const isRunning = computed(() => pomodoroStore.isRunning)
+const isBreakPhase = computed(() => pomodoroStore.isBreakPhase)
+const currentPomodoro = computed(() => pomodoroStore.currentPomodoro)
+const totalSeconds = computed(() => pomodoroStore.phaseDurationSeconds)
+const remainingSeconds = computed(() => pomodoroStore.remainingSeconds)
 
 // Zen Minimalist Palette: Focus = Zen Sage (#8B9A6E), Break = Warm Amber Tea (#C89B6D)
 const ringColor = computed(() => {
   return isBreakPhase.value ? '#C89B6D' : '#8B9A6E'
 })
 
-const toggleTimer = () => {
-  if (isRunning.value) {
-    pauseTimer()
-  } else {
-    startTimer()
+async function runTimerAction(action: () => Promise<void>): Promise<void> {
+  try {
+    await action()
+  } catch (error) {
+    console.error('Failed to persist Pomodoro action:', error)
+    ElNotification({ title: '专注状态保存失败', message: '请稍后重试', type: 'error', position: 'top-right' })
   }
 }
 
-const startTimer = () => {
-  if (remainingSeconds.value <= 0) resetTimer()
-  isRunning.value = true
-  timer = setInterval(() => {
-    remainingSeconds.value--
-    if (remainingSeconds.value <= 0) {
-      handlePhaseComplete()
-    }
-  }, 1000)
-}
+const toggleTimer = () => runTimerAction(() => isRunning.value
+  ? pomodoroStore.pause()
+  : pomodoroStore.start(props.taskId ?? null))
+const resetTimer = () => runTimerAction(() => pomodoroStore.reset())
+const skipPhase = () => runTimerAction(() => pomodoroStore.skip())
 
-const pauseTimer = () => {
-  isRunning.value = false
-  if (timer) clearInterval(timer)
-}
+watch(currentPomodoro, (current, previous) => {
+  if (suppressPhaseNotifications || current <= previous) return
+  ElNotification({ title: '专注完成！休息一下', type: 'success', position: 'top-right' })
+}, { flush: 'sync' })
 
-const resetTimer = () => {
-  pauseTimer()
-  remainingSeconds.value = totalSeconds.value
-}
+watch(isBreakPhase, (isBreak, wasBreak) => {
+  if (suppressPhaseNotifications || !wasBreak || isBreak) return
+  ElNotification({ title: '休息结束，开始专注', type: 'success', position: 'top-right' })
+}, { flush: 'sync' })
 
-const skipPhase = () => {
-  handlePhaseComplete()
-}
-
-const handlePhaseComplete = () => {
-  pauseTimer()
-  
-  if (!isBreakPhase.value) {
-    currentPomodoro.value++
-    isBreakPhase.value = true
-    pomodoroStore.increment()
-  } else {
-    if (currentPomodoro.value >= 4) {
-      currentPomodoro.value = 0
-    }
-    isBreakPhase.value = false
+onMounted(async () => {
+  try {
+    await pomodoroStore.initialize()
+  } catch (error) {
+    console.error('Failed to restore Pomodoro timer:', error)
+  } finally {
+    suppressPhaseNotifications = false
   }
-  
-  remainingSeconds.value = totalSeconds.value
-  
-  ElNotification({
-    title: isBreakPhase.value ? '专注完成！休息一下' : '休息结束，开始专注',
-    type: 'success',
-    position: 'top-right'
-  })
-}
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-  if (clockTimer) clearInterval(clockTimer)
+  clockTimer = setInterval(() => { now.value = new Date() }, 1000)
 })
 
-clockTimer = setInterval(() => {
-  now.value = new Date()
-}, 1000)
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer)
+})
 </script>
 
 <style scoped>

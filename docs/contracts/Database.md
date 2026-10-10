@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-09-24
+更新时间：2026-10-09
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -9,6 +9,30 @@
 事实来源：docs/plans/backend-greenfield-rewrite-plan.md、docs/contracts/ObjectModelMatrix.md、替换前旧 Server 的 DDL/Entity/Mapper 与 PC/Mobile localDb。
 
 ## 数据源边界
+
+### 2026-10-09 Review 本地正式数据与待同步意图（代码与自动验证通过；真实Tauri待验收）
+
+- 用户选择完整本地使用。PC 主树本地 schema v12 新增 `local_review_records` 与 `local_review_intents`；本地正式快照、历史、导入完整度与稳定 ID 的 FIFO outbox 分开存储。最终主树R4 664/664与类型/构建通过，SQLite原子回滚及严格解析通过真实SQLite adapter验证；实际Tauri数据库启动/断网重启仍待验收。
+- 正式投影、历史和新意图原子提交；本地 revision 与服务器 version 分离。HTTP 首次派发前固化 payload，ACK仅处理同ID；较旧回执仅推进独立权威锚点，不回退已包含后续本地动作的更高版本投影，其余意图继续FIFO。冲突意图保留，显式选择云端进度后归档未采用意图再继续，不删除本机审计记录。
+- 临时轮次仍仅进程内切页恢复，不持久化到 SQLite/浏览器/服务端。core Sync 白名单不扩展；Rust snapshot 只替换 local_resource_records，不删除独立 Review 表。
+- 服务端沿用 V29 表/时间列/request_payload/response_payload 与 before_state；可选离线时间与存在性进入请求指纹，但两者均省略时保持旧指纹。公开 schedulingBaseline/legacy firstLearning 为已存字段的派生，无服务端新增列或迁移。详细 [计划](../plans/2026-10-09-review-stats-local-first.md)与 [API](API.md)。
+
+| PC v12 表 | 主键与数据 |
+| --- | --- |
+| `local_review_records` | `(user_id,device_id,knowledge_block_id)`；Subject、local revision、服务器 KB version、content hash、可空 state 的 JSON、命令/有效结果/legacy/导入标记 JSON、presence marker、更新时间 |
+| `local_review_intents` | `(user_id,device_id,client_command_id)`；KB、action、真实 occurredAt、payload JSON、`pending/inflight/applied/conflict/error/archived`、独立 FIFO 创建时间、`prepared`、`preparation_json` |
+
+- browser fallback 用 `auralis:v2:<编码 userId>:<编码 serverDeviceId>:review-store` 单个快照键，记录与意图同次提交；SQLite 使用当前 localDb 的串行事务。结构损坏报错，不以空快照覆写旧数据。Review资源仅从当前账号现行仓储读取；`auralis_subjects`/`auralis_knowledge_blocks`等无账号隔离旧键被忽略，不转换、不删除，联网后由现行Core Sync重建资源。
+- 本地记录的 `state=null` 表示本机没有正式状态；远端是否无状态还须由完整导入标记与独立锚点确认，不能用本地 null 推断。存在且 `version=0` 仍是存在状态。缺少已导入记录表示远端未知；临时 UI 未学习投影不能保存为状态实体或被用来猜测存在性。远端未知时可以按实际本地存在性完成学习，保留导入不完整提示与首次意图的 absent 前提；旧云端已有状态时保存冲突，不覆盖本机审计。
+- `history_json.canonicalAnchor` 独立保存 `knowledgeBlockVersion/subjectId/contentHash/state/commands/effectiveReviews/legacyEvents/legacyHistoryComplete`；明确 null 是没有已验证云端锚点。本地乐观状态/历史不更新该锚点，权威完整导入和自身实际 ACK 才可推进。
+- `preparation_json` 保存 `anchorFingerprint/anchorSubjectId/anchorContentHash/anchorCommandIds/anchorLegacyFingerprint/predecessorClientCommandIds/knownLocalCreate/allowContentInvalidation/sequence`。未固化请求可以在严格证据下绑定真实服务器 KB/state version；`prepared=true` 后载荷不可修改，结果未知只按原请求重试。
+- 正文后的安全准备仅限首条无 reviewId 学习意图，必须有编辑前完整锚点及严格失效证明；存在性不重基。元信息/Core ACK 的 KB version 更新也须以正文一致及权威 state/命令历史未变的证据核对。不能把本地 revision 或 `canonicalVersion+1` 当作 JPA version。未知首学仅完整protocol2空历史确认后准备，后继只沿自身实际ACK前缀；prepared载荷不重写。锚点、SQLite raw事务严格解析、ACK0、迟到回执/账号交错均有自动回归，证据见本轮计划。
+
+### 2026-10-07 会话与 Asset 清理的写入约束
+
+- PC 核心同步和导入在发起时固定 owner/device/session 与代际；会话失效不改变 A 的 Repository 归属，不删除其待同步内容，不将旧操作提交到 B 的投影或网络身份。内部票据不进入 HTTP DTO、SQLite 或服务器表；未结算 inflight 可用原幂等 ID 重试。
+- Source 创建 FILE、替换 Asset 或恢复 FILE 时，对 READY Asset 使用 owner-scoped 悲观写锁；保留期清理使用相同 Asset 锁，在独立事务中重查 active/recent 引用并持久化 ORPHANED，再执行不可回滚的对象删除。
+- ORPHANED 的事务提交是禁止新 FILE 引用的边界；删除失败保持 ORPHANED，可由后续清理幂等重试。Asset/Source 审计行保留。本轮不新增列、索引、迁移或同步字段，验证与剩余工程门槛见 [实施记录](../plans/2026-10-07-priority-function-fixes.md)。
 
 | 数据源 | 新后端目标作用 | 阶段 0 状态 |
 | --- | --- | --- |
@@ -49,6 +73,8 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | review_parameter_sets | FSRS 参数版本 | scheduler/version 唯一 |
 | review_states | 每个知识块当前复习状态 | knowledge_block_id 唯一；user/due 索引 |
 | review_events | 不可变复习历史 | user_id + client_event_id 唯一 |
+| review_lifecycle_commands | 学习、初选、确认、纠正与重学不可变命令回执 | user_id + client_command_id 唯一；用户/知识块归属外键级联物理清理 |
+| review_lifecycle_reviews | 同次复习初选基准与最终有效结果 | review_id 主键；用户/知识块与selected_at历史索引 |
 | change_log | 用户增量同步日志 | 用户域内递增 BIGINT cursor；user_id + cursor 索引 |
 | inbound_mutations | push 幂等结果 | user_id + device_id（语义为 serverDeviceId）+ client_mutation_id 唯一 |
 | domain_event_outbox | 数据库事件 | status/available_at 索引；幂等消费 |
@@ -76,12 +102,27 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 - V25 新增 `account_deletion_jobs(id,user_id,status,requested_at,not_before,next_object_scan_at,object_scan_after_key,lease_until,completed_at,last_error)` 与 `account_deletion_objects(job_id,object_key,deleted_at)`。作业保留待清理对象键、可重试状态、租约和已完成作业的分批复扫游标；`account_deletion_jobs.user_id` 不设置用户外键，使用户最终删除后仍可保留对象键记录。对象键由服务端从当前用户的 Asset、ParsedDocument 元数据收集，不能由客户端指定。
 - 注销请求先将用户状态设为 `DISABLED` 并撤销 refresh sessions；上传意图签发与停用用户通过用户行锁串行化。在现有预签名上传有效期及缓冲后，后台 worker 清理对象，最终在事务中按 `user_id` 显式删除依赖行与用户。已完成作业仍按有界批次周期性复扫已记录对象键，以清除预签名 PUT 晚到造成的对象重现。V25 不修改原有 Subject、Source、Asset 等表的外键删除语义。对象存储与 PostgreSQL/MinIO 真实联动仍需验收。
 
+## 专注与完整 Overview 持久化（V26–V28，2026-10-01）
+
+本轮代码已经追加以下迁移，聚焦自动验证与整合门禁记录以当前状态和实施计划为准；未在运行服务执行迁移。
+
+| 表或迁移 | 现行字段与约束 |
+| --- | --- |
+| V26 `focus_sessions` | `id/user_id/client_session_id/task_id?/started_at/ended_at/duration_seconds/completed/created_at`；用户与 client_session_id 唯一；结束不早于开始；秒数 0–86400；用户外键级联删除，task_id 为历史关联标识，不因任务删除丢失专注统计 |
+| V27 `overview_results` | 按用户、SOURCE/SUBJECT、scope_id 唯一；保存 Source/Subject 归属、ingestion_revision、whole version、outline/summary part version、完整 JSON、每部分 manifest/fingerprint/生成时间和 updated_at；两部分均非空；SOURCE 要求当前 revision，SUBJECT 无 source_id/revision |
+| V27 `overview_write_receipts` | 用户与 client_write_id 唯一；保存 scope/base_version/payload_hash/response_snapshot/created_at；独立保存每次请求的精确回放结果，直到账户删除，不改写历史请求 |
+| V28 | 仅删除 knowledge_blocks.summary/tags 两列；不会删除知识块或正文，也不改写历史 inbound_mutations/change_log JSON |
+
+专注秒数与自然完成轮次由独立历史事件聚合；原 review_events 和 studySeconds 保持复习语义。专注请求先锁用户保证并发幂等，时间规范到数据库微秒精度后比较。
+
+Overview 是独立派生成果，不进入五类资源的 core Sync snapshot/change_log/inbound_mutations。写入在用户与当前输入的锁和事务内校验 owner、活动状态、READY、revision、baseVersion；Subject 校验当前活动 READY FILE 来源集合及已持久化文件 part versions，TEXT/URL 不进入该 manifest。生成过程和失败不落远端结果。Subject 删除只直接清理其 SUBJECT scope 成果，当前子 Source 的成果由各 Source DELETE 事件清理，避免移动后的资料被旧学科误删。普通删除使成果失效，迟到请求与旧回执不能复活已删除或旧 revision 的成果；账户物理清理包含新增三表。详细 HTTP 和 manifest hash 规则见 [API](API.md)。
+
 ## 阶段 2A 核心领域 V2 已实现 schema
 
 Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。
 
 - `subjects` 保存 `name`、`description`、`icon_key`、`sort_key`、`is_default`；新用户注册不自动创建 Subject，列表可以为空。历史遗留的“未分类”记录仍保留 `is_default=true` 以兼容读取，但可按普通 Subject 软删除。名称唯一和恢复占用冲突由 SubjectService 校验。Flyway `V19__remove_subject_color.sql` 删除历史遗留的 `color` 列，仅丢弃该列值，不影响 Subject 行或其他资源。
-- `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、`summary`、正文 `content`、JSON 文本 `tags` 和 `color_override`。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
+- `knowledge_blocks` 保存 `subject_id`、可空 `source_id`、`title`、正文 `content` 和 `color_override`。V28 删除用户明确弃用的 `summary/tags` 列；原正文和其他字段保留。阶段 2B 已创建 `sources` 表、补齐 `source_id` 外键和服务层归属/活动状态校验。
   - `tasks` 保存 `subject_id`、`title`、`description`、`status`、`scheduled_at`、`due_at`、`duration_minutes`、`sort_key`；数据库 CHECK 与服务约束状态和非负时长，`due_at` 是提醒/排序信息，不与 `scheduled_at` 建立先后约束。历史迁移 `V18__restore_task_schedule_order.sql` 曾清空 `due_at < scheduled_at` 行的 `scheduled_at` 并添加 `ck_tasks_schedule_order`；新迁移 `V23__allow_scheduled_tasks_after_due_at.sql` 移除此 CHECK，不修改现有行。该历史清空不会由 V23 自动恢复。`V20__remove_task_cognitive_load` 删除已废弃的认知负荷列及 Task 同步 JSON 字段，V21 删除 Task 颜色列及历史颜色键。
 - KnowledgeBlock/Task 对 Subject 的引用在服务层按当前 `userId` 校验；跨用户或已删除 Subject 不可创建、更新或恢复子资源。三表外键均为 `ON DELETE RESTRICT`，普通业务删除只写 `deleted_at`。
 - Subject 软删除由 Server 事务内的领域事件级联处理同一用户、同一 `subject_id` 下的活动 Source、KnowledgeBlock 和 Task：子行通过实体更新递增 `version`、更新审计时间并写入 `deleted_at`，不执行 SQL 硬删除或新增表/字段；每个子行的 DELETE change-log tombstone 与受影响 Relation tombstone 同事务提交。Subject restore 不恢复这些子行，已删除子行不会重复产生 tombstone。
@@ -116,6 +157,19 @@ V5 同时将 change log、inbound mutation 的 owner 外键改为级联删除，
 
 ## 阶段 3/4 审核修复迁移
 
+### V29 学习、复习纠正与掌握退出（2026-10-08，代码、相关自动验证及临时PG迁移通过）
+
+`V29__review_lifecycle_protocol.sql` 扩展既有Review状态并新增独立命令与有效结果表，不增加核心Sync资源或端侧持久队列。
+
+- `review_states` 增加 `needs_learning BOOLEAN NOT NULL DEFAULT FALSE`、`mastered BOOLEAN NOT NULL DEFAULT FALSE`、`stable_success_count INTEGER NOT NULL DEFAULT 0`、可空 `next_review_stage VARCHAR(32)`、`last_practice_at TIMESTAMPTZ`、`last_review_id UUID`、`pending_review_id UUID`、`content_hash VARCHAR(64)`。稳定次数CHECK 0–3；阶段仅EARLY_RECALL/CROSS_DAY/FINAL_VERIFICATION；needs_learning与mastered互斥；mastered要求stable_success_count=3。新增user/learning/mastery/due联合索引。
+- `review_lifecycle_commands` 保存 `id,user_id,knowledge_block_id,client_command_id,action,occurred_at,knowledge_block_version,base_version,review_id,rating,duration_seconds,content_hash,request_payload,response_payload,created_at`。请求及冻结回执为TEXT；`(user_id,client_command_id)`唯一。action限定LEARNING_COMPLETED/REVIEW_SELECTED/REVIEW_CONFIRMED/REVIEW_CORRECTED/LEARNING_REOPENED；rating可空或AGAIN/HARD/GOOD；版本及耗时非负；按user/KB/occurred_at/id索引读取审计。
+- `review_lifecycle_reviews` 保存 `review_id,user_id,knowledge_block_id,selected_rating,effective_rating,selected_at,resolved_at,resolution,duration_seconds,knowledge_block_version,content_hash,before_state,created_at`。review_id主键；before_state为初选前状态TEXT，用于同次纠正的原始调度基准。有效结果可空，确认/纠正更新同一行；resolution限定AGAIN_SELECTED/CONFIRMED/CORRECTED_AGAIN/SUPERSEDED。反馈仅三档，版本/耗时非负；按user/KB/selected_at/review_id索引。
+- 两新增表user和KB外键均ON DELETE CASCADE；活动资源读取与写入仍按owner和软删除过滤，软删除保留历史。旧review_events不可变快照与精确回放不改写。
+- 旧state迁移仅增加默认未掌握/稳定0/无需学习标记，原日期、历史及version保留；不从reps推断通过次数。nullable内容hash在新流程绑定，不把旧记录认作已经通过3R。mastered仍保留有限due_at，查询按显式mastered排除，避免用极远日期表达毕业。
+- V29在业务流量前用 `INSERT ... SELECT ... WHERE NOT EXISTS(scheduler,version)` 预置默认FSRS_LITE/1参数，沿用既有默认ID/JSON；已有同scheduler/version行保持ID和内容。避免不同Subject/用户首次学习各自查空并竞争全局参数唯一键。临时PG空库双Subject首学与V28自定义参数升级保留分别1/1，当前V29的H2迁移及Lifecycle/legacy回归14/14通过。
+- 生命周期写入沿Subject→owner KB→ReviewState锁序，串行化首次缺状态创建、正文变化与同块命令。读出Subject到加锁间KB已移动时，复用expectedSubjectId重载在锁后重读归属，不匹配拒绝RESOURCE_VERSION_CONFLICT且不写state/command；该helper也保护legacy写入。每个生命周期命令核对当前KnowledgeBlock.version及exact UTF-8正文SHA-256，JPA状态version不绕过；正文变化通过共享领域事件在原事务内失效资格，元信息修改保留。
+- 学科状态统计使用pendingLearning/reviewing/mastered分区；新有效结果与旧非SKIP事件组合，学习完成从命令独立计数。日期归属与响应字段见 [API](API.md)，命令/生成契约/PG证明范围见 [本轮实施](../plans/2026-10-08-review-learning-mastery-implementation.md)。
+
 - `V6__sync_atomicity_and_cursor_high_water.sql` 放宽 inbound mutation 决策约束以容纳事务内 `PROCESSING` 占位，并新增 `sync_cursor_high_water(user_id, cursor)`；高水位不随 change log 保留清理删除。
 - `V7__task_completion_timestamp.sql` 为 `tasks` 新增可空 `completed_at`；任务进入 DONE 时写入，离开 DONE 时清空，保持 DONE 状态的后续编辑不改写该时间。weekly completed task 统计按该字段过滤，而不是按 `updated_at`。
 
@@ -135,11 +189,15 @@ Asset 不作为 Relation 节点，也不进入普通离线 mutation；Source 才
 
 ### KnowledgeBlock
 
-保存 subjectId、sourceId、title、summary、content、tags、colorOverride 和共同字段。content 是正文权威；不保存相对 time 文案、mastery 百分比、difficulty 文案、relatedBlockIds 或拼接关系标记。
+保存 subjectId、sourceId、title、content、colorOverride 和共同字段。content 是正文权威；卡片短文本从正文临时截取，不再持久化 summary、preview 或 tags。原有不可变同步 mutation 的请求和回执不改写；服务端忽略请求中的旧扩展字段。端侧旧库备份保留，不执行历史正文删除。不保存相对 time 文案、mastery 百分比、difficulty 文案、relatedBlockIds 或拼接关系标记。
 
 ### Task
 
-保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、sortKey、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间。排期不自动改变状态；`dueAt` 仅作截止提醒和排序信息，允许 `scheduledAt` 晚于 `dueAt`，写入与迁移均保留截止时间。V21 删除 Task `colorOverride` 并清理相关 JSON；V23 移除历史排期顺序 CHECK。
+保存 subjectId、title、description、status、scheduledAt、dueAt、durationMinutes、sortKey、completedAt 和共同字段。status 固定为 TODO、IN_PROGRESS、DONE、CANCELLED；completedAt 表示最近一次进入 DONE 的服务器时间，包括 PC 自动完成经同步提交的更新，不能用截止时间替代。排期写入本身不自动改变状态；`dueAt` 用于截止提醒、排序和新排期的完整结束上限：创建、恢复、时间字段有效值变化或取消后重新进入活动排期时要求 `scheduledAt + effectiveDurationMinutes <= dueAt`（空时长按 30 分钟，无截止不限制，恰好结束允许）。领域服务共享校验覆盖 REST/Sync、换位和顺延，不增加列、CHECK 或迁移，保留用户截止时间。历史越界排期不批量改写，非时间编辑及自动 DONE 仍允许，空时长与显式 30 等价。PC 活动未排期任务按有效 `dueAt <= now` 提交 DONE；已排期任务按排期结束时刻提交 DONE，两者均保留原 `dueAt`，沿用现有字段和版本规则，无新增列或迁移。V21 删除 Task `colorOverride` 并清理相关 JSON；V23 移除历史排期顺序 CHECK。
+
+PC 自动完成在本地原子提交中要求 TASK 行存在且无 `deletedAt`，包含 Subject cascade 不增加子任务版本的墓碑情形；删除标记以本地资源行元数据为准，不能只检查 payload。条件仅作为端侧仓储写入前置校验，不新增持久化字段或同步载荷。
+
+Task 截止值表示约束（2026-10-09）：`dueAt/due_at` 与 TASK mutation 保存带时区的真实 instant；PC 纯日期输入一次转换为当地日末对应的 UTC 值，不持久化纯日期字符串，不改解释已存午夜/UTC日末。资产库以真实时间戳转换出的本地日期显示；未改日期的非时间编辑保留原精确截止值。本次不改数据结构、同步字段或迁移，不批量改写既有数据；旧日期输入造成的错误值可由用户先清空截止日期、再重选并正常保存纠正。
 
 ### Relation
 
@@ -148,6 +206,15 @@ Asset 不作为 Relation 节点，也不进入普通离线 mutation；Source 才
 ### Review
 
 ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、lapses、schedulerVersion、parameterSetId 和共同字段。ReviewEvent 不可变，保存 clientEventId、评分、复习时间、算法版本、参数版本和前后快照。SKIP 只写事件，不改变 ReviewState。
+
+#### 2026-10-08 学科读取与 PC 本轮状态约束
+
+- 本次学科 states / stats 仅新增读取规则，复用 `review_states`、`review_events`、Subject、Source、KnowledgeBlock 与 Task；不增加表、列、索引、迁移或同步字段。
+- 状态分页在 limit 前过滤 owner、当前学科与活动 Subject/KB，以 knowledge_block_id 作稳定 keyset，游标绑定 userId / subjectId。统计在可重复读事务内组合独立聚合，活动 KB 与无状态/到期/未来三类计数使用同一查询快照。
+- 正式学习判定使用不可变事件 `before_state IS NULL`；首次状态 version 本身为 0，不能用 base_version=0 判断后续评分是否首次。SKIP 仍按现行 events 保存跳过事件，但不计入正式学习次数、首次/后续学习和反馈分布。
+- 日统计按请求 IANA 时区的自然日半开区间聚合并补零；事件随 KB 当前学科归属。KB 墓碑不进入当前状态概况，历史评分与新增 KB 趋势仍保留已软删除行；物理删除后的行无法恢复。任务完成趋势依据当前 DONE/completed_at 并保留已完成软删除历史，重新打开清空的旧 completed_at 不可推算。
+- PC 每学科轮次仅保存在当前进程的 Review Store 内存，固定账号/设备/会话与 roundId；包含队列、展开态、首次正式接受标记和待确认不可变事件。切页可继续，刷新/重启、明确结束、成功删除学科或会话变化清除；不写 SQLite、localStorage、Review outbox 或服务端表。存在未确认事件时先幂等确认再结束，删除成功后失效该学科的在途请求写回资格。
+- 接口与实际验证边界见 [API](API.md) 和 [实施计划](../plans/2026-10-08-subject-review-stats-implementation.md)，专注持久化与个人聚合保持现行规则。
 
 ## 同步不变量
 
@@ -172,6 +239,7 @@ ReviewState 保存 difficulty、stability、dueAt、lastReviewedAt、reps、laps
 - 浏览器 fallback 使用 `auralis:v2:<userId>:<serverDeviceId>:state` namespace，业务记录、tombstone、mutation 和 cursor 不再写入新的全局未命名业务 key。
 - repository 对外返回 camelCase `LocalEntity`/`LocalMutation` DTO；snake_case 只存在于 SQLite adapter。`baseVersion` 不匹配返回 `LocalConflictError`，删除保留 `deletedAt` tombstone，snapshot reset 会保留当前用户所有 pending mutation 及其本地 payload。
 - PC 时间轴自动完成在提交本地 TASK mutation 时额外传入可选 `expectedLocalVersion` 与非 pending mutation 拒绝条件：SQLite 在同一写事务内核对当前资源版本与同资源的 inflight/error/conflict，再提交或合并 pending；浏览器 fallback 在同步 read/modify/write 内进行同样检查。缺行、版本已变化或存在不能合并的未解决 mutation 时拒绝，避免旧自动写入覆盖同步投影或产生重复 outbox。增量 pull 使用 `upsertFromSync` 在同一写边界重新核对同资源未解决 mutation，跳过期间新产生本地写入的资源。其他普通 mutation 调用保持原有提交语义；未新增表或同步字段。
+- 2026-10-07 在线排期响应使用既有 `upsertSyncedBatch`：先核对整批 pending/inflight/conflict/error mutation 围栏，有未解决写入返回 false 且零写；否则在同一 SQL 事务或 browser 同步状态提交段读取当前行，逐项跳过较低版本及会清除当前墓碑的活动响应，包括同版本或更高版本的活动响应。此入口不执行显式恢复；同版本 active→active 和 active→墓碑仍可接受，墓碑更新不能降低版本。其他有效成员在同一提交边界合并，SQL 写失败整体回滚，browser 只写一次状态；true 表示可接受成员合并完成，不表示每个输入成员均覆盖当前行。Store 保留响应原始版本（包括 0），仅从当前 Repository 重建投影；cursor 已推进的较新行/墓碑不能依赖再次 read 修复旧响应覆盖。没有 schema、表、同步字段或迁移变更，验证与限制见 [实施记录](../plans/2026-10-07-timeline-placement-and-swap-fixes.md)。
 - 旧 account-less localStorage 数据仅复制到 `auralis:legacy_unassigned:v1` 备份空间；Tauri 旧 SQLite 资源行复制到 `legacy_unassigned_records`，均保留原值。首次登录必须由用户明确选择“导入当前账号”或“保留未归属备份”，不得静默归属或删除。
 
 该边界已用临时内存 SQLite 与独立 localStorage namespace 覆盖用户隔离、旧 SQLite 行备份、tombstone、版本冲突、snapshot pending 保留和 legacy backup；真实 Tauri plugin、跨版本旧数据库升级和 GUI 迁移选择仍未验收。
@@ -193,12 +261,29 @@ PC 加密 cache/header 与 `payload_receipt_json` 现在记录本地派生格式
 - 同步器只领取 `pending` mutation 为 `inflight`，push 结果只结算同一 `client_mutation_id`。同资源仍有 `pending`、`inflight`、`conflict` 或 `error` mutation 时，push 回包、cursor pull 与 snapshot 均不得覆盖本地投影。
 - cursor pull 对一个资源在同一 page 的多条记录仅应用最后一条；服务端 tombstone 仅在该资源没有未解决本地 mutation 时写入。普通资源列表 API 不参与 PC Store 的缓存刷新。
 
+### PC 专注与 Overview 同步扩展（本地 schema v10/v11，2026-10-01）
+
+以现有 v9 为起点追加表；保留 ai_overview_cache、核心资源副本、旧备份及原 mutation。重复初始化使用既有幂等建表流程，不根据过时文档回退 schema。
+
+Tauri 初始化在 SQL 插件加载固定 `sqlite:auralis.db` 后、执行 PRAGMA/schema/业务查询前，调用 `initialize_local_database_pool` 固定单连接池（max/min 1，无正常 idle/lifetime 回收）。与现有 JS 串行队列共同保证跨插件调用的 BEGIN/COMMIT 连接一致性；native snapshot 仍使用其独立真实事务。没有新增依赖或修改数据库路径。
+
+- v10 `pomodoro_timer_state` 以 `(user_id,device_id)` 为主键保存 state_json/updated_at，包括阶段、时长、累计运行时间、当前开始时间及稳定 clientSessionId/taskId。暂停不累计，重载按时间戳恢复，路由切换不拥有或销毁计时器。
+- v10 `pomodoro_focus_sessions` 以 `(user_id,device_id,client_session_id)` 为主键保存最终时段、实际秒数、自然完成标记和 pending/synced。阶段状态与最终事件同事务保存；ACK 后保留 synced 本机历史，供本地日期的今日卡统计。Profile 只用服务器历史总量，不盲目加 pending，避免响应丢失导致重复显示。
+- v11 `overview_sync_states` 以 owner/device/scope/revision 为主键保存服务器整体与分项版本、分项 manifest/fingerprint；客户端 FILE 对应服务端 SOURCE。
+- v11 `overview_sync_outbox` 以 owner/device/client_write_id 为主键，保存 intent_json、可空 request_json、状态及安全错误。状态为 PREPARED/PENDING/INFLIGHT/CONFLICT/ERROR/STALE。完整成功 cache 与 intent 同事务落地；普通新候选初始为 PREPARED，已有未解决冲突时新候选仍为 CONFLICT。取得 baseline 后 HTTP body 只固化一次，超时或本地 ACK 失败原样重放；终端服务错误为 ERROR，新明确候选可替代旧 ERROR。候选冲突不能被后台 GET 或普通重新生成/保存绕过，须显式选择本机上传或采用远端。
+- 历史完整 READY cache 可作为 LEGACY_SEED；远端已有成果时采用远端，不能用旧 seed 覆盖它。新生成和手动编辑与旧 seed 区分。失败/半成品不 seed，Source revision/删除或 Subject 当前输入变化使迟到候选失效。
+- 端侧 FILE/SUBJECT 删除在首个异步操作前建立 owner/device/scope 删除生命周期围栏；远端请求捕获开始时 generation token，install/complete 在串行写边界内复核。删除失败只能释放自身 ticket，不能释放更新的删除；删除开始至完成期间旧活动投影不能重新激活。成功删除后仅显式恢复或当前活动、未删除且无未解决 DELETE 的恢复投影可以重新激活；旧 generation 响应仍拒绝，不影响其他 owner/scope。该围栏为进程内生命周期状态，不新增持久化表或扩展 core Sync 数据结构。
+- Source DELETE 提交成功后才移除内存投影、discard Overview cache/outbox 和清理 parser；预提交失败保留可恢复的本地资料和未同步候选。Subject 父墓碑已持久化后，即使子级/Overview 清理失败也保持删除围栏，由既有 reconcile 重试；不得因清理异常把已删除 scope 改回活动。
+- 拒绝 Subject DELETE 后的权威 snapshot 修复期间（resetRequired），不得依据旧 Source tombstone 终结可恢复 DRAFT 或删除其本地资产；清理边界须复核当前投影。本地尚未上传的 DRAFT 在恢复活动 Subject 后由既有 coordinator 重建，即使服务器 sources 为空也应保留，不能伪造远端 Source。
+
+SQLite 自动测试与浏览器 fallback 验证不能证明真实 Tauri 重启迁移；具体命令和边界见实施计划。
+
 ### PC AI 总览派生缓存（本地 schema v7，2026-09-10）
 
-- PC 本地 SQLite 新增 `ai_overview_cache`，主键为 `(user_id, device_id, scope_type, scope_id, revision_key)`；`device_id` 仍表示 `serverDeviceId`。该表只保存 AI 生成的大纲、总结、生成时间、输入指纹和安全失败摘要，不进入 `local_resource_records`、`local_mutations`、Sync 或 Server 数据库。
+- PC 本地 SQLite 新增 `ai_overview_cache`，主键为 `(user_id, device_id, scope_type, scope_id, revision_key)`；`device_id` 仍表示 `serverDeviceId`。该表保存 AI 生成的大纲、总结、生成时间、输入指纹和安全失败摘要，不进入 `local_resource_records`、`local_mutations` 或核心 Sync。2026-10-01 起，完整成功成果通过独立 Overview 接口与 Server 结果表对账；失败摘要仍只在本机。
 - `scope_type=FILE` 时 `revision_key` 是非空 Source `ingestionRevision`；`scope_type=SUBJECT` 时固定为 `subject-v1`。数据库 CHECK 与 repository 共同约束该关系，避免把旧文件 revision 误读为当前学科结果。
 - `OUTLINE` 与 `SUMMARY` 分项成功时只替换对应 JSON 和时间；失败只更新 `status/error_code/error_detail`，已有成功内容继续保留。浏览器 fallback 使用 `auralis:v1:overviews:<userId>:<serverDeviceId>`，并对缓存记录和嵌套 JSON 做结构校验，损坏数据统一报告 `OVERVIEW_CACHE_CORRUPT`。
-- 学科总览的 `input_fingerprint` 由参与文件的 Source ID、ingestion revision、大纲和总结规范化排序后计算 SHA-256，用于识别本地资料变化；它不是同步版本或 Server 权威字段。
+- 学科总览的 `input_fingerprint` 由参与文件的 Source ID、ingestion revision、大纲和总结规范化排序后计算 SHA-256，用于识别本地资料变化；它是本地生成输入判定；远端 Subject manifest fingerprint 另按 API 契约计算，不与本地内容 hash 互换。
 
 内存 SQLite 与浏览器 fallback 已覆盖 owner/device/revision 隔离、分项替换、失败保留、并发保存/删除、损坏 JSON 和 fingerprint 稳定性。真实 Tauri SQLite v6→v7 重启升级与双账号 GUI 仍待人工验收。
 
@@ -252,6 +337,7 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - `ingestion_jobs` 保存 Source ingestion 状态、attempt、lease、错误安全摘要及开始/完成时间；当前状态约束为 `PENDING`、`PARSING`、`INDEXING`、`READY`、`FAILED`。worker 通过 `PESSIMISTIC_WRITE` claim-next 选择最早任务，`PARSING/INDEXING` 的过期 lease 可恢复；达到最大 attempt 后进入 `FAILED`，当前不新增 schema 列。
 - `source_chunks` 保存 ordinal、正文、SHA-256、字符偏移、兼容性 `embedding_json`、`generation` 和 `active`；唯一键为 `(user_id, source_id, generation, ordinal)`。embedding 业务校验固定为 1024 个有限浮点数。
 - `conversations` 支持用户隔离和软删除；`messages` 保存 `message_sequence`、`role`、`status`、正文、模型和安全错误元数据，按 `(conversation_id, message_sequence)` 唯一；USER 消息可保存 `client_request_id`，按 `(user_id, client_request_id)` 唯一用于安全重试。
+- 2026-10-01：提问请求顶层 selectionText 与现行 readingContext.selectionText 仅参与本次 Provider prompt，不追加到 messages 正文或创建引用列、locator/citation 记录；本轮没有数据库迁移。现有 client_request_id 回放仍返回已持久化结果。
 - `V9__postgres_vector_support.java` 仅在 PostgreSQL 增加 `vector` 扩展、`source_chunks.embedding vector(1024)` 和 HNSW cosine 索引；H2 使用 V8 的 JSON 兼容列，便于自动测试。
 - `V10__source_chunk_generation_cutover.sql` 增加 `ingestion_jobs.generation`、`source_chunks.generation/active`、新 generation 唯一约束和活动 chunk 查询索引。新 generation 写入完成后才切换 active，失败由事务回滚并保留旧 generation。
 - `V11__backfill_postgres_vectors.java` 仅在 PostgreSQL 将历史 `embedding_json` 回填到 vector 列，避免升级后旧 chunk 因 vector 为空而无法检索。

@@ -1,4 +1,5 @@
 import request from './request'
+import type { SyncRequestScopeTicket, SyncScopedAxiosRequestConfig } from './request'
 import type { LocalMutation } from '@/types/api'
 import type {
   SyncChange,
@@ -75,21 +76,25 @@ function normalizeSnapshotResponse(response: Partial<SyncSnapshotResponse>): Syn
 }
 
 export const useSyncApi = {
-  async pullChanges(input: SyncPullQuery = {}): Promise<SyncPullResponse> {
-    const response = await request.get('/api/sync/pull', { params: input }) as unknown as Partial<SyncPullResponse>
+  async pullChanges(input: SyncPullQuery = {}, scope?: SyncRequestScopeTicket): Promise<SyncPullResponse> {
+    const config = scope
+      ? { params: input, __auralisSyncScope: scope } as SyncScopedAxiosRequestConfig
+      : { params: input }
+    const response = await request.get('/api/sync/pull', config) as unknown as Partial<SyncPullResponse>
     return normalizePullResponse(response)
   },
 
-  async pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }): Promise<SyncPushResponse> {
+  async pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }, scope?: SyncRequestScopeTicket): Promise<SyncPushResponse> {
     const response = await request.post('/api/sync/push', {
       serverDeviceId: input.serverDeviceId,
       mutations: input.mutations.map(toMutationRequest),
-    }) as unknown as Partial<SyncPushResponse>
+    }, scope ? { __auralisSyncScope: scope } as SyncScopedAxiosRequestConfig : undefined) as unknown as Partial<SyncPushResponse>
     return normalizePushResponse(response)
   },
 
-  async getSnapshot(): Promise<SyncSnapshotResponse> {
-    const response = await request.get('/api/sync/snapshot') as unknown as Partial<SyncSnapshotResponse>
+  async getSnapshot(scope?: SyncRequestScopeTicket): Promise<SyncSnapshotResponse> {
+    const config = scope ? { __auralisSyncScope: scope } as SyncScopedAxiosRequestConfig : undefined
+    const response = await request.get('/api/sync/snapshot', config) as unknown as Partial<SyncSnapshotResponse>
     return normalizeSnapshotResponse(response)
   },
 }

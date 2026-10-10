@@ -173,3 +173,11 @@ test('task store metrics and offline persistence protect completed tasks from pa
   assert.match(taskStore, /model\.status !== 'CANCELLED' && model\.status !== 'DONE'/)
   assert.match(dashboard, /\.todo-item\.is-completed/)
 })
+
+test('week-view day drops pass the column full dateKey to the Store', () => {
+  assert.match(timeline, /v-for="day in timelineDays"[\s\S]*?@drop\.prevent="handleDropOnDay\(day\.dateKey\)"/,
+    'each week column must pass its own full dateKey to the day-drop handler')
+  const dayDropHandler = timeline.slice(timeline.indexOf('const handleDropOnDay'), timeline.indexOf('const handleDropOnPending'))
+  assert.match(dayDropHandler, /taskStore\.scheduleTaskToDay\(draggedItem\.value\.taskId, day\)/,
+    'the day-drop handler must forward that date to the Store scheduling operation')
+})

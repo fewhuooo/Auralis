@@ -4,7 +4,7 @@
       
       <!-- Left Column: Timer Core (Enlarged proportion ~64%) -->
       <div class="left-column">
-        <TimerCore />
+        <TimerCore :task-id="selectedTask.isFreeStudy ? null : selectedTask.id" />
       </div>
 
       <!-- Right Column: Stats & Details (~36%) -->
@@ -59,7 +59,7 @@
         <div class="panel-card middle-card">
           <div class="card-header">
             <span class="card-title">今日专注看板</span>
-            <p class="card-sub-hint">记录今日完成的专注轮次与累计心流时长</p>
+            <p class="card-sub-hint">本设备当地日累计；暂停和休息不计入专注时长</p>
           </div>
           <div class="stats-container">
             <div class="stat-col">
@@ -74,7 +74,7 @@
 
             <div class="stat-col">
               <div class="val-wrapper">
-                <span class="stat-val">{{ completedToday * FOCUS_MINS }}</span>
+                <span class="stat-val">{{ (focusSecondsToday / 60).toFixed(1) }}</span>
                 <span class="stat-unit">m</span>
               </div>
               <div class="stat-label-row">
@@ -100,8 +100,6 @@ import { usePomodoroStore } from '@/store/usePomodoroStore'
 
 const taskStore = useTaskStore()
 const pomodoroStore = usePomodoroStore()
-
-const FOCUS_MINS = 25
 
 const FREE_STUDY_TASK = {
   id: 'free-study',
@@ -159,6 +157,8 @@ const selectedTask = computed(() => {
 const completedToday = computed(() => {
   return pomodoroStore.completedToday
 })
+
+const focusSecondsToday = computed(() => pomodoroStore.focusSecondsToday)
 
 /**
  * 寻找当前时间正在进行或即将开始的时间轴任务

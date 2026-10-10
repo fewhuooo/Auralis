@@ -20,6 +20,7 @@ import com.auralis.app.ai.MessageView;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.ai.retrieval.Citation;
+import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
@@ -179,6 +180,97 @@ class AiStreamingTests {
     }
 
     @Test
+    void sendsTopLevelSelectionToProviderWithoutTriggeringRetrieval() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String selection = "A quoted passage selected by the user.";
+        AtomicReference<AiProviderRequest> request = new AtomicReference<>();
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(aiProperties.maxPromptChars()).thenReturn(1000);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
+
+        streamingService.stream(userId, new AiMessageCommand(
+                conversationId, "What does this mean?", AiProviderType.DEEPSEEK, false, 3,
+                "request-selection-no-retrieval", null, selection));
+
+        assertThat(request.get().messages()).anySatisfy(message -> {
+            assertThat(message.role()).isEqualTo(AiMessageRole.USER);
+            assertThat(message.content()).contains(selection);
+        });
+        assertThat(request.get().messages()).anySatisfy(message ->
+                assertThat(message.content()).contains("What does this mean?"));
+        verify(conversationService).reserveUserMessage(eq(userId), eq(conversationId), anyString(),
+                eq("What does this mean?"), eq("request-selection-no-retrieval"));
+        verifyNoInteractions(retrievalService, embeddingProviderRegistry, embeddingProvider);
+        verify(settingsService, never()).resolveServerManagedEmbedding();
+    }
+
+    @Test
+    void topLevelSelectionOverridesReadingContextSelection() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String topLevel = "Top-level selection";
+        String nested = "Nested selection must lose";
+        ReadingContext readingContext = new ReadingContext(null, UUID.randomUUID(),
+                ReadingContext.RetrievalMode.SUBJECT, List.of(), nested);
+        AtomicReference<AiProviderRequest> request = new AtomicReference<>();
+        stubRetrieval(userId);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
+
+        streamingService.stream(userId, new AiMessageCommand(
+                conversationId, "Question", AiProviderType.DEEPSEEK, false, 3,
+                "request-selection-precedence", readingContext, topLevel));
+
+        assertThat(request.get().messages()).anySatisfy(message -> assertThat(message.content()).contains(topLevel));
+        assertThat(request.get().messages()).noneSatisfy(message -> assertThat(message.content()).contains(nested));
+    }
+
+    @Test
+    void blankTopLevelSelectionSuppressesReadingContextQuote() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String nested = "Nested selection must be suppressed";
+        ReadingContext readingContext = new ReadingContext(null, UUID.randomUUID(),
+                ReadingContext.RetrievalMode.SUBJECT, List.of(), nested);
+        AtomicReference<AiProviderRequest> request = new AtomicReference<>();
+        stubRetrieval(userId);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
+
+        streamingService.stream(userId, new AiMessageCommand(
+                conversationId, "Question", AiProviderType.DEEPSEEK, false, 3,
+                "request-selection-blank-precedence", readingContext, "  \n"));
+
+        assertThat(request.get().messages()).noneSatisfy(message -> assertThat(message.content()).contains(nested));
+    }
+
+    @Test
+    void usesNestedSelectionWhenTopLevelIsAbsent() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        String nested = "Nested selection fallback";
+        ReadingContext readingContext = new ReadingContext(null, UUID.randomUUID(),
+                ReadingContext.RetrievalMode.SUBJECT, List.of(), nested);
+        AtomicReference<AiProviderRequest> request = new AtomicReference<>();
+        stubRetrieval(userId);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
+
+        streamingService.stream(userId, new AiMessageCommand(
+                conversationId, "Question", AiProviderType.DEEPSEEK, false, 3,
+                "request-selection-nested-fallback", readingContext, null));
+
+        assertThat(request.get().messages()).anySatisfy(message -> assertThat(message.content()).contains(nested));
+    }
+
+    @Test
     void rejectsTopKOutsideConfiguredRangeBeforeCreatingMessage() {
         UUID userId = UUID.randomUUID();
         when(properties.ai()).thenReturn(aiProperties);
@@ -210,7 +302,8 @@ class AiStreamingTests {
                         conversationId, userMessage, assistantMessage, false));
 
         List<AiStreamEvent> events = streamingService.stream(userId,
-                new AiMessageCommand(null, "retry", AiProviderType.DEEPSEEK, false, 3, "duplicate"));
+                new AiMessageCommand(null, "retry", AiProviderType.DEEPSEEK, false, 3, "duplicate",
+                        null, "a different selection on replay"));
 
         assertThat(events).extracting(AiStreamEvent::event)
                 .containsExactly("message.started", "message.delta", "message.completed");
@@ -400,6 +493,20 @@ class AiStreamingTests {
         public List<AiProviderChunk> stream(AiProviderRequest request, AiCredential credential) {
             return List.of(new AiProviderChunk("hello ", false), new AiProviderChunk("world", true));
         }
+    }
+
+    private void stubRetrieval(UUID userId) {
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(aiProperties.maxPromptChars()).thenReturn(1000);
+        when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.SILICONFLOW, "embedding-model", new AiCredential("https://embedding.test", "secret")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        List<Double> vector = java.util.Collections.nCopies(1024, 1.0);
+        when(embeddingProvider.embed(List.of("Question"), new AiCredential("https://embedding.test", "secret")))
+                .thenReturn(new EmbeddingResult(List.of(vector)));
+        when(retrievalService.retrieve(eq(userId), eq(vector), eq(3), any(ReadingContext.class), eq("Question")))
+                .thenReturn(List.of());
     }
 
     private static final class CapturingStreamingProvider implements AiProviderPort {

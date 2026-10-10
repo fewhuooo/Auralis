@@ -18,12 +18,10 @@ public final class KnowledgeBlockDtos {
             @NotNull UUID subjectId,
             UUID sourceId,
             @NotBlank @Size(max = 240) String title,
-            @Size(max = 4000) String summary,
             @NotBlank String content,
-            @Size(max = 32) List<@NotBlank @Size(max = 120) String> tags,
             @Size(max = 32) String colorOverride) {
         KnowledgeBlockCommand command() {
-            return new KnowledgeBlockCommand(subjectId, sourceId, title, summary, content, tags, colorOverride);
+            return new KnowledgeBlockCommand(subjectId, sourceId, title, content, colorOverride);
         }
     }
 
@@ -32,12 +30,10 @@ public final class KnowledgeBlockDtos {
             @NotNull UUID subjectId,
             UUID sourceId,
             @NotBlank @Size(max = 240) String title,
-            @Size(max = 4000) String summary,
             @NotBlank String content,
-            @Size(max = 32) List<@NotBlank @Size(max = 120) String> tags,
             @Size(max = 32) String colorOverride) {
         KnowledgeBlockCommand command() {
-            return new KnowledgeBlockCommand(subjectId, sourceId, title, summary, content, tags, colorOverride);
+            return new KnowledgeBlockCommand(subjectId, sourceId, title, content, colorOverride);
         }
     }
 
@@ -55,17 +51,15 @@ public final class KnowledgeBlockDtos {
             UUID subjectId,
             UUID sourceId,
             String title,
-            String summary,
             String content,
-            List<String> tags,
             String colorOverride,
             long version,
             Instant createdAt,
             Instant updatedAt,
             Instant deletedAt) {
         static Response from(KnowledgeBlockView view) {
-            return new Response(view.id(), view.subjectId(), view.sourceId(), view.title(), view.summary(), view.content(),
-                    view.tags(), view.colorOverride(), view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
+            return new Response(view.id(), view.subjectId(), view.sourceId(), view.title(), view.content(),
+                    view.colorOverride(), view.version(), view.createdAt(), view.updatedAt(), view.deletedAt());
         }
     }
 }

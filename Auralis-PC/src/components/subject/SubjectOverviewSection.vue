@@ -16,6 +16,7 @@ const emit = defineEmits<{
   generate: []
   'generate-outline': []
   'open-summary': []
+  'resolve-sync-conflict': [choice: 'LOCAL' | 'REMOTE']
 }>()
 
 const hasContent = () => Boolean(props.overview?.outline?.length || props.overview?.summary)
@@ -116,6 +117,13 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
         <p v-if="isStale && hasContent()" class="file-outline__notice subject-stale-notice">
           <IconAlertTriangle :size="12" :stroke-width="1.6" />
           <span class="file-outline__notice-text">资料发生变化，当前内容仍可查看，建议重新生成。</span>
+        </p>
+
+        <p v-if="overview?.syncStatus === 'CONFLICT'" class="file-outline__notice overview-sync-conflict">
+          <IconAlertTriangle :size="12" :stroke-width="1.6" />
+          <span class="file-outline__notice-text">云端版本已变化，本机总览仍保留。</span>
+          <button type="button" class="file-outline__retry" @click.stop="emit('resolve-sync-conflict', 'LOCAL')">保留本机并上传</button>
+          <button type="button" class="file-outline__retry" @click.stop="emit('resolve-sync-conflict', 'REMOTE')">采用云端</button>
         </p>
 
         <!-- 正在梳理中卡片 -->

@@ -1,3 +1,7 @@
+import { register } from 'node:module'
+const srcRootUrl = new URL('../src/', import.meta.url).href
+const loaderCode = "export async function resolve(specifier, context, nextResolve) { if (specifier.startsWith('@/')) { const root = '" + srcRootUrl + "'; const subPath = specifier.slice(2); const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts'; return nextResolve(new URL(withExt, root).href, context); } if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs')) { return nextResolve(new URL(specifier + '.ts', context.parentURL).href, context); } return nextResolve(specifier, context); }"
+register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -60,4 +64,74 @@ test('controller propagates abort without resolving as a successful response', a
   assert.ok(signal)
   controller.abort()
   await assert.rejects(pending, (error) => error instanceof DOMException && error.name === 'AbortError')
+})
+
+
+const { createPinia, setActivePinia } = await import('pinia');
+const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+const { useChatStore } = await import('../src/store/useChatStore.ts');
+
+class MemoryStorage {
+  #values = new Map()
+  getItem(key) { return this.#values.has(key) ? this.#values.get(key) : null }
+  setItem(key, value) { this.#values.set(key, String(value)) }
+  removeItem(key) { this.#values.delete(key) }
+  clear() { this.#values.clear() }
+}
+
+test('chat store sends selectionText properly for NONE and AUTO retrieval modes and respects 4000 char cap', async () => {
+  globalThis.localStorage = new MemoryStorage()
+  setActivePinia(createPinia())
+  const auth = useAuthStore()
+  auth.setSession({
+    user: { id: 'test-user', username: 'test' },
+    tokens: { accessToken: 'access', refreshToken: 'refresh' },
+    sessionId: 'test-session',
+    serverDeviceId: 'test-device',
+  })
+  const chat = useChatStore()
+  chat.sessions.push({
+    id: 'test-conversation',
+    remoteId: 'remote-test-conversation',
+    creationRequestId: 'creation-request',
+    title: 'test',
+    version: 1,
+    localOnly: false,
+    purpose: 'GENERAL',
+  })
+  chat.activeSessionId = 'test-conversation'
+
+  const requests = []
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async (_url, init) => {
+    requests.push(JSON.parse(init.body))
+    return new Response('event: message.completed\ndata: {"content":"ok"}\n\n', {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    })
+  }
+
+  try {
+    await chat.sendMessage('none test', { retrievalMode: 'NONE', selectionText: 'short quote' })
+    await chat.sendMessage('auto test', { retrievalMode: 'AUTO', subjectId: 'subj1', sourceId: 'src1', selectionText: 'a'.repeat(5000) })
+    await chat.sendMessage('remove quote test', { retrievalMode: 'NONE', selectionText: '' })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  assert.equal(requests.length, 3)
+
+  assert.equal(requests[0].content, 'none test')
+  assert.equal(requests[0].retrievalEnabled, false)
+  assert.equal(requests[0].selectionText, 'short quote')
+  assert.equal(requests[0].readingContext, undefined)
+
+  assert.equal(requests[1].content, 'auto test')
+  assert.equal(requests[1].retrievalEnabled, true)
+  assert.equal(requests[1].selectionText.length, 4000)
+  assert.equal(requests[1].readingContext.selectionText.length, 4000)
+  assert.equal(requests[1].readingContext.subjectId, 'subj1')
+
+  assert.equal(requests[2].content, 'remove quote test')
+  assert.equal(requests[2].selectionText, undefined)
 })

@@ -8,16 +8,10 @@
     @close="handleCancel"
   >
     <template #title>
-      <div class="confirm-title-wrap">
-        <IconAlertTriangle v-if="type === 'danger'" :size="18" :stroke-width="2" class="title-icon danger" />
-        <IconHelpCircle v-else :size="18" :stroke-width="2" class="title-icon" />
-        <span>{{ title }}</span>
-      </div>
+      <span class="confirm-title">{{ title }}</span>
     </template>
 
-    <div class="confirm-body">
-      <p class="confirm-message">{{ message }}</p>
-    </div>
+    <p class="confirm-message">{{ message }}</p>
 
     <template #footer>
       <button type="button" class="modal-btn modal-btn-secondary" @click="handleCancel">
@@ -36,7 +30,6 @@
 </template>
 
 <script setup lang="ts">
-import { IconAlertTriangle, IconHelpCircle } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 
 withDefaults(defineProps<{
@@ -77,38 +70,22 @@ const handleConfirm = () => {
 </script>
 
 <style scoped>
-.confirm-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 17px;
+.confirm-title {
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.02em;
 }
 
-html.dark .confirm-title-wrap {
+html.dark .confirm-title {
   color: var(--text-primary, #e6dfd8);
 }
 
-.title-icon {
-  color: var(--color-zen-sage, #8B9A6E);
-  flex-shrink: 0;
-}
-
-.title-icon.danger {
-  color: var(--color-danger, #C2413E);
-}
-
-.confirm-body {
-  padding: 8px 0 14px;
-}
-
 .confirm-message {
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--text-secondary, #2C2C28);
-  line-height: 1.68;
-  margin: 0;
+  line-height: 1.65;
+  margin: 4px 0 8px;
 }
 
 html.dark .confirm-message {

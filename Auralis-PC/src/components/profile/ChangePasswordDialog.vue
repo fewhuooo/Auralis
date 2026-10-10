@@ -1,19 +1,18 @@
 <template>
   <ModalShell
     :model-value="modelValue"
+    title="修改登录密码"
+    aria-label="修改登录密码"
     size="sm"
     @update:model-value="$emit('update:modelValue', $event)"
     @close="handleClose"
   >
     <template #title>
-      <div class="password-dialog-title">
-        <IconShieldLock :size="18" :stroke-width="2" class="shield-icon" />
-        <span>修改登录密码</span>
-      </div>
+      <span class="pwd-title">修改登录密码</span>
     </template>
 
     <div class="change-password-form">
-      <div class="security-tip-banner">
+      <div class="security-tip">
         <IconKey :size="15" :stroke-width="1.8" />
         <span>建议设置 12 位以上包含字母与数字的高强度密码</span>
       </div>
@@ -53,7 +52,7 @@
         />
       </div>
 
-      <div v-if="displayError" class="modal-error-tip">
+      <div v-if="displayError" class="error-tip">
         <IconAlertCircle :size="14" :stroke-width="2" />
         <span>{{ displayError }}</span>
       </div>
@@ -75,7 +74,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed, watch } from 'vue'
-import { IconShieldLock, IconKey, IconAlertCircle } from '@tabler/icons-vue'
+import { IconKey, IconAlertCircle } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 
 const props = withDefaults(
@@ -160,43 +159,15 @@ const handleSubmit = () => {
 </script>
 
 <style scoped>
-.password-dialog-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 18px;
+.pwd-title {
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.02em;
 }
 
-html.dark .password-dialog-title {
+html.dark .pwd-title {
   color: var(--text-primary, #e6dfd8);
-}
-
-.shield-icon {
-  color: var(--color-zen-sage, #8B9A6E);
-  flex-shrink: 0;
-}
-
-.security-tip-banner {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
-  border: 1px solid rgba(139, 154, 110, 0.22);
-  color: var(--color-zen-sage, #76855B);
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 20px;
-  line-height: 1.5;
-}
-
-html.dark .security-tip-banner {
-  background: rgba(163, 177, 155, 0.14);
-  border-color: rgba(163, 177, 155, 0.25);
-  color: #B4C4AA;
 }
 
 .change-password-form {
@@ -204,7 +175,26 @@ html.dark .security-tip-banner {
   flex-direction: column;
 }
 
-.modal-error-tip {
+.security-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.12));
+  color: var(--modal-accent, #8B9A6E);
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+
+html.dark .security-tip {
+  background: rgba(163, 177, 155, 0.14);
+  color: #B4C4AA;
+}
+
+.error-tip {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -212,14 +202,14 @@ html.dark .security-tip-banner {
   color: #C2413E;
   margin-top: 8px;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-md, 10px);
   background: rgba(217, 83, 79, 0.08);
-  border: 1px solid rgba(217, 83, 79, 0.2);
+  border: 1px solid rgba(217, 83, 79, 0.18);
 }
 
-html.dark .modal-error-tip {
-  background: rgba(217, 83, 79, 0.16);
-  border-color: rgba(217, 83, 79, 0.28);
+html.dark .error-tip {
+  background: rgba(217, 83, 79, 0.14);
+  border-color: rgba(217, 83, 79, 0.25);
   color: #F87171;
 }
 </style>

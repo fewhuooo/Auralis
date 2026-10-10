@@ -14,7 +14,7 @@ import { uuidv7 } from '@/utils/uuid'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { createStableMutation } from '@/services/offlineWritePolicy'
-import { findScheduleConflict, getTasksForTimeline, isCompletedScheduledTask, isCompletedTask, isSchedulableTask, isScheduledAtInPast, isScheduledCompletionLocked, isScheduledTaskPast, taskStatusToPresentation } from '@/services/taskViewRules'
+import { findScheduleConflict, getTasksForTimeline, isCompletedScheduledTask, isCompletedTask, isSchedulableTask, isScheduledAtInPast, isScheduledCompletionLocked, isOverdueTask, taskStatusToPresentation, isScheduleWithinDeadline, parseDueTimestamp, localDateEndOfDay } from '@/services/taskViewRules'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
 export const DAY_CODES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -145,13 +145,18 @@ function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
   return timeStringFromMinutes(Math.floor(totalMinutes / TIMELINE_SLOT_MINUTES) * TIMELINE_SLOT_MINUTES)
 }
 
-function isSameScheduleTime(a?: string | null, b?: string | null): boolean {
-  if (!a && !b) return true
-  if (!a || !b) return false
-  if (a === b) return true
-  const ta = Date.parse(a)
-  const tb = Date.parse(b)
-  return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb
+
+
+function normalizeDueAtForApi(value?: string | null): string | undefined {
+  if (!value) return undefined
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return localDateEndOfDay(trimmed)?.toISOString()
+  }
+  const timestamp = Date.parse(trimmed)
+  if (!Number.isFinite(timestamp)) return undefined
+  return new Date(timestamp).toISOString()
 }
 
 function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForScheduledAt(input.scheduledAt) ?? getTodayDayCode()): TaskModel {
@@ -159,6 +164,7 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     ? scheduledAtFromLegacy(input.startTime, fallbackDay)
     : input.scheduledAt
   const status = statusFromLegacy(input.status, Boolean(scheduledAt))
+  const rawDueAt = input.dueAt ?? (input as any).due
   return {
     id: input.id || uuidv7(),
     subjectId: input.subjectId,
@@ -166,7 +172,7 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     description: input.description ?? input.desc ?? '',
     status,
     scheduledAt,
-    dueAt: input.dueAt,
+    dueAt: normalizeDueAtForApi(rawDueAt),
     durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
     version: input.version ?? 0,
     deletedAt: null,
@@ -309,7 +315,7 @@ export const useTaskStore = defineStore('task', () => {
 
   async function recoverOverdueTasks(): Promise<void> {
     if (!isLoading.value && useAuthStore().isAuthenticated) {
-      const endedTaskIds = allTasks.value.filter((task) => isScheduledTaskPast(task)).map((task) => task.id)
+      const endedTaskIds = allTasks.value.filter((task) => isOverdueTask(task)).map((task) => task.id)
       for (const taskId of endedTaskIds) {
         try {
           await withScheduleMutation(async () => {
@@ -324,19 +330,22 @@ export const useTaskStore = defineStore('task', () => {
             const current = findTask(taskId)
             const localModel = localRow ? dtoFromLocal(localRow.value) : null
             if (!current || !localRow || !localModel
+              || localRow.deletedAt !== null
               || localRow.version !== current.version
-              || localModel.scheduledAt !== current.scheduledAt) {
+              || localModel.scheduledAt !== current.scheduledAt
+              || localModel.dueAt !== current.dueAt) {
               void loadLocalTasks()
               return
             }
 
             const latestTask = toPresentationTask(localModel)
-            if (!isScheduledTaskPast(latestTask)) return
+            if (!isOverdueTask(latestTask)) return
             const model = toTaskModel({ ...latestTask, status: 'completed', scheduledAt: latestTask.scheduledAt })
             model.version = localRow.version
             await updateTaskModel(model, {
               expectedLocalVersion: localRow.version,
               rejectIfNonPendingMutation: true,
+              requireActiveResource: true,
             })
           })
         } catch (error) {
@@ -475,33 +484,32 @@ export const useTaskStore = defineStore('task', () => {
     rebuildSchedule()
   }
 
-  function replaceInMemoryMany(tasks: Task[]): void {
-    const replacements = new Map(tasks.map((task) => [task.id, task]))
-    const next = allTasks.value.map((task) => replacements.get(task.id) ?? task)
-    const existingIds = new Set(allTasks.value.map((task) => task.id))
-    for (const task of tasks) {
-      if (!existingIds.has(task.id)) next.push(task)
-    }
-    allTasks.value = next
-    rebuildSchedule()
-  }
-
   async function persistOffline(
     model: TaskModel,
     mutationType: 'CREATE' | 'UPDATE' | 'DELETE',
     payload: Record<string, unknown>,
-    options: { expectedLocalVersion?: number; rejectIfNonPendingMutation?: boolean } = {},
+    options: { expectedLocalVersion?: number; rejectIfNonPendingMutation?: boolean; requireActiveResource?: boolean } = {},
   ): Promise<Task> {
     const assertScheduleMutationAllowed = () => {
       if (mutationType === 'DELETE') return
       const current = findTask(model.id)
-      const scheduleChanged = !current
-        || !isSameScheduleTime(current.scheduledAt, model.scheduledAt)
-        || current.durationMinutes !== model.durationMinutes
-        || (current.status === 'cancelled' && model.status !== 'CANCELLED')
-      if (scheduleChanged && model.scheduledAt && model.status !== 'CANCELLED' && model.status !== 'DONE') {
-        if (!current || !isSameScheduleTime(current.scheduledAt, model.scheduledAt)) assertScheduledAtIsNotPast(model.scheduledAt)
-        assertScheduleDoesNotOverlap(model)
+
+      const getEffectiveTime = (t?: string | null) => t ? (Number.isFinite(parseDueTimestamp(t)) ? parseDueTimestamp(t) : null) : null
+      const getDur = (d?: number | null) => { const v = d == null ? 30 : Number(d); return Number.isFinite(v) ? Math.max(0, v) : 30 }
+
+      const isIntervalUnchanged = current && getEffectiveTime(current.scheduledAt) === getEffectiveTime(model.scheduledAt)
+        && getEffectiveTime(current.dueAt) === getEffectiveTime(model.dueAt)
+        && getDur(current.durationMinutes) === getDur(model.durationMinutes)
+
+      const scheduleChanged = !current || !isIntervalUnchanged || (current.status === 'cancelled' && model.status !== 'CANCELLED')
+      if (scheduleChanged && model.scheduledAt) {
+        if (!isScheduleWithinDeadline(model.scheduledAt, model.durationMinutes, model.dueAt)) {
+          throw new Error('任务排期结束时间不能晚于截止期限')
+        }
+        if (model.status !== 'CANCELLED' && model.status !== 'DONE') {
+          if (!current || getEffectiveTime(current.scheduledAt) !== getEffectiveTime(model.scheduledAt)) assertScheduledAtIsNotPast(model.scheduledAt)
+          assertScheduleDoesNotOverlap(model)
+        }
       }
     }
     assertScheduleMutationAllowed()
@@ -518,6 +526,7 @@ export const useTaskStore = defineStore('task', () => {
       deletedAt: model.deletedAt,
       expectedLocalVersion: options.expectedLocalVersion,
       rejectIfNonPendingMutation: options.rejectIfNonPendingMutation,
+      requireActiveResource: options.requireActiveResource,
       mutation: clientMutation(model.id, mutationType, model.version, payload),
     })
     replaceInMemory(task)
@@ -537,7 +546,7 @@ export const useTaskStore = defineStore('task', () => {
 
   async function updateTaskModel(
     model: TaskModel,
-    options: { expectedLocalVersion?: number; rejectIfNonPendingMutation?: boolean } = {},
+    options: { expectedLocalVersion?: number; rejectIfNonPendingMutation?: boolean; requireActiveResource?: boolean } = {},
   ): Promise<void> {
     const payload = updatePayload(model)
     try {
@@ -591,19 +600,18 @@ export const useTaskStore = defineStore('task', () => {
         deletedAt: model.deletedAt,
         value: taskDto(model),
       })))
+
+      await loadLocalTasks()
+
       if (!persisted) {
         cacheNeedsRefresh = true
-        await loadLocalTasks()
         lastError.value = '排期已保存到服务端，本地任务有未同步修改，正在同步'
-      } else {
-        replaceInMemoryMany(models.map((model) => toPresentationTask(model, 'synced')))
       }
     } catch (error) {
-      // The server transaction already committed. Show its complete response;
-      // the unchanged local cursor lets the next read cycle replay both updates.
+      // The server transaction already committed; rebuild only from the local projection.
       cacheNeedsRefresh = true
+      await loadLocalTasks()
       lastError.value = error instanceof Error ? `排期已保存到服务端，本地刷新中：${error.message}` : '排期已保存到服务端，本地刷新中'
-      replaceInMemoryMany(models.map((model) => toPresentationTask(model, 'synced')))
     }
     const syncStore = useSyncStore()
     syncStore.requestBackgroundSync('read')
@@ -629,8 +637,79 @@ export const useTaskStore = defineStore('task', () => {
     assertScheduledAtIsNotPast(scheduledAt)
     await assertScheduleDaySynced(scheduledAt, taskId)
 
-    const windowStartAt = dateForDay(selectedDayOrKey, timeStringFromMinutes(TIMELINE_START_MINUTES)).toISOString()
-    const windowLastStartAt = dateForDay(selectedDayOrKey, timeStringFromMinutes(TIMELINE_END_MINUTES)).toISOString()
+    const draggedStart = Date.parse(scheduledAt)
+    const windowStartAtStr = dateForDay(selectedDayOrKey, timeStringFromMinutes(TIMELINE_START_MINUTES)).toISOString()
+    const windowLastStartAtStr = dateForDay(selectedDayOrKey, timeStringFromMinutes(TIMELINE_END_MINUTES)).toISOString()
+    const windowStartMs = Date.parse(windowStartAtStr)
+    const windowLastStartMs = Date.parse(windowLastStartAtStr)
+    const windowEndMs = windowLastStartMs + 30 * 60_000
+
+    const getDur = (d: any) => d == null ? 30 : (Number.isFinite(Number(d)) ? Math.max(0, Number(d)) : 30)
+
+    if (!isScheduleWithinDeadline(scheduledAt, task.durationMinutes, task.dueAt)) {
+      throw new Error('任务排期结束时间不能晚于截止期限')
+    }
+
+    if (!targetTaskId) {
+      const ceilToSlot = (timeMs: number) => {
+        if (timeMs <= windowStartMs) return windowStartMs
+        const diff = timeMs - windowStartMs
+        const r = diff % (30 * 60_000)
+        return r === 0 ? timeMs : timeMs + (30 * 60_000 - r)
+      }
+
+      const candidates = allTasks.value.filter(t => {
+        if (t.status === 'cancelled' || !t.scheduledAt) return false
+        const tStart = Date.parse(t.scheduledAt)
+        return tStart >= windowStartMs && tStart < windowEndMs
+      })
+
+      if (!candidates.some(t => t.id === taskId)) candidates.push(task)
+
+      const roundedTarget = ceilToSlot(draggedStart)
+
+      const items = candidates.map(t => {
+        const isSource = t.id === taskId
+        const oldStart = Date.parse(t.scheduledAt!)
+        const dur = getDur(t.durationMinutes)
+        const oldEnd = oldStart + dur * 60_000
+
+        let priority = 2
+        if (!isSource && oldEnd <= roundedTarget) priority = 0
+        else if (isSource) priority = 1
+
+        const proposedStart = isSource ? roundedTarget : oldStart
+        return { task: t, isSource, dur, priority, proposedStart, uuid: t.id }
+      })
+
+      items.sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority
+        if (a.proposedStart !== b.proposedStart) return a.proposedStart - b.proposedStart
+        return a.uuid.localeCompare(b.uuid)
+      })
+
+      let previousEnd: number | null = null
+      for (const item of items) {
+        let actual = item.proposedStart
+        if (previousEnd !== null && actual < previousEnd) {
+          if (isCompletedScheduledTask(item.task)) throw new Error('已完成的排期任务已固定')
+          actual = ceilToSlot(previousEnd)
+        }
+
+        if (actual > windowLastStartMs) throw new Error('超出排期窗口')
+
+        const originalStart = Date.parse(item.task.scheduledAt!)
+        if (item.isSource || actual !== originalStart) {
+          if (!isScheduleWithinDeadline(new Date(actual).toISOString(), item.task.durationMinutes, item.task.dueAt)) {
+            throw new Error('任务排期结束时间不能晚于截止期限')
+          }
+        }
+        previousEnd = actual + item.dur * 60_000
+      }
+    }
+
+    const windowStartAt = windowStartAtStr
+    const windowLastStartAt = windowLastStartAtStr
     const response = await useTaskApi.scheduleInsertions({
       taskId,
       baseVersion: task.version,
@@ -678,32 +757,38 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function scheduleTask(taskId: string, slotTime: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
+    const activeDayKey = selectedDay.value || getTodayDayCode()
+    const targetDateKey = localDateKey(dateForDay(activeDayKey, '00:00').toISOString())!
     return withScheduleMutation(async () => {
       const task = findTask(taskId)
       if (!task || !isSchedulableTask(task)) throw new Error('源任务已变化，请刷新后重试')
-      const slot = timeSlots.value.find((item) => item.time === slotTime)
-      if (!slot) throw new Error('目标时间槽不存在，请拖到可见时段')
-      if (slot.task && isCompletedScheduledTask(slot.task)) throw new Error('已完成的排期任务已固定')
-      return await insertTaskAtSlot(taskId, slotTime, selectedDay.value, targetTaskId)
+      const slot = generateTimeSlots().find((item) => item.time === slotTime)
+      if (!slot) throw new Error('目标时间槽不存在：系统不可见时间')
+      const expectedScheduledAt = dateForDay(targetDateKey, slotTime).toISOString()
+      const existingTask = allTasks.value.find(t => t.scheduledAt === expectedScheduledAt && t.status !== 'cancelled')
+      if (existingTask && isCompletedScheduledTask(existingTask)) throw new Error('已完成的排期任务已固定')
+      return await insertTaskAtSlot(taskId, slotTime, targetDateKey, targetTaskId)
     })
   }
 
   async function scheduleTaskToDay(taskId: string, day: string): Promise<void> {
     return withScheduleMutation(async () => {
       const task = findTask(taskId)
-      if (!task || !isSchedulableTask(task)) throw new Error('源任务已变化，请刷新后重试')
+      if (!task || task.status === 'cancelled') throw new Error('源任务已变化，请刷新后重试')
       if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+      if (isCompletedTask(task)) throw new Error('已完成的排期任务已固定')
       let model: TaskModel | undefined
-      for (let minutes = 8 * 60; minutes <= 22 * 60; minutes += TIMELINE_SLOT_MINUTES) {
+      for (let minutes = TIMELINE_START_MINUTES; minutes <= TIMELINE_END_MINUTES; minutes += TIMELINE_SLOT_MINUTES) {
         const slotTime = timeStringFromMinutes(minutes)
         const candidate = toTaskModel({ ...task, status: task.status, startTime: `${day} ${slotTime}` })
         if (isScheduledAtInPast(candidate.scheduledAt)) continue
+        if (!isScheduleWithinDeadline(candidate.scheduledAt, candidate.durationMinutes, candidate.dueAt)) continue
         if (!findScheduleConflict(allTasks.value, toPresentationTask(candidate), new Set([taskId]))) {
           model = candidate
           break
         }
       }
-      if (!model) throw new Error('当天没有可用的排期时段')
+      if (!model) throw new Error('当天没有符合任务时长和截止期限的可用排期时段')
       assertScheduledAtIsNotPast(model.scheduledAt)
       model.version = task.version
       await updateTaskModel(model)
@@ -711,16 +796,18 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function rescheduleTask(taskId: string, toSlotTime: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
+    const activeDayKey = selectedDay.value || getTodayDayCode()
+    const targetDateKey = localDateKey(dateForDay(activeDayKey, '00:00').toISOString())!
     return withScheduleMutation(async () => {
       const task = findTask(taskId)
       if (!task?.scheduledAt || task.status === 'cancelled') throw new Error('源排期已变化，请刷新后重试')
       if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
-      if (dayCodeForScheduledAt(task.scheduledAt) !== selectedDay.value) {
+      if (localDateKey(task.scheduledAt) !== targetDateKey) {
         throw new Error('源排期已变化，请刷新时间轴后重试')
       }
-      const targetSlot = timeSlots.value.find((slot) => slot.time === toSlotTime)
-      if (!targetSlot) throw new Error('目标时间槽不存在，请拖到可见时段')
-      return await insertTaskAtSlot(taskId, toSlotTime, selectedDay.value, targetTaskId)
+      const targetSlot = generateTimeSlots().find((slot) => slot.time === toSlotTime)
+      if (!targetSlot) throw new Error('目标时间槽不存在：系统不可见时间')
+      return await insertTaskAtSlot(taskId, toSlotTime, targetDateKey, targetTaskId)
     })
   }
 
@@ -736,6 +823,37 @@ export const useTaskStore = defineStore('task', () => {
       if (!day || dayCodeForScheduledAt(from.scheduledAt) !== day) throw new Error('只能交换同一天的任务')
       assertScheduledAtIsNotPast(to.scheduledAt)
       assertScheduledAtIsNotPast(from.scheduledAt)
+
+      const getDur = (d: any) => d == null ? 30 : (Number.isFinite(Number(d)) ? Math.max(0, Number(d)) : 30)
+      const fromDur = getDur(from.durationMinutes)
+      const toDur = getDur(to.durationMinutes)
+      const fromStart = Date.parse(from.scheduledAt)
+      const toStart = Date.parse(to.scheduledAt)
+
+      let newFromStart = toStart
+      let newToStart = fromStart
+      const isAdjacent = (fromStart < toStart && fromStart + fromDur * 60_000 === toStart) || (toStart < fromStart && toStart + toDur * 60_000 === fromStart)
+      const referenceStartMs = Math.min(fromStart, toStart)
+
+      if (fromStart < toStart && fromStart + fromDur * 60_000 === toStart) {
+        newToStart = fromStart
+        newFromStart = fromStart + toDur * 60_000
+      } else if (toStart < fromStart && toStart + toDur * 60_000 === fromStart) {
+        newFromStart = toStart
+        newToStart = toStart + fromDur * 60_000
+      }
+
+      const checkBounds = (startMs: number) => {
+        const refDate = new Date(isAdjacent ? referenceStartMs : startMs)
+        const windowStartMs = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 8, 0, 0).getTime()
+        const windowEndMs = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate(), 22, 30, 0).getTime()
+        if (startMs < windowStartMs || startMs > windowEndMs) throw new Error('超出排期窗口')
+      }
+      checkBounds(newFromStart)
+      checkBounds(newToStart)
+
+      if (!isScheduleWithinDeadline(new Date(newFromStart).toISOString(), from.durationMinutes, from.dueAt)) throw new Error('任务排期结束时间不能晚于截止期限')
+      if (!isScheduleWithinDeadline(new Date(newToStart).toISOString(), to.durationMinutes, to.dueAt)) throw new Error('任务排期结束时间不能晚于截止期限')
       await assertScheduleDaySynced(to.scheduledAt, from.id)
 
       const response = await useTaskApi.swapSchedules({

@@ -19,7 +19,7 @@ import {
   type LocalParsedDocumentRecord,
 } from '@/types/localParsedDocument'
 
-export const LOCAL_SCHEMA_VERSION = 9
+export const LOCAL_SCHEMA_VERSION = 12
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -147,6 +147,34 @@ export interface LocalParsedDocumentRow {
   updated_at: string
 }
 
+export interface LocalReviewRecordRow {
+  user_id: string
+  device_id: string
+  knowledge_block_id: string
+  subject_id: string
+  local_revision: number
+  server_knowledge_block_version: number
+  content_hash: string
+  state_json: string
+  history_json: string | null
+  is_presence_marker: number
+  updated_at: string
+}
+
+export interface LocalReviewIntentRow {
+  client_command_id: string
+  user_id: string
+  device_id: string
+  knowledge_block_id: string
+  action: string
+  occurred_at: string
+  payload_json: string
+  status: string
+  created_at: string
+  prepared: number
+  preparation_json: string
+}
+
 /**
  * These statements are deliberately resource-generic. The repository keeps
  * DTO shape in JSON while enforcing the fields needed for isolation and sync
@@ -229,6 +257,79 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
   )`,
   `CREATE INDEX IF NOT EXISTS idx_ai_overview_cache_scope
     ON ai_overview_cache (user_id, device_id, scope_type, scope_id, updated_at)`,
+  `CREATE TABLE IF NOT EXISTS pomodoro_timer_state (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    state_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS pomodoro_focus_sessions (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    client_session_id TEXT NOT NULL,
+    task_id TEXT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    duration_seconds INTEGER NOT NULL CHECK (duration_seconds >= 0),
+    completed INTEGER NOT NULL CHECK (completed IN (0, 1)),
+    sync_status TEXT NOT NULL CHECK (sync_status IN ('pending', 'synced')),
+    created_at TEXT NOT NULL,
+    synced_at TEXT,
+    PRIMARY KEY (user_id, device_id, client_session_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_pomodoro_focus_sessions_pending
+    ON pomodoro_focus_sessions (user_id, device_id, sync_status, created_at, client_session_id)`,
+  `CREATE TABLE IF NOT EXISTS overview_sync_states (
+    user_id TEXT NOT NULL, device_id TEXT NOT NULL,
+    scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')),
+    scope_id TEXT NOT NULL, revision_key TEXT NOT NULL,
+    state_json TEXT NOT NULL, updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, scope_type, scope_id, revision_key)
+  )`,
+  `CREATE TABLE IF NOT EXISTS overview_sync_outbox (
+    user_id TEXT NOT NULL, device_id TEXT NOT NULL,
+    client_write_id TEXT NOT NULL, scope_type TEXT NOT NULL CHECK (scope_type IN ('FILE', 'SUBJECT')),
+    scope_id TEXT NOT NULL, revision_key TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('PREPARED', 'PENDING', 'INFLIGHT', 'CONFLICT', 'ERROR', 'STALE')),
+    intent_json TEXT NOT NULL, request_json TEXT,
+    error_code TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, client_write_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_overview_sync_outbox_scope
+    ON overview_sync_outbox (user_id, device_id, state, scope_type, scope_id, created_at, client_write_id)`,
+  `CREATE TABLE IF NOT EXISTS local_review_records (
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    knowledge_block_id TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    local_revision INTEGER NOT NULL DEFAULT 0,
+    server_knowledge_block_version INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT NOT NULL,
+    state_json TEXT NOT NULL,
+    history_json TEXT,
+    is_presence_marker INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, device_id, knowledge_block_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_local_review_records_subject
+    ON local_review_records (user_id, device_id, subject_id, updated_at)`,
+  `CREATE TABLE IF NOT EXISTS local_review_intents (
+    client_command_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    knowledge_block_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    payload_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    prepared INTEGER NOT NULL DEFAULT 1 CHECK (prepared IN (0, 1)),
+    preparation_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY (user_id, device_id, client_command_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_local_review_intents_kb
+    ON local_review_intents (user_id, device_id, knowledge_block_id, created_at, status)`,
   `CREATE TABLE IF NOT EXISTS local_asset_files (
     user_id TEXT NOT NULL,
     device_id TEXT NOT NULL,

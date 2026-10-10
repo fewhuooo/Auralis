@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useReviewStore } from '@/store/useReviewStore'
 import { type SubjectCreateRequest, type SubjectView } from '@/api/useSubjectApi'
 import { getDocumentProcessingJobRepository, getLocalAssetRepository, getLocalRepository, getOverviewRepository } from '@/services/localDb'
 import type { LocalRepository } from '@/services/localRepository'
@@ -12,6 +13,7 @@ import { useSyncStore } from '@/store/useSyncStore'
 import { uuidv7 } from '@/utils/uuid'
 import { createStableMutation } from '@/services/offlineWritePolicy'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
+import { beginOverviewScopeDeletion, cancelOverviewScopeDeletion, completeOverviewScopeDeletion } from '@/services/overviewRepository'
 
 export type Subject = SubjectModel
 export type SourceFile = SourceFileModel
@@ -227,19 +229,32 @@ export const useSubjectStore = defineStore('subject', () => {
   async function deleteSubject(id: string): Promise<void> {
     const subject = subjects.value.find((item) => item.id === id)
     if (!subject) return
-    const repo = await repository()
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    if (!userId || !serverDeviceId) throw new Error('Subjects require an authenticated user and device')
+    const reviewStore = useReviewStore()
+    const reviewScopeTicket = reviewStore.captureScopeTicket()
+    const deletionTicket = beginOverviewScopeDeletion(userId,serverDeviceId,'SUBJECT',id)
+    let tombstoneCommitted = false
+    try {
+    const repo = await getLocalRepository(userId,serverDeviceId)
     const existing = await repo.read<SubjectView>('SUBJECT', id)
     const now = new Date().toISOString()
     const localView: SubjectView = {
       ...(existing?.value ?? { id, name: subject.name, description: subject.description, iconKey: subject.iconKey }),
       id, version: subject.version, updatedAt: now, deletedAt: now,
     }
+    if (authStore.user?.id !== userId || authStore.serverDeviceId !== serverDeviceId) throw new Error('OVERVIEW_SCOPE_CHANGED')
     await repo.commitMutation({
       resourceType: 'SUBJECT', resourceId: id, value: localView, version: subject.version, deletedAt: now,
       mutation: createStableMutation({
         clientMutationId: uuidv7(), resourceType: 'SUBJECT', resourceId: id, mutationType: 'DELETE', baseVersion: subject.version, payload: { id },
       }),
     })
+    tombstoneCommitted = true
+    completeOverviewScopeDeletion(deletionTicket)
+    reviewStore.clearDeletedSubject(id, reviewScopeTicket)
     if (activeSubjectId.value === id) setActiveSubject(null)
     subjects.value = subjects.value.filter((item) => item.id !== id)
     try {
@@ -254,6 +269,10 @@ export const useSubjectStore = defineStore('subject', () => {
       console.warn('[SubjectStore] deleted Subject projection cleanup deferred', error)
     }
     scheduleSync()
+    } catch (error) {
+      if (!tombstoneCommitted) cancelOverviewScopeDeletion(deletionTicket)
+      throw error
+    }
   }
 
   const loadSourceFiles = (subjectId: string) => sourceStore.loadSourceFiles(subjectId)

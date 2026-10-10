@@ -10,6 +10,8 @@
 
 ## 全局网络、会话与本地数据
 
+- 2026-10-01 KnowledgeBlock Sync 现行正文为 content；Mobile 本地 preview 作为完整内容映射，HTTP/sync payload 删除 summary/tags，返回映射不再优先旧 summary。页面和本地标签未在本轮清理；专注记录与 Overview results 新接口仅进入生成 SDK，尚无 Mobile/Tablet 运行入口。
+
 - `VITE_API_BASE_URL` 与 `VITE_WS_BASE_URL` 是必填运行时配置；微信只接受 HTTPS/WSS。生产代码不提供 localhost fallback。
 - `requestCore.ts` 发送 Bearer token、接收直接 DTO/RFC Problem Details，并对并发 401 共享一次 refresh；refresh 请求本身禁止递归刷新。
 - Auth 会话保存在 `auralis:auth:v2`，客户端注册标识保存在 `auralis:device:id:v2` 并作为 `clientDeviceKey` 发送；服务端返回的 canonical ID 为 `serverDeviceId`，注册成功直接建立会话并进入对应端首页。

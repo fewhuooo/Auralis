@@ -406,6 +406,150 @@
         } ]
       }
     },
+    "/api/overview-results/subjects/{subjectId}" : {
+      "get" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSubject",
+        "parameters" : [ {
+          "name" : "subjectId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewResultView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "put" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "putSubject",
+        "parameters" : [ {
+          "name" : "subjectId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OverviewResultCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewResultView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/overview-results/sources/{sourceId}" : {
+      "get" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSource",
+        "parameters" : [ {
+          "name" : "sourceId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "ingestionRevision",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewResultView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "put" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "putSource",
+        "parameters" : [ {
+          "name" : "sourceId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OverviewResultCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewResultView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/knowledge-blocks/{id}" : {
       "get" : {
         "tags" : [ "knowledge-block-controller" ],
@@ -1219,6 +1363,179 @@
         } ]
       }
     },
+    "/api/reviews/lifecycle/learning-reopens" : {
+      "post" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "learningReopen",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearningReopenRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/reviews/lifecycle/learning-completions" : {
+      "post" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "learningCompletion",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LearningCompletionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/reviews/lifecycle/attempts" : {
+      "post" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "reviewAttempt",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReviewAttemptRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/reviews/lifecycle/attempts/{reviewId}/corrections" : {
+      "post" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "correctReview",
+        "parameters" : [ {
+          "name" : "reviewId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReviewResolutionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/reviews/lifecycle/attempts/{reviewId}/confirmations" : {
+      "post" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "confirmReview",
+        "parameters" : [ {
+          "name" : "reviewId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReviewResolutionRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CommandResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/reviews/events" : {
       "post" : {
         "tags" : [ "review-controller" ],
@@ -1479,6 +1796,37 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/Response"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/focus-sessions" : {
+      "post" : {
+        "tags" : [ "focus-session-controller" ],
+        "operationId" : "create_5",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/FocusSessionCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/FocusSessionView"
                 }
               }
             }
@@ -2062,6 +2410,52 @@
         } ]
       }
     },
+    "/api/stats/subjects/{subjectId}" : {
+      "get" : {
+        "tags" : [ "stats-controller" ],
+        "operationId" : "subject",
+        "parameters" : [ {
+          "name" : "subjectId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "days",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 7
+          }
+        }, {
+          "name" : "timeZone",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SubjectStatsView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/stats/overview" : {
       "get" : {
         "tags" : [ "stats-controller" ],
@@ -2082,6 +2476,84 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/StatsOverviewView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/reviews/states" : {
+      "get" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "states",
+        "parameters" : [ {
+          "name" : "subjectId",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "cursor",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "limit",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 50,
+            "maximum" : 200,
+            "minimum" : 1
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CursorPageReviewStateView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/reviews/lifecycle/history" : {
+      "get" : {
+        "tags" : [ "review-controller" ],
+        "operationId" : "lifecycleHistory",
+        "parameters" : [ {
+          "name" : "knowledgeBlockId",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/LifecycleHistory"
                 }
               }
             }
@@ -2524,6 +2996,272 @@
           }
         }
       },
+      "OverviewChapter" : {
+        "type" : "object",
+        "properties" : {
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "sections" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSection"
+            },
+            "maxItems" : 500,
+            "minItems" : 0
+          }
+        },
+        "required" : [ "sections" ]
+      },
+      "OverviewLocator" : {
+        "type" : "object",
+        "properties" : {
+          "page" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "blockId" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          }
+        }
+      },
+      "OverviewResponse" : {
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "outline" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewChapter"
+            },
+            "maxItems" : 60,
+            "minItems" : 0
+          },
+          "summary" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/OverviewSummary"
+          }
+        },
+        "required" : [ "outline", "schemaVersion", "summary", "title" ]
+      },
+      "OverviewResultCommand" : {
+        "type" : "object",
+        "properties" : {
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "clientWriteId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "ALL", "OUTLINE", "SUMMARY" ]
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sourceManifest" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSourceManifestEntry"
+            }
+          },
+          "inputFingerprint" : {
+            "type" : "string"
+          },
+          "outlineGeneratedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "summaryGeneratedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "result" : {
+            "$ref" : "#/components/schemas/OverviewResponse"
+          }
+        },
+        "required" : [ "baseVersion", "clientWriteId", "mode", "result" ]
+      },
+      "OverviewSection" : {
+        "type" : "object",
+        "properties" : {
+          "title" : {
+            "type" : "string",
+            "maxLength" : 300,
+            "minLength" : 0
+          },
+          "summary" : {
+            "type" : "string",
+            "maxLength" : 4000,
+            "minLength" : 0
+          },
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 300,
+              "minLength" : 0
+            },
+            "maxItems" : 100,
+            "minItems" : 1
+          },
+          "locator" : {
+            "$ref" : "#/components/schemas/OverviewLocator"
+          }
+        },
+        "required" : [ "sourceIds" ]
+      },
+      "OverviewSourceManifestEntry" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "outlineVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "summaryVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "ingestionRevision", "sourceId" ]
+      },
+      "OverviewSummary" : {
+        "type" : "object",
+        "properties" : {
+          "overview" : {
+            "type" : "string",
+            "maxLength" : 4000,
+            "minLength" : 0
+          },
+          "keyPoints" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 4000,
+              "minLength" : 0
+            },
+            "maxItems" : 100,
+            "minItems" : 0
+          },
+          "learningPath" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 4000,
+              "minLength" : 0
+            },
+            "maxItems" : 100,
+            "minItems" : 0
+          }
+        },
+        "required" : [ "keyPoints", "learningPath" ]
+      },
+      "OverviewResultView" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "scopeType" : {
+            "type" : "string"
+          },
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "outlineVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "summaryVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "outline" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewChapter"
+            }
+          },
+          "summary" : {
+            "$ref" : "#/components/schemas/OverviewSummary"
+          },
+          "outlineSourceManifest" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSourceManifestEntry"
+            }
+          },
+          "summarySourceManifest" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSourceManifestEntry"
+            }
+          },
+          "outlineInputFingerprint" : {
+            "type" : "string"
+          },
+          "summaryInputFingerprint" : {
+            "type" : "string"
+          },
+          "outlineGeneratedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "summaryGeneratedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
       "PasswordChangeRequest" : {
         "type" : "object",
         "properties" : {
@@ -2773,16 +3511,31 @@
           "float" : {
             "type" : "boolean"
           },
-          "container" : {
+          "missingNode" : {
             "type" : "boolean"
           },
-          "missingNode" : {
+          "container" : {
             "type" : "boolean"
           },
           "floatingPointNumber" : {
             "type" : "boolean"
           },
           "object" : {
+            "type" : "boolean"
+          },
+          "boolean" : {
+            "type" : "boolean"
+          },
+          "int" : {
+            "type" : "boolean"
+          },
+          "binary" : {
+            "type" : "boolean"
+          },
+          "short" : {
+            "type" : "boolean"
+          },
+          "long" : {
             "type" : "boolean"
           },
           "double" : {
@@ -2792,44 +3545,29 @@
             "type" : "boolean",
             "deprecated" : true
           },
-          "boolean" : {
-            "type" : "boolean"
-          },
-          "binary" : {
-            "type" : "boolean"
-          },
-          "short" : {
-            "type" : "boolean"
-          },
-          "string" : {
-            "type" : "boolean"
-          },
           "pojo" : {
-            "type" : "boolean"
-          },
-          "int" : {
-            "type" : "boolean"
-          },
-          "long" : {
             "type" : "boolean"
           },
           "number" : {
             "type" : "boolean"
           },
-          "valueNode" : {
+          "string" : {
             "type" : "boolean"
           },
           "bigDecimal" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
             "type" : "boolean"
           },
           "nodeType" : {
             "type" : "string",
             "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
           },
-          "integralNumber" : {
+          "valueNode" : {
             "type" : "boolean"
           },
-          "bigInteger" : {
+          "integralNumber" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -3124,6 +3862,349 @@
         },
         "required" : [ "baseVersion" ]
       },
+      "LearningReopenRequest" : {
+        "type" : "object",
+        "properties" : {
+          "clientCommandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "contentHash" : {
+            "type" : "string",
+            "pattern" : "[0-9a-f]{64}"
+          },
+          "reviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "occurredAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "expectedStateAbsent" : {
+            "type" : [ "boolean", "null" ]
+          }
+        },
+        "required" : [ "baseVersion", "clientCommandId", "contentHash", "knowledgeBlockId", "knowledgeBlockVersion" ]
+      },
+      "CommandResponse" : {
+        "type" : "object",
+        "properties" : {
+          "commandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "clientCommandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "action" : {
+            "type" : "string",
+            "enum" : [ "LEARNING_COMPLETED", "REVIEW_SELECTED", "REVIEW_CONFIRMED", "REVIEW_CORRECTED", "LEARNING_REOPENED" ]
+          },
+          "occurredAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "state" : {
+            "$ref" : "#/components/schemas/ReviewStateView"
+          },
+          "effectiveReview" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/EffectiveReview"
+          }
+        }
+      },
+      "EffectiveReview" : {
+        "type" : "object",
+        "properties" : {
+          "reviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "selectedRating" : {
+            "type" : "string",
+            "enum" : [ "GOOD", "HARD", "AGAIN" ]
+          },
+          "effectiveRating" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "GOOD", "HARD", "AGAIN" ]
+          },
+          "selectedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "resolvedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "resolution" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "AGAIN_SELECTED", "CONFIRMED", "CORRECTED_AGAIN", "SUPERSEDED" ]
+          },
+          "schedulingBaseline" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/SchedulingBaseline"
+          }
+        }
+      },
+      "ReviewStateView" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "userId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "parameterSetId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "difficulty" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "stability" : {
+            "type" : "number",
+            "format" : "double"
+          },
+          "dueAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "lastReviewedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "reps" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "lapses" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "needsLearning" : {
+            "type" : "boolean"
+          },
+          "mastered" : {
+            "type" : "boolean"
+          },
+          "stableSuccessCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "nextReviewStage" : {
+            "type" : "string"
+          },
+          "lastPracticeAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "lastReviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "pendingReviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "contentHash" : {
+            "type" : [ "string", "null" ]
+          }
+        }
+      },
+      "SchedulingBaseline" : {
+        "type" : "object",
+        "properties" : {
+          "dueAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "mastered" : {
+            "type" : "boolean"
+          },
+          "stableSuccessCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "nextReviewStage" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "EARLY_RECALL", "CROSS_DAY", "FINAL_VERIFICATION" ]
+          },
+          "lastPracticeAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "stability" : {
+            "type" : "number",
+            "format" : "double"
+          }
+        }
+      },
+      "LearningCompletionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "clientCommandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "contentHash" : {
+            "type" : "string",
+            "pattern" : "[0-9a-f]{64}"
+          },
+          "reviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "occurredAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "expectedStateAbsent" : {
+            "type" : [ "boolean", "null" ]
+          }
+        },
+        "required" : [ "baseVersion", "clientCommandId", "contentHash", "knowledgeBlockId", "knowledgeBlockVersion" ]
+      },
+      "ReviewAttemptRequest" : {
+        "type" : "object",
+        "properties" : {
+          "clientCommandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "contentHash" : {
+            "type" : "string",
+            "pattern" : "[0-9a-f]{64}"
+          },
+          "reviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "rating" : {
+            "type" : "string",
+            "enum" : [ "GOOD", "HARD", "AGAIN" ]
+          },
+          "durationSeconds" : {
+            "type" : "integer",
+            "format" : "int32",
+            "minimum" : 0
+          },
+          "occurredAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "expectedStateAbsent" : {
+            "type" : [ "boolean", "null" ]
+          }
+        },
+        "required" : [ "baseVersion", "clientCommandId", "contentHash", "knowledgeBlockId", "knowledgeBlockVersion", "rating", "reviewId" ]
+      },
+      "ReviewResolutionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "clientCommandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          },
+          "contentHash" : {
+            "type" : "string",
+            "pattern" : "[0-9a-f]{64}"
+          },
+          "occurredAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "expectedStateAbsent" : {
+            "type" : [ "boolean", "null" ]
+          }
+        },
+        "required" : [ "baseVersion", "clientCommandId", "contentHash", "knowledgeBlockId", "knowledgeBlockVersion" ]
+      },
       "EventRequest" : {
         "type" : "object",
         "properties" : {
@@ -3216,63 +4297,9 @@
           "createdAt" : {
             "type" : "string",
             "format" : "date-time"
-          }
-        }
-      },
-      "ReviewStateView" : {
-        "type" : "object",
-        "properties" : {
-          "id" : {
-            "type" : "string",
-            "format" : "uuid"
           },
-          "userId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "knowledgeBlockId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "parameterSetId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "difficulty" : {
-            "type" : "number",
-            "format" : "double"
-          },
-          "stability" : {
-            "type" : "number",
-            "format" : "double"
-          },
-          "dueAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "lastReviewedAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "reps" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "lapses" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "version" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "createdAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "updatedAt" : {
-            "type" : "string",
-            "format" : "date-time"
+          "firstLearning" : {
+            "type" : "boolean"
           }
         }
       },
@@ -3288,6 +4315,73 @@
           },
           "websocketUrl" : {
             "type" : "string"
+          }
+        }
+      },
+      "FocusSessionCommand" : {
+        "type" : "object",
+        "properties" : {
+          "clientSessionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "taskId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "startedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "endedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "durationSeconds" : {
+            "type" : "integer",
+            "format" : "int32",
+            "maximum" : 86400,
+            "minimum" : 0
+          },
+          "completed" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "clientSessionId", "completed", "endedAt", "startedAt" ]
+      },
+      "FocusSessionView" : {
+        "type" : "object",
+        "properties" : {
+          "id" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "clientSessionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "taskId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "startedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "endedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "durationSeconds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "completed" : {
+            "type" : "boolean"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
           }
         }
       },
@@ -3588,99 +4682,6 @@
           }
         }
       },
-      "OverviewChapter" : {
-        "type" : "object",
-        "properties" : {
-          "title" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
-          },
-          "sections" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/OverviewSection"
-            },
-            "maxItems" : 500,
-            "minItems" : 0
-          }
-        },
-        "required" : [ "sections" ]
-      },
-      "OverviewLocator" : {
-        "type" : "object",
-        "properties" : {
-          "page" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "blockId" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
-          }
-        }
-      },
-      "OverviewSection" : {
-        "type" : "object",
-        "properties" : {
-          "title" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
-          },
-          "summary" : {
-            "type" : "string",
-            "maxLength" : 4000,
-            "minLength" : 0
-          },
-          "sourceIds" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string",
-              "maxLength" : 300,
-              "minLength" : 0
-            },
-            "maxItems" : 100,
-            "minItems" : 1
-          },
-          "locator" : {
-            "$ref" : "#/components/schemas/OverviewLocator"
-          }
-        },
-        "required" : [ "sourceIds" ]
-      },
-      "OverviewSummary" : {
-        "type" : "object",
-        "properties" : {
-          "overview" : {
-            "type" : "string",
-            "maxLength" : 4000,
-            "minLength" : 0
-          },
-          "keyPoints" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string",
-              "maxLength" : 4000,
-              "minLength" : 0
-            },
-            "maxItems" : 100,
-            "minItems" : 0
-          },
-          "learningPath" : {
-            "type" : "array",
-            "items" : {
-              "type" : "string",
-              "maxLength" : 4000,
-              "minLength" : 0
-            },
-            "maxItems" : 100,
-            "minItems" : 0
-          }
-        },
-        "required" : [ "keyPoints", "learningPath" ]
-      },
       "SubjectOverviewRequest" : {
         "type" : "object",
         "properties" : {
@@ -3734,33 +4735,6 @@
           }
         },
         "required" : [ "sourceId" ]
-      },
-      "OverviewResponse" : {
-        "type" : "object",
-        "properties" : {
-          "schemaVersion" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "title" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
-          },
-          "outline" : {
-            "type" : [ "array", "null" ],
-            "items" : {
-              "$ref" : "#/components/schemas/OverviewChapter"
-            },
-            "maxItems" : 60,
-            "minItems" : 0
-          },
-          "summary" : {
-            "type" : [ "object", "null" ],
-            "$ref" : "#/components/schemas/OverviewSummary"
-          }
-        },
-        "required" : [ "outline", "schemaVersion", "summary", "title" ]
       },
       "SourceOverviewRequest" : {
         "type" : "object",
@@ -3828,6 +4802,11 @@
           },
           "readingContext" : {
             "$ref" : "#/components/schemas/ReadingContext"
+          },
+          "selectionText" : {
+            "type" : "string",
+            "maxLength" : 4000,
+            "minLength" : 0
           }
         },
         "required" : [ "content" ]
@@ -4091,6 +5070,14 @@
           "createdKnowledgeCount" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "focusSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "focusCompletedCount" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },
@@ -4102,6 +5089,169 @@
             "items" : {
               "$ref" : "#/components/schemas/Day"
             }
+          }
+        }
+      },
+      "Daily" : {
+        "type" : "object",
+        "properties" : {
+          "date" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "nonSkipReviewEventCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "distinctReviewedKnowledgeBlockCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "firstLearningKnowledgeBlockCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "subsequentReviewKnowledgeBlockCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createdKnowledgeBlockCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "completedTaskCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "learningCompletionCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "distinctStudiedKnowledgeBlockCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "Overview" : {
+        "type" : "object",
+        "properties" : {
+          "fileSourceCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "textSourceCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "urlSourceCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "activeKnowledgeBlockCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "activeTaskCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "todoTaskCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "inProgressTaskCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "doneTaskCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "cancelledTaskCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "newLearningCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "dueReviewCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "scheduledReviewCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pendingLearningCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "reviewingCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "masteredCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "RatingCounts" : {
+        "type" : "object",
+        "properties" : {
+          "againCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "hardCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "goodCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "easyCount" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "SubjectStatsView" : {
+        "type" : "object",
+        "properties" : {
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "generatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "timeZone" : {
+            "type" : "string"
+          },
+          "from" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "to" : {
+            "type" : "string",
+            "format" : "date"
+          },
+          "overview" : {
+            "$ref" : "#/components/schemas/Overview"
+          },
+          "daily" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Daily"
+            }
+          },
+          "ratingCounts" : {
+            "$ref" : "#/components/schemas/RatingCounts"
           }
         }
       },
@@ -4127,6 +5277,14 @@
           "activeSources" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "focusSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "focusCompletedCount" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },
@@ -4144,6 +5302,97 @@
           },
           "hasMore" : {
             "type" : "boolean"
+          }
+        }
+      },
+      "CursorPageReviewStateView" : {
+        "type" : "object",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ReviewStateView"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string"
+          },
+          "hasMore" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "CommandHistory" : {
+        "type" : "object",
+        "properties" : {
+          "commandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "clientCommandId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "action" : {
+            "type" : "string",
+            "enum" : [ "LEARNING_COMPLETED", "REVIEW_SELECTED", "REVIEW_CONFIRMED", "REVIEW_CORRECTED", "LEARNING_REOPENED" ]
+          },
+          "occurredAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "reviewId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "rating" : {
+            "type" : [ "string", "null" ],
+            "enum" : [ "GOOD", "HARD", "AGAIN" ]
+          },
+          "durationSeconds" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "LifecycleHistory" : {
+        "type" : "object",
+        "properties" : {
+          "knowledgeBlockId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "knowledgeBlockVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "protocolVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "state" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/ReviewStateView"
+          },
+          "commands" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CommandHistory"
+            }
+          },
+          "effectiveReviews" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/EffectiveReview"
+            }
           }
         }
       },

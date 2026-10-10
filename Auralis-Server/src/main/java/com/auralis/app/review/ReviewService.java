@@ -5,12 +5,16 @@ import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.review.internal.persistence.ReviewEventEntity;
 import com.auralis.app.review.internal.persistence.ReviewEventRepository;
+import com.auralis.app.review.internal.persistence.ReviewLifecycleReviewRepository;
 import com.auralis.app.review.internal.persistence.ReviewParameterSetEntity;
 import com.auralis.app.review.internal.persistence.ReviewParameterSetRepository;
 import com.auralis.app.review.internal.persistence.ReviewStateEntity;
 import com.auralis.app.review.internal.persistence.ReviewStateRepository;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.shared.domain.ReviewChangedEvent;
+import com.auralis.app.shared.pagination.CursorCodec;
+import com.auralis.app.shared.pagination.CursorPage;
+import com.auralis.app.subject.SubjectService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,30 +36,36 @@ public class ReviewService {
 
     private final ReviewStateRepository stateRepository;
     private final ReviewEventRepository eventRepository;
+    private final ReviewLifecycleReviewRepository lifecycleReviewRepository;
     private final ReviewParameterSetRepository parameterSetRepository;
     private final KnowledgeBlockService knowledgeBlockService;
     private final ReviewScheduler scheduler;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final SubjectService subjectService;
 
     public ReviewService(ReviewStateRepository stateRepository,
                          ReviewEventRepository eventRepository,
+                         ReviewLifecycleReviewRepository lifecycleReviewRepository,
                          ReviewParameterSetRepository parameterSetRepository,
                          KnowledgeBlockService knowledgeBlockService,
                          ReviewScheduler scheduler,
                          ObjectMapper objectMapper,
-                         ApplicationEventPublisher eventPublisher) {
+                         ApplicationEventPublisher eventPublisher,
+                         SubjectService subjectService) {
         this.stateRepository = stateRepository;
         this.eventRepository = eventRepository;
+        this.lifecycleReviewRepository = lifecycleReviewRepository;
         this.parameterSetRepository = parameterSetRepository;
         this.knowledgeBlockService = knowledgeBlockService;
         this.scheduler = scheduler;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
+        this.subjectService = subjectService;
     }
 
     public ReviewStateView preview(UUID userId, UUID knowledgeBlockId, ReviewRating rating, Instant reviewedAt) {
-        knowledgeBlockService.get(userId, knowledgeBlockId);
+        var block = knowledgeBlockService.get(userId, knowledgeBlockId);
         if (rating == ReviewRating.SKIP) {
             return null;
         }
@@ -63,13 +73,16 @@ public class ReviewService {
         return new ReviewStateView(
                 UUID.nameUUIDFromBytes((userId + ":" + knowledgeBlockId).getBytes(StandardCharsets.UTF_8)),
                 userId, knowledgeBlockId, DEFAULT_PARAMETER_ID, result.difficulty(), result.stability(),
-                result.dueAt(), reviewedAt, result.reps(), result.lapses(), 0L, reviewedAt, reviewedAt);
+                result.dueAt(), reviewedAt, result.reps(), result.lapses(), 0L, reviewedAt, reviewedAt,
+                block.version(), false, false, 0, null, reviewedAt, null, null,
+                ReviewContentHash.sha256(block.content()));
     }
 
     @Transactional
     public ReviewResult record(UUID userId, ReviewEventCommand command) {
         validate(command);
         Instant reviewedAt = command.reviewedAt().truncatedTo(ChronoUnit.MICROS);
+        var block = knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, command.knowledgeBlockId());
         var replay = eventRepository.findByUserIdAndClientEventId(userId, command.clientEventId());
         if (replay.isPresent()) {
             ReviewEventEntity event = replay.get();
@@ -84,18 +97,17 @@ public class ReviewService {
                     ? null : replayState(event, userId);
             return new ReviewResult(view(event), state);
         }
-        knowledgeBlockService.get(userId, command.knowledgeBlockId());
         ReviewParameterSetEntity parameterSet = ensureParameterSet();
-        ReviewStateEntity current = stateRepository.findByUserIdAndKnowledgeBlockId(userId, command.knowledgeBlockId())
+        ReviewStateEntity current = stateRepository.findForUpdateByUserIdAndKnowledgeBlockId(userId, command.knowledgeBlockId())
                 .orElse(null);
         if (current != null && current.getVersion() != command.baseVersion()) {
-            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Review state version does not match", view(current));
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Review state version does not match", view(current, block.version()));
         }
         if (current == null && command.baseVersion() != 0) {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "Review state version does not match");
         }
 
-        ReviewStateView beforeView = current == null ? null : view(current);
+        ReviewStateView beforeView = current == null ? null : view(current, block.version());
         ReviewScheduler.StateSnapshot before = current == null ? null : snapshot(current);
         ReviewScheduler.ScheduledReview next = command.rating() == ReviewRating.SKIP
                 ? null : scheduler.schedule(before, command.rating(), reviewedAt);
@@ -110,9 +122,19 @@ public class ReviewService {
                 current.apply(next.difficulty(), next.stability(), next.dueAt(), reviewedAt,
                         next.reps(), next.lapses());
             }
+            lifecycleReviewRepository.supersedeUnresolved(userId, command.knowledgeBlockId());
+            boolean again = command.rating() == ReviewRating.AGAIN;
+            boolean hard = command.rating() == ReviewRating.HARD;
+            boolean mastered = again || hard ? false : current.isMastered();
+            int stable = again || hard ? 0 : current.getStableSuccessCount();
+            String nextStage = mastered ? null : again ? "EARLY_RECALL"
+                    : stable >= 3 ? "FINAL_VERIFICATION" : "CROSS_DAY";
+            current.applyLifecycle(current.getStability(), next.dueAt(), reviewedAt, again, mastered,
+                    stable, nextStage,
+                    null, null, ReviewContentHash.sha256(block.content()));
             saved = stateRepository.saveAndFlush(current);
         }
-        ReviewStateView afterView = saved == null ? null : view(saved);
+        ReviewStateView afterView = saved == null ? null : view(saved, block.version());
         ReviewEventEntity event = new ReviewEventEntity(
                 UUID.randomUUID(), userId, command.knowledgeBlockId(), command.clientEventId(), command.rating(),
                 reviewedAt, command.durationSeconds(), command.baseVersion(), SCHEDULER,
@@ -128,11 +150,33 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public List<ReviewStateView> due(UUID userId, Instant at, int limit) {
         checkLimit(limit);
-        return stateRepository.findTop200ByUserIdAndDueAtLessThanEqualOrderByDueAtAscIdAsc(userId, at).stream()
+        return stateRepository.findTop200ByUserIdAndNeedsLearningFalseAndMasteredFalseAndDueAtLessThanEqualOrderByDueAtAscIdAsc(userId, at).stream()
                 .filter(state -> isActiveBlock(userId, state.getKnowledgeBlockId()))
                 .limit(limit)
                 .map(this::view)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CursorPage<ReviewStateView> states(UUID userId, UUID subjectId, String encodedCursor, int requestedLimit) {
+        checkLimit(requestedLimit);
+        subjectService.requireActiveSubject(userId, subjectId);
+        String resource = "review-states:" + userId + ":" + subjectId;
+        CursorCodec.Cursor cursor = encodedCursor == null || encodedCursor.isBlank()
+                ? null
+                : CursorCodec.decode(resource, encodedCursor);
+        if (cursor != null && (!cursor.sortKey().isEmpty() || !Instant.EPOCH.equals(cursor.updatedAt()))) {
+            throw new DomainException("VALIDATION_FAILED", "Cursor is invalid");
+        }
+        UUID afterKnowledgeBlockId = cursor == null ? null : cursor.id();
+        List<ReviewStateEntity> rows = stateRepository.findForActiveSubjectAfter(
+                userId, subjectId, afterKnowledgeBlockId, requestedLimit + 1);
+        boolean hasMore = rows.size() > requestedLimit;
+        List<ReviewStateEntity> page = hasMore ? rows.subList(0, requestedLimit) : rows;
+        String nextCursor = hasMore
+                ? CursorCodec.encode(resource, "", Instant.EPOCH, page.getLast().getKnowledgeBlockId())
+                : null;
+        return new CursorPage<>(page.stream().map(this::view).toList(), nextCursor, hasMore);
     }
 
     @Transactional(readOnly = true)
@@ -215,16 +259,22 @@ public class ReviewService {
     }
 
     private ReviewStateView view(ReviewStateEntity entity) {
+        return view(entity, knowledgeBlockService.get(entity.getUserId(), entity.getKnowledgeBlockId()).version());
+    }
+
+    private ReviewStateView view(ReviewStateEntity entity, long knowledgeBlockVersion) {
         return new ReviewStateView(entity.getId(), entity.getUserId(), entity.getKnowledgeBlockId(),
                 entity.getParameterSetId(), entity.getDifficulty(), entity.getStability(), entity.getDueAt(),
                 entity.getLastReviewedAt(), entity.getReps(), entity.getLapses(), entity.getVersion(),
-                entity.getCreatedAt(), entity.getUpdatedAt());
+                entity.getCreatedAt(), entity.getUpdatedAt(), knowledgeBlockVersion, entity.isNeedsLearning(),
+                entity.isMastered(), entity.getStableSuccessCount(), entity.getNextReviewStage(),
+                entity.getLastPracticeAt(), entity.getLastReviewId(), entity.getPendingReviewId(), entity.getContentHash());
     }
 
     private ReviewEventView view(ReviewEventEntity entity) {
         return new ReviewEventView(entity.getId(), entity.getUserId(), entity.getKnowledgeBlockId(),
                 entity.getClientEventId(), entity.getRating(), entity.getReviewedAt(), entity.getDurationSeconds(),
                 entity.getBaseVersion(), entity.getScheduler(), entity.getSchedulerVersion(),
-                entity.getParameterSetId(), entity.getCreatedAt());
+                entity.getParameterSetId(), entity.getCreatedAt(), entity.getBeforeState() == null);
     }
 }

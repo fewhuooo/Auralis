@@ -68,6 +68,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/overview-results/subjects/{subjectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSubject"];
+        put: operations["putSubject"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/overview-results/sources/{sourceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getSource"];
+        put: operations["putSource"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/knowledge-blocks/{id}": {
         parameters: {
             query?: never;
@@ -324,6 +356,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reviews/lifecycle/learning-reopens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["learningReopen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/lifecycle/learning-completions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["learningCompletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/lifecycle/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["reviewAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/lifecycle/attempts/{reviewId}/corrections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["correctReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/lifecycle/attempts/{reviewId}/confirmations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirmReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reviews/events": {
         parameters: {
             query?: never;
@@ -414,6 +526,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["restore_4"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/focus-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["create_5"];
         delete?: never;
         options?: never;
         head?: never;
@@ -692,6 +820,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats/subjects/{subjectId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["subject"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats/overview": {
         parameters: {
             query?: never;
@@ -700,6 +844,38 @@ export interface paths {
             cookie?: never;
         };
         get: operations["overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/states": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["states"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reviews/lifecycle/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["lifecycleHistory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -910,6 +1086,92 @@ export interface components {
             /** Format: date-time */
             deletedAt?: string;
         };
+        OverviewChapter: {
+            title?: string;
+            sections: components["schemas"]["OverviewSection"][];
+        };
+        OverviewLocator: {
+            /** Format: int32 */
+            page?: number;
+            blockId?: string;
+        };
+        OverviewResponse: {
+            /** Format: int32 */
+            schemaVersion: number;
+            title: string;
+            outline: components["schemas"]["OverviewChapter"][] | null;
+            summary: components["schemas"]["OverviewSummary"];
+        };
+        OverviewResultCommand: {
+            /** Format: int64 */
+            baseVersion: number;
+            /** Format: uuid */
+            clientWriteId: string;
+            /** @enum {string} */
+            mode: "ALL" | "OUTLINE" | "SUMMARY";
+            /** Format: uuid */
+            ingestionRevision?: string;
+            sourceManifest?: components["schemas"]["OverviewSourceManifestEntry"][];
+            inputFingerprint?: string;
+            /** Format: date-time */
+            outlineGeneratedAt?: string;
+            /** Format: date-time */
+            summaryGeneratedAt?: string;
+            result: components["schemas"]["OverviewResponse"];
+        };
+        OverviewSection: {
+            title?: string;
+            summary?: string;
+            sourceIds: string[];
+            locator?: components["schemas"]["OverviewLocator"];
+        };
+        OverviewSourceManifestEntry: {
+            /** Format: uuid */
+            sourceId: string;
+            /** Format: uuid */
+            ingestionRevision: string;
+            /** Format: int64 */
+            outlineVersion?: number;
+            /** Format: int64 */
+            summaryVersion?: number;
+        };
+        OverviewSummary: {
+            overview?: string;
+            keyPoints: string[];
+            learningPath: string[];
+        };
+        OverviewResultView: {
+            /** Format: uuid */
+            id?: string;
+            scopeType?: string;
+            /** Format: uuid */
+            sourceId?: string;
+            /** Format: uuid */
+            subjectId?: string;
+            /** Format: uuid */
+            ingestionRevision?: string;
+            /** Format: int64 */
+            version?: number;
+            /** Format: int64 */
+            outlineVersion?: number;
+            /** Format: int64 */
+            summaryVersion?: number;
+            /** Format: int32 */
+            schemaVersion?: number;
+            title?: string;
+            outline?: components["schemas"]["OverviewChapter"][];
+            summary?: components["schemas"]["OverviewSummary"];
+            outlineSourceManifest?: components["schemas"]["OverviewSourceManifestEntry"][];
+            summarySourceManifest?: components["schemas"]["OverviewSourceManifestEntry"][];
+            outlineInputFingerprint?: string;
+            summaryInputFingerprint?: string;
+            /** Format: date-time */
+            outlineGeneratedAt?: string;
+            /** Format: date-time */
+            summaryGeneratedAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
         PasswordChangeRequest: {
             /** Format: int64 */
             baseVersion: number;
@@ -1004,27 +1266,27 @@ export interface components {
             empty?: boolean;
             null?: boolean;
             float?: boolean;
-            container?: boolean;
             missingNode?: boolean;
+            container?: boolean;
             floatingPointNumber?: boolean;
             object?: boolean;
+            boolean?: boolean;
+            int?: boolean;
+            binary?: boolean;
+            short?: boolean;
+            long?: boolean;
             double?: boolean;
             /** @deprecated */
             textual?: boolean;
-            boolean?: boolean;
-            binary?: boolean;
-            short?: boolean;
-            string?: boolean;
             pojo?: boolean;
-            int?: boolean;
-            long?: boolean;
             number?: boolean;
-            valueNode?: boolean;
+            string?: boolean;
             bigDecimal?: boolean;
+            bigInteger?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            valueNode?: boolean;
             integralNumber?: boolean;
-            bigInteger?: boolean;
             embeddedValue?: boolean;
         };
         MutationRequest: {
@@ -1135,6 +1397,156 @@ export interface components {
             /** Format: int64 */
             baseVersion: number;
         };
+        LearningReopenRequest: {
+            /** Format: uuid */
+            clientCommandId: string;
+            /** Format: uuid */
+            knowledgeBlockId: string;
+            /** Format: int64 */
+            knowledgeBlockVersion: number;
+            /** Format: int64 */
+            baseVersion: number;
+            contentHash: string;
+            /** Format: uuid */
+            reviewId?: string;
+            /** Format: date-time */
+            occurredAt?: string | null;
+            expectedStateAbsent?: boolean | null;
+        };
+        CommandResponse: {
+            /** Format: uuid */
+            commandId?: string;
+            /** Format: uuid */
+            clientCommandId?: string;
+            /** @enum {string} */
+            action?: "LEARNING_COMPLETED" | "REVIEW_SELECTED" | "REVIEW_CONFIRMED" | "REVIEW_CORRECTED" | "LEARNING_REOPENED";
+            /** Format: date-time */
+            occurredAt?: string;
+            /** Format: int64 */
+            knowledgeBlockVersion?: number;
+            state?: components["schemas"]["ReviewStateView"];
+            effectiveReview?: components["schemas"]["EffectiveReview"];
+        };
+        EffectiveReview: {
+            /** Format: uuid */
+            reviewId?: string;
+            /** @enum {string} */
+            selectedRating?: "GOOD" | "HARD" | "AGAIN";
+            /** @enum {string|null} */
+            effectiveRating?: "GOOD" | "HARD" | "AGAIN" | null;
+            /** Format: date-time */
+            selectedAt?: string;
+            /** Format: date-time */
+            resolvedAt?: string | null;
+            /** @enum {string|null} */
+            resolution?: "AGAIN_SELECTED" | "CONFIRMED" | "CORRECTED_AGAIN" | "SUPERSEDED" | null;
+            schedulingBaseline?: components["schemas"]["SchedulingBaseline"];
+        };
+        ReviewStateView: {
+            /** Format: uuid */
+            id?: string;
+            /** Format: uuid */
+            userId?: string;
+            /** Format: uuid */
+            knowledgeBlockId?: string;
+            /** Format: uuid */
+            parameterSetId?: string;
+            /** Format: double */
+            difficulty?: number;
+            /** Format: double */
+            stability?: number;
+            /** Format: date-time */
+            dueAt?: string;
+            /** Format: date-time */
+            lastReviewedAt?: string;
+            /** Format: int32 */
+            reps?: number;
+            /** Format: int32 */
+            lapses?: number;
+            /** Format: int64 */
+            version?: number;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            /** Format: int64 */
+            knowledgeBlockVersion?: number;
+            needsLearning?: boolean;
+            mastered?: boolean;
+            /** Format: int32 */
+            stableSuccessCount?: number;
+            nextReviewStage?: string;
+            /** Format: date-time */
+            lastPracticeAt?: string;
+            /** Format: uuid */
+            lastReviewId?: string;
+            /** Format: uuid */
+            pendingReviewId?: string;
+            contentHash?: string | null;
+        };
+        SchedulingBaseline: {
+            /** Format: date-time */
+            dueAt?: string | null;
+            mastered?: boolean;
+            /** Format: int32 */
+            stableSuccessCount?: number;
+            /** @enum {string|null} */
+            nextReviewStage?: "EARLY_RECALL" | "CROSS_DAY" | "FINAL_VERIFICATION" | null;
+            /** Format: date-time */
+            lastPracticeAt?: string | null;
+            /** Format: double */
+            stability?: number;
+        };
+        LearningCompletionRequest: {
+            /** Format: uuid */
+            clientCommandId: string;
+            /** Format: uuid */
+            knowledgeBlockId: string;
+            /** Format: int64 */
+            knowledgeBlockVersion: number;
+            /** Format: int64 */
+            baseVersion: number;
+            contentHash: string;
+            /** Format: uuid */
+            reviewId?: string;
+            /** Format: date-time */
+            occurredAt?: string | null;
+            expectedStateAbsent?: boolean | null;
+        };
+        ReviewAttemptRequest: {
+            /** Format: uuid */
+            clientCommandId: string;
+            /** Format: uuid */
+            knowledgeBlockId: string;
+            /** Format: int64 */
+            knowledgeBlockVersion: number;
+            /** Format: int64 */
+            baseVersion: number;
+            contentHash: string;
+            /** Format: uuid */
+            reviewId: string;
+            /** @enum {string} */
+            rating: "GOOD" | "HARD" | "AGAIN";
+            /** Format: int32 */
+            durationSeconds?: number;
+            /** Format: date-time */
+            occurredAt?: string | null;
+            expectedStateAbsent?: boolean | null;
+        };
+        ReviewResolutionRequest: {
+            /** Format: uuid */
+            clientCommandId: string;
+            /** Format: uuid */
+            knowledgeBlockId: string;
+            /** Format: int64 */
+            knowledgeBlockVersion: number;
+            /** Format: int64 */
+            baseVersion: number;
+            contentHash: string;
+            /** Format: date-time */
+            occurredAt?: string | null;
+            expectedStateAbsent?: boolean | null;
+        };
         EventRequest: {
             /** Format: uuid */
             clientEventId: string;
@@ -1177,40 +1589,43 @@ export interface components {
             parameterSetId?: string;
             /** Format: date-time */
             createdAt?: string;
-        };
-        ReviewStateView: {
-            /** Format: uuid */
-            id?: string;
-            /** Format: uuid */
-            userId?: string;
-            /** Format: uuid */
-            knowledgeBlockId?: string;
-            /** Format: uuid */
-            parameterSetId?: string;
-            /** Format: double */
-            difficulty?: number;
-            /** Format: double */
-            stability?: number;
-            /** Format: date-time */
-            dueAt?: string;
-            /** Format: date-time */
-            lastReviewedAt?: string;
-            /** Format: int32 */
-            reps?: number;
-            /** Format: int32 */
-            lapses?: number;
-            /** Format: int64 */
-            version?: number;
-            /** Format: date-time */
-            createdAt?: string;
-            /** Format: date-time */
-            updatedAt?: string;
+            firstLearning?: boolean;
         };
         TicketResponse: {
             ticket?: string;
             /** Format: date-time */
             expiresAt?: string;
             websocketUrl?: string;
+        };
+        FocusSessionCommand: {
+            /** Format: uuid */
+            clientSessionId: string;
+            /** Format: uuid */
+            taskId?: string;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            endedAt: string;
+            /** Format: int32 */
+            durationSeconds?: number;
+            completed: boolean;
+        };
+        FocusSessionView: {
+            /** Format: uuid */
+            id?: string;
+            /** Format: uuid */
+            clientSessionId?: string;
+            /** Format: uuid */
+            taskId?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            endedAt?: string;
+            /** Format: int32 */
+            durationSeconds?: number;
+            completed?: boolean;
+            /** Format: date-time */
+            createdAt?: string;
         };
         RegisterRequest: {
             username: string;
@@ -1324,26 +1739,6 @@ export interface components {
             /** Format: date-time */
             generatedAt?: string;
         };
-        OverviewChapter: {
-            title?: string;
-            sections: components["schemas"]["OverviewSection"][];
-        };
-        OverviewLocator: {
-            /** Format: int32 */
-            page?: number;
-            blockId?: string;
-        };
-        OverviewSection: {
-            title?: string;
-            summary?: string;
-            sourceIds: string[];
-            locator?: components["schemas"]["OverviewLocator"];
-        };
-        OverviewSummary: {
-            overview?: string;
-            keyPoints: string[];
-            learningPath: string[];
-        };
         SubjectOverviewRequest: {
             /** Format: uuid */
             subjectId: string;
@@ -1358,13 +1753,6 @@ export interface components {
             title?: string;
             outline?: components["schemas"]["OverviewChapter"][] | null;
             summary?: components["schemas"]["OverviewSummary"];
-        };
-        OverviewResponse: {
-            /** Format: int32 */
-            schemaVersion: number;
-            title: string;
-            outline: components["schemas"]["OverviewChapter"][] | null;
-            summary: components["schemas"]["OverviewSummary"];
         };
         SourceOverviewRequest: {
             /** Format: uuid */
@@ -1390,6 +1778,7 @@ export interface components {
             topK?: number;
             clientRequestId?: string;
             readingContext?: components["schemas"]["ReadingContext"];
+            selectionText?: string;
         };
         ReadingContext: {
             /** Format: uuid */
@@ -1491,9 +1880,89 @@ export interface components {
             completedTaskCount?: number;
             /** Format: int64 */
             createdKnowledgeCount?: number;
+            /** Format: int64 */
+            focusSeconds?: number;
+            /** Format: int64 */
+            focusCompletedCount?: number;
         };
         WeeklyStatsView: {
             days?: components["schemas"]["Day"][];
+        };
+        Daily: {
+            /** Format: date */
+            date?: string;
+            /** Format: int64 */
+            nonSkipReviewEventCount?: number;
+            /** Format: int64 */
+            distinctReviewedKnowledgeBlockCount?: number;
+            /** Format: int64 */
+            firstLearningKnowledgeBlockCount?: number;
+            /** Format: int64 */
+            subsequentReviewKnowledgeBlockCount?: number;
+            /** Format: int64 */
+            createdKnowledgeBlockCount?: number;
+            /** Format: int64 */
+            completedTaskCount?: number;
+            /** Format: int64 */
+            learningCompletionCount?: number;
+            /** Format: int64 */
+            distinctStudiedKnowledgeBlockCount?: number;
+        };
+        Overview: {
+            /** Format: int64 */
+            fileSourceCount?: number;
+            /** Format: int64 */
+            textSourceCount?: number;
+            /** Format: int64 */
+            urlSourceCount?: number;
+            /** Format: int64 */
+            activeKnowledgeBlockCount?: number;
+            /** Format: int64 */
+            activeTaskCount?: number;
+            /** Format: int64 */
+            todoTaskCount?: number;
+            /** Format: int64 */
+            inProgressTaskCount?: number;
+            /** Format: int64 */
+            doneTaskCount?: number;
+            /** Format: int64 */
+            cancelledTaskCount?: number;
+            /** Format: int64 */
+            newLearningCount?: number;
+            /** Format: int64 */
+            dueReviewCount?: number;
+            /** Format: int64 */
+            scheduledReviewCount?: number;
+            /** Format: int64 */
+            pendingLearningCount?: number;
+            /** Format: int64 */
+            reviewingCount?: number;
+            /** Format: int64 */
+            masteredCount?: number;
+        };
+        RatingCounts: {
+            /** Format: int64 */
+            againCount?: number;
+            /** Format: int64 */
+            hardCount?: number;
+            /** Format: int64 */
+            goodCount?: number;
+            /** Format: int64 */
+            easyCount?: number;
+        };
+        SubjectStatsView: {
+            /** Format: uuid */
+            subjectId?: string;
+            /** Format: date-time */
+            generatedAt?: string;
+            timeZone?: string;
+            /** Format: date */
+            from?: string;
+            /** Format: date */
+            to?: string;
+            overview?: components["schemas"]["Overview"];
+            daily?: components["schemas"]["Daily"][];
+            ratingCounts?: components["schemas"]["RatingCounts"];
         };
         StatsOverviewView: {
             /** Format: int64 */
@@ -1506,11 +1975,51 @@ export interface components {
             completedReviewEvents?: number;
             /** Format: int64 */
             activeSources?: number;
+            /** Format: int64 */
+            focusSeconds?: number;
+            /** Format: int64 */
+            focusCompletedCount?: number;
         };
         SourceListResponse: {
             items?: components["schemas"]["SourceResponse"][];
             nextCursor?: string;
             hasMore?: boolean;
+        };
+        CursorPageReviewStateView: {
+            items?: components["schemas"]["ReviewStateView"][];
+            nextCursor?: string;
+            hasMore?: boolean;
+        };
+        CommandHistory: {
+            /** Format: uuid */
+            commandId?: string;
+            /** Format: uuid */
+            clientCommandId?: string;
+            /** @enum {string} */
+            action?: "LEARNING_COMPLETED" | "REVIEW_SELECTED" | "REVIEW_CONFIRMED" | "REVIEW_CORRECTED" | "LEARNING_REOPENED";
+            /** Format: date-time */
+            occurredAt?: string;
+            /** Format: uuid */
+            reviewId?: string;
+            /** @enum {string|null} */
+            rating?: "GOOD" | "HARD" | "AGAIN" | null;
+            /** Format: int32 */
+            durationSeconds?: number;
+            /** Format: int64 */
+            baseVersion?: number;
+            /** Format: int64 */
+            knowledgeBlockVersion?: number;
+        };
+        LifecycleHistory: {
+            /** Format: uuid */
+            knowledgeBlockId?: string;
+            /** Format: int64 */
+            knowledgeBlockVersion?: number;
+            /** Format: int32 */
+            protocolVersion?: number;
+            state?: components["schemas"]["ReviewStateView"];
+            commands?: components["schemas"]["CommandHistory"][];
+            effectiveReviews?: components["schemas"]["EffectiveReview"][];
         };
         SessionListResponse: {
             items?: components["schemas"]["SessionResponse"][];
@@ -1844,6 +2353,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    getSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subjectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewResultView"];
+                };
+            };
+        };
+    };
+    putSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subjectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverviewResultCommand"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewResultView"];
+                };
+            };
+        };
+    };
+    getSource: {
+        parameters: {
+            query?: {
+                ingestionRevision?: string;
+            };
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewResultView"];
+                };
+            };
+        };
+    };
+    putSource: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sourceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverviewResultCommand"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewResultView"];
+                };
             };
         };
     };
@@ -2437,6 +3044,130 @@ export interface operations {
             };
         };
     };
+    learningReopen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningReopenRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CommandResponse"];
+                };
+            };
+        };
+    };
+    learningCompletion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningCompletionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CommandResponse"];
+                };
+            };
+        };
+    };
+    reviewAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CommandResponse"];
+                };
+            };
+        };
+    };
+    correctReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewResolutionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CommandResponse"];
+                };
+            };
+        };
+    };
+    confirmReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reviewId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewResolutionRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CommandResponse"];
+                };
+            };
+        };
+    };
     event: {
         parameters: {
             query?: never;
@@ -2623,6 +3354,30 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["Response"];
+                };
+            };
+        };
+    };
+    create_5: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FocusSessionCommand"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["FocusSessionView"];
                 };
             };
         };
@@ -3080,6 +3835,31 @@ export interface operations {
             };
         };
     };
+    subject: {
+        parameters: {
+            query: {
+                days?: number;
+                timeZone: string;
+            };
+            header?: never;
+            path: {
+                subjectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["SubjectStatsView"];
+                };
+            };
+        };
+    };
     overview: {
         parameters: {
             query?: {
@@ -3098,6 +3878,52 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["StatsOverviewView"];
+                };
+            };
+        };
+    };
+    states: {
+        parameters: {
+            query: {
+                subjectId: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["CursorPageReviewStateView"];
+                };
+            };
+        };
+    };
+    lifecycleHistory: {
+        parameters: {
+            query: {
+                knowledgeBlockId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["LifecycleHistory"];
                 };
             };
         };

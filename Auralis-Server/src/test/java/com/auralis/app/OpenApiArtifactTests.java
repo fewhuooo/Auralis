@@ -97,12 +97,73 @@ class OpenApiArtifactTests {
     }
 
     @Test
+    void documentsLifecycleVersionFieldsAsRequiredAndOnlyThreeRatings() throws Exception {
+        JsonNode document = openApiDocument();
+
+        JsonNode completion = document.at("/components/schemas/LearningCompletionRequest");
+        assertThat(completion.at("/required").toString())
+                .contains("knowledgeBlockVersion", "baseVersion", "contentHash");
+        assertThat(completion.at("/required").toString())
+                .doesNotContain("occurredAt", "expectedStateAbsent");
+        assertThat(completion.at("/properties/occurredAt/type").toString()).contains("string");
+        assertThat(allowsNull(completion.at("/properties/occurredAt"))).isTrue();
+        assertThat(allowsNull(completion.at("/properties/expectedStateAbsent"))).isTrue();
+        JsonNode attempt = document.at("/components/schemas/ReviewAttemptRequest");
+        assertThat(attempt.at("/required").toString())
+                .contains("knowledgeBlockVersion", "baseVersion", "contentHash");
+        assertThat(attempt.at("/required").toString())
+                .doesNotContain("occurredAt", "expectedStateAbsent");
+        assertThat(attempt.at("/properties/rating/enum").toString())
+                .isEqualTo("[\"GOOD\",\"HARD\",\"AGAIN\"]");
+        for (String schemaName : new String[]{"ReviewResolutionRequest", "LearningReopenRequest"}) {
+            JsonNode request = document.at("/components/schemas/" + schemaName);
+            assertThat(request.at("/required").toString()).doesNotContain("occurredAt", "expectedStateAbsent");
+            assertThat(request.at("/properties/occurredAt").isObject()).isTrue();
+            assertThat(request.at("/properties/expectedStateAbsent").isObject()).isTrue();
+        }
+
+        JsonNode effectiveReview = document.at("/components/schemas/EffectiveReview");
+        assertThat(effectiveReview.at("/properties/selectedRating/enum").toString())
+                .isEqualTo("[\"GOOD\",\"HARD\",\"AGAIN\"]");
+        assertThat(effectiveReview.at("/properties/effectiveRating/enum").toString())
+                .isEqualTo("[\"GOOD\",\"HARD\",\"AGAIN\"]");
+        assertThat(allowsNull(effectiveReview.at("/properties/effectiveRating"))).isTrue();
+        assertThat(allowsNull(effectiveReview.at("/properties/resolvedAt"))).isTrue();
+        assertThat(allowsNull(effectiveReview.at("/properties/resolution"))).isTrue();
+        JsonNode baseline = effectiveReview.at("/properties/schedulingBaseline");
+        assertThat(baseline.isObject()).isTrue();
+        assertThat(allowsNull(baseline)).isTrue();
+        JsonNode baselineSchema = document.at("/components/schemas/SchedulingBaseline");
+        assertThat(baselineSchema.at("/properties/stableSuccessCount/type").toString()).contains("integer");
+        assertThat(baselineSchema.at("/properties/stability/type").toString()).contains("number");
+
+        String lifecycleActions = "[\"LEARNING_COMPLETED\",\"REVIEW_SELECTED\",\"REVIEW_CONFIRMED\","
+                + "\"REVIEW_CORRECTED\",\"LEARNING_REOPENED\"]";
+        assertThat(document.at("/components/schemas/CommandResponse/properties/action/enum").toString())
+                .isEqualTo(lifecycleActions);
+        assertThat(document.at("/components/schemas/CommandHistory/properties/action/enum").toString())
+                .isEqualTo(lifecycleActions);
+        JsonNode resolution = effectiveReview.at("/properties/resolution");
+        assertThat(resolution.at("/enum").toString())
+                .isEqualTo("[\"AGAIN_SELECTED\",\"CONFIRMED\",\"CORRECTED_AGAIN\",\"SUPERSEDED\"]");
+
+        JsonNode history = document.at("/components/schemas/LifecycleHistory");
+        assertThat(allowsNull(history.at("/properties/state"))).isTrue();
+        assertThat(history.at("/properties/protocolVersion/type").asText()).isEqualTo("integer");
+        assertThat(allowsNull(document.at("/components/schemas/ReviewStateView/properties/contentHash"))).isTrue();
+        assertThat(document.at("/components/schemas/ReviewEventView/properties/firstLearning/type").asText())
+                .isEqualTo("boolean");
+    }
+
+    @Test
     void documentsReadingContextAndScopedConversationFields() throws Exception {
         JsonNode document = openApiDocument();
 
         JsonNode message = document.at("/components/schemas/AiMessageCommand");
         JsonNode readingContext = document.at("/components/schemas/ReadingContext");
         assertThat(message.at("/properties/readingContext").isObject()).isTrue();
+        assertThat(message.at("/properties/selectionText/maxLength").asInt()).isEqualTo(4000);
+        assertThat(message.at("/required").toString()).doesNotContain("selectionText");
         assertThat(readingContext.at("/properties/currentSourceId").isObject()).isTrue();
         assertThat(readingContext.at("/required").toString()).doesNotContain("currentSourceId");
         assertThat(readingContext.at("/properties/sourceIds/maxItems").asInt()).isEqualTo(100);

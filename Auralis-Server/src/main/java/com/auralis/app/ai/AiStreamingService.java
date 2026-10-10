@@ -23,6 +23,8 @@ import java.util.Locale;
 public class AiStreamingService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AiStreamingService.class);
+    private static final String SYSTEM_PROMPT =
+            "You are a precise study assistant. Answer using the user's conversation and the supplied personal knowledge context when relevant.";
 
     private final ConversationService conversationService;
     private final AiSettingsService settingsService;
@@ -56,6 +58,7 @@ public class AiStreamingService {
         if (command == null || command.content() == null || command.content().isBlank()) {
             throw new DomainException("VALIDATION_FAILED", "Message content is required");
         }
+        validatePromptBudget(command);
         String content = command.content().trim();
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
         long requestStartedAt = System.nanoTime();
@@ -125,15 +128,14 @@ public class AiStreamingService {
 
             AiProviderPort provider = providerRegistry.require(providerType);
             ConversationView conversation = conversationService.get(userId, conversationId);
-            int maxPromptChars = properties.ai().maxPromptChars();
-            if (maxPromptChars < 1) maxPromptChars = 12000;
+            int maxPromptChars = maxPromptChars();
             AiProviderRequest request = new AiProviderRequest(
                     settings.chatModel(),
                     PromptAssembler.assemble(
-                            "You are a precise study assistant. Answer using the user's conversation and the supplied personal knowledge context when relevant.",
+                            SYSTEM_PROMPT,
                             conversation == null ? List.of() : conversation.messages(),
                             userMessage.id(),
-                            readingContext == null ? null : readingContext.selectionText(),
+                            command.effectiveSelectionText(),
                             citations,
                             content,
                             maxPromptChars),
@@ -212,6 +214,23 @@ public class AiStreamingService {
             sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
                     Map.of("code", "MODEL_PROVIDER_ERROR", "detail", "AI provider request failed")));
         }
+    }
+
+    public void validatePromptBudget(AiMessageCommand command) {
+        if (command == null || command.content() == null) return;
+        if (command.selectionText() != null && command.selectionText().length() > 4000) {
+            throw new DomainException("VALIDATION_FAILED", "selectionText must not exceed 4000 characters");
+        }
+        PromptAssembler.validateSelectionBudget(
+                SYSTEM_PROMPT,
+                command.effectiveSelectionText(),
+                command.content(),
+                maxPromptChars());
+    }
+
+    private int maxPromptChars() {
+        int maxPromptChars = properties.ai().maxPromptChars();
+        return maxPromptChars < 1 ? 12000 : maxPromptChars;
     }
 
     private void replay(ConversationService.ClientRequestReplay replay, AiStreamSink sink) {

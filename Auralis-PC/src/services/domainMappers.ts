@@ -45,7 +45,6 @@ export interface KnowledgeBlockModel {
   subject: string
   subjectId: string
   title: string
-  preview: string
   content: string
   time: string
   source: string
@@ -55,7 +54,6 @@ export interface KnowledgeBlockModel {
   updatedAt?: string
   deletedAt: string | null
   sourceFileId?: string
-  tags: string[]
   difficulty?: 'easy' | 'medium' | 'hard'
   mastery: number
   reviewAt?: string
@@ -155,10 +153,7 @@ export interface KnowledgeBlockDtoLike {
   subjectId?: string
   sourceId?: string
   title?: string
-  description?: string
-  summary?: string
   content?: string
-  tags?: string[]
   colorOverride?: string
   version?: number
   createdAt?: string
@@ -276,7 +271,6 @@ export function isClientFileSource(view: Pick<SourceDtoLike, 'type' | 'assetId' 
 }
 
 export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike, sourceTitle?: string, subjectName?: string): KnowledgeBlockModel {
-  const summary = view.summary || view.description || view.content || ''
   const source = sourceTitle?.trim() || (view.sourceId ? '来源资料' : '未分类材料')
   const subject = subjectName?.trim() || '未分类学科'
   return {
@@ -284,8 +278,7 @@ export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike, sourceTitle?:
     subject,
     subjectId: view.subjectId || '',
     title: view.title || '无标题块',
-    preview: summary,
-    content: view.content || summary,
+    content: view.content || '',
     time: view.updatedAt || view.createdAt || '',
     source,
     color: view.colorOverride || 'rgba(181,196,177,0.4)',
@@ -294,7 +287,6 @@ export function mapKnowledgeBlockView(view: KnowledgeBlockDtoLike, sourceTitle?:
     updatedAt: view.updatedAt,
     deletedAt: view.deletedAt ?? null,
     sourceFileId: view.sourceId,
-    tags: [...(view.tags || [])],
     mastery: 0,
     relatedBlockIds: [],
   }

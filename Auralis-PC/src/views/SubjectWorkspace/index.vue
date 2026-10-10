@@ -35,6 +35,24 @@
           <IconLayoutGrid :size="20" :stroke-width="1.6" />
           <span class="tier1-btn-text">知识库</span>
         </button>
+        <button
+          class="tier1-btn"
+          :class="{ 'is-active': centerView === 'review' }"
+          title="复习"
+          @click="centerView = 'review'; tier2Open = false"
+        >
+          <IconHistory :size="20" :stroke-width="1.6" />
+          <span class="tier1-btn-text">复习</span>
+        </button>
+        <button
+          class="tier1-btn"
+          :class="{ 'is-active': centerView === 'stats' }"
+          title="统计"
+          @click="centerView = 'stats'; tier2Open = false"
+        >
+          <IconChartBar :size="20" :stroke-width="1.6" />
+          <span class="tier1-btn-text">统计</span>
+        </button>
       </div>
       <div class="tier1-bottom">
         <div class="subject-mini-icon" :title="activeSubject?.name">
@@ -56,6 +74,7 @@
             <IconPlus :size="15" :stroke-width="2.4" />
           </button>
         </div>
+
         <div class="drawer-list" v-if="activeSourceFiles.length > 0">
           <div
             v-for="file in activeSourceFiles"
@@ -426,6 +445,7 @@
             @generate="handleOutlineAi"
             @generate-outline="handleSubjectOutlineRegenerate"
             @open-summary="openSubjectSummary"
+            @resolve-sync-conflict="resolveSubjectOverviewConflict"
           />
           <FileOutlineList
             :files="fileOverviewItems"
@@ -434,6 +454,7 @@
             @select-summary="openFileSummary"
             @select-outline-node="openOverviewLocator"
             @regenerate="regenerateFileOverview"
+            @resolve-sync-conflict="resolveFileOverviewConflict"
           />
         </div>
       </div>
@@ -456,6 +477,8 @@
           <span v-else-if="centerView === 'blocks'" class="status-file">
             <IconNotes :size="14" :stroke-width="1.6" class="status-icon" /> 知识块 · {{ filteredBlocks.length }} 个知识块
           </span>
+          <span v-else-if="centerView === 'review'" class="status-file">{{ activeSubject?.name }} · 复习</span>
+          <span v-else-if="centerView === 'stats'" class="status-file">{{ activeSubject?.name }} · 统计</span>
           <span v-else class="status-file">{{ activeSubject?.name }}</span>
         </div>
         <div class="status-right">
@@ -489,125 +512,241 @@
           <IconChevronRight v-else :size="12" :stroke-width="2.5" />
         </button>
 
-        <OverviewSummaryView
-          v-if="centerView === 'summary' && summaryTarget"
-          :title="summaryTarget.title"
-          :kind="summaryTarget.kind"
-          :summary="summaryTarget.record?.summary || null"
-          :is-generating="summaryTarget.isGenerating"
-          :is-stale="summaryTarget.isStale"
-          :error="summaryTarget.error"
-          @close="closeSummary"
-          @regenerate="regenerateSelectedSummary"
-        />
-
-        <template v-else-if="centerView === 'preview' && selectedFile">
-          <FilePreview
-            ref="filePreviewRef"
-            :file="selectedFile"
-            :bare="true"
-            @preview-error="handlePreviewError"
-            @control-ready="previewControlsReady = $event"
-            @zoom-change="handlePreviewZoomChange"
-            @rotation-change="previewRotation = $event"
-            @page-change="handlePreviewPageChange"
-            @text-selected="handleTextSelected"
+        <Transition name="workspace-view-fade" mode="out-in">
+          <SubjectReviewPane
+            v-if="centerView === 'review'"
+            :key="'review-' + subjectId"
+            :subject-id="subjectId"
+            @back="handleReviewOrStatsBack"
           />
 
-          <div v-if="selectedText" class="selection-actions" role="toolbar" aria-label="选中文本操作">
-            <span class="selection-summary">已选 {{ selectedText.length }} 字</span>
-            <button type="button" @click="explainSelection">解释</button>
-            <button type="button" @click="askSelection">追问</button>
-            <button type="button" @click="saveSelection">保存为知识块</button>
-            <button type="button" class="selection-dismiss" aria-label="清除选区" @click="selectedText = ''">×</button>
-          </div>
+          <SubjectStatsPane
+            v-else-if="centerView === 'stats'"
+            :key="'stats-' + subjectId"
+            :subject-id="subjectId"
+            @back="handleReviewOrStatsBack"
+          />
 
-          <footer class="preview-page-footer" aria-label="文档页码">
-            <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">上一页</button>
-            <span class="preview-page-count">{{ previewPage }} / {{ previewPageCount }}</span>
-            <button type="button" class="preview-page-button" :disabled="previewPage >= previewPageCount" @click="filePreviewRef?.nextPage()">下一页</button>
-          </footer>
-        </template>
+          <OverviewSummaryView
+            v-else-if="centerView === 'summary' && summaryTarget"
+            key="summary-view"
+            :title="summaryTarget.title"
+            :kind="summaryTarget.kind"
+            :summary="summaryTarget.record?.summary || null"
+            :is-generating="summaryTarget.isGenerating"
+            :is-stale="summaryTarget.isStale"
+            :error="summaryTarget.error"
+            @close="closeSummary"
+            @regenerate="regenerateSelectedSummary"
+          />
 
-        <!-- Knowledge Blocks Grid -->
-        <div v-else-if="centerView === 'blocks'" class="blocks-workspace">
-          <div class="blocks-top-bar">
-            <div class="blocks-search">
-              <IconSearch :size="12" :stroke-width="2" />
-              <input v-model="blockSearchQuery" placeholder="搜索知识块..." />
+          <div
+            v-else-if="centerView === 'preview' && selectedFile"
+            :key="'preview-' + selectedFile.id"
+            ref="previewPaneWrapperRef"
+            class="preview-pane-wrapper"
+            @mouseup="updateSelectionPosition"
+            @keyup="updateSelectionPosition"
+          >
+            <div v-if="selectedFile.ingestionStatus === 'FAILED'" class="file-processing-alert-banner">
+              <div class="file-processing-alert-text">
+                <span class="file-processing-alert-badge">解析失败</span>
+                <span class="file-processing-alert-msg">{{ selectedFile.safeErrorDetail || '文件解析未完成' }}</span>
+              </div>
+              <button
+                type="button"
+                class="file-processing-alert-btn"
+                :disabled="retryingSourceId === selectedFile.id"
+                @click="handleRetryFileProcessing(selectedFile.id)"
+              >
+                {{ retryingSourceId === selectedFile.id ? '正在重试...' : '重试解析' }}
+              </button>
             </div>
-            <button class="blocks-add-btn" @click="openCreateDialog">+ 手动录入</button>
+
+            <FilePreview
+              ref="filePreviewRef"
+              :file="selectedFile"
+              :bare="true"
+              @preview-error="handlePreviewError"
+              @control-ready="previewControlsReady = $event"
+              @zoom-change="handlePreviewZoomChange"
+              @rotation-change="previewRotation = $event"
+              @page-change="handlePreviewPageChange"
+              @text-selected="handleTextSelected"
+            />
+
+            <!-- 浮动文字提示操作条：放置在选中文字旁边 -->
+            <Transition name="selection-bubble-pop">
+              <div
+                v-if="selectedText && selectionPosition"
+                class="selection-actions floating-selection-bubble"
+                :style="{
+                  top: `${selectionPosition.top}px`,
+                  left: `${selectionPosition.left}px`,
+                  transform: selectionPosition.showBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+                }"
+                role="toolbar"
+                aria-label="选中文本操作"
+                @mousedown.stop.prevent
+              >
+                <span class="selection-summary">已选 {{ selectedText.length }} 字</span>
+                <span class="selection-divider" aria-hidden="true"></span>
+                <button type="button" class="selection-btn action-quote" @click="addSelectionToChat">
+                  <IconMessageCircle :size="13" :stroke-width="2" />
+                  <span>添加到提问</span>
+                </button>
+                <button type="button" class="selection-btn action-save" @click="saveSelection">
+                  <IconNotes :size="13" :stroke-width="2" />
+                  <span>保存为知识块</span>
+                </button>
+                <button type="button" class="selection-dismiss" aria-label="清除选区" title="清除选区" @click="clearSelection">
+                  <IconX :size="13" />
+                </button>
+              </div>
+            </Transition>
+
+            <footer class="preview-page-footer" aria-label="文档页码">
+              <button type="button" class="preview-page-button" :disabled="previewPage <= 1" @click="filePreviewRef?.prevPage()">上一页</button>
+              <span class="preview-page-count">{{ previewPage }} / {{ previewPageCount }}</span>
+              <button type="button" class="preview-page-button" :disabled="previewPage >= previewPageCount" @click="filePreviewRef?.nextPage()">下一页</button>
+            </footer>
           </div>
-          
-          <div class="blocks-grid" v-if="filteredBlocks.length > 0">
-            <div
-              v-for="block in filteredBlocks"
-              :key="block.id"
-              class="block-card"
-              @click="handleBlockClick(block)"
-            >
-              <span class="block-tag" :style="{ background: block.color }">{{ block.subject }}</span>
-              <h4 class="block-title">{{ block.title }}</h4>
-              <p class="block-preview">{{ block.preview }}</p>
-              <div class="block-footer">
-                <span class="block-time">{{ timeAgo(block.time) }}</span>
-                <span class="block-source">{{ block.source }}</span>
+
+          <!-- Knowledge Blocks Grid -->
+          <div v-else-if="centerView === 'blocks'" key="blocks-view" class="blocks-workspace">
+            <div class="blocks-top-bar">
+              <div class="blocks-search-wrapper">
+                <IconSearch :size="14" :stroke-width="1.8" class="search-icon" />
+                <input
+                  v-model="blockSearchQuery"
+                  class="blocks-search-input"
+                  placeholder="搜索知识块内容、标题或概念..."
+                />
+                <button
+                  v-if="blockSearchQuery"
+                  class="search-clear-btn"
+                  title="清空搜索"
+                  @click="blockSearchQuery = ''"
+                >
+                  <IconX :size="12" />
+                </button>
+              </div>
+
+              <div class="blocks-bar-actions">
+                <span class="blocks-count-badge">
+                  共 {{ filteredBlocks.length }} 条记录
+                </span>
+                <button class="blocks-add-btn" @click="openCreateDialog">
+                  <IconPlus :size="14" :stroke-width="2" />
+                  <span>录入知识块</span>
+                </button>
+              </div>
+            </div>
+            
+            <div class="blocks-grid" v-if="filteredBlocks.length > 0">
+              <div
+                v-for="block in filteredBlocks"
+                :key="block.id"
+                class="block-card"
+                @click="handleBlockClick(block)"
+              >
+                <div class="block-card-header">
+                  <h4 class="block-title" :title="block.title">{{ block.title || '未命名知识块' }}</h4>
+                  <div class="block-card-hover-actions">
+                    <button
+                      type="button"
+                      class="card-action-btn"
+                      title="复制知识内容"
+                      @click.stop="handleCopyCardContent(block)"
+                    >
+                      <IconCopy :size="13" :stroke-width="1.8" />
+                    </button>
+                    <button
+                      type="button"
+                      class="card-action-btn danger"
+                      title="删除知识块"
+                      @click.stop="handleDeleteBlockCard(block.id)"
+                    >
+                      <IconTrash :size="13" :stroke-width="1.8" />
+                    </button>
+                  </div>
+                </div>
+
+                <div class="block-card-body">
+                  <div
+                    class="block-preview modal-markdown-body"
+                    v-if="block.content"
+                    v-html="renderMarkdown(block.content)"
+                  ></div>
+                  <p class="block-preview empty" v-else>暂无详细内容</p>
+                </div>
+
+                <div class="block-footer">
+                  <div class="block-source-wrapper" v-if="block.source" :title="`来源资料: ${block.source}`">
+                    <IconFileText :size="12" :stroke-width="1.6" />
+                    <span class="block-source-text">{{ block.source }}</span>
+                  </div>
+                  <div class="block-time-wrapper" :title="block.time">
+                    <IconHistory :size="12" :stroke-width="1.6" />
+                    <span>{{ timeAgo(block.time) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empty Knowledge Blocks Onboarding -->
+            <div class="onboarding-workspace" v-else>
+              <div class="onboarding-header" style="margin-bottom: 24px;">
+                <div class="onboarding-emoji" style="margin-bottom: 12px; opacity: 0.3; color: var(--text-muted);">
+                  <IconNotes :size="60" :stroke-width="1.5" />
+                </div>
+                <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary);">知识库暂无内容</h3>
+                <p style="font-size: 12px; color: var(--text-muted);">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
+              </div>
+              <div class="onboarding-grid" style="max-width: 640px; margin: 0 auto;">
+                <div class="onboarding-card" @click="openCreateDialog">
+                  <div class="onboarding-card-icon">
+                    <IconPlus :size="24" :stroke-width="2" />
+                  </div>
+                  <div class="onboarding-card-body">
+                    <h4>手动新建知识块</h4>
+                    <p>手动录入笔记、重要定义或概念卡片，支持 Markdown 渲染。</p>
+                    <button class="onboarding-card-btn">手动录入</button>
+                  </div>
+                </div>
+                <div class="onboarding-card" @click="tier2Mode = 'files'; tier2Open = true; centerView = 'overview'">
+                  <div class="onboarding-card-icon">
+                    <IconFileText :size="24" :stroke-width="2" />
+                  </div>
+                  <div class="onboarding-card-body">
+                    <h4>关联学习材料</h4>
+                    <p>去左侧材料列表中选择或登记文件，然后使用 AI 自动分析目录大纲。</p>
+                    <button class="onboarding-card-btn">查看材料</button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- Empty Knowledge Blocks Onboarding -->
-          <div class="onboarding-workspace" v-else>
-            <div class="onboarding-header" style="margin-bottom: 24px;">
-              <div class="onboarding-emoji" style="margin-bottom: 12px; opacity: 0.3; color: var(--text-muted);">
-                <IconNotes :size="60" :stroke-width="1.5" />
+          <!-- Default: Subject Onboarding Overview -->
+          <div v-else key="onboarding-view" class="onboarding-workspace">
+            <div class="onboarding-header">
+              <div class="onboarding-emoji">
+                <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="60">
+                  <component :is="getSubjectIconComponent(activeSubject?.icon)" />
+                </ElIcon>
+                <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
               </div>
-              <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary);">知识库暂无内容</h3>
-              <p style="font-size: 12px; color: var(--text-muted);">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
+              <h2 class="onboarding-title">欢迎来到 {{ activeSubject?.name }} 智能学习工作区</h2>
+              <p class="onboarding-subtitle">{{ activeSubject?.description || '在这里，您可以轻松管理您的材料，使用 AI 进行章节大纲提取与核心概念提炼，打造您的专属记忆库。' }}</p>
             </div>
-            <div class="onboarding-grid" style="max-width: 640px; margin: 0 auto;">
-              <div class="onboarding-card" @click="openCreateDialog">
-                <div class="onboarding-card-icon">
-                  <IconPlus :size="24" :stroke-width="2" />
-                </div>
-                <div class="onboarding-card-body">
-                  <h4>手动新建知识块</h4>
-                  <p>手动录入笔记、重要定义或概念卡片，支持 Markdown 渲染。</p>
-                  <button class="onboarding-card-btn">手动录入</button>
-                </div>
-              </div>
-              <div class="onboarding-card" @click="tier2Mode = 'files'; tier2Open = true; centerView = 'overview'">
-                <div class="onboarding-card-icon">
-                  <IconFileText :size="24" :stroke-width="2" />
-                </div>
-                <div class="onboarding-card-body">
-                  <h4>关联学习材料</h4>
-                  <p>去左侧材料列表中选择或登记文件，然后使用 AI 自动分析目录大纲。</p>
-                  <button class="onboarding-card-btn">查看材料</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Default: Subject Onboarding Overview -->
-        <div v-else class="onboarding-workspace">
-          <div class="onboarding-header">
-            <div class="onboarding-emoji">
-              <ElIcon v-if="isSubjectIconKey(activeSubject?.icon) || !getLegacySubjectIcon(activeSubject?.icon)" :size="60">
-                <component :is="getSubjectIconComponent(activeSubject?.icon)" />
-              </ElIcon>
-              <span v-else>{{ getLegacySubjectIcon(activeSubject?.icon) }}</span>
-            </div>
-            <h2 class="onboarding-title">欢迎来到 {{ activeSubject?.name }} 智能学习工作区</h2>
-            <p class="onboarding-subtitle">{{ activeSubject?.description || '在这里，您可以轻松管理您的材料，使用 AI 进行章节大纲提取与核心概念提炼，打造您的专属记忆库。' }}</p>
-          </div>
 
             <div class="onboarding-drag-capsule">
               <IconUpload :size="16" :stroke-width="2" />
               <span>将 PDF 或图片文件拖入此处进行关联</span>
             </div>
-        </div>
+          </div>
+        </Transition>
 
         <!-- Collapse Right Button -->
         <button class="edge-collapse edge-right" @click="rightCollapsed = !rightCollapsed" :title="rightCollapsed ? '展开 AI 助手' : '收起 AI 助手'">
@@ -639,19 +778,7 @@
         <div class="dropdown-mask" v-if="showModelMenu" @click="showModelMenu = false" style="position: fixed; inset: 0; z-index: 3;"></div>
         <div v-if="showModelMenu" class="ai-model-menu ai-file-menu" style="z-index: 4;" @click.stop>
           <div class="ai-menu-section-header">
-            <span>参考范围 (多选)</span>
-          </div>
-          <div
-            v-if="selectedFileId"
-            class="mini-menu-item"
-            :class="{ 'is-active': aiReferenceScope === 'AUTO' }"
-            @click="selectCurrentAiSource"
-          >
-            <span class="mini-menu-icon"><IconFileText :size="16" :stroke-width="1.8" /></span>
-            <div class="mini-menu-text">
-              <span class="mini-menu-label" :class="{ 'is-active': aiReferenceScope === 'AUTO' }">当前文件</span>
-              <span class="mini-menu-desc">优先检索当前文件，按原有规则处理跨文件问题</span>
-            </div>
+            <span>参考范围</span>
           </div>
           <div class="mini-menu-item" :class="{ 'is-active': isAllAiSourcesSelected }" @click="selectAllAiSources">
             <span class="mini-menu-icon"><IconSparkles :size="16" :stroke-width="1.8" /></span>
@@ -687,7 +814,10 @@
             >
               <span class="mini-menu-icon"><IconFileText :size="16" :stroke-width="1.8" /></span>
               <div class="mini-menu-text">
-                <span class="mini-menu-label" :class="{ 'is-active': isAiSourceSelected(file.id) }">{{ file.name }}</span>
+                <div class="mini-menu-label-row">
+                  <span class="mini-menu-label" :class="{ 'is-active': isAiSourceSelected(file.id) }">{{ file.name }}</span>
+                  <span class="mini-menu-current-tag" v-if="file.id === selectedFileId">当前</span>
+                </div>
                 <span class="mini-menu-desc">{{ (file.fileSize / (1024 * 1024)).toFixed(1) }} MB</span>
               </div>
             </div>
@@ -746,7 +876,13 @@
 
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
-              <div class="chat-content" v-if="msg.role === 'user'">{{ msg.content }}</div>
+              <div class="chat-content" v-if="msg.role === 'user'">
+                <div v-if="msg.quoteText" class="chat-bubble-quote-snippet">
+                  <span class="bubble-quote-bar"></span>
+                  <span class="bubble-quote-content">“{{ msg.quoteText }}”</span>
+                </div>
+                <div>{{ msg.content }}</div>
+              </div>
               <div class="chat-content ai-reply" v-else v-html="renderMarkdown(msg.content)"></div>
             </div>
           </div>
@@ -786,20 +922,44 @@
 
       <!-- Input Box -->
       <div class="ai-input-area">
+        <!-- Quoted Selection Banner: 文字添加到提问的 UI -->
+        <Transition name="quote-fade">
+          <div v-if="quotedSelection" class="chat-selection-quote-card">
+            <div class="quote-header">
+              <div class="quote-tag">
+                <span>已引用选中文本</span>
+                <span class="quote-length">({{ quotedSelection.length }} 字)</span>
+              </div>
+              <button
+                type="button"
+                class="quote-remove-btn"
+                title="移除引用"
+                aria-label="移除引用"
+                @click="quotedSelection = ''"
+              >
+                <IconX :size="12" :stroke-width="2" />
+              </button>
+            </div>
+            <div class="quote-text" :title="quotedSelection">
+              {{ quotedSelection }}
+            </div>
+          </div>
+        </Transition>
+
         <div class="ai-input-wrapper ai-chat-capsule">
           <textarea
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            placeholder="问问 Auralis AI..."
+            :placeholder="quotedSelection ? '针对引用的内容输入问题，或直接发送...' : '问问 Auralis AI...'"
             rows="1"
             @keydown.enter.exact.prevent="sendChat"
             @input="autoResizeInput"
           ></textarea>
           <button
             class="ai-send-btn"
-            :class="{ 'is-ready': chatInput.trim() }"
-            :disabled="!chatInput.trim() || isAiStreaming"
+            :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
+            :disabled="(!chatInput.trim() && !quotedSelection) || isAiStreaming"
             @click="sendChat"
             title="发送消息"
             aria-label="发送消息"
@@ -811,12 +971,14 @@
     </aside>
 
     <!-- AI Refine Loading -->
-    <div v-if="isRefiningAi" class="refine-overlay">
-      <div class="refine-card">
-        <div class="refine-spinner"></div>
-        <span class="refine-text">{{ aiRefiningText }}</span>
+    <Transition name="refine-fade">
+      <div v-if="isRefiningAi" class="refine-overlay">
+        <div class="refine-card">
+          <div class="refine-spinner"></div>
+          <span class="refine-text">{{ aiRefiningText }}</span>
+        </div>
       </div>
-    </div>
+    </Transition>
 
     <DocumentNotReadyDialog
       v-model="showNotReadyDialog"
@@ -875,8 +1037,7 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderMarkdown } from '@/utils/markdown'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
 import {
   IconArrowLeft,
@@ -902,7 +1063,10 @@ import {
   IconBook,
   IconCheck,
   IconGripVertical,
-  IconTrash
+  IconTrash,
+  IconHistory,
+  IconChartBar,
+  IconCopy
 } from '@tabler/icons-vue'
 import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-message.css'
@@ -916,6 +1080,8 @@ import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotR
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
 import WorkspaceKnowledgeBlockDialog from '@/components/knowledge/WorkspaceKnowledgeBlockDialog.vue'
 import SubjectOverviewSection from '@/components/subject/SubjectOverviewSection.vue'
+import SubjectReviewPane from '@/components/subject/SubjectReviewPane.vue'
+import SubjectStatsPane from '@/components/subject/SubjectStatsPane.vue'
 import FileOutlineList, { type FileOverviewItem } from '@/components/subject/FileOutlineList.vue'
 import OverviewSummaryView from '@/components/subject/OverviewSummaryView.vue'
 import FileRegisterDialog from '@/components/asset/FileRegisterDialog.vue'
@@ -928,7 +1094,7 @@ import { useAssetStore } from '@/store/useAssetStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { useChatStore } from '@/store/useChatStore'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
-import { getOverviewRepository } from '@/services/localDb'
+import { getLocalRepository, getOverviewRepository } from '@/services/localDb'
 import { OverviewGenerationService, hasUsableOverview } from '@/services/overviewGenerationService'
 import { overviewFailureMessage } from '@/services/overviewFailurePolicy'
 import { classifyClientError, logClientError } from '@/services/clientErrorPolicy'
@@ -936,13 +1102,11 @@ import { documentProcessingRuntime } from '@/services/documentProcessing/runtime
 import { useOverviewApi } from '@/api/useOverviewApi'
 import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
+import { OverviewResultsSyncService } from '@/services/overviewResultsSyncService'
 import type { FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
-
-marked.setOptions({ breaks: true, gfm: true })
-const renderMarkdown = (c: string) => c ? DOMPurify.sanitize(marked.parse(c) as string) : ''
 
 const route = useRoute()
 const router = useRouter()
@@ -978,17 +1142,67 @@ const timeAgo = (iso: string) => {
 // ===== Tier-1 / Tier-2 State =====
 const tier2Open = ref(true)
 const tier2Mode = ref<'files' | 'outline'>('files')
-const centerView = ref<'blocks' | 'preview' | 'overview' | 'summary'>('overview')
+const centerView = ref<'blocks' | 'preview' | 'overview' | 'summary' | 'review' | 'stats'>('overview')
 const rightCollapsed = ref(false)
 
+const lastWorkspaceState = ref<{
+  view: 'preview' | 'overview' | 'blocks'
+  tier2Open: boolean
+  tier2Mode: 'files' | 'outline'
+  selectedFileId: string | null
+}>({
+  view: 'overview',
+  tier2Open: true,
+  tier2Mode: 'files',
+  selectedFileId: null,
+})
+
+const handleReviewOrStatsBack = () => {
+  const previous = lastWorkspaceState.value
+  if (previous) {
+    centerView.value = previous.view
+    tier2Open.value = previous.tier2Open
+    tier2Mode.value = previous.tier2Mode
+    if (previous.selectedFileId) {
+      selectedFileId.value = previous.selectedFileId
+    }
+  } else if (selectedFileId.value) {
+    centerView.value = 'preview'
+    tier2Open.value = true
+    tier2Mode.value = 'files'
+  } else if (activeSourceFiles.value.length > 0) {
+    selectedFileId.value = activeSourceFiles.value[0].id
+    centerView.value = 'preview'
+    tier2Open.value = true
+    tier2Mode.value = 'files'
+  } else {
+    centerView.value = 'overview'
+    tier2Open.value = true
+    tier2Mode.value = 'outline'
+  }
+
+  if (route.query.view || route.query.reviewState) {
+    const query = { ...route.query }
+    delete query.view
+    delete query.reviewState
+    void router.replace({ query })
+  }
+}
+
 const toggleTier2 = (mode: 'files' | 'outline') => {
-  if (tier2Open.value && tier2Mode.value === mode && centerView.value !== 'blocks') {
+  if (tier2Open.value && tier2Mode.value === mode && centerView.value !== 'blocks' && centerView.value !== 'review' && centerView.value !== 'stats') {
     tier2Open.value = false
   } else {
     tier2Mode.value = mode
     tier2Open.value = true
-    if (centerView.value === 'blocks') {
+    if (centerView.value === 'blocks' || centerView.value === 'review' || centerView.value === 'stats') {
       centerView.value = selectedFileId.value ? 'preview' : 'overview'
+      if (route.query.view || route.query.reviewState) {
+        const query = { ...route.query }
+        delete query.view
+        delete query.reviewState
+        void router.replace({ query })
+      }
     }
   }
 }
@@ -1038,14 +1252,31 @@ const startResizeRight = (e: MouseEvent) => {
 // ===== File summary =====
 const selectedFileId = ref<string | null>(null)
 const selectedText = ref('')
+const quotedSelection = ref('')
+const previewPaneWrapperRef = ref<HTMLElement | null>(null)
+const selectionPosition = ref<{ top: number; left: number; showBelow: boolean } | null>(null)
 const showNotReadyDialog = ref(false)
 const showKnowledgeEditor = ref(false)
+const retryingSourceId = ref<string | null>(null)
 const filePreviewRef = ref<InstanceType<typeof FilePreview> | null>(null)
 const previewPage = ref(1)
 const previewPageCount = ref(1)
 const previewControlsReady = ref(false)
 const previewZoomLabel = ref('100%')
 const previewRotation = ref(0)
+
+const handleRetryFileProcessing = async (sourceId: string) => {
+  if (retryingSourceId.value === sourceId) return
+  retryingSourceId.value = sourceId
+  try {
+    await sourceStore.retrySourceProcessing(sourceId)
+    ElMessage.success('已重新发起文件解析')
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '重试解析失败，请稍后再试')
+  } finally {
+    retryingSourceId.value = null
+  }
+}
 
 watch(selectedFileId, () => {
   previewPage.value = 1
@@ -1054,6 +1285,8 @@ watch(selectedFileId, () => {
   previewZoomLabel.value = '100%'
   previewRotation.value = 0
   selectedText.value = ''
+  selectionPosition.value = null
+  quotedSelection.value = ''
 })
 
 const handlePreviewZoomChange = (state: { label?: string; scale: number }) => {
@@ -1090,6 +1323,7 @@ const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.v
     status: record?.status ?? (file.ingestionStatus === 'READY' ? 'PENDING' : undefined),
     error: fileOverviewManualErrors.value[file.id]
       || (record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null),
+    syncStatus: record?.syncStatus,
     isGenerating: generatingFileIds.value.has(file.id),
   }
 }))
@@ -1197,6 +1431,73 @@ const ensureOverviewRuntime = async () => {
   }
   await refreshOverviewCache()
   return true
+}
+
+const resolveOverviewSyncConflict = async (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, choice: 'LOCAL' | 'REMOTE') => {
+  if (!(await ensureOverviewRuntime()) || !overviewRepository) return
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  if (!userId || !serverDeviceId) return
+  const localRepository = await getLocalRepository(userId,serverDeviceId)
+  const isCurrent = () => authStore.isAuthenticated && authStore.user?.id === userId && authStore.serverDeviceId === serverDeviceId
+  const mapCurrentSources = async () => {
+    if (!isCurrent()) return []
+    const rows = await localRepository.list<Record<string, unknown>>('SOURCE', { includeDeleted: false })
+    if (!isCurrent()) return []
+    return rows.flatMap(row => {
+      const value = row.value
+      if (!value || typeof value.id !== 'string' || typeof value.type !== 'string'
+        || typeof value.subjectId !== 'string' || typeof value.ingestionStatus !== 'string') return []
+      return [{
+        id: value.id, type: value.type, subjectId: value.subjectId, ingestionStatus: value.ingestionStatus,
+        ingestionRevision: typeof value.ingestionRevision === 'string' ? value.ingestionRevision : null,
+        deletedAt: row.deletedAt,
+      }]
+    })
+  }
+  const options = {
+    sources: sourceStore.sources.map(source => ({
+      id: source.id, type: source.type ?? 'FILE', subjectId: source.subjectId,
+      ingestionStatus: source.ingestionStatus ?? '', ingestionRevision: source.ingestionRevision ?? null,
+      deletedAt: source.deletedAt,
+    })),
+    subjectIds: subjectStore.subjects.map(subject => subject.id),
+    isCurrent,
+    isSourceCurrent: async (source: { id: string; ingestionRevision: string | null }) => {
+      if (!isCurrent()) return false
+      const row = await localRepository.read<Record<string, unknown>>('SOURCE', source.id)
+      const value = row?.value
+      return isCurrent() && Boolean(row && !row.deletedAt && value && value.id === source.id && value.type === 'FILE'
+        && value.ingestionStatus === 'READY' && value.ingestionRevision === source.ingestionRevision)
+    },
+    isSubjectCurrent: async (id: string) => {
+      if (!isCurrent()) return false
+      const row = await localRepository.read<Record<string, unknown>>('SUBJECT', id)
+      return isCurrent() && Boolean(row && !row.deletedAt && row.id === id)
+    },
+    getCurrentSources: mapCurrentSources,
+  }
+  try {
+    await new OverviewResultsSyncService(overviewRepository,userId,serverDeviceId)
+      .resolveConflict(scopeType,scopeId,revisionKey,choice,options)
+    if (options.isCurrent()) await refreshOverviewCache()
+    ElMessage.success(choice === 'LOCAL' ? '已提交本机总览同步' : '已采用云端总览')
+  } catch (error) {
+    const code = error instanceof Error ? error.message : ''
+    if (code === 'OVERVIEW_INPUT_CHANGED') ElMessage.warning('资料已变化，本机总览未覆盖云端，请先重新生成。')
+    else if (code === 'OVERVIEW_REMOTE_MISSING') ElMessage.warning('云端没有当前版本，保留本机总览并重试。')
+    else if (code === 'OVERVIEW_SCOPE_CHANGED' || code.endsWith('_STALE')) ElMessage.warning('资料版本已变化，请刷新后重试。')
+    else ElMessage.error('总览同步处理失败，请稍后重试。')
+  }
+}
+
+const resolveSubjectOverviewConflict = (choice: 'LOCAL' | 'REMOTE') => {
+  if (subjectId.value) void resolveOverviewSyncConflict('SUBJECT',subjectId.value,'subject-v1',choice)
+}
+
+const resolveFileOverviewConflict = (payload: { fileId: string; choice: 'LOCAL' | 'REMOTE' }) => {
+  const file = activeSourceFiles.value.find(item => item.id === payload.fileId)
+  if (file?.ingestionRevision) void resolveOverviewSyncConflict('FILE',payload.fileId,file.ingestionRevision,payload.choice)
 }
 
 const openFileSummary = (fileId: string) => {
@@ -1733,7 +2034,7 @@ const subjectBlocks = computed(() => recentBlocks.value.filter(b => b.subjectId 
 const filteredBlocks = computed(() => {
   const q = blockSearchQuery.value.trim().toLowerCase()
   if (!q) return subjectBlocks.value
-  return subjectBlocks.value.filter(b => (b.title?.toLowerCase().includes(q)) || (b.preview?.toLowerCase().includes(q)))
+  return subjectBlocks.value.filter(b => (b.title?.toLowerCase().includes(q)) || (b.content?.toLowerCase().includes(q)))
 })
 
 // ===== Register Files =====
@@ -1797,6 +2098,10 @@ const handleRegisterFile = async (data: { file: File; name: string; subjectId: s
 
     if (targetSubjectId === subjectId.value) await sourceStore.loadLocalSourceFiles(subjectId.value)
 
+    uploadProgress.value = 100
+    uploadStage.value = '导入完成'
+    await new Promise(resolve => setTimeout(resolve, 550))
+
     showRegisterModal.value = false
     registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' }
     droppedFile.value = null
@@ -1809,13 +2114,22 @@ const handleRegisterFile = async (data: { file: File; name: string; subjectId: s
   }
 }
 
+
 // ===== Task Creation =====
 const showTaskModal = ref(false)
 
-const handleAddTask = async (taskData: { name: string; duration: number }) => {
+const handleAddTask = async (taskData: { name: string; duration: number; due?: string; dueAt?: string }) => {
   if (!taskData.name.trim() || !activeSubject.value) return
   const s = activeSubject.value
-  await taskStore.addTask({ name: taskData.name.trim(), subject: s.name, desc: '从学科工作区', duration: taskData.duration, status: 'pending', subjectId: s.id })
+  await taskStore.addTask({
+    name: taskData.name.trim(),
+    subject: s.name,
+    desc: '从学科工作区',
+    duration: taskData.duration,
+    status: 'pending',
+    subjectId: s.id,
+    dueAt: taskData.dueAt,
+  })
   showTaskModal.value = false
   ElNotification({ title: '已生成', type: 'success', position: 'top-right' })
 }
@@ -1829,7 +2143,6 @@ const blockDialogVisible = ref(false)
 const selectedBlock = ref<any>(null)
 const isEditMode = ref(false)
 const isCreateMode = ref(false)
-const editForm = ref({ id: '', subject: '', title: '', color: 'rgba(230,223,216,0.5)', preview: '', source: '手动添加' })
 
 const themeColors = [
   { name: '绿', value: 'rgba(181,196,177,0.4)' },
@@ -1840,7 +2153,7 @@ const themeColors = [
 ]
 
 const handleBlockClick = (b: any) => { selectedBlock.value = b; isEditMode.value = false; blockDialogVisible.value = true }
-const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; editForm.value = { id: '', subject: activeSubject.value?.name || '', title: '', color: 'rgba(181,196,177,0.4)', preview: '', source: '手动创建' }; blockDialogVisible.value = true }
+const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; blockDialogVisible.value = true }
 const blockDialogMode = computed<'view' | 'edit' | 'create'>({
   get: () => {
     if (isCreateMode.value) return 'create'
@@ -1861,29 +2174,63 @@ const blockDialogMode = computed<'view' | 'edit' | 'create'>({
   }
 })
 
-const handleSaveBlockFromDialog = async (data: { id?: string; subject: string; title: string; color: string; preview: string; source: string }) => {
-  editForm.value = {
-    id: data.id || '',
-    subject: data.subject,
-    title: data.title,
-    color: data.color,
-    preview: data.preview,
-    source: data.source
+const handleSaveBlockFromDialog = async (data: {
+  id?: string
+  subjectId?: string
+  subject: string
+  title: string
+  color: string
+  content: string
+  source: string
+}) => {
+  if (!data.title.trim() || !data.content.trim()) {
+    ElNotification({ title: '请填写标题与正文内容', type: 'warning', position: 'top-right' })
+    return
   }
-  await handleSaveBlock()
+  if (isCreateMode.value) {
+    await blockStore.addBlock({
+      subject: data.subject || activeSubject.value?.name || '',
+      title: data.title,
+      content: data.content,
+      time: new Date().toLocaleString(),
+      source: data.source,
+      color: data.color,
+      subjectId: data.subjectId || subjectId.value,
+      sourceFileId: selectedSourceId.value || undefined
+    })
+    ElNotification({ title: '已录入', type: 'success', position: 'top-right' })
+  } else {
+    await blockStore.updateBlock({
+      ...selectedBlock.value,
+      subject: data.subject || activeSubject.value?.name || '',
+      title: data.title,
+      content: data.content,
+      color: data.color,
+      time: new Date().toLocaleString()
+    })
+    ElNotification({ title: '已更新', type: 'success', position: 'top-right' })
+  }
+  closeBlockDialog()
 }
 
-const closeBlockDialog = () => { blockDialogVisible.value = false; isEditMode.value = false; isCreateMode.value = false }
-
-const handleSaveBlock = async () => {
-  if (!editForm.value.title.trim() || !editForm.value.preview.trim()) { ElNotification({ title: '请填写必填项', type: 'warning', position: 'top-right' }); return }
-  if (isCreateMode.value) { await blockStore.addBlock({ subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, time: new Date().toLocaleString(), source: editForm.value.source, color: editForm.value.color, subjectId: subjectId.value, sourceFileId: selectedSourceId.value || undefined }); ElNotification({ title: '已录入', type: 'success', position: 'top-right' }) }
-  else { await blockStore.updateBlock({ ...selectedBlock.value, subject: editForm.value.subject, title: editForm.value.title, preview: editForm.value.preview, color: editForm.value.color, time: new Date().toLocaleString() }); ElNotification({ title: '已更新', type: 'success', position: 'top-right' }) }
-  closeBlockDialog()
+const closeBlockDialog = () => {
+  blockDialogVisible.value = false
 }
 
 const handleDeleteBlock = async (id: string) => { if (!id || !confirm('确定删除？')) return; await blockStore.removeBlock(id); blockDialogVisible.value = false; ElNotification({ title: '已删除', type: 'success', position: 'top-right' }) }
 const handleCopyBlockContent = (c: string) => { if (c) { navigator.clipboard.writeText(c); ElNotification({ title: '已复制', type: 'success', position: 'top-right', duration: 2000 }) } }
+const handleCopyCardContent = (block: any) => {
+  const text = block.content || ''
+  if (!text) return
+  if (navigator?.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success('已复制知识内容')
+    }).catch(() => {})
+  }
+}
+const handleDeleteBlockCard = (id: string) => {
+  handleDeleteBlock(id)
+}
 interface PresetQuestionItem {
   label: string
   prompt: string
@@ -1903,10 +2250,14 @@ const sendPreset = (q: string) => {
 
 
 // ===== AI Chat (Right Panel) =====
-interface ChatMsg { role: 'user' | 'assistant'; content: string }
+interface ChatMsg { role: 'user' | 'assistant'; content: string; quoteText?: string }
 const chatMessages = computed<ChatMsg[]>(() => storedChatMessages.value
   .filter((message) => message.role === 'USER' || message.role === 'ASSISTANT')
-  .map((message) => ({ role: message.role === 'USER' ? 'user' : 'assistant', content: message.content })))
+  .map((message) => ({
+    role: message.role === 'USER' ? 'user' : 'assistant',
+    content: message.content,
+    quoteText: message.requestOptions?.selectionText,
+  })))
 const pendingChatMessage = computed(() => storedPendingMessage.value)
 const chatInput = ref('')
 const isAiStreaming = computed(() => storedChatStreaming.value)
@@ -2091,17 +2442,21 @@ const scrollChatToBottom = () => {
 
 const sendChat = async () => {
   const msg = chatInput.value.trim()
-  if (!msg || isAiStreaming.value) return
+  const selectionToSend = quotedSelection.value ? quotedSelection.value.slice(0, 4000) : undefined
+  if ((!msg && !selectionToSend) || isAiStreaming.value) return
   if (showProcessingRequired.value) {
     showNotReadyDialog.value = true
     return
   }
+  const contentToSend = msg || '请围绕我引用的这段内容进行详细讲解和要点梳理。'
   chatInput.value = ''
+  quotedSelection.value = ''
   autoResizeInput()
   scrollChatToBottom()
   try {
-    await chatStore.sendMessage(msg, {
+    await chatStore.sendMessage(contentToSend, {
       ...aiChatReferenceOptions(),
+      selectionText: selectionToSend,
     })
   } catch (error) {
     if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -2140,7 +2495,83 @@ const retryChat = async () => {
 
 const clearChat = () => { chatStore.clearActiveConversation() }
 
-const handleTextSelected = (text: string) => { selectedText.value = text.slice(0, 4000) }
+const updateSelectionPosition = () => {
+  nextTick(() => {
+    const selection = typeof window !== 'undefined' ? window.getSelection() : null
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      if (!showKnowledgeEditor.value) {
+        selectedText.value = ''
+        selectionPosition.value = null
+      }
+      return
+    }
+    const text = selection.toString().trim().slice(0, 4000)
+    if (!text) {
+      if (!showKnowledgeEditor.value) {
+        selectedText.value = ''
+        selectionPosition.value = null
+      }
+      return
+    }
+    selectedText.value = text
+
+    const range = selection.getRangeAt(0)
+    const rangeRect = range.getBoundingClientRect()
+    if (!rangeRect || (rangeRect.width === 0 && rangeRect.height === 0)) {
+      selectionPosition.value = null
+      return
+    }
+
+    const wrapper = previewPaneWrapperRef.value
+    if (!wrapper) return
+    const wrapperRect = wrapper.getBoundingClientRect()
+
+    if (rangeRect.bottom < wrapperRect.top || rangeRect.top > wrapperRect.bottom) {
+      selectionPosition.value = null
+      return
+    }
+
+    const relativeTop = rangeRect.top - wrapperRect.top
+    const relativeBottom = rangeRect.bottom - wrapperRect.top
+    const relativeLeft = (rangeRect.left - wrapperRect.left) + (rangeRect.width / 2)
+
+    const showBelow = relativeTop < 48
+    const top = showBelow
+      ? Math.min(relativeBottom + 8, wrapperRect.height - 44)
+      : Math.max(8, relativeTop - 8)
+
+    const clampedLeft = Math.max(140, Math.min(relativeLeft, wrapperRect.width - 140))
+
+    selectionPosition.value = {
+      top,
+      left: clampedLeft,
+      showBelow,
+    }
+  })
+}
+
+const handleTextSelected = (text: string) => {
+  selectedText.value = text.slice(0, 4000)
+  updateSelectionPosition()
+}
+
+const clearSelection = () => {
+  selectedText.value = ''
+  selectionPosition.value = null
+  if (typeof window !== 'undefined') {
+    window.getSelection()?.removeAllRanges()
+  }
+}
+
+const addSelectionToChat = () => {
+  if (!selectedText.value) return
+  quotedSelection.value = selectedText.value
+  clearSelection()
+  nextTick(() => {
+    chatInputRef.value?.focus()
+  })
+}
+
 const goToProcessingCenter = () => {
   showNotReadyDialog.value = false
   router.push('/profile')
@@ -2165,8 +2596,10 @@ const askSelection = () => {
   void sendSelectionQuestion(chatInput.value)
   chatInput.value = ''
 }
+void explainSelection
+void askSelection
 const saveSelection = () => { showKnowledgeEditor.value = true }
-const saveKnowledgeBlock = async (value: { title: string; content: string; tags: string[] }) => {
+const saveKnowledgeBlock = async (value: { title: string; content: string }) => {
   if (!activeSubject.value) return
   const validSourceFileId = activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
     ? (selectedFileId.value || undefined)
@@ -2176,12 +2609,11 @@ const saveKnowledgeBlock = async (value: { title: string; content: string; tags:
     sourceFileId: validSourceFileId,
     subject: activeSubject.value.name,
     title: value.title,
-    preview: value.content.slice(0, 180),
     content: value.content,
-    tags: value.tags,
     source: selectedFile.value?.name || '选中文本',
   })
   showKnowledgeEditor.value = false
+  clearSelection()
   ElNotification({ title: '已保存为知识块', type: 'success', position: 'top-right' })
 }
 
@@ -2206,7 +2638,20 @@ const stopProcessingRefresh = () => {
   }
 }
 
+const handleDocSelectionChange = () => {
+  const selection = typeof window !== 'undefined' ? window.getSelection() : null
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    if (!showKnowledgeEditor.value) {
+      selectedText.value = ''
+      selectionPosition.value = null
+    }
+  }
+}
+
 onMounted(async () => {
+  if (typeof window !== 'undefined') {
+    document.addEventListener('selectionchange', handleDocSelectionChange)
+  }
   isComponentMounted = true
   startProcessingRefresh()
   const mountGen = ++currentSubjectSwitchGen
@@ -2225,7 +2670,13 @@ onMounted(async () => {
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
     await blockStore.fetchBlocks(undefined, id)
     if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id) return
-    if (activeSourceFiles.value.length > 0) {
+    if (route.query.view === 'review' || route.query.view === 'stats') {
+      centerView.value = route.query.view
+      tier2Open.value = false
+    } else if (route.query.view === 'blocks') {
+      centerView.value = 'blocks'
+      tier2Open.value = false
+    } else if (activeSourceFiles.value.length > 0) {
       const firstFile = activeSourceFiles.value[0]
       aiReferenceScope.value = 'AUTO'
       selectedAiSourceIds.value = [firstFile.id]
@@ -2252,6 +2703,8 @@ watch(subjectId, async (newId) => {
     chatStore.clearActiveConversation()
     selectedFileId.value = null
     selectedText.value = ''
+    selectionPosition.value = null
+    quotedSelection.value = ''
     selectedAiSourceIds.value = []
     aiReferenceScope.value = 'NONE'
     sourceStore.clearActiveSourceFiles()
@@ -2291,7 +2744,13 @@ watch(subjectId, async (newId) => {
       initSubjectOutlineFromExisting(true)
       initAllFileOutlineDrafts(true)
     }
-    if (activeSourceFiles.value.length > 0) {
+    if (route.query.view === 'review' || route.query.view === 'stats') {
+      centerView.value = route.query.view
+      tier2Open.value = false
+    } else if (route.query.view === 'blocks') {
+      centerView.value = 'blocks'
+      tier2Open.value = false
+    } else if (activeSourceFiles.value.length > 0) {
       const firstFile = activeSourceFiles.value[0]
       aiReferenceScope.value = 'AUTO'
       selectedAiSourceIds.value = [firstFile.id]
@@ -2311,7 +2770,42 @@ watch(subjectId, async (newId) => {
   }
 })
 
+watch(centerView, (newView, oldView) => {
+  if (oldView && oldView !== 'review' && oldView !== 'stats' && (newView === 'review' || newView === 'stats')) {
+    lastWorkspaceState.value = {
+      view: oldView === 'blocks' || oldView === 'preview' || oldView === 'overview' ? oldView : (selectedFileId.value ? 'preview' : 'overview'),
+      tier2Open: tier2Open.value,
+      tier2Mode: tier2Mode.value,
+      selectedFileId: selectedFileId.value,
+    }
+  }
+  const queryView = newView === 'review' || newView === 'stats' || newView === 'blocks' ? newView : undefined
+  if (route.query.view === queryView) return
+  const query = { ...route.query }
+  if (queryView) query.view = queryView
+  else delete query.view
+  void router.replace({ query })
+})
+
+watch(() => route.query.view, (newView) => {
+  if (newView === 'review' || newView === 'stats' || newView === 'blocks') {
+    if (centerView.value !== 'review' && centerView.value !== 'stats' && (newView === 'review' || newView === 'stats')) {
+      lastWorkspaceState.value = {
+        view: centerView.value === 'blocks' || centerView.value === 'preview' || centerView.value === 'overview' ? centerView.value : (selectedFileId.value ? 'preview' : 'overview'),
+        tier2Open: tier2Open.value,
+        tier2Mode: tier2Mode.value,
+        selectedFileId: selectedFileId.value,
+      }
+    }
+    centerView.value = newView
+    tier2Open.value = false
+  }
+})
+
 onUnmounted(() => {
+  if (typeof window !== 'undefined') {
+    document.removeEventListener('selectionchange', handleDocSelectionChange)
+  }
   isComponentMounted = false
   currentSubjectSwitchGen++
   stopProcessingRefresh()
@@ -2320,6 +2814,61 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* ===== File Processing Alert Banner ===== */
+.file-processing-alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  margin: 10px 16px 0 16px;
+  border-radius: 8px;
+  background: rgba(216, 92, 92, 0.08);
+  border: 1px solid rgba(216, 92, 92, 0.22);
+  color: var(--text-primary);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.file-processing-alert-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.file-processing-alert-badge {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(216, 92, 92, 0.16);
+  color: #c0392b;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.file-processing-alert-msg {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-processing-alert-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(216, 92, 92, 0.35);
+  background: transparent;
+  color: #c0392b;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+.file-processing-alert-btn:hover:not(:disabled) {
+  background: rgba(216, 92, 92, 0.12);
+}
+.file-processing-alert-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ===== Root & Themes Overrides ===== */
 .workspace-container {
   display: flex;
@@ -2537,8 +3086,8 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
 }
 
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.drawer-item-name { font-size: 13.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.drawer-item-meta { font-size: 10.5px; color: var(--text-muted); }
+.drawer-item-name { font-size: 13.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
+.drawer-item-meta { font-size: 10.5px; color: var(--text-muted); font-feature-settings: "tnum"; }
 
 .drawer-item-delete {
   display: flex;
@@ -2557,24 +3106,202 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
 }
 
-.selection-actions {
+.selection-actions.floating-selection-bubble {
   position: absolute;
-  z-index: 8;
-  left: 24px;
-  bottom: 58px;
-  display: flex;
+  z-index: 100;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: calc(100% - 48px);
-  padding: 7px 9px;
-  border: 1px solid rgba(125, 147, 114, .28);
-  border-radius: 10px;
-  background: rgba(250, 248, 243, .96);
-  box-shadow: 0 8px 22px rgba(40, 45, 38, .12);
+  padding: 5px 8px;
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.10));
+  border-radius: 9999px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(12px);
+  user-select: none;
+  white-space: nowrap;
+  pointer-events: auto;
+  transition: opacity 0.16s ease;
 }
-.selection-actions button { border: 0; border-radius: 7px; padding: 5px 8px; background: rgba(125, 147, 114, .1); color: var(--text-secondary); cursor: pointer; font-size: 11px; white-space: nowrap; }
-.selection-actions .selection-summary { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
-.selection-actions .selection-dismiss { padding: 3px 6px; background: transparent; color: var(--text-muted); font-size: 16px; line-height: 1; }
+html.dark .selection-actions.floating-selection-bubble {
+  background: #1C1E1B;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.selection-actions .selection-summary {
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 0 4px 0 3px;
+}
+.selection-actions .selection-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border-default, rgba(0, 0, 0, 0.08));
+}
+html.dark .selection-actions .selection-divider {
+  background: rgba(255, 255, 255, 0.12);
+}
+.selection-actions .selection-btn {
+  border: none;
+  border-radius: 9999px;
+  padding: 4px 10px;
+  background: rgba(139, 154, 110, 0.12);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all var(--transition-fast);
+}
+.selection-actions .selection-btn:hover {
+  background: var(--color-primary-accent, #8B9A6E);
+  color: #fff;
+  transform: translateY(-0.5px);
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.35);
+}
+.selection-actions .selection-dismiss {
+  border: none;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+.selection-actions .selection-dismiss:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--text-primary);
+}
+html.dark .selection-actions .selection-dismiss:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.selection-bubble-pop-enter-active,
+.selection-bubble-pop-leave-active {
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.selection-bubble-pop-enter-from,
+.selection-bubble-pop-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -85%) scale(0.95);
+}
+
+/* ===== Quoted Selection in AI Chat Input ===== */
+.chat-selection-quote-card {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  background: rgba(139, 154, 110, 0.08);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  backdrop-filter: blur(8px);
+}
+.quote-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.quote-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-primary-accent, #8B9A6E);
+}
+.quote-length {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.quote-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+.quote-remove-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-primary);
+}
+.quote-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+}
+html.dark .chat-selection-quote-card {
+  background: rgba(139, 154, 110, 0.12);
+  border-color: rgba(139, 154, 110, 0.3);
+}
+html.dark .quote-remove-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.quote-fade-enter-active,
+.quote-fade-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.quote-fade-enter-from,
+.quote-fade-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+}
+
+/* Chat bubble quote preview */
+.chat-bubble-quote-snippet {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.9;
+}
+.chat-bubble-quote-snippet .bubble-quote-bar {
+  width: 2px;
+  height: 100%;
+  min-height: 14px;
+  background: var(--color-primary-accent, #8B9A6E);
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.chat-bubble-quote-snippet .bubble-quote-content {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+}
 
 .drawer-item:hover .drawer-item-delete { opacity: 1; }
 .drawer-item-delete:focus-visible { opacity: 1; outline: 2px solid var(--color-primary-accent); outline-offset: 2px; }
@@ -2946,100 +3673,319 @@ html.dark .workspace-center {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-height: 0;
   padding: 24px 28px 20px;
   background: var(--color-bg-primary, #F7F2EB);
 }
 
-.blocks-top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-shrink: 0; }
+.blocks-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 22px;
+  flex-shrink: 0;
+  gap: 16px;
+}
 
-.blocks-search {
+.blocks-search-wrapper {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1.5px solid var(--border-default);
-  transition: border-color var(--transition-fast);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default, #DDD5C7);
+  border-radius: 9999px;
+  padding: 6px 14px;
+  width: 320px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
-.blocks-search:focus-within { border-bottom-color: var(--color-primary-accent); }
-.blocks-search svg { color: var(--text-secondary); flex-shrink: 0; }
-.blocks-search input { background: none; border: none; outline: none; font-size: 13.5px; color: var(--text-primary); width: 200px; }
+html.dark .blocks-search-wrapper {
+  background: var(--color-bg-secondary, #252422);
+  border-color: var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.blocks-search-wrapper:focus-within {
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15), 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.blocks-search-wrapper .search-icon {
+  color: var(--text-muted, #7A7A75);
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.blocks-search-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.search-clear-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s;
+}
+
+.search-clear-btn:hover {
+  color: var(--text-primary);
+}
+
+.blocks-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.blocks-count-badge {
+  font-size: 12px;
+  color: var(--text-muted, #7A7A75);
+  font-weight: 500;
+}
 
 .blocks-add-btn {
-  background: none;
-  border: 1px solid var(--border-default);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
+  border: none;
   font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
+  font-weight: 600;
+  color: #FFFFFF;
   cursor: pointer;
-  padding: 6px 14px;
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
+  padding: 7px 16px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px -1px rgba(139, 154, 110, 0.4), 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.blocks-add-btn:hover { color: var(--color-primary-accent); border-color: var(--color-primary-accent); background: var(--color-primary-light); }
+.blocks-add-btn:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 14px -1px rgba(139, 154, 110, 0.5);
+  color: #FFFFFF;
+}
 
 .blocks-grid {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-default) transparent;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-auto-rows: 184px;
+  gap: 18px;
   align-content: start;
-  padding: 8px 6px 24px 6px;
-  margin: 0 -6px;
+  padding: 4px 2px 28px 2px;
 }
-.blocks-grid::-webkit-scrollbar { display: none; }
 
 .block-card {
   position: relative;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border-radius: 14px;
-  padding: 18px;
+  border-radius: 16px;
+  padding: 16px 18px 14px 18px;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
-  min-height: 150px;
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  height: 184px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+  overflow: hidden;
 }
 
 html.dark .block-card {
-  background: var(--color-bg-secondary);
-  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.35), 0 3px 6px -1px rgba(0, 0, 0, 0.2);
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.3);
 }
 
 .block-card:hover {
   transform: translateY(-3px);
-  border-color: var(--color-primary-accent, #8B9A6E);
-  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(139, 154, 110, 0.12);
+  border-color: rgba(139, 154, 110, 0.5);
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.07), 0 4px 10px -2px rgba(139, 154, 110, 0.14);
   z-index: 2;
 }
 
 html.dark .block-card:hover {
-  box-shadow: 0 14px 28px -4px rgba(0, 0, 0, 0.45), 0 6px 12px -2px rgba(0, 0, 0, 0.3);
+  border-color: rgba(163, 177, 155, 0.45);
+  box-shadow: 0 14px 28px -4px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.35);
 }
 
-.block-tag { align-self: flex-start; font-size: 10px; padding: 3px 10px; border-radius: 6px; color: var(--text-primary); font-weight: 700; margin-bottom: 10px; }
-.block-title { font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.block-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.block-title {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-primary, #1C1C1A);
+  margin: 0;
+  line-height: 1.35;
+  letter-spacing: -0.015em;
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+html.dark .block-title {
+  color: var(--text-primary, #E6DFD8);
+}
+
+.block-card-hover-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transform: translateX(4px);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  flex-shrink: 0;
+}
+
+.block-card:hover .block-card-hover-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.card-action-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: none;
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-muted, #7A7A75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+html.dark .card-action-btn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.card-action-btn:hover {
+  background: rgba(139, 154, 110, 0.2);
+  color: var(--color-primary-accent, #8B9A6E);
+}
+
+.card-action-btn.danger:hover {
+  background: rgba(192, 86, 70, 0.16);
+  color: #C05646;
+}
+
+.block-card-body {
+  flex: 1;
+  min-height: 0;
+  margin-bottom: 10px;
+  overflow: hidden;
+  position: relative;
+}
 
 .block-preview {
   font-size: 13px;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  margin: 0 0 12px;
-  flex: 1;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
+  color: var(--text-secondary, #4A4A45);
+  line-height: 1.55;
+  margin: 0;
+  height: 100%;
   overflow: hidden;
+  word-break: break-word;
+  position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 65%, transparent 100%);
 }
 
-.block-footer { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-muted); }
+.block-preview.empty {
+  color: var(--text-muted);
+  font-style: italic;
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+.block-preview :deep(p) {
+  margin: 0 0 4px 0;
+}
+
+.block-preview :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.block-preview :deep(.katex-display-wrapper) {
+  margin: 4px 0;
+  padding: 2px 6px;
+  background: rgba(139, 154, 110, 0.08);
+  border-radius: 4px;
+  text-align: left;
+}
+
+html.dark .block-preview :deep(.katex-display-wrapper) {
+  background: rgba(139, 154, 110, 0.12);
+}
+
+.block-preview :deep(.katex) {
+  font-size: 1.02em;
+  line-height: 1.2;
+}
+
+html.dark .block-preview {
+  color: var(--text-secondary, #C5BDB5);
+}
+
+.block-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-muted, #7A7A75);
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.04));
+  gap: 12px;
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.block-source-wrapper,
+.block-time-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.block-source-wrapper {
+  flex: 1;
+  min-width: 0;
+}
+
+.block-source-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ===== Onboarding (Getting Started) Workspace ===== */
 .onboarding-workspace {
@@ -3467,6 +4413,33 @@ html.dark .ai-input-wrapper {
   justify-content: center;
   z-index: 1100;
 }
+
+.refine-fade-enter-active,
+.refine-fade-leave-active {
+  transition: opacity 0.22s ease;
+}
+
+.refine-fade-enter-active .refine-card,
+.refine-fade-leave-active .refine-card {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+  will-change: transform, opacity;
+}
+
+.refine-fade-enter-from,
+.refine-fade-leave-to {
+  opacity: 0;
+}
+
+.refine-fade-enter-from .refine-card {
+  transform: scale(0.94);
+  opacity: 0;
+}
+
+.refine-fade-leave-to .refine-card {
+  transform: scale(0.96);
+  opacity: 0;
+}
+
 
 .refine-card {
   background: var(--glass-bg);
@@ -4205,7 +5178,7 @@ html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
 .ai-file-switch .model-text { font-size: 12.5px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
 .chevron-icon { transition: transform 0.2s; opacity: 0.6; flex-shrink: 0; }
 .chevron-icon.is-rotated { transform: rotate(180deg); opacity: 1; }
-.ai-model-menu.ai-file-menu { position: absolute; top: 62px; left: 20px; z-index: 10; min-width: 240px; max-width: 290px; max-height: 320px; overflow-y: auto; padding: 8px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(16px); border: 1px solid var(--border-default); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; gap: 3px; }
+.ai-model-menu.ai-file-menu { position: absolute; top: 62px; left: 20px; z-index: 10; min-width: 240px; max-width: 300px; max-height: 380px; overflow-y: auto; padding: 8px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(16px); border: 1px solid var(--border-default); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; gap: 3px; }
 html.dark .ai-model-menu.ai-file-menu { background: var(--color-bg-secondary); border-color: var(--border-subtle); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
 .ai-menu-section-header { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 6px 10px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
 .ai-menu-header-count { font-size: 10px; color: var(--color-primary-accent, #8B9A6E); font-weight: 600; text-transform: none; }
@@ -4218,7 +5191,10 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .mini-menu-icon { font-size: 16px; color: var(--text-muted); display: flex; align-items: center; justify-content: center; width: 18px; flex-shrink: 0; transition: color 0.15s; }
 .mini-menu-item.is-active .mini-menu-icon { color: var(--color-primary-accent); }
 .mini-menu-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
-.mini-menu-label { font-size: 12.5px; font-weight: 500; color: var(--text-primary); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-menu-label-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mini-menu-label { font-size: 12.5px; font-weight: 500; color: var(--text-primary); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.mini-menu-current-tag { font-size: 9.5px; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: rgba(139, 154, 110, 0.15); color: var(--color-primary-accent, #8B9A6E); line-height: 1.2; flex-shrink: 0; }
+.mini-menu-item.is-active .mini-menu-current-tag { background: var(--color-primary-accent, #8B9A6E); color: #fff; }
 .mini-menu-item.is-active .mini-menu-label { color: var(--color-primary-accent); font-weight: 700; }
 .mini-menu-desc { font-size: 10.5px; color: var(--text-muted); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-menu-item.is-active .mini-menu-desc { color: var(--color-primary-accent); opacity: 0.8; }
@@ -4333,8 +5309,8 @@ html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); backgroun
 html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }
 
 /* Home Modal Styles for Register Modal */
-.modal-container { width: 90%; max-width: 520px; background: var(--color-bg-tertiary, #FAF7F2); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-html.dark .modal-container { background: #181D18; border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
+.modal-container { width: 90%; max-width: 520px; background: var(--color-bg-primary, #F7F2EB); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+html.dark .modal-container { background: var(--color-bg-primary, #1f1e1c); border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
 @keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
 .modal-container .modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
@@ -4359,4 +5335,30 @@ html.dark .styled-el-select :deep(.el-input__wrapper.is-focus) { background: rgb
 .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
 html.dark .btn-primary { background: #9AB08F; color: #1a1a1a; }
 html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(154, 176, 143, 0.2); }
+
+/* Center workspace view transition & preview wrapper */
+.preview-pane-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-view-fade-enter-active,
+.workspace-view-fade-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.workspace-view-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.workspace-view-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 </style>

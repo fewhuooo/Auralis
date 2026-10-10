@@ -2,6 +2,31 @@ import assert from 'node:assert/strict'
 import { register } from 'node:module'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
+import axios from 'axios'
+
+let activeAssetFlowAdapter = async (config) => ({ data: {}, status: 200, statusText: 'OK', headers: {}, config })
+axios.defaults.adapter = (config) => activeAssetFlowAdapter(config)
+
+function createDeferred() {
+  let resolve
+  let reject
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+async function waitForSignal(promise, label, timeoutMs = 300) {
+  let timer
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs)
+  })
+  const signaled = promise.then(() => true)
+  const result = await Promise.race([signaled, timedOut])
+  clearTimeout(timer)
+  assert.equal(result, true, `Timed out waiting for ${label}`)
+}
 
 const srcRootUrl = new URL('../src/', import.meta.url).href
 const loaderCode = `
@@ -25,11 +50,12 @@ register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64
 
 const { setActivePinia, createPinia } = await import('pinia')
 const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
-const { LocalRepository } = await import('../src/services/localRepository.ts')
+const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts')
 const { LocalAssetRepository } = await import('../src/services/localAssetRepository.ts')
 const { LocalAssetService, TransientBrowserAssetAdapter, getOrCreateLocalAssetService } = await import('../src/services/localAssetService.ts')
 const { LocalSourceDraftService, getOrCreateLocalSourceDraftService } = await import('../src/services/localSourceDraftService.ts')
 const { LocalAssetSyncQueue, getOrCreateLocalAssetSyncQueue, releaseLocalAssetSyncQueue } = await import('../src/services/localAssetSyncQueue.ts')
+const { OverviewRepository } = await import('../src/services/overviewRepository.ts')
 const { useAssetStore } = await import('../src/store/useAssetStore.ts')
 const { useSourceStore } = await import('../src/store/useSourceStore.ts')
 const { useSubjectStore } = await import('../src/store/useSubjectStore.ts')
@@ -390,7 +416,6 @@ test('useSourceStore.deleteSourceFile: local-only tombstone releases draft and i
     const { getLocalRepository, getLocalAssetRepository } = await import('../src/services/localDb.ts')
     const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
     const assetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
-
     await sourceStore.deleteSourceFile(sourceId)
 
     const source = await repo.read('SOURCE', sourceId)
@@ -402,6 +427,161 @@ test('useSourceStore.deleteSourceFile: local-only tombstone releases draft and i
     assert.equal((await repo.listUnresolved()).filter((mutation) => mutation.resourceType === 'SOURCE').length, 0)
   } finally {
     releaseLocalAssetSyncQueue('user-local-delete', 'device-local-delete')
+  }
+})
+
+test('useSourceStore.deleteSourceFile: a pre-commit failure keeps the Source visible and preserves its Overview cache and request', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-source-delete-failure', email: 'delete-failure@example.com' },
+    tokens: { accessToken: 'token-delete-failure', refreshToken: 'refresh-delete-failure' },
+    sessionId: 'session-delete-failure',
+    serverDeviceId: 'device-source-delete-failure',
+  })
+  const sourceStore = useSourceStore()
+  const syncStore = useSyncStore()
+  const originalRequestBackgroundSync = syncStore.requestBackgroundSync
+  const sourceId = 'source-delete-commit-failure'
+  const subjectId = 'subject-delete-commit-failure'
+  const revision = 'revision-delete-commit-failure'
+  const { getLocalRepository } = await import('../src/services/localDb.ts')
+  const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+  const overview = new OverviewRepository(authStore.user.id, authStore.serverDeviceId, { storage: createMemoryStorage() })
+  const overviewResponse = {
+    schemaVersion: 1,
+    title: 'Keep this result',
+    outline: [{ title: 'Chapter', sections: [{ title: 'Section', summary: 'Text', sourceIds: [sourceId], locator: null }] }],
+    summary: { overview: 'Keep this summary', keyPoints: ['Point'], learningPath: ['Chapter'] },
+  }
+  const originalCommitMutation = repo.commitMutation.bind(repo)
+  const originalTombstone = repo.tombstone.bind(repo)
+  let overviewDiscardCalls = 0
+  let documentDiscardCalls = 0
+  syncStore.requestBackgroundSync = () => undefined
+
+  try {
+    await repo.upsert('SOURCE', sourceId, {
+      id: sourceId, subjectId, type: 'FILE', title: 'Delete candidate', ingestionStatus: 'READY', ingestionRevision: revision,
+    }, { version: 3 })
+    await sourceStore.loadLocalSourceFiles(subjectId)
+    await overview.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode: 'ALL', response: overviewResponse })
+    const prepared = (await overview.listOverviewOutbox())[0]
+    const immutableRequest = {
+      baseVersion: 0,
+      clientWriteId: prepared.clientWriteId,
+      mode: 'ALL',
+      ingestionRevision: revision,
+      outlineGeneratedAt: '2026-10-01T00:00:00.000Z',
+      summaryGeneratedAt: '2026-10-01T00:00:00.000Z',
+      result: prepared.result,
+    }
+    await overview.materializeOverviewIntent(prepared.clientWriteId, immutableRequest)
+    const cachedBefore = await overview.getFileOverview(sourceId, revision)
+    const outboxBefore = await overview.listOverviewOutbox()
+    sourceStore.attachDocumentScheduler({ schedule: async () => undefined, discard: async () => { documentDiscardCalls += 1 } })
+    sourceStore.attachFileOverviewGenerator({
+      generateReadyFileOverview: async () => ({ status: 'SKIPPED' }),
+      discardFileOverview: async (id) => { overviewDiscardCalls += 1; await overview.removeFileOverviews(id) },
+      restoreFileOverview: async () => true,
+    })
+    repo.commitMutation = async () => { throw new Error('SOURCE_COMMIT_FAILED') }
+    repo.tombstone = async () => { throw new Error('SOURCE_COMMIT_FAILED') }
+
+    await assert.rejects(sourceStore.deleteSourceFile(sourceId), /SOURCE_COMMIT_FAILED/)
+
+    assert.equal(sourceStore.sources.some((item) => item.id === sourceId), true)
+    assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), true)
+    assert.deepEqual(await overview.getFileOverview(sourceId, revision), cachedBefore)
+    assert.deepEqual(await overview.listOverviewOutbox(), outboxBefore)
+    assert.equal(JSON.stringify((await overview.listOverviewOutbox())[0].requestBody), JSON.stringify(immutableRequest))
+    assert.equal(overviewDiscardCalls, 0)
+    assert.equal(documentDiscardCalls, 0)
+  } finally {
+    repo.commitMutation = originalCommitMutation
+    repo.tombstone = originalTombstone
+    sourceStore.attachFileOverviewGenerator(null)
+    sourceStore.attachDocumentScheduler(null)
+    syncStore.requestBackgroundSync = originalRequestBackgroundSync
+    releaseLocalAssetSyncQueue(authStore.user.id, authStore.serverDeviceId)
+  }
+})
+
+test('useSourceStore retries post-commit Overview cleanup from deleted Source reconciliation without releasing the fence', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  authStore.setSession({
+    user: { id: 'user-source-delete-cleanup', email: 'delete-cleanup@example.com' },
+    tokens: { accessToken: 'token-delete-cleanup', refreshToken: 'refresh-delete-cleanup' },
+    sessionId: 'session-delete-cleanup',
+    serverDeviceId: 'device-source-delete-cleanup',
+  })
+  const sourceStore = useSourceStore()
+  const syncStore = useSyncStore()
+  const originalRequestBackgroundSync = syncStore.requestBackgroundSync
+  const sourceId = 'source-delete-cleanup-retry'
+  const subjectId = 'subject-delete-cleanup-retry'
+  const revision = 'revision-delete-cleanup-retry'
+  const { getLocalRepository } = await import('../src/services/localDb.ts')
+  const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+  const overview = new OverviewRepository(authStore.user.id, authStore.serverDeviceId, { storage: createMemoryStorage() })
+  const overviewResponse = {
+    schemaVersion: 1,
+    title: 'Cleanup after commit',
+    outline: [{ title: 'Chapter', sections: [{ title: 'Section', summary: 'Text', sourceIds: [sourceId], locator: null }] }],
+    summary: { overview: 'Cleanup summary', keyPoints: ['Point'], learningPath: ['Chapter'] },
+  }
+  let discardCalls = 0
+  let secondDiscardResolve
+  const secondDiscard = new Promise((resolve) => { secondDiscardResolve = resolve })
+  let schedulerDiscardCalls = 0
+  let secondSchedulerDiscardResolve
+  const secondSchedulerDiscard = new Promise((resolve) => { secondSchedulerDiscardResolve = resolve })
+  syncStore.requestBackgroundSync = () => undefined
+
+  try {
+    await repo.upsert('SOURCE', sourceId, {
+      id: sourceId, subjectId, type: 'FILE', title: 'Delete me', ingestionStatus: 'READY', ingestionRevision: revision,
+    }, { version: 4 })
+    await sourceStore.loadLocalSourceFiles(subjectId)
+    await overview.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode: 'ALL', response: overviewResponse })
+    sourceStore.attachDocumentScheduler({ schedule: async () => undefined, discard: async () => {
+      schedulerDiscardCalls += 1
+      if (schedulerDiscardCalls === 2) secondSchedulerDiscardResolve()
+    } })
+    sourceStore.attachFileOverviewGenerator({
+      generateReadyFileOverview: async () => ({ status: 'SKIPPED' }),
+      discardFileOverview: async (id) => {
+        discardCalls += 1
+        if (discardCalls === 1) throw new Error('TEMPORARY_OVERVIEW_CLEANUP_FAILURE')
+        await overview.removeFileOverviews(id)
+        secondDiscardResolve()
+      },
+      restoreFileOverview: async () => true,
+    })
+
+    await sourceStore.deleteSourceFile(sourceId)
+    assert.equal((await repo.read('SOURCE', sourceId))?.deletedAt !== null, true)
+    assert.equal(sourceStore.sources.some((item) => item.id === sourceId), false)
+    assert.equal(sourceStore.activeSourceFiles.some((item) => item.id === sourceId), false)
+    assert.equal(discardCalls, 1)
+    assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('FILE', sourceId)), false)
+    await assert.rejects(overview.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode: 'ALL', response: overviewResponse }), /OVERVIEW_SCOPE_DELETED/)
+
+    await sourceStore.loadSources()
+    await Promise.all([secondDiscard, secondSchedulerDiscard])
+    assert.equal(discardCalls, 2, 'deleted Source reconciliation retries deferred Overview cleanup')
+    assert.equal(schedulerDiscardCalls, 2)
+    assert.equal(await overview.getFileOverview(sourceId, revision), null)
+    assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('FILE', sourceId)), false,
+      'successful cleanup does not reopen the deleted Source scope')
+  } finally {
+    sourceStore.attachFileOverviewGenerator(null)
+    sourceStore.attachDocumentScheduler(null)
+    syncStore.requestBackgroundSync = originalRequestBackgroundSync
+    releaseLocalAssetSyncQueue(authStore.user.id, authStore.serverDeviceId)
   }
 })
 
@@ -602,6 +782,322 @@ test('useSyncStore: identity switch during queue init releases/disposes old queu
     request.post = originalPost
     releaseLocalAssetSyncQueue('user-switch-A', 'device-switch-A')
     releaseLocalAssetSyncQueue('user-switch-B', 'device-switch-B')
+  }
+})
+
+test('useSyncStore: switch during A queue wakeup lets B sync independently, preserves A outbox, and keeps B state while A unwinds', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  const setSession = (userId, deviceId, sessionId, token) => authStore.setSession({
+    user: { id: userId, email: `${userId}@example.com` },
+    tokens: { accessToken: token, refreshToken: `refresh-${token}` },
+    sessionId,
+    serverDeviceId: deviceId,
+  })
+  const userA = 'user-core-switch-a'
+  const deviceA = 'device-core-switch-a'
+  const userB = 'user-core-switch-b'
+  const deviceB = 'device-core-switch-b'
+
+  const originalGet = request.get
+  const originalPost = request.post
+  const originalWakeUp = LocalAssetSyncQueue.prototype.wakeUp
+  const syncStore = useSyncStore()
+  const subjectStore = useSubjectStore()
+  const originalBackgroundSync = syncStore.requestBackgroundSync
+  const aWakeStarted = createDeferred()
+  const releaseA = createDeferred()
+  const bWakeStarted = createDeferred()
+  const releaseB = createDeferred()
+  const transportCalls = []
+  let promiseA
+  let promiseB
+
+  request.get = async (url) => {
+    transportCalls.push({ method: 'GET', url })
+    if (url === '/api/auth/me/avatar') return new Blob([])
+    if (url === '/api/sync/snapshot') return {
+      snapshotCursor: 'cursor-core-switch-b',
+      subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [],
+    }
+    if (url === '/api/sync/pull') return { changes: [], nextCursor: 'cursor-core-switch-b', hasMore: false, resetRequired: false }
+    return {}
+  }
+  request.post = async (url, data) => {
+    transportCalls.push({ method: 'POST', url, data })
+    return { results: [], serverCursor: 'cursor-core-switch-b' }
+  }
+  setSession(userA, deviceA, 'session-core-switch-a', 'token-core-switch-a')
+  syncStore.requestBackgroundSync = () => {}
+  LocalAssetSyncQueue.prototype.wakeUp = function () {
+    if (this.assetRepository.userId === userA) {
+      aWakeStarted.resolve()
+      return releaseA.promise
+    }
+    if (this.assetRepository.userId === userB) {
+      bWakeStarted.resolve()
+      return releaseB.promise
+    }
+    return originalWakeUp.call(this)
+  }
+
+  try {
+    const addSubjectPromise = subjectStore.addSubject('A pending subject', '', 'book')
+    await waitForSignal(addSubjectPromise, 'A Subject local write')
+    const subjectId = await addSubjectPromise
+    const { getLocalRepository } = await import('../src/services/localDb.ts')
+    const repoA = await getLocalRepository(userA, deviceA)
+    const pendingBeforeSwitch = await repoA.listUnresolved()
+    assert.equal(pendingBeforeSwitch.length, 1)
+    assert.equal(pendingBeforeSwitch[0].resourceId, subjectId)
+
+    promiseA = syncStore.flushNow()
+    await waitForSignal(aWakeStarted.promise, 'A asset queue wakeup')
+
+    setSession(userB, deviceB, 'session-core-switch-b', 'token-core-switch-b')
+    promiseB = syncStore.flushNow()
+    await waitForSignal(bWakeStarted.promise, 'B asset queue wakeup')
+    assert.equal(syncStore.isSyncing, true, 'B cycle must remain visibly active while its queue wakeup is pending')
+
+    releaseA.resolve()
+    await assert.rejects(promiseA, /SYNC_SCOPE_CHANGED/)
+    assert.equal(syncStore.isSyncing, true, 'A finally must not clear B cycle state')
+    assert.equal(syncStore.lastSyncError, null, 'A stale completion must not write an error into B state')
+    assert.deepEqual(await repoA.listUnresolved(), pendingBeforeSwitch, 'A outbox mutation must remain recoverable')
+    assert.deepEqual(transportCalls.filter((call) => call.url === '/api/sync/push'), [], 'A subject must not dispatch through B device scope')
+
+    releaseB.resolve()
+    await promiseB
+    const { getLocalRepository: getRepository } = await import('../src/services/localDb.ts')
+    const repoB = await getRepository(userB, deviceB)
+    assert.equal(syncStore.cursor, 'cursor-core-switch-b')
+    assert.equal((await repoB.getSyncState()).cursor, 'cursor-core-switch-b')
+    assert.deepEqual(await repoB.listUnresolved(), [])
+    assert.equal(syncStore.lastSyncError, null)
+  } finally {
+    releaseA.resolve()
+    releaseB.resolve()
+    await Promise.allSettled([promiseA, promiseB].filter(Boolean))
+    request.get = originalGet
+    request.post = originalPost
+    syncStore.requestBackgroundSync = originalBackgroundSync
+    LocalAssetSyncQueue.prototype.wakeUp = originalWakeUp
+    releaseLocalAssetSyncQueue(userA, deviceA)
+    releaseLocalAssetSyncQueue(userB, deviceB)
+  }
+})
+
+test('useSyncStore: same-account logout and login creates a new cycle while the old session is pending', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  const userId = 'user-session-relogin'
+  const deviceId = 'device-session-relogin'
+  const setSession = (sessionId, token) => authStore.setSession({
+    user: { id: userId, email: 'relogin@example.com' },
+    tokens: { accessToken: token, refreshToken: `refresh-${token}` },
+    sessionId,
+    serverDeviceId: deviceId,
+  })
+  const originalGet = request.get
+  const originalPost = request.post
+  const originalWakeUp = LocalAssetSyncQueue.prototype.wakeUp
+  const syncStore = useSyncStore()
+  const originalBackgroundSync = syncStore.requestBackgroundSync
+  const firstWake = createDeferred()
+  const releaseFirstWake = createDeferred()
+  let wakeCount = 0
+  let promiseBeforeLogout
+  let promiseAfterLogin
+  request.get = async (url) => {
+    if (url === '/api/auth/me/avatar') return new Blob([])
+    if (url === '/api/sync/snapshot') return {
+      snapshotCursor: 'cursor-after-relogin',
+      subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [],
+    }
+    if (url === '/api/sync/pull') return { changes: [], nextCursor: 'cursor-after-relogin', hasMore: false, resetRequired: false }
+    return {}
+  }
+  request.post = async () => ({ results: [], serverCursor: 'cursor-after-relogin' })
+  setSession('session-before-relogin', 'token-before-relogin')
+  syncStore.requestBackgroundSync = () => {}
+  LocalAssetSyncQueue.prototype.wakeUp = function () {
+    wakeCount += 1
+    if (wakeCount === 1) {
+      firstWake.resolve()
+      return releaseFirstWake.promise
+    }
+    return Promise.resolve()
+  }
+
+  try {
+    promiseBeforeLogout = syncStore.flushNow()
+    await waitForSignal(firstWake.promise, 'old session asset queue wakeup')
+    await authStore.logout()
+    setSession('session-after-relogin', 'token-after-relogin')
+    promiseAfterLogin = syncStore.flushNow()
+    await waitForSignal(promiseAfterLogin, 'same-account sync after logout/login')
+    assert.equal(wakeCount, 2, 'new session must start its own queue wakeup')
+    assert.equal(syncStore.cursor, 'cursor-after-relogin')
+
+    releaseFirstWake.resolve()
+    await assert.rejects(promiseBeforeLogout, /SYNC_SCOPE_CHANGED/)
+    assert.equal(syncStore.cursor, 'cursor-after-relogin', 'old session must not overwrite the new session cursor')
+  } finally {
+    releaseFirstWake.resolve()
+    await Promise.allSettled([promiseBeforeLogout, promiseAfterLogin].filter(Boolean))
+    request.get = originalGet
+    request.post = originalPost
+    syncStore.requestBackgroundSync = originalBackgroundSync
+    LocalAssetSyncQueue.prototype.wakeUp = originalWakeUp
+    releaseLocalAssetSyncQueue(userId, deviceId)
+  }
+})
+
+test('useSyncStore: owner A to B to the same A tuple does not revive the old A cycle ticket', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  const userA = 'user-sync-aba-a'
+  const deviceA = 'device-sync-aba-a'
+  const sessionA = 'session-sync-aba-a'
+  const setSession = (userId, deviceId, sessionId) => authStore.setSession({
+    user: { id: userId, email: `${userId}@example.com` },
+    tokens: { accessToken: `token-${sessionId}`, refreshToken: `refresh-${sessionId}` },
+    sessionId,
+    serverDeviceId: deviceId,
+  })
+  const originalGet = request.get
+  const originalPost = request.post
+  const originalWakeUp = LocalAssetSyncQueue.prototype.wakeUp
+  const syncStore = useSyncStore()
+  const originalBackgroundSync = syncStore.requestBackgroundSync
+  const oldWakeStarted = createDeferred()
+  const releaseOldWake = createDeferred()
+  let userAWakeCount = 0
+  let oldCycle
+  let newCycle
+  request.get = async (url) => {
+    if (url === '/api/auth/me/avatar') return new Blob([])
+    if (url === '/api/sync/snapshot') return {
+      snapshotCursor: 'cursor-sync-aba-a',
+      subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [],
+    }
+    return { changes: [], nextCursor: 'cursor-sync-aba-a', hasMore: false, resetRequired: false }
+  }
+  request.post = async () => ({ results: [], serverCursor: 'cursor-sync-aba-a' })
+  setSession(userA, deviceA, sessionA)
+  syncStore.requestBackgroundSync = () => {}
+  LocalAssetSyncQueue.prototype.wakeUp = function () {
+    if (this.assetRepository.userId === userA && userAWakeCount++ === 0) {
+      oldWakeStarted.resolve()
+      return releaseOldWake.promise
+    }
+    return Promise.resolve()
+  }
+
+  try {
+    oldCycle = syncStore.flushNow()
+    await waitForSignal(oldWakeStarted.promise, 'old A asset queue wakeup')
+    setSession('user-sync-aba-b', 'device-sync-aba-b', 'session-sync-aba-b')
+    setSession(userA, deviceA, sessionA)
+    newCycle = syncStore.flushNow()
+    await waitForSignal(newCycle, 'new A cycle after A to B to A identity ABA')
+    assert.equal(userAWakeCount, 2)
+    assert.equal(syncStore.cursor, 'cursor-sync-aba-a')
+
+    releaseOldWake.resolve()
+    await assert.rejects(oldCycle, /SYNC_SCOPE_CHANGED/)
+    assert.equal(syncStore.cursor, 'cursor-sync-aba-a')
+  } finally {
+    releaseOldWake.resolve()
+    await Promise.allSettled([oldCycle, newCycle].filter(Boolean))
+    request.get = originalGet
+    request.post = originalPost
+    syncStore.requestBackgroundSync = originalBackgroundSync
+    LocalAssetSyncQueue.prototype.wakeUp = originalWakeUp
+    releaseLocalAssetSyncQueue(userA, deviceA)
+    releaseLocalAssetSyncQueue('user-sync-aba-b', 'device-sync-aba-b')
+  }
+})
+
+test('useAssetStore.upload: A import finishing after account switch stays in A local scope and cannot change B projections', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+
+  const authStore = useAuthStore()
+  const setSession = (userId, deviceId, sessionId) => authStore.setSession({
+    user: { id: userId, email: `${userId}@example.com` },
+    tokens: { accessToken: `token-${sessionId}`, refreshToken: `refresh-${sessionId}` },
+    sessionId,
+    serverDeviceId: deviceId,
+  })
+  const userA = 'user-asset-import-a'
+  const deviceA = 'device-asset-import-a'
+  const userB = 'user-asset-import-b'
+  const deviceB = 'device-asset-import-b'
+  const originalGet = request.get
+  request.get = async () => new Blob([])
+  setSession(userA, deviceA, 'session-asset-import-a')
+  const assetStore = useAssetStore()
+  const syncStore = useSyncStore()
+  const originalBackgroundSync = syncStore.requestBackgroundSync
+  syncStore.requestBackgroundSync = () => {}
+  const originalImport = LocalAssetService.prototype.importAsset
+  const importStarted = createDeferred()
+  const releaseImport = createDeferred()
+  const aProgress = []
+  LocalAssetService.prototype.importAsset = async function (input) {
+    if (this.repository.userId === userA) {
+      importStarted.resolve()
+      await releaseImport.promise
+    }
+    return originalImport.call(this, input)
+  }
+
+  try {
+    const uploadA = assetStore.upload(
+      new File(['A-owned bytes'], 'a-owned.pdf', { type: 'application/pdf' }),
+      (percent, stage) => aProgress.push({ percent, stage }),
+    )
+    await waitForSignal(importStarted.promise, 'A local import barrier')
+    setSession(userB, deviceB, 'session-asset-import-b')
+    const modelB = await assetStore.upload(new File(['B-owned bytes'], 'b-owned.pdf', { type: 'application/pdf' }))
+    const assetsBeforeACompletes = assetStore.assets.map((asset) => asset.id)
+    const pendingBeforeACompletes = assetStore.pendingUploads.map((upload) => ({ ...upload }))
+    const lastErrorBeforeACompletes = assetStore.lastError
+    const { getLocalAssetRepository, getLocalRepository } = await import('../src/services/localDb.ts')
+    const repoA = await getLocalRepository(userA, deviceA)
+    const assetRepoA = await getLocalAssetRepository(userA, deviceA)
+
+    releaseImport.resolve()
+    await assert.rejects(uploadA, /ASSET_IDENTITY_CHANGED/)
+
+    const importedA = await assetRepoA.listAssetFiles()
+    const aRecord = importedA.find((asset) => asset.originalName === 'a-owned.pdf')
+    assert.ok(aRecord, 'A local file metadata must survive an owner switch')
+    const aJob = await assetRepoA.getActiveSyncJobForAsset(aRecord.localAssetId)
+    assert.equal(aJob?.phase, 'PENDING', 'A upload job must remain retryable')
+    assert.ok(await repoA.read('ASSET', aRecord.localAssetId), 'A asset projection must stay in A repository')
+
+    const repoB = await getLocalRepository(userB, deviceB)
+    assert.equal(await repoB.read('ASSET', aRecord.localAssetId), null, 'A projection must never enter B repository')
+    assert.deepEqual(assetStore.assets.map((asset) => asset.id), assetsBeforeACompletes)
+    assert.ok(assetStore.assets.some((asset) => asset.id === modelB.id))
+    assert.deepEqual(assetStore.pendingUploads.map((upload) => ({ ...upload })), pendingBeforeACompletes)
+    assert.equal(assetStore.lastError, lastErrorBeforeACompletes, 'stale A completion must not project an error into B')
+    assert.deepEqual(aProgress.map((item) => item.percent), [10], 'stale import must not report later shared progress')
+  } finally {
+    releaseImport.resolve()
+    LocalAssetService.prototype.importAsset = originalImport
+    request.get = originalGet
+    syncStore.requestBackgroundSync = originalBackgroundSync
+    releaseLocalAssetSyncQueue(userA, deviceA)
+    releaseLocalAssetSyncQueue(userB, deviceB)
   }
 })
 
@@ -982,3 +1478,235 @@ test('useDocumentProcessingStore.refresh clears progress when the OCR reader omi
 
   assert.deepEqual(store.localOcrProgressBySource, {}, 'a Source missing from a successful reader result must be cleared')
 })
+
+test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and lets B import normally', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  const setSession = (userId, deviceId, sessionId, accessToken, refreshToken) => authStore.setSession({
+    user: { id: userId, email: `${userId}@example.com` },
+    tokens: { accessToken, refreshToken },
+    sessionId,
+    serverDeviceId: deviceId,
+  })
+  const userA = 'user-asset-queue-scope-a'
+  const deviceA = 'device-asset-queue-scope-a'
+  const userB = 'user-asset-queue-scope-b'
+  const deviceB = 'device-asset-queue-scope-b'
+  const syncStore = useSyncStore()
+  const assetStore = useAssetStore()
+  const originalBackgroundSync = syncStore.requestBackgroundSync
+  const originalPost = request.post
+  const originalAdapter = activeAssetFlowAdapter
+  const originalUploadAssetToRemote = LocalAssetService.prototype.uploadAssetToRemote
+  const requestLog = []
+  const intentAttempts = new Map()
+  let staleCycle
+  syncStore.requestBackgroundSync = () => undefined
+  LocalAssetService.prototype.uploadAssetToRemote = async function (args) {
+    return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
+  }
+  activeAssetFlowAdapter = async (config) => {
+    const url = config.url ?? ''
+    const authorization = typeof config.headers?.get === 'function'
+      ? config.headers.get('Authorization')
+      : config.headers?.Authorization
+    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+    requestLog.push({ url, authorization, payload })
+    if (url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/auth/refresh') {
+      assert.equal(payload?.refreshToken, 'refresh-asset-queue-a')
+      return { data: { tokens: { accessToken: 'token-asset-queue-a2', refreshToken: 'refresh-asset-queue-a2' } }, status: 200, statusText: 'OK', headers: {}, config }
+    }
+    if (url === '/api/assets/upload-intents') {
+      const name = payload?.originalName
+      const attempts = (intentAttempts.get(name) ?? 0) + 1
+      intentAttempts.set(name, attempts)
+      if (name === 'a-refresh-retry.pdf' && attempts === 1) {
+        const error = new Error('adapter returned 401')
+        error.config = config
+        error.response = { status: 401, data: {}, headers: {}, config }
+        throw error
+      }
+      if (name === 'a-pre-dispatch-private.pdf') return {
+        data: { assetId: 'asset-a-pre-dispatch', uploadUrl: 'https://storage.invalid/a', uploadStatus: 'UPLOADING' },
+        status: 200, statusText: 'OK', headers: {}, config,
+      }
+      const assetId = name === 'a-refresh-retry.pdf' ? 'asset-a-refresh-retry' : 'asset-b-normal'
+      return {
+        data: { assetId, uploadUrl: `https://storage.invalid/${assetId}`, uploadStatus: 'UPLOADING' },
+        status: 200, statusText: 'OK', headers: {}, config,
+      }
+    }
+    if (url.includes('/complete')) return { data: { id: url.split('/')[3] }, status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/sync/snapshot') return {
+      data: { snapshotCursor: 'asset-queue-cursor', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] },
+      status: 200, statusText: 'OK', headers: {}, config,
+    }
+    if (url === '/api/sync/pull') return {
+      data: { changes: [], nextCursor: 'asset-queue-cursor', hasMore: false, resetRequired: false },
+      status: 200, statusText: 'OK', headers: {}, config,
+    }
+    if (url === '/api/sync/push') return { data: { results: [], serverCursor: 'asset-queue-cursor' }, status: 200, statusText: 'OK', headers: {}, config }
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config }
+  }
+  setSession(userA, deviceA, 'session-asset-queue-a', 'token-asset-queue-a', 'refresh-asset-queue-a')
+
+  try {
+    const firstA = await assetStore.upload(new File(['first A file'], 'a-refresh-retry.pdf', { type: 'application/pdf' }))
+    await syncStore.flushNow()
+
+    assert.equal(authStore.token, 'token-asset-queue-a2', 'the current A upload intent must refresh and retry under A')
+    assert.equal(requestLog.filter((call) => call.url === '/api/assets/upload-intents' && call.payload?.originalName === 'a-refresh-retry.pdf').length, 2)
+    assert.ok(requestLog.some((call) => call.url.includes('/complete') && call.authorization === 'Bearer token-asset-queue-a2'))
+
+    const staleA = await assetStore.upload(new File(['private A file'], 'a-pre-dispatch-private.pdf', { type: 'application/pdf' }))
+    const originalPostBound = originalPost.bind(request)
+    request.post = function (...args) {
+      if (args[0] === '/api/assets/upload-intents' && args[1]?.originalName === 'a-pre-dispatch-private.pdf') {
+        queueMicrotask(() => setSession(userB, deviceB, 'session-asset-queue-b', 'token-asset-queue-b', 'refresh-asset-queue-b'))
+      }
+      return originalPostBound(...args)
+    }
+    staleCycle = syncStore.flushNow()
+    await assert.rejects(staleCycle, /SYNC_SCOPE_CHANGED/)
+    request.post = originalPost
+
+    const staleIntentDispatch = requestLog.filter((call) => call.url === '/api/assets/upload-intents'
+      && call.payload?.originalName === 'a-pre-dispatch-private.pdf')
+    assert.deepEqual(staleIntentDispatch, [], 'the queued A payload must not reach the adapter after B login')
+
+    const modelB = await assetStore.upload(new File(['B file'], 'b-normal.pdf', { type: 'application/pdf' }))
+    await syncStore.flushNow()
+    assert.ok(requestLog.some((call) => call.url === '/api/assets/upload-intents'
+      && call.payload?.originalName === 'b-normal.pdf'
+      && call.authorization === 'Bearer token-asset-queue-b'))
+    assert.ok(requestLog.some((call) => call.url.includes('/complete')
+      && call.authorization === 'Bearer token-asset-queue-b'))
+
+    const { getLocalAssetRepository, getLocalRepository } = await import('../src/services/localDb.ts')
+    const repoA = await getLocalRepository(userA, deviceA)
+    const assetRepoA = await getLocalAssetRepository(userA, deviceA)
+    const assetRepoB = await getLocalAssetRepository(userB, deviceB)
+    assert.ok(await repoA.read('ASSET', staleA.id), 'the A asset projection remains in A storage')
+    assert.ok(await assetRepoA.getActiveSyncJobForAsset(staleA.id), 'the A upload job remains recoverable')
+    assert.equal(await assetRepoB.getAssetFile(staleA.id), null, 'the A local file metadata must not enter B storage')
+    assert.ok(await assetRepoB.getAssetFile(modelB.id), 'B upload must persist in B local asset storage')
+    assert.equal(await assetRepoB.getActiveSyncJobForAsset(modelB.id), null, 'B upload must complete normally')
+    assert.ok(await assetRepoA.getActiveSyncJobForAsset(firstA.id) === null, 'the retried A job should complete normally')
+  } finally {
+    await Promise.allSettled([staleCycle].filter(Boolean))
+    request.post = originalPost
+    activeAssetFlowAdapter = originalAdapter
+    LocalAssetService.prototype.uploadAssetToRemote = originalUploadAssetToRemote
+    syncStore.requestBackgroundSync = originalBackgroundSync
+    releaseLocalAssetSyncQueue(userA, deviceA)
+    releaseLocalAssetSyncQueue(userB, deviceB)
+  }
+});
+
+test('a queued A upload that returns 401 after B login cannot refresh or retry with B credentials', async () => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const authStore = useAuthStore()
+  const setSession = (userId, deviceId, sessionId, accessToken, refreshToken) => authStore.setSession({
+    user: { id: userId, email: `${userId}@example.com` },
+    tokens: { accessToken, refreshToken },
+    sessionId,
+    serverDeviceId: deviceId,
+  })
+  const userA = 'user-asset-delayed-401-a'
+  const deviceA = 'device-asset-delayed-401-a'
+  const userB = 'user-asset-delayed-401-b'
+  const deviceB = 'device-asset-delayed-401-b'
+  const syncStore = useSyncStore()
+  const assetStore = useAssetStore()
+  const originalBackgroundSync = syncStore.requestBackgroundSync
+  const originalAdapter = activeAssetFlowAdapter
+  const originalUploadAssetToRemote = LocalAssetService.prototype.uploadAssetToRemote
+  const requestStarted = createDeferred()
+  const releaseAResponse = createDeferred()
+  const requestLog = []
+  let aIntentAttempts = 0
+  let cycleA
+  syncStore.requestBackgroundSync = () => undefined
+  LocalAssetService.prototype.uploadAssetToRemote = async function (args) {
+    return { status: 200, bytesSent: args.expectedSize, payloadSha256: args.expectedSha256 }
+  }
+  activeAssetFlowAdapter = async (config) => {
+    const url = config.url ?? ''
+    const authorization = typeof config.headers?.get === 'function'
+      ? config.headers.get('Authorization')
+      : config.headers?.Authorization
+    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+    requestLog.push({ url, authorization, payload })
+    if (url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/assets/upload-intents' && payload?.originalName === 'a-delayed-private.pdf') {
+      aIntentAttempts += 1
+      if (aIntentAttempts === 1) {
+        requestStarted.resolve()
+        await releaseAResponse.promise
+        const error = new Error('adapter returned 401')
+        error.config = config
+        error.response = { status: 401, data: {}, headers: {}, config }
+        throw error
+      }
+      return { data: { assetId: 'asset-a-delayed', uploadStatus: 'READY' }, status: 200, statusText: 'OK', headers: {}, config }
+    }
+    if (url === '/api/auth/refresh') return {
+      data: { tokens: { accessToken: 'token-asset-delayed-b2', refreshToken: 'refresh-asset-delayed-b2' } },
+      status: 200, statusText: 'OK', headers: {}, config,
+    }
+    if (url === '/api/assets/upload-intents') return {
+      data: { assetId: 'asset-b-delayed-test', uploadUrl: 'https://storage.invalid/b', uploadStatus: 'UPLOADING' },
+      status: 200, statusText: 'OK', headers: {}, config,
+    }
+    if (url.includes('/complete')) return { data: { id: url.split('/')[3] }, status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/sync/snapshot') return {
+      data: { snapshotCursor: 'delayed-401-cursor', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] },
+      status: 200, statusText: 'OK', headers: {}, config,
+    }
+    if (url === '/api/sync/pull') return {
+      data: { changes: [], nextCursor: 'delayed-401-cursor', hasMore: false, resetRequired: false },
+      status: 200, statusText: 'OK', headers: {}, config,
+    }
+    if (url === '/api/sync/push') return { data: { results: [], serverCursor: 'delayed-401-cursor' }, status: 200, statusText: 'OK', headers: {}, config }
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config }
+  }
+  setSession(userA, deviceA, 'session-asset-delayed-a', 'token-asset-delayed-a', 'refresh-asset-delayed-a')
+
+  try {
+    await assetStore.upload(new File(['A delayed private file'], 'a-delayed-private.pdf', { type: 'application/pdf' }))
+    cycleA = syncStore.flushNow()
+    await waitForSignal(requestStarted.promise, 'A upload intent adapter dispatch')
+    const initialARequest = requestLog.find((call) => call.url === '/api/assets/upload-intents'
+      && call.payload?.originalName === 'a-delayed-private.pdf')
+    assert.equal(initialARequest?.authorization, 'Bearer token-asset-delayed-a')
+
+    setSession(userB, deviceB, 'session-asset-delayed-b', 'token-asset-delayed-b', 'refresh-asset-delayed-b')
+    await assetStore.upload(new File(['B normal file'], 'b-delayed-normal.pdf', { type: 'application/pdf' }))
+    await syncStore.flushNow()
+    assert.ok(requestLog.some((call) => call.url === '/api/assets/upload-intents'
+      && call.payload?.originalName === 'b-delayed-normal.pdf'
+      && call.authorization === 'Bearer token-asset-delayed-b'))
+
+    releaseAResponse.resolve()
+    await assert.rejects(cycleA, /SYNC_SCOPE_CHANGED/)
+
+    assert.equal(requestLog.filter((call) => call.url === '/api/auth/refresh').length, 0,
+      'the stale A 401 must not begin a refresh using B refresh token')
+    assert.equal(requestLog.filter((call) => call.url === '/api/assets/upload-intents'
+      && call.payload?.originalName === 'a-delayed-private.pdf').length, 1,
+    'the stale A intent must not be retried under B')
+    assert.equal(authStore.user?.id, userB)
+    assert.equal(authStore.token, 'token-asset-delayed-b')
+  } finally {
+    releaseAResponse.resolve()
+    await Promise.allSettled([cycleA].filter(Boolean))
+    activeAssetFlowAdapter = originalAdapter
+    LocalAssetService.prototype.uploadAssetToRemote = originalUploadAssetToRemote
+    syncStore.requestBackgroundSync = originalBackgroundSync
+    releaseLocalAssetSyncQueue(userA, deviceA)
+    releaseLocalAssetSyncQueue(userB, deviceB)
+  }
+});

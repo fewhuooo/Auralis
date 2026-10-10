@@ -1,4 +1,5 @@
 import request from './request.ts'
+import type { SyncRequestScopeTicket, SyncScopedAxiosRequestConfig } from './request.ts'
 import type { components } from './generated/schema.ts'
 import {
   MAX_FILE_SIZE_BYTES,
@@ -43,8 +44,12 @@ export function validateFileSize(file: { size: number }): void {
 /**
  * Step 1: Create upload intent.
  */
-export function createUploadIntent(data: UploadIntentRequest): Promise<UploadIntentResponse> {
-  return request.post('/api/assets/upload-intents', data) as unknown as Promise<UploadIntentResponse>
+export function createUploadIntent(
+  data: UploadIntentRequest,
+  scope?: SyncRequestScopeTicket,
+): Promise<UploadIntentResponse> {
+  const config = scope ? { __auralisSyncScope: scope } as SyncScopedAxiosRequestConfig : undefined
+  return request.post('/api/assets/upload-intents', data, config) as unknown as Promise<UploadIntentResponse>
 }
 
 /**
@@ -102,8 +107,9 @@ export function uploadToObjectStorage(
 /**
  * Step 3: Complete upload and transition asset to READY.
  */
-export function completeUpload(assetId: string): Promise<AssetView> {
-  return request.post(`/api/assets/${encodeURIComponent(assetId)}/complete`) as unknown as Promise<AssetView>
+export function completeUpload(assetId: string, scope?: SyncRequestScopeTicket): Promise<AssetView> {
+  const config = scope ? { __auralisSyncScope: scope } as SyncScopedAxiosRequestConfig : undefined
+  return request.post(`/api/assets/${encodeURIComponent(assetId)}/complete`, undefined, config) as unknown as Promise<AssetView>
 }
 
 /**

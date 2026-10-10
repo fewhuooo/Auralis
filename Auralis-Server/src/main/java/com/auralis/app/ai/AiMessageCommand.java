@@ -16,7 +16,19 @@ public record AiMessageCommand(
         boolean retrievalEnabled,
         @Min(1) @Max(32) Integer topK,
         @Size(max = 128) String clientRequestId,
-        @Valid ReadingContext readingContext) {
+        @Valid ReadingContext readingContext,
+        @Size(max = 4000) String selectionText) {
+
+    public AiMessageCommand(
+            UUID conversationId,
+            String content,
+            AiProviderType provider,
+            boolean retrievalEnabled,
+            Integer topK,
+            String clientRequestId,
+            ReadingContext readingContext) {
+        this(conversationId, content, provider, retrievalEnabled, topK, clientRequestId, readingContext, null);
+    }
 
     public AiMessageCommand(
             UUID conversationId,
@@ -25,6 +37,12 @@ public record AiMessageCommand(
             boolean retrievalEnabled,
             Integer topK,
             String clientRequestId) {
-        this(conversationId, content, provider, retrievalEnabled, topK, clientRequestId, null);
+        this(conversationId, content, provider, retrievalEnabled, topK, clientRequestId, null, null);
+    }
+
+    public String effectiveSelectionText() {
+        return selectionText != null
+                ? selectionText
+                : readingContext == null ? null : readingContext.selectionText();
     }
 }

@@ -136,6 +136,7 @@
 
 - [当前状态](current/Status.md)
 - [问题和审查](current/IssuesAndReview.md)
+- [PC / Service 功能完整度检查（2026-10-07）](current/2026-10-07-pc-service-function-audit.md)
 - [整体项目未完成项综合审计（2026-08-16）](current/OverallProjectCompletionAudit.md)
 - [PC 模块](modules/FrontendPC.md)
 - [Mobile / Tablet 模块](modules/FrontendMobileTablet.md)
@@ -148,6 +149,18 @@
 
 ### 运维、计划与交付
 
+- [PC 任务截止日期与排期一致性修复（2026-10-10，代码与自动验证通过；真实环境待验收）](plans/2026-10-09-task-deadline-date-consistency.md)
+- [学科复习与统计完整本地使用（2026-10-09，代码与自动验证通过；真实环境待验收）](plans/2026-10-09-review-stats-local-first.md)
+- [学科复习、学习与掌握退出整体设计（2026-10-08，代码与相关自动验证通过；真实环境待验收）](plans/2026-10-08-review-learning-mastery-design.md)
+- [学科复习、学习与掌握退出实施记录（2026-10-08，相关自动验证及只读审查通过）](plans/2026-10-08-review-learning-mastery-implementation.md)
+- [学科复习与统计实施计划（2026-10-08）](plans/2026-10-08-subject-review-stats-implementation.md)
+- [学科内复习与统计页面方案（2026-10-07 建立，2026-10-08 实施；真实环境待验收）](plans/2026-10-07-subject-review-redesign.md)
+- [PC / Service 三项优先问题修复（2026-10-07）](plans/2026-10-07-priority-function-fixes.md)
+- [PC 时间轴放置与交换修复实施计划（2026-10-07）](plans/2026-10-07-timeline-placement-and-swap-fixes.md)
+- [PC 时间轴日期与拖放修复实施计划（2026-10-06）](plans/2026-10-06-timeline-date-and-drag-fixes.md)
+- [任务完整排期截止时间校验（2026-10-06）](plans/2026-10-06-task-schedule-deadline-guard.md)
+- [PC 未排期任务截止后自动完成（2026-10-06）](plans/2026-10-06-unscheduled-task-deadline.md)
+- [PC 学习数据清理、专注统计与 Overview 同步实施计划（2026-10-01）](plans/2026-10-01-pc-learning-data-cleanup-and-sync.md)
 - [部署指南](operations/Deployment.md)
 - [运维手册](operations/Runbook.md)
 - [测试账号与测试数据重置/注入流程](operations/TestAccountDataResetAndSeed.md)
@@ -203,6 +216,7 @@
 - [计划入口](planning/README.md)
 - [任务总览](planning/Overview.md)
 - [变更记录](release/Changelog.md)
+- [提问选中文本传递与后端处理（2026-10-01）](plans/2026-10-01-chat-selected-text.md)
 - [用户手册](user/UserManual.md)
 
 ### 非工程事实

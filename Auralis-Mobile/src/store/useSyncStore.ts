@@ -45,9 +45,7 @@ function toServerMutation(row: any): SyncMutation {
     subjectId: payload?.subjectId,
     sourceId: payload?.sourceFileId,
     title: payload?.title,
-    summary: payload?.preview || '',
     content: payload?.preview || '',
-    tags: payload?.tags || [],
     colorOverride: payload?.color,
   }
   return {
@@ -100,7 +98,7 @@ async function applyResource(resourceType: string, resourceId: string, mutationT
     } : {
       ...payload,
       subject: payload?.subject || '',
-       preview: payload?.summary || payload?.content || '',
+       preview: payload?.content || '',
        source: payload?.source || '',
        color: payload?.colorOverride || '',
        sourceFileId: payload?.sourceId,

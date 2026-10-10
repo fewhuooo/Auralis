@@ -1,353 +1,193 @@
-# 测试账号与测试数据重置/注入流程
+# 测试账号数据库重建与数据注入流程
 
-更新时间：2026-09-18
+更新时间：2026-10-10
 
 文档状态：现行，仅适用于本机开发环境
 
-## 用途与边界
+## 目标数据与当前执行结果
 
-这份流程用于把本机 Auralis 重置为一套可重复验收的测试环境：
+此流程在本机 PostgreSQL 重建当前 schema，再通过正式 API 创建测试账号、学科、任务和知识块。当前目标如下：
 
-- 清空本机 PostgreSQL `public` schema，让 Server 启动时重新执行全部 Flyway migration。
-- 清空本机 MinIO `auralis-assets` bucket 中的对象，但保留 bucket。
-- 注册或登录一个测试账号。
-- 创建 12 个测试学科和 240 个类真实任务：包含 48 个时间轴合法排期任务（每个学科 4 个，槽位唯一无重叠）、144 个未排期活跃待办任务（每个学科 12 个，涵盖无截止日期与有截止日期两类任务）、24 个已完成任务及 24 个取消任务。
-- 任务时长约束：任务时长严格为整半小时（30、60、90、120 分钟），严禁出现 45 分钟或任何非 30 分钟整倍数时长；
-- 知识块约束：本轮注入严格不注入知识块（保持 0 知识块）。
+| 数据 | 重建后目标 | 注入方式 |
+| --- | ---: | --- |
+| 测试账号 | 1 | `scripts/seed-test-account.mjs` |
+| 学科 | 12 | `scripts/seed-test-account.mjs` |
+| 任务 | 240 | `scripts/seed-test-account.mjs` |
+| 知识块 | 每科 30 个，共 360 个 | `scripts/seed-knowledge-blocks.mjs` |
+| Source / Asset | 0 | 本流程不注入文件或来源 |
 
-该流程会破坏本机数据库和对象存储数据。禁止在生产环境、共享环境或未确认目标容器时执行。流程默认不备份；需要保留数据时应先按 [运维手册](Runbook.md) 备份。
+12 个学科为：高等数学、数据结构与算法、计算机网络、英语阅读、数据库系统、操作系统、编译原理、软件工程、概率统计、机器学习基础、信息安全、项目管理。空数据库执行两份注入脚本后，每科应有 30 个活动知识块，共 360 个。
+
+**本次执行基线（2026-10-10）：**本机 PostgreSQL 已重建并迁移到当前 V29；测试账号有 12 个学科、240 个任务和 360 个知识块，每科 30 个。知识块脚本保留原有 31 个并补入 329 个，最终通过 API 分页回读得到 360 个。Sources 和 Assets 为 0。随后清空 `auralis-assets` bucket 中的 12 个对象；版本控制为 Disabled，删除后回查为 0，bucket 和 MinIO 服务保留。PC/Tauri 本地数据目录没有改动。
+
+本次数据库重建前的备份为 `%TEMP%\auralis-pre-reset-20261010-124547.dump`，SHA-256：`2b9846ad8f5f73b9cbfd6ad1be8aa5c80a28be25ea42a400c5594b45853bc749`。备份目录项检查已通过。需要恢复时先确认目标实例，再依据 [运维手册](Runbook.md) 执行恢复。
+
+## 影响范围
+
+- 重建命令只删除当前 `.env` 指向的 PostgreSQL 数据库 `public` schema 对象和行；其中包括用户/会话、学科、任务、知识块、来源/文件元数据、复习和 AI 等数据库数据。Flyway 迁移记录也会删除并由后端重新建立。
+- 本流程会清空 `.env` 中 `AURALIS_MINIO_BUCKET` 指向的 bucket 全部对象，但保留 bucket、MinIO 服务和命名卷；不会清空其他 bucket。当前目标是 `auralis-assets`，本次确认其版本控制未启用。
+- PC/Tauri 本机离线数据库及本地受管文件不由 PostgreSQL schema 操作清理。服务器用户重建后可能得到新的用户 UUID；客户端应重新登录并确认当前账号后再验收。
+- 清空数据库与 MinIO bucket 后，服务端 Asset/Source 元数据和 bucket 对象均为空；PC/Tauri 本地文件仍保留。
+- 知识块脚本只创建 KnowledgeBlock，不创建 Source、Asset、ParsedDocument、document chunk、向量或索引任务。360 个知识块的数量不代表文件解析或 RAG 检索已验收。
+
+仅限本机开发环境。执行前确认 Compose 项目、`.env` 数据库名、用户、端口和容器均属于本机目标；禁止在生产或共享环境照抄执行。不要把 `.env` 内容或密码复制到日志、工单或终端输出。
 
 ## 前置检查
 
-在仓库根目录执行：
+在仓库根目录用 PowerShell 检查 Compose 配置和容器：
 
 ```powershell
 docker compose --env-file .env config --quiet
-docker compose --env-file .env ps
+docker compose --env-file .env ps -a
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT current_database(), current_user, current_schema();"'
 ```
 
-必须确认目标容器名称为 `auralis-db`、`auralis-minio`、`auralis-backend`，并确认 `.env` 指向本机开发数据库。不要只根据容器名执行删除操作。
+确认输出的数据库名和当前用户与本机 `.env` 及预期开发环境一致。若容器名、Compose project、端口或数据库目标有疑问，停止流程并先确认，不要执行后续 schema 删除。
 
-## 1. 停止会写入数据库的应用
+## 1. 停止写入并备份数据库
+
+停止前端和后端写入，保持数据库容器运行：
 
 ```powershell
 docker compose --env-file .env stop frontend backend
 docker compose --env-file .env up -d db minio minio-init
-docker compose --env-file .env ps db minio minio-init
+docker compose --env-file .env ps -a db minio minio-init
 ```
 
-确认 PostgreSQL 和 MinIO 为 `healthy`，且 `minio-init` 成功退出后再继续。
-
-## 2. 清空 PostgreSQL schema
-
-当前流程不是逐表删除，而是重建 `public` schema。这样可以确保现有数据库对象全部清除，再由当前 Server 镜像执行 V1 到当前版本的迁移。
-
-本机默认 `.env` 使用数据库名和用户 `auralis`；若配置不同，应将命令中的值替换为 `.env` 的实际值：
+继续前确认 PostgreSQL 和 MinIO 健康，`minio-init` 已成功完成。备份用 PostgreSQL custom 格式写入容器临时文件，再用 `docker cp` 复制到本机；不要通过 PowerShell 文本重定向传输二进制 dump：
 
 ```powershell
-docker compose --env-file .env exec -T db psql -v ON_ERROR_STOP=1 -U auralis -d auralis -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO auralis;"
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$backup = Join-Path $env:TEMP "auralis-pre-reset-$stamp.dump"
+docker compose --env-file .env exec -T db sh -lc 'pg_dump --format=custom --no-owner --no-acl -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /tmp/auralis-pre-reset.dump'
+if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed; stop before resetting the schema.' }
+docker compose --env-file .env exec -T db pg_restore --list /tmp/auralis-pre-reset.dump
+if ($LASTEXITCODE -ne 0) { throw 'pg_restore could not read the dump; stop before resetting the schema.' }
+docker cp auralis-db:/tmp/auralis-pre-reset.dump $backup
+if ($LASTEXITCODE -ne 0) { throw 'Could not copy the database backup to the host.' }
+Get-Item $backup | Select-Object FullName, Length
+Get-FileHash -Algorithm SHA256 $backup
 ```
 
-然后重建/启动后端，让 Flyway 建立当前 schema：
+确认本机文件存在、长度非零，并记录路径和 SHA-256。备份校验失败时不得继续。备份文件包含数据库数据，应留在本机受控位置。
+
+### 清空本机 MinIO 应用 bucket
+
+当前配置的目标 bucket 为 `auralis-assets`。下面命令只清除该 bucket 的对象并保留 bucket；执行前核对实际 `.env` 的 `AURALIS_MINIO_BUCKET`：
 
 ```powershell
+docker compose --env-file .env run --rm --entrypoint /bin/sh minio-init -lc 'set -eu; mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"; echo "Objects before cleanup:"; mc ls --recursive "local/$MINIO_BUCKET"; mc rm --recursive --force "local/$MINIO_BUCKET"; echo "Objects after cleanup (expected empty):"; mc ls --recursive "local/$MINIO_BUCKET"'
+```
+
+确认最后一次 `mc ls --recursive` 无对象输出且命令退出码为 0。不要对 `local` 根路径或其他 bucket 执行递归删除。当前 `auralis-assets` 版本控制为 Disabled；若环境启用了版本控制，必须先盘点历史版本和删除标记，并确保清理后版本列表也为空。
+
+## 2. 重建 PostgreSQL schema 并运行迁移
+
+以下命令会删除该数据库 `public` schema 中的全部对象和数据。执行前再次确认前置检查中的数据库目标；不要用 `down -v` 替代此步骤，因为命名卷还承载 MinIO 数据。
+
+```powershell
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION \"$POSTGRES_USER\"; GRANT ALL ON SCHEMA public TO \"$POSTGRES_USER\";"'
+if ($LASTEXITCODE -ne 0) { throw 'Schema reset failed.' }
 docker compose --env-file .env build backend
 docker compose --env-file .env up -d backend
-docker compose --env-file .env logs --tail=120 backend
+docker compose --env-file .env logs --tail=150 backend
 ```
 
-日志应同时出现：
-
-- `Successfully validated <当前 migration 数量> migrations`
-- `Current version of schema "public": <当前版本>`
-- `Schema "public" is up to date` 或从空库逐版本迁移到当前版本
-- `Started AuralisApplication`
-
-## 3. 清空 MinIO 测试对象
-
-保留 bucket，只删除其中对象：
+后端应完成当前仓库内的 Flyway 迁移并达到 readiness。当前仓库版本为 V29；未来若新增迁移，以当前代码中的最新 migration 为目标。不要只凭容器启动或 HTTP 端口开放判断迁移成功。
 
 ```powershell
-docker compose --env-file .env exec -T minio sh -lc 'mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" && mc rm --recursive --force "local/$MINIO_HEALTHCHECK_BUCKET"'
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;"'
+Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:8080/actuator/health/readiness'
 ```
 
-验证对象数量：
+## 3. 注入测试账号、学科和任务
+
+确认后端已就绪后，只执行一次：
 
 ```powershell
-docker compose --env-file .env exec -T minio sh -lc 'mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; mc ls --recursive "local/$MINIO_HEALTHCHECK_BUCKET" 2>/dev/null | wc -l'
+node scripts/seed-test-account.mjs
 ```
 
-预期结果为 `0`。本步骤不删除 PC 本地受管文件；本地文件目录为 `%APPDATA%\com.auralis.app\assets\`，需要另行检查和处理。
+此脚本使用正式 Auth、Subject 和 Task API。账号用户名为 `pc-ai-test-20260918@example.com`；凭据由脚本维护，不在本文重复记录。脚本会先注册，若注册失败则尝试用脚本配置的账号登录，然后创建 12 个学科和 240 个任务。
 
-## 4. 创建或登录测试账号
+**此脚本不是可重复注入脚本。** 重置数据库后首次执行；不要为了补知识块再次运行它，否则会重复创建学科和任务。需要增加知识块时只运行下一节脚本。
 
-推荐通过公开 Auth API 创建账号，不要直接向 `users.password_hash` 写入明文或自制 hash。
+任务分布和数据约束：
+
+- 每科 20 个任务，共 240 个。
+- 每科 4 个未来排期任务，共 48 个；开始时间使用每天 08:30、10:30、14:00、16:00、19:00、21:00 槽位，跨 8 天分配，不重复且无时间区间重叠。
+- 每科 12 个未排期活动任务，共 144 个；其中 72 个有未来截止时间、72 个无截止时间。
+- 每科 2 个 DONE 和 2 个 CANCELLED，共各 24 个。
+- 活动任务状态为 TODO 或 IN_PROGRESS；时长取 30、60、90、120 分钟，不注入 45 分钟任务。
+
+如果注册、登录或 API 请求失败，先检查后端 readiness、测试账号脚本配置和 API 错误；不要直接向数据库业务表写入账号或任务。
+
+## 4. 每科注入 30 个知识块
+
+执行：
 
 ```powershell
-$baseUrl = 'http://127.0.0.1:8080'
-$testUsername = 'pc-ai-test-20260918@example.com'
-$testPassword = 'AuralisPcTest#2026'
-$deviceKey = 'codex-test-seed-20260918'
-
-$registerBody = @{
-  username = $testUsername
-  password = $testPassword
-  displayName = 'Auralis 时间轴测试账号'
-  clientDeviceKey = $deviceKey
-  deviceName = 'Codex 测试设备'
-  platform = 'WINDOWS'
-} | ConvertTo-Json
-
-$auth = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/auth/register" `
-  -ContentType 'application/json' -Body $registerBody
-
-$headers = @{ Authorization = "Bearer $($auth.tokens.accessToken)" }
-$userId = $auth.user.id
+node scripts/seed-knowledge-blocks.mjs
 ```
 
-如果账号已存在，则改用登录：
+脚本从知识目录为 12 个测试学科补充 KnowledgeBlock，每科以 30 个为目标，总量为 360。写入前会校验每科目录恰有 30 个不重复标题；注入使用 `POST /api/knowledge-blocks`，请求字段符合当前 API 契约：`baseVersion`、`subjectId`、`sourceId`、`title`、`content`、`colorOverride`。知识块没有文件来源时 `sourceId` 为 `null`；不再发送已移除的 `summary` 或 `tags` 字段。
+
+脚本按学科读取已有活动知识块，保留已有内容和标题，跳过重复标题，只补足缺口；不会删块或把超出 30 的既有数据减到 30。空库首次注入结果应为每科恰好 30 个、总计 360 个。重复运行是安全的：已达到目标的学科不会继续增加；若某科已超过 30，则保留超出数量，最终以回读计数为准。
+
+脚本完成时应输出 12 科逐科计数、创建数量和回读总量；缺科或回读不足会以非零退出码结束。脚本使用 API 分页读取，页面大小为 200。
+
+## 5. 数据验收
+
+### Migration 和总体计数
 
 ```powershell
-$loginBody = @{
-  username = $testUsername
-  password = $testPassword
-  clientDeviceKey = $deviceKey
-  deviceName = 'Codex 测试设备'
-  platform = 'WINDOWS'
-} | ConvertTo-Json
-
-$auth = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/auth/login" `
-  -ContentType 'application/json' -Body $loginBody
-$headers = @{ Authorization = "Bearer $($auth.tokens.accessToken)" }
-$userId = $auth.user.id
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT installed_rank, version, description, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;"'
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT (SELECT count(*) FROM users WHERE username = ''pc-ai-test-20260918@example.com'') AS users, (SELECT count(*) FROM subjects s JOIN users u ON u.id=s.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND s.deleted_at IS NULL) AS subjects, (SELECT count(*) FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND t.deleted_at IS NULL) AS tasks, (SELECT count(*) FROM knowledge_blocks k JOIN users u ON u.id=k.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND k.deleted_at IS NULL) AS knowledge_blocks, (SELECT count(*) FROM sources s JOIN users u ON u.id=s.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND s.deleted_at IS NULL) AS sources, (SELECT count(*) FROM assets a JOIN users u ON u.id=a.user_id) AS assets;"'
 ```
 
-注册请求字段和 AuthResult 以 [API 契约](../contracts/API.md) 为准。测试密码只能用于本机开发环境，不得复用到生产环境。
+空库完整注入的预期总体计数为 `users=1, subjects=12, tasks=240, knowledge_blocks=360, sources=0, assets=0`。
 
-## 5. 注入测试学科和任务
-
-下面的 PowerShell 片段通过正式 API 注入 12 个学科、每个学科 20 个任务（共 240 项）：
-- **48 个时间轴任务**（每个学科 4 项）：安排在未来 8 天合法白天槽位（08:30~21:00），每天 6 项，时间槽唯一；
-- **144 个活跃待办任务**（每个学科 12 项）：`scheduledAt: null`，作为首页待办清单和排期副驾待安排队列的核心数据源。其中一半（72 项）无截止日期（`dueAt: null`），另一半（72 项）带未来截止日期；
-- **24 个已完成任务**（每个学科 2 项）：`status: 'DONE'`，`scheduledAt: null`；
-- **24 个已取消任务**（每个学科 2 项）：`status: 'CANCELLED'`，`scheduledAt: null`。
+### 逐科确认 KnowledgeBlock 数量
 
 ```powershell
-$subjects = @(
-  @{ name = '高等数学'; description = '极限、微积分、线性代数与概率基础' }
-  @{ name = '数据结构与算法'; description = '复杂度、树、图、查找与排序' }
-  @{ name = '计算机网络'; description = 'TCP/IP、HTTP、路由与网络安全' }
-  @{ name = '英语阅读'; description = '学术阅读、词汇、长难句与写作素材' }
-  @{ name = '数据库系统'; description = '关系模型、SQL、索引、事务与并发' }
-  @{ name = '操作系统'; description = '进程、线程、内存、文件系统与并发控制' }
-  @{ name = '编译原理'; description = '词法分析、语法分析、语义检查与代码生成' }
-  @{ name = '软件工程'; description = '需求、设计、测试、版本控制与交付' }
-  @{ name = '概率统计'; description = '概率模型、随机变量、估计与假设检验' }
-  @{ name = '机器学习基础'; description = '特征、回归、分类、评估与过拟合' }
-  @{ name = '信息安全'; description = '身份认证、密码学、Web 安全与风险分析' }
-  @{ name = '项目管理'; description = '范围、进度、风险、协作与复盘' }
-)
-
-$subjectIds = @{}
-for ($i = 0; $i -lt $subjects.Count; $i++) {
-  $item = $subjects[$i]
-  $body = @{
-    baseVersion = 0
-    name = $item.name
-    description = $item.description
-    iconKey = 'book-open'
-    sortKey = ('{0:D3}' -f $i)
-  } | ConvertTo-Json
-  $created = Invoke-RestMethod -Method Post -Uri "$baseUrl/api/subjects" `
-    -Headers $headers -ContentType 'application/json' -Body $body
-  $subjectIds[$item.name] = $created.id
-}
-
-$taskTemplates = @(
-  '整理本章核心概念并写出一页复习提纲'
-  '完成一组基础练习并记录错误原因'
-  '阅读资料，提取三个关键定义'
-  '用自己的话解释一个容易混淆的知识点'
-  '完成一次限时训练并复盘耗时'
-  '整理公式、命令或 API 的使用边界'
-  '对比两个相近概念并制作判断清单'
-  '完成本周资料的阶段性总结'
-  '回顾已完成内容并标记待复习部分'
-  '整理取消任务的后续补做计划'
-  '把本节内容改写成五道自测题'
-  '找出一个反例并解释它为什么成立'
-  '完成一次错题归因并提出改进动作'
-  '整理本主题与前置知识的依赖关系'
-  '用表格比较三种方案的优缺点'
-  '完成一页术语卡片并标注易错点'
-  '阅读一份补充资料并写出摘要'
-  '对本周学习结果做一次自评'
-  '准备一次三分钟口头讲解'
-  '把知识点应用到一个小型案例'
-)
-
-$subjectNames = @($subjects | ForEach-Object { $_.name })
-$taskCount = 0
-$scheduleSlotIndex = 0
-# 时间轴有效可视窗口为每日 08:00 至 22:30；定义每日有效槽位列表，确保不注入到时间轴没有的位置（如凌晨或深夜）：
-$dailyTimeSlots = @('08:30', '10:30', '14:00', '16:00', '19:00', '21:00')
-
-for ($subjectIndex = 0; $subjectIndex -lt $subjectNames.Count; $subjectIndex++) {
-  $subjectName = $subjectNames[$subjectIndex]
-  for ($taskIndex = 0; $taskIndex -lt 20; $taskIndex++) {
-    $status = if ($taskIndex -ge 16 -and $taskIndex -lt 18) { 'DONE' } elseif ($taskIndex -ge 18) { 'CANCELLED' } elseif (($taskIndex + $subjectIndex) % 7 -eq 0) { 'IN_PROGRESS' } else { 'TODO' }
-    $scheduledAt = $null
-    $dueAt = $null
-
-    if ($taskIndex -lt 4) {
-      # 严格约束在时间轴有效可视范围（08:00~22:30）内，每天最多安排 6 个任务，超出自动递增到下一天白天：
-      $dayOffset = 1 + [Math]::Floor($scheduleSlotIndex / $dailyTimeSlots.Count)
-      $timeStr = $dailyTimeSlots[$scheduleSlotIndex % $dailyTimeSlots.Count]
-      $targetDate = (Get-Date).Date.AddDays($dayOffset)
-      $timeParts = $timeStr.Split(':')
-      $slot = $targetDate.AddHours([int]$timeParts[0]).AddMinutes([int]$timeParts[1])
-      $scheduledAt = $slot.ToUniversalTime().ToString('o')
-      $scheduleSlotIndex++
-    } elseif ($taskIndex -ge 4 -and $taskIndex -lt 16) {
-      # 活跃未排期待办任务：奇数项设置未来截止日期，偶数项为纯无截止时间任务
-      if ($taskIndex % 2 -eq 1) {
-        $dueDayOffset = 1 + (($taskIndex + $subjectIndex) % 7)
-        $dueAt = (Get-Date).Date.AddDays($dueDayOffset).AddHours(20).ToUniversalTime().ToString('o')
-      }
-    }
-
-    $body = @{
-      baseVersion = 0
-      subjectId = $subjectIds[$subjectName]
-      title = "$($subjectName)：$($taskTemplates[$taskIndex])"
-      description = "测试数据：$subjectName 第 $($taskIndex + 1) 项学习任务，用于验证时间轴、状态筛选和任务详情。"
-      status = $status
-      scheduledAt = $scheduledAt
-      dueAt = $dueAt
-      durationMinutes = @(30, 45, 60, 90)[($taskCount % 4)]
-      sortKey = ('{0:D3}' -f $taskCount)
-    } | ConvertTo-Json
-    Invoke-RestMethod -Method Post -Uri "$baseUrl/api/tasks" `
-      -Headers $headers -ContentType 'application/json' -Body $body | Out-Null
-    $taskCount++
-  }
-}
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT s.name, count(k.id) AS knowledge_blocks FROM subjects s JOIN users u ON u.id=s.user_id LEFT JOIN knowledge_blocks k ON k.user_id=u.id AND k.subject_id=s.id AND k.deleted_at IS NULL WHERE u.username = ''pc-ai-test-20260918@example.com'' AND s.deleted_at IS NULL GROUP BY s.id, s.name, s.sort_key ORDER BY s.sort_key, s.name;"'
 ```
 
-如果需要更多数据，优先扩展这段注入逻辑并保持以下约束：任务 `subjectId` 必须属于测试账号；时间轴任务的 `scheduledAt` 必须是未来时间且不重复，**且必须落在时间轴支持的有效槽位范围（08:00~22:30）内，严禁排入时间轴不存在的凌晨或深夜区间**；保留充分的无排期活跃任务供待办清单展示与手动排期；相邻排期的间隔必须大于等于最大 `durationMinutes`；不要直接绕过 API 写入业务表。
+应返回 12 行，每行 `knowledge_blocks=30`。若重复运行前数据库内已有超过 30 个活动块，该科会显示实际较大数量；脚本不会删除已有数据。
 
-## 6. 注入不可解析假文件并链接 KnowledgeBlock
-
-可以放假文件，而且本轮允许它们故意不能解析。它们适合验证：
-
-- 文件列表、文件名、大小、MIME 和上传完成状态；
-- FILE Source 是否正确绑定到 Asset 和测试学科；
-- KnowledgeBlock 是否使用正确的 `sourceId` 链接到 Source；
-- 预览或解析失败时，前端是否展示明确的失败状态。
-
-它们不适合验证 PDF/DOCX/PPTX 解析、OCR、ParsedDocument、切块、向量检索或 AI 引用。那些场景继续使用你之后准备的真实文件。即使是假文件，也必须通过正式 Asset 接口上传，不能只在数据库插入一条 Asset 记录；服务端仍会校验上传对象的大小、MIME 和声明的 SHA-256，但不会替你把不可解析内容变成有效文档。
-
-推荐生成一组明确标记为 fixture 的不可解析文件，例如：
+### 任务状态、截止日期和时长
 
 ```powershell
-$fixtureRoot = Join-Path $PWD 'tmp\auralis-invalid-fixtures'
-New-Item -ItemType Directory -Force -Path $fixtureRoot | Out-Null
-
-$fixtureNames = @(
-  'invalid-fixture-数学-章节摘要.pdf'
-  'invalid-fixture-算法-错题整理.docx'
-  'invalid-fixture-网络-协议对比.pptx'
-  'invalid-fixture-数据库-索引复习.doc'
-  'invalid-fixture-操作系统-进程模型.pdf'
-  'invalid-fixture-软件工程-测试清单.docx'
-  'invalid-fixture-信息安全-风险记录.pptx'
-)
-
-foreach ($name in $fixtureNames) {
-  $path = Join-Path $fixtureRoot $name
-  [System.IO.File]::WriteAllText($path, "Auralis invalid fixture: $name`nThis file is intentionally not a valid office document.", [System.Text.Encoding]::UTF8)
-}
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT status, count(*) AS tasks FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND t.deleted_at IS NULL GROUP BY status ORDER BY status; SELECT count(*) FILTER (WHERE status IN (''TODO'',''IN_PROGRESS'') AND scheduled_at IS NOT NULL) AS active_scheduled, count(*) FILTER (WHERE status IN (''TODO'',''IN_PROGRESS'') AND scheduled_at IS NULL) AS active_unscheduled, count(*) FILTER (WHERE status IN (''TODO'',''IN_PROGRESS'') AND scheduled_at IS NULL AND due_at IS NOT NULL) AS unscheduled_with_due, count(*) FILTER (WHERE status IN (''TODO'',''IN_PROGRESS'') AND scheduled_at IS NULL AND due_at IS NULL) AS unscheduled_without_due, count(*) FILTER (WHERE duration_minutes IS NULL OR duration_minutes % 30 <> 0) AS invalid_durations FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND t.deleted_at IS NULL;"'
 ```
 
-这些文件的扩展名和请求 MIME 可以按目标格式填写，但内容故意不是对应格式。若 Asset `complete` 因对象校验拒绝某种伪造 MIME，就不要绕过校验；改用服务端接受的 fixture MIME 或直接用真实测试文件。不要把假文件命名为用户可能误认为真实资料的名称，建议保留 `invalid-fixture` 标识。
+预期状态总数为 TODO/IN_PROGRESS 合计 192、DONE 24、CANCELLED 24；活动排期 48、活动未排期 144，其中有截止日期 72、无截止日期 72；`invalid_durations=0`。
 
-关联链路必须是：
-
-```text
-invalid fixture file
-  -> POST /api/assets/upload-intents
-  -> PUT uploadUrl
-  -> POST /api/assets/{assetId}/complete
-  -> POST /api/sources (type=FILE, assetId, subjectId)
-  -> POST /api/knowledge-blocks (sourceId=返回的 Source UUID, subjectId=同一学科)
-```
-
-KnowledgeBlock 请求体示例：
-
-```json
-{
-  "baseVersion": 0,
-  "subjectId": "<测试学科 UUID>",
-  "sourceId": "<刚创建的 FILE Source UUID>",
-  "title": "假文件测试知识块",
-  "summary": "用于验证文件来源关联的合成摘要。",
-  "content": "这是合成正文，不代表文件已经解析成功。",
-  "tags": ["seed", "invalid-fixture", "file-linked"],
-  "colorOverride": null
-}
-```
-
-`sourceId` 只能填 Source UUID，不能填本地路径、文件名或 `assetId`。FILE Source 创建后正常处于 `AWAITING_CLIENT`；因此这批假文件可以验证关联和展示，但不会进入可检索的 `READY` 状态。你拿真实文件测试时，还要让 PC/Tauri 提交 ParsedDocument 并完成 indexing，再验证 AI 检索和引用。
-
-## 7. 验证结果
-
-检查后端健康和 migration 版本：
+### 排期唯一性和区间重叠
 
 ```powershell
-docker compose --env-file .env ps backend db minio
-docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT installed_rank, version FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 1;"
+docker compose --env-file .env exec -T db sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT t.scheduled_at, count(*) FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'' AND t.deleted_at IS NULL AND t.status IN (''TODO'',''IN_PROGRESS'') AND t.scheduled_at IS NOT NULL GROUP BY t.scheduled_at HAVING count(*) > 1; SELECT count(*) AS overlapping_pairs FROM tasks a JOIN tasks b ON a.id < b.id AND a.user_id=b.user_id AND a.deleted_at IS NULL AND b.deleted_at IS NULL AND a.status IN (''TODO'',''IN_PROGRESS'') AND b.status IN (''TODO'',''IN_PROGRESS'') AND a.scheduled_at IS NOT NULL AND b.scheduled_at IS NOT NULL AND a.scheduled_at < b.scheduled_at + b.duration_minutes * interval ''1 minute'' AND b.scheduled_at < a.scheduled_at + a.duration_minutes * interval ''1 minute'' JOIN users u ON u.id=a.user_id WHERE u.username = ''pc-ai-test-20260918@example.com'';"'
 ```
 
-检查账号和测试数据数量：
+第一条查询应无行，第二条 `overlapping_pairs=0`。查询只证明数据库中的排期值满足唯一开始时间及任务区间不重叠，不证明 GUI 展示或人工排期体验。
 
-```powershell
-docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT count(*) AS users FROM users WHERE username = 'pc-ai-test-20260918@example.com'; SELECT count(*) AS subjects FROM subjects WHERE user_id = (SELECT id FROM users WHERE username = 'pc-ai-test-20260918@example.com'); SELECT count(*) AS tasks FROM tasks WHERE user_id = (SELECT id FROM users WHERE username = 'pc-ai-test-20260918@example.com'); SELECT count(*) AS assets FROM assets WHERE user_id = (SELECT id FROM users WHERE username = 'pc-ai-test-20260918@example.com');"
-```
+## 6. 手动验收边界
 
-预期结果：仅执行学科/任务注入时为 `users=1`、`subjects=12`、`tasks=240`、`assets=0`；执行 7 个假文件夹具注入后为 `assets=7`，并应有 7 个对应 FILE Source 和至少 7 个 `source_id` 非空的 KnowledgeBlock。可用下面的查询确认文件关联链：
+在 PC/Tauri 中使用测试账号重新登录并等待首次同步完成，确认：
 
-```powershell
-docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT count(*) AS sources FROM sources s JOIN users u ON u.id=s.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND s.deleted_at IS NULL AND s.type = 'FILE'; SELECT count(*) AS linked_knowledge_blocks FROM knowledge_blocks k JOIN users u ON u.id=k.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND k.deleted_at IS NULL AND k.source_id IS NOT NULL;"
-```
+1. 学科列表显示 12 科。
+2. 每科知识列表显示 30 个活动知识块，内容可打开。
+3. 任务列表、待办和 Timeline 能读到对应任务；排期、截止日期、完成和取消状态符合上面的分布。
+4. PostgreSQL 重建后账号可能是新用户 UUID；若客户端保留旧会话，应先退出并重新登录，不清理本机数据库或文件来“修复”服务端数据。
 
-时间轴候选和重复时间检查：
+以上检查需要 GUI/人工执行，本轮命令和 API 回读不能代替它们。真实文件解析、Source/Asset 上传、ParsedDocument、分块、向量检索和 AI 引用也都不在这批种子数据的验收范围内。
 
-```powershell
-docker compose --env-file .env exec -T db psql -U auralis -d auralis -c "SELECT count(*) AS active_scheduled FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NOT NULL; SELECT count(*) AS active_unscheduled, count(due_at) AS has_due FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NULL; SELECT scheduled_at, count(*) FROM tasks t JOIN users u ON u.id=t.user_id WHERE u.username = 'pc-ai-test-20260918@example.com' AND t.deleted_at IS NULL AND t.status IN ('TODO','IN_PROGRESS') AND t.scheduled_at IS NOT NULL GROUP BY scheduled_at HAVING count(*) > 1;"
-```
+## 常见误判与排障
 
-预期结果为：`active_scheduled=48`，未排期活跃任务 `active_unscheduled=144`（其中 `has_due=72`，无截止日期 `72` 项），重复时间查询无行。最后在 PC/Tauri 中登录测试账号，等待本地 projection/sync 完成，再人工检查 Dashboard、Timeline、SubjectHall 和任务状态。
-
-## 8. 文件由用户手动导入
-
-如果没有执行第 6 节的假文件注入，仍可由用户手动导入真实文件。真实文件用于解析/OCR/ParsedDocument/AI 检索验收：
-
-1. 使用测试账号登录 PC/Tauri。
-2. 在目标学科工作区手动选择 PDF、DOCX、PPTX 等文件。
-3. 观察本地受管文件、Source、ParsedDocument/DocumentProcessingJob、MinIO 和前端实时状态。
-4. 记录文件真实验收结果；自动注入的任务数据不能替代文件处理验收。
-
-PC 本地受管文件默认位于：
-
-```text
-%APPDATA%\com.auralis.app\assets\<user-scope>\<local-asset-id>\content.<ext>
-```
-
-清空 PostgreSQL 或 MinIO 不会自动删除该目录中的本地文件。删除本地文件前必须先确认用户明确授权、Source 引用数量和当前应用是否已退出。
-
-## 常见误判
-
-- `flyway_schema_history` 的 `version` 是字符串，不能直接用 `MAX(version)` 判断最新版本；应按 `installed_rank DESC` 检查。
-- 数据库里有 Subject/Task 不代表 PC 已显示；PC 还需要登录正确账号并完成本地 projection/sync。
-- MinIO bucket 为空不代表 PC 本地文件为空；两者是不同存储边界。
-- 构建通过、后端 healthy、SQL 计数正确不等于文件解析、时间轴 GUI、实时状态或真实 MinIO 上传已验收。
+- `flyway_schema_history.version` 是字符串；用 `installed_rank DESC` 查看最后成功应用的版本，不用 `MAX(version)`。
+- `seed-test-account.mjs` 仅用于空库首次建账号/学科/任务；不要把它当作幂等脚本重复运行。
+- `seed-knowledge-blocks.mjs` 对已有活动知识块只补不删。出现多于 30 个时先检查现有数据来源，不要通过删除来凑数。
+- KnowledgeBlock API 当前不接受 `summary/tags`；以 [API 契约](../contracts/API.md) 和实际脚本请求字段为准。
+- 数据库里的 Subject/Task/KnowledgeBlock 不代表 PC 已显示；客户端还需登录正确用户并完成同步/本地投影。
+- 本机 MinIO 对象、PostgreSQL 元数据、PC 本地文件是不同存储边界。本流程清空配置 bucket 中的对象，但保留 PC/Tauri 本机文件。
+- 后端 healthy、migration 完成、API 计数正确不等于 GUI/真机、文件解析或 AI/RAG 业务验收完成。

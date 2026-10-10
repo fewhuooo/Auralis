@@ -22,7 +22,7 @@ const {
   LocalRepository,
   createMemoryStorage,
 } = await import('../src/services/localRepository.ts');
-const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts');
+const { createVersionedLocalSchema, LOCAL_SCHEMA_VERSION } = await import('../src/services/localSchema.ts');
 const { serializeLocalSqlDatabase } = await import('../src/services/localSqlQueue.ts');
 const { LocalDatabaseRuntime } = await import('../src/services/localDatabaseRuntime.ts');
 const { runSyncCycle } = await import('../src/services/syncCycle.ts');
@@ -177,7 +177,7 @@ test('saveCursor persists the current local schema version', async () => {
     const row = sqlite.database
       .prepare('SELECT schema_version FROM sync_metadata WHERE user_id = ? AND device_id = ?')
       .get('user-a', 'device-1');
-    assert.equal(row.schema_version, 9);
+    assert.equal(row.schema_version, LOCAL_SCHEMA_VERSION);
   } finally {
     sqlite.close();
   }
@@ -498,6 +498,49 @@ test('commitMutation can fence an automatic completion against a newer local pro
   }
 });
 
+test('commitMutation with requireActiveResource atomically rejects if the resource projection is deleted, keeping existing tombstone and outbox untouched', async () => {
+  const sqlite = new TemporarySqlite();
+  const repositories = [
+    new LocalRepository('user-a', 'device-memory-active', { storage: createMemoryStorage() }),
+    new LocalRepository('user-a', 'device-sqlite-active', { sql: sqlite }),
+  ];
+
+  try {
+    for (const repository of repositories) {
+      await repository.upsert('TASK', 'task-active-1', { id: 'task-active-1', status: 'TODO' }, { version: 5 });
+      await repository.tombstone('TASK', 'task-active-1', { deletedAt: '2026-10-06T15:00:00.000Z', version: 5 });
+
+      await assert.rejects(repository.commitMutation({
+        resourceType: 'TASK', resourceId: 'task-active-1', value: { id: 'task-active-1', status: 'DONE' },
+        version: 5, deletedAt: null, expectedLocalVersion: 5, requireActiveResource: true,
+        mutation: { clientMutationId: 'stale-auto', resourceType: 'TASK', resourceId: 'task-active-1', mutationType: 'UPDATE', baseVersion: 5, payload: { status: 'DONE' } },
+      }), LocalConflictError);
+
+      assert.ok((await repository.read('TASK', 'task-active-1'))?.deletedAt);
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+
+      await repository.upsert('TASK', 'task-active-2', { id: 'task-active-2', status: 'TODO' }, { version: 5 });
+      await repository.commitMutation({
+        resourceType: 'TASK', resourceId: 'task-active-2', value: { id: 'task-active-2', status: 'DONE' },
+        version: 5, deletedAt: null, expectedLocalVersion: 5, requireActiveResource: true,
+        mutation: { clientMutationId: 'valid-auto', resourceType: 'TASK', resourceId: 'task-active-2', mutationType: 'UPDATE', baseVersion: 5, payload: { status: 'DONE' } },
+      });
+      assert.equal((await repository.read('TASK', 'task-active-2'))?.value.status, 'DONE');
+
+      await repository.upsert('TASK', 'task-active-3', { id: 'task-active-3', status: 'TODO' }, { version: 5 });
+      await repository.tombstone('TASK', 'task-active-3', { deletedAt: '2026-10-06T15:00:00.000Z', version: 5 });
+      await repository.commitMutation({
+        resourceType: 'TASK', resourceId: 'task-active-3', value: { id: 'task-active-3', status: 'DONE' },
+        version: 5, deletedAt: null, expectedLocalVersion: 5,
+        mutation: { clientMutationId: 'no-option', resourceType: 'TASK', resourceId: 'task-active-3', mutationType: 'UPDATE', baseVersion: 5, payload: { status: 'DONE' } },
+      });
+      assert.equal((await repository.read('TASK', 'task-active-3'))?.deletedAt, null);
+    }
+  } finally {
+    sqlite.close();
+  }
+});
+
 test('commitMutation atomically rejects auto completion after its pending mutation becomes inflight', async () => {
   const sqlite = new TemporarySqlite();
   const repositories = [
@@ -616,4 +659,112 @@ test('localSchema sanitizer processes TASK color removal correctly and preserves
   assert.equal(muts[0].payload, '{}');
   assert.equal(muts[0].remote_payload, '{}');
   sqlite.close();
+});
+test('upsertSyncedBatch merges browser members atomically without regressing versions or clearing tombstones', async () => {
+  const { storage, first: repository } = createRepositories();
+  const row = (id, marker) => ({ id, marker });
+  const tombstoneAt = '2026-10-06T10:00:00.000Z';
+  await repository.upsert('TASK', 'active-high', row('active-high', 'v5'), { version: 5, syncStatus: 'synced' });
+  await repository.upsert('TASK', 'active-same', row('active-same', 'before'), { version: 3, syncStatus: 'synced' });
+  await repository.upsert('TASK', 'active-to-delete', row('active-to-delete', 'before'), { version: 7, syncStatus: 'synced' });
+  await repository.upsert('TASK', 'active-delete-stale', row('active-delete-stale', 'active-v5'), { version: 5, syncStatus: 'synced' });
+  await repository.upsert('TASK', 'tombstone-high', row('tombstone-high', 'tomb-v5'), { version: 5, syncStatus: 'synced' });
+  await repository.upsertFromSync('TASK', 'tombstone-high', row('tombstone-high', 'tomb-v5'), { version: 5, deletedAt: tombstoneAt, syncStatus: 'synced' });
+  await repository.upsert('TASK', 'tombstone-stale', row('tombstone-stale', 'tomb-v5'), { version: 5, syncStatus: 'synced' });
+  await repository.upsertFromSync('TASK', 'tombstone-stale', row('tombstone-stale', 'tomb-v5'), { version: 5, deletedAt: tombstoneAt, syncStatus: 'synced' });
+  await repository.saveCursor('cursor-before-batch');
+
+  const stateKey = storage.key(0);
+  const originalWrite = repository.writeBrowserState.bind(repository);
+  let writeCount = 0;
+  repository.writeBrowserState = (state) => { writeCount += 1; return originalWrite(state); };
+  const result = await repository.upsertSyncedBatch([
+    { resourceType: 'TASK', resourceId: 'active-high', version: 4, deletedAt: null, value: row('active-high', 'stale-v4') },
+    { resourceType: 'TASK', resourceId: 'active-same', version: 3, deletedAt: null, value: row('active-same', 'same-v3-update') },
+    { resourceType: 'TASK', resourceId: 'active-to-delete', version: 7, deletedAt: tombstoneAt, value: row('active-to-delete', 'same-v7-delete') },
+    { resourceType: 'TASK', resourceId: 'active-delete-stale', version: 4, deletedAt: tombstoneAt, value: row('active-delete-stale', 'stale-delete-v4') },
+    { resourceType: 'TASK', resourceId: 'tombstone-high', version: 6, deletedAt: null, value: row('tombstone-high', 'active-v6') },
+    { resourceType: 'TASK', resourceId: 'tombstone-stale', version: 4, deletedAt: tombstoneAt, value: row('tombstone-stale', 'tomb-v4') },
+    { resourceType: 'TASK', resourceId: 'fresh', version: 1, deletedAt: null, value: row('fresh', 'new') },
+  ]);
+
+  assert.equal(result, true);
+  assert.equal(writeCount, 1, 'eligible members and skipped stale members commit with one browser state write');
+  const activeHigh = await repository.read('TASK', 'active-high');
+  assert.equal(activeHigh.version, 5);
+  assert.equal(activeHigh.value.marker, 'v5');
+  assert.equal((await repository.read('TASK', 'active-same')).value.marker, 'same-v3-update', 'same-version active response is accepted');
+  const activeToDelete = await repository.read('TASK', 'active-to-delete');
+  assert.equal(activeToDelete.version, 7);
+  assert.equal(activeToDelete.deletedAt, tombstoneAt, 'same-version tombstone is accepted');
+  const activeDeleteStale = await repository.read('TASK', 'active-delete-stale');
+  assert.equal(activeDeleteStale.version, 5);
+  assert.equal(activeDeleteStale.deletedAt, null, 'lower-version tombstone is rejected');
+  assert.equal(activeDeleteStale.value.marker, 'active-v5');
+  const tombstoneHigh = await repository.read('TASK', 'tombstone-high');
+  assert.equal(tombstoneHigh.version, 5);
+  assert.equal(tombstoneHigh.deletedAt, tombstoneAt, 'higher active response cannot clear a tombstone');
+  assert.equal(tombstoneHigh.value.marker, 'tomb-v5');
+  const tombstoneStale = await repository.read('TASK', 'tombstone-stale');
+  assert.equal(tombstoneStale.version, 5, 'lower tombstone cannot reduce the stored version');
+  assert.equal(tombstoneStale.deletedAt, tombstoneAt);
+  assert.equal(tombstoneStale.value.marker, 'tomb-v5');
+  assert.equal((await repository.read('TASK', 'fresh')).value.marker, 'new', 'a fresh eligible row applies beside stale rows');
+  assert.equal((await repository.getSyncState()).cursor, 'cursor-before-batch');
+  assert.deepEqual(await repository.listPending('TASK'), []);
+  assert.ok(storage.getItem(stateKey));
+});
+
+test('upsertSyncedBatch merges SQL members atomically without regressing versions or clearing tombstones', async () => {
+  const sqlite = new TemporarySqlite();
+  const repository = new LocalRepository('user-a', 'device-1', { sql: sqlite });
+  try {
+    const row = (id, marker) => ({ id, marker });
+    const tombstoneAt = '2026-10-06T10:00:00.000Z';
+    await repository.upsert('TASK', 'active-high', row('active-high', 'v5'), { version: 5, syncStatus: 'synced' });
+    await repository.upsert('TASK', 'active-same', row('active-same', 'before'), { version: 3, syncStatus: 'synced' });
+    await repository.upsert('TASK', 'active-to-delete', row('active-to-delete', 'before'), { version: 7, syncStatus: 'synced' });
+    await repository.upsert('TASK', 'active-delete-stale', row('active-delete-stale', 'active-v5'), { version: 5, syncStatus: 'synced' });
+    await repository.upsert('TASK', 'tombstone-high', row('tombstone-high', 'tomb-v5'), { version: 5, syncStatus: 'synced' });
+    await repository.upsertFromSync('TASK', 'tombstone-high', row('tombstone-high', 'tomb-v5'), { version: 5, deletedAt: tombstoneAt, syncStatus: 'synced' });
+    await repository.upsert('TASK', 'tombstone-stale', row('tombstone-stale', 'tomb-v5'), { version: 5, syncStatus: 'synced' });
+    await repository.upsertFromSync('TASK', 'tombstone-stale', row('tombstone-stale', 'tomb-v5'), { version: 5, deletedAt: tombstoneAt, syncStatus: 'synced' });
+    await repository.saveCursor('cursor-before-batch');
+
+    const result = await repository.upsertSyncedBatch([
+      { resourceType: 'TASK', resourceId: 'active-high', version: 4, deletedAt: null, value: row('active-high', 'stale-v4') },
+      { resourceType: 'TASK', resourceId: 'active-same', version: 3, deletedAt: null, value: row('active-same', 'same-v3-update') },
+      { resourceType: 'TASK', resourceId: 'active-to-delete', version: 7, deletedAt: tombstoneAt, value: row('active-to-delete', 'same-v7-delete') },
+      { resourceType: 'TASK', resourceId: 'active-delete-stale', version: 4, deletedAt: tombstoneAt, value: row('active-delete-stale', 'stale-delete-v4') },
+      { resourceType: 'TASK', resourceId: 'tombstone-high', version: 6, deletedAt: null, value: row('tombstone-high', 'active-v6') },
+      { resourceType: 'TASK', resourceId: 'tombstone-stale', version: 4, deletedAt: tombstoneAt, value: row('tombstone-stale', 'tomb-v4') },
+      { resourceType: 'TASK', resourceId: 'fresh', version: 1, deletedAt: null, value: row('fresh', 'new') },
+    ]);
+
+    assert.equal(result, true);
+    const activeHigh = await repository.read('TASK', 'active-high');
+    assert.equal(activeHigh.version, 5);
+    assert.equal(activeHigh.value.marker, 'v5');
+    assert.equal((await repository.read('TASK', 'active-same')).value.marker, 'same-v3-update');
+    const activeToDelete = await repository.read('TASK', 'active-to-delete');
+    assert.equal(activeToDelete.version, 7);
+    assert.equal(activeToDelete.deletedAt, tombstoneAt);
+    const activeDeleteStale = await repository.read('TASK', 'active-delete-stale');
+    assert.equal(activeDeleteStale.version, 5);
+    assert.equal(activeDeleteStale.deletedAt, null);
+    assert.equal(activeDeleteStale.value.marker, 'active-v5');
+    const tombstoneHigh = await repository.read('TASK', 'tombstone-high');
+    assert.equal(tombstoneHigh.version, 5);
+    assert.equal(tombstoneHigh.deletedAt, tombstoneAt);
+    assert.equal(tombstoneHigh.value.marker, 'tomb-v5');
+    const tombstoneStale = await repository.read('TASK', 'tombstone-stale');
+    assert.equal(tombstoneStale.version, 5);
+    assert.equal(tombstoneStale.deletedAt, tombstoneAt);
+    assert.equal(tombstoneStale.value.marker, 'tomb-v5');
+    assert.equal((await repository.read('TASK', 'fresh')).value.marker, 'new');
+    assert.equal((await repository.getSyncState()).cursor, 'cursor-before-batch');
+    assert.deepEqual(await repository.listPending('TASK'), []);
+  } finally {
+    sqlite.close();
+  }
 });

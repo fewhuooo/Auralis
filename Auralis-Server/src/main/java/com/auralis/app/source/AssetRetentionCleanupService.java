@@ -11,11 +11,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * Removes binary objects after the Source soft-delete recovery window.
@@ -32,6 +37,7 @@ public class AssetRetentionCleanupService {
     private final AssetRepository assetRepository;
     private final AssetStoragePort assetStorage;
     private final Clock clock;
+    private final TransactionTemplate assetTransactionTemplate;
     private final long retentionDays;
     private final Counter purgedObjects;
     private final Counter cleanupFailures;
@@ -42,11 +48,14 @@ public class AssetRetentionCleanupService {
             AssetStoragePort assetStorage,
             Clock clock,
             MeterRegistry meterRegistry,
+            PlatformTransactionManager transactionManager,
             @Value("${auralis.upload.asset-retention-days:30}") long retentionDays) {
         this.sourceRepository = sourceRepository;
         this.assetRepository = assetRepository;
         this.assetStorage = assetStorage;
         this.clock = clock;
+        this.assetTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.assetTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.retentionDays = retentionDays > 0 ? retentionDays : DEFAULT_RETENTION_DAYS;
         this.purgedObjects = Counter.builder("auralis.asset.retention.purged_objects")
                 .description("MinIO objects removed after Source retention")
@@ -56,13 +65,21 @@ public class AssetRetentionCleanupService {
                 .register(meterRegistry);
     }
 
-    @Transactional
     public long purgeExpired(Instant cutoff) {
         long purged = 0;
+        Set<OwnerAssetKey> processedAssets = new HashSet<>();
         for (SourceEntity source : sourceRepository.findAllByDeletedAtBefore(cutoff)) {
+            if (source.getAssetId() == null
+                    || !processedAssets.add(new OwnerAssetKey(source.getUserId(), source.getAssetId()))) {
+                continue;
+            }
             try {
-                if (purgeAsset(source, cutoff)) {
+                String objectKey = claimAssetForDeletion(source, cutoff);
+                if (objectKey != null) {
+                    assetStorage.deleteObject(objectKey);
                     purged++;
+                    log.info("ASSET_RETENTION_PURGED sourceId={} assetId={} objectKey={}",
+                            source.getId(), source.getAssetId(), objectKey);
                 }
             } catch (RuntimeException exception) {
                 cleanupFailures.increment();
@@ -81,23 +98,24 @@ public class AssetRetentionCleanupService {
         purgeExpired(clock.instant().minus(Duration.ofDays(retentionDays)));
     }
 
-    private boolean purgeAsset(SourceEntity source, Instant cutoff) {
-        if (source.getAssetId() == null
-                || sourceRepository.existsByAssetIdAndDeletedAtIsNull(source.getAssetId())
-                || sourceRepository.existsByAssetIdAndDeletedAtAfter(source.getAssetId(), cutoff)) {
-            return false;
-        }
+    private String claimAssetForDeletion(SourceEntity source, Instant cutoff) {
+        return assetTransactionTemplate.execute(status -> {
+            AssetEntity asset = assetRepository.findForUpdateByIdAndUserId(
+                    source.getAssetId(), source.getUserId()).orElse(null);
+            if (asset == null
+                    || sourceRepository.existsByAssetIdAndDeletedAtIsNull(asset.getId())
+                    || sourceRepository.existsByAssetIdAndDeletedAtAfter(asset.getId(), cutoff)) {
+                return null;
+            }
 
-        AssetEntity asset = assetRepository.findByIdAndUserId(source.getAssetId(), source.getUserId()).orElse(null);
-        if (asset == null || asset.getUploadStatus() == AssetUploadStatus.ORPHANED) {
-            return false;
-        }
+            if (asset.getUploadStatus() != AssetUploadStatus.ORPHANED) {
+                asset.markOrphaned();
+                assetRepository.saveAndFlush(asset);
+            }
+            return asset.getObjectKey();
+        });
+    }
 
-        assetStorage.deleteObject(asset.getObjectKey());
-        asset.markOrphaned();
-        assetRepository.save(asset);
-        log.info("ASSET_RETENTION_PURGED sourceId={} assetId={} objectKey={}",
-                source.getId(), asset.getId(), asset.getObjectKey());
-        return true;
+    private record OwnerAssetKey(UUID userId, UUID assetId) {
     }
 }

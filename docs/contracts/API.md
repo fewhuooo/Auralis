@@ -1,6 +1,6 @@
 # Auralis API 契约
 
-更新时间：2026-09-24
+更新时间：2026-10-09
 
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
 
@@ -92,8 +92,8 @@
 | Knowledge | /api/knowledge-blocks、/api/knowledge-blocks/{id}、/api/knowledge-blocks/{id}/restore | implemented-phase-2a |
 | Task | /api/tasks、/api/tasks/{id}、/api/tasks/{id}/restore、/api/tasks/schedule-swaps、/api/tasks/schedule-insertions | implemented-phase-2a |
 | Relation | /api/relations、/api/relations/{id}、/api/relations/{id}/restore | implemented-phase-2b |
-| Review | /api/reviews/due、/api/reviews/events、/api/reviews/history | implemented-phase-4 |
-| Stats | /api/stats/overview、/api/stats/weekly | implemented-phase-4 |
+| Review | /api/reviews/due、/api/reviews/states、/api/reviews/events、/api/reviews/history | implemented-phase-4 |
+| Stats | /api/stats/overview、/api/stats/weekly、/api/stats/subjects/{subjectId} | implemented-phase-4 |
 | Sync | /api/sync/push、/api/sync/pull、/api/sync/snapshot | implemented-phase-3 |
 | AI | /api/ai/settings、/api/ai/conversations、/api/ai/messages/stream、建议类接口、/api/ai/source-overviews、/api/ai/subject-overviews | implemented-phase-5-baseline |
 | Realtime | /api/realtime/ticket；WebSocket 地址 /ws/events | implemented-phase-4 |
@@ -129,14 +129,16 @@
 - Subject-owned 写入在服务端使用统一数据库锁协议：先由内部 `SubjectLockCoordinator` 对所有涉及 Subject 去重并按 UUID 升序获取悲观行锁，再锁具体业务资源并重新读取、校验活动状态、归属、`subjectId` 和 Relation 端点。该并发实现不改变任何公开 API 请求/响应、版本或同步字段。
 - `GET /api/subjects`、`GET /api/knowledge-blocks`、`GET /api/tasks` 返回 `{items,nextCursor,hasMore}`，接受不透明 `cursor` 和可选 `limit`（默认 100，范围 1–200），默认过滤已删除记录。Subject 按 `sortKey ASC, updatedAt DESC, id ASC` 稳定分页，其余三类按 `updatedAt DESC, id ASC` 稳定分页。
 - Subject 请求字段为 `name`、`description`、`iconKey`、`sortKey`；响应另含 `defaultSubject`、`version`、`createdAt`、`updatedAt`、`deletedAt`。Subject 不提供专属颜色字段，客户端使用全局语义设计色。
-- KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`summary`、`content`、`tags`、`colorOverride`；阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity。
-- Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`sortKey`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`。更新任务时 `scheduledAt: null` 或 `dueAt: null` 分别明确清除排期或截止时间；PC 客户端把仍未完成/取消且 `scheduledAt` 已过的排期任务更新为 `DONE` 并保留排期，把无 `scheduledAt` 且 `dueAt` 已过的任务更新为 `dueAt: null`，以进入未排期。V21 删除 `tasks.color_override` 并清理 TASK 历史 JSON 颜色键，KnowledgeBlock 的 `colorOverride` 保留。
+- KnowledgeBlock 请求字段为 `subjectId`、可空 `sourceId`、`title`、`content`、`colorOverride`；不再提供知识块 `summary/tags`。阶段 2B 起非空 `sourceId` 必须指向同一用户下活动的 Source。响应不序列化 Entity，正文不会从摘要回退。已排队旧 mutation 的多余字段可被解析器忽略，客户端不得改写其不可变载荷和请求 ID。
+- Task 请求字段为 `subjectId`、`title`、`description`、`status`、`scheduledAt`、`dueAt`、`durationMinutes`、`sortKey`；status 仅接受 `TODO`、`IN_PROGRESS`、`DONE`、`CANCELLED`。更新任务时 `scheduledAt: null` 或 `dueAt: null` 分别明确清除排期或截止时间。PC 客户端把活动的 `TODO`/`IN_PROGRESS` 任务在到期时更新为 `DONE`：有排期时按 `scheduledAt + durationMinutes <= now`，无排期时按有效 `dueAt <= now`，保留原排期和截止时间。复用普通 TASK UPDATE 与现有同步队列，不增加接口；检查在 PC 启动/任务投影刷新及运行中每分钟执行，应用关闭时由下次启动补处理，Server 不提供此自动完成定时器。V21 删除 `tasks.color_override` 并清理 TASK 历史 JSON 颜色键，KnowledgeBlock 的 `colorOverride` 保留。
 - 所有 Task 排期写入均阻止同一用户未删除且非 `CANCELLED` Task 的排期区间重叠，区间按半开形式 `[scheduledAt, scheduledAt + durationMinutes)` 计算，首尾相接允许；`durationMinutes` 为 `null` 时按 30 分钟计算。REST 冲突返回 `400 VALIDATION_FAILED`；Sync push 冲突将该 mutation 记为 `REJECTED` 并返回 `VALIDATION_FAILED`，其他 mutation 仍按各自结果处理。服务端在事务内以同一用户行锁串行化排期写入，覆盖跨 Subject 并发。
-- Task 的 `dueAt` 是截止日期提醒和排序信息，保存或排期时不要求 `scheduledAt <= dueAt`；截止时间已过的任务仍可排在之后，Server 不改写用户提供的 `dueAt`。
-- `POST /api/tasks/schedule-swaps` 用于两个已排期 Task 的原子时段交换。请求为 `{sourceTaskId,sourceBaseVersion,targetTaskId,targetBaseVersion}`，四项均必填；服务端按稳定顺序加锁并在一次事务内校验两个版本和换位后的区间；若两任务原区间首尾紧邻，则交换先后顺序并将两任务紧凑排在原共同时间窗口内，窗口起止不变；非紧邻任务仍互换原开始时间。服务端确认双方新区间不互相重叠且不与同用户其他未取消任务冲突，成功返回 `{source,target}` 两个更新后的 Task。`dueAt` 不限制换位后的排期；`DONE` 和 `CANCELLED` 任务不可交换。任一版本、区间校验或持久化失败均回滚整个交换，不产生半交换状态。`scheduledAt`/`dueAt` 均为 RFC 3339 UTC/带时区 instant；无法反序列化的字段返回 `400 VALIDATION_FAILED` 与 `fieldErrors`。
-- `POST /api/tasks/schedule-insertions` 支持普通空白槽位的插入顺延与任务主体的严格放置，只有顶部交互栏落点使用 `schedule-swaps`。请求为 `{taskId,baseVersion,scheduledAt,windowStartAt,windowLastStartAt,targetTaskId?}`，前五项必填；`targetTaskId` 是可选 UUID，三个时间字段为 RFC 3339 带时区 instant；窗口必须正好覆盖 PC Timeline 当天 08:00 至 22:30 的起始槽，客户端提交这两个本地时间对应的 instants。服务端以 `windowStartAt` 为半小时网格起点将目标向上取整；按目标顺序检查 Task 完整时长，仅当下一任务的原起始时间早于前项结束时间才将其顺延到前项结束后的第一个半小时槽，原有空档会保留。不含 `targetTaskId` 的普通空白槽位请求维持原有插入顺延。含 `targetTaskId` 的卡片主体请求以锁定后的目标任务结束时间计算首个半小时槽，仅移动被拖任务，目标及其他任务不变；若被拖任务完整区间与任何其他排期冲突或目标后无可用起始槽，则整笔返回 `400 VALIDATION_FAILED`；目标已变化导致结束槽不符返回 `409 RESOURCE_VERSION_CONFLICT`，目标不存在返回资源未找到。`DONE` 任务固定，`CANCELLED` 不占用区间；如果需移动 DONE 或任何顺延起点超过 `windowLastStartAt`，则返回 `400 VALIDATION_FAILED` 并回滚整组。`dueAt` 不限制新排期或顺延起点。服务端按 User→Subject(UUID 升序)→相关 Task(UUID 升序) 获取悲观锁并在同一事务中提交。成功返回 HTTP 200 `{tasks:[TaskResponse...]}`，列表只含 `scheduledAt` 实际改变的 Task，按新排期时间和 UUID 排序；每项版本增加 1，并发布普通 `UPDATE` change-log/realtime 事件，客户端后续通过既有 Sync read pull 收敛。版本冲突为 `409 RESOURCE_VERSION_CONFLICT`。本操作是在线 REST 动作，不扩展 Sync inbound mutation 类型。
+- Task 的 `dueAt` 同时用于截止提醒、排序和完整排期上限。创建、恢复、新排期或修改排期/有效时长/截止时间时，若 `scheduledAt` 与 `dueAt` 均存在，必须满足 `scheduledAt + effectiveDurationMinutes <= dueAt`；恰好结束允许，`durationMinutes=null` 按 30 分钟，没有截止时间不施加此限制。Server 不改写用户提供的截止时间。不合法区间返回 `400 VALIDATION_FAILED`，Sync 将该 mutation 记为 `REJECTED`。历史排期不批量重写；有效时间字段未变化的标题、备注、状态更新（含自动 DONE）仍可保存，空时长与显式 30 等价；`CANCELLED` 重新进入活动排期必须重新校验。
+- `POST /api/tasks/schedule-swaps` 用于两个已排期 Task 的原子时段交换。请求为 `{sourceTaskId,sourceBaseVersion,targetTaskId,targetBaseVersion}`，四项均必填；服务端按稳定顺序加锁并在一次事务内校验两个版本和换位后的区间；若两任务原区间首尾紧邻，则交换先后顺序并将两任务紧凑排在原共同时间窗口内，窗口起止不变；非紧邻任务仍互换原开始时间。服务端确认双方新区间不互相重叠且不与同用户其他未取消任务冲突，成功返回 `{source,target}` 两个更新后的 Task。双方的新完整区间均必须结束于各自 `dueAt` 或之前（无截止除外），任一超限整笔返回 `400 VALIDATION_FAILED`；`DONE` 和 `CANCELLED` 任务不可交换。任一版本、区间校验或持久化失败均回滚整个交换，不产生半交换状态。`scheduledAt`/`dueAt` 均为 RFC 3339 UTC/带时区 instant；无法反序列化的字段返回 `400 VALIDATION_FAILED` 与 `fieldErrors`。
+- `POST /api/tasks/schedule-insertions` 支持普通空白槽位的插入顺延与任务主体的严格放置，只有顶部交互栏落点使用 `schedule-swaps`。请求为 `{taskId,baseVersion,scheduledAt,windowStartAt,windowLastStartAt,targetTaskId?}`，前五项必填；`targetTaskId` 是可选 UUID，三个时间字段为 RFC 3339 带时区 instant；窗口必须正好覆盖 PC Timeline 当天 08:00 至 22:30 的起始槽，客户端提交这两个本地时间对应的 instants。服务端以 `windowStartAt` 为半小时网格起点将目标向上取整；按目标顺序检查 Task 完整时长，仅当下一任务的原起始时间早于前项结束时间才将其顺延到前项结束后的第一个半小时槽，原有空档会保留。不含 `targetTaskId` 的普通空白槽位请求维持原有插入顺延。含 `targetTaskId` 的卡片主体请求以锁定后的目标任务结束时间计算首个半小时槽，仅移动被拖任务，目标及其他任务不变；若被拖任务完整区间与任何其他排期冲突或目标后无可用起始槽，则整笔返回 `400 VALIDATION_FAILED`；目标已变化导致结束槽不符返回 `409 RESOURCE_VERSION_CONFLICT`，目标不存在返回资源未找到。`DONE` 任务固定，`CANCELLED` 不占用区间；如果需移动 DONE 或任何顺延起点超过 `windowLastStartAt`，则返回 `400 VALIDATION_FAILED` 并回滚整组。被拖任务和全部实际顺延任务的新完整区间均必须结束于各自截止时间或之前（无截止除外），任一超限整组返回 `400 VALIDATION_FAILED`，所有任务时间和版本保持不变。服务端按 User→Subject(UUID 升序)→相关 Task(UUID 升序) 获取悲观锁并在同一事务中提交。成功返回 HTTP 200 `{tasks:[TaskResponse...]}`，列表只含 `scheduledAt` 实际改变的 Task，按新排期时间和 UUID 排序；每项版本增加 1，并发布普通 `UPDATE` change-log/realtime 事件，客户端后续通过既有 Sync read pull 收敛。版本冲突为 `409 RESOURCE_VERSION_CONFLICT`。本操作是在线 REST 动作，不扩展 Sync inbound mutation 类型。
 - 插入顺延仅移动起始时间处于请求当天窗口内的 Task。前一日开始但区间跨入当天的 Task 保持不动；若它与插入后的排期冲突，整个请求返回 `400 VALIDATION_FAILED`，不改写任何 Task。
 - 所有资源的用户归属均从 Bearer access token 推导；跨用户 ID 统一按未找到处理。版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`，删除后的普通详情/列表不返回墓碑。
+
+PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` 在客户端转换为当地当天 `23:59:59.999` 对应的 UTC ISO instant；例如香港 `2026-10-09` 为 `2026-10-09T15:59:59.999Z`。API 不接收纯日期，不将已提供的午夜或 UTC 日末改解释为全天。未改日期的标题/备注编辑保留原精确截止值。排期插入请求不含 `dueAt`，Server 读取当前任务截止值校验；前端必须采用相同 instant 比较。
 
 ## 阶段 2B Source、Asset、Relation 已构建契约
 
@@ -160,7 +162,69 @@
 
 ## 阶段 4 Review、Stats、Realtime 已实现契约
 
-- `GET /api/reviews/due?at=<RFC3339>&limit=<1..200>` 返回当前用户活动知识块的到期 ReviewState；`POST /api/reviews/events` 接受 `clientEventId`、`knowledgeBlockId`、`rating`、`reviewedAt`、`durationSeconds`、`baseVersion`，rating 为 `AGAIN`、`HARD`、`GOOD`、`EASY`、`SKIP`。SKIP 只写不可变事件，不更新状态；重复 clientEventId 返回首次结果。
+### 2026-10-09 本地复习补传扩展（Service/PC 代码与相关自动验证通过；真实联调待验收）
+
+用户要求完整本地使用并联网同步。下方生命周期请求/历史已按 [本轮计划](../plans/2026-10-09-review-stats-local-first.md)扩展，Service 最终相关32/32、独立OpenAPI9/9及SDK生成通过；PC最终R4 664/664、类型/学科静态/构建通过。PC网络证明使用API adapter，SQLite证明使用真实SQLite测试adapter；真实Tauri/HTTP/双设备未验收。运行中的后端须重建才支持protocolVersion=2，旧协议阻止补传但保留本地数据。
+
+- 五类 POST 可选 `occurredAt`（RFC3339）及 `expectedStateAbsent`（boolean）。省略时间继续用服务端 Clock；显式时间作为操作/调度/历史时间，规范到微秒，最多允许服务器时间后 5 分钟，不早于该 KB 最新已接受命令、lastReviewedAt/lastPracticeAt。超未来 400 VALIDATION_FAILED，倒退 409 RESOURCE_VERSION_CONFLICT，均不写入。
+- `expectedStateAbsent=true` 要求当前无状态，false 要求状态存在，均继续精确检查 baseVersion；省略保留在线规则。它区分无状态与已有 version=0，防止离线首学覆写旧进度。
+- 资源活动/版本/hash 验证仍适用于重放；精确回执早于新时间/存在性验证。同 ID/载荷回放冻结回执，换时间或存在性字段拒绝。两个字段均省略时 fingerprint 保持原结构，不能额外写入两个 null 字段破坏已有回执。
+- 命令 effectiveReview 与 lifecycle/history effectiveReviews 增加可空 `schedulingBaseline`：`{dueAt,mastered,stableSuccessCount,nextReviewStage,lastPracticeAt,stability}`，时间/阶段可空。它是初选前调度快照的公开投影；导入未确认 GOOD/HARD 后本地确认使用该快照，不能从暂定当前状态推断。
+- legacy ReviewEventView 增加 `firstLearning:boolean`，由 SQL NULL before_state 派生，本地统计首学/后续不使用 baseVersion=0 判定。
+- lifecycle/history 顶层固定 `protocolVersion:2`。PC 在任何 lifecycle POST（包括 prepared 重试）前读取并确认该版本；旧后端无字段则保留 pending 并提示更新，不上传。已固化/结果未知的请求不因后续查询而重基；回执 occurredAt 与固化请求规范时间不一致时不得 ACK 或覆盖本机投影。
+- Core Sync 仍只支持五类资源；PC Review outbox 通过现有生命周期 POST 逐 KB FIFO 补传。PC 枚举核心本地全部活动 KB，逐 KB 导入 lifecycle/history 与 legacy history，不调用远端学科 states 分页。先同步 KB，未派发意图在正文一致时才绑定真实版本；已固化请求完整原样重试。冲突保留，不 LWW。学科本地统计不再以 `/stats/subjects/{id}` 的网络可用性作为显示前提；该服务端接口保留。
+- PC 首次准备使用独立云端锚点、完整 lifecycle/legacy/effective 历史和权威 state。Core ACK、纯元信息/父范围更新仅在正文与复习状态/历史不变且版本不回退时绑定实际 KB version；正文更新仅首条未 prepared、无 reviewId 的新正文学习，在严格失效形态及无新增复习历史时绑定 GET 的实际 state version。自身后继仅沿实际前驱 ACK；他端复习、存在性变化或证据不足保留冲突。历史按稳定身份与完整字段比较，后端数组排序不代表新操作。
+
+### 学科复习生命周期（2026-10-08，代码、相关自动验证及只读审查通过；真实联调待验收）
+
+新PC流程使用独立生命周期命令，沿用 `/api/reviews` 与原owner鉴权。未提供操作时间时日期由服务端Clock决定；离线时间补传按上方 2026-10-09 扩展。下方先前events/states/stats交付记录保留原证明范围，原轮次进度见 [实施记录](../plans/2026-10-08-review-learning-mastery-implementation.md)。
+
+| Method | Path | 请求扩展 |
+| --- | --- | --- |
+| POST | `/api/reviews/lifecycle/learning-completions` | 可选 `reviewId` |
+| POST | `/api/reviews/lifecycle/attempts` | `reviewId`、`rating`、可选 `durationSeconds` |
+| POST | `/api/reviews/lifecycle/attempts/{reviewId}/confirmations` | 无 |
+| POST | `/api/reviews/lifecycle/attempts/{reviewId}/corrections` | 无 |
+| POST | `/api/reviews/lifecycle/learning-reopens` | 可选 `reviewId` |
+| GET | `/api/reviews/lifecycle/history?knowledgeBlockId=<UUID>` | 无请求体 |
+
+- 五个POST共同必填 `clientCommandId,knowledgeBlockId,knowledgeBlockVersion,contentHash,baseVersion`；UUID为字符串，rating仅 `AGAIN/HARD/GOOD`。contentHash为实际回忆正文原字符串UTF-8的SHA-256小写64位hex，不trim、不做Unicode或换行归一化。服务端在owner知识块锁后验证版本及正文，未同步正文不能凭旧服务端版本获得正式评分资格。
+- 成功回执为 `commandId,clientCommandId,action,occurredAt,knowledgeBlockVersion,state,effectiveReview`。action为 `LEARNING_COMPLETED/REVIEW_SELECTED/REVIEW_CONFIRMED/REVIEW_CORRECTED/LEARNING_REOPENED`，state为完整非空当前命令后状态。effectiveReview可空，有值时为 `reviewId,selectedRating,effectiveRating,selectedAt,resolvedAt,resolution,schedulingBaseline`；初选GOOD/HARD未核对时effectiveRating/resolvedAt/resolution可空，最终resolution为 `AGAIN_SELECTED/CONFIRMED/CORRECTED_AGAIN`。schedulingBaseline字段按上方离线协议公开。
+- ReviewStateView扩展 `knowledgeBlockVersion,needsLearning,mastered,stableSuccessCount,nextReviewStage,lastPracticeAt,lastReviewId,pendingReviewId,contentHash`。stableSuccessCount为0–3；nextReviewStage为 `EARLY_RECALL/CROSS_DAY/FINAL_VERIFICATION` 或null，其余业务ID/时刻可null，历史迁移state的contentHash可空。state.version保持乐观版本，缺状态首次创建使用baseVersion=0；不能只靠version=0判首次。
+- 同clientCommandId与同载荷精确返回冻结回执，异载荷 `409 MUTATION_REJECTED`；状态或内容资格冲突 `409 RESOURCE_VERSION_CONFLICT`，附服务端当前状态。旧成功重放也必须通过当前活动资源与正文资格，禁止重新绑定已删除或已改正文的旧结果。
+- 初选立即保存日期；GOOD/HARD由confirmations确认，corrections关联同reviewId从初选前基准纠正为AGAIN。最终有效结果计一次，未核对GOOD/HARD不计完成。确认沿初选时间锚点，纠正按纠正时间；learning-completions独立记录学习，不伪装为额外GOOD。
+- 首次学习3天，HARD初始1天，AGAIN及重新学习10分钟；10分钟再回忆GOOD后3天、稳定次数仍0。合法到期跨天GOOD核对后按7/14/30天推进，最终至少30天验证且核对成功持久化mastered。mastered/needsLearning均排除自动due；手动失败、明确重学或正文实质变化可以重新开启。
+- lifecycle/history仅返回新审计 `{protocolVersion:2,knowledgeBlockId,knowledgeBlockVersion,state,commands,effectiveReviews}`，state无记录可空。commands按occurredAt/commandId升序，每项为 `commandId,clientCommandId,action,occurredAt,reviewId,rating,durationSeconds,baseVersion,knowledgeBlockVersion`，reviewId/rating/durationSeconds可空。effectiveReviews按selectedAt/reviewId升序，每项为 `reviewId,selectedRating,effectiveRating,selectedAt,resolvedAt,resolution,schedulingBaseline`；未确认可空，新初选、旧端操作或正文变更替代未确认初选时为 `SUPERSEDED`，无有效结果且不计完成。旧 `/history` 保留旧事件并返回派生firstLearning，PC合并读取；审计命令条数不作为正式复习量。
+- 学科overview新增 `pendingLearningCount,reviewingCount,masteredCount`，三类互斥且和为activeKnowledgeBlockCount。dueReviewCount为reviewing已到期子集；newLearningCount仅统计无state，scheduledReviewCount统计reviewing未来到期子集，这两个保留字段不用于新PC三态分区。daily新增 `learningCompletionCount,distinctStudiedKnowledgeBlockCount`；原复习量/不同KB/反馈分布组合旧非SKIP事件与新最终有效结果，确认与纠正归初选本地日期，学习完成归完成日期。专注仍只在个人页。
+
+### 学科复习状态与统计（2026-10-08，代码、相关自动验证与只读审查通过；真实联调待验收）
+
+- `GET /api/reviews/states?subjectId=<UUID>&cursor=<opaque>&limit=<1..200>` 使用现行 `{items,nextCursor,hasMore}`，默认 limit 为 50。items 为完整 `ReviewStateView`，包含当前用户、活动学科中活动知识块的到期及未来状态；无状态知识块不注入虚构行。按 knowledgeBlockId 升序 keyset 分页，过滤发生在 limit 前，游标绑定用户与学科范围；跨范围或非法游标返回 `400 VALIDATION_FAILED`，不存在或跨用户学科按未找到处理。
+- `GET /api/stats/subjects/{subjectId}?days=7|30&timeZone=<IANA>` 返回 `SubjectStatsView`。days 仅接受 7 或 30，timeZone 为服务端支持的 IANA 区域 ID（包括 UTC）；非法参数返回 `400 VALIDATION_FAILED`。所有聚合先校验当前用户的活动学科，并以同一可重复读事务读取。
+- 顶层字段为 `subjectId,generatedAt,timeZone,from,to,overview,daily,ratingCounts`；from/to 是包含首尾的本地日期，to 为请求时该时区的今天。每天使用 `[dayStart,nextDayStart)`，按日期升序返回 7 / 30 项并补零；现行用户级 weekly 仍为 UTC 七天，不改语义。
+- overview 返回资料、知识块和任务原计数字段，以及 `newLearningCount,dueReviewCount,scheduledReviewCount,pendingLearningCount,reviewingCount,masteredCount`。无state计newLearningCount；reviewing的到期/未来子集分别计dueReviewCount/scheduledReviewCount。当前互斥分区为pendingLearning/reviewing/mastered，三者之和等于活动KB总数；资料总量由三种Source相加。
+- daily 每项包含 `date,nonSkipReviewEventCount,distinctReviewedKnowledgeBlockCount,firstLearningKnowledgeBlockCount,subsequentReviewKnowledgeBlockCount,createdKnowledgeBlockCount,completedTaskCount,learningCompletionCount,distinctStudiedKnowledgeBlockCount`。正式复习组合legacy非SKIP事件与新effectiveRating非空结果，按初选日期计量；legacy首次/后续仍由before_state是否SQL NULL判定，新生命周期有效复习归subsequent，学习完成单独计量。不同KB按日去重，不用baseVersion=0判首次。
+- ratingCounts包含 `againCount,hardCount,goodCount,easyCount`，组合范围内legacy非SKIP事件与新同次最终有效结果，不表示长期掌握率。学习内部循环和成功末尾巩固不增加正式结果；失败可能纠正同次结果为AGAIN，不增加第二次复习。统计不返回专注字段。
+- 历史事件按 KB 当前活动学科归属，评分与新增 KB 趋势保留已软删除 KB 的历史，当前状态概况只包含活动 KB。任务按当前学科归属；completedTaskCount 仅计当前 DONE 且 completed_at 落在当日的任务，保留已完成软删除历史，不恢复重新打开任务的旧完成转换。资料、任务、知识与事件独立聚合，避免多表 fanout。
+- `/events` 与旧 `/history` 保留legacy五档事件/不可变回放；新PC使用上方生命周期协议。`/due` 排除mastered与needsLearning状态。V29新增状态字段和独立命令/有效结果表，不新增core Sync资源；临时轮次仍仅内存。此小节基础交付的旧命令记录只证明当时版本，新机制门槛见本轮实施记录。
+- 实现、生成契约和自动验证进度见 [实施计划](../plans/2026-10-08-subject-review-stats-implementation.md)；GUI、真实 HTTP/Tauri 与多端业务验收独立记录。
+
+### 专注记录与统计（2026-10-01，服务端代码与聚焦自动验证）
+
+- `POST /api/focus-sessions` 接收 `{clientSessionId,taskId?,startedAt,endedAt,durationSeconds,completed}`，时间为 RFC3339。owner 从当前 access token 获取；taskId 只校验用户归属，允许任务后来完成、取消或软删除时补传历史。时长为 0–86400 秒且不得超过时间区间，结束不得早于开始，时间不得超过服务器当前时刻 5 分钟。暂停、休息不由客户端计入，只有自然结束传 completed=true。成功 HTTP 200 返回 `{id,clientSessionId,taskId,startedAt,endedAt,durationSeconds,completed,createdAt}`；非法时间返回 VALIDATION_FAILED，跨用户任务按 RESOURCE_NOT_FOUND 处理。
+- 同一用户与 clientSessionId 的相同规范载荷回放同一结果，异载荷拒绝；时间落库与回放比较统一到数据库微秒精度。最终记录持久化后才由客户端 ACK 本地队列。
+- Stats overview 与 weekly 每日项新增 `focusSeconds/focusCompletedCount`。原 `studySeconds` 保持复习事件耗时含义；PC 个人空间学习时长/专注次数读取专注字段，不盲目叠加未确认的本地 pending 数量。
+
+### 完整 Overview 结果持久化（2026-10-01，服务端代码与聚焦自动验证）
+
+- 独立 `GET/PUT /api/overview-results/sources/{sourceId}` 与 `GET/PUT /api/overview-results/subjects/{subjectId}`，不扩展五类核心 Sync inbound mutation。Source GET 可带 ingestionRevision，仅返回当前活动 READY 资料对应的结果。
+- PUT 为 `{baseVersion,clientWriteId,mode,ingestionRevision?,sourceManifest?,inputFingerprint?,outlineGeneratedAt?,summaryGeneratedAt?,result}`；result 保留现有 OverviewResponse 内容 schemaVersion/title/outline/summary。首次或当前结果失效后的 seed 必须 ALL 且两部分完整；后续分项写入原子保留另一项。
+- FILE 校验当前 owner、活动 READY Source 与 ingestionRevision，inputFingerprint 可空。SUBJECT 的当前 manifest 只包含所属学科的活动 READY FILE Source，符合本轮 PC 文件 Overview 生成范围；TEXT/URL 不进入该集合。服务端校验来源归属、当前修订、已持久化文件结果 part versions 与输入 fingerprint，GET/PUT 使用同一来源集合。
+- Subject manifest entry 为 `{sourceId,ingestionRevision,outlineVersion,summaryVersion}`，按小写 Source UUID 排序。OUTLINE 不依赖的 summaryVersion 为 null，SUMMARY 不依赖的 outlineVersion 为 null，ALL 两者必须为正数。fingerprint 为 UTF-8 SHA-256：`AURALIS-SUBJECT-OVERVIEW-MANIFEST-V1\n` 后逐项 `sourceId\tingestionRevision\toutlineVersion-or--\tsummaryVersion-or--\n`，LF 换行、十进制版本。
+- 返回 `id/scopeType/sourceId/subjectId/ingestionRevision/version/outlineVersion/summaryVersion/schemaVersion/title/outline/summary/outlineSourceManifest/summarySourceManifest/outlineInputFingerprint/summaryInputFingerprint/outlineGeneratedAt/summaryGeneratedAt/updatedAt`。FILE 两个 fingerprint 可空；客户端由 scopeType 和相应 ID 确定 scopeId。
+- whole-record baseVersion 冲突拒绝，不做 LWW；独立持久 write receipt 保证 clientWriteId 同载荷回放、异载荷拒绝。回放仍受资料活动状态和当前修订约束。提交后发布 `OVERVIEW_UPDATED`，客户端重新对账。生成进度、错误和失败记录不进入远端产物。
+
+- `GET /api/reviews/due?at=<RFC3339>&limit=<1..200>` 返回当前用户活动知识块中未掌握、无需重新学习的到期ReviewState；`POST /api/reviews/events` 接受 `clientEventId`、`knowledgeBlockId`、`rating`、`reviewedAt`、`durationSeconds`、`baseVersion`，rating 为 `AGAIN`、`HARD`、`GOOD`、`EASY`、`SKIP`。SKIP 只写不可变事件，不更新状态；重复 clientEventId 返回首次结果。
 - `GET /api/reviews/history?knowledgeBlockId=...` 返回当前用户的不可变复习历史。默认 `FSRS_LITE` 参数集为版本 1，调度结果由状态、评分、时间和参数版本确定。
 - `GET /api/stats/overview?at=<RFC3339>` 返回活动知识块、活动任务、到期复习、已完成复习和活动来源的强类型统计；`GET /api/stats/weekly?from=<date>&to=<date>` 只接受连续 7 天，并按 UTC 日期返回复习、学习秒数、完成任务和新增知识块计数。
 - `POST /api/realtime/ticket` 不接受请求体，服务端从 Bearer access JWT 的 `serverDeviceId` 解析并校验当前设备，返回一次性短期 `{ticket,expiresAt,websocketUrl}`；`/ws/events` 仅接受 WebSocket upgrade，不提供 HTTP `GET` 订阅回退。握手通过 query `ticket` 或 `X-Realtime-Ticket` 认证，不能把 Bearer access token 放入 WebSocket URL；领域写入提交后才发布 `SYNC_CHANGED`/`REVIEW_UPDATED` 事件，同用户的进程内订阅者接收通知。ticket 只持久化 hash，不能跨用户、重用或过期使用。
@@ -195,15 +259,20 @@
 - `GET /api/ai/settings/{provider}/models` 返回 `{provider,models}`，可选地读取已保存 BYOK Provider 的 `GET /models`，按 `data[].id` 最多提取 200 个模型；不支持该端点的服务仍可手动填写 `chatModel`。`POST /api/ai/settings/{provider}/test-connection` 使用已保存的聊天模型发起最小 `POST /chat/completions` 请求，返回 `{provider,reachable,chatModel}`，不依赖 `/models`。两者均不读取 env 默认凭据，也不接收临时明文密钥。未保存配置返回 `503 MODEL_UNAVAILABLE`；无效/不安全地址返回 `400 VALIDATION_FAILED`；上游认证拒绝或响应格式无效返回 `502 MODEL_PROVIDER_ERROR`；超时返回 `504 MODEL_TIMEOUT`，429 返回 `RATE_LIMITED`，上游 5xx 返回 `503 MODEL_UNAVAILABLE`。`OPENAI_COMPATIBLE` 是通用协议类型，服务商名称不单独持久化。
 - `POST /api/ai/conversations` 创建会话；请求可选 `clientRequestId`，同一用户重放同一非空值必须返回同一会话，供离线会话恢复使用。`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息和会话 `version`；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 必须携带当前 `baseVersion` 并执行 owner-scoped 软删除，版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`。
 - `POST /api/ai/messages/stream` 使用 `text/event-stream`，请求包含 `conversationId`、`content`、可选 `provider`、`retrievalEnabled`、`topK` 和可选 `clientRequestId`。省略 `provider` 时使用 `auralis.ai.default-provider`；`topK` 必须为正整数且不超过 `auralis.ai.max-retrieved-chunks`（当前 DTO 上限为 32）；同一用户的 `clientRequestId` 重试会回放已持久化结果，不重复创建 USER 消息或调用 Provider。相同会话并发请求会在短事务中先唯一保留 USER 消息，Provider I/O 不持有数据库事务；assistant 仅关联其对应的 USER 消息。事件为 `message.started`、零个或多个 `citation`、零个或多个 `message.delta`、`message.completed`、`message.error`；citation 包含 `sourceId`、`chunkId`、ordinal、标题、excerpt 和 similarity，USER 消息先持久化，ASSISTANT 成功、失败或断流状态随后持久化。
+- `POST /api/ai/messages/stream` 支持独立可选 `selectionText`（最多 4000 字符），不依赖 `readingContext` 或资料检索开关。顶层值非 null 时优先于现行 `readingContext.selectionText`，空白值明确不使用引用；顶层省略/null 时读取嵌套引用。没有 readingContext 且 retrievalEnabled=false 的引用提问不触发检索/embedding。模型请求将引用作为 USER 资料、固定 SYSTEM 指令约束资料内命令不可执行；为完整固定说明、当前问题和引用预留总 prompt 字符预算，再保留最新完整历史对及剩余检索文本。当前问题与引用无法同时容纳时返回 400 `VALIDATION_FAILED`，不静默截断引用。引用只用于当前请求，不改变 USER 消息持久化内容、citation、locator 或请求回放语义。
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
 - `POST /api/ai/source-overviews` 接受 `{sourceId,mode,instruction?}`；`POST /api/ai/subject-overviews` 接受 `{subjectId,mode,instruction?,sources}`。客户端可通过 `X-Overview-Request-Id` 传递本次尝试的关联 ID；服务端日志为每次生成记录 `generationId`，并按 user/source/revision 和 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 阶段关联。两者都从 Bearer access token 推导 user，拒绝 `userId`、Provider 凭据及非当前 owner 的 Source/Subject。`mode` 只能为 `ALL`、`OUTLINE`、`SUMMARY`；响应固定为 `{schemaVersion:1,title,outline,summary}`，其中 `OUTLINE` 的 `summary` 为 `null`，`SUMMARY` 的 `outline` 为 `null`，`ALL` 两项均非 null；可空响应字段仍是契约的一部分而非缺省字段。
 - `instruction` 最长 2,000 字符，Subject `sources` 必须为 1–100 项且不能重复 Source；响应 title 最长 300 字符、最多 60 个 chapter/500 个 section/100 个 key point，所有 prose 字段最长 4,000 字符。Source overview 只读取 owner-scoped `READY` Source 的 active chunks；Subject overview 按请求 mode 要求每个输入拥有相应非空 outline/summary，逐项验证 Source 属于请求 Subject 和当前 user，并将服务端 Source UUID 映射为短别名后才交给模型。
-- 模型只接收固定 SYSTEM schema/安全规则与独立的 USER 数据字段（instruction、title、chunks/map JSON、显式 alias）；USER 资料内命令不能改变 SYSTEM 规则。回复仅接受单个 JSON object 或单个 `json` fenced block；服务端拒绝包围 prose、malformed JSON、未知/重复 Source alias、过量节点及任何 locator（当前 chunks 没有可信页码/block alias，输出 `locator` 必须为 `null`），并只在最终响应映射为实际 Source UUID。多 batch Source MAP 与非最终 multi-group REDUCE 是 intermediate，使用 `max_tokens=4608`；single-batch Source MAP、Subject direct 与最终单 group REDUCE 是 final，使用 `max_tokens=6144`。Intermediate 规范化 JSON 必须 `<=5200` 字符且 self-pair prompt fit（`<=12000`），Reduce 每轮结果数量必须严格下降；不自动压缩重试。所有 Overview 调用继续使用内部 structured JSON 标记要求 OpenAI-compatible `json_object` response format；DeepSeek completion 同时关闭 thinking，且不会把 `reasoning_content` 回退为最终 JSON。普通聊天/流式请求不启用该标记，公开请求/响应 DTO 不变。两个端点同步且无状态：不创建 Conversation/Message、同步资源、数据库表或迁移；结果由 PC 的 owner/device-scoped 派生缓存保存。客户端输入验证、instruction 或输入 prompt 不合法返回 400 `VALIDATION_FAILED`；Provider 输出 parse/schema/alias/locator 等其它无效错误返回 502 `MODEL_PROVIDER_ERROR`；中间输出预算超限返回 502 `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE`；Reduce 无进展返回 502 `OVERVIEW_REDUCE_NO_PROGRESS`；Provider 不可用返回 `MODEL_UNAVAILABLE`。公开 API route、DTO、OpenAPI schema 未因该内部预算策略变化。
+- 模型只接收固定 SYSTEM schema/安全规则与独立的 USER 数据字段（instruction、title、chunks/map JSON、显式 alias）；USER 资料内命令不能改变 SYSTEM 规则。回复仅接受单个 JSON object 或单个 `json` fenced block；服务端拒绝包围 prose、malformed JSON、未知/重复 Source alias、过量节点及任何 locator（当前 chunks 没有可信页码/block alias，输出 `locator` 必须为 `null`），并只在最终响应映射为实际 Source UUID。多 batch Source MAP 与非最终 multi-group REDUCE 是 intermediate，使用 `max_tokens=4608`；single-batch Source MAP、Subject direct 与最终单 group REDUCE 是 final，使用 `max_tokens=6144`。Intermediate 规范化 JSON 必须 `<=5200` 字符且 self-pair prompt fit（`<=12000`），Reduce 每轮结果数量必须严格下降；不自动压缩重试。所有 Overview 调用继续使用内部 structured JSON 标记要求 OpenAI-compatible `json_object` response format；DeepSeek completion 同时关闭 thinking，且不会把 `reasoning_content` 回退为最终 JSON。普通聊天/流式请求不启用该标记，公开请求/响应 DTO 不变。两个端点同步且无状态：不创建 Conversation/Message、同步资源、数据库表或迁移；结果先由 PC 的 owner/device-scoped 派生缓存保存，完整成功产物再经独立 Overview results GET/PUT 持久化与对账。客户端输入验证、instruction 或输入 prompt 不合法返回 400 `VALIDATION_FAILED`；Provider 输出 parse/schema/alias/locator 等其它无效错误返回 502 `MODEL_PROVIDER_ERROR`；中间输出预算超限返回 502 `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE`；Reduce 无进展返回 502 `OVERVIEW_REDUCE_NO_PROGRESS`；Provider 不可用返回 `MODEL_UNAVAILABLE`。公开 API route、DTO、OpenAPI schema 未因该内部预算策略变化。
 - TEXT/URL Source 创建、更新和 reingest 与对应 ingestion job 在同一事务持久化，job 入队失败则 Source 与 change log 一起回滚；恢复处于 `PENDING/PARSING/INDEXING` 的 TEXT/URL Source 时，按当前 revision 原子补建或复用活跃 job，`READY/FAILED` 不自动重跑；FILE 继续等待 ParsedDocument complete。TEXT 正文或 URL 地址等解析输入变化轮换只读 `ingestionRevision`，不同修订分别建 job，同修订活跃 job 可复用。启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行；提交前核对 Source revision、job/generation、attempt 和在取得行锁后仍有效的 lease，旧 worker 不得覆盖新修订的 Source/chunks。租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。PostgreSQL 使用 pgvector SQL/HNSW 执行用户隔离的 cosine 检索；H2 保留 JSON embedding 的确定性 cosine fallback。
 - SSE 使用 Spring MVC `StreamingResponseBody`，Controller 通过回调把 Provider 增量直接写入响应，不先构造完整事件列表；OpenAI-compatible 适配器解析上游 SSE 的 `data:` 增量、`[DONE]`、超时、429/5xx 和 malformed event。当前自动证据为 Stub/受控 HTTP，不代表真实 Provider 网络、证书、配额或前端联调已通过。文件解析当前只覆盖文本型 MIME，不声称 PDF/DOCX 全格式支持。
 - Provider `baseUrl` 只允许 HTTPS、无 userinfo/query/fragment、无危险端口（默认或显式 443）。`DEEPSEEK` 与 `SILICONFLOW` 的 host 必须精确匹配 `AURALIS_AI_ALLOWED_PROVIDER_HOSTS`；`OPENAI_COMPATIBLE` 允许用户指定公网 HTTPS host。保存和实际请求前执行地址安全校验，实际连接固定到已检查的公网 DNS 地址，Provider 重定向关闭；本地、内网及 NAT64、6to4、Teredo IPv6 转换前缀不在通用 Provider 范围内。
 - Provider 请求使用独立的 `AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS` 连接超时与 `AURALIS_AI_REQUEST_TIMEOUT_MILLIS` 普通聊天/流式/embedding response-read 窗口；Overview map/reduce 非流式 completion 使用可配置的 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`（默认 120000ms，允许范围 60000–120000ms）。连接超时只用于固定地址 TLS socket，普通请求 response/read 默认 10000ms。`SocketTimeoutException` 返回稳定 `MODEL_TIMEOUT`（HTTP 504），其它 IOException 仍为 `MODEL_UNAVAILABLE`（HTTP 503），429/5xx/400 的既有映射不变；来源 URL 保留 HTTP/HTTPS，但每个手动重定向都会重新校验并重新固定 DNS 地址。BYOK key 只以 AES-GCM 密文存储，设置响应、异常和 `toString()` 不输出 key。
 - 阶段 5 的自动证据包括 H2/JPA/MockMvc、Stub Provider、Flyway V1–V14、架构测试、出站安全专项，以及默认 `clean test` 的真实 PostgreSQL 17/pgvector 与 MinIO Testcontainers。R1-03 已验证 HNSW、vector(1024) 写入、用户隔离、generation 原子切换、失败回滚和 Source 删除过滤；R1-04/R1-05 增加了会话恢复键、同一请求并发保留、精确 assistant 关联及流式回放测试。真实 Provider 网络/证书/限流、浏览器前端联调和人工业务验收仍未完成。
+
+## PC 本地数据库初始化命令（2026-10-01）
+
+内部 Tauri invoke `initialize_local_database_pool` 无参数，成功返回 void，失败拒绝并返回本地数据库错误。仅操作已由 SQL 插件加载的固定 `sqlite:auralis.db`，不接受任意路径或 SQL。PC 在 `Database.load` 后、暴露数据库及任何业务 SQL 前调用；失败阻止初始化成功。命令沿用原连接参数，将插件池替换为 max/min connections 均为 1、禁用正常 idle/lifetime 回收的池，再关闭旧池。既有 JS SQL 队列继续串行化，确保分次调用的 BEGIN/COMMIT 使用同一连接；独立 native snapshot 事务保持原实现。
 
 ## PC Tauri AI 辅助阅读契约（2026-08-23，2026-08-26 已实现代码门禁，真实联调与验收待完成）
 

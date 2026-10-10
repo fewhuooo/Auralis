@@ -107,11 +107,11 @@ class SubjectDeletionCascadeTests {
         var otherSource = sourceService.create(other.user().id(), new SourceCommand(
                 otherSubject.id(), SourceType.TEXT, "Other source", null, null, "text", null));
         var deletedBlock = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
-                deletedSubject.id(), deletedSource.id(), "Deleted block", null, "body", List.of(), null));
+                deletedSubject.id(), deletedSource.id(), "Deleted block", "body", null));
         var retainedBlock = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
-                retainedSubject.id(), retainedSource.id(), "Retained block", null, "body", List.of(), null));
+                retainedSubject.id(), retainedSource.id(), "Retained block", "body", null));
         var otherBlock = knowledgeBlockService.create(other.user().id(), new KnowledgeBlockCommand(
-                otherSubject.id(), otherSource.id(), "Other block", null, "body", List.of(), null));
+                otherSubject.id(), otherSource.id(), "Other block", "body", null));
         var deletedTask = taskService.create(owner.user().id(), new TaskCommand(
                 deletedSubject.id(), "Deleted task", null, null, null, null, null, "001"));
         var retainedTask = taskService.create(owner.user().id(), new TaskCommand(
@@ -203,7 +203,7 @@ class SubjectDeletionCascadeTests {
         var source = sourceService.create(owner.user().id(), new SourceCommand(
                 subject.id(), SourceType.TEXT, "Rollback source", null, null, "text", null));
         var block = knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
-                subject.id(), source.id(), "Rollback block", null, "body", List.of(), null));
+                subject.id(), source.id(), "Rollback block", "body", null));
         var task = taskService.create(owner.user().id(), new TaskCommand(
                 subject.id(), "Rollback task", null, null, null, null, null, "001"));
         var subjectRelation = relationService.create(owner.user().id(), new RelationCommand(

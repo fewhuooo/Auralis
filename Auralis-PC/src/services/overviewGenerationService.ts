@@ -23,6 +23,8 @@ interface FileSource {
 
 interface SourceApi { get(sourceId: string): Promise<FileSource | null> }
 interface OverviewRepositoryLike {
+  captureScopeFenceToken(scopeType: 'FILE' | 'SUBJECT', scopeId: string): { userId: string; serverDeviceId: string; scopeType: 'FILE' | 'SUBJECT'; scopeId: string; generation: number }
+  isScopeFenceTokenCurrent(token: { userId: string; serverDeviceId: string; scopeType: 'FILE' | 'SUBJECT'; scopeId: string; generation: number }): boolean
   getFileOverview(sourceId: string, ingestionRevision: string): Promise<FileOverviewRecord | null>
   saveFileOverviewPart(input: { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse }): Promise<unknown>
   markFileOverviewFailed(sourceId: string, ingestionRevision: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
@@ -41,6 +43,7 @@ interface Options {
   listLocalFileOverviews?: (subjectId: string) => Promise<FileOverviewRecord[]>
   requestIdFactory?: () => string
   isFileGenerationEligible?: (sourceId: string, ingestionRevision: string) => Promise<boolean>
+  isFileScopeRestorable?: (sourceId: string) => Promise<boolean>
   getLocalFileGenerationRevision?: (sourceId: string) => Promise<string | null>
 }
 
@@ -118,6 +121,7 @@ export class OverviewGenerationService {
   private readonly listLocalFileOverviews?: Options['listLocalFileOverviews']
   private readonly requestIdFactory: () => string
   private readonly isFileGenerationEligibleCallback?: Options['isFileGenerationEligible']
+  private readonly isFileScopeRestorableCallback?: Options['isFileScopeRestorable']
   private readonly getLocalFileGenerationRevision?: Options['getLocalFileGenerationRevision']
   private readonly inFlight = new Map<string, InFlightFile>()
   private readonly blockedSourceIds = new Set<string>()
@@ -133,6 +137,7 @@ export class OverviewGenerationService {
     this.listLocalFileOverviews = options.listLocalFileOverviews
     this.requestIdFactory = options.requestIdFactory ?? defaultRequestId
     this.isFileGenerationEligibleCallback = options.isFileGenerationEligible
+    this.isFileScopeRestorableCallback = options.isFileScopeRestorable
     this.getLocalFileGenerationRevision = options.getLocalFileGenerationRevision
   }
 
@@ -211,6 +216,17 @@ export class OverviewGenerationService {
     }
     await this.repository.removeFileOverviews(sourceId)
     await Promise.all([...affectedSubjects].map((subjectId) => this.repository.removeSubjectOverview(subjectId)))
+  }
+
+  async restoreFileOverview(sourceId: string): Promise<boolean> {
+    if (!this.isFileScopeRestorableCallback) return false
+    const token = this.repository.captureScopeFenceToken('FILE',sourceId)
+    if (!this.repository.isScopeFenceTokenCurrent(token)) return false
+    let restorable = false
+    try { restorable = await this.isFileScopeRestorableCallback(sourceId) } catch { return false }
+    if (!restorable || !this.repository.isScopeFenceTokenCurrent(token)) return false
+    this.blockedSourceIds.delete(sourceId)
+    return true
   }
 
   async resumePending(trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult[]> {
@@ -351,7 +367,7 @@ export class OverviewGenerationService {
           return skippedResult('SOURCE_NOT_ELIGIBLE')
         }
         const generated = await this.api.generateSourceOverview(request, { requestId, signal: controller.signal })
-        if (!(await this.isEligible(sourceId, revision)) || !(await this.isCurrentReady(sourceId, revision))) {
+        if (controller.signal.aborted || !(await this.isEligible(sourceId, revision)) || !(await this.isCurrentReady(sourceId, revision))) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE' })
           return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
         }

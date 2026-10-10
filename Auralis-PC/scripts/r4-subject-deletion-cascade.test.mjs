@@ -311,3 +311,70 @@ test('rejected Subject DELETE reprojects a local-only draft and preserves its as
   assert.equal((await repo.read('SOURCE', 'source-local-reject'))?.deletedAt, null)
   assert.equal((await repo.listUnresolved()).some((item) => item.resourceType === 'SOURCE'), false)
 })
+
+async function assertDeletedSubjectFenceSurvivesCleanupFailure(failurePoint) {
+  const storage = createMemoryStorage()
+  const subjectId = `subject-delete-${failurePoint}-failure`
+  const repo = new LocalRepository('user-delete-cleanup-failure', `device-${failurePoint}-failure`, { storage, now: () => now })
+  await repo.upsert('SUBJECT', subjectId, { id: subjectId, name: 'Local subject' }, { version: 2 })
+  const overview = new OverviewRepository('user-delete-cleanup-failure', `device-${failurePoint}-failure`, { storage, now: () => now })
+  const originalResponse = {
+    title: 'Existing result',
+    outline: [{ title: 'Chapter', sections: [{ title: 'Section', summary: 'Text', sourceIds: ['source-a'], locator: null }] }],
+    summary: { overview: 'Original summary', keyPoints: ['Point'], learningPath: ['Chapter'] },
+  }
+  await overview.saveSubjectOverviewPart({ subjectId, mode: 'ALL', inputFingerprint: 'fingerprint', response: originalResponse })
+  await repo.commitMutation({
+    resourceType: 'SUBJECT', resourceId: subjectId, value: { id: subjectId, name: 'Local subject' }, version: 2,
+    deletedAt: now, mutation: mutation('SUBJECT', subjectId, 'DELETE'),
+  })
+
+  let cancelCalls = 0
+  let failCascadeOnce = failurePoint === 'cascade'
+  let failOverviewCleanupOnce = failurePoint === 'overview-cleanup'
+  const scopedOverview = {
+    beginScopeDeletion: overview.beginScopeDeletion.bind(overview),
+    completeScopeDeletion: overview.completeScopeDeletion.bind(overview),
+    cancelScopeDeletion(ticket) { cancelCalls += 1; return overview.cancelScopeDeletion(ticket) },
+    reactivateRestoredScope: overview.reactivateRestoredScope.bind(overview),
+    removeFileOverviews: overview.removeFileOverviews.bind(overview),
+    async removeSubjectOverview(id) {
+      if (failOverviewCleanupOnce) { failOverviewCleanupOnce = false; throw new Error('OVERVIEW_CLEANUP_FAILED') }
+      return overview.removeSubjectOverview(id)
+    },
+  }
+  const originalCascade = repo.tombstoneSubjectChildren.bind(repo)
+  repo.tombstoneSubjectChildren = async (...args) => {
+    if (failCascadeOnce) { failCascadeOnce = false; throw new Error('SUBJECT_CASCADE_FAILED') }
+    return originalCascade(...args)
+  }
+  const coordinator = new SubjectDeletionCoordinator({ repo, overview: scopedOverview })
+
+  await assert.rejects(coordinator.reconcileDeletedSubject(subjectId), new RegExp(failurePoint === 'cascade'
+    ? 'SUBJECT_CASCADE_FAILED' : 'OVERVIEW_CLEANUP_FAILED'))
+
+  assert.equal(cancelCalls, 0, 'a durable parent tombstone must keep its Overview lifecycle fence after child cleanup fails')
+  assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('SUBJECT', subjectId)), false)
+  await assert.rejects(overview.saveSubjectOverviewPart({
+    subjectId, mode: 'ALL', inputFingerprint: 'late-fingerprint',
+    response: { ...originalResponse, title: 'Late stale save' },
+  }), /OVERVIEW_SCOPE_DELETED/)
+  assert.equal((await overview.getSubjectOverview(subjectId))?.title, 'Existing result')
+
+  await coordinator.reconcileDeletedSubject(subjectId)
+  assert.equal(cancelCalls, 0)
+  assert.equal(overview.isScopeFenceTokenCurrent(overview.captureScopeFenceToken('SUBJECT', subjectId)), false)
+  assert.equal(await overview.getSubjectOverview(subjectId), null, 'the existing reconciliation path retries deferred cleanup')
+  await assert.rejects(overview.saveSubjectOverviewPart({
+    subjectId, mode: 'ALL', inputFingerprint: 'retry-late-fingerprint',
+    response: { ...originalResponse, title: 'Late stale save after retry' },
+  }), /OVERVIEW_SCOPE_DELETED/)
+}
+
+test('a failed Subject cascade keeps the durable deletion fence and rejects a late Overview save', async () => {
+  await assertDeletedSubjectFenceSurvivesCleanupFailure('cascade')
+})
+
+test('a failed Subject Overview cleanup keeps the durable deletion fence and rejects a late Overview save', async () => {
+  await assertDeletedSubjectFenceSurvivesCleanupFailure('overview-cleanup')
+})

@@ -2,6 +2,58 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { register } from 'node:module';
+import axios from 'axios';
+
+let activeRequestAdapter = async (config) => ({
+  data: {},
+  status: 200,
+  statusText: 'OK',
+  headers: {},
+  config,
+});
+axios.defaults.adapter = (config) => activeRequestAdapter(config);
+
+function createDeferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function axiosResponse(config, data = {}) {
+  return { data, status: 200, statusText: 'OK', headers: {}, config };
+}
+
+function axiosUnauthorized(config) {
+  const error = new Error('adapter returned 401');
+  error.config = config;
+  error.response = { status: 401, data: {}, headers: {}, config };
+  return error;
+}
+
+function requestAuthorization(config) {
+  return typeof config.headers?.get === 'function'
+    ? config.headers.get('Authorization')
+    : config.headers?.Authorization;
+}
+
+function requestPayload(config) {
+  return typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+}
+
+async function waitForSignal(promise, label, timeoutMs = 300) {
+  let timer;
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const signaled = promise.then(() => true);
+  const result = await Promise.race([signaled, timedOut]);
+  clearTimeout(timer);
+  assert.equal(result, true, `Timed out waiting for ${label}`);
+}
 
 const srcRootUrl = new URL('../src/', import.meta.url).href;
 const loaderCode = `
@@ -117,6 +169,220 @@ test('snapshot normalizes missing arrays and keeps tombstone-capable resource li
     assert.deepEqual(snapshot.relations, []);
   } finally {
     request.get = originalGet;
+  }
+});
+
+test('core sync refresh for B does not join A refresh, and stale A success cannot replace B tokens', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  const setSession = (id, accessToken, refreshToken) => {
+    authStore.user = { id, email: `${id}@example.com` };
+    authStore.tokens = { accessToken, refreshToken };
+    authStore.sessionId = `session-${id}`;
+    authStore.serverDeviceId = `device-${id}`;
+    authStore.authStatus = 'authenticated';
+  };
+  const scopeFor = (sessionId) => ({
+    key: Symbol(sessionId),
+    isCurrent: () => authStore.sessionId === sessionId,
+  });
+  const startedRefreshA = createDeferred();
+  const startedRefreshB = createDeferred();
+  const releaseRefreshA = createDeferred();
+  const releaseRefreshB = createDeferred();
+  const calls = [];
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    const url = config.url ?? '';
+    const authorization = requestAuthorization(config);
+    calls.push({ url, authorization, payload: requestPayload(config) });
+    if (url === '/api/auth/refresh') {
+      const refreshToken = requestPayload(config)?.refreshToken;
+      if (refreshToken === 'refresh-a') {
+        startedRefreshA.resolve();
+        return releaseRefreshA.promise;
+      }
+      if (refreshToken === 'refresh-b') {
+        startedRefreshB.resolve();
+        return releaseRefreshB.promise;
+      }
+      assert.fail(`Unexpected refresh token: ${refreshToken}`);
+    }
+    if (url === '/api/sync/push') {
+      if (authorization === 'Bearer token-b2') return axiosResponse(config, { results: [], serverCursor: 'b-cursor' });
+      return Promise.reject(axiosUnauthorized(config));
+    }
+    return axiosResponse(config);
+  };
+
+  try {
+    setSession('user-a', 'token-a', 'refresh-a');
+    const scopeA = scopeFor('session-user-a');
+    const requestA = useSyncApi.pushChanges({ serverDeviceId: 'device-user-a', mutations: [] }, scopeA);
+    await waitForSignal(startedRefreshA.promise, 'A refresh dispatch');
+
+    setSession('user-b', 'token-b', 'refresh-b');
+    const scopeB = scopeFor('session-user-b');
+    const requestB = useSyncApi.pushChanges({ serverDeviceId: 'device-user-b', mutations: [] }, scopeB);
+    await waitForSignal(startedRefreshB.promise, 'B refresh dispatch while A refresh is pending');
+
+    releaseRefreshB.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-b2', refreshToken: 'refresh-b2' },
+    }));
+    await requestB;
+    assert.equal(authStore.token, 'token-b2');
+
+    releaseRefreshA.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-a2', refreshToken: 'refresh-a2' },
+    }));
+    await assert.rejects(requestA, /SYNC_SCOPE_CHANGED/);
+    assert.equal(authStore.sessionId, 'session-user-b');
+    assert.equal(authStore.token, 'token-b2');
+    assert.equal(authStore.refreshToken, 'refresh-b2');
+    assert.deepEqual(calls.filter((call) => call.url === '/api/sync/push').map((call) => call.authorization), [
+      'Bearer token-a',
+      'Bearer token-b',
+      'Bearer token-b2',
+    ]);
+  } finally {
+    releaseRefreshA.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-a2', refreshToken: 'refresh-a2' },
+    }));
+    releaseRefreshB.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-b2', refreshToken: 'refresh-b2' },
+    }));
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+test('core sync requests in the same session share refresh and retry with the rotated access token', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.user = { id: 'user-same-scope-refresh', email: 'same-scope@example.com' };
+  authStore.tokens = { accessToken: 'token-same-scope', refreshToken: 'refresh-same-scope' };
+  authStore.sessionId = 'session-same-scope-refresh';
+  authStore.serverDeviceId = 'device-same-scope-refresh';
+  authStore.authStatus = 'authenticated';
+  const scope = { key: Symbol('same-scope-refresh'), isCurrent: () => authStore.sessionId === 'session-same-scope-refresh' };
+  const refreshStarted = createDeferred();
+  const releaseRefresh = createDeferred();
+  const twoInitialPushes = createDeferred();
+  let refreshCalls = 0;
+  let initialPushCalls = 0;
+  const retriedAuthorization = [];
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    if (config.url === '/api/auth/refresh') {
+      refreshCalls += 1;
+      refreshStarted.resolve();
+      return releaseRefresh.promise;
+    }
+    if (config.url === '/api/sync/push') {
+      const authorization = requestAuthorization(config);
+      if (authorization === 'Bearer token-same-scope-v2') {
+        retriedAuthorization.push(authorization);
+        return axiosResponse(config, { results: [], serverCursor: 'same-scope-cursor' });
+      }
+      initialPushCalls += 1;
+      if (initialPushCalls === 2) twoInitialPushes.resolve();
+      return Promise.reject(axiosUnauthorized(config));
+    }
+    return axiosResponse(config);
+  };
+
+  try {
+    const first = useSyncApi.pushChanges({ serverDeviceId: 'device-same-scope-refresh', mutations: [] }, scope);
+    await waitForSignal(refreshStarted.promise, 'same-session refresh dispatch');
+    const second = useSyncApi.pushChanges({ serverDeviceId: 'device-same-scope-refresh', mutations: [] }, scope);
+    await waitForSignal(twoInitialPushes.promise, 'both same-session requests to receive 401');
+    await new Promise((resolve) => setImmediate(resolve));
+    releaseRefresh.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-same-scope-v2', refreshToken: 'refresh-same-scope-v2' },
+    }));
+    await Promise.all([first, second]);
+
+    assert.equal(refreshCalls, 1, 'same scope requests must share one refresh promise');
+    assert.deepEqual(retriedAuthorization, ['Bearer token-same-scope-v2', 'Bearer token-same-scope-v2']);
+    assert.equal(authStore.token, 'token-same-scope-v2');
+    assert.equal(authStore.refreshToken, 'refresh-same-scope-v2');
+  } finally {
+    releaseRefresh.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-same-scope-v2', refreshToken: 'refresh-same-scope-v2' },
+    }));
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+test('stale core sync refresh failure cannot clear the newly authenticated account', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  const setSession = (id, accessToken, refreshToken) => {
+    authStore.user = { id, email: `${id}@example.com` };
+    authStore.tokens = { accessToken, refreshToken };
+    authStore.sessionId = `session-${id}`;
+    authStore.serverDeviceId = `device-${id}`;
+    authStore.authStatus = 'authenticated';
+  };
+  const startedRefresh = createDeferred();
+  const releaseRefresh = createDeferred();
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    if (config.url === '/api/auth/refresh') {
+      startedRefresh.resolve();
+      return releaseRefresh.promise;
+    }
+    if (config.url === '/api/sync/push') return Promise.reject(axiosUnauthorized(config));
+    return axiosResponse(config);
+  };
+
+  try {
+    setSession('user-a-failure', 'token-a', 'refresh-a');
+    const scopeA = { key: Symbol('stale-refresh-failure'), isCurrent: () => authStore.sessionId === 'session-user-a-failure' };
+    const pending = useSyncApi.pushChanges({ serverDeviceId: 'device-user-a-failure', mutations: [] }, scopeA);
+    await waitForSignal(startedRefresh.promise, 'A failing refresh dispatch');
+
+    setSession('user-b-after-failure', 'token-b', 'refresh-b');
+    releaseRefresh.reject(new Error('REFRESH_A_FAILED'));
+    await assert.rejects(pending, /SYNC_SCOPE_CHANGED/);
+    assert.equal(authStore.sessionId, 'session-user-b-after-failure');
+    assert.equal(authStore.token, 'token-b');
+    assert.equal(authStore.refreshToken, 'refresh-b');
+    assert.equal(authStore.requiresReauthentication, false);
+  } finally {
+    releaseRefresh.reject(new Error('REFRESH_A_FAILED'));
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+test('stale core sync scope is rejected by the request interceptor before authorization or dispatch', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.user = { id: 'user-current', email: 'current@example.com' };
+  authStore.tokens = { accessToken: 'token-current', refreshToken: 'refresh-current' };
+  authStore.sessionId = 'session-current';
+  authStore.serverDeviceId = 'device-current';
+  authStore.authStatus = 'authenticated';
+  let dispatches = 0;
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    dispatches += 1;
+    return axiosResponse(config, { changes: [], nextCursor: null, hasMore: false, resetRequired: false });
+  };
+
+  try {
+    const staleScope = { key: Symbol('already-stale'), isCurrent: () => false };
+    await assert.rejects(useSyncApi.pullChanges({ limit: 1 }, staleScope), /SYNC_SCOPE_CHANGED/);
+    assert.equal(dispatches, 0);
+  } finally {
+    activeRequestAdapter = originalAdapter;
   }
 });
 
@@ -376,4 +642,434 @@ test('remote tombstone removes a settled projection but not a locally unresolved
   record.deletedAt = null;
   await applyPullPage(repository, tombstone);
   assert.equal(record.deletedAt, null);
+});
+
+test('sync cycle releases a claimed mutation when its push response completes after scope invalidation', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const mutation = {
+    clientMutationId: 'mutation-scope-push',
+    userId: 'user-scope-push',
+    resourceType: 'SUBJECT',
+    resourceId: 'subject-scope-push',
+    mutationType: 'CREATE',
+    baseVersion: 0,
+    payload: { id: 'subject-scope-push' },
+    createdAt: '2026-10-07T00:00:00.000Z',
+    status: 'inflight',
+  };
+  const pushStarted = createDeferred();
+  const pushResponse = createDeferred();
+  let current = true;
+  const settled = [];
+  const released = [];
+  const repository = {
+    async claimPending() { return [mutation]; },
+    async settleMutation(value) { settled.push(value); },
+    async releaseInflight(values) { released.push(...values); },
+    async listUnresolved() { return []; },
+    async read() { return null; },
+    async upsert() {},
+    async upsertFromSync() { return false; },
+    async replaceSnapshotPreservingPending() {},
+    async getSyncState() { return { cursor: null, resetRequired: false, schemaVersion: 6 }; },
+    async saveCursor() {},
+  };
+  const api = {
+    async pushChanges() {
+      pushStarted.resolve();
+      return pushResponse.promise;
+    },
+    async pullChanges() { return { changes: [], nextCursor: null, hasMore: false, resetRequired: false }; },
+    async getSnapshot() { return { snapshotCursor: 'stale-snapshot', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] }; },
+  };
+
+  const pending = runSyncCycle({ repository, api, serverDeviceId: 'device-scope-push', isCurrent: () => current });
+  await pushStarted.promise;
+  current = false;
+  pushResponse.resolve({ results: [{
+    clientMutationId: mutation.clientMutationId,
+    decision: 'APPLIED',
+    resourceType: 'SUBJECT',
+    resourceId: mutation.resourceId,
+    current: { id: mutation.resourceId, version: 1 },
+  }], serverCursor: 'stale-push-cursor' });
+
+  await assert.rejects(pending, /SYNC_SCOPE_CHANGED/);
+  assert.deepEqual(settled, []);
+  assert.deepEqual(released, [mutation.clientMutationId]);
+});
+
+test('sync cycle does not apply or save a snapshot that returns after scope invalidation', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const snapshotStarted = createDeferred();
+  const snapshotResponse = createDeferred();
+  let current = true;
+  const writes = [];
+  const repository = {
+    async claimPending() { return []; },
+    async releaseInflight() {},
+    async getSyncState() { return { cursor: null, resetRequired: false, schemaVersion: 6 }; },
+    async replaceSnapshotPreservingPending(values) { writes.push({ type: 'snapshot', values }); },
+    async saveCursor(cursor, resetRequired) { writes.push({ type: 'cursor', cursor, resetRequired }); },
+  };
+  const api = {
+    async pushChanges() { assert.fail('there are no pending mutations'); },
+    async pullChanges() { assert.fail('a fresh scope must request a snapshot'); },
+    async getSnapshot() {
+      snapshotStarted.resolve();
+      return snapshotResponse.promise;
+    },
+  };
+
+  const pending = runSyncCycle({ repository, api, serverDeviceId: 'device-scope-snapshot', isCurrent: () => current });
+  await snapshotStarted.promise;
+  current = false;
+  snapshotResponse.resolve({ snapshotCursor: 'stale-snapshot-cursor', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] });
+
+  await assert.rejects(pending, /SYNC_SCOPE_CHANGED/);
+  assert.deepEqual(writes, []);
+});
+
+test('sync cycle does not apply a pull page or persist its cursor after scope invalidation', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const pullStarted = createDeferred();
+  const pullResponse = createDeferred();
+  let current = true;
+  const writes = [];
+  const repository = {
+    async claimPending() { return []; },
+    async getSyncState() { return { cursor: 'cursor-before', resetRequired: false, schemaVersion: 6 }; },
+    async listUnresolved() { return []; },
+    async read() { return null; },
+    async upsertFromSync(...args) { writes.push({ type: 'resource', args }); return true; },
+    async saveCursor(cursor, resetRequired) { writes.push({ type: 'cursor', cursor, resetRequired }); },
+  };
+  const api = {
+    async pushChanges() { assert.fail('there are no pending mutations'); },
+    async pullChanges() {
+      pullStarted.resolve();
+      return pullResponse.promise;
+    },
+    async getSnapshot() { assert.fail('the response does not require a snapshot'); },
+  };
+
+  const pending = runSyncCycle({ repository, api, serverDeviceId: 'device-scope-pull', isCurrent: () => current });
+  await pullStarted.promise;
+  current = false;
+  pullResponse.resolve({
+    changes: [{ cursor: 'cursor-after', resourceType: 'TASK', resourceId: 'task-scope-pull', mutationType: 'CREATE', version: 1, payload: { id: 'task-scope-pull' } }],
+    nextCursor: 'cursor-after',
+    hasMore: false,
+    resetRequired: false,
+  });
+
+  await assert.rejects(pending, /SYNC_SCOPE_CHANGED/);
+  assert.deepEqual(writes, []);
+});
+
+test('ordinary and core sync 401s in the same session share one rotating refresh token', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.user = { id: 'user-shared-refresh', email: 'shared-refresh@example.com' };
+  authStore.tokens = { accessToken: 'token-shared-refresh', refreshToken: 'refresh-shared-refresh' };
+  authStore.sessionId = 'session-shared-refresh';
+  authStore.serverDeviceId = 'device-shared-refresh';
+  authStore.authStatus = 'authenticated';
+  const scope = {
+    key: Symbol('shared-refresh-scope'),
+    isCurrent: () => authStore.sessionId === 'session-shared-refresh',
+  };
+  const bothInitialRequests = createDeferred();
+  const firstRefreshStarted = createDeferred();
+  let initialRequestCount = 0;
+  let refreshCalls = 0;
+  const refreshTokens = [];
+  const retriedRequests = [];
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    const url = config.url ?? '';
+    const authorization = requestAuthorization(config);
+    if (url === '/api/ordinary') {
+      if (authorization === 'Bearer token-shared-refresh-v2') {
+        retriedRequests.push({ url, authorization });
+        return axiosResponse(config, { ok: true });
+      }
+      initialRequestCount += 1;
+      if (initialRequestCount === 2) bothInitialRequests.resolve();
+      await bothInitialRequests.promise;
+      return Promise.reject(axiosUnauthorized(config));
+    }
+    if (url === '/api/sync/push') {
+      if (authorization === 'Bearer token-shared-refresh-v2') {
+        retriedRequests.push({ url, authorization });
+        return axiosResponse(config, { results: [], serverCursor: null });
+      }
+      initialRequestCount += 1;
+      if (initialRequestCount === 2) bothInitialRequests.resolve();
+      await bothInitialRequests.promise;
+      return Promise.reject(axiosUnauthorized(config));
+    }
+    if (url === '/api/auth/refresh') {
+      refreshCalls += 1;
+      refreshTokens.push(requestPayload(config)?.refreshToken);
+      if (refreshCalls > 1) {
+        return Promise.reject(axiosUnauthorized(config));
+      }
+      firstRefreshStarted.resolve();
+      await new Promise((resolve) => setImmediate(resolve));
+      return axiosResponse(config, {
+        user: authStore.user,
+        tokens: { accessToken: 'token-shared-refresh-v2', refreshToken: 'refresh-shared-refresh-v2' },
+        sessionId: 'session-shared-refresh-next',
+        serverDeviceId: 'device-shared-refresh',
+      });
+    }
+    return axiosResponse(config);
+  };
+
+  try {
+    const ordinary = request.get('/api/ordinary');
+    const coreSync = useSyncApi.pushChanges({ serverDeviceId: 'device-shared-refresh', mutations: [] }, scope);
+    await waitForSignal(firstRefreshStarted.promise, 'the shared session refresh request');
+    const outcomes = await Promise.allSettled([ordinary, coreSync]);
+
+    assert.equal(refreshCalls, 1, 'ordinary Axios and core sync must share one refresh for this session');
+    assert.deepEqual(refreshTokens, ['refresh-shared-refresh']);
+    assert.deepEqual(outcomes.map((outcome) => outcome.status), ['fulfilled', 'fulfilled']);
+    assert.deepEqual(retriedRequests.map((item) => item.authorization), [
+      'Bearer token-shared-refresh-v2',
+      'Bearer token-shared-refresh-v2',
+    ]);
+    assert.equal(authStore.token, 'token-shared-refresh-v2');
+    assert.equal(authStore.refreshToken, 'refresh-shared-refresh-v2');
+  } finally {
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+test('an ordinary A refresh cannot join or overwrite a core sync B refresh', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  const setSession = (id, accessToken, refreshToken) => {
+    authStore.user = { id, email: `${id}@example.com` };
+    authStore.tokens = { accessToken, refreshToken };
+    authStore.sessionId = `session-${id}`;
+    authStore.serverDeviceId = `device-${id}`;
+    authStore.authStatus = 'authenticated';
+  };
+  const scopeFor = (sessionId) => ({
+    key: Symbol(sessionId),
+    isCurrent: () => authStore.sessionId === sessionId,
+  });
+  setSession('user-ordinary-a', 'token-a', 'refresh-a');
+  const startedRefreshA = createDeferred();
+  const startedRefreshB = createDeferred();
+  const releaseRefreshA = createDeferred();
+  const releaseRefreshB = createDeferred();
+  const refreshTokens = [];
+  const originalAdapter = activeRequestAdapter;
+  activeRequestAdapter = async (config) => {
+    const url = config.url ?? '';
+    const authorization = requestAuthorization(config);
+    if (url === '/api/ordinary-a') return Promise.reject(axiosUnauthorized(config));
+    if (url === '/api/sync/push') {
+      if (authorization === 'Bearer token-b2') return axiosResponse(config, { results: [], serverCursor: 'b-cursor' });
+      return Promise.reject(axiosUnauthorized(config));
+    }
+    if (url === '/api/auth/refresh') {
+      const refreshToken = requestPayload(config)?.refreshToken;
+      refreshTokens.push(refreshToken);
+      if (refreshToken === 'refresh-a') {
+        startedRefreshA.resolve();
+        return releaseRefreshA.promise;
+      }
+      if (refreshToken === 'refresh-b') {
+        startedRefreshB.resolve();
+        return releaseRefreshB.promise;
+      }
+      assert.fail(`Unexpected refresh token: ${refreshToken}`);
+    }
+    return axiosResponse(config);
+  };
+
+  try {
+    const requestA = request.get('/api/ordinary-a');
+    await waitForSignal(startedRefreshA.promise, 'ordinary A refresh dispatch');
+    setSession('user-core-b', 'token-b', 'refresh-b');
+    const requestB = useSyncApi.pushChanges(
+      { serverDeviceId: 'device-user-core-b', mutations: [] },
+      scopeFor('session-user-core-b'),
+    );
+    await waitForSignal(startedRefreshB.promise, 'core sync B refresh while ordinary A refresh is pending');
+
+    releaseRefreshB.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-b2', refreshToken: 'refresh-b2' },
+    }));
+    await requestB;
+    releaseRefreshA.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-a2', refreshToken: 'refresh-a2' },
+    }));
+    await assert.rejects(requestA, /SYNC_SCOPE_CHANGED/);
+
+    assert.deepEqual(refreshTokens.sort(), ['refresh-a', 'refresh-b']);
+    assert.equal(authStore.sessionId, 'session-user-core-b');
+    assert.equal(authStore.token, 'token-b2');
+    assert.equal(authStore.refreshToken, 'refresh-b2');
+  } finally {
+    releaseRefreshA.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-a2', refreshToken: 'refresh-a2' },
+    }));
+    releaseRefreshB.resolve(axiosResponse({ url: '/api/auth/refresh' }, {
+      tokens: { accessToken: 'token-b2', refreshToken: 'refresh-b2' },
+    }));
+    activeRequestAdapter = originalAdapter;
+  }
+});
+
+function installLoginNavigationRecorder(navigations) {
+  const previousWindow = globalThis.window;
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { pathname: '/', assign: (path) => navigations.push(path) } },
+  });
+  return () => {
+    if (previousWindow === undefined) delete globalThis.window;
+    else Object.defineProperty(globalThis, 'window', { configurable: true, value: previousWindow });
+  };
+}
+
+function makeAuthScope(authStore, userId, deviceId, sessionId) {
+  return {
+    key: Symbol(`scope-${sessionId}`),
+    isCurrent: () => authStore.authStatus === 'authenticated'
+      && authStore.user?.id === userId
+      && authStore.serverDeviceId === deviceId
+      && authStore.sessionId === sessionId,
+  };
+}
+
+test('a scoped refresh HTTP failure preserves the failed session route after reauthentication clears scope', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.setSession({
+    user: { id: 'user-refresh-failed-a', email: 'refresh-failed-a@example.com' },
+    tokens: { accessToken: 'token-refresh-failed-a', refreshToken: 'refresh-refresh-failed-a' },
+    sessionId: 'session-refresh-failed-a',
+    serverDeviceId: 'device-refresh-failed-a',
+  });
+  const scope = makeAuthScope(authStore, 'user-refresh-failed-a', 'device-refresh-failed-a', 'session-refresh-failed-a');
+  const navigations = [];
+  const restoreWindow = installLoginNavigationRecorder(navigations);
+  const originalAdapter = activeRequestAdapter;
+  const dispatched = [];
+  activeRequestAdapter = async (config) => {
+    const url = config.url ?? '';
+    dispatched.push(url);
+    if (url === '/api/scoped-refresh-failure') return Promise.reject(axiosUnauthorized(config));
+    if (url === '/api/auth/refresh') return Promise.reject(axiosUnauthorized(config));
+    return axiosResponse(config);
+  };
+
+  try {
+    await assert.rejects(
+      request.get('/api/scoped-refresh-failure', { __auralisSyncScope: scope }),
+    );
+
+    assert.deepEqual(dispatched.filter((url) => url !== '/api/auth/me/avatar'), ['/api/scoped-refresh-failure', '/api/auth/refresh']);
+    assert.equal(authStore.authStatus, 'reauthentication-required');
+    assert.deepEqual(navigations, ['/login'], 'the failed A session must retain its login navigation');
+  } finally {
+    activeRequestAdapter = originalAdapter;
+    restoreWindow();
+  }
+});
+
+test('a scoped protected request with no refresh token requires login without dispatching refresh', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.user = { id: 'user-no-refresh-a', email: 'no-refresh-a@example.com' };
+  authStore.tokens = { accessToken: 'token-no-refresh-a' };
+  authStore.sessionId = 'session-no-refresh-a';
+  authStore.serverDeviceId = 'device-no-refresh-a';
+  authStore.authStatus = 'authenticated';
+  const scope = makeAuthScope(authStore, 'user-no-refresh-a', 'device-no-refresh-a', 'session-no-refresh-a');
+  const navigations = [];
+  const restoreWindow = installLoginNavigationRecorder(navigations);
+  const originalAdapter = activeRequestAdapter;
+  const dispatched = [];
+  activeRequestAdapter = async (config) => {
+    const url = config.url ?? '';
+    dispatched.push(url);
+    if (url === '/api/no-refresh-token') return Promise.reject(axiosUnauthorized(config));
+    return axiosResponse(config);
+  };
+
+  try {
+    await assert.rejects(request.get('/api/no-refresh-token', { __auralisSyncScope: scope }));
+
+    assert.deepEqual(dispatched, ['/api/no-refresh-token'], 'a missing refresh token must not make a refresh request');
+    assert.equal(authStore.authStatus, 'reauthentication-required');
+    assert.deepEqual(navigations, ['/login']);
+  } finally {
+    activeRequestAdapter = originalAdapter;
+    restoreWindow();
+  }
+});
+
+test('an A refresh failure followed by B setSession before the outer catch cannot navigate or clear B', async () => {
+  const { setActivePinia, createPinia } = await import('pinia');
+  const { useAuthStore } = await import('../src/store/useAuthStore.ts');
+  setActivePinia(createPinia());
+  const authStore = useAuthStore();
+  authStore.setSession({
+    user: { id: 'user-delayed-failure-a', email: 'delayed-failure-a@example.com' },
+    tokens: { accessToken: 'token-delayed-failure-a', refreshToken: 'refresh-delayed-failure-a' },
+    sessionId: 'session-delayed-failure-a',
+    serverDeviceId: 'device-delayed-failure-a',
+  });
+  const scope = makeAuthScope(authStore, 'user-delayed-failure-a', 'device-delayed-failure-a', 'session-delayed-failure-a');
+  const navigations = [];
+  const restoreWindow = installLoginNavigationRecorder(navigations);
+  const originalAdapter = activeRequestAdapter;
+  const originalRequireReauthentication = authStore.requireReauthentication.bind(authStore);
+  activeRequestAdapter = async (config) => {
+    const url = config.url ?? '';
+    if (url === '/api/delayed-refresh-failure') return Promise.reject(axiosUnauthorized(config));
+    if (url === '/api/auth/refresh') return Promise.reject(axiosUnauthorized(config));
+    if (url === '/api/auth/me/avatar') return axiosResponse(config, new Blob([]));
+    return axiosResponse(config);
+  };
+  authStore.requireReauthentication = (reason) => {
+    originalRequireReauthentication(reason);
+    queueMicrotask(() => {
+      authStore.setSession({
+        user: { id: 'user-delayed-failure-b', email: 'delayed-failure-b@example.com' },
+        tokens: { accessToken: 'token-delayed-failure-b', refreshToken: 'refresh-delayed-failure-b' },
+        sessionId: 'session-delayed-failure-b',
+        serverDeviceId: 'device-delayed-failure-b',
+      });
+    });
+  };
+
+  try {
+    await assert.rejects(request.get('/api/delayed-refresh-failure', { __auralisSyncScope: scope }));
+
+    assert.equal(authStore.user?.id, 'user-delayed-failure-b');
+    assert.equal(authStore.sessionId, 'session-delayed-failure-b');
+    assert.equal(authStore.token, 'token-delayed-failure-b');
+    assert.equal(authStore.authStatus, 'authenticated');
+    assert.deepEqual(navigations, [], 'an old A failure must not navigate after B has authenticated');
+  } finally {
+    authStore.requireReauthentication = originalRequireReauthentication;
+    activeRequestAdapter = originalAdapter;
+    restoreWindow();
+  }
 });

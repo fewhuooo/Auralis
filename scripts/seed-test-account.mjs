@@ -105,7 +105,7 @@ async function run() {
   // 时间轴有效可视窗口为每日 08:00 至 22:30；定义每日有效槽位列表，确保不注入到时间轴没有的位置（如凌晨或深夜）：
   const dailyTimeSlots = ['08:30', '10:30', '14:00', '16:00', '19:00', '21:00']
 
-  console.log('3. Injecting 240 tasks (durations strictly multiples of 30m, 0 knowledge blocks)...')
+  console.log('3. Injecting 240 tasks (durations strictly multiples of 30m; knowledge blocks are seeded separately)...')
   let taskCount = 0
   let scheduleSlotIndex = 0
 

@@ -52,12 +52,36 @@ export function isScheduledTaskPast(task: TaskStatusFields, now = new Date()): b
   return isActionableTask(task) && isScheduledIntervalEnded(task, now)
 }
 
+export function localDateEndOfDay(value?: string | null): Date | undefined {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value?.trim() ?? '')
+  if (!match) return undefined
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(0)
+  date.setFullYear(year, month - 1, day)
+  date.setHours(23, 59, 59, 999)
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return undefined
+  return date
+}
+
+export function parseDueTimestamp(dueAt?: string | null): number {
+  if (!dueAt) return Number.NaN
+  const trimmed = dueAt.trim()
+  if (!trimmed) return Number.NaN
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return localDateEndOfDay(trimmed)?.getTime() ?? Number.NaN
+
+  return Date.parse(trimmed)
+}
+
 export function isUnscheduledTaskPastDue(task: TaskStatusFields, now = new Date()): boolean {
-  const dueTimestamp = task.dueAt ? Date.parse(task.dueAt) : Number.NaN
+  const dueTimestamp = task.dueAt ? parseDueTimestamp(task.dueAt) : Number.NaN
   return isActionableTask(task)
     && !task.scheduledAt
     && Number.isFinite(dueTimestamp)
-    && dueTimestamp < now.getTime()
+    && dueTimestamp <= now.getTime()
 }
 
 export function isScheduledAtInPast(value: string | undefined, now = new Date()): boolean {
@@ -254,8 +278,8 @@ export function comparePendingTasks(
 
   // 2. DDL 时间近优先（时间戳升序）
   if (hasDueA && hasDueB && a.dueAt && b.dueAt) {
-    const timeA = Date.parse(a.dueAt)
-    const timeB = Date.parse(b.dueAt)
+    const timeA = parseDueTimestamp(a.dueAt)
+    const timeB = parseDueTimestamp(b.dueAt)
     if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
       return timeA - timeB
     }
@@ -272,4 +296,17 @@ export function comparePendingTasks(
   const nameA = a.name ?? a.title ?? ''
   const nameB = b.name ?? b.title ?? ''
   return nameA.localeCompare(nameB)
+}
+
+export function isScheduleWithinDeadline(scheduledAt?: string | null, durationMinutes?: number | null, dueAt?: string | null): boolean {
+  if (!scheduledAt || !dueAt) return true
+  const start = Date.parse(scheduledAt)
+  const due = parseDueTimestamp(dueAt)
+  if (!Number.isFinite(start) || !Number.isFinite(due)) return true
+
+  const duration = durationMinutes == null ? 30 : Number(durationMinutes)
+  const effectiveDuration = Number.isFinite(duration) ? Math.max(0, duration) : 30
+
+  const end = start + effectiveDuration * 60_000
+  return end <= due
 }

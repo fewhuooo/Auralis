@@ -97,7 +97,7 @@ class CoreDomainRepositoryTests {
 
     private KnowledgeBlockEntity block(UUID userId, UUID subjectId, boolean deleted) {
         KnowledgeBlockEntity entity = new KnowledgeBlockEntity(
-                UUID.randomUUID(), userId, subjectId, null, "Linear algebra", "Summary", "Content", "[\"math\"]", null);
+                UUID.randomUUID(), userId, subjectId, null, "Linear algebra", "Content", null);
         if (deleted) {
             entity.softDelete();
         }

@@ -121,6 +121,16 @@ public class SourceService {
         return views(sourceRepository.findAllByUserIdAndIdInAndDeletedAtIsNull(userId, ids));
     }
 
+    /** Active ready Sources available as inputs to a Subject overview manifest. */
+    @Transactional(readOnly = true)
+    public List<SourceView> readyOverviewSources(UUID userId, UUID subjectId) {
+        return sourceRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(userId, subjectId).stream()
+                .filter(source -> source.getIngestionStatus() == SourceIngestionStatus.READY
+                        && source.getIngestionRevision() != null)
+                .map(this::view)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public SourceView get(UUID userId, UUID id) {
         return view(active(userId, id));
@@ -422,7 +432,7 @@ public class SourceService {
     }
 
     private void requireReadyAsset(UUID userId, UUID assetId) {
-        AssetEntity asset = assetRepository.findByIdAndUserId(assetId, userId)
+        AssetEntity asset = assetRepository.findForUpdateByIdAndUserId(assetId, userId)
                 .orElseThrow(() -> new DomainException("RESOURCE_NOT_FOUND", "Asset was not found"));
         if (asset.getUploadStatus() != AssetUploadStatus.READY) {
             throw new DomainException("MUTATION_REJECTED", "Source asset is not ready");

@@ -18,6 +18,9 @@ register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64
 
 const {
   getTasksForAssetGroups,
+  isScheduleWithinDeadline,
+  parseDueTimestamp,
+  localDateEndOfDay,
   getTimelineDays,
   getTimelineRange,
   getTasksForTimeline,
@@ -146,12 +149,14 @@ test('separates elapsed timeline tasks from overdue unscheduled tasks', () => {
   const elapsedTimelineTask = task({ id: 'elapsed-timeline', dueAt: '2026-08-23T00:00:00Z', scheduledAt: '2026-08-22T09:00:00+08:00' })
   const futureTimelineTaskWithPastDeadline = task({ id: 'future-timeline', dueAt: '2026-08-21T00:00:00Z', scheduledAt: '2026-08-22T12:00:00+08:00' })
   const overdueUnscheduledTask = task({ id: 'overdue-unassigned', dueAt: '2026-08-21T00:00:00Z' })
+  const exactlyDueUnscheduledTask = task({ id: 'exactly-due', dueAt: '2026-08-22T02:00:00Z' })
 
   assert.equal(typeof isScheduledTaskPast, 'function')
   assert.equal(typeof isUnscheduledTaskPastDue, 'function')
   assert.equal(isScheduledTaskPast(elapsedTimelineTask, now), true)
   assert.equal(isScheduledTaskPast(futureTimelineTaskWithPastDeadline, now), false)
   assert.equal(isUnscheduledTaskPastDue(overdueUnscheduledTask, now), true)
+  assert.equal(isUnscheduledTaskPastDue(exactlyDueUnscheduledTask, now), true, 'boundary condition: dueAt <= now should be true')
   assert.equal(isUnscheduledTaskPastDue(elapsedTimelineTask, now), false)
 })
 
@@ -283,4 +288,60 @@ test('comparePendingTasks prioritizes tasks with deadline, earlier deadline, and
     'no-due-short',
     'no-due-long',
   ])
+})
+
+test('deadline guard: isScheduleWithinDeadline identifies valid and invalid schedules', () => {
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:00:00.000Z', 30, '2026-10-06T10:00:00.000Z'), true)
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:30:00.000Z', 30, '2026-10-06T10:00:00.000Z'), true)
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:31:00.000Z', 30, '2026-10-06T10:00:00.000Z'), false)
+  assert.equal(isScheduleWithinDeadline('2026-10-06T11:30:00+02:00', 30, '2026-10-06T10:00:00.000Z'), true, 'offset timestamps are compared as instants')
+
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:00:00.000Z', 60, '2026-10-06T10:00:00.000Z'), true)
+
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:00:00.000Z', 60, null), true)
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:00:00.000Z', 60, undefined), true)
+
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:30:00.000Z', null, '2026-10-06T10:00:00.000Z'), true)
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:31:00.000Z', null, '2026-10-06T10:00:00.000Z'), false, 'null duration defaults to 30 minutes at the deadline boundary')
+  assert.equal(isScheduleWithinDeadline('2026-10-06T09:31:00.000Z', undefined, '2026-10-06T10:00:00.000Z'), false)
+})
+
+test('date-only deadlines use local end of day while timestamp deadlines keep their exact instant', () => {
+  const dateOnly = '2099-10-06'
+  const expectedLocalEnd = new Date(2099, 9, 6, 23, 59, 59, 999).getTime()
+  assert.equal(parseDueTimestamp(dateOnly), expectedLocalEnd)
+  assert.equal(localDateEndOfDay(dateOnly)?.toISOString(), new Date(expectedLocalEnd).toISOString())
+  assert.equal(localDateEndOfDay('2099-02-30'), undefined)
+
+  const midnight = '2099-10-06T00:00:00.000Z'
+  const offsetMidnight = '2099-10-06T00:00:00+08:00'
+  const utcEndOfDay = '2099-10-06T23:59:59.999Z'
+  const offsetEndOfDay = '2099-10-06T23:59:59.999-05:00'
+  for (const value of [midnight, offsetMidnight, utcEndOfDay, offsetEndOfDay]) {
+    assert.equal(parseDueTimestamp(value), Date.parse(value), `${value} must remain its exact instant`)
+  }
+})
+
+test('timestamp deadlines allow an interval ending exactly at the instant and reject any overrun', () => {
+  const dueAt = '2099-10-06T00:30:00.000Z'
+  assert.equal(isScheduleWithinDeadline('2099-10-06T00:00:00.000Z', 30, dueAt), true)
+  assert.equal(isScheduleWithinDeadline('2099-10-06T00:00:00.001Z', 30, dueAt), false)
+  assert.equal(isScheduleWithinDeadline('2099-10-05T16:00:00.000-08:00', 30, dueAt), true)
+  assert.equal(isScheduleWithinDeadline('2099-10-06T00:00:00.001Z', 30, '2099-10-06T00:00:00.000Z'), false)
+})
+
+test('date-only deadlines still allow the selected local day but reject intervals crossing its end', () => {
+  const dateOnly = '2099-10-06'
+  const localEnd = new Date(2099, 9, 6, 23, 59, 59, 999).getTime()
+  const exactlyEndsAtLocalEnd = new Date(localEnd - 30 * 60_000).toISOString()
+  const oneMillisecondLate = new Date(localEnd - 30 * 60_000 + 1).toISOString()
+
+  assert.equal(isScheduleWithinDeadline(exactlyEndsAtLocalEnd, 30, dateOnly), true)
+  assert.equal(isScheduleWithinDeadline(oneMillisecondLate, 30, dateOnly), false)
+  assert.equal(isScheduleWithinDeadline('2099-10-07T09:00:00.000Z', 30, dateOnly), false)
+
+  const noonToday = new Date(2099, 9, 6, 12, 0, 0, 0)
+  const noonTomorrow = new Date(2099, 9, 7, 12, 0, 0, 0)
+  assert.equal(isUnscheduledTaskPastDue({ dueAt: dateOnly, scheduledAt: undefined }, noonToday), false)
+  assert.equal(isUnscheduledTaskPastDue({ dueAt: dateOnly, scheduledAt: undefined }, noonTomorrow), true)
 })

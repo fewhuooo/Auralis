@@ -1,4 +1,4 @@
-import type { OverviewRepository } from '@/services/overviewRepository'
+import type { OverviewRepository, OverviewScopeDeletionTicket } from '@/services/overviewRepository'
 import type { LocalAssetRepository } from '@/services/localAssetRepository'
 import type { LocalAssetService } from '@/services/localAssetService'
 import type { LocalRepository, LocalSubjectCascadeResource } from '@/services/localRepository'
@@ -21,7 +21,8 @@ export interface SubjectDeletionCoordinatorOptions {
   repo: LocalRepository
   assetRepo?: LocalAssetRepository
   assetService?: LocalAssetService
-  overview?: Pick<OverviewRepository, 'removeSubjectOverview' | 'removeFileOverviews'>
+  overview?: Pick<OverviewRepository, 'removeSubjectOverview' | 'removeFileOverviews' | 'beginScopeDeletion'
+    | 'completeScopeDeletion' | 'cancelScopeDeletion' | 'reactivateRestoredScope'>
   jobs?: Pick<DocumentProcessingJobRepository, 'removeBySource'>
   hooks?: SubjectDeletionRuntimeHooks
 }
@@ -51,15 +52,35 @@ export class SubjectDeletionCoordinator {
   }
 
   /** Commits the local-only child fences before the sync scheduler is released. */
-  async markDeletedSubject(subjectId: string): Promise<LocalSubjectCascadeResource[]> {
-    return withLocalAssetLifecycleLock(this.repo.userId, this.repo.serverDeviceId, () =>
-      this.markDeletedSubjectUnlocked(subjectId))
+  async markDeletedSubject(subjectId: string, existingTicket?: OverviewScopeDeletionTicket): Promise<LocalSubjectCascadeResource[]> {
+    const deletionTicket = existingTicket ?? this.overview?.beginScopeDeletion('SUBJECT',subjectId)
+    try {
+      return await withLocalAssetLifecycleLock(this.repo.userId, this.repo.serverDeviceId, () =>
+        this.markDeletedSubjectUnlocked(subjectId,deletionTicket))
+    } catch (error) {
+      await this.cancelScopeIfParentIsNotDeleted(subjectId,deletionTicket)
+      throw error
+    }
+  }
+
+  private async cancelScopeIfParentIsNotDeleted(subjectId: string, deletionTicket?: OverviewScopeDeletionTicket): Promise<void> {
+    if (!deletionTicket) return
+    try {
+      const subject = await this.repo.read('SUBJECT',subjectId)
+      if (!subject?.deletedAt) this.overview?.cancelScopeDeletion(deletionTicket)
+    } catch {
+      // If the durable parent state is unknown, keep the Overview scope fenced.
+    }
   }
 
   /** Caller must already hold the owner/device asset lifecycle lock. */
-  private async markDeletedSubjectUnlocked(subjectId: string): Promise<LocalSubjectCascadeResource[]> {
+  private async markDeletedSubjectUnlocked(subjectId: string, deletionTicket?: OverviewScopeDeletionTicket): Promise<LocalSubjectCascadeResource[]> {
     const subject = await this.repo.read('SUBJECT', subjectId)
-    if (!subject?.deletedAt) return []
+    if (!subject?.deletedAt) {
+      if (deletionTicket) this.overview?.cancelScopeDeletion(deletionTicket)
+      return []
+    }
+    if (deletionTicket) this.overview?.completeScopeDeletion(deletionTicket)
     const impacted = await this.repo.tombstoneSubjectChildren(subjectId, subject.deletedAt)
     await this.cleanupSubjectOverview(subjectId)
     let changed = impacted.some((resource) => resource.deletedAt === null)
@@ -99,9 +120,15 @@ export class SubjectDeletionCoordinator {
   }
 
   async reconcileDeletedSubject(subjectId: string): Promise<void> {
-    const unresolved = await this.repo.listUnresolved('SUBJECT')
-    const parentPending = unresolved.some((mutation) => mutation.resourceId === subjectId && mutation.mutationType === 'DELETE')
-    await this.cleanupMarkedSubject(await this.markDeletedSubject(subjectId), !parentPending)
+    const deletionTicket = this.overview?.beginScopeDeletion('SUBJECT',subjectId)
+    try {
+      const unresolved = await this.repo.listUnresolved('SUBJECT')
+      const parentPending = unresolved.some((mutation) => mutation.resourceId === subjectId && mutation.mutationType === 'DELETE')
+      await this.cleanupMarkedSubject(await this.markDeletedSubject(subjectId,deletionTicket), !parentPending)
+    } catch (error) {
+      await this.cancelScopeIfParentIsNotDeleted(subjectId,deletionTicket)
+      throw error
+    }
   }
 
   async reconcileDeletedSubjects(): Promise<void> {
@@ -110,11 +137,17 @@ export class SubjectDeletionCoordinator {
     // durable evidence needed to finish that same auditable repair on boot.
     for (const mutation of await this.repo.listUnresolved('SUBJECT')) {
       if (mutation.mutationType !== 'DELETE' || !['conflict', 'error'].includes(mutation.status) || mutation.remoteValue === undefined) continue
-      await this.repo.resolveRejectedSubjectDelete({
+      const restored = await this.repo.resolveRejectedSubjectDelete({
         clientMutationId: mutation.clientMutationId,
         remoteValue: mutation.remoteValue,
         remoteVersion: mutation.remoteVersion,
       })
+      if (restored) {
+        const [subject, unresolved] = await Promise.all([this.repo.read('SUBJECT',mutation.resourceId),this.repo.listUnresolved('SUBJECT')])
+        if (subject && !subject.deletedAt && !unresolved.some(item => item.resourceId === mutation.resourceId && item.mutationType === 'DELETE')) {
+          this.overview?.reactivateRestoredScope('SUBJECT',mutation.resourceId)
+        }
+      }
     }
     const subjects = await this.repo.list('SUBJECT', { includeDeleted: true })
     for (const subject of subjects) {
@@ -129,6 +162,10 @@ export class SubjectDeletionCoordinator {
 
   private async cleanupSource(source: LocalSubjectCascadeResource, allowPhysicalAssetDeletion: boolean): Promise<void> {
     const sourceId = source.id
+    if (source.deletedAt) {
+      const deletionTicket = this.overview?.beginScopeDeletion('FILE',sourceId)
+      if (deletionTicket) this.overview?.completeScopeDeletion(deletionTicket)
+    }
     // Runtime hooks cancel active parser/cache work before the durable job rows
     // are removed. The repository-level cleanup remains restart-idempotent.
     await this.hooks.discardSource?.(sourceId)

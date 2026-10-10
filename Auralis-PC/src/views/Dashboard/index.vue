@@ -52,32 +52,42 @@
     <!-- CENTER: Content Stream -->
     <main class="content-stream">
       <div class="stream-header">
-        <h3 class="stream-title">知识流</h3>
-      </div>
-
-      <div class="stream-body" v-if="filteredBlocks.length > 0">
-        <div
-          v-for="block in filteredBlocks.slice(0, 20)"
-          :key="block.id"
-          class="stream-row"
-          @click="openBlockDetail(block)"
-        >
-          <div class="row-title">{{ block.title }}</div>
-          <div class="row-meta">
-            <!-- 采用统一的浅鼠尾草绿背景+深色文字微标签 (Badge) -->
-            <span class="row-subj-badge">{{ block.subject }}</span>
-            <span class="row-source-badge">来源: {{ block.source }}</span>
-            <span class="row-time-badge" style="display: inline-flex; align-items: center; gap: 4px;">
-              <IconHistory :size="12" :stroke-width="1.6" />
-              {{ timeAgo(block.time) }}
-            </span>
-          </div>
-          <div class="row-preview" v-if="block.preview" v-html="renderMarkdown(block.preview || '')"></div>
+        <div class="stream-title-wrap">
+          <h3 class="stream-title">知识流</h3>
+          <span class="stream-subtitle">{{ currentSubjectTitle }} · {{ filteredBlocks.length }} 个知识块</span>
         </div>
       </div>
-      <div class="empty-stream" v-else>
-        <span>暂无知识块，可在学科空间中添加</span>
-        <button class="create-first-btn" @click="router.push('/subjects')">创建学科空间</button>
+
+      <div class="stream-container">
+        <Transition name="stream-switch" mode="out-in">
+          <div :key="selectedSubjectId || '__all__'" class="stream-view-pane">
+            <div class="stream-body" v-if="filteredBlocks.length > 0">
+              <div
+                v-for="(block, index) in filteredBlocks.slice(0, 20)"
+                :key="block.id"
+                class="stream-row"
+                :style="{ '--row-delay': `${Math.min(index * 20, 160)}ms` }"
+                @click="openBlockDetail(block)"
+              >
+                <div class="row-title">{{ block.title }}</div>
+                <div class="row-meta">
+                  <!-- 采用统一的浅鼠尾草绿背景+深色文字微标签 (Badge) -->
+                  <span class="row-subj-badge">{{ block.subject }}</span>
+                  <span class="row-source-badge">来源: {{ block.source }}</span>
+                  <span class="row-time-badge" style="display: inline-flex; align-items: center; gap: 4px;">
+                    <IconHistory :size="12" :stroke-width="1.6" />
+                    {{ timeAgo(block.time) }}
+                  </span>
+                </div>
+                <div class="row-preview" v-if="block.content" v-html="renderMarkdown(block.content)"></div>
+              </div>
+            </div>
+            <div class="empty-stream" v-else>
+              <span>暂无知识块，可在学科空间中添加</span>
+              <button class="create-first-btn" @click="router.push('/subjects')">创建学科空间</button>
+            </div>
+          </div>
+        </Transition>
       </div>
     </main>
 
@@ -111,93 +121,105 @@
           </div>
         </div>
 
-        <div v-if="dashboardViewMode === 'day'" class="db-day-selector">
-          <button 
-            v-for="day in timelineDays"
-            :key="day.dateKey"
-            class="db-day-btn"
-            :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
-            @click="selectDay(day.dayCode)"
-          >
-            <span class="db-day-week">{{ day.weekdayShort }}</span>
-            <span class="db-day-date-circle">
-              <span class="db-day-date">{{ day.dayLabel }}</span>
-            </span>
-          </button>
-        </div>
+        <div class="timeline-mode-viewport">
+          <Transition :name="`timeline-mode-slide-${viewModeSlideDirection}`" mode="out-in">
+            <div v-if="dashboardViewMode === 'day'" key="day" class="timeline-day-mode-container">
+              <div class="db-day-selector">
+                <button 
+                  v-for="day in timelineDays"
+                  :key="day.dateKey"
+                  class="db-day-btn"
+                  :class="{ 'is-active': selectedDay === day.dayCode, 'is-today': day.isToday }"
+                  @click="selectDay(day.dayCode)"
+                >
+                  <span class="db-day-week">{{ day.weekdayShort }}</span>
+                  <span class="db-day-date-circle">
+                    <span class="db-day-date">{{ day.dayLabel }}</span>
+                  </span>
+                </button>
+              </div>
 
-        <!-- Day Tasks List: Simple Linear Task List (No timeline grid, no drag) -->
-        <div v-if="dashboardViewMode === 'day'" class="scheduled-task-list">
-          <div
-            v-for="task in dayScheduledTasks"
-            :key="task.id"
-            class="scheduled-task-card"
-            :class="{ 'is-completed': isCompletedScheduledTask(task) }"
-          >
-            <input
-              type="checkbox"
-              :checked="isCompletedScheduledTask(task)"
-              :disabled="isScheduledCompletionLocked(task, taskStore.currentNow)"
-              :title="isScheduledCompletionLocked(task, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : '切换任务完成状态'"
-              @change="toggleTaskCompletion(task)"
-              class="task-checkbox"
-              @click.stop
-            />
-            <div
-              class="scheduled-task-content"
-              :class="{ 'is-completion-locked': isScheduledCompletionLocked(task, taskStore.currentNow) }"
-              @click="toggleTaskCompletion(task)"
-            >
-              <div class="scheduled-task-header">
-                <span class="scheduled-task-time">
-                  {{ getTaskTimeStr(task.startTime) }} · {{ task.duration || 30 }}m
-                </span>
-                <span class="scheduled-task-subject" v-if="task.subject">{{ task.subject }}</span>
+              <!-- Day Tasks List: Simple Linear Task List with Directional Slide Transition -->
+              <div class="scheduled-task-viewport">
+                <Transition :name="`timeline-slide-${timelineSlideDirection}`" mode="out-in">
+                  <div :key="selectedDay" class="scheduled-task-list">
+                    <div
+                      v-for="task in dayScheduledTasks"
+                      :key="task.id"
+                      class="scheduled-task-card"
+                      :class="{ 'is-completed': isCompletedScheduledTask(task) }"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="isCompletedScheduledTask(task)"
+                        :disabled="isScheduledCompletionLocked(task, taskStore.currentNow)"
+                        :title="isScheduledCompletionLocked(task, taskStore.currentNow) ? '任务时段已结束，完成状态不可取消' : '切换任务完成状态'"
+                        @change="toggleTaskCompletion(task)"
+                        class="task-checkbox"
+                        @click.stop
+                      />
+                      <div
+                        class="scheduled-task-content"
+                        :class="{ 'is-completion-locked': isScheduledCompletionLocked(task, taskStore.currentNow) }"
+                        @click="toggleTaskCompletion(task)"
+                      >
+                        <div class="scheduled-task-header">
+                          <span class="scheduled-task-time">
+                            {{ getTaskTimeStr(task.startTime) }} · {{ task.duration || 30 }}m
+                          </span>
+                          <span class="scheduled-task-subject" v-if="task.subject">{{ task.subject }}</span>
+                        </div>
+                        <div class="scheduled-task-title">{{ task.name }}</div>
+                      </div>
+                      <button
+                        v-if="!isCompletedScheduledTask(task)"
+                        class="scheduled-task-remove-btn"
+                        @click.stop="handleRemoveSchedule(task)"
+                        title="移出日程"
+                      >✕</button>
+                    </div>
+                    <div v-if="dayScheduledTasks.length === 0" class="empty-scheduled-state">
+                      <span class="empty-scheduled-text">当日暂无排期任务</span>
+                    </div>
+                  </div>
+                </Transition>
               </div>
-              <div class="scheduled-task-title">{{ task.name }}</div>
             </div>
-            <button
-              v-if="!isCompletedScheduledTask(task)"
-              class="scheduled-task-remove-btn"
-              @click.stop="handleRemoveSchedule(task)"
-              title="移出日程"
-            >✕</button>
-          </div>
-          <div v-if="dayScheduledTasks.length === 0" class="empty-scheduled-state">
-            <span class="empty-scheduled-text">当日暂无排期任务</span>
-          </div>
-        </div>
 
-        <!-- Weekly Summary List (Gantt-like Rows) -->
-        <div v-else class="db-weekly-list-gantt">
-          <div 
-            v-for="day in timelineDays"
-            :key="day.dateKey"
-            class="db-weekly-day-row"
-            :class="{ 'is-today': day.isToday }"
-            @click="selectDay(day.dayCode); dashboardViewMode = 'day';"
-          >
-            <div class="db-weekly-row-label">
-              <span class="db-weekly-row-name">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
-              <span class="db-weekly-row-count">{{ getScheduledTasksForDay(day.dayCode).length }} 项</span>
-            </div>
-            <div class="db-weekly-row-timeline">
-              <div 
-                v-for="task in getScheduledTasksForDay(day.dayCode)"
-                :key="task.id" 
-                class="db-weekly-task-block"
-                :class="{ 'is-completed': isCompletedScheduledTask(task) }"
-                :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
-                :title="`${getTaskTimeStr(task.startTime)} ${task.name} (${task.duration}m)`"
-              >
-                <span class="db-weekly-block-time">{{ getTaskTimeStr(task.startTime) }}</span>
-                <span class="db-weekly-block-name">{{ task.name }}</span>
+            <!-- Weekly Summary List (Gantt-like Rows) -->
+            <div v-else key="week" class="timeline-week-mode-container">
+              <div class="db-weekly-list-gantt">
+                <div 
+                  v-for="day in timelineDays"
+                  :key="day.dateKey"
+                  class="db-weekly-day-row"
+                  :class="{ 'is-today': day.isToday }"
+                  @click="selectDay(day.dayCode); setDashboardViewMode('day', false);"
+                >
+                  <div class="db-weekly-row-label">
+                    <span class="db-weekly-row-name">{{ day.weekdayLabel }} {{ day.monthDayLabel }}</span>
+                    <span class="db-weekly-row-count">{{ getScheduledTasksForDay(day.dayCode).length }} 项</span>
+                  </div>
+                  <div class="db-weekly-row-timeline">
+                    <div 
+                      v-for="task in getScheduledTasksForDay(day.dayCode)"
+                      :key="task.id" 
+                      class="db-weekly-task-block"
+                      :class="{ 'is-completed': isCompletedScheduledTask(task) }"
+                      :style="{ borderLeftColor: 'var(--color-primary-accent)' }"
+                      :title="`${getTaskTimeStr(task.startTime)} ${task.name} (${task.duration}m)`"
+                    >
+                      <span class="db-weekly-block-time">{{ getTaskTimeStr(task.startTime) }}</span>
+                      <span class="db-weekly-block-name">{{ task.name }}</span>
+                    </div>
+                    <div v-if="getScheduledTasksForDay(day.dayCode).length === 0" class="db-weekly-row-empty">
+                      空闲
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div v-if="getScheduledTasksForDay(day.dayCode).length === 0" class="db-weekly-row-empty">
-                空闲
-              </div>
             </div>
-          </div>
+          </Transition>
         </div>
       </section>
 
@@ -255,8 +277,7 @@
 import { ref, computed, onMounted, onUnmounted, onActivated, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { renderMarkdown } from '@/utils/markdown'
 import { ElNotification } from 'element-plus'
 import 'element-plus/theme-chalk/el-notification.css'
 
@@ -264,18 +285,13 @@ import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useTaskStore, type Task, type TaskPresentationStatus, DAY_CODES, getTodayDayCode } from '@/store/useTaskStore'
-import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, isCompletedTask, isScheduledCompletionLocked, comparePendingTasks } from '@/services/taskViewRules'
+import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, isCompletedTask, isScheduledCompletionLocked, comparePendingTasks, parseDueTimestamp } from '@/services/taskViewRules'
 import { IconLayoutGrid, IconHistory, IconCircleCheck, IconChevronRight } from '@tabler/icons-vue'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
 import KnowledgeBlockViewDialog from '@/components/knowledge/KnowledgeBlockViewDialog.vue'
 
-marked.setOptions({ breaks: true, gfm: true })
 const SUBJECT_THEME_COLOR = '#8B9A6E'
-const renderMarkdown = (content: string) => {
-  if (!content) return ''
-  return DOMPurify.sanitize(marked.parse(content) as string)
-}
 
 const router = useRouter()
 const route = useRoute()
@@ -290,13 +306,18 @@ const dashboardViewMode = ref<'day' | 'week'>('day')
 const timelineDays = computed(() => getTimelineDays(taskStore.currentNow))
 const selectedTimelineDay = computed(() => timelineDays.value.find((day) => day.dayCode === selectedDay.value) ?? timelineDays.value[0])
 
+const viewModeSlideDirection = ref<'forward' | 'backward'>('forward')
+
 const resetToToday = () => {
   taskStore.setSelectedDay(getTodayDayCode())
 }
 
-const setDashboardViewMode = (mode: 'day' | 'week') => {
-  dashboardViewMode.value = mode
-  if (mode === 'day') {
+const setDashboardViewMode = (mode: 'day' | 'week', shouldResetToToday = true) => {
+  if (dashboardViewMode.value !== mode) {
+    viewModeSlideDirection.value = mode === 'week' ? 'forward' : 'backward'
+    dashboardViewMode.value = mode
+  }
+  if (mode === 'day' && shouldResetToToday) {
     resetToToday()
   }
 }
@@ -310,7 +331,16 @@ watch(
   }
 )
 
+const timelineSlideDirection = ref<'forward' | 'backward'>('forward')
+
 const selectDay = (day: string) => {
+  if (day !== selectedDay.value) {
+    const currentIdx = timelineDays.value.findIndex((d) => d.dayCode === selectedDay.value)
+    const nextIdx = timelineDays.value.findIndex((d) => d.dayCode === day)
+    if (currentIdx !== -1 && nextIdx !== -1) {
+      timelineSlideDirection.value = nextIdx >= currentIdx ? 'forward' : 'backward'
+    }
+  }
   taskStore.setSelectedDay(day)
 }
 
@@ -426,6 +456,12 @@ const filteredBlocks = computed(() => {
   return blocksList.filter(b => b.subjectId === selectedSubjectId.value || b.subject === selectedSubjectId.value)
 })
 
+const currentSubjectTitle = computed(() => {
+  if (!selectedSubjectId.value) return '全部知识'
+  const target = subjectStore.subjects.find(s => s.id === selectedSubjectId.value)
+  return target?.name || '当前学科'
+})
+
 const timeAgo = (isoString: string): string => {
   if (!isoString) return ''
   const diff = Date.now() - new Date(isoString).getTime()
@@ -439,7 +475,8 @@ const timeAgo = (isoString: string): string => {
 
 const isTaskOverdue = (task: Task): boolean => {
   if (!task.dueAt) return false
-  return new Date(task.dueAt).getTime() < taskStore.currentNow.getTime()
+  const due = parseDueTimestamp(task.dueAt)
+  return Number.isFinite(due) && due < taskStore.currentNow.getTime()
 }
 
 const formatTaskDue = (dueAt?: string): string => {
@@ -460,7 +497,14 @@ const openCreateTaskDialog = () => {
   showTaskModal.value = true
 }
 
-const handleAddTask = async (taskData: { name: string; subjectId: string; subjectName: string; duration: number }) => {
+const handleAddTask = async (taskData: {
+  name: string
+  subjectId: string
+  subjectName: string
+  duration: number
+  due?: string
+  dueAt?: string
+}) => {
   try {
     await taskStore.addTask({
       name: taskData.name,
@@ -468,7 +512,8 @@ const handleAddTask = async (taskData: { name: string; subjectId: string; subjec
       desc: '从看板创建',
       duration: taskData.duration,
       status: 'pending',
-      subjectId: taskData.subjectId
+      subjectId: taskData.subjectId,
+      dueAt: taskData.dueAt,
     })
     showTaskModal.value = false
     ElNotification({
@@ -520,6 +565,39 @@ const openBlockDetail = (block: any) => {
   blockDialogVisible.value = true
 }
 
+const handleOpenBlockDetailEvent = (event: Event) => {
+  const block = (event as CustomEvent).detail
+  if (!block || typeof block.id !== 'string') return
+  openBlockDetail(block)
+}
+
+let routeBlockIntentGeneration = 0
+watch(
+  () => route.query.openBlock,
+  async (value) => {
+    const blockId = typeof value === 'string' ? value.trim() : ''
+    if (!blockId) return
+    const generation = ++routeBlockIntentGeneration
+    try {
+      await knowledgeStore.loadLocalBlocks()
+    } catch (error) {
+      console.warn('[Dashboard] Could not load the requested knowledge block', error)
+      return
+    }
+    if (generation !== routeBlockIntentGeneration || route.query.openBlock !== blockId) return
+    const block = recentBlocks.value.find((candidate) => candidate.id === blockId)
+    if (block) openBlockDetail(block)
+    const query = { ...route.query }
+    delete query.openBlock
+    await router.replace({ path: route.path, query, hash: route.hash })
+  },
+  { immediate: true },
+)
+
+onUnmounted(() => {
+  window.removeEventListener('open-block-detail', handleOpenBlockDetailEvent)
+})
+
 const toggleTaskCompletion = async (task: Task) => {
   if (!task.id) return
   if (isScheduledCompletionLocked(task, taskStore.currentNow)) return
@@ -544,6 +622,7 @@ const toggleTaskCompletion = async (task: Task) => {
 }
 
 onMounted(async () => {
+  window.addEventListener('open-block-detail', handleOpenBlockDetailEvent)
   resetToToday()
   await knowledgeStore.fetchBlocks()
   await taskStore.fetchTasks()
@@ -657,8 +736,12 @@ html.dark .subject-index {
   border-radius: 12px;
   cursor: pointer;
   margin-bottom: 16px;
-  transition: all var(--transition-normal);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+.global-view-card:active {
+  transform: scale(0.985);
 }
 
 html.dark .global-view-card {
@@ -754,16 +837,21 @@ html.dark .global-count {
   padding: 10px 12px;
   border-radius: 10px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   font-size: 13px;
   color: var(--text-secondary);
   border: 1px solid transparent;
 }
 
+.subject-item:active {
+  transform: scale(0.985);
+}
+
 .subject-item:hover {
   background: rgba(163, 177, 155, 0.12);
   color: var(--text-primary);
+  transform: translateX(2px);
 }
 
 .subject-item.is-active {
@@ -784,6 +872,18 @@ html.dark .subject-item.is-active {
   height: 5px;
   border-radius: 50%;
   flex-shrink: 0;
+  animation: dot-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dot-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .subject-icon {
@@ -888,9 +988,45 @@ html.dark .content-stream {
   font-size: 12px;
   color: var(--text-secondary);
   font-weight: 600;
+  transition: color var(--transition-fast);
 }
 
+.stream-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
 
+.stream-view-pane {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.stream-switch-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.stream-switch-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  will-change: opacity, transform;
+}
+
+.stream-switch-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.stream-switch-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
 
 .stream-body {
   flex: 1;
@@ -916,6 +1052,19 @@ html.dark .content-stream {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  animation: stream-row-in 0.24s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: var(--row-delay, 0ms);
+}
+
+@keyframes stream-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .stream-row:hover {
@@ -1133,13 +1282,17 @@ html.dark .dashboard-right {
   cursor: pointer;
   outline: none;
   font-family: inherit;
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   line-height: 1.2;
 }
 
 .db-view-toggle-btn:hover {
   color: var(--text-primary);
   background: rgba(163, 177, 155, 0.15);
+}
+
+.db-view-toggle-btn:active {
+  transform: scale(0.95);
 }
 
 .db-view-toggle-btn.is-active {
@@ -1161,17 +1314,22 @@ html.dark .dashboard-right {
   padding: 0;
   cursor: pointer;
   color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 4px;
 }
 
+.db-day-btn:active {
+  transform: scale(0.94);
+}
+
 .db-day-week {
   font-size: 11px;
   font-weight: 700;
   color: var(--text-muted);
+  transition: color 0.15s ease;
 }
 
 .db-day-btn.is-active .db-day-week {
@@ -1185,7 +1343,7 @@ html.dark .dashboard-right {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .db-day-date {
@@ -1196,12 +1354,20 @@ html.dark .dashboard-right {
 .db-day-btn:hover .db-day-date-circle {
   background: rgba(163, 177, 155, 0.12);
   color: var(--text-primary);
+  transform: translateY(-1px);
 }
 
 .db-day-btn.is-active .db-day-date-circle {
   background: linear-gradient(135deg, #A3B19B 0%, #7D9372 100%);
   color: white;
   box-shadow: 0 4px 10px rgba(125, 147, 114, 0.3);
+  animation: day-circle-pop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes day-circle-pop {
+  0% { transform: scale(0.82); }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); }
 }
 
 .db-day-btn.is-active .db-day-date {
@@ -1232,6 +1398,10 @@ html.dark .dashboard-right {
 .db-weekly-day-row:hover {
   border-color: var(--border-strong);
   background: rgba(255, 255, 255, 0.04);
+}
+
+.db-weekly-day-row:active {
+  transform: scale(0.985);
 }
 
 .db-weekly-day-row.is-today {
@@ -1313,7 +1483,108 @@ html.dark .dashboard-right {
   padding: 2px 0;
 }
 
-/* ===== Scheduled Task List (Linear Tasks, No timeline slots) ===== */
+/* ===== Timeline Mode Viewport (Day / Week View Mode Switching) ===== */
+.timeline-mode-viewport {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+.timeline-day-mode-container,
+.timeline-week-mode-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+/* Day -> Week: Forward (新周视图从右滑入，旧日视图向左淡出) */
+.timeline-mode-slide-forward-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.timeline-mode-slide-forward-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  will-change: opacity, transform;
+}
+.timeline-mode-slide-forward-enter-from {
+  opacity: 0;
+  transform: translateX(18px);
+}
+.timeline-mode-slide-forward-leave-to {
+  opacity: 0;
+  transform: translateX(-14px);
+}
+
+/* Week -> Day: Backward (新日视图从左滑入，旧周视图向右淡出) */
+.timeline-mode-slide-backward-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.timeline-mode-slide-backward-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  will-change: opacity, transform;
+}
+.timeline-mode-slide-backward-enter-from {
+  opacity: 0;
+  transform: translateX(-18px);
+}
+.timeline-mode-slide-backward-leave-to {
+  opacity: 0;
+  transform: translateX(14px);
+}
+
+/* ===== Scheduled Task Viewport & Directional Sliding ===== */
+.scheduled-task-viewport {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Forward (右切/向未来日期切): 新卡片从右往左滑入，旧卡片向左淡退 */
+.timeline-slide-forward-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.timeline-slide-forward-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  will-change: opacity, transform;
+}
+.timeline-slide-forward-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+.timeline-slide-forward-leave-to {
+  opacity: 0;
+  transform: translateX(-16px);
+}
+
+/* Backward (左切/向过去日期切): 新卡片从左往右滑入，旧卡片向右淡退 */
+.timeline-slide-backward-enter-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.timeline-slide-backward-leave-active {
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  will-change: opacity, transform;
+}
+.timeline-slide-backward-enter-from {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+.timeline-slide-backward-leave-to {
+  opacity: 0;
+  transform: translateX(16px);
+}
+
 .scheduled-task-list {
   flex: 1;
   overflow-y: auto;
@@ -1321,6 +1592,7 @@ html.dark .dashboard-right {
   flex-direction: column;
   gap: 8px;
   padding: 2px 2px 8px;
+  height: 100%;
 }
 
 .scheduled-task-card {

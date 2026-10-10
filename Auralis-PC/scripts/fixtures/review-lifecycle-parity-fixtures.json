@@ -1,0 +1,940 @@
+[ {
+  "name" : "first-learning",
+  "events" : [ {
+    "input" : {
+      "action" : "LEARNING_COMPLETED",
+      "occurredAt" : "2026-10-08T23:31:09.145626Z",
+      "state" : null,
+      "schedulingBaseline" : null
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-11T23:31:09.145626Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.145626Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : null
+    }
+  } ]
+}, {
+  "name" : "due-good-stable-0",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.159119Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.159119Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.159119Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.159119Z",
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.159119Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-15T23:31:09.159119Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.159119Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "3eca9c4c-9695-470d-89c1-e46574ef8fc4",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.159119Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.159119Z",
+          "mastered" : false,
+          "stableSuccessCount" : 0,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.159119Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "due-good-stable-1",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.180297Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.180297Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.180297Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.180297Z",
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.180297Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-22T23:31:09.180297Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.180297Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "c362fd19-8436-4437-8e77-bbbc0184e706",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.180297Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.180297Z",
+          "mastered" : false,
+          "stableSuccessCount" : 1,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.180297Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "due-good-stable-2",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.203422Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.203422Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.203422Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.203422Z",
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.203422Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.203422Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.203422Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "48949ab0-da77-478e-bac4-67cb641566dd",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.203422Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.203422Z",
+          "mastered" : false,
+          "stableSuccessCount" : 2,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.203422Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "due-good-stable-3",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.223426Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.223426Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.223426Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.223426Z",
+        "mastered" : false,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "lastPracticeAt" : "2026-08-29T23:31:09.223426Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.223426Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.223426Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "73537be3-0381-4ce5-81c4-87e0aec732b9",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.223426Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.223426Z",
+          "mastered" : false,
+          "stableSuccessCount" : 3,
+          "nextReviewStage" : "FINAL_VERIFICATION",
+          "lastPracticeAt" : "2026-08-29T23:31:09.223426Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "early-good",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.249024Z",
+      "state" : {
+        "dueAt" : "2026-10-09T23:31:09.249024Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.249024Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-09T23:31:09.249024Z",
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "EARLY_RECALL",
+        "lastPracticeAt" : "2026-08-29T23:31:09.249024Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-11T23:31:09.249024Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.249024Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "b50bf9b2-a3f7-4564-a9bb-018ad2cb467c",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.249024Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-09T23:31:09.249024Z",
+          "mastered" : false,
+          "stableSuccessCount" : 1,
+          "nextReviewStage" : "EARLY_RECALL",
+          "lastPracticeAt" : "2026-08-29T23:31:09.249024Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "ahead-of-due-good",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.270021Z",
+      "state" : {
+        "dueAt" : "2026-10-15T23:31:09.270021Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.270021Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-15T23:31:09.270021Z",
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.270021Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-15T23:31:09.270021Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.270021Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "ac4615e1-d84f-46f0-94af-5ca93a67e889",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.270021Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-15T23:31:09.270021Z",
+          "mastered" : false,
+          "stableSuccessCount" : 1,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.270021Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "mastered-good",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.288022Z",
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.288022Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.288022Z",
+        "needsLearning" : false,
+        "mastered" : true,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : null,
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-11-07T23:31:09.288022Z",
+        "mastered" : true,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.288022Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.288022Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.288022Z",
+        "needsLearning" : false,
+        "mastered" : true,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : null,
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "2c7949c9-e046-42d7-829a-17a453a4f924",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.288022Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-11-07T23:31:09.288022Z",
+          "mastered" : true,
+          "stableSuccessCount" : 3,
+          "nextReviewStage" : null,
+          "lastPracticeAt" : "2026-08-29T23:31:09.288022Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "hard",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "HARD",
+      "occurredAt" : "2026-10-08T23:31:09.306842Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.306842Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.306842Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.306842Z",
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.306842Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-09T23:31:09.306842Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.306842Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "de376b0d-1539-4426-b6ea-23bd17df2083",
+        "selectedRating" : "HARD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.306842Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.306842Z",
+          "mastered" : false,
+          "stableSuccessCount" : 1,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.306842Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "again",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "AGAIN",
+      "occurredAt" : "2026-10-08T23:31:09.326491Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.326491Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.326491Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.326491Z",
+        "mastered" : false,
+        "stableSuccessCount" : 1,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.326491Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:09.326491Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.326491Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "17a70943-d96b-4296-a1cb-4e1ad7c73ac1",
+        "selectedRating" : "AGAIN",
+        "effectiveRating" : "AGAIN",
+        "selectedAt" : "2026-10-08T23:31:09.326491Z",
+        "resolvedAt" : "2026-10-08T23:31:09.326491Z",
+        "resolution" : "AGAIN_SELECTED",
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.326491Z",
+          "mastered" : false,
+          "stableSuccessCount" : 1,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.326491Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "confirmation-and-correction-same-review-id",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "GOOD",
+      "occurredAt" : "2026-10-08T23:31:09.345623Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.345623Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.345623Z",
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.345623Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.345623Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "26720eb0-68f1-4058-9ba3-8d45cc2908ca",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : null,
+        "selectedAt" : "2026-10-08T23:31:09.345623Z",
+        "resolvedAt" : null,
+        "resolution" : null,
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.345623Z",
+          "mastered" : false,
+          "stableSuccessCount" : 2,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  }, {
+    "input" : {
+      "action" : "REVIEW_CONFIRMED",
+      "occurredAt" : "2026-10-08T23:31:10.345623Z",
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.345623Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.345623Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.345623Z",
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.345623Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.345623Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "26720eb0-68f1-4058-9ba3-8d45cc2908ca",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : "GOOD",
+        "selectedAt" : "2026-10-08T23:31:09.345623Z",
+        "resolvedAt" : "2026-10-08T23:31:10.345623Z",
+        "resolution" : "CONFIRMED",
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.345623Z",
+          "mastered" : false,
+          "stableSuccessCount" : 2,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  }, {
+    "input" : {
+      "action" : "REVIEW_CORRECTED",
+      "rating" : "AGAIN",
+      "occurredAt" : "2026-10-08T23:31:11.345623Z",
+      "state" : {
+        "dueAt" : "2026-11-07T23:31:09.345623Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.345623Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 3,
+        "nextReviewStage" : "FINAL_VERIFICATION",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.345623Z",
+        "mastered" : false,
+        "stableSuccessCount" : 2,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+        "stability" : 12.5
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:11.345623Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:11.345623Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 12.5,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "26720eb0-68f1-4058-9ba3-8d45cc2908ca",
+        "selectedRating" : "GOOD",
+        "effectiveRating" : "AGAIN",
+        "selectedAt" : "2026-10-08T23:31:09.345623Z",
+        "resolvedAt" : "2026-10-08T23:31:11.345623Z",
+        "resolution" : "CORRECTED_AGAIN",
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.345623Z",
+          "mastered" : false,
+          "stableSuccessCount" : 2,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.345623Z",
+          "stability" : 12.5
+        }
+      }
+    }
+  } ]
+}, {
+  "name" : "again-then-relearn",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "AGAIN",
+      "occurredAt" : "2026-10-08T23:31:09.377826Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.377826Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.377826Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.377826Z",
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.377826Z",
+        "stability" : 0.0
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:09.377826Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.377826Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "e55c9934-c588-418f-b30b-aebfc9eded24",
+        "selectedRating" : "AGAIN",
+        "effectiveRating" : "AGAIN",
+        "selectedAt" : "2026-10-08T23:31:09.377826Z",
+        "resolvedAt" : "2026-10-08T23:31:09.377826Z",
+        "resolution" : "AGAIN_SELECTED",
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.377826Z",
+          "mastered" : false,
+          "stableSuccessCount" : 0,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.377826Z",
+          "stability" : 0.0
+        }
+      }
+    }
+  }, {
+    "input" : {
+      "action" : "LEARNING_COMPLETED",
+      "occurredAt" : "2026-10-08T23:31:10.377826Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:09.377826Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.377826Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.377826Z",
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.377826Z",
+        "stability" : 0.0
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:10.377826Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:10.377826Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : null
+    }
+  } ]
+}, {
+  "name" : "again-then-reopen",
+  "events" : [ {
+    "input" : {
+      "action" : "REVIEW_SELECTED",
+      "rating" : "AGAIN",
+      "occurredAt" : "2026-10-08T23:31:09.403834Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:08.403834Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-08-29T23:31:09.403834Z",
+        "needsLearning" : false,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.403834Z",
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.403834Z",
+        "stability" : 0.0
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:09.403834Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.403834Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "daafffc8-4328-4e5f-a663-de88b675aaac",
+        "selectedRating" : "AGAIN",
+        "effectiveRating" : "AGAIN",
+        "selectedAt" : "2026-10-08T23:31:09.403834Z",
+        "resolvedAt" : "2026-10-08T23:31:09.403834Z",
+        "resolution" : "AGAIN_SELECTED",
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.403834Z",
+          "mastered" : false,
+          "stableSuccessCount" : 0,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.403834Z",
+          "stability" : 0.0
+        }
+      }
+    }
+  }, {
+    "input" : {
+      "action" : "LEARNING_REOPENED",
+      "occurredAt" : "2026-10-08T23:31:10.403834Z",
+      "state" : {
+        "dueAt" : "2026-10-08T23:41:09.403834Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.403834Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "schedulingBaseline" : {
+        "dueAt" : "2026-10-08T23:31:08.403834Z",
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "CROSS_DAY",
+        "lastPracticeAt" : "2026-08-29T23:31:09.403834Z",
+        "stability" : 0.0
+      }
+    },
+    "expected" : {
+      "state" : {
+        "dueAt" : "2026-10-08T23:31:10.403834Z",
+        "lastReviewedAt" : null,
+        "lastPracticeAt" : "2026-10-08T23:31:09.403834Z",
+        "needsLearning" : true,
+        "mastered" : false,
+        "stableSuccessCount" : 0,
+        "nextReviewStage" : "EARLY_RECALL",
+        "stability" : 0.0,
+        "reps" : 0,
+        "lapses" : 0
+      },
+      "effectiveReview" : {
+        "reviewId" : "daafffc8-4328-4e5f-a663-de88b675aaac",
+        "selectedRating" : "AGAIN",
+        "effectiveRating" : "AGAIN",
+        "selectedAt" : "2026-10-08T23:31:09.403834Z",
+        "resolvedAt" : "2026-10-08T23:31:09.403834Z",
+        "resolution" : "AGAIN_SELECTED",
+        "schedulingBaseline" : {
+          "dueAt" : "2026-10-08T23:31:08.403834Z",
+          "mastered" : false,
+          "stableSuccessCount" : 0,
+          "nextReviewStage" : "CROSS_DAY",
+          "lastPracticeAt" : "2026-08-29T23:31:09.403834Z",
+          "stability" : 0.0
+        }
+      }
+    }
+  } ]
+} ]

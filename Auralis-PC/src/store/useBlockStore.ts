@@ -10,8 +10,7 @@ export interface KnowledgeBlock {
   id?: string
   subject: string
   title: string
-  preview: string
-  content?: string
+  content: string
   time: string
   source: string
   color: string
@@ -20,7 +19,6 @@ export interface KnowledgeBlock {
   is_deleted?: boolean
   subjectId?: string
   sourceFileId?: string
-  tags?: string[]
   difficulty?: 'easy' | 'medium' | 'hard'
   mastery?: number
   reviewAt?: string

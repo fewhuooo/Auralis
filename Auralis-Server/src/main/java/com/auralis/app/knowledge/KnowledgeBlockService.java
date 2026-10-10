@@ -1,14 +1,13 @@
 package com.auralis.app.knowledge;
 
-import tools.jackson.core.JacksonException;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.shared.domain.ResourceDeletedEvent;
 import com.auralis.app.shared.domain.ResourceChangedEvent;
 import com.auralis.app.shared.domain.ResourceType;
+import com.auralis.app.shared.domain.KnowledgeBlockContentChangedEvent;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
+import com.auralis.app.review.ReviewContentHash;
 import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.shared.pagination.CursorCodec;
@@ -30,7 +29,6 @@ public class KnowledgeBlockService {
     private final SubjectLockCoordinator subjectLockCoordinator;
     private final SourceService sourceService;
     private final ApplicationEventPublisher eventPublisher;
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public KnowledgeBlockService(
             KnowledgeBlockRepository knowledgeBlockRepository,
@@ -59,7 +57,7 @@ public class KnowledgeBlockService {
         validateSource(userId, command.sourceId(), sourceSubjectId);
         KnowledgeBlockView result = view(knowledgeBlockRepository.save(new KnowledgeBlockEntity(
                 blockId, userId, command.subjectId(), command.sourceId(), required(command.title(), "title"),
-                command.summary(), required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride())));
+                required(command.content(), "content"), command.colorOverride())));
         publishChange(userId, result, "CREATE");
         return result;
     }
@@ -104,7 +102,7 @@ public class KnowledgeBlockService {
     public KnowledgeBlockView requireActiveKnowledgeBlockForMutation(UUID userId, UUID id) {
         UUID subjectId = ownerSubjectIdForMutation(userId, id);
         subjectLockCoordinator.lockSubjects(userId, List.of(subjectId));
-        return view(activeForUpdate(userId, id));
+        return requireActiveKnowledgeBlockForMutation(userId, id, subjectId);
     }
 
     /** Revalidates a KnowledgeBlock after all owner Subject locks are held. */
@@ -139,9 +137,15 @@ public class KnowledgeBlockService {
         }
         requireVersion(entity, baseVersion);
         validateSource(userId, command.sourceId(), sourceSubjectId);
-        entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"), command.summary(),
-                required(command.content(), "content"), encodeTags(command.tags()), command.colorOverride());
+        String content = required(command.content(), "content");
+        boolean contentChanged = !entity.getContent().equals(content);
+        entity.update(command.subjectId(), command.sourceId(), required(command.title(), "title"),
+                content, command.colorOverride());
         KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
+        if (contentChanged) {
+            eventPublisher.publishEvent(new KnowledgeBlockContentChangedEvent(
+                    userId, result.id(), ReviewContentHash.sha256(content)));
+        }
         publishChange(userId, result, "UPDATE");
         return result;
     }
@@ -234,27 +238,11 @@ public class KnowledgeBlockService {
         }
     }
 
-    private String encodeTags(List<String> tags) {
-        try {
-            return objectMapper.writeValueAsString(tags == null ? List.of() : tags);
-        } catch (JacksonException exception) {
-            throw new DomainException("VALIDATION_FAILED", "Tags could not be encoded");
-        }
-    }
-
     private KnowledgeBlockView view(KnowledgeBlockEntity entity) {
         return new KnowledgeBlockView(
-                entity.getId(), entity.getSubjectId(), entity.getSourceId(), entity.getTitle(), entity.getSummary(),
-                entity.getContent(), decodeTags(entity.getTags()), entity.getColorOverride(), entity.getVersion(),
+                entity.getId(), entity.getSubjectId(), entity.getSourceId(), entity.getTitle(),
+                entity.getContent(), entity.getColorOverride(), entity.getVersion(),
                 entity.getCreatedAt(), entity.getUpdatedAt(), entity.getDeletedAt());
-    }
-
-    private List<String> decodeTags(String tags) {
-        try {
-            return objectMapper.readValue(tags, new TypeReference<>() { });
-        } catch (JacksonException exception) {
-            throw new DomainException("INTERNAL_ERROR", "Stored tags could not be decoded");
-        }
     }
 
     private void publishChange(UUID userId, KnowledgeBlockView view, String mutationType) {

@@ -9,6 +9,7 @@ export interface FileOverviewItem {
   summary: OverviewSummary | null
   status?: 'READY' | 'FAILED' | 'PENDING'
   error?: string | null
+  syncStatus?: 'LOCAL' | 'PENDING' | 'SYNCED' | 'CONFLICT' | 'ERROR' | 'STALE'
   isGenerating?: boolean
 }
 
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   'select-summary': [fileId: string]
   'select-outline-node': [payload: { fileId: string; locator: OverviewLocator | null }]
   regenerate: [payload: { fileId: string; mode: 'OUTLINE' | 'ALL' }]
+  'resolve-sync-conflict': [payload: { fileId: string; choice: 'LOCAL' | 'REMOTE' }]
 }>()
 </script>
 
@@ -49,8 +51,15 @@ const emit = defineEmits<{
           @click.stop="emit('regenerate', { fileId: file.id, mode: file.summary ? 'OUTLINE' : 'ALL' })"
         >重新生成</button>
       </p>
+      <p v-if="file.syncStatus === 'CONFLICT'" class="file-outline__notice">
+        <IconAlertTriangle :size="12" :stroke-width="1.6" />
+        <span class="file-outline__notice-text">云端版本已变化，本机总览仍保留。</span>
+        <button type="button" class="file-outline__retry" @click.stop="emit('resolve-sync-conflict', { fileId: file.id, choice: 'LOCAL' })">保留本机</button>
+        <button type="button" class="file-outline__retry" @click.stop="emit('resolve-sync-conflict', { fileId: file.id, choice: 'REMOTE' })">采用云端</button>
+      </p>
       <div v-if="file.isGenerating && !file.outline" class="file-outline__pending"><IconRefresh :size="13" :stroke-width="1.6" class="is-spinning" />正在生成文件总览…</div>
       <div v-else-if="!file.outline?.length" class="file-outline__pending">
+        <IconRefresh v-if="file.status !== 'FAILED'" :size="13" :stroke-width="1.6" class="is-spinning" />
         <span>{{ file.status === 'FAILED' ? (file.error || '生成失败') : '等待文件解析并生成大纲' }}</span>
         <button
           v-if="file.status === 'FAILED'"

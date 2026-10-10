@@ -1,5 +1,11 @@
 # Auralis 部署指南
 
+### 2026-10-08 前端镜像构建验证
+
+用户组合构建的前端步骤在 `npm install` 报 `ECONNRESET`。原 Buildx 历史日志确认下载连接被重置；同一 Dockerfile 隔离重试 `docker buildx build --progress plain --file Auralis-PC/Dockerfile Auralis-PC` 退出 0，依赖安装、前端编译和镜像导出均完成。完整日志与时间见 [基础设施记录](../modules/Infrastructure.md)。
+
+本次只验证前端镜像构建，没有部署该无仓库标签的镜像或替换现有服务。后端新增的复习状态与学科统计接口需要重新构建并重启 backend 后才能在当前运行环境使用；前端镜像构建通过不能代替此步骤。再次遇到安装错误时先保留完整 npm 输出，若仍为 ECONNRESET 则排查构建环境到 registry 的网络/代理；不得把它推断为依赖冲突或删除锁文件来规避。
+
 ### 2026-09-24 紧邻任务交换本机部署记录
 
 执行 `docker compose --env-file .env config --quiet`、`build backend`、`up -d --no-deps --force-recreate backend`，均退出 0。最终仅 backend 被替换为容器 `72be6c8240a8…`、镜像 `sha256:bf8e7bb72f0c…`；health/readiness HTTP 200 且 status UP。db/minio 容器与镜像均保持原样、数据卷未重建；Flyway 当前版本 23，无新迁移。GUI 拖放及认证业务请求尚未验收。

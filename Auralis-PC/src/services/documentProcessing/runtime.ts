@@ -444,6 +444,21 @@ export class DocumentProcessingRuntime {
         const jobs = await repository.list()
         return jobs.some((job) => job.sourceId === sourceId && job.ingestionRevision === ingestionRevision && job.phase === 'READY')
       },
+      isFileScopeRestorable: async (sourceId) => {
+        if (!this.isCurrentStart(generation,userId,serverDeviceId)) return false
+        const sourceRow = await localRepo.read<Record<string, unknown>>('SOURCE',sourceId)
+        const sourceValue = sourceRow?.value
+        if (!sourceRow || sourceRow.deletedAt || !sourceValue || sourceValue.id !== sourceId || sourceValue.type !== 'FILE'
+          || typeof sourceValue.subjectId !== 'string') return false
+        const [subjectRow,unresolved] = await Promise.all([
+          localRepo.read('SUBJECT',sourceValue.subjectId),
+          localRepo.listUnresolved(),
+        ])
+        return this.isCurrentStart(generation,userId,serverDeviceId) && Boolean(subjectRow && !subjectRow.deletedAt)
+          && !unresolved.some((mutation) => mutation.mutationType === 'DELETE'
+            && (mutation.resourceType === 'SOURCE' && mutation.resourceId === sourceId
+              || mutation.resourceType === 'SUBJECT' && mutation.resourceId === sourceValue.subjectId))
+      },
       getLocalFileGenerationRevision: async (sourceId) => {
         const source = sourceStore.sources.find((item) => item.id === sourceId)
         if (!source || source.type !== 'FILE' || !source.ingestionRevision) return null

@@ -1,22 +1,21 @@
 <template>
   <ModalShell
     :model-value="modelValue"
+    title="调整 AI 总结要求"
+    aria-label="调整 AI 总结要求"
     size="sm"
     @update:model-value="$emit('update:modelValue', $event)"
     @close="handleCancel"
   >
     <template #title>
-      <div class="summary-dialog-title">
-        <IconSparkles :size="18" :stroke-width="2" class="sparkle-icon" />
-        <span>调整 AI 总结要求</span>
-      </div>
+      <span class="summary-title">调整 AI 总结要求</span>
     </template>
 
-    <form class="summary-instruction-form" @submit.prevent="handleSubmit">
+    <form class="summary-form" @submit.prevent="handleSubmit">
       <p class="instruction-hint">设定您希望 AI 侧重总结的维度或风格：</p>
 
       <!-- Preset Chips -->
-      <div class="instruction-preset-chips">
+      <div class="preset-chips">
         <button
           v-for="chip in presetPrompts"
           :key="chip"
@@ -108,25 +107,18 @@ const handleSubmit = () => {
 </script>
 
 <style scoped>
-.summary-dialog-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 18px;
+.summary-title {
+  font-size: 16px;
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.02em;
 }
 
-html.dark .summary-dialog-title {
+html.dark .summary-title {
   color: var(--text-primary, #e6dfd8);
 }
 
-.sparkle-icon {
-  color: var(--color-zen-sage, #8B9A6E);
-  flex-shrink: 0;
-}
-
-.summary-instruction-form {
+.summary-form {
   display: flex;
   flex-direction: column;
 }
@@ -142,7 +134,7 @@ html.dark .instruction-hint {
   color: var(--text-secondary, #b0aca5);
 }
 
-.instruction-preset-chips {
+.preset-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -151,39 +143,40 @@ html.dark .instruction-hint {
 
 .preset-chip {
   padding: 6px 14px;
-  border-radius: 9999px;
-  border: 1px solid var(--border-default, #DDD5C7);
-  background: var(--color-bg-primary, #F7F2EB);
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.08));
+  background: var(--modal-inset-bg, #FAF7F2);
   color: var(--text-primary, #1C1C1A);
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .preset-chip:hover {
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.14));
-  border-color: var(--color-zen-sage, #8B9A6E);
-  color: var(--color-zen-sage, #76855B);
+  background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.14));
+  border-color: var(--modal-accent, #8B9A6E);
+  color: var(--modal-accent, #76855B);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
 
 html.dark .preset-chip {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+  background: var(--modal-inset-bg, #2e2c29);
+  border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
   color: var(--text-primary, #e6dfd8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
 html.dark .preset-chip:hover {
-  background: var(--color-bg-secondary, #292825);
-  border-color: var(--color-zen-sage, #8B9A6E);
-  color: #FFFFFF;
+  background: rgba(163, 177, 155, 0.14);
+  border-color: var(--modal-accent, #A3B19B);
+  color: #B4C4AA;
 }
 
 .char-count {
-  display: block;
   margin: 8px 0 0;
   color: var(--text-muted, #7A7A75);
   font-size: 12px;

@@ -1,5 +1,47 @@
 # Spring Boot 后端模块
 
+### 2026-10-09 PC 离线复习补传协议（代码及相关自动验证通过；真实联调待验收）
+
+- 最小扩展现有生命周期请求的 occurredAt/expectedStateAbsent；前者保留真实操作时间，后者区分无状态与 version0。owner、活动资源、版本、正文 hash、锁序及回执幂等继续校验，无新端点或数据库迁移。
+- 历史/回执公开初选前 schedulingBaseline，legacy event 公开由 before_state SQL NULL 派生的 firstLearning，支撑本地确认和实际历史统计，不公开原始持久 JSON。history 顶层 protocolVersion=2 供端侧在副作用前检查后端版本。
+- Luna 执行 Agent 完成 Service 与相关测试：最终 clean Lifecycle/Review/SubjectStats/StatsService/OpenAPI 32/32，独立 OpenAPI 比对 9/9；运行时产物及 PC/Mobile SDK 已同步并同 hash。真实 Java/MockMvc 导出 13 场景排程 fixture 给前端，不凭口述重建算法。
+- 参数与拒绝语义见 [API](../contracts/API.md)，命令/退出码/关键输出与哈希记录在 TEMP `auralis-review-stats-local-first-20261009/backend/report.md` / `verification.log`，索引见 [计划](../plans/2026-10-09-review-stats-local-first.md)。未重跑全量 Server、PG 集成或真实多端/GUI。
+
+### 2026-10-08 学习、复习纠正与掌握退出（代码、相关自动验证及只读审查通过）
+
+- Review新增独立生命周期命令/历史，初选即调度、核对确认或同reviewId纠正，显式学习完成与重学。阶段日期按3/7/14/30天与10分钟/1天风险间隔保存，最终核对成功持久化mastered，自动due排除mastered及needsLearning。
+- 同块写入沿Subject→KnowledgeBlock→ReviewState锁序；锁后重查KB仍属已锁Subject，移动交错拒绝且不写state/command。common版本/hash绑定当前正文，正文变化经共享领域事件在原事务内失效掌握/稳定进度，元信息修改保留。旧events精确回放保留，新legacy写入更新最近练习并失效旧因果链，不能凭旧reps毕业。
+- V29新增不可变命令回执与同次有效结果投影，旧state默认稳定0/未掌握且保留原日期与历史。预置既有FSRS_LITE/1默认参数，关闭不同Subject首次学习的全局参数插入竞争；已有同版本行保留ID/JSON。学科统计新增互斥三态、有效复习与独立学习完成；新初选/确认/纠正审计不重复计量。新DTO三档与legacy五档显式区分。
+- 初始相关H2/MockMvc/OpenAPI聚焦25/25、PG2/2与独立OpenAPI导出9/9通过，两端SDK一致。审查后Subject移动PG受控RED→GREEN 1/1；参数初始化PG空库竞争与V28→V29已有参数升级各1/1；最后当前迁移Lifecycle/legacy/schema H2 14/14。临时PG17没有触碰业务库；唯一只读reviewer最终BLOCKER=0、IMPORTANT=0、OPTIONAL=0。以上不代表GUI、真实HTTP或多端验收；完整命令、各版本证明范围和最终哈希见 [本轮实施](../plans/2026-10-08-review-learning-mastery-implementation.md)。
+
+### 2026-10-08 学科复习状态与统计读取
+
+- Review 增加 `GET /api/reviews/states`，以 owner / 活动 Subject / 活动 KB 过滤后按 knowledgeBlockId keyset 完整分页；到期及未来状态均可读取，游标绑定用户与学科。既有 due、评分、历史、调度与事件幂等保持现行规则。
+- Stats 增加 `GET /api/stats/subjects/{subjectId}` 和 `SubjectStatsView`，在可重复读事务中组合独立 owner-scoped 聚合：活动资料、KB、任务与状态概况，近 7 / 30 个 IANA 本地自然日的评分/不同 KB/首次与后续学习/新增 KB/完成任务，以及四档正式反馈分布。独立聚合避免 fanout，学科不包含专注字段。
+- 三类复习状态与活动 KB 总数在同一查询快照内计算；首次正式学习用 before_state 为 SQL NULL。任务日完成保留当前 DONE 的软删除历史，重新打开后的旧完成转换不推算；历史归属按 KB/Task 当前学科解释。
+- 不新增迁移、依赖或 core Sync 字段；stats 仅通过允许的公开模块边界与 owner SQL 查询读取，不跨模块依赖内部实体。完整接口见 [API](../contracts/API.md)，自动门禁、单 reviewer 和真实环境边界见 [实施记录](../plans/2026-10-08-subject-review-stats-implementation.md)。
+
+### 2026-10-07 文件恢复与保留清理并发修复
+
+- `AssetRepository.findForUpdateByIdAndUserId` 使用 owner-scoped 悲观写锁。`SourceService.requireReadyAsset` 在 FILE 创建、替换 Asset 和恢复时共用此锁，沿用 Subject→Source（存在时）→Asset 的写入锁序。
+- `AssetRetentionCleanupService` 每个 owner/Asset 在独立 `REQUIRES_NEW` 模板事务内锁 Asset、重查活动及仍在恢复期内的引用并提交 ORPHANED；提交成功后才删除对象。清理不反向锁 Subject/Source，调度入口不依赖同 Bean 自调用的事务代理。
+- 恢复先提交时，清理重查后保留对象；清理先提交时，新 FILE 引用与恢复拒绝 ORPHANED。对象删除失败保留该状态，由下一轮幂等重试；批次内按 owner/Asset 去重。
+- 新 PostgreSQL 17.11/Testcontainers 并发集成 5/5，实际观察清理的 Asset 锁等待恢复事务；相关 Service/Controller/Asset/retention 56/56。全量 clean test 为 392 项、1 failure、0 error/skip，唯一失败是既有 TaskColor 测试期待迁移 V21、实际 V28；此前 AccountDeletion 微秒舍入失败本次未复现。生产 MinIO/真实 HTTP 与 GUI 验收独立登记，完整证据见 [实施记录](../plans/2026-10-07-priority-function-fixes.md)。
+
+### 2026-10-01 提问选中文本处理（代码与自动验证通过；真实 Provider 待验收）
+
+- AiMessageCommand 增加可选顶层 selectionText（最大 4000 字符），非 null 时优先；空白取消引用，否则保留现行 readingContext 引用路径。AiStreamingService 将有效引用送入模型请求，不修改普通 USER 消息持久化内容或 citation。
+- 无 readingContext 且 retrievalEnabled=false 时，仅传引用，不调用检索/embedding。已有资料范围、owner、READY 与请求回放规则保留。
+- PromptAssembler 完整保留本次问题与引用，优先淘汰旧完整历史对。引用使用 USER 角色、固定 SYSTEM 说明将其视为资料；无法容纳必需内容时抛 VALIDATION_FAILED。AiController 在 SSE 开始前调用同一预算预检，返回 HTTP 400。
+- Server clean focused 47/47、OpenAPI export 8/8、SDK 生成和一致性检查退出 0；未新增数据库/迁移/配置。真实 Provider 与 GUI 未验收，完整命令见 [实施记录](../plans/2026-10-01-chat-selected-text.md)。
+
+### 2026-10-01 学习数据能力调整（整合验证中）
+
+- 新增独立 `focus` 模块及 `POST /api/focus-sessions`，稳定 session ID 按用户幂等记录实际秒数和自然完成标记；Stats 暴露历史全时及每周每日专注秒数/完成轮次，不改变复习事件的 studySeconds。
+- ai 模块新增完整 Overview results GET/PUT、整体及分项版本、Subject 来源 manifest 校验和独立精确回放 receipt；当前 owner/READY/revision/活动状态围栏覆盖读取、写入及重试。生成接口继续无状态，不自动保存中间结果。提交后发布 `OVERVIEW_UPDATED`，不扩展核心资源 Sync。
+- KnowledgeBlock DTO/Entity/Service 删除 summary/tags，Suggestion 的正文输入读取 content；保留 Suggestions 服务端接口和 PC 暂藏策略。追加 V26 专注、V27 成果/回执、V28 摘要/标签删除迁移，账户物理清理包含新增三表。
+- API、数据结构及执行证据见 [API](../contracts/API.md)、[Database](../contracts/Database.md)、[实施计划](../plans/2026-10-01-pc-learning-data-cleanup-and-sync.md)。本轮未部署运行服务或执行生产迁移。
+
 2026-09-27 PC/Service 风险修复：Sync pull 对省略/零 cursor 也使用用户独立高水位和最早保留日志识别清理缺口；Subject Overview 在转换 outline 引用前先建立所有请求 Source 别名；Source Overview 同一进程内以 owner/source/revision/title/mode/instruction 合并进行中生成。TEXT/URL 解析输入变更轮换 Source ingestion revision，新旧修订使用不同 job；Source 与对应 job 在同一事务持久化，失败整体回滚；恢复处理中的 TEXT/URL Source 时按当前 revision 补建或复用 job。worker 的结果及失败写入按 revision、job/generation、attempt 与锁后新鲜时钟的有效 lease 栅栏化，成功的 Source/chunks/job 在短事务内提交。Server clean 聚焦 114/114、PostgreSQL pgvector 2/2 通过；跨服务实例 Overview 去重、真实 Provider/运行服务尚未验收。
 
 2026-09-26 AI 显式检索范围补充：聊天 `ReadingContext` 保留既有 `AUTO` 当前 Source 行为，并支持用户显式选择的 Source ID 集合或全学科范围。检索前验证活动 Subject 属于当前用户；显式 Source 必须属于当前用户及该 Subject 且为活动 READY 状态，结果不得扩展到未选 Source。定向 `AiRetrievalTests` clean 12/12、`ArchitectureTests` 1/1 通过；真实 PostgreSQL/pgvector、Provider 和 GUI 尚未验收。
@@ -103,9 +145,9 @@ Identity 的登录设备列表以活动 refresh session 为边界：同一用户
 - KnowledgeBlock：`POST/GET /api/knowledge-blocks`、`GET/PUT/DELETE /api/knowledge-blocks/{id}`、`POST /api/knowledge-blocks/{id}/restore`。
 - Task：`POST/GET /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`POST /api/tasks/{id}/restore`、`POST /api/tasks/schedule-swaps`、`POST /api/tasks/schedule-insertions`；Task 颜色字段已由 V21 从 API、Entity 和历史同步 JSON 中移除，KnowledgeBlock 颜色仍保留。
 
-创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 排期创建、更新、恢复和换位在事务中先悲观锁定所属 User 行，再按既有 Subject→Task 顺序加锁，以序列化同一用户跨学科的排期写入；通过 TaskService 进入的 REST 与 Sync 写入共用该锁。服务端按 `[scheduledAt, scheduledAt + durationMinutes)` 检查同用户所有未取消、未删除 Task，首尾相接允许，`durationMinutes=null` 按 30 分钟比较；update 排除自身，restore 检查恢复后的区间，swap 同时排除双方旧行并校验双方新区间互不重叠且不冲突于第三方。冲突返回 `VALIDATION_FAILED`，Sync 将该 mutation 记为 `REJECTED`，不会部分写入。Task 的 `dueAt` 只作提醒和排序，不限制创建、更新或排期晚于截止时间；V23 移除历史排期顺序 CHECK。Task 换位仍以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本及换位结果；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
+创建、更新、删除和恢复统一执行 `baseVersion`、userId 隔离和软删除语义；Subject、KnowledgeBlock、Task 列表使用不透明 keyset cursor 和 `limit`（默认 100、最大 200），返回稳定 `nextCursor`/`hasMore`。Task 排期创建、更新、恢复和换位在事务中先悲观锁定所属 User 行，再按既有 Subject→Task 顺序加锁，以序列化同一用户跨学科的排期写入；通过 TaskService 进入的 REST 与 Sync 写入共用该锁。服务端按 `[scheduledAt, scheduledAt + durationMinutes)` 检查同用户所有未取消、未删除 Task，首尾相接允许，`durationMinutes=null` 按 30 分钟比较；update 排除自身，restore 检查恢复后的区间，swap 同时排除双方旧行并校验双方新区间互不重叠且不冲突于第三方。冲突返回 `VALIDATION_FAILED`，Sync 将该 mutation 记为 `REJECTED`，不会部分写入。Task 创建、恢复、排期/有效时长/截止时间变化及取消后重新进入活动排期时，若排期与截止均存在，必须满足 `scheduledAt + effectiveDurationMinutes <= dueAt`，恰好结束允许，无截止不限制。仅标题、备注或状态变化且有效时间值相同的历史越界排期仍可保存（包括自动 DONE），空时长与显式 30 等价；不批量改写旧数据。V23 移除历史排期顺序 CHECK，本轮由领域服务校验，不新增数据库约束或迁移。Task 换位仍以稳定 UUID 顺序获取两个悲观锁，在一个事务中校验版本及换位结果；任一失败均回滚，避免半交换。无法反序列化为 `Instant` 的请求字段由 Problem Details `400 VALIDATION_FAILED + fieldErrors` 返回，而非未处理 500。KnowledgeBlock 的 `sourceId` 现在校验同用户活动 Source；Source 删除通过 shared 事件级联软删除 Relation。
 
-`POST /api/tasks/schedule-insertions` 在不含 `targetTaskId` 时将 Task 插入普通时间槽并顺延发生区间冲突的后续 Task，保留未冲突的空档；含目标 ID 时按本文件最新主体规则严格放置。该请求携带被拖 Task 的 `baseVersion`、目标 `scheduledAt` 及当天 `windowStartAt`/`windowLastStartAt`（08:00 和 22:30 对应的 UTC instants）；服务端按窗口起点向上取整到半小时槽。完成 Task 固定、取消 Task 不占用时间，若需要移动完成 Task或顺延超出窗口则整体拒绝；`dueAt` 不限制插入或顺延时间。所有实际改时的 Task 各增加一次版本并发布普通 `UPDATE` 变更，HTTP 200 响应只返回实际变化的 Task；原子写入失败不保留任何部分变更。该在线操作不增加 Sync mutation，已有事件由客户端 read pull 收敛。
+`POST /api/tasks/schedule-insertions` 在不含 `targetTaskId` 时将 Task 插入普通时间槽并顺延发生区间冲突的后续 Task，保留未冲突的空档；含目标 ID 时按本文件最新主体规则严格放置。该请求携带被拖 Task 的 `baseVersion`、目标 `scheduledAt` 及当天 `windowStartAt`/`windowLastStartAt`（08:00 和 22:30 对应的 UTC instants）；服务端按窗口起点向上取整到半小时槽。完成 Task 固定、取消 Task 不占用时间，若需要移动完成 Task或顺延超出窗口则整体拒绝；被拖任务及全部实际顺延任务均检查新结束时间不晚于各自截止时间；任一超限整组拒绝，校验先于所有任务保存，版本及时间保持原值。所有实际改时的 Task 各增加一次版本并发布普通 `UPDATE` 变更，HTTP 200 响应只返回实际变化的 Task；原子写入失败不保留任何部分变更。该在线操作不增加 Sync mutation，已有事件由客户端 read pull 收敛。
 
 顺延链只移动起始时间位于目标日窗口内的 Task；前一日开始、区间延续到当天的 Task 不会被改期，若与插入结果冲突则整笔拒绝。
 
@@ -215,7 +257,7 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 - `RetrievalService` 只查询当前 userId 的活动 generation chunks。PostgreSQL 通过 `PgVectorRetrievalRepository` 执行带 user/source/active/deleted 过滤的 pgvector cosine SQL，由 HNSW 索引支持 top-k；非 PostgreSQL 环境使用活动 chunk 的 JSON cosine fallback。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
 - Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、会话和 USER 消息的 `clientRequestId` 幂等回放及安全错误/断流状态持久化。流式请求先在短事务中锁定会话并保留唯一 USER 消息，Provider I/O 不持有数据库事务；assistant 以 `reply_to_message_id` 精确关联该 USER 消息。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
-- `POST /api/ai/source-overviews` 与 `POST /api/ai/subject-overviews` 是同步、无状态的结构化生成边界。前者经 `SourceService` owner/active/READY 校验后只通过 active 定向查询读取 ai 模块中的 chunks，并按完整 `auralis.ai.max-prompt-chars` prompt 长度分批归纳、分层归并且每次调用前精确检查上限；后者 owner-check Subject，并验证每个输入 Source 归属该 Subject、无重复且按 mode 有可用 part。服务端为模型分配短 alias，固定 SYSTEM 与独立 USER 数据隔离，map/reduce 全程只保留 alias；输出仅接受一个 JSON object/JSON fenced block，经数量、长度、alias 和 mode nullability 校验，当前无可信页码/block alias 因而强制 `locator=null`，仅最终响应回映射真实 Source UUID。Provider 输出解析/结构错误统一为 `502 MODEL_PROVIDER_ERROR`，客户端输入仍为 `400 VALIDATION_FAILED`。它们重用 `AiSettingsService`、`AiProviderRegistry` 和 `AiProviderPort.complete`，不创建 Conversation/Message，不写 sync/change log，也不新增数据库 schema、表或 Flyway migration；PC 才持久化派生结果。Overview 请求可携带 `X-Overview-Request-Id`；服务端将其规范为 UUID（非法或含敏感内容时生成新 UUID），为每次 user/source/revision 生成 `generationId`，并按 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 输出阶段；失败日志只记录规范化 `requestId`、关联字段、阶段、allowlisted `errorCode`（DomainException code 或 `OVERVIEW_GENERATION_FAILED` 回退）及 exception/cause 类型，不记录原始 exception/cause 文本或 throwable stack。
+- `POST /api/ai/source-overviews` 与 `POST /api/ai/subject-overviews` 是同步、无状态的结构化生成边界。前者经 `SourceService` owner/active/READY 校验后只通过 active 定向查询读取 ai 模块中的 chunks，并按完整 `auralis.ai.max-prompt-chars` prompt 长度分批归纳、分层归并且每次调用前精确检查上限；后者 owner-check Subject，并验证每个输入 Source 归属该 Subject、无重复且按 mode 有可用 part。服务端为模型分配短 alias，固定 SYSTEM 与独立 USER 数据隔离，map/reduce 全程只保留 alias；输出仅接受一个 JSON object/JSON fenced block，经数量、长度、alias 和 mode nullability 校验，当前无可信页码/block alias 因而强制 `locator=null`，仅最终响应回映射真实 Source UUID。Provider 输出解析/结构错误统一为 `502 MODEL_PROVIDER_ERROR`，客户端输入仍为 `400 VALIDATION_FAILED`。它们重用 `AiSettingsService`、`AiProviderRegistry` 和 `AiProviderPort.complete`，不创建 Conversation/Message，不写 sync/change log，也不新增数据库 schema、表或 Flyway migration；PC 先保存本地派生结果，再通过独立 Overview results GET/PUT 持久化完整成功产物；生成接口本身仍保持无状态。Overview 请求可携带 `X-Overview-Request-Id`；服务端将其规范为 UUID（非法或含敏感内容时生成新 UUID），为每次 user/source/revision 生成 `generationId`，并按 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 输出阶段；失败日志只记录规范化 `requestId`、关联字段、阶段、allowlisted `errorCode`（DomainException code 或 `OVERVIEW_GENERATION_FAILED` 回退）及 exception/cause 类型，不记录原始 exception/cause 文本或 throwable stack。
 - Task 14（2026-09-09）：Source ingestion 的 `PARSING`、`PENDING`、`INDEXING`、`READY` 和 `FAILED` 状态及安全失败诊断统一经 `SourceService` 实际持久化后发布既有 `SOURCE/UPDATE` 事件；重复相同状态/诊断不写版本或 change log。ParsedDocument complete 在保持外层事务和 Source 锁的前提下通过该入口转入 `INDEXING`；接受后的异常会将 document、Source、job 和 change-log 一并回滚，预校验失败仍持久化 `REJECTED`。
 - S1 已通过 `V15__tauri_parsed_document_schema.sql` 冻结 `parsed_documents` 的 owner/source/revision、parser/normalization/OCR model、Asset/payload/plain-text SHA、私有 object key、status、generation 和生命周期字段；历史非 READY FILE 在迁移时进入 `AWAITING_CLIENT`，已有 READY FILE 与活动 chunks 保持不变。S2 已让 FILE create/Asset 替换/reingest 等待客户端解析并停止发布旧 ingestion event，TEXT/URL 保留服务端 event；S3 已实现 owner-scoped upload intent，S4 已实现有界 gzip/JSON/ordinal/hash validator 与 legacy Asset SHA 条件回填；S5 已在 Source 行锁内完成 complete 首胜、同 payload 幂等、冲突/过期错误和唯一 revision job 关联；S6 已让带 ParsedDocument 的 worker 消费重新验证后的 blocks、隔离旧 revision/generation、兼容 reingest 复用 accepted 结果，并由 cleanup scheduler 删除过期 payload 对象且保留元数据。
 

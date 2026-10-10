@@ -15,5 +15,6 @@ public record ReviewEventView(
         String scheduler,
         int schedulerVersion,
         UUID parameterSetId,
-        Instant createdAt) {
+        Instant createdAt,
+        boolean firstLearning) {
 }

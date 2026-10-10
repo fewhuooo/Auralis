@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import { getDownloadUrl, type AssetView } from '@/api/useAssetApi'
 import { useAuthStore } from '@/store/useAuthStore'
@@ -25,24 +25,43 @@ export type AssetInput = Pick<LocalAssetFileReadResult, 'file' | 'cleanup'>
 interface AssetOwnerSnapshot {
   userId: string
   serverDeviceId: string
+  sessionId: string | null
+  generation: number
 }
 
 export const useAssetStore = defineStore('asset', () => {
   const assets = ref<AssetModel[]>([])
   const pendingUploads = ref<PendingAssetUpload[]>([])
   const lastError = ref<string | null>(null)
+  const authStore = useAuthStore()
+  let ownerGeneration = 0
+
+  watch(
+    () => ({ userId: authStore.user?.id, serverDeviceId: authStore.serverDeviceId, sessionId: authStore.sessionId }),
+    (newOwner, oldOwner) => {
+      if (!oldOwner || (newOwner.userId === oldOwner.userId && newOwner.serverDeviceId === oldOwner.serverDeviceId && newOwner.sessionId === oldOwner.sessionId)) return
+      ownerGeneration += 1
+      if (newOwner.userId !== oldOwner.userId || newOwner.serverDeviceId !== oldOwner.serverDeviceId) {
+        assets.value = []
+        pendingUploads.value = []
+        lastError.value = null
+      }
+    },
+    { flush: 'sync', deep: true },
+  )
 
   function requireOwner(): AssetOwnerSnapshot {
-    const authStore = useAuthStore()
     const userId = authStore.user?.id
     const serverDeviceId = authStore.serverDeviceId
     if (!userId || !serverDeviceId) throw new Error('Asset access requires an authenticated user and device')
-    return { userId, serverDeviceId }
+    return { userId, serverDeviceId, sessionId: authStore.sessionId, generation: ownerGeneration }
   }
 
   function assertOwner(owner: AssetOwnerSnapshot): void {
-    const authStore = useAuthStore()
-    if (authStore.user?.id !== owner.userId || authStore.serverDeviceId !== owner.serverDeviceId) {
+    if (ownerGeneration !== owner.generation
+      || authStore.user?.id !== owner.userId
+      || authStore.serverDeviceId !== owner.serverDeviceId
+      || authStore.sessionId !== owner.sessionId) {
       throw new Error('ASSET_IDENTITY_CHANGED')
     }
   }
@@ -50,9 +69,12 @@ export const useAssetStore = defineStore('asset', () => {
 
 
   async function upload(file: File, onProgress?: (percent: number, stage: string) => void): Promise<AssetModel> {
-    const authStore = useAuthStore()
-    if (!authStore.user?.id || !authStore.serverDeviceId) {
-      throw new Error('Asset upload requires an authenticated user and device')
+    const owner = requireOwner()
+    const reportProgress = (percent: number, stage: string): void => {
+      if (ownerGeneration === owner.generation && authStore.user?.id === owner.userId
+        && authStore.serverDeviceId === owner.serverDeviceId && authStore.sessionId === owner.sessionId) {
+        onProgress?.(percent, stage)
+      }
     }
 
     validateUploadFile(file)
@@ -67,12 +89,14 @@ export const useAssetStore = defineStore('asset', () => {
       progress: 0,
       status: 'pending',
     }
-    pendingUploads.value = [...pendingUploads.value, pending]
-    lastError.value = null
+    if (ownerGeneration === owner.generation) {
+      pendingUploads.value = [...pendingUploads.value, pending]
+      lastError.value = null
+    }
 
     try {
-      onProgress?.(10, '校验并持久化本地资产...')
-      const localAssetRepo = await getLocalAssetRepository(authStore.user.id, authStore.serverDeviceId)
+      reportProgress(10, '校验并持久化本地资产...')
+      const localAssetRepo = await getLocalAssetRepository(owner.userId, owner.serverDeviceId)
       const assetService = getOrCreateLocalAssetService(localAssetRepo)
 
       const handle = await assetService.importAsset({
@@ -86,7 +110,7 @@ export const useAssetStore = defineStore('asset', () => {
       // Enqueue sync job in localAssetRepo with phase PENDING
       await localAssetRepo.enqueueSyncJob(localAssetId)
 
-      onProgress?.(50, '登记本地资料库...')
+      reportProgress(50, '登记本地资料库...')
 
       const now = new Date().toISOString()
       const syntheticView: AssetView = {
@@ -101,20 +125,21 @@ export const useAssetStore = defineStore('asset', () => {
       }
 
       // Upsert to localRepository as ASSET so local reads see it
-      const repo = await getLocalRepository(authStore.user.id, authStore.serverDeviceId)
+      const repo = await getLocalRepository(owner.userId, owner.serverDeviceId)
       await repo.upsert('ASSET', localAssetId, syntheticView, {
         version: 0,
         deletedAt: null,
         syncStatus: 'pending',
       })
 
+      assertOwner(owner)
       const model = Object.assign(mapAssetView(syntheticView), {
         originalName: file.name,
         uploadStatus: syntheticView.uploadStatus,
       })
       assets.value = [model, ...assets.value.filter((item) => item.id !== model.id)]
       pendingUploads.value = pendingUploads.value.filter((item) => item.clientUploadId !== clientUploadId)
-      onProgress?.(100, '本地导入完成')
+      reportProgress(100, '本地导入完成')
 
       // Request background sync
       useSyncStore().requestBackgroundSync('write')
@@ -122,12 +147,15 @@ export const useAssetStore = defineStore('asset', () => {
       return model
     } catch (error) {
       const message = error instanceof Error ? error.message : '资产上传失败'
-      const current = pendingUploads.value.find((item) => item.clientUploadId === clientUploadId)
-      if (current) {
-        current.status = 'failed'
-        current.error = message
+      if (ownerGeneration === owner.generation && authStore.user?.id === owner.userId
+        && authStore.serverDeviceId === owner.serverDeviceId && authStore.sessionId === owner.sessionId) {
+        const current = pendingUploads.value.find((item) => item.clientUploadId === clientUploadId)
+        if (current) {
+          current.status = 'failed'
+          current.error = message
+        }
+        lastError.value = message
       }
-      lastError.value = message
       throw error
     }
   }

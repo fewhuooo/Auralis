@@ -115,6 +115,7 @@ public class AiController {
     public ResponseEntity<StreamingResponseBody> streamMessage(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody AiMessageCommand command) {
+        streamingService.validatePromptBudget(command);
         StreamingResponseBody body = output -> {
             streamingService.stream(principal.userId(), command, event -> writeEvent(output, event));
         };

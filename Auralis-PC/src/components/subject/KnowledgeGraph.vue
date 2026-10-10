@@ -41,7 +41,7 @@ import { applyKnowledgeGraphForces, setManualGraphPosition, type PhysicsLink, ty
 
 interface SubjectInput { id: string; name: string }
 interface SourceInput { id: string; name: string; subjectId: string }
-interface BlockInput { id: string; title: string; subjectId: string; subject?: string; sourceFileId?: string | null; source?: string; content?: string; preview?: string; time?: string }
+interface BlockInput { id: string; title: string; subjectId: string; subject?: string; sourceFileId?: string | null; source?: string; content?: string; time?: string }
 type AssetType = 'file' | 'block'
 interface GraphNode extends PhysicsNode {
   id: string
@@ -63,7 +63,6 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{
   'select-node': [payload: { type: AssetType; id: string; subjectId: string }]
-  'open-block-detail': [block: BlockInput]
 }>()
 
 const wrapperEl = ref<HTMLDivElement | null>(null)
@@ -527,7 +526,6 @@ function onPointerUp(event: PointerEvent) {
     const node = hitTest(event.clientX, event.clientY)
     if (node && node.type !== 'subject') {
       emit('select-node', { type: node.type, id: node.id, subjectId: node.subjectId })
-      if (node.type === 'block' && node.block) emit('open-block-detail', node.block)
     }
   }
   down = null

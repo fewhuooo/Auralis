@@ -5,5 +5,7 @@ public record StatsOverviewView(
         long activeTasks,
         long dueReviews,
         long completedReviewEvents,
-        long activeSources) {
+        long activeSources,
+        long focusSeconds,
+        long focusCompletedCount) {
 }

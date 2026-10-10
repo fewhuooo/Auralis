@@ -1,8 +1,33 @@
 import assert from 'node:assert/strict'
+import { register } from 'node:module'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import * as taskViewRulesModule from '../src/services/taskViewRules.ts'
 import { mapTaskView } from '../src/services/domainMappers.ts'
+
+const srcRootUrl = new URL('../src/', import.meta.url).href
+const loaderCode = `
+export async function resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@/')) {
+    const root = '${srcRootUrl}';
+    const subPath = specifier.slice(2);
+    const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts';
+    return nextResolve(new URL(withExt, root).href, context);
+  }
+  if ((specifier.startsWith('./') || specifier.startsWith('../'))
+    && context.parentURL && !/\.(?:ts|js|mjs)$/.test(specifier)) {
+    return nextResolve(new URL(specifier + '.ts', context.parentURL).href, context);
+  }
+  return nextResolve(specifier, context);
+}
+`
+register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
+
+const { createPinia, setActivePinia } = await import('pinia')
+const { useAuthStore } = await import('../src/store/useAuthStore.ts')
+const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { useTaskStore } = await import('../src/store/useTaskStore.ts')
+const { getLocalRepository } = await import('../src/services/localDb.ts')
 
 const { findScheduleConflict } = taskViewRulesModule
 
@@ -11,6 +36,102 @@ const taskViewRules = await readFile(new URL('../src/services/taskViewRules.ts',
 const timeline = await readFile(new URL('../src/views/Timeline/index.vue', import.meta.url), 'utf8')
 const taskApi = await readFile(new URL('../src/api/useTaskApi.ts', import.meta.url), 'utf8')
 const taskApiSchema = await readFile(new URL('../src/api/generated/schema.ts', import.meta.url), 'utf8')
+
+let deadlineFixtureNumber = 0
+
+function deadlineTask(id, overrides = {}) {
+  return {
+    id,
+    subjectId: 'deadline-subject',
+    title: `Task ${id}`,
+    description: `Description ${id}`,
+    status: 'TODO',
+    scheduledAt: undefined,
+    dueAt: new Date(Date.now() - 60_000).toISOString(),
+    durationMinutes: 75,
+    sortKey: `sort-${id}`,
+    version: 7,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+    deletedAt: null,
+    ...overrides,
+  }
+}
+
+function localDateKey(date) {
+  if (!date || Number.isNaN(date.getTime())) return undefined
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+async function createTaskStoreFixture(records) {
+  const suffix = ++deadlineFixtureNumber
+  const userId = `task-deadline-user-${suffix}`
+  const serverDeviceId = `task-deadline-device-${suffix}`
+  setActivePinia(createPinia())
+
+  const authStore = useAuthStore()
+  authStore.user = { id: userId, email: `${userId}@example.test` }
+  authStore.tokens = { accessToken: 'deadline-access-token', refreshToken: 'deadline-refresh-token' }
+  authStore.authStatus = 'authenticated'
+  authStore.serverDeviceId = serverDeviceId
+
+  const syncStore = useSyncStore()
+  const requestedSyncs = []
+  syncStore.requestBackgroundSync = (reason) => requestedSyncs.push(reason)
+
+  const repository = await getLocalRepository(userId, serverDeviceId)
+  for (const record of records) {
+    await repository.upsert('TASK', record.id, record, {
+      version: record.version,
+      deletedAt: record.deletedAt,
+      syncStatus: 'synced',
+    })
+  }
+
+  return {
+    repository,
+    requestedSyncs,
+    taskStore: useTaskStore(),
+  }
+}
+
+function taskProjection(tasks) {
+  return tasks.map((task) => ({
+    id: task.id,
+    subjectId: task.subjectId,
+    title: task.title,
+    description: task.description,
+    status: task.status,
+    scheduledAt: task.scheduledAt,
+    dueAt: task.dueAt,
+    durationMinutes: task.durationMinutes,
+    sortKey: task.sortKey,
+    version: task.version,
+    deletedAt: task.deletedAt,
+    sync_status: task.sync_status,
+  }))
+}
+
+async function taskStoreSnapshot(fixture) {
+  return {
+    records: await fixture.repository.list('TASK'),
+    pendingMutations: await fixture.repository.listPending('TASK'),
+    allTasks: taskProjection(fixture.taskStore.allTasks),
+    pendingTasks: taskProjection(fixture.taskStore.pendingTasks),
+    timeline: fixture.taskStore.timeSlots.map(({ time, task }) => ({
+      time,
+      taskId: task?.id ?? null,
+      scheduledAt: task?.scheduledAt,
+    })),
+  }
+}
+
+async function assertDeadlineFailurePreservesStore(fixture, operation, message) {
+  const before = await taskStoreSnapshot(fixture)
+  const error = await operation().then(() => null, (reason) => reason)
+  assert.deepEqual(await taskStoreSnapshot(fixture), before, `${message}: records, outbox, and projections must be unchanged`)
+  assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+}
 
 test('store derives scheduling queue from unscheduled active tasks', () => {
   assert.match(source, /pendingTasks\.value = tasks\.filter\(\(task\) => isSchedulableTask\(task\)\)/)
@@ -39,14 +160,14 @@ test('completed scheduled tasks are fixed before any schedule mutation', () => {
   assert.match(taskViewRules, /return task\.status === 'completed' && Boolean\(task\.scheduledAt\)/)
 
   const scheduleTaskSource = source.slice(source.indexOf('async function scheduleTask('), source.indexOf('async function scheduleTaskToDay('))
-  assert.match(scheduleTaskSource, /if \(slot\.task && isCompletedScheduledTask\(slot\.task\)\)[\s\S]*?throw new Error\('已完成的排期任务已固定'\)/)
+  assert.match(scheduleTaskSource, /if \(existingTask && isCompletedScheduledTask\(existingTask\)\)[\s\S]*?throw new Error\('已完成的排期任务已固定'\)/)
 
   const scheduleTaskToDaySource = source.slice(source.indexOf('async function scheduleTaskToDay('), source.indexOf('async function rescheduleTask('))
   assert.match(scheduleTaskToDaySource, /if \(isCompletedScheduledTask\(task\)\)[\s\S]*?throw new Error\('已完成的排期任务已固定'\)/)
 
   const rescheduleTaskSource = source.slice(source.indexOf('async function rescheduleTask('), source.indexOf('async function unscheduleTask('))
   assert.match(source, /async function insertTaskAtSlot\([\s\S]*?if \(isCompletedScheduledTask\(task\)\) throw new Error\('已完成的排期任务已固定'\)/)
-  assert.match(rescheduleTaskSource, /await insertTaskAtSlot\(taskId, toSlotTime, selectedDay\.value, targetTaskId\)/)
+  assert.match(rescheduleTaskSource, /await insertTaskAtSlot\(taskId, toSlotTime, targetDateKey, targetTaskId\)/)
   const swapTaskSource = source.slice(source.indexOf('async function swapScheduledTasks('), source.indexOf('async function unscheduleTask('))
   assert.match(swapTaskSource, /if \(isCompletedScheduledTask\(from\) \|\| isCompletedScheduledTask\(to\)\) throw new Error\('已完成的排期任务已固定'\)/)
 
@@ -76,11 +197,11 @@ test('scheduledAt is normalized to a UTC ISO instant at the API boundary', () =>
   assert.doesNotMatch(source, /if \(trimmed\.includes\('T'\)\) return trimmed/)
 })
 
-test('elapsed tasks complete on the timeline while overdue unscheduled tasks preserve their deadline as reminder', () => {
+test('elapsed scheduled tasks and overdue unscheduled tasks both complete automatically while preserving deadlines', () => {
   assert.match(taskViewRules, /export function isOverdueTask\(/)
   assert.match(taskViewRules, /export function isScheduledTaskPast\(/)
   assert.match(taskViewRules, /export function isUnscheduledTaskPastDue\(/)
-  assert.match(source, /isScheduledTaskPast/)
+  assert.match(source, /isOverdueTask/)
   assert.match(source, /status: 'completed', scheduledAt: latestTask\.scheduledAt/)
   assert.doesNotMatch(source, /dueAt: undefined, scheduledAt: undefined/, 'Unscheduled overdue tasks must not have their deadline cleared')
   assert.match(source, /dueAt:\s*model\.dueAt \?\? null/)
@@ -112,9 +233,9 @@ test('ordinary slot drops insert and cascade through the server while swap is a 
   const rescheduleTaskSource = source.slice(source.indexOf('async function rescheduleTask('), source.indexOf('async function swapScheduledTasks('))
   const swapTaskSource = source.slice(source.indexOf('async function swapScheduledTasks('), source.indexOf('async function unscheduleTask('))
 
-  assert.match(scheduleTaskSource, /await insertTaskAtSlot\(taskId, slotTime, selectedDay\.value, targetTaskId\)/)
+  assert.match(scheduleTaskSource, /await insertTaskAtSlot\(taskId, slotTime, targetDateKey, targetTaskId\)/)
   assert.match(rescheduleTaskSource, /async function rescheduleTask\(taskId: string, toSlotTime: string, targetTaskId\?: string\)/)
-  assert.match(rescheduleTaskSource, /await insertTaskAtSlot\(taskId, toSlotTime, selectedDay\.value, targetTaskId\)/)
+  assert.match(rescheduleTaskSource, /await insertTaskAtSlot\(taskId, toSlotTime, targetDateKey, targetTaskId\)/)
   assert.doesNotMatch(rescheduleTaskSource, /timeSlots\.value\.find\(\(slot\) => slot\.time === fromSlotTime\)/)
   assert.doesNotMatch(rescheduleTaskSource, /useTaskApi\.swapSchedules/)
   assert.match(swapTaskSource, /useTaskApi\.swapSchedules/)
@@ -150,9 +271,9 @@ test('missing or stale schedule sources and invalid target slots fail with visib
 
   assert.match(insertionSource, /if \(!task\) throw new Error\('源任务已变化，请刷新后重试'\)/)
   assert.match(scheduleTaskSource, /if \(!task \|\| !isSchedulableTask\(task\)\) throw new Error\('源任务已变化，请刷新后重试'\)/)
-  assert.match(scheduleTaskSource, /if \(!slot\) throw new Error\('目标时间槽不存在，请拖到可见时段'\)/)
+  assert.match(scheduleTaskSource, /if \(!slot\) throw new Error\('目标时间槽不存在：系统不可见时间'\)/)
   assert.match(rescheduleTaskSource, /if \(!task\?\.scheduledAt \|\| task\.status === 'cancelled'\) throw new Error\('源排期已变化，请刷新后重试'\)/)
-  assert.match(rescheduleTaskSource, /if \(!targetSlot\) throw new Error\('目标时间槽不存在，请拖到可见时段'\)/)
+  assert.match(rescheduleTaskSource, /if \(!targetSlot\) throw new Error\('目标时间槽不存在：系统不可见时间'\)/)
 })
 
 test('an open app periodically applies the elapsed-task transitions without any notification state', () => {
@@ -171,7 +292,7 @@ test('task loading immediately recovers ended schedules and isolates per-task wr
   assert.match(fetchTasksSource, /await recoverOverdueTasks\(\)/, 'loading the task projection must check ended schedules immediately')
   assert.match(projectionListener, /void loadLocalTasks\(\)\.then\(\(\) => recoverOverdueTasks\(\)\)/, 'sync projection refresh must retry ended tasks immediately instead of waiting for the next minute tick')
   assert.match(recoverySource, /try\s*\{[\s\S]*?await updateTaskModel\(model, \{[\s\S]*?rejectIfNonPendingMutation: true[\s\S]*?\}\)[\s\S]*?\}\s*catch(?:\s*\(error\))?\s*\{/, 'a failed task write must not abort the remaining recovery scan')
-  assert.match(recoverySource, /withScheduleMutation\(async\s*\(\)\s*=>\s*\{[\s\S]*?repo\.read<TaskView>\('TASK', taskId\)[\s\S]*?const current = findTask\(taskId\)[\s\S]*?localRow\.version !== current\.version[\s\S]*?localModel\.scheduledAt !== current\.scheduledAt[\s\S]*?isScheduledTaskPast\(latestTask\)[\s\S]*?updateTaskModel\(model, \{[\s\S]*?rejectIfNonPendingMutation: true/, 'each queued write must match the latest repository version and schedule before conversion')
+  assert.match(recoverySource, /withScheduleMutation\(async\s*\(\)\s*=>\s*\{[\s\S]*?repo\.read<TaskView>\('TASK', taskId\)[\s\S]*?const current = findTask\(taskId\)[\s\S]*?localRow\.version !== current\.version[\s\S]*?localModel\.scheduledAt !== current\.scheduledAt[\s\S]*?localModel\.dueAt !== current\.dueAt[\s\S]*?isOverdueTask\(latestTask\)[\s\S]*?updateTaskModel\(model, \{[\s\S]*?rejectIfNonPendingMutation: true/, 'each queued write must match the latest repository version and schedule before conversion')
   assert.match(recoverySource, /repo\.listUnresolved\('TASK'\)[\s\S]*?const existingMutation = unresolved\.find\(\(mutation\) => mutation\.resourceId === taskId\)[\s\S]*?status !== 'pending'[\s\S]*?return/, 'automatic completion must not add a stale mutation behind inflight, failed, or conflicted task writes')
   assert.match(recoverySource, /catch\s*\(error\)\s*\{[\s\S]*?error instanceof LocalConflictError[\s\S]*?await loadLocalTasks\(\)/, 'a version-fenced write must reload when sync advanced the repository between read and commit')
   assert.match(deleteTaskSource, /return withScheduleMutation\(async\s*\(\)\s*=>\s*\{/, 'task deletion must share the queue so recovery cannot race a delete')
@@ -183,14 +304,14 @@ test('all scheduling entry points reject a past target before persistence or sch
   assert.match(source, /throw new Error\('不能排期到过去的时间'\)/)
 
   const scheduleTaskSource = source.slice(source.indexOf('async function scheduleTask('), source.indexOf('async function scheduleTaskToDay('))
-  assert.match(scheduleTaskSource, /await insertTaskAtSlot\(taskId, slotTime, selectedDay\.value, targetTaskId\)/)
+  assert.match(scheduleTaskSource, /await insertTaskAtSlot\(taskId, slotTime, targetDateKey, targetTaskId\)/)
   assert.match(source, /async function insertTaskAtSlot\([\s\S]*?assertScheduledAtIsNotPast\(scheduledAt\)/)
 
   const scheduleTaskToDaySource = source.slice(source.indexOf('async function scheduleTaskToDay('), source.indexOf('async function rescheduleTask('))
   assert.match(scheduleTaskToDaySource, /assertScheduledAtIsNotPast\(model\.scheduledAt\)[\s\S]*?await updateTaskModel\(model\)/)
 
   const rescheduleTaskSource = source.slice(source.indexOf('async function rescheduleTask('), source.indexOf('async function unscheduleTask('))
-  assert.match(rescheduleTaskSource, /await insertTaskAtSlot\(taskId, toSlotTime, selectedDay\.value, targetTaskId\)/)
+  assert.match(rescheduleTaskSource, /await insertTaskAtSlot\(taskId, toSlotTime, targetDateKey, targetTaskId\)/)
   const swapTaskSource = source.slice(source.indexOf('async function swapScheduledTasks('), source.indexOf('async function unscheduleTask('))
   assert.match(swapTaskSource, /assertScheduledAtIsNotPast\(to\.scheduledAt\)[\s\S]*?assertScheduledAtIsNotPast\(from\.scheduledAt\)[\s\S]*?useTaskApi\.swapSchedules/)
 })
@@ -255,7 +376,6 @@ test('schedule insertions reject unsynced affected-day projections and apply ser
   const persistOfflineSource = source.slice(source.indexOf('async function persistOffline('), source.indexOf('async function addTask('))
   const insertionSource = source.slice(source.indexOf('async function assertScheduleDaySynced('), source.indexOf('async function scheduleTaskToDay('))
 
-  assert.match(persistOfflineSource, /current\.durationMinutes !== model\.durationMinutes/)
   assert.match(persistOfflineSource, /assertScheduleDoesNotOverlap\(model\)/)
   assert.match(insertionSource, /listUnresolved\(\)/)
   assert.match(insertionSource, /syncStatus !== 'synced'/)
@@ -271,7 +391,7 @@ test('schedule insertions reject unsynced affected-day projections and apply ser
   assert.match(cacheSource, /flushNow\(\)\.catch/, 'a failed local cache transaction must promptly attempt cursor-based recovery')
   assert.match(cacheSource, /await loadLocalTasks\(\)/, 'a fenced outbox batch must restore the local projection before retrying sync')
   assert.match(cacheSource, /排期已保存到服务端，本地刷新中/)
-  assert.match(source, /function replaceInMemoryMany\(tasks: Task\[\]\)[\s\S]*?allTasks\.value = next[\s\S]*?rebuildSchedule\(\)/, 'both server results must replace the visible projection together')
+  assert.doesNotMatch(cacheSource, /replaceInMemoryMany|toPresentationTask\(model, 'synced'\)/, 'server responses must be projected only after the repository accepts them')
 
   for (const [start, end] of [
     ['async function addTask(', 'async function updateTaskModel('],
@@ -289,7 +409,7 @@ test('schedule insertions reject unsynced affected-day projections and apply ser
 
 test('dropping an unscheduled task on an occupied slot uses the atomic insertion API', () => {
   const scheduleTaskSource = source.slice(source.indexOf('async function scheduleTask('), source.indexOf('async function scheduleTaskToDay('))
-  assert.match(scheduleTaskSource, /await insertTaskAtSlot\(taskId, slotTime, selectedDay\.value, targetTaskId\)/)
+  assert.match(scheduleTaskSource, /await insertTaskAtSlot\(taskId, slotTime, targetDateKey, targetTaskId\)/)
   assert.doesNotMatch(scheduleTaskSource, /unscheduleTask\(/, 'occupied-slot rejection must not partially unschedule the existing task')
 })
 
@@ -308,3 +428,1338 @@ test('task insertion API uses the confirmed endpoint and instant-window DTO', ()
   assert.match(taskApiSchema, /ScheduleInsertionResponse: \{\s*tasks: components\["schemas"\]\["Response"\]\[\]/)
   assert.match(taskApi, /scheduleInsertions\(data: TaskScheduleInsertionRequest\)[\s\S]*?request\.post\('\/api\/tasks\/schedule-insertions', data\)/)
 })
+
+test('fetching tasks persists overdue unscheduled TODO and IN_PROGRESS as canonical DONE with their deadline and fields', async () => {
+  for (const status of ['TODO', 'IN_PROGRESS']) {
+    const task = deadlineTask(`auto-done-${status}`, {
+      status,
+      title: `Preserved ${status} title`,
+      description: `Preserved ${status} description`,
+      durationMinutes: 105,
+      sortKey: `preserved-${status}`,
+    })
+    const fixture = await createTaskStoreFixture([task])
+
+    await fixture.taskStore.fetchTasks()
+
+    const stored = await fixture.repository.read('TASK', task.id)
+    const mutations = await fixture.repository.listPending('TASK')
+    assert.equal(stored.value.status, 'DONE', 'the durable resource must use the canonical completed status')
+    assert.equal(stored.value.dueAt, task.dueAt, 'automatic completion must retain the original deadline')
+    assert.equal(stored.value.scheduledAt, undefined)
+    assert.equal(stored.value.title, task.title)
+    assert.equal(stored.value.description, task.description)
+    assert.equal(stored.value.durationMinutes, task.durationMinutes)
+    assert.equal(stored.value.sortKey, task.sortKey)
+    assert.equal(stored.value.subjectId, task.subjectId)
+    assert.equal(stored.version, task.version)
+    assert.equal(mutations.length, 1)
+    assert.equal(mutations[0].resourceId, task.id)
+    assert.equal(mutations[0].mutationType, 'UPDATE')
+    assert.equal(mutations[0].baseVersion, task.version)
+    assert.equal(mutations[0].payload.status, 'DONE')
+    assert.equal(mutations[0].payload.dueAt, task.dueAt)
+    assert.equal(mutations[0].payload.title, task.title)
+    assert.equal(fixture.taskStore.allTasks.find((candidate) => candidate.id === task.id).status, 'completed')
+    assert.ok(fixture.requestedSyncs.includes('write'), 'a durable DONE mutation must request background sync')
+  }
+})
+
+test('fetching tasks leaves ineligible deadlines and still-running scheduled tasks unchanged', async () => {
+  const now = Date.now()
+  const records = [
+    deadlineTask('future-deadline', { dueAt: new Date(now + 60 * 60_000).toISOString() }),
+    deadlineTask('empty-deadline', { dueAt: undefined }),
+    deadlineTask('invalid-deadline', { dueAt: 'not-an-instant' }),
+    deadlineTask('already-done', { status: 'DONE' }),
+    deadlineTask('cancelled', { status: 'CANCELLED' }),
+    deadlineTask('scheduled-still-running', {
+      scheduledAt: new Date(now - 15 * 60_000).toISOString(),
+      dueAt: new Date(now - 60 * 60_000).toISOString(),
+      durationMinutes: 60,
+    }),
+  ]
+  const fixture = await createTaskStoreFixture(records)
+
+  await fixture.taskStore.fetchTasks()
+
+  assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+  for (const record of records) {
+    const stored = await fixture.repository.read('TASK', record.id)
+    assert.equal(stored.value.status, record.status, `${record.id} must keep its existing status`)
+    assert.equal(stored.value.dueAt, record.dueAt, `${record.id} must keep its deadline value`)
+    assert.equal(stored.value.scheduledAt, record.scheduledAt, `${record.id} must keep its schedule value`)
+  }
+})
+
+test('re-reading an overdue candidate respects a newer deadline, schedule, cancellation, or deletion', async () => {
+  const now = Date.now()
+  const records = [
+    deadlineTask('deadline-extended'),
+    deadlineTask('new-schedule'),
+    deadlineTask('newly-cancelled'),
+    deadlineTask('newly-deleted'),
+  ]
+  const changes = new Map([
+    [records[0].id, { ...records[0], dueAt: new Date(now + 60 * 60_000).toISOString() }],
+    [records[1].id, { ...records[1], scheduledAt: new Date(now + 2 * 24 * 60 * 60_000).toISOString(), version: records[1].version + 1 }],
+    [records[2].id, { ...records[2], status: 'CANCELLED', version: records[2].version + 1 }],
+    [records[3].id, { ...records[3], deletedAt: new Date(now).toISOString(), version: records[3].version + 1 }],
+  ])
+  const fixture = await createTaskStoreFixture(records)
+  const originalRead = fixture.repository.read.bind(fixture.repository)
+  const originalUpsertFromSync = fixture.repository.upsertFromSync.bind(fixture.repository)
+  const rereadIds = []
+
+  fixture.repository.read = async (resourceType, resourceId) => {
+    const changed = resourceType === 'TASK' ? changes.get(resourceId) : undefined
+    if (changed) {
+      changes.delete(resourceId)
+      rereadIds.push(resourceId)
+      const applied = await originalUpsertFromSync('TASK', resourceId, changed, {
+        version: changed.version,
+        deletedAt: changed.deletedAt,
+        syncStatus: 'synced',
+      })
+      assert.equal(applied, true, 'the simulated remote projection must be applied before the recovery read')
+    }
+    return originalRead(resourceType, resourceId)
+  }
+
+  await fixture.taskStore.fetchTasks()
+  await fixture.taskStore.loadLocalTasks()
+
+  assert.deepEqual(rereadIds.sort(), records.map((record) => record.id).sort(), 'each overdue snapshot candidate must be re-read')
+  assert.deepEqual(await fixture.repository.listPending('TASK'), [], 'stale candidates must not create local DONE mutations')
+  assert.equal((await fixture.repository.read('TASK', records[0].id)).value.dueAt, changes.get(records[0].id)?.dueAt ?? new Date(now + 60 * 60_000).toISOString())
+  assert.equal((await fixture.repository.read('TASK', records[0].id)).value.status, 'TODO')
+  assert.equal((await fixture.repository.read('TASK', records[1].id)).value.scheduledAt, records[1] && new Date(now + 2 * 24 * 60 * 60_000).toISOString())
+  assert.equal((await fixture.repository.read('TASK', records[1].id)).value.status, 'TODO')
+  assert.equal((await fixture.repository.read('TASK', records[2].id)).value.status, 'CANCELLED')
+  assert.ok((await fixture.repository.read('TASK', records[3].id)).deletedAt)
+  assert.equal(fixture.taskStore.allTasks.some((task) => task.id === records[3].id), false, 'deleted projections must stay hidden')
+})
+
+test('real subject cascade tombstones fence automatic completion at read and commit boundaries', async (t) => {
+  for (const scheduled of [false, true]) {
+    for (const racePoint of ['during-read', 'before-commit']) {
+      await t.test(`${racePoint}; ${scheduled ? 'scheduled' : 'unscheduled'} task`, async () => {
+        const task = deadlineTask(`cascade-${racePoint}-${scheduled}`, {
+          scheduledAt: scheduled
+            ? new Date(Date.now() - (75 + 60) * 60_000).toISOString()
+            : undefined,
+        })
+        const fixture = await createTaskStoreFixture([task])
+        const originalRead = fixture.repository.read.bind(fixture.repository)
+        const originalCommitMutation = fixture.repository.commitMutation.bind(fixture.repository)
+        const cascadeAt = new Date().toISOString()
+        let cascadeApplied = false
+
+        const applyCascade = async () => {
+          const impacted = await fixture.repository.tombstoneSubjectChildren(task.subjectId, cascadeAt)
+          assert.ok(impacted.some((resource) => resource.resourceType === 'TASK' && resource.id === task.id))
+          cascadeApplied = true
+        }
+
+        if (racePoint === 'during-read') {
+          fixture.repository.read = async (resourceType, resourceId) => {
+            if (!cascadeApplied && resourceType === 'TASK' && resourceId === task.id) await applyCascade()
+            return originalRead(resourceType, resourceId)
+          }
+        } else {
+          fixture.repository.commitMutation = async (input) => {
+            if (!cascadeApplied && input.resourceType === 'TASK' && input.resourceId === task.id) await applyCascade()
+            return originalCommitMutation(input)
+          }
+        }
+
+        await fixture.taskStore.fetchTasks()
+
+        const stored = await originalRead('TASK', task.id)
+        assert.ok(cascadeApplied, 'the real subject cascade must run in the selected race window')
+        const pending = (await fixture.repository.listPending('TASK')).map(({ resourceId, payload }) => ({ resourceId, payload }))
+        await fixture.taskStore.loadLocalTasks()
+        assert.deepEqual({
+          deletedAt: stored.deletedAt,
+          version: stored.version,
+          status: stored.value.status,
+          pending,
+          visibleAfterRehydrate: fixture.taskStore.allTasks.some((candidate) => candidate.id === task.id),
+        }, {
+          deletedAt: cascadeAt,
+          version: task.version,
+          status: task.status,
+          pending: [],
+          visibleAfterRehydrate: false,
+        }, 'automatic completion must preserve the real cascade tombstone without adding DONE to the outbox or showing the task again')
+      })
+    }
+  }
+})
+
+test('a failed task commit does not starve later tasks and a later fetch retries once without duplicating DONE', async () => {
+  const first = deadlineTask('commit-retry-first')
+  const second = deadlineTask('commit-retry-second', { status: 'IN_PROGRESS' })
+  const fixture = await createTaskStoreFixture([first, second])
+  const originalCommitMutation = fixture.repository.commitMutation.bind(fixture.repository)
+  const attempts = new Map()
+
+  fixture.repository.commitMutation = async (input) => {
+    const count = (attempts.get(input.resourceId) ?? 0) + 1
+    attempts.set(input.resourceId, count)
+    if (input.resourceId === first.id && count === 1) throw new Error('TASK_LOCAL_COMMIT_FAILED')
+    return originalCommitMutation(input)
+  }
+
+  await fixture.taskStore.fetchTasks()
+
+  assert.equal((await fixture.repository.read('TASK', first.id)).value.status, 'TODO')
+  assert.equal((await fixture.repository.read('TASK', second.id)).value.status, 'DONE', 'a first-row failure must not stop later task commits')
+  assert.deepEqual((await fixture.repository.listPending('TASK')).map((mutation) => mutation.resourceId), [second.id])
+
+  await fixture.taskStore.fetchTasks()
+  await fixture.taskStore.fetchTasks()
+
+  assert.equal((await fixture.repository.read('TASK', first.id)).value.status, 'DONE', 'a later task check must retry the failed commit')
+  assert.equal(attempts.get(first.id), 2)
+  assert.equal(attempts.get(second.id), 1, 'already-DONE tasks must not be committed again')
+  assert.equal((await fixture.repository.listPending('TASK')).length, 2, 'each task must have exactly one pending DONE mutation')
+})
+
+test('deadline guard: addTask allows exact end and no deadline but rejects a one-minute overrun without writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const fixture = await createTaskStoreFixture([])
+  await fixture.taskStore.fetchTasks()
+
+  const exact = deadlineTask('dg-exact-create', {
+    status: 'TODO', scheduledAt: d('08:00'), dueAt: d('08:30'), durationMinutes: 30,
+  })
+  await fixture.taskStore.addTask(exact)
+  const exactRow = await fixture.repository.read('TASK', exact.id)
+  assert.equal(exactRow.value.scheduledAt, d('08:00'), 'an interval ending exactly at dueAt is allowed')
+  assert.equal(exactRow.value.dueAt, d('08:30'))
+
+  const noDeadline = deadlineTask('dg-no-deadline-create', {
+    status: 'TODO', scheduledAt: d('14:00'), dueAt: undefined, durationMinutes: 90,
+  })
+  await fixture.taskStore.addTask(noDeadline)
+  assert.equal((await fixture.repository.read('TASK', noDeadline.id)).value.scheduledAt, d('14:00'))
+
+  const overrun = deadlineTask('dg-create-overrun', {
+    status: 'TODO', scheduledAt: d('12:00'), dueAt: d('12:29'), durationMinutes: 30,
+  })
+  const beforeRejectedCreate = await taskStoreSnapshot(fixture)
+  const createError = await fixture.taskStore.addTask(overrun).then(() => null, (reason) => reason)
+  assert.deepEqual(await taskStoreSnapshot(fixture), beforeRejectedCreate, 'a rejected create must not change records, outbox, or projections')
+  assert.equal(await fixture.repository.read('TASK', overrun.id), null)
+  assert.match(createError?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+})
+
+test('deadline guard: scheduling by day skips a blocked slot and rejects when no fitting slot exists', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const occupied = deadlineTask('day-slot-occupied', {
+    status: 'TODO', scheduledAt: d('08:00'), dueAt: undefined, durationMinutes: 30,
+  })
+  const exactFit = deadlineTask('day-slot-exact-fit', {
+    status: 'TODO', scheduledAt: undefined, dueAt: d('09:30'), durationMinutes: 60,
+  })
+  const noFit = deadlineTask('day-slot-no-fit', {
+    status: 'TODO', scheduledAt: undefined, dueAt: d('08:15'), durationMinutes: 30,
+  })
+  const fixture = await createTaskStoreFixture([occupied, exactFit, noFit])
+  await fixture.taskStore.fetchTasks()
+
+  await fixture.taskStore.scheduleTaskToDay(exactFit.id, '2099-10-06')
+  const exactRow = await fixture.repository.read('TASK', exactFit.id)
+  assert.equal(exactRow.value.scheduledAt, d('08:30'), 'the search should skip the occupied 08:00 slot and fit 60 minutes through 09:30')
+  assert.equal(Date.parse(exactRow.value.scheduledAt) + 60 * 60_000, Date.parse(exactRow.value.dueAt))
+
+  const beforeRejectedDaySchedule = await taskStoreSnapshot(fixture)
+  const noFitError = await fixture.taskStore.scheduleTaskToDay(noFit.id, '2099-10-06').then(() => null, (reason) => reason)
+  assert.deepEqual(await taskStoreSnapshot(fixture), beforeRejectedDaySchedule, 'when no slot fits, the task, outbox, and visible timeline must remain unchanged')
+  assert.match(noFitError?.message ?? '', /当天没有符合任务时长和截止期限的可用排期时段/)
+})
+
+test('scheduleTaskToDay rejects DONE and CANCELLED tasks without changing persisted or projected state', async (t) => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const targetDate = '2099-10-07'
+  const cases = [
+    { name: 'DONE unscheduled', status: 'DONE', scheduledAt: undefined, message: /已完成/ },
+    { name: 'DONE scheduled', status: 'DONE', scheduledAt: d('2099-10-06', '10:00'), message: /已完成/ },
+    { name: 'CANCELLED unscheduled', status: 'CANCELLED', scheduledAt: undefined, message: /源任务已变化/ },
+    { name: 'CANCELLED scheduled', status: 'CANCELLED', scheduledAt: d('2099-10-06', '10:00'), message: /源任务已变化/ },
+  ]
+
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const task = deadlineTask(`day-drop-${scenario.name.replaceAll(' ', '-')}`, {
+        status: scenario.status,
+        scheduledAt: scenario.scheduledAt,
+        dueAt: undefined,
+      })
+      const fixture = await createTaskStoreFixture([task])
+      fixture.taskStore.setSelectedDay('Wed', targetDate)
+      await fixture.taskStore.loadLocalTasks()
+      const before = await taskStoreSnapshot(fixture)
+
+      const error = await fixture.taskStore.scheduleTaskToDay(task.id, targetDate).then(() => null, (reason) => reason)
+
+      assert.deepEqual(await taskStoreSnapshot(fixture), before,
+        `${scenario.name} must preserve row/version, outbox, Store tasks, and timeline projection`)
+      assert.match(error?.message ?? '', scenario.message, `${scenario.name} must reject day scheduling`)
+    })
+  }
+})
+
+test('deadline guard: creating a scheduled DONE task still checks its full interval', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const fixture = await createTaskStoreFixture([])
+  await fixture.taskStore.fetchTasks()
+  const done = deadlineTask('dg-done-create', {
+    status: 'DONE', scheduledAt: d('09:00'), dueAt: d('09:29'), durationMinutes: 30,
+  })
+  const before = await taskStoreSnapshot(fixture)
+  const error = await fixture.taskStore.addTask(done).then(() => null, (reason) => reason)
+  assert.deepEqual(await taskStoreSnapshot(fixture), before, 'a rejected terminal create must not change records, outbox, or projections')
+  assert.equal(await fixture.repository.read('TASK', done.id), null)
+  assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+})
+
+test('deadline guard: creating a scheduled CANCELLED task still checks its full interval', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const fixture = await createTaskStoreFixture([])
+  await fixture.taskStore.fetchTasks()
+  const cancelled = deadlineTask('dg-cancelled-create', {
+    status: 'CANCELLED', scheduledAt: d('09:00'), dueAt: d('09:29'), durationMinutes: 30,
+  })
+  const before = await taskStoreSnapshot(fixture)
+  const error = await fixture.taskStore.addTask(cancelled).then(() => null, (reason) => reason)
+  assert.deepEqual(await taskStoreSnapshot(fixture), before, 'a rejected cancelled create must not change records, outbox, or projections')
+  assert.equal(await fixture.repository.read('TASK', cancelled.id), null)
+  assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+})
+
+test('deadline guard: duration expansion of an active scheduled task rejects without writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const active = deadlineTask('dg-update', { status: 'TODO', dueAt: d('10:00'), durationMinutes: 60, scheduledAt: d('09:00') })
+  const fixture = await createTaskStoreFixture([active])
+  await fixture.taskStore.fetchTasks()
+  await assertDeadlineFailurePreservesStore(
+    fixture,
+    () => fixture.taskStore.updateTaskDetails(active.id, { durationMinutes: 90 }),
+    'duration expansion of an active task must be rejected',
+  )
+})
+
+test('deadline guard: moving an active task deadline before its scheduled end rejects without writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const active = deadlineTask('dg-due-edit', { status: 'TODO', dueAt: d('10:00'), durationMinutes: 60, scheduledAt: d('09:00') })
+  const fixture = await createTaskStoreFixture([active])
+  await fixture.taskStore.fetchTasks()
+  await assertDeadlineFailurePreservesStore(
+    fixture,
+    () => fixture.taskStore.updateTaskDetails(active.id, { dueAt: d('09:59') }),
+    'moving the deadline one minute before the scheduled end must be rejected',
+  )
+})
+
+test('deadline guard: changing the deadline of a DONE scheduled task rejects without writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const done = deadlineTask('dg-done', { status: 'DONE', dueAt: d('12:00'), durationMinutes: 60, scheduledAt: d('11:00') })
+  const fixture = await createTaskStoreFixture([done])
+  await fixture.taskStore.fetchTasks()
+  await assertDeadlineFailurePreservesStore(
+    fixture,
+    () => fixture.taskStore.updateTaskDetails(done.id, { dueAt: d('11:30') }),
+    'a terminal task time edit must still obey the deadline',
+  )
+})
+
+test('deadline guard: cancelled-task re-entry rejects without writes', async () => {
+  const scheduledAt = new Date(Math.ceil((Date.now() + 2 * 60 * 60_000) / 60_000) * 60_000).toISOString()
+  const dueAt = new Date(Date.parse(scheduledAt) + 30 * 60_000).toISOString()
+  const cancelled = deadlineTask('dg-cancelled', { status: 'CANCELLED', dueAt, durationMinutes: 60, scheduledAt })
+  const fixture = await createTaskStoreFixture([cancelled])
+  await fixture.taskStore.fetchTasks()
+  await assertDeadlineFailurePreservesStore(
+    fixture,
+    () => fixture.taskStore.updateTaskStatus(cancelled.id, 'pending'),
+    're-entering the active schedule must recheck the full interval',
+  )
+})
+
+test('deadline guard: changing the deadline of a CANCELLED scheduled task rejects without writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const cancelled = deadlineTask('dg-cancelled-edit', { status: 'CANCELLED', dueAt: d('14:00'), durationMinutes: 60, scheduledAt: d('13:00') })
+  const fixture = await createTaskStoreFixture([cancelled])
+  await fixture.taskStore.fetchTasks()
+  await assertDeadlineFailurePreservesStore(
+    fixture,
+    () => fixture.taskStore.updateTaskDetails(cancelled.id, { dueAt: d('13:59') }),
+    'a cancelled task time edit must still obey the deadline',
+  )
+})
+
+test('deadline guard: legacy invalid schedules allow non-temporal edits, equivalent instants, and automatic DONE', async () => {
+  const now = Date.now()
+  const legacyTitle = deadlineTask('dg-legacy-title', {
+    status: 'TODO', scheduledAt: '2099-10-06T09:00:00.000Z', dueAt: '2099-10-06T09:15:00.000Z', durationMinutes: 30,
+  })
+  const legacyOffset = deadlineTask('dg-legacy-offset', {
+    status: 'TODO', scheduledAt: '2099-10-06T10:00:00.000Z', dueAt: '2099-10-06T10:15:00.000Z', durationMinutes: 30,
+  })
+  const legacyNullDuration = deadlineTask('dg-legacy-null-duration', {
+    status: 'TODO', scheduledAt: '2099-10-06T11:00:00.000Z', dueAt: '2099-10-06T11:15:00.000Z', durationMinutes: null,
+  })
+  const endedSchedule = new Date(Math.floor((now - 2 * 60 * 60_000) / 60_000) * 60_000).toISOString()
+  const legacyAutoDone = deadlineTask('dg-legacy-auto-done', {
+    status: 'TODO',
+    scheduledAt: endedSchedule,
+    dueAt: new Date(Date.parse(endedSchedule) + 30 * 60_000).toISOString(),
+    durationMinutes: 60,
+  })
+  const fixture = await createTaskStoreFixture([legacyTitle, legacyOffset, legacyNullDuration, legacyAutoDone])
+  await fixture.taskStore.loadLocalTasks()
+
+  await fixture.taskStore.updateTaskDetails(legacyTitle.id, { title: 'Renamed legacy task' })
+  const renamed = await fixture.repository.read('TASK', legacyTitle.id)
+  assert.equal(renamed.value.title, 'Renamed legacy task')
+  assert.equal(renamed.value.scheduledAt, legacyTitle.scheduledAt)
+  assert.equal(renamed.value.dueAt, legacyTitle.dueAt)
+
+  await fixture.taskStore.updateTaskDetails(legacyOffset.id, { dueAt: '2099-10-06T12:15:00+02:00' })
+  const offsetEdited = await fixture.repository.read('TASK', legacyOffset.id)
+  assert.equal(Date.parse(offsetEdited.value.dueAt), Date.parse(legacyOffset.dueAt), 'offset-equivalent instants are not a deadline change')
+  assert.equal(offsetEdited.value.scheduledAt, legacyOffset.scheduledAt)
+
+  await fixture.taskStore.updateTaskDetails(legacyNullDuration.id, { durationMinutes: 30 })
+  const normalizedDuration = await fixture.repository.read('TASK', legacyNullDuration.id)
+  assert.equal(normalizedDuration.value.durationMinutes, 30, 'null duration and its effective 30-minute value are equivalent')
+  assert.equal(normalizedDuration.value.scheduledAt, legacyNullDuration.scheduledAt)
+
+  await fixture.taskStore.fetchTasks()
+  const autoDone = await fixture.repository.read('TASK', legacyAutoDone.id)
+  assert.equal(autoDone.value.status, 'DONE', 'automatic completion must preserve legacy tasks with unchanged time fields')
+  assert.equal(autoDone.value.scheduledAt, endedSchedule)
+  assert.equal(autoDone.value.dueAt, legacyAutoDone.dueAt)
+  assert.equal(autoDone.value.durationMinutes, 60)
+})
+
+test('deadline guard: a valid adjacent swap reaches the API and applies both server candidates', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const t1 = deadlineTask('swap-1', { status: 'TODO', scheduledAt: d('09:00'), durationMinutes: 30, dueAt: d('10:30') })
+  const t2 = deadlineTask('swap-2', { status: 'TODO', scheduledAt: d('09:30'), durationMinutes: 60, dueAt: d('10:30') })
+  const fixture = await createTaskStoreFixture([t1, t2])
+  await fixture.taskStore.fetchTasks()
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  let apiCalled = false
+  useTaskApi.swapSchedules = async () => {
+    apiCalled = true
+    return {
+      source: { ...t1, scheduledAt: d('10:00'), version: t1.version + 1 },
+      target: { ...t2, scheduledAt: d('09:00'), version: t2.version + 1 },
+    }
+  }
+
+  try {
+    await fixture.taskStore.swapScheduledTasks(t1.id, t2.id)
+    assert.ok(apiCalled, 'a candidate pair that both end by dueAt must reach the server')
+    assert.equal((await fixture.repository.read('TASK', t1.id)).value.scheduledAt, d('10:00'))
+    assert.equal((await fixture.repository.read('TASK', t2.id)).value.scheduledAt, d('09:00'))
+  } finally {
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('deadline guard: source candidate overrun blocks swap with no local writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const source = deadlineTask('swap-source-overrun', {
+    status: 'TODO', scheduledAt: d('11:00'), durationMinutes: 30, dueAt: d('12:00'),
+  })
+  const target = deadlineTask('swap-source-target-valid', {
+    status: 'TODO', scheduledAt: d('11:30'), durationMinutes: 60, dueAt: d('12:30'),
+  })
+  const fixture = await createTaskStoreFixture([source, target])
+  await fixture.taskStore.fetchTasks()
+  const before = await taskStoreSnapshot(fixture)
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  let apiCalled = false
+  useTaskApi.swapSchedules = async () => {
+    apiCalled = true
+    return { source: { ...source, scheduledAt: d('12:00') }, target: { ...target, scheduledAt: d('11:00') } }
+  }
+
+  try {
+    const error = await fixture.taskStore.swapScheduledTasks(source.id, target.id).then(() => null, (reason) => reason)
+    const after = await taskStoreSnapshot(fixture)
+    assert.deepEqual(after, before, 'an invalid swap must preserve rows, outbox, and timeline projection')
+    assert.equal(apiCalled, false, 'the source candidate must be checked before the API call')
+    assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+  } finally {
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('deadline guard: target candidate overrun blocks swap with no local writes', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const source = deadlineTask('swap-target-source-valid', {
+    status: 'TODO', scheduledAt: d('11:30'), durationMinutes: 60, dueAt: d('12:30'),
+  })
+  const target = deadlineTask('swap-target-overrun', {
+    status: 'TODO', scheduledAt: d('11:00'), durationMinutes: 30, dueAt: d('11:45'),
+  })
+  const fixture = await createTaskStoreFixture([source, target])
+  await fixture.taskStore.fetchTasks()
+  const before = await taskStoreSnapshot(fixture)
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  let apiCalled = false
+  useTaskApi.swapSchedules = async () => {
+    apiCalled = true
+    return { source: { ...source, scheduledAt: d('11:00') }, target: { ...target, scheduledAt: d('12:00') } }
+  }
+
+  try {
+    const error = await fixture.taskStore.swapScheduledTasks(source.id, target.id).then(() => null, (reason) => reason)
+    const after = await taskStoreSnapshot(fixture)
+    assert.deepEqual(after, before, 'an invalid swap must preserve rows, outbox, and timeline projection')
+    assert.equal(apiCalled, false, 'the target candidate must be checked before the API call')
+    assert.match(error?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+  } finally {
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('deadline guard: insertTaskAtSlot preflights dragged and shifted tasks', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const t1 = deadlineTask('ins-source', { status: 'TODO', scheduledAt: undefined, durationMinutes: 30, dueAt: d('18:00') })
+  const t2 = deadlineTask('ins-shifted', { status: 'TODO', scheduledAt: d('15:00'), durationMinutes: 30, dueAt: d('15:45') })
+  const t3 = deadlineTask('ins-overlap', { status: 'TODO', scheduledAt: d('14:15'), durationMinutes: 45, dueAt: d('18:00') })
+
+  const fixture = await createTaskStoreFixture([t1, t2, t3])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('2099-10-06')
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  let apiCalled = false
+  useTaskApi.scheduleInsertions = async () => {
+    apiCalled = true
+    return { tasks: [] }
+  }
+
+  try {
+    const before = await taskStoreSnapshot(fixture)
+    const insertionError = await fixture.taskStore.scheduleTask(t1.id, '14:00').then(() => null, (reason) => reason)
+    assert.deepEqual(await taskStoreSnapshot(fixture), before, 'a rejected cascade must preserve all rows, outbox entries, and timeline tasks')
+    assert.equal(apiCalled, false, 'a shifted task that misses its own deadline must be rejected before the API call')
+    assert.match(insertionError?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+
+    // A fitting insertion still delegates the complete changed group to the server.
+    const t4 = deadlineTask('ins-valid', { status: 'TODO', scheduledAt: d('16:00'), durationMinutes: 30, dueAt: d('18:00') })
+    await fixture.repository.upsert('TASK', t4.id, t4, { version: t4.version, syncStatus: 'synced' })
+    await fixture.taskStore.loadLocalTasks()
+
+    await fixture.taskStore.scheduleTask(t1.id, '15:30')
+    assert.equal(apiCalled, true, 'a valid insertion should call the server insertion API')
+  } finally {
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+
+test('deadline guard: a body drop checks the dragged source deadline before the insertion API', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const target = deadlineTask('body-target', { status: 'TODO', scheduledAt: d('09:00'), durationMinutes: 60, dueAt: d('10:30') })
+  const source = deadlineTask('body-source', { status: 'TODO', scheduledAt: undefined, durationMinutes: 30, dueAt: d('10:29') })
+  const fixture = await createTaskStoreFixture([target, source])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('2099-10-06')
+
+  const before = await taskStoreSnapshot(fixture)
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  let apiCalled = false
+  useTaskApi.scheduleInsertions = async () => {
+    apiCalled = true
+    return { tasks: [] }
+  }
+
+  try {
+    const insertionError = await fixture.taskStore.scheduleTask(source.id, '10:00', target.id)
+      .then(() => null, (reason) => reason)
+    assert.deepEqual(await taskStoreSnapshot(fixture), before, 'a rejected body drop must not change the task records, outbox, or timeline')
+    assert.equal(apiCalled, false, 'a body drop whose source would end after its deadline must not call the API')
+    assert.match(insertionError?.message ?? '', /任务排期结束时间不能晚于截止期限/)
+  } finally {
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+
+test('date-fix 1: queued scheduling keeps the date captured before the queue wait', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const sourceTask = deadlineTask('queued-date-source', {
+    status: 'TODO', scheduledAt: undefined, dueAt: d('2099-10-08', '18:00'), durationMinutes: 30,
+  })
+  const fixture = await createTaskStoreFixture([sourceTask])
+  await fixture.taskStore.fetchTasks()
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const originalCommitMutation = fixture.repository.commitMutation.bind(fixture.repository)
+  const requests = []
+  useTaskApi.scheduleInsertions = async (request) => {
+    requests.push(request)
+    return { tasks: [{
+      id: request.taskId, subjectId: 's1', title: 'Queued date source', status: 'TODO',
+      scheduledAt: request.scheduledAt, durationMinutes: 30, version: sourceTask.version,
+    }] }
+  }
+
+  let releaseGate
+  let signalGateEntered
+  const gate = new Promise((resolve) => { releaseGate = resolve })
+  const gateEntered = new Promise((resolve) => { signalGateEntered = resolve })
+  fixture.repository.commitMutation = async (input) => {
+    if (input.resourceId === 'queue-blocker') {
+      signalGateEntered()
+      await gate
+    }
+    return originalCommitMutation(input)
+  }
+
+  try {
+    fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+    const blocker = fixture.taskStore.addTask({ id: 'queue-blocker', subjectId: 's1', title: 'Queue blocker' })
+    await gateEntered
+
+    const queuedSchedule = fixture.taskStore.scheduleTask(sourceTask.id, '09:00')
+    fixture.taskStore.setSelectedDay('Wed', '2099-10-07')
+    releaseGate()
+    await Promise.all([blocker, queuedSchedule])
+
+    assert.equal(requests.length, 1, 'the queued schedule should make one API request')
+    assert.equal(localDateKey(new Date(requests[0].scheduledAt)), '2099-10-06')
+    assert.equal(localDateKey(new Date(requests[0].windowStartAt)), '2099-10-06')
+    assert.equal(localDateKey(new Date(requests[0].windowLastStartAt)), '2099-10-06')
+
+    const row = await fixture.repository.read('TASK', sourceTask.id)
+    assert.equal(localDateKey(new Date(row.value.scheduledAt)), '2099-10-06', 'local row must keep the invocation date')
+    assert.equal(localDateKey(new Date(fixture.taskStore.allTasks.find((task) => task.id === sourceTask.id).scheduledAt)), '2099-10-06')
+    assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '09:00')?.task?.id, undefined,
+      'the changed-day projection must not show a task scheduled on the previous date')
+    assert.equal((await fixture.repository.listPending('TASK')).some((mutation) => mutation.resourceId === sourceTask.id), false,
+      'a server-confirmed schedule must not create an offline schedule mutation')
+
+    fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+    assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '09:00')?.task?.id, sourceTask.id,
+      'the original-day timeline projection must contain the scheduled task')
+  } finally {
+    releaseGate()
+    useTaskApi.scheduleInsertions = originalInsert
+    fixture.repository.commitMutation = originalCommitMutation
+  }
+})
+
+test('date-fix 2: an already scheduled task can move to another slot on the same full dateKey', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const task = deadlineTask('same-date-reschedule', {
+    status: 'TODO', scheduledAt: d('2099-10-06', '10:00'), durationMinutes: 30, dueAt: d('2099-10-06', '18:00'),
+  })
+  const fixture = await createTaskStoreFixture([task])
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+  await fixture.taskStore.loadLocalTasks()
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const requests = []
+  useTaskApi.scheduleInsertions = async (request) => {
+    requests.push(request)
+    return { tasks: [{
+      id: request.taskId, subjectId: task.subjectId, title: task.title, status: 'TODO',
+      scheduledAt: request.scheduledAt, durationMinutes: 30, version: task.version,
+    }] }
+  }
+
+  try {
+    await fixture.taskStore.rescheduleTask(task.id, '11:00')
+    assert.equal(requests.length, 1, 'same-date move should reach the schedule API exactly once')
+    assert.equal(localDateKey(new Date(requests[0].scheduledAt)), '2099-10-06')
+    assert.equal(localDateKey(new Date(requests[0].windowStartAt)), '2099-10-06')
+    const row = await fixture.repository.read('TASK', task.id)
+    assert.equal(row.value.scheduledAt, d('2099-10-06', '11:00'))
+    assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '11:00')?.task?.id, task.id)
+  } finally {
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+
+test('date-fix 3: moving an existing scheduled task to a week-view day writes that exact date', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const task = deadlineTask('week-day-existing-task', {
+    status: 'TODO', scheduledAt: d('2099-10-06', '10:00'), dueAt: undefined, durationMinutes: 30,
+  })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.loadLocalTasks()
+
+  await fixture.taskStore.scheduleTaskToDay(task.id, '2099-10-07')
+
+  const row = await fixture.repository.read('TASK', task.id)
+  assert.equal(row.value.scheduledAt, d('2099-10-07', '08:00'), 'day-column drop should find the first open slot on its date')
+  assert.equal(localDateKey(new Date(fixture.taskStore.allTasks.find((item) => item.id === task.id).scheduledAt)), '2099-10-07')
+  const pending = await fixture.repository.listPending('TASK')
+  assert.equal(pending.filter((mutation) => mutation.resourceId === task.id).length, 1,
+    'the offline schedule update should create one outbox mutation for the moved task')
+
+  fixture.taskStore.setSelectedDay('Wed', '2099-10-07')
+  assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '08:00')?.task?.id, task.id,
+    'the target-day Store projection should contain the moved task')
+  assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '10:00')?.task?.id, undefined,
+    'the old slot must not retain the moved task')
+})
+
+test('date-fix 4: remounted Timeline header and active day resolve to the Store-projected full date', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const targetDate = '2026-10-14'
+  const task = deadlineTask('remount-date-task', {
+    status: 'TODO', scheduledAt: d(targetDate, '09:00'), durationMinutes: 30, dueAt: d(targetDate, '18:00'),
+  })
+  const fixture = await createTaskStoreFixture([task])
+  fixture.taskStore.currentNow = new Date('2026-10-07T12:00:00')
+  fixture.taskStore.setSelectedDay('Wed', targetDate)
+  await fixture.taskStore.loadLocalTasks()
+
+  const projectedSlot = fixture.taskStore.timeSlots.find((slot) => slot.time === '09:00')
+  assert.equal(projectedSlot?.task?.id, task.id, 'Store slots must project the selected next-week task')
+  assert.equal(localDateKey(new Date(projectedSlot.task.scheduledAt)), targetDate)
+
+  const scriptMatch = timeline.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)
+  assert.ok(scriptMatch, 'Timeline must have a script setup block')
+  const script = scriptMatch[1]
+  const extractDecl = (name) => {
+    const match = script.match(new RegExp('const\\s+' + name + '\\s*=\\s*([\\s\\S]*?)(?=\\nconst |\\nlet |\\nfunction |\\n// |$)'))
+    assert.ok(match, `Timeline computed declaration ${name} must exist`)
+    return match[0]
+  }
+  const executable = [
+    extractDecl('timelineDays'),
+    extractDecl('nextWeekNow'),
+    extractDecl('nextWeekTimelineDays'),
+    extractDecl('allTimelineDays'),
+    extractDecl('selectedDateKey'),
+    extractDecl('selectedTimelineDay'),
+    'return { selectedDateKey, selectedTimelineDay };',
+  ].join('\n').replace(/ref<string>/g, 'ref')
+  const ref = (value) => ({ value })
+  const computed = (getter) => ({ get value() { return getter() } })
+  const componentState = new Function('ref', 'computed', 'getTimelineDays', 'taskStore', 'selectedDay', executable)(
+    ref,
+    computed,
+    taskViewRulesModule.getTimelineDays,
+    fixture.taskStore,
+    { value: fixture.taskStore.selectedDay },
+  )
+
+  assert.equal(componentState.selectedDateKey.value, targetDate, 'remount should seed the local date key from Pinia')
+  assert.equal(componentState.selectedTimelineDay.value.dateKey, localDateKey(new Date(projectedSlot.task.scheduledAt)),
+    'the computed date heading must identify the same full date as the Store slot')
+
+  const activeBinding = timeline.match(/:class="\{\s*'is-active':\s*(.*?)\s*,\s*'is-today':/)
+  assert.ok(activeBinding, 'weekly overview must bind its selected day class')
+  const day = componentState.selectedTimelineDay.value
+  const isActive = new Function('selectedTimelineDay', 'day', `return ${activeBinding[1]}`)(day, day)
+  assert.equal(isActive, true, 'the overview row for the Store-projected date must be active after remount')
+})
+
+async function runPulledTaskChanges(fixture, changes, expectedCursor) {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts')
+  await fixture.repository.saveCursor('cursor-before-schedule-response')
+  const result = await runSyncCycle({
+    repository: fixture.repository,
+    serverDeviceId: 'schedule-race-device',
+    api: {
+      async pushChanges() { return { results: [], serverCursor: 'cursor-before-schedule-response' } },
+      async pullChanges(input) {
+        assert.equal(input.cursor, 'cursor-before-schedule-response')
+        return { changes, nextCursor: expectedCursor, hasMore: false, resetRequired: false }
+      },
+      async getSnapshot() { assert.fail('an existing cursor must use incremental read') },
+    },
+  })
+  assert.equal(result.cursor, expectedCursor)
+  assert.equal((await fixture.repository.getSyncState()).cursor, expectedCursor)
+}
+
+function deferredApiResponse() {
+  let resolveResponse
+  let enterApi
+  const response = new Promise((resolve) => { resolveResponse = resolve })
+  const entered = new Promise((resolve) => { enterApi = resolve })
+  return {
+    entered,
+    resolve: resolveResponse,
+    waitForResponse: async () => { enterApi(); return response },
+  }
+}
+
+test('schedule insertion delayed response cannot replace a later pulled update', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const task = deadlineTask('insert-race-update', { status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 30, version: 8 })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const gate = deferredApiResponse()
+  let apiCalls = 0
+  useTaskApi.scheduleInsertions = async () => { apiCalls += 1; return gate.waitForResponse() }
+
+  try {
+    const operation = fixture.taskStore.scheduleTask(task.id, '10:00')
+    await gate.entered
+    await runPulledTaskChanges(fixture, [{
+      cursor: 'event-update-v9', resourceType: 'TASK', resourceId: task.id, mutationType: 'UPDATE',
+      version: 9, deletedAt: null, payload: { ...task, scheduledAt: d('11:00'), version: 9 }, createdAt: null,
+    }], 'cursor-after-update-v9')
+    await fixture.taskStore.loadLocalTasks()
+    gate.resolve({ tasks: [{ ...task, scheduledAt: d('10:00'), version: 8 }] })
+    await operation
+
+    const row = await fixture.repository.read('TASK', task.id)
+    assert.equal(apiCalls, 1)
+    assert.equal(row.version, 9)
+    assert.equal(row.value.scheduledAt, d('11:00'))
+    assert.equal((await fixture.repository.getSyncState()).cursor, 'cursor-after-update-v9')
+    assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === task.id)?.version, 9)
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === task.id)?.scheduledAt, d('11:00'),
+      'successful stale response handling must re-read the current Repository projection')
+    await fixture.taskStore.loadLocalTasks()
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === task.id)?.scheduledAt, d('11:00'),
+      'an ordinary read at the advanced cursor cannot roll the row back to the old response')
+  } finally {
+    gate.resolve({ tasks: [] })
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+
+test('schedule insertion delayed active response cannot clear a later pulled tombstone', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const task = deadlineTask('insert-race-delete', { status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 30, version: 8 })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const gate = deferredApiResponse()
+  let apiCalls = 0
+  useTaskApi.scheduleInsertions = async () => { apiCalls += 1; return gate.waitForResponse() }
+
+  try {
+    const operation = fixture.taskStore.scheduleTask(task.id, '10:00')
+    await gate.entered
+    const deletedAt = '2099-10-06T09:45:00.000Z'
+    await runPulledTaskChanges(fixture, [{
+      cursor: 'event-delete-v9', resourceType: 'TASK', resourceId: task.id, mutationType: 'DELETE',
+      version: 9, deletedAt, payload: { ...task, version: 9 }, createdAt: null,
+    }], 'cursor-after-delete-v9')
+    await fixture.taskStore.loadLocalTasks()
+    gate.resolve({ tasks: [{ ...task, scheduledAt: d('10:00'), version: 8 }] })
+    await operation
+
+    const row = await fixture.repository.read('TASK', task.id)
+    assert.equal(apiCalls, 1)
+    assert.equal(row.version, 9)
+    assert.equal(row.deletedAt, deletedAt)
+    assert.equal(row.value.scheduledAt, undefined)
+    assert.equal((await fixture.repository.getSyncState()).cursor, 'cursor-after-delete-v9')
+    assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+    assert.equal(fixture.taskStore.allTasks.some((item) => item.id === task.id), false)
+    await fixture.taskStore.loadLocalTasks()
+    assert.equal(fixture.taskStore.allTasks.some((item) => item.id === task.id), false,
+      'an ordinary read at the advanced cursor must not resurrect the tombstone')
+  } finally {
+    gate.resolve({ tasks: [] })
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+
+test('swap delayed batch cannot replace a pulled newer task or resurrect a pulled tombstone', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const sourceTask = deadlineTask('swap-race-source', { status: 'TODO', scheduledAt: d('09:00'), durationMinutes: 30, dueAt: d('20:00'), version: 8 })
+  const targetTask = deadlineTask('swap-race-target', { status: 'TODO', scheduledAt: d('09:30'), durationMinutes: 30, dueAt: d('20:00'), version: 8 })
+  const fixture = await createTaskStoreFixture([sourceTask, targetTask])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  const gate = deferredApiResponse()
+  let apiCalls = 0
+  useTaskApi.swapSchedules = async () => { apiCalls += 1; return gate.waitForResponse() }
+
+  try {
+    const operation = fixture.taskStore.swapScheduledTasks(sourceTask.id, targetTask.id)
+    await gate.entered
+    const deletedAt = '2099-10-06T09:40:00.000Z'
+    await runPulledTaskChanges(fixture, [
+      { cursor: 'event-source-v9', resourceType: 'TASK', resourceId: sourceTask.id, mutationType: 'UPDATE', version: 9, deletedAt: null, payload: { ...sourceTask, scheduledAt: d('11:00'), version: 9 }, createdAt: null },
+      { cursor: 'event-target-delete-v9', resourceType: 'TASK', resourceId: targetTask.id, mutationType: 'DELETE', version: 9, deletedAt, payload: { ...targetTask, version: 9 }, createdAt: null },
+    ], 'cursor-after-swap-race')
+    await fixture.taskStore.loadLocalTasks()
+    gate.resolve({
+      source: { ...sourceTask, scheduledAt: d('10:00'), version: 8 },
+      target: { ...targetTask, scheduledAt: d('09:00'), version: 8 },
+    })
+    await operation
+
+    const sourceRow = await fixture.repository.read('TASK', sourceTask.id)
+    const targetRow = await fixture.repository.read('TASK', targetTask.id)
+    assert.equal(apiCalls, 1)
+    assert.equal(sourceRow.version, 9)
+    assert.equal(sourceRow.value.scheduledAt, d('11:00'))
+    assert.equal(targetRow.version, 9)
+    assert.equal(targetRow.deletedAt, deletedAt)
+    assert.equal((await fixture.repository.getSyncState()).cursor, 'cursor-after-swap-race')
+    assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === sourceTask.id)?.version, 9)
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === sourceTask.id)?.scheduledAt, d('11:00'))
+    assert.equal(fixture.taskStore.allTasks.some((item) => item.id === targetTask.id), false)
+    await fixture.taskStore.loadLocalTasks()
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === sourceTask.id)?.scheduledAt, d('11:00'))
+    assert.equal(fixture.taskStore.allTasks.some((item) => item.id === targetTask.id), false)
+  } finally {
+    gate.resolve({ source: null, target: null })
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('Store preserves a zero-version active response against a newer row and accepts a same-version active response', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const task = deadlineTask('zero-version-response', {
+    status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 30, version: 9,
+  })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const originalUpsertBatch = fixture.repository.upsertSyncedBatch.bind(fixture.repository)
+  let responseVersion = 0
+  let apiCalls = 0
+  const cacheVersions = []
+  const requests = []
+  fixture.repository.upsertSyncedBatch = async (items) => {
+    cacheVersions.push(...items.map((item) => item.version))
+    return originalUpsertBatch(items)
+  }
+  useTaskApi.scheduleInsertions = async (request) => {
+    apiCalls += 1
+    requests.push(request)
+    return { tasks: [{ ...task, scheduledAt: request.scheduledAt, version: responseVersion }] }
+  }
+  try {
+    await fixture.taskStore.scheduleTask(task.id, '10:00')
+    let row = await fixture.repository.read('TASK', task.id)
+    const projected = fixture.taskStore.allTasks.find((item) => item.id === task.id)
+    assert.deepEqual({
+      apiCalls,
+      requestedAt: requests[0]?.scheduledAt,
+      cacheVersions,
+      rowVersion: row.version,
+      rowScheduledAt: row.value.scheduledAt,
+      projectedVersion: projected?.version,
+      projectedScheduledAt: projected?.scheduledAt,
+      lastError: fixture.taskStore.lastError,
+    }, {
+      apiCalls: 1,
+      requestedAt: d('10:00'),
+      cacheVersions: [0],
+      rowVersion: 9,
+      rowScheduledAt: undefined,
+      projectedVersion: 9,
+      projectedScheduledAt: undefined,
+      lastError: null,
+    }, 'a real Store API response at v0 stays stale without falling back or causing a cache error')
+
+    responseVersion = 9
+    await fixture.taskStore.scheduleTask(task.id, '11:00')
+    row = await fixture.repository.read('TASK', task.id)
+    assert.equal(apiCalls, 2)
+    assert.deepEqual(cacheVersions, [0, 9])
+    assert.equal(row.version, 9)
+    assert.equal(row.value.scheduledAt, d('11:00'), 'same-version active response remains eligible')
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === task.id)?.scheduledAt, d('11:00'))
+    assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+  } finally {
+    useTaskApi.scheduleInsertions = originalInsert
+    fixture.repository.upsertSyncedBatch = originalUpsertBatch
+  }
+})
+
+test('scheduleTaskToDay scans 22:30 and preserves state when that candidate conflicts or misses its deadline', async (t) => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const makeFixture = async ({ block22, dueAt }) => {
+    const fixture = await createTaskStoreFixture([])
+    fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+    for (let minutes = 8 * 60; minutes <= (block22 ? 21 * 60 + 30 : 22 * 60); minutes += 30) {
+      const time = `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
+      const task = deadlineTask(`last-slot-filler-${block22 ? 'blocked' : 'free'}-${minutes}`, {
+        status: 'TODO', scheduledAt: d(time), durationMinutes: 30, dueAt: undefined,
+      })
+      await fixture.repository.upsert('TASK', task.id, { ...task, version: 1 }, { version: 1, syncStatus: 'synced' })
+    }
+    if (block22) {
+      const blocker = deadlineTask('last-slot-overlap-blocker', {
+        status: 'TODO', scheduledAt: d('22:00'), durationMinutes: 60, dueAt: undefined,
+      })
+      await fixture.repository.upsert('TASK', blocker.id, { ...blocker, version: 1 }, { version: 1, syncStatus: 'synced' })
+    }
+    const newTask = deadlineTask(`last-slot-candidate-${block22 ? 'blocked' : dueAt ? 'deadline' : 'free'}`, {
+      status: 'TODO', scheduledAt: undefined, durationMinutes: 30, dueAt,
+    })
+    await fixture.repository.upsert('TASK', newTask.id, { ...newTask, version: 1 }, { version: 1, syncStatus: 'synced' })
+    await fixture.taskStore.loadLocalTasks()
+    return { fixture, newTask }
+  }
+
+  await t.test('22:30 is accepted when it is the sole free slot and the end equals dueAt', async () => {
+    const { fixture, newTask } = await makeFixture({ block22: false, dueAt: d('23:00') })
+    await fixture.taskStore.scheduleTaskToDay(newTask.id, '2099-10-06')
+    const row = await fixture.repository.read('TASK', newTask.id)
+    assert.equal(row.value.scheduledAt, d('22:30'))
+    assert.equal(row.version, 1)
+    assert.equal((await fixture.repository.listPending('TASK')).filter((mutation) => mutation.resourceId === newTask.id).length, 1)
+    assert.equal(fixture.taskStore.allTasks.find((task) => task.id === newTask.id)?.scheduledAt, d('22:30'))
+    assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '22:30')?.task?.id, newTask.id)
+  })
+
+  await t.test('22:30 candidate that ends one minute after dueAt is rejected without writes', async () => {
+    const { fixture, newTask } = await makeFixture({ block22: false, dueAt: d('22:59') })
+    const before = await taskStoreSnapshot(fixture)
+    const error = await fixture.taskStore.scheduleTaskToDay(newTask.id, '2099-10-06').then(() => null, (reason) => reason)
+    assert.match(error?.message ?? '', /当天没有符合任务时长和截止期限的可用排期时段/)
+    assert.deepEqual(await taskStoreSnapshot(fixture), before)
+  })
+
+  await t.test('occupied 22:00–23:00 interval conflicts with a 22:30 start and is rejected without writes', async () => {
+    const { fixture, newTask } = await makeFixture({ block22: true, dueAt: undefined })
+    const before = await taskStoreSnapshot(fixture)
+    const error = await fixture.taskStore.scheduleTaskToDay(newTask.id, '2099-10-06').then(() => null, (reason) => reason)
+    assert.match(error?.message ?? '', /当天没有符合任务时长和截止期限的可用排期时段/)
+    assert.deepEqual(await taskStoreSnapshot(fixture), before)
+  })
+})
+
+test('swap rejects compacted starts outside the visible window in either direction and preserves the local batch', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  let apiCalls = 0
+  let apiResponse
+  useTaskApi.swapSchedules = async () => { apiCalls += 1; return apiResponse }
+
+  const assertRejected = async (sourceAt, sourceDuration, targetAt, targetDuration, suffix) => {
+    const sourceTask = deadlineTask(`swap-window-source-${suffix}`, { status: 'TODO', scheduledAt: d(sourceAt), durationMinutes: sourceDuration, dueAt: undefined })
+    const targetTask = deadlineTask(`swap-window-target-${suffix}`, { status: 'TODO', scheduledAt: d(targetAt), durationMinutes: targetDuration, dueAt: undefined })
+    apiResponse = { source: { ...sourceTask, version: 8 }, target: { ...targetTask, version: 8 } }
+    apiCalls = 0
+    const fixture = await createTaskStoreFixture([sourceTask, targetTask])
+    await fixture.taskStore.fetchTasks()
+    fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+    const before = await taskStoreSnapshot(fixture)
+    const error = await fixture.taskStore.swapScheduledTasks(sourceTask.id, targetTask.id).then(() => null, (reason) => reason)
+    assert.match(error?.message ?? '', /超出排期窗口/)
+    assert.equal(apiCalls, 0, 'a rejected compact must stop before the swap API call')
+    assert.deepEqual(await taskStoreSnapshot(fixture), before, 'rejected compact must preserve both rows, outbox, and projection')
+  }
+
+  try {
+    await assertRejected('21:30', 30, '22:00', 90, 'forward')
+    await assertRejected('22:00', 90, '21:30', 30, 'reverse')
+    await assertRejected('22:45', 15, '22:00', 30, 'quarter-hour')
+    await assertRejected('08:00', 30, '08:30', 2250, 'overnight-compact')
+  } finally {
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('swap accepts a non-adjacent pair at the inclusive 22:30 boundary even when its interval ends later', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const sourceTask = deadlineTask('swap-visible-source', { status: 'TODO', scheduledAt: d('20:00'), durationMinutes: 30, dueAt: undefined })
+  const targetTask = deadlineTask('swap-visible-target', { status: 'TODO', scheduledAt: d('22:30'), durationMinutes: 30, dueAt: undefined })
+  const fixture = await createTaskStoreFixture([sourceTask, targetTask])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  let apiCalls = 0
+  useTaskApi.swapSchedules = async () => {
+    apiCalls += 1
+    return {
+      source: { ...sourceTask, scheduledAt: d('22:30'), version: 8 },
+      target: { ...targetTask, scheduledAt: d('20:00'), version: 8 },
+    }
+  }
+  try {
+    await fixture.taskStore.swapScheduledTasks(sourceTask.id, targetTask.id)
+    assert.equal(apiCalls, 1)
+    assert.equal((await fixture.repository.read('TASK', sourceTask.id)).value.scheduledAt, d('22:30'))
+    assert.equal((await fixture.repository.read('TASK', targetTask.id)).value.scheduledAt, d('20:00'))
+    assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '22:30')?.task?.id, sourceTask.id)
+    assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '20:00')?.task?.id, targetTask.id)
+  } finally {
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('non-adjacent same-weekday swap keeps the existing cross-week behavior when both destination starts are visible', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString()
+  const sourceTask = deadlineTask('swap-cross-week-source', {
+    status: 'TODO', scheduledAt: d('2099-10-06', '10:00'), durationMinutes: 30, dueAt: undefined,
+  })
+  const targetTask = deadlineTask('swap-cross-week-target', {
+    status: 'TODO', scheduledAt: d('2099-10-13', '11:00'), durationMinutes: 30, dueAt: undefined,
+  })
+  const fixture = await createTaskStoreFixture([sourceTask, targetTask])
+  await fixture.taskStore.fetchTasks()
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalSwap = useTaskApi.swapSchedules
+  let apiCalls = 0
+  useTaskApi.swapSchedules = async () => {
+    apiCalls += 1
+    return {
+      source: { ...sourceTask, scheduledAt: targetTask.scheduledAt, version: sourceTask.version + 1 },
+      target: { ...targetTask, scheduledAt: sourceTask.scheduledAt, version: targetTask.version + 1 },
+    }
+  }
+  try {
+    await fixture.taskStore.swapScheduledTasks(sourceTask.id, targetTask.id)
+    assert.equal(apiCalls, 1)
+    assert.equal((await fixture.repository.read('TASK', sourceTask.id)).value.scheduledAt, targetTask.scheduledAt)
+    assert.equal((await fixture.repository.read('TASK', targetTask.id)).value.scheduledAt, sourceTask.scheduledAt)
+  } finally {
+    useTaskApi.swapSchedules = originalSwap
+  }
+})
+
+test('cache failure after cursor advances reloads the newer Repository projection without installing the response', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const task = deadlineTask('cache-fail-after-pull', { status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 30, version: 8 })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+  const syncStore = useSyncStore()
+  const originalFlush = syncStore.flushNow
+  syncStore.flushNow = async () => {}
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const originalBatch = fixture.repository.upsertSyncedBatch.bind(fixture.repository)
+  const gate = deferredApiResponse()
+  useTaskApi.scheduleInsertions = async () => gate.waitForResponse()
+
+  try {
+    const operation = fixture.taskStore.scheduleTask(task.id, '10:00')
+    await gate.entered
+    await runPulledTaskChanges(fixture, [{
+      cursor: 'event-before-cache-failure', resourceType: 'TASK', resourceId: task.id, mutationType: 'UPDATE',
+      version: 9, deletedAt: null, payload: { ...task, scheduledAt: d('11:00'), version: 9 }, createdAt: null,
+    }], 'cursor-advanced-before-cache-failure')
+    await fixture.taskStore.loadLocalTasks()
+    fixture.repository.upsertSyncedBatch = async () => { throw new Error('injected cache write failure') }
+    gate.resolve({ tasks: [{ ...task, scheduledAt: d('10:00'), version: 8 }] })
+    await operation
+
+    const row = await fixture.repository.read('TASK', task.id)
+    assert.equal(row.version, 9)
+    assert.equal(row.value.scheduledAt, d('11:00'))
+    assert.equal((await fixture.repository.getSyncState()).cursor, 'cursor-advanced-before-cache-failure')
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === task.id)?.scheduledAt, d('11:00'),
+      'cache error handling must reload the repository and must not install the response')
+    assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+  } finally {
+    gate.resolve({ tasks: [] })
+    fixture.repository.upsertSyncedBatch = originalBatch
+    useTaskApi.scheduleInsertions = originalInsert
+    syncStore.flushNow = originalFlush
+  }
+})
+
+test('cache failure before the pull event keeps the old local view until ordinary read recovers the event', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const task = deadlineTask('cache-fail-before-pull', { status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 30, version: 8 })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  const syncStore = useSyncStore()
+  const originalFlush = syncStore.flushNow
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  const originalBatch = fixture.repository.upsertSyncedBatch.bind(fixture.repository)
+  const gate = deferredApiResponse()
+  let viewAtReadStart
+  let finishRecovery
+  const recoveryFinished = new Promise((resolve) => { finishRecovery = resolve })
+  useTaskApi.scheduleInsertions = async () => gate.waitForResponse()
+  fixture.repository.upsertSyncedBatch = async () => { throw new Error('injected pre-pull cache write failure') }
+  syncStore.flushNow = async () => {
+    viewAtReadStart = fixture.taskStore.allTasks.find((item) => item.id === task.id)?.scheduledAt
+    try {
+      await runPulledTaskChanges(fixture, [{
+        cursor: 'event-recovered-v9', resourceType: 'TASK', resourceId: task.id, mutationType: 'UPDATE',
+        version: 9, deletedAt: null, payload: { ...task, scheduledAt: d('11:00'), version: 9 }, createdAt: null,
+      }], 'cursor-after-recovered-v9')
+      await fixture.taskStore.loadLocalTasks()
+    } finally {
+      finishRecovery()
+    }
+  }
+
+  try {
+    const operation = fixture.taskStore.scheduleTask(task.id, '10:00')
+    await gate.entered
+    gate.resolve({ tasks: [{ ...task, scheduledAt: d('10:00'), version: 8 }] })
+    await operation
+    await recoveryFinished
+
+    assert.equal(viewAtReadStart, undefined, 'the catch must re-read the old local row before attempting ordinary sync')
+    const row = await fixture.repository.read('TASK', task.id)
+    assert.equal(row.version, 9)
+    assert.equal(row.value.scheduledAt, d('11:00'))
+    assert.equal((await fixture.repository.getSyncState()).cursor, 'cursor-after-recovered-v9')
+    assert.equal(fixture.taskStore.allTasks.find((item) => item.id === task.id)?.scheduledAt, d('11:00'))
+    assert.deepEqual(await fixture.repository.listPending('TASK'), [])
+  } finally {
+    gate.resolve({ tasks: [] })
+    fixture.repository.upsertSyncedBatch = originalBatch
+    useTaskApi.scheduleInsertions = originalInsert
+    syncStore.flushNow = originalFlush
+  }
+})
+
+test('deadline guard: same-day deadline task can be scheduled into slots on that day', async () => {
+  const fixture = await createTaskStoreFixture([])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('2099-10-06')
+
+  // 创建当天截止的任务（已同步状态，纯日期格式）
+  const sameDayTask = deadlineTask('same-day-task-1', {
+    status: 'TODO',
+    scheduledAt: undefined,
+    durationMinutes: 30,
+    dueAt: '2099-10-06',
+  })
+  await fixture.repository.upsert('TASK', sameDayTask.id, sameDayTask, { version: sameDayTask.version, syncStatus: 'synced' })
+  await fixture.taskStore.loadLocalTasks()
+
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  let apiCalledWith = null
+  useTaskApi.scheduleInsertions = async (params) => {
+    apiCalledWith = params
+    return { tasks: [{ ...sameDayTask, scheduledAt: params.scheduledAt, version: 8 }] }
+  }
+
+  try {
+    // 1. 排到当天 14:00 应当成功调用 API 且不报错
+    await fixture.taskStore.scheduleTask(sameDayTask.id, '14:00')
+    assert.ok(apiCalledWith !== null, 'scheduling into same-day slot must invoke insertion API')
+
+    // 2. 验证 scheduleTaskToDay 也能正确排入当天
+    const task2 = deadlineTask('same-day-task-2', {
+      status: 'TODO',
+      scheduledAt: undefined,
+      durationMinutes: 30,
+      dueAt: '2099-10-06',
+    })
+    await fixture.repository.upsert('TASK', task2.id, task2, { version: task2.version, syncStatus: 'synced' })
+    await fixture.taskStore.loadLocalTasks()
+
+    await fixture.taskStore.scheduleTaskToDay(task2.id, '2099-10-06')
+    const scheduledTask2 = fixture.taskStore.allTasks.find((t) => t.id === task2.id)
+    assert.ok(scheduledTask2?.scheduledAt, 'task with same-day deadline must successfully schedule to available day slot')
+  } finally {
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+
+test('date-only task deadlines become local end of day in Repository records and outbox payloads', async () => {
+  const fixture = await createTaskStoreFixture([])
+  await fixture.taskStore.fetchTasks()
+  const dateOnly = '2099-10-06'
+  const expectedLocalEnd = new Date(2099, 9, 6, 23, 59, 59, 999).toISOString()
+
+  const createdId = await fixture.taskStore.addTask({
+    subjectId: 'deadline-subject',
+    title: 'Created with a date-only deadline',
+    dueAt: dateOnly,
+    durationMinutes: 30,
+  })
+  const created = await fixture.repository.read('TASK', createdId)
+  assert.equal(created?.value.dueAt, expectedLocalEnd)
+  const createMutation = (await fixture.repository.listPending('TASK')).find((item) => item.resourceId === createdId)
+  assert.equal(createMutation?.payload.dueAt, expectedLocalEnd)
+
+  await fixture.taskStore.updateTaskDetails(createdId, { title: 'Edited without changing the deadline' })
+  const unchangedEdit = await fixture.repository.read('TASK', createdId)
+  assert.equal(unchangedEdit?.value.dueAt, expectedLocalEnd)
+
+  await fixture.taskStore.updateTaskDetails(createdId, { dueAt: dateOnly })
+  const edited = await fixture.repository.read('TASK', createdId)
+  assert.equal(edited?.value.dueAt, expectedLocalEnd)
+  const editMutation = (await fixture.repository.listPending('TASK')).find((item) => item.resourceId === createdId)
+  assert.equal(editMutation?.payload.dueAt, expectedLocalEnd)
+
+  const explicitOffset = '2099-10-06T23:59:59.999-05:00'
+  const explicitId = await fixture.taskStore.addTask({
+    subjectId: 'deadline-subject',
+    title: 'Created with an explicit instant',
+    dueAt: explicitOffset,
+    durationMinutes: 30,
+  })
+  const explicit = await fixture.repository.read('TASK', explicitId)
+  assert.equal(explicit?.value.dueAt, new Date(explicitOffset).toISOString())
+})
+
+test('Store rejects exact timestamp-midnight deadlines before API calls or local writes', async () => {
+  const { useTaskApi } = await import('../src/api/useTaskApi.ts')
+  const originalInsert = useTaskApi.scheduleInsertions
+  let apiCalls = 0
+  let activeRepository
+  useTaskApi.scheduleInsertions = async (params) => {
+    apiCalls += 1
+    const stored = await activeRepository.read('TASK', params.taskId)
+    const endAt = Date.parse(params.scheduledAt) + stored.value.durationMinutes * 60_000
+    if (endAt > Date.parse(stored.value.dueAt)) throw new Error('任务排期结束时间不能晚于截止期限')
+    return { tasks: [] }
+  }
+
+  try {
+    for (const dueAt of ['2099-10-06T00:00:00.000Z', '2099-10-06T00:00:00+08:00']) {
+      const id = `exact-midnight-${dueAt.endsWith('Z') ? 'utc' : 'offset'}`
+      const fixture = await createTaskStoreFixture([deadlineTask(id, { dueAt, durationMinutes: 30 })])
+      activeRepository = fixture.repository
+      await fixture.taskStore.fetchTasks()
+      fixture.taskStore.setSelectedDay('2099-10-06')
+
+      await assertDeadlineFailurePreservesStore(
+        fixture,
+        () => fixture.taskStore.scheduleTask(id, '09:00'),
+        `${dueAt} must be compared as its stored instant`,
+      )
+    }
+    assert.equal(apiCalls, 0, 'an interval after explicit midnight must not reach schedule-insertions')
+  } finally {
+    useTaskApi.scheduleInsertions = originalInsert
+  }
+})
+

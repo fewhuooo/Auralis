@@ -30,18 +30,15 @@ test('SubjectCreateModal preserves subject version for edit operations', async (
 
 test('PC subject views use the global theme instead of removed Subject.color', async () => {
   const root = new URL('../src/', import.meta.url)
-  const [dashboard, home, timeline] = await Promise.all([
+  const [dashboard, timeline] = await Promise.all([
     readFile(new URL('views/Dashboard/index.vue', root), 'utf8'),
-    readFile(new URL('views/Home/index.vue', root), 'utf8'),
     readFile(new URL('views/Timeline/index.vue', root), 'utf8'),
   ])
 
-  for (const page of [dashboard, home, timeline]) {
+  for (const page of [dashboard, timeline]) {
     assert.doesNotMatch(page, /\b(?:subj|selectedSubj|subjObj|activeSubject)\??\.color\b/)
     assert.doesNotMatch(page, /\bactiveSubject\.value\.color\b/)
   }
-  assert.match(home, /subjectStore\.addSubject\(formData\.name, formData\.description, formData\.icon\)/)
-  assert.doesNotMatch(home, /formData\.color/)
 })
 
 test('maps current subject DTO to the PC view model without legacy fields', () => {
@@ -109,9 +106,7 @@ test('maps knowledge block and asset DTOs to stable UI fields', () => {
     subjectId: 'subject-1',
     sourceId: 'source-1',
     title: 'Big O',
-    summary: 'Complexity summary',
     content: 'Content',
-    tags: ['complexity'],
     colorOverride: '#abc',
     version: 2,
     deletedAt: null,
@@ -125,13 +120,48 @@ test('maps knowledge block and asset DTOs to stable UI fields', () => {
     createdAt: '2026-08-20T00:00:00Z',
   })
 
-  assert.equal(block.preview, 'Complexity summary')
+  assert.equal(block.content, 'Content')
+  assert.equal('preview' in block, false)
+  assert.equal('tags' in block, false)
   assert.equal(block.source, '编译原理课件chap01(陈火旺)-v9.ppt')
   assert.equal(block.sourceFileId, 'source-1')
   assert.equal(block.version, 2)
   assert.equal(asset.name, 'notes.pdf')
   assert.equal(asset.sizeBytes, 1024)
   assert.equal(asset.status, 'READY')
+})
+
+test('SearchPalette keeps knowledge navigation and removes AI shortcut wiring', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const [searchPalette, dashboard] = await Promise.all([
+    readFile(new URL('components/SearchPalette.vue', root), 'utf8'),
+    readFile(new URL('views/Dashboard/index.vue', root), 'utf8'),
+  ])
+
+  assert.match(searchPalette, /router\.push\(\{\s*path:\s*['"]\/['"],\s*query:\s*\{\s*openBlock:\s*block\.id\s*\}\s*\}\)/)
+  assert.match(searchPalette, /b\.content/)
+  assert.doesNotMatch(searchPalette, /search-trigger-ai-chat|triggerAiChat|快捷操作/)
+  assert.match(dashboard, /watch\(\s*\(\) => route\.query\.openBlock[\s\S]*?await knowledgeStore\.loadLocalBlocks\(\)[\s\S]*?openBlockDetail\(block\)[\s\S]*?delete query\.openBlock/)
+  assert.match(dashboard, /<KnowledgeBlockViewDialog/)
+})
+
+test('knowledge block writes and editors expose only content as the body field', async () => {
+  const root = new URL('../src/', import.meta.url)
+  const [api, store, editor, workspaceDialog] = await Promise.all([
+    readFile(new URL('api/useKnowledgeApi.ts', root), 'utf8'),
+    readFile(new URL('store/useKnowledgeStore.ts', root), 'utf8'),
+    readFile(new URL('components/knowledge/KnowledgeBlockEditor.vue', root), 'utf8'),
+    readFile(new URL('components/knowledge/WorkspaceKnowledgeBlockDialog.vue', root), 'utf8'),
+  ])
+
+  assert.match(api, /content: string/)
+  assert.doesNotMatch(api, /summary\??:|tags\??:/)
+  assert.match(store, /content,/)
+  assert.doesNotMatch(store, /summary|block\.preview|block\.tags/)
+  assert.match(editor, /value: \{ title: string; content: string \}/)
+  assert.doesNotMatch(editor, /tags/)
+  assert.match(workspaceDialog, /content: string/)
+  assert.doesNotMatch(workspaceDialog, /preview|tags|summary/)
 })
 
 test('does not expose a source id as the knowledge block source name', () => {

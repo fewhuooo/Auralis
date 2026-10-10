@@ -18,7 +18,7 @@ export async function resolve(specifier, context, nextResolve) {
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
 const { DocumentProcessingJobRepository, createMemoryStorage } = await import('../src/services/localRepository.ts')
-const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
+const { createVersionedLocalSchema, LOCAL_SCHEMA_VERSION } = await import('../src/services/localSchema.ts')
 
 class TemporarySqlite {
   constructor() {
@@ -38,7 +38,7 @@ class TemporarySqlite {
   }
 }
 
-test('legacy schema upgrades to the current v9 local asset and document schema', async () => {
+test('legacy schema upgrades to the current local asset, document and overview sync schema', async () => {
   const sqlite = new TemporarySqlite()
   try {
     await sqlite.execute('CREATE TABLE local_schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -49,10 +49,12 @@ test('legacy schema upgrades to the current v9 local asset and document schema',
     const table = sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_processing_jobs'").get()
     assert.ok(table)
     const versions = sqlite.database.prepare('SELECT version FROM local_schema_migrations ORDER BY version').all().map((row) => row.version)
-    assert.deepEqual(versions, [2, 9])
+    assert.deepEqual(versions, [2, LOCAL_SCHEMA_VERSION])
     const columns = sqlite.database.prepare('PRAGMA table_info(document_processing_jobs)').all().map((row) => row.name)
     assert.ok(columns.includes('payload_receipt_json'))
     assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ai_overview_cache'").get())
+    assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'overview_sync_outbox'").get())
+    assert.ok(sqlite.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'overview_sync_states'").get())
   } finally {
     sqlite.close()
   }

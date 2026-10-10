@@ -33,22 +33,7 @@
                   <span class="icon">⬡</span>
                   <div class="text">
                     <span class="title">{{ block.title }}</span>
-                    <span class="desc">{{ block.subject }} · {{ block.preview?.slice(0, 50) }}...</span>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="result-group">
-                <div class="group-title">快捷操作</div>
-                <div
-                  class="result-item"
-                  :class="{ 'is-selected': selectedIndex === searchResults.length }"
-                  @click="triggerAiChat"
-                >
-                  <span class="icon">✨</span>
-                  <div class="text">
-                    <span class="title">让 AI 解答 "{{ query }}"</span>
-                    <span class="desc">未匹配到合适知识块？唤醒 RAG 智能大模型</span>
+                    <span class="desc">{{ block.subject }} · {{ block.content.slice(0, 50) }}{{ block.content.length > 50 ? '...' : '' }}</span>
                   </div>
                 </div>
               </div>
@@ -102,7 +87,7 @@ const doSearch = (q: string) => {
       searchResults.value = all.filter((b: any) =>
         (b.title && b.title.toLowerCase().includes(q.toLowerCase())) ||
         (b.subject && b.subject.toLowerCase().includes(q.toLowerCase())) ||
-        (b.preview && b.preview.toLowerCase().includes(q.toLowerCase()))
+        (b.content && b.content.toLowerCase().includes(q.toLowerCase()))
       ).slice(0, 6)
     } catch (e) {
       console.error(e)
@@ -134,42 +119,22 @@ const close = () => {
 
 const selectResult = (block: any) => {
   close()
-  router.push('/')
-  nextTick(() => {
-    window.dispatchEvent(new CustomEvent('open-block-detail', { detail: block }))
-  })
-}
-
-const triggerAiChat = () => {
-  close()
-  router.push('/')
-  nextTick(() => {
-    window.dispatchEvent(new CustomEvent('search-trigger-ai-chat', { detail: query.value }))
-  })
+  void router.push({ path: '/', query: { openBlock: block.id } })
 }
 
 const handleKeyNav = (e: KeyboardEvent) => {
-  const maxIdx = searchResults.value.length // including "Ask AI" at the end
-  if (maxIdx === 0 && query.value) {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      triggerAiChat()
-    }
-    return
-  }
+  const resultCount = searchResults.value.length
+  if (resultCount === 0) return
   if (e.key === 'ArrowDown') {
     e.preventDefault()
-    selectedIndex.value = (selectedIndex.value + 1) % (maxIdx + 1)
+    selectedIndex.value = (selectedIndex.value + 1) % resultCount
   } else if (e.key === 'ArrowUp') {
     e.preventDefault()
-    selectedIndex.value = (selectedIndex.value - 1 + maxIdx + 1) % (maxIdx + 1)
+    selectedIndex.value = (selectedIndex.value - 1 + resultCount) % resultCount
   } else if (e.key === 'Enter') {
     e.preventDefault()
-    if (selectedIndex.value === maxIdx || selectedIndex.value === -1) {
-      triggerAiChat()
-    } else if (selectedIndex.value >= 0 && selectedIndex.value < searchResults.value.length) {
-      selectResult(searchResults.value[selectedIndex.value])
-    }
+    const index = selectedIndex.value < 0 ? 0 : selectedIndex.value
+    selectResult(searchResults.value[index])
   }
 }
 
@@ -374,12 +339,27 @@ onUnmounted(() => {
 /* Animations */
 .palette-enter-active,
 .palette-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.palette-enter-active .palette-container,
+.palette-leave-active .palette-container {
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease;
+  will-change: transform, opacity;
 }
 
 .palette-enter-from,
 .palette-leave-to {
   opacity: 0;
-  transform: translateY(-10px) scale(0.98);
+}
+
+.palette-enter-from .palette-container {
+  opacity: 0;
+  transform: translateY(-12px) scale(0.96);
+}
+
+.palette-leave-to .palette-container {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
 }
 </style>

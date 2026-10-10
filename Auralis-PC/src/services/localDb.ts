@@ -9,16 +9,25 @@ import {
 import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/localSchema';
 import { LocalDatabaseRuntime } from '@/services/localDatabaseRuntime';
 import { LocalSqlQueue, serializeLocalSqlDatabase } from '@/services/localSqlQueue';
-import { replaceLocalResourceSnapshot } from '@/api/tauri';
+import { initializeLocalDatabasePool, replaceLocalResourceSnapshot } from '@/api/tauri';
 import { OverviewRepository } from '@/services/overviewRepository';
+import { FocusSessionRepository } from '@/services/focusSessionRepository';
 import { LocalAssetRepository } from '@/services/localAssetRepository';
 import { LocalParsedDocumentRepository } from '@/services/localParsedDocumentRepository';
 
 // The legacy methods below still map many historical row shapes dynamically.
 // Keep their boundary dynamic while new R4 repositories use LocalSqlDatabase.
+type LegacyKnowledgeBlock = Omit<KnowledgeBlock, 'content'> & {
+  content?: string
+  preview?: string
+  tags?: string[]
+}
+
 let db: any = null;
 const localDatabaseRuntime = new LocalDatabaseRuntime<LocalSqlDatabase | 'localstorage'>();
 const localSqlQueue = new LocalSqlQueue();
+
+export const getLocalSqlDatabase = (): LocalSqlDatabase | 'localstorage' => db;
 
 export const localDb = {
   async init() {
@@ -34,7 +43,9 @@ export const localDb = {
           console.warn('[SQLite PC] Not running in Tauri context, using localStorage fallback.');
           return 'localstorage';
         }
-        const loaded = serializeLocalSqlDatabase(await Database.load('sqlite:auralis.db') as LocalSqlDatabase, localSqlQueue);
+        const rawDatabase = await Database.load('sqlite:auralis.db') as LocalSqlDatabase;
+        await initializeLocalDatabasePool();
+        const loaded = serializeLocalSqlDatabase(rawDatabase, localSqlQueue);
         db = loaded;
         await loaded.execute('PRAGMA journal_mode = WAL');
         await loaded.execute('PRAGMA busy_timeout = 5000');
@@ -228,7 +239,7 @@ export const localDb = {
   },
 
   // Knowledge Block CRUD
-  async getBlocks(subject?: string, subjectId?: string): Promise<KnowledgeBlock[]> {
+  async getBlocks(subject?: string, subjectId?: string): Promise<LegacyKnowledgeBlock[]> {
     if (!db) await this.init();
     if (db === 'localstorage') {
       const blocks: any[] = JSON.parse(localStorage.getItem('auralis_knowledge_blocks') || '[]');
@@ -296,19 +307,20 @@ export const localDb = {
     }));
   },
 
-  async saveBlock(block: KnowledgeBlock, syncStatus = 'synced', syncVersion = 0) {
+  async saveBlock(block: LegacyKnowledgeBlock, syncStatus = 'synced', syncVersion = 0) {
     if (!db) await this.init();
     if (db === 'localstorage') {
       const blocks: any[] = JSON.parse(localStorage.getItem('auralis_knowledge_blocks') || '[]');
       const index = blocks.findIndex((b: any) => b.id === block.id);
       const isDeletedVal = block.is_deleted ? true : false;
       const versionVal = block.sync_version || syncVersion || 0;
+      const preview = block.content ?? block.preview ?? '';
 
       const mapped: any = {
         id: block.id,
         subject: block.subject,
         title: block.title,
-        preview: block.preview,
+        preview,
         time: block.time,
         source: block.source,
         color: block.color,
@@ -336,6 +348,7 @@ export const localDb = {
     const exists = await db.select('SELECT id FROM knowledge_blocks WHERE id = $1', [block.id]);
     const isDeletedVal = block.is_deleted ? 1 : 0;
     const versionVal = block.sync_version || syncVersion || 0;
+    const preview = block.content ?? block.preview ?? '';
 
     const subjectIdVal = block.subjectId || null;
     const sourceFileIdVal = block.sourceFileId || null;
@@ -352,7 +365,7 @@ export const localDb = {
           subject_id = $10, source_file_id = $11, tags = $12, difficulty = $13, mastery = $14, review_at = $15, related_block_ids = $16
          WHERE id = $17`,
         [
-          block.subject, block.title, block.preview, block.time, block.source, block.color, syncStatus, isDeletedVal, versionVal,
+          block.subject, block.title, preview, block.time, block.source, block.color, syncStatus, isDeletedVal, versionVal,
           subjectIdVal, sourceFileIdVal, tagsVal, difficultyVal, masteryVal, reviewAtVal, relatedBlockIdsVal, block.id
         ]
       );
@@ -361,7 +374,7 @@ export const localDb = {
         `INSERT INTO knowledge_blocks (id, subject, title, preview, time, source, color, sync_status, is_deleted, sync_version, subject_id, source_file_id, tags, difficulty, mastery, review_at, related_block_ids)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
-          block.id, block.subject, block.title, block.preview, block.time, block.source, block.color, syncStatus, isDeletedVal, versionVal,
+          block.id, block.subject, block.title, preview, block.time, block.source, block.color, syncStatus, isDeletedVal, versionVal,
           subjectIdVal, sourceFileIdVal, tagsVal, difficultyVal, masteryVal, reviewAtVal, relatedBlockIdsVal
         ]
       );
@@ -427,7 +440,7 @@ export const localDb = {
     await db.execute("UPDATE knowledge_blocks SET sync_status = 'synced' WHERE id = $1", [id]);
   },
 
-  async mergeBlocksFromServer(serverBlocks: KnowledgeBlock[]) {
+  async mergeBlocksFromServer(serverBlocks: LegacyKnowledgeBlock[]) {
     await this.batchMergeBlocks(serverBlocks);
   },
 
@@ -463,11 +476,11 @@ export const localDb = {
           }
         }
 
-        const mappedBlock: KnowledgeBlock = {
+        const mappedBlock: LegacyKnowledgeBlock = {
           id: block.id,
           subject: block.subject,
           title: block.title,
-          preview: block.preview,
+          preview: block.content ?? block.preview ?? '',
           time: block.time,
           source: block.source,
           color: block.color,
@@ -515,11 +528,11 @@ export const localDb = {
         }
       }
 
-      const mappedBlock: KnowledgeBlock = {
+      const mappedBlock: LegacyKnowledgeBlock = {
         id: block.id,
         subject: block.subject,
         title: block.title,
-        preview: block.preview,
+        preview: block.content ?? block.preview ?? '',
         time: block.time,
         source: block.source,
         color: block.color,
@@ -861,11 +874,11 @@ export const localDb = {
 
     if (entityType === 'block') {
       if (action === 'create' || action === 'update') {
-        const block: KnowledgeBlock = {
+        const block: LegacyKnowledgeBlock = {
           id: entityId,
           subject: payload.subject,
           title: payload.title,
-          preview: payload.preview,
+          preview: payload.content ?? payload.preview ?? '',
           time: payload.time,
           source: payload.source,
           sync_status: 'synced',
@@ -1149,6 +1162,21 @@ export async function getOverviewRepository(userId: string, serverDeviceId: stri
   await localDb.init();
   if (db === 'localstorage') return new OverviewRepository(userId, serverDeviceId);
   return new OverviewRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() });
+}
+
+/** Returns the durable, owner/device-scoped Pomodoro runtime and focus outbox. */
+export async function getFocusSessionRepository(userId: string, serverDeviceId: string): Promise<FocusSessionRepository> {
+  await localDb.init();
+  if (db === 'localstorage') {
+    return localDatabaseRuntime.getOrCreate(
+      `focus-sessions:${userId}:${serverDeviceId}`,
+      () => new FocusSessionRepository(userId, serverDeviceId),
+    );
+  }
+  return localDatabaseRuntime.getOrCreate(
+    `focus-sessions:${userId}:${serverDeviceId}`,
+    () => new FocusSessionRepository(userId, serverDeviceId, { sql: db as LocalSqlDatabase, schemaReady: Promise.resolve() }),
+  );
 }
 
 /** Returns the owner/device-scoped LocalAssetRepository on the shared DB. */

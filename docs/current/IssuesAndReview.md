@@ -1,5 +1,439 @@
 # Auralis 当前问题与审查登记
 
+### 2026-10-10 本机 DB 重建后的 MinIO 对象清理（已关闭）
+
+- 本机测试数据库 `public` schema 重建后，用户明确要求一并清空 MinIO。目标 `.env` 配置为 `auralis-assets`，版本控制 Disabled；删除前列出 12 个对象，删除后重新列举为 0。只保留 bucket 和服务，未改其他 bucket 或 PC/Tauri 本机受管文件。
+- 影响已关闭：当前 Assets/Sources 表为空，目标 bucket 也为空；知识块和任务计数不受影响。命令证据与后续重建步骤见 [测试账号数据库重建与数据注入流程](../operations/TestAccountDataResetAndSeed.md)。
+
+### 2026-10-10 自测复习点击后显示完成 0 个（IMPORTANT，代码、自动验证与只读审查层关闭；客户端待验收）
+
+- 可复现路径：最新自测页面传 VOLUNTARY，缓存的旧动作仍按 mastered-only 过滤；未来已学候选得到空队列，Store 原允许发布空轮次，模板无条件显示完成。旧动作通过测试包装器建模，未提取真实运行窗口闭包，未查询真实 SQLite 内容。
+- 最小关闭措施：Store 拒绝空启动；Pane 核对所选数量与实际卡片并清理异常临时轮次，既存空轮次显示错误；开发更新 Store 后完整刷新，避免新组件继续调用旧内存动作。正式记录/outbox 的持久保存和调度未改。
+- 主树回归 107/107、force type-check 退出 0，隔离构建退出 0；默认 5/7、10/12、10/3 的实际 SFC 点击、旧空动作、正常非零完成和刷新后正式记录/outbox 均覆盖。同一只读 reviewer 复核最终 BLOCKER=0、IMPORTANT=0、OPTIONAL=0；真实 Tauri 点击及多设备独立待验收。
+- 范围外门槛：`check-subject-workspace-three-column.mjs` 仍在未改 SubjectWorkspace 的 `centerView === 'summary' && selectedFile` 断言退出 1；未顺手修改。npm 类型检查启动器发生 ENOSPC，直接 vue-tsc 成功。完整命令、原始 RED/GREEN 和差分见 `D:/Temp/auralis-voluntary-review-zero-fix-20261010/evidence/implementation-report.md`。
+
+- 初审 IMPORTANT 已关闭：有效轮次恢复时以成功加载的 subject/account scope 为材料可用标记，加载中及失败重试不误报空轮次；换学科的暂时空 IDs 不清缓存轮次。三条挂起/失败读取测试 RED→GREEN，轮次 ID、queue、phase 和卡片均保留。最终增量与审查分别见 TEMP 的 `evidence/followup-report.md`、`reviewer-report.md`。
+
+### 2026-10-10 PC 任务截止自然日与 instant 不一致（IMPORTANT，代码与自动验证层关闭）
+
+- 前端把带时区午夜/UTC日末扩为本地日末，导致部分排期前置允许、Server 按既存截止拒绝；创建与编辑纯日期拼 UTC 日末又产生时区偏差。真实 Store/Repository/API adapter 复现及源码证据见 [计划](../plans/2026-10-09-task-deadline-date-consistency.md)。
+- 已关闭：纯日期按当地日末保存、已有精确截止保持、编辑非日期字段不改截止；显式日期编辑与清空受临时标记保护。实际 Store/Repository/outbox 和拒绝无副作用回归、HK95/95、UTC/LA各7/7、主树669/669、类型与构建通过；唯一只读 reviewer BLOCKER=0、IMPORTANT=0。OPTIONAL：SFC helper 测试注入转换 stub，GUI 事件未挂载验证，未扩大测试架构。
+- 真实 GUI/Tauri/HTTP 仍待验收。执行环境遗留：本轮 C 盘副本占满空间，已注销但目录仍在，清理被长路径错误及后续执行策略拒绝阻止；不是已关闭事项，路径与原始错误见上述计划。既有 Rust 固定本地地址静态扫描失败不属于本次改动。
+
+### 2026-10-09 学科统计布局无重点与界面杂乱修复（IMPORTANT，代码与自动化测试通过）
+
+- 问题归因：
+  - 学科统计页（`SubjectStatsPane.vue`）先前平铺了 12 个等权卡片与多行散乱指标，静态学科资产（文件、知识块）与动态复习产出（今日复习、累计复习）混杂在同一行卡片中；
+  - 界面装饰性嵌套过多（重度色框、粗阴影、多层辅助说明文本），缺乏核心聚焦视觉层级，整体观感臃肿不符合 Auralis 极简禅意风格。
+- 修复措施：
+  - 重构为三层极简仪表板：① 核心 Hero 看板（大字掌握率 + 极简细轨三态进度 + 去噪行动卡片），重点突出今日到期复习；② 学习活力与近 7 天走势（整合关键活跃指标与极简细柱状图）；③ 底座双栏（工整收敛学科资产与任务协同）；
+  - 去除深层嵌套与冗余说明文本，样式回归 Auralis 宣纸禅意米白风（轻量单层背景、细微边框、呼吸感间距与平滑微悬浮）；
+  - 模板消减深层纯静态节点嵌套，消除自定义渲染器上的 `createStaticVNode` 兼容隐患。
+- 验证证据：`scripts/r4-subject-stats.test.mjs`（11/11 通过）、`scripts/r4-subject-review.test.mjs`（48/48 通过）、`npm run test:r4-pc`（659/659 通过）、`npm run type-check`（0 error）。真实 GUI 待用户人工验收。
+
+### 2026-10-09 学科复习返回按钮层级与跳转位置规范（IMPORTANT，代码与自动化测试通过）
+
+- 问题归因：
+  - 复习最外层（规划总览仪表盘 `!round`）原本放置了多余的返回按钮，与 Tier 1 一级导航栏职责重叠；
+  - 答题轮次内（`round` 存在）左上角返回按钮在先前修复中被过度绑定为直接退出复习视图并返回工作区材料预览，导致用户在答题中点击返回时误跳出复习模块，返回目标位置错误。
+- 修复措施：
+  - 彻底移除 `SubjectReviewPane.vue` 最外层 header 内的返回按钮，最外层级不设返回按钮，切换视图直接通过一级导航；
+  - 将轮次内左上角返回按钮明确绑定为 `endRound`（目标为返回上一级规划仪表盘），退出当前答题轮次并停留在复习规划页；
+  - `SubjectWorkspace/index.vue` 维护完善的 `lastWorkspaceState` 与 `toggleTier2` 逻辑，确保从其他模块切换时的稳健性。
+- 验证证据：`scripts/r4-subject-review.test.mjs`（48/48 通过）、`npm run test:r4-pc`（618/618 通过）、`npm run type-check`（0 error）。
+
+### 2026-10-09 学科复习/统计离线缺口（代码与自动验证层已关闭；真实环境待验收）
+
+- 原复习主体被远端states成功标记限制，统计无持久本地读取，正式生命周期直接REST。现已改为本地读写及独立补传，正式状态/历史/待同步意图跨重启保留，临时轮次仅切页恢复。
+- 本轮关闭条件：本地读写及正式数据/队列恢复、真实操作时间补传、精确幂等和 FIFO、多端冲突保留、账号代际围栏、本地统计与当前排程等价，通过相关自动验证及一次只读审查。GUI/Tauri 断网重启与双设备仍单独验收。
+- 现有 baseVersion=0 同时代表无状态和既存 version0，首次离线学习同步必须显式区分；导入未确认 GOOD/HARD 必须携带初选前 baseline，不从 tentative state 推断。必要协议补充在 [计划](../plans/2026-10-09-review-stats-local-first.md)，尚未声明关闭。
+
+本轮二十三项必要修复已在代码与自动验证层关闭：唯一reviewer确认十四项IMPORTANT，根与执行Agent补充七项，根最终审查再补两项。最终主树R4 664/664（0 failure/skip）、类型/学科两项静态/构建通过；Service相关32/32、独立OpenAPI9/9、SDK一致。唯一reviewer初审后因使用额度中止，主Agent接手最终审查与必要修复，不能把后端初审写成全任务独立审查通过。当前任务范围未留未处理BLOCKER/IMPORTANT；真实Tauri/HTTP/双设备另行验收。证据与限制见 [本地实施计划](../plans/2026-10-09-review-stats-local-first.md)。
+
+| 已关闭问题 | 最小修复与回归范围 |
+| --- | --- |
+| 浏览器当前账号资源缺失后回退旧无账号键，可读取他人遗留KB/Subject | 仅现行owner-scoped LocalRepository；旧键忽略且不删除。真实scoped miss RED读取旧KB，GREEN资源为null、提交404且无record/intent，无绑定仓储不枚举旧数据 |
+| 本地确认无条件增加稳定次数、最终验证不毕业，已有状态重学与重开ID不符Service | 对齐现行Service的初选前baseline/selectedAt、提前与EARLY_RECALL不推进、最终到期且满30天毕业；时间比较保留微秒，包含提前1微秒的边界。已有state重学10分钟/清旧pending，手动重开按请求ID清空。新增8种确认边界及持久重开回归，RED/GREEN；两个原跨天用例明确CROSS_DAY夹具 |
+| 本地事务普通409错误未被Store识别，反复重试冻结旧base；重新确认分支仍取HTTP历史 | 明确识别本地版本冲突；恢复只读严格完整的本地state/history，未知或正文/scope变化安全结束卡片并保留正式记录/outbox；远端409仍单独显式采用云端，真实本地交错与零HTTP回归通过 |
+| ReviewSync 派发初选时丢失本机冻结 reviewId，服务端另建 ID 导致后续确认冲突 | 五类请求按现行 API 保留正式字段；认识/模糊各自真实 Store 三命令离线链按原 ID 与实际 ACK 版本补传，他端新操作拒绝后继且不自动重基 |
+| 已同步核心 KB 首次离线尚无复习导入记录，正式学习保存仍被 statePresenceKnown 门槛拒绝 | 按实际本地存在性持久保存，云端 UNKNOWN 不计确定新学习；完整 protocol2 GET 确认无state及空历史才初次准备，present0/旧云进度冲突保留，冷离线与重启/空云/已有云两分支通过 |
+| updateCachedState 用 ??旧值恢复生命周期明确null，HARD确认后的尾回忆误入核对态 | 四个可空字段仅undefined时回退，null正确清除；真实HARD→确认→FUZZY_RECALL/核对、掌握阶段与学习ID清空回归 |
+| LocalReviewService.pendingRows 的 SQL raw-tx 路径以 safeJson/默认准备凭据绕过仓储严格校验 | 复用同一严格行解析；真实 SQLite 有效 JSON 缺必要字段时拒绝正式提交，record/history/outbox 不变且无嵌套队列锁 |
+| Stats 本地状态提示插入 v-if/else-if 链，待同步条数非零时隐藏统计主体 | 保持 loading/error/stats 三分支相邻，提示在 stats 主体内；实际渲染覆盖 pending>0 与错误/无数据状态 |
+| 用户已实现的强制返回/结束被合并回 pendingCommand 拒绝，无法回规划页 | 强制结束仅清内存轮次，保留已保存正式记录/outbox；覆盖失败待重试与正在本地提交交错，账号围栏保持 |
+| Core ACK 推进 KB version 或正文使云端状态失效，本地请求仍用旧版/猜 +1，产生错误冲突 | 未 prepared 请求依据独立云端锚点及完整历史核对后绑定 GET 实际版本；正文仅首条无 reviewId 学习且 state 精确失效可准备，元信息更新需 state/history 保持；他端复习、存在性变化或证据不足保留冲突，prepared 不改 |
+| 已导入无状态的 KB 编辑/移动后被保存成合成存在态，首学期望存在错误 | record.state 原为 null 时保持 null，仅更新 hash/version/归属；UI临时投影不物化，首学仍 absent/ACK0/3天 |
+| Review ACK 硬猜 base+1，真实服务首回执 version0 被拒 | 使用真实 server version 推进后继，保持本地 revision 分离；MockMvc已证明首次0，补首ACK0/present0/重试收敛 |
+| 同 KB 首命令没有有效 ACK，队列仍继续后继 POST | 首个未确认/失败/冲突停止该 KB，原样重试后用真实前驱 ACK 版本推进；其他 KB 独立继续 |
+| 离线 LEARNING_REOPENED 保留掌握/阶段，后续完成错误排三天 | 对齐 Service：非掌握、stable0、EARLY_RECALL，完成后10分钟；覆盖已掌握重开序列 |
+| 只移动学科且正文不变也被当正文失效重置掌握 | 更新归属与 KB 版本，保留掌握/稳定/日期；旧 scope 意图安全处理，不遗留无法确认的孤儿初选 |
+| 本地命令未原子核对发起轮次的学科，KB 移动后旧轮次仍可提交 | expectedSubjectId 在正式提交事务内等于 KB 当前父学科，覆盖移动交错 |
+| core KB push ERROR/CONFLICT 后 cycle 正常返回，Review 未等核心变更收敛就上传 | 准备及派发逐 KB 检查全部未结 core mutation；未收敛仅 defer，core 收敛后同 ID 继续 |
+| Store 仍把 version0 推断为无状态，已有 version0 首次命令被拒 | 从持久 state/显式本地存在性生成 expectedStateAbsent，覆盖 present0 与 absent 两例 |
+| 旧正文 POST 飞行中失效后，迟到 ACK 可覆盖新投影并删已归档意图；迟到 409 可复活归档状态 | 所有结算分支同事务复核当前 intent 状态及父/KB/hash/version/归属；不恢复旧掌握、不删除归档审计或回退已结算状态 |
+| 已删除 KB 记录替代缺失活动 KB，历史完整度误报 COMPLETE | 每个活动 KB 按 ID 校验导入标记，缺失/部分记录仍 INCOMPLETE |
+| 任意 legacy 事件被当已学习，或未知云端状态被统计为确定新学习 | newLearningCount 仅计已导入明确无状态或有本地 CREATE 证据且无正式状态的 KB；未知可进入本地待学习但历史仍 INCOMPLETE，present0 与 needsLearning 已有状态不算新学习 |
+| daily 完成任务漏算软删除 DONE/completedAt 历史 | 含墓碑任务仅参与适用每日历史聚合，当前任务概况仍只活动行 |
+| daily 新建知识块漏算创建后软删除历史 | 含墓碑 KB 参与 createdAt 趋势，当前知识概况与三态仍只活动行 |
+
+本轮另外发现一个既有工程检查失败（范围外，未修改）：`npm run check:r4-pc` exit1，唯一输出是 `src-tauri/src/local_asset_store.rs: fixed local address`。checker 第18行扫描所有源文本中的 `127.0.0.1/localhost:<port>`；该 Rust 从第1421行开始为 `#[cfg(test)]`，命中第1486/1525/1998/2087/2112行的本地 listener/上传 URL 测试 fixture。Rust 与 checker 均干净并与本轮原快照完全同 hash（分别 `4D089AAB…D8C422C2` / `68FA598A…6C2F31`）。这不作为本轮业务失败，也不把静态命令记成通过；按 OPTIONAL/范围外规则不修改 scanner 或 Rust。正式证据登记在本轮实施计划与执行报告。
+
+### 2026-10-08 复习、学习与掌握退出（本轮必要问题已关闭；真实环境待验收）
+
+- 新生命周期、3R、同次纠正、掌握退出与互斥三态已接通。最终PC专项63/63、type-check/两项静态/build exit0；Service相关25/25、最后当前V29 H2 14/14及各定向PG门槛通过。唯一只读reviewer最终BLOCKER=0、IMPORTANT=0、OPTIONAL=0；以下六项IMPORTANT在本轮代码、相关自动验证与只读审查层关闭。
+
+| 问题 | 最小修复及证据 |
+| --- | --- |
+| 到期队列沿资源ID排序 | Store与Pane按dueAt升序；真实队列RED→GREEN |
+| 未来待复习缺少手动入口 | 独立提前练习选择队列，活动/同步/内容/阶段资格复核；实际Pane/API与StoreRED→GREEN |
+| KB移动后可能只锁旧Subject | 复用expectedSubjectId重载锁后重查；PG RED旧实现写state，GREEN拒绝且state/command均0，1/1 |
+| 不同Subject首次学习竞争全局参数唯一键 | V29预置既有默认参数；PG双事务查空23505 RED→GREEN 1/1，V28自定义参数升级保留1/1，H2当前迁移14/14 |
+| 跨设备reviewId或正文资格变化使pending永久残留 | 权威重读后清过期请求/卡片，可结束重开；不同ID、同ID确认/重学、version/hash变化真实Pinia/API交错覆盖 |
+| legacy清空review IDs及history读取间的新初选 | history区分已使用与未提交R1；历史响应后重新检查版本/内容/当前ID，不覆盖R2；三种真实Store/API交错1/1，包含于最终63/63 |
+
+- Antigravity配色经完整差分及样式/业务哈希验证后仅应用两个scoped样式体，用户布局保留，无新依赖/删除/跨模块写入。新机制旧回执与旧历史保留独立语义，不凭旧reps推断毕业。
+- GUI/Tauri、真实HTTP、多设备联机及生产迁移尚未验收；真实PG正文修改与复习同时写入没有专用动态案例，已由内容行为测试、PC资格用例和事务代码审查覆盖。未重跑全量Server、未关闭下方原工程门槛。完整命令、各版本证明范围、原失败与唯一reviewer报告见 [本轮实施](../plans/2026-10-08-review-learning-mastery-implementation.md)。
+
+### 2026-10-08 复习卡片反馈简化（本次需求已在代码、自动验证与只读审查层关闭）
+
+- 用户要求两项反馈。当前“展开内容”只揭晓，评分入口为“下一个”（GOOD）与“记错了”（AGAIN）；记错队尾与每轮首次调度继续通过现行 Store 处理。
+- 本轮唯一 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0；实际组件点击与 Pinia/API 桩证明两按钮载荷及重复巩固无新增事件，最终专项 41/41。较早 R4 595/595 和类型/静态/build 通过，最后测试增强由随后专项覆盖；原合法历史值与 pending 事件不改写。
+- 当前卡片样式与 StatsPane 日历按本轮快照保留。GUI/Tauri/真实 HTTP/PG 与多端仍未验收；未重跑或关闭原 Service 全量工程门槛，也未处理此前未同步 KB 的 OPTIONAL。证据、时间与工作树保护见 [实施补充](../plans/2026-10-08-subject-review-stats-implementation.md)。
+
+### 2026-10-08 前端 Docker 安装失败（原失败保留；本次隔离重试通过）
+
+- IMPORTANT / 构建受阻：原 Buildx ID `37i8gaymoqh4tmohdcvjdqkuy` 在 npm 下载时 `ECONNRESET` 退出 1；同一 Dockerfile 单独重试后安装、编译及镜像导出退出 0，没有源码修复。具体网络/代理中哪一层重置连接尚未定位，重试成功不证明以后网络不会中断。实际命令、时间及证据见 [基础设施记录](../modules/Infrastructure.md)。
+- OPTIONAL / 既有工具链观察：Node 20.20.2 对要求 Node >=22 的 `@mapbox/jsonlint-lines-primitives@2.0.3` 输出 EBADENGINE，但本次镜像构建通过；package.json 声明 katex，现有 lockfile 根依赖映射未列出它（包条目已存在）。两项均未证明是本次失败原因，当前任务按规则不修改。
+- 此轮只有真实镜像构建验证，没有运行容器部署、后台新接口、GUI 或多端验收；用户业务代码及已有工作树修改冻结，普通门槛未重复运行。
+
+### 2026-10-08 F3 学科内复习与统计（代码、相关自动验证及只读审查层关闭；真实环境待验收）
+
+- 用户要求退役失效生成器并重建学科侧栏中的复习页面，原“PC 页面交付范围尚未确定”的前提已被新需求更新。
+- 实施前 due 的用户级前 200 条与 history 均不能完整重建学科当前状态。现已按 [批准方案](../plans/2026-10-07-subject-review-redesign.md) 增加学科范围完整分页 states、统计接口及 PC 自评页面；新 KB 通过活动知识块与完整状态集合差集分类，失败不伪装成新学习。
+- 每知识块每轮首次非 SKIP 评分调度一次，后续巩固仅在内存进行；统计按学科及 IANA 本地日聚合正式学习，现行全局 weekly 保持原语义。首次失败保留原事件幂等重试，冲突重读后明确确认；两种成功路径均失效统计。
+- 用户进一步明确学科统计只展示资料、知识块、复习与任务；专注时长与轮次只留在个人页。统计不能从仅当前 DONE 的任务状态还原已经重新打开任务的旧完成次数，近期完成指标明确为当前仍完成且 completed_at 在范围内。本次新增只读统计代码，无新增迁移。
+- 本机切页恢复已实现并用真实 Store/deferred 回归验证，队列、展开、首次标记及 pending 随学科缓存；刷新/重启和会话变化清除。页面卸载后成功删除学科也会清轮次并失效迟到评分/状态/历史写回，删除失败与 A→B 交错有专项证据。
+- 最终 PC 专项 40/40、R4 594/594、类型/两项静态/build 通过，Service 新专项 4/4、相关回归 19/19、生成 OpenAPI/两端 SDK 与一致性检查通过。唯一只读 reviewer 最终 BLOCKER=0、IMPORTANT=0，八项必要反馈闭环。全量 Maven 386 项仍有既有迁移断言 1 failure 与本次 Docker 不可用的 6 error，未称全项目通过。GUI/Tauri/真实 HTTP/PostgreSQL 并发/多端未验收；完整证据见 [实施记录](../plans/2026-10-08-subject-review-stats-implementation.md)。
+- 本轮 reviewer 保留 OPTIONAL：未同步 KB 可显示在新学习列表，但计数与可评分集合不包含它们，存在显示数量的细节差异；评分本身受保护，当前任务不修改。未确认评分禁止结束本轮，经审查属于保留原事件幂等确认的必要边界，不列为缺陷。
+
+### 2026-10-07 三项优先问题修复（F1 / F2 / F4 已在代码、相关自动验证及只读审查层关闭）
+
+| ID / 等级 / 状态 | 处理 | 关闭证据与限制 |
+| --- | --- | --- |
+| F1 / BLOCKER / 已关闭 | 同步、导入及真实上传队列捕获 owner/device/session 代际；失效票据在网络派发、刷新/重试、写回和共享状态边界拒绝。A 文件与未结算 outbox 留在 A，可后续重试，B 可独立正常操作 | 真实 Pinia/Repository/Axios adapter 回归覆盖等待切换、同账号重登、A→B→A、迟到 push/pull/snapshot/401、导入和实际队列。reviewer 发现的刷新失败未导航、上传意图派发前泄漏均先 RED 后 GREEN；补正常 A rotation/complete、B 导入与清 A 后 B 登录的微任务交错。最终 PC 专项 107/107、R4 554/554，唯一 reviewer 无 BLOCKER/IMPORTANT；真实 HTTP、Tauri 和双设备未验收 |
+| F2 / IMPORTANT / 已关闭 | READY FILE 引用与清理共用 owner Asset 行锁；清理逐 Asset 独立事务重查引用，提交 ORPHANED 后才删对象，失败后可幂等重试 | 真实 PostgreSQL 17.11 并发集成 5/5，实际 SQL 锁等待；restore 先提交保留、cleanup 先提交拒绝 restore/create/update、共享引用和删除失败重试均验证。相关 56/56，原 SourceAssetRelationServiceTests 15/15。存储使用可控适配器，生产 MinIO 未验收 |
+| F4 / IMPORTANT / 已关闭 | “连续专注”标签纠正为“本周专注天数”，数值仍统计 weekly 中 focusSeconds>0 的日数 | 实际 Antigravity 单行差分，计数/布局沿用；源代码一致性审查、focus 相关回归和最终 PC 类型/构建通过。GUI 未验收 |
+| G1 / 工程门槛 / 未关闭 | 最终 Service clean test 392 项，391 通过、1 failure、0 error/skip；TaskColorRemovalMigrationTests:62 仍期待 V21，实际 V28 | 该既有失败未修改、隐藏或跳过。此前 AccountDeletion 微秒舍入失败本次 4/4 未复现，保持历史登记，未宣称修复。需另行授权处理工程门槛并运行相应用例 |
+
+最终 PC 类型、两项学科静态检查与构建均退出 0；唯一修复 reviewer 最终 BLOCKER=0、IMPORTANT=0。实际完整命令、精确时间、日志、baseline 差分/hash 和 AGY 收据见 [实施记录](../plans/2026-10-07-priority-function-fixes.md)；修复 review 文件为 `C:/Users/Gnasche/AppData/Local/Temp/auralis-priority-function-reviewer-20261007.md`。
+
+其余 10 组功能缺口及 12 项偏好按用户要求逐项确认，当前未修改。审查另确认 same-scope pull 失败可能使 PROCESSING mutation 留在 inflight：完整 baseline 已有同样路径，属于既有范围外行为，留待后续讨论，不计为本轮新增回归或关闭证据。
+
+### 2026-10-07 PC / Service 功能完整度检查（修复前只读审计；三项已由顶部修复关闭）
+
+下列内容保留审计时证据和关闭条件；当前 F1/F2/F4 状态与最新测试结果以上方登记为准。
+
+三个 Luna 极高思考执行审计及唯一只读 reviewer 已完成。完整页面/服务矩阵、10 组 OPTIONAL、12 项无效偏好、源码位置、命令证据与验收边界见 [检查报告](2026-10-07-pc-service-function-audit.md)。审计阶段没有修复源码或测试；下列为修复前状态。
+
+| ID / 等级 | 当前证据与影响 | 最小处理方向 / 关闭条件 |
+| --- | --- | --- |
+| F1 / BLOCKER | `useSyncStore.ts:239–253` 固定 A Repository 后等待 wakeUp，却读当前 B device；`request.ts:51–59` 取 B token。真实 SubjectStore 创建、AuthStore logout/login 的 TEMP harness 退出 0，adapter 观察 A SUBJECT CREATE+B身份；`useAssetStore.ts:52–109` 的独立进程内复现把 A 文件名投影进 B Repository。真实 HTTP/Service 写入/Tauri 落盘未执行，Service自包含学科按B创建是代码推断，已有A记录归属检查正确 | 在已经证明的同步与导入异步边界固定并核验 owner/device/session 代际，切换后旧操作不得以新身份发送或写新投影，保留 A 待同步数据。关闭须可控等待+真实退出/登录过程对照、A重试/B正常操作；另补 Tauri/HTTP/双设备证据 |
+| F2 / IMPORTANT | `AssetRetentionCleanupService.java:59–101` 检查引用后直接删 blob/标 ORPHANED，`SourceService.java:240–257,434–439` 恢复时锁 Source/Subject 并仅查 Asset READY，没有共用临界区。代码确认 cleanup检查→restore成功→cleanup删除的窗口，未动态复现；活动 FILE Source 可能失去对象 | 清理与恢复共享锁/状态协议并在临界区重查引用；确定性交错证明 restore 赢则保留对象，cleanup 赢则拒绝恢复，不能留下活动来源引用丢失对象 |
+| F4 / IMPORTANT | `Profile/index.vue:21,1099–1106` 将 weekly 中 focusSeconds>0 的天数显示为“连续专注”，没有连续日期判断；代码确认 | 最小可改为准确的“本周专注天数”，若批准真实 streak 则计算连续日；隔日/无专注/单日/相邻多日验证标签和值一致 |
+| G1 / 工程门槛未通过 | Service fresh clean test 387 项有 2 失败：`TaskColorRemovalMigrationTests:62` 仍期待 V21、实际 V28；`AccountDeletionCleanupPostgresIntegrationTests:95` 数据库舍入比测试截断多 1µs。退出 1，不能宣称全量通过；没有由此证明注销/迁移业务故障 | 修正与现行迁移/时间精度一致的测试预期，保留原业务断言；运行原失败用例及必要门槛，不删/跳测试 |
+
+OPTIONAL 共 10 组：PC 复习旧生成器断链（F3，范围相关）、Profile统计失败反馈、搜索失败反馈、搜索旧query静态竞态、部分任务/知识块/学科删除失败反馈、Profile UTC今日高亮、原时间轴current/midnight、原跨周同星期交换、Service并发同名学科候选、12项偏好无消费者。静态交错与未做GUI的项不写成已动态复现；F3不要求恢复KB.reviewAt或新增PC评分UI；OPTIONAL本轮不修改。
+
+实际本轮 PC R4 542/542、类型/两项静态退出 0；数据链路 345/345 与全量重叠。Service clean test 385/387、2 fail、0 error/skip，容器集成实际执行。完整实际命令/meta/stdout 在报告所列 TEMP 目录；唯一 reviewer 文件为 `C:\Users\Gnasche\AppData\Local\Temp\auralis-function-audit-reviewer-20261007.md`。早期9月排期失败条目以顶部10月修复记录及当前证据为准，不重开冻结实现。真实 GUI、Tauri/Keyring、文件OCR/续传、会话/AI/SSE、Provider与双设备验收仍开放。
+
+### 2026-10-07 PC 时间轴放置与交换修复（3 项 IMPORTANT 已关闭；代码、自动验证及只读审查）
+
+| 等级 / 状态 | 问题 | 处理与关闭证据 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 迟到在线响应覆盖较新版本或删除墓碑，cursor 已推进后无法靠再次普通 read 修正 | `upsertSyncedBatch` 在提交段保护当前版本/墓碑，保留 mutation 整批围栏并原子合并有效成员；Store 在全部写回结果下仅重读 Repository。真实 Pinia/Repository/API gate 与 `runSyncCycle` 更新/DELETE 交错覆盖插入、交换、cursor/row/version/outbox/投影和缓存失败恢复；SQL/browser 边界、同版本与 v0 对照通过 |
+| IMPORTANT / 已关闭 | 按天排期未扫描合法末槽 22:30 | 使用既有窗口常量扫描至 22:30；唯一空槽成功，结束恰好截止允许，晚一分钟或完整区间冲突时 row/version/outbox/投影不变 |
+| IMPORTANT / 已关闭 | 紧邻异长交换将新起点推到可见网格外 | API 前按实际新起点检查 08:00–22:30；紧邻保留原共同窗口日，非紧邻按各新起点日。两种晚槽方向、22:45 和跨午夜 compact 均零 API/零写，正常 22:30 成功；原跨周同星期 OPTIONAL 行为对照保留 |
+
+最终专项 127/127、PC 542/542，无 skip，类型/两项学科静态检查/构建退出 0；唯一只读 reviewer 本轮 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。主 Agent已读取末版差分和实际日志，没有重复执行普通门禁。执行报告、命令/退出码及日志在 `C:\Users\Gnasche\AppData\Local\Temp\auralis-placement-fixes-execution-20261007`，其中 `focused-final-v3-*`、`test-r4-pc-final-v3-*`、`type-check-after-scope-fix-*`、`build-after-scope-fix-*` 为最终证据；两项无关静态检查沿用 `check-subject-icons-*`、`check-subject-workspace-*` 的 14:53 实际退出 0。详见 [实施记录](../plans/2026-10-07-timeline-placement-and-swap-fixes.md)。真实 GUI/Tauri、HTTP 网络时序和双设备仍待验收；既有跨周同星期交换及当前时刻标记两项 OPTIONAL 不在本轮修改范围。
+
+### 2026-10-07 PC / Service 时间轴放置与交换复查（修复前只读审计；三项已在后续修复关闭）
+
+以下保留审计时证据、影响和关闭条件；当前处理结果以顶部修复登记为准。
+
+| 等级 / 状态 | 问题与证据 | 影响、最小处理方向与关闭条件 |
+| --- | --- | --- |
+| IMPORTANT / 审计时未关闭（最高修复优先级） | `useTaskStore.ts:592-625` 的远端响应写回和 `localRepository.ts:335-393` 的 `upsertSyncedBatch` 仅检查未解决本地 mutation，没有保护较高远端版本/墓碑。实际 Store + Repository + `runSyncCycle` 先应用 v9 更新并推进 cursor，迟到 v8 排期响应将 row/投影回退至旧时间和内容；再次 read 的 `changed=[]`，仍为 v8。另一实际交错先应用 v9 DELETE，迟到 v8 清除 `deletedAt` 并重新显示任务。插入与交换共用写回函数，动态时序复现为插入；SQL 守卫缺口及交换共享路径为代码确认 | 本地可持续显示旧内容或已删除任务，直至后续权威变更/快照等恢复；服务器 v9 未被复现改写。原子 batch 防止部分提交，但不能防止旧响应覆盖新数据。最小方向是在提交段保护当前版本/删除标记，投影不能安装已过期响应，并保证必要恢复读取可收敛。关闭须有更新和 DELETE 两类实际交错回归，断言 row/version/deletedAt/cursor/outbox/内存均正确；覆盖共享交换路径和 SQL/browser 两个提交分支 |
+| IMPORTANT / 审计时未关闭 | `useTaskStore.ts:775-796` 的 `scheduleTaskToDay` 扫描只到 22:00，日网格和插入请求窗口均到 22:30。相同占用条件下，实际 Store 直接放置 22:30 成功，按天排期却报“当天没有符合任务时长和截止期限的可用排期时段”；失败后的 row/版本/outbox/投影保持不变 | 日期列拖放漏掉最后一个合法起始槽。最小方向是对齐择槽上界与可见网格，保留完整时长、截止及冲突校验。关闭须补仅 22:30 可用的成功回归和截止/冲突拒绝对照；不得把任务结束晚于 22:30 本身改为违规 |
+| IMPORTANT / 审计时未关闭 | `useTaskStore.ts:828-860` 紧邻交换预检与日网格 `386-419` 不一致。实际 Store + Repository/API 桩：21:30 的 30 分钟任务与 22:00 的 90 分钟任务交换后，短任务变为 23:00，row/投影为 v8、outbox 为空，但没有可见槽；长任务变为 21:30。UI 标题 drop 入口代码确认，本轮未运行 GUI | 任务仍在数据中，却从日网格消失且无法在该网格继续操作。Service 按原共同窗口紧凑交换符合现行 API 契约，本问题定位为 PC 可见落点缺口。最小方向是交换前验证双方新起点仍可展示/操作；暂不指定 UI 或 API 重设计。关闭须覆盖该晚槽异长组合及反向拖动、正常交换和失败无写入对照；Service 的精确晚槽组合本轮仅算法代码确认 |
+
+已检查的既有路径：空白槽插入顺延、主体严格放到目标结束后、标题交换和待办取消排期的事件归属；服务端版本/锁/事务、完整截止、null 时长按 30、首尾相接、DONE 固定、CANCELLED 不占区间。现有聚焦测试均通过，本轮未发现新的 BLOCKER；审计时三项 IMPORTANT 尚未修复，已由顶部后续修复登记关闭。此前跨周同星期 swap 和当前时刻标记 OPTIONAL 保持原登记，不计入三个新问题。
+
+2026-10-07 实际命令验证：
+
+| 范围 / 执行目录 | 实际命令或选择器 | 退出码 / 结果 | 日志 |
+| --- | --- | --- | --- |
+| PC，`D:\CodeBase\Active\Auralis\Auralis-PC` | `node --experimental-strip-types --test scripts/r4-task-store-schedule.test.mjs scripts/r4-task-view-rules.test.mjs scripts/r4-dashboard-timeline.test.mjs` | 0，90/90，无 skip | `pc-baseline.meta.log`、`pc-baseline.stdout-stderr.log` |
+| LocalRepository，同上 | `node --experimental-strip-types --test scripts/r4-local-repository.test.mjs` | 0，22/22，无 skip | `localrepo-focused.meta.log`、`localrepo-focused.stdout.log` |
+| Service/Controller，`D:\CodeBase\Active\Auralis\Auralis-Server` | `mvnw.cmd -Dtest=... test`，CoreDomainServiceTests 的 11 个排期方法及 CoreDomainControllerTests 的 4 个排期方法；完整实际选择器见报告及 meta | 0，15/15，BUILD SUCCESS，无 failures/errors/skips | `service-focused.meta.log`、`service-focused.stdout.log` |
+| Service 边界，同上 | `mvnw.cmd -Dtest=... test`，CoreDomainServiceTests 的半开区间、空时长、完整截止和取消状态四个方法；完整实际选择器见报告及 meta | 0，4/4，BUILD SUCCESS，无 failures/errors/skips | `service-boundary.meta.log`、`service-boundary.stdout.log` |
+
+完整报告：`C:\Users\Gnasche\AppData\Local\Temp\auralis-placement-swap-audit-20261007.md`。全部日志与独立内存 harness 位于同名 TEMP 目录；复现 JSON 为 `version-drift-recovery.stdout.log`、`tombstone-race.stdout.log`、`last-slot-store.stdout.log`、`adjacent-swap-window.stdout.log`，报告记录完整命令、日期、工作目录和退出码。主 Agent 核对了上述日志及高风险提交边界，没有重复执行已完成门禁。本次未改业务代码、测试、配置、依赖、生成文件、index 或 HEAD；仅登记风险并校正文档事实。未执行全量 Maven/PC 构建、GUI、真实 Tauri SQLite、HTTP 并发、双设备或真实数据库验收。动态复现用 browser fallback/API 桩，不等同于真实服务验收。
+
+### 2026-10-07 PC 时间轴日期与拖放修复（确定问题已修复；专项及只读复核通过）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭（代码与自动验证） | 同日已有排期被星期与完整日期比较误拒，报告源排期已变化 | `rescheduleTask` 比较入队前捕获的具体本地日期；实际 Store/API 桩/Repository 同日改期成功。另一周同星期拒绝由完整日期比较代码确认，未新增独立动态案例 |
+| IMPORTANT / 已关闭（代码与自动验证） | 等待写队列期间切日，原落点漂移到新日期 | 按槽两个入口入队前保存日期；实际 gate-enter 队列 RED/GREEN 验证 schedule 请求、窗口、持久行及旧日/新日投影。排队 reschedule 和 B 日 DONE 槽未新增独立案例 |
+| IMPORTANT / 已关闭（代码与自动验证） | 周视图已有排期跨天拖放被未排期专用守卫拒绝 | 日期列传完整 dateKey，按天入口接受活动已有排期；实际 Store/Repository/outbox 验证目标日期和槽位。既有冲突/完整截止择槽与无写入专项保留；已排期跨日的冲突/截止组合未新增独立案例 |
+| IMPORTANT / 已关闭（代码与自动验证） | 重挂载标题、选中日与保留的任务槽位错位 | 本地日期从 Store 完整 selectedDay 初始化；执行真实 SFC 计算体和选中表达式，与真实 Store 下周槽位一致。GUI/真实路由挂载待验收 |
+| IMPORTANT / 已关闭（补修及只读复核） | reviewer 实际复现按天入口放宽后未排期 DONE 新增排期及 UPDATE outbox | AGY 保留已排期完成守卫并补全部完成态拒绝；DONE/CANCELLED 有无排期四种实际用例均拒绝，仓储/版本/outbox/任务和槽位快照不变。补修 RED 明确复现，最终专项 90/90，同一 reviewer 确认关闭 |
+| OPTIONAL / 未关闭（边界缺口） | `useTaskStore.ts` 的 `swapScheduledTasks` 只比较两项的星期缩写。真实 Store 对 2099-10-06 与 2099-10-13、无截止任务调用 swap API 1 次并交换两项 Repository 日期；服务端现行交换接口也未提供前端“同一天”的补充校验 | 前端守卫不能区分不同周的同星期。当前 UI 不能直接跨周拖放，Store 复现不等同于直接 GUI 复现，模拟响应也不证明真实 HTTP 已成功。后续考虑以具体日期校验前端的同日约束，补不同周同星期与同日成功的回归；本轮不修改，也不据此改变服务端现行契约 |
+| OPTIONAL / 未关闭 | `useTaskStore.ts` 的 `updateCurrentSlot` 用 `selectedDay === getTodayDayCode()` 判断今天。真实 Store 从星期选中切为今天完整日期后，原 `slot.isCurrent=true` 变为 false；午夜跟随逻辑也比较星期，后者仅代码确认、未运行定时器 | 选中今天后当前时刻标记消失，属于较低优先级显示问题。统一今天判断的日期语义并补星期/完整日期及午夜对照；本轮未修改 |
+
+最终专项 90/90、PC 527/527，类型/两项学科静态检查/构建均退出 0；唯一 reviewer 最终 BLOCKER=0、IMPORTANT=0。原两项 OPTIONAL 和独立组合用例覆盖限制保留，真实 GUI/Tauri、HTTP 与双设备待验收。下面为 2026-10-06 修复前排查证据；2026-10-07 RED/GREEN、门禁、审查和工作树保护详见 [实施记录](../plans/2026-10-06-timeline-date-and-drag-fixes.md)。执行目录：`D:\CodeBase\Active\Auralis\Auralis-PC`。
+
+| 实际命令 | 退出码 / 结果 | 证据路径 |
+| --- | --- | --- |
+| `node --experimental-strip-types --test scripts/r4-task-store-schedule.test.mjs scripts/r4-task-view-rules.test.mjs scripts/r4-dashboard-timeline.test.mjs` | 0，80/80；既有专项基线 | `C:\Users\Gnasche\AppData\Local\Temp\auralis-timeline-date-audit-focused-20261006.log` |
+| `node --experimental-strip-types --test --test-name-pattern='DATE-AUDIT' C:\Users\Gnasche\AppData\Local\Temp\auralis-timeline-date-audit-20261006\harness.mjs` | 0，10/10；当前缺陷复现与正常对照 | `C:\Users\Gnasche\AppData\Local\Temp\auralis-timeline-date-audit-harness-final-20261006.log` |
+
+修复前 TEMP harness 提取真实 Pinia/LocalRepository 测试设施并模拟 API 响应，当时没有修改仓库测试或源码。初次 TEMP 适配因无法解析 pinia 失败，跨周 swap 首轮夹具因截止守卫拒绝失败，均由同一执行代理归因后重跑，不作为最终业务证据。10/10 表示成功证明修复前缺陷和正常对照，不能作为修复验收。后续用户授权四项修复，实际新增回归与门禁独立记录；原两项 OPTIONAL 保留。未执行 Maven、真实服务、GUI/Tauri 或双设备业务验收，原生 SQLite 排期执行和跨周 swap 直接 GUI 触发未覆盖。用户既有工作树保留。
+
+### 2026-10-06 PC 新建任务弹窗截止时间选择与 Zen 日期选择器样式修复（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 首页（看板）、排期页及学科工作区在新建任务时无法指定截止时间，用户无法在创建时一步到位建立截止目标；初版接入日期选择器后在某些主题下背景发黑，破坏温润宣纸米白整体视觉 | 在 `TaskCreateDialog.vue` 中接入可选截止时间选择器，复用资产页 `Asset/index.vue` 的温润宣纸米白 `.zen-date-picker` 与 `:global(.zen-date-popper)` 规范；固定温润米白底（`#FAF7F2`）、深墨黑文字（`#1C1C1A`）与抹茶绿边框/高亮图标，彻底根除深黑底色问题；在提交时将日期转换为 ISO 格式 `dueAt`，首页、排期页和学科工作区统一接收并写入 `taskStore.addTask`，在待办清单中实时呈现截止徽标 |
+
+专项测试 `scripts/r4-task-create-dialog-deadline.test.mjs` 通过，`test:r4-pc`（517/517 全部通过），`npm run type-check` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 PC 顶栏开启番茄钟同步时间展示胶囊（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 用户在番茄钟（`/pomodoro`）开启计时后切换至其他页面（如首页、知识库、时间轴、个人中心）时，全站顶部无法直观感知当前番茄钟专注/茶歇状态与剩余时间，需要反复切回专注页面查看 | 在 `AppHeader.vue` 紧靠颜色模式切换按钮左侧接入大气立体的响应式番茄钟时间胶囊（`.header-pomodoro-pill`，88px × 36px，与右侧按钮等高）：当番茄钟运行中或暂停未重置时平滑浮现；完全对齐主界面 `PomodoroRing.vue` 3.8px 宽边框进度条缩减动画（`3.8px` 粗体边框沿跑道顺时针随倒计时逐渐缩减，底轨半透明）、主界面同款温润宣纸米白底（`#FAF7F2`，深色 `#212621`）、去除非时间文字仅保留居中等宽超粗体跳秒数字（`14px, font-weight: 800, tabular-nums`），并在胶囊底部加入柔和双层立体悬浮阴影（`box-shadow`），悬停展示状态 Tooltip，点击快捷路由直达 `/pomodoro`，未激活或重置后自动淡出隐藏 |
+
+专项测试 `scripts/r4-header-pomodoro-pill.test.mjs` 通过，`test:r4-pc`（515/515 全部通过），`npm run type-check` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 PC 学科知识块弹窗顶栏对齐首页知识块（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 学科工作区打开知识块详情时（`WorkspaceKnowledgeBlockDialog.vue`），ModalShell 弹窗顶部标题栏直接渲染了具体的知识块标题，导致与正文首张元信息卡片大标题重复两次展现，且与首页知识块弹窗规范不统一 | 在 `WorkspaceKnowledgeBlockDialog.vue` 浏览模式（`currentMode === 'view'`）下，顶栏对齐首页知识块弹窗（`KnowledgeBlockViewDialog.vue`）的结构与样式，展示「知识块详情」主标题（`kb-dialog-main-title`）与当前学科胶囊药丸徽章（`kb-dialog-subject-pill`），右上角保留关闭按钮；在录入/编辑模式下继续保持对应的功能标题 |
+
+专项测试 `test:r4-pc`（514/514 全部通过），`npm run type-check` 退出 0，`check:subject-workspace` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 PC AI 参考范围下拉菜单交互收敛（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 学科工作区 AI 参考范围弹出菜单在顶部展示冗余的「当前文件」独立选项，与下方「已关联文件」列表割裂并导致菜单空间狭窄和重复认知负担 | `SubjectWorkspace/index.vue` 移除顶层独立占位的「当前文件」大选项，顶层仅保留全局模式「全学科资料」与「不引用资料」；当前文件在下方「已关联文件」中默认呈现激活选中状态，并追加「当前」专属徽标；菜单最大高度调整为 380px |
+
+专项测试 `test:r4-pc`（513/513 全部通过），`npm run type-check` 退出 0，`check:subject-workspace` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 PC 首页时间轴左右切换与日/周视图动效优化（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 首页（Dashboard）点击切换不同星期日程及切换日视图与周视图时，视图内容硬切无动效，缺乏平滑过渡与方向感知 | `Dashboard/index.vue` 接入方向感知的左右平滑滑动 `<Transition :name="`timeline-slide-${timelineSlideDirection}`" mode="out-in">` 与 `<Transition :name="`timeline-mode-slide-${viewModeSlideDirection}`" mode="out-in">`：向右/未来日期与周视图自右向左滑入（`translateX(20px / 18px)`），向左/过去日期与日视图自左向右滑入（`translateX(-20px / -18px)`）；顶部日/周切换胶囊按钮与日期按钮增加微缩放反馈，周视图日期行支持按压反馈并平滑逆向滑回日视图并保留选定日期 |
+
+专项测试 `test:r4-pc`（513/513 全部通过），`npm run type-check` 退出 0，`check:subject-workspace` 与 `check:subject-icons` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 PC 首页切换学科微动效优化（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 首页（Dashboard）点击切换左侧学科时，中间知识流内容瞬时切换无任何动效，缺乏平滑连续感；左侧学科项点击缺乏微交互反馈 | `Dashboard/index.vue` 接入 `<Transition name="stream-switch" mode="out-in">`，以 120ms 离开淡出与 220ms 从下方 6px 处自然托起浮现实现平滑切换；卡片支持微延迟级联淡入；左侧选项增加按压微缩放与激活绿点弹性展开动效；标题联动展示学科名与知识块统计 |
+
+专项测试 `test:r4-pc`（513/513 全部通过），`npm run type-check` 退出 0，`check:subject-workspace` 与 `check:subject-icons` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 PC 知识总览同步提示移除与文件导入进度体验优化（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 知识总览卡片（文件大纲与学科总览）上由于后台技术性重试常态化展示黄色/红色“本机总览尚未同步；重新生成并保存后会重试”提示条，严重打扰用户正常阅读大纲 | 从 `FileOutlineList.vue` 和 `SubjectOverviewSection.vue` 中移除该终端提示条，更新 `r4-overview-sync.test.mjs` 测试；待解析状态增加呼吸感微旋转动效 |
+| IMPORTANT / 已关闭 | 文件导入进度条在本地极快读写时由 10% 瞬间瞬移跳到 100%，且动效设计冗余繁复（含多层卡片、脉冲光晕与抽屉重复闪现，材料列表堆叠额外文字徽标） | `FileRegisterDialog.vue` 回归 Zen 极简设计（纯净 4px 细轨 + 单行阶段提示 + 等宽百分比数字），采用 `requestAnimationFrame` 缓动推进彻底消除瞬跳突变；移除抽屉顶部冗余进度条，录入完成提供 550ms 轻柔停留展示后关闭弹窗；材料列表项移除文字徽章与报错标签，仅使用轻量状态点做提示，详细解析信息与报错原因保留在个人中心文件解析处查看 |
+
+专项测试 `r4-overview-sync.test.mjs`、`r4-subject-overview-ui.test.mjs`、`r4-register-file.test.mjs`、`r4-document-processing-ui.test.mjs`、`r4-file-preview.test.mjs` 全部通过；`npm run type-check` 退出 0。真实桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 任务完整排期截止校验（确定问题已关闭；自动验证和只读审查通过）
+
+| 等级 / 状态 | 问题与证据 | 处理与关闭条件 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | PC 本地排期仅检查过去时间和重叠；Server TaskService 及旧测试明确允许创建/更新/换位/顺延排在截止之后，与用户确认的完整结束上限不符 | PC 在提交/API 前检查全部新安排，后端 REST/Sync 共享完整区间校验；实际 RED/GREEN，最终 PC 513/513、四脚本 102/102、后端 clean 37/37，事务拒绝及自动完成/墓碑保护回归通过 |
+| IMPORTANT / 已关闭 | Antigravity 首版把 null 时长算为 0，紧邻换位与顺延预检计算不符服务端，时间编辑沿用终态豁免；新增测试缺真实创建、offset 和失败后数据断言 | 原隔离工作树补必要实现，执行代理补实际 Store/Repository/API 快照回归，主树 RED 明确复现；完整 diff 和最终门禁均已核对 |
+
+最终单个只读 reviewer 本任务 BLOCKER=0、IMPORTANT=0、OPTIONAL=0，没有修改文件或重跑已完成门禁。历史越界任务非时间编辑、null/30、offset 同 instant 和自动 DONE 保持可保存；恢复与新时间安排受完整上限约束，不批量改数据。没有接口字段、数据库结构、依赖、生成文件或迁移变化，用户既有修改保留。GUI/Tauri、真实服务、双设备同步及实际拖放反馈未业务验收，完整基线、命令、日志和范围见 [实施记录](../plans/2026-10-06-task-schedule-deadline-guard.md)。
+
+### 2026-10-06 知识块 Markdown 排版与 LaTeX 数学公式渲染（确定问题已关闭；自动验证通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | `modal.css` 全局 CSS 错误使用 `:deep(h1)`, `:deep(p)`, `:deep(pre)`，浏览器解析原生忽略导致标题、段落、代码块样式完全失效 | 修正为标准全局 CSS 选择器 `.modal-markdown-body h1/p/pre`，补充 h1~h6、列表、引用块、表格、代码及数学公式居中滚动排版 |
+| IMPORTANT / 已关闭 | 知识块 LaTeX 数学公式（`$...$`, `$$...$$`, `\(...\)`, `\[...\]`）无法解析渲染，公式字符和反斜杠被破坏或转义为纯文本 | 封装 `src/utils/markdown.ts`，基于 `marked` + `katex` + `dompurify` 实现统一渲染引擎，支持行内/块级公式、货币保护、代码块保护与容错降级 |
+| IMPORTANT / 已关闭 | DOMPurify 默认过滤可能清洗掉 KaTeX 输出的 MathML 结构与 SVG 路径导致公式缺漏变形 | 配置 `USE_PROFILES: { mathMl: true, svg: true, html: true }` 并添加白名单标签与属性，保留完整公式呈现 |
+| IMPORTANT / 已关闭 | 知识块编辑时缺乏实时渲染预览，用户录入 LaTeX 公式无法直观确认效果 | 在工作区弹窗、划词快速录入弹窗及资产页编辑区新增「编写 / 实时效果（或实时预览）」胶囊切换，支持即时预览 |
+
+专项测试 `scripts/r4-knowledge-markdown-formula.test.mjs` 9/9 通过，覆盖基础排版、行内公式、块级公式、货币保护、代码保护、LaTeX 错误容错、空值安全与纯文本预览提取；`npm run test:r4-pc` 回归通过（497/497 全部通过）；`npm run type-check`、`npm run check:subject-workspace`、`npm run check:subject-icons` 与 `npm run build` 均退出 0。真实 Tauri/桌面端 GUI 交互待人工走查。
+
+### 2026-10-06 未排期任务截止后自动完成（确定问题已关闭；自动验证和只读审查通过，真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | `useTaskStore.recoverOverdueTasks` 只筛选已排期任务，超期未排期任务不会写回完成；真实 Store/Repository RED 读回 TODO/IN_PROGRESS | 用户确认改为自动 DONE，候选和提交前复判复用完整到期规则，保留 dueAt；最终四脚本 86/86、全 PC 488/488 |
+| IMPORTANT / 已关闭 | 委派补丁引用 `isOverdueTask` 但遗漏导入，且返回测试主要检查源码文本 | 主 Agent 依据完整 patch 和当前 import 最小补齐引用，执行代理添加 4 项实际 Pinia/Repository 回归；类型、静态及 build 均退出 0 |
+| IMPORTANT / 已关闭 | 同版本 Subject cascade 墓碑不改 TASK payload，自动完成预读及提交仅核对版本会清除 row.deletedAt、重新生成 UPDATE | 真实 cascade RED 四种交错均复现复活；添加自动完成专用 SQL/browser 原子活动行条件后专项 86/86、全 PC 488/488，同一 reviewer 确认关闭 |
+
+首轮 RED 59 项中 6 项失败均为既有产品逻辑差异，harness 实际初始化并运行；追加墓碑条件后的 RED 86 项中 6 项失败明确复现复活和未拒绝墓碑。最终自动测试覆盖延期/改期/取消/删除后的重读保护、未结束排期不被截止提前完成、单项提交失败隔离及重试不重复写入；真实 SQLite/browser 验证原子活动行条件。代码范围仅 Task Store、规则辅助、LocalRepository 及三份专项；API 与 Database 仅更新行为说明，不增加公开接口、持久化字段或迁移。完整脏树基线、命令、退出码、日志及委派信息见 [实施记录](../plans/2026-10-06-unscheduled-task-deadline.md)。
+
+最终同一只读 reviewer 本任务 BLOCKER=0、IMPORTANT=0、OPTIONAL=0；类型、两项学科静态检查和 build 均退出 0。主 Agent 核对实际日志与本轮 16 文件差分，无依赖、生成文件、删除或跨模块写入，用户既有改动保留。
+
+未 clean 的 Server 两项检查最初因旧构建产物类加载失败，正常 clean 重编译后 2/2；后端源码、配置和依赖未修改。真实分钟定时器、GUI/Tauri、运行服务和双设备同步未人工验收，脚本测试不替代这些验收。
+
+### 2026-10-01 提问选中文本处理（代码与自动验证通过；真实 Provider/GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | UI 将引用交给 ChatStore，但 NONE 分支不构造 readingContext，请求体丢失 selectionText；真实 Store/fetch 回归 RED 实测 undefined | 独立顶层字段传递，NONE 不开启检索；应用 Antigravity 单行补丁后 focused 5/5、最终 PC 478/478 |
+| IMPORTANT / 已关闭 | PromptAssembler 先填历史再填引用，可能静默丢弃/截断本次引用；selected 文本原来使用 SYSTEM 角色 | 本次问题和引用优先预留预算，引用为 USER 资料，固定安全说明；RED 4 项中 2 项失败，最终 Server 47/47 |
+| IMPORTANT / 已关闭 | 仅在异步 SSE 线程检查预算，HTTP 已返回 200 才出现校验错误 | Controller 在响应开始前同步调用 Service 同一校验；真实 MockMvc 验证 HTTP 400 和明确预算 detail，最终 Server 47/47 |
+
+授权范围、完整脏树基线、契约和最终证据见 [实施记录](../plans/2026-10-01-chat-selected-text.md)。前端 UI 保持用户现状，后端请求字段沿用现行提问接口扩展；OpenAPI/SDK 校验退出 0，真实 Provider 与 GUI 尚未验收。
+
+最终单个只读 reviewer 本轮 BLOCKER=0、IMPORTANT=0、OPTIONAL=0；命令和证据已回写，不把捕获型 Provider 测试写成真实模型服务验收。
+
+### 2026-10-01 学科编辑保存排查（本轮确定问题已关闭；真实 GUI 待验收）
+
+| 等级 / 状态 | 问题与证据 | 处理 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | `SubjectCreateModal.handleSave` 发出事件后提前关闭，父级异步提交失败时表单消失；Hall 仅 console 记录错误 | 等本地提交成功后关闭，失败通知并保留输入重试；专项 7/7 |
+| IMPORTANT / 已关闭 | Hall 将只含表单字段的对象直接交给要求完整 Subject 的 Store，丢失 sortKey/createdAt；既有 iconKey 会优先于新选 icon | 合并当前完整模型并明确写入 iconKey，保留表单原版本；真实本地 mutation/投影回归通过 |
+| IMPORTANT / 已关闭 | 延后关闭后，保存期间重复点击产生多笔 UPDATE；旧完成还能关闭重新打开的弹窗 | 首个 await 前保存守卫与既有 ModalShell 关闭守卫，finally 释放；专项 RED 已复现，最终回归通过 |
+| OPTIONAL / 独立待办 | 既有 `useSyncStore` 先持久化远端墓碑、再异步 hydrate；Pinia 暂留 Subject 时 `useSubjectStore.updateSubject` 无 durable 存在/未删校验，`commitMutation` 可写活动 UPDATE | 后续在 Store/Repository 原子写入边界校验存在、墓碑及版本。本轮仅拦截当前 Store 列表已无目标的保存；不修改既有同步事务边界 |
+
+首轮专项 5 项中 4 项失败，最小字段/关闭/错误反馈补丁后 5/5；追加保存竞态后 7 项中 2 项失败，最终 7/7。测试运行实际 SFC 回调和真实 Pinia/LocalRepository，延迟/拒绝真实提交边界，覆盖失败输入保留、一次 mutation、元数据、图标、缺失目标和创建跳转；不是浏览器挂载验收。
+
+最终验证日期 2026-10-01，工作目录 `Auralis-PC`，执行代理返回以下退出码；主 Agent 读取日志核对、未重复普通门禁。日志根目录为 `C:\Users\Gnasche\AppData\Local\Temp`：
+
+| 命令 | 退出码 / 结果 | 日志或证据 |
+| --- | --- | --- |
+| `node --experimental-strip-types --test scripts/r4-subject-edit.test.mjs` | 0，7/7 | 执行代理实际输出；同 7 例完整输出另包含于下列全套日志 |
+| `npm.cmd run type-check` | 0 | `auralis-subject-edit-final-type-check.log` |
+| `npm.cmd run test:r4-pc` | 0，477/477，fail/cancelled/skipped/todo 均 0 | `auralis-subject-edit-final-test-r4-pc.log` |
+| `npm.cmd run check:subject-icons` | 0，contract passed | `auralis-subject-edit-final-check-subject-icons.log` |
+| `npm.cmd run check:subject-workspace` | 0，contract passed | `auralis-subject-edit-final-check-subject-workspace.log` |
+| `npm.cmd run build` | 0，6.25s，renderer assets 47/47 | `auralis-subject-edit-final-build.log` |
+
+单个只读 reviewer 最终 BLOCKER=0、IMPORTANT=0；OPTIONAL 仅上表既有同步删除风险。本轮完整脏树基线 `70b0af33457d80721671ee1370f06628c1ca3bff`，代码只改两 Vue、package 测试入口及新增专项脚本，无依赖/删除/跨模块写入。Antigravity 实际生成补丁，Codex 审查筛选必要改动、执行代理完善并验证；原 watcher 与用户未提交改动保留。构建仍有既有 externalization、`:deep`、chunk 和 dynamic import/plugin timing 提示。真实浏览器/Tauri 操作、原用户数据库故障与远端服务未验收。
+
+### 2026-10-01 学习数据调整跟踪（本轮确定问题已关闭；真实环境待验收）
+
+本节覆盖早先 Home、summary/preview 派生和 Overview 只存本机的当前实现描述。最终 PC 类型/静态/构建退出 0、回归 470/470；单个只读 reviewer 本任务范围 BLOCKER=0、IMPORTANT=0。下表保留原问题级别与关闭依据，早先门禁计数只作历史证据。
+
+| 等级 / 状态 | 问题或边界 | 处理与验证 |
+| --- | --- | --- |
+| IMPORTANT / 已关闭 | 专注事件离线后与任务完成/删除发生先后变化 | 历史事件只校验 task owner；任务完成/软删除后补传与跨用户拒绝覆盖于 Server 边缘 fresh 7/7，reviewer 确认 |
+| IMPORTANT / 已关闭 | Overview 半成品上传、丢失候选或超时重复覆盖 | 完整成功提交、缓存/intent 原子保存、稳定 ID/body 重放与 revision/manifest/baseVersion 围栏；Overview 主 focused 104/104、PC 470/470 与 reviewer 确认 |
+| IMPORTANT / 已关闭 | Source 移动学科后删除原学科误删成果 | Subject 只清理 SUBJECT scope，当前子 Source 由各自 DELETE 事件清理；移动后保留成果/最终 Source 删除回归包含于 Server 最终 fresh 57/57 |
+| IMPORTANT / 已关闭 | 跨页搜索详情通知先于 Dashboard 挂载而丢失 | 一次性 openBlock query 在 Dashboard 挂载/参数变化时消费，保持 `/` 跳转；导航 focused 与 PC 470/470 通过 |
+| 疑点 / 已排除 | 旧 KnowledgeBlock immutable Sync 请求含弃用扩展字段 | 真实旧 payload push/replay 均 APPLIED、同 cursor、正文保留；未复现 mapper 严格解析疑点，未添加注解或改写请求/receipt；Server 最终 57/57 |
+| IMPORTANT / 已关闭 | 混有 READY TEXT/URL 的学科成果 manifest 与 PC 文件输入不一致 | 当前 manifest 仅活动 READY FILE；混合类型回归包含于 Server 57/57，API/Database 已登记 |
+| IMPORTANT / 已关闭 | Overview 网络等待期间本地资料修订/成员变化 | 动态 owner-scoped 当前态检查与写队列 generation token 复核；await 中修订/删除/成员变化覆盖于 Overview 主 focused 104/104，reviewer 确认 |
+| IMPORTANT / 已关闭 | Tauri SQL 插件池不保证多调用事务使用同一连接 | 任何 SQL 前固定 max/min 1、关闭正常 idle/lifetime 回收，保留既有队列/native snapshot；Rust 实际池 commit/rollback 1/1、fmt/check 与 PC 类型/构建退出 0，reviewer 确认 |
+| IMPORTANT / 已关闭 | 首轮 PC 类型检查暴露旧 facade 与 Task 展示类型不一致 | 最小适配 legacy 本地字段、Task 备注类型和 unused import；正式知识块字段未恢复，备份保留；最终 type-check/build 退出 0 |
+| IMPORTANT / 已关闭 | 远端写入成功但本机 ACK 失败被标终端 ERROR | ACK 故障后同 ID/完整 JSON 重放，终端服务错误单独 ERROR，新明确候选可替代；FILE/SUBJECT 回归包含于 Overview focused 104/104，reviewer 确认 |
+| IMPORTANT / 已关闭 | 删除清理与迟到 Overview 安装存在提交窗口 | owner/device/scope ticket 首 await 前建立，install/complete 写边界复核 generation，恢复不接纳旧响应；Overview 104/104 与失败恢复 67/67、reviewer 确认 |
+| IMPORTANT / 已关闭 | 已有冲突时普通新候选绕过显式冲突选择 | 新生成/保存仍为 CONFLICT，显式 LOCAL 才用最新 baseline 和新 ID 上传；FILE/SUBJECT 回归包含于 104/104，reviewer 确认 |
+| IMPORTANT / 已关闭 | Subject 父墓碑已提交后清理失败错误解除删除围栏 | durable parent 墓碑后 cascade/Overview cleanup 故障保持围栏，迟到保存拒绝；subject-deletion-cascade 10/10、reviewer 确认 |
+| IMPORTANT / 已关闭 | Source 删除未提交前隐藏投影并删除未同步成果 | commit 成功后才移除投影/discard；失败保留 cache/outbox 固化 body、已提交清理由 reconcile 重试；store-local-asset-flow 24/24、file-preview 33/33 |
+| IMPORTANT / 已关闭 | 拒绝 Subject 删除后的 snapshot 修复窗口误终结本地草稿 | 生命周期锁内复核 resetRequired、当前 Source/Subject/未决 DELETE，破坏性边界再读；保留原空服务器 sources fixture，local-only 恢复回归通过，store-local-asset-flow 24/24 |
+| OPTIONAL | 12 项偏好没有接通实际业务效果 | 用户仅要求汇总，保留设置；详见 FrontendPC，不在本轮增加业务实现 |
+| 待验收 | Tauri 重启迁移、真实服务、双 PC 成果收敛 | 需要 GUI/设备/Provider 业务证据；本轮自动检查不能代替 |
+
+完整命令、日志及各轮重叠说明见 [实施与验证记录](../plans/2026-10-01-pc-learning-data-cleanup-and-sync.md)。Mobile/Tablet 本轮仅必要 SDK/知识块契约适配，不宣称已接入专注或 Overview 成果展示；真实环境验收与代码/自动检查状态分开记录。
+
+### 2026-10-01 PC 知识块正文/摘要解耦、学科关联保存修复与内容展示重构（已修复）
+
+- **问题与根因分析**：
+  1. **问题 1（正文修改失效与摘要截断）**：此前首页弹窗、工作区弹窗及资产页内联编辑中均使用 `preview` 作为输入绑定，而 `preview` 在底层映射的是 `summary`；保存时正文 `content` 未改变，且选中文本创建的知识块摘要会被截断至 180 字符，导致保存后详情正文仍是旧内容、长文显示不全；
+  2. **问题 2（首页分类修改未生效）**：此前首页知识块编辑表单为自由文本 `editForm.subject`，保存时仅向后端提交原 `subjectId`，修改文字不会触发学科转移，刷新后恢复原学科；
+  3. **问题 3（内容展示未做好与弹窗割裂）**：首页此前使用独立写死的内联 520px 窄弹窗，与系统级 `ModalShell` 脱节，正文缺乏卡片封装、无跳转学科按钮；工作区弹窗（`WorkspaceKnowledgeBlockDialog.vue`）浏览模式内容展示也只是平铺文本；列表卡片仅取可能为空或截断的 `preview`，未做 fallback 与 3 行优雅截断。
+- **修复方案与实施**：
+  1. **全链路正文与摘要解耦**：
+     - `useKnowledgeStore.ts`：`addBlock` 与 `updateBlock` 显式解耦 `content` 与 `summary`，若未指定摘要则自动提取正文前 180 字符作为 `summary/preview`；`updateBlock` 引入 `useSubjectStore`，当 `block.subjectId` 变更时自动刷新映射新学科名称；
+     - `Home/index.vue`、`WorkspaceKnowledgeBlockDialog.vue`、`Asset/index.vue`、`KnowledgeBlockEditor.vue` 全量将文本编辑区绑定至真正的正文内容 `content`，彻底消除旧正文残留与截断问题；
+  2. **学科转移与真实绑定**：
+     - `Home/index.vue` 编辑表单将原自由文本升级为 `<el-select v-model="editForm.subjectId">` 下拉选择器；保存时提交目标 `subjectId`；
+     - `Asset/index.vue` 纸张卡片顶部将只读文本升级为所属学科下拉选择器 `<el-select v-model="selected.groupId">`，支持在资产页内联转移学科，保存后自动重载资产树；
+  3. **去掉摘要说明与去掉标签**：
+     - 全面移除表单中的“摘要说明 (Summary)”与“知识标签 (Tags)”输入框，正文编辑区（“知识内容”）自适应拓宽为主编辑视口，保存时自动派生 `preview`；
+     - 彻底清除查看态中的标签列表展示（首页阅读弹窗、工作区阅读弹窗、资产库顶部标签胶囊），实现沉浸、纯粹的笔记阅读体验；
+  4. **首页与学科工作区内容展示全面升级（杂志级排版）**：
+     - **弹窗全面升级**：首页知识块弹窗重构为系统级 `ModalShell size="lg"`（760px 舒适大画布），与工作区弹窗（`WorkspaceKnowledgeBlockDialog.vue`）统一采用双层卡片排版——上设 `.kb-meta-card` 展示大标题、来源文件图标、友好相对时间与学科胶囊，下设 `.kb-content-card`（`#FAF7F2` 温润宣纸底板，微边框与底阴影），支持代码高亮与完整 Markdown 样式，为空呈现插图空状态；
+     - **操作闭环**：底部新增带绿色勾反馈的“复制内容”按钮，首页弹窗新增“前往知识块界面”直达按钮（一键跳至对应学科工作区并切换至知识库 Tab）；
+     - **卡片展示强化**：首页与工作区知识块卡片预览均采用 `block.preview || block.content || '暂无详细内容'`，配合 `-webkit-line-clamp: 3` 与人性化时间，彻底消除截断与空白。
+- **门禁与测试**：`npm.cmd run type-check` 退出 0、`npm.cmd run test:r4-pc`（433/433 项全部通过）、`npm.cmd run build` 生产构建通过。真实 GUI 视觉效果待人工验收。
+
+### 2026-10-01 PC 所有弹窗配色对调与按钮/输入框底阴影优化（已修复）
+
+- **现象与需求**：
+  1. 用户反馈：“所有弹窗的配色换一下现在框内配色和背景配色对调一下”；
+  2. 用户进一步要求：“然后按钮和输入框底下都加个阴影”。
+- **分析与设计**：
+  1. 原设计中，弹窗大底板为 `--color-bg-tertiary (#FAF7F2)` 浅宣纸米白，框内输入控件（input / textarea / select）与嵌套卡片（`.modal-card-inset` 等）为 `--color-bg-primary (#F7F2EB)` 燕麦米灰；
+  2. 按照要求对调后：弹窗主卡片容器背景 `--modal-bg` 设为 `var(--color-bg-primary, #F7F2EB)`（深色模式：`var(--color-bg-primary, #1f1e1c)`）；框内控件与内嵌卡片 `--modal-inset-bg` 设为 `var(--color-bg-tertiary, #FAF7F2)`（深色模式：`var(--color-bg-tertiary, #2e2c29)`），呈现更为干净、透亮的框内聚焦质感；
+  3. 立体阴影：表单输入控件（input、textarea、select）底部追加轻柔立体微阴影 `0 1.5px 4px rgba(0, 0, 0, 0.05), 0 0.5px 1.5px rgba(0, 0, 0, 0.03)`（深色模式：`0 2px 6px rgba(0, 0, 0, 0.35)`），聚焦态保持微光光晕与底阴影叠合；
+  4. 按钮系统：次级按钮（`.modal-btn-secondary`）追加 `0 1.5px 4px rgba(0, 0, 0, 0.06)` 底阴影（hover 强化至 `0 3px 8px`）；主按钮与危险按钮强化深层立体漫反射阴影；弹窗内学科与提示词芯片（`.subject-chip`、`.preset-chip`、`.icon-btn`）统一追加底阴影与悬浮微升微交互。
+- **改动范围**：
+  - `src/components/modal/modal.css`：Token 与全局输入控件、按钮样式更新；
+  - `src/components/knowledge/KnowledgeBlockViewDialog.vue`：`.kb-meta-card` 与 `.kb-content-card` 统一使用 `--modal-inset-bg`；
+  - `src/components/task/TaskCreateDialog.vue`：滑轨 `.duration-segmented-track` 与 `.subject-chip` 对调底色并追加阴影；
+  - `src/components/subject/SummaryInstructionDialog.vue`：`.preset-chip` 对调底色并追加阴影；
+  - `src/components/subject/SubjectCreateModal.vue`：`.preview-row` 与 `.icon-btn` 对调底色并追加阴影；
+  - `src/components/asset/FileRegisterDialog.vue`：`.drop-zone`、`.upload-progress` 与 `.subject-chip` 对调底色并追加阴影；
+  - `src/components/knowledge/WorkspaceKnowledgeBlockDialog.vue`：颜色选择微圆点外圈高亮同步新的 `--modal-bg`。
+- **门禁与测试**：`npm.cmd run type-check` 退出 0，`npm.cmd run test:r4-pc`（433/433 项全部通过），`npm.cmd run build` 生产构建成功。真实 GUI 视觉效果待人工验收。
+
+### 2026-10-01 PC 首页知识块展示弹窗排版与交互体验重构（已修复）
+
+- **现象与根因**：用户反馈“首页知识块展示的弹窗没做好”。
+  1. 结构与 `ModalShell` 严重脱节：原 `KnowledgeBlockViewDialog.vue` 将来源、学科、20px 大标题、记于时间等整个信息头全部塞入 `#title` 插槽，导致 Header 高度被撑大到上百像素，右上角关闭按钮在半空中与内容严重脱节，且大标题易与关闭按钮发生水平挤压；
+  2. 时间展示机械生硬：时间直接使用原始 UTC ISO 字符串（`记于 2026-09-25T...`），未做相对时间人性化转换；
+  3. 标签与来源信息缺失：未呈现知识块已关联的标签（`tags`），正文区域缺乏微内嵌卡片质感，为空时缺乏空状态说明；
+  4. 交互单薄：无法一键跳转至该知识块所属的学科空间。
+- **修复**：
+  1. 结构规范化：对齐 `ModalShell`，`#header-icon` 展示精致的 28px 圆角渐变笔记图标，`#title` 展示紧凑单行主标题与学科胶囊微标签，右侧关闭按钮严丝合缝居中对齐；
+  2. 杂志级正文卡片排版：正文移至 Body 内部独立的 `.kb-article-container`，上设元信息卡片呈现大标题、来源文件图标、友好的相对时间（如“10分钟前”，hover 显示完整本地时间），去除冗余标签展示保持版面纯粹；下设宣纸底色的独立滚动 Markdown 正文卡片，配精致空状态；
+  3. 操作闭环与直接定位知识块：底部左侧支持“复制内容”（成功带绿色对勾状态），新增“前往知识块界面”直达按钮（若有 `subjectId`，携带 `?view=blocks` 路由参数，一键直接跳转至对应学科的知识块工作区界面，`SubjectWorkspace` 自动切换 `centerView = 'blocks'` 并收起侧栏）；右侧配置“完成阅读”主操作按钮；
+- **门禁验证**：`npm.cmd run type-check` 退出 0，`npm.cmd run test:r4-pc`（433/433 项全部通过）。
+
+### 2026-10-01 PC 文件解析失败（Embedding provider unavailable 等）增加重试按钮与就地重试流（已修复）
+
+- **现象与根因**：
+  1. 服务端在文件解析的向量化（Embedding）阶段若遇上游网络中断或模型服务不可用，会将 `Source` 的 `ingestionStatus` 设为 `FAILED`，并将错误信息（如 `Embedding provider is unavailable`）写入 `safeErrorDetail`；
+  2. 个人中心解析进度面板（`DocumentProcessingCenter.vue`）中此前仅为 `AWAITING_CLIENT` 提供了“开始本机处理”按钮，当状态为 `FAILED` 时右侧操作栏为空，没有提供重试入口；
+  3. 学科工作区（`SubjectWorkspace/index.vue`）中，当前选中文件解析失败时，主预览区缺乏错误警示横幅与就地重试操作。
+- **修复**：
+  1. `useSourceStore.ts`：实现并导出 `retrySourceProcessing(sourceId: string)`，从本地 repository 或内存读取当前 `baseVersion`，调用后端 `POST /api/sources/{id}/reingest` 重新发起服务侧向量化或客户端解析，通过 `upsertFromSync` 同步持久化状态并更新响应式列表；若需要客户端二次处理则自动调度 `documentScheduler.schedule`；
+  2. `DocumentProcessingCenter.vue`：为 `serverProcessingSources` 中 `source.ingestionStatus === 'FAILED'` 的项增加“重试”按钮，并引入 `retryingSourceIds` 状态管理重试中禁用与视觉反馈；
+  3. `SubjectWorkspace/index.vue`：在选中的文件处于 `FAILED` 状态时，于主预览区顶部呈现高雅警示横幅 `.file-processing-alert-banner`，直观展示失败原因及“重试解析”按钮；
+  4. 测试与验证：更新 `scripts/r4-document-processing-ui.test.mjs`，`npm.cmd run type-check` 0 错误，`npm.cmd run test:r4-pc`（433/433 项全部通过）。
+
+### 2026-10-01 PC 弹窗审阅问题闭环修复
+
+- **审查反馈与处理**：
+  1. **文件上传弹窗过早关闭与格式限制**：`src/views/Asset/index.vue` 不再在启动上传时立即关窗，向 `FileRegisterDialog` 透传 `is-uploading`、`upload-progress`、`upload-stage` 与 `accepted-extensions`，成功后延时平滑关闭，失败保留弹窗与表单供用户重试；`FileRegisterDialog` 默认扩展名统一为 `SUPPORTED_UPLOAD_EXTENSIONS`（PDF/Office），避免允许不支持的类型导致上传失败。
+  2. **弹窗无障碍名称补齐**：`TaskCreateDialog`、`ChangePasswordDialog`、`SummaryInstructionDialog` 显式向 `ModalShell` 传入 `title` 与 `aria-label`；`ModalShell.vue` 增强 `effectiveAriaLabel` 与 `effectiveAriaLabelledBy` 解析，在提供自定义标题插槽时也能正确获取 accessible name。
+  3. **知识块编辑弹窗键盘与焦点管理**：`src/components/knowledge/KnowledgeBlockEditor.vue` 接入统一 `ModalShell`，补齐打开时首项聚焦、Tab 循环、Escape 关闭与关闭后焦点恢复。
+  4. **任务弹窗时长规则与文档同步**：`TaskCreateDialog` 专注时长严格对齐系统整半小时规则（30m~4h 7 档位），采用一体化磁吸分段滑轨；同步修正 `docs/modules/FrontendPC.md` 中的记录。
+- **验证结论**：`npm.cmd run type-check` 退出码 0，`npm.cmd run test:r4-pc`（433/433 项全部通过）。真实 GUI 视觉走查仍需人工验收。
+
+### 2026-09-29 PC 弹窗视觉收敛
+
+- **用户反馈与改动**：用户认为当前弹窗观感较差。现行样式的 14px 遮罩模糊、24px 外框圆角、36px 横向留白和多个装饰性标题图标使弹窗与 PC 工作台的信息密度不一致；本轮在现有组件边界内收敛至 5px 模糊、16px 外框圆角、420/520/680/840px 宽度档位和 24px 横向留白，简化标题及小控件造型，未修改 Store/API、表单字段或提交/关闭事件。
+- **验证与剩余风险**：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（433/433）、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace`、`npm.cmd run build` 均退出 0；临时静态外壳预览已查看。真实业务数据下的浏览器/Tauri 弹窗、深色模式、窄屏、长表单与关闭/焦点行为仍待 GUI 走查，不能据自动门禁宣称业务验收完成。
+
 ### 2026-09-27 PC 全局弹窗无缝流式 UI 重构、8px 工程化按钮系统与组件化提取（Modal & Dialog Refactoring）
 
 - **背景与目标**：此前 PC 端各个视图分散内联自制弹窗（`Dashboard`、`Timeline`、`Profile`、`Asset`、`SubjectWorkspace`），样式代码重复、尺寸不一、硬线条切块生硬、按钮缺乏工程质感、缺乏全局设计美学规范与焦点无障碍管理。目标是在不破坏业务逻辑、不改变响应式状态归属、不破坏既有测试断言的前提下，彻底重构弹窗 UI 美学（参考 Linear、Vercel 及 macOS 设计语言：一体化无缝呼吸画布、彻底消除硬横线分割、16px 精确工程圆角、低反差双层环境漫反射阴影、8px 精准圆角矩形按钮体系与精密负字间距标题排版），建立统一的 `ModalShell` 基础组件并提取 6 个独立业务弹窗。

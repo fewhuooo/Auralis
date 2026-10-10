@@ -51,6 +51,7 @@ export interface LocalCommitInput<T = unknown> extends LocalResourceKey {
   deletedAt: string | null
   expectedLocalVersion?: number
   rejectIfNonPendingMutation?: boolean
+  requireActiveResource?: boolean
   mutation: LocalMutationInput
 }
 
@@ -348,7 +349,20 @@ export class LocalRepository {
         )
         if (unresolved.length > 0) return false
 
+        const currentRows = await database.select<Pick<LocalResourceRow, 'resource_type' | 'resource_id' | 'version' | 'deleted_at'>>(
+          `SELECT resource_type, resource_id, version, deleted_at FROM local_resource_records
+           WHERE user_id = $1 AND (${resourcePredicates.join(' OR ')})`,
+          [this.userId, ...items.flatMap((item) => [item.resourceType, item.resourceId])]
+        )
+        const currentMap = new Map(currentRows.map(row => [resourceKey(row.resource_type, row.resource_id), row]))
+
         for (const item of items) {
+          const current = currentMap.get(resourceKey(item.resourceType, item.resourceId))
+          const staleVersion = current !== undefined && item.version < current.version
+          const wouldClearTombstone = current !== undefined && current.deleted_at !== null && item.deletedAt === null
+          const accept = !staleVersion && !wouldClearTombstone
+          if (!accept) continue
+
           await database.execute(
             `INSERT INTO local_resource_records
               (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
@@ -374,6 +388,15 @@ export class LocalRepository {
     }
 
     for (const item of items) {
+      const index = state.resources.findIndex((resource) => resource.userId === this.userId
+        && resource.resourceType === item.resourceType && resource.id === item.resourceId)
+      const current = index >= 0 ? state.resources[index] : undefined
+
+      const staleVersion = current !== undefined && item.version < current.version
+      const wouldClearTombstone = current !== undefined && current.deletedAt !== null && item.deletedAt === null
+      const accept = !staleVersion && !wouldClearTombstone
+      if (!accept) continue
+
       const entity: LocalEntity<T> = {
         id: item.resourceId,
         resourceType: item.resourceType,
@@ -383,8 +406,6 @@ export class LocalRepository {
         syncStatus: 'synced',
         value: clone(item.value),
       }
-      const index = state.resources.findIndex((resource) => resource.userId === this.userId
-        && resource.resourceType === item.resourceType && resource.id === item.resourceId)
       if (index >= 0) state.resources[index] = entity as LocalEntity<unknown>
       else state.resources.push(entity as LocalEntity<unknown>)
     }
@@ -596,7 +617,7 @@ export class LocalRepository {
             throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} has a non-pending local mutation`)
           }
         }
-        if (input.expectedLocalVersion !== undefined) {
+        if (input.expectedLocalVersion !== undefined || input.requireActiveResource) {
           const rows = await database.select<LocalResourceRow>(
             `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
              FROM local_resource_records
@@ -605,7 +626,12 @@ export class LocalRepository {
           )
           const existing = rows[0] ? resourceFromRow(rows[0]) : null
           if (!existing) throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} no longer exists locally`)
-          this.assertBaseVersion(existing, input.expectedLocalVersion, input.resourceType, input.resourceId)
+          if (input.requireActiveResource && existing.deletedAt !== null) {
+            throw new LocalConflictError(existing, `${input.resourceType}/${input.resourceId} is deleted`)
+          }
+          if (input.expectedLocalVersion !== undefined) {
+            this.assertBaseVersion(existing, input.expectedLocalVersion, input.resourceType, input.resourceId)
+          }
         }
 
         const entity: LocalEntity<T> = {
@@ -661,10 +687,15 @@ export class LocalRepository {
     const resourceIndex = state.resources.findIndex(
       (item) => item.userId === this.userId && item.resourceType === input.resourceType && item.id === input.resourceId,
     )
-    if (input.expectedLocalVersion !== undefined) {
+    if (input.expectedLocalVersion !== undefined || input.requireActiveResource) {
       const existing = resourceIndex >= 0 ? state.resources[resourceIndex] : null
       if (!existing) throw new LocalConflictError(null, `${input.resourceType}/${input.resourceId} no longer exists locally`)
-      this.assertBaseVersion(existing, input.expectedLocalVersion, input.resourceType, input.resourceId)
+      if (input.requireActiveResource && existing.deletedAt !== null) {
+        throw new LocalConflictError(existing, `${input.resourceType}/${input.resourceId} is deleted`)
+      }
+      if (input.expectedLocalVersion !== undefined) {
+        this.assertBaseVersion(existing, input.expectedLocalVersion, input.resourceType, input.resourceId)
+      }
     }
     if (input.rejectIfNonPendingMutation && state.mutations.some((item) => item.userId === this.userId
       && item.resourceType === input.resourceType && item.resourceId === input.resourceId

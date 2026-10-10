@@ -150,10 +150,13 @@ class CoreDomainControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
-                                + "\",\"title\":\"Vectors\",\"content\":\"A vector has direction\",\"tags\":[\"math\"]}"))
+                                + "\",\"title\":\"Vectors\",\"content\":\"A vector has direction\","
+                                + "\"summary\":\"legacy summary\",\"tags\":[\"math\"]}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.subjectId").value(subjectId))
-                .andExpect(jsonPath("$.tags[0]").value("math"));
+                .andExpect(jsonPath("$.content").value("A vector has direction"))
+                .andExpect(jsonPath("$.summary").doesNotExist())
+                .andExpect(jsonPath("$.tags").doesNotExist());
 
         mockMvc.perform(post("/api/tasks")
                         .header(HttpHeaders.AUTHORIZATION, token)
@@ -344,13 +347,99 @@ class CoreDomainControllerTests {
     }
 
     @Test
-    void taskScheduleEndpointsAllowOverdueDeadlinesAcrossUpdateSwapAndInsertion() throws Exception {
-        JsonNode registered = register("schedule-overdue-api@example.com", "schedule-overdue-api-device");
+    void taskScheduleEndpointsRejectDeadlineOverrunAndKeepAllRowsUnchanged() throws Exception {
+        JsonNode registered = register("schedule-deadline-api@example.com", "schedule-deadline-api-device");
         String token = bearer(registered.path("tokens").path("accessToken").asText());
-        String subjectId = createSubject(token, "Schedule overdue");
-        JsonNode source = createScheduledTask(token, subjectId, "Source", "2026-08-27T08:00:00.000Z");
-        JsonNode target = createScheduledTask(token, subjectId, "Target", "2026-08-27T10:00:00.000Z");
-        JsonNode existing = createScheduledTask(token, subjectId, "Existing", "2026-08-27T12:00:00.000Z");
+        String subjectId = createSubject(token, "Schedule deadline");
+
+        mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Late create\",\"scheduledAt\":\"2026-08-27T16:00:00+08:00\""
+                                + ",\"dueAt\":\"2026-08-27T08:29:00Z\",\"durationMinutes\":30}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+
+        JsonNode exactEnd = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Exact end\",\"scheduledAt\":\"2026-08-27T16:00:00+08:00\""
+                                + ",\"dueAt\":\"2026-08-27T08:30:00Z\",\"durationMinutes\":30}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+        assertThat(exactEnd.path("scheduledAt").asText()).isEqualTo("2026-08-27T08:00:00Z");
+
+        mockMvc.perform(put("/api/tasks/{id}", exactEnd.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Exact end\",\"status\":\"TODO\","
+                                + "\"scheduledAt\":\"2026-08-27T16:00:00+08:00\","
+                                + "\"dueAt\":\"2026-08-27T08:29:00+00:00\",\"durationMinutes\":30}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        mockMvc.perform(put("/api/tasks/{id}", exactEnd.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Exact end\",\"status\":\"TODO\","
+                                + "\"scheduledAt\":\"2026-08-27T16:00:00+08:00\","
+                                + "\"dueAt\":\"2026-08-27T08:30:00Z\",\"durationMinutes\":60}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        mockMvc.perform(get("/api/tasks/{id}", exactEnd.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T08:00:00Z"))
+                .andExpect(jsonPath("$.dueAt").value("2026-08-27T08:30:00Z"))
+                .andExpect(jsonPath("$.durationMinutes").value(30))
+                .andExpect(jsonPath("$.version").value(0));
+
+        JsonNode source = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Swap source\",\"scheduledAt\":\"2026-08-27T10:00:00Z\""
+                                + ",\"dueAt\":\"2026-08-27T11:00:00Z\",\"durationMinutes\":30}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+        JsonNode target = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Swap target\",\"scheduledAt\":\"2026-08-27T12:00:00Z\""
+                                + ",\"dueAt\":\"2026-08-27T12:30:00Z\",\"durationMinutes\":30}"))
+                .andExpect(status().isCreated())
+                .andReturn());
+        mockMvc.perform(post("/api/tasks/schedule-swaps")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"sourceTaskId\":\"" + source.path("id").asText()
+                                + "\",\"sourceBaseVersion\":0,\"targetTaskId\":\""
+                                + target.path("id").asText() + "\",\"targetBaseVersion\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        mockMvc.perform(get("/api/tasks/{id}", source.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T10:00:00Z"))
+                .andExpect(jsonPath("$.version").value(0));
+        mockMvc.perform(get("/api/tasks/{id}", target.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T12:00:00Z"))
+                .andExpect(jsonPath("$.version").value(0));
+
+        JsonNode dueTask = json(mockMvc.perform(post("/api/tasks")
+                        .header(HttpHeaders.AUTHORIZATION, token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"subjectId\":\"" + subjectId
+                                + "\",\"title\":\"Shifted task\",\"scheduledAt\":\"2026-08-27T14:00:00Z\""
+                                + ",\"dueAt\":\"2026-08-27T14:30:00Z\",\"durationMinutes\":30}"))
+                .andExpect(status().isCreated())
+                .andReturn());
         JsonNode inserted = json(mockMvc.perform(post("/api/tasks")
                         .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -358,39 +447,26 @@ class CoreDomainControllerTests {
                                 + "\",\"title\":\"Inserted\",\"durationMinutes\":60}"))
                 .andExpect(status().isCreated())
                 .andReturn());
-
-        updateTask(token, subjectId, source, "2026-08-27T08:00:00Z", "2026-08-27T07:30:00Z", 30)
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T08:00:00Z"));
-        updateTask(token, subjectId, target, "2026-08-27T10:00:00Z", "2026-08-27T09:30:00Z", 30)
-                .andExpect(status().isOk());
-        updateTask(token, subjectId, existing, "2026-08-27T12:00:00Z", "2026-08-27T11:30:00Z", 30)
-                .andExpect(status().isOk());
-
-        mockMvc.perform(post("/api/tasks/schedule-swaps")
-                        .header(HttpHeaders.AUTHORIZATION, token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sourceTaskId\":\"" + source.path("id").asText()
-                                + "\",\"sourceBaseVersion\":1,\"targetTaskId\":\""
-                                + target.path("id").asText() + "\",\"targetBaseVersion\":1}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.source.scheduledAt").value("2026-08-27T10:00:00Z"))
-                .andExpect(jsonPath("$.target.scheduledAt").value("2026-08-27T08:00:00Z"));
-
         mockMvc.perform(post("/api/tasks/schedule-insertions")
                         .header(HttpHeaders.AUTHORIZATION, token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"taskId\":\"" + inserted.path("id").asText()
-                                + "\",\"baseVersion\":0,\"scheduledAt\":\"2026-08-27T12:00:00Z\""
+                                + "\",\"baseVersion\":0,\"scheduledAt\":\"2026-08-27T14:00:00Z\""
                                 + ",\"windowStartAt\":\"2026-08-27T08:00:00Z\""
                                 + ",\"windowLastStartAt\":\"2026-08-27T22:30:00Z\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.tasks.length()").value(2));
-        mockMvc.perform(get("/api/tasks/{id}", existing.path("id").asText())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
+        mockMvc.perform(get("/api/tasks/{id}", dueTask.path("id").asText())
                         .header(HttpHeaders.AUTHORIZATION, token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T13:00:00Z"))
-                .andExpect(jsonPath("$.dueAt").value("2026-08-27T11:30:00Z"));
+                .andExpect(jsonPath("$.scheduledAt").value("2026-08-27T14:00:00Z"))
+                .andExpect(jsonPath("$.dueAt").value("2026-08-27T14:30:00Z"))
+                .andExpect(jsonPath("$.version").value(0));
+        mockMvc.perform(get("/api/tasks/{id}", inserted.path("id").asText())
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.scheduledAt").doesNotExist())
+                .andExpect(jsonPath("$.version").value(0));
     }
 
     private org.springframework.test.web.servlet.ResultActions updateTask(

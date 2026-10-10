@@ -15,14 +15,13 @@
       </div>
 
       <!-- Upload Progress -->
-      <div v-if="isUploading" class="upload-progress-wrapper" style="margin: 0 20px 16px; padding: 12px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);">
-        <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
-          <span aria-live="polite" style="font-weight: 500;">{{ uploadStatusText || '正在上传文件' }}</span>
-          <span style="font-weight: 600; color: var(--color-primary-accent, #8B9A6E);">{{ uploadProgress }}%</span>
+      <div v-if="isUploading" class="upload-progress-wrapper" style="margin: 0 20px 16px; padding: 10px 12px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">
+          <span aria-live="polite" style="font-weight: 500;">{{ uploadStatusText || '正在导入本地文件...' }}</span>
+          <span style="font-weight: 600; color: var(--color-primary-accent, #8B9A6E); font-feature-settings: 'tnum';">{{ uploadProgress }}%</span>
         </div>
-        <div style="height: 4px; background: var(--border-subtle); border-radius: 2px; overflow: hidden; position: relative;">
-          <div :style="{ width: uploadProgress + '%', height: '100%', background: 'var(--accent-gradient)', transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)', borderRadius: '2px' }"></div>
-          <div v-if="uploadProgress < 100" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent); animation: shimmer 1.5s infinite; transform: translateX(-100%);"></div>
+        <div style="height: 4px; background: rgba(0, 0, 0, 0.06); border-radius: 9999px; overflow: hidden;">
+          <div :style="{ width: uploadProgress + '%', height: '100%', background: 'var(--color-primary-accent, #8B9A6E)', transition: 'width 0.3s cubic-bezier(0.16, 1, 0.3, 1)', borderRadius: '9999px' }"></div>
         </div>
       </div>
 
@@ -133,12 +132,13 @@
 
     <!-- COLUMN 2: MIDDLE Dynamic Viewer (File / Block / Task) -->
     <main class="studio-middle">
-      <div v-if="!selected" class="empty-state">
-        <IconLayoutDashboard :size="48" :stroke-width="1.6" class="empty-icon" />
-        <h2 class="empty-title">资产阅览区</h2>
-        <p class="empty-desc">在左侧树状目录中选择文件、知识块或任务以开始沉浸式工作</p>
-      </div>
-      <template v-else>
+      <Transition name="asset-view-fade" mode="out-in">
+        <div v-if="!selected" key="empty" class="empty-state">
+          <IconLayoutDashboard :size="48" :stroke-width="1.6" class="empty-icon" />
+          <h2 class="empty-title">资产阅览区</h2>
+          <p class="empty-desc">在左侧树状目录中选择文件、知识块或任务以开始沉浸式工作</p>
+        </div>
+        <div v-else :key="selected.id" class="detail-container">
         <!-- Dynamic Header based on Type -->
         <div class="detail-header">
           <!-- File View Header -->
@@ -164,7 +164,7 @@
               </div>
             </div>
             <div class="editor-bar-right">
-              <span class="editor-stats-hint">{{ (selected.preview || '').length }} 字符</span>
+              <span class="editor-stats-hint">{{ (selected.content || selected.preview || '').length }} 字符</span>
               <button class="btn-primary sm-btn header-save-btn" @click="saveBlockEdit(selected)">
                 <IconCheck :size="14" :stroke-width="2.2" />
                 <span>保存知识块</span>
@@ -217,7 +217,24 @@
               <!-- Paper Meta Top -->
               <div class="paper-meta-header">
                 <div class="paper-meta-left">
-                  <span class="paper-subject-pill">{{ getSubjectName(selected.groupId) }}</span>
+                  <el-select
+                    v-model="selected.groupId"
+                    placeholder="选择所属学科"
+                    size="small"
+                    class="paper-subject-select"
+                  >
+                    <el-option
+                      v-if="selected.groupId === 'all'"
+                      label="未指定学科"
+                      value="all"
+                    />
+                    <el-option
+                      v-for="s in subjectStore.subjects"
+                      :key="s.id"
+                      :label="s.name"
+                      :value="s.id"
+                    />
+                  </el-select>
                 </div>
                 <div class="paper-meta-right">
                   <span class="paper-hint-text">Markdown 实时笔记</span>
@@ -239,13 +256,44 @@
               <!-- Markdown Writing Area -->
               <div class="paper-editor-section">
                 <div class="editor-micro-toolbar">
-                  <span class="micro-tip">支持 Markdown 语法、公式与代码排版</span>
-                  <span class="micro-count">{{ (selected.preview || '').length }} 字</span>
+                  <div class="micro-toolbar-left">
+                    <span class="micro-tip">正文内容 (支持 Markdown 与 LaTeX 公式)</span>
+                    <div class="asset-preview-toggle-group">
+                      <button
+                        type="button"
+                        class="asset-preview-toggle-btn"
+                        :class="{ 'is-active': !isBlockPreviewMode }"
+                        @click="isBlockPreviewMode = false"
+                      >
+                        编写
+                      </button>
+                      <button
+                        type="button"
+                        class="asset-preview-toggle-btn"
+                        :class="{ 'is-active': isBlockPreviewMode }"
+                        @click="isBlockPreviewMode = true"
+                      >
+                        实时预览
+                      </button>
+                    </div>
+                  </div>
+                  <span class="micro-count">{{ (selected.content || selected.preview || '').length }} 字</span>
                 </div>
+                <template v-if="isBlockPreviewMode">
+                  <div
+                    v-if="selected.content || selected.preview"
+                    class="paper-preview-card modal-markdown-body"
+                    v-html="renderMarkdown(selected.content || selected.preview || '')"
+                  ></div>
+                  <div v-else class="paper-preview-card modal-markdown-body empty-preview-tip">
+                    暂无内容可供预览，在编写模式下录入内容
+                  </div>
+                </template>
                 <textarea
-                  v-model="selected.preview"
+                  v-else
+                  v-model="selected.content"
                   class="paper-textarea"
-                  placeholder="在此编写知识块的核心内容、知识点脉络或关键定理（支持 Markdown 语法与代码块）..."
+                  placeholder="在此编写知识块的核心内容、知识点脉络或关键定理（支持 Markdown 语法与 LaTeX 数学公式）..."
                   rows="18"
                 ></textarea>
               </div>
@@ -308,6 +356,7 @@
                         value-format="YYYY-MM-DD"
                         class="zen-date-picker"
                         popper-class="zen-date-popper"
+                        @change="selected.dueDateTouched = true"
                       />
                     </div>
                   </div>
@@ -382,40 +431,47 @@
             </div>
           </div>
         </div>
-      </template>
+        </div>
+      </Transition>
     </main>
 
     <!-- COLUMN 3: RIGHT Context (Only Graph) -->
     <aside class="studio-right-context">
-      <div v-if="!selected" class="graph-empty-state">
-        <IconNetwork :size="40" :stroke-width="1.6" class="empty-graph-icon" />
-        <p class="empty-graph-desc">选择项目以加载上下文星空图</p>
-      </div>
-      <template v-else>
-        <div class="panel-header">
-          <span class="panel-title">关系星图</span>
+      <Transition name="asset-view-fade" mode="out-in">
+        <div v-if="!selected" key="empty" class="graph-empty-state">
+          <IconNetwork :size="40" :stroke-width="1.6" class="empty-graph-icon" />
+          <p class="empty-graph-desc">选择项目以加载上下文星空图</p>
         </div>
-        <div class="context-body">
-          <div class="ctx-graph">
-             <KnowledgeGraph
-              v-if="selectedGroupForGraph"
-              :subjectId="selectedGroupForGraph.id"
-              :blocks="graphBlocks"
-              :sources="graphSources"
-              :subjects="graphSubjects"
-              :subjectName="selectedGroupForGraph.name"
-              :selectedAsset="selectedGraphAsset"
-              @select-node="selectGraphNode"
-            />
+        <div v-else :key="selectedGroupForGraph ? selectedGroupForGraph.id : 'graph'" class="graph-content-wrapper">
+          <div class="panel-header">
+            <span class="panel-title">关系星图</span>
+          </div>
+          <div class="context-body">
+            <div class="ctx-graph">
+               <KnowledgeGraph
+                v-if="selectedGroupForGraph"
+                :subjectId="selectedGroupForGraph.id"
+                :blocks="graphBlocks"
+                :sources="graphSources"
+                :subjects="graphSubjects"
+                :subjectName="selectedGroupForGraph.name"
+                :selectedAsset="selectedGraphAsset"
+                @select-node="selectGraphNode"
+              />
+            </div>
           </div>
         </div>
-      </template>
+      </Transition>
     </aside>
 
     <!-- Register File Modal -->
     <FileRegisterDialog
       v-model="showRegisterModal"
       :default-subject-id="selectedSubjectId"
+      :is-uploading="isUploading"
+      :upload-progress="uploadProgress"
+      :upload-stage="uploadStatusText"
+      :accepted-extensions="SUPPORTED_UPLOAD_EXTENSIONS"
       @submit="handleRegisterSubmit"
     />
   </div>
@@ -429,6 +485,7 @@ import 'element-plus/theme-chalk/el-notification.css'
 import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 import FileRegisterDialog from '@/components/asset/FileRegisterDialog.vue'
+import { SUPPORTED_UPLOAD_EXTENSIONS } from '@/utils/filePreview'
 
 import {
   IconPlus,
@@ -461,10 +518,12 @@ import KnowledgeGraph from '@/components/subject/KnowledgeGraph.vue'
 import { useAssetStore } from '@/store/useAssetStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import { useSourceStore } from '@/store/useSourceStore'
-import { getTasksForAssetGroups, isCompletedTask, isScheduledCompletionLocked, type AssetTaskGroups } from '@/services/taskViewRules'
+import { getTasksForAssetGroups, isCompletedTask, isScheduledCompletionLocked, localDateEndOfDay, type AssetTaskGroups } from '@/services/taskViewRules'
+import { renderMarkdown } from '@/utils/markdown'
 
 // ---- Layout States ----
 const showRegisterModal = ref(false)
+const isBlockPreviewMode = ref(false)
 
 // ---- Upload ----
 const isDragover = ref(false)
@@ -494,11 +553,12 @@ interface TreeNode {
   time?: string
   size?: string
   pages?: number
-  // For blocks
-  preview?: string
-  tags?: string[]
+  // Block body; preview remains the Task note field below.
+  content?: string
   // For tasks
+  preview?: string
   due?: string
+  dueDateTouched?: boolean
   durationMinutes?: number
   done?: boolean
   // Meta
@@ -549,17 +609,17 @@ function formatDuration(minutes: number): string {
 
 function formatDateInput(value?: string): string {
   if (!value) return ''
-  const dateOnly = value.match(/^\d{4}-\d{2}-\d{2}/)?.[0]
-  if (dateOnly) return dateOnly
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function toDueAtValue(value?: string): string | undefined {
+function toDueAtValue(value?: string, originalDueAt?: string, dateTouched = false): string | undefined {
   const trimmed = value?.trim()
   if (!trimmed) return undefined
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return `${trimmed}T23:59:59.999Z`
+  if (!dateTouched && originalDueAt && trimmed === formatDateInput(originalDueAt)) return originalDueAt
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return localDateEndOfDay(trimmed)?.toISOString()
   return trimmed
 }
 
@@ -572,6 +632,7 @@ function taskTreeNode(task: any, groupId: string): TreeNode {
     icon: IconListCheck,
     lucideIcon: IconListCheck,
     due: formatDateInput(task.dueAt),
+    dueDateTouched: false,
     durationMinutes: normalizeDuration(task.durationMinutes ?? task.duration),
     preview: task.description ?? task.desc ?? '',
     done: isCompletedTask(task),
@@ -650,8 +711,8 @@ function rebuildAssetTree(): void {
     // Map all blocks
     blockStore.recentBlocks.forEach(b => {
       allBlocksFolder.children!.push({
-        id: `b-${b.id}`, type: 'block', groupId: 'all', name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
-        preview: b.preview, tags: b.tags || [b.subject], originalData: b
+        id: `b-${b.id}`, type: 'block', groupId: b.subjectId || 'all', name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
+        content: b.content || '', originalData: b
       })
     })
 
@@ -683,7 +744,7 @@ function rebuildAssetTree(): void {
       blocks.forEach(b => {
         subjBlocksFolder.children!.push({
           id: `b-${b.id}`, type: 'block', groupId: subj.id, name: b.title || '无标题块', icon: IconNote, lucideIcon: IconNote,
-          preview: b.preview, tags: b.tags || [b.subject], originalData: b
+          content: b.content || '', originalData: b
         })
       })
 
@@ -834,7 +895,7 @@ const saveTaskEdit = async (task: TreeNode) => {
       subjectId: task.groupId && task.groupId !== 'all' ? task.groupId : task.originalData.subjectId,
       title: task.name.trim() || '未命名任务',
       description: task.preview ?? '',
-      dueAt: toDueAtValue(task.due),
+      dueAt: toDueAtValue(task.due, task.originalData.dueAt, task.dueDateTouched),
       durationMinutes: normalizeDuration(task.durationMinutes),
     })
     await loadAssetsFromBackend()
@@ -849,15 +910,20 @@ const saveTaskEdit = async (task: TreeNode) => {
 const saveBlockEdit = async (block: TreeNode) => {
   if (!block.originalData) return
   try {
+    const targetSubjectId = block.groupId && block.groupId !== 'all' ? block.groupId : block.originalData.subjectId
+    const content = block.content ?? block.originalData.content ?? ''
     await blockStore.updateBlock({
       ...block.originalData,
       title: block.name,
-      preview: block.preview,
-      tags: block.tags
+      content,
+      subjectId: targetSubjectId
     })
+    await loadAssetsFromBackend()
+    selected.value = findTreeNode(rootNodes.value, block.id)
     ElNotification({ title: '✅ 成功', message: '知识块已更新', type: 'success' })
   } catch (err) {
-    console.error(err)
+    console.error('[Asset] Failed to save block:', err)
+    ElNotification({ title: '保存失败', message: '知识块更新失败，请稍后重试', type: 'error' })
   }
 }
 
@@ -923,10 +989,9 @@ const openUploadForGroup = (groupId: string) => {
   showRegisterModal.value = true
 }
 
-const handleRegisterSubmit = ({ file, name, subjectId }: { file: File; name: string; subjectId: string }) => {
+const handleRegisterSubmit = async ({ file, name, subjectId }: { file: File; name: string; subjectId: string }) => {
   const finalFile = new window.File([file], name, { type: file.type })
-  handleFileUpload(finalFile, subjectId)
-  showRegisterModal.value = false
+  await handleFileUpload(finalFile, subjectId)
 }
 
 const handleFileUpload = async (file: File, subjectId: string) => {
@@ -944,12 +1009,25 @@ const handleFileUpload = async (file: File, subjectId: string) => {
     uploadStatusText.value = '资料已关联，等待后台解析...'
     await loadAssetsFromBackend()
     uploadProgress.value = 100
-    setTimeout(() => { isUploading.value = false }, 800)
-
+    uploadStatusText.value = '上传成功'
+    ElNotification({
+      title: '上传成功',
+      message: `文件 ${file.name} 已成功关联`,
+      type: 'success',
+    })
+    setTimeout(() => {
+      isUploading.value = false
+      showRegisterModal.value = false
+    }, 600)
   } catch (err: any) {
     console.error('上传失败:', err)
     uploadStatusText.value = '上传失败: ' + (err.message || '未知错误')
-    setTimeout(() => { isUploading.value = false }, 2000)
+    isUploading.value = false
+    ElNotification({
+      title: '上传失败',
+      message: err.message || '未知错误',
+      type: 'error',
+    })
   }
 }
 
@@ -1225,7 +1303,8 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 
 /* ===== MIDDLE PANEL ===== */
 .studio-middle {
-  flex: 1;
+  flex: 7;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary, #F7F2EB);
@@ -1238,6 +1317,38 @@ html.dark .search-input { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); }
 html.dark .studio-middle {
   background: var(--color-bg-secondary);
   border: 1px solid var(--border-subtle);
+}
+
+.detail-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.graph-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.asset-view-fade-enter-active,
+.asset-view-fade-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.asset-view-fade-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.asset-view-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 .middle-content-scroll {
@@ -1432,7 +1543,7 @@ html.dark .studio-middle {
   box-sizing: border-box;
 }
 .editor-paper-card {
-  background: var(--color-bg-tertiary, #FAF7F2);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: 20px;
   border: 1px solid var(--border-subtle);
   box-shadow: 0 6px 24px -4px rgba(0, 0, 0, 0.04), 0 2px 8px -2px rgba(0, 0, 0, 0.02);
@@ -1443,7 +1554,7 @@ html.dark .studio-middle {
   transition: all var(--transition-fast);
 }
 html.dark .editor-paper-card {
-  background: #181D18;
+  background: #131713;
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
@@ -1460,6 +1571,15 @@ html.dark .editor-paper-card {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+.paper-subject-select {
+  width: 140px;
+}
+.paper-subject-select :deep(.el-select__wrapper) {
+  border-radius: 9999px !important;
+  font-size: 12px;
+  background: rgba(139, 154, 110, 0.08) !important;
+  box-shadow: 0 0 0 1px rgba(139, 154, 110, 0.25) inset !important;
 }
 .paper-subject-pill {
   font-size: 12px;
@@ -1495,7 +1615,7 @@ html.dark .paper-tag-pill {
   font-size: 11.5px;
   font-weight: 600;
   border: 1px solid var(--border-default);
-  background: var(--color-bg-primary, #F7F2EB);
+  background: var(--color-bg-tertiary, #FAF7F2);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -1582,9 +1702,61 @@ html.dark .paper-tag-pill {
   margin-bottom: 8px;
   padding: 0 2px;
 }
+.micro-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .micro-tip {
   font-size: 12px;
   color: var(--text-muted);
+}
+.asset-preview-toggle-group {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
+  padding: 2px;
+  gap: 2px;
+}
+html.dark .asset-preview-toggle-group {
+  background: rgba(255, 255, 255, 0.08);
+}
+.asset-preview-toggle-btn {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #7A7A75);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.asset-preview-toggle-btn:hover {
+  color: var(--text-primary, #1C1C1A);
+}
+.asset-preview-toggle-btn.is-active {
+  background: var(--color-bg-primary, #F7F2EB);
+  color: var(--color-zen-sage, #8B9A6E);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+html.dark .asset-preview-toggle-btn.is-active {
+  background: #242924;
+  color: #a3b386;
+}
+.paper-preview-card {
+  width: 100%;
+  min-height: 380px;
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-radius: 12px;
+  padding: 18px 22px;
+  box-sizing: border-box;
+}
+html.dark .paper-preview-card {
+  background: #181D18;
 }
 .micro-count {
   font-size: 11.5px;
@@ -1595,7 +1767,7 @@ html.dark .paper-tag-pill {
   width: 100%;
   min-height: 380px;
   border: 1px solid var(--border-subtle);
-  background: var(--color-bg-primary, #F7F2EB);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 12px;
   padding: 16px 18px;
   outline: none;
@@ -1625,20 +1797,20 @@ html.dark .paper-tag-pill {
   opacity: 0.6;
 }
 html.dark .paper-textarea {
-  background: #131713;
+  background: #181D18;
   border-color: rgba(255, 255, 255, 0.08);
 }
 
 /* Task Property Panel */
 .paper-property-panel {
-  background: var(--color-bg-primary, #F7F2EB);
+  background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
   padding: 14px 18px;
   margin: 2px 0;
 }
 html.dark .paper-property-panel {
-  background: #131713;
+  background: #181D18;
   border-color: rgba(255, 255, 255, 0.08);
 }
 .property-grid {
@@ -2033,8 +2205,8 @@ html.dark .paper-property-panel {
 
 /* ===== RIGHT CONTEXT PANEL ===== */
 .studio-right-context {
-  width: 620px;
-  flex-shrink: 0;
+  flex: 3;
+  min-width: 260px;
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary, #F7F2EB);
@@ -2134,7 +2306,6 @@ html.dark .studio-right-context {
 .block-body { flex: 1; min-width: 0; }
 .block-heading { font-size: 12px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
 .block-preview { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px; }
-.block-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .block-tag {
   font-size: 9px; color: var(--color-primary-accent, #8B9A6E); background: rgba(139, 154, 110, 0.12);
   padding: 2px 6px; border-radius: var(--radius-sm);

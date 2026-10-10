@@ -409,6 +409,25 @@ class AuthControllerTests {
                 subjectId, userId);
         jdbcTemplate.update("insert into tasks (id, user_id, subject_id, title, status, sort_key) "
                 + "values (?, ?, ?, 'Delete me', 'TODO', '')", taskId, userId, subjectId);
+        UUID focusSessionId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID ingestionRevision = UUID.randomUUID();
+        UUID overviewResultId = UUID.randomUUID();
+        UUID overviewWriteReceiptId = UUID.randomUUID();
+        jdbcTemplate.update("insert into focus_sessions "
+                        + "(id, user_id, client_session_id, task_id, started_at, ended_at, duration_seconds, completed) "
+                        + "values (?, ?, ?, ?, ?, ?, 120, false)",
+                focusSessionId, userId, UUID.randomUUID(), taskId,
+                Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T10:02:00Z"));
+        jdbcTemplate.update("insert into overview_results "
+                        + "(id, user_id, scope_type, scope_id, subject_id, source_id, ingestion_revision, "
+                        + "version, outline_version, summary_version, title, schema_version, outline, summary) "
+                        + "values (?, ?, 'SOURCE', ?, ?, ?, ?, 1, 1, 1, 'Overview', 1, '[]', '{}')",
+                overviewResultId, userId, sourceId, subjectId, sourceId, ingestionRevision);
+        jdbcTemplate.update("insert into overview_write_receipts "
+                        + "(id, user_id, client_write_id, scope_type, scope_id, base_version, payload_hash, response_snapshot) "
+                        + "values (?, ?, ?, 'SOURCE', ?, 0, ?, '{}')",
+                overviewWriteReceiptId, userId, UUID.randomUUID(), sourceId, "a".repeat(64));
 
         mockMvc.perform(delete("/api/auth/me")
                         .header(HttpHeaders.AUTHORIZATION, bearer(token))
@@ -432,6 +451,12 @@ class AuthControllerTests {
         assertThat(accountDeletionCleanupService.processPending()).isEqualTo(1);
         assertThat(jdbcTemplate.queryForObject("select count(*) from tasks where id = ?", Integer.class, taskId)).isZero();
         assertThat(jdbcTemplate.queryForObject("select count(*) from subjects where id = ?", Integer.class, subjectId)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from focus_sessions where id = ?", Integer.class,
+                focusSessionId)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from overview_results where id = ?", Integer.class,
+                overviewResultId)).isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from overview_write_receipts where id = ?", Integer.class,
+                overviewWriteReceiptId)).isZero();
         assertThat(jdbcTemplate.queryForObject(
                 "select status from account_deletion_jobs where id = ?", String.class, UUID.fromString(jobId)))
                 .isEqualTo("COMPLETED");

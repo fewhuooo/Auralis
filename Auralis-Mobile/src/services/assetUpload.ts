@@ -1,4 +1,5 @@
 import { assetApi } from '@/api/assetApi'
+import { uuidv7 } from '@/utils/uuid'
 
 export interface LocalUploadFile {
   path: string
@@ -43,9 +44,10 @@ function putFile(url: string, data: ArrayBuffer, headers: Record<string, string>
   }))
 }
 
-export async function uploadAsset(file: LocalUploadFile): Promise<string> {
+export async function uploadAsset(file: LocalUploadFile, clientImportId = uuidv7()): Promise<string> {
   const intent = await assetApi.createUploadIntent({
     baseVersion: 0,
+    clientImportId,
     originalName: file.name,
     sizeBytes: file.size,
     mimeType: file.mimeType,

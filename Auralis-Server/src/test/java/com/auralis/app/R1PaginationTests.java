@@ -62,9 +62,9 @@ class R1PaginationTests {
         assertPageBoundary(subjects, subjectsNext, 3);
 
         knowledgeBlockService.create(userId, new KnowledgeBlockCommand(
-                firstSubject.id(), null, "Block A", null, "content A", java.util.List.of(), null));
+                firstSubject.id(), null, "Block A", "content A", null));
         knowledgeBlockService.create(userId, new KnowledgeBlockCommand(
-                secondSubject.id(), null, "Block B", null, "content B", java.util.List.of(), null));
+                secondSubject.id(), null, "Block B", "content B", null));
         var blocks = knowledgeBlockService.list(userId, null, 1);
         assertThat(blocks.items()).hasSize(1);
         assertThat(blocks.nextCursor()).isNotBlank();

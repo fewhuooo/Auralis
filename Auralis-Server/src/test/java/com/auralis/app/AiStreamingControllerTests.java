@@ -9,12 +9,16 @@ import com.auralis.app.ai.AiStreamSink;
 import com.auralis.app.ai.AiStreamingService;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.SuggestionService;
+import com.auralis.app.identity.DeviceCommand;
+import com.auralis.app.identity.DevicePlatform;
+import com.auralis.app.identity.IdentityService;
 import com.auralis.app.shared.security.AuthenticatedUser;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
@@ -34,13 +38,29 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest(classes = AuralisApplication.class)
+@SpringBootTest(classes = AuralisApplication.class, properties = "auralis.ai.max-prompt-chars=64")
 @ActiveProfiles("test")
 @AutoConfigureMockMvc
 class AiStreamingControllerTests {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private IdentityService identityService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Test
+    void deserializesTheTopLevelSelectionFieldAlongsideLegacyFields() throws Exception {
+        AiMessageCommand command = objectMapper.readValue(
+                "{\"content\":\"Question\",\"retrievalEnabled\":false,\"selectionText\":\"selected\"}",
+                AiMessageCommand.class);
+
+        assertThat(command.selectionText()).isEqualTo("selected");
+        assertThat(command.effectiveSelectionText()).isEqualTo("selected");
+    }
 
     @Test
     void requiresAuthenticationForStreamingMessages() throws Exception {
@@ -49,6 +69,41 @@ class AiStreamingControllerTests {
                         .content("{\"content\":\"hello\"}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
+    }
+
+    @Test
+    void rejectsQuotedPromptThatCannotFitBeforeStartingTheSseResponse() throws Exception {
+        var auth = identityService.register(
+                "selected-text-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple", "selected-text-controller",
+                new DeviceCommand("selected-text-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
+
+        mockMvc.perform(post("/api/ai/messages/stream")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Question\",\"retrievalEnabled\":false,"
+                                + "\"selectionText\":\"quote\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.detail")
+                        .value("The selected text and current question exceed the prompt budget"));
+    }
+
+    @Test
+    void validatesTopLevelSelectionTextLimit() throws Exception {
+        var auth = identityService.register(
+                "sl-" + UUID.randomUUID() + "@example.com",
+                "correct horse battery staple", "selected-text-controller",
+                new DeviceCommand("selected-text-limit-device-" + UUID.randomUUID(), "Test", DevicePlatform.WEB));
+
+        mockMvc.perform(post("/api/ai/messages/stream")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"Question\",\"retrievalEnabled\":false,\"selectionText\":\""
+                                + "x".repeat(4001) + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("selectionText"));
     }
 
     @Test

@@ -13,26 +13,26 @@
     @close="handleClose"
   >
     <div
-      class="file-register-body"
+      class="file-body"
       @dragover.prevent="isDragover = true"
       @dragleave.prevent="isDragover = false"
       @drop.prevent="handleFileDrop"
     >
       <!-- Drag & Drop Zone -->
       <div
-        class="drag-drop-zone"
+        class="drop-zone"
         :class="{ 'is-active': isDragover, 'has-file': !!selectedFile }"
         @click="triggerFileInput"
       >
-        <div class="drag-icon-circle" :class="{ 'is-success': !!selectedFile }">
-          <IconFileCheck v-if="selectedFile" :size="24" :stroke-width="2" />
-          <IconCloudUpload v-else :size="24" :stroke-width="1.8" />
+        <div class="drop-icon" :class="{ 'is-success': !!selectedFile }">
+          <IconFileCheck v-if="selectedFile" :size="22" :stroke-width="1.8" />
+          <IconCloudUpload v-else :size="22" :stroke-width="1.6" />
         </div>
-        <div class="drag-text">
-          {{ selectedFile ? selectedFile.name : '拖拽文件到此处自动识别，或点击选择' }}
+        <div class="drop-text">
+          {{ selectedFile ? selectedFile.name : '拖拽文件到此处，或点击选择' }}
         </div>
-        <div class="drag-hint">
-          {{ selectedFile ? '点击可更换其他参考文件' : hintText }}
+        <div class="drop-hint">
+          {{ selectedFile ? '点击可更换其他文件' : hintText }}
         </div>
       </div>
 
@@ -44,24 +44,21 @@
         @change="handleFileChange"
       />
 
-      <!-- In-dialog Upload Progress -->
-      <div v-if="isUploading" class="upload-progress-wrapper">
-        <div class="upload-progress-header">
-          <div class="upload-stage-group">
-            <span class="pulse-indicator"></span>
-            <span aria-live="polite" class="upload-stage-text">{{ uploadStage || '正在上传文件...' }}</span>
-          </div>
-          <span class="upload-percent-text">{{ uploadProgress }}%</span>
+      <!-- Upload Progress -->
+      <div v-if="isUploading" class="upload-progress">
+        <div class="progress-header">
+          <span class="stage-text">{{ displayPercent >= 100 ? '导入完成' : (uploadStage || '正在导入本地文件...') }}</span>
+          <span class="progress-pct">{{ displayPercent }}%</span>
         </div>
-        <div class="progress-bar-track">
+        <div class="progress-track">
           <div
-            class="progress-bar-fill"
-            :style="{ width: `${uploadProgress}%` }"
+            class="progress-fill"
+            :style="{ width: `${displayProgress}%` }"
           ></div>
         </div>
       </div>
 
-      <!-- File Name Input -->
+      <!-- File Name -->
       <div class="modal-form-group">
         <label class="modal-form-label">
           文件名称 <span class="required">*</span>
@@ -75,22 +72,22 @@
         />
       </div>
 
-      <!-- Subject Capsule Selection -->
+      <!-- Subject Selection -->
       <div class="modal-form-group">
         <label class="modal-form-label">
           归档至 <span class="required">*</span>
         </label>
-        <div class="subject-capsule-grid">
+        <div class="subject-grid">
           <div
             v-for="subj in resolvedSubjects"
             :key="subj.id"
-            class="subject-capsule-item"
+            class="subject-chip"
             :class="{ 'is-active': selectedSubjectId === subj.id }"
             @click="!isUploading && (selectedSubjectId = subj.id)"
           >
-            <span class="subj-capsule-name">{{ subj.name }}</span>
+            {{ subj.name }}
           </div>
-          <div v-if="resolvedSubjects.length === 0" class="subject-empty-hint">
+          <div v-if="resolvedSubjects.length === 0" class="empty-hint">
             暂无学科，请先创建学科空间
           </div>
         </div>
@@ -112,17 +109,19 @@
         :disabled="!isSubmitEnabled || isUploading"
         @click="handleSubmit"
       >
-        {{ isUploading ? `${uploadStage || '上传中'} ${uploadProgress}%` : submitText }}
+        <IconRotate v-if="isUploading" :size="13" :stroke-width="2.2" class="is-spinning modal-btn-spinner" />
+        {{ isUploading ? (displayPercent >= 100 ? '导入完成' : '导入中...') : submitText }}
       </button>
     </template>
   </ModalShell>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import { IconCloudUpload, IconFileCheck } from '@tabler/icons-vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
+import { IconCloudUpload, IconFileCheck, IconRotate } from '@tabler/icons-vue'
 import ModalShell from '@/components/modal/ModalShell.vue'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { SUPPORTED_UPLOAD_EXTENSIONS } from '@/utils/filePreview'
 
 export interface FileRegisterSubjectItem {
   id: string
@@ -145,8 +144,8 @@ const props = withDefaults(
   {
     title: '上传参考文件',
     submitText: '确认登记',
-    hintText: '支持 PDF、DOC、DOCX、PPT、PPTX；图片和文本仅可预览',
-    acceptedExtensions: () => ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.txt', '.md', '.png', '.jpg', '.jpeg'],
+    hintText: '支持 PDF、DOC、DOCX、PPT、PPTX 文件',
+    acceptedExtensions: () => SUPPORTED_UPLOAD_EXTENSIONS,
     subjects: undefined,
     defaultSubjectId: '',
     isUploading: false,
@@ -174,6 +173,73 @@ const resolvedSubjects = computed<FileRegisterSubjectItem[]>(() => {
 
 const isSubmitEnabled = computed(() => {
   return !!selectedFile.value && fileName.value.trim().length > 0 && selectedSubjectId.value.length > 0
+})
+
+// 极简平滑进度步进引擎，杜绝从 10% 瞬跳 100%
+const displayProgress = ref(0)
+const displayPercent = computed(() => Math.min(100, Math.round(displayProgress.value)))
+
+let animFrameId: number | null = null
+
+const startProgressAnimation = () => {
+  stopProgressAnimation()
+  displayProgress.value = 0
+
+  let lastTime = performance.now()
+
+  const tick = (now: number) => {
+    const dt = Math.min(50, Math.max(10, now - lastTime))
+    lastTime = now
+
+    const rawTarget = props.uploadProgress ?? 0
+    const current = displayProgress.value
+
+    if (rawTarget >= 100) {
+      if (current < 100) {
+        // 当底层已完成时，以平滑匀速自然滑入 100%（约 350ms 内平稳滑过整段差距，杜绝瞬移）
+        const step = Math.max(1.6, dt * 0.18)
+        displayProgress.value = Math.min(100, current + step)
+        animFrameId = requestAnimationFrame(tick)
+      } else {
+        stopProgressAnimation()
+      }
+    } else {
+      // 在未到达 100% 前平滑平稳推进，以优雅速率攀升，并在 86% 处平稳巡航等待
+      const ceiling = Math.max(rawTarget, 86)
+      if (current < ceiling) {
+        const factor = Math.max(0.18, (ceiling - current) / ceiling)
+        const step = Math.max(0.12, dt * 0.08 * factor)
+        displayProgress.value = Math.min(ceiling, current + step)
+      }
+      animFrameId = requestAnimationFrame(tick)
+    }
+  }
+
+  animFrameId = requestAnimationFrame(tick)
+}
+
+const stopProgressAnimation = () => {
+  if (animFrameId !== null) {
+    cancelAnimationFrame(animFrameId)
+    animFrameId = null
+  }
+}
+
+watch(
+  () => props.isUploading,
+  (val) => {
+    if (val) {
+      startProgressAnimation()
+    } else {
+      stopProgressAnimation()
+      displayProgress.value = 0
+    }
+  },
+  { immediate: true }
+)
+
+onUnmounted(() => {
+  stopProgressAnimation()
 })
 
 const resetForm = () => {
@@ -259,62 +325,61 @@ const handleSubmit = () => {
 </script>
 
 <style scoped>
-.file-register-body {
+.file-body {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
-/* Drag drop area */
-.drag-drop-zone {
-  border: 2px dashed rgba(139, 154, 110, 0.35);
-  border-radius: 16px;
-  padding: 26px 20px;
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--modal-inset-border, rgba(0, 0, 0, 0.12));
+  border-radius: var(--radius-lg, 16px);
+  padding: 28px 20px;
   text-align: center;
-  background: var(--color-bg-primary, #F7F2EB);
+  background: var(--modal-inset-bg, #FAF7F2);
   cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-.drag-drop-zone:hover,
-.drag-drop-zone.is-active {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.1));
-  transform: translateY(-1px);
+.drop-zone:hover,
+.drop-zone.is-active {
+  border-color: var(--modal-accent, #8B9A6E);
+  background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.08));
 }
 
-.drag-drop-zone.has-file {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.08));
+.drop-zone.has-file {
+  border-color: var(--modal-accent, #8B9A6E);
+  border-style: solid;
 }
 
-.drag-icon-circle {
+.drop-icon {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 48px;
   height: 48px;
-  border-radius: 50%;
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.12));
-  color: var(--color-zen-sage, #76855B);
+  border-radius: var(--radius-md, 10px);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-muted, #7A7A75);
   margin-bottom: 12px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
 }
 
-.drag-icon-circle.is-success {
-  background: rgba(139, 154, 110, 0.22);
-  color: var(--color-zen-sage, #8B9A6E);
+.drop-icon.is-success {
+  background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.14));
+  color: var(--modal-accent, #8B9A6E);
 }
 
-.drag-drop-zone:hover .drag-icon-circle {
-  transform: scale(1.08);
+.drop-zone:hover .drop-icon {
+  color: var(--modal-accent, #8B9A6E);
 }
 
-.drag-text {
+.drop-text {
   font-size: 14px;
   font-weight: 600;
   color: var(--text-primary, #1C1C1A);
@@ -322,150 +387,137 @@ const handleSubmit = () => {
   line-height: 1.4;
 }
 
-.drag-hint {
+.drop-hint {
   font-size: 12.5px;
   color: var(--text-muted, #7A7A75);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
-/* Progress area */
-.upload-progress-wrapper {
-  padding: 16px 18px;
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: 16px;
+/* Progress */
+.upload-progress {
+  padding: 12px 14px;
+  background: var(--modal-inset-bg, #FAF7F2);
+  border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
+  border-radius: var(--radius-md, 10px);
 }
 
-.upload-progress-header {
+.progress-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-secondary, #2C2C28);
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
-.upload-stage-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pulse-indicator {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-zen-sage, #8B9A6E);
-  animation: pulse-dot 1.5s infinite;
-}
-
-@keyframes pulse-dot {
-  0% {
-    box-shadow: 0 0 0 0 rgba(139, 154, 110, 0.6);
-  }
-  70% {
-    box-shadow: 0 0 0 6px rgba(139, 154, 110, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(139, 154, 110, 0);
-  }
-}
-
-.upload-stage-text {
-  font-weight: 600;
+.stage-text {
+  font-weight: 500;
   color: var(--text-primary, #1C1C1A);
+  font-size: 12.5px;
 }
 
-.upload-percent-text {
-  font-weight: 700;
-  color: var(--color-zen-sage, #76855B);
+.progress-pct {
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--modal-accent, #76855B);
   font-feature-settings: "tnum";
 }
 
-.progress-bar-track {
-  height: 6px;
+.progress-track {
+  height: 4px;
   background: rgba(0, 0, 0, 0.06);
   border-radius: 9999px;
   overflow: hidden;
 }
 
-.progress-bar-fill {
+.progress-fill {
   height: 100%;
-  background: var(--accent-gradient, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
-  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  background: var(--modal-accent, #8B9A6E);
+  transition: width 0.08s linear;
   border-radius: 9999px;
 }
 
-/* Subject capsule grid */
-.subject-capsule-grid {
+.modal-btn-spinner {
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+/* Subject capsule chips */
+.subject-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   max-height: 140px;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
-.subject-capsule-item {
+.subject-chip {
   display: inline-flex;
   align-items: center;
-  padding: 6px 16px;
-  border-radius: 9999px;
-  border: 1px solid var(--border-default, #DDD5C7);
-  background: var(--color-bg-primary, #F7F2EB);
+  padding: 6px 14px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.08));
+  background: var(--modal-inset-bg, #FAF7F2);
   color: var(--text-primary, #1C1C1A);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-.subject-capsule-item:hover {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  color: var(--color-zen-sage, #76855B);
+.subject-chip:hover {
+  border-color: var(--modal-accent, #8B9A6E);
+  color: var(--modal-accent, #76855B);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
   transform: translateY(-1px);
 }
 
-.subject-capsule-item.is-active {
-  border-color: var(--color-zen-sage, #8B9A6E);
-  background: var(--color-sage-bg, rgba(139, 154, 110, 0.14));
+.subject-chip.is-active {
+  background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.14));
+  border-color: var(--modal-accent, #8B9A6E);
   font-weight: 600;
-  color: var(--color-zen-sage, #76855B);
-  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.15);
+  color: var(--modal-accent, #76855B);
 }
 
-.subject-empty-hint {
-  font-size: 12.5px;
+.empty-hint {
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
-  padding: 6px 0;
+  padding: 4px 0;
 }
 
-html.dark .drag-drop-zone {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: rgba(163, 177, 155, 0.3);
+html.dark .drop-zone {
+  background: var(--modal-inset-bg, #2e2c29);
+  border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.12));
 }
 
-html.dark .drag-drop-zone:hover {
-  background: var(--color-bg-secondary, #292825);
-  border-color: var(--color-zen-sage, #8B9A6E);
+html.dark .drop-zone:hover {
+  border-color: var(--modal-accent, #A3B19B);
+  background: rgba(163, 177, 155, 0.08);
 }
 
-html.dark .upload-progress-wrapper {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: var(--border-subtle, rgba(230, 223, 216, 0.06));
+html.dark .drop-icon {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted, #8a867e);
 }
 
-html.dark .subject-capsule-item {
-  background: var(--color-bg-tertiary, #33312e);
-  border-color: var(--border-default, rgba(230, 223, 216, 0.12));
+html.dark .upload-progress {
+  background: var(--modal-inset-bg, #2e2c29);
+  border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
+}
+
+html.dark .subject-chip {
+  background: var(--modal-inset-bg, #2e2c29);
+  border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
   color: var(--text-primary, #e6dfd8);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
-html.dark .subject-capsule-item.is-active {
-  background: rgba(163, 177, 155, 0.2);
-  border-color: var(--color-zen-sage, #8B9A6E);
+html.dark .subject-chip.is-active {
+  background: rgba(163, 177, 155, 0.18);
+  border-color: var(--modal-accent, #A3B19B);
   color: #B4C4AA;
 }
 </style>

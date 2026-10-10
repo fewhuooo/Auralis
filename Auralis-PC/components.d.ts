@@ -43,6 +43,8 @@ declare module 'vue' {
     SearchPalette: typeof import('./src/components/SearchPalette.vue')['default']
     SubjectCreateModal: typeof import('./src/components/subject/SubjectCreateModal.vue')['default']
     SubjectOverviewSection: typeof import('./src/components/subject/SubjectOverviewSection.vue')['default']
+    SubjectReviewPane: typeof import('./src/components/subject/SubjectReviewPane.vue')['default']
+    SubjectStatsPane: typeof import('./src/components/subject/SubjectStatsPane.vue')['default']
     SummaryInstructionDialog: typeof import('./src/components/subject/SummaryInstructionDialog.vue')['default']
     TaskCreateDialog: typeof import('./src/components/task/TaskCreateDialog.vue')['default']
     TimerCore: typeof import('./src/components/pomodoro/TimerCore.vue')['default']

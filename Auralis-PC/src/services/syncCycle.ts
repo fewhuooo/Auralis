@@ -1,5 +1,6 @@
 import type { LocalEntity, LocalMutation } from '@/types/api'
 import type { LocalRepository } from '@/services/localRepository'
+import type { SyncRequestScopeTicket } from '@/api/request'
 import { orderMutationsForPush } from '@/services/syncOrdering'
 import type {
   SyncChange,
@@ -18,15 +19,17 @@ type SyncRepository = Pick<LocalRepository,
   & Partial<Pick<LocalRepository, 'resolveRejectedSubjectDelete'>>
 
 type SyncApi = {
-  pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }): Promise<SyncPushResponse>
-  pullChanges(input: { cursor?: string; limit: number }): Promise<SyncPullResponse>
-  getSnapshot(): Promise<SyncSnapshotResponse>
+  pushChanges(input: { serverDeviceId: string; mutations: LocalMutation[] }, scope?: SyncRequestScopeTicket): Promise<SyncPushResponse>
+  pullChanges(input: { cursor?: string; limit: number }, scope?: SyncRequestScopeTicket): Promise<SyncPullResponse>
+  getSnapshot(scope?: SyncRequestScopeTicket): Promise<SyncSnapshotResponse>
 }
 
 export interface SyncCycleInput {
   repository: SyncRepository
   api: SyncApi
   serverDeviceId: string
+  scope?: SyncRequestScopeTicket
+  isCurrent?: () => boolean
 }
 
 export interface SyncCycleResult {
@@ -44,6 +47,14 @@ function resourceVersion(value: unknown, fallback: number): number {
 
 function resourceKey(resourceType: string, resourceId: string): string {
   return `${resourceType}\u0000${resourceId}`
+}
+
+function assertCurrent(isCurrent?: () => boolean): void {
+  if (isCurrent && !isCurrent()) {
+    const error = new Error('SYNC_SCOPE_CHANGED') as Error & { code: string }
+    error.code = 'SYNC_SCOPE_CHANGED'
+    throw error
+  }
 }
 
 function snapshotItems(snapshot: SyncSnapshotResponse): Array<{
@@ -83,13 +94,21 @@ export function latestChangesByResource(changes: SyncChange[]): SyncChange[] {
   return [...latest.values()]
 }
 
-export async function applyPullPage(repository: SyncRepository, changes: SyncChange[]): Promise<Set<SyncResourceType>> {
+export async function applyPullPage(
+  repository: SyncRepository,
+  changes: SyncChange[],
+  checkCurrent: () => void = () => {},
+): Promise<Set<SyncResourceType>> {
+  checkCurrent()
   const unresolved = await repository.listUnresolved()
+  checkCurrent()
   const protectedResources = new Set(unresolved.map((mutation) => resourceKey(mutation.resourceType, mutation.resourceId)))
   const changed = new Set<SyncResourceType>()
   for (const change of latestChangesByResource(changes)) {
+    checkCurrent()
     if (protectedResources.has(resourceKey(change.resourceType, change.resourceId))) continue
     const current = await repository.read(change.resourceType, change.resourceId)
+    checkCurrent()
     const deletedAt = change.mutationType === 'DELETE'
       ? change.deletedAt ?? new Date().toISOString()
       : change.mutationType === 'RESTORE' ? null : change.deletedAt
@@ -98,6 +117,7 @@ export async function applyPullPage(repository: SyncRepository, changes: SyncCha
       deletedAt,
       syncStatus: 'synced',
     })
+    checkCurrent()
     if (applied) changed.add(change.resourceType)
   }
   return changed
@@ -106,7 +126,9 @@ export async function applyPullPage(repository: SyncRepository, changes: SyncCha
 async function settlePushResult(
   repository: SyncRepository,
   result: SyncMutationResponse,
+  checkCurrent: () => void,
 ): Promise<SyncResourceType | null> {
+  checkCurrent()
   if (!result.clientMutationId || !result.decision || result.decision === 'PROCESSING') return null
   const status = result.decision === 'APPLIED' ? 'applied'
     : result.decision === 'CONFLICT' ? 'conflict' : 'error'
@@ -117,79 +139,112 @@ async function settlePushResult(
     remoteValue: result.current,
     remoteVersion: resourceVersion(result.current, 0),
   })
+  checkCurrent()
   if (result.decision !== 'APPLIED' || !result.resourceType || !result.resourceId || !SYNC_RESOURCE_TYPES.has(result.resourceType)) return null
 
   const unresolved = await repository.listUnresolved()
+  checkCurrent()
   if (unresolved.some((mutation) => mutation.resourceType === result.resourceType && mutation.resourceId === result.resourceId)) {
     return result.resourceType
   }
   if (result.current === undefined) return result.resourceType
   const current = await repository.read(result.resourceType, result.resourceId)
+  checkCurrent()
   await repository.upsert(result.resourceType, result.resourceId, result.current, {
     version: resourceVersion(result.current, current?.version ?? 0),
     deletedAt: isRecord(result.current) && typeof result.current.deletedAt === 'string' ? result.current.deletedAt : current?.deletedAt ?? null,
     syncStatus: 'synced',
   })
+  checkCurrent()
   return result.resourceType
 }
 
-async function pullToCursor(repository: SyncRepository, api: SyncApi): Promise<{ cursor: string | null; changedResourceTypes: Set<SyncResourceType> }> {
+async function pullToCursor(
+  repository: SyncRepository,
+  api: SyncApi,
+  scope: SyncRequestScopeTicket | undefined,
+  checkCurrent: () => void,
+): Promise<{ cursor: string | null; changedResourceTypes: Set<SyncResourceType> }> {
+  checkCurrent()
   const state = await repository.getSyncState()
+  checkCurrent()
   const changedResourceTypes = new Set<SyncResourceType>()
   if (state.resetRequired || state.cursor === null) {
-    const snapshot = await api.getSnapshot()
+    const snapshot = await api.getSnapshot(scope)
+    checkCurrent()
+    checkCurrent()
     await repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
+    checkCurrent()
     await repository.saveCursor(snapshot.snapshotCursor, false)
+    checkCurrent()
     return { cursor: snapshot.snapshotCursor, changedResourceTypes: new Set(SYNC_RESOURCE_TYPES) }
   }
   let cursor: string | null = state.cursor
   let hasMore = true
   while (hasMore) {
-    const response = await api.pullChanges({ ...(cursor ? { cursor } : {}), limit: 100 })
+    checkCurrent()
+    const response = await api.pullChanges({ ...(cursor ? { cursor } : {}), limit: 100 }, scope)
+    checkCurrent()
     if (response.resetRequired) {
-      const snapshot = await api.getSnapshot()
+      const snapshot = await api.getSnapshot(scope)
+      checkCurrent()
       await repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
+      checkCurrent()
       await repository.saveCursor(snapshot.snapshotCursor, false)
+      checkCurrent()
       return { cursor: snapshot.snapshotCursor, changedResourceTypes: new Set(SYNC_RESOURCE_TYPES) }
     }
-    for (const resourceType of await applyPullPage(repository, response.changes)) changedResourceTypes.add(resourceType)
+    for (const resourceType of await applyPullPage(repository, response.changes, checkCurrent)) changedResourceTypes.add(resourceType)
+    checkCurrent()
     const previousCursor = cursor
     cursor = response.nextCursor
     await repository.saveCursor(cursor, false)
+    checkCurrent()
     hasMore = response.hasMore && cursor !== previousCursor
   }
   return { cursor, changedResourceTypes }
 }
 
 export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResult> {
-  const claimed = orderMutationsForPush(await input.repository.claimPending(200))
+  const checkCurrent = (): void => assertCurrent(input.isCurrent ?? input.scope?.isCurrent)
+  checkCurrent()
+  let claimed: LocalMutation[] = []
   const changedResourceTypes = new Set<SyncResourceType>()
   try {
+    claimed = orderMutationsForPush(await input.repository.claimPending(200))
+    checkCurrent()
     if (claimed.length > 0) {
-      const pushed = await input.api.pushChanges({ serverDeviceId: input.serverDeviceId, mutations: claimed })
+      const pushed = await input.api.pushChanges({ serverDeviceId: input.serverDeviceId, mutations: claimed }, input.scope)
+      checkCurrent()
       for (const result of pushed.results) {
+        checkCurrent()
         const claimedMutation = result.clientMutationId
           ? claimed.find((mutation) => mutation.clientMutationId === result.clientMutationId)
           : undefined
-        const resourceType = await settlePushResult(input.repository, result)
+        const resourceType = await settlePushResult(input.repository, result, checkCurrent)
         if (resourceType) changedResourceTypes.add(resourceType)
         const rejectedSubjectDelete = claimedMutation?.resourceType === 'SUBJECT'
           && claimedMutation.mutationType === 'DELETE'
           && result.decision !== 'APPLIED'
           && result.decision !== 'PROCESSING'
         if (rejectedSubjectDelete && input.repository.resolveRejectedSubjectDelete) {
+          checkCurrent()
           const restored = await input.repository.resolveRejectedSubjectDelete({
             clientMutationId: claimedMutation.clientMutationId,
             remoteValue: result.current,
             remoteVersion: resourceVersion(result.current, claimedMutation.baseVersion),
           })
+          checkCurrent()
           if (restored) {
             // A rejected parent cascade must be reconciled from a fresh server
             // snapshot. This repopulates remote children and prevents startup
             // hydration from immediately re-tombstoning the restored Subject.
-            const snapshot = await input.api.getSnapshot()
+            const snapshot = await input.api.getSnapshot(input.scope)
+            checkCurrent()
             await input.repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
+            checkCurrent()
             await input.repository.saveCursor(snapshot.snapshotCursor, false)
+            checkCurrent()
             changedResourceTypes.add('SUBJECT')
             changedResourceTypes.add('SOURCE')
             changedResourceTypes.add('KNOWLEDGE_BLOCK')
@@ -200,10 +255,20 @@ export async function runSyncCycle(input: SyncCycleInput): Promise<SyncCycleResu
       }
     }
   } catch (error) {
-    await input.repository.releaseInflight(claimed.map((mutation) => mutation.clientMutationId))
+    if (claimed.length > 0) await input.repository.releaseInflight(claimed.map((mutation) => mutation.clientMutationId))
     throw error
   }
-  const pulled = await pullToCursor(input.repository, input.api)
+  let pulled: { cursor: string | null; changedResourceTypes: Set<SyncResourceType> }
+  try {
+    pulled = await pullToCursor(input.repository, input.api, input.scope, checkCurrent)
+  } catch (error) {
+    const isCurrent = input.isCurrent ?? input.scope?.isCurrent
+    if (claimed.length > 0 && isCurrent && !isCurrent()) {
+      await input.repository.releaseInflight(claimed.map((mutation) => mutation.clientMutationId))
+    }
+    throw error
+  }
+  checkCurrent()
   for (const resourceType of pulled.changedResourceTypes) changedResourceTypes.add(resourceType)
   return { changedResourceTypes, cursor: pulled.cursor }
 }

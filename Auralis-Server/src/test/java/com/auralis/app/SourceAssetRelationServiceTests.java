@@ -295,7 +295,7 @@ class SourceAssetRelationServiceTests {
         assertThat(textSource.ingestionStatus().name()).isEqualTo("PENDING");
 
         knowledgeBlockService.create(owner.user().id(), new KnowledgeBlockCommand(
-                subject.id(), textSource.id(), "Linked block", null, "body", List.of(), null));
+                subject.id(), textSource.id(), "Linked block", "body", null));
 
         assertThatThrownBy(() -> sourceService.create(other.user().id(), new SourceCommand(
                 subject.id(), SourceType.TEXT, "Cross-user", null, null, "raw text", null)))

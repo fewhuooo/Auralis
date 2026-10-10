@@ -72,7 +72,8 @@
 
     <!-- Subject Create/Edit Modal -->
     <SubjectCreateModal
-      v-if="showSubjectModal"
+      v-model="showSubjectModal"
+      :saving="isSavingSubject"
       :subjectData="selectedSubjectForEdit || undefined"
       @close="closeCreateSubject"
       @save="handleSaveSubject"
@@ -96,6 +97,7 @@ const subjectStore = useSubjectStore()
 
 const showSubjectModal = ref(false)
 const selectedSubjectForEdit = ref<Subject | null>(null)
+const isSavingSubject = ref(false)
 const searchQuery = ref('')
 
 const filteredSubjects = computed(() => {
@@ -119,28 +121,64 @@ onMounted(async () => {
 })
 
 const openCreateSubject = (subject: Subject | null) => {
+  if (isSavingSubject.value) return
   selectedSubjectForEdit.value = subject
   showSubjectModal.value = true
 }
 
 const closeCreateSubject = () => {
+  if (isSavingSubject.value) return
   showSubjectModal.value = false
-  selectedSubjectForEdit.value = null
+  setTimeout(() => {
+    if (!showSubjectModal.value) {
+      selectedSubjectForEdit.value = null
+    }
+  }, 240)
 }
 
 const handleSaveSubject = async (formData: any) => {
+  if (isSavingSubject.value) return
+  isSavingSubject.value = true
+  let closeAfterSave = false
+  let createdSubjectId: string | null = null
   try {
     if (formData.id) {
-      await subjectStore.updateSubject(formData)
+      const existing = subjectStore.subjects.find(s => s.id === formData.id)
+      if (!existing) {
+        ElNotification({
+          title: '无法保存学科空间',
+          message: '该学科已不存在，请刷新后重试。',
+          type: 'error',
+          position: 'top-right'
+        })
+        return
+      }
+      await subjectStore.updateSubject({
+        ...existing,
+        name: formData.name,
+        description: formData.description,
+        iconKey: formData.icon,
+        version: formData.version
+      })
+      closeAfterSave = true
     } else {
-      const newId = await subjectStore.addSubject(formData.name, formData.description, formData.icon)
-      closeCreateSubject()
-      router.push(`/subject/${newId}`)
-      return
+      createdSubjectId = await subjectStore.addSubject(formData.name, formData.description, formData.icon)
+      closeAfterSave = true
     }
-    closeCreateSubject()
   } catch (e) {
     console.error('Failed to save subject:', e)
+    ElNotification({
+      title: '学科空间保存失败',
+      message: '更改未能保存，请重试。表单内容仍保留。',
+      type: 'error',
+      position: 'top-right'
+    })
+  } finally {
+    isSavingSubject.value = false
+  }
+  if (closeAfterSave) {
+    closeCreateSubject()
+    if (createdSubjectId) router.push(`/subject/${createdSubjectId}`)
   }
 }
 

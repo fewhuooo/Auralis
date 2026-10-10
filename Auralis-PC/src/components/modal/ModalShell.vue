@@ -1,6 +1,6 @@
 <template>
   <Teleport :to="teleportTo" :disabled="!teleport">
-    <Transition name="modal-fade" @after-enter="onAfterEnter" @after-leave="onAfterLeave">
+    <Transition name="modal-fade" appear @after-enter="onAfterEnter" @after-leave="onAfterLeave">
       <div
         v-if="modelValue"
         class="modal-shell-overlay"
@@ -130,18 +130,21 @@ let previousActiveElement: HTMLElement | null = null
 
 const sizeClass = computed(() => `modal-size-${props.size}`)
 
-const effectiveAriaLabelledBy = computed(() => {
-  if (props.ariaLabelledBy) return props.ariaLabelledBy
-  return props.title ? titleId : undefined
-})
-
 const effectiveAriaLabel = computed(() => {
-  if (effectiveAriaLabelledBy.value) return undefined
   if (props.ariaLabel) return props.ariaLabel
   if (typeof attrs['aria-label'] === 'string' && attrs['aria-label'].trim()) {
     return attrs['aria-label']
   }
+  if (!props.ariaLabelledBy && props.title) return props.title
   return undefined
+})
+
+const effectiveAriaLabelledBy = computed(() => {
+  if (props.ariaLabelledBy) return props.ariaLabelledBy
+  if (props.ariaLabel || (typeof attrs['aria-label'] === 'string' && attrs['aria-label'].trim())) {
+    return undefined
+  }
+  return props.title ? titleId : undefined
 })
 
 const requestClose = async () => {

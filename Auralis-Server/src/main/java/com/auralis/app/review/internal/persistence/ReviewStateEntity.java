@@ -22,6 +22,14 @@ public class ReviewStateEntity {
     private Instant lastReviewedAt;
     private int reps;
     private int lapses;
+    private boolean needsLearning;
+    private boolean mastered;
+    private int stableSuccessCount;
+    private String nextReviewStage;
+    private Instant lastPracticeAt;
+    private UUID lastReviewId;
+    private UUID pendingReviewId;
+    private String contentHash;
     @Version
     private long version;
     private Instant createdAt;
@@ -53,6 +61,34 @@ public class ReviewStateEntity {
         this.updatedAt = Instant.now();
     }
 
+    public void applyLifecycle(double stability, Instant dueAt, Instant practiceAt,
+                               boolean needsLearning, boolean mastered, int stableSuccessCount,
+                               String nextReviewStage, UUID lastReviewId, UUID pendingReviewId,
+                               String contentHash) {
+        this.stability = stability;
+        this.dueAt = dueAt;
+        this.lastPracticeAt = practiceAt;
+        this.needsLearning = needsLearning;
+        this.mastered = mastered;
+        this.stableSuccessCount = stableSuccessCount;
+        this.nextReviewStage = nextReviewStage;
+        this.lastReviewId = lastReviewId;
+        this.pendingReviewId = pendingReviewId;
+        this.contentHash = contentHash;
+        this.updatedAt = Instant.now();
+    }
+
+    public void invalidateForContent(String newContentHash) {
+        this.needsLearning = true;
+        this.mastered = false;
+        this.stableSuccessCount = 0;
+        this.nextReviewStage = "EARLY_RECALL";
+        this.lastReviewId = null;
+        this.pendingReviewId = null;
+        this.contentHash = newContentHash;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public UUID getKnowledgeBlockId() { return knowledgeBlockId; }
@@ -63,6 +99,14 @@ public class ReviewStateEntity {
     public Instant getLastReviewedAt() { return lastReviewedAt; }
     public int getReps() { return reps; }
     public int getLapses() { return lapses; }
+    public boolean isNeedsLearning() { return needsLearning; }
+    public boolean isMastered() { return mastered; }
+    public int getStableSuccessCount() { return stableSuccessCount; }
+    public String getNextReviewStage() { return nextReviewStage; }
+    public Instant getLastPracticeAt() { return lastPracticeAt; }
+    public UUID getLastReviewId() { return lastReviewId; }
+    public UUID getPendingReviewId() { return pendingReviewId; }
+    public String getContentHash() { return contentHash; }
     public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

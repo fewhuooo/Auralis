@@ -30,14 +30,8 @@ public class KnowledgeBlockEntity {
     @Column(nullable = false, length = 240)
     private String title;
 
-    @Column(length = 4000)
-    private String summary;
-
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
-
-    @Column(nullable = false, columnDefinition = "TEXT")
-    private String tags;
 
     @Column(name = "color_override", length = 32)
     private String colorOverride;
@@ -64,18 +58,14 @@ public class KnowledgeBlockEntity {
             UUID subjectId,
             UUID sourceId,
             String title,
-            String summary,
             String content,
-            String tags,
             String colorOverride) {
         this.id = id;
         this.userId = userId;
         this.subjectId = subjectId;
         this.sourceId = sourceId;
         this.title = title;
-        this.summary = summary;
         this.content = content;
-        this.tags = tags;
         this.colorOverride = colorOverride;
     }
 
@@ -84,9 +74,6 @@ public class KnowledgeBlockEntity {
         Instant now = Instant.now();
         if (id == null) {
             id = UUID.randomUUID();
-        }
-        if (tags == null) {
-            tags = "[]";
         }
         createdAt = now;
         updatedAt = now;
@@ -102,22 +89,18 @@ public class KnowledgeBlockEntity {
     public UUID getSubjectId() { return subjectId; }
     public UUID getSourceId() { return sourceId; }
     public String getTitle() { return title; }
-    public String getSummary() { return summary; }
     public String getContent() { return content; }
-    public String getTags() { return tags; }
     public String getColorOverride() { return colorOverride; }
     public long getVersion() { return version; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
 
-    public void update(UUID subjectId, UUID sourceId, String title, String summary, String content, String tags, String colorOverride) {
+    public void update(UUID subjectId, UUID sourceId, String title, String content, String colorOverride) {
         this.subjectId = subjectId;
         this.sourceId = sourceId;
         this.title = title;
-        this.summary = summary;
         this.content = content;
-        this.tags = tags == null ? "[]" : tags;
         this.colorOverride = colorOverride;
     }
 

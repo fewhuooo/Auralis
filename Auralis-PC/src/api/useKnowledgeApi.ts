@@ -5,12 +5,10 @@ type GeneratedResponse = components['schemas']['Response']
 
 export type KnowledgeBlockView = Pick<
   GeneratedResponse,
-  'id' | 'subjectId' | 'title' | 'description' | 'version' | 'createdAt' | 'updatedAt' | 'deletedAt'
+  'id' | 'subjectId' | 'title' | 'version' | 'createdAt' | 'updatedAt' | 'deletedAt'
 > & {
   sourceId?: string
-  summary?: string
   content?: string
-  tags?: string[]
   colorOverride?: string
 }
 
@@ -19,9 +17,7 @@ export interface KnowledgeBlockCreateRequest {
   subjectId: string
   sourceId?: string
   title: string
-  summary?: string
   content: string
-  tags?: string[]
   colorOverride?: string
 }
 

@@ -1,5 +1,13 @@
 # 基础设施与数据服务模块
 
+### 2026-10-08 PC Docker 依赖下载中断（隔离镜像重试通过；运行容器未切换）
+
+- 用户 Buildx 记录 `37i8gaymoqh4tmohdcvjdqkuy` 在 `Auralis-PC/Dockerfile:8` 的 `npm install` 因 `ECONNRESET` / `network aborted` 退出 1。
+- 在仓库根目录执行 `docker buildx build --progress plain --file Auralis-PC/Dockerfile Auralis-PC`，2026-10-08 08:52:29–08:55:51（香港时间），退出 0；安装 435 个包，前端编译与 47/47 renderer 资产复制完成，镜像导出成功。
+- 输出已进入本地 image store，manifest list ID 为 `sha256:9b850ace4ed9868e7784902ab1a15963c491eeb608c6ff64527ff3aa306693c9`，是无仓库标签的验证镜像。没有执行容器启动或替换；backend/frontend/db/minio 仍运行原容器，数据卷未操作。此结果只证明前端镜像可构建，不证明后端新接口已加载或真实业务已验收。
+- Dockerfile、package.json、package-lock.json 和 .dockerignore 保持本轮开始时 hash；未修改依赖、锁文件、网络/代理配置。现有 Node engine 警告及锁文件根依赖映射漂移另在 Issues 登记，未作为本次失败原因或顺手修改。
+- 原失败、成功构建、metadata、镜像与容器证据位于 `C:/Users/Gnasche/AppData/Local/Temp/auralis-frontend-docker-install-20261008/evidence/`。Docker 当前可用不代表已重新验证此前 Maven 容器测试错误。
+
 2026-09-24 紧邻任务交换部署：仅重建并重启本机 Compose `backend`，最终容器 `72be6c8240a8…`、镜像 `sha256:bf8e7bb72f0c…`，health/readiness HTTP 200 且 status UP。启动日志验证 PostgreSQL 17.11、23 项 Flyway migration，schema 仍为 23；db/minio 容器 ID 与镜像 ID 均未变，未重建卷。GUI 拖放和认证业务请求尚未验收。
 
 2026-09-24：Timeline 主体放置修复后仅重建并重启本机 Compose `backend`，容器 `ee3d733c00c8…`、镜像 `sha256:80d303401599…`，health/readiness 均为 UP。Flyway 从 22 升至 23，`flyway_schema_history` 中 V23 `success=true`；db/minio 容器 ID 未变化、均 healthy，未重建卷。认证业务请求与 GUI 拖放未验收。

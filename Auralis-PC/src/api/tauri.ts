@@ -24,6 +24,9 @@ export const invokeRustCmd = async <T>(command: string, args?: Record<string, un
   }
 }
 
+export const initializeLocalDatabasePool = (): Promise<void> =>
+  invokeRustCmd<void>('initialize_local_database_pool')
+
 export const MAX_OCR_IMAGE_BYTES = 20 * 1024 * 1024
 export const MAX_OCR_TIMEOUT_MS = 120_000
 

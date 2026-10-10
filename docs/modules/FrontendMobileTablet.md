@@ -1,5 +1,9 @@
 # Mobile / Tablet 前端模块
 
+2026-10-09 共享生成 SDK 随离线复习补传契约更新：生命周期可选 occurredAt/expectedStateAbsent、history protocolVersion、初选 schedulingBaseline 与 legacy firstLearning。PC/Mobile schema 由同一运行时 OpenAPI 生成且 hash 一致，Mobile 本轮没有新增运行时调用、离线 Review 队列或页面，不把共享类型更新视为手机已实现本地新机制。
+
+2026-10-01 必要知识块契约适配：`useSyncStore` 不再向 Server 发送已删除的 summary/tags；本地完整 preview 继续映射为 content，接收端仅将 content 映射回 preview，避免旧 summary 截断正文。端侧 preview/tag 存储与现有页面保留，未新增专注历史 API 或 Overview results 展示。生成 SDK 随共享 OpenAPI 更新；因此暴露的现行上传契约 `clientImportId` 必填调用缺口已在 `assetUpload.ts` 最小补齐，每次操作使用一个 UUID，并可由调用方传入稳定 ID 重试，未新增页面或持久状态。Mobile type-check 退出 0，协议检查 23/23；真实设备未验收。
+
 2026-09-24 API 类型同步：从当前 OpenAPI artifact 重新生成 PC/Mobile `schema.ts`，`ScheduleInsertionRequest` 新增可选 `targetTaskId`。Mobile 运行时未调用该主体放置模式，现有请求仍使用无目标 ID 的普通插入语义。
 
 2026-09-23 OpenAPI Task schedule insertion types 同步：`api/generated/schema.ts` 增加 `/api/tasks/schedule-insertions` 请求与响应 DTO；Mobile/Tablet 未接入该端点，运行时行为不变。

@@ -233,10 +233,10 @@
           v-for="day in timelineDays"
           :key="day.dateKey"
           class="weekly-column"
-          :class="{ 'is-today': day.isToday, 'drag-over': dragOverDay === day.dayCode }"
-          @dragover.prevent="dragOverDay = day.dayCode"
+          :class="{ 'is-today': day.isToday, 'drag-over': dragOverDay === day.dateKey }"
+          @dragover.prevent="dragOverDay = day.dateKey"
           @dragleave.prevent="dragOverDay = null"
-          @drop.prevent="handleDropOnDay(day.dayCode)"
+          @drop.prevent="handleDropOnDay(day.dateKey)"
           >
           <div class="weekly-column-header">
             <span class="day-dot" v-if="day.isToday">今</span>
@@ -334,7 +334,7 @@ import {
 } from '@tabler/icons-vue'
 
 import { useTaskStore, DAY_CODES, type Task } from '@/store/useTaskStore'
-import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, comparePendingTasks } from '@/services/taskViewRules'
+import { getTasksForTimeline, getTimelineDays, isCompletedScheduledTask, comparePendingTasks, parseDueTimestamp } from '@/services/taskViewRules'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useKnowledgeStore } from '@/store/useKnowledgeStore'
 import TaskCreateDialog from '@/components/task/TaskCreateDialog.vue'
@@ -359,7 +359,7 @@ const nextWeekNow = computed(() => {
 const nextWeekTimelineDays = computed(() => getTimelineDays(nextWeekNow.value))
 const allTimelineDays = computed(() => [...timelineDays.value, ...nextWeekTimelineDays.value])
 
-const selectedDateKey = ref<string>('')
+const selectedDateKey = ref<string>(/^\d{4}-\d{2}-\d{2}$/.test(selectedDay.value) ? selectedDay.value : '')
 
 const selectedTimelineDay = computed(() => {
   if (selectedDateKey.value) {
@@ -472,7 +472,6 @@ onMounted(async () => {
   await taskStore.fetchTasks()
   await subjectStore.loadSubjects()
   await knowledgeStore.fetchBlocks()
-  await checkSpacedRepetition()
 })
 
 onUnmounted(() => {
@@ -721,7 +720,8 @@ const getBlockTitle = (blockId: string): string => {
 
 const isTaskOverdue = (dueAt?: string): boolean => {
   if (!dueAt) return false
-  return new Date(dueAt).getTime() < taskStore.currentNow.getTime()
+  const due = parseDueTimestamp(dueAt)
+  return Number.isFinite(due) && due < taskStore.currentNow.getTime()
 }
 
 const formatTaskDue = (dueAt?: string): string => {
@@ -729,49 +729,6 @@ const formatTaskDue = (dueAt?: string): string => {
   const d = new Date(dueAt)
   if (Number.isNaN(d.getTime())) return ''
   return `${d.getMonth() + 1}/${d.getDate()} 截止`
-}
-
-// Spaced Repetition Daily reminder checks
-const checkSpacedRepetition = async () => {
-  const todayStr = new Date().toISOString().split('T')[0] // 'yyyy-MM-dd'
-  const dueBlocks = recentBlocks.value.filter(b => b.reviewAt && b.reviewAt <= todayStr)
-  
-  let createdCount = 0
-  for (const block of dueBlocks) {
-    const taskName = `复习: ${block.title}`
-    const exists = pendingTasks.value.some(t => t.name === taskName) || timeSlots.value.some(s => s.task?.name === taskName)
-    
-    if (!exists && block.id && block.subjectId) {
-      await taskStore.addTask({
-        name: taskName,
-        subject: block.subject,
-        desc: `艾宾浩斯复习曲线到期推荐。\n[KB_ID:${block.id}]`,
-        duration: 30,
-        status: 'pending',
-        subjectId: block.subjectId
-      })
-      
-      // Compute next interval (e.g. +3 days) to avoid repeated creation today
-      const nextDate = new Date()
-      nextDate.setDate(nextDate.getDate() + 3)
-      await knowledgeStore.updateBlock({
-        ...block,
-        reviewAt: nextDate.toISOString().split('T')[0]
-      })
-      createdCount++
-    }
-  }
-
-  if (createdCount > 0) {
-    ElNotification({
-      title: '⏰ 遗忘曲线复习推荐',
-      message: `今日有 ${createdCount} 个待复习概念到期，已为您自动在待办任务中生成复习日程。`,
-      type: 'info',
-      position: 'top-right',
-      duration: 6000
-    })
-    await taskStore.loadLocalTasks()
-  }
 }
 
 // Related Block Detail Dialog trigger
@@ -837,6 +794,8 @@ const handleCreateTask = async (taskData: {
   subjectId: string
   subjectName: string
   duration: number
+  due?: string
+  dueAt?: string
   desc?: string
   relatedBlockId?: string
 }) => {
@@ -856,7 +815,8 @@ const handleCreateTask = async (taskData: {
     duration: newTaskForm.value.duration || 60,
     desc: finalDesc,
     status: 'pending' as const,
-    subjectId: taskData.subjectId
+    subjectId: taskData.subjectId,
+    dueAt: taskData.dueAt,
   }
 
   await taskStore.addTask(newTask)
@@ -2032,7 +1992,7 @@ html.dark .weekly-bottom-dock {
   transform: translate(-50%, -50%);
   width: 90%;
   max-width: 520px;
-  background: var(--color-bg-tertiary, #FAF7F2);
+  background: var(--color-bg-primary, #F7F2EB);
   border-radius: 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04);
   border: 1px solid var(--border-subtle);
@@ -2044,7 +2004,7 @@ html.dark .weekly-bottom-dock {
 }
 
 html.dark .modal-container {
-  background: #181D18;
+  background: var(--color-bg-primary, #1f1e1c);
   border-color: rgba(163, 177, 155, 0.25);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
