@@ -1,8 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { IconAlertTriangle, IconArrowLeft, IconRefresh } from '@tabler/icons-vue'
 import type { OverviewSummary } from '@/types/overview'
-import SummaryInstructionDialog from './SummaryInstructionDialog.vue'
 
 const props = withDefaults(defineProps<{
   title: string
@@ -12,8 +10,7 @@ const props = withDefaults(defineProps<{
   isStale?: boolean
   error?: string | null
 }>(), { kind: 'file', isGenerating: false, isStale: false, error: null })
-const emit = defineEmits<{ close: []; regenerate: [instruction?: string] }>()
-const showInstruction = ref(false)
+const emit = defineEmits<{ close: []; regenerate: [instruction?: string]; stop: [] }>()
 </script>
 
 <template>
@@ -22,12 +19,11 @@ const showInstruction = ref(false)
       <button type="button" class="summary-back" @click="emit('close')"><IconArrowLeft :size="15" :stroke-width="1.6" />返回文件</button>
       <div class="summary-title"><small>{{ kind === 'subject' ? '学科总结' : '文件总结' }}</small><strong>{{ title }}</strong></div>
       <div class="summary-actions">
+        <button v-if="isGenerating" type="button" aria-label="停止当前总览生成" @click="emit('stop')">停止</button>
         <button v-if="!error" type="button" :disabled="isGenerating" @click="emit('regenerate')"><IconRefresh v-if="isGenerating" :size="13" :stroke-width="1.6" class="is-spinning" />重新生成</button>
-        <button type="button" :disabled="isGenerating" @click="showInstruction = true">调整要求</button>
       </div>
     </header>
     <div class="overview-summary-view__body">
-      <p v-if="isGenerating && summary" class="summary-notice">正在生成新版本，当前总结继续保留。</p>
       <p v-if="isStale && !isGenerating" class="summary-notice"><IconAlertTriangle :size="13" :stroke-width="1.6" />资料已更新，当前总结可能过期。</p>
       <p v-if="error" class="summary-notice summary-notice--error">
         <IconAlertTriangle :size="13" :stroke-width="1.6" />
@@ -49,11 +45,6 @@ const showInstruction = ref(false)
         <article><h3>推荐学习路径</h3><div class="learning-path"><span v-for="(step, index) in summary.learningPath" :key="step"><b>{{ index + 1 }}</b>{{ step }}</span></div></article>
       </div>
     </div>
-    <SummaryInstructionDialog
-      v-model="showInstruction"
-      :maxlength="2000"
-      @submit="(instruction) => emit('regenerate', instruction)"
-    />
   </section>
 </template>
 

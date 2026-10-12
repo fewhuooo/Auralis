@@ -4,6 +4,13 @@ import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiProviderDiscoveryService;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiSettingsService;
+import com.auralis.app.ai.AiProviderRequest;
+import com.auralis.app.ai.AiProviderResponse;
+import com.auralis.app.ai.AiProviderChunk;
+import com.auralis.app.ai.EmbeddingResult;
+import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiInvocationResult;
+import com.auralis.app.ai.usage.AiTaskScope;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpException;
@@ -18,6 +25,8 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -67,7 +76,11 @@ class AiProviderDiscoveryServiceTests {
         };
 
         AiProviderDiscoveryService service = new AiProviderDiscoveryService(settings, endpointPolicy,
-                new ProviderHttpClient(new ObjectMapper(), transport, 4096));
+                new ProviderHttpClient(new ObjectMapper(), transport, 4096), gateway(request -> {
+                    assertThat(request.model()).isEqualTo("configured-model");
+                    assertThat(request.maxTokens()).isEqualTo(1);
+                    return new AiProviderResponse("OK", null, null, null);
+                }));
 
         var models = service.listModels(USER_ID, PROVIDER);
         var tested = service.testConnection(USER_ID, PROVIDER);
@@ -96,7 +109,10 @@ class AiProviderDiscoveryServiceTests {
             }
         };
         AiProviderDiscoveryService service = new AiProviderDiscoveryService(settings, endpointPolicy,
-                new ProviderHttpClient(new ObjectMapper(), transport, 4096));
+                new ProviderHttpClient(new ObjectMapper(), transport, 4096), gateway(request -> {
+                    throw new DomainException("MODEL_PROVIDER_ERROR",
+                            "AI provider rejected the selected chat model or request");
+                }));
 
         assertThatThrownBy(() -> service.testConnection(USER_ID, PROVIDER))
                 .isInstanceOf(DomainException.class)
@@ -104,5 +120,29 @@ class AiProviderDiscoveryServiceTests {
                 .hasMessageNotContaining(API_KEY)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("MODEL_PROVIDER_ERROR");
+    }
+
+    private AiInvocationGateway gateway(java.util.function.Function<AiProviderRequest, AiProviderResponse> complete) {
+        return context -> new AiTaskScope() {
+            @Override public <T> AiInvocationResult<T> metadata(
+                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, String model, Supplier<T> operation) {
+                return new AiInvocationResult<>(operation.get(), null);
+            }
+            @Override public AiInvocationResult<AiProviderResponse> complete(
+                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, AiProviderRequest request,
+                    AiCredential credential, long timeout) {
+                return new AiInvocationResult<>(complete.apply(request), null);
+            }
+            @Override public AiInvocationResult<Void> stream(
+                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, AiProviderRequest request,
+                    AiCredential credential, Consumer<AiProviderChunk> sink) {
+                throw new UnsupportedOperationException();
+            }
+            @Override public AiInvocationResult<EmbeddingResult> embed(
+                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, String model, List<String> texts,
+                    AiCredential credential) { throw new UnsupportedOperationException(); }
+            @Override public com.auralis.app.ai.usage.AiProviderUsage usage() { return null; }
+            @Override public void close() { }
+        };
     }
 }

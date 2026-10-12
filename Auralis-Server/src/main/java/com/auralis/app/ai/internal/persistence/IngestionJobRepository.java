@@ -34,7 +34,8 @@ public interface IngestionJobRepository extends JpaRepository<IngestionJobEntity
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select job from IngestionJobEntity job
-            where job.status = :pendingStatus
+            where (job.status = :pendingStatus
+                   and (job.nextAttemptAt is null or job.nextAttemptAt <= :now))
                or (job.status in :leasedStatuses
                    and job.leaseUntil is not null
                    and job.leaseUntil <= :now)

@@ -8,9 +8,7 @@ import com.auralis.app.knowledge.KnowledgeBlockCommand;
 import com.auralis.app.knowledge.KnowledgeBlockService;
 import com.auralis.app.review.ReviewContentHash;
 import com.auralis.app.review.ReviewLifecycleDtos;
-import com.auralis.app.review.ReviewRating;
 import com.auralis.app.review.ReviewLifecycleRating;
-import com.auralis.app.review.ReviewDtos;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
 import org.junit.jupiter.api.Test;
@@ -78,13 +76,10 @@ class ReviewLifecycleServiceTests {
         assertThat(today.path("learningCompletionCount").longValue()).isEqualTo(1);
         assertThat(today.path("distinctStudiedKnowledgeBlockCount").longValue()).isEqualTo(1);
 
-        String beforeDue = Instant.parse(state.path("dueAt").asText()).minusSeconds(1).toString();
-        mockMvc.perform(get("/api/reviews/due")
-                        .header("Authorization", owner.authorization())
-                        .param("at", beforeDue))
-                .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content()
-                        .json("[]"));
+        JsonNode states = subjectStates(owner, subjectId);
+        assertThat(states.path("items").size()).isEqualTo(1);
+        assertThat(Instant.parse(states.path("items").get(0).path("dueAt").asText()))
+                .isEqualTo(Instant.parse(state.path("dueAt").asText()));
     }
 
     @Test
@@ -379,36 +374,6 @@ class ReviewLifecycleServiceTests {
         assertThat(Instant.parse(corrected.path("state").path("dueAt").asText()))
                 .isEqualTo(correctedAt.plus(10, ChronoUnit.MINUTES));
         assertThat(corrected.path("effectiveReview").path("effectiveRating").asText()).isEqualTo("AGAIN");
-    }
-
-    @Test
-    void legacyHistoryPublishesBeforeStateDerivedFirstLearningAndPreservesSkipDuration() throws Exception {
-        Owner owner = owner("legacy-history-import");
-        UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand(
-                "Legacy history subject", null, null, "001")).id();
-        var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
-                subjectId, null, "Legacy history block", "body", null));
-        Instant firstAt = Instant.now().minus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
-        postLegacyEvent(owner, new ReviewDtos.EventRequest(UUID.randomUUID(), block.id(), ReviewRating.GOOD,
-                firstAt, 17, 0));
-        var current = history(owner, block.id()).path("state");
-        Instant skipAt = firstAt.plus(1, ChronoUnit.MINUTES);
-        postLegacyEvent(owner, new ReviewDtos.EventRequest(UUID.randomUUID(), block.id(), ReviewRating.SKIP,
-                skipAt, 23, current.path("version").longValue()));
-
-        String content = mockMvc.perform(get("/api/reviews/history")
-                        .header("Authorization", owner.authorization())
-                        .param("knowledgeBlockId", block.id().toString()))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
-        JsonNode events = objectMapper.readTree(content);
-        assertThat(events.size()).isEqualTo(2);
-        assertThat(events.get(0).has("firstLearning")).isTrue();
-        assertThat(events.get(0).path("firstLearning").booleanValue()).isTrue();
-        assertThat(events.get(0).path("durationSeconds").intValue()).isEqualTo(17);
-        assertThat(events.get(1).path("firstLearning").booleanValue()).isFalse();
-        assertThat(events.get(1).path("rating").asText()).isEqualTo("SKIP");
-        assertThat(events.get(1).path("durationSeconds").intValue()).isEqualTo(23);
     }
 
     @Test
@@ -736,11 +701,8 @@ class ReviewLifecycleServiceTests {
         assertThat(afterContent.path("mastered").booleanValue()).isFalse();
         assertThat(afterContent.path("stableSuccessCount").intValue()).isZero();
         assertThat(afterContent.path("lastReviewId").isNull()).isTrue();
-        mockMvc.perform(get("/api/reviews/due")
-                        .header("Authorization", owner.authorization())
-                        .param("at", Instant.now().plus(1, ChronoUnit.DAYS).toString()))
-                .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().json("[]"));
+        JsonNode states = subjectStates(owner, subjectId);
+        assertThat(states.path("items").get(0).path("needsLearning").booleanValue()).isTrue();
     }
 
     @Test
@@ -766,54 +728,12 @@ class ReviewLifecycleServiceTests {
                         attempt.path("state").path("version").longValue(), block.content()));
         assertThat(graduated.path("state").path("mastered").booleanValue()).isTrue();
         assertThat(graduated.path("state").path("nextReviewStage").isNull()).isTrue();
-        mockMvc.perform(get("/api/reviews/due")
-                        .header("Authorization", owner.authorization())
-                        .param("at", Instant.now().plus(365, ChronoUnit.DAYS).toString()))
-                .andExpect(status().isOk())
-                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().json("[]"));
+        JsonNode states = subjectStates(owner, subjectId);
+        assertThat(states.path("items").get(0).path("mastered").booleanValue()).isTrue();
         JsonNode stats = subjectStats(owner, subjectId);
         assertThat(stats.path("overview").path("masteredCount").longValue()).isEqualTo(1);
         assertThat(stats.path("overview").path("reviewingCount").longValue()).isZero();
         assertThat(stats.path("overview").path("pendingLearningCount").longValue()).isZero();
-    }
-
-    @Test
-    void legacyRatingInvalidatesPendingAndCorrectionChainWithoutGrantingMastery() throws Exception {
-        Owner owner = owner("legacy-lifecycle-boundary");
-        UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand(
-                "Legacy subject", null, null, "001")).id();
-        var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
-                subjectId, null, "Legacy block", "body", null));
-        JsonNode learning = postCommand(owner, "/api/reviews/lifecycle/learning-completions",
-                learningCompletion(UUID.randomUUID(), block.id(), block.version(), 0, block.content(), null));
-        UUID reviewId = UUID.randomUUID();
-        JsonNode pending = postCommand(owner, "/api/reviews/lifecycle/attempts", attempt(
-                UUID.randomUUID(), block.id(), block.version(), learning.path("state").path("version").longValue(),
-                block.content(), reviewId, ReviewLifecycleRating.GOOD));
-
-        Instant reviewedAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        UUID clientEventId = UUID.randomUUID();
-        var legacyHard = new ReviewDtos.EventRequest(clientEventId, block.id(), ReviewRating.HARD,
-                reviewedAt, 15, pending.path("state").path("version").longValue());
-        JsonNode legacy = postLegacyEvent(owner, legacyHard);
-        assertThat(legacy.path("state").path("needsLearning").booleanValue()).isFalse();
-        assertThat(legacy.path("state").path("mastered").booleanValue()).isFalse();
-        assertThat(legacy.path("state").path("stableSuccessCount").intValue()).isZero();
-        assertThat(Instant.parse(legacy.path("state").path("lastPracticeAt").asText())).isEqualTo(reviewedAt);
-        assertThat(legacy.path("state").path("pendingReviewId").isNull()).isTrue();
-
-        JsonNode legacyReplay = postLegacyEvent(owner, legacyHard);
-        assertThat(legacyReplay.path("state")).isEqualTo(legacy.path("state"));
-        JsonNode history = history(owner, block.id());
-        assertThat(history.path("effectiveReviews").get(0).path("resolution").asText()).isEqualTo("SUPERSEDED");
-
-        Instant againAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        JsonNode again = postLegacyEvent(owner, new ReviewDtos.EventRequest(UUID.randomUUID(), block.id(),
-                ReviewRating.AGAIN, againAt, 0, legacy.path("state").path("version").longValue()));
-        assertThat(again.path("state").path("needsLearning").booleanValue()).isTrue();
-        assertThat(again.path("state").path("mastered").booleanValue()).isFalse();
-        assertThat(again.path("state").path("stableSuccessCount").intValue()).isZero();
-        assertThat(again.path("state").path("lastReviewId").isNull()).isTrue();
     }
 
     private JsonNode postCommand(Owner owner, String path, String json) throws Exception {
@@ -830,16 +750,6 @@ class ReviewLifecycleServiceTests {
         return postCommand(owner, path, objectMapper.writeValueAsString(request));
     }
 
-    private JsonNode postLegacyEvent(Owner owner, ReviewDtos.EventRequest request) throws Exception {
-        String content = mockMvc.perform(post("/api/reviews/events")
-                        .header("Authorization", owner.authorization())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isCreated())
-                .andReturn().getResponse().getContentAsString();
-        return objectMapper.readTree(content);
-    }
-
     private JsonNode history(Owner owner, UUID blockId) throws Exception {
         String content = mockMvc.perform(get("/api/reviews/lifecycle/history")
                         .header("Authorization", owner.authorization())
@@ -854,6 +764,15 @@ class ReviewLifecycleServiceTests {
                         .header("Authorization", owner.authorization())
                         .param("days", "7")
                         .param("timeZone", "UTC"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return objectMapper.readTree(content);
+    }
+
+    private JsonNode subjectStates(Owner owner, UUID subjectId) throws Exception {
+        String content = mockMvc.perform(get("/api/reviews/states")
+                        .header("Authorization", owner.authorization())
+                        .param("subjectId", subjectId.toString()))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         return objectMapper.readTree(content);

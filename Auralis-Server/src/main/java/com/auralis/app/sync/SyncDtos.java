@@ -71,7 +71,7 @@ public final class SyncDtos {
             String cursor,
             SyncResourceType resourceType,
             UUID resourceId,
-            SyncMutationType mutationType,
+            SyncChangeMutationType mutationType,
             long version,
             Instant deletedAt,
             JsonNode payload,
@@ -86,7 +86,7 @@ public final class SyncDtos {
                 payload = objectMapper.getNodeFactory().textNode(entry.payload());
             }
             return new ChangeResponse(entry.cursor() == 0 ? null : new SyncCursor(entry.cursor()).encode(),
-                    entry.resourceType(), entry.resourceId(), entry.mutationType(), entry.version(),
+                    entry.resourceType(), entry.resourceId(), SyncChangeMutationType.valueOf(entry.mutationType().name()), entry.version(),
                     entry.deletedAt(), payload, entry.createdAt());
         }
     }

@@ -1,6 +1,6 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-10-09
+更新时间：2026-10-10
 
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
 
@@ -144,6 +144,10 @@ Flyway `V4__sync_schema.sql` 新增 `change_log` 和 `inbound_mutations`。`chan
 
 Sync push 在每条 mutation 的独立事务内先预留幂等键，再完成领域写入、change log 和最终决策，保证领域写入与幂等结果原子提交；同键 hash 不同的 mutation 只返回该条 REJECTED。`V6__sync_atomicity_and_cursor_high_water.sql` 增加 PROCESSING 决策和用户域 cursor 高水位表，cursor 分配使用行锁并在 change log 清理后保持单调。REST 领域服务和 push 通过 shared `ResourceChangedEvent` 进入同一个 change log 记录器；PostgreSQL 并发压力仍未验收。
 
+### 2026-10-12 V31 PC Timeline 排期 Sync 命令
+
+`V31__allow_task_schedule_commands_in_sync.sql` 将 `inbound_mutations.mutation_type` 扩至 `VARCHAR(32)`，并允许 `SCHEDULE_INSERTION`、`SCHEDULE_SWAP`。这两个值只属于 inbound command；`change_log` 的 mutation CHECK 仍仅允许 CRUD，排期命令执行后的 Task 变更照常以 `UPDATE` 记录。PC 本地 repository 在一个数据库事务中写入单条排期 outbox 命令与所有受影响 Task 的乐观投影；未结算命令会为其成员建立本地同步围栏，内部成员 ID 不发送到服务端。浏览器状态改写要求 Web Locks API 并通过同源锁串行化；缺少该 API 时拒绝 localStorage 写入，错误码为 `LOCAL_STORAGE_LOCK_UNAVAILABLE`，避免并发覆盖整份状态。服务端在同一 `REQUIRES_NEW` 幂等事务中调用现有 Task 排期领域服务，并将结果 Task 数组和 mutation 回执一起保存。
+
 ## 阶段 4 Review、Stats、Realtime V5 已实现 schema
 
 Flyway `V5__review_stats_realtime_schema.sql` 新增：
@@ -197,7 +201,7 @@ Asset 不作为 Relation 节点，也不进入普通离线 mutation；Source 才
 
 PC 自动完成在本地原子提交中要求 TASK 行存在且无 `deletedAt`，包含 Subject cascade 不增加子任务版本的墓碑情形；删除标记以本地资源行元数据为准，不能只检查 payload。条件仅作为端侧仓储写入前置校验，不新增持久化字段或同步载荷。
 
-Task 截止值表示约束（2026-10-09）：`dueAt/due_at` 与 TASK mutation 保存带时区的真实 instant；PC 纯日期输入一次转换为当地日末对应的 UTC 值，不持久化纯日期字符串，不改解释已存午夜/UTC日末。资产库以真实时间戳转换出的本地日期显示；未改日期的非时间编辑保留原精确截止值。本次不改数据结构、同步字段或迁移，不批量改写既有数据；旧日期输入造成的错误值可由用户先清空截止日期、再重选并正常保存纠正。
+Task 截止值表示约束（2026-10-11）：`dueAt/due_at` 与 TASK mutation 保存带时区的真实 instant；PC 纯日期输入仅在明确的用户输入边界转换为当地日末对应的 UTC 值，不持久化纯日期字符串。读取与排期校验不把无时区纯日期兼容解释为日末；非空无效或无时区 `dueAt` 会阻止新排期。已有带时区午夜/日末按真实 instant，不推断全天语义。资产库以真实时间戳转换出的本地日期显示；未改日期的非时间编辑保留原精确截止值。本次不改数据结构、同步字段或迁移，不批量改写既有数据；旧日期输入造成的错误值可由用户先清空截止日期、再重选并正常保存纠正。
 
 ### Relation
 
@@ -335,6 +339,7 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - `ai_credentials` 按 `(user_id, provider)` 唯一；API key 只保存 AES-GCM 生成的 `api_key_ciphertext` 和 `key_version`，数据库不保存明文 key。Provider 当前约束为 `DEEPSEEK`、`OPENAI_COMPATIBLE`、`SILICONFLOW`。
 - 2026-09-25：用户 AI 设置 API 不再接收或返回 `embedding_model`；该历史可空列保留，无数据库迁移。入库和检索的 Embedding 解析服务端 SiliconFlow 配置，不读取用户聊天 Provider 的该列。
 - `ingestion_jobs` 保存 Source ingestion 状态、attempt、lease、错误安全摘要及开始/完成时间；当前状态约束为 `PENDING`、`PARSING`、`INDEXING`、`READY`、`FAILED`。worker 通过 `PESSIMISTIC_WRITE` claim-next 选择最早任务，`PARSING/INDEXING` 的过期 lease 可恢复；达到最大 attempt 后进入 `FAILED`，当前不新增 schema 列。
+- 2026-10-10：embedding 分批前/后可在短事务中续租原 claim；锁后核对 job/user/source/generation/revision/ParsedDocument 身份、attempt、活动状态与新鲜 Clock 下尚未过期的 lease。新期限按锁后时间加原租期计算，不能续活过期或已被新 attempt 接管的任务。失去 claim 的旧 worker 不写新 attempt 的失败/完成状态；全部批次有效后才进入既有 fenced generation 原子提交。复用现有字段、索引与约束，没有新增 schema/migration。
 - `source_chunks` 保存 ordinal、正文、SHA-256、字符偏移、兼容性 `embedding_json`、`generation` 和 `active`；唯一键为 `(user_id, source_id, generation, ordinal)`。embedding 业务校验固定为 1024 个有限浮点数。
 - `conversations` 支持用户隔离和软删除；`messages` 保存 `message_sequence`、`role`、`status`、正文、模型和安全错误元数据，按 `(conversation_id, message_sequence)` 唯一；USER 消息可保存 `client_request_id`，按 `(user_id, client_request_id)` 唯一用于安全重试。
 - 2026-10-01：提问请求顶层 selectionText 与现行 readingContext.selectionText 仅参与本次 Provider prompt，不追加到 messages 正文或创建引用列、locator/citation 记录；本轮没有数据库迁移。现有 client_request_id 回放仍返回已持久化结果。
@@ -347,6 +352,19 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - PostgreSQL 写入通过 JDBC 将 1024 维 embedding 同时写入 JSON 兼容列和 vector 列；检索通过带 `user_id`、`active`、未删除 Source 过滤的 pgvector cosine SQL，并由 HNSW 索引支持排序。H2 继续使用活动 generation 的 JSON cosine fallback。
 
 阶段 5/R1 schema 验证：H2 PostgreSQL mode 与默认 Testcontainers PostgreSQL 17/pgvector 验证 Flyway V1→V14、JPA `ddl-auto=validate`；R2 clean/upgrade 两类输入验证 V8 历史 `embedding_json` 在 V9/V11 后得到 `vector`、HNSW 索引和回填结果。R1-04/本轮并发测试验证消息幂等键、失败/断流状态、同请求仅一次 USER 保留、会话恢复键和精确 assistant 关联。
+
+## V30 AI Usage Guard B（2026-10-11，代码、相关自动验证与只读审查通过；未部署）
+
+- `V30__ai_usage_guard.sql` 新增非同步派生账本 `ai_usage_locks` 和 `ai_usage_reservations`；不进入 Sync snapshot、change log 或客户端 mutation。Provider I/O 不持有这些表的事务锁；准入/预留/派发标记先锁真实 ACTIVE users 行再按 GLOBAL → USER → TASK 获取账本锁，续租/结算不反向取 users 锁。真实 PostgreSQL 删除/停用并发先复现死锁再验证最小锁序修复，停用后派发拒绝为现行 UNAUTHENTICATED。派发标记是数据库授权点，不能保证授权后的远端请求被撤销。
+- `ai_usage_locks.scope_key` 为主键，scope_type 只接受 GLOBAL/USER/TASK；GLOBAL 单例没有 user_id，USER/TASK 保存归属、feature、task_key_hash、current_task_id、owner_id 和 lease_until。原始 task key 不落库，任务锁贯穿一整个业务任务的多次 Provider 调用。
+- `ai_usage_reservations` 每次调用一行，包含不透明 task_id、feature/stage/provider/model、estimated_input_tokens、reserved_output_tokens、可空 actual_input_tokens/actual_output_tokens、charged_tokens、request_dispatched、owner_id、lease_until、created_at/settled_at 和安全 error_code。state 只接受 RESERVED/COMPLETED/FAILED/RELEASED/EXPIRED，各 token 非负；actual 的 NULL 表示缺失，不能写零冒充缺失。
+- USER/TASK 锁的用户外键 `ON DELETE CASCADE`；reservation.user_id 可空，用户外键 `ON DELETE SET NULL`。删除账号解除归属，保留匿名已结算或未知派发的计额度调用参与系统每日预算，防止删号返还系统额度；账本不保存正文或凭据。已删除用户不能发起新的用户任务，匿名过期预留依保守结算规则回收。
+- reservation 索引覆盖 `(state,lease_until)`、`(user_id,created_at)`、系统窗口及 `(task_id,created_at)`；UTC 小时/日窗口以调用预留的 created_at 归属，计额度调用的已结算消耗与在途预留共同参与拒绝判定。本人额度 DTO 只读该用户聚合，不公开匿名/系统/其他用户数值。
+- 2026-10-12 统计策略：`INGESTION_EMBEDDING` / `RETRIEVAL_EMBEDDING` 的新旧 reservation 不参与上述用户 / 系统 token 窗口或本人 charged / reserved / remaining。表内 estimated / actual / charged 仍保留为每次调用审计，NULL 不改零，无回填、删除、DDL 或新 migration；task 资源预算 / 调用次数及有效 RESERVED 并发统计仍包含 embedding。详见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。
+- `ingestion_jobs` 新增可空 `next_attempt_at`、非负 `failure_count` 和 `(status,next_attempt_at,created_at)` 到期领取索引。attempt_count 继续作为单调 claim 身份；配额延期不增加 failure_count。升级将 PENDING/FAILED 的历史 attempt_count 计为失败次数，PARSING/INDEXING/READY 计为 `GREATEST(attempt_count-1,0)`，避免重置既有普通重试预算。
+- 已完成 embedding 批次复用本 job + generation 的 inactive `source_chunks`；读取/写入受 user/source/revision/ParsedDocument、ordinal/offset/内容 hash 与有效 claim 绑定，partial generation 不可检索。最终完整提交仍在既有 fenced 事务中一次切换 active，旧成功 generation 在此之前保留。
+
+本节取代旧阶段记录中“当前不新增 schema 列”的现行含义。H2 迁移及历史失败次数回填 3/3、真实 PostgreSQL V1→V30 clean、V29→V30 upgrade 1/1、真实 driver/账户锁序 4/4 及检查点/窗口续做通过。升级测试先在 V29 插入 attempt_count=3 的 PENDING/PARSING/READY/FAILED，随后仅应用 V30，验证 failure_count=3/2/2/3 和新账本读写。均为任务独占临时数据库，不是业务库或生产升级验收；最终命令与审查证据见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。
 
 ## PC Tauri ParsedDocument 目标数据契约（2026-08-23，2026-08-24 复核修订，V15/S1–S6 已实现，联调与验收待完成）
 

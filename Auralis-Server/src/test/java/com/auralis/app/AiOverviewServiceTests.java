@@ -11,12 +11,20 @@ import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiSettingsService;
 import com.auralis.app.ai.OverviewDocumentValidator;
+import com.auralis.app.ai.OverviewCancellation;
 import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewGenerationService;
 import com.auralis.app.ai.OverviewMode;
+import com.auralis.app.ai.OverviewTaskDeadline;
 import com.auralis.app.ai.internal.persistence.SourceChunkEntity;
 import com.auralis.app.ai.internal.persistence.SourceChunkRepository;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
+import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiInvocationResult;
+import com.auralis.app.ai.usage.AiUsageLimitException;
+import com.auralis.app.ai.usage.AiTaskScope;
+import com.auralis.app.ai.usage.AiStage;
+import com.auralis.app.ai.usage.AiProviderUsage;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.SourceIngestionStatus;
@@ -42,6 +50,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -53,10 +62,181 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AiOverviewServiceTests {
+
+    @Test
+    void logsKnownUsageCodesAndHidesUnknownCodesAndExceptionDetails() {
+        for (String code : List.of("AI_DAILY_QUOTA_EXCEEDED", "private-code-marker")) {
+            UUID userId = UUID.randomUUID();
+            UUID sourceId = UUID.randomUUID();
+            SourceService sourceService = mock(SourceService.class);
+            when(sourceService.requireActiveSource(userId, sourceId))
+                    .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+            AiProviderPort provider = new AiProviderPort() {
+                @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+                @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                    throw new AiUsageLimitException(code, 429, 30,
+                            Instant.parse("2026-10-11T00:00:00Z"));
+                }
+                @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                        long timeoutMillis, OverviewCancellation cancellation) {
+                    return complete(request, credential);
+                }
+            };
+            OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                    List.of(chunk(userId, sourceId, true, "safe source text")), provider, 5_000);
+            Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+            ListAppender<ILoggingEvent> appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                assertThatThrownBy(() -> service.generateSource(userId,
+                        sourceRequest(sourceId, OverviewMode.ALL, "secret-prompt-marker")))
+                        .isInstanceOf(AiUsageLimitException.class);
+            } finally {
+                logger.detachAppender(appender);
+                appender.stop();
+            }
+
+            List<String> failures = appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.contains("OVERVIEW_GENERATION_FAILED")).toList();
+            assertThat(failures).singleElement().satisfies(message -> {
+                assertThat(message).contains("errorCode=" + (code.startsWith("AI_") ? code : "OVERVIEW_GENERATION_FAILED"));
+                assertThat(message).doesNotContain("private-code-marker", "secret-prompt-marker");
+            });
+        }
+    }
+
+    @Test
+    void rejectsFileOverviewWhenProviderResponseExceedsTotalTaskDeadline() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        AiProviderPort provider = slowProvider(validDocument("source-1"), 80);
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(chunk(userId, sourceId, true, "source facts")), provider, 10);
+
+        assertThatThrownBy(() -> service.generateSource(userId,
+                sourceRequest(sourceId, OverviewMode.ALL, null)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_TIMEOUT");
+    }
+
+    @Test
+    void rejectsSubjectOverviewWhenProviderResponseExceedsTotalTaskDeadline() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        AiProviderPort provider = slowProvider(summaryOnlyDocument("source-1"), 80);
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(), provider, 10);
+        OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(
+                sourceId, "Calculus", null, new OverviewDtos.OverviewSummary("summary", List.of(), List.of()));
+
+        assertThatThrownBy(() -> service.generateSubject(userId,
+                new OverviewDtos.SubjectOverviewRequest(subjectId, OverviewMode.SUMMARY, null, List.of(input))))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_TIMEOUT");
+    }
+
+    @Test
+    void totalDeadlineCancelsProviderCallAndReturnsWithinBudget() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        AtomicInteger providerCalls = new AtomicInteger();
+        java.util.concurrent.CountDownLatch providerStopped = new java.util.concurrent.CountDownLatch(1);
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                return complete(request, credential, 120_000L);
+            }
+            @Override public AiProviderResponse complete(
+                    AiProviderRequest request, AiCredential credential, long responseTimeoutMillis) {
+                providerCalls.incrementAndGet();
+                try {
+                    Thread.sleep(2_500);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("test provider interrupted", exception);
+                }
+                return new AiProviderResponse(validDocument("source-1"), 1, 1);
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                    long responseTimeoutMillis, com.auralis.app.ai.OverviewCancellation cancellation) {
+                providerCalls.incrementAndGet();
+                cancellation.onCancel(providerStopped::countDown);
+                try {
+                    providerStopped.await();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("test provider interrupted", exception);
+                }
+                throw new DomainException("MODEL_TIMEOUT", "test provider aborted by deadline");
+            }
+        };
+        var watchdog = java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(chunk(userId, sourceId, true, "source facts")), provider, 1_500, watchdog);
+        AtomicReference<Long> elapsedMillis = new AtomicReference<>();
+
+        assertThatThrownBy(() -> {
+            long started = System.nanoTime();
+            try {
+                service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
+            } catch (RuntimeException failure) {
+                elapsedMillis.set(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                throw failure;
+            }
+        }).isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_TIMEOUT");
+
+        assertThat(providerCalls).hasValue(1);
+        assertThat(elapsedMillis.get()).isLessThan(2_000L);
+        assertThat(providerStopped.getCount()).isZero();
+        watchdog.shutdownNow();
+    }
+    @Test
+    void capsSingleProviderResponseTimeoutAtTheRemainingTaskBudget() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        AtomicReference<Long> requestedTimeout = new AtomicReference<>();
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                return new AiProviderResponse(validDocument("source-1"), 1, 1);
+            }
+            @Override public AiProviderResponse complete(
+                    AiProviderRequest request, AiCredential credential, long responseTimeoutMillis) {
+                requestedTimeout.set(responseTimeoutMillis);
+                return new AiProviderResponse(validDocument("source-1"), 1, 1);
+            }
+        };
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(chunk(userId, sourceId, true, "source facts")), provider, 5_000);
+
+        service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
+
+        assertThat(requestedTimeout).hasValueSatisfying(value -> assertThat(value).isBetween(1L, 5_000L));
+    }
 
     @Test
     void rejectsForeignDeletedAndNotReadySourcesBeforeProviderCalls() {
@@ -700,6 +880,84 @@ class AiOverviewServiceTests {
             releaseProvider.countDown();
             executor.shutdownNow();
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void ownerDisconnectKeepsOriginalIngressDeadlineForJoinedFollower() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID revision = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY, revision));
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch providerExited = new CountDownLatch(1);
+        AtomicInteger providerCalls = new AtomicInteger();
+        AtomicReference<OverviewCancellation> operationCancellation = new AtomicReference<>();
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                throw new AssertionError("cancellable overload is required for this test");
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                                                          long timeout, OverviewCancellation cancellation) {
+                providerCalls.incrementAndGet();
+                operationCancellation.set(cancellation);
+                providerEntered.countDown();
+                try {
+                    while (!cancellation.isCancelled()) Thread.sleep(10);
+                    throw new DomainException("MODEL_TIMEOUT", "test provider deadline");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrupted);
+                } finally {
+                    providerExited.countDown();
+                }
+            }
+        };
+        ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor();
+        ExecutorService callers = Executors.newFixedThreadPool(2);
+        ExecutorService generation = Executors.newSingleThreadExecutor();
+        OverviewTaskDeadline ingressDeadline = new OverviewTaskDeadline(5_000, System::nanoTime);
+        ingressDeadline.startWatchdog(watchdog);
+        OverviewCancellation ownerRequest = new OverviewCancellation();
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(chunk(userId, sourceId, true, "Calculus content")), provider, 12_000, watchdog, generation);
+        AtomicReference<Thread> followerThread = new AtomicReference<>();
+        long acceptedAt = System.nanoTime();
+        try {
+            Future<OverviewDtos.OverviewResponse> owner = callers.submit(() -> {
+                Thread.sleep(1_500); // Simulate time already spent waiting in the request queue.
+                return service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null),
+                        UUID.randomUUID().toString(), ownerRequest, ingressDeadline);
+            });
+            assertThat(providerEntered.await(2, TimeUnit.SECONDS)).isTrue();
+            Future<OverviewDtos.OverviewResponse> follower = callers.submit(() -> {
+                followerThread.set(Thread.currentThread());
+                return service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
+            });
+            awaitFollowerJoinOrCompletion(follower, followerThread);
+            assertThat(providerCalls).hasValue(1);
+
+            ownerRequest.cancel(OverviewCancellation.Reason.REQUEST_DISCONNECTED);
+            assertThatThrownBy(() -> owner.get(1, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(DomainException.class);
+            assertThat(operationCancellation.get().isCancelled()).isFalse();
+            assertThat(providerExited.await(4, TimeUnit.SECONDS)).isTrue();
+            assertThat(operationCancellation.get().reason()).isEqualTo(OverviewCancellation.Reason.DEADLINE);
+            assertThatThrownBy(() -> follower.get(1, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(DomainException.class);
+            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - acceptedAt)).isLessThan(5_800L);
+            assertThat(providerCalls).hasValue(1);
+        } finally {
+            ownerRequest.cancel(OverviewCancellation.Reason.REQUEST_DISCONNECTED);
+            ingressDeadline.finish();
+            callers.shutdownNow();
+            generation.shutdownNow();
+            watchdog.shutdownNow();
+            assertThat(callers.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(generation.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
         }
     }
 
@@ -1419,6 +1677,395 @@ class AiOverviewServiceTests {
                 .hasMessageContaining("duplicate");
     }
 
+    @Test
+    void packsOversizedSingleSourceAllInputWithoutDroppingSelectedContent() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(), 12_000,
+                validDocument("source-1"), requests);
+        String sectionText = "SECTION_START" + "s".repeat(3_900) + "SECTION_END";
+        String overview = "OVERVIEW_START" + "o".repeat(3_900) + "OVERVIEW_END";
+        String keyPoint = "KEYPOINT_START" + "k".repeat(3_900) + "KEYPOINT_END";
+        String learningPath = "PATH_START" + "p".repeat(3_900) + "PATH_END";
+        OverviewDtos.OverviewSection section = new OverviewDtos.OverviewSection("Section", sectionText,
+                List.of(sourceId.toString()), null);
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary(
+                overview, List.of(keyPoint), List.of(learningPath));
+        OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(sourceId,
+                "Calculus", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(section))), summary);
+        OverviewDtos.SubjectOverviewRequest request = new OverviewDtos.SubjectOverviewRequest(
+                subjectId, OverviewMode.ALL, null, List.of(input));
+
+        service.preflightSubject(userId, request);
+        OverviewDtos.OverviewResponse response = service.generateSubject(userId, request, "oversized-all");
+
+        assertThat(response).isNotNull();
+        assertThat(requests).hasSizeGreaterThan(1).allSatisfy(providerRequest -> {
+            assertThat(providerRequest.messages().get(0).content().length()
+                    + providerRequest.messages().get(1).content().length()).isLessThanOrEqualTo(12_000);
+            assertThat(providerRequest.messages().get(1).content()).doesNotContain(sourceId.toString());
+        });
+        assertThat(requests).anySatisfy(providerRequest -> assertThat(providerRequest.messages().get(0).content())
+                .contains("Target compact serialized JSON <=3600 chars."));
+        String sentData = requests.stream().map(providerRequest -> providerRequest.messages().get(1).content())
+                .reduce("", String::concat);
+        assertThat(sentData).contains("SECTION_START", "SECTION_END", "OVERVIEW_START", "OVERVIEW_END",
+                "KEYPOINT_START", "KEYPOINT_END", "PATH_START", "PATH_END", "source-1");
+    }
+
+    @Test
+    void subjectSingleBatchMapUsesFinalOutputPolicyAfterUnselectedDataTriggersFallback() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(), 12_000,
+                summaryOnlyDocument("source-1"), requests);
+        List<OverviewDtos.OverviewSection> sections = java.util.stream.IntStream.range(0, 4)
+                .mapToObj(index -> new OverviewDtos.OverviewSection("Unselected " + index,
+                        "unselected-" + index + "-" + "x".repeat(3_900), List.of(sourceId.toString()), null))
+                .toList();
+        OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(sourceId,
+                "Calculus", List.of(new OverviewDtos.OverviewChapter("Chapter", sections)),
+                new OverviewDtos.OverviewSummary("Short summary", List.of("Point"), List.of("Path")));
+        OverviewDtos.SubjectOverviewRequest request = new OverviewDtos.SubjectOverviewRequest(
+                subjectId, OverviewMode.SUMMARY, null, List.of(input));
+
+        service.preflightSubject(userId, request);
+        OverviewDtos.OverviewResponse response = service.generateSubject(userId, request, "final-map-policy");
+
+        assertThat(response).isNotNull();
+        assertThat(requests).hasSize(1);
+        assertThat(requests.getFirst().messages().get(0).content())
+                .doesNotContain("Target compact serialized JSON <=3600 chars.", "Intermediate JSON:",
+                        "Keep intermediate output concise and target compact JSON <=3600 characters.");
+        assertThat(requests.getFirst().messages().get(1).content())
+                .contains("sourceAlias").doesNotContain("Unselected");
+    }
+
+    @Test
+    void subjectMapKeepsOnlyTheRequestedPartForEveryMode() {
+        for (OverviewMode mode : OverviewMode.values()) {
+            UUID userId = UUID.randomUUID();
+            UUID subjectId = UUID.randomUUID();
+            UUID sourceId = UUID.randomUUID();
+            SourceService sourceService = mock(SourceService.class);
+            when(sourceService.requireActiveSource(userId, sourceId))
+                    .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+            List<AiProviderRequest> requests = new ArrayList<>();
+            String responseDocument = switch (mode) {
+                case ALL -> validDocument("source-1");
+                case OUTLINE -> outlineOnlyDocument("source-1");
+                case SUMMARY -> summaryOnlyDocument("source-1");
+            };
+            OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(), 12_000,
+                    responseDocument, requests);
+            String longText = "fragment-" + mode.name() + "-" + "x".repeat(3_900);
+            OverviewDtos.OverviewSection section = new OverviewDtos.OverviewSection("Section", longText,
+                    List.of(sourceId.toString()), null);
+            OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary(
+                    "summary-" + longText, List.of(longText), List.of(longText));
+            OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(sourceId,
+                    "Calculus", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(section))), summary);
+            OverviewDtos.SubjectOverviewRequest request = new OverviewDtos.SubjectOverviewRequest(
+                    subjectId, mode, null, List.of(input));
+
+            service.preflightSubject(userId, request);
+            OverviewDtos.OverviewResponse response = service.generateSubject(userId, request, "mode-" + mode.name());
+
+            assertThat(response).isNotNull();
+            assertThat(requests).isNotEmpty().allSatisfy(providerRequest -> {
+                String payload = providerRequest.messages().get(1).content();
+                assertThat(providerRequest.messages().get(0).content().length() + payload.length())
+                        .isLessThanOrEqualTo(12_000);
+                if (mode == OverviewMode.OUTLINE) assertThat(payload).contains("\"outline\"").doesNotContain("\"summary\":{");
+                if (mode == OverviewMode.SUMMARY) assertThat(payload).contains("\"summary\"").doesNotContain("\"outline\":[");
+                if (mode == OverviewMode.ALL) assertThat(payload).contains("\"outline\"", "\"summary\"");
+            });
+        }
+    }
+
+    @Test
+    void subjectPackingUsesJsonEscapedLengthForLargeStrings() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(), 12_000,
+                validDocument("source-1"), requests);
+        String escaped = "\"".repeat(3_500);
+        OverviewDtos.OverviewSection section = new OverviewDtos.OverviewSection("Section", escaped,
+                List.of(sourceId.toString()), null);
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("o".repeat(4_000), List.of(), List.of());
+        OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(sourceId,
+                "Calculus", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(section))), summary);
+        OverviewDtos.SubjectOverviewRequest request = new OverviewDtos.SubjectOverviewRequest(
+                subjectId, OverviewMode.ALL, null, List.of(input));
+
+        service.preflightSubject(userId, request);
+        service.generateSubject(userId, request, "escaped-json");
+
+        assertThat(requests).isNotEmpty().allSatisfy(providerRequest ->
+                assertThat(providerRequest.messages().get(0).content().length()
+                        + providerRequest.messages().get(1).content().length()).isLessThanOrEqualTo(12_000));
+        assertThat(requests.stream().mapToInt(providerRequest ->
+                occurrences(providerRequest.messages().get(1).content(), "\\\"")).sum()).isGreaterThanOrEqualTo(3_500);
+    }
+
+    @Test
+    void packsAggregateSourcesAndPreservesCrossSourceAliases() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        List<UUID> sourceIds = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
+        SourceService sourceService = mock(SourceService.class);
+        sourceIds.forEach(sourceId -> when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY)));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(), 12_000,
+                validDocument("source-1"), requests);
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("summary", List.of("point"), List.of("step"));
+        List<OverviewDtos.SubjectOverviewSourceInput> inputs = new ArrayList<>();
+        for (int i = 0; i < sourceIds.size(); i++) {
+            String marker = "source-" + (i + 1) + "-";
+            OverviewDtos.OverviewSection section = new OverviewDtos.OverviewSection("Section " + (i + 1),
+                    marker + "x".repeat(3_500), List.of(sourceIds.getFirst().toString()), null);
+            inputs.add(new OverviewDtos.SubjectOverviewSourceInput(sourceIds.get(i), "Source " + (i + 1),
+                    List.of(new OverviewDtos.OverviewChapter("Chapter " + (i + 1), List.of(section))), summary));
+        }
+        OverviewDtos.SubjectOverviewRequest request = new OverviewDtos.SubjectOverviewRequest(
+                subjectId, OverviewMode.ALL, null, inputs);
+
+        service.preflightSubject(userId, request);
+        service.generateSubject(userId, request, "cross-source-aliases");
+
+        assertThat(requests).hasSizeGreaterThan(1).allSatisfy(providerRequest ->
+                assertThat(providerRequest.messages().get(0).content().length()
+                        + providerRequest.messages().get(1).content().length()).isLessThanOrEqualTo(12_000));
+        String sentData = requests.stream().map(providerRequest -> providerRequest.messages().get(1).content())
+                .reduce("", String::concat);
+        assertThat(sentData).contains("source-1", "source-2", "source-3", "source-1-", "source-2-", "source-3-")
+                .doesNotContain(sourceIds.stream().map(UUID::toString).toArray(String[]::new));
+    }
+
+    @Test
+    void fragmentedSubjectMapSharesTheRequestTaskDeadline() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        AtomicInteger providerCalls = new AtomicInteger();
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                return complete(request, credential, 120_000L);
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                                                           long timeoutMillis) {
+                providerCalls.incrementAndGet();
+                try { Thread.sleep(250); }
+                catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                }
+                return new AiProviderResponse(validDocument("source-1"), 1, 1);
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                    long timeoutMillis, OverviewCancellation cancellation) {
+                return complete(request, credential, timeoutMillis);
+            }
+        };
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(), provider, 100);
+        OverviewDtos.SubjectOverviewRequest request = oversizedAllRequest(subjectId, sourceId);
+
+        assertThatThrownBy(() -> service.generateSubject(userId, request))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("MODEL_TIMEOUT");
+        assertThat(providerCalls).hasValue(1);
+    }
+
+    @Test
+    void fragmentedSubjectMapReceivesAndHonorsRequestCancellation() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY));
+        CountDownLatch providerEntered = new CountDownLatch(1);
+        CountDownLatch providerExited = new CountDownLatch(1);
+        AtomicReference<OverviewCancellation> providerCancellation = new AtomicReference<>();
+        AtomicInteger providerCalls = new AtomicInteger();
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                throw new AssertionError("cancellable provider overload is required");
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                    long timeoutMillis, OverviewCancellation cancellation) {
+                providerCalls.incrementAndGet();
+                providerCancellation.set(cancellation);
+                providerEntered.countDown();
+                try {
+                    while (!cancellation.isCancelled()) Thread.sleep(5);
+                    throw new DomainException("MODEL_TIMEOUT", "controlled cancellation");
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(exception);
+                } finally {
+                    providerExited.countDown();
+                }
+            }
+        };
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(), provider, 5_000);
+        OverviewCancellation externalCancellation = new OverviewCancellation();
+        ExecutorService caller = Executors.newSingleThreadExecutor();
+        try {
+            Future<OverviewDtos.OverviewResponse> generation = caller.submit(() -> service.generateSubject(
+                    userId, oversizedAllRequest(subjectId, sourceId), "fragment-cancel", externalCancellation));
+            assertThat(providerEntered.await(2, TimeUnit.SECONDS)).isTrue();
+            externalCancellation.cancel(OverviewCancellation.Reason.REQUEST_DISCONNECTED);
+            assertThatThrownBy(() -> generation.get(2, TimeUnit.SECONDS)).hasCauseInstanceOf(DomainException.class);
+            assertThat(providerExited.await(2, TimeUnit.SECONDS)).isTrue();
+            assertThat(providerCalls).hasValue(1);
+            assertThat(providerCancellation.get().reason()).isEqualTo(OverviewCancellation.Reason.REQUEST_DISCONNECTED);
+        } finally {
+            externalCancellation.cancel(OverviewCancellation.Reason.REQUEST_DISCONNECTED);
+            caller.shutdownNow();
+            assertThat(caller.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void boundedSummaryPackingDoesNotDuplicateEveryOtherKeyPoint() throws Exception {
+        ObjectMapper objectMapper = spy(new ObjectMapper());
+        AtomicInteger serializations = new AtomicInteger();
+        AtomicInteger serializedChars = new AtomicInteger();
+        doAnswer(invocation -> {
+            String json = (String) invocation.callRealMethod();
+            int count = serializations.incrementAndGet();
+            serializedChars.addAndGet(json.length());
+            if (count > 512) {
+                throw new IllegalStateException("controlled subject packing serialization cap: count=" + count
+                        + " chars=" + serializedChars.get());
+            }
+            return json;
+        }).when(objectMapper).writeValueAsString(any());
+        OverviewGenerationService service = serviceWithMapper(objectMapper, 12_000);
+        List<String> expectedKeyPoints = java.util.stream.IntStream.range(0, 50)
+                .mapToObj(index -> "k".repeat(200) + index).toList();
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("o".repeat(4_000),
+                expectedKeyPoints, List.of());
+        Class<?> inputType = Class.forName("com.auralis.app.ai.OverviewGenerationService$ModelSubjectInput");
+        java.lang.reflect.Constructor<?> constructor = inputType.getDeclaredConstructor(
+                String.class, String.class, List.class, OverviewDtos.OverviewSummary.class);
+        constructor.setAccessible(true);
+        Object input = constructor.newInstance("source-1", "Calculus", null, summary);
+        java.lang.reflect.Method pack = OverviewGenerationService.class.getDeclaredMethod(
+                "packSubjectInputs", OverviewMode.class, String.class, List.class, OverviewTaskDeadline.class);
+        pack.setAccessible(true);
+
+        OverviewTaskDeadline deadline = new OverviewTaskDeadline(30_000, System::nanoTime);
+        @SuppressWarnings("unchecked")
+        List<List<Object>> batches = (List<List<Object>>) org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> {
+            try {
+                return pack.invoke(service, OverviewMode.SUMMARY, null, List.of(input), deadline);
+            } catch (java.lang.reflect.InvocationTargetException exception) {
+                throw new IllegalStateException(exception.getCause());
+            } catch (ReflectiveOperationException exception) {
+                throw new IllegalStateException(exception);
+            }
+        });
+        java.lang.reflect.Method summaryAccessor = inputType.getDeclaredMethod("summary");
+        summaryAccessor.setAccessible(true);
+        List<String> actualKeyPoints = new ArrayList<>();
+        int actualOverviewChars = 0;
+        for (List<Object> batch : batches) {
+            for (Object fragment : batch) {
+                OverviewDtos.OverviewSummary fragmentSummary =
+                        (OverviewDtos.OverviewSummary) summaryAccessor.invoke(fragment);
+                if (fragmentSummary == null) continue;
+                actualKeyPoints.addAll(fragmentSummary.keyPoints());
+                if (fragmentSummary.overview() != null) actualOverviewChars += fragmentSummary.overview().length();
+            }
+        }
+
+        assertThat(actualKeyPoints).containsExactlyElementsOf(expectedKeyPoints);
+        assertThat(actualOverviewChars).isEqualTo(4_000);
+        assertThat(serializations.get()).isLessThan(512);
+    }
+
+    @Test
+    void subjectPackingHonorsDeadlineCancellationDuringPlanning() throws Exception {
+        ObjectMapper objectMapper = spy(new ObjectMapper());
+        AtomicInteger serializationCount = new AtomicInteger();
+        doAnswer(invocation -> {
+            serializationCount.incrementAndGet();
+            return invocation.callRealMethod();
+        }).when(objectMapper).writeValueAsString(any());
+        OverviewGenerationService service = serviceWithMapper(objectMapper, 12_000);
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("overview", List.of("key point"), List.of());
+        Class<?> inputType = Class.forName("com.auralis.app.ai.OverviewGenerationService$ModelSubjectInput");
+        java.lang.reflect.Constructor<?> constructor = inputType.getDeclaredConstructor(
+                String.class, String.class, List.class, OverviewDtos.OverviewSummary.class);
+        constructor.setAccessible(true);
+        Object input = constructor.newInstance("source-1", "Calculus", null, summary);
+        java.lang.reflect.Method pack = OverviewGenerationService.class.getDeclaredMethod(
+                "packSubjectInputs", OverviewMode.class, String.class, List.class, OverviewTaskDeadline.class);
+        pack.setAccessible(true);
+        AtomicInteger clockReads = new AtomicInteger();
+        OverviewTaskDeadline deadline = new OverviewTaskDeadline(5, () ->
+                TimeUnit.MILLISECONDS.toNanos(clockReads.getAndIncrement()));
+
+        assertThatThrownBy(() -> {
+            try {
+                pack.invoke(service, OverviewMode.SUMMARY, null, List.of(input), deadline);
+            } catch (java.lang.reflect.InvocationTargetException exception) {
+                throw (RuntimeException) exception.getCause();
+            } catch (ReflectiveOperationException exception) {
+                throw new IllegalStateException(exception);
+            }
+        }).isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code()).isEqualTo("MODEL_TIMEOUT");
+        assertThat(clockReads.get()).isGreaterThan(1);
+        assertThat(serializationCount.get()).isLessThan(10);
+    }
+
+    private static OverviewDtos.SubjectOverviewRequest oversizedAllRequest(UUID subjectId, UUID sourceId) {
+        String prose = "p".repeat(4_000);
+        OverviewDtos.OverviewSection section = new OverviewDtos.OverviewSection("Section", prose,
+                List.of(sourceId.toString()), null);
+        OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary(prose, List.of(prose), List.of(prose));
+        OverviewDtos.SubjectOverviewSourceInput input = new OverviewDtos.SubjectOverviewSourceInput(sourceId,
+                "Calculus", List.of(new OverviewDtos.OverviewChapter("Chapter", List.of(section))), summary);
+        return new OverviewDtos.SubjectOverviewRequest(subjectId, OverviewMode.ALL, null, List.of(input));
+    }
+
+    private static int occurrences(String input, String needle) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = input.indexOf(needle, offset)) >= 0) {
+            count++;
+            offset += needle.length();
+        }
+        return count;
+    }
+
     private static OverviewGenerationService service(
             SourceService sourceService,
             SubjectService subjectService,
@@ -1426,6 +2073,110 @@ class AiOverviewServiceTests {
             int maxPromptChars,
             String providerDocument) {
         return service(sourceService, subjectService, chunks, maxPromptChars, providerDocument, null);
+    }
+
+    private static OverviewGenerationService serviceWithTaskTimeout(
+            SourceService sourceService,
+            SubjectService subjectService,
+            List<SourceChunkEntity> chunks,
+            AiProviderPort provider,
+            long taskTimeoutMillis) {
+        return serviceWithTaskTimeout(sourceService, subjectService, chunks, provider, taskTimeoutMillis, null);
+    }
+
+    private static OverviewGenerationService serviceWithTaskTimeout(
+            SourceService sourceService,
+            SubjectService subjectService,
+            List<SourceChunkEntity> chunks,
+            AiProviderPort provider,
+            long taskTimeoutMillis,
+            java.util.concurrent.ScheduledExecutorService watchdog) {
+        return serviceWithTaskTimeout(sourceService, subjectService, chunks, provider, taskTimeoutMillis,
+                watchdog, Runnable::run);
+    }
+
+    private static OverviewGenerationService serviceWithTaskTimeout(
+            SourceService sourceService,
+            SubjectService subjectService,
+            List<SourceChunkEntity> chunks,
+            AiProviderPort provider,
+            long taskTimeoutMillis,
+            java.util.concurrent.ScheduledExecutorService watchdog,
+            java.util.concurrent.Executor generationExecutor) {
+        SourceChunkRepository chunkRepository = mock(SourceChunkRepository.class);
+        when(chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(any(), any())).thenReturn(chunks);
+        AiSettingsService settingsService = mock(AiSettingsService.class);
+        when(settingsService.resolve(any(), eq(AiProviderType.DEEPSEEK))).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "test-model", new AiCredential("https://api.example.test", "key", "embed")));
+        AiProviderRegistry providerRegistry = mock(AiProviderRegistry.class);
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(provider);
+        AuralisProperties properties = mock(AuralisProperties.class);
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(properties.ai()).thenReturn(ai);
+        when(ai.defaultProvider()).thenReturn("DEEPSEEK");
+        when(ai.maxPromptChars()).thenReturn(12_000);
+        when(ai.overviewResponseTimeoutMillis()).thenReturn(120_000L);
+        when(ai.overviewTaskTimeoutMillis()).thenReturn(taskTimeoutMillis);
+        return new OverviewGenerationService(sourceService, subjectService, chunkRepository, settingsService,
+                invocationGateway(providerRegistry), properties, new OverviewDocumentValidator(new ObjectMapper()),
+                new ObjectMapper(), System::nanoTime, watchdog, generationExecutor);
+    }
+
+    private static AiProviderPort slowProvider(String document, long delayMillis) {
+        return new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                return complete(request, credential, 120_000L);
+            }
+            @Override public AiProviderResponse complete(
+                    AiProviderRequest request, AiCredential credential, long responseTimeoutMillis) {
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("test provider interrupted", exception);
+                }
+                return new AiProviderResponse(document, 1, 1);
+            }
+        };
+    }
+
+    private static AiInvocationGateway invocationGateway(AiProviderRegistry registry) {
+        return context -> new AiTaskScope() {
+            private long calls;
+            @Override public <T> AiInvocationResult<T> metadata(
+                    AiStage stage, AiProviderType provider, String model, java.util.function.Supplier<T> operation) {
+                return new AiInvocationResult<>(operation.get(), usage());
+            }
+            @Override public AiInvocationResult<AiProviderResponse> complete(
+                    AiStage stage, AiProviderType providerType, AiProviderRequest request,
+                    AiCredential credential, long timeout) {
+                calls++;
+                return new AiInvocationResult<>(registry.require(providerType)
+                        .complete(request, credential, timeout), usage());
+            }
+            @Override public AiInvocationResult<AiProviderResponse> complete(
+                    AiStage stage, AiProviderType providerType, AiProviderRequest request,
+                    AiCredential credential, long timeout, com.auralis.app.ai.OverviewCancellation cancellation) {
+                calls++;
+                return new AiInvocationResult<>(registry.require(providerType)
+                        .complete(request, credential, timeout, cancellation), usage());
+            }
+            @Override public AiInvocationResult<Void> stream(
+                    AiStage stage, AiProviderType provider, AiProviderRequest request,
+                    AiCredential credential, java.util.function.Consumer<com.auralis.app.ai.AiProviderChunk> sink) {
+                registry.require(provider).streamInto(request, credential, sink);
+                return new AiInvocationResult<>(null, usage());
+            }
+            @Override public AiInvocationResult<com.auralis.app.ai.EmbeddingResult> embed(
+                    AiStage stage, AiProviderType provider, String model, List<String> texts, AiCredential credential) {
+                throw new UnsupportedOperationException();
+            }
+            @Override public AiProviderUsage usage() {
+                return new AiProviderUsage(0, 0, null, null, 0, false);
+            }
+            @Override public void close() { }
+        };
     }
 
     private static OverviewGenerationService service(
@@ -1447,7 +2198,7 @@ class AiOverviewServiceTests {
         when(ai.maxPromptChars()).thenReturn(maxPromptChars);
         when(ai.overviewResponseTimeoutMillis()).thenReturn(120_000L);
         return new OverviewGenerationService(sourceService, mock(SubjectService.class), chunkRepository, settingsService,
-                providerRegistry, properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
+                invocationGateway(providerRegistry), properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
     }
 
     private static OverviewGenerationService service(
@@ -1458,6 +2209,20 @@ class AiOverviewServiceTests {
             String providerDocument,
             List<AiProviderRequest> requests) {
         return service(sourceService, subjectService, chunks, maxPromptChars, providerDocument, requests, null);
+    }
+
+    private static OverviewGenerationService serviceWithMapper(ObjectMapper objectMapper, int maxPromptChars) {
+        SourceChunkRepository chunkRepository = mock(SourceChunkRepository.class);
+        AiSettingsService settingsService = mock(AiSettingsService.class);
+        AiProviderRegistry providerRegistry = mock(AiProviderRegistry.class);
+        AuralisProperties properties = mock(AuralisProperties.class);
+        AuralisProperties.Ai ai = mock(AuralisProperties.Ai.class);
+        when(properties.ai()).thenReturn(ai);
+        when(ai.defaultProvider()).thenReturn("DEEPSEEK");
+        when(ai.maxPromptChars()).thenReturn(maxPromptChars);
+        return new OverviewGenerationService(mock(SourceService.class), mock(SubjectService.class), chunkRepository,
+                settingsService, invocationGateway(providerRegistry), properties,
+                new OverviewDocumentValidator(objectMapper), objectMapper);
     }
 
     private static OverviewGenerationService service(
@@ -1501,7 +2266,7 @@ class AiOverviewServiceTests {
         when(ai.maxPromptChars()).thenReturn(maxPromptChars);
         when(ai.overviewResponseTimeoutMillis()).thenReturn(120_000L);
         return new OverviewGenerationService(sourceService, subjectService, chunkRepository, settingsService,
-                providerRegistry, properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
+                invocationGateway(providerRegistry), properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
     }
 
     private static OverviewGenerationService serviceWithResponses(
@@ -1542,7 +2307,7 @@ class AiOverviewServiceTests {
         when(ai.maxPromptChars()).thenReturn(maxPromptChars);
         when(ai.overviewResponseTimeoutMillis()).thenReturn(120_000L);
         return new OverviewGenerationService(sourceService, mock(SubjectService.class), chunkRepository, settingsService,
-                providerRegistry, properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
+                invocationGateway(providerRegistry), properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
     }
 
     private static OverviewGenerationService service(
@@ -1579,7 +2344,7 @@ class AiOverviewServiceTests {
         when(ai.defaultProvider()).thenReturn("DEEPSEEK");
         when(ai.maxPromptChars()).thenReturn(maxPromptChars);
         return new OverviewGenerationService(sourceService, subjectService, chunkRepository, settingsService,
-                providerRegistry, properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
+                invocationGateway(providerRegistry), properties, new OverviewDocumentValidator(new ObjectMapper()), new ObjectMapper());
     }
 
     private static OverviewDtos.SourceOverviewRequest sourceRequest(UUID sourceId, OverviewMode mode, String instruction) {
@@ -1606,11 +2371,9 @@ class AiOverviewServiceTests {
         while (System.nanoTime() < deadline) {
             if (follower.isDone()) return;
             Thread thread = followerThread.get();
-            if (thread != null && thread.getState() == Thread.State.WAITING) {
-                boolean joinedFuture = java.util.Arrays.stream(thread.getStackTrace())
-                        .anyMatch(frame -> frame.getClassName().equals(CompletableFuture.class.getName())
-                                && (frame.getMethodName().equals("join") || frame.getMethodName().equals("waitingGet")));
-                if (joinedFuture) return;
+            if (thread != null && (thread.getState() == Thread.State.WAITING
+                    || thread.getState() == Thread.State.TIMED_WAITING)) {
+                return;
             }
             Thread.sleep(5);
         }

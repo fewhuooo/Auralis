@@ -1,5 +1,5 @@
 import type { LocalSqlDatabase, LocalReviewRecordRow, LocalReviewIntentRow } from '@/services/localSchema'
-import type { LifecycleStateView, LifecycleAction, LifecycleHistoryCommandView, EffectiveReviewView, ReviewEventView } from '@/api/useReviewApi'
+import type { LifecycleStateView, LifecycleAction, LifecycleHistoryCommandView, EffectiveReviewView } from '@/api/useReviewApi'
 import type { LocalRepository } from '@/services/localRepository'
 
 function storagePart(value: string): string {
@@ -22,8 +22,6 @@ export interface LocalReviewCanonicalAnchor {
   state: LifecycleStateView | null
   commands: LifecycleHistoryCommandView[]
   effectiveReviews: EffectiveReviewView[]
-  legacyEvents: ReviewEventView[]
-  legacyHistoryComplete: boolean
 }
 
 export interface LocalReviewPreparation {
@@ -31,7 +29,6 @@ export interface LocalReviewPreparation {
   anchorSubjectId: string | null
   anchorContentHash: string | null
   anchorCommandIds: string[]
-  anchorLegacyFingerprint: string | null
   predecessorClientCommandIds: string[]
   knownLocalCreate: boolean
   allowContentInvalidation: boolean
@@ -128,7 +125,6 @@ function validateIntent(value: unknown, userId: string, deviceId: string): asser
     || !(row.preparation.anchorContentHash === null || typeof row.preparation.anchorContentHash === 'string')
     || !Array.isArray(row.preparation.anchorCommandIds)
     || !row.preparation.anchorCommandIds.every((item: unknown) => typeof item === 'string' && item.length > 0)
-    || !(row.preparation.anchorLegacyFingerprint === null || typeof row.preparation.anchorLegacyFingerprint === 'string')
     || !Array.isArray(row.preparation.predecessorClientCommandIds)
     || !row.preparation.predecessorClientCommandIds.every((item: unknown) => typeof item === 'string' && item.length > 0)
     || typeof row.preparation.knownLocalCreate !== 'boolean'
@@ -154,8 +150,8 @@ function validateRecord(value: unknown): asserts value is LocalReviewRecord {
     || typeof row.subjectId !== 'string'
     || !isSafeVersion(row.localRevision) || !isSafeVersion(row.serverKnowledgeBlockVersion)
     || typeof row.contentHash !== 'string' || !(row.contentHash === '' || /^[a-f0-9]{64}$/i.test(row.contentHash))
-    || !Array.isArray(row.history) || !Array.isArray(row.effectiveReviews) || !Array.isArray(row.legacyEvents)
-    || typeof row.legacyHistoryComplete !== 'boolean' || typeof row.historyImported !== 'boolean'
+    || !Array.isArray(row.history) || !Array.isArray(row.effectiveReviews)
+    || typeof row.historyImported !== 'boolean'
     || typeof row.isPresenceMarker !== 'boolean' || !isInstant(row.updatedAt)) {
     invalidLocalReviewData('invalid review record')
   }
@@ -173,7 +169,6 @@ function validateRecord(value: unknown): asserts value is LocalReviewRecord {
       || !isInstant(review.selectedAt)
       || !(review.resolvedAt === null || isInstant(review.resolvedAt))) invalidLocalReviewData('invalid effective review history')
   }
-  if (!row.legacyEvents.every(isObject)) invalidLocalReviewData('invalid legacy review history')
 }
 
 function validateCanonicalAnchor(value: unknown, knowledgeBlockId: string): void {
@@ -182,13 +177,12 @@ function validateCanonicalAnchor(value: unknown, knowledgeBlockId: string): void
     || !isSafeVersion(value.knowledgeBlockVersion)
     || typeof value.subjectId !== 'string' || !value.subjectId
     || typeof value.contentHash !== 'string' || !/^[a-f0-9]{64}$/i.test(value.contentHash)
-    || !Array.isArray(value.commands) || !Array.isArray(value.effectiveReviews)
-    || !Array.isArray(value.legacyEvents) || value.legacyHistoryComplete !== true) {
+    || !Array.isArray(value.commands) || !Array.isArray(value.effectiveReviews)) {
     invalidLocalReviewData(`invalid canonical anchor for ${knowledgeBlockId}`)
   }
   const state = value.state as LifecycleStateView | null
   validateState(state, knowledgeBlockId)
-  if (!value.commands.every(isObject) || !value.effectiveReviews.every(isObject) || !value.legacyEvents.every(isObject)) {
+  if (!value.commands.every(isObject) || !value.effectiveReviews.every(isObject)) {
     invalidLocalReviewData(`invalid canonical history for ${knowledgeBlockId}`)
   }
 }
@@ -241,11 +235,10 @@ function withBrowserReviewLock<T>(userId: string, deviceId: string, operation: (
   return run
 }
 
-function parseHistory(raw: string | null, knowledgeBlockId: string): { commands: LifecycleHistoryCommandView[]; effectiveReviews: EffectiveReviewView[]; legacyEvents: ReviewEventView[]; legacyHistoryComplete: boolean; historyImported: boolean; canonicalAnchor: LocalReviewCanonicalAnchor | null } {
+function parseHistory(raw: string | null, knowledgeBlockId: string): { commands: LifecycleHistoryCommandView[]; effectiveReviews: EffectiveReviewView[]; historyImported: boolean; canonicalAnchor: LocalReviewCanonicalAnchor | null } {
   if (!raw) invalidLocalReviewData('missing review history payload')
   const value = JSON.parse(raw)
   if (!isObject(value) || !Array.isArray(value.commands) || !Array.isArray(value.effectiveReviews)
-    || !Array.isArray(value.legacyEvents) || typeof value.legacyHistoryComplete !== 'boolean'
     || typeof value.historyImported !== 'boolean'
     || !Object.prototype.hasOwnProperty.call(value, 'canonicalAnchor')) invalidLocalReviewData('invalid review history payload')
   validateCanonicalAnchor(value.canonicalAnchor, knowledgeBlockId)
@@ -257,12 +250,9 @@ function parseHistory(raw: string | null, knowledgeBlockId: string): { commands:
     if (!isObject(review) || typeof review.reviewId !== 'string' || !review.reviewId
       || !isInstant(review.selectedAt)) invalidLocalReviewData('invalid SQL effective review history')
   }
-  if (!value.legacyEvents.every(isObject)) invalidLocalReviewData('invalid SQL legacy review history')
   return {
     commands: value.commands as LifecycleHistoryCommandView[],
     effectiveReviews: value.effectiveReviews as EffectiveReviewView[],
-    legacyEvents: value.legacyEvents as ReviewEventView[],
-    legacyHistoryComplete: value.legacyHistoryComplete,
     historyImported: value.historyImported,
     canonicalAnchor: value.canonicalAnchor as LocalReviewCanonicalAnchor | null,
   }
@@ -291,8 +281,6 @@ export interface LocalReviewRecord {
   state: LifecycleStateView | null
   history: LifecycleHistoryCommandView[] | null
   effectiveReviews: EffectiveReviewView[]
-  legacyEvents: ReviewEventView[]
-  legacyHistoryComplete: boolean
   historyImported: boolean
   canonicalAnchor: LocalReviewCanonicalAnchor | null
   isPresenceMarker: boolean
@@ -328,8 +316,6 @@ export class ReviewRepository {
       state: parseState(row.state_json, row.knowledge_block_id),
       history: parsedHistory.commands,
       effectiveReviews: parsedHistory.effectiveReviews,
-      legacyEvents: parsedHistory.legacyEvents,
-      legacyHistoryComplete: parsedHistory.legacyHistoryComplete,
       historyImported: parsedHistory.historyImported,
       canonicalAnchor: parsedHistory.canonicalAnchor,
       isPresenceMarker: row.is_presence_marker === 1,
@@ -357,8 +343,6 @@ export class ReviewRepository {
       state: parseState(row.state_json, row.knowledge_block_id),
       history: parsedHistory.commands,
       effectiveReviews: parsedHistory.effectiveReviews,
-      legacyEvents: parsedHistory.legacyEvents,
-      legacyHistoryComplete: parsedHistory.legacyHistoryComplete,
       historyImported: parsedHistory.historyImported,
       canonicalAnchor: parsedHistory.canonicalAnchor,
       isPresenceMarker: row.is_presence_marker === 1,
@@ -552,8 +536,6 @@ export class ReviewRepository {
           state: parseState(row.state_json, row.knowledge_block_id),
           history: parsedHistory.commands,
           effectiveReviews: parsedHistory.effectiveReviews,
-          legacyEvents: parsedHistory.legacyEvents,
-          legacyHistoryComplete: parsedHistory.legacyHistoryComplete,
           historyImported: parsedHistory.historyImported,
           canonicalAnchor: parsedHistory.canonicalAnchor,
           isPresenceMarker: row.is_presence_marker === 1,
@@ -604,7 +586,7 @@ export class ReviewRepository {
       [
         userId, deviceId, record.knowledgeBlockId, record.subjectId,
         record.localRevision, record.serverKnowledgeBlockVersion, record.contentHash,
-        JSON.stringify(record.state), JSON.stringify({ knowledgeBlockId: record.knowledgeBlockId, commands: record.history ?? [], effectiveReviews: record.effectiveReviews ?? [], legacyEvents: record.legacyEvents ?? [], legacyHistoryComplete: record.legacyHistoryComplete === true, historyImported: record.historyImported === true, canonicalAnchor: record.canonicalAnchor }),
+        JSON.stringify(record.state), JSON.stringify({ knowledgeBlockId: record.knowledgeBlockId, commands: record.history ?? [], effectiveReviews: record.effectiveReviews ?? [], historyImported: record.historyImported === true, canonicalAnchor: record.canonicalAnchor }),
         record.isPresenceMarker ? 1 : 0, record.updatedAt
       ]
     )

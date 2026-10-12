@@ -69,7 +69,6 @@ const originalPost = request.post
 const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
 const originalLocalReviewReads = {
   getSubjectStates: LocalReviewService.prototype.getSubjectStates,
-  getLegacyHistory: LocalReviewService.prototype.getLegacyHistory,
   getLifecycleHistory: LocalReviewService.prototype.getLifecycleHistory,
   executeCommand: LocalReviewService.prototype.executeCommand,
 }
@@ -280,7 +279,6 @@ async function seedLocalReviewSubject(authStore, reviewStore, subjectId, blocks)
           knowledgeBlockId: block.id, knowledgeBlockVersion: version, protocolVersion: 2,
           state, commands: block.commands ?? [], effectiveReviews: block.effectiveReviews ?? [],
         },
-        block.legacyEvents ?? [],
       )
       assert.equal(imported, true, 'authoritative review baseline for ' + block.id + ' must import')
     }
@@ -402,10 +400,11 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-test('Review API exposes a scoped subject states page while preserving existing review endpoints', () => {
+test('Review API keeps lifecycle routes and no longer exposes legacy due, event, or history routes', () => {
   assert.equal(typeof useReviewApi.getSubjectStates, 'function')
-  assert.equal(typeof useReviewApi.recordEvent, 'function')
-  assert.equal(typeof useReviewApi.getHistory, 'function')
+  for (const method of ['getDueReviews', 'getReviewQueue', 'recordEvent', 'recordReviewEvent', 'getHistory', 'getReviewHistory']) {
+    assert.equal(method in useReviewApi, false, `${method} must be removed`)
+  }
 })
 
 test('states API passes subject pagination and the session ticket to Axios', async () => {
@@ -549,211 +548,6 @@ test('a transient local state read failure preserves the active round and requir
   assert.equal(reviewStore.getLifecycleRound(subjectId).roundId, round.roundId)
 })
 
-test('group size changes preserve a pending current card and apply to the next group after returning', async () => {
-  const { reviewStore } = fixture('review-group-size-user')
-  useReviewApi.getSubjectStates = async () => page([])
-  await reviewStore.loadSubjectStates('subject-a')
-  const ids = Array.from({ length: 15 }, (_, index) => `kb-${index}`)
-  const round = reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ids, groupSize: 5 })
-  reviewStore.revealCurrentCard('subject-a')
-  let firstAttempt = true
-  useReviewApi.recordEvent = async (payload) => {
-    if (firstAttempt) {
-      firstAttempt = false
-      throw new Error('temporary network failure')
-    }
-    return { event: { clientEventId: payload.clientEventId }, state: stateView(payload.knowledgeBlockId, '2026-10-20T00:00:00Z', 1) }
-  }
-  await assert.rejects(reviewStore.submitRating('subject-a', 'GOOD', 6), /temporary network failure/)
-  const pendingEvent = round.pendingEvent
-  const originalQueue = [...round.queue]
-  const currentId = round.currentKnowledgeBlockId
-
-  reviewStore.setGroupSize('subject-a', 10)
-  assert.equal(reviewStore.getGroupSize('subject-a'), 10)
-  assert.equal(round.groupSize, 10)
-  assert.deepEqual(round.queue, originalQueue)
-  assert.equal(round.currentKnowledgeBlockId, currentId)
-  assert.equal(round.revealed, true)
-  assert.equal(round.pendingEvent, pendingEvent)
-  assert.deepEqual(round.firstAcceptedByBlock, {})
-
-  await reviewStore.retryPending('subject-a')
-  for (let index = 1; index < 5; index += 1) {
-    reviewStore.revealCurrentCard('subject-a')
-    await reviewStore.submitRating('subject-a', 'GOOD', 4)
-  }
-  assert.equal(reviewStore.getRound('subject-a').currentKnowledgeBlockId, null)
-  assert.equal(reviewStore.getRound('subject-a').remainingIds.length, 10)
-  reviewStore.nextGroup('subject-a')
-  const resumed = reviewStore.getRound('subject-a')
-  assert.equal(reviewStore.getGroupSize('subject-a'), 10)
-  assert.equal(resumed.groupSize, 10)
-  assert.equal(resumed.firstGroupCount, 10)
-  assert.equal(resumed.queue.length, 10)
-  assert.equal(Object.keys(resumed.firstAcceptedByBlock).length, 5)
-})
-
-test('first weak rating schedules once and later same-round ratings only consolidate in the queue', async () => {
-  const { reviewStore } = fixture()
-  const dueAt = '2026-10-15T09:30:00.000Z'
-  let eventCount = 0
-  useReviewApi.getSubjectStates = async () => page([])
-  useReviewApi.recordEvent = async (payload) => {
-    eventCount += 1
-    return { event: { clientEventId: payload.clientEventId }, state: stateView(payload.knowledgeBlockId, dueAt, 1) }
-  }
-
-  await reviewStore.loadSubjectStates('subject-a')
-  reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5, now: new Date('2026-10-08T00:00:00Z') })
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'AGAIN', 12)
-
-  const roundAfterFirstRating = reviewStore.getRound('subject-a')
-  assert.equal(eventCount, 1)
-  assert.equal(roundAfterFirstRating.firstAcceptedByBlock['kb-a'].dueAt, dueAt)
-  assert.deepEqual(roundAfterFirstRating.queue, ['kb-a'])
-
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'HARD', 9)
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'GOOD', 8)
-
-  assert.equal(eventCount, 1)
-  assert.deepEqual(reviewStore.getRound('subject-a').completed, ['kb-a'])
-  assert.deepEqual(reviewStore.getRound('subject-a').queue, [])
-})
-
-test('practice ratings requeue weak feedback without posting another formal event', async () => {
-  const { reviewStore } = fixture()
-  let eventCount = 0
-  useReviewApi.getSubjectStates = async () => page([])
-  useReviewApi.recordEvent = async (payload) => {
-    eventCount += 1
-    return { event: { clientEventId: payload.clientEventId }, state: stateView(payload.knowledgeBlockId, '2026-10-15T00:00:00Z', 1) }
-  }
-
-  await reviewStore.loadSubjectStates('subject-a')
-  reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a', 'kb-b'], groupSize: 5 })
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'AGAIN', 5)
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'GOOD', 5)
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'AGAIN', 5)
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'SKIP', 5)
-
-  assert.equal(eventCount, 2)
-  assert.deepEqual(reviewStore.getRound('subject-a').queue, [])
-  assert.deepEqual(reviewStore.getRound('subject-a').completed, ['kb-b'])
-  assert.deepEqual(reviewStore.getRound('subject-a').skipped, ['kb-a'])
-})
-
-test('retry reuses the exact pending event after a network failure', async () => {
-  const { reviewStore } = fixture()
-  const payloads = []
-  let failOnce = true
-  useReviewApi.getSubjectStates = async () => page([])
-  useReviewApi.recordEvent = async (payload) => {
-    payloads.push(structuredClone(payload))
-    if (failOnce) {
-      failOnce = false
-      throw new Error('network timeout')
-    }
-    return { event: { clientEventId: payload.clientEventId }, state: stateView(payload.knowledgeBlockId, '2026-10-20T00:00:00.000Z', 1) }
-  }
-
-  await reviewStore.loadSubjectStates('subject-a')
-  reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5, now: new Date('2026-10-08T00:00:00Z') })
-  reviewStore.revealCurrentCard('subject-a')
-  await assert.rejects(reviewStore.submitRating('subject-a', 'GOOD', 14), /network timeout/)
-  const pending = structuredClone(reviewStore.getRound('subject-a').pendingEvent)
-  await reviewStore.retryPending('subject-a')
-
-  assert.deepEqual(payloads[1], payloads[0])
-  assert.equal(payloads[1].clientEventId, pending.clientEventId)
-  assert.deepEqual(reviewStore.getRound('subject-a').queue, [])
-})
-
-test('pending immutable score survives view unmount and settles once after remount', async () => {
-  const { reviewStore } = fixture()
-  const response = deferred()
-  let calls = 0
-  useReviewApi.getSubjectStates = async () => page([])
-  useReviewApi.recordEvent = async (payload) => {
-    calls += 1
-    assert.equal(Object.isFrozen(payload), true)
-    return response.promise
-  }
-
-  await reviewStore.loadSubjectStates('subject-a')
-  const firstRound = reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5 })
-  reviewStore.revealCurrentCard('subject-a')
-  const firstSubmit = reviewStore.submitRating('subject-a', 'GOOD', 11)
-  const pending = reviewStore.getRound('subject-a').pendingEvent
-  const remountedRound = reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 10 })
-  const retry = reviewStore.retryPending('subject-a')
-
-  assert.equal(remountedRound.roundId, firstRound.roundId)
-  assert.equal(Object.isFrozen(pending), true)
-  assert.equal(calls, 1)
-  response.resolve({ event: { clientEventId: pending.clientEventId }, state: stateView('kb-a', '2026-10-18T00:00:00Z', 1) })
-  await Promise.all([firstSubmit, retry])
-
-  assert.equal(calls, 1)
-  assert.equal(reviewStore.getRound('subject-a').pendingEvent, null)
-  assert.deepEqual(reviewStore.getRound('subject-a').completed, ['kb-a'])
-})
-
-test('a formal response without its scheduled state keeps the immutable event available for retry', async () => {
-  const { reviewStore } = fixture()
-  let calls = 0
-  const eventIds = []
-  useReviewApi.getSubjectStates = async () => page([])
-  useReviewApi.recordEvent = async (payload) => {
-    calls += 1
-    eventIds.push(payload.clientEventId)
-    return calls === 1
-      ? { event: { clientEventId: payload.clientEventId } }
-      : { event: { clientEventId: payload.clientEventId }, state: stateView('kb-a', '2026-10-19T00:00:00Z', 1) }
-  }
-
-  await reviewStore.loadSubjectStates('subject-a')
-  reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5 })
-  reviewStore.revealCurrentCard('subject-a')
-  await assert.rejects(reviewStore.submitRating('subject-a', 'GOOD', 9), /缺少下次复习状态/)
-  const pending = reviewStore.getRound('subject-a').pendingEvent
-  await reviewStore.retryPending('subject-a')
-
-  assert.equal(calls, 2)
-  assert.equal(eventIds[1], eventIds[0])
-  assert.equal(pending.clientEventId, eventIds[0])
-})
-
-test('an initial SKIP records only the existing SKIP event and leaves the block eligible next round', async () => {
-  const { reviewStore } = fixture()
-  const payloads = []
-  useReviewApi.getSubjectStates = async () => page([])
-  useReviewApi.recordEvent = async (payload) => {
-    payloads.push(payload)
-    return { event: { clientEventId: payload.clientEventId } }
-  }
-
-  await reviewStore.loadSubjectStates('subject-a')
-  reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5, now: new Date('2026-10-08T00:00:00Z') })
-  reviewStore.revealCurrentCard('subject-a')
-  await reviewStore.submitRating('subject-a', 'SKIP', 2)
-
-  assert.equal(payloads.length, 1)
-  assert.equal(payloads[0].rating, 'SKIP')
-  assert.equal(reviewStore.getRound('subject-a').firstAcceptedByBlock['kb-a'], undefined)
-  assert.deepEqual(reviewStore.getRound('subject-a').skipped, ['kb-a'])
-  reviewStore.endRound('subject-a')
-  reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5, now: new Date('2026-10-08T00:00:00Z') })
-  assert.deepEqual(reviewStore.getRound('subject-a').queue, ['kb-a'])
-})
-
 test('logout and account A to B to A transitions clear rounds and invalidate a pending local state read', async () => {
   const { authStore, reviewStore } = fixture('review-user-a')
   const subjectId = 'review-session-subject'
@@ -761,7 +555,7 @@ test('logout and account A to B to A transitions clear rounds and invalidate a p
     { id: 'kb-session', localCreate: true },
   ])
   await reviewStore.loadSubjectStates(subjectId)
-  reviewStore.startRound({ subjectId, knowledgeBlockIds: ['kb-session'], groupSize: 5 })
+  reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: 'kb-session', version: 0 }], groupSize: 5 })
 
   const originalList = repository.list.bind(repository)
   const snapshot = await originalList('KNOWLEDGE_BLOCK', { includeDeleted: true })
@@ -784,7 +578,7 @@ test('logout and account A to B to A transitions clear rounds and invalidate a p
   })
   readResult.resolve(snapshot)
   await assert.rejects(loading)
-  assert.equal(reviewStore.getRound(subjectId), null)
+  assert.equal(reviewStore.getLifecycleRound(subjectId), null)
   assert.equal(reviewStore.subjectStatesBySubjectId[subjectId], undefined)
 
   authStore.setSession({
@@ -792,30 +586,30 @@ test('logout and account A to B to A transitions clear rounds and invalidate a p
     tokens: { accessToken: 'review-user-a-access-2', refreshToken: 'review-user-a-refresh-2' },
     sessionId: 'review-user-a-session-2', serverDeviceId: 'review-user-a-device',
   })
-  assert.equal(reviewStore.getRound(subjectId), null)
+  assert.equal(reviewStore.getLifecycleRound(subjectId), null)
   assert.equal(reviewStore.subjectStatesBySubjectId[subjectId], undefined)
 })
 
-test('round state survives view unmount and remains isolated by subject', async () => {
+test('lifecycle round state survives view unmount and remains isolated by subject', async () => {
   const { reviewStore } = fixture()
   useReviewApi.getSubjectStates = async () => page([])
   await reviewStore.loadSubjectStates('subject-a')
   await reviewStore.loadSubjectStates('subject-b')
 
-  const first = reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 5 })
-  reviewStore.revealCurrentCard('subject-a')
+  const first = reviewStore.startLifecycleRound({ subjectId: 'subject-a', knowledgeBlocks: [{ id: 'kb-a', version: 1 }], groupSize: 5 })
+  reviewStore.beginLifecycleRecall('subject-a')
   const startedAt = first.currentStartedAt
   reviewStore.reconcileSubjectBlocks('subject-a', ['kb-a'])
-  const resumed = reviewStore.startRound({ subjectId: 'subject-a', knowledgeBlockIds: ['kb-a'], groupSize: 10 })
-  const otherSubject = reviewStore.startRound({ subjectId: 'subject-b', knowledgeBlockIds: ['kb-b'], groupSize: 5 })
+  const resumed = reviewStore.startLifecycleRound({ subjectId: 'subject-a', knowledgeBlocks: [{ id: 'kb-a', version: 1 }], groupSize: 10 })
+  const otherSubject = reviewStore.startLifecycleRound({ subjectId: 'subject-b', knowledgeBlocks: [{ id: 'kb-b', version: 1 }], groupSize: 5 })
 
   assert.equal(resumed.roundId, first.roundId)
   assert.equal(resumed.groupSize, 5)
-  assert.equal(resumed.revealed, true)
+  assert.equal(resumed.phase, 'LEARNING_RECALL')
   assert.equal(resumed.currentStartedAt, startedAt)
   assert.equal(otherSubject.roundId === first.roundId, false)
-  assert.equal(reviewStore.getRound('subject-a').currentKnowledgeBlockId, 'kb-a')
-  assert.equal(reviewStore.getRound('subject-b').currentKnowledgeBlockId, 'kb-b')
+  assert.equal(reviewStore.getLifecycleRound('subject-a').currentKnowledgeBlockId, 'kb-a')
+  assert.equal(reviewStore.getLifecycleRound('subject-b').currentKnowledgeBlockId, 'kb-b')
 })
 
 test('normal token rotation within the same owner device and session keeps a local state read current', async () => {
@@ -891,10 +685,9 @@ test('a late local state read cannot overwrite a newer complete read or its load
   assert.equal(reviewStore.subjectStatesLoadingBySubjectId[subjectId], false)
 })
 
-test('subject history reloads persisted legacy events and lifecycle audit separately', async () => {
+test('subject history reloads lifecycle audit only', async () => {
   const { authStore, reviewStore } = fixture('lifecycle-history-user')
   const subjectId = 'subject-history'
-  const legacy = [{ id: 'legacy-review', knowledgeBlockId: 'kb-history', rating: 'GOOD', reviewedAt: '2025-01-01T00:00:00Z' }]
   const audit = {
     knowledgeBlockId: 'kb-history',
     knowledgeBlockVersion: 2,
@@ -912,13 +705,13 @@ test('subject history reloads persisted legacy events and lifecycle audit separa
   }
   await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{
     id: 'kb-history', version: 2, state: null, commands: audit.commands,
-    effectiveReviews: audit.effectiveReviews, legacyEvents: legacy,
+    effectiveReviews: audit.effectiveReviews,
   }])
 
-  await reviewStore.loadSubjectHistory(subjectId, 'kb-history')
+  const loaded = await reviewStore.loadSubjectHistory(subjectId, 'kb-history')
 
   const key = subjectId + '\u0000kb-history'
-  assert.deepEqual(reviewStore.historyBySubjectBlock[key], legacy)
+  assert.deepEqual(loaded, audit)
   assert.deepEqual(reviewStore.lifecycleHistoryBySubjectBlock[key], audit)
 })
 
@@ -958,14 +751,8 @@ test('deleteSubject after pane unmount clears only the deleted local review scop
     if (stateCalls === 2) paneStateRead.resolve()
     return lateStates.promise
   }
-  const lateLegacyHistory = deferred()
-  const legacyRead = deferred()
   const lateLifecycleHistory = deferred()
   const lifecycleRead = deferred()
-  LocalReviewService.prototype.getLegacyHistory = async function () {
-    legacyRead.resolve()
-    return lateLegacyHistory.promise
-  }
   LocalReviewService.prototype.getLifecycleHistory = async function (userId, deviceId, knowledgeBlockId) {
     lifecycleRead.resolve()
     return lateLifecycleHistory.promise.then((history) => ({ ...history, knowledgeBlockId }))
@@ -974,8 +761,6 @@ test('deleteSubject after pane unmount clears only the deleted local review scop
   const pendingStateLoad = reviewStore.loadSubjectStates(subjectId)
   await firstStateRead.promise
   const pendingHistory = reviewStore.loadSubjectHistory(subjectId, 'kb-a')
-  await legacyRead.promise
-  lateLegacyHistory.resolve([])
   await lifecycleRead.promise
   const mountedPane = await mountReviewPane(pinia, subjectId)
   await paneStateRead.promise
@@ -986,7 +771,7 @@ test('deleteSubject after pane unmount clears only the deleted local review scop
   assert.equal(reviewStore.getLifecycleRound(subjectId), null)
   assert.equal(reviewStore.isSubjectStatesLoaded(subjectId), false)
   assert.equal(reviewStore.subjectStatesBySubjectId[subjectId], undefined)
-  assert.equal(reviewStore.historyBySubjectBlock[`${subjectId}\u0000kb-a`], undefined)
+  assert.equal(reviewStore.lifecycleHistoryBySubjectBlock[`${subjectId}\u0000kb-a`], undefined)
 
   lateStates.resolve({ items: [] })
   lateLifecycleHistory.resolve({
@@ -998,7 +783,7 @@ test('deleteSubject after pane unmount clears only the deleted local review scop
   assert.equal(reviewStore.getLifecycleRound(subjectId), null)
   assert.equal(reviewStore.isSubjectStatesLoaded(subjectId), false)
   assert.equal(reviewStore.subjectStatesBySubjectId[subjectId], undefined)
-  assert.equal(reviewStore.historyBySubjectBlock[`${subjectId}\u0000kb-a`], undefined)
+  assert.equal(reviewStore.lifecycleHistoryBySubjectBlock[`${subjectId}\u0000kb-a`], undefined)
   assert.equal(subjectStore.subjects.length, 0)
 })
 
@@ -1010,7 +795,7 @@ test('a failed subject tombstone keeps its active review round and state cache',
   const { repository } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{ id: 'kb-a', state: null }])
   subjectStore.subjects = [subjectModel(subjectId)]
   await reviewStore.loadSubjectStates(subjectId)
-  reviewStore.startRound({ subjectId, knowledgeBlockIds: ['kb-a'], groupSize: 5 })
+  reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: 'kb-a', version: 1 }], groupSize: 5 })
 
   const originalCommit = repository.commitMutation.bind(repository)
   repository.commitMutation = async (input) => {
@@ -1021,7 +806,7 @@ test('a failed subject tombstone keeps its active review round and state cache',
   }
 
   await assert.rejects(subjectStore.deleteSubject(subjectId), /tombstone rejected/)
-  assert.ok(reviewStore.getRound(subjectId))
+  assert.ok(reviewStore.getLifecycleRound(subjectId))
   assert.equal(reviewStore.isSubjectStatesLoaded(subjectId), true)
 })
 
@@ -1035,7 +820,7 @@ test('a delayed A subject deletion cannot clear the same subject round after B s
   const { repository } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{ id: blockA, state: null }])
   subjectStore.subjects = [subjectModel(subjectId)]
   await reviewStore.loadSubjectStates(subjectId)
-  reviewStore.startRound({ subjectId, knowledgeBlockIds: [blockA], groupSize: 5 })
+  reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: blockA, version: 1 }], groupSize: 5 })
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   await localDb.init()
   const repositoryB = await getLocalRepository('review-delete-user-b', 'user-b-device')
@@ -1059,51 +844,16 @@ test('a delayed A subject deletion cannot clear the same subject round after B s
       subjectStore.subjects = [subjectModel(subjectId)]
       reviewStore.reconcileSubjectBlocks(subjectId, [blockB])
       await reviewStore.loadSubjectStates(subjectId)
-      reviewStore.startRound({ subjectId, knowledgeBlockIds: [blockB], groupSize: 5 })
+      reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: blockB, version: 1 }], groupSize: 5 })
     }
     return result
   }
 
   await subjectStore.deleteSubject(subjectId)
-  const currentRound = reviewStore.getRound(subjectId)
+  const currentRound = reviewStore.getLifecycleRound(subjectId)
   assert.ok(currentRound)
   assert.equal(currentRound.queue[0], blockB)
   assert.equal(reviewStore.subjectStatesBySubjectId[subjectId][0].knowledgeBlockId, blockB)
-})
-
-test('version conflict requires fresh states and explicit confirmation with a new event id', async () => {
-  const { authStore, reviewStore } = fixture('legacy-version-conflict-user')
-  const subjectId = `subject-version-conflict-${Date.now()}`
-  const { repository, contentHashes, localReviewService } = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [
-    { id: 'kb-a', state: null },
-  ])
-  const requests = []
-  useReviewApi.recordEvent = async (payload) => {
-    requests.push(structuredClone(payload))
-    if (requests.length === 1) throw new ApiProblemError({ title: 'Version conflict', detail: 'conflict', status: 409, code: 'RESOURCE_VERSION_CONFLICT' })
-    return { event: { clientEventId: payload.clientEventId }, state: stateView('kb-a', '2026-10-20T00:00:00Z', 4) }
-  }
-
-  await reviewStore.loadSubjectStates(subjectId)
-  reviewStore.startRound({ subjectId, knowledgeBlockIds: ['kb-a'], groupSize: 5 })
-  reviewStore.revealCurrentCard(subjectId)
-  await assert.rejects(reviewStore.submitRating(subjectId, 'HARD', 7), /conflict/)
-  assert.equal(reviewStore.getRound(subjectId).conflictNeedsConfirmation, true)
-  const authoritativeState = stateView('kb-a', '2026-10-12T00:00:00Z', 3, {
-    knowledgeBlockVersion: 1, contentHash: contentHashes['kb-a'],
-  })
-  assert.equal(await localReviewService.importLifecycleHistory(
-    authStore.user.id, authStore.serverDeviceId, 'kb-a', {
-      knowledgeBlockId: 'kb-a', knowledgeBlockVersion: 1, protocolVersion: 2,
-      state: authoritativeState, commands: [], effectiveReviews: [],
-    },
-  ), true)
-  await reviewStore.reconfirmPending(subjectId)
-
-  assert.equal(requests[0].baseVersion, 0)
-  assert.equal(requests[1].baseVersion, 3)
-  assert.notEqual(requests[0].clientEventId, requests[1].clientEventId)
-  assert.equal(reviewStore.getRound(subjectId).firstAcceptedByBlock['kb-a'].state.version, 4)
 })
 
 test('subject review UI contains the three state lists and first-rating retry controls', async () => {
@@ -1114,6 +864,8 @@ test('subject review UI contains the three state lists and first-rating retry co
   assert.match(source, /自测复习/)
   assert.match(source, /retryPending/)
   assert.match(source, /reconfirmPending/)
+  assert.match(source, /reviewStore\.retryLifecyclePending/)
+  assert.match(source, /reviewStore\.reconfirmLifecyclePending/)
   assert.match(source, /结束本轮/)
   assert.match(source, /下一组知识块数量/)
   assert.match(source, /round\.firstGroupCount/)
@@ -1164,10 +916,7 @@ test('review history follows the current card and the round summary shows first 
   const blockA = `kb-history-a-${Date.now()}`
   const blockB = `kb-history-b-${Date.now()}`
   await seedLocalReviewSubject(authStore, reviewStore, subjectId, [
-    { id: blockA, version: 1, title: 'A', content: '内容-A', state: stateView(blockA, '2026-10-07T00:00:00.000Z', 1), legacyEvents: [{
-      id: `history-${blockA}`, knowledgeBlockId: blockA, rating: 'GOOD',
-      reviewedAt: '2025-01-02T03:04:05.000Z', durationSeconds: 95,
-    }] },
+    { id: blockA, version: 1, title: 'A', content: '内容-A', state: stateView(blockA, '2026-10-07T00:00:00.000Z', 1) },
     { id: blockB, version: 1, title: 'B', content: '内容-B', state: stateView(blockB, '2026-10-07T00:00:00.000Z', 1) },
   ])
   await reviewStore.loadSubjectStates(subjectId)
@@ -1184,9 +933,9 @@ test('review history follows the current card and the round summary shows first 
   assert.equal(reviewStore.getLifecycleRound(subjectId).currentKnowledgeBlockId, blockA)
 
   const historyA = await reviewStore.loadSubjectHistory(subjectId, blockA)
-  assert.equal(historyA.length, 1)
-  assert.equal(historyA[0].reviewedAt, '2025-01-02T03:04:05.000Z')
-  assert.equal(historyA[0].durationSeconds, 95)
+  assert.equal(historyA.knowledgeBlockId, blockA)
+  assert.deepEqual(historyA.commands, [])
+  assert.deepEqual(historyA.effectiveReviews, [])
 
   await waitFor(() => reviewStore.isSubjectStatesLoaded(subjectId)
     && findButton(root, '认识') && !findButton(root, '认识').props.disabled,
@@ -1202,7 +951,7 @@ test('review history follows the current card and the round summary shows first 
     'the local confirmed review should reload before moving to the next card')
 
   assert.equal(reviewStore.getLifecycleRound(subjectId).currentKnowledgeBlockId, blockB)
-  assert.deepEqual(await reviewStore.loadSubjectHistory(subjectId, blockB), [])
+  assert.deepEqual((await reviewStore.loadSubjectHistory(subjectId, blockB)).effectiveReviews, [])
   const viewText = collectText(root)
   assert.doesNotMatch(viewText, /2025/)
   assert.match(viewText, /首次选择：忘记 0 · 模糊 0 · 认识 1/)
@@ -1980,18 +1729,14 @@ test('reconfirmation discards a pending local command when imported text qualifi
   assert.equal((await inspectLocalReview(authStore, localRepository, blockId)).pending.length, 0)
 })
 
-test('reconfirmation consults persisted local lifecycle history when a legacy update clears review ids', async () => {
+test('reconfirmation consults persisted lifecycle history when a concurrent update clears review ids', async () => {
   const suffix = Date.now()
   const { authStore, reviewStore } = fixture('reconfirm-legacy-' + suffix)
   const subjectId = 'subject-reconfirm-legacy-' + suffix
   const blockId = 'kb-reconfirm-legacy-' + suffix
-  const legacyEvent = {
-    id: 'legacy-' + blockId, knowledgeBlockId: blockId, rating: 'GOOD',
-    reviewedAt: '2025-01-02T03:04:05.000Z', durationSeconds: 95, firstLearning: false,
-  }
   const baseline = await seedLocalReviewSubject(authStore, reviewStore, subjectId, [{
     id: blockId, version: 1, content: 'Legacy bridge block',
-    state: stateView(blockId, new Date(Date.now() - 3600000).toISOString(), 1), legacyEvents: [legacyEvent],
+    state: stateView(blockId, new Date(Date.now() - 3600000).toISOString(), 1),
   }])
   await reviewStore.loadSubjectStates(subjectId)
   const round = reviewStore.startLifecycleRound({ subjectId, knowledgeBlocks: [{ id: blockId, version: 1 }], groupSize: 5 })
@@ -2018,7 +1763,7 @@ test('reconfirmation consults persisted local lifecycle history when a legacy up
   assert.equal(await localService.importLifecycleHistory(authStore.user.id, authStore.serverDeviceId, blockId, {
     knowledgeBlockId: blockId, knowledgeBlockVersion: 1, protocolVersion: 2,
     state: advancedState, commands: selectedRecord.history, effectiveReviews: [],
-  }, [legacyEvent]), true)
+  }), true)
   let remoteHistoryCalls = 0
   useReviewApi.getLifecycleHistory = async () => {
     remoteHistoryCalls += 1
@@ -2030,7 +1775,7 @@ test('reconfirmation consults persisted local lifecycle history when a legacy up
   assert.equal(round.pendingCommand, null)
   assert.equal(round.phase, 'GROUP_COMPLETE')
   assert.match(round.pendingError, /另一设备更新/)
-  assert.deepEqual(await reviewStore.loadSubjectHistory(subjectId, blockId), [legacyEvent])
+  assert.equal((await reviewStore.loadSubjectHistory(subjectId, blockId)).commands.length, 1)
 })
 
 test('SubjectWorkspace exposes review and statistics as subject-local views with direct query links', async () => {
@@ -2359,11 +2104,10 @@ test('voluntary pane shows the actual selected group size for the default and se
     await seedLocalReviewSubject(authStore, reviewStore, subjectId, blocks)
     const { root } = await mountReviewPane(pinia, subjectId)
     await waitFor(() => reviewStore.isSubjectStatesLoaded(subjectId)
-      && findButton(findElementByClass(root, 'subject-review__voluntary-counts'), String(selectedSize))
+      && findButton(root, selectedSize + ' 个')
       && findButton(root, '自测复习'),
-      'the selected self-test size should be available after local state loads')
-    const voluntaryCounts = findElementByClass(root, 'subject-review__voluntary-counts')
-    await findButton(voluntaryCounts, String(selectedSize)).props.onClick()
+      'the unified group size and self-test entrance should be available after local state loads')
+    await findButton(root, selectedSize + ' 个').props.onClick()
     await findButton(root, '自测复习').props.onClick()
     await settleVue()
 

@@ -11,6 +11,7 @@ import {
 import { getDeviceIdentity } from '@/auth/deviceIdentity'
 import { isValidSession } from '@/auth/sessionValidation'
 import type { AuthSessionStatus } from '@/auth/authSessionState'
+import { deleteAvatarCache, getAvatarCache, saveAvatarCache } from '@/services/avatarCache'
 
 export { isValidSession }
 
@@ -44,6 +45,33 @@ export const useAuthStore = defineStore(
     const reauthenticationReason = ref<string | null>(null)
     const avatarUrl = ref<string>('')
     let currentAvatarBlobUrl: string | null = null
+    let currentAvatarUserId: string | null = null
+    let avatarRequestGeneration = 0
+    let currentLoadUser: string | null = null
+    let loadAvatarPromise: Promise<string> | null = null
+
+    function invalidateAvatarRequest(): void {
+      avatarRequestGeneration += 1
+      currentLoadUser = null
+      loadAvatarPromise = null
+    }
+
+    function clearAvatarDisplay(): void {
+      if (currentAvatarBlobUrl) {
+        URL.revokeObjectURL(currentAvatarBlobUrl)
+        currentAvatarBlobUrl = null
+      }
+      currentAvatarUserId = null
+      avatarUrl.value = ''
+    }
+
+    function showAvatarBlob(userId: string, blob: Blob): string {
+      if (currentAvatarBlobUrl) URL.revokeObjectURL(currentAvatarBlobUrl)
+      currentAvatarBlobUrl = URL.createObjectURL(blob)
+      currentAvatarUserId = userId
+      avatarUrl.value = currentAvatarBlobUrl
+      return currentAvatarBlobUrl
+    }
 
     const token = computed({
       get: () => tokens.value?.accessToken ?? null,
@@ -82,6 +110,10 @@ export const useAuthStore = defineStore(
         clearSession()
         return
       }
+      invalidateAvatarRequest()
+      if (currentAvatarUserId && currentAvatarUserId !== result.user.id) {
+        clearAvatarDisplay()
+      }
       user.value = result.user ?? null
       tokens.value = result.tokens ?? null
       sessionId.value = result.sessionId ?? null
@@ -97,6 +129,8 @@ export const useAuthStore = defineStore(
     }
 
     function clearSession(): void {
+      const currentUserId = user.value?.id
+      invalidateAvatarRequest()
       user.value = null
       tokens.value = null
       sessionId.value = null
@@ -104,14 +138,12 @@ export const useAuthStore = defineStore(
       authStatus.value = 'anonymous'
       reauthenticationReason.value = null
       showAuthModal.value = false
-      if (currentAvatarBlobUrl) {
-        URL.revokeObjectURL(currentAvatarBlobUrl)
-        currentAvatarBlobUrl = null
-      }
-      avatarUrl.value = ''
+      clearAvatarDisplay()
+      if (currentUserId) void deleteAvatarCache(currentUserId)
     }
 
     function requireReauthentication(reason = '登录会话已失效，请重新登录。'): void {
+      invalidateAvatarRequest()
       user.value = null
       tokens.value = null
       sessionId.value = null
@@ -119,6 +151,7 @@ export const useAuthStore = defineStore(
       authStatus.value = 'reauthentication-required'
       reauthenticationReason.value = reason
       showAuthModal.value = true
+      clearAvatarDisplay()
     }
 
     async function login(payload: LoginPayload): Promise<AuthResult> {
@@ -171,42 +204,92 @@ export const useAuthStore = defineStore(
     }
 
     function setAvatarUrl(url: string): void {
-      if (currentAvatarBlobUrl && currentAvatarBlobUrl !== url) {
-        URL.revokeObjectURL(currentAvatarBlobUrl)
-        currentAvatarBlobUrl = null
-      }
+      invalidateAvatarRequest()
+      if (currentAvatarBlobUrl && currentAvatarBlobUrl !== url) URL.revokeObjectURL(currentAvatarBlobUrl)
+      currentAvatarBlobUrl = null
       avatarUrl.value = url
       if (url.startsWith('blob:')) {
         currentAvatarBlobUrl = url
+        currentAvatarUserId = user.value?.id ?? null
+      } else {
+        currentAvatarUserId = null
       }
     }
 
     async function loadAvatar(): Promise<string> {
-      if (!tokens.value?.accessToken) {
-        if (currentAvatarBlobUrl) {
-          URL.revokeObjectURL(currentAvatarBlobUrl)
-          currentAvatarBlobUrl = null
-        }
-        avatarUrl.value = ''
+      const requestedUserId = user.value?.id
+      if (!tokens.value?.accessToken || !requestedUserId) {
+        invalidateAvatarRequest()
+        clearAvatarDisplay()
         return ''
       }
-      try {
-        const blob = await useAuthApi.getAvatarBlob()
-        if (blob && blob.size > 0) {
-          if (currentAvatarBlobUrl) {
-            URL.revokeObjectURL(currentAvatarBlobUrl)
+
+      if (currentAvatarUserId && currentAvatarUserId !== requestedUserId) clearAvatarDisplay()
+      if (loadAvatarPromise && currentLoadUser === requestedUserId) return loadAvatarPromise
+
+      const generation = ++avatarRequestGeneration
+      currentLoadUser = requestedUserId
+      const isCurrentRequest = () => avatarRequestGeneration === generation && user.value?.id === requestedUserId
+      const request = (async () => {
+        try {
+          if (currentAvatarUserId !== requestedUserId || !avatarUrl.value) {
+            const cachedBlob = await getAvatarCache(requestedUserId)
+            if (!isCurrentRequest()) return avatarUrl.value
+            if (cachedBlob) showAvatarBlob(requestedUserId, cachedBlob)
           }
-          currentAvatarBlobUrl = URL.createObjectURL(blob)
-          avatarUrl.value = currentAvatarBlobUrl
-          return currentAvatarBlobUrl
-        } else {
-          avatarUrl.value = ''
-          return ''
+
+          try {
+            const blob = await useAuthApi.getAvatarBlob()
+            if (!isCurrentRequest()) return avatarUrl.value
+
+            if (blob && blob.size > 0) {
+              showAvatarBlob(requestedUserId, blob)
+              await saveAvatarCache(requestedUserId, blob)
+              return avatarUrl.value
+            }
+
+            // Contract uses HTTP 404 to signal an unset avatar. An empty 200
+            // response is not authoritative and must not erase the offline copy.
+            return avatarUrl.value
+          } catch (error: any) {
+            if (!isCurrentRequest()) return avatarUrl.value
+
+            const status = error?.status ?? error?.problem?.status ?? error?.response?.status
+            if (status === 404) {
+              clearAvatarDisplay()
+              await deleteAvatarCache(requestedUserId)
+            }
+
+            // 网络错误和服务端故障保留已显示的本地头像。
+            return avatarUrl.value
+          }
+        } finally {
+          if (avatarRequestGeneration === generation && currentLoadUser === requestedUserId) {
+            currentLoadUser = null
+            loadAvatarPromise = null
+          }
         }
-      } catch {
-        avatarUrl.value = ''
-        return ''
+      })()
+      loadAvatarPromise = request
+      return request
+    }
+
+    async function setAvatarFromBlob(blob: Blob, expectedUserId: string): Promise<string> {
+      const currentUserId = user.value?.id
+      if (!currentUserId || currentUserId !== expectedUserId || blob.size === 0) return avatarUrl.value
+
+      invalidateAvatarRequest()
+      const url = showAvatarBlob(currentUserId, blob)
+      await saveAvatarCache(currentUserId, blob)
+      return user.value?.id === currentUserId ? url : avatarUrl.value
+    }
+
+    async function clearAvatar(expectedUserId: string): Promise<void> {
+      if (user.value?.id === expectedUserId || currentAvatarUserId === expectedUserId) {
+        invalidateAvatarRequest()
+        clearAvatarDisplay()
       }
+      await deleteAvatarCache(expectedUserId)
     }
 
     return {
@@ -234,6 +317,8 @@ export const useAuthStore = defineStore(
       avatarUrl,
       setAvatarUrl,
       loadAvatar,
+      setAvatarFromBlob,
+      clearAvatar,
     }
   },
   {

@@ -86,6 +86,46 @@ class AiSourceChunkTests {
         verifyNoInteractions(chunkRepository);
     }
 
+    @Test
+    void stagedCheckpointIsInactiveAndBoundToDeterministicChunkMetadata() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID generation = UUID.randomUUID();
+        List<TextChunk> chunks = List.of(new TextChunk(7, "checkpoint", 20, 30));
+        when(chunkRepository.findAllByUserIdAndSourceIdAndGenerationOrderByOrdinalAsc(userId, sourceId, generation))
+                .thenReturn(List.of());
+        when(chunkRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        chunkService.stageCheckpoint(userId, sourceId, generation, chunks, List.of(vector()));
+
+        ArgumentCaptor<List<SourceChunkEntity>> captor = ArgumentCaptor.forClass(List.class);
+        verify(chunkRepository).saveAll(captor.capture());
+        SourceChunkEntity row = captor.getValue().getFirst();
+        assertThat(row.getUserId()).isEqualTo(userId);
+        assertThat(row.getSourceId()).isEqualTo(sourceId);
+        assertThat(row.getGeneration()).isEqualTo(generation);
+        assertThat(row.getOrdinal()).isEqualTo(7);
+        assertThat(row.isActive()).isFalse();
+        assertThat(row.getContent()).isEqualTo("checkpoint");
+        assertThat(row.getCharStart()).isEqualTo(20);
+        assertThat(row.getCharEnd()).isEqualTo(30);
+    }
+
+    @Test
+    void checkpointLoadRejectsRowsThatDoNotMatchParsedContent() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID generation = UUID.randomUUID();
+        SourceChunkEntity wrong = new SourceChunkEntity(UUID.randomUUID(), userId, sourceId, 0,
+                "old text", "0".repeat(64), 0, 8, "[]", generation, false);
+        when(chunkRepository.findAllByUserIdAndSourceIdAndGenerationOrderByOrdinalAsc(userId, sourceId, generation))
+                .thenReturn(List.of(wrong));
+
+        assertThatThrownBy(() -> chunkService.loadCheckpoint(userId, sourceId, generation,
+                List.of(new TextChunk(0, "new text", 0, 8))))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
     private static List<Double> vector() {
         return java.util.stream.Stream.generate(() -> 0.0).limit(1024).toList();
     }

@@ -21,7 +21,7 @@ export type OverviewFailureCode =
 export type OverviewRegenerationResult =
   | { status: 'STARTED'; requestId?: string }
   | { status: 'SKIPPED'; code: OverviewSkipCode }
-  | { status: 'FAILED'; code: OverviewFailureCode; detail?: string }
+  | { status: 'FAILED'; code: OverviewFailureCode; detail?: string; httpStatus?: number; retryAfterSeconds?: number; resetAt?: string }
 
 export interface OverviewLocator { page: number | null; blockId: string | null }
 export interface OverviewSection { title: string; summary: string | null; sourceIds: string[]; locator: OverviewLocator | null }
@@ -46,7 +46,20 @@ export interface SubjectOverviewRequest {
   instruction?: string
   sources: SubjectOverviewSourceInput[]
 }
-export interface OverviewRequestContext { requestId: string; signal?: AbortSignal }
+import type { SyncRequestScopeTicket } from '@/api/request'
+
+export interface OverviewRequestContext {
+  requestId: string
+  signal?: AbortSignal
+  scope?: SyncRequestScopeTicket
+  consumerId?: string
+}
+
+export interface OverviewOperationHandle<T = OverviewRegenerationResult> extends Promise<T> {
+  readonly consumerId: string
+  stop(): void
+}
+
 export interface OverviewApi {
   generateSourceOverview(request: SourceOverviewRequest, context?: OverviewRequestContext): Promise<OverviewResponse>
   generateSubjectOverview(request: SubjectOverviewRequest, context?: OverviewRequestContext): Promise<OverviewResponse>

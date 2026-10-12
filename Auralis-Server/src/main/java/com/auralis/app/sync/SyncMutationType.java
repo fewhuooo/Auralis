@@ -4,5 +4,7 @@ public enum SyncMutationType {
     CREATE,
     UPDATE,
     DELETE,
-    RESTORE
+    RESTORE,
+    SCHEDULE_INSERTION,
+    SCHEDULE_SWAP
 }

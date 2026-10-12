@@ -1,5 +1,152 @@
 # Auralis 当前问题与审查登记
 
+### P1-AI-Subject-Overview-Aggregate-Prompt（IMPORTANT；代码、定向回归、审查与本机部署关闭，业务待实测）
+
+- 证据：Subject 直接组合所有合法 outline / summary，在出站前以完整序列化 prompt 的 12000 字符上限拒绝；单源合法大输入与现场日志相同，preflight 成功后 `VALIDATION_FAILED` / cause null / Provider 0 次。当前服务端三源缓存按空 instruction 重建为 16631 字符，原始请求体未保留。
+- 影响：各文件总览可用仍不能生成学科总览；PC 现行错误分类与 UI 将详情改为通用失败提示，用户不能识别 prompt 校验原因。
+- 处理：仅 Subject 内部无损拆片 / 精确分包、同 scope 的有界归纳与既有 REDUCE；不放宽 prompt / 用量限制、不修改数据库或扩改前端。本次为明确 correctness 例外，已有 Source 流程保持。
+- 关闭条件：合法单源 / 多源 / 三 mode / 转义及别名 / 取消预算相关回归、唯一只读审查、已测源码对应与文档回写通过；本机部署和真实 Provider / GUI 重试独立记录。[计划与证据](../plans/2026-10-12-subject-overview-prompt-batching.md)。
+- 最终语义片段按所选字段分配一次，规划时扣绝对期限；Subject 中间 MAP 沿原 compact 指令，最终单包不使用中间目标。新增有界 RED 及阶段 RED 对应修复后，全新编译 Surefire 73/73、源码 / class 证据通过，唯一 reviewer 0 B / I / O。最后 shell exit 丢失明确登记，不冒称 0；过时增量结果排除。运行与真实模型结果仍独立验收。
+- 本机香港 13:57:23 仅 backend 更新为 `a5a50bb7…`，healthy / readiness 200、部署 Service 与已测 class 精确匹配；旧镜像保留。db / MinIO 与卷、Flyway V31、额度 / embedding Guard 保持。真实 Provider / GUI 重试是剩余业务验收，不能由部署健康代替。
+
+### 2026-10-12 embedding 排除额度与单人测试策略（代码、配置与运行策略核对关闭；业务测试待验收）
+
+- 需求：所有 ingestion / retrieval embedding 从用户和系统 token 窗口及本人展示中排除，历史 ledger 保留；单人小时 / 日默认提高到 1000000 / 2000000。
+- 边界：按 stage 判定，普通聊天 / Overview / 连接生成仍计量；embedding 保留并发、有效账户 / 任务租约、资源预算、调用次数和字节上限。窗口已满或已超额不应仅因此拒绝新 embedding。
+- 关闭条件：历史 settled / reserved 排除、普通生成拒绝、embedding 满额准入及并发 / cancel / expiry 回归；配置有效值、唯一只读审查和本机新 backend 运行态证据分别记录。实际 GUI / Provider 测试另验收，详见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。
+- 自动证据：相关后端 53/53，最终新增 2/2 与其重叠；配置 6/6、Compose quiet 和 allowlist 有效值通过，历史账本不改。更新前等有效 TASK lease 自然释放，并确认 RESERVED / 活动 ingestion 为 0 后只替换 backend。
+- 代码与配置审查层关闭：唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。本机镜像 `31f7dec…` healthy / readiness 200、有效额度与 Guard 字节码排除均确认，db / MinIO 与 Flyway V31 保持。系统日消耗 53567 / 2000000 的只读快照有余量；真实 Provider / GUI 操作结果仍独立验收。
+
+### IMPORTANT：embedding 完整用量被当作未知、上传阻塞核心同步（2026-10-12，最小修复与定向验证通过；新补丁运行态待验收）
+
+- 额度证据：目标大 PDF 三批 input actual 合计 22316，但适配器无条件丢弃 output，触发保守 charged 94615；小时上限 100000、余量 5385，下一批预留拒绝后正常延期到香港 11:00，未占有活跃 lease，也没有 RESERVED。历史 response 原始 usage 未捕获，不能由 NULL 反推 Provider 缺字段；合法 output 0 被丢弃已用真实适配器受控 RED 证明。
+- 最小处理：只解析官方 `completion_tokens`，合法 0 保留，未知/非法继续保守；不改限额、Guard、检查点、账本记录或免费模型策略。完整实际用量下才减少本次结算，修复不回改旧记录。
+- 同步证据：真实 PC store 的受控 probe 中，未返回的 asset queue wake 阻止普通 push/pull，释放后才继续；修复仅使上传 wake 后台执行，错误被消费且旧会话不影响新会话。资产完成后 draft 才进入 outbox、原通知触发后续同步。
+- 现场限制：目标原始 Asset 早于额度延期约四分钟 READY；两次现场数据库无 blocker，缺少 sync HTTP 证据。因此独立客户端缺陷与这次同步症状的历史因果分开记录。PC 对 quota 延期仍显示泛化排队，未增加公开 retry timestamp 或页面设计。
+- 原部署真实恢复：香港 11:00 自然重试，attempt=2、failure=0、无残留 lease/error；同 generation 从 32 个 inactive chunks 续做为 42 个 active chunks，job / Source READY，只新增一次 embedding。没有人为重跑。此证据关闭本次“调度未推进”的疑问，不代表尚未部署的解析与同步补丁已获得真实验收。
+- 自动验证：后端五类 56/56 在与主树源码相同的隔离副本通过；PC 最终四项回归与 actual-store probe、type-check/build 通过。51/51 完整相关套件先于最后安全日志与测试断言强化，随后四项覆盖改动重跑；静态门禁失败仍为本轮未改的 Rust 固定地址规则。
+- 代码与审查层关闭：相关回归通过，唯一 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0；五个主树源码/test hash 与已测版本匹配。运行态关闭条件仍为新补丁部署后实际完整 usage 结算、桌面上传期间其他实体及跨设备同步验收。详见 [本轮计划](../plans/2026-10-12-pdf-ingestion-quota-and-sync.md)。
+
+### IMPORTANT：PC 头像云端不可用时无法显示（实现已更新；运行态待验收）
+
+- 证据：旧 `useAuthStore.loadAvatar()` 与个人中心 `loadAvatar()` 都直接请求服务端头像；读取失败会清空全局 `avatarUrl`。头像仅保存在运行时 Blob URL，重启后没有本地副本。
+- 影响：断网或服务端暂时不可用时，PC 顶栏与个人中心不能显示已上传头像。
+- 处理：IndexedDB 按 `user.id` 缓存 Blob；加载时优先呈现缓存并后台请求云端刷新。网络错误保留缓存，明确 404 才清除；上传、重置、退出登录和账号切换均处理对应缓存与对象 URL 生命周期。
+- 代码验证：`npm.cmd run type-check` 退出码 0；本轮未运行测试。关闭条件：在 Tauri 桌面端在线建立缓存，重启后断网确认顶栏和个人中心均显示头像，并确认重置后回到首字母。
+- 只读复核：BLOCKER=0、IMPORTANT=0。OPTIONAL：同一账号重置请求的迟到响应若晚于后续头像上传，可能清掉后上传头像的本地缓存；本轮不修改 OPTIONAL 项。不同账号的缓存删除按用户 ID 隔离。
+
+### 2026-10-12 PC 设置与个人中心（Profile Studio）视觉重构交接状态
+
+- 设置中心（`src/views/Profile/index.vue`）完成 Awwwards 获奖级视觉设计、立体投影与微交互全面重构；
+- 建筑级双栏立体投影（左右面板 `20px` 圆角，近远场双层漫散阴影；内部卡片网格 `18px~20px` 圆角、Tier 3 控件底色与微晶边框）；
+- 标头瑞士现代微标 `SYSTEM PREFERENCES`、核心指标等宽数表、AI 使用额度微晶卡片、物理阻尼弹簧开关、聚焦扩散呼吸光晕与全覆盖深色模式系统；
+- 验证：`scripts/r4-profile-live-links.test.mjs`、`scripts/r4-profile-logout.test.mjs`（9/9 项测试）全量通过；`npm run type-check` 0 报错；`npm run build` 成功。真实 Tauri 桌面端 GUI 待人工走查。
+
+### 2026-10-12 PC Timeline 离线排期交接状态（代码审查关闭；真实环境待验收）
+
+- 代码覆盖本地原子事务、稳定命令 ID、离线插入/顺延/换位、Sync 幂等回放、pull/snapshot 成员保护及拒绝恢复。浏览器 `localStorage` 下所有 LocalRepository 状态改写要求 Web Locks API 并共用同源互斥锁；缺少 API 时写入拒绝且返回 `LOCAL_STORAGE_LOCK_UNAVAILABLE`。新增共享存储跨 repository 的排期/snapshot 和排期/cursor 交错回归。
+- PC 四个定向套件 173/173，`npm.cmd run type-check` 退出码 0；LocalRepository 套件单独 35/35。Server `SyncServiceTests` 21/21、`SyncSchemaTests` 4/4、`CoreDomainControllerTests` 9/9；合并定向 Maven 测试 34/34，clean 重建成功。新增回归验证缺少换位目标 ID 且快照失败时命令可重试，成功获取完整快照后恢复服务端任务投影。
+- OpenAPI artifact 和 PC/Mobile SDK 的 mutation enum 静态结构检查通过。PC `check:r4-pc` 退出码 1，仅命中未修改的 `src-tauri/src/local_asset_store.rs` 固定本地地址规则。
+- 独立 `OpenApiArtifactTests` 12/12；`scripts/check-openapi.ps1` 仍在 JUnit discovery 退出码 1（`NoClassDefFoundError: JsonNode`），所以运行时 artifact 对比未完成。
+- 最新只读复审发现的“缺少目标 ID 时先终结命令、随后快照失败会留下乐观任务排期”已按快照先行校验、失败回放原命令修复；最终复核 BLOCKER=0、IMPORTANT=0。真实 Tauri/断网重启和恢复、PostgreSQL/跨设备行为及部署验收仍未完成；命令验证不代表 GUI 或业务验收。
+
+### P1-AI-Overview-Final-Map-Budget-Mismatch（IMPORTANT，代码、相关验证和只读审查层关闭；部署验收待完成）
+
+- 证据：部署 JAR 与隔离失败反例中，Subject direct / 单批 Source 最终 MAP 请求 6144 被 `AiUsageGatewayService.boundedRequest` 的 4608 阈值拒绝；真实码 `AI_REQUEST_BUDGET_EXCEEDED`（413），Provider 0 次、reservation 0 行。现场 26ms 日志和两次只读账本快照吻合。
+- 影响：合法的学科总览及单批文件总览无法生成。异常本体沿 JSON/SSE 保留真实码，但 `OverviewGenerationService.stableErrorCode` 把用量码记为通用生成失败，影响定位。
+- 处理：仅对齐既有最终输出上限并补安全日志白名单，不更改任务/用户/系统预算、并发、租约、数据库记录或调度配置。
+- 关闭条件：真实服务→gateway→隔离账本回归通过、6145 超限仍拒绝且不出站、结算和 TASK 释放及 JSON/SSE/日志真实码得到验证，并完成唯一只读审查。代码关闭与部署/真实 Provider/GUI 验收分别记录，完整证据见 [诊断与修复](../plans/2026-10-11-overview-usage-limit-diagnosis.md)。当前运行 backend 已是今天的新镜像，本轮修复尚未部署；下方 406 条目的旧镜像是此前观察。
+- 自动证据：主树定向 19/19、本机 SSE 1/1；集成 2/2 是追加释放断言后的重跑，计数不相加。初始隔离 85/85、router 1/1 的范围与主树验证分开。唯一只读审查 BLOCKER=0、IMPORTANT=0，六项主树 source/test 与已测 manifest 一致；OPTIONAL=1 为两份诊断报告的 evidence 索引 SHA 待更新，按规则未修改，不影响代码测试证据。报告当前 hash 与 final-review 均登记在本轮计划。
+
+### P1-PC-Overview-406-Client-Server-Protocol-Skew（根因已定位；本机容器更新待执行）
+
+- 证据：当前 PC `postOverviewSse` 明确发送 `Accept: text/event-stream`。正在运行的 backend 镜像构建于 2026-10-09；容器字节码对应旧 `AiController`，Overview 方法直接返回 `OverviewResponse` 且未提供 SSE。现场日志显示 Provider/Overview 已成功，随后 `RequestResponseBodyMethodProcessor.writeWithMessageConverters` 因 `HttpMediaTypeNotAcceptableException` 失败，符合旧 Controller 尝试按 SSE Accept 写 JSON DTO 的协商失败。
+- 影响：运行中的旧服务在结果写出阶段返回 406，旧 `GlobalExceptionHandler` 又通过通用异常分支误报为 500。已在工作树为 Overview 提供的 JSON/SSE Controller 加回归测试，并让 406 返回 `NOT_ACCEPTABLE` Problem Details；Docker 容器仍是旧镜像，因此本机运行态尚未关闭。
+- `CACHE_RETURN` 不持久化结果；PC 收到响应后才执行 Overview results PUT。当前 request ID 仅关联日志，PC 手动重新生成会新建 request ID，响应丢失后可能再次调用 Provider 和计用量。防止跨失败重放需要独立幂等/结果回放设计，不包含在本次内容协商修复中。
+- 关闭条件：重建/重启 backend 后，从 PC 对 JSON 与 `text/event-stream` 两条成功路径取得运行态 HTTP 证据，并确认不再出现写出阶段 406。真实 Provider 与桌面操作另行验收。
+
+### 2026-10-11 Mobile / Tablet 复习接口调用待迁移（本轮范围外）
+
+- 共享服务端已移除 `/api/reviews/due`、`POST /api/reviews/events` 和旧 `/api/reviews/history`。Mobile / Tablet 的复习页面与 API wrapper 仍调用旧路由，复习请求当前会失败。
+- 本轮按用户限定只迁移 PC，不修改 Mobile / Tablet。恢复这些页面前，需将相应客户端迁移到 lifecycle 命令、states 与 lifecycle history；无需恢复旧路由或读取旧历史。
+
+### 2026-10-11 PC 总览生成返回后页面未自动更新（已关闭）
+
+- 现象与影响：用户反馈“总览后端返回之后，不能自动更新到页面上，自己刷新后才能显示”。后台生成完成落库后，UI 无感知，一直停留在初始占位或未刷新状态。
+- 解决：建立总览缓存更新事件机制（`OVERVIEW_CACHE_UPDATED_EVENT`），在仓储层落库后向 UI 广播；`SubjectWorkspace` 监听并在匹配当前学科或关联原材料时自动刷新缓存、大纲并解除 loading；补充原材料状态 deep watch 和 `getLatestFileOverview` 容错。
+- 关闭证据：`scripts/r4-subject-overview-ui.test.mjs` 增补测试通过，总览相关单元测试 120/120 全部通过；`vue-tsc` 0 报错。代码层已关闭，GUI 待验收。
+
+### 2026-10-11 Overview 硬超时与取消（IMPORTANT，代码、相关自动验证与只读审查层关闭）
+
+- 初始 RED：1500ms 期限下受控阻塞 Provider 实际 2658ms 才返回；真实 TLS 持续慢流同样超过期限。旧 JSON 等待期间无早期写入信号，PC AbortSignal 不能证明服务端停止。
+- 已实施：入口单调绝对期限、当前独占 socket 主动关闭、同路由 SSE、原 owner 期限与共享兴趣、PC 停止和生命周期围栏；B 结算规则保留。单一审查提出的 SSE 503、真实 SQLite 写入取消、阻塞 DNS 和 queued/active writer 提前释放名额均有 RED/GREEN，最小修复及证据见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
+- 相关自动验证通过：组合后端 124/124（与初期 84/51 重叠）、PC Overview 72/72、cache 14/14、sync 22/22、runtime 20/20 和 UI 16/16；源码 manifest、运行时 OpenAPI/SDK、类型和构建对应关系另有核对。唯一只读审查批准范围 BLOCKER=0、IMPORTANT=0。
+- 运行态验收继续开放：未部署，需在支持 SSE 的新版 backend 上验证真实 PC、代理刷新/断连及 Provider。JSON 无写出前断连保证；JDBC/数据库锁不能强制中止，原生 DNS 仅有界隔离；本地关闭不证明远端计算撤回。Mobile 旧 Review 类型错误和跨实例幂等不在本轮范围。
+
+### 2026-10-10 AI IMPORTANT 修复与验收边界（代码、相关自动验证与只读审查通过；真实环境待验收）
+
+| 问题 | 证据与影响 | 处理与关闭条件 |
+| --- | --- | --- |
+| IMPORTANT：伴读来源缺少文件名（代码与相关自动验证层关闭） | 原 `SubjectWorkspace` 消息映射丢弃 citation；用户无法从回答辨别实际检索来源。 | 历史/流式纯文本文件名已实现，相关 27/27、type/build 及单一只读代码审查通过；GUI 单独验收。 |
+| IMPORTANT：调用预算和并发保护缺失（代码、相关自动验证与只读审查层关闭） | 原 chat 未显式限定输出、usage 未统一结算；缺少任务累计额度和 Provider 闸门。 | B 已实现统一 gateway、持久预留/结算与全局/用户/任务预算；本人额度显示在三端个人中心。核心 H2/config 31/31、真实 PG 锁序 4/4、检查点/续做及 V29→V30 升级通过；真实 Provider、GUI 与生产发布独立待验收，见 [B 计划](../plans/2026-10-10-ai-usage-guard-b.md)。 |
+| IMPORTANT：Overview 缺少总任务时限（Provider 传输与相关自动验证层关闭） | 原合作式检查无法中止持续慢流、阻塞 TLS/写入及客户端断连后的调用。 | 2026-10-11 增加入口绝对期限、独占 socket 关闭、SSE 与有界 DNS 等待；相关本机 TLS/TCP 和普通 Provider 兼容回归通过，见本轮计划。JDBC/数据库锁、原生 DNS、GUI、真实代理/Provider 与运行态发布边界仍独立登记。 |
+| IMPORTANT：embedding 全文单次请求与响应配对（代码与相关自动验证层关闭） | 原 worker 一次发送全部 chunks；adapter 忽略响应 index，乱序可能把向量配给错误文本。 | 已按 32 条/32768 UTF-8 文本字节分批并归位/拒绝非法 index；各批 count 校验、全部向量验证及原子提交保留。受控顺序、失败不提交和 lease 回归通过；只读审查通过。字节累计测试使用 ASCII，多字节边界仅有源码检查，属于 OPTIONAL 验证缺口。 |
+| 质量基线与真实语义验收 | 八个匿名 fixture、实际 chunk/hash/scope 合同检查和评分模板已加入；离线 3/3 不评价模型回答。 | 基线设施已构建并通过离线检查；真实 Recall@K/MRR、支持性/覆盖性、注入与范围隔离及人工评分仍开放。 |
+
+- PC 全量新增证据：679/680，未改 `r4-task-create-dialog-deadline.test.mjs` 使用 LF 分隔符提取 CRLF SFC，拼入 `</script>` 导致 SyntaxError；该失败未隐藏且未扩大修复范围。已有 `local_asset_store.rs` 固定地址静态扫描失败继续保留。
+- 后端首轮聚焦 89/89、兼容增量 31/31；同一 reviewer 确认锁等待跨 lease 的续活竞态，原执行 Agent 先 RED 再最小修复，最终 Job/Worker 18/18 与配置 5/5 通过。锁后已过期 claim 不续租，新 attempt 不受旧 attempt 失败影响；真实 PostgreSQL 锁竞争未运行。PC Overview 静态回归 48/48 通过。
+- B 增量审查发现的原子成功结算、结算与 heartbeat 交接、users 外键锁序、停用后派发、AI advice 模块循环、只读检查点写锁、硬预算永久延期与 Mobile 额度 401 路径均按必要最小修改及相关 RED/GREEN 关闭；唯一 reviewer 最终批准范围 BLOCKER=0、IMPORTANT=0，报告见 B 计划。真实 PG 跨额度窗口续做验证已完成，但未执行操作系统进程杀死/重启验收。
+- 范围外既有失败：Modulith knowledge ↔ review 循环在未改 HEAD 可复现，涉及类 hash 与 HEAD 一致；主树 deadline 测试的 CRLF 提取和 legacy invalid schedules 断言在应用 B 前后均失败。没有修改冻结的非 AI 模块或将全量门禁写为通过。
+- 完整证据、命令和本轮范围见 [共通实施](../plans/2026-10-10-ai-important-fixes.md) 与 [B 实施](../plans/2026-10-10-ai-usage-guard-b.md)。跨实例用量/TASK 互斥已由持久账本保护；持久 Overview 作业和跨实例幂等仍未纳入；本机慢流/断连已有验证，真实代理/Provider、GUI 和运行态发布仍是独立验收边界。
+
+### 2026-10-10 PC + Service 功能盘点校正（静态代码核对；未重跑验证）
+
+按当前工作树核对 PC + Service 功能清单。SearchPalette 结果跳转、专注会话关联与持久化、知识块正文保存、完整成功 Overview 跨 PC 设备读取已有实现；12 项无业务消费者的偏好及 Suggestions 确定性输出已有登记，详见 [当前状态](Status.md) 和 [PC 模块](../modules/FrontendPC.md)。本节只增加尚未登记的缺口或产品范围待确认项。
+
+#### IMPORTANT：资产中心 Source 状态固定显示“正常”（已关闭）
+
+- 证据：`Auralis-PC/src/views/Asset/index.vue` 原本在全局文件树和学科文件树分别写入 `status: 'success'` 与 `statusText: '正常'`，未按 Source 的实际 ingestion 状态映射。
+- 影响：解析中或失败的文件在资产中心仍可能显示正常，用户无法从该页判断处理状态。
+- 处理动作：资产树构建逻辑中引入 `getFileStatus(file)`，结合 `useDocumentProcessingStore` 本地任务和 `file.ingestionStatus` 真实状态映射（READY 为已就绪，FAILED 为解析失败，AWAITING_CLIENT 为待本机处理，PARSING / INDEXING / VALIDATING / PENDING 为处理中），补充 `.status-dot.failed`、`.status-badge.failed` 以及 amber 色处理中样式，并在树节点状态点增加 tooltip title 悬浮说明。
+- 关闭条件与证据：两类文件树均由当前 Source 实际状态及本地文档处理任务驱动；`npm run build`（`vue-tsc` 与 Vite 构建）顺利通过（退出码 0），自动化测试通过。当前代码层已关闭。
+
+#### OPTIONAL：登录恢复与隐私条款入口待定范围
+
+- 证据：`Auralis-PC/src/views/Login/index.vue` 的“忘记密码”和“隐私与条款”仅显示即将上线/发布提示；现有 Auth API 只有已登录改密能力，没有密码找回流程，也没有隐私条款页面或目标链接。
+- 影响：用户无法通过登录页恢复遗忘的密码，也无法从该入口阅读隐私与条款内容。
+- 处理动作：产品确认是否纳入当前候选范围，再按确认范围实现恢复流程和可访问的条款内容/链接。
+- 关闭条件：批准的入口均可完成预期流程，或产品明确记录不纳入当前候选并移除误导性占位提示。
+
+#### OPTIONAL：账户注销处理进度不可查询
+
+- 证据：`DELETE /api/auth/me` 返回 HTTP 202 和初始作业状态；后台异步清理后没有公开状态查询路由。PC Profile 受理后退出登录，无法展示该作业后续进度。
+- 影响：用户不能确认后台清理是否完成或失败；服务端当前仍会自行重试清理。
+- 处理动作：确认产品是否需要注销进度可见性；若需要，设计用户隔离的查询与状态展示，不暴露其他账户信息。
+- 关闭条件：进度查询和 PC 展示通过 owner 隔离及异步状态验证，或产品明确保持异步受理后即退出的现状。
+
+#### 待实现：文档处理密钥丢失后自动重新处理
+
+- 证据：该主密钥用于 PC 本地文档处理加密 cache/package，不保护知识块、任务、账户或原始文件。`DocumentProcessingRuntime.ensureEncryptionReady()` 当前发现任务保存了 cache id/receipt 且 keyring 中没有密钥时，仍抛出 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`。正式路由没有通用密钥备份/导出/恢复 UI。
+- 已确认的产品决策：不增加通用密钥备份/恢复入口。OS keyring 明确确认密钥缺失时，自动创建新密钥，废弃受影响任务的旧加密 cache、receipt 和续传进度，不尝试用新密钥读取旧密文；从仍可取得的原始文件重新处理并上传。原始文件无法恢复时提示用户重新选择文件上传。keyring 访问拒绝或其他错误应保留真实错误，不触发密钥轮换。
+- 当前状态：仅本轮文档登记了该决策，当前代码仍会报告恢复必需；实现与 Windows Tauri/真实 Server 验收待完成。详细边界见[密钥恢复设计](../design/2026-09-04-pc-document-encryption-recovery-design.md)。
+- 关闭条件：自动测试证明旧密文不会被新密钥解密/续传、失效检查点不会重入旧恢复路径、可用原始输入时能够重新处理上传、原始输入不可用时给出重新选择提示，并证明非缺失类 keyring 错误不会轮换密钥；再完成真实 Tauri/Server 验收。
+
+#### OPTIONAL：时间轴手动完成与知识块选择器待确认
+
+- 证据：`Auralis-PC/src/views/Timeline/index.vue` 展示已完成状态并可从任务描述解析知识块关联，但时间轴没有手动完成操作，也没有独立知识块关联选择器。
+- 影响：用户需在其他入口完成任务，任务与知识块的关联不能从时间轴直接建立或调整。
+- 处理动作：确认这两项是否属于时间轴职责；如纳入范围，再补交互、持久化和对应验证。
+- 关闭条件：按批准范围完成对应操作与回归，或在产品范围中明确由其他页面承担/不提供。
+
+#### OPTIONAL：没有持久通知收件箱
+
+- 证据：PC 当前使用临时操作通知；未发现持久通知列表、已读状态或收件箱页面/Store。
+- 影响：操作提示消失后没有统一的历史通知入口；当前偏好中的任务/专注提醒也没有业务消费者，后者另见 FrontendPC 的 12 项清单。
+- 处理动作：确认是否需要持久通知中心及通知类型、保留期限和已读语义。
+- 关闭条件：按批准范围实现通知写入、列表和已读行为并验证，或明确保持临时提示模式。
+
+本次盘点只读代码与文档，没有运行测试、构建、GUI 或真实服务验收。
+
 ### 2026-10-10 本机 DB 重建后的 MinIO 对象清理（已关闭）
 
 - 本机测试数据库 `public` schema 重建后，用户明确要求一并清空 MinIO。目标 `.env` 配置为 `auralis-assets`，版本控制 Disabled；删除前列出 12 个对象，删除后重新列举为 0。只保留 bucket 和服务，未改其他 bucket 或 PC/Tauri 本机受管文件。
@@ -13,6 +160,12 @@
 - 范围外门槛：`check-subject-workspace-three-column.mjs` 仍在未改 SubjectWorkspace 的 `centerView === 'summary' && selectedFile` 断言退出 1；未顺手修改。npm 类型检查启动器发生 ENOSPC，直接 vue-tsc 成功。完整命令、原始 RED/GREEN 和差分见 `D:/Temp/auralis-voluntary-review-zero-fix-20261010/evidence/implementation-report.md`。
 
 - 初审 IMPORTANT 已关闭：有效轮次恢复时以成功加载的 subject/account scope 为材料可用标记，加载中及失败重试不误报空轮次；换学科的暂时空 IDs 不清缓存轮次。三条挂起/失败读取测试 RED→GREEN，轮次 ID、queue、phase 和卡片均保留。最终增量与审查分别见 TEMP 的 `evidence/followup-report.md`、`reviewer-report.md`。
+
+### 2026-10-11 PC 截止纯日期旧值兼容移除（定向测试、类型检查与只读审查通过；GUI 待验收）
+
+- 现行持久化契约是带时区的真实 `dueAt` instant。日期解析不再把裸纯日期或无时区值兼容成当地日末；非空无效截止值拒绝新排期，明确的用户日期输入仍在写入边界转换为当地日末。Store 读取和按天排期保留旧值，非时间字段编辑传回相同旧值时也不会自动修正。
+- 测试账号数据注入文档提醒注入端提供精确带时区截止值，并说明插入排期只校验既有截止，不会修正旧任务。没有修改任务数据或数据库/API 契约字段。
+- 定向回归 92/92，`npm run type-check` 退出码 0；Codex 只读复核 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。构建与 GUI 尚未执行。在取得实际任务 `dueAt` 之前，不把原用户任务的问题归因于注入数据。
 
 ### 2026-10-10 PC 任务截止自然日与 instant 不一致（IMPORTANT，代码与自动验证层关闭）
 
@@ -1024,7 +1177,7 @@ MinIO 实际同步主链路此前已人工验证；本轮真机验收覆盖本�
 - Final review fix 1–3 已关闭全部 Critical/Important findings：scheduler 将 immutable Asset SHA 原样传入 runner；legacy、receipt-only、matching、mismatched 及删除失败的 cache ID 清理均按安全顺序处理，覆盖 discard、stale 和 terminal jobs；coordinator 对缺失、不完整或非法 schema-v1 receipt 在 intent/PUT/complete 前统一拒绝。
 - Final evidence：scheduler 27/27、完整 PC R4 250/250、type-check 和 diff-check 通过。Minor reviewer findings未在本轮处理；真实重建 Tauri、Server/MinIO 与 GUI retry 仍未验收。
 
-更新时间：2026-09-09
+更新时间：2026-10-11
 
 文档状态：现行风险登记
 
@@ -1094,7 +1247,7 @@ PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home
 | P1-Auth-Guard | PC 登录守卫逻辑已恢复，公共登录页已与认证壳隔离，但浏览器/Tauri 的登录、刷新、退出和过期仍未人工验收 | `Auralis-PC/src/router/index.ts`、`src/auth/authGuard.ts`、`src/App.vue`、`src/components/layout/AppSidebar.vue`；`r4-pc-protocol.test.mjs` 与 runtime 回归已覆盖公开/受保护/登录页决策及白屏回归 | 会话持久化、过期和退出后的实际导航行为仍可能与纯函数决策不一致 | 在浏览器和 Tauri GUI 走查登录、刷新、退出、过期和返回地址，并确认无 token/refresh token 时不出现空白页 | 自动测试与目标 GUI 的登录/刷新/退出/过期证据齐全 | PC/Auth |
 | P1-Test-Coverage | 新后端已覆盖主要模块自动测试；多设备和浏览器客户端仍缺业务回归保护，当前宿主无法完成全量 Testcontainers 门禁 | 2026-09-12 Task 3 fresh 聚焦 57/57、0 failures/errors/skipped；全量 239 项、0 failures、3 Docker/Testcontainers errors，错误仅为 Docker 不可用 | 主链路通过不等于 PostgreSQL 全量并发行为、双设备断网恢复和真实 WebSocket 可用；当前环境无法完成容器证据 | 恢复 Docker 后复跑全量及三项容器集成测试；继续增加 PostgreSQL/MinIO 异常与并发、双设备和浏览器 WebSocket 回归 | CI 或本地门禁执行到真实基础设施与目标客户端断言并保留报告 | Backend |
 | P1-Asset-Verification | Asset 上传完成的服务端对象实体验证已构建，异常分支仍未闭环 | R2 已补充 sha256 metadata header、失败对象清理、MinIO integration test 和 `scripts/audit-minio-assets.ps1`；2026-08-23 新增离线 GET signer 回归 3/3，Docker 临时账号真实 upload PUT 200、READY、download GET 200/26 bytes | 对象不存在、大小/hash 不符、超时和重复完成仍可能在部署差异下产生未覆盖行为；真实生产凭据与 bucket policy 仍未验收 | 补充真实 MinIO 异常路径、完成回调和生产凭据验证 | 真实 MinIO 主链路与异常路径、凭据、bucket policy 和部署配置测试通过 | Asset/Infrastructure |
-| P1-PC-Task-Scheduling-Atomicity | 时间轴拖放已改为本地 outbox 优先，但双任务换位的持久化原子组、到期转换与过去时段保护仍与现行回归契约不一致 | 2026-09-03：Task Store 已用 `serverDeviceId` 读取本地 repository，加载先呈现本地任务、后台刷新云端，日期切换只重建内存槽位；单任务拖放不再等待远端 `PUT`，本地 repository/outbox 成功后立即更新内存，云端 push/pull 在后台执行且失败不回退本地结果。本地写入失败由 Timeline/Dashboard 通知反馈；原生 payload 现含 `taskId` 与 `sourceSlotTime`。时间轴相关 Node 套件 31 项中 26 项通过、5 项失败：负荷标签、排期换位、到期自动转换与过去时段保护；`check:r4-pc`（80 文件）通过，本机 `vue-tsc` 缺失 | 双任务本地写入仍不是持久化原子组；WebView 原生拖放、离线/409、两类转换失败、过去时段错误反馈与真实服务版本仍可能产生半交换或错误状态；无法用历史通过记录覆盖当前失败 | 先为双任务换位补齐本地原子组/服务端 swap 协调和剩余 5 个静态/行为回归，再运行 type-check、完整 PC 回归与 production build；随后在 Tauri 以过去/当前/未来槽位、已排期双向换位、未排期逾期、完成/取消、原槽、拖回待办、断网/冲突和重启后转换走查 | 当前 Node 套件、type-check、完整 PC 回归和生产 build 均通过；Tauri 上述路径可用且失败不留半交换；过去时段操作不产生写入；已过排期任务完成且保留排期，未排期逾期任务清除截止时间进入未排期 | PC/Backend |
+| P1-PC-Task-Scheduling-Atomicity | PC Timeline 排期代码侧已改为本地原子投影加单条 Sync 命令，离线插入/顺延/换位可以排队 | 2026-10-12：PC 定向套件 173/173、type-check 通过；Server Sync/Schema/Task controller clean 定向测试 34/34；最终只读复审 BLOCKER=0、IMPORTANT=0 | Tauri/Web 实际断网重启、真实服务拒绝恢复、PostgreSQL 并发和跨设备行为仍未验收；命令行测试不能替代真实客户端行为 | 在 Tauri 上覆盖插入顺延、换位、断网重启、网络恢复及版本冲突 | PC/Backend 代码实现、契约与相关定向验证通过，并有真实桌面端断网恢复与服务端排期证据 | PC/Backend
 | P1-OpenAPI-PC-Schema-Stale | **已关闭（2026-09-12）**：OpenAPI artifact 与 Server runtime 及 PC `schema.ts` 一致 | Task 3 `check-openapi.ps1` 退出 0；PC/Mobile generated schema SHA-256 均为 `2152390C192BCBE34B7618D11B71F28DF72AC9262C39625594B5EF3CC7D219C7`，包含 `subjectOverview`/`sourceOverview` 可选 `X-Overview-Request-Id` header | 无；真实 Provider/客户端联调仍由独立风险跟踪 | 保持生成器驱动并在 API 变化后重跑 artifact/schema gate | `check-openapi.ps1` 持续退出 0 | Contract/PC |
 
 ### 2026-09-07 Task 认知负荷切换复核
@@ -1302,13 +1455,12 @@ R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动
 - 处理动作：设计跨实例持久协调/幂等策略，并补多副本及真实 Provider 并发生成回归。
 - 关闭条件：跨实例同键并发只产生一个有效进行中生成/稳定幂等结果，并取得真实 Server/Provider 证据。
 
-### P1-PC-Overview-Timeout-Mismatch（2026-09-10）
+### P1-PC-Overview-Timeout-Mismatch（2026-10-11 本地传输验证通过；真实环境待验收）
 
-- 优先级：P1。
-- 证据：当前 PC Axios 总体 timeout 仍短于 Server 可能包含多次 Provider 调用的 Overview 生成窗口；本任务未改变 timeout 行为。自动 Overview focused 16/16、PC R4 310/310 通过，但不覆盖真实长耗时网络。
-- 影响：Server 仍在生成时，PC 可能先超时并将一次可完成的请求表现为失败，且服务端工作可能继续。
-- 处理动作：在受控真实 Provider/反向代理环境对齐端到端 timeout、取消和失败语义；确认普通 chat/stream/embedding 的既有 timeout 不回归。
-- 关闭条件：长耗时 Overview 在 PC、Server、Provider 和代理链路取得一致成功/超时证据，且普通 AI 路径回归通过。
+- PC 外层为 300000ms，Server 默认为 240000ms 入口绝对预算，超期关闭本调用 socket。本机真实 TLS 持续慢流、握手/写入阻塞与 Servlet/TCP 断连已验证；连接阻塞仅有受控 socket 替身，非真实内核 connect 停滞。
+- 相关普通 Provider/HTTP 兼容回归通过。同步 JDBC/账本锁等待无法强制中止；preflight 若阻塞，HTTP/SSE 建立可晚于期限。原生 DNS 可能占固定 resolver slot 至 OS 返回，但取消后不得迟到 HTTP 出站。
+- 剩余影响：运行旧 backend 尚不支持 PC SSE；真实反向代理可能缓冲或先断开，远端计算撤回也未证明。未部署与真实环境边界不能写为业务验收通过。
+- 关闭条件：更新 backend 后，在真实 PC、代理和 Provider 链路取得成功/超时/主动停止的一致运行态证据，保持普通 AI 路径；完整命令和限制见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
 
 ### P1-PC-Overview-Tauri-Provider-Attribution（2026-09-10）
 
@@ -1321,3 +1473,10 @@ R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动
 
 - 已增加两处临时、非改变行为的证据：Provider 发送前从已序列化 body 记录 `AI_JSON_MODE`（只含 structured JSON、`json_object`、maxTokens/stage）；Overview FINAL 在既有 validator 前对原始 `message.content` 直接执行 `readTree`，记录 `FINAL_JSON_CHECK`（valid、字符数、Jackson 行列和异常类型），不做 fence stripping，因此 fenced JSON 会 valid=false。不记录 body、prompt、正文、原始 exception message、URL 或凭据，普通聊天/流式不变。
 - 自动聚焦测试已通过；尚未部署或重跑真实 DeepSeek。若重跑仍失败，应结合 `FINAL_JSON_CHECK valid` 与 `JSON_PARSE`/schema 阶段判断是 JSON 文本非法还是 schema 校验失败；在此之前不引入修复性重试或放宽 validator。
+
+### 2026-10-12 PC Profile Studio 比例与全站文案人文化审查
+
+- 范围：`Profile/index.vue`、`AppHeader.vue`、`AppSidebar.vue`、`Dashboard/index.vue`、`Asset/index.vue`、`SubjectHall/index.vue`。
+- 检查项：设置页左侧透视面板比例扩增（`flex: 3.8; min-width: 380px; max-width: 480px`，右侧 `flex: 6.2`），全站移除不可理解的技术自白和黑话文案（如“排期副驾”、“重型资产编排”、“彻底从本地数据库移除”等），去除冗余 SVG 小图标。
+- 自动化验证：相关 68/68 项单元测试全部通过，`npm run type-check` 0 报错，`npm run build` 成功。
+

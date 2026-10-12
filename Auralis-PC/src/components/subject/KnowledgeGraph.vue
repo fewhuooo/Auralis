@@ -24,13 +24,32 @@
       </div>
     </div>
 
-    <!-- Sleek Pill Fit View Button -->
-    <button class="fit-button" type="button" @click="fitView" title="适配星图视野">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
-      </svg>
-      <span>适配视野</span>
-    </button>
+    <!-- Sleek Floating Graph Control Toolbar Pill -->
+    <div class="graph-toolbar">
+      <button class="toolbar-btn" type="button" @click="zoomIn" title="放大视野">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+      <button class="toolbar-btn" type="button" @click="zoomOut" title="缩小视野">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+      </button>
+      <div class="toolbar-divider"></div>
+      <button class="toolbar-btn text-btn" type="button" @click="fitView" title="适配星图视野">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+        </svg>
+        <span>适配</span>
+      </button>
+      <button class="toolbar-btn" type="button" @click="resetLayout" title="重新排布星图">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+        </svg>
+      </button>
+    </div>
     <p v-if="nodes.length === 0" class="empty-state">暂无可展示的星图资产</p>
   </div>
 </template>
@@ -245,6 +264,7 @@ function triggerSimulation(fitAfter = false, mode: 'layout' | 'settle' | 'drag' 
 }
 
 function drawLabel(ctx: CanvasRenderingContext2D, node: GraphNode, isHover: boolean) {
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
   ctx.save()
   ctx.font = node.type === 'subject'
     ? '600 12px var(--font-family-base, sans-serif)'
@@ -261,10 +281,12 @@ function drawLabel(ctx: CanvasRenderingContext2D, node: GraphNode, isHover: bool
   const pillY = labelY - pillHeight / 2
 
   // Rounded pill capsule with gentle soft shadow
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.06)'
+  ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.06)'
   ctx.shadowBlur = 6
   ctx.shadowOffsetY = 2
-  ctx.fillStyle = isHover ? '#FAF7F2' : 'rgba(250, 247, 242, 0.92)'
+  ctx.fillStyle = isDark
+    ? (isHover ? '#272F27' : 'rgba(32, 39, 32, 0.94)')
+    : (isHover ? '#FAF7F2' : 'rgba(250, 247, 242, 0.94)')
   ctx.beginPath()
   ctx.roundRect(pillX, pillY, labelWidth + pillPaddingX * 2, pillHeight, 9999)
   ctx.fill()
@@ -272,11 +294,15 @@ function drawLabel(ctx: CanvasRenderingContext2D, node: GraphNode, isHover: bool
   // Pill border
   ctx.shadowColor = 'transparent'
   ctx.lineWidth = 1
-  ctx.strokeStyle = isHover ? '#8B9A6E' : 'rgba(139, 154, 110, 0.28)'
+  ctx.strokeStyle = isDark
+    ? (isHover ? '#9AB08F' : 'rgba(154, 176, 143, 0.35)')
+    : (isHover ? '#8B9A6E' : 'rgba(139, 154, 110, 0.3)')
   ctx.stroke()
 
   // Label text
-  ctx.fillStyle = isHover ? '#1C1C1A' : '#344139'
+  ctx.fillStyle = isDark
+    ? (isHover ? '#FFFFFF' : '#e6dfd8')
+    : (isHover ? '#1C1C1A' : '#344139')
   ctx.fillText(label, node.x, labelY)
   ctx.restore()
 }
@@ -289,16 +315,45 @@ function draw(timestamp: number) {
   ctx.translate(width / 2 + camera.x, height / 2 + camera.y)
   ctx.scale(camera.k, camera.k)
 
-  // 1. Subtle Background Stardust Points
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+
+  // 1. Subtle Celestial Coordinate Grid Marks
+  const gridSize = 140
+  const minWorldX = (-width / 2 - camera.x) / camera.k
+  const maxWorldX = (width / 2 - camera.x) / camera.k
+  const minWorldY = (-height / 2 - camera.y) / camera.k
+  const maxWorldY = (height / 2 - camera.y) / camera.k
+
+  const startX = Math.floor(minWorldX / gridSize) * gridSize
+  const endX = Math.ceil(maxWorldX / gridSize) * gridSize
+  const startY = Math.floor(minWorldY / gridSize) * gridSize
+  const endY = Math.ceil(maxWorldY / gridSize) * gridSize
+
+  ctx.strokeStyle = isDark ? 'rgba(154, 176, 143, 0.08)' : 'rgba(139, 154, 110, 0.07)'
+  ctx.lineWidth = 0.8
+  for (let gx = startX; gx <= endX; gx += gridSize) {
+    for (let gy = startY; gy <= endY; gy += gridSize) {
+      ctx.beginPath()
+      ctx.moveTo(gx - 3, gy)
+      ctx.lineTo(gx + 3, gy)
+      ctx.moveTo(gx, gy - 3)
+      ctx.lineTo(gx, gy + 3)
+      ctx.stroke()
+    }
+  }
+
+  // 2. Subtle Background Stardust Points
   for (const star of ambientStars) {
-    const twinkle = 0.12 + 0.18 * Math.sin(timestamp * star.speed + star.phase)
-    ctx.fillStyle = `rgba(139, 154, 110, ${twinkle})`
+    const twinkle = 0.12 + 0.2 * Math.sin(timestamp * star.speed + star.phase)
+    ctx.fillStyle = isDark
+      ? `rgba(154, 176, 143, ${twinkle * 1.2})`
+      : `rgba(139, 154, 110, ${twinkle})`
     ctx.beginPath()
     ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2)
     ctx.fill()
   }
 
-  // 2. Determine Focus & Neighbor Network for Hover
+  // 3. Determine Focus & Neighbor Network for Hover
   const isHovering = Boolean(hovered)
   const connectedNeighbors = new Set<string>()
   if (hovered) {
@@ -309,7 +364,7 @@ function draw(timestamp: number) {
     }
   }
 
-  // 3. Constellation Links & Living Energy Photons
+  // 4. Constellation Links & Living Energy Photons
   for (let i = 0; i < links.length; i++) {
     const link = links[i]
     const isLinkActive = hovered === link.a || hovered === link.b || isSelected(link.a) || isSelected(link.b)
@@ -324,8 +379,8 @@ function draw(timestamp: number) {
     ctx.lineTo(link.b.x, link.b.y)
     ctx.lineWidth = isLinkActive ? 1.8 : 1
     ctx.strokeStyle = isLinkActive
-      ? `rgba(139, 154, 110, ${linkAlpha})`
-      : `rgba(163, 177, 155, ${linkAlpha})`
+      ? (isDark ? `rgba(154, 176, 143, ${linkAlpha})` : `rgba(139, 154, 110, ${linkAlpha})`)
+      : (isDark ? `rgba(140, 155, 135, ${linkAlpha * 0.8})` : `rgba(163, 177, 155, ${linkAlpha})`)
     ctx.stroke()
 
     // Flowing Constellation Energy Photon (travelling along link)
@@ -333,15 +388,23 @@ function draw(timestamp: number) {
     const px = link.a.x + (link.b.x - link.a.x) * photonProgress
     const py = link.a.y + (link.b.y - link.a.y) * photonProgress
 
+    // Photon glow aura if link active
+    if (isLinkActive) {
+      ctx.beginPath()
+      ctx.arc(px, py, 4.5, 0, Math.PI * 2)
+      ctx.fillStyle = isDark ? 'rgba(154, 176, 143, 0.25)' : 'rgba(139, 154, 110, 0.22)'
+      ctx.fill()
+    }
+
     ctx.beginPath()
-    ctx.arc(px, py, isLinkActive ? 2.2 : 1.4, 0, Math.PI * 2)
+    ctx.arc(px, py, isLinkActive ? 2.4 : 1.5, 0, Math.PI * 2)
     ctx.fillStyle = isLinkActive
-      ? 'rgba(139, 154, 110, 0.95)'
-      : `rgba(163, 177, 155, ${isHovering ? 0.2 : 0.55})`
+      ? (isDark ? '#9AB08F' : 'rgba(139, 154, 110, 0.95)')
+      : (isDark ? `rgba(154, 176, 143, ${isHovering ? 0.2 : 0.55})` : `rgba(163, 177, 155, ${isHovering ? 0.2 : 0.55})`)
     ctx.fill()
   }
 
-  // 4. Star Nodes with Breathing Aura & Dynamic Interaction
+  // 5. Star Nodes with Breathing Aura & Dynamic Interaction
   for (const node of nodes.value) {
     const active = hovered === node || isSelected(node)
     const isConnected = !isHovering || connectedNeighbors.has(node.key)
@@ -572,6 +635,25 @@ function fitView() {
   camera.y = -(minY + maxY) / 2 * camera.k
 }
 
+function zoomIn() {
+  camera.k = Math.min(3.5, camera.k * 1.25)
+}
+
+function zoomOut() {
+  camera.k = Math.max(0.25, camera.k / 1.25)
+}
+
+function resetLayout() {
+  triggerSimulation(true, 'layout')
+}
+
+defineExpose({
+  fitView,
+  zoomIn,
+  zoomOut,
+  resetLayout
+})
+
 function resizeCanvas() {
   if (!canvasEl.value || !wrapperEl.value || !context) return
   width = wrapperEl.value.clientWidth
@@ -680,34 +762,70 @@ watch(() => [props.subjectId, props.subjectName, props.subjects, props.sources, 
   opacity: 0.75;
 }
 
-/* Floating Sleek Pill Fit View Button */
-.fit-button {
+/* Floating Sleek Pill Graph Control Toolbar */
+.graph-toolbar {
   position: absolute;
   right: 14px;
   bottom: 14px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 3px;
   border: 1px solid rgba(139, 154, 110, 0.25);
   border-radius: 9999px;
-  padding: 6px 14px;
+  padding: 3px 6px;
   background: rgba(250, 247, 242, 0.88);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  color: #3B5740;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 14px -2px rgba(35, 45, 30, 0.08), 0 2px 6px rgba(0, 0, 0, 0.03);
   transition: all var(--transition-fast, 0.15s ease);
 }
-.fit-button:hover {
-  background: #FAF7F2;
-  border-color: #8B9A6E;
+.toolbar-btn {
+  background: transparent;
+  border: none;
+  border-radius: 9999px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #3B5740;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 0;
+}
+.toolbar-btn.text-btn {
+  width: auto;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.toolbar-btn:hover {
+  background: rgba(139, 154, 110, 0.15);
   color: #8B9A6E;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.18);
+  transform: scale(1.05);
+}
+.toolbar-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(139, 154, 110, 0.2);
+  margin: 0 2px;
+}
+html.dark .graph-toolbar {
+  background: rgba(30, 32, 28, 0.88);
+  border-color: rgba(154, 176, 143, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+html.dark .toolbar-btn {
+  color: #9AB08F;
+}
+html.dark .toolbar-btn:hover {
+  background: rgba(154, 176, 143, 0.2);
+  color: #FFFFFF;
+}
+html.dark .toolbar-divider {
+  background: rgba(154, 176, 143, 0.2);
 }
 
 .empty-state {
@@ -731,17 +849,5 @@ html.dark .legend-item {
 }
 html.dark .hud-hint {
   color: #8a867e;
-}
-html.dark .fit-button {
-  background: rgba(30, 32, 28, 0.88);
-  border-color: rgba(154, 176, 143, 0.25);
-  color: #9AB08F;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-}
-html.dark .fit-button:hover {
-  background: #242622;
-  border-color: #9AB08F;
-  color: #b0c2a7;
-  box-shadow: 0 4px 14px rgba(154, 176, 143, 0.2);
 }
 </style>

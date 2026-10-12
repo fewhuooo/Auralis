@@ -59,9 +59,12 @@ public record AuralisProperties(
             @Positive long providerConnectTimeoutMillis,
             @Positive long requestTimeoutMillis,
             @Min(60_000) @Max(120_000) long overviewResponseTimeoutMillis,
+            @Min(1_000) @Max(300_000) long overviewTaskTimeoutMillis,
             @Positive int maxPromptChars,
             @Positive int maxRetrievedChunks,
             @Positive long ingestionMaxBytes,
+            @Positive int ingestionEmbeddingBatchMaxItems,
+            @Positive long ingestionEmbeddingBatchMaxUtf8Bytes,
             @Positive long urlConnectTimeoutMillis,
             @Positive long urlReadTimeoutMillis,
             @jakarta.validation.constraints.PositiveOrZero int urlMaxRedirects,
@@ -70,7 +73,37 @@ public record AuralisProperties(
             boolean ingestionWorkerEnabled,
             @Positive long ingestionPollDelayMillis,
             @Positive long ingestionLeaseMillis,
-            @Positive int ingestionMaxAttempts) {
+            @Positive int ingestionMaxAttempts,
+            @Valid Limits limits) {
+    }
+
+    public record Limits(
+            @Min(1) int globalConcurrent,
+            @Min(1) int perUserConcurrent,
+            @Positive long perUserHourlyTokens,
+            @Positive long perUserDailyTokens,
+            @Positive long globalDailyTokens,
+            @Min(60_000) @Max(3_600_000) long reservationLeaseMillis,
+            @Min(1_000) @Max(300_000) long heartbeatMillis,
+            @Min(1) @Max(16_384) int chatMaxOutputTokens,
+            @Min(1) @Max(100) int chatMaxCalls,
+            @Positive long chatTaskTokens,
+            @Min(1) @Max(512) int overviewMaxCalls,
+            @Positive long overviewTaskTokens,
+            @Min(1) @Max(1_024) int ingestionMaxCalls,
+            @Positive long ingestionTaskTokens) {
+
+        @jakarta.validation.constraints.AssertTrue
+        public boolean isHeartbeatWindowSafe() {
+            return reservationLeaseMillis > 0 && heartbeatMillis > 0
+                    && heartbeatMillis <= reservationLeaseMillis / 3;
+        }
+
+        @jakarta.validation.constraints.AssertTrue
+        public boolean isQuotaWindowSafe() {
+            return perUserHourlyTokens <= perUserDailyTokens
+                    && perUserDailyTokens <= globalDailyTokens;
+        }
     }
 
     public record Defaults(

@@ -311,7 +311,7 @@ const loadHistory = async () => {
       .sort((a, b) => b.time.localeCompare(a.time))
   } catch (error) {
     console.error('[TabletAI] Failed to load conversation history:', error)
-    uni.showToast({ title: '会话历史加载失败', icon: 'none' })
+    uni.showToast({ title: error instanceof Error ? error.message : '会话历史加载失败', icon: 'none' })
   }
 }
 
@@ -389,7 +389,7 @@ const deleteSession = (id: string) => {
           uni.showToast({ title: '已删除', icon: 'success' })
         } catch (error) {
           console.error('[TabletAI] Failed to delete conversation:', error)
-          uni.showToast({ title: '会话删除失败', icon: 'none' })
+          uni.showToast({ title: error instanceof Error ? error.message : '会话删除失败', icon: 'none' })
         }
       }
     }
@@ -458,7 +458,7 @@ const handleSearch = async () => {
       currentSessionId.value = conversation.id
     } catch (error) {
       console.error('[TabletAI] Failed to create conversation:', error)
-      uni.showToast({ title: '新对话创建失败', icon: 'none' })
+      uni.showToast({ title: error instanceof Error ? error.message : '新对话创建失败', icon: 'none' })
       return
     }
   }
@@ -472,7 +472,9 @@ const handleSearch = async () => {
   try {
     await chatWithAI(text, [], (delta) => { messages.value[aiMsgIndex].content += delta; scrollToBottom() }, currentSessionId.value || undefined)
     await loadHistory()
-  } catch (err) { messages.value[aiMsgIndex].content = '网络异常，请重试。' }
+  } catch (error) {
+    messages.value[aiMsgIndex].content = error instanceof Error ? error.message : '网络异常，请重试。'
+  }
   finally { isAiTyping.value = false; scrollToBottom() }
 }
 </script>

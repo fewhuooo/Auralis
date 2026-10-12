@@ -69,19 +69,25 @@ public class SyncMutationProcessor {
                 changeLogCapture.finish();
                 MutationDecision decision = "RESOURCE_VERSION_CONFLICT".equals(exception.code())
                         ? MutationDecision.CONFLICT : MutationDecision.REJECTED;
-                entity.complete(decision, null, serialize(exception.current()), exception.code());
+                Object current = isScheduleMutation(mutation)
+                        ? domainWritePort.currentTaskSchedule(userId, mutation)
+                        : exception.current();
+                entity.complete(decision, null, serialize(current), exception.code());
                 return response(inboundMutationRepository.saveAndFlush(entity));
             }
 
             List<ChangeLogEntry> changes = changeLogCapture.finish();
-            ChangeLogEntry appliedChange = changes.stream()
-                    .filter(change -> change.resourceType() == mutation.resourceType())
-                    .filter(change -> change.resourceId().equals(mutation.resourceId()))
-                    .filter(change -> change.mutationType() == mutation.mutationType())
-                    .findFirst()
-                    .orElseThrow(() -> new DomainException(
-                            "INTERNAL_ERROR", "Domain write did not produce a matching change log entry"));
-            entity.complete(MutationDecision.APPLIED, appliedChange.cursor(), serialize(resource), null);
+            Long appliedCursor = isScheduleMutation(mutation)
+                    ? changes.stream().mapToLong(ChangeLogEntry::cursor).max().stream().boxed().findFirst().orElse(null)
+                    : changes.stream()
+                            .filter(change -> change.resourceType() == mutation.resourceType())
+                            .filter(change -> change.resourceId().equals(mutation.resourceId()))
+                            .filter(change -> change.mutationType() == mutation.mutationType())
+                            .map(ChangeLogEntry::cursor)
+                            .findFirst()
+                            .orElseThrow(() -> new DomainException(
+                                    "INTERNAL_ERROR", "Domain write did not produce a matching change log entry"));
+            entity.complete(MutationDecision.APPLIED, appliedCursor, serialize(resource), null);
             return response(inboundMutationRepository.saveAndFlush(entity));
         } finally {
             changeLogCapture.finish();
@@ -112,6 +118,12 @@ public class SyncMutationProcessor {
         } catch (JacksonException | NoSuchAlgorithmException exception) {
             throw new DomainException("INTERNAL_ERROR", "Mutation fingerprint could not be generated");
         }
+    }
+
+    private boolean isScheduleMutation(SyncMutation mutation) {
+        return mutation.resourceType() == SyncResourceType.TASK
+                && (mutation.mutationType() == SyncMutationType.SCHEDULE_INSERTION
+                || mutation.mutationType() == SyncMutationType.SCHEDULE_SWAP);
     }
 
     private String serialize(Object value) {

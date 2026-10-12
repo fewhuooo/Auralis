@@ -92,6 +92,46 @@
           </view>
         </view>
 
+        <!-- Group 2.5: AI 使用额度 -->
+        <view class="profile-group">
+          <text class="group-title">AI 使用额度</text>
+          <view class="menu-list" style="padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--list-bg);">
+            <view v-if="loadingAiUsage" style="color: var(--text-secondary); font-size: 13px;">加载中...</view>
+            <view v-else-if="aiUsageError" style="color: #ff3b30; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+              <text>{{ aiUsageError }}</text>
+              <view @click="fetchAiUsage" style="color: var(--primary); padding: 4px 8px;">重试</view>
+            </view>
+            <view v-else-if="aiUsage" style="display: flex; flex-direction: column; gap: 16px;">
+              <view style="background: var(--page-bg); padding: 12px; border-radius: 8px;">
+                <view style="display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-primary);">
+                  <text>每小时额度 (Hourly)</text>
+                  <text style="color: var(--text-secondary); font-weight: normal; font-size: 12px;">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleString('zh-CN') }}</text>
+                </view>
+                <view style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-secondary);">
+                  <text>总额度：{{ aiUsage.hourly.limitTokens }} token</text>
+                  <text>剩余额度：{{ aiUsage.hourly.remainingTokens }} token</text>
+                  <text title="缺少实际 usage 时按保守估算">已结算（可能为保守估算）：{{ aiUsage.hourly.chargedTokens }} token</text>
+                  <text title="在途预留为估算值，不代表最终实际用量">在途预留（估算）：{{ aiUsage.hourly.reservedTokens }} token</text>
+                </view>
+              </view>
+              <view style="background: var(--page-bg); padding: 12px; border-radius: 8px;">
+                <view style="display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; font-size: 13px; color: var(--text-primary);">
+                  <text>每日额度 (Daily)</text>
+                  <text style="color: var(--text-secondary); font-weight: normal; font-size: 12px;">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString('zh-CN') }}</text>
+                </view>
+                <view style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-secondary);">
+                  <text>总额度：{{ aiUsage.daily.limitTokens }} token</text>
+                  <text>剩余额度：{{ aiUsage.daily.remainingTokens }} token</text>
+                  <text title="缺少实际 usage 时按保守估算">已结算（可能为保守估算）：{{ aiUsage.daily.chargedTokens }} token</text>
+                  <text title="在途预留为估算值，不代表最终实际用量">在途预留（估算）：{{ aiUsage.daily.reservedTokens }} token</text>
+                </view>
+              </view>
+              <view style="display: flex; justify-content: flex-end;">
+                <view @click="fetchAiUsage" style="color: var(--primary); padding: 4px 8px; font-size: 13px;">刷新</view>
+              </view>
+            </view>
+          </view>
+        </view>
         <!-- Group 2: AI 设置 -->
         <view class="profile-group">
           <text class="group-title">AI 设置</text>
@@ -219,12 +259,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useBlockStore } from '@/store/useBlockStore'
 import { useTaskStore } from '@/store/useTaskStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSyncStore } from '@/store/useSyncStore'
+import { useAiUsage } from '@/utils/useAiUsage'
 import { useAuthStore } from '@/store/useAuthStore'
 import LineIcon from '@/components/LineIcon.vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -235,6 +276,13 @@ const taskStore = useTaskStore()
 const settingsStore = useSettingsStore()
 const syncStore = useSyncStore()
 const authStore = useAuthStore()
+
+const { aiUsage, loadingAiUsage, aiUsageError, fetchAiUsage } = useAiUsage()
+
+
+
+
+
 
 const { darkMode, language } = storeToRefs(settingsStore)
 
@@ -656,3 +704,4 @@ const showFeatureUnderDevelopment = (name: string) => {
   height: calc(180rpx + env(safe-area-inset-bottom));
 }
 </style>
+

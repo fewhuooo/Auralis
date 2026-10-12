@@ -3,6 +3,7 @@ package com.auralis.app.ai.internal.security;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.auralis.app.ai.OverviewCancellation;
 import com.auralis.app.shared.config.AuralisProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +70,36 @@ public class ProviderHttpClient {
             Object body,
             Class<T> responseType) throws IOException {
         return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            long responseTimeoutMillis,
+            OverviewCancellation cancellation) throws IOException {
+        if (endpoint == null || path == null || !path.startsWith("/")
+                || apiKey == null || apiKey.isBlank() || responseType == null) {
+            throw new IllegalArgumentException("Provider request is invalid");
+        }
+        byte[] requestBody;
+        try {
+            requestBody = objectMapper.writeValueAsBytes(body);
+        } catch (JacksonException exception) {
+            throw new IOException("Could not serialize provider request", exception);
+        }
+        if (cancellation != null && cancellation.isCancelled()) throw new IOException("Provider call was cancelled");
+        logStructuredJsonMode(requestBody);
+        byte[] responseBody = transport.post(endpoint, path, apiKey, requestBody, connectTimeoutMillis,
+                requirePositiveTimeout(responseTimeoutMillis), cancellation);
+        if (responseBody == null || responseBody.length > maxResponseBytes) throw new ProviderResponseTooLargeException();
+        try {
+            return objectMapper.readValue(responseBody, responseType);
+        } catch (JacksonException exception) {
+            throw new IOException("Could not parse provider response", exception);
+        }
     }
 
     public <T> T getJson(
@@ -270,8 +301,18 @@ public class ProviderHttpClient {
         @Override
         public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody,
                            long connectTimeoutMillis, long responseTimeoutMillis) throws IOException {
+            return post(endpoint, path, apiKey, requestBody, connectTimeoutMillis, responseTimeoutMillis, null);
+        }
+
+        @Override
+        public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody,
+                           long connectTimeoutMillis, long responseTimeoutMillis,
+                           OverviewCancellation cancellation) throws IOException {
             URI target = buildTargetUri(endpoint, path);
             HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
+            ProviderSocketRegistry registry = new ProviderSocketRegistry();
+            OverviewCancellation.Registration cancellationRegistration = cancellation == null
+                    ? () -> { } : cancellation.onCancel(registry::abort);
             int connectTimeout = toIntTimeout(connectTimeoutMillis);
             int responseTimeout = toIntTimeout(responseTimeoutMillis);
             connection.setConnectTimeout(connectTimeout);
@@ -282,9 +323,10 @@ public class ProviderHttpClient {
             connection.setRequestProperty("Accept", "application/json");
             connection.setRequestProperty("Content-Type", "application/json");
             connection.setRequestProperty("Authorization", "Bearer " + apiKey);
+            connection.setRequestProperty("Connection", "close");
             connection.setFixedLengthStreamingMode(requestBody.length);
             connection.setSSLSocketFactory(new PinnedSslSocketFactory(
-                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout));
+                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout, registry));
             connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
             try {
                 connection.getOutputStream().write(requestBody);
@@ -296,6 +338,8 @@ public class ProviderHttpClient {
                     return readBounded(input, maxResponseBytes);
                 }
             } finally {
+                cancellationRegistration.close();
+                registry.clear();
                 connection.disconnect();
             }
         }

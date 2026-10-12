@@ -14,7 +14,7 @@
         <div class="panel-card top-card">
           <div class="card-header">
             <span class="card-title">当前专注</span>
-            <p class="card-sub-hint">选择待专注的学习任务，或自由沉浸学习</p>
+            <p class="card-sub-hint">选择要专注的任务，或开启自由专注</p>
           </div>
 
           <div class="task-selector-wrap">
@@ -59,7 +59,7 @@
         <div class="panel-card middle-card">
           <div class="card-header">
             <span class="card-title">今日专注看板</span>
-            <p class="card-sub-hint">本设备当地日累计；暂停和休息不计入专注时长</p>
+            <p class="card-sub-hint">今日累计专注数据，暂停与休息不计入时长</p>
           </div>
           <div class="stats-container">
             <div class="stat-col">
@@ -271,10 +271,14 @@ onMounted(async () => {
   border-radius: 24px;
   border: 1px solid var(--border-subtle, #E6E6E4);
   padding: 26px 28px;
-  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 12px 30px -4px rgba(0, 0, 0, 0.05), 0 2px 8px -2px rgba(0, 0, 0, 0.02);
   display: flex;
   flex-direction: column;
-  transition: all var(--transition-fast, 0.15s ease);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.panel-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03), 0 16px 36px -4px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1px);
 }
 
 .card-header {
@@ -286,7 +290,7 @@ onMounted(async () => {
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
   font-family: var(--font-family-base);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
 }
 
 .card-sub-hint {
@@ -294,6 +298,7 @@ onMounted(async () => {
   color: var(--text-muted, #7A7A75);
   margin-top: 4px;
   margin-bottom: 0;
+  letter-spacing: 0.1px;
 }
 
 /* Zen Task Selector */
@@ -306,11 +311,11 @@ onMounted(async () => {
 :deep(.zen-select .el-select__wrapper) {
   background: var(--color-bg-tertiary, #FAF7F2);
   border-radius: 9999px;
-  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04) inset, 0 0 0 1px var(--border-default, #E6E6E4) inset;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03) inset, 0 0 0 1px var(--border-default, #E6E6E4) inset;
   padding: 8px 20px;
   height: 52px;
   min-height: 52px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 :deep(.zen-select .el-select__wrapper:hover) {
   box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.45) inset;
@@ -321,7 +326,7 @@ onMounted(async () => {
 }
 :deep(.el-select__placeholder), :deep(.el-select__selected-item) {
   font-weight: 600;
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--text-primary, #1C1C1A);
 }
 
@@ -332,13 +337,15 @@ onMounted(async () => {
   align-items: center;
   padding: 14px 18px;
   border-radius: 16px;
-  background: rgba(139, 154, 110, 0.08);
+  background: rgba(139, 154, 110, 0.07);
   border: 1px solid rgba(139, 154, 110, 0.2);
-  transition: all 0.2s;
+  border-left: 3.5px solid #8B9A6E;
+  transition: all 0.25s ease;
 }
 .active-focus-banner.is-free {
-  background: rgba(110, 136, 152, 0.08);
+  background: rgba(110, 136, 152, 0.07);
   border-color: rgba(110, 136, 152, 0.2);
+  border-left-color: #6E8898;
 }
 .banner-info {
   flex: 1;
@@ -367,16 +374,16 @@ onMounted(async () => {
 .banner-status-tag {
   font-size: 10.5px;
   font-weight: 600;
-  padding: 1.5px 8px;
+  padding: 2px 9px;
   border-radius: 9999px;
-  background: rgba(139, 154, 110, 0.15);
-  color: #637748;
+  background: rgba(139, 154, 110, 0.16);
+  color: #556B3D;
   white-space: nowrap;
   flex-shrink: 0;
 }
 .active-focus-banner.is-free .banner-status-tag {
-  background: rgba(110, 136, 152, 0.15);
-  color: #536B79;
+  background: rgba(110, 136, 152, 0.16);
+  color: #486270;
 }
 .banner-desc {
   font-size: 12px;
@@ -390,32 +397,39 @@ onMounted(async () => {
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
+  padding: 10px 14px;
 }
 .stat-col {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  transition: transform 0.2s ease;
+}
+.stat-col:hover {
+  transform: translateY(-1px);
 }
 .stat-divider {
   width: 1px;
   height: 52px;
-  background-color: var(--border-subtle, #E6E6E4);
+  background: linear-gradient(180deg, transparent 0%, var(--border-default, #E6E6E4) 20%, var(--border-default, #E6E6E4) 80%, transparent 100%);
 }
 .val-wrapper {
   display: flex;
   align-items: baseline;
 }
 .stat-val {
-  font-size: 38px;
+  font-size: 40px;
   font-weight: 800;
   color: var(--text-primary, #1C1C1A);
   font-family: var(--font-family-base);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  letter-spacing: -1px;
 }
 .stat-unit {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text-muted, #7A7A75);
   margin-left: 4px;
   font-weight: 600;
@@ -424,10 +438,14 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   margin-top: 10px;
-  gap: 5px;
+  gap: 6px;
 }
 .stat-icon {
   color: #8B9A6E;
+  transition: transform 0.2s ease;
+}
+.stat-col:hover .stat-icon {
+  transform: scale(1.1);
 }
 .stat-label {
   font-size: 13px;
@@ -442,13 +460,16 @@ html.dark .pomodoro-page {
 html.dark .panel-card {
   background: var(--color-bg-secondary, #212621);
   border-color: rgba(163, 177, 155, 0.22);
-  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 12px 30px -4px rgba(0, 0, 0, 0.4);
+}
+html.dark .panel-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), 0 16px 36px -4px rgba(0, 0, 0, 0.5);
 }
 html.dark .card-title, html.dark .stat-val, html.dark .banner-title {
   color: #FAF7F2;
 }
 html.dark .stat-divider {
-  background-color: rgba(163, 177, 155, 0.2);
+  background: linear-gradient(180deg, transparent 0%, rgba(163, 177, 155, 0.2) 20%, rgba(163, 177, 155, 0.2) 80%, transparent 100%);
 }
 html.dark :deep(.zen-select .el-select__wrapper) {
   background: #181D18;
@@ -460,6 +481,18 @@ html.dark :deep(.zen-select .el-select__wrapper.is-focused) {
 html.dark .active-focus-banner {
   background: rgba(154, 176, 143, 0.12);
   border-color: rgba(154, 176, 143, 0.25);
+  border-left-color: #9AB08F;
+}
+html.dark .active-focus-banner.is-free {
+  background: rgba(110, 136, 152, 0.12);
+  border-color: rgba(110, 136, 152, 0.25);
+  border-left-color: #849EAE;
+}
+html.dark .active-focus-banner .banner-status-tag {
+  color: #b8ccaf;
+}
+html.dark .active-focus-banner.is-free .banner-status-tag {
+  color: #a0b8c7;
 }
 </style>
 

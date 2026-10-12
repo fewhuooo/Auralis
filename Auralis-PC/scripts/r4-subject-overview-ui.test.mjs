@@ -26,7 +26,7 @@ test('subject overview exposes a separate outline regeneration action and compar
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(component, /重新生成大纲/)
   assert.match(component, /generate-outline/)
-  assert.match(workspace, /regenerateSubjectOverview\(subjectId\.value, 'OUTLINE'\)/)
+  assert.match(workspace, /overviewGeneration\.regenerateSubjectOverview\(launchSubjectId, 'OUTLINE'\)/)
   assert.doesNotMatch(workspace, /subjectOverviewRecord\.value\.inputFingerprint\)\s*\)/)
   assert.doesNotMatch(workspace, /subjectOverviewRecord\.value\?\.inputFingerprint\s*&&\s*usable\.length/)
 })
@@ -43,13 +43,13 @@ test('file outlines render inline with summary and regeneration entry points', a
 
 test('middle summary view preserves old content during regeneration or error', async () => {
   const source = await read('src/components/subject/OverviewSummaryView.vue')
-  assert.match(source, /isGenerating && summary/)
+  assert.doesNotMatch(source, /正在生成新版本，当前总结继续保留/)
   assert.match(source, /error/)
   assert.match(source, /当前内容仍可查看/)
   assert.match(source, /内容概述/)
   assert.match(source, /核心要点/)
   assert.match(source, /推荐学习路径/)
-  assert.match(source, /2000/)
+  assert.doesNotMatch(source, /调整要求/)
 })
 
 test('SubjectWorkspace integrates overview UI with outline composer and unified overview cards', async () => {
@@ -61,7 +61,7 @@ test('SubjectWorkspace integrates overview UI with outline composer and unified 
   assert.match(source, /<FileOutlineList/)
   assert.match(source, /<OverviewSummaryView/)
   assert.match(source, /centerView === 'summary'/)
-  assert.match(source, /regenerateSubjectOverview\(subjectId\.value, 'ALL'\)/)
+  assert.match(source, /overviewGeneration\.regenerateSubjectOverview\(launchSubjectId, 'ALL'\)/)
 })
 
 test('manual overview handlers branch on structured results and refresh only after success', async () => {
@@ -172,5 +172,19 @@ test('subject workspace lifecycle guards against session race, unmount leakage, 
   assert.match(workspace, /const readingSessionId = await chatStore\.startReadingSession\(firstFile\.id,\s*newId,\s*firstFile\.name\)\.catch\(\(\) => undefined\)[\s\S]*?if\s*\(!isComponentMounted\s*\|\|\s*currentSubjectSwitchGen\s*!==\s*switchGen\s*\|\|\s*subjectId\.value\s*!==\s*newId\s*\|\|\s*selectedFileId\.value\s*!==\s*firstFile\.id\)[\s\S]*?chatStore\.endSessionById\(readingSessionId\)/)
   // 4. selectFile 中的代次与阅读会话保护
   assert.match(workspace, /const selectFile = async \(id: string\) => \{[\s\S]*?\+\+currentSubjectSwitchGen[\s\S]*?const readingSessionId = await chatStore\.startReadingSession\(id,\s*targetSubjectId,\s*file\.name\)\.catch\(\(\) => undefined\)[\s\S]*?if\s*\(!isComponentMounted\s*\|\|\s*currentSubjectSwitchGen\s*!==\s*fileSelectGen[\s\S]*?chatStore\.endSessionById\(readingSessionId\)/)
+})
+
+test('SubjectWorkspace subscribes to overview cache updates and refreshes view reactively', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  const syncWakeup = await read('src/services/overviewSyncWakeup.ts')
+  const repo = await read('src/services/overviewRepository.ts')
+  assert.match(syncWakeup, /export const OVERVIEW_CACHE_UPDATED_EVENT = 'auralis-overview-cache-updated'/)
+  assert.match(syncWakeup, /subscribeOverviewCacheUpdated/)
+  assert.match(repo, /notifyOverviewCacheUpdated/)
+  assert.match(repo, /getLatestFileOverview/)
+  assert.match(workspace, /subscribeOverviewCacheUpdated\(/)
+  assert.match(workspace, /unsubscribeOverviewCache\?\.()/)
+  assert.match(workspace, /watch\(activeSourceFiles/)
+  assert.match(workspace, /getLatestFileOverview/)
 })
 

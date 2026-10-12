@@ -15,6 +15,7 @@ const emit = defineEmits<{
   'update:collapsed': [value: boolean]
   generate: []
   'generate-outline': []
+  stop: []
   'open-summary': []
   'resolve-sync-conflict': [choice: 'LOCAL' | 'REMOTE']
 }>()
@@ -57,6 +58,13 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
         </button>
 
         <span class="file-outline__actions">
+          <button
+            v-if="isGenerating"
+            type="button"
+            class="retry-capsule__btn"
+            aria-label="停止学科总览生成"
+            @click.stop="emit('stop')"
+          >停止</button>
           <!-- 重试胶囊（遇到意外错误说明 + 重试一体化胶囊） -->
           <div
             v-if="error"
@@ -498,6 +506,16 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   flex-shrink: 0;
   transition: transform 0.15s ease, background 0.15s ease, opacity 0.15s ease;
 }
+.subject-outline__section:hover {
+  background: rgba(125, 147, 114, 0.08);
+  color: var(--color-primary-accent, #8B9A6E);
+  transform: translateX(2px);
+}
+.subject-outline__section:hover::before {
+  opacity: 0.95;
+  background: var(--color-primary-accent, #8B9A6E);
+  transform: scale(1.25);
+}
 .subject-outline__section span {
   flex: 1;
   min-width: 0;
@@ -509,22 +527,12 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   color: var(--text-muted);
   opacity: 0.25;
   flex-shrink: 0;
-  transition: opacity 0.15s ease, color 0.15s ease, transform 0.15s ease;
-}
-.subject-outline__section:hover {
-  background: var(--bg-modifier-hover);
-  color: var(--text-primary);
-  transform: translateX(2px);
-}
-.subject-outline__section:hover::before {
-  background: var(--color-primary-accent);
-  opacity: 1;
-  transform: scale(1.3);
+  transition: opacity 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 .subject-outline__section:hover .section-arrow {
-  color: var(--color-primary-accent);
-  opacity: 0.85;
-  transform: translateX(1px);
+  opacity: 0.95;
+  color: var(--color-primary-accent, #8B9A6E);
+  transform: translateX(2.5px);
 }
 .zen-menu-item {
   display: flex;

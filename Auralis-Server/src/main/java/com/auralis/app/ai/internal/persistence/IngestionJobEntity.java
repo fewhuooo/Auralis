@@ -42,6 +42,12 @@ public class IngestionJobEntity {
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
 
+    @Column(name = "failure_count", nullable = false)
+    private int failureCount;
+
+    @Column(name = "next_attempt_at")
+    private Instant nextAttemptAt;
+
     @Column(name = "lease_until")
     private Instant leaseUntil;
 
@@ -113,6 +119,8 @@ public class IngestionJobEntity {
     public UUID getGeneration() { return generation; }
     public IngestionJobStatus getStatus() { return status; }
     public int getAttemptCount() { return attemptCount; }
+    public int getFailureCount() { return failureCount; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
     public Instant getLeaseUntil() { return leaseUntil; }
     public String getErrorCode() { return errorCode; }
     public String getErrorDetail() { return errorDetail; }
@@ -141,32 +149,75 @@ public class IngestionJobEntity {
     public void claim(Instant now, Instant leaseUntil) {
         status = IngestionJobStatus.PARSING;
         attemptCount++;
+        nextAttemptAt = null;
         startedAt = now;
         this.leaseUntil = leaseUntil;
         errorCode = null;
         errorDetail = null;
     }
 
+    public void recordExpiredLeaseFailure(Instant now) {
+        failureCount++;
+        status = IngestionJobStatus.PENDING;
+        leaseUntil = null;
+        nextAttemptAt = null;
+        completedAt = null;
+        errorCode = "INGESTION_LEASE_EXPIRED";
+        errorDetail = "Ingestion worker lease expired";
+        updatedAt = now;
+    }
+
+    public boolean renewLease(int claimedAttempt, Instant now, Instant newLeaseUntil) {
+        if (!ownsClaim(claimedAttempt, now) || newLeaseUntil == null || !newLeaseUntil.isAfter(now)) {
+            return false;
+        }
+        if (leaseUntil == null || newLeaseUntil.isAfter(leaseUntil)) {
+            leaseUntil = newLeaseUntil;
+            updatedAt = now;
+        }
+        return true;
+    }
+
     public void markReady(Instant now) {
         status = IngestionJobStatus.READY;
         completedAt = now;
         leaseUntil = null;
+        nextAttemptAt = null;
     }
 
     public void markFailed(Instant now, String errorCode, String errorDetail) {
         status = IngestionJobStatus.FAILED;
         completedAt = now;
         leaseUntil = null;
+        nextAttemptAt = null;
         this.errorCode = errorCode;
         this.errorDetail = errorDetail;
     }
 
     public void markRetry(Instant now, String errorCode, String errorDetail) {
+        failureCount++;
         status = IngestionJobStatus.PENDING;
         leaseUntil = null;
         completedAt = null;
+        nextAttemptAt = null;
         this.errorCode = errorCode;
         this.errorDetail = errorDetail;
+        updatedAt = now;
+    }
+
+    public void markFinalFailure(Instant now, String errorCode, String errorDetail) {
+        failureCount++;
+        markFailed(now, errorCode, errorDetail);
+    }
+
+    public void deferUntil(Instant now, Instant retryAt, String errorCode) {
+        if (now == null || retryAt == null) throw new IllegalArgumentException("now and retryAt are required");
+        status = IngestionJobStatus.PENDING;
+        leaseUntil = null;
+        completedAt = null;
+        nextAttemptAt = retryAt;
+        this.errorCode = errorCode;
+        this.errorDetail = "AI usage limit reached; retry is scheduled";
         updatedAt = now;
     }
 

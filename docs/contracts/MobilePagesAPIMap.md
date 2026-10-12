@@ -10,6 +10,8 @@
 
 ## 全局网络、会话与本地数据
 
+- 2026-10-11 AI 额度接入：手机/平板现有 Profile 通过共享 `useAiUsage` → `GET /api/ai/usage` 显示本人 UTC 小时/每日窗口，resetAt 在页面按当地时间显示。只保存当前页面内存态，加载/失败不显示模拟值；账号/请求代次围栏拒绝旧响应。AI Search 通过 HTTP/SSE 的安全额度错误字段显示等待提示，仍为显式重试。类型/H5/协议验证与真实设备验收分别记录于 [B 计划](../plans/2026-10-10-ai-usage-guard-b.md)。
+
 - 2026-10-01 KnowledgeBlock Sync 现行正文为 content；Mobile 本地 preview 作为完整内容映射，HTTP/sync payload 删除 summary/tags，返回映射不再优先旧 summary。页面和本地标签未在本轮清理；专注记录与 Overview results 新接口仅进入生成 SDK，尚无 Mobile/Tablet 运行入口。
 
 - `VITE_API_BASE_URL` 与 `VITE_WS_BASE_URL` 是必填运行时配置；微信只接受 HTTPS/WSS。生产代码不提供 localhost fallback。
@@ -28,9 +30,9 @@
 | AI Search | `POST /api/ai/conversations`、`POST /api/ai/messages/stream` | SSE 支持 chunk 边界、401 单次重试和稳定 clientRequestId；真实 Provider/断流未验收 |
 | Stats | `GET /api/stats/overview`、`GET /api/stats/weekly` | 已移除随机演示数据；学科分布无对应统计契约时保持空，不伪造 |
 | Timeline | Task Store → Sync | 拖拽保留 sortKey/startTime 映射；真实冲突 UI 待联调 |
-| Review | `GET /api/reviews/due`、`POST /api/reviews/events` | 已移除示例知识块注入；服务端事件不可撤销，右滑不再伪造回滚 |
+| Review | 仍调用 `GET /api/reviews/due`、`POST /api/reviews/events` | 两条服务端路由已于 2026-10-11 移除；Mobile 页面尚未迁移，复习功能当前不可用（本轮只迁移 PC） |
 | Asset | `POST /api/assets/upload-intents` → 预签名 PUT → `POST /api/assets/{id}/complete` | 已移除模拟上传/失败伪成功；微信 upload 合法域名、MinIO 和大文件仍待验证 |
-| Settings/Profile | Auth/Settings Store 与 Task/Block Store | 无独立 profile API；统计来自当前 Store，注册天数未由 User DTO 提供时显示中性元信息，不伪造天数 |
+| Settings/Profile | Auth/Settings Store 与 Task/Block Store；Profile 另读 `GET /api/ai/usage` | AI 额度为本人两窗口权威快照；注册天数未由 User DTO 提供时显示中性元信息，不伪造天数 |
 | Handwriting | 手写引擎与本地输入 | 当前只保留本地画布；识别服务未接通时明确提示，不自动伪造 OCR 或知识抽取 |
 
 ## Tablet 页面
@@ -40,8 +42,8 @@ Tablet 页面由 `#ifndef MP-WEIXIN` 排除在微信产物外。Login、AI Searc
 | 页面组 | 当前数据边界 | 剩余缺口 |
 | --- | --- | --- |
 | Dashboard / Stats / Subject Hall / Workspace | Subject、Block、Task、Asset 与 Sync Store；Dashboard/Stats 使用 `GET /api/stats/overview`、`GET /api/stats/weekly`；Workspace 总结与伴读使用当前 Conversation/SSE，不写入固定摘要 | 真实服务、横屏触控与错误态仍需验证 |
-| Pomodoro / Review | Task/Block Store；任务选择器无任务时保持空态；Review 使用 `GET /api/reviews/due`、`POST /api/reviews/events`，服务端事件成功后才推进卡片 | 前后台计时、弱网重试与真机手势仍需验证；右滑不撤销不可变事件 |
-| Profile / AI Search | Auth、脱敏 AI settings、Conversation POST/GET/DELETE/SSE | Tablet 新对话先创建服务端 Conversation；历史使用列表/详情消息，删除携带版本；真实 Provider/断流仍待验收 |
+| Pomodoro / Review | Task/Block Store；任务选择器无任务时保持空态；Tablet Review 仍调用 `GET /api/reviews/due`、`POST /api/reviews/events` | 复习路由已于 2026-10-11 移除，Tablet 页面尚未迁移、当前不可用；本轮只迁移 PC |
+| Profile / AI Search | Auth、脱敏 AI settings、Profile 的 `GET /api/ai/usage`、Conversation POST/GET/DELETE/SSE | Tablet 新对话先创建服务端 Conversation；历史使用列表/详情消息，删除携带版本；真实 Provider/断流仍待验收 |
 | Handwriting | `tablet_notes`、NoteDocument、repository、handwriting engine | feature flag 默认关闭；不纳入云同步或当前发布阻断条件 |
 
 ## 启动与生命周期

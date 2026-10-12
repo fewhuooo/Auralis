@@ -11,7 +11,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.core.task.TaskRejectedException;
 
 import java.net.URI;
 import java.util.List;
@@ -21,6 +23,21 @@ import tools.jackson.databind.exc.InvalidFormatException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(TaskRejectedException.class)
+    ResponseEntity<ApiProblemDetails> handleAsyncCapacity(TaskRejectedException exception,
+                                                          HttpServletRequest request) {
+        String traceId = (String) request.getAttribute(TraceIdFilter.ATTRIBUTE);
+        ApiProblemDetails body = new ApiProblemDetails(
+                URI.create("https://auralis.app/problems/service_unavailable"),
+                HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(), HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Service is busy; retry shortly", request.getRequestURI(), ApiErrorCode.SERVICE_UNAVAILABLE.name(),
+                traceId == null ? "missing-trace-id" : traceId, List.of(), null, 1L, null);
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "1")
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(body);
+    }
 
     @ExceptionHandler(DomainException.class)
     ResponseEntity<ApiProblemDetails> handleDomain(
@@ -103,6 +120,21 @@ public class GlobalExceptionHandler {
                 HttpStatus.NOT_FOUND,
                 ApiErrorCode.RESOURCE_NOT_FOUND,
                 "Resource was not found",
+                List.of(),
+                null,
+                request
+        );
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    ResponseEntity<ApiProblemDetails> handleNotAcceptable(
+            HttpMediaTypeNotAcceptableException exception,
+            HttpServletRequest request
+    ) {
+        return response(
+                HttpStatus.NOT_ACCEPTABLE,
+                ApiErrorCode.NOT_ACCEPTABLE,
+                "No acceptable response representation is available",
                 List.of(),
                 null,
                 request

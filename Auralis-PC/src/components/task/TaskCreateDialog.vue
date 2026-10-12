@@ -401,7 +401,7 @@ const handleSubmit = () => {
 
 <style scoped>
 .task-title {
-  font-size: 16px;
+  font-size: 16.5px;
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.02em;
@@ -421,11 +421,12 @@ html.dark .task-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 7px;
 }
 
 .subject-count-hint {
   font-size: 11px;
+  font-weight: 500;
   color: var(--text-muted, #7A7A75);
 }
 
@@ -435,7 +436,7 @@ html.dark .task-title {
   gap: 8px;
   max-height: 240px;
   overflow-y: auto;
-  padding: 2px 2px 8px 2px;
+  padding: 3px 3px 8px 3px;
   scrollbar-width: thin;
   scrollbar-color: rgba(139, 154, 110, 0.35) transparent;
 }
@@ -461,7 +462,7 @@ html.dark .task-title {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 6.5px 15px;
   border-radius: var(--radius-full, 9999px);
   border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.08));
   background: var(--modal-inset-bg, #FAF7F2);
@@ -469,16 +470,20 @@ html.dark .task-title {
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
 }
 
 .subject-chip:hover {
   border-color: var(--modal-accent, #8B9A6E);
   color: var(--modal-accent, #76855B);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
-  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1.5px);
+}
+
+.subject-chip:active {
+  transform: translateY(0) scale(0.975);
 }
 
 .subject-chip.active {
@@ -486,6 +491,7 @@ html.dark .task-title {
   border-color: var(--modal-accent, #8B9A6E);
   color: var(--modal-accent, #76855B);
   font-weight: 600;
+  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.16), 0 3px 10px rgba(139, 154, 110, 0.18);
 }
 
 .chip-icon {
@@ -498,9 +504,10 @@ html.dark .task-title {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 6.5px 15px;
   border-radius: var(--radius-full, 9999px);
   background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.14));
+  border: 1px solid rgba(139, 154, 110, 0.22);
   font-size: 12.5px;
   font-weight: 600;
   color: var(--modal-accent, #8B9A6E);
@@ -510,7 +517,7 @@ html.dark .task-title {
 .empty-hint {
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 /* Duration header and pill */
@@ -529,6 +536,7 @@ html.dark .task-title {
   font-weight: 600;
   color: var(--modal-accent, #8B9A6E);
   background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.12));
+  border: 1px solid rgba(139, 154, 110, 0.2);
   padding: 3px 12px;
   border-radius: var(--radius-full, 9999px);
   font-feature-settings: "tnum";
@@ -548,11 +556,12 @@ html.dark .task-title {
   border-radius: var(--radius-full, 9999px);
   background: var(--modal-inset-bg, #FAF7F2);
   border: 1.5px solid var(--modal-inset-border, rgba(0, 0, 0, 0.08));
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.03);
+  box-shadow: inset 0 1.5px 4px rgba(0, 0, 0, 0.04);
   user-select: none;
   cursor: pointer;
   overflow: hidden;
   box-sizing: border-box;
+  transition: border-color 0.2s ease;
 }
 
 .duration-segmented-track:hover {
@@ -564,22 +573,22 @@ html.dark .task-title {
   top: 3px;
   bottom: 3px;
   border-radius: var(--radius-full, 9999px);
-  background: linear-gradient(135deg, #8E9F70 0%, #768758 100%);
-  box-shadow: 0 3px 12px rgba(118, 135, 88, 0.38), 0 1px 2px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(135deg, #8E9F70 0%, #738455 100%);
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.40), 0 1px 2px rgba(0, 0, 0, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: grab;
   z-index: 2;
   box-sizing: border-box;
-  transition: left 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.15s ease, box-shadow 0.15s ease;
+  transition: left 0.24s cubic-bezier(0.16, 1, 0.3, 1), transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .active-thumb-pill.dragging {
   cursor: grabbing;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-  transform: scale(1.02);
-  box-shadow: 0 4px 16px rgba(118, 135, 88, 0.5);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  transform: scale(1.025);
+  box-shadow: 0 6px 20px rgba(118, 135, 88, 0.52), 0 0 0 3px rgba(139, 154, 110, 0.18);
 }
 
 .active-thumb-text {
@@ -636,17 +645,19 @@ html.dark .subject-chip.active {
   background: rgba(163, 177, 155, 0.18);
   border-color: var(--modal-accent, #A3B19B);
   color: #B4C4AA;
+  box-shadow: 0 0 0 2px rgba(163, 177, 155, 0.22), 0 4px 12px rgba(0, 0, 0, 0.45);
 }
 
 html.dark .duration-value-pill {
   background: rgba(163, 177, 155, 0.14);
   color: #B4C4AA;
+  border-color: rgba(163, 177, 155, 0.24);
 }
 
 html.dark .duration-segmented-track {
   background: var(--modal-inset-bg, #2e2c29);
   border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 1.5px 4px rgba(0, 0, 0, 0.25);
 }
 
 html.dark .duration-segmented-track:hover {
@@ -655,11 +666,11 @@ html.dark .duration-segmented-track:hover {
 
 html.dark .active-thumb-pill {
   background: linear-gradient(135deg, #9BAA80 0%, #829267 100%);
-  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 html.dark .active-thumb-pill.dragging {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 0 3px rgba(163, 177, 155, 0.22);
 }
 
 html.dark .segment-label {
@@ -692,9 +703,9 @@ html.dark .track-segment-item:hover .segment-label {
   font-weight: 500;
   color: var(--modal-accent, #8B9A6E);
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  transition: all 0.15s ease;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm, 6px);
+  transition: all 0.18s ease;
 }
 
 .due-clear-btn:hover {

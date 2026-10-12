@@ -20,7 +20,7 @@ export type AiStreamEvent =
   | { event: 'citation'; data: AiStreamCitation }
   | { event: 'message.delta'; data: string }
   | { event: 'message.completed'; data: { conversationId?: string; messageId?: string; content?: string } }
-  | { event: 'message.error'; data: { code?: string; message?: string; detail?: string } }
+  | { event: 'message.error'; data: { code?: string; message?: string; detail?: string; retryAfterSeconds?: number; resetAt?: string } }
   | { event: string; data: unknown }
 
 export interface SseParserOptions {

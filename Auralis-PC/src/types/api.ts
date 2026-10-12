@@ -58,8 +58,8 @@ export type LocalResourceType =
   | 'CHAT';
 
 export type LocalSyncStatus = 'synced' | 'pending' | 'conflict' | 'error';
-export type LocalMutationType = 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE';
-export type LocalMutationStatus = 'pending' | 'inflight' | 'applied' | 'conflict' | 'error';
+export type LocalMutationType = 'CREATE' | 'UPDATE' | 'DELETE' | 'RESTORE' | 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP';
+export type LocalMutationStatus = 'pending' | 'inflight' | 'applied' | 'rejected' | 'conflict' | 'error';
 
 export interface LocalMutation {
   clientMutationId: string;

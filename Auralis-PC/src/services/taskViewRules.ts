@@ -71,7 +71,7 @@ export function parseDueTimestamp(dueAt?: string | null): number {
   const trimmed = dueAt.trim()
   if (!trimmed) return Number.NaN
 
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return localDateEndOfDay(trimmed)?.getTime() ?? Number.NaN
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmed)) return Number.NaN
 
   return Date.parse(trimmed)
 }
@@ -302,7 +302,8 @@ export function isScheduleWithinDeadline(scheduledAt?: string | null, durationMi
   if (!scheduledAt || !dueAt) return true
   const start = Date.parse(scheduledAt)
   const due = parseDueTimestamp(dueAt)
-  if (!Number.isFinite(start) || !Number.isFinite(due)) return true
+  if (!Number.isFinite(due)) return false
+  if (!Number.isFinite(start)) return true
 
   const duration = durationMinutes == null ? 30 : Number(durationMinutes)
   const effectiveDuration = Number.isFinite(duration) ? Math.max(0, duration) : 30

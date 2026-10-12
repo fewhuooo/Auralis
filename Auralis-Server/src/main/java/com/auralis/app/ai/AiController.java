@@ -1,6 +1,8 @@
 package com.auralis.app.ai;
 
 import com.auralis.app.shared.security.AuthenticatedUser;
+import com.auralis.app.ai.usage.AiUsageQueryService;
+import com.auralis.app.ai.usage.AiUsageSnapshot;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +23,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import static org.springframework.http.HttpStatus.CREATED;
 import static org.springframework.http.HttpStatus.NO_CONTENT;
@@ -36,6 +42,8 @@ public class AiController {
     private final SuggestionService suggestionService;
     private final OverviewGenerationService overviewGenerationService;
     private final ObjectMapper objectMapper;
+    private final AiUsageQueryService usageQueryService;
+    private final OverviewSseAdapter overviewSseAdapter;
 
     public AiController(
             AiSettingsService settingsService,
@@ -44,7 +52,9 @@ public class AiController {
             AiStreamingService streamingService,
             SuggestionService suggestionService,
             OverviewGenerationService overviewGenerationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AiUsageQueryService usageQueryService,
+            OverviewSseAdapter overviewSseAdapter) {
         this.settingsService = settingsService;
         this.providerDiscoveryService = providerDiscoveryService;
         this.conversationService = conversationService;
@@ -52,6 +62,13 @@ public class AiController {
         this.suggestionService = suggestionService;
         this.overviewGenerationService = overviewGenerationService;
         this.objectMapper = objectMapper;
+        this.usageQueryService = usageQueryService;
+        this.overviewSseAdapter = overviewSseAdapter;
+    }
+
+    @GetMapping("/usage")
+    public AiUsageSnapshot usage(@AuthenticationPrincipal AuthenticatedUser principal) {
+        return usageQueryService.snapshotForUser(principal.userId());
     }
 
     @GetMapping("/settings")
@@ -141,19 +158,60 @@ public class AiController {
         return suggestionService.generate(principal.userId(), command);
     }
 
-    @PostMapping("/source-overviews")
-    public OverviewDtos.OverviewResponse sourceOverview(
+    @Operation(summary = "Generate a source overview", description = "Returns the existing JSON response by default. Accept text/event-stream opts into heartbeat comments and terminal result/error events.")
+    @ApiResponse(responseCode = "200", description = "Overview result or opt-in SSE stream", content = {
+            @Content(mediaType = "application/json", schema = @Schema(implementation = OverviewDtos.OverviewResponse.class)),
+            @Content(mediaType = "text/event-stream", schema = @Schema(type = "string", description = "SSE comments are heartbeats; terminal result data is OverviewResponse and terminal error data is sanitized."))
+    })
+    @PostMapping(value = "/source-overviews", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_EVENT_STREAM_VALUE})
+    public ResponseEntity<?> sourceOverview(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody OverviewDtos.SourceOverviewRequest request,
-            @RequestHeader(value = "X-Overview-Request-Id", required = false) String requestId) {
-        return overviewGenerationService.generateSource(principal.userId(), request, requestId);
+            @RequestHeader(value = "X-Overview-Request-Id", required = false) String requestId,
+            @RequestHeader(value = "Accept", required = false) String accept) {
+        if (acceptsEventStream(accept)) {
+            var emitter = overviewSseAdapter.source(principal.userId(), request, requestId);
+            return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
+                    .header("Cache-Control", "no-cache")
+                    .header("X-Accel-Buffering", "no")
+                    .body(emitter);
+        }
+        try (OverviewSseAdapter.Permit permit = overviewSseAdapter.acquireJsonPermit()) {
+            overviewGenerationService.preflightSource(principal.userId(), request);
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
+                    .body(overviewGenerationService.generateSource(principal.userId(), request, requestId,
+                            null, permit.deadline()));
+        }
     }
 
-    @PostMapping("/subject-overviews")
-    public OverviewDtos.OverviewResponse subjectOverview(
+    @Operation(summary = "Generate a subject overview", description = "Returns the existing JSON response by default. Accept text/event-stream opts into heartbeat comments and terminal result/error events.")
+    @ApiResponse(responseCode = "200", description = "Overview result or opt-in SSE stream", content = {
+            @Content(mediaType = "application/json", schema = @Schema(implementation = OverviewDtos.OverviewResponse.class)),
+            @Content(mediaType = "text/event-stream", schema = @Schema(type = "string", description = "SSE comments are heartbeats; terminal result data is OverviewResponse and terminal error data is sanitized."))
+    })
+    @PostMapping(value = "/subject-overviews", produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.TEXT_EVENT_STREAM_VALUE})
+    public ResponseEntity<?> subjectOverview(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @Valid @RequestBody OverviewDtos.SubjectOverviewRequest request,
-            @RequestHeader(value = "X-Overview-Request-Id", required = false) String requestId) {
-        return overviewGenerationService.generateSubject(principal.userId(), request, requestId);
+            @RequestHeader(value = "X-Overview-Request-Id", required = false) String requestId,
+            @RequestHeader(value = "Accept", required = false) String accept) {
+        if (acceptsEventStream(accept)) {
+            var emitter = overviewSseAdapter.subject(principal.userId(), request, requestId);
+            return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
+                    .header("Cache-Control", "no-cache")
+                    .header("X-Accel-Buffering", "no")
+                    .body(emitter);
+        }
+        try (OverviewSseAdapter.Permit permit = overviewSseAdapter.acquireJsonPermit()) {
+            overviewGenerationService.preflightSubject(principal.userId(), request);
+            return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
+                    .body(overviewGenerationService.generateSubject(principal.userId(), request, requestId,
+                            null, permit.deadline()));
+        }
+    }
+
+    private boolean acceptsEventStream(String accept) {
+        return accept != null && accept.toLowerCase(java.util.Locale.ROOT).contains(MediaType.TEXT_EVENT_STREAM_VALUE)
+                && !accept.toLowerCase(java.util.Locale.ROOT).contains(MediaType.APPLICATION_JSON_VALUE);
     }
 }

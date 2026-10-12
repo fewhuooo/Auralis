@@ -17,6 +17,7 @@ import com.auralis.app.subject.SubjectService;
 import com.auralis.app.task.TaskCommand;
 import com.auralis.app.task.TaskService;
 import com.auralis.app.task.TaskStatus;
+import com.auralis.app.task.TaskView;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.time.Instant;
 import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -195,6 +197,232 @@ class SyncServiceTests {
         assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
         assertThat(result.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(taskService.list(auth.user().id())).hasSize(1);
+    }
+
+    @Test
+    void scheduleInsertionSyncMutationAppliesAtomicallyAndReplaysFullTaskArray() {
+        AuthResult auth = register("sync-schedule-insertion");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule insertion", null, null, "001")).id();
+        TaskView existing = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Existing", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T09:00:00Z"), null, 60, "001"));
+        TaskView source = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Source", null, TaskStatus.TODO,
+                null, null, 30, "002"));
+        long cursorBefore = changeLogService.latestCursor(auth.user().id()).value();
+        var payload = objectMapper.createObjectNode()
+                .put("taskId", source.id().toString())
+                .put("baseVersion", source.version())
+                .put("scheduledAt", "2026-09-25T09:00:00Z")
+                .put("windowStartAt", "2026-09-25T08:00:00Z")
+                .put("windowLastStartAt", "2026-09-25T22:30:00Z");
+        SyncMutation mutation = new SyncMutation("schedule-insertion-1", SyncResourceType.TASK,
+                source.id(), SyncMutationType.SCHEDULE_INSERTION, source.version(), payload);
+
+        var first = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+        var replay = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+
+        assertThat(first.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.APPLIED);
+        assertThat(first.current()).isInstanceOf(tools.jackson.databind.JsonNode.class);
+        assertThat((tools.jackson.databind.JsonNode) first.current()).hasSize(2);
+        assertThat(replay.current()).isEqualTo(first.current());
+        assertThat(replay.changeCursor()).isEqualTo(first.changeCursor());
+        assertThat(changeLogService.latestCursor(auth.user().id()).value() - cursorBefore).isEqualTo(2);
+        assertThat(jdbcTemplate.queryForObject(
+                "select count(*) from change_log where user_id = ? and cursor > ? and resource_type = 'TASK' and mutation_type = 'UPDATE'",
+                Long.class, auth.user().id(), cursorBefore)).isEqualTo(2L);
+        assertThat(taskService.get(auth.user().id(), source.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T09:00:00Z"));
+        assertThat(taskService.get(auth.user().id(), existing.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T09:30:00Z"));
+    }
+
+    @Test
+    void scheduleInsertionBusinessRejectionPersistsCurrentTasks() {
+        AuthResult auth = register("sync-sched-reject");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule deadline", null, null, "001")).id();
+        TaskView source = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Deadline source", null, TaskStatus.TODO, null,
+                Instant.parse("2026-09-25T08:15:00Z"), 30, "001"));
+        var payload = objectMapper.createObjectNode()
+                .put("taskId", source.id().toString())
+                .put("baseVersion", source.version())
+                .put("scheduledAt", "2026-09-25T08:00:00Z")
+                .put("windowStartAt", "2026-09-25T08:00:00Z")
+                .put("windowLastStartAt", "2026-09-25T22:30:00Z");
+        SyncMutation mutation = new SyncMutation("schedule-insertion-rejected-1", SyncResourceType.TASK,
+                source.id(), SyncMutationType.SCHEDULE_INSERTION, source.version(), payload);
+
+        var result = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+
+        assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
+        assertThat(result.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(result.current()).isInstanceOf(tools.jackson.databind.JsonNode.class);
+        assertThat((tools.jackson.databind.JsonNode) result.current()).hasSize(1);
+        assertThat(taskService.get(auth.user().id(), source.id()).scheduledAt()).isNull();
+    }
+
+    @Test
+    void scheduleInsertionRejectsPayloadIdentityOrVersionThatDiffersFromOuterMutation() {
+        AuthResult auth = register("sched-ins-id");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule insertion identity", null, null, "001")).id();
+        TaskView source = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Source", null, TaskStatus.TODO, null, null, 30, "001"));
+        TaskView payloadTask = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Payload task", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T09:00:00Z"), null, 30, "002"));
+
+        var mismatchedIdentityPayload = objectMapper.createObjectNode()
+                .put("taskId", payloadTask.id().toString())
+                .put("baseVersion", payloadTask.version())
+                .put("scheduledAt", "2026-09-25T08:00:00Z")
+                .put("windowStartAt", "2026-09-25T08:00:00Z")
+                .put("windowLastStartAt", "2026-09-25T22:30:00Z");
+        var mismatchedVersionPayload = objectMapper.createObjectNode()
+                .put("taskId", source.id().toString())
+                .put("baseVersion", source.version() + 1)
+                .put("scheduledAt", "2026-09-25T08:00:00Z")
+                .put("windowStartAt", "2026-09-25T08:00:00Z")
+                .put("windowLastStartAt", "2026-09-25T22:30:00Z");
+
+        var identityResult = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(
+                new SyncMutation("schedule-insertion-wrong-task", SyncResourceType.TASK, source.id(),
+                        SyncMutationType.SCHEDULE_INSERTION, source.version(), mismatchedIdentityPayload))).getFirst();
+        var versionResult = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(
+                new SyncMutation("schedule-insertion-wrong-version", SyncResourceType.TASK, source.id(),
+                        SyncMutationType.SCHEDULE_INSERTION, source.version(), mismatchedVersionPayload))).getFirst();
+
+        for (var result : java.util.List.of(identityResult, versionResult)) {
+            assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
+            assertThat(result.code()).isEqualTo("VALIDATION_FAILED");
+            var current = (tools.jackson.databind.JsonNode) result.current();
+            assertThat(current).hasSize(1);
+            assertThat(current.get(0).get("id").asText()).isEqualTo(source.id().toString());
+        }
+        assertThat(taskService.get(auth.user().id(), source.id()).scheduledAt()).isNull();
+        assertThat(taskService.get(auth.user().id(), payloadTask.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T09:00:00Z"));
+    }
+
+    @Test
+    void scheduleSwapRejectsPayloadIdentityOrVersionThatDiffersFromOuterMutation() {
+        AuthResult auth = register("sched-swap-id");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule swap identity", null, null, "001")).id();
+        TaskView source = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Source", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T08:00:00Z"), null, 30, "001"));
+        TaskView target = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Target", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T09:00:00Z"), null, 30, "002"));
+        TaskView payloadTask = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Payload task", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T10:00:00Z"), null, 30, "003"));
+
+        var mismatchedIdentityPayload = objectMapper.createObjectNode()
+                .put("sourceTaskId", payloadTask.id().toString())
+                .put("sourceBaseVersion", payloadTask.version())
+                .put("targetTaskId", target.id().toString())
+                .put("targetBaseVersion", target.version());
+        var mismatchedVersionPayload = objectMapper.createObjectNode()
+                .put("sourceTaskId", source.id().toString())
+                .put("sourceBaseVersion", source.version() + 1)
+                .put("targetTaskId", target.id().toString())
+                .put("targetBaseVersion", target.version());
+
+        var identityResult = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(
+                new SyncMutation("schedule-swap-wrong-task", SyncResourceType.TASK, source.id(),
+                        SyncMutationType.SCHEDULE_SWAP, source.version(), mismatchedIdentityPayload))).getFirst();
+        var versionResult = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(
+                new SyncMutation("schedule-swap-wrong-version", SyncResourceType.TASK, source.id(),
+                        SyncMutationType.SCHEDULE_SWAP, source.version(), mismatchedVersionPayload))).getFirst();
+
+        for (var result : java.util.List.of(identityResult, versionResult)) {
+            assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
+            assertThat(result.code()).isEqualTo("VALIDATION_FAILED");
+            var current = (tools.jackson.databind.JsonNode) result.current();
+            assertThat(current).extracting(item -> item.get("id").asText())
+                    .contains(source.id().toString());
+            assertThat(current).extracting(item -> item.get("id").asText())
+                    .doesNotContain(payloadTask.id().toString());
+        }
+        assertThat(taskService.get(auth.user().id(), source.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T08:00:00Z"));
+        assertThat(taskService.get(auth.user().id(), target.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T09:00:00Z"));
+        assertThat(taskService.get(auth.user().id(), payloadTask.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T10:00:00Z"));
+    }
+
+    @Test
+    void scheduleSwapRejectsMissingTargetBaseVersionAndReplaysDecision() {
+        AuthResult auth = register("sched-swap-target-version");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule swap missing target version", null, null, "001")).id();
+        TaskView source = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Source", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T08:00:00Z"), null, 30, "001"));
+        TaskView target = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Target", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T09:00:00Z"), null, 30, "002"));
+        var payload = objectMapper.createObjectNode()
+                .put("sourceTaskId", source.id().toString())
+                .put("sourceBaseVersion", source.version())
+                .put("targetTaskId", target.id().toString());
+        SyncMutation mutation = new SyncMutation("schedule-swap-missing-target-version-1", SyncResourceType.TASK,
+                source.id(), SyncMutationType.SCHEDULE_SWAP, source.version(), payload);
+
+        var first = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+        var replay = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+
+        assertThat(first.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.REJECTED);
+        assertThat(first.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(first.current()).isInstanceOf(tools.jackson.databind.JsonNode.class);
+        var current = (tools.jackson.databind.JsonNode) first.current();
+        assertThat(current).hasSize(2);
+        assertThat(current).extracting(item -> item.get("id").asText())
+                .contains(source.id().toString(), target.id().toString());
+        assertThat(replay.decision()).isEqualTo(first.decision());
+        assertThat(replay.code()).isEqualTo(first.code());
+        assertThat(replay.recordedAt()).isEqualTo(first.recordedAt());
+        assertThat(taskService.get(auth.user().id(), source.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T08:00:00Z"));
+        assertThat(taskService.get(auth.user().id(), target.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T09:00:00Z"));
+    }
+
+    @Test
+    void scheduleSwapVersionConflictStoresBothCurrentTasksWithoutPartialMove() {
+        AuthResult auth = register("sync-schedule-swap-conflict");
+        UUID subjectId = subjectService.create(auth.user().id(), new SubjectCommand(
+                "Schedule swap", null, null, "001")).id();
+        TaskView source = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Source", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T08:00:00Z"), null, 30, "001"));
+        TaskView target = taskService.create(auth.user().id(), new TaskCommand(
+                subjectId, "Target", null, TaskStatus.TODO,
+                Instant.parse("2026-09-25T09:00:00Z"), null, 30, "002"));
+        var payload = objectMapper.createObjectNode()
+                .put("sourceTaskId", source.id().toString())
+                .put("sourceBaseVersion", 1)
+                .put("targetTaskId", target.id().toString())
+                .put("targetBaseVersion", target.version());
+        SyncMutation mutation = new SyncMutation("schedule-swap-conflict-1", SyncResourceType.TASK,
+                source.id(), SyncMutationType.SCHEDULE_SWAP, 1, payload);
+
+        var result = syncService.push(auth.user().id(), auth.serverDeviceId(), java.util.List.of(mutation)).getFirst();
+
+        assertThat(result.decision()).isEqualTo(com.auralis.app.sync.MutationDecision.CONFLICT);
+        assertThat(result.code()).isEqualTo("RESOURCE_VERSION_CONFLICT");
+        assertThat(result.current()).isInstanceOf(tools.jackson.databind.JsonNode.class);
+        assertThat((tools.jackson.databind.JsonNode) result.current()).hasSize(2);
+        assertThat(taskService.get(auth.user().id(), source.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T08:00:00Z"));
+        assertThat(taskService.get(auth.user().id(), target.id()).scheduledAt())
+                .isEqualTo(Instant.parse("2026-09-25T09:00:00Z"));
     }
 
     @Test

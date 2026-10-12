@@ -5,45 +5,45 @@
    ========================================================================== */
 
 :root {
-  /* Backdrop: warm immersive, moderate blur */
-  --modal-backdrop-bg: rgba(28, 28, 26, 0.38);
-  --modal-backdrop-blur: 8px;
+  /* Backdrop: warm immersive, deep atmospheric blur */
+  --modal-backdrop-bg: rgba(28, 28, 26, 0.42);
+  --modal-backdrop-blur: 14px;
 
-  /* Card: warm oatmeal primary, subtle border, soft shadow */
+  /* Card: warm oatmeal primary, subtle micro-crystalline border, ambient diffusion shadow */
   --modal-bg: var(--color-bg-primary, #F7F2EB);
-  --modal-border: var(--border-subtle, rgba(0, 0, 0, 0.06));
+  --modal-border: var(--border-subtle, rgba(0, 0, 0, 0.07));
   --modal-radius: var(--radius-xl, 20px);
   --modal-shadow:
-    0 12px 48px -8px rgba(0, 0, 0, 0.10),
-    0 4px 14px -4px rgba(0, 0, 0, 0.05);
+    0 24px 64px -12px rgba(0, 0, 0, 0.13),
+    0 8px 24px -6px rgba(0, 0, 0, 0.06);
 
   /* Inset controls and cards */
   --modal-inset-bg: var(--color-bg-tertiary, #FAF7F2);
   --modal-inset-border: var(--border-default, rgba(0, 0, 0, 0.08));
 
   /* Layout padding */
-  --modal-header-padding: 24px 28px 10px 28px;
+  --modal-header-padding: 24px 28px 12px 28px;
   --modal-body-padding: 8px 28px 18px 28px;
-  --modal-footer-padding: 10px 28px 24px 28px;
+  --modal-footer-padding: 12px 28px 24px 28px;
 
   /* Accent: Zen Sage */
   --modal-accent: var(--color-zen-sage, #8B9A6E);
   --modal-accent-hover: #7A8A5E;
-  --modal-accent-subtle: rgba(139, 154, 110, 0.12);
+  --modal-accent-subtle: rgba(139, 154, 110, 0.14);
 }
 
 html.dark {
-  --modal-backdrop-bg: rgba(0, 0, 0, 0.52);
+  --modal-backdrop-bg: rgba(10, 10, 9, 0.65);
   --modal-bg: var(--color-bg-primary, #1f1e1c);
-  --modal-border: rgba(255, 255, 255, 0.06);
+  --modal-border: rgba(255, 255, 255, 0.08);
   --modal-shadow:
-    0 16px 56px -12px rgba(0, 0, 0, 0.55),
-    0 6px 18px -6px rgba(0, 0, 0, 0.30);
+    0 32px 80px -16px rgba(0, 0, 0, 0.65),
+    0 12px 32px -8px rgba(0, 0, 0, 0.40);
   --modal-inset-bg: var(--color-bg-tertiary, #2e2c29);
-  --modal-inset-border: rgba(255, 255, 255, 0.08);
+  --modal-inset-border: rgba(255, 255, 255, 0.09);
   --modal-accent: #A3B19B;
   --modal-accent-hover: #8EA486;
-  --modal-accent-subtle: rgba(163, 177, 155, 0.14);
+  --modal-accent-subtle: rgba(163, 177, 155, 0.16);
 }
 
 /* ==========================================================================
@@ -56,15 +56,15 @@ html.dark {
   align-items: center;
   justify-content: center;
   background: var(--modal-backdrop-bg);
-  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
-  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(160%);
+  backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--modal-backdrop-blur)) saturate(180%);
   padding: 24px;
   box-sizing: border-box;
   z-index: 1000;
 }
 
 /* ==========================================================================
-   Modal Card — warm paper, large radius, subtle border
+   Modal Card — warm paper, large radius, subtle border & inner hairline glow
    ========================================================================== */
 .modal-shell-card {
   position: relative;
@@ -73,13 +73,21 @@ html.dark {
   background: var(--modal-bg);
   border: 1px solid var(--modal-border);
   border-radius: var(--modal-radius);
-  box-shadow: var(--modal-shadow);
+  box-shadow:
+    var(--modal-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   box-sizing: border-box;
   color: var(--text-primary, #1C1C1A);
   outline: none;
+}
+
+html.dark .modal-shell-card {
+  box-shadow:
+    var(--modal-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Width tiers */
@@ -152,28 +160,33 @@ html.dark .modal-pill {
   white-space: nowrap;
 }
 
-/* Close button — subtle rounded, Zen style */
+/* Close button — subtle rounded, Zen style with spring physics */
 .modal-shell-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-md, 10px);
-  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted, #7A7A75);
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   padding: 0;
   flex-shrink: 0;
 }
 
 .modal-shell-close:hover {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.05);
   color: var(--text-primary, #1C1C1A);
+  transform: rotate(90deg);
+}
+
+.modal-shell-close:active {
+  transform: rotate(90deg) scale(0.92);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 html.dark .modal-shell-close {
@@ -182,7 +195,14 @@ html.dark .modal-shell-close {
 
 html.dark .modal-shell-close:hover {
   background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.09);
   color: var(--text-primary, #e6dfd8);
+  transform: rotate(90deg);
+}
+
+html.dark .modal-shell-close:active {
+  transform: rotate(90deg) scale(0.92);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ==========================================================================
@@ -253,12 +273,12 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
    ========================================================================== */
 .modal-fade-enter-active,
 .modal-fade-leave-active {
-  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .modal-fade-enter-active .modal-shell-card,
 .modal-fade-leave-active .modal-shell-card {
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.26s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
 }
 
@@ -269,12 +289,12 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
 
 .modal-fade-enter-from .modal-shell-card {
   opacity: 0;
-  transform: scale(0.95) translateY(12px);
+  transform: scale(0.96) translateY(12px);
 }
 
 .modal-fade-leave-to .modal-shell-card {
   opacity: 0;
-  transform: scale(0.97) translateY(8px);
+  transform: scale(0.975) translateY(8px);
 }
 
 /* ==========================================================================
@@ -292,7 +312,7 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
   font-weight: 600;
   cursor: pointer;
   border: none;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   outline: none;
   line-height: 1;
   white-space: nowrap;
@@ -306,10 +326,10 @@ html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
 
 /* Secondary — ghost pill */
 .modal-btn-secondary {
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.10));
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.09));
   color: var(--text-primary, #1C1C1A);
-  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.06), 0 0.5px 1.5px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04);
 }
 
 html.dark .modal-btn-secondary {
@@ -320,33 +340,40 @@ html.dark .modal-btn-secondary {
 }
 
 .modal-btn-secondary:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: var(--border-strong, rgba(0, 0, 0, 0.18));
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.065);
+  border-color: var(--border-strong, rgba(0, 0, 0, 0.16));
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
+  transform: translateY(-1px);
 }
 
 html.dark .modal-btn-secondary:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.10);
   border-color: rgba(255, 255, 255, 0.16);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  transform: translateY(-1px);
 }
 
 .modal-btn-secondary:active:not(:disabled) {
-  transform: scale(0.985);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transform: translateY(0) scale(0.975);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
-/* Primary — solid sage capsule */
+/* Primary — solid sage capsule with gentle gradient */
 .modal-btn-primary {
-  background: var(--modal-accent);
+  background: linear-gradient(135deg, #8E9F70 0%, #768758 100%);
   color: #FFFFFF;
-  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.32), 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 14px rgba(118, 135, 88, 0.32), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 .modal-btn-primary:hover:not(:disabled) {
-  background: var(--modal-accent-hover);
-  box-shadow: 0 5px 16px rgba(139, 154, 110, 0.42), 0 2px 5px rgba(0, 0, 0, 0.10);
-  transform: translateY(-1px);
+  background: linear-gradient(135deg, #96A878 0%, #7D8F5E 100%);
+  box-shadow: 0 6px 18px rgba(118, 135, 88, 0.42), 0 2px 4px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1.5px);
+}
+
+.modal-btn-primary:active:not(:disabled) {
+  transform: translateY(0) scale(0.975);
+  box-shadow: 0 2px 6px rgba(118, 135, 88, 0.26);
 }
 
 .modal-btn-primary:active:not(:disabled) {
@@ -461,8 +488,8 @@ html.dark .modal-form-label {
   font-size: 13.5px;
   font-family: inherit;
   outline: none;
-  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.05), 0 0.5px 1.5px rgba(0, 0, 0, 0.03);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.04), 0 0.5px 1.5px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), background 0.22s ease;
 }
 
 html.dark .modal-form-input,
@@ -478,14 +505,16 @@ html.dark .modal-form-select {
 .modal-form-textarea:focus,
 .modal-form-select:focus {
   border-color: var(--modal-accent);
-  box-shadow: 0 0 0 3px var(--modal-accent-subtle), 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: var(--color-bg-primary, #FDFBF8);
+  box-shadow: 0 0 0 3.5px var(--modal-accent-subtle), 0 2px 8px rgba(139, 154, 110, 0.12);
 }
 
 html.dark .modal-form-input:focus,
 html.dark .modal-form-textarea:focus,
 html.dark .modal-form-select:focus {
   border-color: var(--modal-accent);
-  box-shadow: 0 0 0 3px var(--modal-accent-subtle), 0 3px 10px rgba(0, 0, 0, 0.45);
+  background: #252422;
+  box-shadow: 0 0 0 3.5px var(--modal-accent-subtle), 0 3px 12px rgba(0, 0, 0, 0.5);
 }
 
 .modal-form-input::placeholder,

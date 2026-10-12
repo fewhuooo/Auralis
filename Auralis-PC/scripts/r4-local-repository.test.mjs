@@ -61,6 +61,46 @@ function createRepositories() {
   };
 }
 
+function createSharedBrowserLockManager() {
+  let tail = Promise.resolve();
+  return {
+    request(_name, _options, callback) {
+      const previous = tail;
+      let release;
+      const gate = new Promise((resolve) => { release = resolve; });
+      tail = previous.then(() => gate);
+      return previous.then(async () => {
+        try {
+          return await callback({ mode: 'exclusive' });
+        } finally {
+          release();
+        }
+      });
+    },
+  };
+}
+
+function createReadInterleavingStorage() {
+  const backing = createMemoryStorage();
+  let onNextRead = null;
+  return {
+    storage: {
+      getItem(key) {
+        const value = backing.getItem(key);
+        const callback = onNextRead;
+        onNextRead = null;
+        callback?.();
+        return value;
+      },
+      setItem: backing.setItem.bind(backing),
+      removeItem: backing.removeItem.bind(backing),
+      key: backing.key.bind(backing),
+      get length() { return backing.length; },
+    },
+    beforeNextRead(callback) { onNextRead = callback; },
+  };
+}
+
 test('browser fallback isolates two users on the same device namespace', async () => {
   const { storage, first, second } = createRepositories();
 
@@ -243,15 +283,156 @@ test('snapshot reset replaces remote rows while preserving pending payload and m
   assert.deepEqual((await first.listPending()).map((item) => item.clientMutationId), ['mutation-1']);
 });
 
-test('SQL snapshot reset delegates to the native transactional replacement boundary', async () => {
+test('snapshot replacement cannot hide a schedule command committed during snapshot fencing', async () => {
+  const { first: repository } = createRepositories();
+  await repository.upsert('TASK', 'task-race', { id: 'task-race', scheduledAt: null }, { version: 2 });
+
+  const snapshot = repository.replaceSnapshotPreservingPending([
+    { resourceType: 'TASK', resourceId: 'task-race', version: 3, deletedAt: null, value: { id: 'task-race', scheduledAt: 'remote' } },
+  ]);
+  const schedule = repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-race', value: { id: 'task-race', scheduledAt: 'optimistic' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-race', clientMutationId: 'schedule-race',
+      mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+      payload: { _localAffectedTaskIds: ['task-race'] },
+    },
+  });
+
+  const [snapshotResult, scheduleResult] = await Promise.allSettled([snapshot, schedule]);
+  assert.equal(snapshotResult.status, 'fulfilled');
+  const row = await repository.read('TASK', 'task-race');
+  const pending = await repository.listPending('TASK');
+  if (scheduleResult.status === 'fulfilled') {
+    assert.equal(row.value.scheduledAt, 'optimistic');
+    assert.deepEqual(pending.map((item) => item.clientMutationId), ['schedule-race']);
+  } else {
+    assert.ok(scheduleResult.reason instanceof LocalConflictError);
+    assert.equal(row.value.scheduledAt, 'remote');
+    assert.deepEqual(pending, []);
+  }
+});
+
+test('browser snapshot and schedule commit serialize across repository instances sharing localStorage', async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { locks: createSharedBrowserLockManager() },
+  });
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+  try {
+    const interleavingStorage = createReadInterleavingStorage();
+    const first = new LocalRepository('user-a', 'device-shared', { storage: interleavingStorage.storage });
+    const second = new LocalRepository('user-a', 'device-shared', { storage: interleavingStorage.storage });
+    await first.upsert('TASK', 'task-cross-tab', { id: 'task-cross-tab', scheduledAt: null }, { version: 2 });
+
+    let schedulePromise;
+    interleavingStorage.beforeNextRead(() => {
+      schedulePromise = second.commitScheduleMutation({
+        items: [
+          { resourceType: 'TASK', resourceId: 'task-cross-tab', value: { id: 'task-cross-tab', scheduledAt: 'optimistic' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+        ],
+        mutation: {
+          resourceType: 'TASK', resourceId: 'task-cross-tab', clientMutationId: 'schedule-cross-tab',
+          mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+          payload: { _localAffectedTaskIds: ['task-cross-tab'] },
+        },
+      });
+    });
+
+    await first.replaceSnapshotPreservingPending([
+      { resourceType: 'TASK', resourceId: 'task-cross-tab', version: 3, deletedAt: null, value: { id: 'task-cross-tab', scheduledAt: 'remote' } },
+    ]);
+    const scheduleResult = await Promise.allSettled([schedulePromise]);
+    const row = await first.read('TASK', 'task-cross-tab');
+
+    assert.equal(scheduleResult[0].status, 'rejected');
+    assert.ok(scheduleResult[0].reason instanceof LocalConflictError);
+    assert.equal(row.value.scheduledAt, 'remote');
+    assert.deepEqual(await first.listPending('TASK'), []);
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+    else delete globalThis.navigator;
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else delete globalThis.window;
+  }
+});
+
+test('browser localStorage writes fail closed when Web Locks is unavailable', async () => {
+  const { storage, first } = createRepositories();
+  await first.upsert('TASK', 'task-no-lock', { id: 'task-no-lock', title: 'Original' }, { version: 2 });
+
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: {} });
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+  try {
+    const browserRepository = new LocalRepository('user-a', 'device-1', { storage });
+    await assert.rejects(
+      browserRepository.upsert('TASK', 'task-no-lock', { id: 'task-no-lock', title: 'Must stay unchanged' }, { version: 2 }),
+      (error) => error?.code === 'LOCAL_STORAGE_LOCK_UNAVAILABLE',
+    );
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+    else delete globalThis.navigator;
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else delete globalThis.window;
+  }
+
+  assert.equal((await first.read('TASK', 'task-no-lock')).value.title, 'Original');
+});
+
+test('browser schedule commit does not overwrite a concurrent local repository state update', async () => {
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { locks: createSharedBrowserLockManager() },
+  });
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+  try {
+    const interleavingStorage = createReadInterleavingStorage();
+    const first = new LocalRepository('user-a', 'device-sync', { storage: interleavingStorage.storage });
+    const second = new LocalRepository('user-a', 'device-sync', { storage: interleavingStorage.storage });
+    await first.upsert('TASK', 'task-sync', { id: 'task-sync', scheduledAt: null }, { version: 2 });
+
+    let cursorPromise;
+    interleavingStorage.beforeNextRead(() => {
+      cursorPromise = second.saveCursor('cursor-from-other-tab');
+    });
+    await first.commitScheduleMutation({
+      items: [
+        { resourceType: 'TASK', resourceId: 'task-sync', value: { id: 'task-sync', scheduledAt: 'optimistic' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      ],
+      mutation: {
+        resourceType: 'TASK', resourceId: 'task-sync', clientMutationId: 'schedule-sync-race',
+        mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+        payload: { _localAffectedTaskIds: ['task-sync'] },
+      },
+    });
+    await cursorPromise;
+
+    assert.equal((await first.read('TASK', 'task-sync')).value.scheduledAt, 'optimistic');
+    assert.equal((await first.getSyncState()).cursor, 'cursor-from-other-tab');
+    assert.deepEqual((await first.listPending('TASK')).map((item) => item.clientMutationId), ['schedule-sync-race']);
+  } finally {
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator);
+    else delete globalThis.navigator;
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else delete globalThis.window;
+  }
+});
+
+test('SQL snapshot reset replaces remote rows through the repository transaction', async () => {
   const sqlite = new TemporarySqlite();
   try {
     await createVersionedLocalSchema(sqlite);
-    let received = null;
     const repository = new LocalRepository('user-a', 'device-1', {
-      sql: sqlite,
+      sql: serializeLocalSqlDatabase(sqlite),
       schemaReady: Promise.resolve(),
-      replaceSnapshot: async (items) => { received = items; },
     });
     const snapshot = [
       { resourceType: 'SUBJECT', resourceId: 'subject-1', version: 1, deletedAt: null, value: { name: 'Physics' } },
@@ -259,7 +440,48 @@ test('SQL snapshot reset delegates to the native transactional replacement bound
 
     await repository.replaceSnapshotPreservingPending(snapshot);
 
-    assert.deepEqual(received, snapshot);
+    assert.equal((await repository.read('SUBJECT', 'subject-1'))?.value.name, 'Physics');
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('SQLite snapshot replacement cannot hide a concurrent schedule command', async () => {
+  const sqlite = new TemporarySqlite();
+  try {
+    await createVersionedLocalSchema(sqlite);
+    const repository = new LocalRepository('user-a', 'device-1', {
+      sql: serializeLocalSqlDatabase(sqlite),
+      schemaReady: Promise.resolve(),
+    });
+    await repository.upsert('TASK', 'task-race', { id: 'task-race', scheduledAt: null }, { version: 2 });
+
+    const snapshot = repository.replaceSnapshotPreservingPending([
+      { resourceType: 'TASK', resourceId: 'task-race', version: 3, deletedAt: null, value: { id: 'task-race', scheduledAt: 'remote' } },
+    ]);
+    const schedule = repository.commitScheduleMutation({
+      items: [
+        { resourceType: 'TASK', resourceId: 'task-race', value: { id: 'task-race', scheduledAt: 'optimistic' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      ],
+      mutation: {
+        resourceType: 'TASK', resourceId: 'task-race', clientMutationId: 'schedule-race',
+        mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+        payload: { _localAffectedTaskIds: ['task-race'] },
+      },
+    });
+
+    const [snapshotResult, scheduleResult] = await Promise.allSettled([snapshot, schedule]);
+    assert.equal(snapshotResult.status, 'fulfilled');
+    const row = await repository.read('TASK', 'task-race');
+    const pending = await repository.listPending('TASK');
+    if (scheduleResult.status === 'fulfilled') {
+      assert.equal(row.value.scheduledAt, 'optimistic');
+      assert.deepEqual(pending.map((item) => item.clientMutationId), ['schedule-race']);
+    } else {
+      assert.ok(scheduleResult.reason instanceof LocalConflictError);
+      assert.equal(row.value.scheduledAt, 'remote');
+      assert.deepEqual(pending, []);
+    }
   } finally {
     sqlite.close();
   }
@@ -767,4 +989,232 @@ test('upsertSyncedBatch merges SQL members atomically without regressing version
   } finally {
     sqlite.close();
   }
+});
+
+test('commitScheduleMutation persists a multi-task projection with exactly one outbox command in browser and SQLite', async () => {
+  const sqlite = new TemporarySqlite();
+  const browser = new LocalRepository('user-a', 'browser-device', { storage: createMemoryStorage() });
+  const sql = new LocalRepository('user-a', 'sqlite-device', { sql: sqlite });
+  try {
+    for (const repository of [browser, sql]) {
+      await repository.upsert('TASK', 'task-a', { title: 'A', scheduledAt: null }, { version: 2 });
+      await repository.upsert('TASK', 'task-b', { title: 'B', scheduledAt: null }, { version: 4 });
+      const originalWrite = repository === browser ? repository.writeBrowserState?.bind(repository) : undefined;
+      let browserWrites = 0;
+      if (originalWrite) repository.writeBrowserState = (state) => { browserWrites += 1; return originalWrite(state); };
+
+      const committed = await repository.commitScheduleMutation({
+        items: [
+          { resourceType: 'TASK', resourceId: 'task-a', value: { title: 'A', scheduledAt: '2026-10-11T09:00:00.000Z' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+          { resourceType: 'TASK', resourceId: 'task-b', value: { title: 'B', scheduledAt: '2026-10-11T09:30:00.000Z' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+        ],
+        mutation: {
+          resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-command-1',
+          mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+          payload: { scheduledAt: '2026-10-11T09:00:00.000Z', _localAffectedTaskIds: ['task-a', 'task-b'] },
+        },
+      });
+
+      assert.deepEqual(committed.map((item) => item.id), ['task-a', 'task-b']);
+      assert.equal((await repository.read('TASK', 'task-a')).syncStatus, 'pending');
+      assert.equal((await repository.read('TASK', 'task-b')).syncStatus, 'pending');
+      assert.deepEqual((await repository.listPending('TASK')).map((item) => [item.clientMutationId, item.mutationType]), [
+        ['schedule-command-1', 'SCHEDULE_INSERTION'],
+      ]);
+      assert.deepEqual((await repository.listUnresolved('TASK')).map((item) => item.clientMutationId), ['schedule-command-1']);
+      if (originalWrite) assert.equal(browserWrites, 1, 'browser fallback must commit the batch in one state write');
+    }
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('resolveScheduleMutation applies server Task arrays atomically and makes rejected commands terminal', async () => {
+  const { first: repository } = createRepositories();
+  await repository.upsert('TASK', 'task-a', { title: 'A', scheduledAt: null }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { title: 'B', scheduledAt: null }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { title: 'A', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { title: 'B', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-command-2',
+      mutationType: 'SCHEDULE_SWAP', baseVersion: 2,
+      payload: { _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+
+  const resolved = await repository.resolveScheduleMutation({
+    clientMutationId: 'schedule-command-2',
+    status: 'rejected',
+    error: 'RESOURCE_VERSION_CONFLICT',
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', version: 3, deletedAt: null, value: { title: 'A', scheduledAt: 'server-a' } },
+      { resourceType: 'TASK', resourceId: 'task-b', version: 5, deletedAt: null, value: { title: 'B', scheduledAt: 'server-b' } },
+    ],
+  });
+
+  assert.equal(resolved, true);
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'server-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'server-b');
+  assert.equal((await repository.read('TASK', 'task-a')).syncStatus, 'synced');
+  assert.equal((await repository.read('TASK', 'task-b')).syncStatus, 'synced');
+  assert.deepEqual(await repository.listPending('TASK'), []);
+  assert.deepEqual(await repository.listUnresolved('TASK'), []);
+
+  const state = JSON.parse(repository.storage.getItem('auralis:v2:user-a:device-1:state'));
+  const command = state.mutations.find((item) => item.clientMutationId === 'schedule-command-2');
+  assert.equal(command.status, 'rejected');
+  assert.equal(command.error, 'RESOURCE_VERSION_CONFLICT');
+});
+
+test('resolveScheduleMutation accepts server-shifted Tasks outside the local prediction fence', async () => {
+  const sqlite = new TemporarySqlite();
+  const repositories = [
+    new LocalRepository('user-a', 'browser-server-cohort', { storage: createMemoryStorage() }),
+    new LocalRepository('user-a', 'sqlite-server-cohort', { sql: sqlite }),
+  ];
+  try {
+    for (const repository of repositories) {
+      await repository.upsert('TASK', 'task-a', { title: 'A', scheduledAt: null }, { version: 2 });
+      await repository.upsert('TASK', 'task-server-neighbor', { title: 'Neighbor', scheduledAt: 'before' }, { version: 7 });
+      await repository.commitScheduleMutation({
+        items: [
+          { resourceType: 'TASK', resourceId: 'task-a', value: { title: 'A', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+        ],
+        mutation: {
+          resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-server-cohort',
+          mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+          payload: { _localAffectedTaskIds: ['task-a'] },
+        },
+      });
+
+      const resolved = await repository.resolveScheduleMutation({
+        clientMutationId: 'schedule-server-cohort',
+        status: 'applied',
+        items: [
+          { resourceType: 'TASK', resourceId: 'task-a', version: 3, deletedAt: null, value: { title: 'A', scheduledAt: 'server-a' } },
+          { resourceType: 'TASK', resourceId: 'task-server-neighbor', version: 8, deletedAt: null, value: { title: 'Neighbor', scheduledAt: 'server-shifted' } },
+        ],
+      });
+
+      assert.equal(resolved, true);
+      assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'server-a');
+      assert.equal((await repository.read('TASK', 'task-server-neighbor')).value.scheduledAt, 'server-shifted');
+      assert.equal((await repository.read('TASK', 'task-server-neighbor')).syncStatus, 'synced');
+      assert.deepEqual(await repository.listUnresolved('TASK'), []);
+    }
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('resolveScheduleMutation preserves the complete newer local batch when a server response is stale', async () => {
+  const { first: repository } = createRepositories();
+  await repository.upsert('TASK', 'task-a', { title: 'A', scheduledAt: 'before-a' }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { title: 'B', scheduledAt: 'before-b' }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { title: 'A', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { title: 'B', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-command-stale',
+      mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+      payload: { _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+  await repository.upsert('TASK', 'task-a', { title: 'A', scheduledAt: 'newer-a' }, { version: 9, syncStatus: 'synced' });
+
+  const resolved = await repository.resolveScheduleMutation({
+    clientMutationId: 'schedule-command-stale',
+    status: 'applied',
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', version: 8, deletedAt: null, value: { title: 'A', scheduledAt: 'stale-a' } },
+      { resourceType: 'TASK', resourceId: 'task-b', version: 5, deletedAt: null, value: { title: 'B', scheduledAt: 'stale-b' } },
+    ],
+  });
+
+  assert.equal(resolved, false);
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'newer-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'optimistic-b', 'no member of a stale server batch is partially applied');
+  assert.deepEqual(await repository.listPending('TASK'), []);
+  assert.deepEqual(await repository.listUnresolved('TASK'), []);
+});
+
+test('commitScheduleMutation rolls back all SQLite and browser changes if the outbox write fails', async () => {
+  const sqlite = new TemporarySqlite();
+  const browser = new LocalRepository('user-a', 'browser-failure', { storage: createMemoryStorage() });
+  const sql = new LocalRepository('user-a', 'sqlite-failure', { sql: sqlite });
+  try {
+    for (const repository of [browser, sql]) {
+      await repository.upsert('TASK', 'task-a', { scheduledAt: null }, { version: 1 });
+      await repository.upsert('TASK', 'task-b', { scheduledAt: null }, { version: 1 });
+    }
+    const originalExecute = sqlite.execute.bind(sqlite);
+    sqlite.execute = async (statement, params) => {
+      if (statement.includes('INSERT INTO local_mutations')) throw new Error('outbox write failed');
+      return originalExecute(statement, params);
+    };
+    const originalBrowserWrite = browser.writeBrowserState.bind(browser);
+    browser.writeBrowserState = () => { throw new Error('browser state write failed'); };
+    const inputFor = (id) => ({
+      items: [
+        { resourceType: 'TASK', resourceId: 'task-a', value: { scheduledAt: 'optimistic-a' }, version: 1, deletedAt: null, expectedLocalVersion: 1 },
+        { resourceType: 'TASK', resourceId: 'task-b', value: { scheduledAt: 'optimistic-b' }, version: 1, deletedAt: null, expectedLocalVersion: 1 },
+      ],
+      mutation: {
+        resourceType: 'TASK', resourceId: 'task-a', clientMutationId: `schedule-rollback-${id}`,
+        mutationType: 'SCHEDULE_INSERTION', baseVersion: 1,
+        payload: { _localAffectedTaskIds: ['task-a', 'task-b'] },
+      },
+    });
+
+    await assert.rejects(browser.commitScheduleMutation(inputFor('browser')), /browser state write failed/);
+    browser.writeBrowserState = originalBrowserWrite;
+    await assert.rejects(sql.commitScheduleMutation(inputFor('sqlite')), /outbox write failed/);
+    for (const repository of [browser, sql]) {
+      assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, null);
+      assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, null);
+      assert.deepEqual(await repository.listPending('TASK'), []);
+    }
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('unresolved schedule commands fence member Task edits, pull updates and snapshot reset', async () => {
+  const { first: repository } = createRepositories();
+  await repository.upsert('TASK', 'task-a', { title: 'A', scheduledAt: null }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { title: 'B', scheduledAt: null }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { title: 'A', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { title: 'B', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-fence',
+      mutationType: 'SCHEDULE_SWAP', baseVersion: 2,
+      payload: { _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+
+  await assert.rejects(repository.commitMutation({
+    resourceType: 'TASK', resourceId: 'task-b', value: { title: 'B edited', scheduledAt: 'optimistic-b' },
+    version: 4, deletedAt: null, expectedLocalVersion: 4,
+    mutation: { resourceType: 'TASK', resourceId: 'task-b', clientMutationId: 'task-b-edit', mutationType: 'UPDATE', baseVersion: 4, payload: { title: 'B edited' } },
+  }), (error) => error instanceof LocalConflictError);
+
+  assert.equal(await repository.upsertFromSync('TASK', 'task-b', { title: 'B remote', scheduledAt: null }, {
+    version: 5, deletedAt: null, syncStatus: 'synced',
+  }), false);
+  await repository.replaceSnapshotPreservingPending([
+    { resourceType: 'TASK', resourceId: 'task-a', version: 3, deletedAt: null, value: { title: 'A remote', scheduledAt: null } },
+    { resourceType: 'TASK', resourceId: 'task-b', version: 5, deletedAt: null, value: { title: 'B remote', scheduledAt: null } },
+  ]);
+
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'optimistic-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'optimistic-b');
+  assert.deepEqual((await repository.listPending('TASK')).map((item) => item.clientMutationId), ['schedule-fence']);
 });

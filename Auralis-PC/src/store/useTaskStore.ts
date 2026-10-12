@@ -1,7 +1,6 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import {
-  useTaskApi,
   type TaskCreateRequest,
   type TaskUpdateRequest,
   type TaskView,
@@ -11,9 +10,9 @@ import { getLocalRepository } from '@/services/localDb'
 import { LocalConflictError, type LocalRepository } from '@/services/localRepository'
 import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
-import { useSyncStore } from '@/store/useSyncStore'
+import { isOnline, useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { createStableMutation } from '@/services/offlineWritePolicy'
+import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
 import { findScheduleConflict, getTasksForTimeline, isCompletedScheduledTask, isCompletedTask, isSchedulableTask, isScheduledAtInPast, isScheduledCompletionLocked, isOverdueTask, taskStatusToPresentation, isScheduleWithinDeadline, parseDueTimestamp, localDateEndOfDay } from '@/services/taskViewRules'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
@@ -23,7 +22,7 @@ export type DayCode = typeof DAY_CODES[number]
 export const getTodayDayCode = (): DayCode => DAY_CODES[new Date().getDay()] || 'Mon'
 
 export type TaskPresentationStatus = 'pending' | 'scheduled' | 'completed' | 'learning' | 'to_review' | 'cancelled'
-export type ScheduleInsertionResult = 'saved' | 'refreshing'
+export type ScheduleInsertionResult = 'saved' | 'queued' | 'rejected'
 
 /**
  * The old-looking fields in this interface are presentation aliases only.
@@ -147,15 +146,17 @@ function timelineSlotTimeForScheduledAt(value?: string): string | undefined {
 
 
 
-function normalizeDueAtForApi(value?: string | null): string | undefined {
-  if (!value) return undefined
+function normalizeDueAtForUserInput(value?: string | null): string | undefined {
+  if (value == null) return undefined
   const trimmed = value.trim()
   if (!trimmed) return undefined
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return localDateEndOfDay(trimmed)?.toISOString()
+    const localEndOfDay = localDateEndOfDay(trimmed)
+    if (!localEndOfDay) throw new Error('截止日期格式无效')
+    return localEndOfDay.toISOString()
   }
-  const timestamp = Date.parse(trimmed)
-  if (!Number.isFinite(timestamp)) return undefined
+  const timestamp = parseDueTimestamp(trimmed)
+  if (!Number.isFinite(timestamp)) throw new Error('截止时间格式无效')
   return new Date(timestamp).toISOString()
 }
 
@@ -172,7 +173,9 @@ function toTaskModel(input: TaskInput, fallbackDay: DayCode = dayCodeForSchedule
     description: input.description ?? input.desc ?? '',
     status,
     scheduledAt,
-    dueAt: normalizeDueAtForApi(rawDueAt),
+    // Preserve persisted values exactly. Date-only conversion belongs to
+    // explicit user-input paths, never to reading or rescheduling old tasks.
+    dueAt: rawDueAt || undefined,
     durationMinutes: input.durationMinutes ?? input.duration ?? 30,    sortKey: input.sortKey ?? input.position,
     version: input.version ?? 0,
     deletedAt: null,
@@ -536,7 +539,11 @@ export const useTaskStore = defineStore('task', () => {
 
   async function addTask(input: TaskInput): Promise<string> {
     return withScheduleMutation(async () => {
-      const model = toTaskModel(input, (selectedDay.value as DayCode) || getTodayDayCode())
+      const rawDueAt = input.dueAt ?? (input as any).due
+      const model = toTaskModel({
+        ...input,
+        dueAt: normalizeDueAtForUserInput(rawDueAt),
+      }, (selectedDay.value as DayCode) || getTodayDayCode())
       if (!model.subjectId) throw new Error('Task requires a subjectId')
       const payload = createPayload(model)
       await persistOffline(model, 'CREATE', payload as unknown as Record<string, unknown>)
@@ -589,39 +596,54 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  async function persistRemoteScheduleModels(models: TaskModel[]): Promise<ScheduleInsertionResult> {
-    let cacheNeedsRefresh = false
-    try {
-      const repo = await repository()
-      const persisted = await repo.upsertSyncedBatch(models.map((model) => ({
+  function scheduleModelAt(task: Task, scheduledAt: string): TaskModel {
+    const model = toTaskModel({ ...task, status: task.status, scheduledAt, startTime: undefined })
+    model.version = task.version
+    return model
+  }
+
+  async function commitOfflineSchedule(
+    models: TaskModel[],
+    mutationType: 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP',
+    sourceTaskId: string,
+    payload: Record<string, unknown>,
+  ): Promise<ScheduleInsertionResult> {
+    if (models.length === 0) return 'saved'
+    const source = models.find((model) => model.id === sourceTaskId)
+    if (!source) throw new Error('排期事务缺少源任务')
+    const clientMutationId = uuidv7()
+    const affectedTaskIds = models.map((model) => model.id)
+    const repo = await repository()
+    await repo.commitScheduleMutation({
+      items: models.map((model) => ({
         resourceType: 'TASK',
         resourceId: model.id,
+        value: taskDto(model),
         version: model.version,
         deletedAt: model.deletedAt,
-        value: taskDto(model),
-      })))
-
-      await loadLocalTasks()
-
-      if (!persisted) {
-        cacheNeedsRefresh = true
-        lastError.value = '排期已保存到服务端，本地任务有未同步修改，正在同步'
-      }
-    } catch (error) {
-      // The server transaction already committed; rebuild only from the local projection.
-      cacheNeedsRefresh = true
-      await loadLocalTasks()
-      lastError.value = error instanceof Error ? `排期已保存到服务端，本地刷新中：${error.message}` : '排期已保存到服务端，本地刷新中'
-    }
+        expectedLocalVersion: model.version,
+      })),
+      mutation: createStableMutation({
+        clientMutationId,
+        resourceType: 'TASK',
+        resourceId: sourceTaskId,
+        mutationType,
+        baseVersion: source.version,
+        payload: { ...payload, _localAffectedTaskIds: affectedTaskIds },
+      }),
+    })
+    await loadLocalTasks()
     const syncStore = useSyncStore()
-    syncStore.requestBackgroundSync('read')
-    if (cacheNeedsRefresh) {
-      void syncStore.flushNow().catch((error) => {
-        const detail = error instanceof Error ? error.message : '同步失败'
-        lastError.value = `排期已保存到服务端，等待本地同步恢复：${detail}`
-      })
+    syncStore.requestBackgroundSync('write')
+    try {
+      await syncStore.flushNow()
+    } catch (error) {
+      if (!isOfflineTransportFailure(error)) throw error
+      return 'queued'
     }
-    return cacheNeedsRefresh ? 'refreshing' : 'saved'
+    const scheduleError = syncStore.scheduleSyncErrors.find(error => error.clientMutationId === clientMutationId)
+    if (scheduleError) return 'rejected'
+    return isOnline() ? 'saved' : 'queued'
   }
 
   async function insertTaskAtSlot(taskId: string, slotTime: string, day: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
@@ -643,6 +665,12 @@ export const useTaskStore = defineStore('task', () => {
     const windowStartMs = Date.parse(windowStartAtStr)
     const windowLastStartMs = Date.parse(windowLastStartAtStr)
     const windowEndMs = windowLastStartMs + 30 * 60_000
+    const ceilToSlot = (timeMs: number) => {
+      if (timeMs <= windowStartMs) return windowStartMs
+      const diff = timeMs - windowStartMs
+      const remainder = diff % (30 * 60_000)
+      return remainder === 0 ? timeMs : timeMs + (30 * 60_000 - remainder)
+    }
 
     const getDur = (d: any) => d == null ? 30 : (Number.isFinite(Number(d)) ? Math.max(0, Number(d)) : 30)
 
@@ -650,14 +678,8 @@ export const useTaskStore = defineStore('task', () => {
       throw new Error('任务排期结束时间不能晚于截止期限')
     }
 
+    const changedModels: TaskModel[] = []
     if (!targetTaskId) {
-      const ceilToSlot = (timeMs: number) => {
-        if (timeMs <= windowStartMs) return windowStartMs
-        const diff = timeMs - windowStartMs
-        const r = diff % (30 * 60_000)
-        return r === 0 ? timeMs : timeMs + (30 * 60_000 - r)
-      }
-
       const candidates = allTasks.value.filter(t => {
         if (t.status === 'cancelled' || !t.scheduledAt) return false
         const tStart = Date.parse(t.scheduledAt)
@@ -705,21 +727,41 @@ export const useTaskStore = defineStore('task', () => {
           }
         }
         previousEnd = actual + item.dur * 60_000
+        if (actual !== Date.parse(item.task.scheduledAt ?? '') || item.isSource && actual !== draggedStart) {
+          changedModels.push(scheduleModelAt(item.task, new Date(actual).toISOString()))
+        }
       }
+    } else {
+      const targetTask = findTask(targetTaskId)
+      if (!targetTask?.scheduledAt || targetTask.status === 'cancelled' || isCompletedScheduledTask(targetTask)) {
+        throw new Error('目标排期已变化，请刷新后重试')
+      }
+      if (localDateKey(targetTask.scheduledAt) !== localDateKey(scheduledAt)) {
+        throw new Error('只能插入到当天的任务后面')
+      }
+      const targetStart = Date.parse(targetTask.scheduledAt)
+      const targetEnd = targetStart + getDur(targetTask.durationMinutes) * 60_000
+      const expectedStart = ceilToSlot(targetEnd)
+      if (expectedStart !== draggedStart) throw new Error('目标排期已变化，请刷新后重试')
+      changedModels.push(scheduleModelAt(task, scheduledAt))
     }
 
-    const windowStartAt = windowStartAtStr
-    const windowLastStartAt = windowLastStartAtStr
-    const response = await useTaskApi.scheduleInsertions({
+    const changedIds = new Set(changedModels.map((model) => model.id))
+    for (const model of changedModels) {
+      if (findScheduleConflict(allTasks.value, toPresentationTask(model), changedIds)) {
+        throw new Error('目标时段与其他任务冲突')
+      }
+    }
+    if (changedModels.length === 0) return 'saved'
+
+    return await commitOfflineSchedule(changedModels, 'SCHEDULE_INSERTION', taskId, {
       taskId,
       baseVersion: task.version,
       scheduledAt,
-      windowStartAt,
-      windowLastStartAt,
-      targetTaskId,
+      windowStartAt: windowStartAtStr,
+      windowLastStartAt: windowLastStartAtStr,
+      ...(targetTaskId ? { targetTaskId } : {}),
     })
-    const changedModels = response.tasks.map((taskView) => mapTaskView(taskView))
-    return await persistRemoteScheduleModels(changedModels)
   }
 
   async function updateTaskStatus(taskId: string, newStatus: TaskPresentationStatus): Promise<void> {
@@ -740,12 +782,13 @@ export const useTaskStore = defineStore('task', () => {
       const current = findTask(taskId)
       if (!current) return
       const hasDueAtChange = Object.prototype.hasOwnProperty.call(changes, 'dueAt')
+        && !Object.is(changes.dueAt, current.dueAt)
       const model = toTaskModel({
         ...current,
         subjectId: changes.subjectId ?? current.subjectId,
         title: changes.title ?? current.title,
         description: changes.description ?? current.description,
-        dueAt: hasDueAtChange ? changes.dueAt : current.dueAt,
+        dueAt: hasDueAtChange ? normalizeDueAtForUserInput(changes.dueAt) : current.dueAt,
         durationMinutes: changes.durationMinutes ?? current.durationMinutes,
         scheduledAt: current.scheduledAt,
         status: current.status,
@@ -856,18 +899,22 @@ export const useTaskStore = defineStore('task', () => {
       if (!isScheduleWithinDeadline(new Date(newToStart).toISOString(), to.durationMinutes, to.dueAt)) throw new Error('任务排期结束时间不能晚于截止期限')
       await assertScheduleDaySynced(to.scheduledAt, from.id)
 
-      const response = await useTaskApi.swapSchedules({
+      const changedModels = [
+        scheduleModelAt(from, new Date(newFromStart).toISOString()),
+        scheduleModelAt(to, new Date(newToStart).toISOString()),
+      ]
+      const changedIds = new Set(changedModels.map((model) => model.id))
+      for (const model of changedModels) {
+        if (findScheduleConflict(allTasks.value, toPresentationTask(model), changedIds)) {
+          throw new Error('目标时段与其他任务冲突')
+        }
+      }
+      return await commitOfflineSchedule(changedModels, 'SCHEDULE_SWAP', from.id, {
         sourceTaskId: from.id,
         sourceBaseVersion: from.version,
         targetTaskId: to.id,
         targetBaseVersion: to.version,
       })
-      if (!response.source || !response.target) {
-        useSyncStore().requestBackgroundSync('read')
-        return 'refreshing'
-      }
-      const changedModels = [mapTaskView(response.source), mapTaskView(response.target)]
-      return await persistRemoteScheduleModels(changedModels)
     })
   }
 

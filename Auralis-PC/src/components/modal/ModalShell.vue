@@ -37,7 +37,7 @@
                 aria-label="关闭"
                 @click="requestClose"
               >
-                ✕
+                <IconX :size="15" :stroke-width="2.2" />
               </button>
             </slot>
           </div>
@@ -59,6 +59,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, nextTick, useAttrs } from 'vue'
+import { IconX } from '@tabler/icons-vue'
 import './modal.css'
 import {
   lockBodyScroll,

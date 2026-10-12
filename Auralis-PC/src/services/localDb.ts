@@ -9,7 +9,7 @@ import {
 import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/localSchema';
 import { LocalDatabaseRuntime } from '@/services/localDatabaseRuntime';
 import { LocalSqlQueue, serializeLocalSqlDatabase } from '@/services/localSqlQueue';
-import { initializeLocalDatabasePool, replaceLocalResourceSnapshot } from '@/api/tauri';
+import { initializeLocalDatabasePool } from '@/api/tauri';
 import { OverviewRepository } from '@/services/overviewRepository';
 import { FocusSessionRepository } from '@/services/focusSessionRepository';
 import { LocalAssetRepository } from '@/services/localAssetRepository';
@@ -1130,7 +1130,6 @@ export async function getLocalRepository(userId: string, serverDeviceId: string)
     () => createLocalRepository(userId, serverDeviceId, {
       sql: db as LocalSqlDatabase,
       schemaReady: Promise.resolve(),
-      replaceSnapshot: (snapshot) => localSqlQueue.enqueue(() => replaceLocalResourceSnapshot(userId, snapshot)),
     }),
   );
 }

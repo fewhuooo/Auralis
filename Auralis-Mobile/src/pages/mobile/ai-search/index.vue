@@ -448,8 +448,7 @@ const handleSearch = async () => {
       scrollToBottom()
     })
   } catch (err) {
-    console.error(err)
-    messages.value[aiMsgIndex].content = '网络请求失败，请稍后再试。'
+    messages.value[aiMsgIndex].content = err instanceof Error ? err.message : '网络请求失败，请稍后再试。'
   } finally {
     isAiTyping.value = false
     scrollToBottom()

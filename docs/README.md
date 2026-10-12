@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-09-15
+更新时间：2026-10-11
 
 文档状态：现行
 
@@ -149,6 +149,15 @@
 
 ### 运维、计划与交付
 
+- [大 PDF 摄入额度与同步等待诊断、最小修复（2026-10-12，代码与定向验证通过；新补丁未部署）](plans/2026-10-12-pdf-ingestion-quota-and-sync.md)
+- [Embedding 额度排除与单人测试额度（2026-10-12，代码、相关验证与本机部署通过；业务待实测）](plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)
+- [学科总览合法输入分批（2026-10-12，代码、定向回归、审查及本机更新完成；业务待实测）](plans/2026-10-12-subject-overview-prompt-batching.md)
+- [PC 时间轴断网排期设计（2026-10-11，用户已批准）](superpowers/specs/2026-10-11-offline-timeline-scheduling-design.md)
+- [PC 时间轴断网排期实施计划（2026-10-12，代码与定向自动验证完成；真实断网/恢复与 GUI 验收待完成）](superpowers/plans/2026-10-11-offline-timeline-scheduling.md)
+- [学科总览用量误拒绝诊断与最小修复（2026-10-11，代码、相关验证和审查通过；未部署）](plans/2026-10-11-overview-usage-limit-diagnosis.md)
+- [Overview 硬超时与取消实施计划（2026-10-11，代码/相关验证/审查通过，真实环境待验收）](plans/2026-10-11-overview-hard-timeout-cancellation.md)
+- [AI 完整持久配额与个人中心额度实施计划（2026-10-10，代码、相关自动验证及只读审查通过）](plans/2026-10-10-ai-usage-guard-b.md)
+- [AI IMPORTANT 修复实施计划与证据（2026-10-10，相关自动验证及只读审查通过；真实环境待验收）](plans/2026-10-10-ai-important-fixes.md)
 - [PC 任务截止日期与排期一致性修复（2026-10-10，代码与自动验证通过；真实环境待验收）](plans/2026-10-09-task-deadline-date-consistency.md)
 - [学科复习与统计完整本地使用（2026-10-09，代码与自动验证通过；真实环境待验收）](plans/2026-10-09-review-stats-local-first.md)
 - [学科复习、学习与掌握退出整体设计（2026-10-08，代码与相关自动验证通过；真实环境待验收）](plans/2026-10-08-review-learning-mastery-design.md)

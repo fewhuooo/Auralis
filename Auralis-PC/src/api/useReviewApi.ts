@@ -12,9 +12,6 @@ export type ReviewStateView = Omit<GeneratedReviewStateView,
   pendingReviewId?: string | null
   contentHash?: string | null
 }
-export type ReviewEventView = components['schemas']['ReviewEventView']
-export type EventRequest = components['schemas']['EventRequest']
-export type EventResponse = components['schemas']['EventResponse']
 export type CursorPageReviewStateView = Omit<components['schemas']['CursorPageReviewStateView'], 'items'> & {
   items?: ReviewStateView[]
 }
@@ -122,15 +119,6 @@ export type LifecycleHistoryResponse = Omit<GeneratedLifecycleHistory, 'state' |
   effectiveReviews: LifecycleEffectiveReviewHistoryView[]
 }
 
-export interface ReviewQuery {
-  at?: string
-  limit?: number
-}
-
-export interface ReviewHistoryQuery {
-  knowledgeBlockId: string
-}
-
 export interface SubjectReviewStatesQuery {
   subjectId: string
   cursor?: string
@@ -142,21 +130,9 @@ function scopedConfig(scope?: SyncRequestScopeTicket): SyncScopedAxiosRequestCon
 }
 
 export const useReviewApi = {
-  getDueReviews(params?: ReviewQuery): Promise<ReviewStateView[]> {
-    return request.get('/api/reviews/due', { params }) as unknown as Promise<ReviewStateView[]>
-  },
-  getReviewQueue(params?: ReviewQuery): Promise<ReviewStateView[]> {
-    return request.get('/api/reviews/due', { params }) as unknown as Promise<ReviewStateView[]>
-  },
   getSubjectStates(params: SubjectReviewStatesQuery, scope?: SyncRequestScopeTicket): Promise<CursorPageReviewStateView> {
     const query = { ...params, cursor: params.cursor || undefined }
     return request.get('/api/reviews/states', { params: query, ...scopedConfig(scope) }) as unknown as Promise<CursorPageReviewStateView>
-  },
-  recordEvent(data: EventRequest, scope?: SyncRequestScopeTicket): Promise<EventResponse> {
-    return request.post('/api/reviews/events', data, scopedConfig(scope)) as unknown as Promise<EventResponse>
-  },
-  recordReviewEvent(data: EventRequest): Promise<EventResponse> {
-    return request.post('/api/reviews/events', data) as unknown as Promise<EventResponse>
   },
   selectReview(data: ReviewAttemptRequest, scope?: SyncRequestScopeTicket): Promise<LifecycleCommandResponse> {
     return request.post('/api/reviews/lifecycle/attempts', data, scopedConfig(scope)) as unknown as Promise<LifecycleCommandResponse>
@@ -176,17 +152,4 @@ export const useReviewApi = {
   getLifecycleHistory(params: LifecycleHistoryQuery, scope?: SyncRequestScopeTicket): Promise<LifecycleHistoryResponse> {
     return request.get('/api/reviews/lifecycle/history', { params, ...scopedConfig(scope) }) as unknown as Promise<LifecycleHistoryResponse>
   },
-  getHistory(params: ReviewHistoryQuery, scope?: SyncRequestScopeTicket): Promise<ReviewEventView[]> {
-    return request.get('/api/reviews/history', { params, ...scopedConfig(scope) }) as unknown as Promise<ReviewEventView[]>
-  },
-  getReviewHistory(params: ReviewHistoryQuery): Promise<ReviewEventView[]> {
-    return request.get('/api/reviews/history', { params }) as unknown as Promise<ReviewEventView[]>
-  },
 }
-
-export const getDueReviews = useReviewApi.getDueReviews
-export const getReviewQueue = useReviewApi.getReviewQueue
-export const recordEvent = useReviewApi.recordEvent
-export const recordReviewEvent = useReviewApi.recordReviewEvent
-export const getHistory = useReviewApi.getHistory
-export const getReviewHistory = useReviewApi.getReviewHistory

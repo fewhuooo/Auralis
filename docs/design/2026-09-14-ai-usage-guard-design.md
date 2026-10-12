@@ -2,9 +2,27 @@
 
 更新时间：2026-09-14
 
-文档状态：已批准设计，待实施
+文档状态：阶段 1/2 与个人中心额度已实现并通过相关自动验证；阶段 3 与真实环境验收独立
 
 权威范围：Auralis Server 所有外部 AI Provider 调用的统一入口、单次与任务预算、并发限制、小时/每日配额、用量结算、后台任务退避，以及与 HTTP/数据库资源隔离相关的设计决策
+
+### 2026-10-12 embedding 额度排除与测试默认值
+
+用户明确要求 embedding 不计额度，并放宽单人额度测试。当前策略按 `INGESTION_EMBEDDING` / `RETRIEVAL_EMBEDDING` 排除用户小时 / 日和系统日 token 窗口及本人额度展示，覆盖历史已结算和在途记录；原 reservation、actual / charged 审计、未知 usage 语义均保留。新 embedding 不因窗口已满或已超额被额度拒绝，账户 / 并发 / task 资源预算 / 调用次数 / UTF-8 字节限制仍可拒绝。聊天、Overview 和生成连接测试继续计量，不按 Provider 或模型名称一并豁免。
+
+单人默认值更新为 1000000 / 小时、2000000 / 日（均 10 倍），系统 2000000 / 日及并发 4 / 2 保持。下文旧阶段背景和初始任务预算为设计历史，现行 stage 统计与验证、运行态边界以 [本轮策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md) 为准。
+
+### 2026-10-10 实施准备校正
+
+当前源码已使用 Overview 中间/最终输出上限 `4608/6144`，PC 请求窗口为 `300000ms`；`IngestionWorker.process` 已没有包住 Provider I/O 的方法级事务。下文背景及初始表中的 `1024/4096`、PC `60 秒` 和外层事务描述是设计时基线，不能作为恢复当前实现的依据。完整持久配额范围仍为已批准设计，实施前必须按当前 MAP/REDUCE 与合法 ingestion 字节上限重新校核任务预算/调用次数；本轮共通修复和范围状态见 [2026-10-10 实施记录](../plans/2026-10-10-ai-important-fixes.md)。
+
+### 2026-10-10 B 范围确认与个人中心额度追加
+
+用户明确选择实施 B，并要求额度显示在现有个人中心。本轮落实阶段 1/2，并增加当前账号 `GET /api/ai/usage` 与 PC/Mobile/Tablet 个人中心显示；不扩展阶段 3 的异步 Overview。实施边界、校准后的初始任务预算、完整任务 lease、活跃续租、ingestion 额度中断后持久续做与单调 claim/独立 failure 次数见 [本轮 B 计划](../plans/2026-10-10-ai-usage-guard-b.md)。以下初始策略表中旧任务数值以该计划的当前值为准；小时/日开发额度仍使用原批准默认值，可配置覆盖。
+
+个人中心展示本人小时/今日的 limit、已结算 charged、在途 reserved、remaining 与 resetAt；以 token 为单位，重置时间按当地时区展示。缺失 Provider usage 时 charged 为保守估算；不显示金额或他人/全局额度。加载/失败状态明确，不以零模拟未读取，账号切换及迟到返回须隔离。
+
+2026-10-11 实现校正：准入、预留与派发标记在账本锁前锁定真实 ACTIVE users 行；标记作为派发授权点，Provider I/O 在事务外。成功接受与 owner/lease 校验原子结算；heartbeat 对已完成调用只续 TASK。请求/任务硬预算拒绝终态失败，配额等待才延期；AI 模块 advice 处理额度异常，沿现行 UNAUTHENTICATED 处理停用账号。最终代码/迁移/审查及未覆盖范围见 B 计划，下文保留原设计时背景。
 
 ## 背景
 
@@ -290,8 +308,8 @@ Ingestion 按顺序把 chunks 组成有界 batch，每批分别预留和结算�
 ```yaml
 global-concurrent: 4
 per-user-concurrent: 2
-per-user-hourly-tokens: 100000
-per-user-daily-tokens: 200000
+per-user-hourly-tokens: 1000000
+per-user-daily-tokens: 2000000
 global-daily-tokens: 2000000
 reservation-lease-millis: 300000
 ```

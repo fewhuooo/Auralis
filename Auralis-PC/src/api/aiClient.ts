@@ -13,6 +13,19 @@ export type MessageView = components['schemas']['MessageView']
 export type AiMessageCommand = components['schemas']['AiMessageCommand']
 export type CitationView = components['schemas']['CitationView']
 
+export interface AiQuotaInfo {
+  limitTokens: number
+  chargedTokens: number
+  reservedTokens: number
+  remainingTokens: number
+  resetAt: string
+}
+
+export interface AiUsageView {
+  hourly: AiQuotaInfo
+  daily: AiQuotaInfo
+}
+
 export type CanonicalAiProvider = 'DEEPSEEK' | 'OPENAI_COMPATIBLE' | 'SILICONFLOW'
 
 export interface AiModelListView {
@@ -41,6 +54,13 @@ export async function checkHealth(): Promise<boolean> {
 
 export function getAiSettings(): Promise<AiSettingsView[]> {
   return request.get('/api/ai/settings') as unknown as Promise<AiSettingsView[]>
+}
+
+import { validateAiUsage } from '../services/aiUsageGuardHelper.ts'
+
+export async function getAiUsage(): Promise<AiUsageView> {
+  const res = await request.get('/api/ai/usage')
+  return validateAiUsage(res)
 }
 
 export function updateAiSettings(data: AiSettingsCommand): Promise<AiSettingsView> {
@@ -117,6 +137,7 @@ export async function* streamAiMessage(
 export const useAiApi = {
   checkHealth,
   getAiSettings,
+  getAiUsage,
   updateAiSettings,
   listAiModels,
   testAiConnection,

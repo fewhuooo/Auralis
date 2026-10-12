@@ -157,7 +157,16 @@ public class ConversationService {
             String errorCode) {
         ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
         return appendMessageLocked(conversation, userId, AiMessageRole.ASSISTANT, content, status, model, errorCode,
-                null, replyToMessageId);
+                null, replyToMessageId, null);
+    }
+
+    @Transactional
+    public MessageView appendAssistantReply(
+            UUID userId, UUID conversationId, UUID replyToMessageId, String content,
+            AiMessageStatus status, String model, String errorCode, String usageJson) {
+        ConversationEntity conversation = requireActiveForUpdate(userId, conversationId);
+        return appendMessageLocked(conversation, userId, AiMessageRole.ASSISTANT, content, status, model, errorCode,
+                null, replyToMessageId, usageJson);
     }
 
     @Transactional(readOnly = true)
@@ -185,6 +194,21 @@ public class ConversationService {
             String errorCode,
             String clientRequestId,
             UUID replyToMessageId) {
+        return appendMessageLocked(conversation, userId, role, content, status, model, errorCode,
+                clientRequestId, replyToMessageId, null);
+    }
+
+    private MessageView appendMessageLocked(
+            ConversationEntity conversation,
+            UUID userId,
+            AiMessageRole role,
+            String content,
+            AiMessageStatus status,
+            String model,
+            String errorCode,
+            String clientRequestId,
+            UUID replyToMessageId,
+            String usageJson) {
         if (content == null || (content.isBlank() && status == AiMessageStatus.COMPLETED)) {
             throw new IllegalArgumentException("Message content must not be blank");
         }
@@ -192,7 +216,7 @@ public class ConversationService {
         conversationRepository.saveAndFlush(conversation);
         MessageEntity message = new MessageEntity(
                 UUID.randomUUID(), conversation.getId(), userId, nextSequence, role, status,
-                content.trim(), model, errorCode, null, clientRequestId, replyToMessageId);
+                content.trim(), model, errorCode, usageJson, clientRequestId, replyToMessageId);
         return toView(messageRepository.saveAndFlush(message));
     }
 

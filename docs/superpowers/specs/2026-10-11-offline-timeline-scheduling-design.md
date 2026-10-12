@@ -2,7 +2,7 @@
 
 日期：2026-10-11
 
-状态：用户已批准设计，待规格审阅
+状态：用户已批准；实现与定向自动验证通过，跨标签页写入在无 Web Locks API 时改为失败关闭并待最终只读复核；真实断网恢复、GUI 与跨设备验收待执行
 
 ## 目标
 
@@ -32,7 +32,7 @@ Sync 新增 `SCHEDULE_INSERTION` 与 `SCHEDULE_SWAP` 两种 Task 命令。插入
 
 ### 本地保存和投影
 
-PC 在现有 `LocalRepository` 的 SQL 与浏览器存储实现中增加批量排期提交：校验受影响的本地版本及当天 unresolved mutations，在一个本地事务中写入全部乐观 Task 投影及一条排期命令 outbox mutation。成功操作不生成逐 Task 普通 `UPDATE` mutation。受影响任务保持 pending 状态，直到服务端回放结果被原子合并。
+PC 在现有 `LocalRepository` 的 SQL 与浏览器存储实现中增加批量排期提交：校验受影响的本地版本及当天 unresolved mutations，在一个本地事务中写入全部乐观 Task 投影及一条排期命令 outbox mutation。成功操作不生成逐 Task 普通 `UPDATE` mutation。受影响任务保持 pending 状态，直到服务端回放结果被原子合并。浏览器 localStorage 中所有 repository 状态改写共用 Web Locks 同源互斥锁；浏览器未提供 Web Locks API 时以 `LOCAL_STORAGE_LOCK_UNAVAILABLE` 拒绝写入，避免整份状态被并发覆盖。Tauri 的 SQLite 持久化路径不受此浏览器 API 限制。
 
 插入命令复用现有半小时网格、截止、固定已完成任务、窗口和顺延规则计算本地预期投影。交换命令复用现有非紧邻互换和相邻紧凑规则。服务端仍为权威执行者；发生版本冲突时不自动改写原命令版本或静默重试不同用户意图。
 
@@ -54,7 +54,7 @@ PC 在现有 `LocalRepository` 的 SQL 与浏览器存储实现中增加批量�
 
 - PC Store：断网插入并顺延、断网换位、本地投影与单 outbox 命令的原子性、重启恢复、连接恢复回放、同命令重试不重复移动任务、服务端冲突后回滚本地乐观结果、非传输错误仍失败、已有截止约束与日期解析行为。
 - Sync/Repository：浏览器存储与 SQL repository 的批量提交/结算、mutation 顺序、重复响应、账号/设备切换隔离。
-- Server：两个新 Sync 命令路由到现有事务操作；同一 mutation ID/哈希返回相同完整结果；ID 哈希不匹配拒绝；插入/交换验证失败时不留下部分变更；ChangeLog 仅记录 Task UPDATE。
+- Server：两个新 Sync 命令路由到现有事务操作；换位 payload 必须带有目标 Task ID 与 `targetBaseVersion`；同一 mutation ID/哈希返回相同完整结果；ID 哈希不匹配拒绝；插入/交换验证失败时不留下部分变更；ChangeLog 仅记录 Task UPDATE。
 - 契约：数据库迁移、运行时 OpenAPI、PC SDK schema 与 `docs/contracts/API.md`、`docs/contracts/Database.md` 一致。
 
 ## 验收

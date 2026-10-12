@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { register } from 'node:module'
+import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -13,12 +14,16 @@ export async function resolve(specifier, context, nextResolve) {
     const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts';
     return nextResolve(new URL(withExt, root).href, context);
   }
+  if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs')) {
+    return nextResolve(new URL(specifier + '.ts', context.parentURL).href, context);
+  }
   return nextResolve(specifier, context);
 }
 `
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
 const { OverviewGenerationService } = await import('../src/services/overviewGenerationService.ts')
+const { OverviewRepository } = await import('../src/services/overviewRepository.ts')
 const { validateOverviewResponse } = await import('../src/api/overviewResponseValidator.ts')
 const { classifyOverviewFailure, overviewFailureMessage } = await import('../src/services/overviewFailurePolicy.ts')
 const source = async (relativePath) => readFile(path.resolve(import.meta.dirname, '..', relativePath), 'utf8')
@@ -89,6 +94,50 @@ class FakeOverviewRepository {
   async getSubjectOverview(subjectId) { return this.subjects.get(subjectId) ?? null }
   async saveSubjectOverviewPart(input) { this.subjects.set(input.subjectId, { ...input, status: 'READY' }); return this.subjects.get(input.subjectId) }
   async markSubjectOverviewFailed(subjectId, mode, code, detail) { this.failures.push({ subjectId, mode, code, detail }) }
+}
+
+class BarrierOverviewSqlite {
+  constructor() {
+    this.database = new DatabaseSync(':memory:')
+    this.blockNextCacheWrite = false
+    this.cacheWriteReached = null
+    this.releaseCacheWrite = null
+    this.completedTransactions = 0
+  }
+  async execute(sql, values = []) {
+    if (this.blockNextCacheWrite && sql.trimStart().toUpperCase().startsWith('INSERT INTO AI_OVERVIEW_CACHE')) {
+      this.blockNextCacheWrite = false
+      this.cacheWriteReached?.()
+      await new Promise((resolve) => { this.releaseCacheWrite = resolve })
+    }
+    this.database.prepare(sql.replace(/\$\d+/g, '?')).run(...values)
+  }
+  async select(sql, values = []) { return this.database.prepare(sql.replace(/\$\d+/g, '?')).all(...values) }
+  async transaction(operation) {
+    this.database.exec('BEGIN IMMEDIATE')
+    try {
+      const result = await operation(this)
+      this.database.exec('COMMIT')
+      this.completedTransactions += 1
+      return result
+    } catch (error) {
+      this.database.exec('ROLLBACK')
+      this.completedTransactions += 1
+      throw error
+    }
+  }
+  blockCacheWrite() {
+    this.blockNextCacheWrite = true
+    return new Promise((resolve) => { this.cacheWriteReached = resolve })
+  }
+  release() { this.releaseCacheWrite?.() }
+  async waitForTransactions(expected) {
+    for (let attempt = 0; attempt < 500 && this.completedTransactions < expected; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2))
+    }
+    assert.equal(this.completedTransactions, expected)
+  }
+  close() { this.database.close() }
 }
 
 function sourceApi(source) {
@@ -636,16 +685,18 @@ test('discard aborts an in-flight subject generation that uses the discarded Sou
   const repository = new FakeOverviewRepository()
   let releaseProvider
   const providerGate = new Promise((resolve) => { releaseProvider = resolve })
+  let notifyProviderStarted
+  const providerStarted = new Promise((resolve) => { notifyProviderStarted = resolve })
   let signal
   const service = new OverviewGenerationService({
-    api: { async generateSubjectOverview(_request, context) { signal = context.signal; await providerGate; return response('ALL') } },
+    api: { async generateSubjectOverview(_request, context) { signal = context.signal; notifyProviderStarted(); await providerGate; return response('ALL') } },
     repository,
     listLocalFileOverviews: async () => [
       { sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary },
     ],
   })
   const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
-  await new Promise((resolve) => setImmediate(resolve))
+  await providerStarted
   await service.discardFileOverview('source-1')
   releaseProvider()
 
@@ -678,7 +729,7 @@ test('subject generation rechecks the generation fence after the latest fingerpr
   assert.equal(repository.removedSubjectOverviews.includes('subject-1'), true)
 })
 
-test('discard during subject cache save compensates the late write before generation settles', async () => {
+test('discard during a subject cache save keeps the discarded cache absent before generation settles', async () => {
   const repository = new FakeOverviewRepository()
   let releaseSave
   const saveGate = new Promise((resolve) => { releaseSave = resolve })
@@ -764,25 +815,26 @@ test('overview response validation rejects malformed or mode-inconsistent provid
 
 test('overview API maps the two authenticated stateless endpoints exactly', async () => {
   const api = await source('src/api/useOverviewApi.ts')
-  assert.match(api, /aiRequest\.post\('\/api\/ai\/source-overviews', request,/)
-  assert.match(api, /aiRequest\.post\('\/api\/ai\/subject-overviews', request,/)
+  assert.match(api, /postOverviewSse\('\/api\/ai\/source-overviews', request,/)
+  assert.match(api, /postOverviewSse\('\/api\/ai\/subject-overviews', request,/)
   assert.doesNotMatch(api, /userId|serverDeviceId|conversation|localStorage/)
 })
 
-test('overview HTTP timeout exceeds the server provider response limit for both endpoints', async () => {
-  const api = await source('src/api/useOverviewApi.ts')
-  const timeoutLiteral = api.match(/OVERVIEW_REQUEST_TIMEOUT_MS\s*=\s*([\d_]+)/)?.[1]
+test('Overview SSE transport enforces an absolute deadline across both endpoints', async () => {
+  const transport = await source('src/api/overviewSse.ts')
+  const timeoutLiteral = transport.match(/OVERVIEW_SSE_DEADLINE_MS\s*=\s*([\d_]+)/)?.[1]
   const timeout = Number(timeoutLiteral?.replaceAll('_', ''))
-  assert.ok(timeout > 120_000, 'PC must allow the server Overview provider response window plus transport overhead')
-  assert.equal((api.match(/timeout:\s*OVERVIEW_REQUEST_TIMEOUT_MS/g) ?? []).length, 2,
-    'Source and Subject Overview requests must both use the extended timeout')
+  assert.ok(timeout >= 300_000, 'PC must enforce its existing absolute Overview request bound')
+  assert.match(transport, /setTimeout\(/)
+  assert.match(transport, /reader\.read\(/)
 })
 
 test('overview generation requests carry a per-attempt request id and server stages expose a generation id', async () => {
   const api = await source('src/api/useOverviewApi.ts')
+  const transport = await source('src/api/overviewSse.ts')
   const server = await readFile(path.resolve(import.meta.dirname, '..', '..', 'Auralis-Server/src/main/java/com/auralis/app/ai/OverviewGenerationService.java'), 'utf8')
   const cors = await readFile(path.resolve(import.meta.dirname, '..', '..', 'Auralis-Server/src/main/java/com/auralis/app/shared/config/WebConfiguration.java'), 'utf8')
-  assert.match(api, /X-Overview-Request-Id/)
+  assert.match(transport, /X-Overview-Request-Id/)
   assert.match(cors, /X-Overview-Request-Id/)
   assert.match(api, /randomUUID|uuidv7/i)
   assert.match(api, /context\?\.requestId\s*\?\?\s*overviewRequestId\(\)/)
@@ -795,14 +847,16 @@ test('overview generation requests carry a per-attempt request id and server sta
 
 test('overview API callsites preserve the service request ID in the existing header', async () => {
   const api = await source('src/api/useOverviewApi.ts')
+  const transport = await source('src/api/overviewSse.ts')
   for (const method of ['generateSourceOverview', 'generateSubjectOverview']) {
     const start = api.indexOf(`${method}(request`)
     assert.notEqual(start, -1, `missing API method: ${method}`)
     const callsite = api.slice(start, start + 450)
     assert.match(callsite, /context\?: OverviewRequestContext/)
-    assert.match(callsite, /X-Overview-Request-Id.*context\?\.requestId\s*\?\?\s*overviewRequestId\(\)/s)
+    assert.match(callsite, /requestId:\s*context\?\.requestId\s*\?\?\s*overviewRequestId\(\)/)
     assert.match(callsite, /signal:\s*context\?\.signal/)
   }
+  assert.match(transport, /'X-Overview-Request-Id': requestId/)
 })
 
 test('runtime and SourceStore trigger file generation after READY and retry on resume', async () => {
@@ -824,6 +878,21 @@ test('runtime and SourceStore trigger file generation after READY and retry on r
   assert.match(store, /ingestionRevision:\s*file\.ingestionRevision/)
   assert.match(store, /hydrateSources\(\)\s*\.catch/)
   assert.match(runtime, /lifecycleGeneration/)
+  assert.match(runtime, /this\.snapshot\.overviewGeneration\.cancelAll\(\)/)
+})
+
+test('manual Overview Stop controls release only their scoped view-owned handles', async () => {
+  const workspace = await source('src/views/SubjectWorkspace/index.vue')
+  const subjectSection = await source('src/components/subject/SubjectOverviewSection.vue')
+  const fileList = await source('src/components/subject/FileOutlineList.vue')
+  const summary = await source('src/components/subject/OverviewSummaryView.vue')
+  assert.match(workspace, /@stop="stopManualOverview\('subject', subjectId\)"/)
+  assert.match(workspace, /@stop-regeneration="stopManualOverview\('file', \$event\)"/)
+  assert.match(workspace, /@stop="summaryTarget && stopManualOverview\(summaryTarget\.kind, summaryTarget\.id\)"/)
+  assert.match(workspace, /stopAllManualOverviews\(\)/)
+  assert.match(subjectSection, /aria-label="停止学科总览生成"/)
+  assert.match(fileList, /aria-label="`停止\$\{file\.name\}总览生成`"/)
+  assert.match(summary, /aria-label="停止当前总览生成"/)
 })
 
 test('correlates file trigger lifecycle diagnostics to one request context and coalesces duplicates', async () => {
@@ -1147,4 +1216,775 @@ test('a new Source ID remains eligible after an old Source ID is discarded', asy
 
   assert.deepEqual(calls, [{ sourceId: 'new-source', mode: 'ALL' }])
   assert.deepEqual(repository.removedOverviewSources, ['old-source'])
+})
+
+const { SyncScopeChangedError } = await import('../src/api/request.ts')
+const { postOverviewSse } = await import('../src/api/overviewSse.ts')
+
+function createMockSseStream(chunks, onCancel) {
+  let index = 0
+  const encoder = new TextEncoder()
+  return {
+    body: {
+      getReader() {
+        return {
+          async read() {
+            if (index < chunks.length) {
+              const chunk = chunks[index++]
+              return { done: false, value: encoder.encode(chunk) }
+            }
+            return { done: true, value: undefined }
+          },
+          async cancel(reason) {
+            onCancel?.(reason)
+          },
+          releaseLock() {},
+        }
+      },
+    },
+  }
+}
+
+test('postOverviewSse ignores SSE comment heartbeats and returns terminal validated result', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  let capturedUrl = ''
+  let capturedHeaders = {}
+  let capturedMethod = ''
+  let capturedBody = ''
+  const validResult = {
+    schemaVersion: 1,
+    title: '大纲与总结',
+    outline: [{ title: '第一章', sections: [{ title: '第一节', summary: '摘要', sourceIds: ['source-1'], locator: null }] }],
+    summary: null,
+  }
+
+  const mockFetch = async (url, options) => {
+    capturedUrl = String(url)
+    capturedMethod = options.method
+    capturedHeaders = options.headers instanceof Headers ? Object.fromEntries(options.headers.entries()) : options.headers
+    capturedBody = options.body
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/event-stream' }),
+      ...createMockSseStream([
+        ': ping\n\n',
+        ': heartbeat\n\n',
+        `event: result\ndata: ${JSON.stringify(validResult)}\n\n`,
+      ]),
+    }
+  }
+
+  const res = await postOverviewSse(
+    '/api/ai/source-overviews',
+    { sourceId: 'source-1', mode: 'OUTLINE' },
+    { requestId: 'custom-req-id' },
+    { fetch: mockFetch }
+  )
+
+  assert.equal(capturedMethod, 'POST')
+  assert.match(capturedUrl, /\/api\/ai\/source-overviews$/)
+  const normalizedHeaders = new Headers(capturedHeaders)
+  assert.equal(normalizedHeaders.get('accept'), 'text/event-stream')
+  assert.equal(normalizedHeaders.get('content-type'), 'application/json')
+  assert.equal(normalizedHeaders.get('x-overview-request-id'), 'custom-req-id')
+  assert.deepEqual(JSON.parse(capturedBody), { sourceId: 'source-1', mode: 'OUTLINE' })
+  assert.deepEqual(res, validResult)
+})
+
+test('postOverviewSse cancels the response reader after a terminal event', async () => {
+  let readerCanceled = false
+  const result = {
+    schemaVersion: 1,
+    title: '总览',
+    outline: [{ title: '第一章', sections: [{ title: '第一节', summary: null, sourceIds: ['source-1'], locator: null }] }],
+    summary: null,
+  }
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
+    ...createMockSseStream([`event: result\ndata: ${JSON.stringify(result)}\n\n`], () => { readerCanceled = true }),
+  })
+  await postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'OUTLINE' }, undefined, { fetch: mockFetch })
+  assert.equal(readerCanceled, true, 'terminal event must close the response body reader')
+})
+
+test('postOverviewSse maps terminal error event through Overview failure policy', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
+    ...createMockSseStream([
+      ': heartbeat\n\n',
+      'event: error\ndata: {"code":"AI_DAILY_QUOTA_EXCEEDED","detail":"Quota exceeded","status":429,"retryAfterSeconds":12,"resetAt":"2026-10-11T12:00:00Z"}\n\n',
+    ]),
+  })
+
+  await assert.rejects(
+    postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'ALL' }, undefined, { fetch: mockFetch }),
+    (err) => {
+      const classified = classifyOverviewFailure(err)
+      return classified.code === 'AI_DAILY_QUOTA_EXCEEDED'
+        && classified.status === 429
+        && classified.retryAfterSeconds === 12
+        && classified.resetAt === '2026-10-11T12:00:00Z'
+    }
+  )
+})
+
+test('postOverviewSse keeps pre-response errors as ordinary ProblemDetails', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  const mockFetch = async () => ({
+    ok: false,
+    status: 400,
+    headers: new Headers({ 'content-type': 'application/problem+json' }),
+    json: async () => ({ status: 400, title: 'Bad Request', detail: 'Invalid parameters' }),
+    text: async () => JSON.stringify({ status: 400, title: 'Bad Request', detail: 'Invalid parameters' }),
+  })
+
+  await assert.rejects(
+    postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'ALL' }, undefined, { fetch: mockFetch }),
+    (err) => err?.name === 'ApiProblemError' && err?.status === 400
+  )
+})
+
+test('postOverviewSse rejects EOF without terminal result or error as protocol failure', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
+    ...createMockSseStream([
+      ': heartbeat\n\n',
+    ]),
+  })
+
+  await assert.rejects(
+    postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'ALL' }, undefined, { fetch: mockFetch }),
+    (err) => {
+      const classified = classifyOverviewFailure(err)
+      return classified.code === 'OVERVIEW_GENERATION_FAILED' || classified.code === 'OVERVIEW_STATUS_UNKNOWN'
+    }
+  )
+})
+
+test('postOverviewSse cancels active fetch and body reader promptly when AbortSignal aborts', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  let readerCanceled = false
+  const controller = new AbortController()
+
+  const mockFetch = async (_url, options) => {
+    options.signal?.addEventListener('abort', () => {
+      readerCanceled = true
+    })
+    return {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/event-stream' }),
+      body: new ReadableStream({
+        cancel() {
+          readerCanceled = true
+        },
+      }),
+    }
+  }
+
+  const promise = postOverviewSse(
+    '/api/ai/source-overviews',
+    { sourceId: 'source-1', mode: 'ALL' },
+    { signal: controller.signal },
+    { fetch: mockFetch }
+  )
+
+  await new Promise((resolve) => setImmediate(resolve))
+  controller.abort()
+
+  await assert.rejects(promise, (err) => err?.name === 'AbortError' || err?.code === 'ABORTED' || controller.signal.aborted)
+  assert.equal(readerCanceled, true, 'body reader must be canceled on signal abort')
+})
+
+test('postOverviewSse enforces deadline across response headers and stream reading', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
+    body: new ReadableStream(),
+  })
+
+  await assert.rejects(
+    postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'ALL' }, undefined, {
+      fetch: mockFetch,
+      deadlineMs: 20,
+    }),
+    (err) => {
+      const classified = classifyOverviewFailure(err)
+      return classified.code === 'MODEL_TIMEOUT'
+    }
+  )
+})
+
+test('postOverviewSse captures SyncRequestScopeTicket and asserts it before send and after 401 refresh', async () => {
+  assert.equal(typeof postOverviewSse, 'function', 'postOverviewSse must be exported')
+  let isScopeValid = false
+  const scopeTicket = {
+    key: Symbol('test-scope'),
+    isCurrent: () => isScopeValid,
+  }
+
+  // Pre-send assertion: scope not current throws SyncScopeChangedError before network call
+  await assert.rejects(
+    postOverviewSse(
+      '/api/ai/source-overviews',
+      { sourceId: 'source-1', mode: 'ALL' },
+      { scope: scopeTicket },
+      { fetch: async () => { throw new Error('should not call fetch') } }
+    ),
+    (err) => err instanceof SyncScopeChangedError
+  )
+
+  // 401 refresh: scope becomes stale after 401 refresh
+  isScopeValid = true
+  let refreshed = false
+  const refreshScopeTicket = {
+    key: Symbol('refresh-scope'),
+    isCurrent: () => !refreshed, // becomes false after refresh
+  }
+
+  const mockFetch401 = async () => ({
+    ok: false,
+    status: 401,
+    headers: new Headers(),
+    json: async () => ({ status: 401, title: 'Unauthorized' }),
+    text: async () => 'Unauthorized',
+  })
+
+  await assert.rejects(
+    postOverviewSse(
+      '/api/ai/source-overviews',
+      { sourceId: 'source-1', mode: 'ALL' },
+      { scope: refreshScopeTicket },
+      {
+        fetch: mockFetch401,
+        refreshAccessToken: async () => {
+          refreshed = true
+          return 'new-token'
+        },
+      }
+    ),
+    (err) => err instanceof SyncScopeChangedError
+  )
+})
+
+test('postOverviewSse deadline stops waiting for an in-progress 401 refresh without retrying', async () => {
+  let fetchCalls = 0
+  let releaseRefresh
+  const mockFetch = async () => {
+    fetchCalls += 1
+    return fetchCalls === 1
+      ? { ok: false, status: 401, headers: new Headers(), json: async () => ({}), text: async () => '' }
+      : { ok: false, status: 503, headers: new Headers(), json: async () => ({ status: 503 }), text: async () => '' }
+  }
+  const promise = postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'ALL' }, undefined, {
+    fetch: mockFetch,
+    deadlineMs: 15,
+    refreshAccessToken: async () => new Promise((resolve) => { releaseRefresh = resolve }),
+  }).catch((error) => error)
+  await new Promise((resolve) => setImmediate(resolve))
+  const outcome = await Promise.race([
+    promise.then(() => 'settled'),
+    new Promise((resolve) => setTimeout(() => resolve('refresh-still-pending'), 60)),
+  ])
+  releaseRefresh?.('refreshed')
+  const error = await promise
+  assert.equal(outcome, 'settled', 'deadline must finish the Overview consumer before refresh completes')
+  assert.equal(classifyOverviewFailure(error).code, 'MODEL_TIMEOUT')
+  assert.equal(fetchCalls, 1, 'an expired request must not be retried after refresh finishes')
+})
+
+test('postOverviewSse caller Stop ends its wait during 401 refresh without canceling shared refresh', async () => {
+  const controller = new AbortController()
+  let fetchCalls = 0
+  let refreshFinished = false
+  const mockFetch = async () => {
+    fetchCalls += 1
+    return { ok: false, status: 401, headers: new Headers(), json: async () => ({}), text: async () => '' }
+  }
+  const promise = postOverviewSse('/api/ai/source-overviews', { sourceId: 'source-1', mode: 'ALL' }, { signal: controller.signal }, {
+    fetch: mockFetch,
+    refreshAccessToken: async () => new Promise((resolve) => setTimeout(() => { refreshFinished = true; resolve('refreshed') }, 80)),
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  controller.abort(new DOMException('Stopped', 'AbortError'))
+  const outcome = await Promise.race([
+    promise.then(() => 'resolved', () => 'rejected'),
+    new Promise((resolve) => setTimeout(() => resolve('still-waiting'), 20)),
+  ])
+  assert.equal(outcome, 'rejected', 'Stop must settle the consumer promptly')
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await promise.catch(() => undefined)
+  assert.equal(refreshFinished, true, 'the shared refresh operation is allowed to finish independently')
+  assert.equal(fetchCalls, 1, 'the stopped request must never retry')
+})
+
+test('OverviewGenerationService exposes stoppable handle for manual file overview and stops transport on last consumer', async () => {
+  const repository = new FakeOverviewRepository()
+  let abortCalled = false
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview(_req, context) {
+        context.signal?.addEventListener('abort', () => { abortCalled = true })
+        await new Promise(() => {}) // hangs
+        return response('ALL')
+      },
+    },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    getLocalFileGenerationRevision: async () => 'rev-1',
+  })
+
+  const handle = service.regenerateFileOverview('source-1', 'ALL')
+  assert.equal(typeof handle.stop, 'function', 'manual regeneration must expose stop() handle')
+
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(abortCalled, false)
+
+  handle.stop()
+  const result = await handle
+  assert.equal(abortCalled, true, 'abort signal should be triggered on stop')
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'ABORTED' })
+})
+
+test('OverviewGenerationService coalesces duplicate manual consumers and aborts transport only when all consumers leave', async () => {
+  const repository = new FakeOverviewRepository()
+  let abortCalled = false
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview(_req, context) {
+        context.signal?.addEventListener('abort', () => { abortCalled = true })
+        await new Promise(() => {}) // hangs
+        return response('ALL')
+      },
+    },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    getLocalFileGenerationRevision: async () => 'rev-1',
+  })
+
+  const handleA = service.regenerateFileOverview('source-1', 'ALL')
+  const handleB = service.regenerateFileOverview('source-1', 'ALL')
+
+  await new Promise((resolve) => setImmediate(resolve))
+
+  // Stopping first consumer does NOT abort the shared transport
+  handleA.stop()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(abortCalled, false, 'transport must not abort while consumer B remains')
+
+  // Stopping second consumer (last interest) aborts the transport
+  handleB.stop()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(abortCalled, true, 'transport must abort once all consumers leave')
+
+  const [resA, resB] = await Promise.all([handleA, handleB])
+  assert.deepEqual(resA, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.deepEqual(resB, { status: 'SKIPPED', code: 'ABORTED' })
+})
+
+test('OverviewGenerationService automatic work survives manual consumer release and view unmount', async () => {
+  const repository = new FakeOverviewRepository()
+  let abortCalled = false
+  let finishWork
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview(_req, context) {
+        context.signal?.addEventListener('abort', () => { abortCalled = true })
+        await new Promise((resolve) => { finishWork = resolve })
+        return response('ALL')
+      },
+    },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    getLocalFileGenerationRevision: async () => 'rev-1',
+  })
+
+  // Automatic trigger starts work
+  const autoPromise = service.generateReadyFileOverview('source-1', 'rev-1', 'JOB_CHANGED')
+  await new Promise((resolve) => setImmediate(resolve))
+  // Manual trigger coalesces with it
+  const manualHandle = service.regenerateFileOverview('source-1', 'ALL')
+
+  await new Promise((resolve) => setImmediate(resolve))
+
+  // View unmounts or stops manual consumer
+  manualHandle.stop()
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(abortCalled, false, 'automatic work must not abort on manual consumer release')
+
+  // Let work complete
+  finishWork()
+  const [autoRes, manualRes] = await Promise.all([autoPromise, manualHandle])
+  assert.equal(abortCalled, false)
+  assert.equal(autoRes.status, 'STARTED')
+  assert.deepEqual(manualRes, { status: 'SKIPPED', code: 'ABORTED' })
+})
+
+test('a source revision change aborts only the old revision without changing successful cache', async () => {
+  const repository = new FakeOverviewRepository()
+  const cached = {
+    sourceId: 'source-1',
+    ingestionRevision: 'rev-1',
+    title: '现有成果',
+    outline,
+    summary,
+    status: 'READY',
+  }
+  repository.files.set('source-1:rev-1', cached)
+  let aborted = false
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview(_request, context) {
+        context.signal?.addEventListener('abort', () => { aborted = true })
+        await new Promise(() => {})
+        return response('ALL')
+      },
+    },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    getLocalFileGenerationRevision: async () => 'rev-1',
+  })
+  const handle = service.regenerateFileOverview('source-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  service.invalidateSourceRevision('source-1', 'rev-2')
+  assert.deepEqual(await handle, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.equal(aborted, true)
+  assert.equal(repository.failures.length, 0)
+  assert.equal(repository.files.get('source-1:rev-1'), cached)
+})
+
+test('intentional abort returns SKIPPED/ABORTED without marking FAILED or deleting cache/outbox', async () => {
+  const repository = new FakeOverviewRepository()
+  const existingRecord = {
+    sourceId: 'source-1',
+    ingestionRevision: 'rev-1',
+    title: '旧版本',
+    outline: outline,
+    summary: summary,
+    status: 'READY',
+  }
+  repository.files.set('source-1:rev-1', existingRecord)
+
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview(_req, context) {
+        await new Promise((resolve) => context.signal?.addEventListener('abort', resolve))
+        throw new DOMException('Aborted', 'AbortError')
+      },
+    },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    getLocalFileGenerationRevision: async () => 'rev-1',
+  })
+
+  const handle = service.regenerateFileOverview('source-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+  handle.stop()
+
+  const result = await handle
+  assert.deepEqual(result, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.equal(repository.failures.length, 0, 'intentional abort must not record failure')
+  assert.deepEqual(repository.files.get('source-1:rev-1'), existingRecord, 'existing cache must remain preserved')
+})
+
+test('newer subject generation aborts previous in-flight subject generation', async () => {
+  const repository = new FakeOverviewRepository()
+  const abortedSignals = []
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSubjectOverview(_req, context) {
+        context.signal?.addEventListener('abort', () => abortedSignals.push(context.signal))
+        await new Promise(() => {}) // hangs
+        return response('ALL')
+      },
+    },
+    repository,
+    listLocalFileOverviews: async () => [{
+      sourceId: 'source-1',
+      ingestionRevision: 'rev-1',
+      title: 'Doc',
+      outline,
+      summary,
+      status: 'READY',
+    }],
+  })
+
+  const first = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+
+  const second = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+
+  assert.equal(abortedSignals.length, 1, 'first subject generation must be aborted by newer generation')
+})
+
+test('runtime stop and cancelAll aborts active file and subject generation', async () => {
+  const repository = new FakeOverviewRepository()
+  const abortedSignals = []
+  const service = new OverviewGenerationService({
+    api: {
+      async generateSourceOverview(_req, context) {
+        context.signal?.addEventListener('abort', () => abortedSignals.push('file'))
+        await new Promise(() => {})
+        return response('ALL')
+      },
+      async generateSubjectOverview(_req, context) {
+        context.signal?.addEventListener('abort', () => abortedSignals.push('subject'))
+        await new Promise(() => {})
+        return response('ALL')
+      },
+    },
+    repository,
+    sourceApi: sourceApi({ id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' }),
+    isFileGenerationEligible: async () => true,
+    getLocalFileGenerationRevision: async () => 'rev-1',
+    listLocalFileOverviews: async () => [{
+      sourceId: 'source-1',
+      ingestionRevision: 'rev-1',
+      title: 'Doc',
+      outline,
+      summary,
+      status: 'READY',
+    }],
+  })
+
+  const filePromise = service.regenerateFileOverview('source-1', 'ALL')
+  const subjectPromise = service.regenerateSubjectOverview('subject-1', 'ALL')
+  await new Promise((resolve) => setImmediate(resolve))
+
+  service.cancelAll()
+
+  const [fileRes, subjectRes] = await Promise.all([filePromise, subjectPromise])
+  assert.deepEqual(fileRes, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.deepEqual(subjectRes, { status: 'SKIPPED', code: 'ABORTED' })
+  assert.deepEqual(abortedSignals.sort(), ['file', 'subject'])
+})
+
+test('cancellation inside the subject SQL write rolls back cache and outbox without publishing', async () => {
+  const sql = new BarrierOverviewSqlite()
+  const previousWindow = globalThis.window
+  const events = []
+  try {
+    const repository = new OverviewRepository('cancel-subject-user', 'device-1', { sql })
+    await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'ALL', inputFingerprint: 'old-fingerprint', response: response('ALL') })
+    const before = await repository.getSubjectOverview('subject-1')
+    const outboxBefore = await repository.listOverviewOutbox()
+    const target = new EventTarget()
+    target.addEventListener('auralis-overview-cache-updated', event => events.push(['cache', event.detail]))
+    target.addEventListener('auralis-overview-intent-created', event => events.push(['intent', event.detail]))
+    globalThis.window = target
+    const entered = sql.blockCacheWrite()
+    const service = new OverviewGenerationService({
+      api: { async generateSubjectOverview() { return { ...response('ALL'), title: 'Late subject result' } } },
+      repository,
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+    })
+    const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+    await entered
+    service.cancelAll()
+    sql.release()
+
+    assert.deepEqual(await attempt, { status: 'SKIPPED', code: 'ABORTED' })
+    assert.deepEqual(await repository.getSubjectOverview('subject-1'), before)
+    assert.deepEqual(await repository.listOverviewOutbox(), outboxBefore)
+    assert.deepEqual(events, [])
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+    sql.close()
+  }
+})
+
+test('stopping a file consumer inside the SQL write rolls back its late cache and outbox write', async () => {
+  const sql = new BarrierOverviewSqlite()
+  const previousWindow = globalThis.window
+  const events = []
+  try {
+    const repository = new OverviewRepository('cancel-file-user', 'device-1', { sql })
+    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: response('ALL') })
+    const before = await repository.getFileOverview('source-1', 'rev-1')
+    const outboxBefore = await repository.listOverviewOutbox()
+    const target = new EventTarget()
+    target.addEventListener('auralis-overview-cache-updated', event => events.push(['cache', event.detail]))
+    target.addEventListener('auralis-overview-intent-created', event => events.push(['intent', event.detail]))
+    globalThis.window = target
+    const entered = sql.blockCacheWrite()
+    const service = new OverviewGenerationService({
+      api: { async generateSourceOverview() { return { ...response('ALL'), title: 'Late file result' } } },
+      repository,
+      sourceApi: { async get() { return { id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' } } },
+    })
+    const attempt = service.regenerateFileOverview('source-1', 'ALL')
+    await entered
+    attempt.stop()
+    sql.release()
+
+    assert.deepEqual(await attempt, { status: 'SKIPPED', code: 'ABORTED' })
+    await sql.waitForTransactions(2)
+    assert.deepEqual(await repository.getFileOverview('source-1', 'rev-1'), before)
+    assert.deepEqual(await repository.listOverviewOutbox(), outboxBefore)
+    assert.deepEqual(events, [])
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window
+    else globalThis.window = previousWindow
+    sql.close()
+  }
+})
+
+test('a queued cancelled file save is rejected after the earlier SQL write releases', async () => {
+  const sql = new BarrierOverviewSqlite()
+  try {
+    const repository = new OverviewRepository('queued-cancel-user', 'device-1', { sql })
+    const blockerEntered = sql.blockCacheWrite()
+    const blockerSave = repository.saveFileOverviewPart({ sourceId: 'blocker', ingestionRevision: 'rev-1', mode: 'ALL', response: response('ALL') })
+    await blockerEntered
+    let queuedSaveResolve
+    const queuedSaveCalled = new Promise(resolve => { queuedSaveResolve = resolve })
+    let queuedSaveSettledResolve
+    const queuedSaveSettled = new Promise(resolve => { queuedSaveSettledResolve = resolve })
+    const save = repository.saveFileOverviewPart.bind(repository)
+    repository.saveFileOverviewPart = input => {
+      const pending = save(input)
+      if (input.sourceId === 'source-queued') {
+        queuedSaveResolve()
+        pending.then(queuedSaveSettledResolve, queuedSaveSettledResolve)
+      }
+      return pending
+    }
+    const service = new OverviewGenerationService({
+      api: { async generateSourceOverview() { return response('ALL') } },
+      repository,
+      sourceApi: { async get() { return { id: 'source-queued', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' } } },
+    })
+    const attempt = service.regenerateFileOverview('source-queued', 'ALL')
+    await queuedSaveCalled
+    attempt.stop()
+    sql.release()
+
+    assert.deepEqual(await attempt, { status: 'SKIPPED', code: 'ABORTED' })
+    await blockerSave
+    await queuedSaveSettled
+    await sql.waitForTransactions(1)
+    assert.equal(await repository.getFileOverview('source-queued', 'rev-1'), null)
+    assert.deepEqual((await repository.listOverviewOutbox()).map(item => item.scopeId), ['blocker'])
+  } finally { sql.close() }
+})
+
+test('a superseded subject SQL save rolls back without deleting either prior or newer owner data', async () => {
+  const sql = new BarrierOverviewSqlite()
+  try {
+    const repository = new OverviewRepository('subject-supersede-user', 'device-1', { sql })
+    await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'ALL', inputFingerprint: 'prior-fingerprint', response: response('ALL') })
+    const originalOutbox = await repository.listOverviewOutbox()
+    const entered = sql.blockCacheWrite()
+    let providerCalls = 0
+    const service = new OverviewGenerationService({
+      api: { async generateSubjectOverview() {
+        providerCalls += 1
+        return { ...response('ALL'), title: providerCalls === 1 ? 'Superseded result' : 'Current result' }
+      } },
+      repository,
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+    })
+    const first = service.regenerateSubjectOverview('subject-1', 'ALL')
+    await entered
+    const second = service.regenerateSubjectOverview('subject-1', 'ALL')
+    sql.release()
+    const [firstResult, secondResult] = await Promise.all([first, second])
+
+    assert.deepEqual(firstResult, { status: 'SKIPPED', code: 'ABORTED' })
+    assert.equal(secondResult.status, 'STARTED')
+    assert.equal((await repository.getSubjectOverview('subject-1'))?.title, 'Current result')
+    const outbox = await repository.listOverviewOutbox()
+    assert.deepEqual(outbox.slice(0, originalOutbox.length), originalOutbox)
+    assert.equal(outbox.length, originalOutbox.length + 1)
+  } finally { sql.close() }
+})
+
+test('a subject Stop after SQL commit preserves the committed cache and intent', async () => {
+  const sql = new BarrierOverviewSqlite()
+  try {
+    const repository = new OverviewRepository('subject-commit-boundary-user', 'device-1', { sql })
+    await repository.saveSubjectOverviewPart({ subjectId: 'subject-1', mode: 'ALL', inputFingerprint: 'prior-fingerprint', response: response('ALL') })
+    const outboxBefore = await repository.listOverviewOutbox()
+    const save = repository.saveSubjectOverviewPart.bind(repository)
+    let committedResolve
+    const committed = new Promise(resolve => { committedResolve = resolve })
+    let releaseSave
+    const saveGate = new Promise(resolve => { releaseSave = resolve })
+    repository.saveSubjectOverviewPart = async input => {
+      const result = await save(input)
+      committedResolve()
+      await saveGate
+      return result
+    }
+    const service = new OverviewGenerationService({
+      api: { async generateSubjectOverview() { return { ...response('ALL'), title: 'Committed subject result' } } },
+      repository,
+      listLocalFileOverviews: async () => [{ sourceId: 'source-1', ingestionRevision: 'rev-1', title: 'Source', status: 'READY', outline, summary }],
+    })
+    const attempt = service.regenerateSubjectOverview('subject-1', 'ALL')
+    await committed
+    service.cancelAll()
+    releaseSave()
+
+    assert.deepEqual(await attempt, { status: 'SKIPPED', code: 'ABORTED' })
+    assert.equal((await repository.getSubjectOverview('subject-1'))?.title, 'Committed subject result')
+    assert.equal((await repository.listOverviewOutbox()).length, outboxBefore.length + 1)
+  } finally { sql.close() }
+})
+
+test('a file Stop after SQL commit keeps the committed cache and intent', async () => {
+  const sql = new BarrierOverviewSqlite()
+  try {
+    const repository = new OverviewRepository('file-commit-boundary-user', 'device-1', { sql })
+    await repository.saveFileOverviewPart({ sourceId: 'source-1', ingestionRevision: 'rev-1', mode: 'ALL', response: response('ALL') })
+    const outboxBefore = await repository.listOverviewOutbox()
+    const save = repository.saveFileOverviewPart.bind(repository)
+    let committedResolve
+    const committed = new Promise(resolve => { committedResolve = resolve })
+    let settledResolve
+    const saveSettled = new Promise(resolve => { settledResolve = resolve })
+    let releaseSave
+    const saveGate = new Promise(resolve => { releaseSave = resolve })
+    repository.saveFileOverviewPart = async input => {
+      try {
+        const result = await save(input)
+        committedResolve()
+        await saveGate
+        return result
+      } finally { settledResolve() }
+    }
+    const service = new OverviewGenerationService({
+      api: { async generateSourceOverview() { return { ...response('ALL'), title: 'Committed file result' } } },
+      repository,
+      sourceApi: { async get() { return { id: 'source-1', type: 'FILE', ingestionStatus: 'READY', ingestionRevision: 'rev-1' } } },
+    })
+    const attempt = service.regenerateFileOverview('source-1', 'ALL')
+    await committed
+    attempt.stop()
+    releaseSave()
+
+    assert.deepEqual(await attempt, { status: 'SKIPPED', code: 'ABORTED' })
+    await saveSettled
+    assert.equal((await repository.getFileOverview('source-1', 'rev-1'))?.title, 'Committed file result')
+    assert.equal((await repository.listOverviewOutbox()).length, outboxBefore.length + 1)
+  } finally { sql.close() }
 })

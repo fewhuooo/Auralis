@@ -2,10 +2,6 @@ import { ref, watch } from 'vue'
 import { defineStore } from 'pinia'
 import {
   useReviewApi,
-  type EventRequest,
-  type ReviewHistoryQuery,
-  type ReviewQuery,
-  type ReviewEventView,
   type ReviewStateView,
   type LifecycleHistoryResponse,
   type EffectiveReviewView,
@@ -23,8 +19,6 @@ import { SyncScopeChangedError, type SyncRequestScopeTicket } from '@/api/reques
 import { useAuthStore } from '@/store/useAuthStore'
 import { mapReviewStateView, type ReviewStateModel } from '@/services/domainMappers'
 
-export type ReviewRating = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY' | 'SKIP'
-
 interface SessionIdentity {
   userId: string
   deviceId: string
@@ -33,31 +27,6 @@ interface SessionIdentity {
 
 interface ReviewScopeTicket extends SyncRequestScopeTicket, SessionIdentity {
   generation: number
-}
-
-export interface FirstAcceptedReview {
-  rating: Exclude<ReviewRating, 'SKIP'>
-  dueAt?: string
-  state: ReviewStateModel
-}
-
-export interface SubjectReviewRound {
-  roundId: string
-  subjectId: string
-  scopeTicket: ReviewScopeTicket
-  groupSize: 5 | 10
-  queue: string[]
-  remainingIds: string[]
-  firstGroupCount: number
-  firstAcceptedByBlock: Record<string, FirstAcceptedReview>
-  completed: string[]
-  skipped: string[]
-  currentKnowledgeBlockId: string | null
-  currentStartedAt: string
-  revealed: boolean
-  pendingEvent: EventRequest | null
-  pendingError: string | null
-  conflictNeedsConfirmation: boolean
 }
 
 export type LifecycleReviewPhase = 'REVIEW_RECALL' | 'REVIEW_CHECK' | 'LEARNING_READ' | 'LEARNING_RECALL' | 'LEARNING_CHECK' | 'FUZZY_RECALL' | 'FUZZY_CHECK' | 'GROUP_COMPLETE'
@@ -117,10 +86,6 @@ export interface LifecycleSubjectReviewRound {
   fuzzyQueueIds: string[]
   fuzzyCompletedIds: string[]
   completedIds: string[]
-}
-
-interface ReviewSubmissionResult {
-  formal: boolean
 }
 
 function currentIdentity(authStore: ReturnType<typeof useAuthStore>): SessionIdentity | null {
@@ -240,10 +205,6 @@ function assertEffectiveReviewView(value: unknown): asserts value is EffectiveRe
 
 export const useReviewStore = defineStore('review', () => {
   const authStore = useAuthStore()
-  const queue = ref<ReviewStateModel[]>([])
-  const history = ref<ReviewEventView[]>([])
-  const isLoading = ref(false)
-  const lastError = ref<string | null>(null)
 
   const subjectStatesBySubjectId = ref<Record<string, LifecycleReviewStateModel[]>>({})
   const subjectStatesLoadedBySubjectId = ref<Record<string, boolean>>({})
@@ -251,9 +212,7 @@ export const useReviewStore = defineStore('review', () => {
   const subjectStatesErrorBySubjectId = ref<Record<string, string | null>>({})
   const reviewConflictsBySubjectId = ref<Record<string, string[]>>({})
   const groupSizeBySubjectId = ref<Record<string, 5 | 10>>({})
-  const roundsBySubjectId = ref<Record<string, SubjectReviewRound>>({})
   const lifecycleRoundsBySubjectId = ref<Record<string, LifecycleSubjectReviewRound>>({})
-  const historyBySubjectBlock = ref<Record<string, ReviewEventView[]>>({})
   const lifecycleHistoryBySubjectBlock = ref<Record<string, LifecycleHistoryResponse>>({})
   const historyLoadingBySubjectBlock = ref<Record<string, boolean>>({})
   const historyErrorBySubjectBlock = ref<Record<string, string | null>>({})
@@ -263,7 +222,6 @@ export const useReviewStore = defineStore('review', () => {
   const historyRequestVersions = new Map<string, number>()
   const issuedScopeTickets = new WeakSet<object>()
   const activeBlockIdsBySubject = new Map<string, Set<string>>()
-  const pendingRequestBySubject = new Map<string, { roundId: string; clientEventId: string; promise: Promise<ReviewSubmissionResult> }>()
   const pendingLifecycleRequestBySubject = new Map<string, { roundId: string; clientCommandId: string; promise: Promise<LifecycleCommandResponse> }>()
 
   function clearSessionBoundState(): void {
@@ -273,21 +231,14 @@ export const useReviewStore = defineStore('review', () => {
     subjectStatesErrorBySubjectId.value = {}
     reviewConflictsBySubjectId.value = {}
     groupSizeBySubjectId.value = {}
-    roundsBySubjectId.value = {}
     lifecycleRoundsBySubjectId.value = {}
-    historyBySubjectBlock.value = {}
     lifecycleHistoryBySubjectBlock.value = {}
     historyLoadingBySubjectBlock.value = {}
     historyErrorBySubjectBlock.value = {}
     stateRequestVersions.clear()
     historyRequestVersions.clear()
     activeBlockIdsBySubject.clear()
-    pendingRequestBySubject.clear()
     pendingLifecycleRequestBySubject.clear()
-    queue.value = []
-    history.value = []
-    isLoading.value = false
-    lastError.value = null
   }
 
   let observedIdentity = currentIdentity(authStore)
@@ -344,19 +295,16 @@ export const useReviewStore = defineStore('review', () => {
     delete subjectStatesLoadingBySubjectId.value[subjectId]
     delete subjectStatesErrorBySubjectId.value[subjectId]
     delete groupSizeBySubjectId.value[subjectId]
-    delete roundsBySubjectId.value[subjectId]
     delete lifecycleRoundsBySubjectId.value[subjectId]
     activeBlockIdsBySubject.delete(subjectId)
-    pendingRequestBySubject.delete(subjectId)
     pendingLifecycleRequestBySubject.delete(subjectId)
 
     const prefix = `${subjectId}\u0000`
     for (const key of historyRequestVersions.keys()) {
       if (key.startsWith(prefix)) historyRequestVersions.set(key, (historyRequestVersions.get(key) ?? 0) + 1)
     }
-    for (const key of Object.keys(historyBySubjectBlock.value)) {
+    for (const key of Object.keys(lifecycleHistoryBySubjectBlock.value)) {
       if (!key.startsWith(prefix)) continue
-      delete historyBySubjectBlock.value[key]
       delete lifecycleHistoryBySubjectBlock.value[key]
       delete historyLoadingBySubjectBlock.value[key]
       delete historyErrorBySubjectBlock.value[key]
@@ -429,8 +377,6 @@ export const useReviewStore = defineStore('review', () => {
   function setGroupSize(subjectId: string, groupSize: 5 | 10): void {
     if (groupSize !== 5 && groupSize !== 10) throw new Error('每组知识块数量只能是 5 或 10。')
     groupSizeBySubjectId.value[subjectId] = groupSize
-    const round = roundsBySubjectId.value[subjectId]
-    if (round?.scopeTicket.isCurrent()) round.groupSize = groupSize
     const lifecycleRound = lifecycleRoundsBySubjectId.value[subjectId]
     if (lifecycleRound?.scopeTicket.isCurrent()) lifecycleRound.groupSize = groupSize
   }
@@ -442,7 +388,6 @@ export const useReviewStore = defineStore('review', () => {
     for (const key of [...historyRequestVersions.keys()]) {
       if (!key.startsWith(historyPrefix) || activeIds.has(key.slice(historyPrefix.length))) continue
       historyRequestVersions.set(key, (historyRequestVersions.get(key) ?? 0) + 1)
-      delete historyBySubjectBlock.value[key]
       delete lifecycleHistoryBySubjectBlock.value[key]
       delete historyLoadingBySubjectBlock.value[key]
       delete historyErrorBySubjectBlock.value[key]
@@ -450,27 +395,6 @@ export const useReviewStore = defineStore('review', () => {
     if (subjectStatesLoadedBySubjectId.value[subjectId]) {
       subjectStatesBySubjectId.value[subjectId] = (subjectStatesBySubjectId.value[subjectId] ?? [])
         .filter((state) => activeIds.has(state.knowledgeBlockId))
-    }
-
-    const round = roundsBySubjectId.value[subjectId]
-    if (round) {
-      const currentId = round.currentKnowledgeBlockId
-      round.queue = round.queue.filter((id) => activeIds.has(id))
-      round.remainingIds = round.remainingIds.filter((id) => activeIds.has(id))
-      round.completed = round.completed.filter((id) => activeIds.has(id))
-      round.skipped = round.skipped.filter((id) => activeIds.has(id))
-      for (const id of Object.keys(round.firstAcceptedByBlock)) {
-        if (!activeIds.has(id)) delete round.firstAcceptedByBlock[id]
-      }
-      if (round.pendingEvent && !activeIds.has(round.pendingEvent.knowledgeBlockId)) {
-        round.pendingEvent = null
-        round.pendingError = null
-        round.conflictNeedsConfirmation = false
-      }
-      if ((round.queue[0] ?? null) !== currentId) updateCurrent(round)
-      if (activeIds.size === 0 || (!round.queue.length && !round.remainingIds.length)) {
-        delete roundsBySubjectId.value[subjectId]
-      }
     }
 
     const lifecycleRound = lifecycleRoundsBySubjectId.value[subjectId]
@@ -497,50 +421,6 @@ export const useReviewStore = defineStore('review', () => {
       if (activeIds.size === 0) delete lifecycleRoundsBySubjectId.value[subjectId]
     }
 
-    for (const key of Object.keys(historyBySubjectBlock.value)) {
-      if (key.startsWith(`${subjectId}\u0000`) && !activeIds.has(key.slice(subjectId.length + 1))) {
-        delete historyBySubjectBlock.value[key]
-        delete historyLoadingBySubjectBlock.value[key]
-        delete historyErrorBySubjectBlock.value[key]
-      }
-    }
-  }
-
-  function updateCurrent(round: SubjectReviewRound): void {
-    round.currentKnowledgeBlockId = round.queue[0] ?? null
-    round.currentStartedAt = new Date().toISOString()
-    round.revealed = false
-  }
-
-  function startRound(input: { subjectId: string; knowledgeBlockIds: string[]; groupSize: 5 | 10; now?: Date }): SubjectReviewRound {
-    const ticket = createScopeTicket()
-    if (!isSubjectStatesLoaded(input.subjectId)) throw new Error('请先完整加载复习状态，再开始本轮。')
-    const existing = roundsBySubjectId.value[input.subjectId]
-    if (existing?.scopeTicket.isCurrent()) return existing
-    groupSizeBySubjectId.value[input.subjectId] = input.groupSize
-    const knownActiveIds = activeBlockIdsBySubject.get(input.subjectId)
-    const uniqueIds = [...new Set(input.knowledgeBlockIds.filter((id) => id && (!knownActiveIds || knownActiveIds.has(id))))]
-    const queue = uniqueIds.slice(0, input.groupSize)
-    const round: SubjectReviewRound = {
-      roundId: makeUuid(),
-      subjectId: input.subjectId,
-      scopeTicket: ticket,
-      groupSize: input.groupSize,
-      queue,
-      remainingIds: uniqueIds.slice(input.groupSize),
-      firstGroupCount: queue.length,
-      firstAcceptedByBlock: {},
-      completed: [],
-      skipped: [],
-      currentKnowledgeBlockId: queue[0] ?? null,
-      currentStartedAt: (input.now ?? new Date()).toISOString(),
-      revealed: false,
-      pendingEvent: null,
-      pendingError: null,
-      conflictNeedsConfirmation: false,
-    }
-    roundsBySubjectId.value[input.subjectId] = round
-    return round
   }
 
   function lifecycleStateFor(subjectId: string, knowledgeBlockId: string): LifecycleReviewStateModel | undefined {
@@ -711,26 +591,6 @@ export const useReviewStore = defineStore('review', () => {
       return
     }
     updateLifecycleCurrent(round)
-  }
-
-  function getRound(subjectId: string): SubjectReviewRound | null {
-    const round = roundsBySubjectId.value[subjectId]
-    return round?.scopeTicket.isCurrent() ? round : null
-  }
-
-  function revealCurrentCard(subjectId: string): void {
-    const round = getRound(subjectId)
-    if (round?.currentKnowledgeBlockId) round.revealed = true
-  }
-
-  function removeCurrentFromQueue(round: SubjectReviewRound, requeue: boolean, skipped = false): void {
-    const currentId = round.currentKnowledgeBlockId
-    if (!currentId) return
-    round.queue = round.queue.filter((id, index) => index !== 0 || id !== currentId)
-    if (requeue && !round.queue.includes(currentId)) round.queue.push(currentId)
-    if (skipped && !round.skipped.includes(currentId)) round.skipped.push(currentId)
-    if (!requeue && !skipped && !round.completed.includes(currentId)) round.completed.push(currentId)
-    updateCurrent(round)
   }
 
   function updateCachedState(subjectId: string, state: ReviewStateModel): void {
@@ -1263,8 +1123,7 @@ export const useReviewStore = defineStore('review', () => {
       const afterHistoryRound = lifecycleRoundsBySubjectId.value[subjectId]
       if (afterHistoryRound?.roundId !== roundId
         || afterHistoryRound.pendingCommand?.request.clientCommandId !== clientCommandId) throw new SyncScopeChangedError()
-      if (!localRecord || !localRecord.historyImported || !localRecord.legacyHistoryComplete
-        || !localRecord.canonicalAnchor?.legacyHistoryComplete
+      if (!localRecord || !localRecord.historyImported || !localRecord.canonicalAnchor
         || !Array.isArray(localRecord.history) || !Array.isArray(localRecord.effectiveReviews)
         || localRecord.subjectId !== subjectId || localRecord.contentHash !== pending.request.contentHash
         || localRecord.canonicalAnchor.subjectId !== subjectId
@@ -1384,151 +1243,7 @@ export const useReviewStore = defineStore('review', () => {
     delete lifecycleRoundsBySubjectId.value[subjectId]
   }
 
-  function isConflict(error: unknown): boolean {
-    return error instanceof ApiProblemError && (error.status === 409 || error.problem.code === 'RESOURCE_VERSION_CONFLICT')
-  }
-
-  function applyConfirmedSubmission(
-    round: SubjectReviewRound,
-    event: EventRequest,
-    responseState: ReviewStateView | undefined,
-  ): void {
-    const currentRound = roundsBySubjectId.value[round.subjectId]
-    if (currentRound?.roundId !== round.roundId || currentRound.pendingEvent?.clientEventId !== event.clientEventId) return
-    const blockId = event.knowledgeBlockId
-    if (event.rating !== 'SKIP') {
-      if (!responseState) throw new Error('评分已返回，但缺少下次复习状态；请原样重试以确认结果。')
-      assertStateView(responseState)
-      if (responseState.knowledgeBlockId !== blockId) throw new Error('评分响应知识块不匹配；请原样重试以确认结果。')
-      const mapped = mapReviewStateView(responseState)
-      currentRound.pendingEvent = null
-      currentRound.pendingError = null
-      currentRound.conflictNeedsConfirmation = false
-      updateCachedState(round.subjectId, mapped)
-      currentRound.firstAcceptedByBlock[blockId] = {
-        rating: event.rating,
-        dueAt: mapped.dueAt,
-        state: mapped,
-      }
-      removeCurrentFromQueue(currentRound, event.rating === 'AGAIN' || event.rating === 'HARD')
-    } else {
-      currentRound.pendingEvent = null
-      currentRound.pendingError = null
-      currentRound.conflictNeedsConfirmation = false
-      removeCurrentFromQueue(currentRound, false, true)
-    }
-  }
-
-  function sendPending(round: SubjectReviewRound): Promise<ReviewSubmissionResult> {
-    const event = round.pendingEvent
-    if (!event) return Promise.reject(new Error('当前没有待确认评分。'))
-    const inFlight = pendingRequestBySubject.get(round.subjectId)
-    if (inFlight?.roundId === round.roundId && inFlight.clientEventId === event.clientEventId) return inFlight.promise
-
-    round.pendingError = null
-    round.conflictNeedsConfirmation = false
-    const ticket = round.scopeTicket
-    const promise = (async (): Promise<ReviewSubmissionResult> => {
-      try {
-        assertCurrent(ticket)
-        const response = await useReviewApi.recordEvent(event, ticket)
-        assertCurrent(ticket)
-        applyConfirmedSubmission(round, event, response?.state)
-        return { formal: true }
-      } catch (error) {
-        const currentRound = roundsBySubjectId.value[round.subjectId]
-        if (ticket.isCurrent() && currentRound?.roundId === round.roundId
-          && currentRound.pendingEvent?.clientEventId === event.clientEventId) {
-          currentRound.pendingError = error instanceof Error ? error.message : '评分结果尚未确认。'
-          currentRound.conflictNeedsConfirmation = isConflict(error)
-        }
-        throw error
-      } finally {
-        const latest = pendingRequestBySubject.get(round.subjectId)
-        if (latest?.roundId === round.roundId && latest.clientEventId === event.clientEventId) {
-          pendingRequestBySubject.delete(round.subjectId)
-        }
-      }
-    })()
-    pendingRequestBySubject.set(round.subjectId, { roundId: round.roundId, clientEventId: event.clientEventId, promise })
-    return promise
-  }
-
-  async function submitRating(subjectId: string, rating: ReviewRating, durationSeconds = 0): Promise<ReviewSubmissionResult> {
-    const round = getRound(subjectId)
-    const blockId = round?.currentKnowledgeBlockId
-    if (!round || !blockId) throw new Error('当前没有可评分的知识块。')
-    if (!round.revealed) throw new Error('请先展开知识块内容，再提交评分。')
-    if (round.pendingEvent) throw new Error('当前评分尚未确认，请先重试或重新确认。')
-
-    if (round.firstAcceptedByBlock[blockId]) {
-      removeCurrentFromQueue(round, rating === 'AGAIN' || rating === 'HARD', rating === 'SKIP')
-      return { formal: false }
-    }
-
-    const existingState = (subjectStatesBySubjectId.value[subjectId] ?? [])
-      .find((state) => state.knowledgeBlockId === blockId)
-    const event: EventRequest = Object.freeze({
-      clientEventId: makeUuid(),
-      knowledgeBlockId: blockId,
-      rating,
-      reviewedAt: new Date().toISOString(),
-      durationSeconds: Math.max(0, Math.floor(durationSeconds)),
-      baseVersion: existingState?.version ?? 0,
-    })
-    round.pendingEvent = event
-    round.pendingError = null
-    round.conflictNeedsConfirmation = false
-    return sendPending(round)
-  }
-
-  async function retryPending(subjectId: string): Promise<ReviewSubmissionResult> {
-    const round = getRound(subjectId)
-    if (!round?.pendingEvent) throw new Error('当前没有待确认评分。')
-    if (round.conflictNeedsConfirmation) throw new Error('复习状态已变化，请先重新确认本次评分。')
-    return sendPending(round)
-  }
-
-  async function reconfirmPending(subjectId: string): Promise<ReviewSubmissionResult> {
-    const round = getRound(subjectId)
-    const pending = round?.pendingEvent
-    if (!round || !pending || !round.conflictNeedsConfirmation) throw new Error('当前评分不需要重新确认。')
-    const roundId = round.roundId
-    const clientEventId = pending.clientEventId
-    const latestStates = await loadSubjectStates(subjectId)
-    const latestRound = roundsBySubjectId.value[subjectId]
-    if (!round.scopeTicket.isCurrent()) throw new SyncScopeChangedError()
-    if (latestRound?.roundId !== roundId || latestRound.pendingEvent?.clientEventId !== clientEventId) {
-      throw new SyncScopeChangedError()
-    }
-    const latestState = latestStates.find((state) => state.knowledgeBlockId === pending.knowledgeBlockId)
-    latestRound.pendingEvent = Object.freeze({
-      ...pending,
-      clientEventId: makeUuid(),
-      baseVersion: latestState?.version ?? 0,
-    })
-    latestRound.pendingError = null
-    latestRound.conflictNeedsConfirmation = false
-    return sendPending(latestRound)
-  }
-
-  function nextGroup(subjectId: string): void {
-    const round = getRound(subjectId)
-    if (!round || round.queue.length || !round.remainingIds.length) return
-    round.queue = round.remainingIds.slice(0, round.groupSize)
-    round.remainingIds = round.remainingIds.slice(round.groupSize)
-    round.firstGroupCount = round.queue.length
-    updateCurrent(round)
-  }
-
-  function endRound(subjectId: string): void {
-    const round = roundsBySubjectId.value[subjectId]
-    if (!round) return
-    if (round.pendingEvent) throw new Error('请先确认当前评分，再结束本轮。')
-    delete roundsBySubjectId.value[subjectId]
-  }
-
-  async function loadSubjectHistory(subjectId: string, knowledgeBlockId: string): Promise<ReviewEventView[]> {
+  async function loadSubjectHistory(subjectId: string, knowledgeBlockId: string): Promise<LifecycleHistoryResponse> {
     const ticket = createScopeTicket()
     const key = subjectBlockKey(subjectId, knowledgeBlockId)
     const requestVersion = (historyRequestVersions.get(key) ?? 0) + 1
@@ -1541,21 +1256,13 @@ export const useReviewStore = defineStore('review', () => {
       await localDb.init()
       const localRepository = await getLocalRepository(ticket.userId, ticket.deviceId)
       const localService = new LocalReviewService(getLocalSqlDatabase(), localRepository)
-      const views = await localService.getLegacyHistory(ticket.userId, ticket.deviceId, knowledgeBlockId)
       const lifecycleHistory = await localService.getLifecycleHistory(ticket.userId, ticket.deviceId, knowledgeBlockId)
       assertCurrent(ticket)
-      if (!Array.isArray(views) || !lifecycleHistory || lifecycleHistory.knowledgeBlockId !== knowledgeBlockId
+      if (!lifecycleHistory || lifecycleHistory.knowledgeBlockId !== knowledgeBlockId
         || !Number.isInteger(lifecycleHistory.knowledgeBlockVersion) || lifecycleHistory.knowledgeBlockVersion < 0
         || !Array.isArray(lifecycleHistory.commands) || !Array.isArray(lifecycleHistory.effectiveReviews)
         || (lifecycleHistory.state !== null && (!lifecycleHistory.state || lifecycleHistory.state.knowledgeBlockId !== knowledgeBlockId))) {
         throw new Error('复习历史响应无效。')
-      }
-      for (const event of views) {
-        if (!event || (event.reviewedAt !== undefined && !Number.isFinite(Date.parse(event.reviewedAt)))
-          || (event.rating !== undefined && !['AGAIN', 'HARD', 'GOOD', 'EASY', 'SKIP'].includes(event.rating))
-          || (event.firstLearning !== undefined && typeof event.firstLearning !== 'boolean')) {
-          throw new Error('复习历史事件不完整。')
-        }
       }
       if (lifecycleHistory.state) assertStateView(lifecycleHistory.state)
       for (const command of lifecycleHistory.commands) {
@@ -1573,9 +1280,8 @@ export const useReviewStore = defineStore('review', () => {
       }
       for (const review of lifecycleHistory.effectiveReviews) assertEffectiveReviewView(review)
       if (historyRequestVersions.get(key) !== requestVersion) throw new SyncScopeChangedError()
-      historyBySubjectBlock.value[key] = views
       lifecycleHistoryBySubjectBlock.value[key] = lifecycleHistory
-      return views
+      return lifecycleHistory
     } catch (error) {
       if (ticket.isCurrent() && historyRequestVersions.get(key) === requestVersion) {
         historyErrorBySubjectBlock.value[key] = error instanceof Error ? error.message : '复习历史加载失败。'
@@ -1609,9 +1315,7 @@ export const useReviewStore = defineStore('review', () => {
     const history = await useReviewApi.getLifecycleHistory({ knowledgeBlockId }, ticket)
     assertCurrent(ticket)
     if (history.protocolVersion !== 2) throw new Error('服务器复习同步协议尚未更新；本机进度仍被保留。')
-    const legacyEvents = await useReviewApi.getHistory({ knowledgeBlockId }, ticket)
-    assertCurrent(ticket)
-    const adopted = await localService.adoptCloudHistory(ticket.userId, ticket.deviceId, knowledgeBlockId, history, legacyEvents)
+    const adopted = await localService.adoptCloudHistory(ticket.userId, ticket.deviceId, knowledgeBlockId, history)
     assertCurrent(ticket)
     if (!adopted) throw new Error('云端复习进度与当前本地正文不匹配；本机记录仍被保留。')
     await loadSubjectStates(subjectId)
@@ -1623,70 +1327,24 @@ export const useReviewStore = defineStore('review', () => {
     }
   }
 
-  async function loadQueue(params: ReviewQuery = { at: new Date().toISOString(), limit: 100 }): Promise<ReviewStateModel[]> {
-    isLoading.value = true
-    lastError.value = null
-    try {
-      const views = await useReviewApi.getReviewQueue(params)
-      queue.value = (views ?? []).map(mapReviewStateView).filter((item) => item.knowledgeBlockId)
-      return queue.value
-    } catch (error) {
-      lastError.value = error instanceof Error ? error.message : '复习队列加载失败'
-      throw error
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  async function recordEvent(input: EventRequest): Promise<void> {
-    const response = await useReviewApi.recordEvent(input)
-    if (response.state) {
-      const next = mapReviewStateView(response.state)
-      queue.value = queue.value.map((item) => item.knowledgeBlockId === next.knowledgeBlockId ? next : item)
-    }
-  }
-
-  async function loadHistory(params: ReviewHistoryQuery): Promise<ReviewEventView[]> {
-    const views = await useReviewApi.getHistory(params)
-    history.value = views ?? []
-    return history.value
-  }
-
   return {
-    queue,
-    history,
-    isLoading,
-    lastError,
     subjectStatesBySubjectId,
     subjectStatesLoadedBySubjectId,
     subjectStatesLoadingBySubjectId,
     subjectStatesErrorBySubjectId,
     reviewConflictsBySubjectId,
     groupSizeBySubjectId,
-    roundsBySubjectId,
     lifecycleRoundsBySubjectId,
-    historyBySubjectBlock,
     lifecycleHistoryBySubjectBlock,
     historyLoadingBySubjectBlock,
     historyErrorBySubjectBlock,
     captureScopeTicket,
     clearDeletedSubject,
-    loadQueue,
-    recordEvent,
-    loadHistory,
     loadSubjectStates,
     isSubjectStatesLoaded,
     reconcileSubjectBlocks,
-    startRound,
     startLifecycleRound,
-    getRound,
     getLifecycleRound,
-    revealCurrentCard,
-    submitRating,
-    retryPending,
-    reconfirmPending,
-    nextGroup,
-    endRound,
     nextLifecycleGroup,
     selectLifecycleRating,
     beginLifecycleRecall,

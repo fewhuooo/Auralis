@@ -436,22 +436,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/reviews/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["event"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/relations": {
         parameters: {
             query?: never;
@@ -701,6 +685,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Generate a subject overview
+         * @description Returns the existing JSON response by default. Accept text/event-stream opts into heartbeat comments and terminal result/error events.
+         */
         post: operations["subjectOverview"];
         delete?: never;
         options?: never;
@@ -717,6 +705,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Generate a source overview
+         * @description Returns the existing JSON response by default. Accept text/event-stream opts into heartbeat comments and terminal result/error events.
+         */
         post: operations["sourceOverview"];
         delete?: never;
         options?: never;
@@ -884,38 +876,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/reviews/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["history"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/reviews/due": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["due"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/auth/sessions": {
         parameters: {
             query?: never;
@@ -924,6 +884,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["usage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1268,25 +1244,25 @@ export interface components {
             float?: boolean;
             missingNode?: boolean;
             container?: boolean;
-            floatingPointNumber?: boolean;
             object?: boolean;
-            boolean?: boolean;
-            int?: boolean;
-            binary?: boolean;
+            floatingPointNumber?: boolean;
+            valueNode?: boolean;
+            bigInteger?: boolean;
+            bigDecimal?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            integralNumber?: boolean;
+            string?: boolean;
+            pojo?: boolean;
             short?: boolean;
+            binary?: boolean;
             long?: boolean;
             double?: boolean;
             /** @deprecated */
             textual?: boolean;
-            pojo?: boolean;
             number?: boolean;
-            string?: boolean;
-            bigDecimal?: boolean;
-            bigInteger?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            valueNode?: boolean;
-            integralNumber?: boolean;
+            int?: boolean;
+            boolean?: boolean;
             embeddedValue?: boolean;
         };
         MutationRequest: {
@@ -1296,7 +1272,7 @@ export interface components {
             /** Format: uuid */
             resourceId: string;
             /** @enum {string} */
-            mutationType: "CREATE" | "UPDATE" | "DELETE" | "RESTORE";
+            mutationType: "CREATE" | "UPDATE" | "DELETE" | "RESTORE" | "SCHEDULE_INSERTION" | "SCHEDULE_SWAP";
             /** Format: int64 */
             baseVersion?: number;
             payload?: components["schemas"]["JsonNode"];
@@ -1315,7 +1291,7 @@ export interface components {
             /** Format: uuid */
             resourceId?: string;
             /** @enum {string} */
-            mutationType?: "CREATE" | "UPDATE" | "DELETE" | "RESTORE";
+            mutationType?: "CREATE" | "UPDATE" | "DELETE" | "RESTORE" | "SCHEDULE_INSERTION" | "SCHEDULE_SWAP";
             changeCursor?: string;
             current?: unknown;
             code?: string;
@@ -1362,6 +1338,10 @@ export interface components {
             traceId?: string;
             fieldErrors?: components["schemas"]["FieldError"][];
             current?: unknown;
+            /** Format: int64 */
+            retryAfterSeconds?: number;
+            /** Format: date-time */
+            resetAt?: string;
         };
         FieldError: {
             field?: string;
@@ -1546,50 +1526,6 @@ export interface components {
             /** Format: date-time */
             occurredAt?: string | null;
             expectedStateAbsent?: boolean | null;
-        };
-        EventRequest: {
-            /** Format: uuid */
-            clientEventId: string;
-            /** Format: uuid */
-            knowledgeBlockId: string;
-            /** @enum {string} */
-            rating: "AGAIN" | "HARD" | "GOOD" | "EASY" | "SKIP";
-            /** Format: date-time */
-            reviewedAt: string;
-            /** Format: int32 */
-            durationSeconds?: number;
-            /** Format: int64 */
-            baseVersion?: number;
-        };
-        EventResponse: {
-            event?: components["schemas"]["ReviewEventView"];
-            state?: components["schemas"]["ReviewStateView"];
-        };
-        ReviewEventView: {
-            /** Format: uuid */
-            id?: string;
-            /** Format: uuid */
-            userId?: string;
-            /** Format: uuid */
-            knowledgeBlockId?: string;
-            /** Format: uuid */
-            clientEventId?: string;
-            /** @enum {string} */
-            rating?: "AGAIN" | "HARD" | "GOOD" | "EASY" | "SKIP";
-            /** Format: date-time */
-            reviewedAt?: string;
-            /** Format: int32 */
-            durationSeconds?: number;
-            /** Format: int64 */
-            baseVersion?: number;
-            scheduler?: string;
-            /** Format: int32 */
-            schedulerVersion?: number;
-            /** Format: uuid */
-            parameterSetId?: string;
-            /** Format: date-time */
-            createdAt?: string;
-            firstLearning?: boolean;
         };
         TicketResponse: {
             ticket?: string;
@@ -2043,6 +1979,22 @@ export interface components {
             /** Format: date-time */
             revokedAt?: string;
             current?: boolean;
+        };
+        AiUsageSnapshot: {
+            hourly?: components["schemas"]["Window"];
+            daily?: components["schemas"]["Window"];
+        };
+        Window: {
+            /** Format: int64 */
+            limitTokens?: number;
+            /** Format: int64 */
+            chargedTokens?: number;
+            /** Format: int64 */
+            reservedTokens?: number;
+            /** Format: int64 */
+            remainingTokens?: number;
+            /** Format: date-time */
+            resetAt?: string;
         };
         AiModelListView: {
             /** @enum {string} */
@@ -3168,30 +3120,6 @@ export interface operations {
             };
         };
     };
-    event: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["EventRequest"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["EventResponse"];
-                };
-            };
-        };
-    };
     list_3: {
         parameters: {
             query?: {
@@ -3632,6 +3560,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Overview-Request-Id"?: string;
+                Accept?: string;
             };
             path?: never;
             cookie?: never;
@@ -3642,13 +3571,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Overview result or opt-in SSE stream */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["OverviewResponse"];
+                    "application/json": components["schemas"]["OverviewResponse"];
+                    "text/event-stream": string;
                 };
             };
         };
@@ -3658,6 +3588,7 @@ export interface operations {
             query?: never;
             header?: {
                 "X-Overview-Request-Id"?: string;
+                Accept?: string;
             };
             path?: never;
             cookie?: never;
@@ -3668,13 +3599,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
+            /** @description Overview result or opt-in SSE stream */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": components["schemas"]["OverviewResponse"];
+                    "application/json": components["schemas"]["OverviewResponse"];
+                    "text/event-stream": string;
                 };
             };
         };
@@ -3928,51 +3860,6 @@ export interface operations {
             };
         };
     };
-    history: {
-        parameters: {
-            query: {
-                knowledgeBlockId: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["ReviewEventView"][];
-                };
-            };
-        };
-    };
-    due: {
-        parameters: {
-            query?: {
-                at?: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["ReviewStateView"][];
-                };
-            };
-        };
-    };
     sessions: {
         parameters: {
             query?: never;
@@ -3989,6 +3876,26 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["SessionListResponse"];
+                };
+            };
+        };
+    };
+    usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["AiUsageSnapshot"];
                 };
             };
         };

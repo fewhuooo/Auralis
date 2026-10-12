@@ -1,6 +1,6 @@
 # Auralis 系统架构
 
-更新时间：2026-10-09
+更新时间：2026-10-11
 
 文档状态：现行
 
@@ -17,6 +17,8 @@
 2026-10-01 学习数据补充：PC 专注运行时把实际耗时与最终事件原子保存到账号/设备隔离的本地表，稳定 session ID 上传至独立 `focus` 模块，Stats 聚合历史专注秒数与自然完成轮次。专注不生成 ReviewEvent。Profile 显示服务器权威聚合，避免提交超时后把本机 pending 再加一次。
 
 AI Overview 生成边界继续无状态。PC 只将完整成功成果提交至 ai 模块中的独立结果表与写入回执表；GET/PUT 使用 owner、Source READY/revision、Subject 当前来源 manifest 和整体版本作围栏。PC durable outbox 的缓存与 intent 同事务保存，HTTP 载荷固化后按相同 clientWriteId 原样重试；文件成果先收敛再上传学科成果。此链路不扩展五类 core Sync 资源，提交后通过 `OVERVIEW_UPDATED` 提示重拉。
+
+2026-10-11 Overview 取消实现：PC 在同一生成 POST 上选择 SSE，通过心跳、终端事件和消费者 AbortSignal 管理当前请求；服务端进程内共享 Source flight 按兴趣和原 owner 入口绝对期限关闭当前调用独占 socket。手动页面、后台 runtime 与同键消费者各自拥有取消范围，取消不删除成功结果或独立 outbox。生成资源有界，预检和排队计入单调绝对期限，独立 watchdog 发出终端超时，用量仅在实际调用退出后结算和释放。取消写入以最终同步提交 guard 为边界，进入提交后的成功成果保留。入口计时不强制中止 JDBC/数据库锁，preflight 阻塞可延迟 SSE 建立；原生 DNS 仅由固定资源隔离。无持久 Overview 作业、取消 API 或跨实例取消协调；JSON 保留默认兼容路径，其断连只能在写入后可靠观察。本机 TLS/TCP 自动验证通过，本地关闭 socket 不代表服务商撤回远端计算。实际命令、审查及发布边界见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
 
 PC Tauri SQL 插件加载后先由内部初始化命令固定单连接池（max/min 1，无正常 idle/lifetime 回收），再交给既有 JS 串行 SQL 队列。跨调用的 BEGIN/COMMIT 使用同一连接，完整缓存/intent 和专注状态/事件的本地原子提交因此不依赖默认多连接池的偶然分配；native snapshot 事务保持独立实现。
 
@@ -189,6 +191,16 @@ sequenceDiagram
 ```
 
 FILE Source 的目标链路由 PC 统一生成 ParsedDocument，服务端不执行图片或扫描 PDF OCR。Office 后台解析必须由已挂载的离屏 renderer 完成，不能假设 Rust 能直接调用浏览器 File Viewer。TEXT/URL Source 继续由服务端解析。ParsedDocument 是不进入普通 Sync 的私有派生对象；服务端以 Source `ingestionRevision` 仲裁多设备并发 complete，最新成功代可用于重新分块或重新 Embedding。完整设计见 [PC Tauri AI 辅助阅读全流程设计](../design/2026-08-23-pc-tauri-ai-assisted-reading-design.md)。
+
+### AI 调用与本人额度（2026-10-10 B 实施边界）
+
+Chat retrieval + completion、整个 Overview MAP/REDUCE、ingestion job + generation 及 Provider 设置检查都经 `AiInvocationGateway` 建立任务 scope。准入/预留/派发标记短事务先锁真实 users 行并重查 ACTIVE，再按 GLOBAL → USER → TASK 获取账本锁；结算/续租不反向取 users 行锁，避免注销清理的级联死锁。派发标记是数据库授权点，不能撤销已授权的远端请求。成功接受与任务 owner/lease 在同一结算事务裁决，数据库事务结束后出站；独立有界 heartbeat 维持活跃任务和调用，响应按真实可空 usage 或保守估算结算。稳定 task key 只用于互斥，原始 key 不落库。进程异常后的 lease 回收与合作式 deadline 不能撤回服务商已经收到的请求。
+
+ingestion 配额延期通过 next_attempt_at 控制重新领取，attempt_count 保留单调 claim 身份，failure_count 单独控制普通失败重试；不可恢复的请求/任务预算拒绝成为 fenced 终态。完成批次留在当前 generation 的 inactive chunks，重启后按当前内容和有效 claim 恢复；Source → job 检查点锁使用可写短事务，检索只读完整成功后原子激活的 generation。
+
+PC、Mobile、Tablet 的现有个人中心通过当前 access token 请求 `GET /api/ai/usage`，只展示本人 UTC 小时/日额度，并将 resetAt 转为当地时间。客户端读取失败保留明确错误态；账号切换使旧请求代次失效。没有新页面、核心 Sync 资源或支付边界。系统每日额度仍包括删号后的匿名已消耗账本。
+
+这是本轮代码已接入并取得相关自动证据的边界；最终审查与真实环境验收状态分别见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。六类额度异常由 AI 模块自己的 advice 处理，shared 不反向引用 AI。
 
 ### WebSocket 生命周期
 

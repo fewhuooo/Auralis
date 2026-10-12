@@ -74,9 +74,12 @@ auralis:
     provider-connect-timeout-millis: ${AURALIS_AI_PROVIDER_CONNECT_TIMEOUT_MILLIS:3000}
     request-timeout-millis: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:10000}
     overview-response-timeout-millis: ${AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS:120000}
+    overview-task-timeout-millis: ${AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS:240000}
     max-prompt-chars: ${AURALIS_AI_MAX_PROMPT_CHARS:12000}
     max-retrieved-chunks: ${AURALIS_AI_MAX_RETRIEVED_CHUNKS:8}
     ingestion-max-bytes: ${AURALIS_AI_INGESTION_MAX_BYTES:5242880}
+    ingestion-embedding-batch-max-items: ${AURALIS_AI_INGESTION_EMBEDDING_BATCH_MAX_ITEMS:32}
+    ingestion-embedding-batch-max-utf8-bytes: ${AURALIS_AI_INGESTION_EMBEDDING_BATCH_MAX_UTF8_BYTES:32768}
     url-connect-timeout-millis: ${AURALIS_AI_URL_CONNECT_TIMEOUT_MILLIS:3000}
     url-read-timeout-millis: ${AURALIS_AI_URL_READ_TIMEOUT_MILLIS:10000}
     url-max-redirects: ${AURALIS_AI_URL_MAX_REDIRECTS:3}
@@ -86,6 +89,21 @@ auralis:
     ingestion-poll-delay-millis: ${AURALIS_AI_INGESTION_POLL_DELAY_MILLIS:1000}
     ingestion-lease-millis: ${AURALIS_AI_INGESTION_LEASE_MILLIS:300000}
     ingestion-max-attempts: ${AURALIS_AI_INGESTION_MAX_ATTEMPTS:3}
+    limits:
+      global-concurrent: ${AURALIS_AI_LIMITS_GLOBAL_CONCURRENT:4}
+      per-user-concurrent: ${AURALIS_AI_LIMITS_PER_USER_CONCURRENT:2}
+      per-user-hourly-tokens: ${AURALIS_AI_LIMITS_PER_USER_HOURLY_TOKENS:1000000}
+      per-user-daily-tokens: ${AURALIS_AI_LIMITS_PER_USER_DAILY_TOKENS:2000000}
+      global-daily-tokens: ${AURALIS_AI_LIMITS_GLOBAL_DAILY_TOKENS:2000000}
+      reservation-lease-millis: ${AURALIS_AI_LIMITS_RESERVATION_LEASE_MILLIS:300000}
+      heartbeat-millis: ${AURALIS_AI_LIMITS_HEARTBEAT_MILLIS:10000}
+      chat-max-output-tokens: ${AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS:4096}
+      chat-max-calls: ${AURALIS_AI_LIMITS_CHAT_MAX_CALLS:2}
+      chat-task-tokens: ${AURALIS_AI_LIMITS_CHAT_TASK_TOKENS:32000}
+      overview-max-calls: ${AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS:24}
+      overview-task-tokens: ${AURALIS_AI_LIMITS_OVERVIEW_TASK_TOKENS:524288}
+      ingestion-max-calls: ${AURALIS_AI_LIMITS_INGESTION_MAX_CALLS:512}
+      ingestion-task-tokens: ${AURALIS_AI_LIMITS_INGESTION_TASK_TOKENS:16777216}
   sync:
     retention-cleanup-delay-millis: ${AURALIS_SYNC_RETENTION_CLEANUP_DELAY_MILLIS:3600000}
     retention-cleanup-initial-delay-millis: ${AURALIS_SYNC_RETENTION_CLEANUP_INITIAL_DELAY_MILLIS:60000}

@@ -1,5 +1,5 @@
 import { createVersionedLocalSchema, type LocalSqlDatabase } from '@/services/localSchema'
-import { OVERVIEW_INTENT_CREATED_EVENT } from '@/services/overviewSyncWakeup'
+import { OVERVIEW_INTENT_CREATED_EVENT, notifyOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
 import type {
   FileFingerprintInput, FileOverviewRecord, OverviewCacheRecord, OverviewMode, OverviewOutboxRecord,
   OverviewResponse, OverviewResultCommand, OverviewSyncState, SubjectOverviewRecord,
@@ -24,8 +24,8 @@ interface BrowserState {
   states: OverviewSyncState[]
   outbox: OverviewOutboxRecord[]
 }
-export interface SaveFileOverviewPartInput { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse }
-export interface SaveSubjectOverviewPartInput { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string }
+export interface SaveFileOverviewPartInput { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse; isStillCurrent?: () => boolean }
+export interface SaveSubjectOverviewPartInput { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string; isStillCurrent?: () => boolean }
 export type OverviewScopeType = 'FILE' | 'SUBJECT'
 export interface OverviewScopeFenceToken {
   userId: string
@@ -41,6 +41,11 @@ const browserWriteQueues = new Map<string, Promise<void>>()
 const sqlWriteQueues = new WeakMap<object, Promise<void>>()
 const scopeLifecycle = new Map<string, { generation: number; state: 'DELETING' | 'DELETED' | 'ACTIVE' }>()
 const SCOPE_FENCE_REJECTED = Symbol('OVERVIEW_SCOPE_FENCE_REJECTED')
+const SAVE_NOT_CURRENT = Symbol('OVERVIEW_SAVE_NOT_CURRENT')
+export function isOverviewSaveNotCurrent(error: unknown): boolean { return error === SAVE_NOT_CURRENT }
+function assertSaveCurrent(isStillCurrent?: () => boolean): void {
+  if (isStillCurrent && !isStillCurrent()) throw SAVE_NOT_CURRENT
+}
 const scopeLifecycleKey = (userId: string, serverDeviceId: string, scopeType: OverviewScopeType, scopeId: string): string =>
   JSON.stringify([userId,serverDeviceId,scopeType,scopeId])
 function currentScopeLifecycle(userId: string, serverDeviceId: string, scopeType: OverviewScopeType, scopeId: string) {
@@ -300,6 +305,21 @@ export class OverviewRepository {
     const found = this.readBrowserState().records.find(item => item.scopeType === scopeType && item.scopeId === scopeId && item.revisionKey === revisionKey)
     return found ? clone(found) : null
   }
+  private async getLatest(scopeType: 'FILE' | 'SUBJECT', scopeId: string, database?: LocalSqlDatabase): Promise<OverviewCacheRecord | null> {
+    if (this.sql) {
+      if (!database) await this.ensureSql()
+      const rows = await (database ?? this.sql).select<Row>(`SELECT scope_type,scope_id,revision_key,title,outline_json,summary_json,
+        outline_generated_at,summary_generated_at,input_fingerprint,status,error_code,error_detail,updated_at
+        FROM ai_overview_cache WHERE user_id=$1 AND device_id=$2 AND scope_type=$3 AND scope_id=$4
+        ORDER BY updated_at DESC LIMIT 1`,
+      [this.userId, this.serverDeviceId, scopeType, scopeId])
+      return rows[0] ? fromRow(rows[0]) : null
+    }
+    const found = this.readBrowserState().records
+      .filter(item => item.scopeType === scopeType && item.scopeId === scopeId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+    return found ? clone(found) : null
+  }
   private serializeWrite<T>(operation: () => Promise<T>): Promise<T> {
     const previous = this.sql ? (sqlWriteQueues.get(this.sql) ?? Promise.resolve()) : (browserWriteQueues.get(this.namespace) ?? Promise.resolve())
     const result = previous.then(operation, operation)
@@ -381,20 +401,25 @@ export class OverviewRepository {
     state.outbox.push(clone(intent))
     this.writeBrowserState(state)
   }
-  private async persistSuccessful(record: OverviewCacheRecord, mode: OverviewMode, database?: LocalSqlDatabase): Promise<boolean> {
+  private async persistSuccessful(record: OverviewCacheRecord, mode: OverviewMode, database?: LocalSqlDatabase, isStillCurrent?: () => boolean): Promise<boolean> {
     const complete = isComplete(record)
     if (this.sql) {
+      assertSaveCurrent(isStillCurrent)
       await this.persist(record, database)
+      assertSaveCurrent(isStillCurrent)
       if (!complete) return false
       const existing = await this.getOutboxForScope(record.scopeType,record.scopeId,record.revisionKey,database)
+      assertSaveCurrent(isStillCurrent)
       const requiresConflictResolution = existing.some(item => item.state === 'CONFLICT')
       await this.staleSupersededIntents(record.scopeType,record.scopeId,record.revisionKey,database)
+      assertSaveCurrent(isStillCurrent)
       const next = this.makeIntent(record, mode, 'LOCAL_WRITE')
       if (requiresConflictResolution) {
         next.state = 'CONFLICT'
         next.errorCode = 'OVERVIEW_CONFLICT_REQUIRES_RESOLUTION'
       }
       await this.insertOutbox(next, database)
+      assertSaveCurrent(isStillCurrent)
       return true
     }
     const state = this.readBrowserState()
@@ -414,6 +439,7 @@ export class OverviewRepository {
       }
       state.outbox.push(next)
     }
+    assertSaveCurrent(isStillCurrent)
     this.writeBrowserState(state)
     return complete
   }
@@ -622,6 +648,9 @@ export class OverviewRepository {
       await this.saveSyncState(remoteState,database)
       if (!keepCandidate) await this.persist(record,database)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
+      notifyOverviewCacheUpdated(typeof window !== 'undefined' ? window : undefined, {
+        userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType: record.scopeType, scopeId: record.scopeId, revisionKey: record.revisionKey,
+      })
       return true
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
     })
@@ -737,6 +766,9 @@ export class OverviewRepository {
       await this.saveSyncState(remoteState,database)
       await this.persist(record,database)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
+      notifyOverviewCacheUpdated(typeof window !== 'undefined' ? window : undefined, {
+        userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType: record.scopeType, scopeId: record.scopeId, revisionKey: record.revisionKey,
+      })
       return true
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) return false; throw error }
     })
@@ -753,18 +785,27 @@ export class OverviewRepository {
     const record = await this.get('FILE', sourceId, ingestionRevision)
     return record ? { ...await this.hydrateSyncStatus(record), scopeType: 'FILE', sourceId, ingestionRevision } : null
   }
+  async getLatestFileOverview(sourceId: string): Promise<FileOverviewRecord | null> {
+    requireValue(sourceId, 'OVERVIEW_SCOPE_INVALID')
+    const record = await this.getLatest('FILE', sourceId)
+    return record ? { ...await this.hydrateSyncStatus(record), scopeType: 'FILE', sourceId, ingestionRevision: record.revisionKey } : null
+  }
   async saveFileOverviewPart(input: SaveFileOverviewPartInput): Promise<FileOverviewRecord> {
     requireValue(input.sourceId, 'OVERVIEW_SCOPE_INVALID')
     requireFileRevision(input.ingestionRevision)
     const token = this.captureScopeFenceToken('FILE',input.sourceId)
     const saved = await this.serializeWrite(async () => {
+      assertSaveCurrent(input.isStillCurrent)
       if (!this.isScopeFenceTokenCurrent(token)) throw new Error('OVERVIEW_SCOPE_DELETED')
       try { return await this.transaction(async database => {
+      assertSaveCurrent(input.isStillCurrent)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       const next = this.merge(await this.get('FILE', input.sourceId, input.ingestionRevision, database), 'FILE', input.sourceId,
         input.ingestionRevision, input.mode, input.response, null)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
-      const intentCreated = await this.persistSuccessful(next, input.mode, database)
+      assertSaveCurrent(input.isStillCurrent)
+      const intentCreated = await this.persistSuccessful(next, input.mode, database, input.isStillCurrent)
+      if (this.sql) assertSaveCurrent(input.isStillCurrent)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       return {
         record: { ...next, syncStatus: intentCreated ? 'PENDING' as const : undefined, scopeType: 'FILE' as const, sourceId: input.sourceId, ingestionRevision: input.ingestionRevision },
@@ -773,6 +814,9 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) throw new Error('OVERVIEW_SCOPE_DELETED'); throw error }
     })
     if (saved.intentCreated) notifyOverviewIntentCreated(this.userId,this.serverDeviceId,saved.record)
+    notifyOverviewCacheUpdated(typeof window !== 'undefined' ? window : undefined, {
+      userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType: 'FILE', scopeId: input.sourceId, revisionKey: input.ingestionRevision,
+    })
     return saved.record
   }
   async getSubjectOverview(subjectId: string): Promise<SubjectOverviewRecord | null> {
@@ -784,13 +828,17 @@ export class OverviewRepository {
     requireValue(input.subjectId, 'OVERVIEW_SCOPE_INVALID')
     const token = this.captureScopeFenceToken('SUBJECT',input.subjectId)
     const saved = await this.serializeWrite(async () => {
+      assertSaveCurrent(input.isStillCurrent)
       if (!this.isScopeFenceTokenCurrent(token)) throw new Error('OVERVIEW_SCOPE_DELETED')
       try { return await this.transaction(async database => {
+      assertSaveCurrent(input.isStillCurrent)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       const next = this.merge(await this.get('SUBJECT', input.subjectId, SUBJECT_REVISION_KEY, database), 'SUBJECT', input.subjectId,
         SUBJECT_REVISION_KEY, input.mode, input.response, input.inputFingerprint)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
-      const intentCreated = await this.persistSuccessful(next, input.mode, database)
+      assertSaveCurrent(input.isStillCurrent)
+      const intentCreated = await this.persistSuccessful(next, input.mode, database, input.isStillCurrent)
+      if (this.sql) assertSaveCurrent(input.isStillCurrent)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
       return {
         record: { ...next, syncStatus: intentCreated ? 'PENDING' as const : undefined, scopeType: 'SUBJECT' as const, subjectId: input.subjectId },
@@ -799,6 +847,9 @@ export class OverviewRepository {
       }) } catch (error) { if (error === SCOPE_FENCE_REJECTED) throw new Error('OVERVIEW_SCOPE_DELETED'); throw error }
     })
     if (saved.intentCreated) notifyOverviewIntentCreated(this.userId,this.serverDeviceId,saved.record)
+    notifyOverviewCacheUpdated(typeof window !== 'undefined' ? window : undefined, {
+      userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType: 'SUBJECT', scopeId: input.subjectId, revisionKey: SUBJECT_REVISION_KEY,
+    })
     return saved.record
   }
   async markSubjectOverviewFailed(subjectId: string, _mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void> {
@@ -824,6 +875,9 @@ export class OverviewRepository {
             outlineGeneratedAt: null, summaryGeneratedAt: null, inputFingerprint: null, status: 'FAILED',
             errorCode: safeErrorCode(errorCode), errorDetail: safeErrorDetail(errorDetail), updatedAt: now }, database)
       if (!this.isScopeFenceTokenCurrent(token)) throw SCOPE_FENCE_REJECTED
+      notifyOverviewCacheUpdated(typeof window !== 'undefined' ? window : undefined, {
+        userId: this.userId, serverDeviceId: this.serverDeviceId, scopeType, scopeId, revisionKey,
+      })
       }) } catch (error) { if (error !== SCOPE_FENCE_REJECTED) throw error }
     })
   }

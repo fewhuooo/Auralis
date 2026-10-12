@@ -191,7 +191,7 @@ export class LocalSubjectStats {
     } satisfies DayTotals]))
     let historyComplete = blocks.every(block => {
       const record = reviewRecordById.get(block.id)
-      return record?.historyImported === true && record.legacyHistoryComplete
+      return record?.historyImported === true
     })
 
     const touch = (date: string, kbId: string, studied: boolean, reviewed: boolean): DayTotals | null => {
@@ -250,22 +250,6 @@ export class LocalSubjectStats {
         if (!date || !day) continue
         day.nonSkipReviewEventCount += 1
         addRating(review.effectiveRating)
-        touch(date, blockId, true, true)
-      }
-      for (const event of record.legacyEvents) {
-        if (!hasValidInstant(event.reviewedAt)) {
-          historyComplete = false
-          continue
-        }
-        if (event.firstLearning !== true && event.firstLearning !== false) historyComplete = false
-        if (event.rating === 'SKIP') continue
-        const date = dateOnly(event.reviewedAt, timeZone)
-        const day = date ? dailyByDate.get(date) : null
-        if (!date || !day) continue
-        day.nonSkipReviewEventCount += 1
-        if (event.firstLearning === true) day.firstLearningKnowledgeBlockCount += 1
-        else if (event.firstLearning === false) day.subsequentReviewKnowledgeBlockCount += 1
-        addRating(event.rating)
         touch(date, blockId, true, true)
       }
     }

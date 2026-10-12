@@ -20,9 +20,17 @@ public interface AiProviderPort {
         return complete(request, credential);
     }
 
+    default AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                                        long responseTimeoutMillis, OverviewCancellation cancellation) {
+        if (cancellation != null && cancellation.isCancelled()) {
+            throw new com.auralis.app.shared.error.DomainException("MODEL_TIMEOUT", "Overview generation was cancelled");
+        }
+        return complete(request, credential, responseTimeoutMillis);
+    }
+
     default List<AiProviderChunk> stream(AiProviderRequest request, AiCredential credential) {
         AiProviderResponse response = complete(request, credential);
-        return List.of(new AiProviderChunk(response.content(), true));
+        return List.of(new AiProviderChunk(response.content(), true, response.usage()));
     }
 
     /**

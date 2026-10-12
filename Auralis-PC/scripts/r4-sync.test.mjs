@@ -421,9 +421,199 @@ test('sync cycle reruns when a mutation is queued during an active cycle', () =>
 test('Pinia sync store delegates transport and projection reconciliation to the shared cycle', () => {
   const source = fs.readFileSync(new URL('../src/store/useSyncStore.ts', import.meta.url), 'utf8');
   assert.match(source, /import\s*\{\s*runSyncCycle\s*\}\s*from\s*'@\/services\/syncCycle'/);
-  assert.match(source, /await\s+runSyncCycle\(/);
+  assert.match(source, /await\s+runCoreSyncWithAssetQueueWakeup\(assetQueue,\s*scope\.isCurrent,\s*\(\)\s*=>\s*runSyncCycle\(/);
+  assert.doesNotMatch(source, /await\s+assetQueue\.wakeUp\(\)/);
   assert.doesNotMatch(source, /async function applyPushResult/);
   assert.doesNotMatch(source, /async function pullLoop/);
+});
+
+test('sync cycle atomically reconciles an applied schedule command and records one applied result', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-schedule', 'device-schedule', { storage: createMemoryStorage() });
+  await repository.saveCursor('schedule-cursor-before');
+  await repository.upsert('TASK', 'task-a', { id: 'task-a', scheduledAt: null }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { id: 'task-b', scheduledAt: null }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { id: 'task-a', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { id: 'task-b', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-applied',
+      mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+      payload: { taskId: 'task-a', scheduledAt: 'optimistic-a', _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+  const current = [
+    { id: 'task-a', scheduledAt: 'server-a', version: 3, deletedAt: null },
+    { id: 'task-b', scheduledAt: 'server-b', version: 5, deletedAt: null },
+  ];
+  const pushed = [];
+  const result = await runSyncCycle({
+    repository,
+    serverDeviceId: 'device-schedule',
+    api: {
+      async pushChanges({ mutations }) {
+        pushed.push(...mutations);
+        return { results: [{ clientMutationId: 'schedule-applied', decision: 'APPLIED', resourceType: 'TASK', resourceId: 'task-a', mutationType: 'SCHEDULE_INSERTION', current }], serverCursor: 'schedule-cursor-after' };
+      },
+      async pullChanges() { return { changes: [], nextCursor: 'schedule-cursor-before', hasMore: false, resetRequired: false }; },
+      async getSnapshot() { assert.fail('a valid schedule response does not require a snapshot'); },
+    },
+  });
+
+  assert.deepEqual(pushed.map((mutation) => mutation.clientMutationId), ['schedule-applied']);
+  assert.equal(pushed[0].payload._localAffectedTaskIds[0], 'task-a', 'the outbox keeps its local fence metadata for reconciliation');
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'server-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'server-b');
+  assert.deepEqual(await repository.listPending('TASK'), []);
+  assert.equal(result.scheduleApplied, 1);
+  assert.deepEqual(result.scheduleErrors, []);
+});
+
+test('sync cycle restores the server Task cohort and terminates a rejected schedule command', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-schedule-conflict', 'device-schedule-conflict', { storage: createMemoryStorage() });
+  await repository.saveCursor('schedule-conflict-cursor');
+  await repository.upsert('TASK', 'task-a', { id: 'task-a', scheduledAt: 'old-a' }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { id: 'task-b', scheduledAt: 'old-b' }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { id: 'task-a', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { id: 'task-b', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-conflict',
+      mutationType: 'SCHEDULE_SWAP', baseVersion: 2,
+      payload: { sourceTaskId: 'task-a', targetTaskId: 'task-b', _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+  const current = [
+    { id: 'task-a', scheduledAt: 'server-a', version: 3, deletedAt: null },
+    { id: 'task-b', scheduledAt: 'server-b', version: 6, deletedAt: null },
+  ];
+  const result = await runSyncCycle({
+    repository,
+    serverDeviceId: 'device-schedule-conflict',
+    api: {
+      async pushChanges() {
+        return { results: [{ clientMutationId: 'schedule-conflict', decision: 'CONFLICT', resourceType: 'TASK', resourceId: 'task-a', mutationType: 'SCHEDULE_SWAP', current, code: 'RESOURCE_VERSION_CONFLICT' }], serverCursor: 'schedule-conflict-server-cursor' };
+      },
+      async pullChanges() { return { changes: [], nextCursor: 'schedule-conflict-cursor', hasMore: false, resetRequired: false }; },
+      async getSnapshot() { assert.fail('the current Task cohort is sufficient to resolve this conflict'); },
+    },
+  });
+
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'server-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'server-b');
+  assert.deepEqual(await repository.listPending('TASK'), []);
+  assert.deepEqual(await repository.listUnresolved('TASK'), []);
+  assert.equal(result.scheduleApplied, 0);
+  assert.deepEqual(result.scheduleErrors, [{ clientMutationId: 'schedule-conflict', code: 'RESOURCE_VERSION_CONFLICT' }]);
+});
+
+test('schedule rejection with a missing swap target stays retryable until snapshot reconciliation succeeds', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-schedule-missing-target', 'device-schedule-missing-target', { storage: createMemoryStorage() });
+  await repository.saveCursor('schedule-missing-target-cursor');
+  await repository.upsert('TASK', 'task-a', { id: 'task-a', scheduledAt: 'old-a' }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { id: 'task-b', scheduledAt: 'old-b' }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { id: 'task-a', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { id: 'task-b', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-missing-target',
+      mutationType: 'SCHEDULE_SWAP', baseVersion: 2,
+      payload: { sourceTaskId: 'task-a', _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+
+  const rejected = {
+    clientMutationId: 'schedule-missing-target', decision: 'REJECTED', resourceType: 'TASK',
+    resourceId: 'task-a', mutationType: 'SCHEDULE_SWAP',
+    current: [{ id: 'task-a', scheduledAt: 'server-a', version: 2, deletedAt: null }],
+    code: 'VALIDATION_FAILED',
+  };
+  const baseApi = {
+    async pushChanges() { return { results: [rejected], serverCursor: 'schedule-missing-target-server-cursor' }; },
+    async pullChanges() { return { changes: [], nextCursor: 'schedule-missing-target-cursor', hasMore: false, resetRequired: false }; },
+  };
+
+  await assert.rejects(runSyncCycle({
+    repository,
+    serverDeviceId: 'device-schedule-missing-target',
+    api: { ...baseApi, async getSnapshot() { throw new Error('snapshot temporarily unavailable'); } },
+  }), /snapshot temporarily unavailable/);
+
+  assert.deepEqual((await repository.listPending('TASK')).map((item) => item.clientMutationId), ['schedule-missing-target']);
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'optimistic-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'optimistic-b');
+
+  const snapshotTasks = [
+    { id: 'task-a', scheduledAt: 'server-a', version: 2, deletedAt: null },
+    { id: 'task-b', scheduledAt: 'server-b', version: 4, deletedAt: null },
+  ];
+  await runSyncCycle({
+    repository,
+    serverDeviceId: 'device-schedule-missing-target',
+    api: {
+      ...baseApi,
+      async getSnapshot() {
+        return {
+          snapshotCursor: 'schedule-missing-target-snapshot-cursor',
+          subjects: [], sources: [], knowledgeBlocks: [], tasks: snapshotTasks, relations: [],
+        };
+      },
+    },
+  });
+
+  assert.deepEqual(await repository.listPending('TASK'), []);
+  assert.deepEqual(await repository.listUnresolved('TASK'), []);
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'server-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'server-b');
+});
+
+test('pull and snapshot cannot overwrite tasks fenced by a pending schedule command', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-schedule-pending', 'device-schedule-pending', { storage: createMemoryStorage() });
+  await repository.saveCursor('schedule-pending-cursor');
+  await repository.upsert('TASK', 'task-a', { id: 'task-a', scheduledAt: null }, { version: 2 });
+  await repository.upsert('TASK', 'task-b', { id: 'task-b', scheduledAt: null }, { version: 4 });
+  await repository.commitScheduleMutation({
+    items: [
+      { resourceType: 'TASK', resourceId: 'task-a', value: { id: 'task-a', scheduledAt: 'optimistic-a' }, version: 2, deletedAt: null, expectedLocalVersion: 2 },
+      { resourceType: 'TASK', resourceId: 'task-b', value: { id: 'task-b', scheduledAt: 'optimistic-b' }, version: 4, deletedAt: null, expectedLocalVersion: 4 },
+    ],
+    mutation: {
+      resourceType: 'TASK', resourceId: 'task-a', clientMutationId: 'schedule-pending',
+      mutationType: 'SCHEDULE_SWAP', baseVersion: 2,
+      payload: { sourceTaskId: 'task-a', targetTaskId: 'task-b', _localAffectedTaskIds: ['task-a', 'task-b'] },
+    },
+  });
+  await runSyncCycle({
+    repository,
+    serverDeviceId: 'device-schedule-pending',
+    api: {
+      async pushChanges() { return { results: [{ clientMutationId: 'schedule-pending', decision: 'PROCESSING' }], serverCursor: 'schedule-pending-cursor' }; },
+      async pullChanges() {
+        return { changes: [
+          { cursor: 'schedule-cursor-a', resourceType: 'TASK', resourceId: 'task-a', mutationType: 'UPDATE', version: 3, deletedAt: null, payload: { id: 'task-a', scheduledAt: 'old-server-a' } },
+          { cursor: 'schedule-cursor-b', resourceType: 'TASK', resourceId: 'task-b', mutationType: 'UPDATE', version: 5, deletedAt: null, payload: { id: 'task-b', scheduledAt: 'old-server-b' } },
+        ], nextCursor: 'schedule-pending-cursor', hasMore: false, resetRequired: false };
+      },
+      async getSnapshot() { assert.fail('pending schedule members must be fenced from snapshot pull'); },
+    },
+  });
+
+  assert.equal((await repository.read('TASK', 'task-a')).value.scheduledAt, 'optimistic-a');
+  assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'optimistic-b');
+  assert.deepEqual((await repository.listUnresolved('TASK')).map((item) => item.clientMutationId), ['schedule-pending']);
 });
 
 test('background scheduler coalesces several requests into one delayed cycle', async () => {
@@ -987,6 +1177,184 @@ test('a scoped refresh HTTP failure preserves the failed session route after rea
   } finally {
     activeRequestAdapter = originalAdapter;
     restoreWindow();
+  }
+});
+
+test('core push and pull finish while the asset upload queue is still pending', async () => {
+  const { runCoreSyncWithAssetQueueWakeup } = await import('../src/store/useSyncStore.ts');
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-queue-barrier', 'device-queue-barrier', { storage: createMemoryStorage() });
+  await repository.saveCursor('queue-barrier-before');
+  await repository.upsert('SUBJECT', 'subject-queue-barrier', { id: 'subject-queue-barrier', name: 'Subject' }, { version: 1 });
+  await repository.enqueueMutation({
+    resourceType: 'SUBJECT', resourceId: 'subject-queue-barrier', clientMutationId: 'subject-queue-barrier-create',
+    mutationType: 'UPDATE', baseVersion: 1, payload: { id: 'subject-queue-barrier', name: 'Subject' },
+  });
+  const queueWake = createDeferred();
+  const coreRequests = [];
+  const coreRun = runCoreSyncWithAssetQueueWakeup(
+    { wakeUp: () => queueWake.promise },
+    () => true,
+    () => runSyncCycle({
+      repository,
+      serverDeviceId: 'device-queue-barrier',
+      api: {
+        async pushChanges({ mutations }) {
+          coreRequests.push({ type: 'push', mutations });
+          return { results: [{ clientMutationId: 'subject-queue-barrier-create', decision: 'APPLIED', resourceType: 'SUBJECT', resourceId: 'subject-queue-barrier' }], serverCursor: 'queue-barrier-pushed' };
+        },
+        async pullChanges() {
+          coreRequests.push({ type: 'pull' });
+          return { changes: [], nextCursor: 'queue-barrier-after', hasMore: false, resetRequired: false };
+        },
+        async getSnapshot() { assert.fail('the repository already has a cursor'); },
+      },
+    }),
+  );
+
+  try {
+    const outcome = await Promise.race([
+      coreRun.then(() => 'completed'),
+      new Promise((resolve) => setTimeout(() => resolve('blocked-by-asset-queue'), 300)),
+    ]);
+    assert.equal(outcome, 'completed', 'core sync must not await the network-bound upload queue');
+    assert.deepEqual(coreRequests.map((request) => request.type), ['push', 'pull']);
+  } finally {
+    queueWake.resolve();
+    await coreRun;
+  }
+});
+
+test('a Source released after upload is sent by the next core cycle', async () => {
+  const { runCoreSyncWithAssetQueueWakeup } = await import('../src/store/useSyncStore.ts');
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-queue-source', 'device-queue-source', { storage: createMemoryStorage() });
+  await repository.saveCursor('queue-source-before');
+  const queueSource = fs.readFileSync(new URL('../src/services/localAssetSyncQueue.ts', import.meta.url), 'utf8');
+  const draftSource = fs.readFileSync(new URL('../src/services/localSourceDraftService.ts', import.meta.url), 'utf8');
+  const createDraftBody = draftSource.slice(draftSource.indexOf('async createDraft'), draftSource.indexOf('async releaseDraftsForAsset'));
+  assert.doesNotMatch(createDraftBody, /enqueueMutation/, 'creating a local draft must not make a Source syncable before Asset completion');
+  assert.match(queueSource, /if\s*\(released\.length\s*>\s*0\s*&&\s*this\.onWakeup\s*&&\s*!this\.disposed\)\s*\{\s*this\.assertNotDisposed\(\)\s*this\.onWakeup\(\)/,
+    'the existing queue requests a later sync only after it releases at least one draft');
+  const queueWake = createDeferred();
+  const sourceReleased = createDeferred();
+  const calls = [];
+  let released = false;
+  let followupCycle;
+  const sourceCreate = async () => {
+    await repository.upsert('SOURCE', 'source-after-upload', { id: 'source-after-upload', name: 'Uploaded PDF' }, { version: 0 });
+    await repository.enqueueMutation({
+      resourceType: 'SOURCE', resourceId: 'source-after-upload', clientMutationId: 'source-after-upload-create',
+      mutationType: 'CREATE', baseVersion: 0, payload: { id: 'source-after-upload', name: 'Uploaded PDF' },
+    });
+    sourceReleased.resolve();
+  };
+  const queue = {
+    async wakeUp() {
+      if (released) return;
+      await queueWake.promise;
+      released = true;
+      await sourceCreate();
+      followupCycle = sync();
+    },
+  };
+  const sync = () => runCoreSyncWithAssetQueueWakeup(queue, () => true, () => runSyncCycle({
+    repository,
+    serverDeviceId: 'device-queue-source',
+    api: {
+      async pushChanges({ mutations }) {
+        calls.push(...mutations);
+        return {
+          results: mutations.map((mutation) => ({
+            clientMutationId: mutation.clientMutationId, decision: 'APPLIED',
+            resourceType: mutation.resourceType, resourceId: mutation.resourceId,
+          })),
+          serverCursor: 'queue-source-pushed',
+        };
+      },
+      async pullChanges() { return { changes: [], nextCursor: 'queue-source-after', hasMore: false, resetRequired: false }; },
+      async getSnapshot() { assert.fail('the repository already has a cursor'); },
+    },
+  }));
+
+  await sync();
+  assert.deepEqual(calls, [], 'a local draft must not create a Source mutation before Asset completion');
+  queueWake.resolve();
+  await waitForSignal(sourceReleased.promise, 'the Asset completion Source release');
+  await followupCycle;
+  assert.deepEqual(calls.map((mutation) => mutation.clientMutationId), ['source-after-upload-create']);
+});
+
+test('a current-scope asset queue rejection is consumed without failing core sync', async () => {
+  const { runCoreSyncWithAssetQueueWakeup } = await import('../src/store/useSyncStore.ts');
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-queue-error', 'device-queue-error', { storage: createMemoryStorage() });
+  await repository.saveCursor('queue-error-before');
+  const queueWake = createDeferred();
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  try {
+    await runCoreSyncWithAssetQueueWakeup(
+      { wakeUp: () => queueWake.promise },
+      () => true,
+      () => runSyncCycle({
+        repository,
+        serverDeviceId: 'device-queue-error',
+        api: {
+          async pushChanges() { return { results: [], serverCursor: 'queue-error-pushed' }; },
+          async pullChanges() { return { changes: [], nextCursor: 'queue-error-after', hasMore: false, resetRequired: false }; },
+          async getSnapshot() { assert.fail('the repository already has a cursor'); },
+        },
+      }),
+    );
+    queueWake.reject(new Error('retryable upload failure'));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(warnings.length, 1);
+    assert.deepEqual(warnings[0], ['[useSyncStore] Asset queue wakeup deferred', { code: 'SYNC_FAILED', detail: 'retryable upload failure' }]);
+    assert.equal((await repository.getSyncState()).cursor, 'queue-error-after', 'the core cycle remains successful');
+  } finally {
+    queueWake.resolve();
+    console.warn = originalWarn;
+  }
+});
+
+test('late asset queue rejection from an old scope is consumed without a sync error', async () => {
+  const { runCoreSyncWithAssetQueueWakeup } = await import('../src/store/useSyncStore.ts');
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('user-queue-stale', 'device-queue-stale', { storage: createMemoryStorage() });
+  await repository.saveCursor('queue-stale-before');
+  const queueWake = createDeferred();
+  let scopeIsCurrent = true;
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  try {
+    await runCoreSyncWithAssetQueueWakeup(
+      { wakeUp: () => queueWake.promise },
+      () => scopeIsCurrent,
+      () => runSyncCycle({
+        repository,
+        serverDeviceId: 'device-queue-stale',
+        api: {
+          async pushChanges() { return { results: [], serverCursor: 'queue-stale-pushed' }; },
+          async pullChanges() { return { changes: [], nextCursor: 'queue-stale-after', hasMore: false, resetRequired: false }; },
+          async getSnapshot() { assert.fail('the repository already has a cursor'); },
+        },
+      }),
+    );
+    scopeIsCurrent = false;
+    queueWake.reject(new Error('old account upload failed'));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(warnings, [], 'a stale queue rejection must not be reported into the current session');
+    assert.equal((await repository.getSyncState()).cursor, 'queue-stale-after', 'the successful core cycle remains committed');
+  } finally {
+    queueWake.resolve();
+    console.warn = originalWarn;
   }
 });
 

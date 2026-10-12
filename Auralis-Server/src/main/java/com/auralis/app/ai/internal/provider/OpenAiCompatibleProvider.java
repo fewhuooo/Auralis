@@ -10,6 +10,8 @@ import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
+import com.auralis.app.ai.OverviewCancellation;
+import com.auralis.app.ai.usage.AiTokenUsage;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpException;
@@ -61,7 +63,7 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
 
     @Override
     public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
-        return complete(request, credential, null);
+        return complete(request, credential, null, null);
     }
 
     @Override
@@ -69,21 +71,30 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             AiProviderRequest request,
             AiCredential credential,
             long responseTimeoutMillis) {
-        return complete(request, credential, Long.valueOf(responseTimeoutMillis));
+        return complete(request, credential, Long.valueOf(responseTimeoutMillis), null);
+    }
+
+    @Override
+    public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                                       long responseTimeoutMillis, OverviewCancellation cancellation) {
+        return complete(request, credential, Long.valueOf(responseTimeoutMillis), cancellation);
     }
 
     private AiProviderResponse complete(
             AiProviderRequest request,
             AiCredential credential,
-            Long responseTimeoutMillis) {
+            Long responseTimeoutMillis,
+            OverviewCancellation cancellation) {
         validateCredential(credential);
         try {
-            ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
-                    providerType, URI.create(credential.baseUrl().trim()));
+            URI baseUri = URI.create(credential.baseUrl().trim());
+            ResolvedProviderEndpoint endpoint = cancellation == null
+                    ? endpointPolicy.resolve(providerType, baseUri)
+                    : endpointPolicy.resolve(providerType, baseUri, responseTimeoutMillis, cancellation);
             JsonNode body = responseTimeoutMillis == null
                     ? httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class)
                     : httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class,
-                    responseTimeoutMillis);
+                    responseTimeoutMillis, cancellation);
             return parseResponse(body, request);
         } catch (DomainException exception) {
             throw exception;
@@ -114,6 +125,9 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
                     providerType, URI.create(credential.baseUrl().trim()));
             Map<String, Object> body = new LinkedHashMap<>(requestBody(request));
             body.put("stream", true);
+            if (providerType == AiProviderType.OPENAI_COMPATIBLE) {
+                body.put("stream_options", Map.of("include_usage", true));
+            }
             httpClient.postStream(
                     endpoint, "/chat/completions", credential.apiKey(), body,
                     line -> parseStreamLine(line, sink));
@@ -173,9 +187,15 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         JsonNode usage = body.path("usage");
         return new AiProviderResponse(
                 content.asText(),
-                usage.path("prompt_tokens").asLong(0),
-                usage.path("completion_tokens").asLong(0),
+                tokenCount(usage, "prompt_tokens"),
+                tokenCount(usage, "completion_tokens"),
                 normalizedFinishReason(body));
+    }
+
+    private Long tokenCount(JsonNode usage, String field) {
+        if (usage == null || !usage.isObject()) return null;
+        JsonNode value = usage.path(field);
+        return value.isIntegralNumber() && value.canConvertToLong() ? value.longValue() : null;
     }
 
     private String normalizedFinishReason(JsonNode body) {
@@ -264,6 +284,12 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
         try {
             JsonNode body = STREAM_OBJECT_MAPPER.readTree(payload);
+            AiTokenUsage usage = parseUsage(body == null ? null : body.path("usage"));
+            JsonNode choices = body == null ? null : body.path("choices");
+            if ((choices == null || !choices.isArray() || choices.isEmpty()) && usage != null) {
+                sink.accept(new AiProviderChunk("", false, usage));
+                return;
+            }
             JsonNode choice = body.path("choices").path(0);
             JsonNode content = choice.path("delta").path("content");
             if (content.isTextual() && !content.asText().isEmpty()) {
@@ -271,13 +297,22 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             }
             JsonNode finishReason = choice.path("finish_reason");
             if (!finishReason.isMissingNode() && !finishReason.isNull()) {
-                sink.accept(new AiProviderChunk("", true));
+                sink.accept(new AiProviderChunk("", true, usage));
+            } else if (usage != null) {
+                sink.accept(new AiProviderChunk("", false, usage));
             }
         } catch (AiStreamAbortException exception) {
             throw exception;
         } catch (Exception exception) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event");
         }
+    }
+
+    private AiTokenUsage parseUsage(JsonNode usage) {
+        if (usage == null || !usage.isObject()) return null;
+        Long input = tokenCount(usage, "prompt_tokens");
+        Long output = tokenCount(usage, "completion_tokens");
+        return input == null && output == null ? null : new AiTokenUsage(input, output);
     }
 
     private DomainException providerError(int status, Throwable cause) {

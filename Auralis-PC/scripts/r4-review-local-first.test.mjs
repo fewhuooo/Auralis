@@ -30,7 +30,7 @@ globalThis.window = {
 }
 globalThis.localStorage = testStorage
 
-function canonicalAnchor({ knowledgeBlockVersion, subjectId, contentHash, state = null, commands = [], effectiveReviews = [], legacyEvents = [] }) {
+function canonicalAnchor({ knowledgeBlockVersion, subjectId, contentHash, state = null, commands = [], effectiveReviews = [] }) {
   let canonicalState = state
   if (canonicalState) {
     const {
@@ -44,8 +44,6 @@ function canonicalAnchor({ knowledgeBlockVersion, subjectId, contentHash, state 
     state: canonicalState,
     commands: structuredClone(commands),
     effectiveReviews: structuredClone(effectiveReviews),
-    legacyEvents: structuredClone(legacyEvents),
-    legacyHistoryComplete: legacyEvents.every(event => event.firstLearning === true || event.firstLearning === false),
   }
 }
 
@@ -186,12 +184,11 @@ async function syncUnknownCloudFollowupChain(fixture, { injectExternalReviewBefo
   const { ReviewSyncService } = await import('../src/services/reviewSyncService.ts')
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
     selectReview: useReviewApi.selectReview,
     confirmReview: useReviewApi.confirmReview,
   }
-  const server = { state: null, commands: [], effectiveReviews: [], legacyEvents: [] }
+  const server = { state: null, commands: [], effectiveReviews: [] }
   const posts = []
   let historyReads = 0
 
@@ -285,7 +282,6 @@ async function syncUnknownCloudFollowupChain(fixture, { injectExternalReviewBefo
       effectiveReviews: structuredClone(server.effectiveReviews),
     }
   }
-  useReviewApi.getHistory = async () => structuredClone(server.legacyEvents)
   useReviewApi.completeLearning = async request => applyServerCommand(request, 'LEARNING_COMPLETED', request.reviewId ?? null)
   useReviewApi.selectReview = async request => applyServerCommand(request, 'REVIEW_SELECTED', request.reviewId)
   useReviewApi.confirmReview = async (reviewId, request) => applyServerCommand(request, 'REVIEW_CONFIRMED', reviewId)
@@ -294,7 +290,6 @@ async function syncUnknownCloudFollowupChain(fixture, { injectExternalReviewBefo
     return { result, posts, server, historyReads }
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
     useReviewApi.selectReview = originals.selectReview
     useReviewApi.confirmReview = originals.confirmReview
@@ -483,17 +478,12 @@ test('an unknown remote state allows local first learning and binds to an empty 
   const { ReviewSyncService } = await import('../src/services/reviewSyncService.ts')
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   const apiCalls = []
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => {
     apiCalls.push(['lifecycle', knowledgeBlockId])
     return { knowledgeBlockId, knowledgeBlockVersion: 7, protocolVersion: 2, state: null, commands: [], effectiveReviews: [] }
-  }
-  useReviewApi.getHistory = async ({ knowledgeBlockId }) => {
-    apiCalls.push(['legacy', knowledgeBlockId])
-    return []
   }
   useReviewApi.completeLearning = async request => {
     apiCalls.push(['post', request.knowledgeBlockId])
@@ -512,8 +502,8 @@ test('an unknown remote state allows local first learning and binds to an empty 
   }
   try {
     const result = await new ReviewSyncService('localstorage', repository).syncAllPending(userId, deviceId)
-    assert.deepEqual(apiCalls.map(([kind]) => kind), ['lifecycle', 'legacy', 'post'],
-      'the server contract and both empty histories are checked before freezing and posting the first command')
+    assert.deepEqual(apiCalls.map(([kind]) => kind), ['lifecycle', 'post'],
+      'the lifecycle history is checked before freezing and posting the first command')
     assert.equal(result.syncedCommandCount, 1)
     assert.equal(result.conflictCount, 0)
     assert.equal((await reviewRepository.getPendingIntents(userId, deviceId, block.id)).length, 0)
@@ -523,7 +513,6 @@ test('an unknown remote state allows local first learning and binds to an empty 
     assert.deepEqual(acknowledged.canonicalAnchor.commands.map(command => command.clientCommandId), [savedIntent[0].clientCommandId])
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -541,7 +530,6 @@ test('an unknown remote state conflicts without POST when protocol-v2 reports a 
   const localState = (await reviewRepository.getReviewRecord(userId, deviceId, block.id)).state
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   let postCount = 0
@@ -553,7 +541,6 @@ test('an unknown remote state conflicts without POST when protocol-v2 reports a 
     commands: [],
     effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async () => { postCount += 1; throw new Error('a state-presence conflict must stop before POST') }
   try {
     const result = await new ReviewSyncService('localstorage', repository).syncAllPending(userId, deviceId)
@@ -568,7 +555,6 @@ test('an unknown remote state conflicts without POST when protocol-v2 reports a 
       'remote presence must not be silently rebased into the unknown local intent')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -667,7 +653,7 @@ test('a persisted version-zero ReviewState is sent as present while an absent st
       needsLearning: false, mastered: true, stableSuccessCount: 3, nextReviewStage: null,
       lastPracticeAt: null, lastReviewId: null, pendingReviewId: null, contentHash, canonicalVersion: 0,
     },
-    history: [], effectiveReviews: [], legacyEvents: [], legacyHistoryComplete: true,
+    history: [], effectiveReviews: [],
     historyImported: true, isPresenceMarker: false, canonicalAnchor: null, updatedAt: '2026-10-09T00:00:00.000Z',
   })
 
@@ -791,13 +777,11 @@ test('known-absent history stays absent after a body update or parent move until
 
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
     knowledgeBlockId, knowledgeBlockVersion: 2, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async request => {
     assert.equal(request.expectedStateAbsent, true, 'both transitions send the explicit absent-state guard')
     assert.equal(request.baseVersion, 0)
@@ -818,7 +802,6 @@ test('known-absent history stays absent after a body update or parent move until
     }
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -900,7 +883,7 @@ test('an existing version-zero ReviewState binds first learning to the actual po
   assert.equal((await repository.read('KNOWLEDGE_BLOCK', block.id)).version, 9,
     'the core ACK can advance the KB by more than one version')
 
-  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory, completeLearning: useReviewApi.completeLearning }
+  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, completeLearning: useReviewApi.completeLearning }
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
     knowledgeBlockId, knowledgeBlockVersion: 9, protocolVersion: 2,
     state: {
@@ -909,7 +892,6 @@ test('an existing version-zero ReviewState binds first learning to the actual po
       lastReviewId: null, pendingReviewId: null,
     }, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async request => {
     assert.equal(request.expectedStateAbsent, false)
     assert.equal(request.baseVersion, 6,
@@ -932,7 +914,6 @@ test('an existing version-zero ReviewState binds first learning to the actual po
     assert.equal(record.canonicalAnchor.knowledgeBlockVersion, 9)
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -963,7 +944,7 @@ test('a stale subject round cannot commit after its KB moves to another active s
       needsLearning: false, mastered: false, stableSuccessCount: 0, nextReviewStage: 'CROSS_DAY',
       lastPracticeAt: null, lastReviewId: null, pendingReviewId: null, contentHash: hash, canonicalVersion: 0,
     },
-    history: [], effectiveReviews: [], legacyEvents: [], legacyHistoryComplete: true,
+    history: [], effectiveReviews: [],
     historyImported: true, isPresenceMarker: false, canonicalAnchor: null, updatedAt: '2026-10-09T00:00:00.000Z',
   })
   const pinia = createPinia()
@@ -1031,7 +1012,7 @@ test('local reconfirm ends a card when the current local review history is incom
       needsLearning: false, mastered: false, stableSuccessCount: 0, nextReviewStage: 'CROSS_DAY',
       lastPracticeAt: null, lastReviewId: null, pendingReviewId: null, contentHash, canonicalVersion: 1,
     },
-    history: [], effectiveReviews: [], legacyEvents: [], legacyHistoryComplete: false,
+    history: [], effectiveReviews: [],
     historyImported: false, isPresenceMarker: false, canonicalAnchor: null, updatedAt: '2026-10-09T00:00:00.000Z',
   }
   await reviewRepository.saveReviewRecord('localstorage', userId, deviceId, initialRecord)
@@ -1124,7 +1105,7 @@ test('a same-KB successor waits for its predecessor ACK while another KB continu
   assert.ok(fifoIntents[0].createdAt < fifoIntents[1].createdAt,
     'the persisted local creation sequence is strictly increasing even within one millisecond')
   const originals = {
-    getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory,
+    getLifecycleHistory: useReviewApi.getLifecycleHistory,
     selectReview: useReviewApi.selectReview, confirmReview: useReviewApi.confirmReview,
   }
   const selectionRequests = []
@@ -1136,7 +1117,6 @@ test('a same-KB successor waits for its predecessor ACK while another KB continu
     state: null, commands: [], effectiveReviews: [],
   }]))
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => structuredClone(serverHistories.get(knowledgeBlockId))
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async request => {
     selectionRequests.push(JSON.parse(JSON.stringify(request)))
     if (request.knowledgeBlockId === firstBlock.id && firstARequestFails) {
@@ -1204,7 +1184,6 @@ test('a same-KB successor waits for its predecessor ACK while another KB continu
     assert.equal((await new ReviewRepository('localstorage', repository).getPendingIntents(userId, deviceId, firstBlock.id)).length, 0)
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
     useReviewApi.confirmReview = originals.confirmReview
   }
@@ -1413,7 +1392,7 @@ test('browser review storage rejects valid JSON with corrupt records or intents 
   const goodRecord = {
     knowledgeBlockId: 'replacement-kb', subjectId: 'corrupt-subject', localRevision: 0,
     serverKnowledgeBlockVersion: 1, contentHash: 'b'.repeat(64), state: null,
-    history: [], effectiveReviews: [], legacyEvents: [], legacyHistoryComplete: false,
+    history: [], effectiveReviews: [],
     historyImported: false, isPresenceMarker: false, canonicalAnchor: null, updatedAt: '2026-10-09T00:00:00.000Z',
   }
 
@@ -1532,7 +1511,7 @@ test('a subject-only KB move preserves mastery and surfaces a stale pending sele
       mastered: true, stableSuccessCount: 3, nextReviewStage: null, lastPracticeAt: '2026-10-01T00:00:00.000Z',
       lastReviewId: 'mastered-last-review', pendingReviewId: null, contentHash: masteredHash, canonicalVersion: 3,
     },
-    history: [], effectiveReviews: [], legacyEvents: [], legacyHistoryComplete: true,
+    history: [], effectiveReviews: [],
     historyImported: true, isPresenceMarker: false, canonicalAnchor: null, updatedAt: dueAt,
   })
   const pendingHash = await sha256(pending.content)
@@ -1581,7 +1560,7 @@ test('reopening a mastered card resets its local review phase before the ten-min
   assert.equal(learned.state.nextReviewStage, 'EARLY_RECALL')
 })
 
-test('local subject statistics classify legacy first learning, deduplicate sources, use IANA dates and final corrections', async () => {
+test('local subject statistics use lifecycle history, deduplicate sources, apply IANA dates and final corrections', async () => {
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   const { LocalSubjectStats } = await import('../src/services/localSubjectStats.ts')
   const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
@@ -1629,12 +1608,7 @@ test('local subject statistics classify legacy first learning, deduplicate sourc
       occurredAt: firstAt, reviewId: null, rating: null, durationSeconds: 20, baseVersion: 0, knowledgeBlockVersion: 1 }],
     effectiveReviews: [{ reviewId: 'effective-review', selectedRating: 'GOOD', effectiveRating: 'AGAIN',
       selectedAt: laterAt, resolvedAt: laterAt, resolution: 'CORRECTED_AGAIN' }],
-    legacyEvents: [
-      { id: 'legacy-first', knowledgeBlockId: block.id, rating: 'GOOD', reviewedAt: firstAt, durationSeconds: 10, firstLearning: true },
-      { id: 'legacy-later', knowledgeBlockId: block.id, rating: 'HARD', reviewedAt: laterAt, durationSeconds: 12, firstLearning: false },
-      { id: 'legacy-skip', knowledgeBlockId: block.id, rating: 'SKIP', reviewedAt: laterAt, durationSeconds: 1, firstLearning: false },
-    ],
-    legacyHistoryComplete: true, historyImported: true, isPresenceMarker: false, canonicalAnchor: null, updatedAt: laterAt,
+    historyImported: true, isPresenceMarker: false, canonicalAnchor: null, updatedAt: laterAt,
   })
 
   const stats = await LocalSubjectStats.compute('localstorage', userId, deviceId, subject.id, 7, zone, repository)
@@ -1644,18 +1618,19 @@ test('local subject statistics classify legacy first learning, deduplicate sourc
   const laterDay = stats.daily.find(day => day.date === expectedDate(laterAt))
   assert.equal(expectedDate(firstAt), yesterday.toISOString().slice(0, 10), 'the test event crosses the IANA date boundary from UTC')
   assert.equal(firstDay.createdKnowledgeBlockCount, 1)
-  assert.equal(firstDay.firstLearningKnowledgeBlockCount, 1)
+  assert.equal(firstDay.firstLearningKnowledgeBlockCount, 0,
+    'first-learning totals are no longer inferred from the removed event stream')
   assert.equal(firstDay.learningCompletionCount, 1)
-  assert.equal(laterDay.subsequentReviewKnowledgeBlockCount, 1)
-  assert.equal(laterDay.nonSkipReviewEventCount, 2, 'one legacy attempt plus the final corrected lifecycle result count once each')
+  assert.equal(laterDay.subsequentReviewKnowledgeBlockCount, 0)
+  assert.equal(laterDay.nonSkipReviewEventCount, 1, 'only the final effective lifecycle result is counted')
   assert.equal(laterDay.completedTaskCount, 1, 'daily task completions use the actual completedAt value')
   assert.equal(stats.overview.fileSourceCount, 1, 'local/server aliases count one imported source once')
   assert.equal(stats.overview.textSourceCount, 1)
   assert.equal(stats.overview.doneTaskCount, 1)
   assert.equal(stats.historyCoverage, 'COMPLETE')
   assert.equal(stats.ratingCounts.againCount, 1, 'correction uses the final effective rating')
-  assert.equal(stats.ratingCounts.goodCount, 1)
-  assert.equal(stats.ratingCounts.hardCount, 1)
+  assert.equal(stats.ratingCounts.goodCount, 0)
+  assert.equal(stats.ratingCounts.hardCount, 0)
 })
 
 test('local new-learning statistics require explicit knowledge that ReviewState is absent', async () => {
@@ -1695,14 +1670,14 @@ test('local new-learning statistics require explicit knowledge that ReviewState 
   assert.equal(await service.importLifecycleHistory(userId, deviceId, block.id, {
     knowledgeBlockId: block.id, knowledgeBlockVersion: 1, protocolVersion: 2,
     state: null, commands: [], effectiveReviews: [],
-  }, []), true)
+  }), true)
   const knownAbsent = await compute()
   assert.equal(knownAbsent.historyCoverage, 'INCOMPLETE', 'the unrelated local CREATE still lacks a complete imported history record')
   assert.equal(knownAbsent.overview.newLearningCount, 2,
     'an explicitly imported absent ReviewState counts as new learning')
 })
 
-test('local statistics preserve soft-deleted history and require coverage for each active block', async () => {
+test('local statistics preserve soft-deleted history and require lifecycle coverage for each active block', async () => {
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
   const { LocalSubjectStats } = await import('../src/services/localSubjectStats.ts')
@@ -1727,16 +1702,14 @@ test('local statistics preserve soft-deleted history and require coverage for ea
   const activeHash = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest(
     'SHA-256', new TextEncoder().encode(activeBlock.content),
   )), value => value.toString(16).padStart(2, '0')).join('')
-  const record = (knowledgeBlockId, flags, legacyEvents = [], state = null) => ({
+  const record = (knowledgeBlockId, historyImported, state = null) => ({
     knowledgeBlockId, subjectId, localRevision: 1, serverKnowledgeBlockVersion: 1,
-    contentHash: knowledgeBlockId === activeBlock.id ? activeHash : 'a'.repeat(64), state, history: [], effectiveReviews: [], legacyEvents,
-    legacyHistoryComplete: flags.legacyHistoryComplete, historyImported: flags.historyImported,
+    contentHash: knowledgeBlockId === activeBlock.id ? activeHash : 'a'.repeat(64), state, history: [], effectiveReviews: [],
+    historyImported,
     isPresenceMarker: false, canonicalAnchor: null, updatedAt: completedAt,
   })
   await reviewRepository.saveReviewRecord('localstorage', userId, deviceId,
-    record(oldBlock.id, { historyImported: true, legacyHistoryComplete: true }, [
-      { id: 'deleted-first', knowledgeBlockId: oldBlock.id, rating: 'GOOD', reviewedAt: createdAt, firstLearning: true },
-    ]))
+    record(oldBlock.id, true))
   const compute = () => LocalSubjectStats.compute('localstorage', userId, deviceId, subjectId, 30, 'UTC', repository)
   const missing = await compute()
   assert.equal(missing.historyCoverage, 'INCOMPLETE', 'a deleted KB history cannot stand in for a missing active KB record')
@@ -1747,18 +1720,17 @@ test('local statistics preserve soft-deleted history and require coverage for ea
     'daily completion history includes the subsequently deleted task')
   assert.equal(missing.overview.doneTaskCount, 0, 'overview DONE totals only include active tasks')
 
-  const skip = { id: 'legacy-skip', knowledgeBlockId: activeBlock.id, rating: 'SKIP', reviewedAt: completedAt, firstLearning: true }
   await reviewRepository.saveReviewRecord('localstorage', userId, deviceId,
-    record(activeBlock.id, { historyImported: true, legacyHistoryComplete: false }, [skip]))
+    record(activeBlock.id, false))
   const partial = await compute()
-  assert.equal(partial.historyCoverage, 'INCOMPLETE', 'incomplete legacy history stays explicit')
-  assert.equal(partial.overview.newLearningCount, 1, 'a legacy SKIP alone does not create review state')
+  assert.equal(partial.historyCoverage, 'INCOMPLETE', 'an active block without imported lifecycle history is incomplete')
+  assert.equal(partial.overview.newLearningCount, 0, 'an unimported record does not create known new learning')
 
   await reviewRepository.saveReviewRecord('localstorage', userId, deviceId,
-    record(activeBlock.id, { historyImported: true, legacyHistoryComplete: true }, [skip]))
-  const completeSkip = await compute()
-  assert.equal(completeSkip.historyCoverage, 'COMPLETE')
-  assert.equal(completeSkip.overview.newLearningCount, 1)
+    record(activeBlock.id, true))
+  const completeAbsent = await compute()
+  assert.equal(completeAbsent.historyCoverage, 'COMPLETE')
+  assert.equal(completeAbsent.overview.newLearningCount, 1)
 
   const existingNeedsLearningState = {
     knowledgeBlockId: activeBlock.id, dueAt: completedAt, version: 1, knowledgeBlockVersion: 1,
@@ -1766,7 +1738,7 @@ test('local statistics preserve soft-deleted history and require coverage for ea
     lastPracticeAt: null, lastReviewId: null, pendingReviewId: null, contentHash: activeHash,
   }
   await reviewRepository.saveReviewRecord('localstorage', userId, deviceId,
-    record(activeBlock.id, { historyImported: true, legacyHistoryComplete: true }, [skip], existingNeedsLearningState))
+    record(activeBlock.id, true, existingNeedsLearningState))
   const existingState = await compute()
   assert.equal(existingState.overview.pendingLearningCount, 1)
   assert.equal(existingState.overview.newLearningCount, 0,
@@ -1816,13 +1788,12 @@ for (const failedCoreStatus of ['error', 'conflict']) {
         baseVersion: 0, contentHash: hash, occurredAt: completedAt, expectedStateAbsent: true,
       },
     )
-    const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory, completeLearning: useReviewApi.completeLearning }
+    const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, completeLearning: useReviewApi.completeLearning }
     let postCount = 0
     const sentRequests = []
     useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
       knowledgeBlockId, knowledgeBlockVersion: 2, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
     })
-    useReviewApi.getHistory = async () => []
     useReviewApi.completeLearning = async request => {
       postCount += 1
       sentRequests.push({ ...request })
@@ -1848,7 +1819,6 @@ for (const failedCoreStatus of ['error', 'conflict']) {
       assert.equal(intent, null, 'the converged review intent is acknowledged')
     } finally {
       useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-      useReviewApi.getHistory = originals.getHistory
       useReviewApi.completeLearning = originals.completeLearning
     }
   })
@@ -1893,7 +1863,6 @@ test('review sync requires protocol v2 before dispatch and preserves a frozen mu
 
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     selectReview: useReviewApi.selectReview,
     confirmReview: useReviewApi.confirmReview,
   }
@@ -1911,7 +1880,6 @@ test('review sync requires protocol v2 before dispatch and preserves a frozen mu
     knowledgeBlockVersion: remoteKbVersion,
     protocolVersion: protocol,
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async (request) => {
     postCount += 1
     sent.push({ ...request })
@@ -2010,7 +1978,6 @@ test('review sync requires protocol v2 before dispatch and preserves a frozen mu
     assert.equal((await reviewRepository.getReviewRecord(userId, deviceId, block.id)).state.canonicalVersion, 10)
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
     useReviewApi.confirmReview = originals.confirmReview
   }
@@ -2038,7 +2005,7 @@ test('ReviewSync imports every local subject block and keeps failed history visi
     }, { version: 1, syncStatus: 'synced' })
   }
 
-  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory }
+  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory }
   const requested = []
   const failedId = blockIds[100]
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => {
@@ -2052,7 +2019,6 @@ test('ReviewSync imports every local subject block and keeps failed history visi
       effectiveReviews: [],
     }
   }
-  useReviewApi.getHistory = async () => []
   try {
     const result = await new ReviewSyncService('localstorage', repository).syncAllPending(userId, deviceId)
     assert.equal(requested.length, 201)
@@ -2072,7 +2038,6 @@ test('ReviewSync imports every local subject block and keeps failed history visi
     assert.equal(stats.historyCoverage, 'INCOMPLETE')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
   }
 })
 
@@ -2106,12 +2071,11 @@ test('network failure and a failed local ACK commit retry the same immutable rev
     },
   )
   const key = `auralis:v2:${userId}:${deviceId}:review-store`
-  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory, selectReview: useReviewApi.selectReview, setItem: testStorage.setItem }
+  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, selectReview: useReviewApi.selectReview, setItem: testStorage.setItem }
   const requests = []
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
     knowledgeBlockId, knowledgeBlockVersion: 4, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async (request) => {
     requests.push(JSON.parse(JSON.stringify(request)))
     if (requests.length === 1) throw { status: 503, message: 'server unavailable' }
@@ -2142,7 +2106,6 @@ test('network failure and a failed local ACK commit retry the same immutable rev
   } finally {
     testStorage.setItem = originals.setItem
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -2178,7 +2141,6 @@ test('ReviewSync rechecks the current body hash inside the inflight claim before
   )
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     selectReview: useReviewApi.selectReview,
     executeAtomicReviewCommit: ReviewRepository.prototype.executeAtomicReviewCommit,
   }
@@ -2187,7 +2149,6 @@ test('ReviewSync rechecks the current body hash inside the inflight claim before
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
     knowledgeBlockId, knowledgeBlockVersion: 1, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async () => { postCount += 1; throw new Error('must not POST changed content') }
   ReviewRepository.prototype.executeAtomicReviewCommit = async function (...args) {
     if (args[2] === block.id && ++atomicReads === 4) {
@@ -2206,7 +2167,6 @@ test('ReviewSync rechecks the current body hash inside the inflight claim before
   } finally {
     ReviewRepository.prototype.executeAtomicReviewCommit = originals.executeAtomicReviewCommit
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -2243,7 +2203,6 @@ test('ReviewSync rechecks the active parent subject inside the inflight claim be
   )
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     selectReview: useReviewApi.selectReview,
     executeAtomicReviewCommit: ReviewRepository.prototype.executeAtomicReviewCommit,
   }
@@ -2252,7 +2211,6 @@ test('ReviewSync rechecks the active parent subject inside the inflight claim be
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
     knowledgeBlockId, knowledgeBlockVersion: 1, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async () => { postCount += 1; throw new Error('must not POST deleted parent') }
   ReviewRepository.prototype.executeAtomicReviewCommit = async function (...args) {
     if (args[2] === block.id && ++atomicReads === 4) {
@@ -2271,7 +2229,6 @@ test('ReviewSync rechecks the active parent subject inside the inflight claim be
   } finally {
     ReviewRepository.prototype.executeAtomicReviewCommit = originals.executeAtomicReviewCommit
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -2307,7 +2264,6 @@ test('a late receipt after body invalidation preserves the new projection and ar
   )
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     selectReview: useReviewApi.selectReview,
   }
   let remoteKbVersion = 1
@@ -2320,7 +2276,6 @@ test('a late receipt after body invalidation preserves the new projection and ar
     knowledgeBlockId, knowledgeBlockVersion: remoteKbVersion, protocolVersion: 2,
     state: null, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async request => {
     postCount += 1
     markPostStarted(request)
@@ -2362,7 +2317,6 @@ test('a late receipt after body invalidation preserves the new projection and ar
       .intents.find(intent => intent.clientCommandId === frozenRequest.clientCommandId).status, 'archived')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -2406,7 +2360,6 @@ test('a late receipt after a KB moves subjects cannot restore or acknowledge the
   )
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     selectReview: useReviewApi.selectReview,
   }
   let remoteKbVersion = 1
@@ -2419,7 +2372,6 @@ test('a late receipt after a KB moves subjects cannot restore or acknowledge the
     knowledgeBlockId, knowledgeBlockVersion: remoteKbVersion, protocolVersion: 2,
     state: canonicalState, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async request => {
     postCount += 1
     markPostStarted(request)
@@ -2462,7 +2414,6 @@ test('a late receipt after a KB moves subjects cannot restore or acknowledge the
     assert.equal((await reviewRepository.getReviewRecord(userId, deviceId, block.id)).subjectId, newSubjectId)
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -2495,14 +2446,13 @@ test('a late 409 cannot revive an intent archived by an in-flight body change', 
       baseVersion: 0, contentHash: hash, occurredAt: '2026-10-09T08:00:00.000000Z', expectedStateAbsent: true, rating: 'GOOD', reviewId: 'late-409-review',
     },
   )
-  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory, selectReview: useReviewApi.selectReview }
+  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, selectReview: useReviewApi.selectReview }
   let signalPost
   let rejectPost
   const postStarted = new Promise(resolve => { signalPost = resolve })
   useReviewApi.getLifecycleHistory = async ({ knowledgeBlockId }) => ({
     knowledgeBlockId, knowledgeBlockVersion: 1, protocolVersion: 2, state: null, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async () => {
     signalPost()
     return new Promise((_resolve, reject) => { rejectPost = reject })
@@ -2519,7 +2469,6 @@ test('a late 409 cannot revive an intent archived by an in-flight body change', 
     assert.equal(intent.status, 'archived', 'a late failure cannot revive a command invalidated while POST was in flight')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -2552,7 +2501,7 @@ test('scope generation blocks A to B to A late sync work and preserves requests 
       baseVersion: 0, contentHash, occurredAt: '2026-10-09T06:30:00.000000Z', expectedStateAbsent: true, rating: 'GOOD', reviewId: 'scope-review',
     },
   )
-  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, getHistory: useReviewApi.getHistory, selectReview: useReviewApi.selectReview }
+  const originals = { getLifecycleHistory: useReviewApi.getLifecycleHistory, selectReview: useReviewApi.selectReview }
   let generation = 1
   let activeUser = 'scope-user'
   let postCount = 0
@@ -2561,7 +2510,6 @@ test('scope generation blocks A to B to A late sync work and preserves requests 
     generation = 3; activeUser = 'scope-user'
     return { knowledgeBlockId, knowledgeBlockVersion: 2, protocolVersion: 2, state: null, commands: [], effectiveReviews: [] }
   }
-  useReviewApi.getHistory = async () => []
   useReviewApi.selectReview = async (request) => {
     postCount += 1
     return { ...selected, commandId: 'scope-server-command', clientCommandId: request.clientCommandId }
@@ -2584,7 +2532,6 @@ test('scope generation blocks A to B to A late sync work and preserves requests 
     assert.equal(pending[0].status, 'inflight', '401 leaves the frozen outbox entry available to the existing auth lifecycle')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.selectReview = originals.selectReview
   }
 })
@@ -3212,7 +3159,6 @@ test('unprepared first learning after multiple local body edits binds to the act
 
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   let postCount = 0
@@ -3225,7 +3171,6 @@ test('unprepared first learning after multiple local body edits binds to the act
     knowledgeBlockId: block.id, knowledgeBlockVersion: 9, protocolVersion: 2,
     state: remoteState, commands: [], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async request => {
     postCount += 1
     assert.equal(request.baseVersion, 6, 'preparation uses the actual returned ReviewState version, regardless of increment count')
@@ -3279,7 +3224,6 @@ test('unprepared first learning after multiple local body edits binds to the act
     assert.equal(record.canonicalAnchor.knowledgeBlockVersion, 9)
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -3347,7 +3291,6 @@ test('an external lifecycle command after a body edit prevents automatic request
   }
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   let postCount = 0
@@ -3356,7 +3299,6 @@ test('an external lifecycle command after a body edit prevents automatic request
     state: { ...invalidatedRemoteState, version: 8, needsLearning: false, dueAt: '2026-10-09T08:03:00.000000Z' },
     commands: [externalCommand], effectiveReviews: [],
   })
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async () => { postCount += 1; throw { status: 409 } }
   try {
     const result = await new ReviewSyncService('localstorage', repository).syncAllPending(userId, deviceId)
@@ -3368,7 +3310,6 @@ test('an external lifecycle command after a body edit prevents automatic request
     assert.equal(intent.prepared, false, 'proof failure retains the draft and never freezes a different server base')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -3405,7 +3346,7 @@ test('an unprepared review intent binds to the actual KB version returned by cor
     knowledgeBlockId: block.id, knowledgeBlockVersion: 2, protocolVersion: 2,
     state, commands: [], effectiveReviews: [],
   }
-  assert.equal(await localReview.importLifecycleHistory(userId, deviceId, block.id, initialHistory, []), true)
+  assert.equal(await localReview.importLifecycleHistory(userId, deviceId, block.id, initialHistory), true)
 
   const localState = await localReview.getKnowledgeBlockState(userId, deviceId, block.id, subjectId)
   const occurredAt = '2026-10-09T09:00:00.000000Z'
@@ -3459,12 +3400,10 @@ test('an unprepared review intent binds to the actual KB version returned by cor
   }
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   let postedRequest = null
   useReviewApi.getLifecycleHistory = async () => structuredClone(remoteHistory)
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async request => {
     postedRequest = structuredClone(request)
     return {
@@ -3491,7 +3430,6 @@ test('an unprepared review intent binds to the actual KB version returned by cor
     assert.equal(record.canonicalAnchor.state.version, 1)
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })
@@ -3557,12 +3495,10 @@ test('canonical preparation compares same-time command and review histories by i
   }
   const originals = {
     getLifecycleHistory: useReviewApi.getLifecycleHistory,
-    getHistory: useReviewApi.getHistory,
     completeLearning: useReviewApi.completeLearning,
   }
   let postCount = 0
   useReviewApi.getLifecycleHistory = async () => structuredClone(remoteHistory)
-  useReviewApi.getHistory = async () => []
   useReviewApi.completeLearning = async request => {
     postCount += 1
     assert.equal(request.baseVersion, 3)
@@ -3607,7 +3543,6 @@ test('canonical preparation compares same-time command and review histories by i
     assert.equal(postCount, 1, 'a changed canonical signature must never be dispatched')
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
-    useReviewApi.getHistory = originals.getHistory
     useReviewApi.completeLearning = originals.completeLearning
   }
 })

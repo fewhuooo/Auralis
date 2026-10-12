@@ -120,6 +120,8 @@ node scripts/seed-test-account.mjs
 - 每科 2 个 DONE 和 2 个 CANCELLED，共各 24 个。
 - 活动任务状态为 TODO 或 IN_PROGRESS；时长取 30、60、90、120 分钟，不注入 45 分钟任务。
 
+**截止时间注入提醒：**Task `dueAt` 必须写成带时区的 RFC 3339 时间戳（真实 instant），不可将 `YYYY-MM-DD` 纯日期直接存入或按当天日末兼容解释。若注入的是“当天截止”，应先按目标用户时区把日期转换成当地日末，再提交对应 UTC instant；任何当天排期的完整结束时刻都必须不晚于该 instant。`schedule-insertions` 会按数据库中已有 `dueAt` 精确校验，不会替注入数据或旧任务修正截止值；PC 对非空纯日期/无时区的无效截止值会拒绝新排期。当前 `seed-test-account.mjs` 写入的截止均为带时区的具体时刻；新增或修改注入数据时保持这一约束。
+
 如果注册、登录或 API 请求失败，先检查后端 readiness、测试账号脚本配置和 API 错误；不要直接向数据库业务表写入账号或任务。
 
 ## 4. 每科注入 30 个知识块

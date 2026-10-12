@@ -125,7 +125,8 @@ class AiStreamingControllerTests {
                 streamingService,
                 mock(SuggestionService.class),
                 mock(com.auralis.app.ai.OverviewGenerationService.class),
-                new ObjectMapper());
+                new ObjectMapper(), mock(com.auralis.app.ai.usage.AiUsageQueryService.class),
+                mock(com.auralis.app.ai.OverviewSseAdapter.class));
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         controller.streamMessage(new AuthenticatedUser(userId, UUID.randomUUID(), UUID.randomUUID()), command)

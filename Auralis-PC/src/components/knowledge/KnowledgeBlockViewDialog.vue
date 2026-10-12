@@ -7,14 +7,11 @@
     @update:model-value="emit('update:modelValue', $event)"
     @close="close"
   >
-    <template #header-icon>
-      <div class="kb-dialog-icon" aria-hidden="true">
-        <IconNotes :size="16" :stroke-width="2" />
-      </div>
-    </template>
-
     <template #title>
       <div class="kb-dialog-header-title">
+        <div class="kb-dialog-icon" aria-hidden="true">
+          <IconNotes :size="15" :stroke-width="2.2" />
+        </div>
         <span class="kb-dialog-main-title">知识块详情</span>
         <span v-if="block?.subject" class="kb-dialog-subject-pill" :style="subjectPillStyle">
           {{ block.subject }}
@@ -209,12 +206,13 @@ const handleCopy = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm, 7px);
   background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.16));
   color: var(--modal-accent, #76855B);
   flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
 html.dark .kb-dialog-icon {
@@ -225,15 +223,15 @@ html.dark .kb-dialog-icon {
 .kb-dialog-header-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .kb-dialog-main-title {
-  font-size: 15px;
-  font-weight: 650;
+  font-size: 15.5px;
+  font-weight: 700;
   color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
 }
 
 html.dark .kb-dialog-main-title {
@@ -241,14 +239,15 @@ html.dark .kb-dialog-main-title {
 }
 
 .kb-dialog-subject-pill {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 2px 9px;
-  border-radius: 9999px;
+  padding: 2.5px 10px;
+  border-radius: var(--radius-full, 9999px);
   background: var(--modal-accent-subtle, rgba(139, 154, 110, 0.12));
   color: var(--modal-accent, #76855B);
   border: 1px solid rgba(139, 154, 110, 0.22);
   white-space: nowrap;
+  letter-spacing: 0.01em;
 }
 
 html.dark .kb-dialog-subject-pill {
@@ -261,29 +260,32 @@ html.dark .kb-dialog-subject-pill {
 .kb-article-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 /* 顶部元信息卡片 */
 .kb-meta-card {
-  padding: 16px 18px;
-  border-radius: 12px;
+  padding: 18px 22px;
+  border-radius: 14px;
   background: var(--modal-inset-bg, #FAF7F2);
   border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
+  box-shadow: 0 1.5px 4px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.2s ease;
 }
 
 html.dark .kb-meta-card {
   background: var(--modal-inset-bg, #2e2c29);
   border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .kb-title {
-  margin: 0 0 10px 0;
-  font-size: 18px;
+  margin: 0 0 12px 0;
+  font-size: 19px;
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.38;
   color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
   word-break: break-word;
 }
 
@@ -295,7 +297,7 @@ html.dark .kb-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
 }
@@ -303,12 +305,33 @@ html.dark .kb-title {
 .kb-meta-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: var(--radius-full, 9999px);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+html.dark .kb-meta-item {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: #9E9B95;
+}
+
+.kb-meta-item:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary, #1C1C1A);
+}
+
+html.dark .kb-meta-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #E6DFD8;
 }
 
 .kb-meta-source-text {
-  max-width: 240px;
+  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -316,23 +339,27 @@ html.dark .kb-title {
 
 /* 正文卡片 */
 .kb-content-card {
-  padding: 18px 20px;
-  border-radius: 12px;
+  padding: 20px 24px;
+  border-radius: 14px;
   background: var(--modal-inset-bg, #FAF7F2);
   border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
-  min-height: 160px;
-  max-height: 480px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+  min-height: 180px;
+  max-height: 500px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 154, 110, 0.35) transparent;
 }
 
 html.dark .kb-content-card {
   background: var(--modal-inset-bg, #2e2c29);
   border-color: var(--modal-inset-border, rgba(255, 255, 255, 0.08));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .kb-markdown-content {
-  font-size: 13.5px;
-  line-height: 1.72;
+  font-size: 14px;
+  line-height: 1.76;
   color: var(--text-primary, #1C1C1A);
   word-break: break-word;
 }
@@ -346,36 +373,56 @@ html.dark .kb-markdown-content {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 36px 0;
+  gap: 10px;
+  padding: 44px 0;
   color: var(--text-muted, #7A7A75);
 }
 
 .kb-empty-icon {
-  opacity: 0.45;
+  opacity: 0.4;
+  stroke: var(--modal-accent, #8B9A6E);
 }
 
 .kb-empty-text {
   margin: 0;
   font-size: 13px;
   font-style: italic;
+  letter-spacing: -0.01em;
 }
 
 /* 底部操作 */
 .kb-footer-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .kb-footer-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin-left: auto;
 }
 
+.kb-btn-goto {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kb-btn-goto svg {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.kb-btn-goto:hover svg {
+  transform: translate(2px, -2px);
+}
+
 .is-success {
-  color: #2e7d32;
+  color: #4E8652;
+  animation: kb-pop-in 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes kb-pop-in {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 </style>

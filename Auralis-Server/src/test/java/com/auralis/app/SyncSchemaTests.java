@@ -48,6 +48,20 @@ class SyncSchemaTests {
                 Integer.class)).isGreaterThanOrEqualTo(1);
     }
 
+    @Test
+    void scheduleCommandsAreAllowedOnlyForInboundMutations() {
+        String inboundCheck = checkClause("inbound_mutations", "ck_inbound_mutations_mutation_type");
+        String changeLogCheck = checkClause("change_log", "ck_change_log_mutation_type");
+
+        assertThat(inboundCheck).contains("SCHEDULE_INSERTION").contains("SCHEDULE_SWAP");
+        assertThat(changeLogCheck).doesNotContain("SCHEDULE_INSERTION").doesNotContain("SCHEDULE_SWAP");
+        assertThat(jdbcTemplate.queryForObject(
+                "select character_maximum_length from information_schema.columns "
+                        + "where lower(table_schema) = 'public' and lower(table_name) = 'inbound_mutations' "
+                        + "and lower(column_name) = 'mutation_type'",
+                Integer.class)).isGreaterThanOrEqualTo("SCHEDULE_INSERTION".length());
+    }
+
     private boolean tableExists(String tableName) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "select count(*) > 0 from information_schema.tables "
@@ -73,5 +87,15 @@ class SyncSchemaTests {
                         + "and lower(constraint_type) = 'foreign key'",
                 Boolean.class,
                 tableName);
+    }
+
+    private String checkClause(String tableName, String constraintName) {
+        return jdbcTemplate.queryForObject(
+                "select cc.check_clause from information_schema.check_constraints cc "
+                        + "join information_schema.table_constraints tc "
+                        + "on tc.constraint_schema = cc.constraint_schema and tc.constraint_name = cc.constraint_name "
+                        + "where lower(tc.table_schema) = 'public' and lower(tc.table_name) = ? "
+                        + "and lower(tc.constraint_name) = ?",
+                String.class, tableName, constraintName);
     }
 }

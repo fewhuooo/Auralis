@@ -2,6 +2,7 @@ import type { components } from '@/api/generated/schema'
 
 export type SyncResourceType = components['schemas']['MutationRequest']['resourceType']
 export type SyncMutationType = components['schemas']['MutationRequest']['mutationType']
+export type SyncChangeMutationType = components['schemas']['ChangeResponse']['mutationType']
 export type SyncMutationDecision = NonNullable<components['schemas']['MutationResponse']['decision']>
 
 export type SyncMutationRequest = components['schemas']['MutationRequest']
@@ -15,7 +16,7 @@ export interface SyncChange {
   cursor: string | null
   resourceType: SyncResourceType
   resourceId: string
-  mutationType: SyncMutationType
+  mutationType: SyncChangeMutationType
   version: number
   deletedAt: string | null
   payload: unknown

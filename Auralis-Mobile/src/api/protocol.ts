@@ -1,3 +1,5 @@
+import { formatAiQuotaMessage, formatRetrySuffix, isAiQuotaError, parseRetryAfter } from '../utils/aiUsageGuardHelper.ts'
+
 export interface ApiFieldError {
   field: string
   message: string
@@ -14,6 +16,8 @@ export interface ProblemDetails {
   traceId?: string
   fieldErrors: ApiFieldError[]
   current?: unknown
+  retryAfterSeconds?: number
+  resetAt?: string
 }
 
 export class ApiProblemError extends Error {
@@ -21,6 +25,8 @@ export class ApiProblemError extends Error {
   readonly status: number
   readonly code?: string
   readonly fieldErrors: ApiFieldError[]
+  readonly retryAfterSeconds?: number
+  readonly resetAt?: string
 
   constructor(problem: ProblemDetails) {
     super(problem.detail || problem.title)
@@ -29,6 +35,8 @@ export class ApiProblemError extends Error {
     this.status = problem.status
     this.code = problem.code
     this.fieldErrors = problem.fieldErrors
+    this.retryAfterSeconds = problem.retryAfterSeconds
+    this.resetAt = problem.resetAt
   }
 }
 
@@ -39,8 +47,17 @@ function asRecord(value: unknown): Record<string, unknown> {
 export function parseProblemDetails(value: unknown, fallbackStatus = 500): ProblemDetails {
   const body = asRecord(value)
   const status = typeof body.status === 'number' ? body.status : fallbackStatus
-  const title = typeof body.title === 'string' && body.title ? body.title : 'Request failed'
-  const detail = typeof body.detail === 'string' && body.detail ? body.detail : title
+  const code = typeof body.code === 'string' ? body.code : undefined
+  const retryAfterSeconds = parseRetryAfter(body.retryAfterSeconds)
+  const resetAt = typeof body.resetAt === 'string' && !Number.isNaN(Date.parse(body.resetAt))
+    ? body.resetAt
+    : undefined
+  const rawTitle = typeof body.title === 'string' && body.title ? body.title : 'Request failed'
+  const rawDetail = typeof body.detail === 'string' && body.detail ? body.detail : rawTitle
+  const title = code && isAiQuotaError(code)
+    ? `${formatAiQuotaMessage(code)}${formatRetrySuffix(retryAfterSeconds, resetAt)}`
+    : rawTitle
+  const detail = code && isAiQuotaError(code) ? title : rawDetail
   const rawFieldErrors = Array.isArray(body.fieldErrors) ? body.fieldErrors : []
   const fieldErrors = rawFieldErrors.flatMap((entry) => {
     const item = asRecord(entry)
@@ -53,10 +70,12 @@ export function parseProblemDetails(value: unknown, fallbackStatus = 500): Probl
     status,
     detail,
     instance: typeof body.instance === 'string' ? body.instance : undefined,
-    code: typeof body.code === 'string' ? body.code : undefined,
+    code,
     traceId: typeof body.traceId === 'string' ? body.traceId : undefined,
     fieldErrors,
     current: body.current,
+    retryAfterSeconds,
+    resetAt,
   }
 }
 
@@ -105,3 +124,5 @@ export function dedupeEventKey(event: {
     .filter((part) => part !== null && part !== undefined && part !== '')
     .join(':')
 }
+
+

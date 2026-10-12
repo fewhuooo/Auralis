@@ -42,6 +42,7 @@ interface SourceDocumentScheduler {
 interface FileOverviewGenerator {
   generateReadyFileOverview(sourceId: string, ingestionRevision: string, trigger: FileOverviewTrigger): Promise<OverviewRegenerationResult>
   discardFileOverview(sourceId: string): Promise<void>
+  invalidateSourceRevision(sourceId: string, ingestionRevision: string | null): void
   restoreFileOverview(sourceId: string): Promise<boolean>
 }
 
@@ -114,6 +115,13 @@ export const useSourceStore = defineStore('source', () => {
 
   function replaceSources(models: SourceFileModel[], subjectIdToFocus?: string): void {
     const sorted = sortSources(models)
+    const nextRevisions = new Map(sorted.map((source) => [source.id, source.ingestionRevision ?? null]))
+    for (const previous of sources.value) {
+      const nextRevision = nextRevisions.get(previous.id)
+      if (previous.ingestionRevision !== nextRevision) {
+        fileOverviewGenerator?.invalidateSourceRevision(previous.id, nextRevision ?? null)
+      }
+    }
     sources.value = sorted
     if (subjectIdToFocus !== undefined) activeSubjectId.value = subjectIdToFocus
     const focusId = activeSubjectId.value

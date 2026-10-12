@@ -100,12 +100,6 @@ const {
 } = await import('../src/api/useRelationApi.ts');
 const {
   useReviewApi,
-  getDueReviews,
-  getReviewQueue,
-  recordEvent,
-  recordReviewEvent,
-  getHistory,
-  getReviewHistory,
 } = await import('../src/api/useReviewApi.ts');
 const {
   useStatsApi,
@@ -133,6 +127,43 @@ const {
   streamAiMessage,
 } = await import('../src/api/aiClient.ts');
 const { default: request } = await import('../src/api/request.ts');
+const { useSyncApi } = await import('../src/api/useSyncApi.ts');
+
+test('sync push serializes schedule commands without local-only fence metadata', async () => {
+  const originalPost = request.post;
+  let posted;
+  request.post = async (_url, body) => {
+    posted = body;
+    return { results: [], serverCursor: null };
+  };
+  try {
+    await useSyncApi.pushChanges({
+      serverDeviceId: 'device-1',
+      mutations: [{
+        clientMutationId: 'schedule-1', userId: 'user-1', resourceType: 'TASK', resourceId: 'task-1',
+        mutationType: 'SCHEDULE_INSERTION', baseVersion: 3, status: 'pending', createdAt: '2026-10-12T00:00:00Z',
+        payload: { taskId: 'task-1', scheduledAt: '2026-10-12T09:00:00Z', _localAffectedTaskIds: ['task-1', 'task-2'] },
+      }],
+    });
+
+    assert.equal(posted.mutations[0].mutationType, 'SCHEDULE_INSERTION');
+    assert.deepEqual(posted.mutations[0].payload, { taskId: 'task-1', scheduledAt: '2026-10-12T09:00:00Z' });
+  } finally {
+    request.post = originalPost;
+  }
+});
+
+test('sync pull rejects schedule command types because they are inbound-only', async () => {
+  const originalGet = request.get;
+  request.get = async () => ({
+    changes: [{ cursor: '1', resourceType: 'TASK', resourceId: 'task-1', mutationType: 'SCHEDULE_SWAP' }],
+  });
+  try {
+    await assert.rejects(useSyncApi.pullChanges(), /invalid resource identity or mutationType/);
+  } finally {
+    request.get = originalGet;
+  }
+});
 
 
 test('parses RFC 9457 Problem Details with field-level validation details', () => {
@@ -1174,54 +1205,12 @@ test('Relation API routes and parameters adhere to OpenAPI direct DTO contract',
   }
 });
 
-test('Review API routes and parameters adhere to OpenAPI direct DTO contract', async () => {
-  const calls = [];
-  const origGet = request.get;
-  const origPost = request.post;
-
-  try {
-    request.get = async (url, config) => {
-      calls.push({ method: 'GET', url, config });
-      if (url === '/api/reviews/due') {
-        return [{ id: 'rs-1', knowledgeBlockId: 'kb-1', difficulty: 0.3, stability: 2.5 }];
-      }
-      return [{ id: 'rev-1', knowledgeBlockId: 'kb-1', rating: 'GOOD' }];
-    };
-    request.post = async (url, data, config) => {
-      calls.push({ method: 'POST', url, data, config });
-      return { event: { id: 'rev-1' }, state: { id: 'rs-1' } };
-    };
-
-    // getReviewQueue
-    const queue = await getReviewQueue({ at: '2026-08-20T00:00:00Z', limit: 25 });
-    assert.equal(calls[0].method, 'GET');
-    assert.equal(calls[0].url, '/api/reviews/due');
-    assert.deepEqual(calls[0].config?.params, { at: '2026-08-20T00:00:00Z', limit: 25 });
-    assert.equal(queue.length, 1);
-
-    // recordReviewEvent
-    const recorded = await recordReviewEvent({
-      clientEventId: 'ev-uuid-1',
-      knowledgeBlockId: 'kb-1',
-      rating: 'GOOD',
-      reviewedAt: '2026-08-20T00:00:00Z',
-      durationSeconds: 15,
-      baseVersion: 0,
-    });
-    assert.equal(calls[1].method, 'POST');
-    assert.equal(calls[1].url, '/api/reviews/events');
-    assert.equal(calls[1].data?.rating, 'GOOD');
-    assert.equal(recorded.state?.id, 'rs-1');
-
-    // getReviewHistory
-     const history = await getReviewHistory({ knowledgeBlockId: 'kb-1' });
-    assert.equal(calls[2].method, 'GET');
-    assert.equal(calls[2].url, '/api/reviews/history');
-     assert.deepEqual(calls[2].config?.params, { knowledgeBlockId: 'kb-1' });
-    assert.equal(history.length, 1);
-  } finally {
-    request.get = origGet;
-    request.post = origPost;
+test('Review API removes the legacy due, event, and history wrappers', () => {
+  assert.equal(typeof useReviewApi.getSubjectStates, 'function');
+  assert.equal(typeof useReviewApi.selectReview, 'function');
+  assert.equal(typeof useReviewApi.getLifecycleHistory, 'function');
+  for (const method of ['getDueReviews', 'getReviewQueue', 'recordEvent', 'recordReviewEvent', 'getHistory', 'getReviewHistory']) {
+    assert.equal(method in useReviewApi, false, `${method} must be removed`);
   }
 });
 

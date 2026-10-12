@@ -1,5 +1,6 @@
 package com.auralis.app.ai.internal.security;
 
+import com.auralis.app.ai.OverviewCancellation;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Consumer;
@@ -23,6 +24,18 @@ public interface ProviderHttpTransport {
             long connectTimeoutMillis,
             long responseTimeoutMillis) throws IOException {
         return post(endpoint, path, apiKey, requestBody);
+    }
+
+    default byte[] post(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            byte[] requestBody,
+            long connectTimeoutMillis,
+            long responseTimeoutMillis,
+            OverviewCancellation cancellation) throws IOException {
+        if (cancellation != null && cancellation.isCancelled()) throw new IOException("Provider call was cancelled");
+        return post(endpoint, path, apiKey, requestBody, connectTimeoutMillis, responseTimeoutMillis);
     }
 
     default void postStream(

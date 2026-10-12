@@ -96,7 +96,7 @@ test('runtime discovers processing Sources once, shares one bounded sync cycle, 
     runner: null,
     repository: { list: async () => [] },
     scheduler: { resume: async (ids) => { resumeIds.push(ids) } },
-    overviewGeneration: { resumePending: async () => {} },
+    overviewGeneration: { resumePending: async () => {}, cancelAll() {} },
   }
 
   await Promise.all([runtime.resumePending(), runtime.resumePending()])
@@ -136,7 +136,7 @@ test('resumePending does not wait for overview generation before Source reconcil
     runner: null,
     repository: { list: async () => [] },
     scheduler: { resume: async () => {} },
-    overviewGeneration: { resumePending: async () => overviewPending },
+    overviewGeneration: { resumePending: async () => overviewPending, cancelAll() {} },
   }
 
   const pending = runtime.resumePending()
@@ -179,7 +179,7 @@ test('runtime stop cancels a pending reconciliation timer and prevents later syn
     runner: null,
     repository: { list: async () => [] },
     scheduler: { resume: async () => {} },
-    overviewGeneration: { resumePending: async () => {} },
+    overviewGeneration: { resumePending: async () => {}, cancelAll() {} },
   }
   await runtime.resumePending()
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -217,7 +217,7 @@ test('runtime scope change prevents an old reconciliation cycle from syncing aga
     runner: null,
     repository: { list: async () => [] },
     scheduler: { resume: async () => {} },
-    overviewGeneration: { resumePending: async () => {} },
+    overviewGeneration: { resumePending: async () => {}, cancelAll() {} },
   }
 
   await runtime.resumePending()
@@ -256,7 +256,7 @@ test('resumePending does not start reconciliation after stop during an in-flight
     runner: null,
     repository: { list: async () => new Promise((resolve) => { resolveList = resolve }) },
     scheduler: { resume: async () => { schedulerCalls += 1 } },
-    overviewGeneration: { resumePending: async () => {} },
+    overviewGeneration: { resumePending: async () => {}, cancelAll() {} },
   }
 
   const pending = runtime.resumePending()

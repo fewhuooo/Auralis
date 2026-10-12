@@ -1,7 +1,9 @@
+import { validateAiUsage, formatAiQuotaMessage, parseRetryAfter, formatRetrySuffix } from '../utils/aiUsageGuardHelper.ts'
 import type { components } from './generated/schema'
 import { aiApi } from './aiApi'
 import { createSseDecoder } from './sse'
 import { ApiProblemError, parseProblemDetails } from './protocol'
+import mobileRequest from './request'
 import { getRuntimeConfig } from '@/config/runtime'
 import { useAuthStore } from '@/store/useAuthStore'
 import { uuidv7 } from '@/utils/uuid'
@@ -17,12 +19,30 @@ export interface AiConfig {
   hasApiKey: boolean
 }
 
+export interface AiQuotaInfo {
+  limitTokens: number
+  chargedTokens: number
+  reservedTokens: number
+  remainingTokens: number
+  resetAt: string
+}
+
+export interface AiUsageView {
+  hourly: AiQuotaInfo
+  daily: AiQuotaInfo
+}
+
 let cachedConfig: AiConfig = {
   provider: 'OPENAI_COMPATIBLE',
   baseUrl: '',
   model: '',
   apiKey: '',
   hasApiKey: false,
+}
+
+export async function getAiUsage(): Promise<AiUsageView> {
+  const response = await mobileRequest.get<unknown>('/api/ai/usage')
+  return validateAiUsage(response)
 }
 
 export const getAiConfig = () => ({ ...cachedConfig })
@@ -90,9 +110,16 @@ async function streamMessage(
         }
       }
       if (event.event === 'message.error' && !settled) {
-        const value = event.data as { message?: string; detail?: string }
+        const value = event.data as { message?: string; detail?: string; code?: string; retryAfterSeconds?: number; resetAt?: string }
         settled = true
-        reject(new Error(value?.message || value?.detail || 'AI stream failed'))
+        reject(new ApiProblemError(parseProblemDetails({
+          status: 500,
+          title: value?.message || 'AI stream failed',
+          detail: value?.detail || value?.message || '',
+          code: value?.code,
+          retryAfterSeconds: value?.retryAfterSeconds,
+          resetAt: value?.resetAt,
+        }, 500)))
       }
     })
     const task = uni.request({
@@ -118,7 +145,30 @@ async function streamMessage(
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
           settled = true
-          reject(new ApiProblemError(parseProblemDetails(response.data, response.statusCode)))
+          const problem = parseProblemDetails(response.data, response.statusCode)
+          
+          const quotaTitle = formatAiQuotaMessage(problem.code)
+          let title = quotaTitle === 'AI 请求失败' ? (problem.title || 'AI stream failed') : quotaTitle
+          
+          let parsedRetryAfter = parseRetryAfter(problem.retryAfterSeconds);
+          if (parsedRetryAfter === undefined && response.header) {
+              const headers = response.header as Record<string, string>
+              const retryAfterHeader = Object.keys(headers).find(k => k.toLowerCase() === 'retry-after')
+              if (retryAfterHeader) {
+                  parsedRetryAfter = parseRetryAfter(headers[retryAfterHeader])
+              }
+          }
+          if (quotaTitle !== 'AI 请求失败') {
+            title += formatRetrySuffix(parsedRetryAfter, problem.resetAt)
+            problem.title = title
+            problem.detail = title
+          }
+          problem.retryAfterSeconds = parsedRetryAfter
+          
+          if (['AI_REQUEST_BUDGET_EXCEEDED', 'AI_TASK_BUDGET_EXCEEDED', 'AI_CONCURRENCY_LIMIT', 'AI_HOURLY_QUOTA_EXCEEDED', 'AI_DAILY_QUOTA_EXCEEDED', 'AI_GLOBAL_QUOTA_EXCEEDED'].includes(problem.code || '')) {
+            problem.detail = problem.title
+          }
+          reject(new ApiProblemError(problem))
           return
         }
         if (!receivedChunk) sse.push(decodeChunk(response.data, textDecoder))
@@ -180,3 +230,7 @@ export async function chatWithAI(
     clientRequestId: uuidv7(),
   }, onMessage)
 }
+
+
+
+

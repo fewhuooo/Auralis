@@ -163,7 +163,7 @@ public class TaskService {
      * acquired in a stable order, so a competing exchange cannot expose a
      * half-completed schedule to callers.
      */
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public ScheduleSwapResult swapSchedules(
             UUID userId,
             UUID sourceTaskId,
@@ -235,7 +235,7 @@ public class TaskService {
         return new ScheduleSwapResult(sourceView, targetView);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public List<TaskView> insertSchedule(
             UUID userId,
             UUID taskId,
@@ -246,7 +246,7 @@ public class TaskService {
         return insertSchedule(userId, taskId, baseVersion, requestedAt, windowStartAt, windowLastStartAt, null);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = DomainException.class)
     public List<TaskView> insertSchedule(
             UUID userId,
             UUID taskId,
@@ -347,6 +347,7 @@ public class TaskService {
 
         Instant previousEnd = null;
         List<TaskEntity> changed = new ArrayList<>();
+        java.util.Map<UUID, Instant> proposedStarts = new java.util.LinkedHashMap<>();
         for (TaskEntity task : ordered) {
             if (task.getStatus() == TaskStatus.CANCELLED) {
                 continue;
@@ -363,8 +364,8 @@ public class TaskService {
                 throw new DomainException("VALIDATION_FAILED", "Rescheduled tasks exceed the available window");
             }
             if (!actualStart.equals(task.getScheduledAt())) {
-                task.reschedule(actualStart);
                 changed.add(task);
+                proposedStarts.put(task.getId(), actualStart);
             }
             previousEnd = actualStart.plus(Duration.ofMinutes(effectiveDurationMinutes(task.getDurationMinutes())));
         }
@@ -373,21 +374,58 @@ public class TaskService {
             return List.of();
         }
         validateScheduleIntervals(userId, changed.stream()
-                .map(task -> new ScheduleCandidate(task.getScheduledAt(), task.getDueAt(),
+                .map(task -> new ScheduleCandidate(proposedStarts.get(task.getId()), task.getDueAt(),
                         task.getDurationMinutes(), task.getStatus()))
                 .toList(), changed.stream().map(TaskEntity::getId).collect(java.util.stream.Collectors.toSet()));
         validateScheduleDeadlines(changed.stream()
-                .map(task -> new ScheduleCandidate(task.getScheduledAt(), task.getDueAt(),
+                .map(task -> new ScheduleCandidate(proposedStarts.get(task.getId()), task.getDueAt(),
                         task.getDurationMinutes(), task.getStatus()))
                 .toList());
 
         List<TaskView> results = new ArrayList<>(changed.size());
         for (TaskEntity task : changed) {
+            task.reschedule(proposedStarts.get(task.getId()));
             results.add(view(taskRepository.saveAndFlush(task)));
         }
         results.sort(Comparator.comparing(TaskView::scheduledAt).thenComparing(TaskView::id));
         results.forEach(result -> publishChange(userId, result, "UPDATE"));
         return List.copyOf(results);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaskView> currentInsertionSchedule(
+            UUID userId, UUID taskId, Instant windowStartAt, Instant windowLastStartAt) {
+        List<TaskEntity> active = taskRepository
+                .findAllByUserIdAndDeletedAtIsNullAndScheduledAtIsNotNullOrderByIdAsc(userId);
+        List<TaskView> result = new ArrayList<>();
+        if (windowStartAt != null && windowLastStartAt != null) {
+            active.stream()
+                    .filter(task -> !task.getScheduledAt().isBefore(windowStartAt)
+                            && !task.getScheduledAt().isAfter(windowLastStartAt))
+                    .map(this::view)
+                    .forEach(result::add);
+        }
+        taskRepository.findByIdAndUserIdAndDeletedAtIsNull(taskId, userId)
+                .map(this::view)
+                .filter(task -> result.stream().noneMatch(existing -> existing.id().equals(task.id())))
+                .ifPresent(result::add);
+        result.sort(Comparator.comparing(TaskView::scheduledAt,
+                Comparator.nullsLast(Comparator.naturalOrder())).thenComparing(TaskView::id));
+        return List.copyOf(result);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TaskView> currentSwapSchedule(UUID userId, UUID sourceTaskId, UUID targetTaskId) {
+        List<TaskView> result = new ArrayList<>();
+        if (sourceTaskId != null) {
+            taskRepository.findByIdAndUserIdAndDeletedAtIsNull(sourceTaskId, userId)
+                    .map(this::view).ifPresent(result::add);
+        }
+        if (targetTaskId != null && !targetTaskId.equals(sourceTaskId)) {
+            taskRepository.findByIdAndUserIdAndDeletedAtIsNull(targetTaskId, userId)
+                    .map(this::view).ifPresent(result::add);
+        }
+        return List.copyOf(result);
     }
 
     private Instant ceilToSlot(Instant instant, Instant windowStartAt) {

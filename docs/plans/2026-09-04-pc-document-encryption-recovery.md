@@ -8,12 +8,18 @@
 
 **Tech Stack:** Vue 3、TypeScript、Node `node:test`（`--experimental-strip-types`）、Tauri/Rust 既有安全边界。
 
+## 2026-10-10 已确认的后续产品决策
+
+本计划原定“可续传 cache 缺少原密钥时保留恢复错误”描述的是当前 fail-closed 行为。最新产品决策要求：keyring 明确确认密钥不存在时，创建新密钥、废弃该任务的旧加密 cache/receipt/续传进度，并从可取得的原始文件重新处理上传；没有可用原始输入时提示用户重新选择文件。新密钥不得尝试解密旧密文。keyring 访问被拒或其他错误仍报告原错误，不自动轮换密钥。
+
+该行为尚未实现；完成时应补充旧 cache 不会被读取、失效检查点不会重新进入旧续传、原始输入不可用时提示明确，以及非缺失类 keyring 错误不轮换的自动回归和 Windows Tauri/真实 Server 验收。现有下方 Task 1/2 记录的是先前恢复边界工作，不得据此把上述新决策写成已实现。
+
 ## Global Constraints
 
 - 主密钥仍存放在 OS keyring `auralis/master_key`，不写入 SQLite、localStorage 或日志。
 - `READY`、`FAILED_LOCAL`、`FAILED_SERVER` 终态任务的 receipt 不得阻塞首次初始化。
-- 有 `payloadCacheId` 或 `payloadReceipt` 的 `PACKAGING`、`UPLOADING`、`SERVER_VALIDATING`、`SERVER_INDEXING`、`PAUSED_NETWORK` 任务仍必须报告 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`。
-- 读取、上传或删除既有 cache 必须继续使用已存在的主密钥；不得为该路径生成替代密钥。
+- 当前实现对有 `payloadCacheId` 或 `payloadReceipt` 的 `PACKAGING`、`UPLOADING`、`SERVER_VALIDATING`、`SERVER_INDEXING`、`PAUSED_NETWORK` 任务仍报告 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`；这不是 2026-10-10 决策的目标行为。
+- 读取既有 cache 必须使用创建它的原密钥；keyring 明确确认该密钥丢失后，废弃旧 cache/receipt/续传状态并新建 package，不得用新密钥读取旧 cache。
 - 不更改 API、数据库 schema、Source 同步契约或已存在的用户工作树改动。
 
 ---

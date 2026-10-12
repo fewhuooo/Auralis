@@ -5,6 +5,7 @@ import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.ai.retrieval.SourceChunkService;
 import com.auralis.app.source.SourceService;
+import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +14,7 @@ import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Map;
 
 @Service
 public class IngestionCompletionService {
@@ -65,6 +67,51 @@ public class IngestionCompletionService {
     }
 
     @Transactional
+    public Map<Integer, List<Double>> loadCheckpoint(
+            IngestionClaim claim, java.util.UUID sourceRevision, List<TextChunk> chunks) {
+        boolean currentRevision = sourceService.lockIngestionRevision(
+                claim.userId(), claim.sourceId(), sourceRevision);
+        Optional<IngestionJobEntity> locked = lockOwnedClaim(claim);
+        if (!currentRevision || locked.isEmpty() || !jobRevisionMatches(locked.get(), sourceRevision)) {
+            throw new DomainException(STALE_CODE, STALE_DETAIL);
+        }
+        return chunkService.loadCheckpoint(claim.userId(), claim.sourceId(), claim.generation(), chunks);
+    }
+
+    @Transactional
+    public boolean stageCheckpoint(
+            IngestionClaim claim, java.util.UUID sourceRevision, List<TextChunk> chunks,
+            List<List<Double>> vectors) {
+        boolean currentRevision = sourceService.lockIngestionRevision(
+                claim.userId(), claim.sourceId(), sourceRevision);
+        Optional<IngestionJobEntity> locked = lockOwnedClaim(claim);
+        if (!currentRevision || locked.isEmpty() || !jobRevisionMatches(locked.get(), sourceRevision)) {
+            return false;
+        }
+        chunkService.stageCheckpoint(claim.userId(), claim.sourceId(), claim.generation(), chunks, vectors);
+        return true;
+    }
+
+    @Transactional
+    public boolean defer(
+            IngestionClaim claim, java.util.UUID sourceRevision, Instant retryAt, String errorCode) {
+        boolean currentRevision = sourceService.lockIngestionRevision(
+                claim.userId(), claim.sourceId(), sourceRevision);
+        Optional<IngestionJobEntity> locked = lockOwnedClaim(claim);
+        if (!currentRevision || locked.isEmpty() || !jobRevisionMatches(locked.get(), sourceRevision)) {
+            return false;
+        }
+        IngestionJobEntity job = locked.get();
+        if (!sourceService.markPendingIfRevision(claim.userId(), claim.sourceId(), sourceRevision)) {
+            failStale(job, clock.instant());
+            return false;
+        }
+        job.deferUntil(clock.instant(), retryAt, errorCode);
+        jobRepository.saveAndFlush(job);
+        return true;
+    }
+
+    @Transactional
     public boolean fail(
             IngestionClaim claim,
             java.util.UUID sourceRevision,
@@ -83,7 +130,7 @@ public class IngestionCompletionService {
             failStale(job, now);
             return false;
         }
-        if (job.getAttemptCount() < maxAttempts) {
+        if (job.getFailureCount() + 1 < maxAttempts) {
             if (!sourceService.markPendingIfRevision(claim.userId(), claim.sourceId(), sourceRevision)) {
                 failStale(job, now);
                 return false;
@@ -95,7 +142,7 @@ public class IngestionCompletionService {
                 failStale(job, now);
                 return false;
             }
-            job.markFailed(now, errorCode, errorDetail);
+            job.markFinalFailure(now, errorCode, errorDetail);
         }
         jobRepository.saveAndFlush(job);
         return true;
@@ -114,7 +161,7 @@ public class IngestionCompletionService {
         IngestionJobEntity job = locked.get();
         if (!sameIdentity(exhaustedJob, job)
                 || job.getAttemptCount() != exhaustedJob.getAttemptCount()
-                || job.getAttemptCount() < maxAttempts
+                || job.getFailureCount() < maxAttempts
                 || !isClaimable(job, clock.instant())) {
             return false;
         }

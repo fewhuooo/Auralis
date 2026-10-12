@@ -161,8 +161,7 @@
 
           <!-- 账号快捷操作 -->
           <div class="account-card-actions">
-            <button class="account-btn danger" @click="handleLogout">
-              退出登录
+            <button class="account-btn danger" @click="handleLogout">退出登录
             </button>
           </div>
         </div>
@@ -171,8 +170,12 @@
       <!-- ===== RIGHT PANEL: 分项设置 ===== -->
       <main class="studio-right">
         <div class="settings-header">
+          <div class="settings-header-badge">
+            <span class="badge-dot"></span>
+            <span>SYSTEM PREFERENCES</span>
+          </div>
           <h1 class="settings-title">个人偏好与设置</h1>
-          <p class="settings-desc">管理你的账户偏好、AI 模型代理与多端同步策略</p>
+          <p class="settings-desc">个性化设置与多设备协同偏好</p>
         </div>
 
         <!-- Settings Groups -->
@@ -243,28 +246,115 @@
           </div>
         </div>
 
+        <!-- AI Usage Guard B -->
+        <div class="settings-group ai-usage-group">
+          <div class="group-header">
+            <h3 class="group-title">AI 使用额度</h3>
+            <span class="group-header-desc">账户当前周期的 AI 调用余量</span>
+          </div>
+          
+          <div class="group-items usage-group-body">
+            <div v-if="loadingAiUsage" class="usage-loading">加载中...</div>
+            <div v-else-if="aiUsageError" class="usage-error">
+              <span>{{ aiUsageError }}</span>
+              <button class="action-btn secondary" @click="fetchAiUsage">重试</button>
+            </div>
+            <div v-else-if="aiUsage" class="usage-content">
+              <!-- Hourly -->
+              <div class="usage-card">
+                <div class="usage-card-header">
+                  <div class="usage-header-left">
+                    <span class="usage-plan-name">每小时额度 (Hourly)</span>
+                    <span class="usage-percent-badge" :class="{ 'is-low': hourlyUsagePercent < 20 }">剩余 {{ hourlyUsagePercent }}%</span>
+                  </div>
+                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.hourly.resetAt).toLocaleTimeString() }}</span>
+                </div>
+                <!-- 进度条 -->
+                <div class="usage-progress-bar-wrap">
+                  <div class="usage-progress-bar-fill" :style="{ width: hourlyUsagePercent + '%' }" :class="{ 'is-low': hourlyUsagePercent < 20 }"></div>
+                </div>
+                <div class="usage-grid">
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">总额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.hourly.limitTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">剩余额度</span>
+                    <span class="usage-stat-val accent">{{ aiUsage.hourly.remainingTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" >
+                    <span class="usage-stat-label">已用额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.hourly.chargedTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" >
+                    <span class="usage-stat-label">预留额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.hourly.reservedTokens }} token</span>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Daily -->
+              <div class="usage-card">
+                <div class="usage-card-header">
+                  <div class="usage-header-left">
+                    <span class="usage-plan-name">每日额度 (Daily)</span>
+                    <span class="usage-percent-badge" :class="{ 'is-low': dailyUsagePercent < 20 }">剩余 {{ dailyUsagePercent }}%</span>
+                  </div>
+                  <span class="usage-reset-tag">重置时间: {{ new Date(aiUsage.daily.resetAt).toLocaleString() }}</span>
+                </div>
+                <!-- 进度条 -->
+                <div class="usage-progress-bar-wrap">
+                  <div class="usage-progress-bar-fill" :style="{ width: dailyUsagePercent + '%' }" :class="{ 'is-low': dailyUsagePercent < 20 }"></div>
+                </div>
+                <div class="usage-grid">
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">总额度</span>
+                    <span class="usage-stat-val">{{ aiUsage.daily.limitTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box">
+                    <span class="usage-stat-label">剩余额度</span>
+                    <span class="usage-stat-val accent">{{ aiUsage.daily.remainingTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" title="缺少实际 usage 时按保守估算">
+                    <span class="usage-stat-label">已结算（估算）</span>
+                    <span class="usage-stat-val">{{ aiUsage.daily.chargedTokens }} token</span>
+                  </div>
+                  <div class="usage-stat-box" title="在途预留为估算值，不代表最终实际用量">
+                    <span class="usage-stat-label">在途预留（估算）</span>
+                    <span class="usage-stat-val">{{ aiUsage.daily.reservedTokens }} token</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="usage-actions">
+                <button class="action-btn secondary" @click="fetchAiUsage">刷新</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- AI BYOK Settings -->
         <div class="settings-group byok-group">
           <div class="group-header">
             <h3 class="group-title">AI 模型与服务</h3>
-            <span class="group-header-desc">自定义大模型供应商代理、模型选择与云端加密托管</span>
+            <span class="group-header-desc">配置自定义 AI 模型服务与密钥 (选填)</span>
           </div>
           <div class="byok-intro">
             <div class="row-info">
-              <span class="row-label">自定义模型代理与密钥</span>
-              <span class="row-desc">配置会直接安全加密保存至服务端。此设备本地不保存明文密钥，亦不在普通请求中附加密钥。</span>
+              <span class="row-label">自定义 AI 服务商</span>
+              <span class="row-desc">密钥均安全加密保存，仅在发起 AI 请求时使用</span>
             </div>
             <div class="byok-status-pill" :class="{ 'is-active': currentProviderHasKey }">
               <span class="status-dot"></span>
-              <span>{{ currentProviderHasKey ? '已配置云端密钥' : '未配置密钥' }}</span>
+              <span>{{ currentProviderHasKey ? '已配置密钥' : '未配置密钥' }}</span>
             </div>
           </div>
 
           <div class="group-items">
             <div class="settings-row byok-field-row">
               <div class="row-info">
-                <span class="row-label">服务商 (Provider)</span>
-                <span class="row-desc">输入服务商名称；DeepSeek 和 SiliconFlow 会自动识别，其余按 OpenAI 兼容接口连接</span>
+                <span class="row-label">AI 服务商</span>
+                <span class="row-desc">支持 DeepSeek、硅基流动或 OpenAI 兼容服务</span>
               </div>
               <div class="row-control byok-control-wrap">
                 <input
@@ -273,13 +363,26 @@
                   class="settings-input byok-input"
                   placeholder="如 DEEPSEEK / SILICONFLOW / OpenAI Compatible 服务商"
                 />
+                <div class="quick-providers-bar">
+                  <span class="quick-preset-label">快速预设:</span>
+                  <button
+                    v-for="qp in quickProviders"
+                    :key="qp.provider"
+                    type="button"
+                    class="quick-preset-chip"
+                    :class="{ 'is-active': normalizeProvider(customProvider) === qp.provider }"
+                    @click="applyQuickProvider(qp)"
+                  >
+                    {{ qp.name }}
+                  </button>
+                </div>
               </div>
             </div>
 
             <div class="settings-row byok-field-row">
               <div class="row-info">
                 <span class="row-label">对话模型 (Chat Model)</span>
-                <span class="row-desc">填写对话模型名称；保存配置后可自动检测其他候选模型</span>
+                <span class="row-desc">如 deepseek-chat、gpt-4o 等</span>
               </div>
               <div class="row-control byok-control-wrap">
                 <div class="byok-model-detect-group">
@@ -319,7 +422,7 @@
             <div class="settings-row byok-field-row">
               <div class="row-info">
                 <span class="row-label">Base URL</span>
-                <span class="row-desc">API 代理端点地址</span>
+                <span class="row-desc">接口请求地址 (选填，留空使用默认服务地址)</span>
               </div>
               <div class="row-control byok-control-wrap">
                 <input
@@ -334,22 +437,33 @@
             <div class="settings-row byok-field-row">
               <div class="row-info">
                 <span class="row-label">API Key</span>
-                <span class="row-desc">服务端使用 AES-GCM 安全托管密钥</span>
+                <span class="row-desc">个人 API 密钥 (安全加密保存)</span>
               </div>
               <div class="row-control byok-control-wrap">
-                <input
-                  v-model="customApiKey"
-                  type="password"
-                  class="settings-input byok-input"
-                  :placeholder="currentProviderHasKey ? '•••••••• (已配置，留空保持原密钥)' : 'sk-...'"
-                  autocomplete="new-password"
-                />
+                <div class="api-key-input-wrapper">
+                  <input
+                    v-model="customApiKey"
+                    :type="showApiKey ? 'text' : 'password'"
+                    class="settings-input byok-input byok-key-input"
+                    :placeholder="currentProviderHasKey ? '•••••••• (已配置，留空保持原密钥)' : 'sk-...'"
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="eye-toggle-btn"
+                    :title="showApiKey ? '隐藏密钥' : '显示密钥'"
+                    @click="showApiKey = !showApiKey"
+                  >
+                    <IconEyeOff v-if="showApiKey" :size="15" />
+                    <IconEye v-else :size="15" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
           <div class="byok-action-footer">
-            <span class="byok-tip">留空 API Key 保存将仅更新模型与 Base URL</span>
+            <span class="byok-tip">未修改密钥时留空即可</span>
             <div class="byok-btn-group">
               <button
                 class="action-btn"
@@ -373,13 +487,13 @@
         <div class="settings-group privacy-group">
           <div class="group-header">
             <h3 class="group-title">数据与隐私</h3>
-            <span class="group-header-desc">集中管理用户本地数据备份、AI 处理范围与运行诊断</span>
+            <span class="group-header-desc">数据备份、缓存清理与隐私策略</span>
           </div>
           <div class="group-items">
             <div class="settings-row">
               <div class="row-info">
                 <span class="row-label">本地数据导出</span>
-                <span class="row-desc">导出当前本地知识块与任务数据为 JSON 文件，不包含原始文件</span>
+                <span class="row-desc">导出全部笔记卡片与任务排期数据为备份文件</span>
               </div>
               <div class="row-control">
                 <button class="action-btn" @click="handleExportData">
@@ -391,7 +505,7 @@
             <div class="settings-row">
               <div class="row-info">
                 <span class="row-label">清理本地缓存</span>
-                <span class="row-desc">清理已缓存的临时索引与视图缓存，不影响云端和登录状态</span>
+                <span class="row-desc">释放本地临时存储空间，不影响笔记内容与登录状态</span>
               </div>
               <div class="row-control">
                 <button class="action-btn" @click="handleClearCache">
@@ -403,7 +517,7 @@
             <div class="settings-row">
               <div class="row-info">
                 <span class="row-label">运行诊断日志</span>
-                <span class="row-desc">保存本地客户端运行与故障分析日志，便于定位同步与渲染异常</span>
+                <span class="row-desc">记录运行日志，便于排查使用问题</span>
               </div>
               <div class="row-control">
                 <button
@@ -420,10 +534,10 @@
             <div class="settings-row">
               <div class="row-info">
                 <span class="row-label">AI 数据处理说明</span>
-                <span class="row-desc">仅在用户主动发起问答或资料解析时传输请求所需的资料内容。请求经 Auralis 服务端转发给已配置的 AI Provider；实际处理方式以服务商隐私政策为准</span>
+                <span class="row-desc">仅在主动发起问答或资料解析时传输必要内容，严格保障个人数据隐私</span>
               </div>
               <div class="row-control">
-                <span class="privacy-scope-badge">经服务端转发</span>
+                <span class="privacy-scope-badge">隐私保护</span>
               </div>
             </div>
           </div>
@@ -432,12 +546,12 @@
         <!-- Auth sessions -->
         <div class="settings-group session-group">
           <div class="group-header">
-            <h3 class="group-title">登录会话管理</h3>
-            <span class="group-header-desc">多端活跃设备查看与远程撤销</span>
+            <h3 class="group-title">登录设备管理</h3>
+            <span class="group-header-desc">查看已登录的设备并可管理下线</span>
           </div>
-          <div v-if="sessionsLoading" class="session-empty">正在加载会话...</div>
+          <div v-if="sessionsLoading" class="session-empty">正在加载设备列表...</div>
           <div v-else-if="sessionsError" class="session-empty session-error">{{ sessionsError }}</div>
-          <div v-else-if="sessions.length === 0" class="session-empty">暂无可展示的登录会话</div>
+          <div v-else-if="sessions.length === 0" class="session-empty">暂无其他登录设备</div>
           <div v-else class="group-items">
             <div v-for="session in sessions" :key="session.id || session.serverDeviceId" class="settings-row session-row">
               <div class="session-row-main">
@@ -458,7 +572,7 @@
                   :disabled="revokingSessionId === session.id"
                   @click="handleRevokeSession(session)"
                 >
-                  {{ revokingSessionId === session.id ? '撤销中...' : '撤销' }}
+                  {{ revokingSessionId === session.id ? '下线中...' : '下线' }}
                 </button>
               </div>
             </div>
@@ -469,22 +583,22 @@
         <!-- Danger Zone -->
         <div class="danger-zone">
           <div class="group-header danger-header">
-            <h3 class="group-title danger-title">敏感与危险操作</h3>
+            <h3 class="group-title danger-title">数据与账户重置</h3>
             <span class="group-header-desc danger-desc">不可逆操作，请谨慎执行</span>
           </div>
           <div class="danger-row">
             <div class="row-info">
-              <span class="row-label">清除本地离线数据</span>
-              <span class="row-desc">重置本地离线数据库与草稿缓存，下次启动将从服务端重新拉取</span>
+              <span class="row-label">重置本地离线数据</span>
+              <span class="row-desc">清空本地数据并重新从云端下载完整数据</span>
             </div>
             <button class="action-btn danger" @click="handleResetOfflineData">
-              清除数据
+              重置数据
             </button>
           </div>
           <div class="danger-row">
             <div class="row-info">
               <span class="row-label">注销账户</span>
-              <span class="row-desc">永久删除所有数据，此操作不可逆</span>
+              <span class="row-desc">永久注销账号并删除所有个人笔记与设置，不可恢复</span>
             </div>
             <button class="action-btn danger" @click="handleDeleteAccount">
               注销账户
@@ -522,16 +636,21 @@ import {
   IconClock,
   IconTrendingUp,
   IconCamera,
+  IconEye,
+  IconEyeOff,
 } from '@tabler/icons-vue'
+import { isCurrentUsageRequest, nextRequestGeneration } from '@/services/aiUsageGuardHelper.ts'
 import { useAuthApi, type SessionResponse } from '@/api/useAuthApi'
 import {
   getAiSettings,
+  getAiUsage,
   updateAiSettings,
   listAiModels,
   testAiConnection,
   normalizeProvider,
   type AiSettingsCommand,
   type AiSettingsView,
+  type AiUsageView,
 } from '@/api/aiClient'
 import { useSyncStore } from '@/store/useSyncStore'
 import { useSettingsStore } from '@/store/useSettingsStore'
@@ -548,6 +667,34 @@ import DocumentProcessingCenter from '@/components/documentProcessing/DocumentPr
 import ChangePasswordDialog from '@/components/profile/ChangePasswordDialog.vue'
 
 const settingsStore = useSettingsStore()
+
+const showApiKey = ref(false)
+
+const quickProviders = [
+  { name: 'DeepSeek', provider: 'DEEPSEEK', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
+  { name: 'SiliconFlow', provider: 'SILICONFLOW', model: 'deepseek-ai/DeepSeek-V3', baseUrl: 'https://api.siliconflow.cn/v1' },
+  { name: 'OpenAI 兼容', provider: 'OPENAI_COMPATIBLE', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
+]
+
+const applyQuickProvider = (p: typeof quickProviders[0]) => {
+  customProvider.value = p.provider
+  customChatModel.value = p.model
+  customBaseUrl.value = p.baseUrl
+}
+
+const hourlyUsagePercent = computed(() => {
+  if (!aiUsage.value?.hourly?.limitTokens) return 100
+  const remaining = aiUsage.value.hourly.remainingTokens ?? 0
+  const limit = aiUsage.value.hourly.limitTokens
+  return Math.min(100, Math.max(0, Math.round((remaining / limit) * 100)))
+})
+
+const dailyUsagePercent = computed(() => {
+  if (!aiUsage.value?.daily?.limitTokens) return 100
+  const remaining = aiUsage.value.daily.remainingTokens ?? 0
+  const limit = aiUsage.value.daily.limitTokens
+  return Math.min(100, Math.max(0, Math.round((remaining / limit) * 100)))
+})
 const knowledgeStore = useKnowledgeStore()
 const statsStore = useStatsStore()
 const authStore = useAuthStore()
@@ -597,7 +744,6 @@ const loadAvatar = async () => {
       authStore.setAvatarUrl('')
     }
   } catch {
-    // 404 等未设置头像的静默展示首字母
     userAvatarUrl.value = ''
     authStore.setAvatarUrl('')
   }
@@ -635,9 +781,13 @@ const handleAvatarFileSelected = async (event: Event) => {
     return
   }
 
+  const requestedUserId = authStore.user?.id
   try {
     await useAuthApi.uploadAvatar(file)
-    await loadAvatar()
+    if (requestedUserId && authStore.user?.id === requestedUserId) {
+      await authStore.setAvatarFromBlob(file, requestedUserId)
+      void authStore.loadAvatar()
+    }
     ElNotification({
       title: '头像已更新',
       message: '个人头像已成功同步保存至云端',
@@ -657,14 +807,10 @@ const handleAvatarFileSelected = async (event: Event) => {
 }
 
 const resetAvatar = async () => {
+  const requestedUserId = authStore.user?.id
   try {
     await useAuthApi.resetAvatar()
-    if (currentAvatarBlobUrl && currentAvatarBlobUrl !== authStore.avatarUrl) {
-      URL.revokeObjectURL(currentAvatarBlobUrl)
-    }
-    currentAvatarBlobUrl = null
-    userAvatarUrl.value = ''
-    authStore.setAvatarUrl('')
+    if (requestedUserId) await authStore.clearAvatar(requestedUserId)
     ElNotification({
       title: '已重置头像',
       message: '已恢复默认首字母头像',
@@ -674,7 +820,7 @@ const resetAvatar = async () => {
   } catch (err: any) {
     ElNotification({
       title: '重置头像失败',
-      message: err?.problem?.detail || err?.message || '网络或服务端异常',
+      message: err?.problem?.detail || err?.message || '网络连接异常，请稍后重试',
       type: 'error',
       duration: 3000,
     })
@@ -837,7 +983,7 @@ const handleRevokeSession = async (session: SessionResponse) => {
   try {
     await useAuthApi.revokeSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
-    ElNotification({ title: '会话已撤销', message: '该设备的登录续期已撤销，现有访问令牌会在到期后失效。', type: 'success', duration: 3000 })
+    ElNotification({ title: '设备已下线', message: '该设备已成功下线。', type: 'success', duration: 3000 })
   } catch (error) {
     ElNotification({ title: '撤销失败', message: error instanceof Error ? error.message : '请稍后重试', type: 'error', duration: 3000 })
   } finally {
@@ -951,7 +1097,7 @@ const handleDetectModels = async () => {
     }
     ElNotification({
       title: '检测完成',
-      message: `已从服务端探测到 ${models.length} 个可用模型，点击标签即可选用`,
+      message: `已获取到 ${models.length} 个可用模型，点击即可选用`,
       type: 'success',
       duration: 3000,
     })
@@ -1076,7 +1222,7 @@ const handleSaveAiSettings = async () => {
       aiSettingsList.value.push(updated)
     }
     if (!silent) {
-      ElNotification({ title: 'AI 配置已保存', message: `服务商 [${customProvider.value}] 配置已安全托管至服务端。`, type: 'success', duration: 3000 })
+      ElNotification({ title: 'AI 配置已保存', message: `[${customProvider.value}] AI 配置已成功保存。`, type: 'success', duration: 3000 })
     }
     return updated
   } catch (error: any) {
@@ -1092,7 +1238,7 @@ const syncStore = useSyncStore()
 const syncStatusText = computed(() => {
   if (syncStore.isSyncing) return '正在与云端同步...'
   if (syncStore.lastSyncError) return `同步异常 · ${syncStore.lastSyncError}`
-  if (syncStore.resetRequired) return '需重置同步 · 等待全量拉取'
+  if (syncStore.resetRequired) return '需要重置 · 等待重新同步'
   return '已同步 · 状态正常'
 })
 
@@ -1194,38 +1340,38 @@ const settingGroups = reactive([
     title: '外观与显示',
     desc: '个性化主题外观、界面紧凑度与全局基础字号',
     items: [
-      { id: 'dark', label: '深色模式', desc: '切换应用全局视觉风格为深色模式', type: 'toggle', value: settingsStore.isDark },
-      { id: 'compact', label: '紧凑布局', desc: '收紧间隙与卡片以高密度呈现学习内容', type: 'toggle', value: settingsStore.compactLayout },
-      { id: 'lang', label: '界面语言', desc: '选择应用内交互与提示文本的主要语言', type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
-      { id: 'font_size', label: '基础字号', desc: '调整全局文字排版显示的基础文字大小', type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
+      { id: 'dark', label: '深色模式', desc: '适合夜间或弱光环境使用', type: 'toggle', value: settingsStore.isDark },
+      { id: 'compact', label: '紧凑布局', desc: '收紧界面间隙，在单屏内展示更多内容', type: 'toggle', value: settingsStore.compactLayout },
+      { id: 'lang', label: '界面语言', desc: '选择系统界面的主要显示语言', type: 'select', value: localStorage.getItem('sc_setting_lang') || '简体中文', options: ['简体中文', 'English', '日本語'] },
+      { id: 'font_size', label: '基础字号', desc: '调整界面正文字号大小', type: 'select', value: settingsStore.fontSize, options: ['12px', '14px', '16px'] },
     ] as SettingItem[]
   },
   {
     title: '提醒与自动化',
     desc: '统一配置任务提醒、专注时钟与文件解析等主动通知',
     items: [
-      { id: 'task_remind', label: '任务提醒', desc: '临近截止与排期时发送桌面通知提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
-      { id: 'focus_end', label: '专注结束提醒', desc: '番茄时钟倒计时结束时播放提示音与系统通知', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
-      { id: 'auto_overview', label: '自动生成概览', desc: '文件解析完成后自动构建知识图谱与结构导图', type: 'toggle', value: localStorage.getItem('sc_setting_auto_overview') !== 'false' },
+      { id: 'task_remind', label: '任务提醒', desc: '任务到期前发送系统提醒', type: 'toggle', value: localStorage.getItem('sc_setting_task_remind') !== 'false' },
+      { id: 'focus_end', label: '专注结束提醒', desc: '专注倒计时结束时播放提示音与通知', type: 'toggle', value: localStorage.getItem('sc_setting_focus_end') !== 'false' },
+      { id: 'auto_overview', label: '自动生成概览', desc: '资料导入完成后自动构建思维导图', type: 'toggle', value: localStorage.getItem('sc_setting_auto_overview') !== 'false' },
     ] as SettingItem[]
   },
   {
     title: '同步与数据',
     desc: '管理多设备增量同步策略、网络环境与传输状态',
     items: [
-      { id: 'sync_status', label: '同步状态', desc: '本地知识库版本与云端持久化保持一致', type: 'status', value: '已同步 · 状态正常' },
-      { id: 'auto_sync', label: '自动同步', desc: '定期将本地知识块与任务变更自动同步至云端', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
-      { id: 'wifi_only', label: '仅 Wi-Fi 同步', desc: '移动网络环境下暂停大文件与高频增量同步', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
-      { id: 'sync_now', label: '立即同步', desc: '向云端发起一次双向数据校验与增量合并', type: 'action', btnText: '立即同步', variant: 'primary' },
+      { id: 'sync_status', label: '同步状态', desc: '已与云端保持最新同步', type: 'status', value: '已同步 · 状态正常' },
+      { id: 'auto_sync', label: '自动同步', desc: '在多设备间自动同步学习数据', type: 'toggle', value: localStorage.getItem('sc_setting_auto_sync') !== 'false' },
+      { id: 'wifi_only', label: '仅 Wi-Fi 同步', desc: '使用移动网络时暂停同步，节省流量', type: 'toggle', value: localStorage.getItem('sc_setting_wifi_only') === 'true' },
+      { id: 'sync_now', label: '立即同步', desc: '立即检查并同步最新数据', type: 'action', btnText: '立即同步', variant: 'primary' },
     ] as SettingItem[]
   },
   {
     title: 'AI 功能',
     desc: '按需开启或关闭学习工作流中的各项 AI 智能辅助能力',
     items: [
-      { id: 'rag', label: 'RAG 语义搜索', desc: '使用文档语义内容与向量检索增强搜索与问答', type: 'toggle', value: localStorage.getItem('sc_setting_rag') !== 'false' },
-      { id: 'auto_tag', label: 'AI 自动标签', desc: '解析文件与知识块入库后自动提取学科及关键标签', type: 'toggle', value: localStorage.getItem('sc_setting_auto_tag') !== 'false' },
-      { id: 'auto_summary', label: 'AI 自动总结', desc: '多模态资料解析完成后自动提炼结构化摘要', type: 'toggle', value: localStorage.getItem('sc_setting_auto_summary') !== 'false' },
+      { id: 'rag', label: '智能语义搜索', desc: '根据资料实际含义检索内容，搜索更精准', type: 'toggle', value: localStorage.getItem('sc_setting_rag') !== 'false' },
+      { id: 'auto_tag', label: 'AI 自动标签', desc: '导入资料时自动分类并提炼关键标签', type: 'toggle', value: localStorage.getItem('sc_setting_auto_tag') !== 'false' },
+      { id: 'auto_summary', label: 'AI 自动总结', desc: '导入资料后自动提炼核心知识点摘要', type: 'toggle', value: localStorage.getItem('sc_setting_auto_summary') !== 'false' },
     ] as SettingItem[]
   },
 ])
@@ -1235,7 +1381,8 @@ const handleToggle = (item: SettingItem) => {
   item.value = !item.value
   switch (item.id) {
     case 'dark':
-      settingsStore.isDark = item.value
+      settingsStore.toggleDark()
+      item.value = settingsStore.isDark
       break
     case 'compact':
       settingsStore.compactLayout = item.value
@@ -1362,10 +1509,13 @@ watch(() => pomodoroStore.syncRevision, (revision, previous) => {
   if (revision > previous) void loadStats()
 })
 
+watch(() => authStore.avatarUrl, (newUrl) => {
+  userAvatarUrl.value = newUrl || ''
+})
+
 onUnmounted(() => {
   if (currentAvatarBlobUrl && currentAvatarBlobUrl !== authStore.avatarUrl) {
     URL.revokeObjectURL(currentAvatarBlobUrl)
-    currentAvatarBlobUrl = null
   }
 })
 
@@ -1392,7 +1542,7 @@ const handleLogout = async () => {
 
 const handleClearCache = async () => {
   try {
-    await ElMessageBox.confirm('将清除本地界面渲染缓存与临时会话日志，不影响离线数据、云端存储与登录状态。确认继续？', '清理本地缓存', {
+    await ElMessageBox.confirm('将清除临时渲染缓存，不影响你的笔记数据、云端存储与登录状态。确认继续？', '清理本地缓存', {
       confirmButtonText: '清除',
       cancelButtonText: '取消',
       type: 'info',
@@ -1413,7 +1563,7 @@ const handleClearCache = async () => {
 const handleResetOfflineData = async () => {
   try {
     await ElMessageBox.confirm(
-      '清除离线数据将重置本地离线存储并清空未同步的本地改动草稿。下次同步将从服务端完整拉取最新快照。确认重置？',
+      '将清空本地离线数据与未同步草稿，并重新同步云端完整数据。确认重置？',
       '清除本地离线数据',
       {
         confirmButtonText: '重置离线数据',
@@ -1432,7 +1582,7 @@ const handleResetOfflineData = async () => {
     offlineKeys.forEach((k) => localStorage.removeItem(k))
     ElNotification({
       title: '离线数据已重置',
-      message: '本地离线存储已清空，正在从服务端重新拉取最新快照...',
+      message: '本地离线数据已清空，正在重新同步云端数据...',
       type: 'warning',
       duration: 4000,
     })
@@ -1486,38 +1636,97 @@ const handleDeleteAccount = async () => {
     // User cancelled
   }
 }
+
+// === AI Usage Guard B Logic ===
+const aiUsage = ref<AiUsageView | null>(null)
+const loadingAiUsage = ref(false)
+const aiUsageError = ref<string>('')
+let currentUsageRequestGeneration = 0
+const currentUsageAccountIdentity = () => `${authStore.user?.id || ''}:${authStore.token || ''}`
+
+const fetchAiUsage = async () => {
+  if (!authStore.token) {
+    aiUsage.value = null
+    aiUsageError.value = ''
+    loadingAiUsage.value = false
+    return
+  }
+  const gen = nextRequestGeneration()
+  const requestIdentity = currentUsageAccountIdentity()
+  currentUsageRequestGeneration = gen
+  loadingAiUsage.value = true
+  aiUsageError.value = ''
+  try {
+    const res = await getAiUsage()
+    if (!isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentUsageAccountIdentity())) return
+    aiUsage.value = res
+  } catch (err: any) {
+    if (!isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentUsageAccountIdentity())) return
+    aiUsage.value = null
+    aiUsageError.value = err.message || '加载 AI 额度失败'
+  } finally {
+    if (isCurrentUsageRequest(gen, currentUsageRequestGeneration, requestIdentity, currentUsageAccountIdentity())) {
+      loadingAiUsage.value = false
+    }
+  }
+}
+
+watch([() => authStore.token, () => authStore.user?.id], () => {
+  currentUsageRequestGeneration = nextRequestGeneration()
+  aiUsage.value = null
+  aiUsageError.value = ''
+  loadingAiUsage.value = false
+  if (authStore.token) {
+    fetchAiUsage()
+  }
+}, { flush: 'sync' })
+
+onMounted(() => {
+  if (authStore.token) {
+    fetchAiUsage()
+  }
+})
+// =============================
 </script>
 
 <style scoped>
-/* ===== Layout ===== */
+/* ==========================================================================
+   Auralis Profile Studio — Awwwards 获奖级视觉设计系统与微交互体系
+   ========================================================================== */
+
+/* ===== 1. Main Studio Layout ===== */
 .profile-studio {
   display: flex;
   flex-direction: row;
   width: 100%;
   height: 100%;
   background: var(--color-bg-secondary, #EEEEEE);
-  padding: 10px;
-  gap: 10px;
+  padding: 14px 18px 18px;
+  gap: 16px;
   overflow: hidden;
   box-sizing: border-box;
 }
 
-/* ===== LEFT PANEL (30%) ===== */
+/* ===== 2. LEFT PANEL: 数据透视与身份面板 (38%) ===== */
 .studio-left {
-  flex: 3;
-  min-width: 320px;
+  flex: 3.8;
+  min-width: 380px;
+  max-width: 480px;
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
-  padding: 24px 22px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 20px;
+  box-shadow: 
+    0 10px 30px -4px rgba(35, 45, 30, 0.08), 
+    0 2px 8px -1px rgba(0, 0, 0, 0.04);
+  padding: 22px 20px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   box-sizing: border-box;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .studio-left::-webkit-scrollbar {
   display: none;
@@ -1526,33 +1735,86 @@ const handleDeleteAccount = async () => {
   flex-shrink: 0;
 }
 
-/* 1. User Profile Card */
+/* 2.1 用户基本资料卡 (User Profile Card) */
 .user-profile-card {
   display: flex;
   align-items: center;
   gap: 16px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   border-radius: 18px;
   padding: 18px 20px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.user-profile-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(35, 45, 30, 0.06);
 }
 
 .avatar-wrap {
   position: relative;
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   flex-shrink: 0;
   cursor: pointer;
   border-radius: 50%;
+  box-shadow: 
+    0 0 0 2px rgba(139, 154, 110, 0.25),
+    0 4px 14px rgba(0, 0, 0, 0.08);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+.avatar-wrap:hover {
+  transform: scale(1.04);
+  box-shadow: 
+    0 0 0 3px #8B9A6E,
+    0 6px 20px rgba(139, 154, 110, 0.35);
 }
 
 .user-avatar-img {
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   object-fit: cover;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  display: block;
+}
+
+.user-avatar {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #8B9A6E 0%, #6E8052 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 800;
+  color: #FAF7F2;
+  letter-spacing: -0.5px;
+}
+
+.user-status-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #637748;
+  border: 2px solid #FAF7F2;
+  box-shadow: 0 0 6px rgba(99, 119, 72, 0.5);
+  animation: breathe-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes breathe-glow {
+  0%, 100% {
+    box-shadow: 0 0 4px rgba(99, 119, 72, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 10px rgba(99, 119, 72, 0.8);
+    transform: scale(1.08);
+  }
 }
 
 .avatar-hover-overlay {
@@ -1560,6 +1822,7 @@ const handleDeleteAccount = async () => {
   inset: 0;
   border-radius: 50%;
   background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
   color: #FFFFFF;
   display: flex;
   align-items: center;
@@ -1568,35 +1831,8 @@ const handleDeleteAccount = async () => {
   transition: opacity 0.2s ease;
   pointer-events: none;
 }
-
 .avatar-wrap:hover .avatar-hover-overlay {
   opacity: 1;
-}
-
-.user-avatar {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #8B9A6E 0%, #768759 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  font-weight: 800;
-  color: #FAF7F2;
-  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.32);
-}
-
-.user-status-dot {
-  position: absolute;
-  bottom: 1px;
-  right: 1px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #637748;
-  border: 2px solid #FAF7F2;
-  box-shadow: 0 0 4px rgba(99, 119, 72, 0.4);
 }
 
 .user-profile-meta {
@@ -1614,72 +1850,12 @@ const handleDeleteAccount = async () => {
 }
 
 .user-name {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 750;
   color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.02em;
   margin: 0;
-}
-
-.edit-name-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: transparent;
-  border: none;
-  color: var(--text-muted, #7A7A75);
-  cursor: pointer;
-  transition: all 0.2s;
-  padding: 0;
-}
-
-.edit-name-btn:hover {
-  color: #637748;
-  background: rgba(139, 154, 110, 0.12);
-}
-
-.nickname-inline-edit {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.nickname-edit-input {
-  width: 110px;
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  border: 1px solid #8B9A6E;
-  background: #FFFFFF;
-  color: var(--text-primary, #1C1C1A);
-  outline: none;
-}
-
-.icon-btn-confirm,
-.icon-btn-cancel {
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  padding: 2px 4px;
-  color: #637748;
-  border-radius: 4px;
-}
-
-.icon-btn-confirm:hover {
-  background: rgba(139, 154, 110, 0.15);
-}
-
-.icon-btn-cancel {
-  color: var(--text-muted, #7A7A75);
-}
-
-.icon-btn-cancel:hover {
-  color: #C2413E;
-  background: rgba(217, 83, 79, 0.1);
+  line-height: 1.25;
 }
 
 .user-handle {
@@ -1689,6 +1865,7 @@ const handleDeleteAccount = async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.1px;
 }
 
 .user-badges {
@@ -1696,7 +1873,7 @@ const handleDeleteAccount = async () => {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .user-streak-pill {
@@ -1704,60 +1881,48 @@ const handleDeleteAccount = async () => {
   align-items: center;
   gap: 5px;
   background: rgba(200, 155, 109, 0.12);
-  border: 1px solid rgba(200, 155, 109, 0.25);
-  padding: 2px 8px;
+  border: 1px solid rgba(200, 155, 109, 0.28);
+  padding: 3px 9px;
   border-radius: 9999px;
   font-size: 11px;
   color: #9E6D38;
+  font-weight: 500;
+  transition: all 0.2s ease;
 }
-
+.user-streak-pill:hover {
+  background: rgba(200, 155, 109, 0.18);
+  border-color: rgba(200, 155, 109, 0.4);
+}
 .streak-icon {
   color: #C89B6D;
 }
-
 .user-streak-pill strong {
   color: #875727;
-  font-weight: 700;
+  font-weight: 750;
+  margin-left: 2px;
 }
 
 .device-pill {
   display: inline-flex;
   align-items: center;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 9999px;
   font-size: 11px;
-  background: rgba(0, 0, 0, 0.035);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--text-secondary, #4A4A45);
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
-/* Document Processing Center Integration in Left Column */
-.studio-left :deep(.processing-center) {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: 18px;
-  padding: 16px 18px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
-}
-
-.studio-left :deep(.processing-center h3) {
-  font-size: 13.5px;
-  font-weight: 700;
-}
-
-.studio-left :deep(.processing-center p) {
-  font-size: 11.5px;
-}
-
-/* 4. Study Stats Card */
+/* 2.2 核心学习指标 (Study Overview) */
 .study-stats-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
 .study-stats-header {
@@ -1768,7 +1933,7 @@ const handleDeleteAccount = async () => {
 
 .study-stats-title {
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
 }
@@ -1781,74 +1946,73 @@ const handleDeleteAccount = async () => {
 
 .stat-cell {
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: 12px;
-  padding: 10px 12px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 14px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .stat-cell:last-child:nth-child(odd) {
   grid-column: 1 / -1;
 }
-
 .stat-cell:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px);
+  border-color: rgba(139, 154, 110, 0.35);
+  box-shadow: 0 4px 14px rgba(35, 45, 30, 0.06);
 }
 
 .stat-top {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
 }
 
 .stat-icon-wrap {
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(139, 154, 110, 0.12);
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: rgba(139, 154, 110, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #637748;
   flex-shrink: 0;
 }
-
 .stat-icon {
   color: #637748;
 }
 
 .stat-label {
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 550;
   color: var(--text-muted, #7A7A75);
 }
 
 .stat-value {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 800;
   color: var(--text-primary, #1C1C1A);
-  line-height: 1.1;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
-
 .stat-value.accent {
   color: #637748;
 }
 
-/* ===== 3. Subject Distribution Card (学科分布) ===== */
+/* 2.3 学科知识分布 (Subject Distribution) */
 .subject-dist-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
 .subject-dist-header {
@@ -1859,22 +2023,33 @@ const handleDeleteAccount = async () => {
 
 .subject-dist-title {
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
+}
+
+.subject-dist-subtitle {
+  font-size: 10px;
+  font-weight: 750;
+  color: #637748;
+  background: rgba(139, 154, 110, 0.12);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  letter-spacing: 0.5px;
 }
 
 .no-data-hint {
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
   text-align: center;
-  padding: 12px 0;
+  padding: 14px 0;
 }
 
 .subject-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .subject-row {
@@ -1884,17 +2059,17 @@ const handleDeleteAccount = async () => {
 }
 
 .subject-dot {
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .subject-name {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary, #4A4A45);
-  width: 68px;
+  font-weight: 600;
+  color: var(--text-secondary, #344139);
+  width: 72px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1904,47 +2079,53 @@ const handleDeleteAccount = async () => {
 .subject-bar-bg {
   flex: 1;
   height: 6px;
-  background: rgba(0, 0, 0, 0.04);
-  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
   overflow: hidden;
 }
 
 .subject-bar-fill {
   height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-.subject-dist-subtitle {
-  font-size: 10px;
-  font-weight: 700;
-  color: #637748;
-  background: rgba(139, 154, 110, 0.12);
-  padding: 1px 7px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.2);
-  letter-spacing: 0.5px;
+  transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .subject-count-badge {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary, #1C1C1A);
-  min-width: 38px;
+  min-width: 42px;
   text-align: right;
   flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ===== Account Adjustments Section (账号与安全) ===== */
+/* 2.4 Document Processing Center Integration */
+.studio-left :deep(.processing-center) {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
+}
+.studio-left :deep(.processing-center h3) {
+  font-size: 13.5px;
+  font-weight: 750;
+}
+.studio-left :deep(.processing-center p) {
+  font-size: 11.5px;
+}
+
+/* 2.5 账号与安全凭证管理 (Account & Security) */
 .account-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
 }
 
 .account-card-header {
@@ -1961,7 +2142,7 @@ const handleDeleteAccount = async () => {
 
 .account-card-title {
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 750;
   color: var(--text-primary, #1C1C1A);
   letter-spacing: -0.2px;
 }
@@ -1971,19 +2152,20 @@ const handleDeleteAccount = async () => {
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   color: #637748;
   background: rgba(139, 154, 110, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  border: 1px solid rgba(139, 154, 110, 0.22);
 }
 
 .sec-dot {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: #637748;
+  box-shadow: 0 0 5px rgba(99, 119, 72, 0.6);
 }
 
 .account-card-body {
@@ -1998,15 +2180,14 @@ const handleDeleteAccount = async () => {
   justify-content: space-between;
   gap: 12px;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: 12px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 13px;
   padding: 10px 14px;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .account-cell:hover {
   border-color: rgba(139, 154, 110, 0.35);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 3px 8px rgba(35, 45, 30, 0.04);
 }
 
 .cell-main {
@@ -2019,14 +2200,14 @@ const handleDeleteAccount = async () => {
 
 .cell-label {
   font-size: 10.5px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-muted, #7A7A75);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
 }
 
 .cell-val {
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary, #1C1C1A);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2043,46 +2224,44 @@ const handleDeleteAccount = async () => {
 
 .cell-tag {
   font-size: 11px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
+  font-weight: 650;
+  padding: 3px 9px;
+  border-radius: 9999px;
   flex-shrink: 0;
 }
-
 .cell-tag.success {
-  background: rgba(139, 154, 110, 0.12);
+  background: rgba(139, 154, 110, 0.14);
   color: #637748;
-  border: 1px solid rgba(139, 154, 110, 0.22);
+  border: 1px solid rgba(139, 154, 110, 0.25);
 }
-
 .cell-tag.default {
-  background: rgba(0, 0, 0, 0.035);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--text-muted, #7A7A75);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
 }
 
 .avatar-cell-preview {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 .mini-avatar {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #8B9A6E 0%, #768759 100%);
+  background: linear-gradient(135deg, #8B9A6E 0%, #6E8052 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  font-weight: 700;
+  font-weight: 750;
   color: #FAF7F2;
   font-size: 13px;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
-
 .mini-avatar-img {
   width: 100%;
   height: 100%;
@@ -2099,50 +2278,50 @@ const handleDeleteAccount = async () => {
   padding: 4px 12px;
   border-radius: 9999px;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 650;
   border: 1px solid var(--border-default, #E6E6E4);
   background: #FFFFFF;
-  color: var(--text-secondary, #4A4A45);
+  color: var(--text-secondary, #344139);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: inherit;
   flex-shrink: 0;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
-
 .cell-btn:hover {
   border-color: #8B9A6E;
-  color: var(--text-primary, #1C1C1A);
+  color: #637748;
   background: #FAF7F2;
+  transform: translateY(-1px);
 }
-
 .cell-btn.primary {
-  background: #8B9A6E;
+  background: linear-gradient(135deg, #8B9A6E 0%, #768759 100%);
   color: #FAF7F2;
   border-color: transparent;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.25);
 }
-
 .cell-btn.primary:hover {
-  background: #768759;
+  background: linear-gradient(135deg, #768759 0%, #637748 100%);
+  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.35);
 }
 
 .cell-edit-wrap {
   width: 100%;
-  margin-top: 2px;
+  margin-top: 3px;
 }
-
 .cell-edit-input {
   width: 100%;
   font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
   border: 1px solid #8B9A6E;
   background: #FFFFFF;
   color: var(--text-primary, #1C1C1A);
   outline: none;
   font-family: inherit;
   box-sizing: border-box;
-  box-shadow: 0 0 0 2px rgba(139, 154, 110, 0.15);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
+  transition: all 0.2s;
 }
 
 .cell-edit-btns {
@@ -2155,230 +2334,140 @@ const handleDeleteAccount = async () => {
 .account-card-actions {
   display: flex;
   gap: 8px;
-  margin-top: 2px;
+  margin-top: 4px;
 }
-
 .account-btn {
   flex: 1;
-  height: 34px;
+  height: 36px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: 11px;
+  font-size: 12.5px;
+  font-weight: 650;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: inherit;
   border: 1px solid transparent;
 }
-
-.account-btn.secondary {
-  background: var(--color-bg-primary, #F7F2EB);
-  border-color: var(--border-subtle, #E6E6E4);
-  color: var(--text-secondary, #4A4A45);
-}
-
-.account-btn.secondary:hover {
-  background: #FFFFFF;
-  border-color: #8B9A6E;
-  color: var(--text-primary, #1C1C1A);
-}
-
 .account-btn.danger {
-  background: rgba(217, 83, 79, 0.05);
-  border-color: rgba(217, 83, 79, 0.2);
+  background: rgba(217, 83, 79, 0.08);
+  border-color: rgba(217, 83, 79, 0.25);
   color: #C2413E;
 }
-
 .account-btn.danger:hover {
-  background: rgba(217, 83, 79, 0.12);
+  background: rgba(217, 83, 79, 0.16);
   border-color: #C2413E;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(217, 83, 79, 0.18);
 }
 
-/* ===== Zen Modal for Password Change ===== */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.2s ease;
-}
 
-.zen-modal-card {
-  width: 90%;
-  max-width: 400px;
-  background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: 20px;
-  box-shadow: 0 20px 40px -8px rgba(0, 0, 0, 0.18);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  animation: slideUp 0.25s ease;
-}
-
-.zen-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 22px;
-  border-bottom: 1px solid var(--border-subtle, #E6E6E4);
-  background: rgba(0, 0, 0, 0.015);
-}
-
-.zen-modal-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary, #1C1C1A);
-  margin: 0;
-}
-
-.zen-modal-close {
-  background: transparent;
-  border: none;
-  font-size: 16px;
-  color: var(--text-muted, #7A7A75);
-  cursor: pointer;
-  padding: 4px;
-  line-height: 1;
-}
-
-.zen-modal-close:hover {
-  color: var(--text-primary, #1C1C1A);
-}
-
-.zen-modal-body {
-  padding: 20px 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.modal-form-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.modal-form-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-primary, #1C1C1A);
-}
-
-.modal-input {
-  width: 100% !important;
-  box-sizing: border-box;
-}
-
-.modal-error-tip {
-  font-size: 11.5px;
-  color: #C2413E;
-  margin-top: 2px;
-}
-
-.zen-modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 22px;
-  border-top: 1px solid var(--border-subtle, #E6E6E4);
-  background: rgba(0, 0, 0, 0.015);
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* ===== RIGHT PANEL (70%) ===== */
+/* ===== 3. RIGHT PANEL: 分项设置控制台 (62%) ===== */
 .studio-right {
-  flex: 7;
+  flex: 6.2;
   min-width: 0;
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  border-radius: var(--radius-lg, 16px);
-  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
-  padding: 30px 36px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 20px;
+  box-shadow: 
+    0 10px 30px -4px rgba(35, 45, 30, 0.08), 
+    0 2px 8px -1px rgba(0, 0, 0, 0.04);
+  padding: 28px 36px;
   display: block;
   box-sizing: border-box;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 .studio-right::-webkit-scrollbar {
   display: none;
 }
 .studio-right > * {
   flex-shrink: 0;
-  max-width: 960px;
+  max-width: 980px;
   margin-left: auto;
   margin-right: auto;
   width: 100%;
 }
 
+/* 3.1 标头区 (Swiss Editorial Typography) */
 .settings-header {
-  margin-bottom: 24px;
+  margin-bottom: 26px;
   flex-shrink: 0;
 }
 
+.settings-header-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  border-radius: 9999px;
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 750;
+  color: #637748;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.settings-header-badge .badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #637748;
+  box-shadow: 0 0 5px rgba(99, 119, 72, 0.5);
+}
+
 .settings-title {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 850;
   color: var(--text-primary, #1C1C1A);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.03em;
   margin: 0 0 6px 0;
+  line-height: 1.2;
 }
 
 .settings-desc {
   font-size: 13px;
   color: var(--text-muted, #7A7A75);
   margin: 0;
+  letter-spacing: -0.1px;
 }
 
-/* Settings Groups */
+/* 3.2 设置分组 (Settings Groups) */
 .settings-group {
   flex-shrink: 0;
   margin-bottom: 22px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   border-radius: 20px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.settings-group:hover {
+  border-color: rgba(139, 154, 110, 0.28);
+  box-shadow: 0 6px 20px rgba(35, 45, 30, 0.05);
 }
 
 .group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-subtle, #E6E6E4);
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   background: rgba(0, 0, 0, 0.012);
-  min-height: 48px;
+  min-height: 50px;
   box-sizing: border-box;
 }
 
 .group-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 14.5px;
+  font-weight: 750;
   color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.2px;
   margin: 0;
 }
 
@@ -2386,33 +2475,31 @@ const handleDeleteAccount = async () => {
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
 }
-
 .group-header-desc.danger-desc {
-  color: rgba(176, 58, 46, 0.8);
+  color: rgba(176, 58, 46, 0.85);
 }
 
 .group-items {
   padding: 4px 0;
 }
 
+/* 3.3 设置项单行 (Settings Row) */
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 15px 22px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
   gap: 20px;
-  min-height: 52px;
+  min-height: 54px;
   box-sizing: border-box;
-  transition: background 0.15s ease;
+  transition: background 0.2s ease;
 }
-
 .settings-row:last-child {
   border-bottom: none;
 }
-
 .settings-row:hover {
-  background: rgba(0, 0, 0, 0.015);
+  background: rgba(139, 154, 110, 0.035);
 }
 
 .row-info {
@@ -2425,14 +2512,15 @@ const handleDeleteAccount = async () => {
 
 .row-label {
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.15px;
 }
 
 .row-desc {
   font-size: 11.5px;
   color: var(--text-muted, #7A7A75);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .row-control {
@@ -2442,58 +2530,63 @@ const handleDeleteAccount = async () => {
   flex-shrink: 0;
 }
 
-/* Toggle Switch */
+/* 3.4 交互控件 (Controls: Toggle, Select, Input, Action Button) */
 .toggle-btn {
-  width: 44px;
-  height: 24px;
+  width: 46px;
+  height: 26px;
   border-radius: 9999px;
   background: #D8D8D4;
   border: none;
   cursor: pointer;
   position: relative;
-  transition: background 0.25s ease;
+  transition: background 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease;
   flex-shrink: 0;
   padding: 0;
+  outline: none;
 }
-
 .toggle-btn.is-on {
   background: #8B9A6E;
+  box-shadow: 0 2px 10px rgba(139, 154, 110, 0.35);
 }
 
 .toggle-knob {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #FFFFFF;
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
-
 .toggle-btn.is-on .toggle-knob {
   transform: translateX(20px);
 }
 
-/* Select & Input Controls */
 .settings-select {
-  background: #FFFFFF;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #FFFFFF;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237A7A75' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 14px 14px !important;
   border: 1px solid var(--border-default, #E6E6E4);
   border-radius: 12px;
   color: var(--text-primary, #1C1C1A);
   font-family: inherit;
   font-size: 12.5px;
-  padding: 7px 12px;
+  font-weight: 550;
+  padding: 7px 32px 7px 12px;
   cursor: pointer;
   outline: none;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
-
 .settings-select:focus {
   border-color: #8B9A6E;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
 }
 
 .settings-input {
@@ -2504,29 +2597,27 @@ const handleDeleteAccount = async () => {
   font-family: inherit;
   font-size: 12.5px;
   padding: 7px 12px;
-  width: 220px;
+  width: 230px;
   outline: none;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
-
 .settings-input:focus {
   border-color: #8B9A6E;
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18);
 }
 
-/* Action Button */
 .action-btn {
-  padding: 6px 16px;
+  padding: 7px 18px;
   border-radius: 9999px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 650;
   cursor: pointer;
   border: 1px solid var(--border-default, #E6E6E4);
   background: #FFFFFF;
-  color: var(--text-secondary, #4A4A45);
+  color: var(--text-secondary, #344139);
   font-family: inherit;
-  transition: all 0.2s;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   white-space: nowrap;
   flex-shrink: 0;
   display: inline-flex;
@@ -2534,22 +2625,25 @@ const handleDeleteAccount = async () => {
   justify-content: center;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
-
 .action-btn:hover {
   border-color: #8B9A6E;
-  color: var(--text-primary, #1C1C1A);
+  color: #637748;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(35, 45, 30, 0.06);
+}
+.action-btn:active {
+  transform: scale(0.97);
 }
 
 .action-btn.primary {
-  background: linear-gradient(135deg, #8B9A6E 0%, #768759 100%);
+  background: linear-gradient(135deg, #8B9A6E 0%, #6E8052 100%);
   border-color: transparent;
   color: #FAF7F2;
-  box-shadow: 0 3px 10px rgba(139, 154, 110, 0.3);
+  box-shadow: 0 3px 12px rgba(139, 154, 110, 0.3);
 }
-
 .action-btn.primary:hover {
-  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.4);
-  transform: translateY(-1px);
+  box-shadow: 0 5px 16px rgba(139, 154, 110, 0.42);
+  transform: translateY(-1.5px);
 }
 
 .action-btn.danger {
@@ -2557,27 +2651,156 @@ const handleDeleteAccount = async () => {
   border-color: rgba(217, 83, 79, 0.25);
   color: #C2413E;
 }
-
 .action-btn.danger:hover {
-  background: rgba(217, 83, 79, 0.15);
+  background: rgba(217, 83, 79, 0.16);
   border-color: #C2413E;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(217, 83, 79, 0.18);
 }
 
-.btn-inner-icon {
-  margin-right: 4px;
+.status-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  font-size: 12px;
+  color: var(--text-secondary, #344139);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.status-pill-badge.is-warning {
+  border-color: rgba(212, 168, 126, 0.4);
+  background: rgba(212, 168, 126, 0.08);
+}
+.status-pill-badge.is-warning .status-dot-indicator {
+  background: #C49A6C;
+  box-shadow: 0 0 6px rgba(196, 154, 108, 0.6);
 }
 
-/* ===== BYOK Card Styling ===== */
-.byok-group {
+.status-dot-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8B9A6E;
+  display: inline-block;
+  box-shadow: 0 0 6px rgba(139, 154, 110, 0.6);
+}
+
+
+/* ===== 4. AI 使用额度卡片 (AI Usage Cards) ===== */
+.usage-group-body {
+  padding: 18px 22px !important;
+}
+
+.usage-loading {
+  color: var(--text-muted, #7A7A75);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
+.usage-error {
+  color: #C2413E;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.usage-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.usage-card {
+  background: var(--color-bg-primary, #F7F2EB);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.usage-card:hover {
   border-color: rgba(139, 154, 110, 0.3);
+  box-shadow: 0 4px 12px rgba(35, 45, 30, 0.04);
+}
+
+.usage-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.usage-plan-name {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.2px;
+}
+
+.usage-reset-tag {
+  font-size: 11px;
+  color: var(--text-muted, #7A7A75);
+  background: rgba(0, 0, 0, 0.035);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.usage-stat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.usage-stat-label {
+  font-size: 10.5px;
+  color: var(--text-muted, #7A7A75);
+  font-weight: 550;
+}
+
+.usage-stat-val {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-primary, #1C1C1A);
+  font-variant-numeric: tabular-nums;
+}
+.usage-stat-val.accent {
+  color: #637748;
+}
+
+.usage-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+
+/* ===== 5. AI BYOK 配置区 (BYOK Settings) ===== */
+.byok-group {
+  border-color: rgba(139, 154, 110, 0.28);
 }
 
 .byok-intro {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border-subtle, #E6E6E4);
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   background: rgba(139, 154, 110, 0.06);
   gap: 16px;
 }
@@ -2589,16 +2812,15 @@ const handleDeleteAccount = async () => {
   padding: 4px 12px;
   border-radius: 9999px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 650;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   color: var(--text-muted, #7A7A75);
   white-space: nowrap;
   flex-shrink: 0;
 }
-
 .byok-status-pill.is-active {
-  background: rgba(139, 154, 110, 0.15);
+  background: rgba(139, 154, 110, 0.16);
   border-color: rgba(139, 154, 110, 0.35);
   color: #637748;
 }
@@ -2610,14 +2832,9 @@ const handleDeleteAccount = async () => {
   background: var(--text-muted, #7A7A75);
   flex-shrink: 0;
 }
-
 .byok-status-pill.is-active .status-dot {
   background: #637748;
-  box-shadow: 0 0 6px rgba(99, 119, 72, 0.6);
-}
-
-.byok-field-row {
-  transition: background 0.15s;
+  box-shadow: 0 0 6px rgba(99, 119, 72, 0.7);
 }
 
 .byok-control-wrap {
@@ -2625,7 +2842,12 @@ const handleDeleteAccount = async () => {
   flex-direction: column;
   align-items: flex-end;
   flex: 1;
-  max-width: 360px;
+  max-width: 380px;
+}
+
+.byok-input {
+  width: 100% !important;
+  max-width: 380px;
 }
 
 .byok-model-detect-group {
@@ -2634,113 +2856,83 @@ const handleDeleteAccount = async () => {
   gap: 8px;
   width: 100%;
 }
-
 .byok-model-input {
   flex: 1;
 }
 
 .byok-detect-btn {
-  padding: 6px 12px;
+  padding: 7px 14px;
   font-size: 11.5px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .detected-models-tray {
-  margin-top: 8px;
+  margin-top: 10px;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
 }
-
 .tray-label {
   font-size: 11px;
   color: var(--text-muted, #7A7A75);
+  font-weight: 550;
 }
-
 .tray-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-
 .model-chip {
   border: 1px solid var(--border-default, #E6E6E4);
   background: #FFFFFF;
-  color: var(--text-secondary, #4A4A45);
-  border-radius: 6px;
-  padding: 3px 8px;
+  color: var(--text-secondary, #344139);
+  border-radius: 8px;
+  padding: 4px 10px;
   font-size: 11.5px;
+  font-weight: 550;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: inherit;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
-
 .model-chip:hover {
   border-color: #8B9A6E;
   color: #637748;
   background: rgba(139, 154, 110, 0.08);
+  transform: translateY(-1px);
 }
-
 .model-chip.is-selected {
   border-color: #8B9A6E;
   background: #8B9A6E;
   color: #FAF7F2;
-  font-weight: 600;
-}
-
-.byok-input {
-  width: 100% !important;
-  max-width: 360px;
+  font-weight: 650;
+  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.3);
 }
 
 .byok-action-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 16px 22px;
   background: rgba(0, 0, 0, 0.015);
-  border-top: 1px solid var(--border-subtle, #E6E6E4);
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   gap: 16px;
 }
-
 .byok-tip {
   font-size: 11.5px;
   color: var(--text-muted, #7A7A75);
 }
-
 .byok-btn-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* Status Pill Badge & Indicators */
-.status-pill-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, #E6E6E4);
-  font-size: 12px;
-  color: var(--text-secondary, #4A4A45);
-  font-weight: 500;
-}
 
-.status-dot-indicator {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #8B9A6E;
-  display: inline-block;
-  box-shadow: 0 0 5px rgba(139, 154, 110, 0.5);
-}
-
-/* Privacy Group */
+/* ===== 6. 数据与隐私及会话管理 (Privacy & Sessions) ===== */
 .privacy-group {
   border-color: rgba(139, 154, 110, 0.2);
 }
@@ -2748,32 +2940,27 @@ const handleDeleteAccount = async () => {
 .privacy-scope-badge {
   display: inline-flex;
   align-items: center;
-  padding: 3px 10px;
-  border-radius: 6px;
-  background: rgba(139, 154, 110, 0.1);
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  padding: 4px 12px;
+  border-radius: 9999px;
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.25);
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 650;
   color: #637748;
 }
 
-/* ===== Session Group ===== */
 .session-empty {
-  padding: 18px 20px;
+  padding: 20px 22px;
   font-size: 12.5px;
   color: var(--text-muted, #7A7A75);
 }
-
 .session-error {
   color: #C2413E;
 }
 
 .session-row {
-  padding: 14px 20px;
-  min-height: 52px;
-  box-sizing: border-box;
+  padding: 15px 22px;
 }
-
 .session-row-main {
   display: flex;
   align-items: center;
@@ -2781,109 +2968,135 @@ const handleDeleteAccount = async () => {
   flex: 1;
   min-width: 0;
 }
-
-.session-device-icon {
-  color: #8B9A6E;
-  flex-shrink: 0;
-}
-
 .session-title-line {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-
 .session-current-pill {
   font-size: 10.5px;
-  font-weight: 600;
-  padding: 1px 8px;
+  font-weight: 700;
+  padding: 2px 8px;
   border-radius: 9999px;
-  background: rgba(139, 154, 110, 0.15);
+  background: rgba(139, 154, 110, 0.16);
+  border: 1px solid rgba(139, 154, 110, 0.28);
   color: #637748;
 }
 
-/* Logout Group */
-.logout-group {
-  flex-shrink: 0;
-  margin-top: 12px;
-  margin-bottom: 24px;
-}
 
-.logout-row {
-  padding: 14px 20px;
-}
-
-.logout-btn {
-  background: var(--color-bg-primary, #F7F2EB);
-  color: var(--text-secondary, #4A4A45);
-}
-
-/* ===== Danger Zone ===== */
+/* ===== 7. 危险操作区 (Danger Zone) ===== */
 .danger-zone {
   flex-shrink: 0;
   margin-bottom: 24px;
-  background: rgba(217, 83, 79, 0.03);
-  border: 1px solid rgba(217, 83, 79, 0.18);
+  background: rgba(217, 83, 79, 0.035);
+  border: 1px solid rgba(217, 83, 79, 0.2);
   border-radius: 20px;
   overflow: hidden;
+  box-shadow: 0 2px 8px rgba(217, 83, 79, 0.03);
 }
 
 .danger-header {
-  border-bottom-color: rgba(217, 83, 79, 0.15);
-  background: rgba(217, 83, 79, 0.03);
-  min-height: 48px;
-  box-sizing: border-box;
+  border-bottom: 1px solid rgba(217, 83, 79, 0.15);
+  background: rgba(217, 83, 79, 0.04);
+  padding: 16px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
-
 .danger-title {
   color: #B03A2E;
+  font-size: 14.5px;
+  font-weight: 750;
+  margin: 0;
 }
 
 .danger-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 20px;
+  padding: 15px 22px;
   border-bottom: 1px solid rgba(217, 83, 79, 0.08);
   gap: 20px;
-  min-height: 52px;
+  min-height: 54px;
   box-sizing: border-box;
 }
-
 .danger-row:last-child {
   border-bottom: none;
 }
 
-/* Dark Mode Overrides */
+
+/* ===== 8. 深色模式全面适配 (Dark Mode System) ===== */
 html.dark .profile-studio {
-  background: #121512;
+  background: var(--color-bg-secondary, #1B201B);
 }
 
 html.dark .studio-left,
 html.dark .studio-right {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.2);
-  box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.4);
+  background: #1F241F;
+  border-color: rgba(163, 177, 155, 0.16);
+  box-shadow: 
+    0 14px 36px rgba(0, 0, 0, 0.48), 
+    0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+html.dark .user-profile-card,
+html.dark .study-stats-card,
+html.dark .subject-dist-card,
+html.dark .account-card,
+html.dark .settings-group,
+html.dark .studio-left :deep(.processing-center) {
+  background: #242A24;
+  border-color: rgba(163, 177, 155, 0.16);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .settings-group:hover {
+  border-color: rgba(163, 177, 155, 0.3);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
 html.dark .stat-cell,
-html.dark .bar-chart,
-html.dark .user-streak-pill,
-html.dark .device-pill,
-html.dark .user-profile-card,
-html.dark .account-card,
-html.dark .study-stats-card,
-html.dark .subject-dist-card,
-html.dark .privacy-group,
-html.dark .studio-left :deep(.processing-center),
-html.dark .zen-modal-card,
-html.dark .settings-group {
-  background: #212621;
-  border-color: rgba(163, 177, 155, 0.22);
+html.dark .account-cell,
+html.dark .usage-card {
+  background: #1F241F;
+  border-color: rgba(163, 177, 155, 0.14);
+}
+html.dark .stat-cell:hover,
+html.dark .account-cell:hover,
+html.dark .usage-card:hover {
+  border-color: rgba(163, 177, 155, 0.35);
 }
 
-html.dark .subject-dist-title {
+html.dark .usage-stat-box {
+  background: rgba(0, 0, 0, 0.25);
+  border-color: rgba(163, 177, 155, 0.12);
+}
+
+html.dark .settings-title,
+html.dark .user-name,
+html.dark .group-title,
+html.dark .row-label,
+html.dark .stat-value,
+html.dark .subject-dist-title,
+html.dark .subject-count-badge,
+html.dark .account-card-title,
+html.dark .cell-val,
+html.dark .usage-plan-name,
+html.dark .usage-stat-val {
   color: #FAF7F2;
+}
+
+html.dark .stat-label,
+html.dark .row-desc,
+html.dark .user-handle,
+html.dark .cell-sub,
+html.dark .group-header-desc,
+html.dark .settings-desc,
+html.dark .byok-tip,
+html.dark .tray-label,
+html.dark .usage-stat-label,
+html.dark .usage-reset-tag {
+  color: #9AA096;
 }
 
 html.dark .subject-name {
@@ -2894,110 +3107,341 @@ html.dark .subject-bar-bg {
   background: rgba(255, 255, 255, 0.08);
 }
 
-html.dark .status-pill-badge {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.25);
-  color: #D6D2CA;
-}
-
-html.dark .privacy-scope-badge {
-  background: rgba(139, 154, 110, 0.18);
-  border-color: rgba(139, 154, 110, 0.35);
-  color: #A3B19B;
-}
-
-html.dark .settings-title,
-html.dark .user-name,
-html.dark .stat-value,
-html.dark .group-title,
-html.dark .account-card-title,
-html.dark .account-item-label,
-html.dark .zen-modal-title,
-html.dark .modal-form-label,
-html.dark .row-label {
-  color: #FAF7F2;
-}
-
 html.dark .settings-select,
 html.dark .settings-input,
-html.dark .nickname-input {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.25);
+html.dark .cell-edit-input {
+  background-color: #181D18;
+  border-color: rgba(163, 177, 155, 0.22);
   color: #FAF7F2;
+}
+html.dark .settings-select:focus,
+html.dark .settings-input:focus,
+html.dark .cell-edit-input:focus {
+  border-color: #9AB08F;
+  box-shadow: 0 0 0 3px rgba(154, 176, 143, 0.22);
 }
 
 html.dark .action-btn,
 html.dark .cell-btn,
-html.dark .account-btn.secondary {
-  background: #212621;
-  border-color: rgba(163, 177, 155, 0.25);
+html.dark .model-chip {
+  background: #1D231D;
+  border-color: rgba(163, 177, 155, 0.22);
   color: #FAF7F2;
 }
+html.dark .action-btn:hover,
+html.dark .cell-btn:hover,
+html.dark .model-chip:hover {
+  border-color: #9AB08F;
+  color: #9AB08F;
+  background: #242A24;
+}
 
-html.dark .account-cell {
+html.dark .status-pill-badge {
   background: #181D18;
-  border-color: rgba(163, 177, 155, 0.18);
-}
-
-html.dark .cell-label {
-  color: #8C8A84;
-}
-
-html.dark .cell-val {
+  border-color: rgba(163, 177, 155, 0.22);
   color: #FAF7F2;
 }
 
-html.dark .cell-sub {
-  color: #B5B3AD;
+html.dark .byok-intro {
+  background: rgba(139, 154, 110, 0.1);
+  border-bottom-color: rgba(163, 177, 155, 0.16);
 }
-
-html.dark .cell-tag.default {
-  background: rgba(255, 255, 255, 0.05);
+html.dark .byok-status-pill {
+  background: #181D18;
   border-color: rgba(163, 177, 155, 0.2);
-  color: #A3B19B;
+  color: #9AA096;
+}
+html.dark .byok-status-pill.is-active {
+  background: rgba(139, 154, 110, 0.2);
+  border-color: rgba(139, 154, 110, 0.35);
+  color: #9AB08F;
 }
 
-html.dark .account-btn.danger {
-  background: rgba(217, 83, 79, 0.1);
-  border-color: rgba(217, 83, 79, 0.3);
-  color: #E68582;
+html.dark .group-header,
+html.dark .byok-action-footer {
+  background: rgba(0, 0, 0, 0.12);
+  border-color: rgba(163, 177, 155, 0.14);
 }
 
-html.dark .subject-count-badge {
-  color: #FAF7F2;
+html.dark .settings-row {
+  border-bottom-color: rgba(255, 255, 255, 0.04);
+}
+html.dark .settings-row:hover {
+  background: rgba(255, 255, 255, 0.025);
 }
 
-html.dark .cell-edit-input {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.35);
-  color: #FAF7F2;
+html.dark .device-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(163, 177, 155, 0.16);
+  color: #C0C5BD;
 }
 
 html.dark .danger-zone {
   background: rgba(217, 83, 79, 0.06);
   border-color: rgba(217, 83, 79, 0.25);
 }
-
-html.dark .model-chip {
-  background: #181D18;
-  border-color: rgba(163, 177, 155, 0.25);
-  color: #D6D2CA;
+html.dark .danger-header {
+  background: rgba(217, 83, 79, 0.08);
+  border-bottom-color: rgba(217, 83, 79, 0.2);
+}
+html.dark .danger-row {
+  border-bottom-color: rgba(217, 83, 79, 0.1);
 }
 
-html.dark .model-chip:hover {
+html.dark .settings-header-badge {
+  background: rgba(139, 154, 110, 0.16);
+  border-color: rgba(139, 154, 110, 0.3);
+  color: #9AB08F;
+}
+html.dark .settings-header-badge .badge-dot {
+  background: #9AB08F;
+  box-shadow: 0 0 5px rgba(154, 176, 143, 0.6);
+}
+
+/* ===== 9. 精雕细琢微交互增强体系 (Refinements V2) ===== */
+
+/* 9.1 账号单元格专属属性图标底座 */
+.cell-icon-wrap {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(139, 154, 110, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #637748;
+  flex-shrink: 0;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.account-cell:hover .cell-icon-wrap {
+  background: rgba(139, 154, 110, 0.2);
+  color: #516439;
+  transform: scale(1.05);
+}
+
+/* 9.2 分组标头分类图标徽章 (Group Icon Badges) */
+.group-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.group-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgba(139, 154, 110, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #637748;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.settings-group:hover .group-icon-wrap {
+  transform: scale(1.06);
+  background: rgba(139, 154, 110, 0.18);
+}
+.group-icon-wrap.danger {
+  background: rgba(217, 83, 79, 0.1);
+  color: #B03A2E;
+}
+.danger-zone:hover .group-icon-wrap.danger {
+  transform: scale(1.06);
+  background: rgba(217, 83, 79, 0.18);
+}
+.group-title-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 9.3 AI 使用额度进度条与高定胶囊 (AI Usage Progress) */
+.usage-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.usage-percent-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #637748;
+  background: rgba(139, 154, 110, 0.14);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  padding: 1px 8px;
+  border-radius: 9999px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+}
+.usage-percent-badge.is-low {
+  color: #C89B6D;
+  background: rgba(200, 155, 109, 0.14);
+  border-color: rgba(200, 155, 109, 0.3);
+}
+
+.usage-progress-bar-wrap {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 9999px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.usage-progress-bar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #8B9A6E 0%, #6E8052 100%);
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 6px rgba(139, 154, 110, 0.5);
+}
+.usage-progress-bar-fill.is-low {
+  background: linear-gradient(90deg, #D4A87E 0%, #C49A6C 100%);
+  box-shadow: 0 0 6px rgba(212, 168, 126, 0.5);
+}
+
+/* 9.4 Provider 快速预设标签 (Quick Provider Presets) */
+.quick-providers-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  width: 100%;
+  flex-wrap: wrap;
+}
+.quick-preset-label {
+  font-size: 11px;
+  color: var(--text-muted, #7A7A75);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.quick-preset-chip {
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.035);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  color: var(--text-secondary, #344139);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+}
+.quick-preset-chip:hover {
+  background: rgba(139, 154, 110, 0.12);
+  border-color: rgba(139, 154, 110, 0.3);
+  color: #637748;
+  transform: translateY(-1px);
+}
+.quick-preset-chip.is-active {
+  background: rgba(139, 154, 110, 0.18);
   border-color: #8B9A6E;
-  color: #A3B19B;
-  background: rgba(139, 154, 110, 0.15);
+  color: #637748;
+  font-weight: 700;
 }
 
-html.dark .model-chip.is-selected {
-  background: #8B9A6E;
-  color: #FAF7F2;
-  border-color: #8B9A6E;
+/* 9.5 API Key 密码框与显隐小眼睛 (Eye Toggle) */
+.api-key-input-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  align-items: center;
+}
+.byok-key-input {
+  padding-right: 36px !important;
+}
+.eye-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #7A7A75);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+.eye-toggle-btn:hover {
+  color: var(--text-primary, #1C1C1A);
+  background: rgba(0, 0, 0, 0.05);
 }
 
-html.dark .mini-avatar {
-  background: #2E362E;
+/* 9.6 高定 Select 自定义下拉箭头 */
+.settings-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px !important;
+  background-color: #FFFFFF;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237A7A75' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 14px 14px !important;
+}
+
+/* 9.7 深色模式对应补充 */
+html.dark .cell-icon-wrap,
+html.dark .group-icon-wrap {
+  background: rgba(139, 154, 110, 0.18);
+  color: #9AB08F;
+}
+html.dark .account-cell:hover .cell-icon-wrap,
+html.dark .settings-group:hover .group-icon-wrap {
+  background: rgba(139, 154, 110, 0.28);
+  color: #B8CCAF;
+}
+
+html.dark .group-icon-wrap.danger {
+  background: rgba(217, 83, 79, 0.16);
+  color: #E68582;
+}
+
+html.dark .usage-progress-bar-wrap {
+  background: rgba(255, 255, 255, 0.08);
+}
+html.dark .usage-progress-bar-fill {
+  background: linear-gradient(90deg, #9AB08F 0%, #768759 100%);
+}
+html.dark .usage-percent-badge {
+  background: rgba(139, 154, 110, 0.2);
+  border-color: rgba(139, 154, 110, 0.35);
+  color: #9AB08F;
+}
+
+html.dark .quick-preset-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(163, 177, 155, 0.16);
+  color: #C0C5BD;
+}
+html.dark .quick-preset-chip:hover {
+  background: rgba(139, 154, 110, 0.16);
+  border-color: rgba(139, 154, 110, 0.35);
+  color: #9AB08F;
+}
+html.dark .quick-preset-chip.is-active {
+  background: rgba(139, 154, 110, 0.24);
+  border-color: #9AB08F;
   color: #FAF7F2;
 }
+
+html.dark .eye-toggle-btn {
+  color: #9AA096;
+}
+html.dark .eye-toggle-btn:hover {
+  color: #FAF7F2;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .settings-select {
+  background-color: #181D18 !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239AA096' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 14px 14px !important;
+}
+
 </style>

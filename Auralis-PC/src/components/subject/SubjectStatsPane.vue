@@ -24,10 +24,10 @@
       <template v-else-if="stats">
         <div v-if="reviewSyncError" class="subject-stats__notice" role="status">{{ reviewSyncError }}</div>
         <div v-if="stats?.historyCoverage === 'INCOMPLETE'" class="subject-stats__notice subject-stats__notice--hidden" role="status">
-          本机尚未具备完整的历史复习记录；趋势仅统计本机已有且时间可核验的记录。
+          当前设备历史复习记录未完全同步，趋势图仅统计当前已有记录。
         </div>
         <div v-if="(stats?.pendingReviewCommandCount ?? 0) > 0" class="subject-stats__notice subject-stats__notice--hidden" role="status">
-          {{ stats?.pendingReviewCommandCount ?? 0 }} 条复习操作已保存在本机，等待联网同步。
+          {{ stats?.pendingReviewCommandCount ?? 0 }} 条复习记录已保存在本地，等待联网同步。
         </div>
         <div v-if="subjectStatsError" class="subject-stats__notice subject-stats__notice--error" role="alert">
           <span>统计刷新失败，当前显示上次成功的数据：{{ subjectStatsError }}</span>

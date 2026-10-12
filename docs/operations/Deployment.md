@@ -1,5 +1,19 @@
 # Auralis 部署指南
 
+### 2026-10-12 学科总览分批修复本机部署
+
+香港 13:57:23 仅 backend 更新为 `sha256:a5a50bb7ae02cb1cc93a3e17a46b2515552f4e434b50b9a5764cf8bfabf541f2`。实际执行 `docker compose --env-file .env build --progress plain backend` 和 `docker compose --env-file .env up -d --no-deps --force-recreate backend`，均退出 0；容器 healthy，readiness HTTP 200。旧镜像 `31f7dec…` 保留于 `auralis-backend:rollback-subject-overview-prompt-batching-20261012`。
+
+构建前后 474 份输入 hash 保持，替换前有效 TASK / RESERVED / PARSING 或 INDEXING 为 0；db / MinIO 容器与数据卷保持，Flyway V31，无新迁移。运行 Service class 与 73 项 clean 回归版本精确匹配，Guard 保留 embedding 排除，现有额度 / prompt / deadline 保持。本次验证仅涵盖构建、部署与健康；真实 Provider / GUI 生成另行验收，详见 [完整证据](../plans/2026-10-12-subject-overview-prompt-batching.md)。
+
+### 2026-10-12 embedding 额度策略与本机测试配置
+
+单人默认 1000000 token / 小时、2000000 / 日；系统日 2000000、并发 4 / 2 保持。`application.yml`、Compose fallback 与 `.env.example` 需一致；本机 `.env` 相关键未设置，已有其他环境若设置旧值则仍按显式覆盖生效。embedding 的新旧记录排除由新服务端聚合实现，单改 env 不会替换运行中 JAR。
+
+本轮只更新本机 backend，不重建 db / minio 或数据卷；部署前核对现有成功 migration，当前只读观察 V31 已应用，本次策略无新迁移。构建、运行态健康 / 有效额度、已部署类中的统计过滤和真实 Provider / GUI 分别验收，证据见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。
+
+实际部署：香港 12:57:12 仅 backend 更新为 `sha256:31f7dec47c568c5c3de3c7dfe1727228c245c90c6b81d6fb0931843b5227a11c`，healthy / readiness 200。`docker compose --env-file .env build backend`、`docker compose --env-file .env up -d --no-deps --force-recreate backend` 均退出码 0；更新前有效 TASK / RESERVED / 活动 ingestion 为 0，db / MinIO 身份及卷保持，Flyway V31 / 失败 0。旧镜像保留于 `auralis-backend:rollback-embedding-quota-20261012-precandidate`。已核对运行额度与 Guard 字节码，未用实际 Provider / GUI 代替用户业务测试。
+
 ### 2026-10-08 前端镜像构建验证
 
 用户组合构建的前端步骤在 `npm install` 报 `ECONNRESET`。原 Buildx 历史日志确认下载连接被重置；同一 Dockerfile 隔离重试 `docker buildx build --progress plain --file Auralis-PC/Dockerfile Auralis-PC` 退出 0，依赖安装、前端编译和镜像导出均完成。完整日志与时间见 [基础设施记录](../modules/Infrastructure.md)。
@@ -14,7 +28,7 @@
 
 执行 `docker compose --env-file .env config --quiet`、`build backend` 与 `up -d --no-deps --force-recreate backend`，均退出 0；只替换 backend 容器，db/minio 容器和数据卷未重建。新容器 `ee3d733c00c8…` healthy，health/readiness UP；Flyway V23 成功且当前 schema 版本为 23。此证据只证明本机运行和迁移，尚无认证后的排期操作或 GUI 拖放验收。
 
-更新时间：2026-09-10
+更新时间：2026-10-11
 
 文档状态：现行，生产方案待加固
 
@@ -84,6 +98,20 @@ DEEPSEEK_API_KEY / OPENAI_API_KEY / SILICONFLOW_API_KEY（可选默认 Provider�
 实际变量名必须与最终配置绑定一致。Provider 默认 key 由 Compose 注入后端运行时；用户 BYOK 仍通过 API 加密存储，任何 key 都不写入日志。
 
 ## 本地基础设施
+
+### 2026-10-11 Overview 取消发布要求（代码与相关自动验证通过；未部署）
+
+本轮 PC 使用现行 `/api/ai/source-overviews` 与 `/api/ai/subject-overviews` 的可选 SSE 响应。发布时先确认后端支持 `Accept: text/event-stream`、心跳及最终 `result/error`，再启用新 PC；默认 JSON 消费者继续使用原响应。没有新数据库迁移或取消路由。
+
+`Auralis-PC/nginx.conf` 的 `/api/` 已设置 `proxy_buffering off` 与 `proxy_cache off`。部署链上的其他代理须实际透传/刷新心跳，并让空闲超时覆盖心跳间隔；PC 外层期限、任务期限及收尾须留余量。本地 socket/Servlet 测试不能替代真实代理、Tauri/GUI 和 Provider 验收，检查结果单独记录在 [本轮计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
+
+### 2026-10-10 AI Usage Guard B 发布准备（代码与相关自动验证通过；尚未部署）
+
+发布本轮代码时需安装 V30 持久账本与 ingestion 延期字段，并在所有 backend 实例统一 `AURALIS_AI_LIMITS_*` 策略。变量及默认值见 [基础设施配置](../modules/Infrastructure.md)。不能让旧实例继续直接调用 Provider 而绕过账本；发布前需确认当前实例版本和相关迁移验证证据，并备份数据库。
+
+前端个人中心依赖 `GET /api/ai/usage`。先确认新后端已提供本人额度和稳定错误码，再验收 PC、手机与 Tablet 的加载、失败重试、账号切换和额度重置时间。Provider usage 缺失时会保守结算，不能把个人中心数值当作服务商金额账单。
+
+本轮 `.env.example` Compose config、任务独占临时 PostgreSQL V1→V30 clean 与 V29→V30 历史数据保留升级已通过；临时 PG 已停止。未重建、切换或启动业务容器，未修改业务数据库。真实 Provider、代理/SSE 断流、GUI 和设备验收与命令测试分别记录在 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。
 
 ### 启动核心依赖
 

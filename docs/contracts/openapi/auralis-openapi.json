@@ -1536,37 +1536,6 @@
         } ]
       }
     },
-    "/api/reviews/events" : {
-      "post" : {
-        "tags" : [ "review-controller" ],
-        "operationId" : "event",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/EventRequest"
-              }
-            }
-          },
-          "required" : true
-        },
-        "responses" : {
-          "201" : {
-            "description" : "Created",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/EventResponse"
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
     "/api/relations" : {
       "get" : {
         "tags" : [ "relation-controller" ],
@@ -2122,9 +2091,18 @@
     "/api/ai/subject-overviews" : {
       "post" : {
         "tags" : [ "ai-controller" ],
+        "summary" : "Generate a subject overview",
+        "description" : "Returns the existing JSON response by default. Accept text/event-stream opts into heartbeat comments and terminal result/error events.",
         "operationId" : "subjectOverview",
         "parameters" : [ {
           "name" : "X-Overview-Request-Id",
+          "in" : "header",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "Accept",
           "in" : "header",
           "required" : false,
           "schema" : {
@@ -2143,11 +2121,17 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Overview result or opt-in SSE stream",
             "content" : {
-              "*/*" : {
+              "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/OverviewResponse"
+                }
+              },
+              "text/event-stream" : {
+                "schema" : {
+                  "type" : "string",
+                  "description" : "SSE comments are heartbeats; terminal result data is OverviewResponse and terminal error data is sanitized."
                 }
               }
             }
@@ -2161,9 +2145,18 @@
     "/api/ai/source-overviews" : {
       "post" : {
         "tags" : [ "ai-controller" ],
+        "summary" : "Generate a source overview",
+        "description" : "Returns the existing JSON response by default. Accept text/event-stream opts into heartbeat comments and terminal result/error events.",
         "operationId" : "sourceOverview",
         "parameters" : [ {
           "name" : "X-Overview-Request-Id",
+          "in" : "header",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "Accept",
           "in" : "header",
           "required" : false,
           "schema" : {
@@ -2182,11 +2175,17 @@
         },
         "responses" : {
           "200" : {
-            "description" : "OK",
+            "description" : "Overview result or opt-in SSE stream",
             "content" : {
-              "*/*" : {
+              "application/json" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/OverviewResponse"
+                }
+              },
+              "text/event-stream" : {
+                "schema" : {
+                  "type" : "string",
+                  "description" : "SSE comments are heartbeats; terminal result data is OverviewResponse and terminal error data is sanitized."
                 }
               }
             }
@@ -2564,83 +2563,6 @@
         } ]
       }
     },
-    "/api/reviews/history" : {
-      "get" : {
-        "tags" : [ "review-controller" ],
-        "operationId" : "history",
-        "parameters" : [ {
-          "name" : "knowledgeBlockId",
-          "in" : "query",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "format" : "uuid"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/ReviewEventView"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
-    "/api/reviews/due" : {
-      "get" : {
-        "tags" : [ "review-controller" ],
-        "operationId" : "due",
-        "parameters" : [ {
-          "name" : "at",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "string",
-            "format" : "date-time"
-          }
-        }, {
-          "name" : "limit",
-          "in" : "query",
-          "required" : false,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int32",
-            "default" : 50,
-            "maximum" : 200,
-            "minimum" : 1
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "description" : "OK",
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "type" : "array",
-                  "items" : {
-                    "$ref" : "#/components/schemas/ReviewStateView"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security" : [ {
-          "bearerAuth" : [ ]
-        } ]
-      }
-    },
     "/api/auth/sessions" : {
       "get" : {
         "tags" : [ "auth-controller" ],
@@ -2652,6 +2574,27 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/SessionListResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/usage" : {
+      "get" : {
+        "tags" : [ "ai-controller" ],
+        "operationId" : "usage",
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AiUsageSnapshot"
                 }
               }
             }
@@ -3517,22 +3460,38 @@
           "container" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
-            "type" : "boolean"
-          },
           "object" : {
             "type" : "boolean"
           },
-          "boolean" : {
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
-          "int" : {
+          "valueNode" : {
             "type" : "boolean"
           },
-          "binary" : {
+          "bigInteger" : {
+            "type" : "boolean"
+          },
+          "bigDecimal" : {
+            "type" : "boolean"
+          },
+          "nodeType" : {
+            "type" : "string",
+            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
+          },
+          "integralNumber" : {
+            "type" : "boolean"
+          },
+          "string" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
             "type" : "boolean"
           },
           "short" : {
+            "type" : "boolean"
+          },
+          "binary" : {
             "type" : "boolean"
           },
           "long" : {
@@ -3545,29 +3504,13 @@
             "type" : "boolean",
             "deprecated" : true
           },
-          "pojo" : {
-            "type" : "boolean"
-          },
           "number" : {
             "type" : "boolean"
           },
-          "string" : {
+          "int" : {
             "type" : "boolean"
           },
-          "bigDecimal" : {
-            "type" : "boolean"
-          },
-          "bigInteger" : {
-            "type" : "boolean"
-          },
-          "nodeType" : {
-            "type" : "string",
-            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
-          },
-          "valueNode" : {
-            "type" : "boolean"
-          },
-          "integralNumber" : {
+          "boolean" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -3593,7 +3536,7 @@
           },
           "mutationType" : {
             "type" : "string",
-            "enum" : [ "CREATE", "UPDATE", "DELETE", "RESTORE" ]
+            "enum" : [ "CREATE", "UPDATE", "DELETE", "RESTORE", "SCHEDULE_INSERTION", "SCHEDULE_SWAP" ]
           },
           "baseVersion" : {
             "type" : "integer",
@@ -3644,7 +3587,7 @@
           },
           "mutationType" : {
             "type" : "string",
-            "enum" : [ "CREATE", "UPDATE", "DELETE", "RESTORE" ]
+            "enum" : [ "CREATE", "UPDATE", "DELETE", "RESTORE", "SCHEDULE_INSERTION", "SCHEDULE_SWAP" ]
           },
           "changeCursor" : {
             "type" : "string"
@@ -3764,7 +3707,15 @@
               "$ref" : "#/components/schemas/FieldError"
             }
           },
-          "current" : { }
+          "current" : { },
+          "retryAfterSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "resetAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
         }
       },
       "FieldError" : {
@@ -4204,104 +4155,6 @@
           }
         },
         "required" : [ "baseVersion", "clientCommandId", "contentHash", "knowledgeBlockId", "knowledgeBlockVersion" ]
-      },
-      "EventRequest" : {
-        "type" : "object",
-        "properties" : {
-          "clientEventId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "knowledgeBlockId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "rating" : {
-            "type" : "string",
-            "enum" : [ "AGAIN", "HARD", "GOOD", "EASY", "SKIP" ]
-          },
-          "reviewedAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "durationSeconds" : {
-            "type" : "integer",
-            "format" : "int32",
-            "minimum" : 0
-          },
-          "baseVersion" : {
-            "type" : "integer",
-            "format" : "int64",
-            "minimum" : 0
-          }
-        },
-        "required" : [ "clientEventId", "knowledgeBlockId", "rating", "reviewedAt" ]
-      },
-      "EventResponse" : {
-        "type" : "object",
-        "properties" : {
-          "event" : {
-            "$ref" : "#/components/schemas/ReviewEventView"
-          },
-          "state" : {
-            "$ref" : "#/components/schemas/ReviewStateView"
-          }
-        }
-      },
-      "ReviewEventView" : {
-        "type" : "object",
-        "properties" : {
-          "id" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "userId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "knowledgeBlockId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "clientEventId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "rating" : {
-            "type" : "string",
-            "enum" : [ "AGAIN", "HARD", "GOOD", "EASY", "SKIP" ]
-          },
-          "reviewedAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "durationSeconds" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "baseVersion" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "scheduler" : {
-            "type" : "string"
-          },
-          "schedulerVersion" : {
-            "type" : "integer",
-            "format" : "int32"
-          },
-          "parameterSetId" : {
-            "type" : "string",
-            "format" : "uuid"
-          },
-          "createdAt" : {
-            "type" : "string",
-            "format" : "date-time"
-          },
-          "firstLearning" : {
-            "type" : "boolean"
-          }
-        }
       },
       "TicketResponse" : {
         "type" : "object",
@@ -5449,6 +5302,42 @@
           },
           "current" : {
             "type" : "boolean"
+          }
+        }
+      },
+      "AiUsageSnapshot" : {
+        "type" : "object",
+        "properties" : {
+          "hourly" : {
+            "$ref" : "#/components/schemas/Window"
+          },
+          "daily" : {
+            "$ref" : "#/components/schemas/Window"
+          }
+        }
+      },
+      "Window" : {
+        "type" : "object",
+        "properties" : {
+          "limitTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "chargedTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "reservedTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "remainingTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "resetAt" : {
+            "type" : "string",
+            "format" : "date-time"
           }
         }
       },

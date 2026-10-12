@@ -16,6 +16,9 @@ public interface SourceChunkRepository extends JpaRepository<SourceChunkEntity, 
 
     List<SourceChunkEntity> findAllByUserIdAndSourceIdOrderByOrdinalAsc(UUID userId, UUID sourceId);
 
+    List<SourceChunkEntity> findAllByUserIdAndSourceIdAndGenerationOrderByOrdinalAsc(
+            UUID userId, UUID sourceId, UUID generation);
+
     List<SourceChunkEntity> findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(UUID userId, UUID sourceId);
 
     void deleteAllByUserIdAndSourceId(UUID userId, UUID sourceId);

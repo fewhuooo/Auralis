@@ -413,3 +413,71 @@ html.dark .el-popover.zen-action-popover {
   border-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45) !important;
 }
+
+/* ===== 10. Global Coordinated Theme Transition & Ambient Aurora ===== */
+/* 在主题模式切换瞬间，统一全站所有元素的颜色与边框过渡节拍，彻底杜绝不同组件变色的时间差与撕裂感 */
+html.theme-in-transition,
+html.theme-in-transition *,
+html.theme-in-transition *::before,
+html.theme-in-transition *::after {
+  transition: 
+    background-color 0.48s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.48s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.48s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.48s cubic-bezier(0.16, 1, 0.3, 1),
+    fill 0.48s cubic-bezier(0.16, 1, 0.3, 1),
+    stroke 0.48s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition-delay: 0s !important;
+}
+
+/* 全景光影流幔（纯 GPU 独立合成层，舒缓曼妙，Awwwards 级光暗呼吸） */
+.theme-ambient-curtain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99998;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.theme-ambient-curtain.to-dark {
+  background: radial-gradient(circle at var(--curtain-x, 88%) var(--curtain-y, 24px), rgba(22, 27, 22, 0.5) 0%, rgba(16, 20, 16, 0.28) 50%, rgba(10, 12, 10, 0.08) 80%, transparent 100%);
+  animation: curtain-fade 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.theme-ambient-curtain.to-light {
+  background: radial-gradient(circle at var(--curtain-x, 88%) var(--curtain-y, 24px), rgba(255, 248, 235, 0.55) 0%, rgba(247, 242, 235, 0.3) 50%, rgba(238, 238, 238, 0.08) 80%, transparent 100%);
+  animation: curtain-fade 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes curtain-fade {
+  0% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0.7;
+    transform: scale(1.005);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+/* ===== 11. View Transitions API (Chromium 111+ & Tauri WebView2) 原生硬件加速天体波纹扩散 ===== */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none !important;
+  mix-blend-mode: normal !important;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 999999;
+}

@@ -13,11 +13,15 @@ import com.auralis.app.source.SourceService;
 import com.auralis.app.subject.SubjectCommand;
 import com.auralis.app.subject.SubjectService;
 import com.auralis.app.task.TaskCommand;
+import com.auralis.app.task.TaskDtos;
 import com.auralis.app.task.TaskService;
+import com.auralis.app.task.TaskView;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
+import java.util.List;
+import java.util.Objects;
 
 @Component
 public class DomainWritePort {
@@ -61,6 +65,7 @@ public class DomainWritePort {
             case UPDATE -> subjectService.update(userId, mutation.resourceId(), mutation.baseVersion(), command(payload, SubjectCommand.class));
             case DELETE -> { subjectService.delete(userId, mutation.resourceId(), mutation.baseVersion()); yield null; }
             case RESTORE -> subjectService.restore(userId, mutation.resourceId(), mutation.baseVersion());
+            case SCHEDULE_INSERTION, SCHEDULE_SWAP -> throw unsupportedScheduleMutation();
         };
     }
 
@@ -70,6 +75,7 @@ public class DomainWritePort {
             case UPDATE -> sourceService.update(userId, mutation.resourceId(), mutation.baseVersion(), command(payload, SourceCommand.class));
             case DELETE -> { sourceService.delete(userId, mutation.resourceId(), mutation.baseVersion()); yield null; }
             case RESTORE -> sourceService.restore(userId, mutation.resourceId(), mutation.baseVersion());
+            case SCHEDULE_INSERTION, SCHEDULE_SWAP -> throw unsupportedScheduleMutation();
         };
     }
 
@@ -79,6 +85,7 @@ public class DomainWritePort {
             case UPDATE -> knowledgeBlockService.update(userId, mutation.resourceId(), mutation.baseVersion(), command(payload, KnowledgeBlockCommand.class));
             case DELETE -> { knowledgeBlockService.delete(userId, mutation.resourceId(), mutation.baseVersion()); yield null; }
             case RESTORE -> knowledgeBlockService.restore(userId, mutation.resourceId(), mutation.baseVersion());
+            case SCHEDULE_INSERTION, SCHEDULE_SWAP -> throw unsupportedScheduleMutation();
         };
     }
 
@@ -88,6 +95,7 @@ public class DomainWritePort {
             case UPDATE -> taskService.update(userId, mutation.resourceId(), mutation.baseVersion(), command(payload, TaskCommand.class));
             case DELETE -> { taskService.delete(userId, mutation.resourceId(), mutation.baseVersion()); yield null; }
             case RESTORE -> taskService.restore(userId, mutation.resourceId(), mutation.baseVersion());
+            case SCHEDULE_INSERTION, SCHEDULE_SWAP -> applyTaskSchedule(userId, mutation, payload);
         };
     }
 
@@ -97,12 +105,84 @@ public class DomainWritePort {
             case UPDATE -> relationService.update(userId, mutation.resourceId(), mutation.baseVersion(), command(payload, RelationCommand.class));
             case DELETE -> { relationService.delete(userId, mutation.resourceId(), mutation.baseVersion()); yield null; }
             case RESTORE -> relationService.restore(userId, mutation.resourceId(), mutation.baseVersion());
+            case SCHEDULE_INSERTION, SCHEDULE_SWAP -> throw unsupportedScheduleMutation();
         };
+    }
+
+    public List<TaskView> applyTaskSchedule(UUID userId, SyncMutation mutation, JsonNode payload) {
+        return switch (mutation.mutationType()) {
+            case SCHEDULE_INSERTION -> {
+                TaskDtos.ScheduleInsertionRequest request = command(payload, TaskDtos.ScheduleInsertionRequest.class);
+                validateScheduleEnvelope(mutation, request.taskId(), request.baseVersion());
+                yield taskService.insertSchedule(userId, request.taskId(), request.baseVersion(),
+                        request.scheduledAt(), request.windowStartAt(), request.windowLastStartAt(),
+                        request.targetTaskId());
+            }
+            case SCHEDULE_SWAP -> {
+                TaskDtos.ScheduleSwapRequest request = command(payload, TaskDtos.ScheduleSwapRequest.class);
+                validateScheduleEnvelope(mutation, request.sourceTaskId(), request.sourceBaseVersion());
+                validateScheduleSwapTarget(request.targetTaskId(), request.targetBaseVersion());
+                TaskService.ScheduleSwapResult result = taskService.swapSchedules(
+                        userId, request.sourceTaskId(), request.sourceBaseVersion(),
+                        request.targetTaskId(), request.targetBaseVersion());
+                yield List.of(result.source(), result.target());
+            }
+            default -> throw unsupportedScheduleMutation();
+        };
+    }
+
+    public List<TaskView> currentTaskSchedule(UUID userId, SyncMutation mutation) {
+        JsonNode payload = mutation.payload() == null ? NullNode.getInstance() : mutation.payload();
+        try {
+            return switch (mutation.mutationType()) {
+                case SCHEDULE_INSERTION -> {
+                    TaskDtos.ScheduleInsertionRequest request = command(payload, TaskDtos.ScheduleInsertionRequest.class);
+                    validateScheduleEnvelope(mutation, request.taskId(), request.baseVersion());
+                    yield taskService.currentInsertionSchedule(userId, request.taskId(),
+                            request.windowStartAt(), request.windowLastStartAt());
+                }
+                case SCHEDULE_SWAP -> {
+                    TaskDtos.ScheduleSwapRequest request = command(payload, TaskDtos.ScheduleSwapRequest.class);
+                    validateScheduleEnvelope(mutation, request.sourceTaskId(), request.sourceBaseVersion());
+                    yield taskService.currentSwapSchedule(userId, request.sourceTaskId(), request.targetTaskId());
+                }
+                default -> throw unsupportedScheduleMutation();
+            };
+        } catch (DomainException exception) {
+            if (mutation.mutationType() == SyncMutationType.SCHEDULE_INSERTION) {
+                return taskService.currentInsertionSchedule(userId, mutation.resourceId(), null, null);
+            }
+            if (mutation.mutationType() == SyncMutationType.SCHEDULE_SWAP) {
+                return taskService.currentSwapSchedule(userId, mutation.resourceId(), null);
+            }
+            throw exception;
+        }
+    }
+
+    private DomainException unsupportedScheduleMutation() {
+        return new DomainException("VALIDATION_FAILED", "Schedule mutations are only supported for tasks");
+    }
+
+    private void validateScheduleEnvelope(SyncMutation mutation, UUID payloadTaskId, Long payloadBaseVersion) {
+        if (!Objects.equals(mutation.resourceId(), payloadTaskId)
+                || payloadBaseVersion == null || payloadBaseVersion.longValue() != mutation.baseVersion()) {
+            throw new DomainException("VALIDATION_FAILED", "Schedule mutation identity does not match its payload");
+        }
+    }
+
+    private void validateScheduleSwapTarget(UUID targetTaskId, Long targetBaseVersion) {
+        if (targetTaskId == null || targetBaseVersion == null) {
+            throw new DomainException("VALIDATION_FAILED", "Schedule swap target identity and version are required");
+        }
     }
 
     private <T> T command(JsonNode payload, Class<T> type) {
         try {
-            return objectMapper.treeToValue(payload, type);
+            T result = objectMapper.treeToValue(payload, type);
+            if (result == null) {
+                throw new DomainException("VALIDATION_FAILED", "Mutation payload is invalid");
+            }
+            return result;
         } catch (JacksonException exception) {
             throw new DomainException("VALIDATION_FAILED", "Mutation payload is invalid");
         }

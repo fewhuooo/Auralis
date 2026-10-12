@@ -33,6 +33,7 @@ import java.util.UUID;
 
 @Service
 public class ReviewLifecycleService {
+    private static final String PARAMETER_SET_SCHEDULER = "FSRS_LITE";
     private static final int PARAMETER_VERSION = 1;
     private static final Duration MAX_FUTURE_OCCURRENCE = Duration.ofMinutes(5);
     private static final UUID DEFAULT_PARAMETER_ID = UUID.nameUUIDFromBytes(
@@ -43,7 +44,6 @@ public class ReviewLifecycleService {
     private final ReviewLifecycleReviewRepository lifecycleReviewRepository;
     private final ReviewParameterSetRepository parameterSetRepository;
     private final KnowledgeBlockService knowledgeBlockService;
-    private final ReviewScheduler scheduler;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
@@ -53,7 +53,6 @@ public class ReviewLifecycleService {
                                   ReviewLifecycleReviewRepository lifecycleReviewRepository,
                                   ReviewParameterSetRepository parameterSetRepository,
                                   KnowledgeBlockService knowledgeBlockService,
-                                  ReviewScheduler scheduler,
                                   ObjectMapper objectMapper,
                                   ApplicationEventPublisher eventPublisher,
                                   Clock clock) {
@@ -62,7 +61,6 @@ public class ReviewLifecycleService {
         this.lifecycleReviewRepository = lifecycleReviewRepository;
         this.parameterSetRepository = parameterSetRepository;
         this.knowledgeBlockService = knowledgeBlockService;
-        this.scheduler = scheduler;
         this.objectMapper = objectMapper;
         this.eventPublisher = eventPublisher;
         this.clock = clock;
@@ -467,9 +465,9 @@ public class ReviewLifecycleService {
 
     private ReviewStateEntity newState(UUID userId, UUID blockId, Instant now) {
         ReviewParameterSetEntity parameters = parameterSetRepository.findBySchedulerAndVersion(
-                        ReviewService.SCHEDULER, PARAMETER_VERSION)
+                        PARAMETER_SET_SCHEDULER, PARAMETER_VERSION)
                 .orElseGet(() -> parameterSetRepository.saveAndFlush(new ReviewParameterSetEntity(
-                        DEFAULT_PARAMETER_ID, ReviewService.SCHEDULER, PARAMETER_VERSION,
+                        DEFAULT_PARAMETER_ID, PARAMETER_SET_SCHEDULER, PARAMETER_VERSION,
                         "{\"againMinutes\":10,\"hardFactor\":1.2,\"goodFactor\":2.0,\"easyFactor\":3.0}")));
         return new ReviewStateEntity(UUID.randomUUID(), userId, blockId, parameters.getId(), 5.0, 0.0, now);
     }

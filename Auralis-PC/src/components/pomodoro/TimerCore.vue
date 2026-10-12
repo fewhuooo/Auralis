@@ -2,7 +2,10 @@
   <div class="timer-core">
     <!-- Time Row -->
     <div class="time-row">
-      <span class="datetime-text">{{ currentDateFormatted }} {{ currentTimeFormatted }}</span>
+      <span class="datetime-text">
+        <span class="datetime-dot"></span>
+        {{ currentDateFormatted }} {{ currentTimeFormatted }}
+      </span>
     </div>
 
     <div class="center-block">
@@ -19,13 +22,14 @@
 
       <!-- Phase Status -->
       <div class="phase-status">
-        <span class="phase-pill" :class="{ 'is-break': isBreakPhase }">
+        <span class="phase-pill" :class="{ 'is-break': isBreakPhase, 'is-active': isRunning }">
+          <span class="phase-beacon"></span>
           {{ isBreakPhase ? '茶歇时刻' : '沉浸专注中' }}
         </span>
       </div>
 
       <!-- Progress Dots -->
-      <div class="progress-dots">
+      <div class="progress-dots" :title="`今日第 ${currentPomodoro} 个番茄周期`">
         <div 
           v-for="i in 4" 
           :key="i"
@@ -37,7 +41,13 @@
       <!-- Controls -->
       <div class="controls">
         <button class="ctrl-btn secondary" type="button" @click="resetTimer">重置</button>
-        <button class="main-btn" type="button" :class="{ 'is-running': isRunning, 'is-break': isBreakPhase }" @click="toggleTimer">
+        <button 
+          class="main-btn" 
+          type="button" 
+          :class="{ 'is-running': isRunning, 'is-break': isBreakPhase }" 
+          @click="toggleTimer"
+          :title="isRunning ? '暂停专注' : '开始专注'"
+        >
           <div class="pause-icon" v-if="isRunning"></div>
           <div class="play-icon" v-else></div>
         </button>
@@ -138,23 +148,37 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   position: relative;
+  user-select: none;
 }
 
 .time-row {
   position: absolute;
-  top: 10px;
+  top: 14px;
   left: 20px;
 }
 .datetime-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   color: var(--text-muted, #7A7A75);
   font-weight: 600;
   font-family: var(--font-family-base);
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-subtle, #E6E6E4);
-  padding: 5px 14px;
+  padding: 6px 16px;
   border-radius: 9999px;
   box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+}
+.datetime-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8B9A6E;
+  opacity: 0.8;
 }
 
 .center-block {
@@ -176,45 +200,76 @@ onUnmounted(() => {
 .phase-pill {
   display: inline-flex;
   align-items: center;
-  padding: 4px 16px;
+  gap: 8px;
+  padding: 5px 18px;
   border-radius: 9999px;
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
   background: rgba(139, 154, 110, 0.12);
-  color: #637748;
-  border: 1px solid rgba(139, 154, 110, 0.25);
-  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.08);
+  color: #556B3D;
+  border: 1px solid rgba(139, 154, 110, 0.28);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.08);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.phase-beacon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #8B9A6E;
   transition: all 0.3s ease;
+}
+.phase-pill.is-active .phase-beacon {
+  animation: beacon-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(139, 154, 110, 0.8);
+}
+@keyframes beacon-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
 }
 .phase-pill.is-break {
   background: rgba(200, 155, 109, 0.15);
   color: #9C7240;
-  border-color: rgba(200, 155, 109, 0.3);
-  box-shadow: 0 2px 6px rgba(200, 155, 109, 0.1);
+  border-color: rgba(200, 155, 109, 0.32);
+  box-shadow: 0 2px 8px rgba(200, 155, 109, 0.1);
+}
+.phase-pill.is-break .phase-beacon {
+  background: #C89B6D;
+}
+.phase-pill.is-break.is-active .phase-beacon {
+  box-shadow: 0 0 6px rgba(200, 155, 109, 0.8);
 }
 
 .progress-dots {
   display: flex;
   justify-content: center;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin-top: 14px;
+  padding: 4px 8px;
 }
 .dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: rgba(139, 154, 110, 0.22);
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  background: rgba(139, 154, 110, 0.18);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .dot.is-filled {
   background: #8B9A6E;
-  box-shadow: 0 0 8px rgba(139, 154, 110, 0.6);
-  transform: scale(1.15);
+  box-shadow: 0 0 10px rgba(139, 154, 110, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
+  transform: scale(1.18);
 }
 .dot.is-break-filled {
   background: #C89B6D;
-  box-shadow: 0 0 8px rgba(200, 155, 109, 0.6);
+  box-shadow: 0 0 10px rgba(200, 155, 109, 0.65), 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 .controls {
@@ -228,23 +283,25 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--text-secondary, #344139);
   font-weight: 600;
-  padding: 8px 18px;
+  padding: 9px 20px;
   border-radius: 9999px;
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default, #E6E6E4);
   cursor: pointer;
   box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  letter-spacing: 0.3px;
 }
 .ctrl-btn:hover {
   background: var(--color-bg-tertiary, #FAF7F2);
   border-color: #8B9A6E;
   color: #8B9A6E;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.16);
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.18);
 }
 .ctrl-btn:active {
-  transform: scale(0.96);
+  transform: translateY(0.5px) scale(0.96);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .main-btn {
@@ -256,38 +313,42 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 6px 20px rgba(139, 154, 110, 0.38);
+  box-shadow: 0 8px 24px -2px rgba(139, 154, 110, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
+  position: relative;
+  outline: none;
 }
 .main-btn:hover {
-  transform: scale(1.06) translateY(-2px);
-  box-shadow: 0 8px 26px rgba(139, 154, 110, 0.5);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 10px 30px rgba(139, 154, 110, 0.52), 0 3px 8px rgba(0, 0, 0, 0.06);
 }
 .main-btn:active {
-  transform: scale(0.96);
+  transform: translateY(1px) scale(0.96);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.36);
 }
 .main-btn.is-break {
   background: linear-gradient(135deg, #D6AF83 0%, #C89B6D 100%);
-  box-shadow: 0 6px 20px rgba(200, 155, 109, 0.38);
+  box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.44), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 .main-btn.is-break:hover {
-  box-shadow: 0 8px 26px rgba(200, 155, 109, 0.5);
+  box-shadow: 0 10px 30px rgba(200, 155, 109, 0.52), 0 3px 8px rgba(0, 0, 0, 0.06);
 }
 
 .play-icon {
   width: 0;
   height: 0;
   border-style: solid;
-  border-width: 13px 0 13px 20px;
+  border-width: 12px 0 12px 19px;
   border-color: transparent transparent transparent #FFFFFF;
-  margin-left: 5px;
+  margin-left: 4px;
 }
 .pause-icon {
   width: 16px;
   height: 20px;
   border-left: 5px solid #FFFFFF;
   border-right: 5px solid #FFFFFF;
+  border-radius: 1px;
   box-sizing: border-box;
 }
 
@@ -309,10 +370,27 @@ html.dark .ctrl-btn:hover {
 }
 html.dark .main-btn {
   background: #9AB08F;
-  box-shadow: 0 6px 20px rgba(154, 176, 143, 0.3);
+  box-shadow: 0 8px 24px -2px rgba(154, 176, 143, 0.35);
 }
 html.dark .main-btn.is-break {
   background: #C89B6D;
-  box-shadow: 0 6px 20px rgba(200, 155, 109, 0.3);
+  box-shadow: 0 8px 24px -2px rgba(200, 155, 109, 0.35);
+}
+html.dark .dot {
+  background: rgba(163, 177, 155, 0.2);
+}
+html.dark .dot.is-filled {
+  background: #9AB08F;
+  box-shadow: 0 0 10px rgba(154, 176, 143, 0.6);
+}
+html.dark .phase-pill {
+  background: rgba(154, 176, 143, 0.16);
+  color: #b8ccaf;
+  border-color: rgba(154, 176, 143, 0.32);
+}
+html.dark .phase-pill.is-break {
+  background: rgba(200, 155, 109, 0.18);
+  color: #dfba92;
+  border-color: rgba(200, 155, 109, 0.35);
 }
 </style>

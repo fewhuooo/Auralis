@@ -63,10 +63,17 @@
         </button>
       </Transition>
 
-      <!-- 12.5: 深色模式切换 -->
-      <button class="header-icon-btn dark-toggle" :title="settingsStore.isDark ? '切换浅色模式' : '切换深色模式'" @click="settingsStore.toggleDark">
-        <IconSun v-if="settingsStore.isDark" :size="16" :stroke-width="1.6" />
-        <IconMoon v-else :size="16" :stroke-width="1.6" />
+      <!-- 12.5: 深色模式切换 (天体径向涟漪 + 旋转动效) -->
+      <button 
+        class="header-icon-btn dark-toggle" 
+        :title="settingsStore.isDark ? '切换浅色模式' : '切换深色模式'" 
+        @click="handleThemeToggle"
+        aria-label="切换浅色或深色模式"
+      >
+        <Transition name="theme-flip" mode="out-in">
+          <IconSun v-if="settingsStore.isDark" key="sun" :size="17" :stroke-width="1.8" class="theme-icon sun-icon" />
+          <IconMoon v-else key="moon" :size="17" :stroke-width="1.8" class="theme-icon moon-icon" />
+        </Transition>
       </button>
       <!-- 用户头像 -->
       <div class="avatar-wrapper" @click="router.push('/profile')" title="查看个人中心">
@@ -90,6 +97,10 @@ const router = useRouter()
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const pomodoroStore = usePomodoroStore()
+
+const handleThemeToggle = (event?: MouseEvent) => {
+  settingsStore.toggleDark(event)
+}
 
 const userInitial = computed(() => {
   return authStore.username ? authStore.username.charAt(0).toUpperCase() : 'U'
@@ -140,12 +151,12 @@ const handlePomodoroClick = () => {
 }
 
 const pageTitleMap: Record<string, string> = {
-  '/': '知识检索与入库',
-  '/asset': '重型资产编排',
-  '/timeline': '排期副驾',
-  '/profile': '个人中心',
+  '/': '首页',
+  '/asset': '资料管理',
+  '/timeline': '任务排期',
+  '/profile': '个人设置',
   '/pomodoro': '专注时钟',
-  '/subjects': '学科大厅',
+  '/subjects': '学科空间',
 }
 
 const currentPageTitle = computed(() => pageTitleMap[route.path] || 'Auralis')
@@ -165,7 +176,9 @@ onMounted(() => {
 .app-header {
   height: var(--header-height);
   background: var(--color-bg-primary, #F7F2EB);
-  border-bottom: 1px solid var(--border-subtle);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -173,19 +186,24 @@ onMounted(() => {
   gap: 24px;
   position: relative;
   z-index: 5;
+  user-select: none;
 }
 
 /* Left */
 .header-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
 .page-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.3px;
+  margin: 0;
+  line-height: 1.2;
 }
 
 /* Center: 全局搜索唤醒入口 */
@@ -198,51 +216,72 @@ onMounted(() => {
 .search-trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   max-width: 460px;
   padding: 8px 16px;
-  background: var(--color-bg-tertiary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  border-radius: 9999px;
   cursor: pointer;
-  transition: all var(--transition-normal);
-  color: var(--text-muted);
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  color: var(--text-muted, #7A7A75);
   font-family: inherit;
   font-size: 13px;
+  outline: none;
+  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
 }
 
 .search-trigger:hover {
-  background: rgba(139, 154, 110, 0.12);
-  border-color: var(--color-zen-sage);
-  box-shadow: var(--accent-glow);
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: rgba(139, 154, 110, 0.5);
+  box-shadow: 0 4px 16px rgba(139, 154, 110, 0.18), 0 0 0 2px rgba(139, 154, 110, 0.1);
+  transform: translateY(-1px);
+  color: var(--text-secondary, #344139);
+}
+
+.search-trigger:active {
+  transform: translateY(0.5px) scale(0.99);
 }
 
 .search-icon {
   display: flex;
   align-items: center;
-  color: var(--text-muted);
+  color: var(--text-muted, #7A7A75);
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.search-trigger:hover .search-icon {
+  color: #8B9A6E;
+  transform: scale(1.1);
 }
 
 .search-placeholder {
   flex: 1;
   text-align: left;
+  letter-spacing: -0.1px;
 }
 
 .search-shortcut {
   display: flex;
-  gap: 4px;
+  gap: 5px;
 }
 
 .search-shortcut kbd {
   background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  padding: 1px 5px;
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  padding: 2px 6px;
   font-size: 11px;
-  font-family: inherit;
-  color: var(--text-muted);
-  line-height: 1.6;
+  font-weight: 600;
+  font-family: var(--font-family-mono, monospace);
+  color: var(--text-muted, #7A7A75);
+  line-height: 1.4;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+.search-trigger:hover .search-shortcut kbd {
+  border-color: rgba(139, 154, 110, 0.3);
+  color: #637748;
 }
 
 /* Right: 用户状态 */
@@ -251,75 +290,110 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 10px;
 }
 
 .header-icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-md);
-  background: transparent;
-  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 16px;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+  outline: none;
+  color: var(--text-secondary, #344139);
 }
 
-.header-icon-btn:hover {
-  background: rgba(139, 154, 110, 0.12);
-  border-color: var(--border-subtle);
+.header-icon-btn.dark-toggle:hover {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: #8B9A6E;
+  color: #8B9A6E;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.22);
+}
+.header-icon-btn.dark-toggle:active {
+  transform: scale(0.92);
 }
 
-.notification-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ef4444;
-  border: 2px solid var(--color-bg-secondary);
+/* Celestial Flip Transition */
+.theme-flip-enter-active,
+.theme-flip-leave-active {
+  transition: all 0.48s cubic-bezier(0.34, 1.25, 0.64, 1);
+}
+.theme-flip-enter-from {
+  opacity: 0;
+  transform: rotate(-90deg) scale(0.5);
+}
+.theme-flip-leave-to {
+  opacity: 0;
+  transform: rotate(90deg) scale(0.5);
+}
+
+.theme-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+.sun-icon {
+  color: #E2A03F;
+}
+.moon-icon {
+  color: #637748;
+}
+.header-icon-btn.dark-toggle:hover .sun-icon {
+  transform: rotate(25deg) scale(1.12);
+  color: #EDB34D;
+}
+.header-icon-btn.dark-toggle:hover .moon-icon {
+  transform: rotate(-20deg) scale(1.12);
+  color: #8B9A6E;
 }
 
 .avatar-wrapper {
   position: relative;
-  margin-left: 8px;
+  margin-left: 6px;
   cursor: pointer;
+  outline: none;
 }
 
 .avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
   background: var(--accent-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 700;
   color: white;
-  transition: transform var(--transition-fast);
+  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .avatar:hover {
-  transform: scale(1.05);
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.3);
 }
 
 .avatar-img {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
   object-fit: cover;
   display: block;
-  transition: transform var(--transition-fast);
+  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
 .avatar-img:hover {
-  transform: scale(1.05);
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.3);
 }
 
 /* 番茄钟顶栏时间胶囊 — 跑道形粗体边框进度条，底部加阴影悬浮在页面上 */
@@ -415,27 +489,51 @@ onMounted(() => {
 }
 
 /* 深色模式适配 — 严格对齐主界面 PomodoroRing 和 ring-pill */
+html.dark .app-header {
+  background: var(--color-bg-secondary, #292825);
+  border-bottom-color: rgba(163, 177, 155, 0.15);
+}
+html.dark .search-trigger {
+  background: #1f1e1c;
+  border-color: rgba(163, 177, 155, 0.2);
+  color: #b0aca5;
+}
+html.dark .search-trigger:hover {
+  background: #1f1e1c;
+  border-color: #9AB08F;
+  box-shadow: 0 4px 16px rgba(154, 176, 143, 0.2);
+}
+html.dark .search-shortcut kbd {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(163, 177, 155, 0.2);
+  color: #b0aca5;
+}
+html.dark .header-icon-btn.dark-toggle {
+  background: #1f1e1c;
+  border-color: rgba(163, 177, 155, 0.2);
+  color: #FAF7F2;
+}
+html.dark .header-icon-btn.dark-toggle:hover {
+  border-color: #9AB08F;
+  color: #9AB08F;
+}
 html.dark .header-pomodoro-pill {
   background: #212621;
   box-shadow: 
     0 4px 16px -2px rgba(0, 0, 0, 0.45),
     0 2px 6px -1px rgba(0, 0, 0, 0.30);
 }
-
 html.dark .header-pomodoro-pill:hover {
   box-shadow: 
     0 6px 20px -2px rgba(0, 0, 0, 0.55),
     0 3px 8px -1px rgba(0, 0, 0, 0.35);
 }
-
 html.dark .pomo-track-path {
   stroke: rgba(163, 177, 155, 0.18);
 }
-
 html.dark .header-pomodoro-pill.is-break .pomo-track-path {
   stroke: rgba(212, 168, 126, 0.20);
 }
-
 html.dark .pomo-time-display {
   color: #FAF7F2;
 }

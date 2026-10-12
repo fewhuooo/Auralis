@@ -10,9 +10,15 @@ import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.ai.ingestion.IngestionCompletionService;
 import com.auralis.app.ai.ingestion.IngestionClaim;
 import com.auralis.app.ai.ingestion.IngestionWorker;
+import com.auralis.app.ai.ingestion.TextChunk;
+import com.auralis.app.ai.ingestion.TextChunker;
 import com.auralis.app.ai.ingestion.SourceParser;
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
+import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiInvocationResult;
+import com.auralis.app.ai.usage.AiTaskScope;
+import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.source.SourceIngestionStatus;
 import com.auralis.app.source.ParsedDocumentReadView;
@@ -23,23 +29,32 @@ import com.auralis.app.source.SourceType;
 import com.auralis.app.source.SourceView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
+import java.time.ZoneId;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.never;
 
@@ -58,6 +73,10 @@ class AiIngestionWorkerTests {
     private AiSettingsService settingsService;
     @Mock
     private EmbeddingProviderRegistry embeddingProviderRegistry;
+    @Mock
+    private AiInvocationGateway invocationGateway;
+    @Mock
+    private AiTaskScope taskScope;
     @Mock
     private ParsedDocumentService parsedDocumentService;
     @Mock
@@ -79,11 +98,24 @@ class AiIngestionWorkerTests {
         generation = UUID.randomUUID();
         revision = UUID.randomUUID();
         when(properties.ai()).thenReturn(aiProperties);
-        when(aiProperties.ingestionLeaseMillis()).thenReturn(300_000L);
-        when(aiProperties.ingestionMaxAttempts()).thenReturn(3);
+        lenient().when(aiProperties.ingestionLeaseMillis()).thenReturn(300_000L);
+        lenient().when(aiProperties.ingestionMaxAttempts()).thenReturn(3);
+        lenient().when(aiProperties.ingestionEmbeddingBatchMaxItems()).thenReturn(32);
+        lenient().when(aiProperties.ingestionEmbeddingBatchMaxUtf8Bytes()).thenReturn(32_768L);
+        lenient().when(jobService.renewClaim(any(), any(), any())).thenReturn(true);
+        lenient().when(invocationGateway.beginTask(any())).thenReturn(taskScope);
+        lenient().when(taskScope.embed(any(), any(), any(), anyList(), any())).thenAnswer(invocation -> {
+            AiProviderType providerType = invocation.getArgument(1);
+            List<String> texts = invocation.getArgument(3);
+            AiCredential credential = invocation.getArgument(4);
+            return new AiInvocationResult<>(embeddingProviderRegistry.require(providerType)
+                    .embed(texts, credential), null);
+        });
+        lenient().when(completionService.loadCheckpoint(any(), any(), anyList())).thenReturn(java.util.Map.of());
+        lenient().when(completionService.stageCheckpoint(any(), any(), anyList(), anyList())).thenReturn(true);
         worker = new IngestionWorker(
                 jobService, completionService, sourceService, List.of(parser), settingsService,
-                embeddingProviderRegistry, parsedDocumentService, clock, properties);
+                invocationGateway, parsedDocumentService, clock, properties);
     }
 
     @Test
@@ -101,6 +133,35 @@ class AiIngestionWorkerTests {
         verify(completionService).fail(
                 eq(IngestionClaim.from(job)), eq(revision), eq(clock.instant()), eq(3),
                 eq("INGESTION_FAILED"), any());
+    }
+
+    @Test
+    void quotaDenialDefersWithoutRecordingOrdinaryFailure() {
+        IngestionJobEntity job = claimedJob(1);
+        Instant resetAt = clock.instant().plusSeconds(3600);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(invocationGateway.beginTask(any())).thenThrow(new AiUsageLimitException(
+                "AI_HOURLY_QUOTA_EXCEEDED", 429, 3600, resetAt));
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(completionService).defer(eq(IngestionClaim.from(job)), eq(revision), eq(resetAt),
+                eq("AI_HOURLY_QUOTA_EXCEEDED"));
+        verify(completionService, never()).fail(any(), any(), any(), anyInt(), any(), any());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"AI_REQUEST_BUDGET_EXCEEDED,413", "AI_TASK_BUDGET_EXCEEDED,422"})
+    void deterministicBudgetDenialTerminalizesInsteadOfDeferring(String code, int status) {
+        IngestionJobEntity job = claimedJob(1);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(invocationGateway.beginTask(any())).thenThrow(new AiUsageLimitException(code, status, 0, null));
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(completionService).fail(eq(IngestionClaim.from(job)), eq(revision), eq(clock.instant()),
+                eq(1), eq(code), any());
+        verify(completionService, never()).defer(any(), any(), any(), any());
     }
 
     @Test
@@ -145,6 +206,186 @@ class AiIngestionWorkerTests {
         verify(completionService).complete(
                 eq(IngestionClaim.from(job)), eq(revision), anyList(), anyList(), eq(clock.instant()));
         verify(sourceService, never()).markReady(any(), any());
+    }
+
+    @Test
+    void completedCheckpointBatchIsReusedWithoutAnotherEmbeddingDispatch() {
+        String text = "source text";
+        IngestionJobEntity job = claimedJob(2);
+        SourceView source = source();
+        List<TextChunk> chunks = new TextChunker(1200, 120).chunk(text);
+        List<Double> checkpointVector = vector();
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
+        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(parser.supports(SourceType.TEXT)).thenReturn(true);
+        when(parser.parse(userId, source)).thenReturn(text);
+        when(completionService.loadCheckpoint(eq(IngestionClaim.from(job)), eq(revision), eq(chunks)))
+                .thenReturn(java.util.Map.of(0, checkpointVector));
+        when(completionService.complete(any(), eq(revision), anyList(), anyList(), eq(clock.instant())))
+                .thenReturn(true);
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(taskScope, never()).embed(any(), any(), any(), anyList(), any());
+        verify(completionService, never()).stageCheckpoint(any(), any(), anyList(), anyList());
+        verify(completionService).complete(eq(IngestionClaim.from(job)), eq(revision), eq(chunks),
+                eq(List.of(checkpointVector)), eq(clock.instant()));
+    }
+
+    @Test
+    void embedsInBoundedBatchesAndPreservesChunkSequenceBeforeCommitting() {
+        String text = "x".repeat(36_000);
+        IngestionJobEntity job = claimedJob(1);
+        SourceView source = source();
+        EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
+        List<List<String>> submittedBatches = new ArrayList<>();
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
+        when(parser.supports(SourceType.TEXT)).thenReturn(true);
+        when(parser.parse(userId, source)).thenReturn(text);
+        when(settingsService.resolveServerManagedEmbedding())
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.SILICONFLOW, "embedding-model",
+                        new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        doAnswer(invocation -> {
+            List<String> batch = List.copyOf(invocation.getArgument(0));
+            submittedBatches.add(batch);
+            return new EmbeddingResult(java.util.Collections.nCopies(batch.size(), vector()));
+        }).when(embeddingProvider).embed(anyList(), any());
+
+        assertThat(worker.processNext()).isTrue();
+
+        List<String> expectedChunks = new TextChunker(1200, 120).chunk(text).stream()
+                .map(TextChunk::content).toList();
+        assertThat(submittedBatches).hasSizeGreaterThan(1);
+        assertThat(submittedBatches).allSatisfy(batch -> {
+            assertThat(batch).hasSizeLessThanOrEqualTo(32);
+            assertThat(batch.stream().mapToInt(value -> value.getBytes(StandardCharsets.UTF_8).length).sum())
+                    .isLessThanOrEqualTo(32_768);
+        });
+        assertThat(submittedBatches.stream().flatMap(List::stream).toList()).containsExactlyElementsOf(expectedChunks);
+        org.mockito.ArgumentCaptor<List<List<Double>>> vectors = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(completionService).complete(
+                eq(IngestionClaim.from(job)), eq(revision), anyList(), vectors.capture(), eq(clock.instant()));
+        assertThat(vectors.getValue()).hasSize(expectedChunks.size());
+    }
+
+    @Test
+    void renewsClaimAcrossMultipleBatchesThatOutlastTheOriginalLease() {
+        AtomicReference<Instant> now = new AtomicReference<>(clock.instant());
+        Clock mutableClock = new Clock() {
+            @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(ZoneId zone) { return this; }
+            @Override public Instant instant() { return now.get(); }
+        };
+        worker = new IngestionWorker(jobService, completionService, sourceService, List.of(parser), settingsService,
+                invocationGateway, parsedDocumentService, mutableClock, properties);
+        when(aiProperties.ingestionLeaseMillis()).thenReturn(100L);
+        when(jobService.renewClaim(any(), any(), any())).thenReturn(true);
+        IngestionJobEntity job = new IngestionJobEntity(
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation, revision);
+        job.claim(now.get(), now.get().plusMillis(100));
+        SourceView source = source();
+        EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
+        when(parser.supports(SourceType.TEXT)).thenReturn(true);
+        when(parser.parse(userId, source)).thenReturn("x".repeat(36_000));
+        when(settingsService.resolveServerManagedEmbedding())
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.SILICONFLOW, "embedding-model",
+                        new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        doAnswer(invocation -> {
+            List<String> batch = invocation.getArgument(0);
+            now.set(now.get().plusMillis(101));
+            return new EmbeddingResult(java.util.Collections.nCopies(batch.size(), vector()));
+        }).when(embeddingProvider).embed(anyList(), any());
+
+        assertThat(worker.processNext()).isTrue();
+
+        assertThat(now.get()).isAfter(clock.instant().plusMillis(100));
+        org.mockito.ArgumentCaptor<IngestionClaim> claimCaptor =
+                org.mockito.ArgumentCaptor.forClass(IngestionClaim.class);
+        org.mockito.ArgumentCaptor<Instant> renewedAt = org.mockito.ArgumentCaptor.forClass(Instant.class);
+        verify(jobService, org.mockito.Mockito.atLeast(4))
+                .renewClaim(claimCaptor.capture(), renewedAt.capture(), any());
+        assertThat(claimCaptor.getAllValues()).allMatch(claim -> claim.equals(IngestionClaim.from(job)));
+        verify(completionService).complete(eq(IngestionClaim.from(job)), eq(revision), anyList(), anyList(), eq(now.get()));
+    }
+
+    @Test
+    void doesNotCommitGenerationWhenEmbeddingProviderReturnsWrongVectorCount() {
+        IngestionJobEntity job = claimedJob(1);
+        SourceView source = source();
+        EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
+        when(parser.supports(SourceType.TEXT)).thenReturn(true);
+        when(parser.parse(userId, source)).thenReturn("one chunk");
+        when(settingsService.resolveServerManagedEmbedding())
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.SILICONFLOW, "embedding-model",
+                        new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        when(embeddingProvider.embed(anyList(), any())).thenReturn(new EmbeddingResult(List.of()));
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(completionService, never()).complete(any(), any(), anyList(), anyList(), any());
+        verify(completionService).fail(eq(IngestionClaim.from(job)), eq(revision), eq(clock.instant()), eq(3),
+                eq("MODEL_PROVIDER_ERROR"), any());
+    }
+
+    @Test
+    void stopsEmbeddingWhenTheClaimLeaseExpiresBetweenBatches() {
+        AtomicReference<Instant> now = new AtomicReference<>(clock.instant());
+        Clock mutableClock = new Clock() {
+            @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(ZoneId zone) { return this; }
+            @Override public Instant instant() { return now.get(); }
+        };
+        worker = new IngestionWorker(jobService, completionService, sourceService, List.of(parser), settingsService,
+                invocationGateway, parsedDocumentService, mutableClock, properties);
+        when(aiProperties.ingestionLeaseMillis()).thenReturn(100L);
+        when(jobService.renewClaim(any(), any(), any())).thenReturn(true, false);
+        String text = "x".repeat(36_000);
+        IngestionJobEntity job = new IngestionJobEntity(
+                UUID.randomUUID(), userId, sourceId, IngestionJobStatus.PENDING, generation, revision);
+        job.claim(now.get(), now.get().plusMillis(100));
+        SourceView source = source();
+        EmbeddingProviderPort embeddingProvider = org.mockito.Mockito.mock(EmbeddingProviderPort.class);
+        when(jobService.claimNext(any(), any(), eq(3))).thenReturn(Optional.of(job));
+        when(sourceService.requireActiveSource(userId, sourceId)).thenReturn(source);
+        when(sourceService.markParsingIfRevision(userId, sourceId, revision)).thenReturn(Optional.of(source));
+        when(parser.supports(SourceType.TEXT)).thenReturn(true);
+        when(parser.parse(userId, source)).thenReturn(text);
+        when(settingsService.resolveServerManagedEmbedding())
+                .thenReturn(new AiSettingsService.ResolvedSettings(
+                        AiProviderType.SILICONFLOW, "embedding-model",
+                        new AiCredential("https://api.siliconflow.cn", "test-key", "embedding-model")));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(sourceService.markIndexingIfRevision(userId, sourceId, revision)).thenReturn(true);
+        doAnswer(invocation -> {
+            List<String> batch = invocation.getArgument(0);
+            now.set(now.get().plusMillis(101));
+            return new EmbeddingResult(java.util.Collections.nCopies(batch.size(), vector()));
+        }).when(embeddingProvider).embed(anyList(), any());
+
+        assertThat(worker.processNext()).isTrue();
+
+        verify(embeddingProvider, org.mockito.Mockito.times(1)).embed(anyList(), any());
+        verify(completionService, never()).complete(any(), any(), anyList(), anyList(), any());
+        verify(completionService, never()).fail(any(), any(), any(), anyInt(), any(), any());
     }
 
     @Test

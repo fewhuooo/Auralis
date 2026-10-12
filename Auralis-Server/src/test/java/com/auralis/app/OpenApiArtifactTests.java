@@ -70,6 +70,30 @@ class OpenApiArtifactTests {
     }
 
     @Test
+    void exposesScheduleCommandsOnPushWithoutAddingThemToChangeLog() throws Exception {
+        JsonNode document = openApiDocument();
+
+        assertThat(document.at("/components/schemas/MutationRequest/properties/mutationType/enum").toString())
+                .contains("SCHEDULE_INSERTION", "SCHEDULE_SWAP");
+        assertThat(document.at("/components/schemas/MutationResponse/properties/mutationType/enum").toString())
+                .contains("SCHEDULE_INSERTION", "SCHEDULE_SWAP");
+        assertThat(document.at("/components/schemas/ChangeResponse/properties/mutationType/enum").toString())
+                .isEqualTo("[\"CREATE\",\"UPDATE\",\"DELETE\",\"RESTORE\"]");
+    }
+
+    @Test
+    void omitsRemovedLegacyReviewRoutesAndEventSchemas() throws Exception {
+        JsonNode document = openApiDocument();
+
+        assertThat(document.at("/paths/~1api~1reviews~1due").isMissingNode()).isTrue();
+        assertThat(document.at("/paths/~1api~1reviews~1events").isMissingNode()).isTrue();
+        assertThat(document.at("/paths/~1api~1reviews~1history").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/EventRequest").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/EventResponse").isMissingNode()).isTrue();
+        assertThat(document.at("/components/schemas/ReviewEventView").isMissingNode()).isTrue();
+    }
+
+    @Test
     void documentsParsedDocumentContractAndReadOnlySourceRevision() throws Exception {
         JsonNode document = openApiDocument();
 
@@ -151,8 +175,6 @@ class OpenApiArtifactTests {
         assertThat(allowsNull(history.at("/properties/state"))).isTrue();
         assertThat(history.at("/properties/protocolVersion/type").asText()).isEqualTo("integer");
         assertThat(allowsNull(document.at("/components/schemas/ReviewStateView/properties/contentHash"))).isTrue();
-        assertThat(document.at("/components/schemas/ReviewEventView/properties/firstLearning/type").asText())
-                .isEqualTo("boolean");
     }
 
     @Test
@@ -195,6 +217,21 @@ class OpenApiArtifactTests {
                 .isEqualTo("#/components/schemas/OverviewChapter");
         assertThat(input.at("/properties/summary/$ref").asText())
                 .isEqualTo("#/components/schemas/OverviewSummary");
+    }
+
+    @Test
+    void overviewRoutesKeepJsonAndDocumentOptInEventStreamAndRequestId() throws Exception {
+        JsonNode document = openApiDocument();
+        for (String route : new String[]{"/api/ai/source-overviews", "/api/ai/subject-overviews"}) {
+            JsonNode operation = document.at("/paths/" + route.replace("/", "~1") + "/post");
+            assertThat(operation.isObject()).isTrue();
+            assertThat(operation.at("/requestBody/content/application~1json/schema").isObject()).isTrue();
+            assertThat(operation.at("/responses/200/content/application~1json/schema/$ref").asText())
+                    .isEqualTo("#/components/schemas/OverviewResponse");
+            assertThat(operation.at("/responses/200/content/text~1event-stream/schema").isObject()).isTrue();
+            assertThat(operation.at("/parameters").toString()).contains("X-Overview-Request-Id");
+            assertThat(operation.at("/description").asText()).contains("heartbeat").contains("terminal");
+        }
     }
 
     @Test

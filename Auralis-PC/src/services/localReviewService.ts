@@ -11,7 +11,6 @@ import type {
   CursorPageReviewStateView,
   LifecycleHistoryCommandView,
   LifecycleHistoryResponse,
-  ReviewEventView,
 } from '@/api/useReviewApi'
 
 function localReviewConflict(): ApiProblemError {
@@ -69,11 +68,9 @@ function canonicalState(state: LifecycleStateView | null): LifecycleStateView | 
 
 function anchorFromHistory(
   history: LifecycleHistoryResponse,
-  legacyEvents: ReviewEventView[],
   subjectId: string,
   contentHash: string,
 ): LocalReviewCanonicalAnchor | null {
-  if (!legacyEvents.every(event => event.firstLearning === true || event.firstLearning === false)) return null
   return {
     knowledgeBlockVersion: history.knowledgeBlockVersion,
     subjectId,
@@ -81,8 +78,6 @@ function anchorFromHistory(
     state: canonicalState(history.state),
     commands: JSON.parse(JSON.stringify(history.commands)),
     effectiveReviews: JSON.parse(JSON.stringify(history.effectiveReviews)),
-    legacyEvents: JSON.parse(JSON.stringify(legacyEvents)),
-    legacyHistoryComplete: true,
   }
 }
 
@@ -355,7 +350,6 @@ export class LocalReviewService {
     deviceId: string,
     kbId: string,
     history: LifecycleHistoryResponse,
-    legacyEvents: ReviewEventView[] = [],
   ): Promise<boolean> {
     if (history.protocolVersion !== 2 || history.knowledgeBlockId !== kbId) return false
     return this.repo.executeAtomicReviewCommit(userId, deviceId, kbId, async (tx, currentRecord, kbResource, subjectResource) => {
@@ -386,10 +380,8 @@ export class LocalReviewService {
         state,
         history: history.commands,
         effectiveReviews: history.effectiveReviews,
-        legacyEvents,
-        legacyHistoryComplete: legacyEvents.every(event => event.firstLearning === true || event.firstLearning === false),
         historyImported: true,
-          canonicalAnchor: anchorFromHistory(history, legacyEvents, subjectId ?? '', hash),
+        canonicalAnchor: anchorFromHistory(history, subjectId ?? '', hash),
         isPresenceMarker: false,
         updatedAt: new Date().toISOString(),
       }
@@ -403,7 +395,6 @@ export class LocalReviewService {
     deviceId: string,
     kbId: string,
     history: LifecycleHistoryResponse,
-    legacyEvents: ReviewEventView[],
   ): Promise<boolean> {
     if (history.protocolVersion !== 2 || history.knowledgeBlockId !== kbId) return false
     return this.repo.executeAtomicReviewCommit(userId, deviceId, kbId, async (tx, currentRecord, kbResource, subjectResource) => {
@@ -428,10 +419,8 @@ export class LocalReviewService {
         state,
         history: history.commands,
         effectiveReviews: history.effectiveReviews,
-        legacyEvents,
-        legacyHistoryComplete: legacyEvents.every(event => event.firstLearning === true || event.firstLearning === false),
         historyImported: true,
-        canonicalAnchor: anchorFromHistory(history, legacyEvents, subjectId ?? currentRecord?.subjectId ?? '', hash),
+        canonicalAnchor: anchorFromHistory(history, subjectId ?? currentRecord?.subjectId ?? '', hash),
         isPresenceMarker: false,
         updatedAt: new Date().toISOString(),
       }
@@ -445,10 +434,6 @@ export class LocalReviewService {
     const blocks = (await this.listSyncBlocks(userId)).filter(block => block.subjectId === subjectId)
     const unresolved = await this.repo.getUnresolvedIntents(userId, deviceId, blocks.map(block => block.id))
     return [...new Set(unresolved.filter(intent => intent.status === 'conflict').map(intent => intent.knowledgeBlockId))]
-  }
-
-  async getLegacyHistory(userId: string, deviceId: string, kbId: string): Promise<ReviewEventView[]> {
-    return (await this.repo.getReviewRecord(userId, deviceId, kbId))?.legacyEvents ?? []
   }
 
   private async pendingRows(tx: LocalSqlDatabase | 'localstorage', userId: string, deviceId: string, kbId: string): Promise<LocalReviewIntent[]> {
@@ -573,8 +558,6 @@ export class LocalReviewService {
         state: stateWithCanonical,
         history: nextCommands,
         effectiveReviews: nextEffective,
-        legacyEvents: currentRecord?.legacyEvents ?? [],
-        legacyHistoryComplete: currentRecord?.legacyHistoryComplete ?? false,
         historyImported: currentRecord?.historyImported ?? false,
         canonicalAnchor: anchor,
         isPresenceMarker: false,
@@ -596,7 +579,6 @@ export class LocalReviewService {
           anchorSubjectId: anchor?.subjectId ?? null,
           anchorContentHash: anchor?.contentHash ?? null,
           anchorCommandIds: anchor?.commands.map(command => command.clientCommandId) ?? [],
-          anchorLegacyFingerprint: anchor ? stableJson(anchor.legacyEvents) : null,
           predecessorClientCommandIds: previousReviewIntents.map(item => item.clientCommandId),
           knownLocalCreate: unresolvedCoreMutationType === 'CREATE',
           allowContentInvalidation,

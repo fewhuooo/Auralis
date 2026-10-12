@@ -255,8 +255,6 @@ test('local review history keeps prior review results and records reopen then co
       knowledgeBlockVersion,
     }],
     effectiveReviews: [previousReview],
-    legacyEvents: [],
-    legacyHistoryComplete: true,
     historyImported: true,
     isPresenceMarker: false, canonicalAnchor: null, updatedAt: '2026-10-07T10:01:00.000000Z',
   })

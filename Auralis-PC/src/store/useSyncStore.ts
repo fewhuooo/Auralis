@@ -33,6 +33,19 @@ export function isOnline(): boolean {
   return typeof navigator === 'undefined' || navigator.onLine !== false
 }
 
+export function runCoreSyncWithAssetQueueWakeup<T>(
+  assetQueue: Pick<LocalAssetSyncQueue, 'wakeUp'>,
+  isScopeCurrent: () => boolean,
+  runCoreCycle: () => Promise<T>,
+): Promise<T> {
+  void assetQueue.wakeUp().catch(error => {
+    if (!isScopeCurrent()) return
+    const safe = classifyClientError(error, 'SYNC')
+    logClientError('[useSyncStore] Asset queue wakeup deferred', error, safe)
+  })
+  return runCoreCycle()
+}
+
 export const getClientId = (): string => {
   const authStore = useAuthStore()
   const userId = authStore.user?.id ?? 'anonymous'
@@ -53,8 +66,16 @@ export const useSyncStore = defineStore('sync', () => {
   const isPushing = ref(false)
   const lastSyncError = ref<string | null>(null)
   const lastSyncErrorCode = ref<string | null>(null)
+  const scheduleSyncErrors = ref<Array<{ clientMutationId: string; code: string }>>([])
   const reviewSyncError = ref<string | null>(null)
   const isSyncing = computed(() => isPulling.value || isPushing.value)
+
+  function acknowledgeScheduleSyncError(clientMutationId: string): boolean {
+    const remaining = scheduleSyncErrors.value.filter(error => error.clientMutationId !== clientMutationId)
+    if (remaining.length === scheduleSyncErrors.value.length) return false
+    scheduleSyncErrors.value = remaining
+    return true
+  }
 
   let repository: LocalRepository | null = null
   let repositoryKey: string | null = null
@@ -118,6 +139,7 @@ export const useSyncStore = defineStore('sync', () => {
         resetRequired.value = false
         lastSyncError.value = null
         lastSyncErrorCode.value = null
+        scheduleSyncErrors.value = []
         reviewSyncError.value = null
         isPushing.value = false
         isPulling.value = false
@@ -317,19 +339,21 @@ export const useSyncStore = defineStore('sync', () => {
     try {
       const assetQueue = await getAssetQueue(scope)
       requireCurrentSyncScope(scope)
-      await assetQueue.wakeUp()
-      requireCurrentSyncScope(scope)
-
-      const result = await runSyncCycle({
+      const result = await runCoreSyncWithAssetQueueWakeup(assetQueue, scope.isCurrent, () => runSyncCycle({
         repository: repositoryForSync,
         api: useSyncApi,
         serverDeviceId: scope.serverDeviceId,
         scope,
         isCurrent: scope.isCurrent,
-      })
+      }))
       requireCurrentSyncScope(scope)
       cursor.value = result.cursor
       resetRequired.value = false
+      if (result.scheduleErrors.length > 0) {
+        const queuedErrors = new Map(scheduleSyncErrors.value.map(error => [error.clientMutationId, error]))
+        for (const error of result.scheduleErrors) queuedErrors.set(error.clientMutationId, error)
+        scheduleSyncErrors.value = [...queuedErrors.values()]
+      }
       if (result.changedResourceTypes.size > 0) {
         publishProjectionChange({ resourceTypes: result.changedResourceTypes })
         publishUpdated()
@@ -468,6 +492,8 @@ export const useSyncStore = defineStore('sync', () => {
     isSyncing,
     lastSyncError,
     lastSyncErrorCode,
+    scheduleSyncErrors,
+    acknowledgeScheduleSyncError,
     reviewSyncError,
     requestBackgroundSync,
     flushNow,

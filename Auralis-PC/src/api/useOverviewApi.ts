@@ -1,4 +1,4 @@
-import { aiRequest } from './request.ts'
+import { postOverviewSse } from './overviewSse.ts'
 import type {
   OverviewApi,
   OverviewRequestContext,
@@ -6,10 +6,6 @@ import type {
   SourceOverviewRequest,
   SubjectOverviewRequest,
 } from '@/types/overview'
-import { validateOverviewResponse } from './overviewResponseValidator.ts'
-
-// Server-side Overview generation may run several provider stages, each with up to a 120s response window.
-const OVERVIEW_REQUEST_TIMEOUT_MS = 300_000
 
 /** Authenticated, stateless structured-generation endpoints. */
 function overviewRequestId(): string {
@@ -18,20 +14,20 @@ function overviewRequestId(): string {
 
 export const useOverviewApi: OverviewApi = {
   generateSourceOverview(request: SourceOverviewRequest, context?: OverviewRequestContext): Promise<OverviewResponse> {
-    return aiRequest.post('/api/ai/source-overviews', request, {
-      headers: { 'X-Overview-Request-Id': context?.requestId ?? overviewRequestId() },
-      timeout: OVERVIEW_REQUEST_TIMEOUT_MS,
+    return postOverviewSse('/api/ai/source-overviews', request, {
+      requestId: context?.requestId ?? overviewRequestId(),
       signal: context?.signal,
+      scope: context?.scope,
+      consumerId: context?.consumerId,
     })
-      .then(response => validateOverviewResponse(response, request.mode))
   },
   generateSubjectOverview(request: SubjectOverviewRequest, context?: OverviewRequestContext): Promise<OverviewResponse> {
-    return aiRequest.post('/api/ai/subject-overviews', request, {
-      headers: { 'X-Overview-Request-Id': context?.requestId ?? overviewRequestId() },
-      timeout: OVERVIEW_REQUEST_TIMEOUT_MS,
+    return postOverviewSse('/api/ai/subject-overviews', request, {
+      requestId: context?.requestId ?? overviewRequestId(),
       signal: context?.signal,
+      scope: context?.scope,
+      consumerId: context?.consumerId,
     })
-      .then(response => validateOverviewResponse(response, request.mode))
   },
 }
 

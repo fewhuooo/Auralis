@@ -1,5 +1,31 @@
 # 基础设施与数据服务模块
 
+### 2026-10-12 学科总览分批修复本机更新（构建与运行核对通过）
+
+- 香港 13:57:23 仅 backend 更新为 `a5a50bb7…`，Docker build / recreate 实际退出码 0，healthy / readiness HTTP 200；旧 `31f7dec…` 保留回滚 tag。
+- 构建前后 474 份 Server / Docker 输入 hash 零漂移，替换前有效 TASK lease / RESERVED / 活动 ingestion 为 0。db / MinIO 容器和卷保持，Flyway V31，无新增配置、迁移或拓扑。
+- 运行额度个人 1000000 / 小时、2000000 / 日，系统日 2000000、并发个人 2 / 全局 4，prompt 默认 12000、Overview 期限 240000ms，真实 `.env` hash 保持。部署 Service / Guard class 与预期精确一致；真实 Provider / GUI 待验收，见 [部署记录](../plans/2026-10-12-subject-overview-prompt-batching.md)。
+
+### 2026-10-12 单人测试额度（配置、Compose 与本机运行态验证通过）
+
+- `application.yml`、Compose backend 的环境变量 fallback 与 `.env.example` 同步为单人 1000000 token / 小时、2000000 / 日；系统每日 2000000、全局 / 用户并发 4 / 2 和其他任务 / 请求边界保持。
+- 本机真实 `.env` 未设置这两个额度键，没有旧值覆盖；无需修改真实 `.env`。Compose 显式 environment 优先于应用默认值，修改后需重建并更新 backend 才能在运行态采用新策略。
+- embedding 排除额度由服务端 stage 聚合实现，不通过无限额或并发关闭实现。没有新配置键、迁移、服务或部署拓扑，实际验证和部署证据见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。
+- 配置隔离 6/6，示例 Compose quiet 退出码 0，解析仅输出 allowlist，值与上述设置一致；真实 `.env` hash 保持。实际容器更新与 GUI / Provider 验收单独记录。
+- 本机 backend 香港 12:57:12 更新，镜像 `31f7dec…` healthy / readiness 200；运行白名单个人 1000000 / 2000000、系统日 2000000、并发 4 / 2 与配置一致。更新前活动任务自然释放，db / MinIO 容器、镜像和卷未变，Flyway 仍 V31，无新迁移；旧镜像保留回滚 tag。完整命令和运行 JAR 字节码核对见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)，不代表 GUI 或 Provider 业务验收。
+
+### 2026-10-11 Overview 用量故障运行态检查（只读诊断；未改调度配置）
+
+- `aiUsageHeartbeatExecutor`、`overviewDeadlineScheduler`、`overviewHeartbeatScheduler` 被对应调用显式使用，不依赖默认 `@Scheduled` 路由。Spring 面对多个 ScheduledExecutorService 且没有名为 `taskScheduler` 的 bean 时会警告；隔离 Spring 7 诊断仍观察到 scheduled tick，警告不能单独证明任务停止。
+- 用量租约通过 beginTask/reserve/snapshotForUser 惰性回收，没有依赖默认 scheduler 的独立用量清理任务。现场两次短只读账本快照没有 reservation 占用；26ms 故障由最终 MAP 6144 与网关 4608 预算冲突引起。未关闭限制、清空记录、修改 bean 或部署。证据及运行态边界见 [诊断与修复](../plans/2026-10-11-overview-usage-limit-diagnosis.md)。
+
+### 2026-10-11 Overview 期限与 SSE 资源边界（代码与相关自动验证通过；未部署）
+
+- 本轮沿用 Overview 240 秒总期限和 PC 300 秒外层期限，新增进程内准入 24、SSE 上限 8、生成 executor 4/8/16，独立单线程期限/心跳 scheduler（取消计时任务即时移出队列），writer 为 8 线程、8 队列；SSE/准入名额保留到实际 worker 退出及排队/执行中的写入全部清理，拒绝提交亦释放其占用。预检、排队和等待者计入入口绝对期限；服务繁忙沿现行 503。没有新环境变量、依赖、迁移、容器或部署拓扑。
+- `Auralis-PC/nginx.conf` 的 `/api/` 已有 `proxy_buffering off` 与 `proxy_cache off`；SSE 响应补充 `Cache-Control: no-cache` 和 `X-Accel-Buffering: no`。当前未更换运行容器，实际代理及时转发、真实客户端断连和 Provider 另行验收；发布顺序先服务端兼容支持、再 PC，见 [部署](../operations/Deployment.md) 与 [运行手册](../operations/Runbook.md)。
+- 实际源码/验证状态及 JSON 断连限制见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
+- Overview DNS 等待单独使用固定 4 个 daemon 线程与队列 8，取消的排队任务即时移除、容量不足返回服务繁忙；不修改其他 Provider 解析配置。原生 DNS 可能持续占用固定 slot 至 OS 返回，本地调用可先取消而不发出迟到 HTTP 请求。socket 关闭也无法中止 JDBC 或数据库锁等待，入口计时不代表该数据库故障下的 HTTP 墙钟保证。
+
 ### 2026-10-08 PC Docker 依赖下载中断（隔离镜像重试通过；运行容器未切换）
 
 - 用户 Buildx 记录 `37i8gaymoqh4tmohdcvjdqkuy` 在 `Auralis-PC/Dockerfile:8` 的 `npm install` 因 `ECONNRESET` / `network aborted` 退出 1。
@@ -14,7 +40,7 @@
 
 2026-09-23：排期插入失败源于运行中的 backend 镜像落后于当前 TaskController：日志为 `POST /api/tasks/schedule-insertions` 的 `HttpRequestMethodNotSupportedException`，旧镜像构建时间为 2026-09-20。重建 backend 后容器 healthy，readiness HTTP 200。构建期间发现 Windows Maven wrapper 为 CRLF，Dockerfile 现在在运行 wrapper 前将其转为 LF。该 Compose 使用默认 prod profile，运行时 `/v3/api-docs` 按配置关闭（HTTP 404）；OpenAPI artifact 包含该接口。恢复时只重建 backend；db/minio 仅启动已有容器，其命名数据卷未重建；backend 无数据卷。
 
-更新时间：2026-09-10
+更新时间：2026-10-11
 
 文档状态：现行
 
@@ -87,6 +113,26 @@ Compose 将 `AURALIS_DB_*` 映射到 Spring datasource，将 `AURALIS_MINIO_*` �
 - `AURALIS_AI_REQUEST_TIMEOUT_MILLIS`：普通聊天非流式/流式及 embedding 的 response/read 超时，默认 10000ms；`AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`：Overview map/reduce 非流式 completion response/read 超时，默认 120000ms，配置边界为 60000–120000ms。
 - `AURALIS_AI_MAX_PROMPT_CHARS`、`AURALIS_AI_MAX_RETRIEVED_CHUNKS`、`AURALIS_AI_INGESTION_MAX_BYTES`。
 - `AURALIS_AI_URL_CONNECT_TIMEOUT_MILLIS`、`AURALIS_AI_URL_READ_TIMEOUT_MILLIS`、`AURALIS_AI_URL_MAX_REDIRECTS`：Source URL 获取的连接、读取、重定向和大小边界。
+
+### 2026-10-10 持久 AI 配额配置（代码与示例配置验证通过；未部署）
+
+`application.yml` 的 `auralis.ai.limits`、`.env.example` 和 Compose backend 已使用同一组变量。以下默认值是开发额度策略，单位为 token，不是金额或产品套餐；所有实例必须连接同一个账本数据库，并使用一致的策略。
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `AURALIS_AI_LIMITS_GLOBAL_CONCURRENT` / `AURALIS_AI_LIMITS_PER_USER_CONCURRENT` | 4 / 2 | 系统 / 用户并发 |
+| `AURALIS_AI_LIMITS_PER_USER_HOURLY_TOKENS` / `AURALIS_AI_LIMITS_PER_USER_DAILY_TOKENS` | 1000000 / 2000000 | 用户 UTC 小时 / 自然日额度（2026-10-12 测试策略） |
+| `AURALIS_AI_LIMITS_GLOBAL_DAILY_TOKENS` | 2000000 | 系统 UTC 自然日额度 |
+| `AURALIS_AI_LIMITS_RESERVATION_LEASE_MILLIS` / `AURALIS_AI_LIMITS_HEARTBEAT_MILLIS` | 300000 / 10000 | 持久租约 / 活跃续租间隔 |
+| `AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS` / `AURALIS_AI_LIMITS_CHAT_MAX_CALLS` / `AURALIS_AI_LIMITS_CHAT_TASK_TOKENS` | 4096 / 2 / 32000 | Chat 输出 / 调用次数 / 任务累计预算 |
+| `AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS` / `AURALIS_AI_LIMITS_OVERVIEW_TASK_TOKENS` | 24 / 524288 | Overview 调用次数 / 任务累计预算 |
+| `AURALIS_AI_LIMITS_INGESTION_MAX_CALLS` / `AURALIS_AI_LIMITS_INGESTION_TASK_TOKENS` | 512 / 16777216 | 同 job + generation 的累计预算 |
+
+额度必须为正，用户小时 ≤ 用户每日 ≤ 系统每日；lease 允许 60000–3600000ms，heartbeat 允许 1000–300000ms 且不超过 lease 的三分之一。Overview 原有 4608/6144 输出上限保留。共通的 `AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS=240000`、embedding 每批 32 条 / 32768 UTF-8 文本字节也已透传；任务预算、估算 token 和 UTF-8 字节上限分别校验。
+
+实例需同步 UTC 时钟；租约基于服务端 Clock，任务总 deadline 使用单调时钟。MVC SSE 异步池固定 core 4 / max 8 / queue 16，满载拒绝入队映射为安全 `503 SERVICE_UNAVAILABLE`，不增加自动循环重试。
+
+2026-10-10 仅运行 `docker compose --env-file .env.example config --quiet`，退出 0，证据为 `D:/Temp/auralis-ai-usage-guard-b-20261010/config/compose-config.*`。未读取真实 `.env`、部署容器或变更业务数据。账本、迁移、客户端和并发验证的完成状态见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。
 
 ## R1-06 后端运行配置和工具链
 

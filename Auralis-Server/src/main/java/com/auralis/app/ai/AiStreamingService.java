@@ -1,7 +1,11 @@
 package com.auralis.app.ai;
 
-import com.auralis.app.ai.internal.provider.AiProviderRegistry;
-import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
+import com.auralis.app.ai.usage.AiFeature;
+import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiStage;
+import com.auralis.app.ai.usage.AiTaskContext;
+import com.auralis.app.ai.usage.AiTaskScope;
+import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.ai.retrieval.Citation;
 import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.ai.retrieval.RetrievalService;
@@ -28,24 +32,21 @@ public class AiStreamingService {
 
     private final ConversationService conversationService;
     private final AiSettingsService settingsService;
-    private final AiProviderRegistry providerRegistry;
     private final RetrievalService retrievalService;
-    private final EmbeddingProviderRegistry embeddingProviderRegistry;
     private final AuralisProperties properties;
+    private final AiInvocationGateway invocationGateway;
 
     public AiStreamingService(
             ConversationService conversationService,
             AiSettingsService settingsService,
-            AiProviderRegistry providerRegistry,
             RetrievalService retrievalService,
-            EmbeddingProviderRegistry embeddingProviderRegistry,
-            AuralisProperties properties) {
+            AuralisProperties properties,
+            AiInvocationGateway invocationGateway) {
         this.conversationService = conversationService;
         this.settingsService = settingsService;
-        this.providerRegistry = providerRegistry;
         this.retrievalService = retrievalService;
-        this.embeddingProviderRegistry = embeddingProviderRegistry;
         this.properties = properties;
+        this.invocationGateway = invocationGateway;
     }
 
     public List<AiStreamEvent> stream(UUID userId, AiMessageCommand command) {
@@ -105,12 +106,15 @@ public class AiStreamingService {
         StringBuilder complete = new StringBuilder();
         String model = null;
         boolean assistantPersisted = false;
+        AiTaskScope taskScope = null;
         try {
             sink.emit(new AiStreamEvent("message.started", userMessage.id().toString(),
                     Map.of("conversationId", conversationId, "messageId", userMessage.id())));
 
             AiSettingsService.ResolvedSettings settings = settingsService.resolve(userId, providerType);
             model = settings.chatModel();
+            taskScope = invocationGateway.beginTask(new AiTaskContext(userId, AiFeature.CHAT,
+                    reservation.userMessage().id().toString()));
             LOGGER.info(
                     "AI_CHAT_PROVIDER_RESOLVED userId={} conversationId={} messageId={} provider={} model={} endpointHost={}",
                     userId, conversationId, userMessage.id(), providerType, settings.chatModel(),
@@ -118,7 +122,7 @@ public class AiStreamingService {
             ReadingContext readingContext = command.readingContext();
             List<Citation> citations;
             if (command.retrievalEnabled() || readingContext != null) {
-                citations = retrieve(userId, conversationId, userMessage.id(), content, topK, readingContext);
+                citations = retrieve(taskScope, userId, conversationId, userMessage.id(), content, topK, readingContext);
             } else {
                 citations = List.of();
             }
@@ -126,7 +130,6 @@ public class AiStreamingService {
                 sink.emit(new AiStreamEvent("citation", citation.chunkId().toString(), toView(citation)));
             }
 
-            AiProviderPort provider = providerRegistry.require(providerType);
             ConversationView conversation = conversationService.get(userId, conversationId);
             int maxPromptChars = maxPromptChars();
             AiProviderRequest request = new AiProviderRequest(
@@ -148,7 +151,7 @@ public class AiStreamingService {
                     request.messages().size(), citations.size());
             int[] chunkCount = {0};
             AtomicBoolean completed = new AtomicBoolean(false);
-            provider.streamInto(request, settings.credential(), chunk -> {
+            taskScope.stream(AiStage.CHAT_COMPLETION, providerType, request, settings.credential(), chunk -> {
                 if (chunk == null) {
                     throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid chunk");
                 }
@@ -171,7 +174,8 @@ public class AiStreamingService {
 
             MessageView assistant = conversationService.appendAssistantReply(
                     userId, conversationId, userMessage.id(), complete.toString(),
-                    AiMessageStatus.COMPLETED, settings.chatModel(), null);
+                    AiMessageStatus.COMPLETED, settings.chatModel(), null,
+                    usageJson(taskScope == null ? null : taskScope.usage()));
             assistantPersisted = true;
             LOGGER.info(
                     "AI_STREAM_SUCCESS userId={} conversationId={} userMessageId={} assistantMessageId={} provider={} model={} outputChars={} elapsedMs={}",
@@ -187,8 +191,17 @@ public class AiStreamingService {
                     elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.INTERRUPTED,
-                        model, "CLIENT_DISCONNECTED");
+                        model, "CLIENT_DISCONNECTED", usageJson(taskScope == null ? null : taskScope.usage()));
             }
+        } catch (AiUsageLimitException exception) {
+            if (!assistantPersisted) {
+                appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
+                        model, exception.code(), usageJson(taskScope == null ? null : taskScope.usage()));
+            }
+            sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
+                    Map.of("code", exception.code(), "detail", "AI usage limit reached",
+                            "retryAfterSeconds", exception.retryAfterSeconds(),
+                            "resetAt", exception.resetAt() == null ? "" : exception.resetAt().toString())));
         } catch (DomainException exception) {
             LOGGER.warn(
                     "AI_STREAM_FAILED userId={} conversationId={} userMessageId={} provider={} model={} errorCode={} exceptionType={} exceptionMessage={} rootCauseType={} rootCauseMessage={} partialOutputChars={} elapsedMs={}",
@@ -197,7 +210,7 @@ public class AiStreamingService {
                     rootCauseMessage(exception), complete.length(), elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
-                        model, exception.code());
+                        model, exception.code(), usageJson(taskScope == null ? null : taskScope.usage()));
             }
             sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
                     Map.of("code", exception.code(), "detail", safeDetail(exception.getMessage()))));
@@ -209,10 +222,14 @@ public class AiStreamingService {
                     rootCauseMessage(exception), complete.length(), elapsedMillis(requestStartedAt));
             if (!assistantPersisted) {
                 appendFailure(userId, conversationId, userMessage.id(), complete.toString(), AiMessageStatus.FAILED,
-                        model, "MODEL_PROVIDER_ERROR");
+                        model, "MODEL_PROVIDER_ERROR", usageJson(taskScope == null ? null : taskScope.usage()));
             }
             sink.emit(new AiStreamEvent("message.error", userMessage.id().toString(),
                     Map.of("code", "MODEL_PROVIDER_ERROR", "detail", "AI provider request failed")));
+        } finally {
+            if (taskScope != null) {
+                taskScope.close();
+            }
         }
     }
 
@@ -254,6 +271,7 @@ public class AiStreamingService {
     }
 
     private List<Citation> retrieve(
+            AiTaskScope taskScope,
             UUID userId,
             UUID conversationId,
             UUID userMessageId,
@@ -274,8 +292,8 @@ public class AiStreamingService {
                     "AI_EMBEDDING_CONFIG_RESOLVED userId={} conversationId={} messageId={} provider={} model={} endpointHost={}",
                     userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
                     safeHost(embeddingSettings.credential().baseUrl()));
-            EmbeddingProviderPort embeddingProvider = embeddingProviderRegistry.require(AiProviderType.SILICONFLOW);
-            EmbeddingResult result = embeddingProvider.embed(List.of(content), embeddingSettings.credential());
+            EmbeddingResult result = taskScope.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
+                    embeddingModel, List.of(content), embeddingSettings.credential()).value();
             if (result == null || result.vectors().isEmpty()) {
                 throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned no vector");
             }
@@ -330,8 +348,24 @@ public class AiStreamingService {
             AiMessageStatus status,
             String model,
             String errorCode) {
+        appendFailure(userId, conversationId, replyToMessageId, content, status, model, errorCode, null);
+    }
+
+    private void appendFailure(
+            UUID userId, UUID conversationId, UUID replyToMessageId, String content,
+            AiMessageStatus status, String model, String errorCode, String usageJson) {
         conversationService.appendAssistantReply(userId, conversationId, replyToMessageId,
-                content == null ? "" : content, status, model, errorCode);
+                content == null ? "" : content, status, model, errorCode, usageJson);
+    }
+
+    private String usageJson(com.auralis.app.ai.usage.AiProviderUsage usage) {
+        if (usage == null) return null;
+        return "{\"estimatedInputTokens\":" + usage.estimatedInputTokens()
+                + ",\"reservedOutputTokens\":" + usage.reservedOutputTokens()
+                + ",\"actualInputTokens\":" + (usage.actualInputTokens() == null ? "null" : usage.actualInputTokens())
+                + ",\"actualOutputTokens\":" + (usage.actualOutputTokens() == null ? "null" : usage.actualOutputTokens())
+                + ",\"chargedTokens\":" + usage.chargedTokens()
+                + ",\"providerUsageComplete\":" + usage.providerUsageComplete() + "}";
     }
 
     private String normalizeClientRequestId(String clientRequestId) {

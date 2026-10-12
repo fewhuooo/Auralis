@@ -444,6 +444,7 @@
             :error="subjectOverviewError"
             @generate="handleOutlineAi"
             @generate-outline="handleSubjectOutlineRegenerate"
+            @stop="stopManualOverview('subject', subjectId)"
             @open-summary="openSubjectSummary"
             @resolve-sync-conflict="resolveSubjectOverviewConflict"
           />
@@ -454,6 +455,7 @@
             @select-summary="openFileSummary"
             @select-outline-node="openOverviewLocator"
             @regenerate="regenerateFileOverview"
+            @stop-regeneration="stopManualOverview('file', $event)"
             @resolve-sync-conflict="resolveFileOverviewConflict"
           />
         </div>
@@ -538,6 +540,7 @@
             :error="summaryTarget.error"
             @close="closeSummary"
             @regenerate="regenerateSelectedSummary"
+            @stop="summaryTarget && stopManualOverview(summaryTarget.kind, summaryTarget.id)"
           />
 
           <div
@@ -637,7 +640,7 @@
                   共 {{ filteredBlocks.length }} 条记录
                 </span>
                 <button class="blocks-add-btn" @click="openCreateDialog">
-                  <IconPlus :size="14" :stroke-width="2" />
+                  <IconPlus :size="14" :stroke-width="2.2" class="blocks-add-icon" />
                   <span>录入知识块</span>
                 </button>
               </div>
@@ -648,23 +651,34 @@
                 v-for="block in filteredBlocks"
                 :key="block.id"
                 class="block-card"
+                role="button"
+                tabindex="0"
+                :aria-label="`查看知识块 ${block.title || '未命名知识块'}`"
                 @click="handleBlockClick(block)"
+                @keydown.enter="handleBlockClick(block)"
               >
                 <div class="block-card-header">
-                  <h4 class="block-title" :title="block.title">{{ block.title || '未命名知识块' }}</h4>
+                  <div class="block-title-row">
+                    <IconNotes :size="14" :stroke-width="1.8" class="block-title-badge-icon" />
+                    <h4 class="block-title" :title="block.title">{{ block.title || '未命名知识块' }}</h4>
+                  </div>
                   <div class="block-card-hover-actions">
                     <button
                       type="button"
                       class="card-action-btn"
-                      title="复制知识内容"
+                      :class="{ 'is-copied': copiedBlockId === block.id }"
+                      :title="copiedBlockId === block.id ? '已复制内容' : '复制知识内容'"
+                      :aria-label="copiedBlockId === block.id ? '已复制内容' : '复制知识内容'"
                       @click.stop="handleCopyCardContent(block)"
                     >
-                      <IconCopy :size="13" :stroke-width="1.8" />
+                      <IconCheck v-if="copiedBlockId === block.id" :size="13" :stroke-width="2.2" class="copy-success-icon" />
+                      <IconCopy v-else :size="13" :stroke-width="1.8" />
                     </button>
                     <button
                       type="button"
                       class="card-action-btn danger"
                       title="删除知识块"
+                      aria-label="删除知识块"
                       @click.stop="handleDeleteBlockCard(block.id)"
                     >
                       <IconTrash :size="13" :stroke-width="1.8" />
@@ -683,11 +697,11 @@
 
                 <div class="block-footer">
                   <div class="block-source-wrapper" v-if="block.source" :title="`来源资料: ${block.source}`">
-                    <IconFileText :size="12" :stroke-width="1.6" />
+                    <IconFileText :size="11.5" :stroke-width="1.6" />
                     <span class="block-source-text">{{ block.source }}</span>
                   </div>
                   <div class="block-time-wrapper" :title="block.time">
-                    <IconHistory :size="12" :stroke-width="1.6" />
+                    <IconHistory :size="11.5" :stroke-width="1.6" />
                     <span>{{ timeAgo(block.time) }}</span>
                   </div>
                 </div>
@@ -695,13 +709,13 @@
             </div>
 
             <!-- Empty Knowledge Blocks Onboarding -->
-            <div class="onboarding-workspace" v-else>
-              <div class="onboarding-header" style="margin-bottom: 24px;">
-                <div class="onboarding-emoji" style="margin-bottom: 12px; opacity: 0.3; color: var(--text-muted);">
-                  <IconNotes :size="60" :stroke-width="1.5" />
+            <div class="onboarding-workspace blocks-empty-workspace" v-else>
+              <div class="onboarding-header" style="margin-bottom: 28px;">
+                <div class="empty-icon-halo">
+                  <IconNotes :size="36" :stroke-width="1.6" class="empty-halo-svg" />
                 </div>
-                <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary);">知识库暂无内容</h3>
-                <p style="font-size: 12px; color: var(--text-muted);">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
+                <h3 style="font-size: 17px; font-weight: 750; color: var(--text-primary); letter-spacing: -0.015em; margin-bottom: 8px;">知识库暂无内容</h3>
+                <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6;">建议导入材料进行提炼，或者直接手动创建您的第一个知识卡片</p>
               </div>
               <div class="onboarding-grid" style="max-width: 640px; margin: 0 auto;">
                 <div class="onboarding-card" @click="openCreateDialog">
@@ -883,7 +897,15 @@
                 </div>
                 <div>{{ msg.content }}</div>
               </div>
-              <div class="chat-content ai-reply" v-else v-html="renderMarkdown(msg.content)"></div>
+              <div class="chat-content ai-reply" v-else>
+                <div class="ai-reply-text" v-html="renderMarkdown(msg.content)"></div>
+                <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
+                  <div class="citation-title">参考资料：</div>
+                  <ul class="citation-list">
+                    <li v-for="fileName in msg.citationFileNames" :key="fileName">{{ fileName }}</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -901,8 +923,16 @@
                 <span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>
               </div>
               <div class="chat-content ai-reply" v-else>
-                <span v-html="renderMarkdown(streamingContent)"></span>
-                <span class="typing-cursor"></span>
+                <div class="ai-reply-text">
+                  <span v-html="renderMarkdown(streamingContent)"></span>
+                  <span class="typing-cursor"></span>
+                </div>
+                <div class="chat-msg-citations" v-if="streamingCitationFileNames && streamingCitationFileNames.length > 0">
+                  <div class="citation-title">参考资料：</div>
+                  <ul class="citation-list">
+                    <li v-for="fileName in streamingCitationFileNames" :key="fileName">{{ fileName }}</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
@@ -1038,6 +1068,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { renderMarkdown } from '@/utils/markdown'
+import { getAiCitationFileNames } from '@/utils/aiCitationFileNames'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
 import {
   IconArrowLeft,
@@ -1103,7 +1134,8 @@ import { useOverviewApi } from '@/api/useOverviewApi'
 import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
 import { OverviewResultsSyncService } from '@/services/overviewResultsSyncService'
-import type { FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
+import { subscribeOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
+import type { FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -1307,6 +1339,7 @@ const fileOverviewManualErrors = ref<Record<string, string>>({})
 const selectedSummaryScope = ref<{ kind: 'file' | 'subject'; id: string } | null>(null)
 let overviewRepository: OverviewRepository | null = null
 let overviewGeneration: OverviewGenerationService | null = null
+let unsubscribeOverviewCache: (() => void) | null = null
 
 const subjectOverviewError = computed(() => subjectOverviewManualError.value
   || (subjectOverviewRecord.value?.status === 'FAILED'
@@ -1333,6 +1366,7 @@ const summaryTarget = computed(() => {
   if (!scope) return null
   if (scope.kind === 'subject') return {
     kind: 'subject' as const,
+    id: scope.id,
     title: activeSubject.value?.name || '学科',
     record: subjectOverviewRecord.value,
     isGenerating: subjectOverviewGenerating.value,
@@ -1343,6 +1377,7 @@ const summaryTarget = computed(() => {
   const record = fileOverviewRecords.value[scope.id] ?? null
   return file ? {
     kind: 'file' as const,
+    id: scope.id,
     title: file.name,
     record,
     isGenerating: generatingFileIds.value.has(scope.id),
@@ -1356,6 +1391,43 @@ const setFileGenerating = (fileId: string, generating: boolean) => {
   const next = new Set(generatingFileIds.value)
   if (generating) next.add(fileId); else next.delete(fileId)
   generatingFileIds.value = next
+}
+
+type ManualOverviewScope = { kind: 'file'; id: string } | { kind: 'subject'; id: string }
+const manualOverviewHandles = new Map<string, OverviewOperationHandle>()
+const manualOverviewKey = (kind: 'file' | 'subject', id: string) => `${kind}:${id}`
+const stopManualOverview = (kind: 'file' | 'subject', id: string) => {
+  const key = manualOverviewKey(kind, id)
+  const handle = manualOverviewHandles.get(key)
+  if (!handle) return
+  manualOverviewHandles.delete(key)
+  handle.stop()
+  if (kind === 'file') setFileGenerating(id, false)
+  else subjectOverviewGenerating.value = false
+}
+const stopAllManualOverviews = () => {
+  for (const key of [...manualOverviewHandles.keys()]) {
+    const separator = key.indexOf(':')
+    stopManualOverview(key.slice(0, separator) as 'file' | 'subject', key.slice(separator + 1))
+  }
+}
+const runManualOverview = async (scope: ManualOverviewScope, handle: OverviewOperationHandle) => {
+  const key = manualOverviewKey(scope.kind, scope.id)
+  manualOverviewHandles.get(key)?.stop()
+  manualOverviewHandles.set(key, handle)
+  if (scope.kind === 'file') setFileGenerating(scope.id, true)
+  else subjectOverviewGenerating.value = true
+  try {
+    const result = await handle
+    if (manualOverviewHandles.get(key) !== handle) return
+    if (applyManualOverviewResult(result, scope)) await refreshOverviewCache()
+  } finally {
+    if (manualOverviewHandles.get(key) === handle) {
+      manualOverviewHandles.delete(key)
+      if (scope.kind === 'file') setFileGenerating(scope.id, false)
+      else subjectOverviewGenerating.value = false
+    }
+  }
 }
 
 const overviewSkipMessage = (code: string) => {
@@ -1378,13 +1450,14 @@ const clearFileOverviewManualError = (fileId: string) => {
   fileOverviewManualErrors.value = next
 }
 
-const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: { kind: 'file'; id: string } | { kind: 'subject'; id: string }) => {
+const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: ManualOverviewScope) => {
   if (result.status === 'STARTED') {
     ElMessage.success('已更新')
     if (scope.kind === 'subject') subjectOverviewManualError.value = null
     else clearFileOverviewManualError(scope.id)
     return true
   }
+  if (result.status === 'SKIPPED' && result.code === 'ABORTED') return false
   const message = result.status === 'SKIPPED' ? overviewSkipMessage(result.code) : manualOverviewFailureMessage(result.code)
   if (scope.kind === 'subject') subjectOverviewManualError.value = message
   else fileOverviewManualErrors.value = { ...fileOverviewManualErrors.value, [scope.id]: message }
@@ -1395,9 +1468,15 @@ const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: { 
 
 const refreshOverviewCache = async () => {
   if (!overviewRepository) return
-  const records = await Promise.all(activeSourceFiles.value.map(async (file) => file.ingestionRevision
-    ? overviewRepository!.getFileOverview(file.id, file.ingestionRevision)
-    : null))
+  const records = await Promise.all(activeSourceFiles.value.map(async (file) => {
+    if (file.ingestionRevision) {
+      const record = await overviewRepository!.getFileOverview(file.id, file.ingestionRevision)
+      if (record) return record
+    }
+    return (overviewRepository as any).getLatestFileOverview
+      ? (overviewRepository as any).getLatestFileOverview(file.id)
+      : null
+  }))
   fileOverviewRecords.value = Object.fromEntries(records.filter((record): record is FileOverviewRecord => record !== null).map(record => [record.sourceId, record]))
   subjectOverviewRecord.value = await overviewRepository.getSubjectOverview(subjectId.value)
   const usable = records.filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
@@ -1521,33 +1600,20 @@ const openOverviewLocator = async ({ fileId }: { fileId: string }) => {
 }
 
 const regenerateFileOverview = async ({ fileId, mode }: { fileId: string; mode: 'OUTLINE' | 'ALL' }) => {
+  const launchSubjectId = subjectId.value
   if (!await ensureOverviewRuntime() || !overviewGeneration) return
-  setFileGenerating(fileId, true)
-  try {
-    const result = await overviewGeneration.regenerateFileOverview(fileId, mode)
-    if (applyManualOverviewResult(result, { kind: 'file', id: fileId })) await refreshOverviewCache()
-  } finally {
-    setFileGenerating(fileId, false)
-  }
+  if (!isComponentMounted || subjectId.value !== launchSubjectId || !activeSourceFiles.value.some(file => file.id === fileId)) return
+  await runManualOverview({ kind: 'file', id: fileId }, overviewGeneration.regenerateFileOverview(fileId, mode))
 }
 
 const regenerateSelectedSummary = async (instruction?: string) => {
   const scope = selectedSummaryScope.value
   if (!scope || !await ensureOverviewRuntime() || !overviewGeneration) return
+  if (!isComponentMounted || selectedSummaryScope.value?.kind !== scope.kind || selectedSummaryScope.value?.id !== scope.id) return
   if (scope.kind === 'subject') {
-    subjectOverviewGenerating.value = true
-    try {
-      const result = await overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction)
-      if (applyManualOverviewResult(result, scope)) await refreshOverviewCache()
-    }
-    finally { subjectOverviewGenerating.value = false }
+    await runManualOverview(scope, overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction))
   } else {
-    setFileGenerating(scope.id, true)
-    try {
-      const result = await overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction)
-      if (applyManualOverviewResult(result, scope)) await refreshOverviewCache()
-    }
-    finally { setFileGenerating(scope.id, false) }
+    await runManualOverview(scope, overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction))
   }
 }
 
@@ -1760,8 +1826,23 @@ watch(fileOverviewItems, (items) => {
         initFileOutlineDraft(item.id, true)
       }
     }
+    if (!subjectOverviewRecord.value?.outline?.length) {
+      const filesWithOutline = items.filter(item => Array.isArray(item.outline) && item.outline.length > 0)
+      if (filesWithOutline.length === 1 && (!subjectOutline.value.length || subjectOutline.value[0]?.title?.includes('新建章节'))) {
+        initSubjectOutlineFromExisting(true)
+      }
+    }
   }
 }, { deep: true, immediate: true })
+
+watch(activeSourceFiles, async () => {
+  if (!isComponentMounted) return
+  await refreshOverviewCache()
+  if (isOutlineComposer.value) {
+    initSubjectOutlineFromExisting()
+    initAllFileOutlineDrafts()
+  }
+}, { deep: true })
 
 const saveCurrentOutline = async () => {
   if (!subjectId.value || !overviewRepository || isSavingOutline.value) return
@@ -2003,29 +2084,21 @@ const unlinkFile = (chapterIndex: number, sectionIndex: number, targetFileId?: s
 }
 
 const handleOutlineAi = async () => {
+  const launchSubjectId = subjectId.value
   tier2Open.value = true
   subjectOverviewCollapsed.value = false
   if (!await ensureOverviewRuntime() || !overviewGeneration) return
-  subjectOverviewGenerating.value = true
-  try {
-    const result = await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'ALL')
-    if (applyManualOverviewResult(result, { kind: 'subject', id: subjectId.value })) await refreshOverviewCache()
-  } finally {
-    subjectOverviewGenerating.value = false
-  }
+  if (!isComponentMounted || subjectId.value !== launchSubjectId) return
+  await runManualOverview({ kind: 'subject', id: launchSubjectId }, overviewGeneration.regenerateSubjectOverview(launchSubjectId, 'ALL'))
 }
 
 const handleSubjectOutlineRegenerate = async () => {
+  const launchSubjectId = subjectId.value
   tier2Open.value = true
   subjectOverviewCollapsed.value = false
   if (!await ensureOverviewRuntime() || !overviewGeneration) return
-  subjectOverviewGenerating.value = true
-  try {
-    const result = await overviewGeneration.regenerateSubjectOverview(subjectId.value, 'OUTLINE')
-    if (applyManualOverviewResult(result, { kind: 'subject', id: subjectId.value })) await refreshOverviewCache()
-  } finally {
-    subjectOverviewGenerating.value = false
-  }
+  if (!isComponentMounted || subjectId.value !== launchSubjectId) return
+  await runManualOverview({ kind: 'subject', id: launchSubjectId }, overviewGeneration.regenerateSubjectOverview(launchSubjectId, 'OUTLINE'))
 }
 
 // ===== Knowledge Blocks =====
@@ -2219,11 +2292,19 @@ const closeBlockDialog = () => {
 
 const handleDeleteBlock = async (id: string) => { if (!id || !confirm('确定删除？')) return; await blockStore.removeBlock(id); blockDialogVisible.value = false; ElNotification({ title: '已删除', type: 'success', position: 'top-right' }) }
 const handleCopyBlockContent = (c: string) => { if (c) { navigator.clipboard.writeText(c); ElNotification({ title: '已复制', type: 'success', position: 'top-right', duration: 2000 }) } }
+const copiedBlockId = ref<string | null>(null)
+let copyTimeout: ReturnType<typeof setTimeout> | null = null
+
 const handleCopyCardContent = (block: any) => {
   const text = block.content || ''
   if (!text) return
   if (navigator?.clipboard?.writeText) {
     navigator.clipboard.writeText(text).then(() => {
+      copiedBlockId.value = block.id
+      if (copyTimeout) clearTimeout(copyTimeout)
+      copyTimeout = setTimeout(() => {
+        copiedBlockId.value = null
+      }, 1500)
       ElMessage.success('已复制知识内容')
     }).catch(() => {})
   }
@@ -2250,18 +2331,20 @@ const sendPreset = (q: string) => {
 
 
 // ===== AI Chat (Right Panel) =====
-interface ChatMsg { role: 'user' | 'assistant'; content: string; quoteText?: string }
+interface ChatMsg { role: 'user' | 'assistant'; content: string; quoteText?: string; citationFileNames?: string[] }
 const chatMessages = computed<ChatMsg[]>(() => storedChatMessages.value
   .filter((message) => message.role === 'USER' || message.role === 'ASSISTANT')
   .map((message) => ({
     role: message.role === 'USER' ? 'user' : 'assistant',
     content: message.content,
     quoteText: message.requestOptions?.selectionText,
+    citationFileNames: getAiCitationFileNames(message.citations),
   })))
 const pendingChatMessage = computed(() => storedPendingMessage.value)
 const chatInput = ref('')
 const isAiStreaming = computed(() => storedChatStreaming.value)
 const streamingContent = computed(() => storedStreamingContent.value)
+const streamingCitationFileNames = computed(() => getAiCitationFileNames(chatStore.citations))
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const showProcessingRequired = computed(() => {
@@ -2651,6 +2734,27 @@ const handleDocSelectionChange = () => {
 onMounted(async () => {
   if (typeof window !== 'undefined') {
     document.addEventListener('selectionchange', handleDocSelectionChange)
+    unsubscribeOverviewCache = subscribeOverviewCacheUpdated(
+      window,
+      (detail) => Boolean(authStore.isAuthenticated && authStore.user?.id === detail.userId && authStore.serverDeviceId === detail.serverDeviceId),
+      async (detail) => {
+        if (!isComponentMounted) return
+        const isCurrentSubject = detail.scopeType === 'SUBJECT' && detail.scopeId === subjectId.value
+        const isCurrentFile = detail.scopeType === 'FILE' && activeSourceFiles.value.some(file => file.id === detail.scopeId)
+        if (isCurrentSubject || isCurrentFile) {
+          if (detail.scopeType === 'FILE') {
+            setFileGenerating(detail.scopeId, false)
+          } else {
+            subjectOverviewGenerating.value = false
+          }
+          await refreshOverviewCache()
+          if (isOutlineComposer.value) {
+            initSubjectOutlineFromExisting()
+            initAllFileOutlineDrafts()
+          }
+        }
+      }
+    )
   }
   isComponentMounted = true
   startProcessingRefresh()
@@ -2697,6 +2801,7 @@ onMounted(async () => {
 
 watch(subjectId, async (newId) => {
   const switchGen = ++currentSubjectSwitchGen
+  stopAllManualOverviews()
   if (newId) {
     // 立即同步清空草稿、大纲与选中文件状态，杜绝任何异步间隙内新学科携带旧文件或旧草稿
     chatStore.abortStream()
@@ -2806,7 +2911,10 @@ onUnmounted(() => {
   if (typeof window !== 'undefined') {
     document.removeEventListener('selectionchange', handleDocSelectionChange)
   }
+  unsubscribeOverviewCache?.()
+  unsubscribeOverviewCache = null
   isComponentMounted = false
+  stopAllManualOverviews()
   currentSubjectSwitchGen++
   stopProcessingRefresh()
   void chatStore.endActiveSession().catch(() => undefined)
@@ -2882,15 +2990,15 @@ onUnmounted(() => {
   /* Zen Minimalist Theme override */
   --color-primary-accent: #8B9A6E;
   --color-primary-accent-hover: #76855B;
-  --color-primary-light: rgba(139, 154, 110, 0.16);
+  --color-primary-light: rgba(139, 154, 110, 0.14);
   --color-primary-glow: rgba(139, 154, 110, 0.28);
-  --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
-  --workspace-card-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  --accent-gradient: linear-gradient(135deg, #8E9F70 0%, #768758 100%);
+  --workspace-card-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.04), 0 4px 12px -2px rgba(0, 0, 0, 0.02);
 }
 
 html.dark .workspace-container {
   background: var(--color-bg-primary);
-  --workspace-card-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.35), 0 2px 6px -1px rgba(0, 0, 0, 0.2);
+  --workspace-card-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.45);
 }
 
 /* ===== Tier-1 Icon Strip ===== */
@@ -2902,81 +3010,107 @@ html.dark .workspace-container {
   flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 0;
+  padding: 22px 0 18px;
   background: var(--color-bg-primary, #F7F2EB);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl, 18px);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   box-shadow: var(--workspace-card-shadow);
+  box-sizing: border-box;
 }
 
 html.dark .tier1-strip {
   background: var(--color-bg-secondary);
-  border: 1px solid var(--border-subtle);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 .tier1-top, .tier1-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 
 .tier1-btn {
   width: 62px;
-  height: 56px;
+  height: 58px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   border: none;
   background: transparent;
-  border-radius: var(--radius-md);
+  border-radius: 14px;
   cursor: pointer;
-  color: var(--text-secondary);
-  transition: all var(--transition-fast);
+  color: var(--text-muted, #7A7A75);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  padding: 0;
 }
 
 .tier1-btn svg {
-  stroke-width: 2.2;
+  stroke-width: 2;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .tier1-btn-text {
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
+  letter-spacing: -0.01em;
 }
 
 .tier1-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.045);
+  color: var(--text-primary, #1C1C1A);
+  transform: translateY(-1px);
+}
+
+.tier1-btn:hover svg {
+  transform: scale(1.06);
 }
 
 html.dark .tier1-btn:hover {
   background: rgba(255, 255, 255, 0.06);
+  color: #e6dfd8;
+}
+
+.tier1-btn:active {
+  transform: scale(0.94);
 }
 
 .tier1-btn.is-active {
   background: var(--color-primary-light);
-  color: var(--color-primary-accent);
+  color: var(--color-primary-accent, #76855B);
   font-weight: 700;
-  box-shadow: var(--shadow-sm);
-  border-left: 3px solid var(--color-primary-accent);
-  border-radius: var(--radius-md);
+  box-shadow: 0 3px 12px rgba(139, 154, 110, 0.16);
+  border-radius: 14px;
+}
+
+html.dark .tier1-btn.is-active {
+  background: rgba(163, 177, 155, 0.18);
+  color: #B4C4AA;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
 }
 
 .subject-mini-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
-  background: #7D9372;
+  font-size: 19px;
+  background: linear-gradient(135deg, #8E9F70 0%, #768758 100%);
   color: #ffffff;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 12px rgba(118, 135, 88, 0.35);
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: default;
+}
+
+.subject-mini-icon:hover {
+  transform: scale(1.08) rotate(3deg);
 }
 
 /* ===== Tier-2 Drawer (Rounded Card) ===== */
@@ -2986,11 +3120,12 @@ html.dark .tier1-btn:hover {
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary, #F7F2EB);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl, 18px);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   box-shadow: var(--workspace-card-shadow);
   overflow: hidden;
-  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-width 0.3s ease;
+  transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease, border-width 0.28s ease;
+  box-sizing: border-box;
 }
 
 .tier2-drawer:not(.is-open) {
@@ -3002,7 +3137,7 @@ html.dark .tier1-btn:hover {
 
 html.dark .tier2-drawer {
   background: var(--color-bg-secondary);
-  border-color: var(--border-subtle);
+  border-color: rgba(255, 255, 255, 0.07);
 }
 
 .drawer-content { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
@@ -3011,18 +3146,28 @@ html.dark .tier2-drawer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 16px 14px;
+  padding: 20px 18px 14px;
   flex-shrink: 0;
 }
 
-.drawer-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin: 0; text-transform: uppercase; letter-spacing: 0.5px; }
+.drawer-title {
+  font-size: 13.5px;
+  font-weight: 750;
+  color: var(--text-primary, #1C1C1A);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+html.dark .drawer-title {
+  color: var(--text-primary, #e6dfd8);
+}
 
 .drawer-action {
-  width: 27px;
-  height: 27px;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: 50%;
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  background: var(--accent-gradient);
   color: #ffffff;
   cursor: pointer;
   display: flex;
@@ -3030,46 +3175,63 @@ html.dark .tier2-drawer {
   justify-content: center;
   padding: 0;
   box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, opacity 0.2s ease;
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.24s ease, opacity 0.2s ease;
 }
 
 .drawer-action:hover {
-  transform: scale(1.06);
+  transform: rotate(90deg) scale(1.08);
   box-shadow: 0 4px 14px rgba(139, 154, 110, 0.5);
   opacity: 0.95;
 }
 
 .drawer-action:active {
-  transform: scale(0.96);
-  box-shadow: 0 2px 4px rgba(139, 154, 110, 0.25);
+  transform: scale(0.92);
+  box-shadow: 0 1px 3px rgba(139, 154, 110, 0.25);
 }
 
 html.dark .drawer-action {
-  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  background: var(--accent-gradient);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4);
 }
 
-.drawer-list { flex: 1; overflow-y: auto; padding: 0 10px 10px; display: flex; flex-direction: column; gap: 4px; }
+.drawer-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 154, 110, 0.3) transparent;
+}
 
 .drawer-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  border-radius: 12px;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+  user-select: none;
+  background: transparent;
 }
 
-.drawer-item:hover { background: var(--color-bg-tertiary, #FAF7F2); }
-html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
+.drawer-item:hover {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  transform: translateX(2px);
+}
+
+html.dark .drawer-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
 
 .drawer-item.is-active {
-  background: linear-gradient(90deg, rgba(139, 154, 110, 0.15) 0%, rgba(139, 154, 110, 0.04) 100%);
+  background: linear-gradient(90deg, rgba(139, 154, 110, 0.16) 0%, rgba(139, 154, 110, 0.04) 100%);
   font-weight: 700;
-  color: var(--color-primary-accent);
+  color: var(--color-primary-accent, #76855B);
   box-shadow: 0 2px 10px rgba(139, 154, 110, 0.08);
 }
 
@@ -3077,8 +3239,8 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   content: '';
   position: absolute;
   left: 0;
-  top: 8px;
-  bottom: 8px;
+  top: 9px;
+  bottom: 9px;
   width: 3px;
   background: var(--color-primary-accent);
   border-radius: 1.5px;
@@ -3111,62 +3273,80 @@ html.dark .drawer-item:hover { background: rgba(255, 255, 255, 0.04); }
   z-index: 100;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.10));
-  border-radius: 9999px;
-  background: var(--color-bg-tertiary, #FAF7F2);
-  box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.04);
-  backdrop-filter: blur(12px);
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid rgba(139, 154, 110, 0.28);
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-bg-primary, #FFFFFF);
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(139, 154, 110, 0.18);
+  backdrop-filter: blur(14px) saturate(180%);
   user-select: none;
   white-space: nowrap;
   pointer-events: auto;
-  transition: opacity 0.16s ease;
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: bubble-spring-pop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@keyframes bubble-spring-pop {
+  from { opacity: 0; transform: scale(0.92) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 html.dark .selection-actions.floating-selection-bubble {
   background: #1C1E1B;
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  border-color: rgba(163, 177, 155, 0.3);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), 0 4px 12px rgba(163, 177, 155, 0.15);
 }
+
 .selection-actions .selection-summary {
   color: var(--text-muted);
   font-size: 11.5px;
-  font-weight: 500;
-  padding: 0 4px 0 3px;
+  font-weight: 550;
+  padding: 0 4px 0 4px;
+  font-feature-settings: "tnum";
 }
+
 .selection-actions .selection-divider {
   width: 1px;
   height: 14px;
-  background: var(--border-default, rgba(0, 0, 0, 0.08));
+  background: rgba(139, 154, 110, 0.2);
 }
+
 html.dark .selection-actions .selection-divider {
   background: rgba(255, 255, 255, 0.12);
 }
+
 .selection-actions .selection-btn {
   border: none;
-  border-radius: 9999px;
-  padding: 4px 10px;
+  border-radius: var(--radius-full, 9999px);
+  padding: 5px 12px;
   background: rgba(139, 154, 110, 0.12);
   color: var(--text-primary);
   cursor: pointer;
   font-size: 11.5px;
-  font-weight: 500;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .selection-actions .selection-btn:hover {
   background: var(--color-primary-accent, #8B9A6E);
-  color: #fff;
+  color: #FFFFFF;
   transform: translateY(-0.5px);
-  box-shadow: 0 2px 6px rgba(139, 154, 110, 0.35);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
 }
+
+.selection-actions .selection-btn:active {
+  transform: scale(0.95);
+}
+
 .selection-actions .selection-dismiss {
   border: none;
   border-radius: 50%;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3174,12 +3354,15 @@ html.dark .selection-actions .selection-divider {
   color: var(--text-muted);
   cursor: pointer;
   padding: 0;
-  transition: all var(--transition-fast);
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .selection-actions .selection-dismiss:hover {
-  background: rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.05);
   color: var(--text-primary);
+  transform: scale(1.1);
 }
+
 html.dark .selection-actions .selection-dismiss:hover {
   background: rgba(255, 255, 255, 0.12);
 }
@@ -3488,58 +3671,79 @@ html.dark .workspace-center {
   background: transparent;
   box-shadow: none;
 }
+
 .preview-control-group {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 9px;
+  padding: 3px 5px;
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  border-radius: var(--radius-full, 9999px);
   background: var(--color-bg-tertiary, #FAF7F2);
-  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04);
 }
+
+html.dark .preview-control-group {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.3);
+}
+
 .preview-status-button,
 .preview-page-button {
   min-width: 28px;
   height: 28px;
-  padding: 0 9px;
+  padding: 0 10px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-full, 9999px);
   color: var(--text-secondary);
   background: transparent;
   box-shadow: none;
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
 .preview-status-button {
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
+
 .preview-status-button:hover:not(:disabled) {
-  border-color: transparent;
-  background: rgba(139, 154, 110, 0.14);
+  background: rgba(139, 154, 110, 0.16);
   color: var(--color-primary-accent, #8B9A6E);
-  box-shadow: none;
+  transform: translateY(-0.5px);
 }
+
+.preview-status-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
 .preview-page-button {
-  border: 1px solid var(--border-subtle);
-  background: var(--color-bg-tertiary, #FAF7F2);
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  background: var(--color-bg-primary, #FFFFFF);
   box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  padding: 0 14px;
 }
+
+html.dark .preview-page-button {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(163, 177, 155, 0.25);
+}
+
 .preview-page-button:hover:not(:disabled) {
   border-color: var(--color-primary-accent, #8B9A6E);
   background: rgba(139, 154, 110, 0.14);
   color: var(--color-primary-accent, #8B9A6E);
   box-shadow: 0 2px 8px rgba(139, 154, 110, 0.2);
+  transform: translateY(-1px);
 }
-.preview-status-button:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: none;
+
+.preview-page-button:active:not(:disabled) {
+  transform: scale(0.95);
 }
-.preview-page-button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 1px 2px rgba(24, 32, 28, 0.08); }
 .preview-status-button:focus-visible,
 .preview-page-button:focus-visible { outline: 2px solid var(--color-primary-accent, #8B9A6E); outline-offset: 2px; }
 .preview-status-button:disabled,
@@ -3674,7 +3878,7 @@ html.dark .workspace-center {
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
-  padding: 24px 28px 20px;
+  padding: 26px 36px 24px;
   background: var(--color-bg-primary, #F7F2EB);
 }
 
@@ -3682,7 +3886,7 @@ html.dark .workspace-center {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
   flex-shrink: 0;
   gap: 16px;
 }
@@ -3692,28 +3896,40 @@ html.dark .workspace-center {
   display: flex;
   align-items: center;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-default, #DDD5C7);
-  border-radius: 9999px;
-  padding: 6px 14px;
-  width: 320px;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  border-radius: var(--radius-full, 9999px);
+  padding: 8px 16px;
+  width: 340px;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  box-sizing: border-box;
 }
 
 html.dark .blocks-search-wrapper {
   background: var(--color-bg-secondary, #252422);
-  border-color: var(--border-subtle, rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .blocks-search-wrapper:focus-within {
   border-color: var(--color-primary-accent, #8B9A6E);
-  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.15), 0 2px 6px rgba(0, 0, 0, 0.05);
+  background: var(--color-bg-primary, #FFFFFF);
+  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.16), 0 3px 10px rgba(0, 0, 0, 0.04);
+}
+
+html.dark .blocks-search-wrapper:focus-within {
+  background: #1f1e1c;
+  box-shadow: 0 0 0 3.5px rgba(163, 177, 155, 0.22), 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .blocks-search-wrapper .search-icon {
   color: var(--text-muted, #7A7A75);
   margin-right: 8px;
   flex-shrink: 0;
+  transition: color 0.2s ease;
+}
+
+.blocks-search-wrapper:focus-within .search-icon {
+  color: var(--color-primary-accent, #8B9A6E);
 }
 
 .blocks-search-input {
@@ -3730,16 +3946,17 @@ html.dark .blocks-search-wrapper {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: color 0.15s;
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .search-clear-btn:hover {
   color: var(--text-primary);
+  transform: scale(1.15);
 }
 
 .blocks-bar-actions {
@@ -3749,31 +3966,56 @@ html.dark .blocks-search-wrapper {
 }
 
 .blocks-count-badge {
-  font-size: 12px;
-  color: var(--text-muted, #7A7A75);
-  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-primary-accent, #8B9A6E);
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.24);
+  padding: 3px 12px;
+  border-radius: var(--radius-full, 9999px);
+  box-shadow: 0 1px 3px rgba(139, 154, 110, 0.08);
+}
+
+html.dark .blocks-count-badge {
+  color: #B4C4AA;
+  background: rgba(163, 177, 155, 0.14);
+  border-color: rgba(163, 177, 155, 0.26);
 }
 
 .blocks-add-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%);
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
   border: none;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12.5px;
+  font-weight: 650;
   color: #FFFFFF;
   cursor: pointer;
-  padding: 7px 16px;
-  border-radius: 9999px;
-  box-shadow: 0 2px 8px -1px rgba(139, 154, 110, 0.4), 0 1px 2px rgba(0, 0, 0, 0.05);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  padding: 7px 18px;
+  border-radius: var(--radius-full, 9999px);
+  box-shadow: 0 2px 10px -1px rgba(139, 154, 110, 0.35);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.blocks-add-btn .blocks-add-icon {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .blocks-add-btn:hover {
   transform: translateY(-1.5px);
-  box-shadow: 0 4px 14px -1px rgba(139, 154, 110, 0.5);
+  box-shadow: 0 4px 14px -1px rgba(139, 154, 110, 0.45);
   color: #FFFFFF;
+}
+
+.blocks-add-btn:hover .blocks-add-icon {
+  transform: rotate(90deg) scale(1.1);
+}
+
+.blocks-add-btn:active {
+  transform: scale(0.95);
 }
 
 .blocks-grid {
@@ -3783,9 +4025,9 @@ html.dark .blocks-search-wrapper {
   scrollbar-width: thin;
   scrollbar-color: var(--border-default) transparent;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  grid-auto-rows: 184px;
-  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  grid-auto-rows: 196px;
+  gap: 20px;
   align-content: start;
   padding: 4px 2px 28px 2px;
 }
@@ -3799,7 +4041,7 @@ html.dark .blocks-search-wrapper {
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
-  height: 184px;
+  height: 190px;
   box-sizing: border-box;
   flex-shrink: 0;
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
@@ -3815,23 +4057,43 @@ html.dark .block-card {
 
 .block-card:hover {
   transform: translateY(-3px);
-  border-color: rgba(139, 154, 110, 0.5);
-  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.07), 0 4px 10px -2px rgba(139, 154, 110, 0.14);
+  border-color: rgba(139, 154, 110, 0.45);
+  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 3px 8px -2px rgba(139, 154, 110, 0.12);
   z-index: 2;
 }
 
 html.dark .block-card:hover {
   border-color: rgba(163, 177, 155, 0.45);
-  box-shadow: 0 14px 28px -4px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 24px -4px rgba(0, 0, 0, 0.45), 0 3px 10px -2px rgba(0, 0, 0, 0.3);
 }
 
 .block-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 8px;
   flex-shrink: 0;
+}
+
+.block-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+}
+
+.block-title-badge-icon {
+  color: var(--text-muted, #7A7A75);
+  margin-top: 2px;
+  flex-shrink: 0;
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.block-card:hover .block-title-badge-icon {
+  color: var(--color-primary-accent, #8B9A6E);
+  transform: scale(1.1);
 }
 
 .block-title {
@@ -3849,6 +4111,15 @@ html.dark .block-card:hover {
   -webkit-box-orient: vertical;
   overflow: hidden;
   word-break: break-word;
+  transition: color 0.2s ease;
+}
+
+.block-card:hover .block-title {
+  color: var(--color-primary-accent, #8B9A6E);
+}
+
+html.dark .block-card:hover .block-title {
+  color: #B4C4AA;
 }
 
 html.dark .block-title {
@@ -3858,10 +4129,10 @@ html.dark .block-title {
 .block-card-hover-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   opacity: 0;
   transform: translateX(4px);
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   flex-shrink: 0;
 }
 
@@ -3871,37 +4142,62 @@ html.dark .block-title {
 }
 
 .card-action-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  border: none;
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--text-muted, #7A7A75);
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-secondary, #7A7A75);
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.dark .card-action-btn {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #9E9B95;
 }
 
 .card-action-btn:hover {
-  background: rgba(139, 154, 110, 0.2);
-  color: var(--color-primary-accent, #8B9A6E);
+  background: var(--color-primary-accent, #8B9A6E);
+  color: #FFFFFF;
+  border-color: var(--color-primary-accent, #8B9A6E);
+  transform: scale(1.08);
+}
+
+.card-action-btn:active {
+  transform: scale(0.92);
+}
+
+.card-action-btn.is-copied {
+  background: rgba(139, 154, 110, 0.18) !important;
+  color: var(--color-primary-accent, #8B9A6E) !important;
+  border-color: var(--color-primary-accent, #8B9A6E) !important;
+}
+
+.copy-success-icon {
+  animation: check-bounce 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes check-bounce {
+  0% { transform: scale(0.6); }
+  60% { transform: scale(1.2); }
+  100% { transform: scale(1); }
 }
 
 .card-action-btn.danger:hover {
-  background: rgba(192, 86, 70, 0.16);
-  color: #C05646;
+  background: #D14343;
+  color: #FFFFFF;
+  border-color: #D14343;
 }
 
 .block-card-body {
   flex: 1;
   min-height: 0;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   overflow: hidden;
   position: relative;
 }
@@ -3909,7 +4205,7 @@ html.dark .card-action-btn {
 .block-preview {
   font-size: 13px;
   color: var(--text-secondary, #4A4A45);
-  line-height: 1.55;
+  line-height: 1.62;
   margin: 0;
   height: 100%;
   overflow: hidden;
@@ -3932,6 +4228,20 @@ html.dark .card-action-btn {
 
 .block-preview :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.block-preview :deep(strong) {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.block-preview :deep(code) {
+  font-family: inherit;
+  font-size: 11.5px;
+  padding: 1.5px 5px;
+  border-radius: 4px;
+  background: rgba(139, 154, 110, 0.10);
+  color: var(--color-primary-accent, #8B9A6E);
 }
 
 .block-preview :deep(.katex-display-wrapper) {
@@ -3979,12 +4289,45 @@ html.dark .block-preview {
 .block-source-wrapper {
   flex: 1;
   min-width: 0;
+  background: transparent;
+  padding: 0;
+  transition: color 0.18s ease;
+}
+
+.block-card:hover .block-source-wrapper {
+  color: var(--text-secondary, #4A4A45);
+}
+
+html.dark .block-card:hover .block-source-wrapper {
+  color: var(--text-secondary, #C5BDB5);
 }
 
 .block-source-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 空状态下的光环 */
+.empty-icon-halo {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: rgba(139, 154, 110, 0.10);
+  border: 1.5px solid rgba(139, 154, 110, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 8px 24px -4px rgba(139, 154, 110, 0.20), inset 0 2px 6px rgba(255, 255, 255, 0.5);
+}
+
+html.dark .empty-icon-halo {
+  background: rgba(163, 177, 155, 0.12);
+  border-color: rgba(163, 177, 155, 0.24);
+  color: #B4C4AA;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.4), inset 0 2px 6px rgba(255, 255, 255, 0.05);
 }
 
 /* ===== Onboarding (Getting Started) Workspace ===== */
@@ -4014,39 +4357,42 @@ html.dark .block-preview {
 
 .onboarding-title {
   font-size: 24px;
-  font-weight: 800;
+  font-weight: 850;
   color: var(--text-primary);
-  margin-bottom: 16px;
-  letter-spacing: -0.4px;
+  margin-bottom: 14px;
+  letter-spacing: -0.025em;
+  line-height: 1.3;
 }
 
 .onboarding-subtitle {
-  font-size: 14.5px;
+  font-size: 14px;
   color: var(--text-secondary);
-  line-height: 1.65;
+  line-height: 1.68;
 }
 
 .onboarding-drag-capsule {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   margin-top: 32px;
-  padding: 12px 24px;
-  border-radius: 999px;
+  padding: 13px 28px;
+  border-radius: var(--radius-full, 9999px);
   background: rgba(139, 154, 110, 0.08);
   color: var(--color-primary-accent, #8B9A6E);
-  font-size: 14px;
-  font-weight: 600;
-  border: 1px dashed rgba(139, 154, 110, 0.35);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-size: 13.5px;
+  font-weight: 650;
+  border: 1.5px dashed rgba(139, 154, 110, 0.38);
+  box-shadow: 0 4px 16px -2px rgba(139, 154, 110, 0.08);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
 }
 
 .onboarding-drag-capsule:hover {
-  background: rgba(139, 154, 110, 0.14);
-  border-color: rgba(139, 154, 110, 0.55);
+  background: rgba(139, 154, 110, 0.15);
+  border-color: var(--color-primary-accent, #8B9A6E);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(139, 154, 110, 0.12);
+  box-shadow: 0 8px 24px -4px rgba(139, 154, 110, 0.20);
 }
 
 .onboarding-grid {
@@ -4059,39 +4405,49 @@ html.dark .block-preview {
 }
 
 .onboarding-card {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  padding: 24px;
+  background: var(--color-bg-primary, #FFFFFF);
+  border: 1px solid rgba(139, 154, 110, 0.16);
+  border-radius: 18px;
+  padding: 26px 24px;
   cursor: pointer;
-  transition: all var(--transition-normal);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
-  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.04), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
 }
 
 html.dark .onboarding-card {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-secondary, #22211f);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.35);
 }
 
 .onboarding-card:hover {
-  transform: translateY(-3px);
-  border-color: var(--color-primary-accent, #8B9A6E);
-  box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 4px 10px -2px rgba(139, 154, 110, 0.12);
+  transform: translateY(-3.5px);
+  border-color: rgba(139, 154, 110, 0.45);
+  box-shadow: 0 14px 28px -4px rgba(139, 154, 110, 0.16), 0 4px 10px -2px rgba(0, 0, 0, 0.04);
 }
 
 .onboarding-card-icon {
-  font-size: 32px;
-  width: 58px;
-  height: 58px;
-  background: var(--color-primary-light);
+  font-size: 28px;
+  width: 56px;
+  height: 56px;
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.24);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-primary-accent);
+  color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 4px 12px -2px rgba(139, 154, 110, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.onboarding-card:hover .onboarding-card-icon {
+  transform: scale(1.08) rotate(3deg);
+  background: rgba(139, 154, 110, 0.18);
 }
 
 .onboarding-card-body {
@@ -4103,36 +4459,43 @@ html.dark .onboarding-card {
 }
 
 .onboarding-card-body h4 {
-  font-size: 15px;
+  font-size: 15.5px;
   font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.015em;
 }
 
 .onboarding-card-body p {
   font-size: 13px;
   color: var(--text-secondary);
-  line-height: 1.55;
+  line-height: 1.6;
   margin: 0;
 }
 
 .onboarding-card-btn {
   margin-top: auto;
-  background: var(--color-primary-light);
-  border: 1px solid rgba(163, 177, 155, 0.3);
-  color: var(--color-primary-accent);
+  background: rgba(139, 154, 110, 0.12);
+  border: 1px solid rgba(139, 154, 110, 0.25);
+  color: var(--color-primary-accent, #8B9A6E);
   font-size: 12px;
-  font-weight: 700;
-  padding: 8px 18px;
-  border-radius: var(--radius-md);
+  font-weight: 650;
+  padding: 7px 20px;
+  border-radius: var(--radius-full, 9999px);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .onboarding-card:hover .onboarding-card-btn {
-  background: var(--color-primary-accent);
-  color: white;
+  background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%));
+  color: #FFFFFF;
   border-color: transparent;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.35);
+  transform: translateY(-1px);
+}
+
+.onboarding-card-btn:active {
+  transform: scale(0.95);
 }
 
 /* ===== Right: AI Assistant (Rounded Card) ===== */
@@ -5360,5 +5723,36 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
 .workspace-view-fade-leave-to {
   opacity: 0;
   transform: translateY(-4px);
+}
+.chat-msg-citations {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-subtle);
+  font-size: 13px;
+}
+.chat-msg-citations .citation-title {
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.chat-msg-citations .citation-list {
+  list-style-type: none;
+  padding-left: 0;
+  margin: 0;
+}
+.chat-msg-citations .citation-list li {
+  color: var(--text-muted);
+  position: relative;
+  padding-left: 14px;
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+.chat-msg-citations .citation-list li::before {
+  content: '·';
+  position: absolute;
+  left: 0;
+  top: 0;
+  color: var(--text-muted);
+  font-weight: bold;
 }
 </style>

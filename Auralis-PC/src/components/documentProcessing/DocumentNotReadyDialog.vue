@@ -3,11 +3,11 @@
     <div v-if="modelValue" class="not-ready-backdrop" role="dialog" aria-modal="true" aria-labelledby="not-ready-title" @click.self="$emit('cancel')">
       <div class="not-ready-dialog">
         <div class="not-ready-icon">⏳</div>
-        <h3 id="not-ready-title">文件还在解析</h3>
-        <p>“{{ fileName }}”完成解析后才能使用 AI 检索。你可以在个人中心查看实时进度。</p>
+        <h3 id="not-ready-title">文件正在处理</h3>
+        <p>“{{ fileName }}”处理完成后即可使用智能问答与检索。你可以在个人设置中查看进度。</p>
         <div class="not-ready-actions">
           <button type="button" class="secondary" @click="$emit('cancel')">稍后再说</button>
-          <button type="button" class="primary" @click="$emit('go-profile')">查看解析进度</button>
+          <button type="button" class="primary" @click="$emit('go-profile')">查看处理进度</button>
         </div>
       </div>
     </div>

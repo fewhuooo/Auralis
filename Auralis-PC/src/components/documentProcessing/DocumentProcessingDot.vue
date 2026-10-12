@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import { sourceDetailLabel } from '@/utils/documentProcessingStatus'
@@ -41,6 +41,46 @@ const label = computed(() => {
     return sharedLabel
   }
   return '正在解析文件'
+})
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const startPollingIfNeeded = () => {
+  if (visible.value && !failed.value) {
+    if (!pollTimer) {
+      pollTimer = setInterval(async () => {
+        if (!visible.value || failed.value) {
+          if (pollTimer) {
+            clearInterval(pollTimer)
+            pollTimer = null
+          }
+          return
+        }
+        await store.refresh().catch(() => undefined)
+        if (sourcePhase.value && sourcePhase.value !== 'READY') {
+          await sourceStore.loadSources().catch(() => undefined)
+        }
+      }, 2500)
+    }
+  } else if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+watch([visible, failed], () => {
+  startPollingIfNeeded()
+})
+
+onMounted(() => {
+  startPollingIfNeeded()
+})
+
+onUnmounted(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 </script>
 

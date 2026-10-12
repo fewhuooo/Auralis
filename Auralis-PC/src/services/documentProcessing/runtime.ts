@@ -299,6 +299,7 @@ export class DocumentProcessingRuntime {
     if (typeof window !== 'undefined') window.removeEventListener('online', this.onlineHandler)
     if (typeof window !== 'undefined') window.removeEventListener('auralis-sync-updated', this.syncHandler)
     if (this.snapshot) {
+      this.snapshot.overviewGeneration.cancelAll()
       attachSubjectDeletionRuntime(null)
       useSourceStore().attachDocumentScheduler(null)
       useSourceStore().attachFileOverviewGenerator(null)

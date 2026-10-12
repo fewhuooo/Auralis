@@ -1,5 +1,5 @@
 import type { SyncRequestScopeTicket } from '@/api/request'
-import { useReviewApi, type EffectiveReviewView, type LifecycleCommandResponse, type LifecycleHistoryCommandView, type LifecycleHistoryResponse, type ReviewEventView } from '@/api/useReviewApi'
+import { useReviewApi, type EffectiveReviewView, type LifecycleCommandResponse, type LifecycleHistoryCommandView, type LifecycleHistoryResponse } from '@/api/useReviewApi'
 import type { LocalSqlDatabase } from './localSchema'
 import { LocalReviewService } from './localReviewService'
 import { ReviewRepository, type LocalReviewCanonicalAnchor, type LocalReviewIntent, type LocalReviewRecord } from './reviewRepository'
@@ -89,14 +89,6 @@ function sameEffectiveReviews(left: EffectiveReviewView[], right: EffectiveRevie
   return sameRowsByIdentity(left, right, 'reviewId')
 }
 
-function sameLegacyEvents(left: ReviewEventView[], right: ReviewEventView[]): boolean {
-  const identify = (event: ReviewEventView): Record<string, unknown> => ({
-    ...event,
-    _identity: event.clientEventId || event.id,
-  })
-  return sameRowsByIdentity(left.map(identify), right.map(identify), '_identity')
-}
-
 function canonicalState(state: LifecycleHistoryResponse['state']): LifecycleHistoryResponse['state'] {
   if (!state) return null
   const {
@@ -114,11 +106,9 @@ function canonicalState(state: LifecycleHistoryResponse['state']): LifecycleHist
 
 function anchorFromFetched(
   history: LifecycleHistoryResponse,
-  legacyEvents: ReviewEventView[],
   subjectId: string,
   contentHash: string,
 ): LocalReviewCanonicalAnchor | null {
-  if (!legacyEvents.every(event => event.firstLearning === true || event.firstLearning === false)) return null
   return {
     knowledgeBlockVersion: history.knowledgeBlockVersion,
     subjectId,
@@ -126,21 +116,16 @@ function anchorFromFetched(
     state: canonicalState(history.state),
     commands: JSON.parse(JSON.stringify(history.commands)),
     effectiveReviews: JSON.parse(JSON.stringify(history.effectiveReviews)),
-    legacyEvents: JSON.parse(JSON.stringify(legacyEvents)),
-    legacyHistoryComplete: true,
   }
 }
 
 function matchesContentInvalidation(
   anchor: LocalReviewCanonicalAnchor,
   history: LifecycleHistoryResponse,
-  legacyEvents: ReviewEventView[],
   subjectId: string,
   currentHash: string,
 ): boolean {
-  if (!anchor.legacyHistoryComplete || anchor.subjectId !== subjectId
-    || !sameCommands(anchor.commands, history.commands)
-    || !sameLegacyEvents(anchor.legacyEvents, legacyEvents)) return false
+  if (anchor.subjectId !== subjectId || !sameCommands(anchor.commands, history.commands)) return false
   const effectiveReviews = anchor.effectiveReviews.map(review => review.resolution === null
     ? { ...review, resolution: 'SUPERSEDED' as const }
     : review)
@@ -166,26 +151,22 @@ function matchesContentInvalidation(
 function sameRemoteAnchor(
   anchor: LocalReviewCanonicalAnchor,
   history: LifecycleHistoryResponse,
-  legacyEvents: ReviewEventView[],
   subjectId: string,
   contentHash: string,
 ): boolean {
-  const fetched = anchorFromFetched(history, legacyEvents, subjectId, contentHash)
+  const fetched = anchorFromFetched(history, subjectId, contentHash)
   return !!fetched
     && anchor.knowledgeBlockVersion === fetched.knowledgeBlockVersion
     && anchor.subjectId === fetched.subjectId
     && anchor.contentHash === fetched.contentHash
-    && anchor.legacyHistoryComplete === fetched.legacyHistoryComplete
     && stableJson(anchor.state) === stableJson(fetched.state)
     && sameCommands(anchor.commands, fetched.commands)
     && sameEffectiveReviews(anchor.effectiveReviews, fetched.effectiveReviews)
-    && sameLegacyEvents(anchor.legacyEvents, fetched.legacyEvents)
 }
 
 function matchesMetadataOnlyUpdate(
   anchor: LocalReviewCanonicalAnchor,
   history: LifecycleHistoryResponse,
-  legacyEvents: ReviewEventView[],
   currentHash: string,
 ): boolean {
   // Subject moves and other metadata-only KB revisions do not change review
@@ -196,8 +177,7 @@ function matchesMetadataOnlyUpdate(
     || history.knowledgeBlockVersion < anchor.knowledgeBlockVersion
     || stableJson(anchor.state) !== stableJson(canonicalState(history.state))
     || !sameCommands(anchor.commands, history.commands)
-    || !sameEffectiveReviews(anchor.effectiveReviews, history.effectiveReviews)
-    || !sameLegacyEvents(anchor.legacyEvents, legacyEvents)) return false
+    || !sameEffectiveReviews(anchor.effectiveReviews, history.effectiveReviews)) return false
   return true
 }
 
@@ -320,7 +300,6 @@ export class ReviewSyncService {
     subjectId: string,
     intent: LocalReviewIntent,
     history: LifecycleHistoryResponse,
-    legacyEvents: ReviewEventView[],
   ): Promise<'prepared' | 'deferred' | 'conflict'> {
     if (!validateHistory(history, kbId)) return 'deferred'
     let outcome: 'prepared' | 'deferred' | 'conflict' = 'deferred'
@@ -357,8 +336,7 @@ export class ReviewSyncService {
         let acknowledgedPredecessorExtension = false
         if (!initialAnchorStillCurrent && preparation.predecessorClientCommandIds.length > 0
           && anchor.subjectId === preparation.anchorSubjectId
-          && anchor.contentHash === preparation.anchorContentHash
-          && stableJson(anchor.legacyEvents) === preparation.anchorLegacyFingerprint) {
+          && anchor.contentHash === preparation.anchorContentHash) {
           const currentIds = new Set(anchor.commands.map(command => command.clientCommandId))
           const originalIds = new Set(preparation.anchorCommandIds)
           const addedIds = [...currentIds].filter(id => !originalIds.has(id))
@@ -371,41 +349,38 @@ export class ReviewSyncService {
         if (allowedLineage && anchor.contentHash === actualHash
           && (preparation.predecessorClientCommandIds.length === 0
             || preparation.predecessorClientCommandIds.every(id => anchor.commands.some(command => command.clientCommandId === id)))) {
-          baselineMatches = sameRemoteAnchor(anchor, history, legacyEvents, subjectId, actualHash)
-          metadataOnlyMatches = matchesMetadataOnlyUpdate(anchor, history, legacyEvents, actualHash)
+          baselineMatches = sameRemoteAnchor(anchor, history, subjectId, actualHash)
+          metadataOnlyMatches = matchesMetadataOnlyUpdate(anchor, history, actualHash)
         }
         if (preparation.allowContentInvalidation && preparation.predecessorClientCommandIds.length === 0
           && preparation.anchorFingerprint === currentFingerprint
           && anchor.subjectId === subjectId
-          && matchesContentInvalidation(anchor, history, legacyEvents, subjectId, actualHash)) {
+          && matchesContentInvalidation(anchor, history, subjectId, actualHash)) {
           contentInvalidationMatches = true
         }
       } else if (!anchor && preparation.anchorFingerprint === null && preparation.knownLocalCreate
         && history.state === null && history.commands.length === 0 && history.effectiveReviews.length === 0
-        && legacyEvents.length === 0 && intent.payload.expectedStateAbsent === true) {
+        && intent.payload.expectedStateAbsent === true) {
         localCreateMatches = true
       } else if (!anchor && preparation.anchorFingerprint === null && !preparation.knownLocalCreate
         && preparation.predecessorClientCommandIds.length === 0
         && intent.action === 'LEARNING_COMPLETED' && typeof intent.payload.reviewId !== 'string'
         && intent.payload.expectedStateAbsent === true
-        && history.state === null && history.commands.length === 0 && history.effectiveReviews.length === 0
-        && legacyEvents.length === 0) {
-        // The remote state was unknown when local learning was saved. Only a
-        // complete v2 response proving both lifecycle and legacy histories are
-        // empty may bind this first unprepared learning command to absence.
+        && history.state === null && history.commands.length === 0 && history.effectiveReviews.length === 0) {
+        // The remote state was unknown when local learning was saved. The v2
+        // lifecycle response must prove an empty history before binding the
+        // first unprepared learning command to absence.
         unknownEmptyRemoteMatches = true
       } else if (anchor && preparation.anchorFingerprint === null && preparation.knownLocalCreate
         && preparation.predecessorClientCommandIds.length > 0
         && anchor.subjectId === subjectId && anchor.contentHash === actualHash
-        && anchor.legacyEvents.length === 0
         && preparation.predecessorClientCommandIds.every(id => anchor.commands.some(command => command.clientCommandId === id))) {
         const predecessorIds = new Set(preparation.predecessorClientCommandIds)
         localCreateMatches = anchor.commands.every(command => predecessorIds.has(command.clientCommandId))
-          && sameRemoteAnchor(anchor, history, legacyEvents, subjectId, actualHash)
+          && sameRemoteAnchor(anchor, history, subjectId, actualHash)
       } else if (anchor && preparation.anchorFingerprint === null && !preparation.knownLocalCreate
         && preparation.predecessorClientCommandIds.length > 0
         && anchor.subjectId === subjectId && anchor.contentHash === actualHash
-        && anchor.legacyEvents.length === 0
         && preparation.predecessorClientCommandIds.every(id => anchor.commands.some(command => command.clientCommandId === id))) {
         const predecessorIds = new Set(preparation.predecessorClientCommandIds)
         const startsWithAcknowledgedFirstLearning = anchor.commands.some(command =>
@@ -416,7 +391,7 @@ export class ReviewSyncService {
         // history change fails the full anchor comparison below.
         unknownAcknowledgedPrefixMatches = startsWithAcknowledgedFirstLearning
           && anchor.commands.every(command => predecessorIds.has(command.clientCommandId))
-          && sameRemoteAnchor(anchor, history, legacyEvents, subjectId, actualHash)
+          && sameRemoteAnchor(anchor, history, subjectId, actualHash)
       }
 
       const hasKnownAnchor = baselineMatches || metadataOnlyMatches || contentInvalidationMatches
@@ -476,9 +451,7 @@ export class ReviewSyncService {
             result.protocolBlocked = true
             continue
           }
-          const legacyEvents: ReviewEventView[] = await useReviewApi.getHistory({ knowledgeBlockId: block.id }, scope)
-          if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
-          await this.localReview.importLifecycleHistory(userId, deviceId, block.id, history, legacyEvents)
+          await this.localReview.importLifecycleHistory(userId, deviceId, block.id, history)
           continue
         }
 
@@ -527,9 +500,7 @@ export class ReviewSyncService {
         return { synced, conflict: false, protocolBlocked: true }
       }
       if (!intent.prepared) {
-        const legacyEvents = await useReviewApi.getHistory({ knowledgeBlockId: kbId }, scope)
-        if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
-        const preparation = await this.prepareIntent(userId, deviceId, kbId, subjectId, intent, history, legacyEvents)
+        const preparation = await this.prepareIntent(userId, deviceId, kbId, subjectId, intent, history)
         if (preparation === 'deferred') return { synced, conflict: false, protocolBlocked: false }
         if (preparation === 'conflict') return { synced, conflict: true, protocolBlocked: false }
         const refreshed = await this.repository.getPendingIntents(userId, deviceId, kbId)
@@ -601,8 +572,6 @@ export class ReviewSyncService {
             state: canonicalState(response.state),
             commands: mergeCanonicalCommand(previousAnchor?.commands ?? [], response, intent),
             effectiveReviews: mergeEffectiveReview(previousAnchor?.effectiveReviews ?? [], response.effectiveReview),
-            legacyEvents: previousAnchor?.legacyEvents ?? [],
-            legacyHistoryComplete: previousAnchor?.legacyHistoryComplete ?? true,
           }
           const record: LocalReviewRecord = {
             knowledgeBlockId: kbId,
@@ -613,8 +582,6 @@ export class ReviewSyncService {
             state,
             history: mergeCommandHistory(currentRecord?.history ?? [], response, intent),
             effectiveReviews: mergeEffectiveReview(currentRecord?.effectiveReviews ?? [], response.effectiveReview),
-            legacyEvents: currentRecord?.legacyEvents ?? [],
-            legacyHistoryComplete: currentRecord?.legacyHistoryComplete ?? false,
             historyImported: currentRecord?.historyImported ?? false,
             canonicalAnchor,
             isPresenceMarker: currentRecord?.isPresenceMarker ?? false,

@@ -1,5 +1,86 @@
 # Auralis 变更记录
 
+### 学科总览合法输入分批（2026-10-12；代码、定向验证、只读审查与本机更新完成）
+
+- 修复各文件总览合法但合并超出 12000 prompt 上限时立即 `VALIDATION_FAILED`：大 Subject 资料完整分片 / 精确分包后归纳合并，小请求保留 direct。
+- 分片分配独立资料并检查规划期限；仅中间 Subject MAP 附加 compact 指令。原模式 / alias / UUID 映射、用量与并发、Source 流程、数据库及接口字段保持。
+- 全新隔离编译 Surefire 73/73、主树与已测源码精确一致，唯一只读审查 0 B / I / O；wrapper 未保留 shell exit 明确登记，早期增量和 72 项阶段不计最终总数。部署与真实 Provider / GUI 分别验收，详见 [实施记录](../plans/2026-10-12-subject-overview-prompt-batching.md)。
+- 香港 13:57:23 仅 backend 更新为 `a5a50bb7…`，构建 / 替换退出码 0、healthy / readiness 200，部署 Service class 对应已测版本；db / MinIO、Flyway V31 与现行额度策略保持。真实生成待用户实测验收。
+
+### Embedding 额度排除与单人测试默认值（2026-10-12；代码、相关验证及本机部署完成）
+
+- 文件摄入与检索 embedding 不计用户小时 / 每日及系统每日 token 配额，个人中心 charged / reserved / remaining 同时排除历史 embedding；原 reservation 与 actual / charged 审计保留，无回填或清账。
+- 单人小时 / 日默认提高 10 倍为 1000000 / 2000000，三份配置同步；系统日 2000000、全局 / 用户并发 4 / 2 及任务 / 请求资源保护保持。无新 API 字段、环境变量或数据库迁移。
+- 代码、配置验证与本机部署状态及业务验收独立记录，详见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。
+- 相关后端隔离 53/53、最终受影响两项 2/2（重叠）、配置 6/6 及 Compose 校验通过；不表述为主树全量或真实 GUI / Provider 通过。
+- 唯一只读审查 0 BLOCKER / IMPORTANT / OPTIONAL。本机 backend 香港 12:57:12 更新为 `31f7dec…`，健康 / 有效额度 / Guard 字节码排除确认，db / MinIO 和 Flyway V31 保持；旧镜像留回滚 tag，未删除历史用量。GUI / Provider 业务由用户实测验收。
+
+### 大 PDF embedding 用量解析与 PC 上传同步（2026-10-12；代码与定向验证通过，新补丁未部署）
+
+- SiliconFlow embedding 适配器保留合法 `completion_tokens`，含 0；完整 usage 按实际值结算，缺失或非法字段仍保守。保留全部 AI 额度与并发限制、历史账本及现有检查点流程。
+- PC 初始化资产队列后后台唤醒上传，普通 push/pull 不再等待上传结束；安全日志、会话隔离及 Asset 完成后才释放 Source mutation 的顺序保留。
+- 后端五类定向 56/56 在源码与主树相同的隔离构建通过；PC 最终四项回归、actual-store probe、类型检查和构建通过，早期完整相关套件 51/51 不与四项累加。PC 静态门禁仍因既有 Rust 固定地址扫描失败。Antigravity 委派无实现产出，最终由 Luna 执行最小修改。
+- 原部署在香港 11:00 自然恢复该 PDF，42 个 chunks 激活、Source READY，此为原调度和检查点续做的只读现场验证。新解析补丁实际结算、桌面上传期间其他实体/跨设备同步待部署后验收，详见 [诊断与修复](../plans/2026-10-12-pdf-ingestion-quota-and-sync.md)。
+
+### PC 头像本地缓存与断网回退（2026-10-12；代码实现，GUI 待验收）
+
+- 头像 Blob 按用户 ID 缓存于 IndexedDB；顶栏和个人中心先展示本地副本，再尝试云端刷新。网络故障时保留头像，云端明确无头像、用户重置或退出登录时清理对应缓存。
+- 上传成功后将已接受的图片写入本地缓存并立即显示；账号切换与迟到请求不会覆盖当前账号头像。
+- `npm.cmd run type-check` 退出码 0；本轮未运行测试。真实桌面端重启后断网显示待人工验收。
+
+### PC Timeline 离线排期（2026-10-12；代码与定向命令验证通过，真实环境待验收）
+
+- Timeline 插入、顺延与换位改为本地原子事务，任务投影和一条稳定 ID 的 Sync 命令一起保存。离线时继续保留操作，恢复网络后幂等推送；服务器拒绝或版本冲突时以当前 Task 数组恢复本机排期并通知用户。回执缺少本地受影响任务时，先验证完整快照再结束命令；快照失败会将命令释放回待同步队列。
+- Sync push 增加 `SCHEDULE_INSERTION`、`SCHEDULE_SWAP` 入站命令，复用 TaskService 现有校验和事务，并校验 payload 源 Task ID/baseVersion 与外层 mutation 一致。换位目标 Task ID/version 缺失时记为幂等的 `REJECTED/VALIDATION_FAILED`。V31 扩大 inbound mutation 列并放宽 CHECK，change log 仍记录普通 Task `UPDATE`；OpenAPI 与 PC/Mobile 生成类型已同步。pending fence 与 SQLite 快照替换在同一事务内完成；多条排期拒绝均逐条通知。
+- 浏览器 LocalRepository 的状态改写要求 Web Locks API 并通过同源锁串行化；缺少该 API 时拒绝 localStorage 写入，以保护整份状态。共享 localStorage 跨 repository 交错回归已覆盖锁下竞争和无锁失败。四个 PC 定向套件现为 173/173（含缺失换位目标 ID 且快照暂时失败的恢复重试）、LocalRepository 单套 35/35、`npm.cmd run type-check` 退出码 0；Server Sync/Schema/Task controller 定向 Maven 测试 34/34，独立 `OpenApiArtifactTests` 12/12；只读复审 BLOCKER=0、IMPORTANT=0。`check:r4-pc` 命中未修改 Rust 文件中的固定本地地址规则；`check-openapi.ps1` 的运行时 artifact 检查在 JUnit discovery 失败，报 `NoClassDefFoundError: JsonNode`。本轮未部署；真实 Tauri/断网恢复验收待完成。
+
+### PC 任务截止纯日期旧值兼容移除（2026-10-11；定向测试、类型检查与只读审查通过）
+
+- 截止解析只接受带时区的真实 instant，不再把已存裸 `YYYY-MM-DD` 当作当地日末；非空无效截止值拒绝新排期。Store 读取保留旧截止值，未改截止的资产字段编辑保留原值；TaskCreateDialog、Store 和资产库的明确用户日期输入仍按当地日末转换。
+- 测试账号注入文档新增精确 `dueAt` 提醒：当天截止按目标时区转成当地日末再提交，排期结束不得晚于该 instant，插入 API 不负责修正已有任务。
+- 未更改任务数据、API/数据库字段或迁移；定向 Store/截止规则测试 92/92、类型检查退出码 0，Codex 只读审查 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。构建与 GUI 本轮未执行。
+
+### 学科总览最终 MAP 用量误拒绝（2026-10-11；代码与相关验证通过，未部署本轮修复）
+
+- 对齐 Overview MAP/REDUCE 与既有最终输出 6144 token 上限，修复合法学科直接生成及单批文件生成在预留前被 4608 阈值拒绝的 `AI_REQUEST_BUDGET_EXCEEDED`（413）。6145 仍拒绝，中间输出 4608、聊天及全部额度/并发/任务预算继续适用；没有修改数据库记录、迁移、配置或接口。
+- Overview 失败日志保留六类已知安全用量码，未知码仍通用回退；JSON/SSE 原有真实错误码传递保留。主树定向 19/19、本机 SSE 1/1，追加 TASK 释放断言后集成 2/2（重叠）通过；运行账本两次只读快照没有历史预留占用。
+- 唯一只读审查 BLOCKER=0、IMPORTANT=0；OPTIONAL=1 是诊断报告 evidence 索引 SHA 更新项，六项源码/测试与已测 hash 一致。完整命令、抛出位置、生命周期和运行镜像证据见 [诊断与修复](../plans/2026-10-11-overview-usage-limit-diagnosis.md)。本轮未提交或部署，真实 PC/代理/Provider/GUI 验收待新修复进入运行 backend 后完成。
+
+### Overview 重新生成 406 协商失败诊断（2026-10-11；代码与回归测试更新，本机容器仍待重建）
+
+- 现场异常来自旧 backend 镜像（2026-10-09 构建）与当前 PC Overview SSE 请求协议不一致：旧 `AiController` 直接返回 JSON DTO，无法满足 `Accept: text/event-stream`；Provider 与生成阶段已成功，失败发生于 MVC 响应写出。DeepSeek、JSON 解析和 Schema 校验逻辑未改。
+- 当前工作树的 Overview Controller 已有 JSON 默认响应及 opt-in SSE；新增 JSON Controller、PC 实际 Accept 下的 SSE 终态、以及不可接受格式 406 回归。全局异常处理器不再把 `HttpMediaTypeNotAcceptableException` 兜底成 500，返回 HTTP 406 `NOT_ACCEPTABLE`。后端聚焦回归 15/15、运行时 OpenAPI 11/11 通过。
+- `CACHE_RETURN` 仅为日志阶段，不持久化结果。客户端只有收到响应后才保存；同一失败后的手动重新生成会形成新请求并可能重复 Provider 调用/用量。新增持久幂等回放不属于本次最小响应修复。
+- 运行中的 Docker backend 尚未更新；命令验证不能替代更新后的本机 HTTP、真实 Provider 或 PC GUI 验收。
+
+### Overview 硬期限与取消（2026-10-11；代码、相关自动验证与只读审查通过；真实环境待验收）
+
+- 同一 Source/Subject Overview POST 增加可选 SSE 心跳与终端事件，保留默认 JSON。入口绝对期限扣除预检和排队，主动关闭当前 Provider socket；共享 Source 保留原 owner 期限和其他消费者需求，未知已派发用量按 B 保守结算。
+- PC 学科、文件和总结生成提供“停止”；切页释放页面消费者，后台任务继续，runtime/account/修订与删除取消旧工作。真实 SQL 保存增加可选同步 guard，提交前取消回滚本操作 cache/outbox，进入提交后保留成功成果；已有自动缓存广播和并行视图精简保留。
+- 单一审查补修 SSE 503 映射、DNS 有界取消和写入名额竞态；固定 DNS 4 线程/8 队列，writer 8/8，SSE 名额保留到实际 worker 和全部写入退出。后端组合 124/124 与 PC Overview 72、cache 14、sync 22、runtime 20、UI 16 项相关回归通过，计数与初期套件重叠；最新增量、类型/构建和源码 hash 见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。运行时 OpenAPI 与两端 SDK 已同步。
+- 本机 TLS/TCP 已自动验证；同步 JDBC/数据库锁不能强制取消、原生 DNS 可能仍占固定 slot。Mobile 旧 Review 两处类型错误另行迁移，GUI、真实代理/Provider 和运行态部署待验收。本轮无数据库结构、依赖或生产配置变化，未部署。
+
+### 复习旧接口与 FSRS Lite 调度器移除（2026-10-11；PC 迁移与定向验证通过）
+
+- 删除服务端 `/api/reviews/due`、`POST /api/reviews/events`、`GET /api/reviews/history` 及 FSRS Lite 动态间隔调度代码；保留 `/api/reviews/states` 和生命周期复习接口。数据库结构未变，`review_events` 仍供现有统计查询读取。
+- PC 移除旧接口 wrapper、旧事件回合与旧历史读取，仅同步生命周期命令和历史；本地复习统计不再合并旧事件。
+- 后端编译、路由/lifecycle 定向测试 15/15、OpenAPI 10/10、OpenAPI/SDK 检查、PC 复习定向回归 132/132 与 `node node_modules/vue-tsc/bin/vue-tsc.js -b` 类型检查通过。
+- 按本轮范围未迁移 Mobile / Tablet；它们仍使用已删除的旧路由，迁移完成前复习请求不可用。未部署。
+
+### AI 持久配额与个人中心额度（2026-10-11；代码、相关自动验证与只读审查通过，未部署）
+
+- Chat、Overview、embedding、连接测试与模型元数据查询统一进入 Provider gateway，新增 V30 持久预留/结算、跨实例全局/用户并发、小时/每日额度及任务累计预算；缺失 usage 保守计账。users-first 准入/预留/派发授权与原子成功结算关闭账户停用、级联锁序及 owner/lease 竞态，网络调用保持事务外。
+- ingestion 完成批次持久保留为 inactive 检查点；配额等待只延后领取，普通 failure 与单调 claim attempt 分开，跨窗口只继续剩余批次，完整后原子激活。硬预算超限成为明确终态；有界 MVC async 与安全错误提示保留显式重试。
+- PC、Mobile、Tablet 现有个人中心显示本人小时/今日额度、已用、在途预留、剩余及当地重置时间；加载/失败/账号切换隔离，Mobile 额度请求沿既有 401 refresh 路径。运行时 OpenAPI 与两端 SDK 同步。
+- Luna 管理实际 Antigravity 前端候选并按真实失败补修；核心 31/31 + PG 锁序 4/4、业务 147/147、最终受影响组合 37/37、真实 V29→V30 升级 1/1、OpenAPI 9/9、前端行为 8/8 与协议 24/24、两端类型和隔离 PC/H5 构建通过，计数有重叠。全量 Modulith 和 PC deadline 的既有失败单独登记；真实 Provider、GUI/设备与发布未验收，未提交或部署。完整证据见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。
+
+### AI 伴读来源、Overview 时限、embedding 分批与匿名质量基线（2026-10-10；代码与相关自动验证通过）
+
+- 历史与流式回答显示实际 citation 的去重文件名，以普通文本渲染；正文 Markdown/公式和参考范围交互保留。
+- Overview 增加默认 240 秒合作式任务 deadline、剩余 response timeout 与迟到结果拒绝；embedding 按 32 条/32768 UTF-8 文本字节分批，校验并归位响应 index，全部向量验证后才切换 generation。批前后短事务续租，锁后读取 Clock 拒绝已过期或被接管 claim；没有新增表、迁移或公开 DTO。
+- 新增八个匿名质量样例、实际 chunk/hash/scope 契约测试和离线 runner；评分模板全部未评分，真实模型质量未验收。
+- Luna 管理 Antigravity 生成来源展示并补强回归；PC 相关 27/27、type/build 与 Overview 静态 48/48 通过，完整 R4 679/680 与既有 Rust 静态失败分开记录。后端首轮聚焦 89/89、兼容增量 31/31，锁竞态补修最终 Job/Worker 18/18、配置 5/5 通过；质量离线 3/3 通过。单一 reviewer 已通过共通代码与文档审查；完整持久配额已按 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md) 实现，尚未部署。合作式 deadline 的持续 I/O 中断、真实 Provider/网络和 GUI 独立待验收；任务临时 PG 后续证据单独记录在 B 计划。证据见 [共通实施](../plans/2026-10-10-ai-important-fixes.md)。
+
 ### 自测复习空启动保护（2026-10-10；代码与自动验证通过，客户端待验收）
 
 - 自测启动校验实际 5/10 数量和卡片；Store 拒绝空队列，缓存空轮次显示错误，避免直接显示“完成 0 个”。保留当前活动候选池、独立数量选择与配色。
@@ -422,7 +503,7 @@
 - complete 返回 `ACCEPTED` 后，PC coordinator 现在按现行本地状态机依次持久化 `SERVER_INDEXING`、`READY`，不再直接跨越中间阶段；未修改迁移表或 scheduler 的 READY 后 cache cleanup 责任。
 - TDD 回归先用真实 `DocumentProcessingJobRepository` 复现 `DOCUMENT_JOB_ILLEGAL_TRANSITION`，修复后 ParsedDocument upload 15/15、processing flow 1/1、job schema 16/16、source scheduler 27/27、完整 `npm.cmd run test:r4-pc` 251/251、`npm.cmd run type-check` 与 `git diff --check` 通过。真实 Tauri/Server/MinIO 与 GUI 仍待验收。
 
-更新时间：2026-09-09
+更新时间：2026-10-11
 
 文档状态：现行历史记录
 

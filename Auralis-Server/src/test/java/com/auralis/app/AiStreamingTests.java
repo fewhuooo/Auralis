@@ -19,6 +19,9 @@ import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.MessageView;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
+import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiInvocationResult;
+import com.auralis.app.ai.usage.AiTaskScope;
 import com.auralis.app.ai.retrieval.Citation;
 import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.ai.retrieval.RetrievalService;
@@ -70,6 +73,12 @@ class AiStreamingTests {
     private EmbeddingProviderPort embeddingProvider;
 
     @Mock
+    private AiInvocationGateway invocationGateway;
+
+    @Mock
+    private AiTaskScope taskScope;
+
+    @Mock
     private AuralisProperties properties;
 
     @Mock
@@ -95,6 +104,25 @@ class AiStreamingTests {
                 .thenAnswer(invocation -> new MessageView(
                         UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, invocation.getArgument(4),
                         invocation.getArgument(3), invocation.getArgument(5), invocation.getArgument(6), null));
+        lenient().when(conversationService.appendAssistantReply(any(), any(), any(), anyString(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> new MessageView(
+                        UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, invocation.getArgument(4),
+                        invocation.getArgument(3), invocation.getArgument(5), invocation.getArgument(6), null));
+        lenient().when(invocationGateway.beginTask(any())).thenReturn(taskScope);
+        lenient().when(taskScope.stream(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            AiProviderType providerType = invocation.getArgument(1);
+            AiProviderRequest request = invocation.getArgument(2);
+            AiCredential credential = invocation.getArgument(3);
+            java.util.function.Consumer<AiProviderChunk> sink = invocation.getArgument(4);
+            providerRegistry.require(providerType).streamInto(request, credential, sink);
+            return new AiInvocationResult<>(null, null);
+        });
+        lenient().when(taskScope.embed(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+            AiProviderType providerType = invocation.getArgument(1);
+            List<String> texts = invocation.getArgument(3);
+            AiCredential credential = invocation.getArgument(4);
+            return new AiInvocationResult<>(embeddingProviderRegistry.require(providerType).embed(texts, credential), null);
+        });
     }
 
     @Test
@@ -117,7 +145,7 @@ class AiStreamingTests {
         assertThat(events.get(1).data()).isEqualTo("hello ");
         assertThat(events.get(2).data()).isEqualTo("world");
         verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
-                eq("hello world"), eq(AiMessageStatus.COMPLETED), eq("deepseek-chat"), eq(null));
+                eq("hello world"), eq(AiMessageStatus.COMPLETED), eq("deepseek-chat"), eq(null), any());
     }
 
     @Test
@@ -331,7 +359,7 @@ class AiStreamingTests {
                 });
 
         verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
-                eq("hello "), eq(AiMessageStatus.INTERRUPTED), eq("deepseek-chat"), eq("CLIENT_DISCONNECTED"));
+                eq("hello "), eq(AiMessageStatus.INTERRUPTED), eq("deepseek-chat"), eq("CLIENT_DISCONNECTED"), any());
     }
 
     @Test
@@ -363,7 +391,7 @@ class AiStreamingTests {
                 .extracting(value -> ((java.util.Map<?, ?>) value).get("code"))
                 .isEqualTo("RATE_LIMITED");
         verify(conversationService).appendAssistantReply(eq(userId), eq(conversationId), any(),
-                eq(""), eq(AiMessageStatus.FAILED), eq("deepseek-chat"), eq("RATE_LIMITED"));
+                eq(""), eq(AiMessageStatus.FAILED), eq("deepseek-chat"), eq("RATE_LIMITED"), any());
     }
 
     @Test

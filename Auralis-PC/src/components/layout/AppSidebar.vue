@@ -1,71 +1,101 @@
 <template>
   <aside class="sidebar">
-    <!-- Brand -->
-    <div class="sidebar-brand"
-      @mouseenter="handleMouseEnter($event, 'nav', { title: 'Auralis (Auralis)', desc: '跨平台智能生产力中枢' })"
+    <!-- Brand Logo -->
+    <div 
+      class="sidebar-brand"
+      @click="router.push('/')"
+      @mouseenter="handleMouseEnter($event, 'nav', { title: 'Auralis', desc: '智能学习与知识工作台' })"
       @mouseleave="handleMouseLeave"
+      title="回到首页"
     >
       <div class="brand-icon">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <rect width="28" height="28" rx="8" fill="url(#brand-grad)" />
-          <path d="M8 14L12 10L16 14L20 10" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M8 18L12 14L16 18L20 14" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.5"/>
+          <rect width="28" height="28" rx="8" fill="url(#brand-grad)" class="brand-rect" />
+          <path d="M7.5 14L11.5 10L16.5 14L20.5 10" stroke="white" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="brand-wave-1"/>
+          <path d="M7.5 18L11.5 14L16.5 18L20.5 14" stroke="white" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" opacity="0.6" class="brand-wave-2"/>
           <defs>
             <linearGradient id="brand-grad" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
-              <stop stop-color="var(--color-zen-sage)" />
-              <stop offset="1" stop-color="var(--color-zen-ivory)" />
+              <stop stop-color="#8B9A6E" />
+              <stop offset="1" stop-color="#728456" />
             </linearGradient>
           </defs>
         </svg>
       </div>
     </div>
 
-    <!-- Primary Navigation -->
-    <nav class="sidebar-nav">
+    <!-- Primary Fixed Navigation (Top 5 features strictly fixed, never scroll) -->
+    <nav class="sidebar-primary-nav" aria-label="核心功能导航">
       <!-- Dashboard -->
-      <router-link to="/" class="nav-item" :class="{ 'is-active': route.path === '/' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '首页看盘', desc: '日程 · 知识块速览' })"
+      <router-link 
+        to="/" 
+        class="nav-item" 
+        :class="{ 'is-active': route.path === '/' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '首页', desc: '日程与知识总览' })"
         @mouseleave="handleMouseLeave"
+        aria-label="首页"
       >
-        <span class="nav-icon"><IconLayoutDashboard :size="20" :stroke-width="1.6" /></span>
+        <span class="nav-active-indicator"></span>
+        <span class="nav-icon"><IconLayoutDashboard :size="20" :stroke-width="1.7" /></span>
       </router-link>
 
       <!-- Subject Hall -->
-      <router-link to="/subjects" class="nav-item" :class="{ 'is-active': route.path === '/subjects' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '学科大厅', desc: '管理与浏览所有学科' })"
+      <router-link 
+        to="/subjects" 
+        class="nav-item" 
+        :class="{ 'is-active': route.path === '/subjects' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '学科空间', desc: '浏览与管理学科' })"
         @mouseleave="handleMouseLeave"
+        aria-label="学科空间"
       >
-        <span class="nav-icon"><IconBooks :size="20" :stroke-width="1.6" /></span>
+        <span class="nav-active-indicator"></span>
+        <span class="nav-icon"><IconBooks :size="20" :stroke-width="1.7" /></span>
       </router-link>
 
       <!-- Timeline -->
-      <router-link to="/timeline" class="nav-item" :class="{ 'is-active': route.path === '/timeline' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '排期副驾', desc: '任务排期 · 拖拽看板' })"
+      <router-link 
+        to="/timeline" 
+        class="nav-item" 
+        :class="{ 'is-active': route.path === '/timeline' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '任务排期', desc: '日程规划与任务安排' })"
         @mouseleave="handleMouseLeave"
+        aria-label="任务排期"
       >
-        <span class="nav-icon"><IconCalendarTime :size="20" :stroke-width="1.6" /></span>
+        <span class="nav-active-indicator"></span>
+        <span class="nav-icon"><IconCalendarTime :size="20" :stroke-width="1.7" /></span>
       </router-link>
 
       <!-- Asset -->
-      <router-link to="/asset" class="nav-item" :class="{ 'is-active': route.path === '/asset' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '资产编排', desc: '材料管理 · 本地文件登记' })"
+      <router-link 
+        to="/asset" 
+        class="nav-item" 
+        :class="{ 'is-active': route.path === '/asset' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '资料管理', desc: '文件、知识点与关联图谱' })"
         @mouseleave="handleMouseLeave"
+        aria-label="资料管理"
       >
-        <span class="nav-icon"><IconDatabase :size="20" :stroke-width="1.6" /></span>
+        <span class="nav-active-indicator"></span>
+        <span class="nav-icon"><IconDatabase :size="20" :stroke-width="1.7" /></span>
       </router-link>
 
       <!-- Pomodoro -->
-      <router-link to="/pomodoro" class="nav-item" :class="{ 'is-active': route.path === '/pomodoro' }"
-        @mouseenter="handleMouseEnter($event, 'nav', { title: '专注时钟', desc: '番茄钟 · 沉浸学习' })"
+      <router-link 
+        to="/pomodoro" 
+        class="nav-item" 
+        :class="{ 'is-active': route.path === '/pomodoro' }"
+        @mouseenter="handleMouseEnter($event, 'nav', { title: '专注时钟', desc: '番茄钟专注与休息' })"
         @mouseleave="handleMouseLeave"
+        aria-label="专注时钟"
       >
-        <span class="nav-icon"><IconStopwatch :size="20" :stroke-width="1.6" /></span>
+        <span class="nav-active-indicator"></span>
+        <span class="nav-icon"><IconStopwatch :size="20" :stroke-width="1.7" /></span>
       </router-link>
+    </nav>
 
-      <!-- Divider -->
-      <div class="sidebar-divider"></div>
+    <!-- Divider (Fixed) -->
+    <div class="sidebar-divider"></div>
 
-      <!-- Dynamic subjects -->
+    <!-- Scrollable Subjects Section (Only subjects list can scroll) -->
+    <div class="sidebar-subjects-scroll" aria-label="学科列表">
       <div class="subjects-list">
         <div
           v-for="subj in subjectStore.subjects"
@@ -75,7 +105,9 @@
           @click="router.push(`/subject/${subj.id}`)"
           @mouseenter="handleMouseEnter($event, 'subject', subj)"
           @mouseleave="handleMouseLeave"
+          :aria-label="subj.name"
         >
+          <span class="nav-active-indicator"></span>
           <div class="subject-icon-bg">
             <component
               v-if="isSubjectIconKey(subj.icon) || !getLegacySubjectIcon(subj.icon)"
@@ -86,16 +118,19 @@
           </div>
         </div>
       </div>
-    </nav>
+    </div>
 
-    <!-- Footer: 三端同步状态 -->
+    <!-- Footer: 三端同步状态 (Fixed at bottom) -->
     <div class="sidebar-footer">
-      <div class="sync-status"
+      <div 
+        class="sync-status"
         :aria-label="`${connectionProjection.message}${connectionProjection.retryable ? '，可重试' : ''}`"
         :data-retryable="connectionProjection.retryable"
-        @mouseenter="handleMouseEnter($event, 'sync', { title: connectionProjection.message, desc: connectionProjection.retryable ? '可重试' : undefined })"
+        @mouseenter="handleMouseEnter($event, 'sync', { title: connectionProjection.message, desc: connectionProjection.retryable ? '点击立即重试同步' : undefined })"
         @mouseleave="handleMouseLeave"
+        @click="triggerSyncRetry"
       >
+        <span class="sync-ripple" :class="`status-${connectionProjection.level}`"></span>
         <span class="sync-dot" :class="`status-${connectionProjection.level}`"></span>
       </div>
     </div>
@@ -134,6 +169,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { IconLayoutDashboard, IconBooks, IconCalendarTime, IconDatabase, IconStopwatch } from '@tabler/icons-vue'
 import { useAuthStore } from '@/store/useAuthStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
+import { useSyncStore } from '@/store/useSyncStore'
 import type { ConnectionProjection } from '@/services/connectionStatusProjection'
 import {
   getLegacySubjectIcon,
@@ -146,6 +182,7 @@ const router = useRouter()
 defineProps<{ connectionProjection: ConnectionProjection }>()
 const authStore = useAuthStore()
 const subjectStore = useSubjectStore()
+const syncStore = useSyncStore()
 
 // Hover States
 const hoverState = ref<{
@@ -192,6 +229,10 @@ const keepHoverCard = () => {
   }
 }
 
+const triggerSyncRetry = () => {
+  syncStore.requestBackgroundSync('online')
+}
+
 onMounted(async () => {
   if (!authStore.isAuthenticated) return
   try {
@@ -204,23 +245,22 @@ onMounted(async () => {
 onUnmounted(() => {
   if (closeTimeout) clearTimeout(closeTimeout)
 })
-
-
-
 </script>
-
 
 <style scoped>
 .sidebar {
   width: var(--sidebar-width);
   height: 100vh;
   background: var(--color-bg-primary, #F7F2EB);
-  border-right: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 10;
   align-items: center;
+  user-select: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 /* Brand */
@@ -228,29 +268,54 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  margin-bottom: 8px;
+  padding: 22px 0 18px;
   width: 100%;
   position: relative;
+  cursor: pointer;
+  outline: none;
+  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  margin-bottom: 14px;
+}
+.brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
+  border-radius: 8px;
+}
+.sidebar-brand:hover .brand-icon {
+  transform: scale(1.08) translateY(-1px);
+  filter: drop-shadow(0 4px 10px rgba(139, 154, 110, 0.4));
+}
+.sidebar-brand:active .brand-icon {
+  transform: scale(0.96);
+}
+.brand-rect {
+  transition: all 0.3s ease;
 }
 
-/* Navigation */
-.sidebar-nav {
-  flex: 1;
-  padding: 0;
+/* Fixed Primary Navigation (Strictly Non-scrollable) */
+.sidebar-primary-nav {
+  flex-shrink: 0;
+  padding: 2px 0 0;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  overflow-y: auto;
-  /* Hide scrollbar for IE, Edge and Firefox */
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
 }
 
-/* Hide scrollbar for Chrome, Safari and Opera */
-.sidebar-nav::-webkit-scrollbar {
+/* Scrollable Subjects Section (Only subjects list can scroll) */
+.sidebar-subjects-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  padding: 4px 0 8px;
+}
+.sidebar-subjects-scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -261,93 +326,65 @@ onUnmounted(() => {
   width: 44px;
   height: 44px;
   flex-shrink: 0;
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
+  border-radius: 12px;
+  color: var(--text-secondary, #344139);
   text-decoration: none;
-  transition: all var(--transition-normal);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
   margin-bottom: 8px;
   cursor: pointer;
+  outline: none;
+}
+
+.nav-active-indicator {
+  position: absolute;
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3.5px;
+  height: 0;
+  background: var(--accent-gradient, linear-gradient(180deg, #9EAD80 0%, #8B9A6E 100%));
+  border-radius: 0 4px 4px 0;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  opacity: 0;
 }
 
 .nav-item:hover {
-  background: rgba(139, 154, 110, 0.16);
+  background: rgba(139, 154, 110, 0.12);
   color: var(--text-primary);
+  transform: translateY(-1px);
+}
+.nav-item:active {
+  transform: scale(0.96);
 }
 
 .nav-item.is-active {
-  background: var(--border-subtle);
-  color: var(--text-primary);
+  background: rgba(139, 154, 110, 0.16);
+  color: #556B3D;
 }
-
-.nav-item.is-active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
+.nav-item.is-active .nav-active-indicator {
   height: 20px;
-  background: var(--accent-gradient);
-  border-radius: var(--radius-full);
-}
-
-.nav-item.is-disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.6);
 }
 
 .nav-icon {
-  font-size: 18px;
+  font-size: 19px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.nav-item:hover .nav-icon {
+  transform: scale(1.08);
 }
 
 .sidebar-divider {
   width: 24px;
   height: 1px;
-  background: var(--border-subtle);
-  margin: 8px 0;
+  background: linear-gradient(90deg, transparent, var(--border-default, #E6E6E4) 20%, var(--border-default, #E6E6E4) 80%, transparent);
+  margin: 10px 0 12px;
   flex-shrink: 0;
-}
-
-/* Tooltip floating card styling */
-.sidebar-tooltip-floating {
-  position: absolute;
-  left: calc(var(--sidebar-width) + 8px);
-  transform: translateY(-50%);
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-md);
-  padding: 8px 12px;
-  box-shadow: var(--shadow-md);
-  white-space: nowrap;
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: left;
-  pointer-events: none;
-  animation: fade-in-tooltip var(--transition-fast) ease-out;
-}
-
-@keyframes fade-in-tooltip {
-  from { opacity: 0; transform: translateY(-50%) translateX(-4px); }
-  to { opacity: 1; transform: translateY(-50%) translateX(0); }
-}
-
-.tooltip-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.tooltip-desc {
-  font-size: 10px;
-  color: var(--text-muted);
 }
 
 /* Subjects List */
@@ -357,45 +394,40 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  margin-top: 8px;
 }
 
 .subject-item {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  border-radius: var(--radius-md);
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   position: relative;
-  transition: all var(--transition-normal);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
 }
-
 .subject-item:hover {
-  background: rgba(163, 177, 155, 0.15);
+  background: rgba(139, 154, 110, 0.12);
+  transform: translateY(-1px);
 }
-
+.subject-item:active {
+  transform: scale(0.96);
+}
 .subject-item.is-active {
-  background: var(--border-subtle);
+  background: rgba(139, 154, 110, 0.16);
 }
-
-.subject-item.is-active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 18px;
-  background: var(--accent-gradient);
-  border-radius: var(--radius-full);
+.subject-item.is-active .nav-active-indicator {
+  height: 20px;
+  opacity: 1;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.6);
 }
 
 .subject-icon-bg {
-  width: 31px;
-  height: 31px;
+  width: 32px;
+  height: 32px;
   border-radius: 9px;
   display: flex;
   align-items: center;
@@ -403,200 +435,216 @@ onUnmounted(() => {
   font-size: 15px;
   flex-shrink: 0;
   background: transparent;
-  border: 2px solid #A3B19B;
-  color: var(--color-primary-accent, #7D9372);
-  box-shadow: none;
+  border: 1.5px solid rgba(139, 154, 110, 0.35);
+  color: #637748;
+  transition: all 0.22s ease;
 }
-
+.subject-item:hover .subject-icon-bg {
+  border-color: #8B9A6E;
+  color: #4C5D35;
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.2);
+}
 .subject-icon-glyph {
   width: 18px;
   height: 18px;
 }
 
-/* Floating Hover Subject Card */
-.subject-hover-card-floating {
-  position: absolute;
-  left: calc(var(--sidebar-width) + 8px);
-  transform: translateY(-50%);
-  width: 220px;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--radius-lg);
-  padding: 12px;
-  box-shadow: var(--shadow-lg);
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  text-align: left;
-  pointer-events: auto;
-  animation: fade-in-tooltip var(--transition-fast) ease-out;
-}
-
-.hover-subject-name {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.hover-subject-desc {
-  font-size: 11px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-  word-wrap: break-word;
-}
-
-.hover-subject-meta {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.hover-subject-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 6px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
-}
-
-.hover-action-btn {
-  flex: 1;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  font-size: 11px;
-  padding: 4px 0;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  transition: all var(--transition-fast);
-}
-
-.hover-action-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-
-.hover-action-btn.delete:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-  border-color: rgba(239, 68, 68, 0.25);
-}
-
-
 /* Footer Section */
 .sidebar-footer {
-  padding: 16px 0;
-  border-top: 1px solid var(--border-subtle);
+  padding: 16px 0 20px;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-}
-
-.profile-entry {
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-lg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-decoration: none;
-  cursor: pointer;
-  position: relative;
-  transition: all var(--transition-fast);
-}
-
-.profile-entry:hover {
-  background: rgba(163, 177, 155, 0.15);
-}
-
-.profile-entry.is-active {
-  background: var(--border-subtle);
-}
-
-.footer-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--accent-gradient);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  color: white;
+  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   flex-shrink: 0;
 }
 
-.hover-profile-name {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.hover-profile-status {
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-/* Sync Status dot */
+/* Sync Status Dual Ripple */
 .sync-status {
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  width: 24px;
-  height: 24px;
-  cursor: help;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+.sync-status:hover {
+  background: rgba(139, 154, 110, 0.12);
+}
+.sync-ripple {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  opacity: 0.25;
+  transition: all 0.3s ease;
+}
+.sync-ripple.status-ready {
+  background: #8B9A6E;
+  animation: ripple-spread 3s ease-out infinite;
+}
+.sync-ripple.status-syncing {
+  background: #C89B6D;
+  animation: ripple-spread 1.4s ease-out infinite;
+}
+.sync-ripple.status-error {
+  background: #D47B7B;
+  animation: ripple-spread 1.8s ease-out infinite;
+}
+@keyframes ripple-spread {
+  0% { transform: scale(0.7); opacity: 0.6; }
+  100% { transform: scale(1.7); opacity: 0; }
 }
 
 .sync-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  animation: pulse-dot 2s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
-.sync-dot.ready {
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+.sync-dot.status-ready, .sync-dot.ready {
+  background: #8B9A6E;
+  box-shadow: 0 0 8px rgba(139, 154, 110, 0.7);
 }
-
-.sync-dot.status-ready {
-  background: #22c55e;
-  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+.sync-dot.status-syncing, .sync-dot.syncing {
+  background: #C89B6D;
+  box-shadow: 0 0 8px rgba(200, 155, 109, 0.7);
 }
-
-.sync-dot.status-syncing {
-  background: #f59e0b;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
-}
-
 .sync-dot.status-error {
-  background: #ef4444;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+  background: #D47B7B;
+  box-shadow: 0 0 8px rgba(212, 123, 123, 0.7);
+}
+.sync-dot.status-offline, .sync-dot.status-reconnecting {
+  background: #C89B6D;
+  box-shadow: 0 0 8px rgba(200, 155, 109, 0.7);
 }
 
-.sync-dot.status-offline,
-.sync-dot.status-reconnecting {
-  background: #f59e0b;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+/* Frosted Glass Tooltips & Cards */
+.sidebar-tooltip-floating {
+  position: absolute;
+  left: calc(var(--sidebar-width) + 10px);
+  transform: translateY(-50%);
+  background: rgba(247, 242, 235, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 154, 110, 0.22);
+  border-radius: 12px;
+  padding: 8px 14px;
+  box-shadow: 0 8px 24px -2px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.03);
+  white-space: nowrap;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  pointer-events: none;
+  animation: fade-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes fade-slide-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(-6px); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0); }
 }
 
-.sync-dot.syncing {
-  background: #f59e0b;
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.6);
+.tooltip-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.1px;
 }
-
-.hover-sync-text {
+.tooltip-desc {
   font-size: 11px;
+  color: var(--text-muted, #7A7A75);
+}
+
+/* Floating Hover Subject Card */
+.subject-hover-card-floating {
+  position: absolute;
+  left: calc(var(--sidebar-width) + 10px);
+  transform: translateY(-50%);
+  width: 230px;
+  background: rgba(247, 242, 235, 0.95);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(139, 154, 110, 0.24);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.04);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  pointer-events: auto;
+  animation: fade-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hover-subject-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary, #1C1C1A);
+  letter-spacing: -0.2px;
+}
+.hover-subject-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary, #344139);
+  line-height: 1.45;
+  word-wrap: break-word;
+}
+.hover-subject-meta {
+  font-size: 10.5px;
+  color: var(--text-muted, #7A7A75);
   font-weight: 600;
-  color: var(--text-primary);
+  margin-top: 4px;
+}
+
+/* Dark Mode Overrides */
+html.dark .sidebar {
+  background: var(--color-bg-secondary, #292825);
+  border-right-color: rgba(163, 177, 155, 0.15);
+}
+html.dark .nav-item {
+  color: #b0aca5;
+}
+html.dark .nav-item:hover {
+  background: rgba(163, 177, 155, 0.12);
+  color: #FAF7F2;
+}
+html.dark .nav-item.is-active {
+  background: rgba(163, 177, 155, 0.18);
+  color: #b8ccaf;
+}
+html.dark .subject-item:hover {
+  background: rgba(163, 177, 155, 0.12);
+}
+html.dark .subject-item.is-active {
+  background: rgba(163, 177, 155, 0.18);
+}
+html.dark .subject-icon-bg {
+  border-color: rgba(163, 177, 155, 0.3);
+  color: #b8ccaf;
+}
+html.dark .sidebar-footer {
+  border-top-color: rgba(163, 177, 155, 0.15);
+}
+html.dark .sidebar-tooltip-floating {
+  background: rgba(33, 38, 33, 0.94);
+  border-color: rgba(163, 177, 155, 0.25);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+html.dark .subject-hover-card-floating {
+  background: rgba(33, 38, 33, 0.95);
+  border-color: rgba(163, 177, 155, 0.28);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+}
+html.dark .tooltip-title, html.dark .hover-subject-name {
+  color: #FAF7F2;
+}
+html.dark .hover-subject-desc {
+  color: #d9d0c7;
 }
 </style>

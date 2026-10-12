@@ -11,7 +11,10 @@ import type {
 } from '@/types/sync'
 
 const RESOURCE_TYPES = new Set(['SUBJECT', 'SOURCE', 'KNOWLEDGE_BLOCK', 'TASK', 'RELATION'])
-const MUTATION_TYPES = new Set(['CREATE', 'UPDATE', 'DELETE', 'RESTORE'])
+const PUSH_MUTATION_TYPES = new Set([
+  'CREATE', 'UPDATE', 'DELETE', 'RESTORE', 'SCHEDULE_INSERTION', 'SCHEDULE_SWAP',
+])
+const PULL_MUTATION_TYPES = new Set(['CREATE', 'UPDATE', 'DELETE', 'RESTORE'])
 
 function assertMutationValue<T extends string>(value: string, values: Set<string>, label: string): T {
   if (!values.has(value)) throw new Error(`Unsupported sync ${label}: ${value}`)
@@ -19,13 +22,17 @@ function assertMutationValue<T extends string>(value: string, values: Set<string
 }
 
 function toMutationRequest(mutation: LocalMutation): SyncMutationRequest {
+  const payload = { ...mutation.payload }
+  if (mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP') {
+    delete payload._localAffectedTaskIds
+  }
   return {
     clientMutationId: mutation.clientMutationId,
     resourceType: assertMutationValue(mutation.resourceType, RESOURCE_TYPES, 'resourceType'),
     resourceId: mutation.resourceId,
-    mutationType: assertMutationValue(mutation.mutationType, MUTATION_TYPES, 'mutationType'),
+    mutationType: assertMutationValue(mutation.mutationType, PUSH_MUTATION_TYPES, 'mutationType') as SyncMutationRequest['mutationType'],
     baseVersion: mutation.baseVersion,
-    payload: mutation.payload,
+    payload,
   }
 }
 
@@ -33,7 +40,7 @@ function normalizeChange(change: Partial<SyncChange>): SyncChange {
   if (!change.resourceType || !RESOURCE_TYPES.has(change.resourceType)) {
     throw new Error('Sync pull returned an invalid resourceType')
   }
-  if (!change.resourceId || !change.mutationType || !MUTATION_TYPES.has(change.mutationType)) {
+  if (!change.resourceId || !change.mutationType || !PULL_MUTATION_TYPES.has(change.mutationType)) {
     throw new Error('Sync pull returned an invalid resource identity or mutationType')
   }
   return {

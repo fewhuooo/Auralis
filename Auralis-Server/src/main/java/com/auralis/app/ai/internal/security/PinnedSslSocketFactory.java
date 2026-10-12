@@ -14,16 +14,27 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
     private final List<InetAddress> addresses;
     private final int port;
     private final int connectTimeoutMillis;
+    private final ProviderSocketRegistry registry;
 
     public PinnedSslSocketFactory(
             SSLSocketFactory delegate,
             List<InetAddress> addresses,
             int port,
             int connectTimeoutMillis) {
+        this(delegate, addresses, port, connectTimeoutMillis, null);
+    }
+
+    PinnedSslSocketFactory(
+            SSLSocketFactory delegate,
+            List<InetAddress> addresses,
+            int port,
+            int connectTimeoutMillis,
+            ProviderSocketRegistry registry) {
         this.delegate = delegate;
         this.addresses = List.copyOf(addresses);
         this.port = port;
         this.connectTimeoutMillis = connectTimeoutMillis;
+        this.registry = registry;
     }
 
     @Override
@@ -53,7 +64,9 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
         if (socket == null || !socket.isConnected() || !addresses.contains(socket.getInetAddress())) {
             throw new IOException("TLS socket is outside the checked address set");
         }
-        return delegate.createSocket(socket, host, port, autoClose);
+        Socket tls = delegate.createSocket(socket, host, port, autoClose);
+        if (registry != null) registry.register(tls);
+        return tls;
     }
 
     @Override
@@ -61,7 +74,9 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
         if (addresses.isEmpty()) {
             throw new IOException("Pinned TLS target has no resolved addresses");
         }
-        return new PinnedConnectSocket(addresses.get(0), port, connectTimeoutMillis);
+        PinnedConnectSocket socket = new PinnedConnectSocket(addresses.get(0), port, connectTimeoutMillis);
+        if (registry != null) registry.register(socket);
+        return socket;
     }
 
     @Override
@@ -79,9 +94,12 @@ public final class PinnedSslSocketFactory extends SSLSocketFactory {
         int targetPort = requestedPort == 0 ? port : requestedPort;
         for (InetAddress address : addresses) {
             Socket plain = new Socket();
+            if (registry != null) registry.register(plain);
             try {
                 plain.connect(new InetSocketAddress(address, targetPort), connectTimeoutMillis);
-                return delegate.createSocket(plain, host, targetPort, true);
+                Socket tls = delegate.createSocket(plain, host, targetPort, true);
+                if (registry != null) registry.register(tls);
+                return tls;
             } catch (IOException exception) {
                 lastException = exception;
                 try {

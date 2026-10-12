@@ -6,6 +6,11 @@ import com.auralis.app.ai.internal.security.ProviderHttpException;
 import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;
 import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
 import com.auralis.app.shared.error.DomainException;
+import com.auralis.app.ai.usage.AiFeature;
+import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiStage;
+import com.auralis.app.ai.usage.AiTaskContext;
+import com.auralis.app.ai.usage.AiTaskScope;
 import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
@@ -26,50 +31,48 @@ public class AiProviderDiscoveryService {
     private final AiSettingsService settingsService;
     private final ProviderEndpointPolicy endpointPolicy;
     private final ProviderHttpClient httpClient;
+    private final AiInvocationGateway invocationGateway;
 
     public AiProviderDiscoveryService(AiSettingsService settingsService,
-            ProviderEndpointPolicy endpointPolicy, ProviderHttpClient httpClient) {
+            ProviderEndpointPolicy endpointPolicy, ProviderHttpClient httpClient,
+            AiInvocationGateway invocationGateway) {
         this.settingsService = settingsService;
         this.endpointPolicy = endpointPolicy;
         this.httpClient = httpClient;
+        this.invocationGateway = invocationGateway;
     }
 
     public AiModelListView listModels(UUID userId, AiProviderType provider) {
-        return new AiModelListView(provider, loadModels(userId, provider));
+        AiSettingsService.ResolvedSettings saved = settingsService.requireSavedByok(userId, provider);
+        try (AiTaskScope scope = invocationGateway.beginTask(new AiTaskContext(
+                userId, AiFeature.PROVIDER_SETUP, "models:" + UUID.randomUUID()))) {
+            List<String> models = scope.metadata(AiStage.PROVIDER_METADATA, provider, null,
+                    () -> loadModels(userId, provider, saved)).value();
+            return new AiModelListView(provider, models);
+        }
     }
 
     public AiConnectionTestView testConnection(UUID userId, AiProviderType provider) {
         AiSettingsService.ResolvedSettings saved = settingsService.requireSavedByok(userId, provider);
-        ResolvedProviderEndpoint endpoint = resolveEndpoint(provider, saved);
-        Map<String, Object> request = Map.of(
-                "model", saved.chatModel(),
-                "messages", List.of(Map.of("role", "user", "content", "Reply with OK.")),
-                "max_tokens", 1);
+        AiProviderRequest request = new AiProviderRequest(saved.chatModel(),
+                List.of(new AiProviderRequest.Message(AiMessageRole.USER, "Reply with OK.")), 0.0, 1);
         try {
-            JsonNode response = httpClient.postJson(
-                    endpoint, "/chat/completions", saved.credential().apiKey(), request, JsonNode.class);
-            JsonNode choices = response == null ? null : response.path("choices");
-            if (choices == null || !choices.isArray() || choices.isEmpty()) {
-                throw new DomainException("MODEL_PROVIDER_ERROR",
-                        "AI provider returned an invalid chat completion response");
+            try (AiTaskScope scope = invocationGateway.beginTask(new AiTaskContext(
+                    userId, AiFeature.PROVIDER_SETUP, "test:" + UUID.randomUUID()))) {
+                AiProviderResponse response = scope.complete(AiStage.PROVIDER_TEST, provider, request,
+                        saved.credential(), 0).value();
+                if (response == null || response.content() == null || response.content().isBlank()) {
+                    throw new DomainException("MODEL_PROVIDER_ERROR",
+                            "AI provider returned an invalid chat completion response");
+                }
             }
             return new AiConnectionTestView(provider, true, saved.chatModel());
         } catch (DomainException exception) {
             throw exception;
-        } catch (ProviderHttpException exception) {
-            throw mapChatTestStatus(exception);
-        } catch (ProviderResponseTooLargeException exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
-                    exception);
-        } catch (SocketTimeoutException exception) {
-            throw new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
-        } catch (IOException exception) {
-            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
         }
     }
 
-    private List<String> loadModels(UUID userId, AiProviderType provider) {
-        AiSettingsService.ResolvedSettings saved = settingsService.requireSavedByok(userId, provider);
+    private List<String> loadModels(UUID userId, AiProviderType provider, AiSettingsService.ResolvedSettings saved) {
         ResolvedProviderEndpoint endpoint = resolveEndpoint(provider, saved);
         try {
             JsonNode response = httpClient.getJson(endpoint, "/models", saved.credential().apiKey(), JsonNode.class);

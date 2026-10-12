@@ -3,7 +3,7 @@
     <div class="processing-center-heading">
       <div>
         <h3 id="processing-center-title">文件解析进度</h3>
-        <p>解析完成后，文件会自动进入 AI 检索。</p>
+        <p>处理完成后，文件即可用于智能问答与阅读。</p>
       </div>
       <button type="button" class="processing-refresh" :disabled="store.loading || !store.isRuntimeAvailable" @click="refresh">刷新</button>
     </div>

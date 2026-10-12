@@ -2,29 +2,35 @@ package com.auralis.app;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import static org.springframework.http.MediaType.APPLICATION_JSON;
+import java.util.stream.Collectors;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(classes = AuralisApplication.class)
 @ActiveProfiles("test")
-@AutoConfigureMockMvc
 class ReviewControllerTests {
 
     @Autowired
-    private MockMvc mockMvc;
+    @Qualifier("requestMappingHandlerMapping")
+    private RequestMappingHandlerMapping handlerMapping;
 
     @Test
-    void reviewRoutesRequireAuthentication() throws Exception {
-        mockMvc.perform(get("/api/reviews/due")).andExpect(status().isUnauthorized());
-        mockMvc.perform(get("/api/reviews/history")).andExpect(status().isUnauthorized());
-        mockMvc.perform(post("/api/reviews/events").contentType(APPLICATION_JSON).content("{}"))
-                .andExpect(status().isUnauthorized());
+    void deprecatedReviewRoutesAreNotMapped() {
+        var routePatterns = handlerMapping.getHandlerMethods().keySet().stream()
+                .flatMap(mapping -> mapping.getPatternValues().stream())
+                .collect(Collectors.toSet());
+
+        assertThat(routePatterns).doesNotContain(
+                "/api/reviews/due",
+                "/api/reviews/events",
+                "/api/reviews/history");
+        assertThat(routePatterns).contains(
+                "/api/reviews/states",
+                "/api/reviews/lifecycle/history");
     }
 }

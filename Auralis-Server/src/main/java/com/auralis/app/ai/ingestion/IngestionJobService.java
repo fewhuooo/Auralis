@@ -5,9 +5,12 @@ import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
 import com.auralis.app.source.IngestionJobReference;
 import com.auralis.app.source.ParsedDocumentIngestionPort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -21,9 +24,12 @@ public class IngestionJobService implements ParsedDocumentIngestionPort {
             List.of(IngestionJobStatus.PENDING, IngestionJobStatus.PARSING, IngestionJobStatus.INDEXING);
 
     private final IngestionJobRepository jobRepository;
+    private final Clock clock;
 
-    public IngestionJobService(IngestionJobRepository jobRepository) {
+    @Autowired
+    public IngestionJobService(IngestionJobRepository jobRepository, Clock clock) {
         this.jobRepository = jobRepository;
+        this.clock = clock;
     }
 
     @Transactional
@@ -88,8 +94,12 @@ public class IngestionJobService implements ParsedDocumentIngestionPort {
             return Optional.empty();
         }
         IngestionJobEntity job = jobs.get(0);
-        if (job.getAttemptCount() >= maxAttempts) {
-            return Optional.of(job);
+        boolean expiredLease = isExpiredLease(job, now);
+        if (expiredLease) {
+            job.recordExpiredLeaseFailure(now);
+        }
+        if (job.getFailureCount() >= maxAttempts) {
+            return Optional.of(expiredLease ? jobRepository.saveAndFlush(job) : job);
         }
         job.claim(now, leaseUntil);
         return Optional.of(jobRepository.saveAndFlush(job));
@@ -106,17 +116,57 @@ public class IngestionJobService implements ParsedDocumentIngestionPort {
             return Optional.empty();
         }
         IngestionJobEntity job = found.get();
-        boolean expiredLease = (job.getStatus() == IngestionJobStatus.PARSING
-                || job.getStatus() == IngestionJobStatus.INDEXING)
-                && job.getLeaseUntil() != null && !job.getLeaseUntil().isAfter(now);
-        if (job.getStatus() != IngestionJobStatus.PENDING && !expiredLease) {
+        boolean pendingDue = job.getStatus() == IngestionJobStatus.PENDING
+                && (job.getNextAttemptAt() == null || !job.getNextAttemptAt().isAfter(now));
+        boolean expiredLease = isExpiredLease(job, now);
+        if (!pendingDue && !expiredLease) {
             return Optional.empty();
         }
-        if (job.getAttemptCount() >= maxAttempts) {
-            return Optional.of(job);
+        if (expiredLease) {
+            job.recordExpiredLeaseFailure(now);
+        }
+        if (job.getFailureCount() >= maxAttempts) {
+            return Optional.of(expiredLease ? jobRepository.saveAndFlush(job) : job);
         }
         job.claim(now, leaseUntil);
         return Optional.of(jobRepository.saveAndFlush(job));
+    }
+
+    @Transactional
+    public boolean renewClaim(IngestionClaim claim, Instant now, Instant leaseUntil) {
+        if (claim == null || now == null || leaseUntil == null || !leaseUntil.isAfter(now)) {
+            return false;
+        }
+        Duration leaseDuration = Duration.between(now, leaseUntil);
+        Optional<IngestionJobEntity> found = jobRepository.findForUpdateByIdAndUserId(
+                claim.jobId(), claim.userId());
+        if (found.isEmpty()) {
+            return false;
+        }
+        IngestionJobEntity job = found.get();
+        Instant lockedNow = clock.instant();
+        Instant renewedLeaseUntil = lockedNow.plus(leaseDuration);
+        if (!sameIdentity(claim, job)
+                || !job.renewLease(claim.attemptCount(), lockedNow, renewedLeaseUntil)) {
+            return false;
+        }
+        jobRepository.saveAndFlush(job);
+        return true;
+    }
+
+    private boolean sameIdentity(IngestionClaim claim, IngestionJobEntity job) {
+        return claim.jobId().equals(job.getId())
+                && claim.userId().equals(job.getUserId())
+                && claim.sourceId().equals(job.getSourceId())
+                && claim.generation().equals(job.getGeneration())
+                && java.util.Objects.equals(claim.ingestionRevision(), job.getIngestionRevision())
+                && java.util.Objects.equals(claim.parsedDocumentId(), job.getParsedDocumentId());
+    }
+
+    private boolean isExpiredLease(IngestionJobEntity job, Instant now) {
+        return (job.getStatus() == IngestionJobStatus.PARSING
+                || job.getStatus() == IngestionJobStatus.INDEXING)
+                && job.getLeaseUntil() != null && !job.getLeaseUntil().isAfter(now);
     }
 
     private IngestionJobReference reference(IngestionJobEntity job) {

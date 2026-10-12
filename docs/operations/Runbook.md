@@ -1,5 +1,19 @@
 # Auralis 运维与应急 Runbook
 
+### 2026-10-12 学科总览 preflight 后快速 VALIDATION_FAILED
+
+若日志在 `REQUEST_VALIDATE_SUCCESS` 后数毫秒失败且没有 `PROVIDER_REQUEST`，外层 `phase=FINAL` 不代表模型已生成；需区分完整 JSON 转义 prompt 校验与 quota 错误。合法文件总览合并也可能超过 12000 字符，本次当前三份缓存按空 instruction 重建为 16631，单份均能装下。原始请求体未记录，缓存重建仅作为候选证据。
+
+本机香港 13:57:23 已更新 Subject 内部分批 / 有界归纳修复（`a5a50bb7…` healthy / readiness 200），部署类与已测版本精确匹配，原额度与 embedding 排除保留。PC 仍可能展示通用生成失败；实测应按关联 requestId / generationId 核对 MAP / REDUCE、实际错误码和独立结果保存响应。大请求也继续受原调用次数、资源预算、deadline 与输出 schema 限制。无需清空旧用量或缓存，详见 [本轮记录](../plans/2026-10-12-subject-overview-prompt-batching.md)。
+
+### 2026-10-12 embedding 额度排除策略
+
+当前统计按 `INGESTION_EMBEDDING` / `RETRIEVAL_EMBEDDING` 排除用户小时 / 日和系统日额度，个人中心也排除历史 embedding charged / reserved。原行仍保留调用审计，不能将原始 ledger charged 总和当作新窗口消耗；生成调用缺 usage 仍保守。embedding 可以因并发、任务资源预算 / 调用次数、输入字节上限或 Provider 故障失败，但新策略下不应仅因 token 窗口满额延期。
+
+单人测试默认为 1000000 / 小时、2000000 / 日，系统日仍 2000000，多用户共享生成总量。排查先核对实际容器额度变量与包含新聚合的 JAR，再比较个人中心；三份配置已同步，新代码需重建 backend。不得删除旧账本来让显示归零，详见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。下方历史 PDF 小时延期是策略调整前的诊断。
+
+本机香港 12:57:12 已按新策略更新 backend（`31f7dec…` healthy / readiness 200）；运行 Guard 的两个 embedding stage 豁免与四条窗口聚合排除已确认，个人小时 / 日为 1000000 / 2000000。当前策略不需重试或清账来排除历史 embedding；个人中心应重新读取额度。实际 Provider 操作和同步表现仍由真实测试确认。
+
 2026-09-24 紧邻任务交换运行记录：本机 backend 已单独重建并重启，镜像 `sha256:bf8e7bb72f0c…`，health/readiness HTTP 200、Flyway 23；db/minio 未动。若顶部交换仍按旧的“直接互换开始时间”表现，先核对运行容器镜像及 PC 是否加载新前端，再检查 `POST /api/tasks/schedule-swaps` 的响应时间；不要重置数据库。
 
 2026-09-24 运行记录：Timeline 主体放置修复已通过单独重建/重启 `backend` 部署到本机 Compose；health/readiness UP，Flyway V23 `success=true`，db/minio 容器保持原样。若 PC 仍呈现旧主体行为，先核对请求是否包含 `targetTaskId`、运行镜像是否为 `sha256:80d303401599…`，再查看返回的 `VALIDATION_FAILED`/`RESOURCE_VERSION_CONFLICT`；不应通过重置数据库处理拖放冲突。
@@ -8,7 +22,7 @@
 
 如果 backend 日志显示 `POST /api/tasks/schedule-insertions` 的 `HttpRequestMethodNotSupportedException`，先核对运行镜像是否早于包含 `TaskController.insertSchedule` 的当前版本。该接口在当前代码和 OpenAPI artifact 中使用 POST；旧镜像不含映射时客户端只看到通用 500。已验证恢复流程为单独重建并重启 backend，确认容器 healthy 和 readiness HTTP 200。若需启动数据库依赖，只启动现有 db/minio 容器，不重建或清除数据卷。默认 prod profile 关闭 `/v3/api-docs`，HTTP 404 是预期配置。
 
-更新时间：2026-09-10
+更新时间：2026-10-11
 
 文档状态：现行，部分流程待生产演练
 
@@ -141,6 +155,36 @@ chat/ingest 超时、401、模型不存在、无效 JSON 或空结果。
 - `application-prod.yml` 是否仍使用错误的 `spring.ai.openai` 口径。
 
 恢复后分别验证普通 chat、SSE、文本摄入和文件摄入。不得用一次 chat 成功推断全部 AI 路径可用。
+
+## AI 配额拒绝与 ingestion 等待（已实现；真实环境验收独立）
+
+先记录稳定错误码及安全 `retryAfterSeconds/resetAt`，再读取本人 `GET /api/ai/usage`；六种拒绝及状态见 [API 契约](../contracts/API.md)。小时/每日额度耗尽应等待窗口重置，并发繁忙应等现有调用完成。任务累计预算或单次输入预算耗尽不能靠自动循环重试解决。
+
+后台 ingestion 因额度或繁忙延期时，检查 job 的 `next_attempt_at`、有效 claim 与 checkpoint generation；延期应保留已完成 inactive chunks，不增加普通 `failure_count` 或把当前 Source 写为 FAILED。旧 worker 不得覆盖新 attempt。窗口恢复后验证从未完成批次继续，并仅在完整成功时一次切换 active generation。
+
+若 embedding HTTP 连续成功后没有后续调用，先检查是否 job 已为未来 `next_attempt_at` 的 PENDING，而不是仅根据最后一条 HTTP 日志判断阻塞。2026-10-12 大 PDF 现场为小时额度延期，三笔 charged 合计 94615、没有 RESERVED、租约为空；两次快照无数据库 blocker。当前 PC 仅显示泛化排队，job 的重试时间不在 Source DTO 中。
+
+该现场在香港 11:00 原部署自然续做成功，只新增一笔 embedding，同 generation 从 32 个 inactive chunks 变为 42 个 active chunks，job / Source READY。记录初始延期与后续恢复的时间，区分原调度恢复、补丁部署及 GUI 验收；本轮未人为重跑。
+
+同时核对 reservation 的 estimated、actual input/output 和 charged。旧 SiliconFlow 适配器丢弃 `completion_tokens`，包含合法 0 的完整响应也变成部分未知，按保守估算扣内部额度；本轮补读取该字段。真实缺失用量仍保守，不清空旧账本或把免费模型全部归零。免费与金额不决定本应用 token 配额。源码、命令和真实验收边界见 [PDF 诊断与修复](../plans/2026-10-12-pdf-ingestion-quota-and-sync.md)。
+
+## Overview 超时与取消（2026-10-11 已实现，未部署）
+
+若 `PROVIDER_REQUEST` 后立即出现 `AiUsageLimitException`，先核对安全业务码和阶段预算。该日志位于 gateway 预留之前，不证明 HTTP 已出站。2026-10-11 已定位最终 MAP 6144 被旧网关 4608 阈值误拒绝；修复版本须保留两个 Overview 操作的 6144 最终上限、生成服务的 4608 中间输出及全部配额保护。默认 JSON 看 ProblemDetails，SSE 看终端 error 的 code/status，不用 HTTP 200 判断成功。诊断与回归见 [本轮证据](../plans/2026-10-11-overview-usage-limit-diagnosis.md)。
+
+账本只读排查使用短 `BEGIN READ ONLY` 和聚合/LIMIT，分别查看 RESERVED、有效 lease、request_dispatched 和 charged_tokens。TASK 标识仍在但 owner/lease 已清空不代表并发占用。过期预留在 beginTask/reserve/snapshotForUser 惰性回收；最后一个入口可能写回收状态，不应当作严格只读诊断 API。已派发未知用量保守计账是安全规则，不能作为泄漏直接归零。默认 scheduler 的歧义警告也不能单独证明回收失效。
+
+PC 请求使用同路由 SSE：注释心跳仅维持连接，最终 `result` 才是结构化成果；已开始响应后，错误在 `error` 事件中携带业务 `code/status`，此时 HTTP 200 不代表生成成功。缺少最终事件的断流须按状态不确定处理。JSON 消费者仍按 HTTP ProblemDetails 判断失败，等待时不能保证及时感知断连。
+
+入口预算扣除 preflight 和数据库等待时间，但 socket 关闭不打断 JDBC/数据库锁等待。同步 preflight 若卡住，SSE 尚未建立，HTTP 响应可能晚于期限；区分此类数据库等待与已经进入 Provider 传输的慢流。原生 DNS 也可能忽略线程中断，只能由有界解析等待隔离，不能将 Future.cancel 当作 OS lookup 已结束。
+
+验收取消时同时查看连接关闭、生成工作退出、在途预留完成结算和任务释放；用户已派发但 usage 未知的调用沿 B 保守计账，取消不能被当作零费用。共享生成中的一个消费者离开后，其余需求可以继续；只有最后消费者退出或总期限到达才终止当前传输。远端 Provider 已收到的计算能否撤回不由本地 socket 关闭证明，完整证据见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
+
+`AI_REQUEST_BUDGET_EXCEEDED` 或 `AI_TASK_BUDGET_EXCEEDED` 属于不可恢复的本次输入/任务预算拒绝，会按有效 claim 终态失败，不能期待每秒延期恢复预算。调整策略或输入后通过现行重新摄入流程创建新的 job/generation，不改旧账本来伪造剩余额度。账户停用的晚到 AI 请求沿用 `UNAUTHENTICATED`；排查时不要把它当作额度耗尽。
+
+进程异常的租约由账本按保守规则回收。不要手工删 reservation、把已派发请求改为零消耗或清空匿名记录来恢复额度；这些操作会破坏跨实例预算与系统累计用量。数据库故障时先恢复数据库，不通过绕过 gateway 恢复 Provider 调用。实际完成与自动验证范围见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。
+
+`503 SERVICE_UNAVAILABLE` 加 `Retry-After: 1` 表示应用异步入队被有界线程池拒绝；先确认服务负载与已运行任务，不把它诊断为 Provider 凭据错误。客户端显式稍后再试，避免自动补发放大负载。
 
 ## HTTP 401 / 403
 

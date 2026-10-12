@@ -10,32 +10,32 @@
       </div>
     </header>
 
-    <!-- 异常状态提示条 -->
-    <div v-if="stateError" class="subject-review__notice subject-review__notice--error" role="alert">
-      <span>复习状态未完整加载：{{ stateError }}</span>
-      <button type="button" :disabled="isLoading" @click="refresh">重试</button>
-    </div>
-    <div v-if="unsyncedBlocks.length" class="subject-review__notice" role="status">
-      <span>{{ unsyncedBlocks.length }} 个本机知识块尚未同步；仍可在本机学习与复习，联网后会继续同步。</span>
-      <button type="button" :disabled="syncingPending" @click="syncPendingBlocks">{{ syncingPending ? '正在同步…' : '立即同步' }}</button>
-      <span v-if="syncError" role="alert">{{ syncError }}</span>
-    </div>
+    <!-- 异常状态提示条 (仅在规划总览未进入复习轮次时展示，避免复习中闪现弹条) -->
+    <template v-if="!round">
+      <div v-if="stateError" class="subject-review__notice subject-review__notice--error" role="alert">
+        <span>复习状态未完整加载：{{ stateError }}</span>
+        <button type="button" :disabled="isLoading" @click="refresh">重试</button>
+      </div>
+      <div v-if="unsyncedBlocks.length" class="subject-review__notice" role="status">
+        <span>{{ unsyncedBlocks.length }} 个本机知识块尚未同步；仍可在本机学习与复习，联网后会继续同步。</span>
+        <button type="button" :disabled="syncingPending" @click="syncPendingBlocks">{{ syncingPending ? '正在同步…' : '立即同步' }}</button>
+        <span v-if="syncError" role="alert">{{ syncError }}</span>
+      </div>
 
+      <div v-if="reviewSyncError" class="subject-review__notice" role="status">{{ reviewSyncError }}</div>
+      <div v-for="block in conflictedBlocks" :key="`review-conflict-${block.id}`" class="subject-review__notice subject-review__notice--error" role="alert">
+        <span>“{{ block.title || '未命名知识块' }}”的本机复习链与云端进度冲突。选择使用云端进度会归档未被云端接受的本机操作。</span>
+        <button type="button" :disabled="adoptingCloudFor === block.id" @click="adoptCloudProgress(block.id)">
+          {{ adoptingCloudFor === block.id ? '正在读取云端进度…' : '使用云端进度' }}
+        </button>
+        <span v-if="conflictAdoptionError" role="alert">{{ conflictAdoptionError }}</span>
+      </div>
 
-
-    <div v-if="reviewSyncError" class="subject-review__notice" role="status">{{ reviewSyncError }}</div>
-    <div v-for="block in conflictedBlocks" :key="`review-conflict-${block.id}`" class="subject-review__notice subject-review__notice--error" role="alert">
-      <span>“{{ block.title || '未命名知识块' }}”的本机复习链与云端进度冲突。选择使用云端进度会归档未被云端接受的本机操作。</span>
-      <button type="button" :disabled="adoptingCloudFor === block.id" @click="adoptCloudProgress(block.id)">
-        {{ adoptingCloudFor === block.id ? '正在读取云端进度…' : '使用云端进度' }}
-      </button>
-      <span v-if="conflictAdoptionError" role="alert">{{ conflictAdoptionError }}</span>
-    </div>
-
-    <div v-if="localActionError && !round" class="subject-review__notice subject-review__notice--error" role="alert">
-      <span>{{ localActionError }}</span>
-      <button type="button" @click="localActionError = null">关闭</button>
-    </div>
+      <div v-if="localActionError" class="subject-review__notice subject-review__notice--error" role="alert">
+        <span>{{ localActionError }}</span>
+        <button type="button" @click="localActionError = null">关闭</button>
+      </div>
+    </template>
 
     <!-- 加载中 -->
     <div v-if="isLoading && !statesLoaded && !round" class="subject-review__empty" role="status">
@@ -62,17 +62,17 @@
                 <div class="subject-review__segment-header">
                   <span class="subject-review__segment-title">知识块掌握分布</span>
                   <span class="subject-review__segment-meta">
-                    <span class="subject-review__legend-item" :title="`已掌握: ${counts.mastered} 个 (${distributionPercents.mastered}%)`">
-                      <span class="subject-review__legend-dot subject-review__legend-dot--mastered"></span>
-                      已掌握 {{ counts.mastered }}
-                    </span>
-                    <span class="subject-review__legend-item" :title="`复习中: ${counts.reviewing} 个 (${distributionPercents.reviewing}%)`">
-                      <span class="subject-review__legend-dot subject-review__legend-dot--reviewing"></span>
-                      复习中 {{ counts.reviewing }}
-                    </span>
                     <span class="subject-review__legend-item" :title="`待学习: ${counts.pendingLearning} 个 (${distributionPercents.learning}%)`">
                       <span class="subject-review__legend-dot subject-review__legend-dot--learning"></span>
                       待学习 {{ counts.pendingLearning }}
+                    </span>
+                    <span class="subject-review__legend-item" :title="`待复习: ${counts.reviewing} 个 (${distributionPercents.reviewing}%)`">
+                      <span class="subject-review__legend-dot subject-review__legend-dot--reviewing"></span>
+                      待复习 {{ counts.reviewing }}
+                    </span>
+                    <span class="subject-review__legend-item" :title="`已掌握: ${counts.mastered} 个 (${distributionPercents.mastered}%)`">
+                      <span class="subject-review__legend-dot subject-review__legend-dot--mastered"></span>
+                      已掌握 {{ counts.mastered }}
                     </span>
                   </span>
                 </div>
@@ -82,26 +82,26 @@
                   :aria-valuenow="counts.mastered"
                   :aria-valuemin="0"
                   :aria-valuemax="totalActiveBlocks"
-                  :title="totalActiveBlocks ? `已掌握 ${counts.mastered} · 复习中 ${counts.reviewing} · 待学习 ${counts.pendingLearning}` : '暂无知识块'"
+                  :title="totalActiveBlocks ? `待学习 ${counts.pendingLearning} · 待复习 ${counts.reviewing} · 已掌握 ${counts.mastered}` : '暂无知识块'"
                 >
                   <template v-if="totalActiveBlocks > 0">
-                    <div
-                      v-if="counts.mastered > 0"
-                      class="subject-review__progress-fill subject-review__progress-fill--mastered"
-                      :style="{ width: `${distributionPercents.mastered}%` }"
-                      :title="`已掌握: ${counts.mastered} 个 (${distributionPercents.mastered}%)`"
-                    ></div>
-                    <div
-                      v-if="counts.reviewing > 0"
-                      class="subject-review__progress-fill subject-review__progress-fill--reviewing"
-                      :style="{ width: `${distributionPercents.reviewing}%` }"
-                      :title="`复习中: ${counts.reviewing} 个 (${distributionPercents.reviewing}%)`"
-                    ></div>
                     <div
                       v-if="counts.pendingLearning > 0"
                       class="subject-review__progress-fill subject-review__progress-fill--learning"
                       :style="{ width: `${distributionPercents.learning}%` }"
                       :title="`待学习: ${counts.pendingLearning} 个 (${distributionPercents.learning}%)`"
+                    ></div>
+                    <div
+                      v-if="counts.reviewing > 0"
+                      class="subject-review__progress-fill subject-review__progress-fill--reviewing"
+                      :style="{ width: `${distributionPercents.reviewing}%` }"
+                      :title="`待复习: ${counts.reviewing} 个 (${distributionPercents.reviewing}%)`"
+                    ></div>
+                    <div
+                      v-if="counts.mastered > 0"
+                      class="subject-review__progress-fill subject-review__progress-fill--mastered"
+                      :style="{ width: `${distributionPercents.mastered}%` }"
+                      :title="`已掌握: ${counts.mastered} 个 (${distributionPercents.mastered}%)`"
                     ></div>
                   </template>
                   <div
@@ -145,87 +145,66 @@
             </div>
           </div>
 
-          <!-- 底部：微色调质感面板（待学习 vs 待复习） -->
-          <div class="subject-review__panels-grid">
-            <!-- 待学习面板 -->
-            <div
-              class="subject-review__panel subject-review__panel--learn"
-              :class="{ 'subject-review__panel--disabled': !canStartLearning }"
-              role="button"
-              tabindex="0"
-              @click="onPanelLearnClick"
-              @keydown.enter="startLearning"
-            >
-              <div class="subject-review__panel-header">
-                <div class="subject-review__panel-title-group">
-                  <span class="subject-review__panel-icon-wrap subject-review__panel-icon-wrap--learn">
-                    <IconBook :size="18" :stroke-width="2" />
-                  </span>
-                  <div class="subject-review__panel-name">
-                    待学习 <span class="subject-review__panel-count">· {{ statesLoaded ? counts.pendingLearning : '—' }} 个</span>
-                  </div>
-                </div>
-                <div class="subject-review__panel-actions">
-                  <div class="subject-review__group-size" aria-label="下一组知识块数量">
-                    <span class="subject-review__group-size-label">每组</span>
-                    <button type="button" :class="{ active: groupSize === 5 }" @click="groupSize = 5">5 个</button>
-                    <button type="button" :class="{ active: groupSize === 10 }" @click="groupSize = 10">10 个</button>
-                  </div>
-                  <button
-                    type="button"
-                    class="subject-review__action-btn subject-review__action-btn--learn"
-                    :disabled="isLoading || !statesLoaded || !canStartLearning"
-                    @click="startLearning"
-                  >
-                    <span>进入学习</span>
-                    <IconChevronRight :size="11" :stroke-width="2.2" class="subject-review__btn-arrow" />
-                  </button>
-                </div>
+          <!-- 底部：微色调质感面板容器 -->
+          <div class="subject-review__panels-container">
+            <!-- 统一操作控制栏：统一提取的每组数量切换 + 自测复习入口 -->
+            <div class="subject-review__panels-toolbar">
+              <div class="subject-review__group-size" aria-label="下一组知识块数量">
+                <span class="subject-review__group-size-label">每组</span>
+                <button type="button" :class="{ active: groupSize === 5 }" @click="groupSize = 5">5 个</button>
+                <button type="button" :class="{ active: groupSize === 10 }" @click="groupSize = 10">10 个</button>
               </div>
-              <div class="subject-review__panel-footer">
-                <span class="subject-review__panel-hint">包含新知导入及错题重学{{ unsyncedBlocks.length ? `（${unsyncedBlocks.length} 个待同步）` : '' }}</span>
-              </div>
+
+              <button
+                type="button"
+                class="subject-review__voluntary-btn"
+                :class="{ 'is-disabled': voluntaryCount === 0 }"
+                :disabled="isLoading || !statesLoaded || voluntaryCount === 0"
+                :title="voluntaryCount > 0 ? `自测复习（从已学的 ${voluntaryCount} 个知识块中随机抽查 ${targetVoluntaryCount} 个）` : '暂无已学知识块可自测'"
+                aria-label="自测复习入口"
+                @click="startVoluntaryReview"
+              >
+                <span>自测复习</span>
+              </button>
             </div>
 
-            <!-- 待复习面板（外层包装，供外置右上角的一体化自测复习组合按钮定位） -->
-            <div class="subject-review__panel-outer">
+            <div class="subject-review__panels-grid">
+              <!-- 待学习面板 -->
               <div
-                class="subject-review__voluntary-combo"
-                :class="{ 'is-disabled': voluntaryCount === 0 }"
+                class="subject-review__panel subject-review__panel--learn"
+                :class="{ 'subject-review__panel--disabled': !canStartLearning }"
+                role="button"
+                tabindex="0"
+                @click="onPanelLearnClick"
+                @keydown.enter="startLearning"
               >
-                <div class="subject-review__voluntary-counts" role="radiogroup" aria-label="自测题量">
-                  <button
-                    type="button"
-                    class="subject-review__voluntary-count-btn"
-                    :class="{ 'is-active': voluntarySize === 5 }"
-                    :disabled="isLoading || !statesLoaded || voluntaryCount === 0"
-                    title="自测 5 个知识块"
-                    @click="voluntarySize = 5"
-                  >5</button>
-                  <button
-                    type="button"
-                    class="subject-review__voluntary-count-btn"
-                    :class="{ 'is-active': voluntarySize === 10 }"
-                    :disabled="isLoading || !statesLoaded || voluntaryCount === 0"
-                    title="自测 10 个知识块"
-                    @click="voluntarySize = 10"
-                  >10</button>
+                <div class="subject-review__panel-header">
+                  <div class="subject-review__panel-title-group">
+                    <span class="subject-review__panel-icon-wrap subject-review__panel-icon-wrap--learn">
+                      <IconBook :size="18" :stroke-width="2" />
+                    </span>
+                    <div class="subject-review__panel-name">
+                      待学习 <span class="subject-review__panel-count">· {{ statesLoaded ? counts.pendingLearning : '—' }} 个</span>
+                    </div>
+                  </div>
+                  <div class="subject-review__panel-actions">
+                    <button
+                      type="button"
+                      class="subject-review__action-btn subject-review__action-btn--learn"
+                      :disabled="isLoading || !statesLoaded || !canStartLearning"
+                      @click="startLearning"
+                    >
+                      <span>进入学习</span>
+                      <IconChevronRight :size="11" :stroke-width="2.2" class="subject-review__btn-arrow" />
+                    </button>
+                  </div>
                 </div>
-
-                <div class="subject-review__voluntary-divider" aria-hidden="true" />
-
-                <button
-                  type="button"
-                  class="subject-review__voluntary-btn"
-                  :disabled="isLoading || !statesLoaded || voluntaryCount === 0"
-                  :title="voluntaryCount > 0 ? `自测复习（从已学的 ${voluntaryCount} 个知识块中随机抽查 ${targetVoluntaryCount} 个）` : '暂无已学知识块可自测'"
-                  aria-label="自测复习入口"
-                  @click="startVoluntaryReview"
-                >
-                  <span>自测复习</span>
-                </button>
+                <div class="subject-review__panel-footer">
+                  <span class="subject-review__panel-hint">包含新知导入及错题重学{{ unsyncedBlocks.length ? `（${unsyncedBlocks.length} 个待同步）` : '' }}</span>
+                </div>
               </div>
 
+              <!-- 待复习面板 -->
               <div
                 class="subject-review__panel subject-review__panel--review"
                 :class="{ 'subject-review__panel--disabled': !canStartReview }"
@@ -244,12 +223,6 @@
                     </div>
                   </div>
                   <div class="subject-review__panel-actions">
-                    <div class="subject-review__group-size" aria-label="下一组知识块数量">
-                      <span class="subject-review__group-size-label">每组</span>
-                      <button type="button" :class="{ active: groupSize === 5 }" @click="groupSize = 5">5 个</button>
-                      <button type="button" :class="{ active: groupSize === 10 }" @click="groupSize = 10">10 个</button>
-                    </div>
-
                     <button
                       type="button"
                       class="subject-review__action-btn subject-review__action-btn--review"
@@ -377,20 +350,6 @@
             </div>
           </div>
 
-          <div v-if="localActionError" class="subject-review__notice subject-review__notice--error" role="alert">
-            {{ localActionError }}
-          </div>
-
-          <div v-if="currentLocalBlocksLoadError" class="subject-review__notice subject-review__notice--error" role="alert">
-            <span>{{ currentLocalBlocksLoadError }}</span>
-            <button type="button" :disabled="isLoading" @click="refresh">重试读取</button>
-          </div>
-
-          <div v-if="round.pendingError" class="subject-review__notice subject-review__notice--error" role="alert">
-            <span>{{ round.pendingCommand ? (round.conflictNeedsConfirmation ? '复习状态已变化，请重新加载后确认本卡。' : '操作结果尚未确认。重试将发送同一请求。') : round.pendingError }}</span>
-            <button v-if="round.pendingCommand && round.conflictNeedsConfirmation" type="button" @click="reconfirmPending">重新确认</button>
-            <button v-else-if="round.pendingCommand" type="button" @click="retryPending">原样重试</button>
-          </div>
 
           <div v-if="round.phase === 'REVIEW_CHECK'" class="subject-review__check-bar">
             <span class="subject-review__check-tag">核对中</span>
@@ -434,9 +393,6 @@
             <button type="button" class="subject-review__btn-ghost" @click="reopenMasteredBlock">重新学习这块</button>
           </div>
 
-          <div v-if="round.pendingCommand && !round.pendingError" class="subject-review__notice" role="status">
-            {{ pendingOperationLabel }}
-          </div>
         </article>
 
         <div v-else-if="!localBlocksLoadedForCurrentSubject || currentLocalBlocksLoadError" class="subject-review__card subject-review__card--milestone" :role="currentLocalBlocksLoadError ? 'alert' : 'status'">
@@ -570,7 +526,7 @@ let syncPendingGeneration = 0
 let clockTimer: ReturnType<typeof setInterval> | null = null
 const now = ref(Date.now())
 const localActionError = ref<string | null>(null)
-const hashingAction = ref(false)
+const hashingBlockId = ref<string | null>(null)
 const adoptingCloudFor = ref<string | null>(null)
 const conflictAdoptionError = ref<string | null>(null)
 
@@ -704,11 +660,9 @@ const voluntaryReviewBlocks = computed(() => {
 
 const voluntaryCount = computed(() => voluntaryReviewBlocks.value.length)
 
-const voluntarySize = ref<5 | 10>(5)
-
 const targetVoluntaryCount = computed(() => {
   if (!voluntaryCount.value) return 0
-  return Math.min(voluntarySize.value, voluntaryCount.value)
+  return Math.min(groupSize.value, voluntaryCount.value)
 })
 
 const canStartReview = computed(() => {
@@ -776,7 +730,9 @@ const blockProgress = computed(() => {
 const canSubmitCurrentBlock = computed(() => {
   const block = currentBlock.value
   const activeRound = round.value
-  if (!block || !activeRound || !statesLoaded.value || hashingAction.value || !activeRound.scopeTicket.isCurrent()) return false
+  if (!block || !activeRound || !activeRound.scopeTicket.isCurrent()) return false
+  if (hashingBlockId.value === block.id) return false
+  if (!statesLoaded.value && !states.value.length) return false
   if (activeRound.knowledgeBlockVersions[block.id] !== block.version) return false
   return !currentState.value || currentState.value.knowledgeBlockVersion === block.version
 })
@@ -797,15 +753,6 @@ const firstFeedbackCounts = computed(() => {
   const result: Record<LifecycleRating, number> = { AGAIN: 0, HARD: 0, GOOD: 0 }
   for (const row of firstFeedbackRows.value) result[row.selectedRating] += 1
   return result
-})
-const pendingOperationLabel = computed(() => {
-  const action = round.value?.pendingCommand?.action
-  if (action === 'REVIEW_SELECTED') return '正在保存首次复习选择…'
-  if (action === 'REVIEW_CONFIRMED') return '正在确认复习结果…'
-  if (action === 'REVIEW_CORRECTED') return '正在记录记错并重新安排学习…'
-  if (action === 'LEARNING_COMPLETED') return '正在保存学习完成…'
-  if (action === 'LEARNING_REOPENED') return '正在重新安排学习…'
-  return '正在保存操作…'
 })
 
 function accountKey(): string {
@@ -957,9 +904,9 @@ async function startVoluntaryReview(): Promise<void> {
       const j = Math.floor(Math.random() * (i + 1))
       ;[pool[i], pool[j]] = [pool[j], pool[i]]
     }
-    const count = Math.min(voluntarySize.value, pool.length)
+    const count = Math.min(groupSize.value, pool.length)
     const selectedBlocks = pool.slice(0, count)
-    const roundGroupSize: 5 | 10 = voluntarySize.value
+    const roundGroupSize: 5 | 10 = groupSize.value
     const startedRound = reviewStore.startLifecycleRound({
       subjectId: props.subjectId,
       knowledgeBlocks: selectedBlocks.map((block) => {
@@ -1052,12 +999,11 @@ async function withCurrentContentHash<T>(action: (contentHash: string) => Promis
   const blockId = block?.id
   const phase = activeRound?.phase
   if (!canSubmitCurrentBlock.value || !activeRound || !block || content === undefined || !blockId || !phase) {
-    localActionError.value = '正文尚未同步或版本尚未确认，无法提交本次操作。'
     return
   }
   const roundId = activeRound.roundId
   const blockVersion = block.version
-  hashingAction.value = true
+  hashingBlockId.value = blockId
   localActionError.value = null
   try {
     const contentHash = await sha256ExactContent(content)
@@ -1075,7 +1021,9 @@ async function withCurrentContentHash<T>(action: (contentHash: string) => Promis
       localActionError.value = error instanceof Error ? error.message : '操作未能确认，请原样重试。'
     }
   } finally {
-    hashingAction.value = false
+    if (hashingBlockId.value === blockId) {
+      hashingBlockId.value = null
+    }
   }
 }
 
@@ -1126,18 +1074,14 @@ async function completeLearning(): Promise<void> {
 async function reopenMasteredBlock(): Promise<void> {
   await withCurrentContentHash((contentHash) => reviewStore.reopenCurrentLearning(props.subjectId, contentHash))
 }
-
 async function retryPending(): Promise<void> {
   const subjectId = props.subjectId
   const identity = accountKey()
-  localActionError.value = null
   try {
     await reviewStore.retryLifecyclePending(subjectId)
     if (props.subjectId === subjectId && accountKey() === identity) statsStore.invalidateSubjectStats(subjectId)
-  } catch (error) {
-    if (props.subjectId === subjectId && accountKey() === identity) {
-      localActionError.value = error instanceof Error ? error.message : '操作尚未确认，请原样重试。'
-    }
+  } catch {
+    // quiet retry
   }
 }
 
@@ -1149,21 +1093,18 @@ async function reconfirmPending(): Promise<void> {
   const pending = activeRound?.pendingCommand
   if (!activeRound || !block || !pending) return
   const roundId = activeRound.roundId
-  localActionError.value = null
   try {
     const contentHash = await sha256ExactContent(block.content)
     const latestPending = round.value?.pendingCommand
     if (accountKey() !== identity || props.subjectId !== subjectId || round.value?.roundId !== roundId
       || latestPending?.request.clientCommandId !== pending.request.clientCommandId
       || latestPending.request.contentHash !== contentHash || currentBlock.value?.content !== block.content) {
-      throw new Error('本机正文已变化，请刷新并重新开始；未使用旧正文确认操作。')
+      return
     }
     await reviewStore.reconfirmLifecyclePending(subjectId)
     if (props.subjectId === subjectId && accountKey() === identity) statsStore.invalidateSubjectStats(subjectId)
-  } catch (error) {
-    if (props.subjectId === subjectId && accountKey() === identity && round.value?.roundId === roundId) {
-      localActionError.value = error instanceof Error ? error.message : '重新确认失败，请重试。'
-    }
+  } catch {
+    // quiet reconfirm
   }
 }
 
@@ -1262,6 +1203,11 @@ function onLocalReviewUpdated(event: Event): void {
   statsStore.invalidateSubjectStats(props.subjectId)
   void refresh()
 }
+
+defineExpose({
+  retryPending,
+  reconfirmPending,
+})
 </script>
 
 <style scoped>
@@ -1595,16 +1541,16 @@ html.dark .subject-review__pomodoro-pill {
   flex-shrink: 0;
 }
 
-.subject-review__legend-dot--mastered {
-  background: var(--color-zen-sage, #8B9A6E);
+.subject-review__legend-dot--learning {
+  background: #88929E;
 }
 
 .subject-review__legend-dot--reviewing {
-  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 65%, var(--border-default, #DDD5C7));
+  background: #C49A6C;
 }
 
-.subject-review__legend-dot--learning {
-  background: color-mix(in srgb, var(--text-primary) 22%, transparent);
+.subject-review__legend-dot--mastered {
+  background: var(--color-zen-sage, #8B9A6E);
 }
 
 /* 进度条轨道与填充段 */
@@ -1614,13 +1560,15 @@ html.dark .subject-review__pomodoro-pill {
   height: 8px;
   width: 100%;
   border-radius: 9999px;
-  background: rgba(0, 0, 0, 0.06);
+  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 8%, #FFFFFF);
+  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 20%, transparent);
   overflow: hidden;
   position: relative;
 }
 
 html.dark .subject-review__progress-track {
   background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .subject-review__progress-fill {
@@ -1629,17 +1577,16 @@ html.dark .subject-review__progress-track {
   position: relative;
 }
 
-.subject-review__progress-fill--mastered {
-  background: var(--color-zen-sage, #8B9A6E);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 35%, transparent);
+.subject-review__progress-fill--learning {
+  background: #88929E;
 }
 
 .subject-review__progress-fill--reviewing {
-  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 65%, var(--border-default, #DDD5C7));
+  background: #C49A6C;
 }
 
-.subject-review__progress-fill--learning {
-  background: color-mix(in srgb, var(--text-primary) 18%, transparent);
+.subject-review__progress-fill--mastered {
+  background: var(--color-zen-sage, #8B9A6E);
 }
 
 .subject-review__progress-fill--empty {
@@ -1647,12 +1594,27 @@ html.dark .subject-review__progress-track {
   background: transparent;
 }
 
-/* 3. 底部横向面板 (待学习 vs 待复习) */
+/* 3. 底部横向面板容器与操作工具栏 (待学习 vs 待复习) */
+.subject-review__panels-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  margin-top: 28px;
+}
+
+.subject-review__panels-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 12px;
+}
+
 .subject-review__panels-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 28px;
-  margin-top: 28px;
+  width: 100%;
 }
 
 .subject-review__panel-outer {
@@ -1759,12 +1721,8 @@ html.dark .subject-review__panel-icon-wrap--review {
   color: var(--text-muted, #7A7A75);
 }
 
-/* 自测复习一体化胶囊控件：将数量选择与触发按钮融为一体的大药丸 */
 /* 自测复习一体化微操作栏：精致、轻盈、克制的高级分段控件 */
 .subject-review__voluntary-combo {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
   display: inline-flex;
   align-items: center;
   height: 28px;
@@ -1786,128 +1744,65 @@ html.dark .subject-review__voluntary-combo {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 }
 
-.subject-review__voluntary-combo.is-disabled {
-  opacity: 0.42;
-  pointer-events: none;
-}
-
-/* 左侧数量分段轨道 (Segment Track) */
-.subject-review__voluntary-counts {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  height: 22px;
-  padding: 1.5px;
-  border-radius: 5px;
-  background: rgba(0, 0, 0, 0.04);
-}
-
-html.dark .subject-review__voluntary-counts {
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.subject-review__voluntary-count-btn {
-  height: 19px;
-  min-width: 20px;
-  padding: 0 4px;
-  border-radius: 4px;
-  border: none !important;
-  background: transparent !important;
-  color: var(--text-muted, #7A7A75) !important;
-  font-size: 11px !important;
-  font-weight: 500 !important;
-  cursor: pointer;
-  transition: all 0.15s ease !important;
-  line-height: 1 !important;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.subject-review__voluntary-count-btn:hover:not(:disabled):not(.is-active) {
-  color: var(--text-primary) !important;
-}
-
-.subject-review__voluntary-count-btn.is-active {
-  background: var(--color-bg-primary, #FFFFFF) !important;
-  color: var(--text-primary) !important;
-  font-weight: 700 !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
-}
-
-html.dark .subject-review__voluntary-count-btn.is-active {
-  background: #383632 !important;
-  color: #FFFFFF !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
-}
-
-/* 分段与触发项之间的细分割线 */
-.subject-review__voluntary-divider {
-  width: 1px;
-  height: 12px;
-  background: var(--border-subtle, rgba(0, 0, 0, 0.08));
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-
-html.dark .subject-review__voluntary-divider {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* 右侧自测复习触发按钮 */
+/* 右侧自测复习触发按钮：与左侧统一每组题量开关高度/风格协调的微操作胶囊 */
 .subject-review__voluntary-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 5px;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 8px;
   font-size: 11.5px;
   font-weight: 600;
   letter-spacing: 0.01em;
   cursor: pointer;
-  background: rgba(139, 154, 110, 0.1);
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  background: var(--color-bg-primary, #FFFFFF);
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   color: #4A5E30;
-  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.03),
+    0 3px 10px -2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   user-select: none;
   flex-shrink: 0;
   line-height: 1;
 }
 
 html.dark .subject-review__voluntary-btn {
-  background: rgba(163, 177, 155, 0.12);
-  border-color: rgba(163, 177, 155, 0.22);
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
   color: #A3B19B;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 }
 
 .subject-review__voluntary-btn:hover:not(:disabled) {
-  background: rgba(139, 154, 110, 0.18);
+  background: rgba(139, 154, 110, 0.12);
   border-color: rgba(139, 154, 110, 0.35);
   color: #384A22;
   transform: translateY(-0.5px);
-  box-shadow: 0 2px 5px rgba(139, 154, 110, 0.18);
+  box-shadow: 0 2px 8px rgba(139, 154, 110, 0.18);
 }
 
 html.dark .subject-review__voluntary-btn:hover:not(:disabled) {
-  background: rgba(163, 177, 155, 0.2);
+  background: rgba(163, 177, 155, 0.18);
   border-color: rgba(163, 177, 155, 0.38);
   color: #BFCCB8;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .subject-review__voluntary-btn:active:not(:disabled) {
   transform: translateY(0);
-  background: rgba(139, 154, 110, 0.24);
+  background: rgba(139, 154, 110, 0.22);
   box-shadow: none;
 }
 
 html.dark .subject-review__voluntary-btn:active:not(:disabled) {
-  background: rgba(163, 177, 155, 0.28);
+  background: rgba(163, 177, 155, 0.26);
 }
 
-.subject-review__voluntary-btn:disabled {
-  opacity: 0.45;
+.subject-review__voluntary-btn:disabled,
+.subject-review__voluntary-btn.is-disabled {
+  opacity: 0.42;
   cursor: not-allowed;
   pointer-events: none;
   transform: none !important;
@@ -1924,7 +1819,7 @@ html.dark .subject-review__voluntary-btn:active:not(:disabled) {
   line-height: 1.4;
 }
 
-/* 面板右上角操作区（每组数量选择 + 进入按钮） */
+/* 面板右上角操作区（进入按钮） */
 .subject-review__panel-actions {
   display: flex;
   align-items: center;
@@ -1935,22 +1830,28 @@ html.dark .subject-review__voluntary-btn:active:not(:disabled) {
 .subject-review__group-size {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  background: color-mix(in srgb, var(--color-bg-primary) 65%, transparent);
+  gap: 3px;
+  height: 28px;
+  padding: 2px 4px 2px 10px;
+  background: var(--color-bg-primary, #FFFFFF);
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  border-radius: 9999px;
-  padding: 2px 3px 2px 8px;
-  font-size: 11px;
+  border-radius: 8px;
+  box-shadow: 
+    0 1px 3px rgba(0, 0, 0, 0.03),
+    0 3px 10px -2px rgba(0, 0, 0, 0.04);
+  font-size: 11.5px;
   user-select: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.dark .subject-review__group-size {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
 }
 
 .subject-review__group-size-label {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-muted);
   font-weight: 500;
   margin-right: 2px;
@@ -1959,11 +1860,11 @@ html.dark .subject-review__group-size {
 .subject-review__group-size button {
   border: 1px solid transparent !important;
   background: transparent !important;
-  padding: 2px 7px !important;
+  padding: 2px 8px !important;
   font-size: 11px !important;
   font-weight: 500 !important;
   line-height: 1.3 !important;
-  border-radius: 9999px !important;
+  border-radius: 5px !important;
   color: var(--text-muted) !important;
   cursor: pointer;
   transition: all 0.15s ease !important;
@@ -1979,15 +1880,15 @@ html.dark .subject-review__group-size button:hover:not(.active) {
 }
 
 .subject-review__group-size button.active {
-  background: var(--color-bg-card, #FFFFFF) !important;
+  background: var(--color-bg-tertiary, #FAF7F2) !important;
   color: var(--text-primary) !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
   border-color: var(--border-subtle, rgba(0, 0, 0, 0.08)) !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06) !important;
 }
 
 html.dark .subject-review__group-size button.active {
-  background: var(--color-bg-secondary, #2f2e2b) !important;
+  background: #383632 !important;
   color: var(--text-primary) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;

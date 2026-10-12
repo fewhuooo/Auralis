@@ -1,6 +1,7 @@
 package com.auralis.app.ai.internal.security;
 
 import com.auralis.app.ai.AiProviderType;
+import com.auralis.app.ai.OverviewCancellation;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,12 +15,28 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 public class ProviderEndpointPolicy {
 
+    private static final AtomicInteger DNS_THREAD_SEQUENCE = new AtomicInteger();
+    private static final ThreadPoolExecutor OVERVIEW_DNS_EXECUTOR = new ThreadPoolExecutor(
+            4, 4, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(8), daemonDnsThreadFactory(),
+            new ThreadPoolExecutor.AbortPolicy());
+
     private final Set<String> allowedProviderHosts;
     private final DnsResolver dnsResolver;
+    private final ThreadPoolExecutor overviewDnsExecutor;
 
     @Autowired
     public ProviderEndpointPolicy(AuralisProperties properties) {
@@ -31,6 +48,11 @@ public class ProviderEndpointPolicy {
     }
 
     ProviderEndpointPolicy(List<String> allowedProviderHosts, DnsResolver dnsResolver) {
+        this(allowedProviderHosts, dnsResolver, OVERVIEW_DNS_EXECUTOR);
+    }
+
+    ProviderEndpointPolicy(List<String> allowedProviderHosts, DnsResolver dnsResolver,
+                           ThreadPoolExecutor overviewDnsExecutor) {
         this.allowedProviderHosts = allowedProviderHosts == null
                 ? Set.of()
                 : allowedProviderHosts.stream()
@@ -38,6 +60,7 @@ public class ProviderEndpointPolicy {
                 .map(this::normalizeHost)
                 .collect(Collectors.toUnmodifiableSet());
         this.dnsResolver = dnsResolver == null ? InetAddress::getAllByName : dnsResolver;
+        this.overviewDnsExecutor = overviewDnsExecutor;
     }
 
     public URI validate(AiProviderType provider, String rawBaseUrl) {
@@ -74,11 +97,107 @@ public class ProviderEndpointPolicy {
     public ResolvedProviderEndpoint resolve(AiProviderType provider, URI baseUri) {
         URI validated = validate(provider, baseUri == null ? null : baseUri.toString());
         List<InetAddress> addresses = resolvePublicAddresses(validated);
+        return resolvedEndpoint(validated, addresses);
+    }
+
+    public ResolvedProviderEndpoint resolve(AiProviderType provider, URI baseUri, long timeoutMillis,
+                                            OverviewCancellation cancellation) {
+        URI validated = validate(provider, baseUri == null ? null : baseUri.toString());
+        List<InetAddress> addresses = resolvePublicAddresses(validated, timeoutMillis, cancellation);
+        return resolvedEndpoint(validated, addresses);
+    }
+
+    private ResolvedProviderEndpoint resolvedEndpoint(URI validated, List<InetAddress> addresses) {
         return new ResolvedProviderEndpoint(
                 normalizeHost(validated.getHost()),
                 validated.getPort() == -1 ? 443 : validated.getPort(),
                 addresses,
                 validated.getRawPath() == null || validated.getRawPath().isBlank() ? "/" : validated.getRawPath());
+    }
+
+    private List<InetAddress> resolvePublicAddresses(URI uri, long timeoutMillis,
+                                                     OverviewCancellation cancellation) {
+        if (uri == null || uri.getHost() == null) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider target is unavailable");
+        }
+        if (timeoutMillis <= 0) {
+            throw new DomainException("MODEL_TIMEOUT", "AI provider target resolution timed out");
+        }
+        if (cancellation != null && cancellation.isCancelled()) throw resolutionCancelled(cancellation);
+        FutureTask<InetAddress[]> lookup = new FutureTask<>(() -> dnsResolver.resolve(uri.getHost()));
+        OverviewCancellation.Registration registration = cancellation == null
+                ? () -> { }
+                : cancellation.onCancel(() -> {
+                    lookup.cancel(true);
+                    overviewDnsExecutor.remove(lookup);
+                });
+        try {
+            if (lookup.isCancelled()) throw resolutionCancelled(cancellation);
+            try {
+                overviewDnsExecutor.execute(lookup);
+                // Cover cancellation racing between listener registration and queue insertion.
+                if (lookup.isCancelled()) overviewDnsExecutor.remove(lookup);
+            } catch (RejectedExecutionException rejected) {
+                throw new DomainException("SERVICE_UNAVAILABLE", "Provider address resolution is busy", null,
+                        rejected);
+            }
+            InetAddress[] addresses = lookup.get(timeoutMillis, TimeUnit.MILLISECONDS);
+            if (cancellation != null && cancellation.isCancelled()) throw resolutionCancelled(cancellation);
+            return filterPublicAddresses(addresses);
+        } catch (TimeoutException timeout) {
+            cancelLookup(lookup);
+            throw new DomainException("MODEL_TIMEOUT", "AI provider target resolution timed out", null, timeout);
+        } catch (CancellationException cancelled) {
+            cancelLookup(lookup);
+            if (cancellation != null && cancellation.isCancelled()) throw resolutionCancelled(cancellation);
+            throw new DomainException("MODEL_TIMEOUT", "AI provider target resolution was cancelled", null, cancelled);
+        } catch (InterruptedException interrupted) {
+            cancelLookup(lookup);
+            Thread.currentThread().interrupt();
+            throw new DomainException("MODEL_TIMEOUT", "AI provider target resolution was interrupted", null,
+                    interrupted);
+        } catch (ExecutionException failed) {
+            Throwable cause = failed.getCause();
+            if (cause instanceof UnknownHostException) {
+                throw new DomainException("MODEL_UNAVAILABLE", "AI provider target is unavailable");
+            }
+            if (cause instanceof RuntimeException runtime) throw runtime;
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider target is unavailable", null, cause);
+        } finally {
+            registration.close();
+        }
+    }
+
+    private List<InetAddress> filterPublicAddresses(InetAddress[] addresses) {
+        if (addresses == null || addresses.length == 0) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider target is unavailable");
+        }
+        List<InetAddress> publicAddresses = Arrays.stream(addresses)
+                .filter(address -> address != null && isPublicAddress(address))
+                .toList();
+        if (publicAddresses.isEmpty()) throw invalidUrl();
+        return publicAddresses;
+    }
+
+    private void cancelLookup(FutureTask<?> lookup) {
+        lookup.cancel(true);
+        overviewDnsExecutor.remove(lookup);
+    }
+
+    private DomainException resolutionCancelled(OverviewCancellation cancellation) {
+        if (cancellation != null && cancellation.reason() != null
+                && cancellation.reason() != OverviewCancellation.Reason.DEADLINE) {
+            return new DomainException("MODEL_TIMEOUT", "AI provider target resolution was cancelled");
+        }
+        return new DomainException("MODEL_TIMEOUT", "AI provider target resolution timed out");
+    }
+
+    private static ThreadFactory daemonDnsThreadFactory() {
+        return task -> {
+            Thread thread = new Thread(task, "overview-provider-dns-" + DNS_THREAD_SEQUENCE.incrementAndGet());
+            thread.setDaemon(true);
+            return thread;
+        };
     }
 
     public List<InetAddress> resolvePublicAddresses(URI uri) {

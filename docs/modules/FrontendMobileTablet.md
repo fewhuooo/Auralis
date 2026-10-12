@@ -1,5 +1,12 @@
 # Mobile / Tablet 前端模块
 
+### 2026-10-11 手机与平板个人中心 AI 额度（代码、相关自动验证与只读审查通过；真机待验收）
+
+- `mobile/profile` 与 `tablet/profile` 共用 `useAiUsage`，从认证 `GET /api/ai/usage` 展示小时/今日总额、已结算、在途预留、剩余及当地重置时间。账号切换、离开页面及新请求使旧响应失效；首次加载和失败不伪造零额度。
+- `api/protocol.ts` 与 AI SSE 解析保留六种额度/预算码的安全重试元数据，手机/平板 AI Search 的提示共用 `aiUsageGuardHelper`。保留手动重试、会话协议与已有正文，不增加自动补发。
+- 额度 GET 使用现行 `mobileRequest`，access token 过期时沿用一次 refresh/retry，失败调用原 session 失效处理。实际消费者与生产 request executor 回归先 RED 后 GREEN；额度重试策略仍由用户显式触发。
+- 实际 Antigravity 候选经 Luna 按失败证据补修并守卫应用。行为 8/8、Mobile 协议 24/24、Tablet 三脚本和静态扫描通过；H5 build 与最终同 hash SDK 下两端 type-check 退出 0，唯一只读审查通过。微信构建、真实设备/Provider/GUI 本轮未验收，完整证据见 [B 计划](../plans/2026-10-10-ai-usage-guard-b.md)。没有新增路由、依赖、端侧表或额度持久缓存。
+
 2026-10-09 共享生成 SDK 随离线复习补传契约更新：生命周期可选 occurredAt/expectedStateAbsent、history protocolVersion、初选 schedulingBaseline 与 legacy firstLearning。PC/Mobile schema 由同一运行时 OpenAPI 生成且 hash 一致，Mobile 本轮没有新增运行时调用、离线 Review 队列或页面，不把共享类型更新视为手机已实现本地新机制。
 
 2026-10-01 必要知识块契约适配：`useSyncStore` 不再向 Server 发送已删除的 summary/tags；本地完整 preview 继续映射为 content，接收端仅将 content 映射回 preview，避免旧 summary 截断正文。端侧 preview/tag 存储与现有页面保留，未新增专注历史 API 或 Overview results 展示。生成 SDK 随共享 OpenAPI 更新；因此暴露的现行上传契约 `clientImportId` 必填调用缺口已在 `assetUpload.ts` 最小补齐，每次操作使用一个 UUID，并可由调用方传入稳定 ID 重试，未新增页面或持久状态。Mobile type-check 退出 0，协议检查 23/23；真实设备未验收。

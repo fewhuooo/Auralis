@@ -32,6 +32,8 @@
   <!-- Kept mounted across routes for background Office extraction. -->
   <BackgroundParserHost ref="backgroundParserHost" />
 
+  <!-- Full-Page GPU Ambient Theme Veil (Zero Jank, Zero Lag) -->
+  <div v-if="curtainClass" :key="curtainKey" :class="['theme-ambient-curtain', curtainClass]" aria-hidden="true"></div>
 </template>
 
 <script setup lang="ts">
@@ -104,11 +106,30 @@ const handleRealtimeStatus = (event: Event): void => {
   }
 }
 
+const curtainClass = ref<string | null>(null)
+const curtainKey = ref(0)
+let curtainTimer: ReturnType<typeof setTimeout> | null = null
+
+const handleThemeChangeEvent = (event: Event): void => {
+  const detail = (event as CustomEvent<{ dark: boolean; isViewTransition?: boolean }>).detail
+  if (detail?.isViewTransition) return
+
+  const isDark = detail?.dark
+  curtainClass.value = isDark ? 'to-dark' : 'to-light'
+  curtainKey.value++
+  if (curtainTimer) clearTimeout(curtainTimer)
+  curtainTimer = setTimeout(() => {
+    curtainClass.value = null
+    curtainTimer = null
+  }, 500)
+}
+
 onMounted(() => {
   setBackgroundParserHost(backgroundParserHost.value)
   window.addEventListener('online', updateBrowserOnline)
   window.addEventListener('offline', updateBrowserOnline)
   window.addEventListener('auralis-realtime-status', handleRealtimeStatus)
+  window.addEventListener('sc-theme-change', handleThemeChangeEvent)
 
   if (authStore.isAuthenticated) {
     startAuthenticatedRuntime()
@@ -131,6 +152,8 @@ onUnmounted(() => {
   window.removeEventListener('online', updateBrowserOnline)
   window.removeEventListener('offline', updateBrowserOnline)
   window.removeEventListener('auralis-realtime-status', handleRealtimeStatus)
+  window.removeEventListener('sc-theme-change', handleThemeChangeEvent)
+  if (curtainTimer) clearTimeout(curtainTimer)
   stopWatchingAuth?.()
   stopWatchingAuth = undefined
   realtimeController.stop()
@@ -199,7 +222,7 @@ onUnmounted(() => {
 /* Shell transition (between public login and authenticated app) */
 .shell-fade-enter-active,
 .shell-fade-leave-active {
-  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .shell-fade-enter-from,
@@ -207,21 +230,29 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* Page transition — smooth spring with subtle lift */
-.page-fade-enter-active,
+/* Page transition — 纯 GPU 合成层，从容舒缓呼吸感，满帧丝滑 */
+.page-fade-enter-active {
+  transition: 
+    opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1), 
+    transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
 .page-fade-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: 
+    opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), 
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   will-change: opacity, transform;
 }
 
 .page-fade-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(10px);
 }
 
 .page-fade-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-6px);
 }
 
 </style>

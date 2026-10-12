@@ -1,5 +1,245 @@
 # Auralis 当前状态
 
+### 2026-10-12 学科总览合并输入超限（代码、定向回归、只读审查与本机更新完成；业务实测待验收）
+
+- 现场重新生成约 13ms 返回 `VALIDATION_FAILED`，在 Provider 请求前失败；`phase=FINAL` 为外层失败标签。
+- 合法单源大输入在隔离测试中通过 preflight 后重现同错；服务端现有三个文件总览按空 instruction 重建合并 prompt 为 16631 字符，超过现行 12000，单独均可装下。当前缓存重建不冒称原始请求体。
+- Subject 已增加精确语义分片 / 分包与有界 MAP / REDUCE，保留所选输入、mode / alias、用量、deadline 与取消约束；小请求继续直接生成。审查发现的重复片段膨胀与 FINAL 使用中间压缩指令已关闭。
+- 最终全新隔离编译 330 main / 107 test，Surefire 73/73，Maven `BUILD SUCCESS`；最后包装器未保留 shell exit，按证据标为不可独立确认。早期增量编译和不同源码的 72 项阶段不作最终通过计数。两份主树 hash 与已测源文件一致，唯一只读审查 0 BLOCKER / IMPORTANT / OPTIONAL；本机部署和真实 Provider / GUI 验收分别记录，详见 [实施计划](../plans/2026-10-12-subject-overview-prompt-batching.md)。
+- 香港 13:57:23 仅 backend 更新为 `a5a50bb7…`，Docker build / recreate 实际退出码 0，healthy / readiness 200；部署 Service class 与 fresh scratch 精确相同，Guard class 保持。替换前活动 TASK / RESERVED / ingestion 为 0，db / MinIO 容器与卷、Flyway V31、真实 `.env` 和额度配置保持，旧镜像留回滚 tag。真实 Provider / GUI 重新生成仍待验收。
+
+### 2026-10-12 embedding 额度排除与单人测试额度（代码、相关验证与本机部署完成；业务测试待验收）
+
+- 用户最新指令调整统计口径：文件入库 / 检索 embedding 不计小时、日及系统日额度，也不计个人中心窗口，历史调用记录保留并从聚合排除。
+- 单人测试默认提高 10 倍至 1000000 / 小时、2000000 / 日；系统日 2000000、并发 4 / 2、任务资源 / 调用次数 / 请求字节上限保留。本机 `.env` 无相关旧额度覆盖。
+- 代码、配置和运行态分别验证；详见 [实施计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。下方 PDF 故障记录与当时免费 embedding 仍计配额的策略为变更前历史事实。
+- 后端隔离相关 53/53、最终两项精确源码回归 2/2（重叠），配置隔离 6/6 和 Compose 校验通过；6 份主树目标 hash 与已测文件一致。实际 Provider / GUI 未由这些命令验收。
+- 唯一只读审查范围 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。本机 backend 香港 12:57:12 更新为镜像 `31f7dec…`，healthy、readiness 200，运行额度 1000000 / 小时、2000000 / 日，已部署 Guard 字节码确认 embedding 排除。db / MinIO 身份与卷保持，Flyway 仍 V31；更新前活动任务租约自然释放，没有强停 AI 任务。
+- 香港 12:59:36 系统日聚合余量为 1946433，供当前测试；个人中心可刷新显示新的口径。实际 Provider、GUI / 跨设备业务仍由真实操作验收，服务健康与字节码检查不替代这些验收。
+
+### 2026-10-12 大 PDF 摄入额度与同步等待（代码与定向自动验证通过；新补丁未部署）
+
+- 初始现场目标 job 因 `AI_HOURLY_QUOTA_EXCEEDED` 延期到 UTC 03:00（香港 11:00），租约已释放、失败次数为 0，32 个 inactive checkpoint chunks 保留；三笔已结算额度为 94615，无在途 reservation。两次数据库快照无锁等待；事故时段缺少 sync access 记录，无法把同步症状归同因。
+- 香港 11:00 原部署自然续做成功：同一 generation 保留原检查点，仅新增一笔 embedding，42 个 chunks 全部激活，job / Source 均为 READY，失败次数仍为 0。本轮只读观察，未人工重跑；这验证原部署的窗口恢复和检查点续做，不证明新用量补丁已部署或 GUI 已验收。
+- 适配器丢弃合法 embedding `completion_tokens:0`，使完整响应成为部分未知用量；受控 RED 已确认。本轮只补该字段解析，完整用量按实际结算、缺失或非法仍保守，保留现有全部限制及历史账本。免费模型仍计入内部 token 配额，配额不是金额账单。
+- 独立 PC 受控 probe 证明资产上传 `wakeUp()` 未返回会挡住普通 push/pull；已用后台唤醒和原完成通知解除该等待，错误通过现有安全日志处理，保留会话围栏及 Asset 完成后才生成 Source mutation 的顺序。
+- 后端五类定向 56/56 通过，运行在源码与主树逐项相同的隔离构建目录。PC 最后修改后的四项回归、实际 store probe、类型检查和构建通过；此前完整相关套件 51/51 与最后四项重叠，不相加。PC 静态门禁仍命中既有 Rust 固定地址规则。新 backend/PC 补丁部署、实际响应结算和上传期间跨设备同步仍待验收。
+- 验证、委派和最终审查证据见 [本轮诊断与修复](../plans/2026-10-12-pdf-ingestion-quota-and-sync.md)。代码/命令验证、部署和真实 GUI/Provider 验收分别记录。
+- 唯一只读审查范围内 BLOCKER=0、IMPORTANT=0、OPTIONAL=0；主树五个源码/test hash 与已测版本一致。既有用户修改保留，无关并行更新另行登记，未提交或部署。
+
+### 2026-10-12 PC 头像本地缓存与断网回退（代码完成；断网 GUI 待验收）
+
+- `Auralis-PC/src/services/avatarCache.ts` 使用 IndexedDB 按用户 ID 持久化头像 Blob；Pinia 不保存图片或 Blob URL。
+- 顶栏与个人中心通过 auth store 共享头像状态：先显示本地缓存，再请求云端刷新；网络故障保留本地头像，服务端明确返回无头像时清除缓存并回退首字母。上传成功写入本地副本，重置和退出登录清理对应缓存；账号切换与旧请求由代次隔离。
+- 验证：`npm.cmd run type-check` 退出码 0。未运行测试；真实 Tauri 重启后断网显示仍待 GUI 验收。首次升级后的本地副本需要客户端在线成功读取或重新上传头像后建立。
+- 只读复核：BLOCKER=0、IMPORTANT=0；记录一个同账号重置响应与后续上传交错时可能清掉新缓存的 OPTIONAL 边界，本轮未改。
+
+### 2026-10-12 PC 设置与个人中心（Profile Studio）Awwwards 获奖级视觉设计与微交互重构完成（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：以这个设计优化一下设置页。
+- 解决：
+  - **设置中心（`Auralis-PC/src/views/Profile/index.vue`）全局重构与分层投影强化**：
+    - **强化容器与卡片立体分层投影**：
+      - 重构左右双栏容器（左侧数据透视 `.studio-left`、右侧分项设置 `.studio-right`），赋予 `20px` 现代圆角与高定近远场双层阴影系统（`0 10px 30px -4px rgba(35, 45, 30, 0.08), 0 2px 8px -1px rgba(0, 0, 0, 0.04)`，暗色 `0 14px 36px rgba(0, 0, 0, 0.48), 0 2px 10px rgba(0, 0, 0, 0.35)`）；
+      - 舒缓呼吸留白：外层内边距调整为 `14px 18px 18px`，容器间隙扩展至 `16px`；内部所有独立卡片采用 `18px~20px` 现代圆角、Tier 3 控件底色与极细微晶边框；
+    - **排版与信息层级升级**：
+      - 右侧标头加入瑞士现代微晶胶囊微标 `.settings-header-badge`（`SYSTEM PREFERENCES`），大标题字重与字距沉稳紧凑；
+      - 核心学习指标四宫格升级为等宽数表对齐 `tabular-nums`、渐变图标底座与悬停立体微浮雕；
+      - 废除 AI 使用额度的粗糙内联样式，重构为微晶网格卡片 `.usage-card`、清晰标签与重置时间微药丸；
+    - **高定微交互体系**：
+      - 物理弹簧阻尼开关（`.toggle-btn`），开启态激发 Sage 翡翠微光；
+      - 下拉框与输入框聚焦激发 3px Sage 呼吸光晕；
+      - 药丸化操作按钮、头像呼吸晶体与触控候选模型微芯片 `.model-chip`；
+    - **深色模式（Dark Mode System）极致适配**：
+      - 全面补齐暗黑模式下的温润墨玉与灰绿色彩分层，彻底杜绝发灰、失真与对比度不足。
+- 验证：`vue-tsc -b` 0 报错；`scripts/r4-profile-live-links.test.mjs`、`scripts/r4-profile-logout.test.mjs`（9/9 项测试）全量通过；`npm run build` 生产构建成功。真实桌面端 GUI 待人工走查。
+
+### 2026-10-12 PC Timeline 断网排期实现（代码、定向命令验证与只读复核通过；真实环境待验收）
+
+- PC 排期插入/顺延和换位已写成本地原子事务：受影响 Task 乐观投影与一条稳定 ID 的 `SCHEDULE_INSERTION` 或 `SCHEDULE_SWAP` Sync 命令一起落库。断网时保留本机结果和待同步命令，网络恢复后幂等重放；服务器拒绝或版本冲突会将当前 Task 数组原子合并回本地。
+- Sync pull/snapshot 为尚未结算命令的成员 Task 建立本地保护；SQLite 在同一事务读取保护围栏并替换快照，浏览器 LocalRepository 状态改写要求 Web Locks API 并通过同源锁串行化，缺少该 API 时拒绝 localStorage 写入；命令内部成员清单不进入 HTTP payload。多条服务端拒绝按 mutation ID 排队并逐条通知。回执缺少本地受影响任务时，客户端先取回并校验完整快照再终结命令；快照不可用或不完整时命令保留待重试状态。服务端沿用现有 Task 插入和换位事务，核对 payload 源 Task ID/baseVersion 与外层 mutation 一致，并验证换位目标 Task ID/baseVersion 存在；缺少目标字段会幂等记录为 `REJECTED/VALIDATION_FAILED`。V31 只扩展 inbound mutation 枚举与列宽，change log 仍仅记录 Task `UPDATE`。
+- 验证：四个 PC 定向套件合计 173/173，LocalRepository 单套 35/35；`npm.cmd run type-check` 退出码 0；OpenAPI/PC/Mobile mutation enum 静态形状检查退出码 0。Server Sync/Schema/Task controller 定向 Maven 测试 34/34，clean 重建成功，独立 `OpenApiArtifactTests` 12/12。最新只读复审 BLOCKER=0、IMPORTANT=0。`npm.cmd run check:r4-pc` 退出码 1，命中未修改的 `src-tauri/src/local_asset_store.rs` 固定本地地址扫描；`scripts/check-openapi.ps1` 退出码 1，JUnit discovery 报 `NoClassDefFoundError: JsonNode`，运行时 artifact 对比未完成。真实 Tauri/断网恢复与 PostgreSQL/跨设备仍待验收。
+- 代码和命令验证不等同于真实断网重启、Tauri GUI、PostgreSQL/跨设备恢复或部署验收；这些仍待执行。详见[实施计划](../superpowers/plans/2026-10-11-offline-timeline-scheduling.md)。
+
+### 2026-10-11 PC 资产库界面（Asset Studio）Awwwards 获奖级视觉设计与微交互全面重构（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：优化资产库界面。
+- 解决：
+  - **资产库中心（`Auralis-PC/src/views/Asset/index.vue`）全局重构与分层投影强化**：
+    - **强化容器与纸张卡片分层立体投影**：
+      - 彻底重构三大核心容器（左侧资产树 `.studio-left`、中间阅览区 `.studio-middle`、右侧上下文星图 `.studio-right-context`）外层，采用 `20px` 现代圆角与高定近远场双层阴影系统（`0 10px 30px -4px rgba(35, 45, 30, 0.08), 0 2px 8px -1px rgba(0, 0, 0, 0.04)`，暗色 `0 14px 36px rgba(0, 0, 0, 0.48), 0 2px 10px rgba(0, 0, 0, 0.35)`）；
+      - 核心纸张卡片（`.editor-paper-card`）赋予沉浸浮空阴影（`0 16px 44px -6px rgba(35, 45, 30, 0.09), 0 4px 16px -2px rgba(0, 0, 0, 0.03)`，暗色 `0 20px 50px rgba(0, 0, 0, 0.5)`），彻底解决卡片贴平、缺乏分层、无法辨识的视觉痛点；
+    - **左侧资产树层级优化与微交互**：
+      - 搜索栏升级为全圆角集成胶囊，配备 `<IconSearch>` 矢量图标与一键清空按钮，聚焦触发 Sage 柔光外环；
+      - 树形项目优化为悬停向右平移微动效，选中态增加渐变光底与左侧鼠尾草绿呼吸高光条；
+      - 文件状态指示灯（`.status-dot`）升级为微晶呼吸灯（翡翠绿、琥珀金慢呼吸光晕 `breathe-glow`、红宝石微晶）；
+      - 底部上传区升级为磁吸质感触控卡片，配备专属图标底座与双行排版提示；
+    - **中间沉浸阅览与编辑画布**：
+      - 禅意艺术空状态，配双层同心柔光微浮动环与「导入新资产」快捷入口；
+      - 顶部吸顶毛玻璃导航条（`backdrop-filter: blur(16px)`）；
+      - 知识块编辑标题无边框沉浸融入纸面，编写/实时预览切换重构为高定 Segmented Control 胶囊滑块；
+      - 任务属性网格升级为 Notion 风格微卡片，日期与时长选择器微晶化；
+    - **右侧关系星图与代码精简**：
+      - 整合图谱画布并设计空灵星轨微光空状态；
+      - 清理数百行历史遗留的重复与废弃 CSS 规则。
+- 验证：`vue-tsc -b` 0 报错；`scripts/r4-asset-tasks.test.mjs`、`scripts/r4-register-file.test.mjs`、`scripts/r4-document-processing-ui.test.mjs`（20/20 项测试）全量通过；`npm run build` 生产构建成功。真实桌面端 GUI 待人工走查。
+
+### 2026-10-11 PC 排期页（Timeline）Awwwards 获奖级视觉重构、卡片分层投影与微交互打磨完成（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：以 Awwwards、Webby Awards、FWA 获奖级网站为品质标准，完成后从排版、留白、视觉层级、色彩、动效、微交互、响应式和原创性上自检并持续优化，直到没有明显可提升之处。继续优化排期页；继续打磨该页ui，但是不要动我时间轴放置的逻辑；适当在卡片下面加阴影现在没有分层看不清。
+- 解决：
+  - **排期页（`Auralis-PC/src/views/Timeline/index.vue`）全局重构与分层投影强化**：
+    - **强化卡片分层与立体投影**：
+      - 为全页卡片（时间流任务卡片 `.slot-task`、待安排卡片 `.pending-card`、周排期概览行 `.weekly-overview-row`、周视图卡片 `.weekly-task-card`、底部药丸 `.pending-pill`）增加显著的近远场双层阴影（`0 4px 16px -2px rgba(35, 45, 30, 0.12), 0 2px 6px -1px rgba(0, 0, 0, 0.05)`），悬停增加至 `0 10px 28px -3px rgba(35, 45, 30, 0.18)`；
+      - 提升卡片底色对比度（纯白 `#FFFFFF`，暗色 `#1F241F`）并增强 Sage 微晶边框对比度（`1px solid rgba(139, 154, 110, 0.22)`），使卡片在米色宣纸画布与时间槽网格上呈现清晰的立体浮起感，彻底消除平淡模糊与缺乏分层的问题；
+    - **严守时间轴放置物理契约**：
+      - 严格维持 `TIMELINE_SLOT_HEIGHT = 80px` 与 `TIMELINE_SLOT_GAP = 4px`（`.time-slots { gap: 4px; }`，`.time-slot { height: 80px; min-height: 80px; }`），确保多槽位任务的内联高度计算与底层放置网格 100% 严丝合缝；
+    - **材质与排版升级**：彻底摒除 `#EEEEEE` 生硬底色，融入宣纸底 `var(--color-bg-primary, #F7F2EB)`（深色 `#111411`），四大主容器采用 18px 现代圆角与双层漫散阴影；瑞士风标头、微晶胶囊统计（32px 高度药丸、数值与标签清晰层级、悬停 1.5px 微浮雕）；
+    - **触控微交互**：日/周视图分段控制器药丸化、新建任务主按钮内置加号悬停 90° 旋转与弹簧回弹微动效；中栏时间流配置翠羽 Sage 呼吸扩散指针与渐隐光针；周视图 7 泳道与底部 Dock 升级为 Apple Dock 质感悬浮微晶面板。
+- 验证：`vue-tsc -b` 0 报错；`r4-dashboard-timeline.test.mjs`、`r4-task-store-schedule.test.mjs`、`r4-task-view-rules.test.mjs`（109/109 项测试）全部通过；`npm run build` 构建成功。真实桌面端 GUI 待人工走查。
+
+### 2026-10-11 PC 学科中心掌握度性能提升、三态掌握度轴色彩与顺序完全对齐、切卡按钮即时响应（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：学习和复习知识块页面，跳转到下一个知识的时候会出现无法点击下方按钮一段很短的时间；学科中心页的掌握度加载的很慢，然后复习页和统计页的掌握度轴颜色不一样。
+- 解决：
+  - **学科中心/学科大厅掌握度加载秒开（`SubjectHall/index.vue`）**：
+    - 废弃原先为每个学科并发调用 `LocalSubjectStats.compute`（包含 7 天复习趋势计算与全量表重扫）的慢方案；
+    - 重构为单次批量读取当前用户的所有有效知识块与复习评测记录（单次 `repo.list` 读库），在内存中通过 Map 单次 O(N) 极速累加各学科的待学习、待复习与已掌握数量及掌握度百分比，将加载耗时从数秒降低至毫秒级；
+    - 引入 `isLoadingMastery` 与 `masteryPending` 互斥防抖机制，杜绝组件 mount 与 watch 并发触发时的数据库重复读取与锁竞争。
+  - **掌握度轴三色与顺序三端完全对齐**：
+    - 学科大厅（`SubjectHall`）、学科统计页（`SubjectStatsPane`）和学科复习页（`SubjectReviewPane`）三处的掌握度进度细轨与图例颜色及顺序 100% 对齐：
+      - 待学习（`new/learning`）：`#88929E`（灰蓝板岩色）
+      - 待复习（`due/reviewing`）：`#C49A6C`（暖陶土琥珀色）
+      - 已掌握（`mastered`）：`var(--color-zen-sage, #8B9A6E)`（禅意鼠尾草绿）
+      - 轨道顺序统一为：待学习 -> 待复习 -> 已掌握。
+  - **彻底移除复习过程中的瞬态报错弹条与提示框（`SubjectReviewPane.vue`）**：
+    - 页面顶部所有异常状态提示条（`stateError`、`unsyncedBlocks`、`reviewSyncError`、`conflictedBlocks` 等）全部限制在未进入轮次的规划总览（`!round`）时显示，复习做题时顶部绝对不弹出任何红框；
+    - 卡片内部彻底移除网络重试与切卡瞬态提示条（`round.pendingError`、`round.pendingCommand` 操作提示条与 `currentLocalBlocksLoadError`），彻底消除复习切卡时报错闪现即逝与高度弹跳问题；
+    - 在 `withCurrentContentHash` 动作拦截校验中，对卡片未就绪状态改为静默防御 return。
+  - **修复切卡时底部按钮短暂无法点击的交互延迟（`SubjectReviewPane.vue`）**：
+    - 将全局互斥标志 `hashingAction: ref(boolean)` 重构为卡片维度的 `hashingBlockId: ref<string | null>(null)`；切到下一张卡时，当前卡的 ID 立即与锁脱钩，不再受上一张卡异步微任务锁的滞留影响；
+    - 优化 `canSubmitCurrentBlock` 判定条件：放宽为 `!statesLoaded.value && !states.value.length`，只要本地内存已有持久化状态，即使后台静默刷新也绝不触发虚假禁用，确保卡片切换后底部操作按钮零延迟立即可点。
+- 验证：`vue-tsc -b` 0 报错；`scripts/r4-subject-review.test.mjs`、`scripts/r4-subject-edit.test.mjs`、`scripts/r4-subject-stats.test.mjs`（68/68）全量学科测试套件通过。真实桌面端 GUI 待人工走查。
+
+### 2026-10-11 PC 学科空间大厅与具体学科工作区全面升级与掌握度接口真实对接（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：优化学科空间页；学科大厅掌握度展示没有对接接口啊；还没对齐学科里面的三色展示；下面的数量标注不用了。
+- 解决：
+  - 学科空间大厅（`SubjectHall/index.vue`）：
+    - **真实掌握度统计对接与三态细轨对齐**：彻底废弃基于 `blocks / (files * 3)` 的伪计算估算；引入 `useStatsStore` 调用 `loadSubjectStats(subjectId, { days: 7, timeZone })`，严格按照权威公式 `overview.masteredCount / overview.activeKnowledgeBlockCount * 100` 渲染各学科掌握度百分比；进度条全面升级为与学科内（`SubjectStatsPane`）一致的三态细轨比例槽（待学习 `#88929E`、待复习 `#C49A6C`、已掌握 `var(--color-zen-sage, #8B9A6E)`），保持极简无额外文字干扰的纯净细轨并支持交互 tooltip 详细提示，并在学科增删与 `local-review-updated` 本地复习完成事件时自动刷新掌握度映射表；
+    - 头部排版升级为瑞士现代风（24px，`-0.025em`），搭配「共 N 个空间」统计微胶囊与内置旋转微动效的主操作胶囊按钮；
+    - 搜索栏升级为集成胶囊容器，常驻搜索图标，配备输入清空按钮与 3.5px Sage 扩散光晕；
+    - 学科卡片（`.subject-card`）升级为 18px 现代圆角、透绿微晶边框与双层自然散光阴影；悬停抬升 3.5px 并漫射透绿微光，触击提供 0.985 阻尼微缩；
+    - 44px 独立图标容器，悬停触发微放大与 3° 微转动动效；编辑与删除微按钮升级为毛玻璃浮雕圆钮；
+    - 新建学科空间卡片（`.add-card`）升级为高阶微晶虚线磁吸卡片，加号圆钮悬停顺时针旋转 90° 并平滑放大；
+    - 空状态引入双层发光光环与清空搜索引导。
+  - 具体学科工作区（`SubjectWorkspace/index.vue`）：
+    - Tier 1 纵向导航条（`.tier1-strip`）升级为 18px 圆角与双层散光阴影，激活态重构为微晶内嵌立体胶囊，触击提供 `scale(0.94)` 弹簧阻尼反馈；
+    - 底部学科 Mini 图标升级为 40px 双层阴影渐变胶囊，悬停微旋转放大；
+    - Tier 2 抽屉侧栏（`.tier2-drawer`）过渡优化为 0.32s 流畅阻尼展开，材料项（`.drawer-item`）悬停向右平移 2px，激活态配备呼吸高光指示条；
+    - 添加材料按钮（`.drawer-action`）悬停顺时针旋转 90° 放大，触击微缩；
+    - 知识库子页面（`centerView === 'blocks'`）：搜索框升级为极简全圆角胶囊与 Sage 扩散外环，计数升级为透绿立体微晶胶囊，录入知识块按钮配置加号顺时针 90° 旋转与触击弹性反馈；知识卡片升级为 `18px` 现代圆角、透绿微晶边框与自然双层漫散阴影，悬停上浮 3.5px 扩散 Sage 柔光；操作圆钮升级为 26px 毛玻璃浮雕圆钮；正文 Markdown 行高扩展至 1.62；底部来源资料配备独立小药丸；空状态引入双层柔光光环与引导卡片微动效；
+    - 学科欢迎引导页（`onboarding-workspace`）：瑞士平面大标题（24px，`-0.025em`），拖拽上传区域升级为透绿微晶虚线磁吸胶囊，引导卡片配备 `18px` 圆角、透绿微晶边框与图标底座 3° 微转动微动效；
+    - 材料预览控制器与划词气泡（`preview-status-controls` & `floating-selection-bubble`）：顶部缩放与旋转按钮组升级为一体化全圆角磨砂微晶胶囊控制器；底部分页器按钮升级为纯净胶囊；划词浮动气泡引入阻尼弹簧弹出动效（`bubble-spring-pop`）与毛玻璃透光材质；
+    - 总览大纲组件（`FileOutlineList.vue`）：按用户指令调回原版紧凑设计，维持既有轻量样式与交互。
+- 验证：`vue-tsc -b` 0 报错；`scripts/r4-subject-edit.test.mjs`、`scripts/r4-subject-stats.test.mjs`、`scripts/r4-subject-review.test.mjs`、`scripts/r4-subject-overview-ui.test.mjs` 等 84 项学科测试全绿。真实桌面端 GUI 待人工走查。
+
+### 2026-10-11 PC 全局模态弹窗系统与首页两大弹窗体验升级（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：首页的两个弹窗，顺便涉及整个弹窗框架的优化。
+- 解决：
+  - 弹窗系统架构（`ModalShell.vue` 与 `modal.css`）：
+    - 遮罩采用 `backdrop-filter: blur(14px) saturate(180%)` 深层环境漫散，弹窗卡片内置发丝级内高光（`inset 0 1px 0 rgba(255, 255, 255, 0.7)` / 暗色 `inset 0 1px 0 rgba(255, 255, 255, 0.08)`）配合双层立体微晶柔光扩散阴影；
+    - 进出场搭载阻尼弹簧动效（`scale(0.96) translateY(12px) -> scale(1) translateY(0)`，曲线 `cubic-bezier(0.16, 1, 0.3, 1)`）；
+    - 关闭按钮引入 Tabler 矢量 `<IconX>`，支持悬停 90° 旋转与 0.92 触击回弹；
+    - 表单输入框聚焦搭载 `3.5px` 扩散式 Sage 柔光外环；
+    - 按钮体系（`.modal-btn`）升级为渐变光润立体微胶囊，具备微浮雕与触觉阻尼反馈。
+  - 知识块详情弹窗（`KnowledgeBlockViewDialog.vue`）：
+    - 头部集成微图标与杂志级主标题（19px，`-0.02em`）；
+    - 来源资料与记录时间微标采用圆角全封胶囊与微边框；
+    - 正文卡片内衬米白宣纸质感并放宽阅读留白与行高（1.76）；
+    - 底部「复制内容」点击弹出翠绿打勾动画与轻触反馈，「前往知识块界面」悬停支持箭头右上穿透位移。
+  - 新建任务弹窗（`TaskCreateDialog.vue`）：
+    - 学科选择网格升级为立体微质感胶囊（`.subject-chip`），激活态增加高雅 Sage 柔光双层外环与触击缩放；
+    - 整半小时磁吸滑轨（`.duration-segmented-track`）增加内阴影，活动手柄（`.active-thumb-pill`）增强渐变质感与拖动微光圈；
+    - 严格保持已有契约（`zen-date-picker`、`zen-date-popper`、`dueAtFromInput` 等）。
+- 验证：`vue-tsc -b` 0 报错；`scripts/r4-task-create-dialog-deadline.test.mjs`、`scripts/r4-dashboard-timeline.test.mjs` 等 37 项测试全绿。真实桌面端 GUI 待人工走查。
+
+### 2026-10-11 PC 首页 (Dashboard) 获奖级美学与微交互全面升级（代码与自动验证通过；GUI 待验收）
+
+- 用户指令：以 Awwwards、Webby Awards、FWA 获奖级网站为品质标准，优化首页并强化跳转按钮微动效。
+- 解决：重构 `src/views/Dashboard/index.vue`。统一 Auralis 极简宣纸美学底色与三大栏温润米白卡片（`18px` 圆角、透绿微晶边框、双层自然漫散光影）；欢迎语区域引入 `-0.015em` 字距与高质感统计微胶囊；知识流卡片扩展内边距至 `18px 22px`，优化 Markdown 行高与瑞士排印对齐；7 日选择器激活日期圆圈接入弹性放大动效（`day-circle-pop`）；日程任务卡片左侧增加 Sage 高光竖条，移出按钮改用矢量图标 `<IconX>` 柔和悬浮显现；待办条目升级为圆润高定全圆角胶囊与语义逾期警示光晕。针对全站跳转与动作按钮建立系统化物理微动效：
+  - 「管理学科」：内置矢向图标 `<IconArrowRight>`，悬停时箭头向右弹性平推 3px，触击提供 `scale(0.97)` 按压阻尼；
+  - 知识流顶栏：选中学科时增设「进入工作区」直达胶囊（`<IconArrowUpRight>`），悬停时朝右上角位移 2px 并漫射 Sage 柔光；
+  - 「前往排期」：内置 `<IconChevronRight>`，悬停时图标平滑向右推进 3px 并带浮雕微阴影，触击 `scale(0.95)`；
+  - 「新建任务」FAB：内置 `<IconPlus>`，悬停时放大 1.08 倍并伴随顺时针 90° 机械阻尼旋转，触击 `scale(0.92)` 挤压回弹；
+  - 空流「创建学科空间」：配微图标与高光漫反射，周视图甘特行悬停向右微移 2px 强化日视图切入指引感。
+- 验证：`scripts/r4-dashboard-timeline.test.mjs` 与 `scripts/r4-dashboard-search-navigation.test.mjs` 专项回归 19/19 项测试全部通过；`vue-tsc` 0 报错退出码 0。真实桌面端 GUI 待人工走查。
+
+### 2026-10-11 学科总览 26ms 用量误拒绝（代码、相关验证与只读审查通过；未部署本轮修复）
+
+- 现场 UTC 07:16:49 学科生成在 Provider 阶段日志后快速失败；今天构建并在 UTC 07:14:47 启动的新 backend 也包含同一预算错误。部署字节码与隔离 RED 确认：既有最终 MAP 输出 6144 被网关的 4608 上限拒绝，真实码为 `AI_REQUEST_BUDGET_EXCEEDED`（413），发生在预留和 Provider 出站之前。
+- 两次 `BEGIN READ ONLY` 快照均为 reservation 0 行，目标 TASK owner/lease 已释放，没有历史预留持续占用额度的现场证据。原异常不被生成服务包装；用量码仅在失败日志中被通用回退掩盖。调度歧义警告不等于任务停摆，用量过期回收使用惰性路径。
+- 两处最小生产修复与主树 gateway/H2/受控 Provider 回归已通过：定向 19/19，追加 TASK 释放断言后集成 2/2（重叠），本机 SSE 1/1；主树唯一覆盖 20 项。保留现行安全限制和全部记录。唯一只读审查 BLOCKER=0、IMPORTANT=0，OPTIONAL=1 是诊断报告 evidence 索引 SHA 更新项；代码六文件 hash 一致。本轮未部署修复或写业务数据库，真实 PC/Provider/GUI 验收待更新后的运行环境完成。详见 [诊断与修复](../plans/2026-10-11-overview-usage-limit-diagnosis.md)。下方旧镜像观察是此前 406 诊断时的历史状态。
+
+### 2026-10-11 Overview 重新生成响应 406（根因已定位；工作树修复待部署）
+
+- 本机 backend 容器镜像构建时间为 2026-10-09；实际失败堆栈在 `RequestResponseBodyMethodProcessor.writeWithMessageConverters`，发生于 Overview 成功返回之后。PC 当前请求发送 `Accept: text/event-stream`，而容器内 `AiController` 仍是旧的直接返回 `OverviewResponse`、未声明或实现 SSE 的版本；旧端无法为 SSE 请求写出该 JSON DTO，因而抛 `HttpMediaTypeNotAcceptableException`。当前工作树的 Controller 已实现显式 opt-in SSE，来源版本差异是本次根因。
+- 另修正全局异常处理器将该异常兜底成 HTTP 500 的状态错误；现在映射 HTTP 406 `NOT_ACCEPTABLE` Problem Details。`AiOverviewControllerTests` 覆盖合法 Subject JSON 序列化和不支持 Accept 的 HTTP 406，真实 TCP SSE 测试覆盖 PC 实际 Accept 下的 Subject 终态 JSON。干净编译聚焦套件通过 15/15，`OpenApiArtifactTests` 11/11。
+- `CACHE_RETURN` 只是 alias 映射和返回前的日志阶段，不持久化 Overview。PC 收到响应后才写独立结果接口；响应丢失后手动重新生成会创建新 request ID 并可能再次调用 Provider、重新计用量。此问题未通过增加缓存或幂等表扩展本次修复。
+- 运行中的容器尚未重建，代码验证不等于本机服务已更新或真实 Provider/GUI 验收。
+
+### 2026-10-11 总结预览视图精简（代码与自动验证通过；GUI 待验收）
+
+- 用户反馈：“总结预览里面有个调整要求去掉”以及“重新生成时的这个提示去掉（正在生成新版本，当前总结继续保留。）”。
+- 解决：从 `OverviewSummaryView.vue` 移除顶部操作区的「调整要求」按钮、关联弹窗，并移除重新生成时的黄色通知条，保留顶部操作按钮自身旋转/禁用态的生成反馈。
+- 验证：`scripts/r4-subject-overview-ui.test.mjs` 测试更新，总览测试套件 138/138 项测试全量通过；`vue-tsc` 0 报错。真实 GUI 体验待走查验收。
+
+### 2026-10-11 PC 学科复习每组题量切换提取合并（代码与自动验证通过；GUI 待验收）
+
+- 用户反馈：“复习页的每组个数按钮有点重复了全部提取到同一个切换按钮吧”以及“自测复习的个数怎么还是独立的”。
+- 解决：从「待学习」与「待复习」卡片中移除各自重复的 `每组 [5 个] [10 个]` 控件，同时彻底移除「自测复习」独立的 `[5] [10]` 分段选择；在面板卡片上方建立统一微操作栏 `subject-review__panels-toolbar`，左侧保留全页唯一的 `每组 [5 个] [10 个]` 切换按钮，统一驱动「进入学习」、「进入复习」与「自测复习」的单组题量；右侧为纯粹的「自测复习」操作胶囊。
+- 验证：`scripts/r4-subject-review.test.mjs` 50/50 项测试全量通过；`vue-tsc` 0 报错。真实 GUI 体验待走查验收。
+
+### 2026-10-11 PC 复习迁移到生命周期接口（代码与定向验证通过；Mobile / Tablet 待迁移）
+
+- 服务端 `/api/reviews/due`、`POST /api/reviews/events`、旧 `/api/reviews/history` 与 FSRS Lite 动态调度实现已删除；`/api/reviews/states`、lifecycle 命令及 lifecycle history 保留。生命周期仍引用原参数集 ID；`review_events` 表仍供统计读取，本轮未改数据库结构。
+- PC 旧 API wrapper、旧事件回合、旧历史读取和旧事件统计分支已删除，页面仍使用生命周期卡片池、命令与正式本地记录。
+- 后端编译通过，路由/lifecycle 定向测试 15/15，OpenAPI 测试 10/10；`scripts/check-openapi.ps1` 退出码 0。PC 生命周期复习、历史和自测卡片回归 99/99 通过。
+- `npm run type-check` 的 Windows shim 当前缺失；改用已安装包直接执行 `node node_modules/vue-tsc/bin/vue-tsc.js -b`，退出码 0。Mobile / Tablet 调用方按用户要求未改，仍请求已删除路由；这些页面迁移前复习请求会失败。
+
+### 2026-10-11 PC 总览生成返回后页面自动更新（代码与自动验证通过；真实环境待验收）
+
+- 已修复用户反馈的“总览后端返回之后，不能自动更新到页面上，自己刷新后才能显示”问题。
+- 根因：`OverviewGenerationService` 与 `overviewRepository` 完成落库后无 UI 事件；`SubjectWorkspace` 仅初始化读取且未监听原材料状态/版本变化，导致后台就绪后界面未响应。
+- 解决：新增 `auralis-overview-cache-updated` 事件并在所有缓存落库后派发；`SubjectWorkspace` mounted 注册订阅自动更新缓存和大纲并于 unmounted 注销；增加对原材料文件的 deep watch 及 `getLatestFileOverview` 兜底回查。
+- 验证：`scripts/r4-subject-overview-ui.test.mjs` 增补测试，总览专项 120/120 测试通过；`vue-tsc` 0 报错。真实 GUI / Provider 待用户走查验收。
+
+### 2026-10-11 Overview 硬超时与取消（代码、相关自动验证与只读审查通过；真实环境待验收）
+
+- 两个现行生成 POST 保留默认 JSON，并支持 PC opt-in SSE 心跳和终端结果。默认 240 秒入口绝对期限扣除预检/队列及 Provider 阶段；到期或最后消费者退出主动关闭本调用独占 socket。共享 Source 保留原 owner 期限，其他消费者可继续；已派发未知用量沿 B 保守结算。
+- PC 学科、文件和总结手动生成提供“停止”；切页只释放页面消费者，自动后台工作继续。runtime/account、删除/修订失效取消旧请求，身份和迟到结果有围栏。实际 SQL 写入期间取消在提交前回滚本操作 cache/outbox；最终同步 guard 通过并进入提交后保留已提交的成功成果。
+- SSE 繁忙错误 503、DNS 有界取消等待、缓存写入取消及写入名额竞态均经实际 RED/GREEN 补修。SSE 名额同时覆盖待写与正在写的心跳/终端事件，在生成 worker 真正退出且本请求全部写入清理后才释放。
+- 后端初期聚焦 84/84、DNS/Provider/Overview 组合 124/124 通过；124 已含兼容 51 项和原聚焦中 60 项，不相加。最终 writer 增量及完整命令见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。PC 主树 Overview 72/72、cache 14/14、sync 22/22、runtime 20/20，保留并行视图精简后的候选 Subject UI 16/16、应用类型检查和 Vite 构建通过；初期 110 文件静态检查通过。运行时 OpenAPI 11/11 与两端 SDK 同步。
+- 相关命令验证和本机 TLS/TCP 已完成；GUI、真实代理/Provider 及部署待验收。同步 JDBC/数据库锁等待不能由 socket 取消，preflight 阻塞时 HTTP/SSE 建立仍可能晚于期限；原生 DNS 可占固定解析 slot 至 OS 返回。Mobile 的两处旧 Review 类型引用错误按另一迁移任务登记。本轮未部署或修改业务数据库。
+
+### 2026-10-10 AI IMPORTANT 修复（代码、相关自动验证与只读审查通过；真实环境待验收）
+
+- 伴读来源文件名已由 Luna 管理 Antigravity 实施并应用；相关回归 27/27、类型检查和隔离构建通过。完整 PC R4 为 679/680，唯一失败来自未改截止日期测试的 CRLF 源码提取；`check:r4-pc` 仍有已登记的 Rust 固定本地地址扫描失败。未把全量回归或静态检查写为通过。
+- Overview 已增加默认 240 秒合作式 deadline；embedding 已按条数与 UTF-8 文本字节有界分批，响应 index 校验归位，全部向量通过既有约束后才切换 generation。批前后按当前 claim 续租；锁等待跨 lease 的竞态已用锁后新鲜 Clock 修复。首轮后端聚焦 89/89、聊天/检索/chunk 增量 31/31，补修最终 Job/Worker 18/18、配置 5/5 通过；PC Overview 静态回归 48/48 通过。
+- 完整持久配额 B 已接入统一 Provider gateway、任务预算、跨实例并发、小时/每日预留与结算、后台持久批次续做及有界 MVC async。PC、Mobile、Tablet 的既有个人中心已展示本人小时/今日额度，加载/失败/账号切换与现行 Mobile 401 refresh 路径有回归；行为 8/8、Mobile 协议 24/24、PC/Mobile 类型检查与隔离 PC/H5 构建通过。运行时 OpenAPI 9/9、两端生成 schema 同 hash；详见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)。
+- 最终核心 H2/config 31/31、任务独占 PostgreSQL 锁序 4/4 通过，包含账户停用后派发拒绝；真实 PG 检查点及跨额度窗口续做通过，V29→V30 历史失败次数保留升级 1/1。以上使用任务独占临时库与受控 Provider，不能推断真实 Provider 或生产迁移已验收。全量 Modulith 的 knowledge ↔ review 循环已在未改 HEAD 复现；主树两项未改 deadline 测试失败仍登记，不宣称全量工程检查通过。
+- 单一 reviewer 已完成 B 代码与文档审查：批准范围 BLOCKER=0、IMPORTANT=0；相邻共通 OPTIONAL 验证缺口不扩改。匿名八样例离线契约 3/3 通过，真实 embedding、语义质量和人工评分未运行；GUI、真实 Provider、HTTP 断连及代理链路仍待验收，合作式 deadline 不能强制终止持续 slow-drip I/O。未提交或部署；11 项既有用户改动按原字节或仅排除明确任务回写的内存投影 hash 保护，证据与剩余事项见 [共通计划](../plans/2026-10-10-ai-important-fixes.md) 和 B 计划。
+
+### 2026-10-10 PC + Service 功能盘点校正（静态代码核对；未重跑测试/构建）
+
+- 本条按当前工作树核对用户提供的 PC + Service 清单。正式路由仍为 8 条；`Home`、`Settings` 页面源码已删除，首页由 Dashboard 承担，个人设置在 Profile。SearchPalette 的知识块结果通过 `openBlock` 路由参数由 Dashboard 打开；全局搜索范围是本地知识块标题、学科和正文内容，最多 6 项，AI 快捷入口当前已移除。
+- 专注任务关联、本地活动状态/事件持久化及 `POST /api/focus-sessions` 均已实现；知识块正文编辑保存 `content`，摘要由正文派生；完整成功的 Overview 结果走独立 GET/PUT 和对账，可跨 PC 设备读取，失败/半成品仍留在设备侧。以上不替代本机 GUI、真实 HTTP、Provider 和双设备验收。
+- 已有登记继续有效：12 项无业务消费者的偏好见 [PC 模块](../modules/FrontendPC.md)；Suggestions 确定性输出与质量验收见 Issues 中的 `P1-Phase5-Suggestion-Quality`；PC JSON 导出范围有限及本地文件无备份/恢复能力已有登记。
+- 新增事项进展：资产中心两处 Source 树映射把状态固定成“正常”已关闭（已由真实 ingestionStatus 与本地任务驱动，按就绪/失败/待处理/解析中展示状态与样式）；登录页忘记密码及隐私条款仍为占位；注销请求受理后没有进度查询；时间轴没有手动完成操作和知识块选择器；应用没有持久通知收件箱。以上入口/功能仍按待确认产品范围登记为 OPTIONAL。文档处理密钥的范围已确认：不增加通用备份/恢复入口；密钥确实丢失时应自动新建密钥、废弃旧续传状态并从原始文件重新处理，原始文件不可恢复时提示重选上传。当前代码仍报告 `DOCUMENT_ENCRYPTION_KEY_RECOVERY_REQUIRED`，该恢复行为待实现；证据与关闭条件见 [问题和审查](IssuesAndReview.md)。
+- Service 当前没有密码找回、通用用户偏好同步或完整数据备份/导出 API；账户注销接口返回异步受理状态，当前没有进度查询路由。这些是现行能力边界，不表示本轮增加了接口。
+- 本次只做静态代码/文档核对；没有运行测试、类型检查、构建、GUI、真实 Provider 或 HTTP 验收。
+
 ### 2026-10-10 本机测试数据库重建与知识块补量（API 回读通过；PC GUI 待验收）
 
 - 本机 PostgreSQL `public` schema 已重建，后端 Flyway 到 V29；测试账号下有 12 个学科、240 个任务、360 个活动 KnowledgeBlock，每科 30 个。知识块注入实际新增 329 个、保留既有 31 个；再次执行创建 0 个并回读 360 个，证明该脚本可重复补量。
@@ -35,13 +275,18 @@
 
 补充只读核对（2026-10-10）：当前三个入口分别进入新知/错题学习、到期复习、未到期及已掌握块主动抽查，均接现行本地生命周期和独立 outbox。检查期间页面/Store/测试发生外部更新；最终运行 `node --experimental-strip-types --test scripts/r4-subject-review.test.mjs scripts/r4-review-local-first.test.mjs scripts/r4-review-reopen-engine.test.mjs` 为 98/98，`node node_modules/vue-tsc/bin/vue-tsc.js -b --pretty false` 退出 0。独立临时探针实际点击最新主动入口，并对两类块执行 GOOD/确认，观察到真实本地记录与待同步命令，提前练习不增加稳定次数、掌握成功保留掌握。证据位于 `D:/Temp/auralis-review-three-entries-audit-20261010/`；本轮核对未修改复习源码，GUI/Tauri/真实 HTTP 仍未验收。
 
+### 2026-10-11 PC 任务截止纯日期兼容移除（定向测试与类型检查通过；只读审查通过；GUI 待验收）
+
+- `parseDueTimestamp` 不再把裸 `YYYY-MM-DD` 或无时区值当作有效截止 instant；Store 读取和排期旧任务时保留原截止值，非空无效值拒绝新排期，带时区时间戳继续按精确 instant 比较。Store 只在截止值实际变化时执行用户输入转换；普通字段编辑携带相同旧值时保留原值。TaskCreateDialog、Store 和资产库编辑仅在明确的用户日期输入时转换为当地日末。
+- 测试账号注入文档已提醒：注入 `dueAt` 必须提交带时区时间戳；当天截止先按目标时区转为当地日末，排期完整结束不能晚于此值，插入操作不会修复已有任务。
+- 不改任务数据、API/数据库字段或迁移。`node --experimental-strip-types --test scripts/r4-task-store-schedule.test.mjs scripts/r4-task-view-rules.test.mjs` 为 92/92；`npm run type-check` 退出码 0。Codex 只读审查 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。构建与 GUI 本轮未运行/验收。
+
 ### 2026-10-10 PC 任务截止日期与排期一致性（代码、自动验证与只读审查通过；真实环境待验收）
 
 - 创建弹窗、Store 与资产库编辑的纯日期按当地日末转换为 UTC instant；已有午夜/日末时间戳按真实 instant 比较。完整区间结束必须不晚于截止，恰好结束允许。资产库显示本地日期，未触碰日期的标题/备注编辑保留原精确值；先清空再重选可纠正旧日期输入值，不批量改写既有数据。
 - Luna 实施并按 hash 守卫仅应用四源、三测试；唯一只读 Luna reviewer：BLOCKER=0、IMPORTANT=0、OPTIONAL=1（未挂载 Element Plus 的 GUI 事件覆盖）。实际主树 HK 95/95、UTC/洛杉矶各7/7、PC R4 669/669、type-check 与构建均 exit0。构建产物放 D 临时目录，原 dist、用户 Home/Settings 删除及其他 PC 基线保持；未提交、暂存或部署。
 - Antigravity 首请求因地区不支持退出3，没有生成代码。C 盘任务副本复制期间耗尽空间，副本已注销但删除遇长路径错误，后续删除被执行策略拒绝，尚未清理；明确残留目录及失败证据见 [实施记录](../plans/2026-10-09-task-deadline-date-consistency.md)。已知范围外 Rust 静态扫描失败保持原登记，GUI/Tauri/HTTP 待验收。
-- 先前“当天截止任务排期校验”仅有 PC 测试证据，不能证明午夜扩展与 Server instant 一致；本轮现行规则已替代该扩展解释。`parseDueTimestamp` 的统一调用保留，日期转换仅限纯日期输入。
-
+- 先前“当天截止任务排期校验”仅有 PC 测试证据，不能证明午夜扩展与 Server instant 一致；现行规则要求截止是带时区时间戳，日期转换仅限明确的用户输入边界。2026-10-11 追加移除了读取存储纯日期时的当地日末兼容解释，详见下方记录。
 
 - 学科统计（`SubjectStatsPane.vue`）彻底告别散乱无重点与局促拥挤问题，重构为层次明确、呼吸感充足（`1160px`、`36px 48px 72px` 内边距、`32px` 模块间距）的三层极简架构：
   - **核心 Hero 看板**：左侧为学科名称、大字掌握度百分比（`52px` Sage 绿）与轻量细轨三态分布条（`8px`），右侧为层级分明的「当前行动」卡片组（`待复习` 今日到期琥珀色高光突出并附 CTA、`待学习`、`已掌握`），行动意图明确；
@@ -495,6 +740,12 @@ PC 设置页面（`Profile/index.vue`）已全面打通真实服务端与数据�
 
 2026-09-23 PC 截止日期（dueAt）与排期门禁解耦为纯 DDL 提醒特性收口（独立分支 `agy/deadline-as-reminder`）：全面将截止日期从排期/待办资格限制中解耦，任务无需截止日期即可进入待办清单与排期副驾待安排队列，`dueAt` 仅作为到期提醒与排序参考。移除 `recoverOverdueTasks` 中清空逾期未排期任务 `dueAt` 的逻辑，永久保留用户的真实截止日期；首页待办清单标题行最右侧补充「前往排期」微胶囊跳转按钮；首页待办卡片与 Timeline 待安排卡片均新增截止日期徽标（`todo-due-badge`、`pending-due-badge`），逾期时低饱和暖红高亮告警；更新 `r4-task-view-rules.test.mjs` 与 `r4-task-store-schedule.test.mjs` 自动化测试守卫，确保无 DDL 任务可排期、真实 DDL 不被抹除或篡改、`unscheduleTask` 绝不捏造假 `dueAt`。同步修复学科工作区 `saveCurrentOutline` 保存返回后校验目标学科 ID 防止大纲跨学科污染，在 `onMounted`/`watch(subjectId)` 中引入递增序号 `currentSubjectSwitchGen` 与路由 ID 守卫彻底消除快速连续切换学科时的异步覆盖竞态，并在切换学科时同步重置总览过期标记（`isSubjectOverviewStale`）、手动错误（`subjectOverviewManualError`、`fileOverviewManualErrors`）与生成中状态。全量 `npm.cmd run test:r4-pc` 386/386、`npm.cmd run type-check`、`npm.cmd run build` 全部通过。
 
+2026-10-12 PC Profile Studio 左栏比例扩增、文字去黑话与 SVG 图标瘦身完成：
+- 设置页（`Profile/index.vue`）左侧透视面板比例调整为 `flex: 3.8; min-width: 380px; max-width: 480px`（右侧 `flex: 6.2`），左栏信息在宽屏下不再被 400px 限制卡死，指标卡片与 7 天走势图展示更加大气舒展；
+- 全站巡检清理工程技术黑话与生硬自白（如“排期副驾”改为“任务排期”，“重型资产编排”改为“资料管理”，“彻底从本地数据库移除”改为“学科及关联材料已删除”等）；
+- 裁剪 Profile 页面装饰性小 SVG 图标，保留核心高价值交互控件；
+- 自动化测试 68/68 全部通过，`vue-tsc -b` 0 报错，`npm run build` 成功。
+
 2026-09-23 PC 学科大纲保存数据保留、消除切换异步残留、彻底消除伪轮转覆写、首页移出日程按 ID 寻址、严禁捏造 dueAt、学科切换 AI 请求旧文件隔离与测试脚本一致性收口：修复学科工作区（`SubjectWorkspace/index.vue`）大纲手工编排保存时覆盖丢失小节 `summary`、多文件 `sourceIds` 及 `locator` 的问题，UI 扩展支持每小节展示多文件胶囊与独立解除关联；彻底移除早期原型遗留的 `syncOutlineFileLinks` 及其在 `onMounted`/`watch(subjectId)` 的覆写调用，确保真实文件关联不受伪轮转破坏；在 `watch(subjectId)` 入口第一行立即同步调用 `chatStore.abortStream()`、`chatStore.clearActiveConversation()`、清空 `selectedFileId`、`selectedAiSourceIds`、`sourceStore.clearActiveSourceFiles()`、`subjectOutline` 与草稿并为 `saveCurrentOutline` 加入非空守卫，彻底消灭切换学科等待期间旧大纲被保存进新学科及 AI 请求携带旧学科文件 ID 的异步竞态窗口；在 `sendChat`、`retryChat`、`sendSelectionQuestion` 与 `saveKnowledgeBlock` 中严格增加跨学科文件归属校验，非当前学科文件 ID 一律过滤置空；扩展 `useTaskStore.ts` 的 `unscheduleTask` 优先通过唯一任务 ID 匹配，避免 `Dashboard/index.vue` 移出日程在同槽多任务时的串操作，并在发生异常时通过 `ElNotification` 弹出清晰错误提示；严格禁止在 `unscheduleTask` 中为未设置截止日期的任务捏造并持久化假 `dueAt`，任务移出日程仅清除 `scheduledAt` 与 `startTime`，首页“待办清单”展示由 `Dashboard/index.vue` 纯 UI 计算属性安全投影未排期活跃任务；同步清理 `scripts/seed-test-account.mjs` 中多余注册第二个 companion 账号的逻辑，严格维持单一测试账号 `users=1` 基准。全量 `npm.cmd run test:r4-pc` 386/386、`npm.cmd run type-check`、`npm.cmd run check:subject-workspace`、`npm.cmd run check:subject-icons` 及 `git diff --check` 全部通过。
 
 2026-09-22 测试注入数据已按新时间轴规范全量重置并注入完成：执行本机 PostgreSQL `public` schema 重建与 Flyway v1~v22 全量迁移，清空 MinIO 历史测试对象。通过标准 REST API 重新为测试账号 `pc-ai-test-20260918@example.com` 注入 12 个学科空间与 240 个类真实任务。排期严格限定在时间轴合法可视窗口（`08:00 ~ 22:30`）内的 6 个标准半小时槽位（`08:30`、`10:30`、`14:00`、`16:00`、`19:00`、`21:00`），从次日起按日均分（每日 6 项），彻底消除凌晨与深夜排期。数据库校验结果：`users=1`、`subjects=12`、`tasks=240`、`active_scheduled=192`、重复槽位为 0、非法时段排期为 0。PC 端 `npm.cmd run test:r4-pc` 382/382 全部通过。
@@ -578,7 +829,7 @@ PC 设置页面（`Profile/index.vue`）已全面打通真实服务端与数据�
 
 2026-09-09 Task 12 final review closure：Rust `document_packager` 5/5、`document_cache` 5/5、`document_upload` 8/8，Java `ParsedDocumentValidatorTests,ParsedDocumentCompleteTests` 8/8；最终 PC scheduler focused 27/27、完整 `test:r4-pc` 250/250、`npm.cmd run type-check` 和 `git diff --check` 通过。最终 reviewer 的所有 Critical/Important findings 已关闭：scheduler SHA 透传、receipt/cache ID 安全清理（含 discard/stale/terminal 任务）和 legacy/incomplete receipt 的网络前拒绝。上传内容仍是单个 gzip JSON schema-v1 envelope，不是 NDJSON；未改变 Server migration/OpenAPI。真实重建 Tauri、Server/MinIO PUT/complete/indexing 和 `1.pdf` GUI retry 尚未观察，仍是业务验收边界。
 
-更新时间：2026-09-09
+更新时间：2026-10-11
 
 2026-09-09 Task 15：PC ParsedDocument complete 在明确 `ACCEPTED` 后通过可注入回调请求一次 background `read` sync；回调异常不会改变 accepted 结果或阻止本地 `SERVER_INDEXING → READY`，非 accepted/异常路径不请求。Task 15 upload focused 24/24、runtime/scheduler/flow/schema 组合 64/64；完整 PC、type-check 和 diff-check 结果见任务报告。真实 Tauri/Server/MinIO/sync pull/GUI 仍待验收。
 
