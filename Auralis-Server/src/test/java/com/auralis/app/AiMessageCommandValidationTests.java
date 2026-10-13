@@ -14,9 +14,9 @@ class AiMessageCommandValidationTests {
     @Test
     void acceptsASelectionAtTheMaximumAndRejectsOneCharacterOver() {
         AiMessageCommand atLimit = new AiMessageCommand(
-                null, "question", null, false, null, null, null, "x".repeat(4000));
+                null, "question", null, null, null, null, "x".repeat(4000));
         AiMessageCommand overLimit = new AiMessageCommand(
-                null, "question", null, false, null, null, null, "x".repeat(4001));
+                null, "question", null, null, null, null, "x".repeat(4001));
 
         assertThat(validator.validate(atLimit)).isEmpty();
         assertThat(validator.validate(overLimit))

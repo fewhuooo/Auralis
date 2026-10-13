@@ -1245,24 +1245,24 @@ export interface components {
             missingNode?: boolean;
             container?: boolean;
             object?: boolean;
+            /** @deprecated */
+            textual?: boolean;
+            short?: boolean;
+            long?: boolean;
+            binary?: boolean;
+            string?: boolean;
+            int?: boolean;
+            double?: boolean;
+            pojo?: boolean;
+            boolean?: boolean;
+            number?: boolean;
             floatingPointNumber?: boolean;
-            valueNode?: boolean;
             bigInteger?: boolean;
-            bigDecimal?: boolean;
             /** @enum {string} */
             nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
             integralNumber?: boolean;
-            string?: boolean;
-            pojo?: boolean;
-            short?: boolean;
-            binary?: boolean;
-            long?: boolean;
-            double?: boolean;
-            /** @deprecated */
-            textual?: boolean;
-            number?: boolean;
-            int?: boolean;
-            boolean?: boolean;
+            valueNode?: boolean;
+            bigDecimal?: boolean;
             embeddedValue?: boolean;
         };
         MutationRequest: {
@@ -1709,7 +1709,6 @@ export interface components {
             content: string;
             /** @enum {string} */
             provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
-            retrievalEnabled?: boolean;
             /** Format: int32 */
             topK?: number;
             clientRequestId?: string;

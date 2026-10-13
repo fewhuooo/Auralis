@@ -627,7 +627,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   IconFlame,
@@ -725,28 +725,12 @@ const userInitial = computed(() => {
 const continuousStudyDays = ref(1)
 
 // === Avatar State & Methods ===
-const userAvatarUrl = ref<string>(authStore.avatarUrl || '')
+const userAvatarUrl = computed(() => authStore.avatarUrl)
 const avatarFileInputRef = ref<HTMLInputElement | null>(null)
-let currentAvatarBlobUrl: string | null = null
 
 const loadAvatar = async () => {
-  try {
-    const blob = await useAuthApi.getAvatarBlob()
-    if (blob && blob.size > 0) {
-      if (currentAvatarBlobUrl && currentAvatarBlobUrl !== authStore.avatarUrl) {
-        URL.revokeObjectURL(currentAvatarBlobUrl)
-      }
-      currentAvatarBlobUrl = URL.createObjectURL(blob)
-      userAvatarUrl.value = currentAvatarBlobUrl
-      authStore.setAvatarUrl(currentAvatarBlobUrl)
-    } else {
-      userAvatarUrl.value = ''
-      authStore.setAvatarUrl('')
-    }
-  } catch {
-    userAvatarUrl.value = ''
-    authStore.setAvatarUrl('')
-  }
+  // authStore.loadAvatar() encapsulates IndexedDB avatar cache fallback and useAuthApi.getAvatarBlob() sync
+  await authStore.loadAvatar()
 }
 
 const triggerAvatarUpload = () => {
@@ -1369,7 +1353,6 @@ const settingGroups = reactive([
     title: 'AI 功能',
     desc: '按需开启或关闭学习工作流中的各项 AI 智能辅助能力',
     items: [
-      { id: 'rag', label: '智能语义搜索', desc: '根据资料实际含义检索内容，搜索更精准', type: 'toggle', value: localStorage.getItem('sc_setting_rag') !== 'false' },
       { id: 'auto_tag', label: 'AI 自动标签', desc: '导入资料时自动分类并提炼关键标签', type: 'toggle', value: localStorage.getItem('sc_setting_auto_tag') !== 'false' },
       { id: 'auto_summary', label: 'AI 自动总结', desc: '导入资料后自动提炼核心知识点摘要', type: 'toggle', value: localStorage.getItem('sc_setting_auto_summary') !== 'false' },
     ] as SettingItem[]
@@ -1389,7 +1372,6 @@ const handleToggle = (item: SettingItem) => {
       break
     case 'auto_sync':
     case 'wifi_only':
-    case 'rag':
     case 'auto_tag':
     case 'auto_summary':
     case 'task_remind':
@@ -1509,15 +1491,7 @@ watch(() => pomodoroStore.syncRevision, (revision, previous) => {
   if (revision > previous) void loadStats()
 })
 
-watch(() => authStore.avatarUrl, (newUrl) => {
-  userAvatarUrl.value = newUrl || ''
-})
 
-onUnmounted(() => {
-  if (currentAvatarBlobUrl && currentAvatarBlobUrl !== authStore.avatarUrl) {
-    URL.revokeObjectURL(currentAvatarBlobUrl)
-  }
-})
 
 const handleLogout = async () => {
   try {

@@ -213,27 +213,14 @@ html.dark .modal-shell-close:active {
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1 1 auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-/* Thin rounded scrollbar */
-.modal-shell-body::-webkit-scrollbar { width: 5px; }
-.modal-shell-body::-webkit-scrollbar-track { background: transparent; }
-
-.modal-shell-body::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.10);
-  border-radius: 9999px;
-}
-
-.modal-shell-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.18);
-}
-
-html.dark .modal-shell-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-}
-
-html.dark .modal-shell-body::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+.modal-shell-body::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* ==========================================================================

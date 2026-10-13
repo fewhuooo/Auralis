@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-10-11
+更新时间：2026-10-13
 
 文档状态：现行
 
@@ -149,6 +149,8 @@
 
 ### 运维、计划与交付
 
+- [Overview 动态预算与超限恢复（2026-10-13；代码/自动门禁/指定P4完成，业务库V32运行态只读观察）](plans/2026-10-12-overview-dynamic-budget-recovery.md)
+- [RAG 默认开启实施计划与证据（2026-10-12；跨端代码、定向测试与构建完成，业务待实测）](plans/2026-10-12-rag-always-on.md)
 - [大 PDF 摄入额度与同步等待诊断、最小修复（2026-10-12，代码与定向验证通过；新补丁未部署）](plans/2026-10-12-pdf-ingestion-quota-and-sync.md)
 - [Embedding 额度排除与单人测试额度（2026-10-12，代码、相关验证与本机部署通过；业务待实测）](plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)
 - [学科总览合法输入分批（2026-10-12，代码、定向回归、审查及本机更新完成；业务待实测）](plans/2026-10-12-subject-overview-prompt-batching.md)

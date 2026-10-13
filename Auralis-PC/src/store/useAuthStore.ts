@@ -348,6 +348,7 @@ export const useAuthStore = defineStore(
         } else {
           store.authStatus = 'authenticated'
           store.reauthenticationReason = null
+          void (ctx.store as any).loadAvatar?.()
         }
         store.isHydrated = true
       },

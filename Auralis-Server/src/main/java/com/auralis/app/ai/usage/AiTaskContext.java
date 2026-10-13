@@ -3,7 +3,11 @@ package com.auralis.app.ai.usage;
 import java.util.Objects;
 import java.util.UUID;
 
-public record AiTaskContext(UUID userId, AiFeature feature, String taskKey) {
+public record AiTaskContext(UUID userId, AiFeature feature, String taskKey, UUID budgetTaskId) {
+
+    public AiTaskContext(UUID userId, AiFeature feature, String taskKey) {
+        this(userId, feature, taskKey, null);
+    }
 
     public AiTaskContext {
         Objects.requireNonNull(userId, "userId");

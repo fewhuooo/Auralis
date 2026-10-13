@@ -721,16 +721,14 @@ html.dark .dashboard-container {
   border-radius: 18px;
   border: 1px solid var(--card-border-color);
   box-shadow: var(--dashboard-card-shadow);
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 154, 110, 0.2) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .subject-index::-webkit-scrollbar {
-  width: 4px;
-}
-.subject-index::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.2);
-  border-radius: 4px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .index-header {
@@ -1164,16 +1162,14 @@ html.dark .stream-subtitle {
   flex-direction: column;
   gap: 14px;
   padding: 4px 4px 16px 2px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 154, 110, 0.22) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .stream-body::-webkit-scrollbar {
-  width: 5px;
-}
-.stream-body::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.22);
-  border-radius: 4px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .stream-row {
@@ -2018,16 +2014,14 @@ html.dark .todo-jump-btn:hover {
   flex-direction: column;
   gap: 8px;
   padding: 2px 2px 8px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 154, 110, 0.2) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .todo-list::-webkit-scrollbar {
-  width: 4px;
-}
-.todo-list::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.2);
-  border-radius: 4px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 /* 待办事件胶囊化包裹 (Capsule/Pill shape) */

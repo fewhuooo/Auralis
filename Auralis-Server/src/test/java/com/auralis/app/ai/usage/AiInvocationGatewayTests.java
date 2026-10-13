@@ -51,6 +51,141 @@ import static org.mockito.Mockito.when;
 class AiInvocationGatewayTests {
 
     @Test
+    void overviewBudgetTaskIdPersistsCallLimitAcrossFailedGenerationRetry() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits base = limits(100_000, 200_000);
+        AuralisProperties.Limits oneOverviewCall = new AuralisProperties.Limits(
+                base.globalConcurrent(), base.perUserConcurrent(), base.perUserHourlyTokens(),
+                base.perUserDailyTokens(), base.globalDailyTokens(), base.reservationLeaseMillis(),
+                base.heartbeatMillis(), base.chatMaxOutputTokens(), base.chatMaxCalls(), base.chatTaskTokens(),
+                1, base.overviewTaskTokens(), base.ingestionMaxCalls(), base.ingestionTaskTokens());
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, oneOverviewCall);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, oneOverviewCall, heartbeat, db.transactions());
+        UUID budgetTaskId = UUID.randomUUID();
+        AiTaskContext context = new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
+                "logical-input-generation", budgetTaskId);
+
+        try (AiTaskScope firstAttempt = gateway.beginTask(context)) {
+            firstAttempt.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(),
+                    new AiCredential("https://provider.test/v1", "synthetic-test-key"), 1_000);
+        }
+        try (AiTaskScope retry = gateway.beginTask(context)) {
+            assertThatThrownBy(() -> retry.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                    request(), new AiCredential("https://other-provider.test/v1", "different-profile-key"), 1_000))
+                    .isInstanceOf(AiUsageLimitException.class)
+                    .extracting(error -> ((AiUsageLimitException) error).code())
+                    .isEqualTo("AI_TASK_BUDGET_EXCEEDED");
+        } finally {
+            heartbeat.shutdownNow();
+        }
+
+        assertThat(provider.completeCalls()).isEqualTo(1);
+        assertThat(db.jdbc().queryForObject("select count(distinct task_id) from ai_usage_reservations", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void overviewUsageSummaryAggregatesFailedAttemptAndSuccessfulRetryWithoutHidingUnknownDispatch() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = limits(100_000, 200_000);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
+        AiTaskContext context = new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW,
+                "retry-usage-summary", UUID.randomUUID());
+        AtomicInteger attempt = new AtomicInteger();
+        provider.beforeComplete = () -> {
+            if (attempt.getAndIncrement() == 0) throw new IllegalStateException("synthetic provider disconnect");
+        };
+        AiProviderUsage failedUsage;
+        AiProviderUsage successfulUsage;
+        try {
+            try (AiTaskScope failed = gateway.beginTask(context)) {
+                assertThatThrownBy(() -> failed.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                        request(), new AiCredential("https://provider.test/v1", "synthetic-test-key"), 1_000))
+                        .isInstanceOf(IllegalStateException.class);
+                failedUsage = failed.usage();
+            }
+            try (AiTaskScope retry = gateway.beginTask(context)) {
+                retry.complete(AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK, request(),
+                        new AiCredential("https://provider.test/v1", "synthetic-test-key"), 1_000);
+                successfulUsage = retry.usage();
+            }
+        } finally {
+            heartbeat.shutdownNow();
+        }
+
+        OverviewTaskUsageSummary summary = gateway.overviewTaskUsage(context);
+        assertThat(summary.estimatedInputTokens()).isEqualTo(
+                failedUsage.estimatedInputTokens() + successfulUsage.estimatedInputTokens());
+        assertThat(summary.reservedOutputTokens()).isEqualTo(
+                failedUsage.reservedOutputTokens() + successfulUsage.reservedOutputTokens());
+        assertThat(summary.chargedTokens()).isEqualTo(failedUsage.chargedTokens() + successfulUsage.chargedTokens());
+        assertThat(summary.actualInputTokens()).isNull();
+        assertThat(summary.actualOutputTokens()).isNull();
+        assertThat(summary.unknownDispatchedCalls()).isEqualTo(1);
+        assertThat(summary.activeDispatchedReservations()).isZero();
+        assertThat(summary.providerUsageComplete()).isFalse();
+    }
+
+    @Test
+    void stableOverviewBudgetIdsAreNamespacedByOwnerAndFeature() throws Exception {
+        TestDb db = database();
+        UUID firstUser = db.user();
+        UUID secondUser = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits base = limits(100_000, 200_000);
+        AuralisProperties.Limits oneOverviewCall = new AuralisProperties.Limits(
+                base.globalConcurrent(), base.perUserConcurrent(), base.perUserHourlyTokens(),
+                base.perUserDailyTokens(), base.globalDailyTokens(), base.reservationLeaseMillis(),
+                base.heartbeatMillis(), base.chatMaxOutputTokens(), base.chatMaxCalls(), base.chatTaskTokens(),
+                1, base.overviewTaskTokens(), base.ingestionMaxCalls(), base.ingestionTaskTokens());
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, oneOverviewCall);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, oneOverviewCall, heartbeat, db.transactions());
+        UUID sharedBudgetId = UUID.randomUUID();
+        AiTaskContext firstOwnerSource = new AiTaskContext(firstUser, AiFeature.SOURCE_OVERVIEW,
+                "same-stable-id", sharedBudgetId);
+        AiTaskContext secondOwnerSource = new AiTaskContext(secondUser, AiFeature.SOURCE_OVERVIEW,
+                "same-stable-id", sharedBudgetId);
+        AiTaskContext firstOwnerSubject = new AiTaskContext(firstUser, AiFeature.SUBJECT_OVERVIEW,
+                "same-stable-id", sharedBudgetId);
+        try {
+            for (AiTaskContext context : List.of(firstOwnerSource, secondOwnerSource, firstOwnerSubject)) {
+                try (AiTaskScope scope = gateway.beginTask(context)) {
+                    scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(),
+                            new AiCredential("https://provider.test/v1", "synthetic-test-key"), 1_000);
+                }
+            }
+        } finally {
+            heartbeat.shutdownNow();
+        }
+
+        assertThat(db.jdbc().queryForObject("select count(distinct task_id) from ai_usage_reservations", Integer.class))
+                .isEqualTo(3);
+        assertThat(gateway.overviewTaskUsage(firstOwnerSource).chargedTokens()).isGreaterThan(0);
+        assertThat(gateway.overviewTaskUsage(secondOwnerSource).chargedTokens()).isGreaterThan(0);
+        assertThat(gateway.overviewTaskUsage(firstOwnerSubject).chargedTokens()).isGreaterThan(0);
+    }
+
+    @Test
+    void stableBudgetTaskIdsAreRejectedForNonOverviewFeatures() throws Exception {
+        TestDb db = database();
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(),
+                Clock.systemUTC(), limits(100_000, 200_000));
+        AiTaskContext chat = new AiTaskContext(db.user(), AiFeature.CHAT, "chat-stable-budget", UUID.randomUUID());
+        assertThatThrownBy(() -> guard.beginTask(chat)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void acceptsOverview6144ButRejects6145BeforeReservationOrProviderDispatch() throws Exception {
         TestDb db = database();
         UUID userId = db.user();

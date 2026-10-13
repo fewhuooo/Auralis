@@ -1,5 +1,43 @@
 # Auralis 当前问题与审查登记
 
+### 2026-10-13-PC-Subject-Overview-Regeneration-Conflict-Prompt（已完成；自动测试通过，GUI待验收）
+
+- 用户反馈：“学科总览重新生成的时候不用问用户是否保留原版，默认更新就好了，不用弹提示”并截图指定移除“云端版本已变化，本机总览仍保留。 [保留本机并上传] [采用云端]”。
+- 影响范围与改动：
+  - `Auralis-PC/src/components/subject/SubjectOverviewSection.vue`：移除冲突提示条与二选一操作按钮；
+  - `Auralis-PC/src/views/SubjectWorkspace/index.vue`：学科总览手动重新生成结果不再触发 `ElMessage.success('已更新')` 等全局 Toast；存在冲突时自动静默采用本地版本同步（`resolveSubjectOverviewConflict('LOCAL', true)`）；
+  - 保留 `FileOutlineList.vue` 的分文件总览既有冲突与重试行为不变。
+- 门禁：`vue-tsc -b` 通过；`scripts/r4-subject-overview-ui.test.mjs` 与 `scripts/r4-overview-sync.test.mjs` 共 38 项测试通过。
+
+### P1-AI-Overview-SelfPair-False-Rejection（代码与自动验证关闭；指定 P4 完成，部署/GUI待验收）
+
+- 已实现：合法中间 JSON 的 5200 字符软目标与实际消费者完整 prompt 检查分离；真实组合执行语义分包/有界恢复，并细分 prompt hard-budget、截断和恢复耗尽错误。原有 12000 字符 prompt、4608/6144 输出、Gateway 用量/调用数、取消及 task deadline 仍有效。V32 coordinator 已接入 Service。
+- 自动集成证据：最终需求核对后 fresh backend 门禁 20 suites / 210 tests，0 failure/error/skip，test/package exit 0；包含 clean/V31→V32 PostgreSQL、request replay、claim/fence/takeover、预算 lineage、checkpoint/hash/expiry、六类跨实例用量错误、Gateway、HTTP/SSE映射与deadline/cancel。数据库测试仅Testcontainers。P4 TEMP composition/reader 4/4、只读precheck通过；真实两条生成链结果见计划。
+- 现行 request mapping 只保证规范化有效 UUID 的 replay；缺失/空白/非法 ID 由服务端生成新 UUID。14 天只清理成功 response payload；request mapping/generation/budget metadata 保留，旧 ID 不可复用。失败 lineage 保留并由新有效 request ID 继续累计；recovery_count generation 累计、recovery actions 安全集合去重。
+- 唯一 reviewer 首审 B0/I1/O0。I1 已最小修复：私有 V32 保存安全 `error_status` / `error_retry_after_seconds` / `error_reset_at`，fenced提交，接管/成功清除；Service恢复原 `AiUsageLimitException`，公开DTO不变。旧实现六种跨实例用量错误RED，新实现GREEN；HTTP/SSE映射另有类型组合证据。原reviewer复审因工具线程上限不可调度，执行代理也遇用量限制；主代理检查完整修复diff和208项证据后关闭I1，剩余B0/I0/O0，不冒称第二次独立review。
+- 指定P4已实际完成：Source ALL / 单输入Subject ALL分别9/1 calls、69.595/6.414s，60,035总charged，活动预留/租约0，未触发额外恢复。主要正文主题初步覆盖；金额账单、普遍成功率、真实恢复/取消、多文件Subject、PC GUI、正式保存仍未验收，不能由本次成功替代。2026-10-13 03:34:43 首次只读观察 backend 镜像 `sha256:f0c3e886175dadd709876988c7570a395793ae67a637545cbe5825a570317593` healthy 且 Flyway V32 `success=true`；其后用户更新镜像并 retry。各次运行镜像 class/source provenance 未核验。
+- 当前实现、命令、审查限制与真实评估证据见[实施计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+
+### P1-AI-Subject-Overview-Map-Json-Validation（运行态业务生成中断；原因待定位）
+
+- 影响：用户这次 Subject ALL 生成以 `MODEL_PROVIDER_ERROR` 中断，generation FAILED 且无结果；故障具体拒绝原因待定位。本次只读证据未证明 frozen parser/validator 存在 correctness 问题，不登记为已确认代码缺陷。
+- 用户日志 request `5c927548-22b0-4bac-bba9-4cb4f0c3b544` / generation `18226745-50bc-4ce9-be30-97cf8c61f57c`：MAP1 解析/schema 成功并记录一个 checkpoint；MAP2 `responseChars=5076`、`outputTokens=2511`、`finishReason=stop`，进入 JSON 相关 validator 后以 `MODEL_PROVIDER_ERROR` 失败。`stop` 不证明内容是合法 JSON；日志无 provider 原文、准确 Jackson exception type 或行列位置，现有证据不足以证明 frozen validator 有 correctness 问题，故本轮不改 parser 或 validator。
+- 主代理只读确认该 generation 为 FAILED、无结果；reservation 通过 `AiUsageGuard.stableOverviewTaskId(userId, SUBJECT_OVERVIEW, budgetTaskId)` 映射后查得两笔 DEEPSEEK `OVERVIEW_MAP` 调用均为 `COMPLETED`、已派发，实际 input/output 分别为 4,672/2,619 与 4,502/2,511，charged 分别为 7,291 与 7,013，合计 14,304；usage 完整、unknown dispatch/活动 reservation 均为 0。TASK 锁 current_task_id 留存，但 owner/lease 为空。
+- 已按相同 generation 实际进行一次 retry；MAP1 的快速成功和无出站请求的阶段序列支持 checkpoint 复用，但没有显式 hit/restore phase。后续只定位安全可证的 validator 拒绝原因（异常类别、行列/偏移或拒绝分类），不读取/记录响应正文，不自动修复 JSON，也不建议无界重复 Provider 请求。
+- 2026-10-13 后续 retry 已实际进入同 generation：MAP1 约6ms内成功且之前无该阶段 Provider request，DB `recovery_count=1`、checkpoint count=5；这一运行序列支持 checkpoint 复用，但没有显式 hit/restore phase。MAP2/MAP3 与 REDUCE round1 成功，round2 再次在 JSON_PARSE 失败；generation 仍 FAILED、无结果。累计7笔调用均已结算，input/output/charged 26,627/16,894/43,521，unknown/active reservation及锁租约均为0。安全日志没有准确 Jackson 原因或响应正文，不能关闭本项，也不据此确认 validator 缺陷。
+- 当前工作树已增加仅用于真实 Provider 响应 validation 路径的安全拒绝诊断：固定 reason、exception type 与 Jackson 位置（trim/fence 剥离后的 JSON 坐标），不记录消息/正文/字段值/path。此次定向回归 83/83、exit 0；旧 210 项全门禁早于该增量。该日志实现当时未由 Codex 部署；其后用户更新镜像并 retry，但后续请求在 Provider 响应 validation 前以 no-progress 结束，未验证诊断输出或运行镜像 class/source provenance。JSON 拒绝原因仍待定位，风险保持开放。
+- 后续同 generation retry 在 `OVERVIEW_REDUCE_NO_PROGRESS` 失败。代码归因与用户运行序列表明 recovery compaction 在严格缩减比较前保存 checkpoint；同 purpose 重试会先恢复该合法但无缩减的输出，再本地失败。Service 的最小本地修复增加独立 full/partial compaction purpose，fresh 与 checkpoint restore 都要求输出严格短于输入，失败输出不会保存且错误码保留。真实 PostgreSQL Service 回归在同generation中插入旧 `REDUCE` step key 的 poison checkpoint：修复前重试命中旧 checkpoint 并再次 NO_PROGRESS；修复后保留该旧行而绕过它，普通 MAP/REDUCE 检查点复用，仅由 Gateway 增加受控压缩与最终调用后成功，generation/budget lineage 不变。相关 Recovery/Coordinator/DynamicBudget/Service/Gateway/cancellation 隔离门禁 141/141 通过；旧 210 项门禁早于修复。修复未部署。此项仍不能关闭 Subject JSON 失败风险：原 JSON 拒绝原因尚未定位，尚无同类用户请求的最终候选验收。
+- 后续只读读取到 backend 镜像 `sha256:489106fe07a0c26f8da32884bc0e1aed858f680a9ecbd40bb638374f27369ebf` healthy、Flyway V32 成功；用户随后使用该运行态进行 retry。未验证镜像是否包含安全 validator 诊断或本地 recovery no-progress 修复；本执行器未部署/迁移。
+- 首次归因执行器以 Postgres READ ONLY 事务查询，未调用 Provider、执行迁移/部署或重跑测试；随后本地 recovery 修复另有141项隔离门禁。命令、退出码与脱敏结果：[Subject MAP2 只读证据](D:/Temp/auralis-overview-dynamic-budget-20261012/validation/diagnostics/subject-map-json-20261013/readonly-attribution.md)；本轮修复证据：[recovery no-progress 报告](D:/Temp/auralis-overview-dynamic-budget-20261012/validation/diagnostics/recovery-no-progress-20261013/recovery-no-progress-report.md)。
+- 关闭条件：在不记录 Provider 正文或密钥的安全诊断下确定 validator 拒绝类别/位置；随后取得同类 Subject ALL 的合法最终候选，并有实际 checkpoint 恢复续做的证据。不得仅凭 `finishReason=stop`、无 Provider request 的时序或代码路径预期关闭。
+
+### 2026-10-12 聊天资料检索默认开启：代码与命令验证
+
+- 后端新聊天常开检索，PC / Mobile / Tablet 移除关闭入口与请求开关，范围与 owner/replay 安全约束保持；当前文件未就绪继续等待处理，不因默认开启绕过门槛。额度未调整。
+- reviewer 指出的同学科 READY 计数/高亮、已删除/跨学科选择残留和手动撤销末项时 PENDING 当前文件回退均用 RED 复现后最小修复；仍存在的未就绪选择保留。最终 PC 57/57、type-check / build，后端 47/47、OpenAPI/SDK 门禁，Mobile 24/24、static / H5 build 均退出码 0。唯一只读最终复核 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。
+- 既有门禁保留失败：PC static 退出 1，仅未改 Rust 固定本地地址规则；Mobile type-check 退出 2，仅 `reviewApi.ts` 缺少 `EventRequest` / `EventResponse`。同 HEAD 干净 archive 分别复现，非 RAG 修改引入，未扩改 Review 或 Rust。
+- 真实 Provider、GUI/真机及部署均未验收；关闭运行态边界需要在新客户端与后端中确认范围标签、引用、无命中回答、检索失败和额度反馈。代码与审查不能替代该证据，见[实施计划](../plans/2026-10-12-rag-always-on.md)。
+
 ### P1-AI-Subject-Overview-Aggregate-Prompt（IMPORTANT；代码、定向回归、审查与本机部署关闭，业务待实测）
 
 - 证据：Subject 直接组合所有合法 outline / summary，在出站前以完整序列化 prompt 的 12000 字符上限拒绝；单源合法大输入与现场日志相同，preflight 成功后 `VALIDATION_FAILED` / cause null / Provider 0 次。当前服务端三源缓存按空 instruction 重建为 16631 字符，原始请求体未保留。
@@ -32,7 +70,7 @@
 - 证据：旧 `useAuthStore.loadAvatar()` 与个人中心 `loadAvatar()` 都直接请求服务端头像；读取失败会清空全局 `avatarUrl`。头像仅保存在运行时 Blob URL，重启后没有本地副本。
 - 影响：断网或服务端暂时不可用时，PC 顶栏与个人中心不能显示已上传头像。
 - 处理：IndexedDB 按 `user.id` 缓存 Blob；加载时优先呈现缓存并后台请求云端刷新。网络错误保留缓存，明确 404 才清除；上传、重置、退出登录和账号切换均处理对应缓存与对象 URL 生命周期。
-- 代码验证：`npm.cmd run type-check` 退出码 0；本轮未运行测试。关闭条件：在 Tauri 桌面端在线建立缓存，重启后断网确认顶栏和个人中心均显示头像，并确认重置后回到首字母。
+- 代码验证：`scripts/r4-profile-live-links.test.mjs`（7/7 项测试通过）与 `npm run type-check` 退出码 0。关闭条件：在 Tauri 桌面端在线建立缓存，重启后断网确认顶栏和个人中心均显示头像，并确认重置后回到首字母。
 - 只读复核：BLOCKER=0、IMPORTANT=0。OPTIONAL：同一账号重置请求的迟到响应若晚于后续头像上传，可能清掉后上传头像的本地缓存；本轮不修改 OPTIONAL 项。不同账号的缓存删除按用户 ID 隔离。
 
 ### 2026-10-12 PC 设置与个人中心（Profile Studio）视觉重构交接状态
@@ -381,7 +419,7 @@ OPTIONAL 共 10 组：PC 复习旧生成器断链（F3，范围相关）、Profi
 
 | 等级 / 状态 | 问题与证据 | 处理与验证 |
 | --- | --- | --- |
-| IMPORTANT / 已关闭 | 学科工作区 AI 参考范围弹出菜单在顶部展示冗余的「当前文件」独立选项，与下方「已关联文件」列表割裂并导致菜单空间狭窄和重复认知负担 | `SubjectWorkspace/index.vue` 移除顶层独立占位的「当前文件」大选项，顶层仅保留全局模式「全学科资料」与「不引用资料」；当前文件在下方「已关联文件」中默认呈现激活选中状态，并追加「当前」专属徽标；菜单最大高度调整为 380px |
+| IMPORTANT / 已关闭 | 学科工作区 AI 参考范围弹出菜单在顶部展示冗余的「当前文件」独立选项，与下方「已关联文件」列表割裂并导致菜单空间狭窄和重复认知负担 | `SubjectWorkspace/index.vue` 移除顶层独立占位的「当前文件」选项；当前学科范围位于顶部，当前文件在下方「已关联文件」列表呈激活状态并附「当前」徽标；菜单最大高度为 380px。当前检索默认开启与范围行为见[实施计划](../plans/2026-10-12-rag-always-on.md) |
 
 专项测试 `test:r4-pc`（513/513 全部通过），`npm run type-check` 退出 0，`check:subject-workspace` 退出 0。真实桌面端 GUI 交互待人工走查。
 
@@ -448,7 +486,7 @@ OPTIONAL 共 10 组：PC 复习旧生成器断链（F3，范围相关）、Profi
 
 | 等级 / 状态 | 问题与证据 | 处理 |
 | --- | --- | --- |
-| IMPORTANT / 已关闭 | UI 将引用交给 ChatStore，但 NONE 分支不构造 readingContext，请求体丢失 selectionText；真实 Store/fetch 回归 RED 实测 undefined | 独立顶层字段传递，NONE 不开启检索；应用 Antigravity 单行补丁后 focused 5/5、最终 PC 478/478 |
+| IMPORTANT / 已关闭 | UI 将引用交给 ChatStore，但请求体曾丢失 selectionText；真实 Store/fetch 回归 RED 实测 undefined | selectionText 通过独立顶层字段传递，不修改用户消息正文；应用 Antigravity 单行补丁后 focused 5/5、最终 PC 478/478 |
 | IMPORTANT / 已关闭 | PromptAssembler 先填历史再填引用，可能静默丢弃/截断本次引用；selected 文本原来使用 SYSTEM 角色 | 本次问题和引用优先预留预算，引用为 USER 资料，固定安全说明；RED 4 项中 2 项失败，最终 Server 47/47 |
 | IMPORTANT / 已关闭 | 仅在异步 SSE 线程检查预算，HTTP 已返回 200 才出现校验错误 | Controller 在响应开始前同步调用 Service 同一校验；真实 MockMvc 验证 HTTP 400 和明确预算 detail，最终 Server 47/47 |
 
@@ -1297,7 +1335,7 @@ PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home
 | P2-Infra-Readiness | 无 CI、监控、告警、正式备份演练 | 仓库现状 | 发布与恢复门禁不足 | 建流水线、指标、备份恢复 | 发布演练和告警测试 | Infra |
 | P2-Mobile-Build-Warning | Mobile H5/微信构建有动态/静态 import 与 Sass legacy API 警告 | 2026-08-12 `build:h5` 与 `build:mp-weixin` 输出 | 未来打包与 Sass 升级可能出现行为或兼容性问题 | 明确 `useSyncStore` 的加载策略，升级/替换 Sass legacy API | 构建无对应警告，或有记录的接受决定 | Mobile |
 
-| P1-Phase5-External-Infra | 阶段 5 的 PostgreSQL/pgvector、MinIO 主链路、默认容器门禁和 SiliconFlow embedding 单次 smoke 已通过，但真实聊天服务与异常路径未验收 | 2026-08-21 `mvn -B -ntp test` 148/0/0：PostgreSQL 17.11 + pgvector V1→V14 clean/upgrade 与 MinIO 主链路均实际运行；真实 Java Provider 链路调用 SiliconFlow `BAAI/bge-m3` 返回 1 条 embedding | 真实聊天响应、限流/断流网络、对象异常和完整部署拓扑仍可能与基线不同 | 增加 chat smoke、MinIO 异常路径和生产 Compose 验证 | migration、JPA validate、embedding 检索、对象链路、异常路径和真实 Provider 在真实依赖上通过 |
+| P1-Phase5-External-Infra | 阶段 5 的 PostgreSQL/pgvector、MinIO 主链路、默认容器门禁和 SiliconFlow embedding 单次 smoke 已通过；真实聊天服务与异常路径仍未验收 | 2026-08-21 `mvn -B -ntp test` 148/0/0：PostgreSQL 17.11 + pgvector V1→V14 clean/upgrade 与 MinIO 主链路均实际运行；真实 Java Provider 链路调用 SiliconFlow `BAAI/bge-m3` 返回 1 条 embedding。2026-10-12 新聊天检索默认开启：后端 clean 定向测试 47/47，`scripts/check-openapi.ps1` 退出码 0，包含 OpenAPI artifact 12/12 与 PC/Mobile SDK 标准生成对比 | 真实聊天响应、限流/断流网络、对象异常和完整部署拓扑仍可能与基线不同；客户端代码与定向验证已完成，真实 Provider / GUI 验收未运行 | 增加 chat smoke、MinIO 异常路径和生产 Compose 验证；针对 [RAG 默认开启计划](../plans/2026-10-12-rag-always-on.md) 完成跨端范围行为验证及真实 Provider 验收 | migration、JPA validate、embedding 检索、对象链路、异常路径和真实 Provider 在真实依赖上通过；新聊天检索路径、错误反馈和客户端范围有对应自动及真实环境证据 |
 | P1-Phase5-Ingestion-Fencing | 2026-09-27 已加入同事务 Source/job 入队、恢复处理中 Source 补 job、revision/job/generation/attempt/锁后 lease 栅栏及同事务完成 | Server clean 聚焦 114/114、PostgreSQL pgvector 2/2，覆盖入队失败回滚、恢复与迟到结果拒绝；未做真实进程崩溃/长耗时 Provider | 代码级提交/入队及恢复缺口已关闭；真实运行稳定性仍待验收 | 受控环境演练进程重启、重复执行和真实 Provider 超时 | 真实部署验证已提交或恢复的处理中 Source 必有匹配 job，stale worker 无法提交旧结果 |
 | P1-Phase5-Provider-Security | BYOK/URL 已具备 HTTPS allowlist、IPv4/IPv6 SSRF、DNS 公网地址过滤与固定连接、重定向关闭/复核、超时和响应体上限；除 Overview 失败事件外，既有 AI 失败日志保留脱敏后的异常类名/message/root cause，Overview 现改为 allowlisted errorCode、关联字段、阶段和 exception/cause 类型；真实网络、限流、审计和密钥轮换仍未验收 | `ProviderEndpointPolicy`、`ProviderHttpClient`、`PinnedSslSocketFactory`、`UrlSourceFetcher`、`AiStreamingService`；2026-08-23 原始异常日志/Authorization 脱敏回归与 `AiStreamingTests` 12/12 通过，真实 SiliconFlow embedding smoke 通过；Task 2 Overview 日志/requestId 安全回归 19/19 | 真实 DNS/证书/代理环境仍可能暴露网络策略或 provider 异常映射问题；截断日志不替代完整上游诊断 | 补受控 DNS rebinding、redirect、超时、429/5xx、日志采集/轮转、审计和密钥轮换专项 | 安全专项测试和生产 secret/网络策略、日志采集记录通过 |
 | P1-Phase5-Suggestion-Quality | Suggestions 是确定性基线，未接入真实 LLM、RAG citation 或质量评估 | `SuggestionService` owner check 与 controller 测试通过，返回 citations 当前为空 | 产品可能误认为已具备 AI 总结/提问质量 | 接入受控模型与 RetrievalService，增加 schema、引用正确性、提示注入和人工质量验收 | 质量指标、引用回链和人工样例验收记录完成 |
@@ -1474,9 +1512,20 @@ R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动
 - 已增加两处临时、非改变行为的证据：Provider 发送前从已序列化 body 记录 `AI_JSON_MODE`（只含 structured JSON、`json_object`、maxTokens/stage）；Overview FINAL 在既有 validator 前对原始 `message.content` 直接执行 `readTree`，记录 `FINAL_JSON_CHECK`（valid、字符数、Jackson 行列和异常类型），不做 fence stripping，因此 fenced JSON 会 valid=false。不记录 body、prompt、正文、原始 exception message、URL 或凭据，普通聊天/流式不变。
 - 自动聚焦测试已通过；尚未部署或重跑真实 DeepSeek。若重跑仍失败，应结合 `FINAL_JSON_CHECK valid` 与 `JSON_PARSE`/schema 阶段判断是 JSON 文本非法还是 schema 校验失败；在此之前不引入修复性重试或放宽 validator。
 
-### 2026-10-12 PC Profile Studio 比例与全站文案人文化审查
+### 2026-10-13 PC 全站多余滚动条与弹窗内层嵌套滚动条根除（已修复）
 
-- 范围：`Profile/index.vue`、`AppHeader.vue`、`AppSidebar.vue`、`Dashboard/index.vue`、`Asset/index.vue`、`SubjectHall/index.vue`。
-- 检查项：设置页左侧透视面板比例扩增（`flex: 3.8; min-width: 380px; max-width: 480px`，右侧 `flex: 6.2`），全站移除不可理解的技术自白和黑话文案（如“排期副驾”、“重型资产编排”、“彻底从本地数据库移除”等），去除冗余 SVG 小图标。
-- 自动化验证：相关 68/68 项单元测试全部通过，`npm run type-check` 0 报错，`npm run build` 成功。
+- **现象与根因**：
+  1. `ConfirmDialog.vue`：确认弹窗正文仅一行确认提示，但因外层 `.modal-shell-body` 开启了 `overflow-y: auto` 且子元素 `<p>` 存在外边距，在 Windows Chromium 下因亚像素行高计算触发微量溢出，露出不该有的垂直滚动条；
+  2. `WorkspaceKnowledgeBlockDialog.vue` 与 `KnowledgeBlockViewDialog.vue`：浏览态的正文卡片 `.kb-content-card` 错误写死了 `max-height: 480px/500px; overflow-y: auto;`（甚至配置了 `scrollbar-width: thin`），编辑预览卡片 `.edit-rendered-card` 也设置了 `max-height: 380px; overflow-y: auto;`，导致弹窗内部产生框中框、内层嵌套截断和“双重滚动条”；
+  3. `modal.css`：在全局模态基类中错误声明了 `.modal-shell-body::-webkit-scrollbar { width: 5px; }`，打破了 Auralis 极简禅意体系中“除文件阅读器外全局隐藏滚动条”的设计规范；
+  4. `TaskCreateDialog.vue`：所属学科列表 `.subject-grid` 显式设置了 5px 自定义滚动条；
+  5. `SubjectWorkspace/index.vue`、`Dashboard/index.vue`、`Timeline/index.vue`：部分局部滚动区域（如学科文件抽屉 `.drawer-list`、知识块网格 `.blocks-grid`、首页待办列表 `.todo-list`、流式速递 `.stream-body`、时间轴刻度槽 `.time-slots` 等）显式设置了 `scrollbar-width: thin` 与滚动条样式。
+- **修复**：
+  1. `ConfirmDialog.vue`：为模态壳绑定 `body-class="confirm-modal-body"` 并设置 `overflow: hidden !important;`，正文外边距归零，彻底消灭确认弹窗的任何滚动条；
+  2. `WorkspaceKnowledgeBlockDialog.vue` & `KnowledgeBlockViewDialog.vue`：彻底移除 `.kb-content-card` 与 `.edit-rendered-card` 的 `max-height` 及 `overflow-y: auto` / `scrollbar-width: thin`，正文内容自然撑开，统一由外层模态壳平滑滚动，杜绝双滚动条；
+  3. `modal.css`：恢复模态主内容区 `scrollbar-width: none; ::-webkit-scrollbar { display: none; }`，杜绝未溢出弹窗产生灰色滑条；
+  4. `TaskCreateDialog.vue`：`.subject-grid` 设为 `scrollbar-width: none; ::-webkit-scrollbar { display: none; }`；
+  5. `SubjectWorkspace`、`Dashboard`、`Timeline`：所有局部滚动列表统一遵循全局极简禅意无滚动条规范，隐藏滚动条视觉露出，保留自然滚轮与触控滚动。
+- **验证**：PC 类型检查 `npm run type-check` 0 error，核心单元回归（Markdown 公式渲染、任务创建等）全部通过。真实 GUI 视觉体验待人工验收。
+
 

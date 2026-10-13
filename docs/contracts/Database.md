@@ -117,6 +117,18 @@ Flyway `V1__identity_schema.sql` 是当前身份表 schema 的唯一权威来源
 
 Overview 是独立派生成果，不进入五类资源的 core Sync snapshot/change_log/inbound_mutations。写入在用户与当前输入的锁和事务内校验 owner、活动状态、READY、revision、baseVersion；Subject 校验当前活动 READY FILE 来源集合及已持久化文件 part versions，TEXT/URL 不进入该 manifest。生成过程和失败不落远端结果。Subject 删除只直接清理其 SUBJECT scope 成果，当前子 Source 的成果由各 Source DELETE 事件清理，避免移动后的资料被旧学科误删。普通删除使成果失效，迟到请求与旧回执不能复活已删除或旧 revision 的成果；账户物理清理包含新增三表。详细 HTTP 和 manifest hash 规则见 [API](API.md)。
 
+## Overview 私有生成协调（V32，2026-10-13；Service 集成、自动门禁通过，运行态已观察应用）
+
+Flyway V32 新增私有生成状态并已接入 Overview Service，clean 与 V31→V32 PostgreSQL 自动集成门禁通过。2026-10-13 主代理只读观察到当前 backend healthy、Flyway V32 `success=true`；本执行器未执行部署或迁移，也未验证运行镜像内 class/source provenance、构建替换退出码或备份。该结构不属于五类资源同步，也不替代 V27 `overview_results` / `overview_write_receipts`。
+
+| 表 | 用途及主要约束 |
+| --- | --- |
+| `overview_generations` | owner、scope/revision、input/profile/algorithm fingerprint、状态、fence/lease、累计 charged/unknown-dispatched/reservation 预算 lineage、累计 recovery count / 去重后的安全 recovery actions 和可选成功结果；结果大小受限，状态受 CHECK 约束。`error_status` / `error_retry_after_seconds` / `error_reset_at` 仅保存六种既有用量错误的安全状态与重试信息，可空 reset 时间不写零值替代；详情只允许合法 FAILED/code/status 组合，失败提交受 fence/lease 保护，接管或成功清除。成功 response payload 按 14 天期限清除；generation 与 budget metadata 保留，失败 lineage 不因重试或 payload 清理而重置。 |
+| `overview_generation_requests` | owner-scoped `request_id` 到 generation/input 的映射；`(user_id,request_id)` 唯一。只对规范化有效 UUID 提供客户端 replay；输入冲突拒绝。mapping 与 generation/budget metadata 保留，成功 payload 清理后旧 ID 仍不能再次绑定。缺失/空白/非法 ID 会被生成新的服务端 UUID，因此不构成客户端 idempotency key。 |
+| `overview_generation_checkpoints` | 按 generation、step、输入 fingerprint、schema version 记录已校验中间 payload/hash；唯一约束防止相同步骤身份重复写入，payload 有大小上限。checkpoint 按独立到期策略清理，不代表 request mapping 或 generation metadata 的保留期限。 |
+
+协调器以短事务执行 claim/fence/lease 仲裁，Provider I/O 不在事务中；Service 调用仍通过现有 Gateway 与用户用量账本。失败 payload 可按策略清理，但 generation budget lineage 不得因此重置；账户删除级联清理私有行。生成 endpoint 不写正式 Overview results，保存仍由客户端调用独立 PUT。
+
 ## 阶段 2A 核心领域 V2 已实现 schema
 
 Flyway `V2__core_domain_schema.sql` 在 V1 之后新增 `subjects`、`knowledge_blocks`、`tasks` 三张表，全部使用 UUID 主键、`user_id` 归属外键、`version`、审计时间和 `deleted_at` 墓碑；Subject、KnowledgeBlock、Task 的 JPA Entity 使用 `@Version`，业务 Repository 查询显式带 `userId` 和 `deleted_at IS NULL`。

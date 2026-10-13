@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch, nextTick } from 'vue'
+import { updateWindowTheme } from '@/api/tauri'
 
 export const useSettingsStore = defineStore('settings', () => {
   const isDark = ref(typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false)
@@ -9,6 +10,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // Apply dark mode immediately
   if (typeof document !== 'undefined') {
     document.documentElement.classList.toggle('dark', isDark.value)
+    void updateWindowTheme(isDark.value)
   }
 
   let transitionTimer: ReturnType<typeof setTimeout> | null = null
@@ -27,6 +29,7 @@ export const useSettingsStore = defineStore('settings', () => {
           transitionTimer = null
         }, 500)
       }
+      void updateWindowTheme(val)
       window.dispatchEvent(new CustomEvent('sc-theme-change', { detail: { dark: val, isViewTransition: isViewTransitioning } }))
     }
   })

@@ -120,18 +120,44 @@
       </div>
     </div>
 
-    <!-- Footer: 三端同步状态 (Fixed at bottom) -->
+    <!-- Footer: 模式切换 + 个人中心 (头像右下角附带三端同步状态点) -->
     <div class="sidebar-footer">
-      <div 
-        class="sync-status"
-        :aria-label="`${connectionProjection.message}${connectionProjection.retryable ? '，可重试' : ''}`"
-        :data-retryable="connectionProjection.retryable"
-        @mouseenter="handleMouseEnter($event, 'sync', { title: connectionProjection.message, desc: connectionProjection.retryable ? '点击立即重试同步' : undefined })"
+      <!-- 模式切换按钮 (天体日月翻转) -->
+      <button 
+        class="sidebar-action-btn theme-toggle-btn" 
+        :title="settingsStore.isDark ? '切换浅色模式' : '切换深色模式'" 
+        @click="handleThemeToggle"
+        @mouseenter="handleMouseEnter($event, 'profile', { title: settingsStore.isDark ? '浅色模式' : '深色模式', desc: '点击切换主题界面' })"
         @mouseleave="handleMouseLeave"
-        @click="triggerSyncRetry"
+        aria-label="切换浅色或深色模式"
       >
-        <span class="sync-ripple" :class="`status-${connectionProjection.level}`"></span>
-        <span class="sync-dot" :class="`status-${connectionProjection.level}`"></span>
+        <Transition name="theme-flip" mode="out-in">
+          <IconSun v-if="settingsStore.isDark" key="sun" :size="17" :stroke-width="1.8" class="theme-icon sun-icon" />
+          <IconMoon v-else key="moon" :size="17" :stroke-width="1.8" class="theme-icon moon-icon" />
+        </Transition>
+      </button>
+
+      <!-- 个人中心入口 (用户头像 + 右下角状态点) -->
+      <div 
+        class="sidebar-avatar-entry" 
+        @click="router.push('/profile')"
+        @mouseenter="handleMouseEnter($event, 'profile', { title: authStore.username || '个人中心', desc: connectionProjection.message })"
+        @mouseleave="handleMouseLeave"
+        title="个人设置"
+      >
+        <img v-if="authStore.avatarUrl" :src="authStore.avatarUrl" class="sidebar-avatar-img" alt="用户头像" />
+        <div v-else class="sidebar-avatar">{{ userInitial }}</div>
+
+        <!-- 镶嵌在头像右下角的状态点徽标 (点击可重试同步) -->
+        <div 
+          class="avatar-sync-badge"
+          :class="`status-${connectionProjection.level}`"
+          :title="`${connectionProjection.message}${connectionProjection.retryable ? ' (点击重试)' : ''}`"
+          @click.stop="triggerSyncRetry"
+        >
+          <span class="avatar-sync-ripple" :class="`status-${connectionProjection.level}`"></span>
+          <span class="avatar-sync-dot" :class="`status-${connectionProjection.level}`"></span>
+        </div>
       </div>
     </div>
 
@@ -164,10 +190,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconLayoutDashboard, IconBooks, IconCalendarTime, IconDatabase, IconStopwatch } from '@tabler/icons-vue'
+import { IconLayoutDashboard, IconBooks, IconCalendarTime, IconDatabase, IconStopwatch, IconSun, IconMoon } from '@tabler/icons-vue'
 import { useAuthStore } from '@/store/useAuthStore'
+import { useSettingsStore } from '@/store/useSettingsStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
 import { useSyncStore } from '@/store/useSyncStore'
 import type { ConnectionProjection } from '@/services/connectionStatusProjection'
@@ -181,8 +208,17 @@ const route = useRoute()
 const router = useRouter()
 defineProps<{ connectionProjection: ConnectionProjection }>()
 const authStore = useAuthStore()
+const settingsStore = useSettingsStore()
 const subjectStore = useSubjectStore()
 const syncStore = useSyncStore()
+
+const userInitial = computed(() => {
+  return authStore.username ? authStore.username.charAt(0).toUpperCase() : 'U'
+})
+
+const handleThemeToggle = (event?: MouseEvent) => {
+  settingsStore.toggleDark(event)
+}
 
 // Hover States
 const hoverState = ref<{
@@ -235,6 +271,7 @@ const triggerSyncRetry = () => {
 
 onMounted(async () => {
   if (!authStore.isAuthenticated) return
+  void authStore.loadAvatar()
   try {
     await subjectStore.loadSubjects()
   } catch (error) {
@@ -449,68 +486,179 @@ onUnmounted(() => {
   height: 18px;
 }
 
-/* Footer Section */
+/* Footer Section: 模式切换 + 个人中心 */
 .sidebar-footer {
-  padding: 16px 0 20px;
+  padding: 14px 0 18px;
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 12px;
   border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   flex-shrink: 0;
 }
 
-/* Sync Status Dual Ripple */
-.sync-status {
+/* 模式切换按钮 */
+.sidebar-action-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  outline: none;
+  color: var(--text-secondary, #344139);
 }
-.sync-status:hover {
-  background: rgba(139, 154, 110, 0.12);
+
+.sidebar-action-btn:hover {
+  background: var(--color-bg-tertiary, #FAF7F2);
+  border-color: rgba(139, 154, 110, 0.3);
+  color: #8B9A6E;
+  transform: translateY(-1px);
 }
-.sync-ripple {
+
+.sidebar-action-btn:active {
+  transform: scale(0.92);
+}
+
+.theme-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+.sun-icon {
+  color: #E2A03F;
+}
+.moon-icon {
+  color: #637748;
+}
+.theme-toggle-btn:hover .sun-icon {
+  transform: rotate(25deg) scale(1.12);
+  color: #EDB34D;
+}
+.theme-toggle-btn:hover .moon-icon {
+  transform: rotate(-20deg) scale(1.12);
+  color: #8B9A6E;
+}
+
+/* 个人中心头像容器 */
+.sidebar-avatar-entry {
+  position: relative;
+  cursor: pointer;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: var(--accent-gradient);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: white;
+  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sidebar-avatar:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.3);
+}
+
+.sidebar-avatar-img {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  object-fit: cover;
+  display: block;
+  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sidebar-avatar-img:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.3);
+}
+
+/* 镶嵌在头像右下角的状态点徽标 */
+.avatar-sync-badge {
   position: absolute;
-  width: 18px;
-  height: 18px;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  opacity: 0.25;
-  transition: all 0.3s ease;
+  background: var(--color-bg-primary, #F7F2EB);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  box-shadow: 0 0 0 2px var(--color-bg-primary, #F7F2EB);
+  transition: transform 0.2s ease;
 }
-.sync-ripple.status-ready {
+
+.avatar-sync-badge:hover {
+  transform: scale(1.25);
+}
+
+.avatar-sync-ripple {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  opacity: 0.3;
+  pointer-events: none;
+}
+.avatar-sync-ripple.status-ready {
   background: #8B9A6E;
   animation: ripple-spread 3s ease-out infinite;
 }
-.sync-ripple.status-syncing {
+.avatar-sync-ripple.status-syncing {
   background: #C89B6D;
   animation: ripple-spread 1.4s ease-out infinite;
 }
-.sync-ripple.status-error {
+.avatar-sync-ripple.status-error {
   background: #D47B7B;
   animation: ripple-spread 1.8s ease-out infinite;
 }
+
 @keyframes ripple-spread {
   0% { transform: scale(0.7); opacity: 0.6; }
   100% { transform: scale(1.7); opacity: 0; }
 }
 
-.sync-dot {
-  width: 8px;
-  height: 8px;
+.avatar-sync-dot {
+  width: 7.5px;
+  height: 7.5px;
   border-radius: 50%;
   position: relative;
   z-index: 1;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.sync-dot.status-ready, .sync-dot.ready {
+.avatar-sync-dot.status-ready, .avatar-sync-dot.ready {
   background: #8B9A6E;
-  box-shadow: 0 0 8px rgba(139, 154, 110, 0.7);
+  box-shadow: 0 0 6px rgba(139, 154, 110, 0.8);
+}
+.avatar-sync-dot.status-syncing, .avatar-sync-dot.syncing {
+  background: #C89B6D;
+  box-shadow: 0 0 6px rgba(200, 155, 109, 0.8);
+}
+.avatar-sync-dot.status-error {
+  background: #D47B7B;
+  box-shadow: 0 0 6px rgba(212, 123, 123, 0.8);
+}
+.avatar-sync-dot.status-offline, .avatar-sync-dot.status-reconnecting {
+  background: #C89B6D;
+  box-shadow: 0 0 6px rgba(200, 155, 109, 0.8);
 }
 .sync-dot.status-syncing, .sync-dot.syncing {
   background: #C89B6D;
@@ -646,5 +794,14 @@ html.dark .tooltip-title, html.dark .hover-subject-name {
 }
 html.dark .hover-subject-desc {
   color: #d9d0c7;
+}
+html.dark .avatar-sync-badge {
+  background: var(--color-bg-secondary, #292825);
+  box-shadow: 0 0 0 2px var(--color-bg-secondary, #292825);
+}
+html.dark .sidebar-action-btn:hover {
+  background: rgba(163, 177, 155, 0.12);
+  border-color: rgba(163, 177, 155, 0.3);
+  color: #FAF7F2;
 }
 </style>

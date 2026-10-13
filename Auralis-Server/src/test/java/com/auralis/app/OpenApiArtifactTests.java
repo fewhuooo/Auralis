@@ -183,6 +183,7 @@ class OpenApiArtifactTests {
 
         JsonNode message = document.at("/components/schemas/AiMessageCommand");
         JsonNode readingContext = document.at("/components/schemas/ReadingContext");
+        assertThat(message.has("retrievalEnabled")).isFalse();
         assertThat(message.at("/properties/readingContext").isObject()).isTrue();
         assertThat(message.at("/properties/selectionText/maxLength").asInt()).isEqualTo(4000);
         assertThat(message.at("/required").toString()).doesNotContain("selectionText");

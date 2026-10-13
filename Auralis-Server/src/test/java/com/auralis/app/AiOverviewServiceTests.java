@@ -642,6 +642,42 @@ class AiOverviewServiceTests {
     }
 
     @Test
+    void addsAdvisoryContentTargetAndFullRequestAssessmentWithoutChangingOutputReserve() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = service(sourceService, mock(SubjectService.class),
+                List.of(chunk(userId, sourceId, true, "A substantial source paragraph. ".repeat(120))),
+                12_000, validDocument("source-1"), requests);
+        Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null));
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        assertThat(requests).singleElement().satisfies(request -> {
+            assertThat(request.maxTokens()).isEqualTo(6_144);
+            assertThat(request.messages().getFirst().content())
+                    .contains("Advisory output target")
+                    .contains("Preserve all distinct content");
+        });
+        assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(log -> log.contains("phase=OVERVIEW_BUDGET_ASSESSMENT")))
+                .singleElement()
+                .satisfies(log -> assertThat(log)
+                        .contains("eligibility=UNKNOWN_CAPABILITY", "contextFit=unknown",
+                                "outputReserve=6144", "promptChars="));
+    }
+
+    @Test
     void rejectsMalformedUnknownAliasAndExcessiveProviderDocuments() {
         UUID userId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
@@ -815,7 +851,7 @@ class AiOverviewServiceTests {
                 .thenReturn(source(secondId, subjectId, SourceIngestionStatus.READY));
         List<AiProviderRequest> requests = new ArrayList<>();
         OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(),
-                12_000, validDocument("source-1"), requests);
+                12_000, validDocumentWithAliases("source-1", "source-2"), requests);
         OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("summary", List.of(), List.of());
         OverviewDtos.OverviewSection firstSection = new OverviewDtos.OverviewSection("Section", "summary",
                 List.of(secondId.toString()), null);
@@ -1072,7 +1108,7 @@ class AiOverviewServiceTests {
                 new AiProviderResponse(validDocument("source-1"), 1, 1_025),
                 new AiProviderResponse(validDocument("source-1"), 1, 4_096)),
                 List.of(chunk(userId, sourceId, true, "a".repeat(1_200)),
-                        chunk(userId, sourceId, true, "b".repeat(1_200))), 2_800, requests);
+                        chunk(userId, sourceId, true, "b".repeat(1_200))), 3_500, requests);
         Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
@@ -1094,10 +1130,10 @@ class AiOverviewServiceTests {
         assertThat(budgetLogs).hasSize(2);
         assertThat(budgetLogs).allSatisfy(log -> {
             assertThat(log).contains("normalizedChars=")
-                    .contains("normalizedLimit=5200")
+                    .contains("normalizedSoftTarget=5200")
                     .contains("selfPairPromptChars=")
-                    .contains("promptLimit=2800")
-                    .contains("characterOverflow=false")
+                    .contains("promptLimit=3500")
+                    .contains("softTargetExceeded=false")
                     .contains("selfPairOverflow=false");
             assertThat(log).doesNotContain("mapJson", "sourceTitle", "chunks",
                     "https://api.example.test", "key");
@@ -1105,15 +1141,19 @@ class AiOverviewServiceTests {
     }
 
     @Test
-    void rejectsIntermediateOutputThatExceedsNormalizedJsonBudgetBeforeReduce() {
+    void acceptsIntermediateOutputSlightlyAboveSoftTarget() {
         UUID userId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         SourceService sourceService = mock(SourceService.class);
         when(sourceService.requireActiveSource(userId, sourceId))
                 .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
         List<AiProviderRequest> requests = new ArrayList<>();
-        OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
-                new AiProviderResponse(balancedLargeValidDocument("source-1", 3_000, 1_976), 1, 1_000)),
+        String aboveSoftTarget = balancedLargeValidDocument("source-1", 3_000, 1_976);
+        List<AiProviderResponse> responses = List.of(
+                new AiProviderResponse(aboveSoftTarget, 1, 1_000),
+                new AiProviderResponse(validDocument("source-1"), 1, 1_000),
+                new AiProviderResponse(validDocument("source-1"), 1, 4_096));
+        OverviewGenerationService service = serviceWithResponses(sourceService, responses,
                 List.of(
                         chunk(userId, sourceId, true, "a".repeat(2_000)),
                         chunk(userId, sourceId, true, "b".repeat(2_000)),
@@ -1122,11 +1162,88 @@ class AiOverviewServiceTests {
                         chunk(userId, sourceId, true, "e".repeat(2_000)),
                         chunk(userId, sourceId, true, "f".repeat(2_000))), 12_000, requests);
 
-        assertThatThrownBy(() -> service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null)))
-                .isInstanceOf(DomainException.class)
-                .extracting(e -> ((DomainException) e).code())
-                .isEqualTo("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE");
-        assertThat(requests).hasSize(1);
+        assertThat(service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
+        assertThat(requests).hasSize(3);
+        assertThat(requests.get(0).maxTokens()).isEqualTo(4_608);
+        assertThat(requests.get(2).maxTokens()).isEqualTo(6_144);
+    }
+
+    @Test
+    void acceptsIntermediateOutputTenPercentAboveSoftTarget() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        String aboveSoftTarget = balancedLargeValidDocument("source-1", 3_000, 2_495);
+        assertThat(aboveSoftTarget).hasSize(5_720);
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
+                        new AiProviderResponse(aboveSoftTarget, 1, 1_000),
+                        new AiProviderResponse(validDocument("source-1"), 1, 1_000),
+                        new AiProviderResponse(validDocument("source-1"), 1, 4_096)),
+                List.of(chunk(userId, sourceId, true, "a".repeat(2_000)),
+                        chunk(userId, sourceId, true, "b".repeat(2_000)),
+                        chunk(userId, sourceId, true, "c".repeat(2_000)),
+                        chunk(userId, sourceId, true, "d".repeat(2_000)),
+                        chunk(userId, sourceId, true, "e".repeat(2_000)),
+                        chunk(userId, sourceId, true, "f".repeat(2_000))), 12_000, requests);
+        Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+        assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK") && log.contains("normalizedChars=5720")))
+                .singleElement()
+                .satisfies(log -> assertThat(log).contains("normalizedSoftTarget=5200", "softTargetExceeded=true"));
+        assertThat(requests).hasSize(3);
+    }
+
+    @Test
+    void acceptsIntermediateOutputOnePercentAboveSoftTarget() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        String aboveSoftTarget = balancedLargeValidDocument("source-1", 3_000, 2_027);
+        assertThat(aboveSoftTarget).hasSize(5_252);
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
+                        new AiProviderResponse(aboveSoftTarget, 1, 1_000),
+                        new AiProviderResponse(validDocument("source-1"), 1, 1_000),
+                        new AiProviderResponse(validDocument("source-1"), 1, 4_096)),
+                List.of(chunk(userId, sourceId, true, "a".repeat(2_000)),
+                        chunk(userId, sourceId, true, "b".repeat(2_000)),
+                        chunk(userId, sourceId, true, "c".repeat(2_000)),
+                        chunk(userId, sourceId, true, "d".repeat(2_000)),
+                        chunk(userId, sourceId, true, "e".repeat(2_000)),
+                        chunk(userId, sourceId, true, "f".repeat(2_000))), 12_000, requests);
+        Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+        assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK") && log.contains("normalizedChars=5252")))
+                .singleElement()
+                .satisfies(log -> assertThat(log).contains("normalizedChars=5252", "normalizedSoftTarget=5200",
+                        "softTargetExceeded=true"));
+        assertThat(requests).extracting(AiProviderRequest::maxTokens)
+                .containsExactly(4_608, 4_608, 6_144);
+        assertThat(requests).allSatisfy(request -> assertThat(request.messages().stream()
+                .mapToInt(message -> message.content().length()).sum()).isLessThanOrEqualTo(12_000));
     }
 
     @Test
@@ -1141,6 +1258,7 @@ class AiOverviewServiceTests {
         OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
                 new AiProviderResponse(boundary, 1, 1),
                 new AiProviderResponse(boundary, 1, 1),
+                new AiProviderResponse(validDocument("source-1"), 1, 1_024),
                 new AiProviderResponse(validDocument("source-1"), 1, 4_096)),
                 List.of(
                         chunk(userId, sourceId, true, "a".repeat(2_000)),
@@ -1157,23 +1275,21 @@ class AiOverviewServiceTests {
     }
 
     @Test
-    void enforcesSelfPairBoundaryIndependentlyOfNormalizedJsonBoundary() {
+    void reportsSelfPairBoundaryIndependentlyOfNormalizedJsonBoundary() {
         UUID userId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         SourceService sourceService = mock(SourceService.class);
         when(sourceService.requireActiveSource(userId, sourceId))
                 .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
-        String boundaryDocument = balancedLargeValidDocument("source-1", 3_000, 1_753);
+        String boundaryDocument = balancedLargeValidDocument("source-1", 3_000, 1_630);
         List<SourceChunkEntity> chunks = List.of(
-                chunk(userId, sourceId, true, "a".repeat(2_000)),
-                chunk(userId, sourceId, true, "b".repeat(2_000)),
-                chunk(userId, sourceId, true, "c".repeat(2_000)),
-                chunk(userId, sourceId, true, "d".repeat(2_000)),
-                chunk(userId, sourceId, true, "e".repeat(2_000)),
-                chunk(userId, sourceId, true, "f".repeat(2_000)));
+                chunk(userId, sourceId, true, "a".repeat(7_000)),
+                chunk(userId, sourceId, true, "b".repeat(7_000)));
         List<AiProviderResponse> responses = List.of(
                 new AiProviderResponse(boundaryDocument, 1, 3_073),
                 new AiProviderResponse(boundaryDocument, 1, 3_073),
+                new AiProviderResponse(validDocument("source-1"), 1, 1_024),
+                new AiProviderResponse(validDocument("source-1"), 1, 1_024),
                 new AiProviderResponse(validDocument("source-1"), 1, 4_096));
 
         Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
@@ -1211,32 +1327,203 @@ class AiOverviewServiceTests {
         assertThat(acceptedAppender.list.stream().map(ILoggingEvent::getFormattedMessage)
                 .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")))
                 .anySatisfy(log -> assertThat(log)
-                        .contains("normalizedChars=4978", "selfPairPromptChars=12000",
-                                "characterOverflow=false", "selfPairOverflow=false"));
-
-        List<AiProviderRequest> rejectedRequests = new ArrayList<>();
-        OverviewGenerationService rejectedService = serviceWithResponses(sourceService, responses.subList(0, 1),
-                chunks, 12_000, rejectedRequests);
-        ListAppender<ILoggingEvent> rejectedAppender = new ListAppender<>();
-        rejectedAppender.start();
-        logger.addAppender(rejectedAppender);
-        try {
-            assertThatThrownBy(() -> rejectedService.generateSource(userId,
-                    sourceRequest(sourceId, OverviewMode.ALL, boundaryInstruction + "i")))
-                    .isInstanceOf(DomainException.class)
-                    .extracting(error -> ((DomainException) error).code())
-                    .isEqualTo("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE");
-        } finally {
-            logger.detachAppender(rejectedAppender);
-            rejectedAppender.stop();
-        }
-        assertThat(rejectedAppender.list.stream().map(ILoggingEvent::getFormattedMessage)
-                .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")))
-                .anySatisfy(log -> assertThat(log)
-                        .contains("normalizedChars=4978", "selfPairPromptChars=12001",
-                                "characterOverflow=false", "selfPairOverflow=true"));
+                        .contains("normalizedChars=4855", "selfPairPromptChars=12000",
+                                "softTargetExceeded=false", "selfPairOverflow=false"));
         assertThat(acceptedRequests).extracting(AiProviderRequest::maxTokens)
-                .contains(4_608, 6_144).doesNotContainNull();
+                .containsExactly(4_608, 4_608, 6_144);
+        assertThat(acceptedRequests.getLast().messages().stream()
+                .mapToInt(message -> message.content().length()).sum()).isEqualTo(12_000);
+    }
+
+    @Test
+    void acceptsSoftTargetOutputWhenTheActualUnequalReducePairFits() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        String largerMap = balancedLargeValidDocument("source-1", 3_000, 1_837);
+        assertThat(largerMap).hasSize(5_062);
+        List<SourceChunkEntity> chunks = List.of(
+                chunk(userId, sourceId, true, "a".repeat(2_000)),
+                chunk(userId, sourceId, true, "b".repeat(2_000)),
+                chunk(userId, sourceId, true, "c".repeat(2_000)),
+                chunk(userId, sourceId, true, "d".repeat(2_000)),
+                chunk(userId, sourceId, true, "e".repeat(2_000)),
+                chunk(userId, sourceId, true, "f".repeat(2_000)));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
+                new AiProviderResponse(largerMap, 1, 2_521, "stop"),
+                new AiProviderResponse(validDocument("source-1"), 1, 128, "stop"),
+                new AiProviderResponse(validDocument("source-1"), 1, 300, "stop")),
+                chunks, 12_000, requests);
+        Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(service.generateSource(userId,
+                    sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(log -> log.contains("phase=INTERMEDIATE_BUDGET_CHECK")
+                        && log.contains("normalizedChars=5062")))
+                .singleElement()
+                .satisfies(log -> assertThat(log)
+                        .contains("normalizedChars=5062", "normalizedSoftTarget=5200",
+                                "selfPairPromptChars=12281", "promptLimit=12000",
+                                "softTargetExceeded=false", "selfPairOverflow=true"));
+        assertThat(requests).hasSize(3);
+        assertThat(requests).extracting(AiProviderRequest::maxTokens)
+                .containsExactly(4_608, 4_608, 6_144);
+        assertThat(requests.get(2).messages().stream()
+                .mapToInt(message -> message.content().length()).sum()).isLessThanOrEqualTo(12_000);
+    }
+
+    @Test
+    void compactsSingletonReduceInputsUntilTheActualPairFits() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        List<AiProviderResponse> responses = List.of(
+                new AiProviderResponse(largeValidDocument("source-1", 400), 1, 1_024),
+                new AiProviderResponse(largeValidDocument("source-1", 400), 1, 1_024),
+                new AiProviderResponse(validDocument("source-1"), 1, 1_024),
+                new AiProviderResponse(validDocument("source-1"), 1, 1_024),
+                new AiProviderResponse(validDocument("source-1"), 1, 4_096));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = serviceWithResponses(sourceService, responses,
+                List.of(chunk(userId, sourceId, true, "a".repeat(800)),
+                        chunk(userId, sourceId, true, "b".repeat(800))), 2_800, requests);
+        Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(service.generateSource(userId,
+                    sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        assertThat(requests).hasSize(5);
+        assertThat(requests).extracting(AiProviderRequest::maxTokens)
+                .containsExactly(4_608, 4_608, 4_608, 4_608, 6_144);
+        assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(log -> log.contains("phase=RECOVERY_COMPACT")))
+                .hasSize(2);
+    }
+
+    @Test
+    void structuralReduceSplitPreservesEverySelectedFieldAndAliasInAllModes() throws Exception {
+        for (OverviewMode mode : OverviewMode.values()) {
+            OverviewGenerationService service = serviceWithMapper(new ObjectMapper(), 5_000);
+            UUID userId = UUID.randomUUID();
+            Class<?> contextType = Class.forName("com.auralis.app.ai.OverviewGenerationService$GenerationContext");
+            var contextConstructor = contextType.getDeclaredConstructors()[0];
+            contextConstructor.setAccessible(true);
+            Object context = contextConstructor.newInstance(userId, null, null, mode, "request", "generation",
+                    new OverviewTaskDeadline(120_000, System::nanoTime), null);
+            String sectionText = ("S😀\"").repeat(900);
+            String overviewText = ("O😀\\").repeat(1_000);
+            List<String> keyPoints = List.of("K\"\\ path".repeat(10), "k😀".repeat(40));
+            List<String> learningPath = List.of("L\\path step");
+            List<OverviewDtos.OverviewChapter> outline = mode == OverviewMode.SUMMARY ? null : List.of(
+                    new OverviewDtos.OverviewChapter("Chapter", List.of(
+                            new OverviewDtos.OverviewSection("Section", sectionText, List.of("source-1"), null))));
+            OverviewDtos.OverviewSummary summary = mode == OverviewMode.OUTLINE ? null
+                    : new OverviewDtos.OverviewSummary(overviewText, keyPoints, learningPath);
+            OverviewDtos.OverviewResponse document = new OverviewDtos.OverviewResponse(1, "Calculus", outline, summary);
+            var splitMethod = OverviewGenerationService.class.getDeclaredMethod("splitOverviewForReduce",
+                    contextType, OverviewMode.class, String.class, OverviewDtos.OverviewResponse.class);
+            splitMethod.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            List<OverviewDtos.OverviewResponse> fragments = (List<OverviewDtos.OverviewResponse>)
+                    splitMethod.invoke(service, context, mode, "", document);
+
+            String actualSectionText = fragments.stream().filter(part -> part.outline() != null)
+                    .flatMap(part -> part.outline().stream())
+                    .flatMap(chapter -> chapter.sections().stream())
+                    .map(OverviewDtos.OverviewSection::summary).collect(java.util.stream.Collectors.joining());
+            String actualOverviewText = fragments.stream().filter(part -> part.summary() != null)
+                    .map(part -> part.summary().overview()).filter(java.util.Objects::nonNull)
+                    .collect(java.util.stream.Collectors.joining());
+            List<String> actualKeyPoints = fragments.stream().filter(part -> part.summary() != null)
+                    .flatMap(part -> part.summary().keyPoints().stream()).toList();
+            List<String> actualLearningPath = fragments.stream().filter(part -> part.summary() != null)
+                    .flatMap(part -> part.summary().learningPath().stream()).toList();
+
+            assertThat(fragments).hasSizeGreaterThan(1);
+            assertThat(actualSectionText).isEqualTo(mode == OverviewMode.SUMMARY ? "" : sectionText);
+            assertThat(actualOverviewText).isEqualTo(mode == OverviewMode.OUTLINE ? "" : overviewText);
+            assertThat(actualKeyPoints).isEqualTo(mode == OverviewMode.OUTLINE ? List.of() : keyPoints);
+            assertThat(actualLearningPath).isEqualTo(mode == OverviewMode.OUTLINE ? List.of() : learningPath);
+            assertThat(fragments.stream().filter(part -> part.outline() != null)
+                    .flatMap(part -> part.outline().stream()).flatMap(chapter -> chapter.sections().stream())
+                    .flatMap(section -> section.sourceIds().stream())).allMatch("source-1"::equals);
+            assertThat(fragments).allSatisfy(part -> {
+                if (mode == OverviewMode.OUTLINE) assertThat(part.summary()).isNull();
+                if (mode == OverviewMode.SUMMARY) assertThat(part.outline()).isNull();
+            });
+        }
+    }
+
+    @Test
+    void reducePlanningStopsOnCancellationOrExpiredDeadline() throws Exception {
+        OverviewGenerationService service = serviceWithMapper(new ObjectMapper(), 5_000);
+        Class<?> contextType = Class.forName("com.auralis.app.ai.OverviewGenerationService$GenerationContext");
+        var contextConstructor = contextType.getDeclaredConstructors()[0];
+        contextConstructor.setAccessible(true);
+        var splitMethod = OverviewGenerationService.class.getDeclaredMethod("splitOverviewForReduce",
+                contextType, OverviewMode.class, String.class, OverviewDtos.OverviewResponse.class);
+        splitMethod.setAccessible(true);
+        OverviewDtos.OverviewResponse document = new OverviewDtos.OverviewResponse(1, "Calculus", null,
+                new OverviewDtos.OverviewSummary("O".repeat(4_000), List.of("point"), List.of()));
+        OverviewCancellation cancellation = new OverviewCancellation();
+        cancellation.cancel(OverviewCancellation.Reason.REQUEST_DISCONNECTED);
+        Object cancelledContext = contextConstructor.newInstance(UUID.randomUUID(), null, null,
+                OverviewMode.SUMMARY, "request", "generation",
+                new OverviewTaskDeadline(120_000, System::nanoTime), cancellation);
+        assertThatThrownBy(() -> splitMethod.invoke(service, cancelledContext, OverviewMode.SUMMARY, "", document))
+                .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
+                .extracting(error -> ((DomainException) error.getCause()).code())
+                .isEqualTo("MODEL_TIMEOUT");
+
+        AtomicInteger clockReads = new AtomicInteger();
+        OverviewTaskDeadline expired = new OverviewTaskDeadline(1,
+                () -> TimeUnit.MILLISECONDS.toNanos(2L * clockReads.getAndIncrement()));
+        Object expiredContext = contextConstructor.newInstance(UUID.randomUUID(), null, null,
+                OverviewMode.SUMMARY, "request", "generation", expired, null);
+        assertThatThrownBy(() -> splitMethod.invoke(service, expiredContext, OverviewMode.SUMMARY, "", document))
+                .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
+                .extracting(error -> ((DomainException) error.getCause()).code())
+                .isEqualTo("MODEL_TIMEOUT");
+        assertThat(clockReads.get()).isGreaterThan(1);
+    }
+
+    @Test
+    void treatsProviderLengthFinishReasonAsTruncatedOutput() {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        OverviewGenerationService service = serviceWithResponses(sourceService,
+                List.of(new AiProviderResponse(validDocument("source-1"), 1, 4_608, "length")),
+                List.of(chunk(userId, sourceId, true, "content")), 12_000, requests);
+        assertThatThrownBy(() -> service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("OVERVIEW_PROVIDER_OUTPUT_TRUNCATED");
+        assertThat(requests).hasSize(1);
     }
 
     @Test
@@ -1253,7 +1540,7 @@ class AiOverviewServiceTests {
                 new AiProviderResponse(valid, 1, 3_073),
                 new AiProviderResponse(valid, 1, 4_096)),
                 List.of(chunk(userId, sourceId, true, "a".repeat(1_200)),
-                        chunk(userId, sourceId, true, "b".repeat(1_200))), 2_800, requests);
+                        chunk(userId, sourceId, true, "b".repeat(1_200))), 3_500, requests);
 
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
@@ -1278,6 +1565,9 @@ class AiOverviewServiceTests {
         for (int i = 0; i < 2; i++) {
             responses.add(new AiProviderResponse(valid, 1, 3_072));
         }
+        for (int i = 0; i < 2; i++) {
+            responses.add(new AiProviderResponse(valid, 1, 3_072));
+        }
         responses.add(new AiProviderResponse(valid, 1, 4_096));
         OverviewGenerationService service = serviceWithResponses(sourceService, responses,
                 List.of(chunk(userId, sourceId, true, "a".repeat(7_000)),
@@ -1288,11 +1578,11 @@ class AiOverviewServiceTests {
         assertThat(service.generateSource(userId,
                 sourceRequest(sourceId, OverviewMode.ALL, null))).isNotNull();
         assertThat(requests).extracting(AiProviderRequest::maxTokens)
-                .containsExactly(4_608, 4_608, 4_608, 4_608, 4_608, 4_608, 6_144);
+                .containsExactly(4_608, 4_608, 4_608, 4_608, 4_608, 4_608, 4_608, 4_608, 6_144);
     }
 
     @Test
-    void rejectsIntermediateOutputThatCannotFitSelfPairBeforeReduce() {
+    void hardLimitRejectsReduceRecoveryWhenSingletonCompactionMakesNoProgress() {
         UUID userId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         SourceService sourceService = mock(SourceService.class);
@@ -1300,15 +1590,19 @@ class AiOverviewServiceTests {
                 .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
         List<AiProviderRequest> requests = new ArrayList<>();
         OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
+                new AiProviderResponse(validDocument("source-1"), 1, 1),
+                new AiProviderResponse(validDocument("source-1"), 1, 1),
                 new AiProviderResponse(validDocument("source-1"), 1, 1)),
-                List.of(chunk(userId, sourceId, true, "a".repeat(400)),
-                        chunk(userId, sourceId, true, "b".repeat(400))), 2_000, requests);
+                List.of(chunk(userId, sourceId, true, "a".repeat(800)),
+                        chunk(userId, sourceId, true, "b".repeat(800))), 2_600, requests);
 
         assertThatThrownBy(() -> service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null)))
                 .isInstanceOf(DomainException.class)
                 .extracting(e -> ((DomainException) e).code())
-                .isEqualTo("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE");
-        assertThat(requests).hasSize(1);
+                .isEqualTo("OVERVIEW_REDUCE_NO_PROGRESS");
+        assertThat(requests).hasSize(3);
+        assertThat(requests).extracting(AiProviderRequest::maxTokens)
+                .containsExactly(4_608, 4_608, 4_608);
     }
 
     @Test
@@ -1374,23 +1668,30 @@ class AiOverviewServiceTests {
     }
 
     @Test
-    void stopsReducingWhenEveryDocumentFitsAloneButNoPairFits() {
+    void stopsReducingWhenEveryDocumentFitsAloneButNoPairFitsWithinRecoveryCallBound() {
         UUID userId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         SourceService sourceService = mock(SourceService.class);
         when(sourceService.requireActiveSource(userId, sourceId))
                 .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
         List<AiProviderRequest> requests = new ArrayList<>();
-        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(
-                        chunk(userId, sourceId, true, "a".repeat(400)),
-                        chunk(userId, sourceId, true, "b".repeat(400))), 2_000,
-                validDocument("source-1"), requests, 4);
+        String mapDocument = largeValidDocument("source-1", 400);
+        String compactedDocument = largeValidDocument("source-1", 300);
+        OverviewGenerationService service = serviceWithResponses(sourceService, List.of(
+                        new AiProviderResponse(mapDocument, 1, 1_024),
+                        new AiProviderResponse(mapDocument, 1, 1_024),
+                        new AiProviderResponse(compactedDocument, 1, 1_024),
+                        new AiProviderResponse(compactedDocument, 1, 1_024)),
+                List.of(chunk(userId, sourceId, true, "a".repeat(800)),
+                        chunk(userId, sourceId, true, "b".repeat(800))), 2_800, requests);
 
         assertThatThrownBy(() -> service.generateSource(userId, sourceRequest(sourceId, OverviewMode.ALL, null)))
                 .isInstanceOf(DomainException.class)
                 .extracting(e -> ((DomainException) e).code())
-                .isEqualTo("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE");
-        assertThat(requests).hasSize(1);
+                .isEqualTo("OVERVIEW_REDUCE_NO_PROGRESS");
+        assertThat(requests).hasSize(4);
+        assertThat(requests).extracting(AiProviderRequest::maxTokens)
+                .containsExactly(4_608, 4_608, 4_608, 4_608);
     }
 
     @Test
@@ -1572,6 +1873,63 @@ class AiOverviewServiceTests {
                         && !log.contains("apiKey"));
         assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage))
                 .noneMatch(log -> log.contains("FINAL_JSON_CHECK") && log.contains("INTERMEDIATE"));
+    }
+
+    @Test
+    void logsSafeIntermediateProviderJsonDiagnosticsWithoutChangingProviderError() {
+        assertIntermediateJsonDiagnostic(
+                "{\n  \"title\":\"syntax-secret-marker\", \"outline\":[}\n}",
+                "syntax-secret-marker");
+        assertIntermediateJsonDiagnostic(
+                validDocument("source-1").replace("\"schemaVersion\":1", "\"schemaVersion\":\"mapping-secret-marker\""),
+                "mapping-secret-marker");
+    }
+
+    private void assertIntermediateJsonDiagnostic(String response, String secretMarker) {
+        UUID userId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        SourceService sourceService = mock(SourceService.class);
+        when(sourceService.requireActiveSource(userId, sourceId))
+                .thenReturn(source(sourceId, UUID.randomUUID(), SourceIngestionStatus.READY));
+        List<AiProviderRequest> requests = new ArrayList<>();
+        List<SourceChunkEntity> chunks = java.util.stream.IntStream.range(0, 8)
+                .mapToObj(index -> chunk(userId, sourceId, true,
+                        Character.toString((char) ('a' + index)).repeat(250)))
+                .toList();
+        OverviewGenerationService service = serviceWithResponses(sourceService,
+                List.of(new AiProviderResponse(response, 1, 100)), chunks, 3_000, requests);
+        Logger logger = (Logger) LoggerFactory.getLogger(OverviewGenerationService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> service.generateSource(userId,
+                    sourceRequest(sourceId, OverviewMode.ALL, null)))
+                    .isInstanceOf(DomainException.class)
+                    .extracting(error -> ((DomainException) error).code())
+                    .isEqualTo("MODEL_PROVIDER_ERROR");
+        } finally {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+
+        List<String> messages = appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertThat(requests).isNotEmpty();
+        assertThat(messages).anyMatch(message -> message.contains("phase=OVERVIEW_VALIDATION_DIAGNOSTIC")
+                && message.contains("outputStage=INTERMEDIATE")
+                && message.contains("purpose=MAP")
+                && message.contains("step=provider_document")
+                && message.contains("reason=JACKSON_READ_FAILURE")
+                && message.contains("exceptionType=")
+                && message.contains("line=")
+                && message.contains("column=")
+                && message.contains("charOffset=")
+                && !message.contains("line=-1")
+                && !message.contains("column=-1")
+                && !message.contains("charOffset=-1"));
+        assertThat(messages).noneMatch(message -> message.contains(secretMarker));
+        assertThat(messages).anyMatch(message -> message.startsWith("OVERVIEW_GENERATION_FAILED ")
+                && message.contains("errorCode=MODEL_PROVIDER_ERROR"));
     }
 
     @ParameterizedTest
@@ -1832,8 +2190,27 @@ class AiOverviewServiceTests {
         sourceIds.forEach(sourceId -> when(sourceService.requireActiveSource(userId, sourceId))
                 .thenReturn(source(sourceId, subjectId, SourceIngestionStatus.READY)));
         List<AiProviderRequest> requests = new ArrayList<>();
-        OverviewGenerationService service = service(sourceService, mock(SubjectService.class), List.of(), 12_000,
-                validDocument("source-1"), requests);
+        AiProviderPort provider = new AiProviderPort() {
+            @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential) {
+                return complete(request, credential, 120_000L);
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                                                           long timeoutMillis) {
+                requests.add(request);
+                String prompt = request.messages().get(1).content();
+                List<String> aliases = java.util.stream.IntStream.rangeClosed(1, sourceIds.size())
+                        .mapToObj(index -> "source-" + index)
+                        .filter(alias -> prompt.contains(alias)).toList();
+                return new AiProviderResponse(validDocumentWithAliases(aliases.toArray(String[]::new)), 1, 1);
+            }
+            @Override public AiProviderResponse complete(AiProviderRequest request, AiCredential credential,
+                    long timeoutMillis, OverviewCancellation cancellation) {
+                return complete(request, credential, timeoutMillis);
+            }
+        };
+        OverviewGenerationService service = serviceWithTaskTimeout(sourceService, mock(SubjectService.class),
+                List.of(), provider, 120_000L);
         OverviewDtos.OverviewSummary summary = new OverviewDtos.OverviewSummary("summary", List.of("point"), List.of("step"));
         List<OverviewDtos.SubjectOverviewSourceInput> inputs = new ArrayList<>();
         for (int i = 0; i < sourceIds.size(); i++) {
@@ -1976,15 +2353,20 @@ class AiOverviewServiceTests {
                 String.class, String.class, List.class, OverviewDtos.OverviewSummary.class);
         constructor.setAccessible(true);
         Object input = constructor.newInstance("source-1", "Calculus", null, summary);
+        Class<?> contextType = Class.forName("com.auralis.app.ai.OverviewGenerationService$GenerationContext");
+        var contextConstructor = contextType.getDeclaredConstructors()[0];
+        contextConstructor.setAccessible(true);
+        OverviewTaskDeadline deadline = new OverviewTaskDeadline(30_000, System::nanoTime);
+        Object context = contextConstructor.newInstance(UUID.randomUUID(), null, null, OverviewMode.SUMMARY,
+                "request", "generation", deadline, null);
         java.lang.reflect.Method pack = OverviewGenerationService.class.getDeclaredMethod(
-                "packSubjectInputs", OverviewMode.class, String.class, List.class, OverviewTaskDeadline.class);
+                "packSubjectInputs", contextType, OverviewMode.class, String.class, List.class);
         pack.setAccessible(true);
 
-        OverviewTaskDeadline deadline = new OverviewTaskDeadline(30_000, System::nanoTime);
         @SuppressWarnings("unchecked")
         List<List<Object>> batches = (List<List<Object>>) org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> {
             try {
-                return pack.invoke(service, OverviewMode.SUMMARY, null, List.of(input), deadline);
+                return pack.invoke(service, context, OverviewMode.SUMMARY, null, List.of(input));
             } catch (java.lang.reflect.InvocationTargetException exception) {
                 throw new IllegalStateException(exception.getCause());
             } catch (ReflectiveOperationException exception) {
@@ -2025,16 +2407,21 @@ class AiOverviewServiceTests {
                 String.class, String.class, List.class, OverviewDtos.OverviewSummary.class);
         constructor.setAccessible(true);
         Object input = constructor.newInstance("source-1", "Calculus", null, summary);
+        Class<?> contextType = Class.forName("com.auralis.app.ai.OverviewGenerationService$GenerationContext");
+        var contextConstructor = contextType.getDeclaredConstructors()[0];
+        contextConstructor.setAccessible(true);
         java.lang.reflect.Method pack = OverviewGenerationService.class.getDeclaredMethod(
-                "packSubjectInputs", OverviewMode.class, String.class, List.class, OverviewTaskDeadline.class);
+                "packSubjectInputs", contextType, OverviewMode.class, String.class, List.class);
         pack.setAccessible(true);
         AtomicInteger clockReads = new AtomicInteger();
         OverviewTaskDeadline deadline = new OverviewTaskDeadline(5, () ->
                 TimeUnit.MILLISECONDS.toNanos(clockReads.getAndIncrement()));
+        Object context = contextConstructor.newInstance(UUID.randomUUID(), null, null, OverviewMode.SUMMARY,
+                "request", "generation", deadline, null);
 
         assertThatThrownBy(() -> {
             try {
-                pack.invoke(service, OverviewMode.SUMMARY, null, List.of(input), deadline);
+                pack.invoke(service, context, OverviewMode.SUMMARY, null, List.of(input));
             } catch (java.lang.reflect.InvocationTargetException exception) {
                 throw (RuntimeException) exception.getCause();
             } catch (ReflectiveOperationException exception) {
@@ -2406,6 +2793,12 @@ class AiOverviewServiceTests {
                 + "\"sections\":[{\"title\":\"Sequences\",\"summary\":\"A limit\",\"sourceIds\":[\""
                 + alias + "\"],\"locator\":null}]}],\"summary\":{\"overview\":\"Study\"," 
                 + "\"keyPoints\":[\"Limits\"],\"learningPath\":[\"Limits\"]}}";
+    }
+
+    private static String validDocumentWithAliases(String... aliases) {
+        return validDocument(aliases[0]).replace("\"sourceIds\":[\"" + aliases[0] + "\"]",
+                "\"sourceIds\":" + java.util.Arrays.stream(aliases).map(alias -> "\"" + alias + "\"")
+                        .collect(java.util.stream.Collectors.joining(",", "[", "]")));
     }
 
     private static String markedDocument(String alias, String marker) {

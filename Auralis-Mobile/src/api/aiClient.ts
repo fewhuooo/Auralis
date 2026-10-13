@@ -203,7 +203,7 @@ async function conversationForCurrentUser(title: string): Promise<string> {
 }
 
 export async function completeAiText(text: string): Promise<string> {
-  return streamMessage({ content: text, retrievalEnabled: true, clientRequestId: uuidv7() }, () => undefined)
+  return streamMessage({ content: text, clientRequestId: uuidv7() }, () => undefined)
 }
 
 export async function transcribeAndExtractTasks(text: string) {
@@ -225,7 +225,6 @@ export async function chatWithAI(
   await streamMessage({
     conversationId: activeConversationId,
     content: text,
-    retrievalEnabled: true,
     topK: 8,
     clientRequestId: uuidv7(),
   }, onMessage)

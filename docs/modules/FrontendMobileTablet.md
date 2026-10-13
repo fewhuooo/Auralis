@@ -1,5 +1,11 @@
 # Mobile / Tablet 前端模块
 
+### 2026-10-12 聊天资料检索默认开启（代码、协议测试与 H5 构建通过；类型检查受既有问题阻断）
+
+- Mobile 与 Tablet AI 聊天不发送 `retrievalEnabled`，沿用服务端新聊天的默认检索路径；`ReadingContext` 若存在，仍由其限定来源范围。Tablet Profile 已移除本地 `ragEnabled` 关闭控件。
+- `test:r4-mobile` 24/24、`check:r4-mobile` 与 `build:h5` 退出码 0。`type-check` 退出码 2，仅为未迁移的 `src/api/reviewApi.ts` 引用已移除的 `EventRequest` / `EventResponse`；干净 HEAD 同样复现，不属于本轮引入，未修改该模块。
+- 本轮额度、BYOK、模型设置、会话与 SSE 协议保持。真实 Provider、GUI/真机及微信构建未运行，证据见[计划](../plans/2026-10-12-rag-always-on.md)。
+
 ### 2026-10-11 手机与平板个人中心 AI 额度（代码、相关自动验证与只读审查通过；真机待验收）
 
 - `mobile/profile` 与 `tablet/profile` 共用 `useAiUsage`，从认证 `GET /api/ai/usage` 展示小时/今日总额、已结算、在途预留、剩余及当地重置时间。账号切换、离开页面及新请求使旧响应失效；首次加载和失败不伪造零额度。

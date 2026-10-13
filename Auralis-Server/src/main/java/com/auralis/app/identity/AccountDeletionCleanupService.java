@@ -181,6 +181,10 @@ public class AccountDeletionCleanupService {
         jdbcTemplate.update("delete from focus_sessions where user_id = ?", userId);
         jdbcTemplate.update("delete from overview_write_receipts where user_id = ?", userId);
         jdbcTemplate.update("delete from overview_results where user_id = ?", userId);
+        jdbcTemplate.update("delete from overview_generation_checkpoints where generation_id in "
+                + "(select id from overview_generations where user_id = ?)", userId);
+        jdbcTemplate.update("delete from overview_generation_requests where user_id = ?", userId);
+        jdbcTemplate.update("delete from overview_generations where user_id = ?", userId);
         jdbcTemplate.update("delete from messages where user_id = ?", userId);
         jdbcTemplate.update("delete from conversations where user_id = ?", userId);
         jdbcTemplate.update("delete from relations where user_id = ?", userId);

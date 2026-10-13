@@ -61,7 +61,8 @@ class GlobalExceptionHandlerTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE", "OVERVIEW_REDUCE_NO_PROGRESS"})
+    @ValueSource(strings = {"OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE", "OVERVIEW_PROMPT_BUDGET_EXCEEDED",
+            "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED", "OVERVIEW_RECOVERY_EXHAUSTED", "OVERVIEW_REDUCE_NO_PROGRESS"})
     void mapsOverviewBudgetFailuresToBadGateway(String code) {
         var request = new MockHttpServletRequest("POST", "/api/ai/source-overviews");
 

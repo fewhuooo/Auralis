@@ -42,7 +42,7 @@ export async function getAvatarCache(userId: string): Promise<Blob | null> {
 
       request.onsuccess = () => {
         const record = request.result as AvatarRecord | undefined
-        if (record?.blob instanceof Blob) result = record.blob
+        if (record?.blob instanceof Blob && record.blob.size > 0) result = record.blob
       }
       request.onerror = () => reject(request.error || new Error('Failed to read avatar cache'))
       tx.oncomplete = () => {
@@ -65,7 +65,7 @@ export async function getAvatarCache(userId: string): Promise<Blob | null> {
 }
 
 export async function saveAvatarCache(userId: string, blob: Blob): Promise<void> {
-  if (!userId || !(blob instanceof Blob)) return
+  if (!userId || !(blob instanceof Blob) || blob.size === 0) return
 
   try {
     const db = await openDatabase()

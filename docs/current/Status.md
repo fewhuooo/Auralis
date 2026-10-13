@@ -1,5 +1,35 @@
 # Auralis 当前状态
 
+### 2026-10-13 PC 学科总览重新生成默认更新与提示清理（代码与自动测试通过；GUI 待验收）
+
+- 用户指令：学科总览重新生成的时候不用问用户是否保留原版，默认更新就好了，不用弹提示；去掉“云端版本已变化，本机总览仍保留”提示。
+- 解决：
+  - `SubjectOverviewSection.vue` 移除 `overview?.syncStatus === 'CONFLICT'` 对应的冲突提示条及“保留本机并上传 / 采用云端”操作按钮；
+  - `SubjectWorkspace/index.vue` 在学科总览重新生成时（`scope.kind === 'subject'`）不再弹出 `ElMessage.success('已更新')` 等全局 Toast；
+  - 学科总览在重新生成或检测到冲突状态时，默认静默执行本地覆盖更新（`resolveSubjectOverviewConflict('LOCAL', true)`），不再要求用户手动二选一；
+  - `FileOutlineList.vue` 的分文件总览冲突与错误操作保持不变。
+- 验证：`vue-tsc -b` 0 报错；`scripts/r4-subject-overview-ui.test.mjs` 与 `scripts/r4-overview-sync.test.mjs` 38 项测试全绿。真实 GUI 视觉待验收。
+
+### 2026-10-13 Overview 动态预算与超限恢复（实现、自动门禁与指定 P4 通过；部署/GUI未验收）
+
+- P0 已确认 Self-Pair 仅为复制中间 JSON 的本地预检，并不执行 Provider 或全局关系校验。受控合法 fixture 精确重现 `normalizedChars=5062`、`selfPairPromptChars=12167` 的误拒绝；原现场完整 JSON 未提供，fixture 不冒称原始载荷。
+- 当前代码已具备动态内容软目标、真实内容语义分包、prompt 硬上限与三类预算/截断/恢复错误分类；V32 私有 generation/checkpoint/request mapping coordinator 已接入 Overview Service。有效规范化 UUID 的同 request replay、失败 lineage 与跨 request ID 预算累计已由最终自动门禁覆盖。结果 payload 14 天清理时保留 request/generation/budget metadata，旧 request ID 不可复用；recovery count 按 generation 累计、actions 安全集合去重。2026-10-13 03:34:43 首次只读观察到 backend 镜像 `sha256:f0c3e886175dadd709876988c7570a395793ae67a637545cbe5825a570317593` healthy、Flyway V32 `success=true`；之后用户更新镜像并进行真实 retry。各次运行镜像 class/source provenance 均未核验。
+- 保留原 Gateway 用户额度、请求 / 任务预算、并发、绝对期限及取消；生成仍只返回候选，不写正式 Overview results，客户端保存仍走既有独立 PUT 围栏。Byte-based token estimate 不是 tokenizer 实测。
+- 最终需求核对后 fresh backend 门禁为 20 suites / 210 tests，0 failure/error/skip；clean 编译 335 main / 111 test，test 与 package 均退出 0。临时 PostgreSQL 覆盖 clean/V31→V32、协调/重放/恢复/账本及跨实例六类用量错误。唯一 reviewer 首审 B0/I1/O0；I1 已由 Luna high 执行代理修复，主代理依据完整 diff 和实际回归关闭，剩余 B0/I0/O0。原 reviewer 复审被工具线程上限拒绝，后续主代理裁决不冒称独立复审。
+- 指定 PDF 的真实 DEEPSEEK `deepseek-v4-flash` 评估成功：Source ALL 9 calls、44,097 input / 12,643 output、56,740 charged、69.595s；单文件 Subject ALL 1 call、1,806 / 1,489、3,295 charged、6.414s。合计 60,035 charged；零 unknown-dispatched / 活动预留 / 任务租约，recovery=0。八组主要正文主题初步核对均被覆盖，细节压缩；Subject 保留 Source outline/summary。本次不证明多文件、真实恢复成功率或全书知识完整性。业务输入只读、原业务账本计量、V32仅TEMP H2、候选仅TEMP；正式结果行数保持1，未执行PUT。详细命令、hash、内容边界与原review结论见[实施计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+- 2026-10-13 首次运行的 MAP2 JSON 相关校验失败仍缺少精确拒绝原因。后续同 generation retry（request `70b1a9f6-e190-4932-920e-8ec738d61617`）的 MAP1 在 6ms 内成功且此前没有该阶段 `PROVIDER_REQUEST`；DB `recovery_count=1`、checkpoint 总数5，与已存 checkpoint 复用相符，但运行日志没有显式 restore/hit phase。MAP2（4,661 chars / 2,287 tokens）、MAP3（1,888 / 1,006）均成功；REDUCE round1 两组均成功，round2 输出 5,789 chars / 3,020 tokens 后再次在 JSON 相关校验阶段被拒绝，最终仍为 `MODEL_PROVIDER_ERROR`、无结果。具体原因未定位，不能断言响应是非法 JSON。只读账本累计7笔均已结算，input/output/charged 为 26,627 / 16,894 / 43,521；usage 完整、unknown/active reservation 为0，锁无 owner/lease。原始响应、准确 Jackson 错误位置/类型仍不可得，业务生成仍未验收。只读命令与限制见[首次诊断](D:/Temp/auralis-overview-dynamic-budget-20261012/validation/diagnostics/subject-map-json-20261013/readonly-attribution.md)及[重试报告](D:/Temp/auralis-overview-dynamic-budget-20261012/validation/diagnostics/subject-map-json-20261013/retry-20261013-040434-report.md)。
+- 为定位这类失败，当前工作树 validator 可向真实 Provider 响应校验路径发送固定拒绝类别、异常类型和 Jackson 行/列/字符偏移日志；位置基于 trim/fence 剥离后的 JSON。没有记录消息、正文、字段值或 Jackson path。两个相关测试类定向门禁 83/83 通过；此前 210 项门禁早于这次日志改动。该日志实现当时未由 Codex 部署；之后用户更新镜像并 retry，但后续请求在 Provider 响应校验前以 no-progress 结束，未验证诊断输出或运行镜像 class/source provenance。诊断实现与命令见[D:/Temp 定向证据](D:/Temp/auralis-overview-dynamic-budget-20261012/validation/diagnostics/safe-json-logging-20261013/report.md)。
+- 2026-10-13 后续用户 retry 沿用 generation `18226745-50bc-4ce9-be30-97cf8c61f57c`；此前 REDUCE 响应在 JSON 相关校验阶段被拒绝，具体原因未定位。本次继续阶段使用已有6个 checkpoint，未产生 Provider request，恢复在 `OVERVIEW_REDUCE_NO_PROGRESS` 结束。只读 DB 显示恢复计数3、8笔已结算调用，input/output/charged 30,137/19,913/50,050，usage完整、unknown/active reservation为0，无结果。代码归因确认 recovery compaction checkpoint 在尺寸缩减检查前保存，导致无进展结果被下一次同 purpose 重放并再次失败。Service 已采用独立 full/partial recovery-compaction purpose，并在 cache/fresh 两条路径校验严格缩减、仅在校验成功后保存；fresh no-progress 仍返回原错误码且不落checkpoint。隔离 Recovery/Coordinator/DynamicBudget/Service/Gateway/cancellation 门禁 141/141 通过；此前 210 项门禁早于本次修复。本地修复未部署，业务 Subject 生成仍未成功验收。
+- 后续只读观察 backend 镜像 `sha256:489106fe07a0c26f8da32884bc0e1aed858f680a9ecbd40bb638374f27369ebf`，StartedAt `2026-10-13T04:34:01.775901382Z`，healthy，Flyway V32 已成功。该观察不证明运行镜像包含安全 validator 诊断或本地 recovery fix；未读取 class/source provenance，也未由本执行器部署、迁移、重置预算或发起 Provider 请求。P1 JSON 失败风险保持开放。
+- 生成 endpoint 仍只返回候选，不写正式 Overview results；客户端保存仍走既有独立 PUT 围栏。Byte-based token estimate 不是 tokenizer 实测。代码、自动化、临时 PostgreSQL、真实 Provider、GUI、部署和业务迁移状态分别记录，上一轮 RAG 修改保持。本轮只读诊断未执行部署、提交/推送；运行态观察见上。
+
+### 2026-10-12 聊天资料检索默认开启（跨端代码、定向测试与构建完成；业务待实测）
+
+- 用户已要求默认启用聊天资料检索，并移除关闭选项。批准范围为 PC、Mobile、Tablet 与后端聊天路径：请求 DTO 删除 `retrievalEnabled` 字段，新聊天始终使用现有检索；PC 当前文件用 `AUTO`，无当前文件且无明确文件范围时用当前学科 `SUBJECT`，Mobile 无上下文时沿用服务端当前用户 owner 范围。
+- 保留现有 owner / 活动 Source / `READY` 校验、显式 Source/Subject 范围及空命中后继续生成行为；embedding 配置或 Provider 失败不降级。既有额度策略不变，旧报告的 token 估算、RAG 预算、Provider retry 与 Overview 后台处理不在范围内。
+- 请求 DTO 已删除字段，旧 extra 字段 JSON 被 Spring mapper 忽略；后端 clean 定向测试 47/47、OpenAPI/SDK 门禁退出码 0；PC 最终 57/57、type-check / build 退出码 0；Mobile 24/24、static / H5 build 退出码 0。PC static 仍命中未改 Rust 固定地址规则，Mobile type-check 仍因未迁移 Review API 缺少 EventRequest/EventResponse 退出 2，两者均在干净 HEAD 复现。
+- 实际 Antigravity MCP 返回部分补丁并遇超时，由 Luna 与主 Agent 补齐；Codex 唯一只读最终审查 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。当前文件未就绪仍保持 AUTO 处理门槛，失效选择、全学科 READY 标记和手动末项撤销均已有回归。未部署、未提交/推送；真实 Provider、PC GUI、Mobile/Tablet 真机均 NOT_RUN。详见[实施计划](../plans/2026-10-12-rag-always-on.md)。
+
 ### 2026-10-12 学科总览合并输入超限（代码、定向回归、只读审查与本机更新完成；业务实测待验收）
 
 - 现场重新生成约 13ms 返回 `VALIDATION_FAILED`，在 Provider 请求前失败；`phase=FINAL` 为外层失败标签。
@@ -31,7 +61,7 @@
 
 - `Auralis-PC/src/services/avatarCache.ts` 使用 IndexedDB 按用户 ID 持久化头像 Blob；Pinia 不保存图片或 Blob URL。
 - 顶栏与个人中心通过 auth store 共享头像状态：先显示本地缓存，再请求云端刷新；网络故障保留本地头像，服务端明确返回无头像时清除缓存并回退首字母。上传成功写入本地副本，重置和退出登录清理对应缓存；账号切换与旧请求由代次隔离。
-- 验证：`npm.cmd run type-check` 退出码 0。未运行测试；真实 Tauri 重启后断网显示仍待 GUI 验收。首次升级后的本地副本需要客户端在线成功读取或重新上传头像后建立。
+- 验证：`scripts/r4-profile-live-links.test.mjs`（7/7 项测试全量通过）与 `npm.cmd run type-check` 退出码 0。真实 Tauri 重启后断网显示仍待 GUI 验收。首次升级后的本地副本需要客户端在线成功读取或重新上传头像后建立。
 - 只读复核：BLOCKER=0、IMPORTANT=0；记录一个同账号重置响应与后续上传交错时可能清掉新缓存的 OPTIONAL 边界，本轮未改。
 
 ### 2026-10-12 PC 设置与个人中心（Profile Studio）Awwwards 获奖级视觉设计与微交互重构完成（代码与自动验证通过；GUI 待验收）
@@ -404,7 +434,7 @@
 ### 2026-10-06 PC AI 参考范围下拉菜单交互收敛（代码、自动验证通过；真实环境待验收）
 
 - **AI 参考范围交互收敛**：
-  - `SubjectWorkspace/index.vue`：移除顶部参考范围区域中冗余占位的「当前文件」独立选项，顶层仅保留全局模式「全学科资料」与「不引用资料」；
+  - `SubjectWorkspace/index.vue`：移除顶部参考范围区域中冗余占位的「当前文件」独立选项，顶部显示当前学科参考范围；
   - 正在浏览的文件直接在下方的「已关联文件」列表中默认呈选中高亮状态，并附加绿色徽标「当前」（`.mini-menu-current-tag`），消除了顶层伪选项与关联文件列表割裂的双重展示体验；
   - 弹出菜单高度优化为 `max-height: 380px`，空间更宽敞舒适。
 - **门禁验证**：`type-check` 退出 0，`test:r4-pc`（513/513 全部通过），`check:subject-workspace` 退出 0。真实桌面端 GUI 待人工走查。
@@ -460,7 +490,7 @@
 
 ### 2026-10-01 提问选中文本链路（代码和自动验证通过；真实 Provider/GUI 待验收）
 
-- 用户完成的引用 UI 保持原样，ChatStore 独立传递 selectionText，NONE 模式也能引用并保持关闭资料检索。后端优先使用顶层引用、保留现行嵌套字段；引用限 4000 字符，仅用于当前模型请求。
+- 用户完成的引用 UI 保持原样，ChatStore 独立传递 selectionText；后端优先使用顶层引用、保留现行嵌套字段；引用限 4000 字符，仅用于当前模型请求。2026-10-12 批准的新聊天默认开启检索，不提供关闭模式，实施状态见本页顶部。
 - 引用作为 USER 资料并配固定 SYSTEM 安全说明，预算优先保留完整当前问题和引用；无法容纳时在 SSE 开始前明确 HTTP 400，不静默丢弃引用。
 - Server 最终 clean focused 47/47，OpenAPI export 8/8、SDK 生成/校验退出 0；PC focused 5/5、最终回归 478/478、类型/构建退出 0；Mobile 仅生成类型适配且类型检查退出 0。主 Agent 核对日志和完整脏树差分，命令与最终审查见 [实施记录](../plans/2026-10-01-chat-selected-text.md)。
 - 前端传递层与专项测试实际由 Antigravity Gemini 3.1 Pro High 生成，Codex 执行代理完成后端、生成契约和命令验证；用户工作树保留。未提交、部署或执行生产迁移，真实模型服务/GUI 未验收。
@@ -552,6 +582,15 @@
 3. 控件全域圆润一致性：操作按钮统一升级为 `border-radius: 9999px` Zen 胶囊按钮（高度 40px，主操作对齐全站 `Primary Gradient` 禅绿渐变 `linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)`，次操作为燕麦米白底板配发丝边框，危险操作为陶土红渐变）；表单输入框统一采用 14px 舒适圆角；关闭按钮升级为 32px 纯圆交互靶点；单选芯片、学科标签与时间滑块统一采用全圆角胶囊形态；
 4. 业务弹窗全面适配：覆盖确认对话框（`ConfirmDialog.vue`）、修改密码（`ChangePasswordDialog.vue`）、AI 总结指令（`SummaryInstructionDialog.vue`）、文件登记（`FileRegisterDialog.vue`）、任务创建（`TaskCreateDialog.vue`）、学科新建（`SubjectCreateModal.vue`）与知识块阅读/编辑（`KnowledgeBlockViewDialog.vue`、`WorkspaceKnowledgeBlockDialog.vue`）全量业务弹窗；
 5. 门禁验证：`npm.cmd run type-check`、`npm.cmd run test:r4-pc`（433/433 全部通过）、`npm.cmd run check:subject-icons`、`npm.cmd run check:subject-workspace` 与 `npm.cmd run build` 全部退出 0。真实 GUI 视觉体验待人工确认。
+
+2026-10-13 PC 全站多余滚动条与弹窗内层嵌套滚动条根除（代码与门禁验证通过，GUI 待验收）：
+彻底排查并消除 PC 端各处不该露出的滚动条：
+1. `ConfirmDialog.vue`（确认提示框）：绑定 `body-class="confirm-modal-body"` 并设置 `overflow: hidden !important;`，外边距归零，彻底解决 Windows Chromium 下因亚像素溢出导致的垂直滚动条；
+2. `WorkspaceKnowledgeBlockDialog.vue` 与 `KnowledgeBlockViewDialog.vue`：正文卡片 `.kb-content-card` 与编辑预览卡片 `.edit-rendered-card` 移除 `max-height` 及 `overflow-y: auto;`（及显式 `scrollbar-width: thin;`），正文内容自然流转展开，统一由外层模态壳平滑滚动，彻底根除内层嵌套与“双滚动条”；
+3. `modal.css`：在全局模态主内容区恢复 `scrollbar-width: none; ::-webkit-scrollbar { display: none; }`，与全站极简禅意无滚动条规范保持统一；
+4. `TaskCreateDialog.vue`：所属学科列表 `.subject-grid` 设为隐形滚动；
+5. `SubjectWorkspace`、`Dashboard`、`Timeline`：所有局部滚动列表（文件抽屉、知识块网格、待办列表、动态速递、时间轴槽位等）隐藏滚动条外观，保留自然流畅鼠标滚轮与触控滚动。
+门禁验证：`npm run type-check` 0 error，核心单元回归全量通过。真实 GUI 待验收。
 
 2026-09-27 PC 任务编排中心侧栏下周排期概览实现（代码与门禁验证通过，GUI 待验收）：在任务编排中心（`Timeline/index.vue`）侧栏中，直接于“本周排期概览”下方新增“下周排期概览”区块，与本周排期呈现样式 100% 同款对齐（无需 Tab 切换，自适应铺满侧栏并支持纵向平滑滚动）。基于 `getTimelineDays` 与 `dateKey` 实现精确的下周 7 天时间轮播与下周各日任务排期筛选；点击下周任意一天，高亮自适应切至目标项，中间“时间流细节”标题与半小时槽位排期自动联动切换为选中日期。PC 全量回归测试 `npm.cmd run test:r4-pc`（433/433 全量通过）、`npm.cmd run type-check` 退出 0。
 

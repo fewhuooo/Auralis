@@ -801,13 +801,6 @@
               <span class="mini-menu-desc">检索当前学科所有已就绪资料</span>
             </div>
           </div>
-          <div class="mini-menu-item" :class="{ 'is-active': aiReferenceScope === 'NONE' }" @click="selectNoAiSources">
-            <span class="mini-menu-icon"><IconMessageCircle :size="16" :stroke-width="1.8" /></span>
-            <div class="mini-menu-text">
-              <span class="mini-menu-label" :class="{ 'is-active': aiReferenceScope === 'NONE' }">不引用资料</span>
-              <span class="mini-menu-desc">按普通对话回答，不检索文件</span>
-            </div>
-          </div>
 
           <template v-if="activeSourceFiles.length > 0">
             <div class="ai-menu-divider"></div>
@@ -1420,7 +1413,12 @@ const runManualOverview = async (scope: ManualOverviewScope, handle: OverviewOpe
   try {
     const result = await handle
     if (manualOverviewHandles.get(key) !== handle) return
-    if (applyManualOverviewResult(result, scope)) await refreshOverviewCache()
+    if (applyManualOverviewResult(result, scope)) {
+      await refreshOverviewCache()
+      if (scope.kind === 'subject' && subjectOverviewRecord.value?.syncStatus === 'CONFLICT') {
+        void resolveSubjectOverviewConflict('LOCAL', true)
+      }
+    }
   } finally {
     if (manualOverviewHandles.get(key) === handle) {
       manualOverviewHandles.delete(key)
@@ -1452,7 +1450,7 @@ const clearFileOverviewManualError = (fileId: string) => {
 
 const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: ManualOverviewScope) => {
   if (result.status === 'STARTED') {
-    ElMessage.success('已更新')
+    if (scope.kind !== 'subject') ElMessage.success('已更新')
     if (scope.kind === 'subject') subjectOverviewManualError.value = null
     else clearFileOverviewManualError(scope.id)
     return true
@@ -1461,8 +1459,11 @@ const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: Ma
   const message = result.status === 'SKIPPED' ? overviewSkipMessage(result.code) : manualOverviewFailureMessage(result.code)
   if (scope.kind === 'subject') subjectOverviewManualError.value = message
   else fileOverviewManualErrors.value = { ...fileOverviewManualErrors.value, [scope.id]: message }
-  if (result.status === 'SKIPPED') ElMessage.warning(message)
-  else ElMessage.error(message)
+  if (result.status === 'SKIPPED') {
+    if (scope.kind !== 'subject') ElMessage.warning(message)
+  } else {
+    if (scope.kind !== 'subject') ElMessage.error(message)
+  }
   return false
 }
 
@@ -1482,6 +1483,9 @@ const refreshOverviewCache = async () => {
   const usable = records.filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
   isSubjectOverviewStale.value = Boolean(subjectOverviewRecord.value?.inputFingerprint
     && await computeSubjectInputFingerprint(usable) !== subjectOverviewRecord.value.inputFingerprint)
+  if (subjectOverviewRecord.value?.syncStatus === 'CONFLICT') {
+    void resolveSubjectOverviewConflict('LOCAL', true)
+  }
 }
 
 const ensureOverviewRuntime = async () => {
@@ -1512,7 +1516,7 @@ const ensureOverviewRuntime = async () => {
   return true
 }
 
-const resolveOverviewSyncConflict = async (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, choice: 'LOCAL' | 'REMOTE') => {
+const resolveOverviewSyncConflict = async (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, choice: 'LOCAL' | 'REMOTE', silent = false) => {
   if (!(await ensureOverviewRuntime()) || !overviewRepository) return
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
@@ -1560,18 +1564,22 @@ const resolveOverviewSyncConflict = async (scopeType: 'FILE' | 'SUBJECT', scopeI
     await new OverviewResultsSyncService(overviewRepository,userId,serverDeviceId)
       .resolveConflict(scopeType,scopeId,revisionKey,choice,options)
     if (options.isCurrent()) await refreshOverviewCache()
-    ElMessage.success(choice === 'LOCAL' ? '已提交本机总览同步' : '已采用云端总览')
+    if (!silent) {
+      ElMessage.success(choice === 'LOCAL' ? '已提交本机总览同步' : '已采用云端总览')
+    }
   } catch (error) {
-    const code = error instanceof Error ? error.message : ''
-    if (code === 'OVERVIEW_INPUT_CHANGED') ElMessage.warning('资料已变化，本机总览未覆盖云端，请先重新生成。')
-    else if (code === 'OVERVIEW_REMOTE_MISSING') ElMessage.warning('云端没有当前版本，保留本机总览并重试。')
-    else if (code === 'OVERVIEW_SCOPE_CHANGED' || code.endsWith('_STALE')) ElMessage.warning('资料版本已变化，请刷新后重试。')
-    else ElMessage.error('总览同步处理失败，请稍后重试。')
+    if (!silent) {
+      const code = error instanceof Error ? error.message : ''
+      if (code === 'OVERVIEW_INPUT_CHANGED') ElMessage.warning('资料已变化，本机总览未覆盖云端，请先重新生成。')
+      else if (code === 'OVERVIEW_REMOTE_MISSING') ElMessage.warning('云端没有当前版本，保留本机总览并重试。')
+      else if (code === 'OVERVIEW_SCOPE_CHANGED' || code.endsWith('_STALE')) ElMessage.warning('资料版本已变化，请刷新后重试。')
+      else ElMessage.error('总览同步处理失败，请稍后重试。')
+    }
   }
 }
 
-const resolveSubjectOverviewConflict = (choice: 'LOCAL' | 'REMOTE') => {
-  if (subjectId.value) void resolveOverviewSyncConflict('SUBJECT',subjectId.value,'subject-v1',choice)
+const resolveSubjectOverviewConflict = (choice: 'LOCAL' | 'REMOTE' = 'LOCAL', silent = false) => {
+  if (subjectId.value) void resolveOverviewSyncConflict('SUBJECT',subjectId.value,'subject-v1',choice, silent)
 }
 
 const resolveFileOverviewConflict = (payload: { fileId: string; choice: 'LOCAL' | 'REMOTE' }) => {
@@ -2362,9 +2370,9 @@ const showProcessingRequired = computed(() => {
 const showFileMenu = ref(false)
 const showModelMenu = showFileMenu
 
-type AiReferenceScope = 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT' | 'NONE'
+type AiReferenceScope = 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
 const MAX_AI_REFERENCE_SOURCES = 100
-const aiReferenceScope = ref<AiReferenceScope>('NONE')
+const aiReferenceScope = ref<AiReferenceScope>('SUBJECT')
 const selectedAiSourceIds = ref<string[]>([])
 
 const addAiReferenceSourceWithinLimit = (selected: Set<string>, sourceId: string) => {
@@ -2385,10 +2393,11 @@ const addAiReferenceSourceWithinLimit = (selected: Set<string>, sourceId: string
 watch(
   selectedFileId,
   (newId) => {
+    const current = activeSourceFiles.value.find((file) => file.id === newId)
     if (aiReferenceScope.value === 'AUTO') {
       selectedAiSourceIds.value = newId ? [newId] : []
+      if (!newId) aiReferenceScope.value = 'SUBJECT'
     } else if (aiReferenceScope.value === 'SELECTED_SOURCES' && newId) {
-      const current = activeSourceFiles.value.find((file) => file.id === newId)
       if (current?.ingestionStatus === 'READY' && !selectedAiSourceIds.value.includes(newId)) {
         const selected = new Set(selectedAiSourceIds.value)
         if (addAiReferenceSourceWithinLimit(selected, newId)) {
@@ -2400,12 +2409,34 @@ watch(
   { immediate: true }
 )
 
+watch(
+  [activeSourceFiles, subjectId],
+  () => {
+    if (aiReferenceScope.value !== 'SELECTED_SOURCES') return
+    const selected = selectedAiSourceIds.value.filter((id) =>
+      activeSourceFiles.value.some((file) => file.id === id && file.subjectId === subjectId.value))
+    if (selected.length === selectedAiSourceIds.value.length) return
+    selectedAiSourceIds.value = selected
+    const current = activeSourceFiles.value.find((file) =>
+      file.id === selectedFileId.value && file.subjectId === subjectId.value)
+    if (selected.length === 0 || (selected.length === 1 && selected[0] === current?.id)) {
+      aiReferenceScope.value = current ? 'AUTO' : 'SUBJECT'
+      selectedAiSourceIds.value = current ? [current.id] : []
+    }
+  },
+  { deep: true }
+)
+
 const isAllAiSourcesSelected = computed(() => {
   return aiReferenceScope.value === 'SUBJECT'
 })
 
 const isAiSourceSelected = (id: string) => {
-  return aiReferenceScope.value === 'SUBJECT' || selectedAiSourceIds.value.includes(id)
+  if (aiReferenceScope.value === 'SUBJECT') {
+    return activeSourceFiles.value.some((file) =>
+      file.id === id && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')
+  }
+  return selectedAiSourceIds.value.includes(id)
 }
 
 const toggleAiSource = (id: string) => {
@@ -2430,21 +2461,26 @@ const toggleAiSource = (id: string) => {
 
   selectedAiSourceIds.value = [...selected]
   aiReferenceScope.value = selected.size === 0
-    ? 'NONE'
+    ? (current ? 'AUTO' : 'SUBJECT')
     : selected.size === 1 && selected.has(selectedFileId.value || '')
       ? 'AUTO'
       : 'SELECTED_SOURCES'
+  if (aiReferenceScope.value === 'AUTO' && current) {
+    selectedAiSourceIds.value = [current.id]
+  } else if (aiReferenceScope.value === 'SUBJECT') {
+    selectedAiSourceIds.value = []
+  }
 }
 
 const selectCurrentAiSource = () => {
-  if (!selectedFileId.value) return
-  aiReferenceScope.value = 'AUTO'
-  selectedAiSourceIds.value = [selectedFileId.value]
-}
-
-const selectNoAiSources = () => {
-  aiReferenceScope.value = 'NONE'
-  selectedAiSourceIds.value = []
+  const current = activeSourceFiles.value.find((file) => file.id === selectedFileId.value)
+  if (current) {
+    aiReferenceScope.value = 'AUTO'
+    selectedAiSourceIds.value = [current.id]
+  } else {
+    aiReferenceScope.value = 'SUBJECT'
+    selectedAiSourceIds.value = []
+  }
 }
 
 const selectAllAiSources = () => {
@@ -2455,9 +2491,6 @@ const selectAllAiSources = () => {
 const aiChatReferenceOptions = () => {
   const current = activeSourceFiles.value.find((file) =>
     file.id === selectedFileId.value && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')
-  if (aiReferenceScope.value === 'NONE') {
-    return { subjectId: subjectId.value, retrievalMode: 'NONE' as const }
-  }
   if (aiReferenceScope.value === 'SUBJECT') {
     return { subjectId: subjectId.value, retrievalMode: 'SUBJECT' as const }
   }
@@ -2465,7 +2498,7 @@ const aiChatReferenceOptions = () => {
     return {
       subjectId: subjectId.value,
       sourceId: current?.id,
-      retrievalMode: 'AUTO' as const,
+      retrievalMode: current ? ('AUTO' as const) : ('SUBJECT' as const),
     }
   }
 
@@ -2477,14 +2510,14 @@ const aiChatReferenceOptions = () => {
   }
   return {
     subjectId: subjectId.value,
-    sourceIds,
-    retrievalMode: sourceIds.length ? 'SELECTED_SOURCES' as const : 'NONE' as const,
+    sourceIds: sourceIds.length ? sourceIds : undefined,
+    sourceId: !sourceIds.length && current ? current.id : undefined,
+    retrievalMode: sourceIds.length ? 'SELECTED_SOURCES' as const : (current ? 'AUTO' as const : 'SUBJECT' as const),
   }
 }
 
 const aiSourceSummaryText = computed(() => {
   if (aiReferenceScope.value === 'SUBJECT') return '全学科资料'
-  if (aiReferenceScope.value === 'NONE') return '不引用资料'
   if (aiReferenceScope.value === 'AUTO') return selectedFile.value?.name || '当前文件'
   const count = selectedAiSourceIds.value.length
   if (count === 1) {
@@ -2495,8 +2528,11 @@ const aiSourceSummaryText = computed(() => {
 })
 
 const aiSourceSummaryTitle = computed(() => {
-  if (aiReferenceScope.value === 'SUBJECT') return `当前参考：全学科资料 (共 ${activeSourceFiles.value.length} 份)`
-  if (aiReferenceScope.value === 'NONE') return '当前不引用资料，AI 不会检索文件'
+  if (aiReferenceScope.value === 'SUBJECT') {
+    const count = activeSourceFiles.value.filter((file) =>
+      file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
+    return `当前参考：全学科资料 (共 ${count} 份)`
+  }
   if (aiReferenceScope.value === 'AUTO') return `当前参考：${selectedFile.value?.name || '当前文件'}`
   const count = selectedAiSourceIds.value.length
   if (count === 1) {
@@ -2795,6 +2831,8 @@ onMounted(async () => {
       }
     } else {
       centerView.value = 'overview'
+      aiReferenceScope.value = 'SUBJECT'
+      selectedAiSourceIds.value = []
     }
   }
 })
@@ -2811,7 +2849,7 @@ watch(subjectId, async (newId) => {
     selectionPosition.value = null
     quotedSelection.value = ''
     selectedAiSourceIds.value = []
-    aiReferenceScope.value = 'NONE'
+    aiReferenceScope.value = 'SUBJECT'
     sourceStore.clearActiveSourceFiles()
     subjectOutline.value = []
     fileOutlineDrafts.value = {}
@@ -2871,6 +2909,8 @@ watch(subjectId, async (newId) => {
     } else {
       selectedFileId.value = null
       centerView.value = 'overview'
+      aiReferenceScope.value = 'SUBJECT'
+      selectedAiSourceIds.value = []
     }
   }
 })
@@ -3202,8 +3242,11 @@ html.dark .drawer-action {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 154, 110, 0.3) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.drawer-list::-webkit-scrollbar {
+  display: none;
 }
 
 .drawer-item {
@@ -4022,14 +4065,17 @@ html.dark .blocks-count-badge {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-default) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   grid-auto-rows: 196px;
   gap: 20px;
   align-content: start;
   padding: 4px 2px 28px 2px;
+}
+.blocks-grid::-webkit-scrollbar {
+  display: none;
 }
 
 .block-card {

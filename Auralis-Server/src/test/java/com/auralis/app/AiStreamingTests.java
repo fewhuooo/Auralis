@@ -21,6 +21,7 @@ import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.ai.usage.AiInvocationGateway;
 import com.auralis.app.ai.usage.AiInvocationResult;
+import com.auralis.app.ai.usage.AiStage;
 import com.auralis.app.ai.usage.AiTaskScope;
 import com.auralis.app.ai.retrieval.Citation;
 import com.auralis.app.ai.retrieval.ReadingContext;
@@ -43,6 +44,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -123,6 +125,17 @@ class AiStreamingTests {
             AiCredential credential = invocation.getArgument(4);
             return new AiInvocationResult<>(embeddingProviderRegistry.require(providerType).embed(texts, credential), null);
         });
+        AiCredential embeddingCredential = new AiCredential("https://embedding.test", "secret", "embedding-model");
+        List<Double> vector = java.util.Collections.nCopies(1024, 1.0);
+        lenient().when(properties.ai()).thenReturn(aiProperties);
+        lenient().when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        lenient().when(aiProperties.maxPromptChars()).thenReturn(12000);
+        lenient().when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.SILICONFLOW, "embedding-model", embeddingCredential));
+        lenient().when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        lenient().when(embeddingProvider.embed(any(), any())).thenReturn(new EmbeddingResult(List.of(vector)));
+        lenient().when(retrievalService.retrieve(any(), any(), anyInt())).thenReturn(List.of());
+        lenient().when(retrievalService.retrieve(any(), any(), anyInt(), any(), any())).thenReturn(List.of());
     }
 
     @Test
@@ -138,7 +151,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(provider);
 
         List<AiStreamEvent> events = streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3, "request-1"));
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 3, "request-1"));
 
         assertThat(events).extracting(AiStreamEvent::event)
                 .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
@@ -163,12 +176,12 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(provider);
 
         List<AiStreamEvent> events = streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", null, false, 3, "request-default"));
+                new AiMessageCommand(conversationId, "hello", null, 3, "request-default"));
 
         assertThat(events).extracting(AiStreamEvent::event)
                 .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
         verify(settingsService).resolve(userId, AiProviderType.OPENAI_COMPATIBLE);
-        verify(settingsService, never()).resolveServerManagedEmbedding();
+        verify(settingsService).resolveServerManagedEmbedding();
         verify(providerRegistry).require(AiProviderType.OPENAI_COMPATIBLE);
     }
 
@@ -195,7 +208,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(provider);
 
         List<AiStreamEvent> events = streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, true, 2,
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 2,
                         "request-retrieval"));
 
         assertThat(events).extracting(AiStreamEvent::event)
@@ -208,7 +221,37 @@ class AiStreamingTests {
     }
 
     @Test
-    void sendsTopLevelSelectionToProviderWithoutTriggeringRetrieval() {
+    void retrievesByDefaultAndCompletesWhenNoCitationsAreAvailable() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        List<Double> vector = java.util.Collections.nCopies(1024, 1.0);
+        AiCredential embeddingCredential = new AiCredential("https://embedding.test", "secret", "embedding-model");
+        when(properties.ai()).thenReturn(aiProperties);
+        when(aiProperties.maxRetrievedChunks()).thenReturn(8);
+        when(aiProperties.maxPromptChars()).thenReturn(1000);
+        when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+        when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
+                AiProviderType.SILICONFLOW, "embedding-model", embeddingCredential));
+        when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
+        when(embeddingProvider.embed(List.of("hello"), embeddingCredential))
+                .thenReturn(new EmbeddingResult(List.of(vector)));
+        when(retrievalService.retrieve(userId, vector, 3)).thenReturn(List.of());
+        when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
+
+        List<AiStreamEvent> events = streamingService.stream(userId,
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 3,
+                        "request-empty-retrieval"));
+
+        assertThat(events).extracting(AiStreamEvent::event)
+                .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
+        verify(taskScope).embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model",
+                List.of("hello"), embeddingCredential);
+        verify(retrievalService).retrieve(userId, vector, 3);
+    }
+
+    @Test
+    void sendsTopLevelSelectionToProviderAlongsideDefaultRetrieval() {
         UUID userId = UUID.randomUUID();
         UUID conversationId = UUID.randomUUID();
         String selection = "A quoted passage selected by the user.";
@@ -221,7 +264,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
-                conversationId, "What does this mean?", AiProviderType.DEEPSEEK, false, 3,
+                conversationId, "What does this mean?", AiProviderType.DEEPSEEK, 3,
                 "request-selection-no-retrieval", null, selection));
 
         assertThat(request.get().messages()).anySatisfy(message -> {
@@ -232,8 +275,8 @@ class AiStreamingTests {
                 assertThat(message.content()).contains("What does this mean?"));
         verify(conversationService).reserveUserMessage(eq(userId), eq(conversationId), anyString(),
                 eq("What does this mean?"), eq("request-selection-no-retrieval"));
-        verifyNoInteractions(retrievalService, embeddingProviderRegistry, embeddingProvider);
-        verify(settingsService, never()).resolveServerManagedEmbedding();
+        verify(embeddingProviderRegistry).require(AiProviderType.SILICONFLOW);
+        verify(retrievalService).retrieve(eq(userId), any(), eq(3));
     }
 
     @Test
@@ -251,7 +294,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
-                conversationId, "Question", AiProviderType.DEEPSEEK, false, 3,
+                conversationId, "Question", AiProviderType.DEEPSEEK, 3,
                 "request-selection-precedence", readingContext, topLevel));
 
         assertThat(request.get().messages()).anySatisfy(message -> assertThat(message.content()).contains(topLevel));
@@ -272,7 +315,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
-                conversationId, "Question", AiProviderType.DEEPSEEK, false, 3,
+                conversationId, "Question", AiProviderType.DEEPSEEK, 3,
                 "request-selection-blank-precedence", readingContext, "  \n"));
 
         assertThat(request.get().messages()).noneSatisfy(message -> assertThat(message.content()).contains(nested));
@@ -292,7 +335,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
-                conversationId, "Question", AiProviderType.DEEPSEEK, false, 3,
+                conversationId, "Question", AiProviderType.DEEPSEEK, 3,
                 "request-selection-nested-fallback", readingContext, null));
 
         assertThat(request.get().messages()).anySatisfy(message -> assertThat(message.content()).contains(nested));
@@ -305,7 +348,7 @@ class AiStreamingTests {
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
 
         assertThatThrownBy(() -> streamingService.stream(userId,
-                new AiMessageCommand(null, "hello", AiProviderType.DEEPSEEK, false, 9, "request-topk")))
+                new AiMessageCommand(null, "hello", AiProviderType.DEEPSEEK, 9, "request-topk")))
                 .isInstanceOf(DomainException.class)
                 .extracting("code")
                 .isEqualTo("VALIDATION_FAILED");
@@ -330,7 +373,7 @@ class AiStreamingTests {
                         conversationId, userMessage, assistantMessage, false));
 
         List<AiStreamEvent> events = streamingService.stream(userId,
-                new AiMessageCommand(null, "retry", AiProviderType.DEEPSEEK, false, 3, "duplicate",
+                new AiMessageCommand(null, "retry", AiProviderType.DEEPSEEK, 3, "duplicate",
                         null, "a different selection on replay"));
 
         assertThat(events).extracting(AiStreamEvent::event)
@@ -351,7 +394,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
 
         streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3, "request-abort"),
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 3, "request-abort"),
                 event -> {
                     if (event.event().equals("message.delta")) {
                         throw new AiStreamAbortException("client disconnected");
@@ -383,7 +426,7 @@ class AiStreamingTests {
         });
 
         List<AiStreamEvent> events = streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3, "request-limit"));
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 3, "request-limit"));
 
         assertThat(events).extracting(AiStreamEvent::event)
                 .containsExactly("message.started", "message.error");
@@ -407,7 +450,7 @@ class AiStreamingTests {
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
 
         streamingService.stream(userId,
-                new AiMessageCommand(conversationId, prompt, AiProviderType.DEEPSEEK, false, 3, "request-log"));
+                new AiMessageCommand(conversationId, prompt, AiProviderType.DEEPSEEK, 3, "request-log"));
 
         assertThat(output.getOut())
                 .contains("AI_STREAM_START")
@@ -436,7 +479,7 @@ class AiStreamingTests {
                 .thenThrow(new DomainException("MODEL_UNAVAILABLE", "Embedding provider is unavailable"));
 
         streamingService.stream(userId,
-                new AiMessageCommand(conversationId, prompt, AiProviderType.DEEPSEEK, true, 3, "request-embedding-failure"));
+                new AiMessageCommand(conversationId, prompt, AiProviderType.DEEPSEEK, 3, "request-embedding-failure"));
 
         assertThat(output.getOut())
                 .contains("AI_EMBEDDING_START")
@@ -455,7 +498,7 @@ class AiStreamingTests {
         when(aiProperties.defaultProvider()).thenReturn("");
 
         assertThatThrownBy(() -> streamingService.stream(userId,
-                new AiMessageCommand(UUID.randomUUID(), prompt, null, false, 3, "request-provider-failure")))
+                new AiMessageCommand(UUID.randomUUID(), prompt, null, 3, "request-provider-failure")))
                 .isInstanceOf(DomainException.class)
                 .extracting("code")
                 .isEqualTo("MODEL_UNAVAILABLE");
@@ -477,7 +520,7 @@ class AiStreamingTests {
                 .thenThrow(new DomainException("VALIDATION_FAILED", "Provider URL is not allowed"));
 
         streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3,
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 3,
                         "request-domain-failure"));
 
         assertThat(output.getOut())
@@ -498,7 +541,7 @@ class AiStreamingTests {
                 .thenThrow(new DomainException("VALIDATION_FAILED", "Authorization: Bearer " + secret));
 
         streamingService.stream(userId,
-                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, false, 3,
+                new AiMessageCommand(conversationId, "hello", AiProviderType.DEEPSEEK, 3,
                         "request-secret-failure"));
 
         assertThat(output.getOut())

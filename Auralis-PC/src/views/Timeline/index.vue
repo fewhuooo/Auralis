@@ -1238,15 +1238,14 @@ html.dark .btn-secondary {
 /* 4. Left Column: Weekly Overview */
 .weekly-overview-column {
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .weekly-overview-column::-webkit-scrollbar {
-  width: 4px;
-}
-
-.weekly-overview-column::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.2);
-  border-radius: 4px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .weekly-overview-column .weekly-overview-list {
@@ -1396,15 +1395,14 @@ html.dark .btn-secondary {
   overflow-y: auto;
   min-height: 0;
   padding-right: 6px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .time-slots::-webkit-scrollbar {
-  width: 5px;
-}
-
-.time-slots::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.22);
-  border-radius: 6px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .time-slot {
@@ -1708,15 +1706,14 @@ html.dark .kb-relation-badge {
   overflow-y: auto;
   min-height: 0;
   padding-right: 5px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .pending-tasks::-webkit-scrollbar {
-  width: 5px;
-}
-
-.pending-tasks::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.2);
-  border-radius: 6px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .pending-tasks.drag-over {
@@ -1889,15 +1886,14 @@ html.dark .pending-due-badge.is-overdue {
   grid-template-columns: repeat(7, 1fr);
   gap: 10px;
   width: 100%;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .weekly-view-body::-webkit-scrollbar {
-  width: 5px;
-}
-
-.weekly-view-body::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.22);
-  border-radius: 6px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .weekly-column {
@@ -1959,15 +1955,14 @@ html.dark .pending-due-badge.is-overdue {
   gap: 8px;
   flex: 1;
   overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .weekly-tasks-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.weekly-tasks-list::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.2);
-  border-radius: 4px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .weekly-task-card {

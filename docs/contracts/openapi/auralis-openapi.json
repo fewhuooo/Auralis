@@ -3463,16 +3463,41 @@
           "object" : {
             "type" : "boolean"
           },
+          "textual" : {
+            "type" : "boolean",
+            "deprecated" : true
+          },
+          "short" : {
+            "type" : "boolean"
+          },
+          "long" : {
+            "type" : "boolean"
+          },
+          "binary" : {
+            "type" : "boolean"
+          },
+          "string" : {
+            "type" : "boolean"
+          },
+          "int" : {
+            "type" : "boolean"
+          },
+          "double" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "boolean" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "type" : "boolean"
+          },
           "floatingPointNumber" : {
             "type" : "boolean"
           },
-          "valueNode" : {
-            "type" : "boolean"
-          },
           "bigInteger" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
             "type" : "boolean"
           },
           "nodeType" : {
@@ -3482,35 +3507,10 @@
           "integralNumber" : {
             "type" : "boolean"
           },
-          "string" : {
+          "valueNode" : {
             "type" : "boolean"
           },
-          "pojo" : {
-            "type" : "boolean"
-          },
-          "short" : {
-            "type" : "boolean"
-          },
-          "binary" : {
-            "type" : "boolean"
-          },
-          "long" : {
-            "type" : "boolean"
-          },
-          "double" : {
-            "type" : "boolean"
-          },
-          "textual" : {
-            "type" : "boolean",
-            "deprecated" : true
-          },
-          "number" : {
-            "type" : "boolean"
-          },
-          "int" : {
-            "type" : "boolean"
-          },
-          "boolean" : {
+          "bigDecimal" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -4638,9 +4638,6 @@
           "provider" : {
             "type" : "string",
             "enum" : [ "DEEPSEEK", "OPENAI_COMPATIBLE", "SILICONFLOW" ]
-          },
-          "retrievalEnabled" : {
-            "type" : "boolean"
           },
           "topK" : {
             "type" : "integer",

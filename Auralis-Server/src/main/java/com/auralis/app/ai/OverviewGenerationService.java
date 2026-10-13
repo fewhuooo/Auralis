@@ -3,15 +3,19 @@ package com.auralis.app.ai;
 import com.auralis.app.ai.OverviewDtos.OverviewChapter;
 import com.auralis.app.ai.OverviewDtos.OverviewResponse;
 import com.auralis.app.ai.OverviewDtos.OverviewSection;
+import com.auralis.app.ai.OverviewDtos.OverviewSummary;
 import com.auralis.app.ai.OverviewDtos.SubjectOverviewRequest;
 import com.auralis.app.ai.OverviewDtos.SubjectOverviewSourceInput;
 import com.auralis.app.ai.OverviewDtos.SourceOverviewRequest;
 import com.auralis.app.ai.internal.persistence.SourceChunkRepository;
 import com.auralis.app.ai.usage.AiFeature;
 import com.auralis.app.ai.usage.AiInvocationGateway;
+import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.ai.usage.AiStage;
 import com.auralis.app.ai.usage.AiTaskContext;
 import com.auralis.app.ai.usage.AiTaskScope;
+import com.auralis.app.ai.usage.AiProviderUsage;
+import com.auralis.app.ai.usage.OverviewTaskUsageSummary;
 import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import com.auralis.app.source.SourceIngestionStatus;
@@ -35,6 +39,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
@@ -60,12 +69,14 @@ public class OverviewGenerationService {
     private static final int INTERMEDIATE_MAX_TOKENS = 4_608;
     private static final int FINAL_MAX_TOKENS = 6_144;
     private static final int MAX_INTERMEDIATE_JSON_CHARS = 5_200;
+    private static final int MAX_SINGLETON_REDUCE_RECOVERY_ROUNDS = 2;
 
     private static final Set<String> ALLOWED_FAILURE_CODES = Set.of(
             "VALIDATION_FAILED", "UNAUTHENTICATED", "FORBIDDEN", "RESOURCE_NOT_FOUND", "RESOURCE_DELETED",
             "RESOURCE_VERSION_CONFLICT", "MUTATION_REJECTED", "UPLOAD_VALIDATION_FAILED", "INGESTION_FAILED",
             "MODEL_PROVIDER_ERROR", "MODEL_UNAVAILABLE", "MODEL_TIMEOUT", "RATE_LIMITED",
-            "OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE", "OVERVIEW_REDUCE_NO_PROGRESS");
+            "OVERVIEW_PROMPT_BUDGET_EXCEEDED", "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED",
+            "OVERVIEW_RECOVERY_EXHAUSTED", "OVERVIEW_REDUCE_NO_PROGRESS");
     private static final Set<String> ALLOWED_USAGE_FAILURE_CODES = Set.of(
             "AI_REQUEST_BUDGET_EXCEEDED", "AI_TASK_BUDGET_EXCEEDED", "AI_CONCURRENCY_LIMIT",
             "AI_HOURLY_QUOTA_EXCEEDED", "AI_DAILY_QUOTA_EXCEEDED", "AI_GLOBAL_QUOTA_EXCEEDED");
@@ -89,9 +100,18 @@ public class OverviewGenerationService {
             Reduce: synthesize into one cohesive overview from already-compressed overview JSON; do not summarize each input separately. Merge duplicate, overlapping, adjacent, or equivalent topics; do not create one chapter or section per input document. State each fact once in the most appropriate field (outline, summary.overview, keyPoints, or learningPath). Preserve definitions, conceptual relationships, causal chains, key conclusions, and only evidence required to understand concepts/conclusions; remove examples, rhetoric, procedural narration, repeated caveats/conclusions, and low-value detail first. Use fewer, denser chapters and sections with short titles and concise sentences; do not quote input or add facts. Target serialized JSON between 2500 and 3000 characters when substantial; obey mode, aliases, schema, locator=null; do not pad.
             """.strip();
 
+    private static final String RECOVERY_REDUCE_INSTRUCTION = """
+            Some mapJson inputs may be disjoint partial fragments created only to fit the consumer prompt. Do not invent a mode field that is absent from the supplied inputs. During an intermediate reduction, preserve only supplied fields and leave an absent outline or summary null; later reductions combine these partial outputs. During the final reduction, combine all supplied partial outputs into one complete response for the requested mode. Preserve every distinct section, summary fact, and alias.
+            """.strip();
+
     private enum OutputStage { INTERMEDIATE, FINAL }
 
-    private enum PromptPurpose { MAP, REDUCE, SUBJECT_DIRECT, SUBJECT_MAP }
+    private enum PromptPurpose {
+        MAP, REDUCE, REDUCE_SELF_PAIR, REDUCE_RECOVERY, REDUCE_COMPACTION,
+        REDUCE_RECOVERY_COMPACTION, SUBJECT_DIRECT, SUBJECT_MAP
+    }
+
+    private record ReduceInput(OverviewResponse response, boolean partial) { }
 
     private final SourceService sourceService;
     private final SubjectService subjectService;
@@ -104,11 +124,11 @@ public class OverviewGenerationService {
     private final LongSupplier monotonicNanos;
     private final ScheduledExecutorService deadlineScheduler;
     private final Executor generationExecutor;
+    private final OverviewGenerationCoordinator generationCoordinator;
     // Coalesces calls handled by this service instance; it does not coordinate across server replicas.
     private final ConcurrentMap<SourceGenerationKey, SourceGenerationFlight> inFlightSourceGenerations =
             new ConcurrentHashMap<>();
 
-    @Autowired
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
                                      SourceChunkRepository chunkRepository, AiSettingsService settingsService,
                                      AiInvocationGateway invocationGateway, AuralisProperties properties,
@@ -116,7 +136,21 @@ public class OverviewGenerationService {
                                      @Qualifier("overviewDeadlineScheduler") ScheduledExecutorService deadlineScheduler,
                                      @Qualifier("overviewGenerationExecutor") Executor generationExecutor) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
-                documentValidator, objectMapper, System::nanoTime, deadlineScheduler, generationExecutor);
+                documentValidator, objectMapper, System::nanoTime, deadlineScheduler, generationExecutor,
+                null);
+    }
+
+    @Autowired
+    public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
+                                     SourceChunkRepository chunkRepository, AiSettingsService settingsService,
+                                     AiInvocationGateway invocationGateway, AuralisProperties properties,
+                                     OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
+                                     @Qualifier("overviewDeadlineScheduler") ScheduledExecutorService deadlineScheduler,
+                                     @Qualifier("overviewGenerationExecutor") Executor generationExecutor,
+                                     OverviewGenerationCoordinator generationCoordinator) {
+        this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
+                documentValidator, objectMapper, System::nanoTime, deadlineScheduler, generationExecutor,
+                generationCoordinator);
     }
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -124,7 +158,7 @@ public class OverviewGenerationService {
                                      AiInvocationGateway invocationGateway, AuralisProperties properties,
                                      OverviewDocumentValidator documentValidator, ObjectMapper objectMapper) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
-                documentValidator, objectMapper, System::nanoTime, null, Runnable::run);
+                documentValidator, objectMapper, System::nanoTime, null, Runnable::run, null);
     }
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -133,7 +167,7 @@ public class OverviewGenerationService {
                                      OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
                                      LongSupplier monotonicNanos) {
         this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
-                documentValidator, objectMapper, monotonicNanos, null, Runnable::run);
+                documentValidator, objectMapper, monotonicNanos, null, Runnable::run, null);
     }
 
     public OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
@@ -142,6 +176,16 @@ public class OverviewGenerationService {
                                      OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
                                      LongSupplier monotonicNanos, ScheduledExecutorService deadlineScheduler,
                                      Executor generationExecutor) {
+        this(sourceService, subjectService, chunkRepository, settingsService, invocationGateway, properties,
+                documentValidator, objectMapper, monotonicNanos, deadlineScheduler, generationExecutor, null);
+    }
+
+    OverviewGenerationService(SourceService sourceService, SubjectService subjectService,
+                              SourceChunkRepository chunkRepository, AiSettingsService settingsService,
+                              AiInvocationGateway invocationGateway, AuralisProperties properties,
+                              OverviewDocumentValidator documentValidator, ObjectMapper objectMapper,
+                              LongSupplier monotonicNanos, ScheduledExecutorService deadlineScheduler,
+                              Executor generationExecutor, OverviewGenerationCoordinator generationCoordinator) {
         this.sourceService = sourceService;
         this.subjectService = subjectService;
         this.chunkRepository = chunkRepository;
@@ -153,6 +197,7 @@ public class OverviewGenerationService {
         this.monotonicNanos = Objects.requireNonNull(monotonicNanos);
         this.deadlineScheduler = deadlineScheduler;
         this.generationExecutor = Objects.requireNonNull(generationExecutor);
+        this.generationCoordinator = generationCoordinator;
     }
 
     public OverviewResponse generateSource(UUID userId, SourceOverviewRequest request) {
@@ -190,11 +235,51 @@ public class OverviewGenerationService {
         if (source.ingestionStatus() != SourceIngestionStatus.READY) {
             throw new DomainException("MUTATION_REJECTED", "Source is not ready for overview generation");
         }
+        AiSettingsService.ResolvedSettings settings = resolveOverviewSettings(userId);
+        context = context.withSettings(settings, resolveModelBudget(settings));
+        List<String> chunks = loadActiveChunks(userId, source.id());
+        if (chunks.isEmpty()) {
+            throw new DomainException("MUTATION_REJECTED", "Source has no active chunks for overview generation");
+        }
+        String payloadFingerprint = sourcePayloadFingerprint(source, request, chunks);
+        String profileFingerprint = profileFingerprint(settings);
+        String inputFingerprint = sha256(write(List.of("SOURCE", source.id(), source.ingestionRevision(),
+                source.title(), request.mode(), Objects.toString(request.instruction(), ""), sha256(write(chunks)))));
+        OverviewGenerationCoordinator.Request durableRequest = generationCoordinator == null ? null
+                : new OverviewGenerationCoordinator.Request(userId, UUID.fromString(context.requestId()),
+                "SOURCE", source.id(), source.ingestionRevision(), inputFingerprint, payloadFingerprint,
+                profileFingerprint, "overview-v1");
+        context = context.withSourceRequest(durableRequest, payloadFingerprint, request.instruction());
         GenerationContext generationContext = context;
         SourceGenerationKey key = new SourceGenerationKey(userId, source.id(), source.ingestionRevision(),
-                source.title(), request.mode(), request.instruction() == null ? "" : request.instruction());
-        OverviewResponse result = singleFlight(key, context.deadline(), requestCancellation,
-                cancellation -> generateSourceOverview(generationContext.withCancellation(cancellation), request, source));
+                source.title(), request.mode(), request.instruction() == null ? "" : request.instruction(),
+                payloadFingerprint, profileFingerprint);
+        OverviewResponse result;
+        java.util.Optional<OverviewGenerationCoordinator.Acquisition> mappedRequest = durableRequest == null
+                ? java.util.Optional.empty() : generationCoordinator.lookupRequest(durableRequest);
+        if (mappedRequest.isPresent()) {
+            OverviewGenerationCoordinator.Acquisition mapped = mappedRequest.orElseThrow();
+            OverviewCancellation.Registration cancellationRegistration = requestCancellation == null ? () -> { }
+                    : requestCancellation.onCancel(() -> generationContext.deadline().cancellation().cancel(
+                            requestCancellation.reason() == OverviewCancellation.Reason.DEADLINE
+                                    ? OverviewCancellation.Reason.DEADLINE : OverviewCancellation.Reason.REQUEST_DISCONNECTED));
+            try {
+                result = runDurableAcquisition(mapped, generationContext, generationContext.deadline().cancellation(), acquisition ->
+                        generateSourceOverview(generationContext.withCancellation(generationContext.deadline().cancellation())
+                                .withAcquisition(acquisition), request, source, chunks),
+                        Map.of(source.id().toString(), source.id().toString()), true);
+            } finally {
+                cancellationRegistration.close();
+            }
+        } else {
+            result = singleFlight(key, context, requestCancellation, durableRequest,
+                    Map.of(source.id().toString(), source.id().toString()),
+                    (operationContext, acquisition) -> {
+                        operationContext = operationContext
+                                .withAcquisition(acquisition);
+                        return generateSourceOverview(operationContext, request, source, chunks);
+                    });
+        }
         context.deadline().remainingMillis();
         logSuccess(context);
         return result;
@@ -222,24 +307,25 @@ public class OverviewGenerationService {
     }
 
     private OverviewResponse generateSourceOverview(GenerationContext context, SourceOverviewRequest request,
-                                                     SourceView source) {
-        AiTaskScope scope = invocationGateway.beginTask(new AiTaskContext(context.userId(), AiFeature.SOURCE_OVERVIEW,
-                context.generationId()));
+                                                     SourceView source, List<String> chunks) {
+        AiTaskScope scope = invocationGateway.beginTask(taskContext(context, AiFeature.SOURCE_OVERVIEW));
         try (scope) {
-        List<String> chunks = chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(context.userId(), source.id())
-                .stream().map(chunk -> chunk.getContent()).filter(content -> content != null && !content.isBlank())
-                .map(String::trim).toList();
         logPhase(context, "CHUNK_LOAD_SUCCESS", "chunkCount={}", chunks.size());
         if (chunks.isEmpty()) {
             throw new DomainException("MUTATION_REJECTED", "Source has no active chunks for overview generation");
         }
+        context = context.withContentStats(OverviewContentStats.fromTexts(
+                prependSourceTitle(source.title(), chunks), 1, source.ingestionRevision().toString()));
         Map<String, String> aliases = Map.of("source-1", source.id().toString());
         List<OverviewResponse> mapped = new ArrayList<>();
-            List<List<String>> batches = packChunks(request.mode(), request.instruction(), source.title(), chunks,
+            List<List<String>> batches = packChunks(context, request.mode(), request.instruction(), source.title(), chunks,
                     OutputStage.FINAL, PromptPurpose.MAP);
             if (batches.size() > 1) {
-                batches = packChunks(request.mode(), request.instruction(), source.title(), chunks,
+                List<List<String>> intermediateBatches = packChunks(context, request.mode(), request.instruction(), source.title(), chunks,
                         OutputStage.INTERMEDIATE, PromptPurpose.MAP);
+                if (intermediateBatches.size() > 1) {
+                    batches = intermediateBatches;
+                }
             }
             logPhase(context, "MAP_START", "batchCount={}", batches.size());
             int mapIndex = 0;
@@ -256,10 +342,14 @@ public class OverviewGenerationService {
         }
     }
 
-    private OverviewResponse singleFlight(SourceGenerationKey key, OverviewTaskDeadline deadline,
+    private OverviewResponse singleFlight(SourceGenerationKey key, GenerationContext generationContext,
                                           OverviewCancellation requestCancellation,
-                                          Function<OverviewCancellation, OverviewResponse> operation) {
+                                          OverviewGenerationCoordinator.Request durableRequest,
+                                          Map<String, String> replayAliases,
+                                          java.util.function.BiFunction<GenerationContext,
+                                                  OverviewGenerationCoordinator.Acquisition, OverviewResponse> operation) {
         SourceGenerationFlight flight;
+        OverviewTaskDeadline deadline = generationContext.deadline();
         Runnable detach;
         SourceGenerationFlight flightToStart = null;
         boolean owner = false;
@@ -294,18 +384,40 @@ public class OverviewGenerationService {
                         .onCancel(() -> ownedFlight.cancel(OverviewCancellation.Reason.DEADLINE));
             }
         }
+        CompletableFuture<Void> participantBinding = CompletableFuture.completedFuture(null);
+        if (durableRequest != null) {
+            SourceGenerationFlight participantFlight = flight;
+            participantBinding = participantFlight.binding.thenAccept(binding ->
+                    generationCoordinator.associateRequest(binding, durableRequest));
+        }
         if (owner) {
             SourceGenerationFlight ownedFlight = flightToStart;
+            CompletableFuture<Void> ownerBinding = participantBinding;
             try {
                 generationExecutor.execute(() -> {
                     try {
                         if (ownedFlight.cancellation.isCancelled()) {
                             throw new DomainException("MODEL_TIMEOUT", "Overview request was cancelled");
                         }
-                        OverviewResponse value = operation.apply(ownedFlight.cancellation);
+                        OverviewGenerationCoordinator.Acquisition binding = null;
+                        if (durableRequest != null) {
+                            binding = generationCoordinator.acquire(durableRequest);
+                            ownedFlight.binding.complete(binding);
+                            ownerBinding.join();
+                        }
+                        OverviewResponse value = durableRequest == null
+                                ? operation.apply(generationContext.withCancellation(ownedFlight.cancellation)
+                                        .withLocalFlight(key, ownedFlight), null)
+                                : runDurableAcquisition(binding, generationContext.withCancellation(ownedFlight.cancellation)
+                                        .withLocalFlight(key, ownedFlight),
+                                        ownedFlight.cancellation,
+                                        acquisition -> operation.apply(generationContext.withCancellation(ownedFlight.cancellation)
+                                                .withLocalFlight(key, ownedFlight).withAcquisition(acquisition), acquisition),
+                                        replayAliases, false);
                         deadline.remainingMillis();
                         ownedFlight.result.complete(value);
                     } catch (RuntimeException | Error failure) {
+                        if (durableRequest != null) ownedFlight.binding.completeExceptionally(failure);
                         ownedFlight.result.completeExceptionally(failure);
                     } finally {
                         inFlightSourceGenerations.remove(key, ownedFlight);
@@ -319,17 +431,20 @@ public class OverviewGenerationService {
                 ownedFlight.ownerCancellation.close();
                 ownedFlight.ownerDeadline.close();
                 deadline.finish();
-                ownedFlight.result.completeExceptionally(new DomainException(
-                        "SERVICE_UNAVAILABLE", "Overview capacity is temporarily unavailable", null, rejected));
+                DomainException unavailable = new DomainException(
+                        "SERVICE_UNAVAILABLE", "Overview capacity is temporarily unavailable", null, rejected);
+                if (durableRequest != null) ownedFlight.binding.completeExceptionally(unavailable);
+                ownedFlight.result.completeExceptionally(unavailable);
             }
-            return awaitOwner(flight, deadline, requestCancellation);
+            return awaitOwner(flight, deadline, requestCancellation, participantBinding);
         }
-        return await(flight, deadline, requestCancellation, detach);
+        return await(flight, deadline, requestCancellation, detach, participantBinding);
     }
 
     private OverviewResponse awaitOwner(SourceGenerationFlight flight, OverviewTaskDeadline deadline,
-                                        OverviewCancellation requestCancellation) {
+                                        OverviewCancellation requestCancellation, CompletableFuture<Void> participantBinding) {
         try {
+            waitForBinding(participantBinding, deadline, requestCancellation);
             return awaitResult(flight, deadline, requestCancellation);
         } finally {
             flight.ownerDetach.run();
@@ -337,16 +452,148 @@ public class OverviewGenerationService {
     }
 
     private OverviewResponse await(SourceGenerationFlight inFlight, OverviewTaskDeadline deadline,
-                                   OverviewCancellation requestCancellation, Runnable detach) {
+                                   OverviewCancellation requestCancellation, Runnable detach,
+                                   CompletableFuture<Void> participantBinding) {
         OverviewCancellation.Registration deadlineRegistration = deadline.cancellation().onCancel(detach);
         OverviewCancellation.Registration requestRegistration = requestCancellation == null ? () -> { }
                 : requestCancellation.onCancel(detach);
         try {
+            waitForBinding(participantBinding, deadline, requestCancellation);
             return awaitResult(inFlight, deadline, requestCancellation);
         } finally {
             detach.run();
             deadlineRegistration.close();
             requestRegistration.close();
+        }
+    }
+
+    private void waitForBinding(CompletableFuture<Void> binding, OverviewTaskDeadline deadline,
+                                OverviewCancellation requestCancellation) {
+        try {
+            while (true) {
+                if (requestCancellation != null && requestCancellation.isCancelled()) {
+                    throw new DomainException("MODEL_TIMEOUT", "Overview request was cancelled");
+                }
+                try {
+                    binding.get(Math.min(100, deadline.remainingMillis()), TimeUnit.MILLISECONDS);
+                    return;
+                } catch (TimeoutException ignored) { }
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new DomainException("MODEL_TIMEOUT", "Overview request was interrupted", null, exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause();
+            if (cause instanceof RuntimeException runtimeException) throw runtimeException;
+            throw new CompletionException(cause);
+        }
+    }
+
+    private OverviewResponse runDurableAcquisition(OverviewGenerationCoordinator.Acquisition initial,
+                                                   GenerationContext context,
+                                                   OverviewCancellation cancellation,
+                                                   Function<OverviewGenerationCoordinator.Acquisition,
+                                                           OverviewResponse> ownerOperation,
+                                                   Map<String, String> replayAliases,
+                                                   boolean allowMappedFailureTakeover) {
+        OverviewGenerationCoordinator.Acquisition acquisition = initial;
+        int transitions = 0;
+        while (true) {
+            context.deadline().remainingMillis();
+            if (cancellation != null && cancellation.isCancelled()) {
+                throw new DomainException("MODEL_TIMEOUT", "Overview request was cancelled");
+            }
+            if (acquisition.state() == OverviewGenerationCoordinator.AcquisitionState.FAILED) {
+                if (allowMappedFailureTakeover && transitions++ == 0) {
+                    acquisition = generationCoordinator.acquire(context.coordinatorRequest());
+                    continue;
+                }
+                throw new DomainException("OVERVIEW_GENERATION_FAILED", "The previous overview generation failed");
+            }
+            if (acquisition.state() == OverviewGenerationCoordinator.AcquisitionState.REPLAY) {
+                requireCurrentSource(context);
+                return readDurableResult(acquisition.resultJson(), replayAliases, context.mode());
+            }
+            if (acquisition.state() == OverviewGenerationCoordinator.AcquisitionState.WAITER) {
+                OverviewGenerationCoordinator.AwaitResult outcome = generationCoordinator.await(acquisition,
+                        java.time.Duration.ofMillis(context.deadline().remainingMillis()),
+                        () -> cancellation != null && cancellation.isCancelled());
+                if ("SUCCESS".equals(outcome.status())) {
+                    requireCurrentSource(context);
+                    return readDurableResult(outcome.resultJson(), replayAliases, context.mode());
+                }
+                if ("EXPIRED".equals(outcome.status()) && transitions++ == 0) {
+                    acquisition = generationCoordinator.acquire(context.coordinatorRequest());
+                    continue;
+                }
+                if ("FAILED".equals(outcome.status())) {
+                    OverviewGenerationCoordinator.FailureDetails failureDetails = outcome.failureDetails();
+                    if (failureDetails != null) {
+                        throw new AiUsageLimitException(outcome.errorCode(), failureDetails.status(),
+                                failureDetails.retryAfterSeconds(), failureDetails.resetAt());
+                    }
+                    throw new DomainException(outcome.errorCode() == null ? "OVERVIEW_GENERATION_FAILED" : outcome.errorCode(),
+                            "The previous overview generation failed; submit a new request to resume it");
+                }
+                throw new DomainException("MODEL_TIMEOUT", "Overview generation ownership expired");
+            }
+            OverviewGenerationCoordinator.GenerationLease lease = acquisition.lease();
+            if (lease == null) throw new DomainException("MODEL_TIMEOUT", "Overview generation lease is unavailable");
+            AtomicBoolean lostLease = new AtomicBoolean();
+            AutoCloseable heartbeat = generationCoordinator.startHeartbeat(lease, () -> {
+                lostLease.set(true);
+                if (cancellation != null) cancellation.cancel(OverviewCancellation.Reason.DEADLINE);
+            });
+            try {
+                OverviewResponse value = ownerOperation.apply(acquisition);
+                context.deadline().remainingMillis();
+                requireCurrentSource(context.withAcquisition(acquisition));
+                if (lostLease.get() || cancellation != null && cancellation.isCancelled()
+                        || !generationCoordinator.owns(lease)) {
+                    throw new DomainException("MODEL_TIMEOUT", "Overview generation ownership expired");
+                }
+                String resultJson = write(value);
+                if (context.localFlight() != null) context.localFlight().closeForNewInterests();
+                OverviewTaskUsageSummary usage = invocationGateway.overviewTaskUsage(
+                        new AiTaskContext(context.userId(), context.sourceId() == null
+                                ? AiFeature.SUBJECT_OVERVIEW : AiFeature.SOURCE_OVERVIEW,
+                                acquisition.generationId().toString(), acquisition.budgetTaskId()));
+                if (!generationCoordinator.complete(lease, resultJson, usage,
+                        context.recoveryTracker().count(), context.recoveryTracker().actions())) {
+                    throw new DomainException("MODEL_TIMEOUT", "Overview generation ownership expired before completion");
+                }
+                return value;
+            } catch (RuntimeException failure) {
+                String errorCode = stableErrorCode(failure);
+                OverviewGenerationCoordinator.FailureDetails failureDetails = failure instanceof AiUsageLimitException usageFailure
+                        && errorCode.equals(usageFailure.code())
+                        ? new OverviewGenerationCoordinator.FailureDetails(usageFailure.status(),
+                        usageFailure.retryAfterSeconds(), usageFailure.resetAt())
+                        : null;
+                OverviewTaskUsageSummary usage = invocationGateway.overviewTaskUsage(
+                        new AiTaskContext(context.userId(), context.sourceId() == null
+                                ? AiFeature.SUBJECT_OVERVIEW : AiFeature.SOURCE_OVERVIEW,
+                                acquisition.generationId().toString(), acquisition.budgetTaskId()));
+                generationCoordinator.fail(lease, errorCode, failureDetails, usage,
+                        context.recoveryTracker().count(), context.recoveryTracker().actions());
+                throw failure;
+            } finally {
+                try { heartbeat.close(); } catch (Exception ignored) { }
+            }
+        }
+    }
+
+    private OverviewResponse readDurableResult(String payload, Map<String, String> aliases, OverviewMode mode) {
+        if (payload == null) throw new DomainException("VALIDATION_FAILED", "Stored overview response is missing");
+        try {
+            OverviewResponse stored = objectMapper.readValue(payload, OverviewResponse.class);
+            OverviewResponse validated = documentValidator.validateProviderDocument(write(stored), aliases);
+            validateModeFields(validated, mode);
+            return forMode(validated, mode);
+        } catch (DomainException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new DomainException("VALIDATION_FAILED", "Stored overview response is invalid", null, exception);
         }
     }
 
@@ -440,17 +687,57 @@ public class OverviewGenerationService {
         if (safeSources.isEmpty()) {
             throw new DomainException("VALIDATION_FAILED", "Subject overview requires at least one usable source");
         }
+        AiSettingsService.ResolvedSettings settings = resolveOverviewSettings(userId);
+        context = context.withSettings(settings, resolveModelBudget(settings))
+                .withContentStats(subjectContentStats(safeSources, resolvedSources));
+        String payloadFingerprint = subjectPayloadFingerprint(request, resolvedSources);
+        String profileFingerprint = profileFingerprint(settings);
+        String inputFingerprint = sha256(write(List.of("SUBJECT", request.subjectId(), request.mode(),
+                Objects.toString(request.instruction(), ""), sha256(payloadFingerprint))));
+        OverviewGenerationCoordinator.Request durableRequest = generationCoordinator == null ? null
+                : new OverviewGenerationCoordinator.Request(userId, UUID.fromString(context.requestId()),
+                "SUBJECT", request.subjectId(), null, inputFingerprint, payloadFingerprint,
+                profileFingerprint, "overview-v1");
+        context = context.withSubjectRequest(durableRequest, payloadFingerprint, request);
+        GenerationContext subjectContext = context;
         OverviewResponse result;
+        if (durableRequest != null) {
+            java.util.Optional<OverviewGenerationCoordinator.Acquisition> mapped = generationCoordinator.lookupRequest(durableRequest);
+            OverviewGenerationCoordinator.Acquisition initial = mapped.orElseGet(() -> generationCoordinator.acquire(durableRequest));
+            result = runDurableAcquisition(initial, subjectContext, subjectContext.cancellation(),
+                    acquisition -> generateSubjectOverview(subjectContext.withAcquisition(acquisition), request,
+                            safeSources, aliases), aliases, mapped.isPresent());
+        } else {
+            result = generateSubjectOverview(subjectContext, request, safeSources, aliases);
+        }
+        logPhase(context, "CACHE_RETURN", "sourceCount={}", safeSources.size());
+        context.deadline().remainingMillis();
+        OverviewResponse finalResult = forMode(documentValidator.mapAliasesToSourceIds(result, aliases), request.mode());
+        context.deadline().remainingMillis();
+        logSuccess(context);
+        return finalResult;
+        } catch (RuntimeException exception) {
+            logFailure(context, exception);
+            throw exception;
+        } finally {
+            context.deadline().finish();
+            requestRegistration.close();
+        }
+    }
+
+    private OverviewResponse generateSubjectOverview(GenerationContext context, SubjectOverviewRequest request,
+                                                     List<ModelSubjectInput> safeSources, Map<String, String> aliases) {
         AiTaskScope scope = invocationGateway.beginTask(new AiTaskContext(
-                userId, AiFeature.SUBJECT_OVERVIEW, context.generationId()));
+                context.userId(), AiFeature.SUBJECT_OVERVIEW, context.generationId(),
+                context.acquisition() == null ? null : context.acquisition().budgetTaskId()));
+        OverviewResponse result;
         try (scope) {
             String directData = userData(request.mode(), request.instruction(), "sources", safeSources);
-            if (fits(request.mode(), request.instruction(), directData, OutputStage.FINAL, PromptPurpose.SUBJECT_DIRECT)) {
+            if (fits(context, request.mode(), request.instruction(), directData, OutputStage.FINAL, PromptPurpose.SUBJECT_DIRECT)) {
                 result = invoke(scope, context, request.mode(), request.instruction(), aliases,
                         directData, OutputStage.FINAL, PromptPurpose.SUBJECT_DIRECT);
             } else {
-                List<List<ModelSubjectInput>> batches = packSubjectInputs(request.mode(), request.instruction(), safeSources,
-                        context.deadline());
+                List<List<ModelSubjectInput>> batches = packSubjectInputs(context, request.mode(), request.instruction(), safeSources);
                 List<OverviewResponse> mapped = new ArrayList<>();
                 logPhase(context, "SUBJECT_MAP_START", "batchCount={}", batches.size());
                 for (int batchIndex = 0; batchIndex < batches.size(); batchIndex++) {
@@ -465,18 +752,18 @@ public class OverviewGenerationService {
                 result = reduce(scope, context, request.mode(), request.instruction(), aliases, mapped);
             }
         }
-        logPhase(context, "CACHE_RETURN", "sourceCount={}", safeSources.size());
-        context.deadline().remainingMillis();
-        OverviewResponse finalResult = forMode(documentValidator.mapAliasesToSourceIds(result, aliases), request.mode());
-        context.deadline().remainingMillis();
-        logSuccess(context);
-        return finalResult;
-        } catch (RuntimeException exception) {
-            logFailure(context, exception);
-            throw exception;
-        } finally {
-            context.deadline().finish();
-            requestRegistration.close();
+        if (request.mode() == OverviewMode.ALL) requireSubjectAliasCoverage(result, aliases.keySet());
+        return result;
+    }
+
+    private void requireSubjectAliasCoverage(OverviewResponse result, Set<String> expectedAliases) {
+        Set<String> coveredAliases = new LinkedHashSet<>();
+        if (result.outline() != null) {
+            result.outline().forEach(chapter -> chapter.sections().forEach(section ->
+                    coveredAliases.addAll(section.sourceIds())));
+        }
+        if (!coveredAliases.containsAll(expectedAliases)) {
+            throw providerInvalid("final subject overview does not cover every selected source");
         }
     }
 
@@ -575,20 +862,75 @@ public class OverviewGenerationService {
 
     private OverviewResponse invoke(AiTaskScope taskScope, GenerationContext context, OverviewMode mode, String instruction, Map<String, String> aliases,
                                     String userData, OutputStage stage, PromptPurpose purpose) {
-        if (messageLength(mode, instruction, userData, stage, purpose) > maximumPromptChars()) {
-            throw new DomainException("VALIDATION_FAILED", "Overview prompt exceeds the configured limit");
+        return invoke(taskScope, context, mode, instruction, aliases, userData, stage, purpose, -1);
+    }
+
+    private OverviewResponse invoke(AiTaskScope taskScope, GenerationContext context, OverviewMode mode, String instruction, Map<String, String> aliases,
+                                    String userData, OutputStage stage, PromptPurpose purpose, int strictMaxChars) {
+        String systemText = systemInstruction(context, stage, purpose);
+        int promptChars = systemText.length() + userData.length();
+        if (promptChars > maximumPromptChars()) {
+            DomainException failure = new DomainException("OVERVIEW_PROMPT_BUDGET_EXCEEDED",
+                    "Overview provider prompt exceeds the configured limit");
+            logFailureAtPhase(context, "PROMPT_BUDGET", failure);
+            throw failure;
         }
-        AiProviderType providerType = configuredProvider();
+        AiSettingsService.ResolvedSettings settings = context.settings() == null
+                ? resolveOverviewSettings(context.userId()) : context.settings();
+        AiProviderType providerType = settings.provider();
+        String checkpointStep = "step_" + sha256(purpose.name() + "|" + stage.name() + "|"
+                + sha256(systemText) + "|" + sha256(userData));
+        if (context.acquisition() != null && context.acquisition().lease() != null) {
+            requireOwnerActive(context);
+            OverviewGenerationCoordinator.Checkpoint checkpoint = generationCoordinator.loadCheckpoint(
+                    context.acquisition().lease(), checkpointStep,
+                    context.coordinatorRequest().inputFingerprint(), context.coordinatorRequest().profileFingerprint(),
+                    context.coordinatorRequest().algorithmVersion(), 1);
+            if (checkpoint != null) {
+                requireCurrentSource(context);
+                OverviewResponse recovered = restoreCheckpoint(context, mode, instruction, aliases,
+                        checkpoint.payloadJson(), stage, purpose);
+                requireStrictShrink(context, recovered, strictMaxChars);
+                requireOwnerActive(context);
+                return recovered;
+            }
+        }
         AiProviderResponse response;
         context.deadline().remainingMillis();
         requireCurrentSource(context);
         try {
             logPhase(context, "PROVIDER_REQUEST", "provider={} payloadChars={}", providerType, userData.length());
-            AiSettingsService.ResolvedSettings settings = settingsService.resolve(context.userId(), providerType);
+            int callIndex = context.callsStarted().getAndIncrement();
+            int maxCalls = overviewMaxCalls();
+            long taskTokenBudget = overviewTaskTokens();
+            AiProviderUsage currentUsage = taskScope.usage();
+            long remainingTaskTokens = Math.max(0, taskTokenBudget
+                    - (currentUsage == null ? 0 : currentUsage.chargedTokens()));
+            OverviewBudgetPlanner.OutputStage plannerStage = plannerStage(stage);
+            OverviewBudgetPlanner.ContentPlan contentPlan = OverviewBudgetPlanner.planContent(
+                    context.contentStats(), plannerStage);
+            OverviewBudgetPlanner.RequestAssessment assessment = OverviewBudgetPlanner.assessRequest(
+                    systemText, userData, context.modelBudget() == null
+                            ? resolveModelBudget(settings) : context.modelBudget(), plannerStage,
+                    Math.max(0, maxCalls - callIndex), remainingTaskTokens);
+            logPhase(context, "OVERVIEW_BUDGET_ASSESSMENT",
+                    "eligibility={} reason={} contextFit={} estimatedInputUpper={} outputReserve={} reservedTask={} "
+                            + "remainingCalls={} remainingTaskTokens={} targetOutputTokens={} suggestedMapGroups={} promptChars={}",
+                    assessment.eligibility(), assessment.reason(), assessment.contextFit().map(Object::toString).orElse("unknown"),
+                    assessment.estimatedInputTokensUpperBound(), assessment.outputTokenReserve(),
+                    assessment.reservedTaskTokens(), Math.max(0, maxCalls - callIndex), remainingTaskTokens,
+                    contentPlan.targetOutputTokens(), contentPlan.suggestedMapGroups(), promptChars);
+            if (assessment.contextFit().isPresent() && !assessment.contextFit().get()) {
+                DomainException failure = new DomainException("OVERVIEW_PROMPT_BUDGET_EXCEEDED",
+                        "Overview request exceeds the verified model context budget");
+                logFailureAtPhase(context, "MODEL_CONTEXT_BUDGET", failure);
+                throw failure;
+            }
             long responseTimeoutMillis = context.deadline().responseTimeoutMillis(overviewResponseTimeoutMillis());
-            AiStage usageStage = purpose == PromptPurpose.REDUCE ? AiStage.OVERVIEW_REDUCE : AiStage.OVERVIEW_MAP;
+            AiStage usageStage = isReducePurpose(purpose) ? AiStage.OVERVIEW_REDUCE : AiStage.OVERVIEW_MAP;
+            requireOwnerActive(context);
             response = taskScope.complete(usageStage, providerType, new AiProviderRequest(
-                    settings.chatModel(), List.of(new AiProviderRequest.Message(AiMessageRole.SYSTEM, systemInstruction(stage, purpose)),
+                    settings.chatModel(), List.of(new AiProviderRequest.Message(AiMessageRole.SYSTEM, systemText),
                             new AiProviderRequest.Message(AiMessageRole.USER, userData)), 0.1, maxTokens(stage), true), settings.credential(),
                     responseTimeoutMillis, context.cancellation() == null
                             ? context.deadline().cancellation() : context.cancellation()).value();
@@ -606,20 +948,47 @@ public class OverviewGenerationService {
         }
         logPhase(context, "JSON_PARSE_START", "responseChars={} outputTokens={} finishReason={}",
                 response.content().length(), response.outputTokens(), response.finishReason());
+        if (response.finishReason() != null && "length".equalsIgnoreCase(response.finishReason().trim())) {
+            DomainException failure = new DomainException("OVERVIEW_PROVIDER_OUTPUT_TRUNCATED",
+                    "AI provider stopped at its output token limit");
+            logFailureAtPhase(context, "PROVIDER_OUTPUT_LIMIT", failure);
+            throw failure;
+        }
         if (stage == OutputStage.FINAL) {
             logFinalJsonCheck(context, response.content());
         }
         try {
-            OverviewResponse parsed = documentValidator.validateProviderDocument(response.content(), aliases);
+            OverviewResponse parsed = documentValidator.validateProviderDocument(response.content(), aliases,
+                    diagnostic -> logPhase(context, "OVERVIEW_VALIDATION_DIAGNOSTIC",
+                            "outputStage={} purpose={} step=provider_document positionBasis=normalized_json "
+                                    + "reason={} exceptionType={} line={} column={} charOffset={}",
+                            stage.name(), purpose.name(), diagnostic.reason(), diagnostic.exceptionType(),
+                            diagnostic.line(), diagnostic.column(), diagnostic.charOffset()));
             logPhase(context, "JSON_PARSE_SUCCESS", "");
-            validateModeFields(parsed, mode);
+            if (!isPartialReduceRecovery(purpose, stage)) {
+                validateModeFields(parsed, mode);
+            }
+            if (context.subjectRequest() != null && mode == OverviewMode.ALL && stage == OutputStage.FINAL) {
+                requireSubjectAliasCoverage(parsed, aliases.keySet());
+            }
             logPhase(context, "SCHEMA_VALIDATE_SUCCESS", "");
             if (stage == OutputStage.INTERMEDIATE) {
                 validateIntermediateOutput(context, mode, instruction, parsed);
             }
+            requireStrictShrink(context, parsed, strictMaxChars);
+            requireCurrentSource(context);
+            if (context.acquisition() != null && context.acquisition().lease() != null) {
+                requireOwnerActive(context);
+                generationCoordinator.saveCheckpoint(context.acquisition().lease(), checkpointStep,
+                        context.coordinatorRequest().inputFingerprint(), context.coordinatorRequest().profileFingerprint(),
+                        context.coordinatorRequest().algorithmVersion(), 1, write(parsed));
+            }
             return parsed;
         } catch (DomainException exception) {
-            if ("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE".equals(exception.code())) {
+            if ("OVERVIEW_REDUCE_NO_PROGRESS".equals(exception.code())) {
+                throw exception;
+            }
+            if ("OVERVIEW_PROMPT_BUDGET_EXCEEDED".equals(exception.code())) {
                 logFailureAtPhase(context, "SCHEMA_VALIDATE", exception);
                 throw exception;
             }
@@ -628,6 +997,48 @@ public class OverviewGenerationService {
                     "AI provider returned an invalid overview", null, exception);
             logFailureAtPhase(context, phase, providerFailure);
             throw providerFailure;
+        }
+    }
+
+    private OverviewResponse restoreCheckpoint(GenerationContext context, OverviewMode mode, String instruction,
+                                               Map<String, String> aliases, String payload,
+                                               OutputStage stage, PromptPurpose purpose) {
+        try {
+            OverviewResponse decoded = objectMapper.readValue(payload, OverviewResponse.class);
+            OverviewResponse parsed = documentValidator.validateProviderDocument(write(decoded), aliases);
+            if (!isPartialReduceRecovery(purpose, stage)) {
+                validateModeFields(parsed, mode);
+            }
+            if (stage == OutputStage.INTERMEDIATE) validateIntermediateOutput(context, mode, instruction, parsed);
+            return parsed;
+        } catch (Exception exception) {
+            if (exception instanceof DomainException domainException) throw domainException;
+            throw new DomainException("VALIDATION_FAILED", "Stored overview checkpoint is invalid", null, exception);
+        }
+    }
+
+    private void requireStrictShrink(GenerationContext context, OverviewResponse response, int strictMaxChars) {
+        if (strictMaxChars <= 0 || write(response).length() < strictMaxChars) return;
+        DomainException failure = new DomainException("OVERVIEW_REDUCE_NO_PROGRESS",
+                "Overview recovery did not reduce the intermediate document");
+        logFailureAtPhase(context, "RECOVERY", failure);
+        throw failure;
+    }
+
+    private boolean isPartialReduceRecovery(PromptPurpose purpose, OutputStage stage) {
+        return stage == OutputStage.INTERMEDIATE
+                && (purpose == PromptPurpose.REDUCE_RECOVERY || purpose == PromptPurpose.REDUCE_RECOVERY_COMPACTION);
+    }
+
+    private void requireOwnerActive(GenerationContext context) {
+        if (context.acquisition() == null || context.acquisition().lease() == null) return;
+        context.deadline().remainingMillis();
+        if (context.cancellation() != null && context.cancellation().isCancelled()) {
+            throw new DomainException("MODEL_TIMEOUT", "Overview generation was cancelled");
+        }
+        if (!generationCoordinator.owns(context.acquisition().lease())) {
+            if (context.cancellation() != null) context.cancellation().cancel(OverviewCancellation.Reason.DEADLINE);
+            throw new DomainException("MODEL_TIMEOUT", "Overview generation ownership expired");
         }
     }
 
@@ -648,50 +1059,239 @@ public class OverviewGenerationService {
                                             OverviewResponse parsed) {
         String normalized = write(parsed);
         String selfPairData = userData(mode, instruction, "mapJson", List.of(parsed, parsed));
-        int selfPairPromptChars = messageLength(mode, instruction, selfPairData, OutputStage.INTERMEDIATE, PromptPurpose.REDUCE);
+        int selfPairPromptChars = messageLength(context, mode, instruction, selfPairData, OutputStage.INTERMEDIATE, PromptPurpose.REDUCE_SELF_PAIR);
         int promptLimit = maximumPromptChars();
-        boolean characterOverflow = normalized.length() > MAX_INTERMEDIATE_JSON_CHARS;
+        boolean softTargetExceeded = normalized.length() > MAX_INTERMEDIATE_JSON_CHARS;
         boolean selfPairOverflow = selfPairPromptChars > promptLimit;
         logPhase(context, "INTERMEDIATE_BUDGET_CHECK",
-                "normalizedChars={} normalizedLimit={} selfPairPromptChars={} promptLimit={} "
-                        + "characterOverflow={} selfPairOverflow={}",
+                "normalizedChars={} normalizedSoftTarget={} selfPairPromptChars={} promptLimit={} "
+                        + "softTargetExceeded={} selfPairOverflow={}",
                 normalized.length(), MAX_INTERMEDIATE_JSON_CHARS, selfPairPromptChars, promptLimit,
-                characterOverflow, selfPairOverflow);
-        if (characterOverflow || selfPairOverflow) {
-            throw new DomainException("OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE",
-                    "AI provider overview output exceeded the intermediate budget");
-        }
+                softTargetExceeded, selfPairOverflow);
     }
 
     private OverviewResponse reduce(AiTaskScope scope, GenerationContext context, OverviewMode mode, String instruction, Map<String, String> aliases,
                                     List<OverviewResponse> documents) {
-        List<OverviewResponse> current = List.copyOf(documents);
+        List<ReduceInput> current = prepareReduceInputs(context, mode, instruction, documents);
         int round = 0;
+        int recoveryRounds = 0;
         while (current.size() > 1) {
+            context.deadline().remainingMillis();
             round++;
-            List<List<OverviewResponse>> groups = packDocuments(mode, instruction, current,
+            List<List<ReduceInput>> groups = packDocuments(context, mode, instruction, current,
                     OutputStage.FINAL, PromptPurpose.REDUCE);
             if (groups.size() > 1) {
-                groups = packDocuments(mode, instruction, current,
+                List<List<ReduceInput>> intermediateGroups = packDocuments(context, mode, instruction, current,
                         OutputStage.INTERMEDIATE, PromptPurpose.REDUCE);
+                if (intermediateGroups.size() > 1) {
+                    groups = intermediateGroups;
+                }
             }
             logPhase(context, "REDUCE_START", "round={} inputCount={} groupCount={}", round, current.size(), groups.size());
             try {
                 requireReduceProgress(current.size(), groups.size());
             } catch (DomainException failure) {
-                logFailureAtPhase(context, "REDUCE", failure);
-                throw failure;
+                if (recoveryRounds >= MAX_SINGLETON_REDUCE_RECOVERY_ROUNDS) {
+                    logFailureAtPhase(context, "RECOVERY", failure);
+                    throw failure;
+                }
+                recoveryRounds++;
+                context.recoveryTracker().record("REDUCE_RECOVERY");
+                current = recoverReduceInputs(scope, context, mode, instruction, aliases, current, recoveryRounds);
+                continue;
             }
-            List<OverviewResponse> next = new ArrayList<>(groups.size());
-            for (List<OverviewResponse> group : groups) {
-                next.add(invoke(scope, context, mode, instruction, aliases,
-                        userData(mode, instruction, "mapJson", group),
-                        groups.size() == 1 ? OutputStage.FINAL : OutputStage.INTERMEDIATE, PromptPurpose.REDUCE));
+            List<ReduceInput> next = new ArrayList<>(groups.size());
+            for (List<ReduceInput> group : groups) {
+                List<OverviewResponse> groupResponses = group.stream().map(ReduceInput::response).toList();
+                boolean partial = group.stream().anyMatch(ReduceInput::partial);
+                OverviewResponse reduced = invoke(scope, context, mode, instruction, aliases,
+                        userData(mode, instruction, "mapJson", groupResponses),
+                        groups.size() == 1 ? OutputStage.FINAL : OutputStage.INTERMEDIATE,
+                        partial ? PromptPurpose.REDUCE_RECOVERY : PromptPurpose.REDUCE);
+                next.add(new ReduceInput(reduced, partial && groups.size() > 1));
             }
             logPhase(context, "REDUCE_SUCCESS", "round={} outputCount={}", round, next.size());
             current = List.copyOf(next);
         }
-        return current.getFirst();
+        return current.getFirst().response();
+    }
+
+    private List<ReduceInput> prepareReduceInputs(GenerationContext context, OverviewMode mode, String instruction,
+                                                        List<OverviewResponse> documents) {
+        List<ReduceInput> prepared = new ArrayList<>();
+            for (OverviewResponse document : documents) {
+            checkPlanningActive(context);
+            String singleInput = userData(mode, instruction, "mapJson", List.of(document));
+                if (fits(context, mode, instruction, singleInput, OutputStage.INTERMEDIATE, PromptPurpose.REDUCE)) {
+                prepared.add(new ReduceInput(document, false));
+            } else {
+                List<OverviewResponse> fragments = splitOverviewForReduce(context, mode, instruction, document);
+                if (fragments.size() < 2) {
+                    throw promptBudgetFailure(context, "RECOVERY", "Overview output cannot fit a consumer prompt");
+                }
+                fragments.forEach(fragment -> prepared.add(new ReduceInput(fragment, true)));
+                context.recoveryTracker().record("REDUCE_SPLIT");
+                logPhase(context, "RECOVERY_SPLIT", "fragmentCount={} normalizedChars={}",
+                        fragments.size(), write(document).length());
+            }
+        }
+        return List.copyOf(prepared);
+    }
+
+    private List<ReduceInput> recoverReduceInputs(AiTaskScope scope, GenerationContext context,
+                                                        OverviewMode mode, String instruction,
+                                                        Map<String, String> aliases,
+                                                        List<ReduceInput> documents, int attempt) {
+        checkPlanningActive(context);
+        int largestIndex = 0;
+        int largestChars = -1;
+        for (int index = 0; index < documents.size(); index++) {
+            checkPlanningActive(context);
+            int chars = write(documents.get(index).response()).length();
+            if (chars > largestChars) {
+                largestChars = chars;
+                largestIndex = index;
+            }
+        }
+        ReduceInput largestInput = documents.get(largestIndex);
+        OverviewResponse largest = largestInput.response();
+        String singleInput = userData(mode, instruction, "mapJson", List.of(largest));
+        PromptPurpose singletonPurpose = largestInput.partial()
+                ? PromptPurpose.REDUCE_RECOVERY_COMPACTION : PromptPurpose.REDUCE_COMPACTION;
+        if (!fits(context, mode, instruction, singleInput, OutputStage.INTERMEDIATE, singletonPurpose)) {
+            List<OverviewResponse> fragments = splitOverviewForReduce(context, mode, instruction, largest);
+            if (fragments.size() < 2) {
+                throw promptBudgetFailure(context, "RECOVERY", "Overview output cannot fit a consumer prompt");
+            }
+            List<ReduceInput> expanded = new ArrayList<>(documents.size() - 1 + fragments.size());
+            expanded.addAll(documents.subList(0, largestIndex));
+            fragments.forEach(fragment -> expanded.add(new ReduceInput(fragment, true)));
+            expanded.addAll(documents.subList(largestIndex + 1, documents.size()));
+            context.recoveryTracker().record("REDUCE_SPLIT");
+            logPhase(context, "RECOVERY_SPLIT", "attempt={} fragmentCount={} normalizedChars={}",
+                    attempt, fragments.size(), largestChars);
+            return List.copyOf(expanded);
+        }
+
+        OverviewResponse compacted = invoke(scope, context, mode, instruction, aliases, singleInput,
+                OutputStage.INTERMEDIATE, singletonPurpose, largestChars);
+        int compactedChars = write(compacted).length();
+        if (compactedChars >= largestChars) {
+            DomainException failure = new DomainException("OVERVIEW_REDUCE_NO_PROGRESS",
+                    "Overview recovery did not reduce the intermediate document");
+            logFailureAtPhase(context, "RECOVERY", failure);
+            throw failure;
+        }
+        List<ReduceInput> recovered = new ArrayList<>(documents);
+        recovered.set(largestIndex, new ReduceInput(compacted, largestInput.partial()));
+        context.recoveryTracker().record("REDUCE_COMPACT");
+        logPhase(context, "RECOVERY_COMPACT", "attempt={} beforeChars={} afterChars={}",
+                attempt, largestChars, compactedChars);
+        return List.copyOf(recovered);
+    }
+
+    private List<OverviewResponse> splitOverviewForReduce(GenerationContext context, OverviewMode mode,
+                                                           String instruction, OverviewResponse document) {
+        List<OverviewResponse> fragments = new ArrayList<>();
+        if (mode != OverviewMode.SUMMARY && document.outline() != null) {
+            for (OverviewChapter chapter : document.outline()) {
+                checkPlanningActive(context);
+                if (chapter.sections().isEmpty()) {
+                    OverviewResponse fragment = partialOverview(mode, document.title(), List.of(chapter), null);
+                    requireFittingFragment(context, mode, instruction, fragment);
+                    fragments.add(fragment);
+                } else {
+                    for (OverviewSection section : chapter.sections()) {
+                        checkPlanningActive(context);
+                        java.util.function.Function<String, OverviewResponse> candidate = value ->
+                                partialOverview(mode, document.title(), List.of(new OverviewChapter(chapter.title(),
+                                        List.of(new OverviewSection(section.title(), value, section.sourceIds(), null)))), null);
+                        fragments.addAll(splitTextForReduce(context, mode, instruction, section.summary(), candidate));
+                    }
+                }
+            }
+        }
+        if (mode != OverviewMode.OUTLINE && document.summary() != null) {
+            OverviewSummary summary = document.summary();
+            java.util.function.Function<String, OverviewResponse> overviewFragment = value ->
+                    partialOverview(mode, document.title(), null, new OverviewSummary(value, List.of(), List.of()));
+            fragments.addAll(splitTextForReduce(context, mode, instruction, summary.overview(), overviewFragment));
+            for (String keyPoint : summary.keyPoints()) {
+                checkPlanningActive(context);
+                fragments.addAll(splitTextForReduce(context, mode, instruction, keyPoint, value ->
+                        partialOverview(mode, document.title(), null, new OverviewSummary(null, List.of(value), List.of()))));
+            }
+            for (String learningPath : summary.learningPath()) {
+                checkPlanningActive(context);
+                fragments.addAll(splitTextForReduce(context, mode, instruction, learningPath, value ->
+                        partialOverview(mode, document.title(), null, new OverviewSummary(null, List.of(), List.of(value)))));
+            }
+        }
+        if (fragments.size() < 2) {
+            throw promptBudgetFailure(context, "RECOVERY", "Overview output has no safe semantic split");
+        }
+        return List.copyOf(fragments);
+    }
+
+    private List<OverviewResponse> splitTextForReduce(GenerationContext context, OverviewMode mode,
+                                                       String instruction, String value,
+                                                       java.util.function.Function<String, OverviewResponse> candidate) {
+        List<OverviewResponse> fragments = new ArrayList<>();
+        int length = value.codePointCount(0, value.length());
+        int start = 0;
+        while (start < length) {
+            checkPlanningActive(context);
+            int low = 1;
+            int high = length - start;
+            int best = 0;
+            while (low <= high) {
+                checkPlanningActive(context);
+                int size = low + (high - low) / 2;
+                String part = substringByCodePoints(value, start, start + size);
+                OverviewResponse fragment = candidate.apply(part);
+                String prompt = userData(mode, instruction, "mapJson", List.of(fragment));
+                if (fits(context, mode, instruction, prompt, OutputStage.INTERMEDIATE, PromptPurpose.REDUCE_RECOVERY)) {
+                    best = size;
+                    low = size + 1;
+                } else {
+                    high = size - 1;
+                }
+            }
+            if (best == 0) {
+                throw promptBudgetFailure(context, "RECOVERY", "Overview field cannot fit a consumer prompt");
+            }
+            fragments.add(candidate.apply(substringByCodePoints(value, start, start + best)));
+            start += best;
+        }
+        return List.copyOf(fragments);
+    }
+
+    private OverviewResponse partialOverview(OverviewMode mode, String title,
+                                              List<OverviewChapter> outline, OverviewSummary summary) {
+        return new OverviewResponse(1, title, mode == OverviewMode.SUMMARY ? null : outline,
+                mode == OverviewMode.OUTLINE ? null : summary);
+    }
+
+    private void requireFittingFragment(GenerationContext context, OverviewMode mode, String instruction,
+                                       OverviewResponse fragment) {
+        checkPlanningActive(context);
+        if (!fits(context, mode, instruction, userData(mode, instruction, "mapJson", List.of(fragment)),
+                OutputStage.INTERMEDIATE, PromptPurpose.REDUCE_RECOVERY)) {
+            throw promptBudgetFailure(context, "RECOVERY", "Overview structural fragment cannot fit a consumer prompt");
+        }
+    }
+
+    private void checkPlanningActive(GenerationContext context) {
+        context.deadline().remainingMillis();
+        if (context.cancellation() != null && context.cancellation().isCancelled()) {
+            throw new DomainException("MODEL_TIMEOUT", "Overview generation was cancelled during planning");
+        }
+    }
+
+    private DomainException promptBudgetFailure(GenerationContext context, String phase, String detail) {
+        DomainException failure = new DomainException("OVERVIEW_RECOVERY_EXHAUSTED", detail);
+        logFailureAtPhase(context, phase, failure);
+        return failure;
     }
 
     static void requireReduceProgress(int inputCount, int groupCount) {
@@ -701,21 +1301,57 @@ public class OverviewGenerationService {
         }
     }
 
-    private List<List<String>> packChunks(OverviewMode mode, String instruction, String title, List<String> chunks,
+    private List<List<String>> packChunks(GenerationContext context, OverviewMode mode, String instruction, String title, List<String> chunks,
                                           OutputStage stage, PromptPurpose purpose) {
+        List<String> fragments = new ArrayList<>();
+        for (String chunk : chunks) {
+            checkPlanningActive(context);
+            String singleData = sourceChunkData(mode, instruction, title, List.of(chunk));
+            if (fits(context, mode, instruction, singleData, stage, purpose)) {
+                fragments.add(chunk);
+                continue;
+            }
+
+            int length = codePoints(chunk);
+            int start = 0;
+            while (start < length) {
+                checkPlanningActive(context);
+                int low = 1;
+                int high = length - start;
+                int best = 0;
+                while (low <= high) {
+                    checkPlanningActive(context);
+                    int size = low + (high - low) / 2;
+                    String part = substringByCodePoints(chunk, start, start + size);
+                    String data = sourceChunkData(mode, instruction, title, List.of(part));
+                    if (fits(context, mode, instruction, data, stage, purpose)) {
+                        best = size;
+                        low = size + 1;
+                    } else {
+                        high = size - 1;
+                    }
+                }
+                if (best == 0) {
+                    throw promptBudgetFailure(context, "PROMPT_BUDGET",
+                            "Overview source text cannot fit a consumer prompt");
+                }
+                fragments.add(substringByCodePoints(chunk, start, start + best));
+                start += best;
+            }
+        }
+
         List<List<String>> batches = new ArrayList<>();
         List<String> current = new ArrayList<>();
-        for (String chunk : chunks) {
+        for (String chunk : fragments) {
+            checkPlanningActive(context);
             List<String> candidate = new ArrayList<>(current);
             candidate.add(chunk);
-            if (!fits(mode, instruction, userData(mode, instruction, "sourceTitle", title, "chunks", candidate), stage, purpose)) {
-                if (current.isEmpty()) {
-                    throw new DomainException("VALIDATION_FAILED", "Overview source chunk exceeds the configured prompt limit");
-                }
+            if (!fits(context, mode, instruction, sourceChunkData(mode, instruction, title, candidate), stage, purpose)) {
                 batches.add(List.copyOf(current));
                 current = new ArrayList<>(List.of(chunk));
-                if (!fits(mode, instruction, userData(mode, instruction, "sourceTitle", title, "chunks", current), stage, purpose)) {
-                    throw new DomainException("VALIDATION_FAILED", "Overview source chunk exceeds the configured prompt limit");
+                if (!fits(context, mode, instruction, sourceChunkData(mode, instruction, title, current), stage, purpose)) {
+                    throw promptBudgetFailure(context, "PROMPT_BUDGET",
+                            "Overview source text cannot fit a consumer prompt");
                 }
             } else {
                 current = candidate;
@@ -725,22 +1361,25 @@ public class OverviewGenerationService {
         return batches;
     }
 
-    private List<List<ModelSubjectInput>> packSubjectInputs(OverviewMode mode, String instruction,
-                                                             List<ModelSubjectInput> sources,
-                                                             OverviewTaskDeadline deadline) {
+    private String sourceChunkData(OverviewMode mode, String instruction, String title, List<String> chunks) {
+        return userData(mode, instruction, "sourceAlias", "source-1", "sourceTitle", title, "chunks", chunks);
+    }
+
+    private List<List<ModelSubjectInput>> packSubjectInputs(GenerationContext context, OverviewMode mode, String instruction,
+                                                             List<ModelSubjectInput> sources) {
         List<ModelSubjectInput> fragments = new ArrayList<>();
         for (ModelSubjectInput source : sources) {
-            deadline.remainingMillis();
-            fragments.addAll(subjectInputFragments(mode, instruction, source, deadline));
+            context.deadline().remainingMillis();
+            fragments.addAll(subjectInputFragments(context, mode, instruction, source));
         }
 
         List<List<ModelSubjectInput>> batches = new ArrayList<>();
         List<ModelSubjectInput> current = new ArrayList<>();
         for (ModelSubjectInput fragment : fragments) {
-            deadline.remainingMillis();
+            context.deadline().remainingMillis();
             List<ModelSubjectInput> candidate = new ArrayList<>(current);
             candidate.add(fragment);
-            if (!fits(mode, instruction, userData(mode, instruction, "sources", candidate),
+            if (!fits(context, mode, instruction, userData(mode, instruction, "sources", candidate),
                     OutputStage.INTERMEDIATE, PromptPurpose.SUBJECT_MAP)) {
                 if (current.isEmpty()) {
                     throw new DomainException("VALIDATION_FAILED", "Subject input fragment exceeds the configured prompt limit");
@@ -755,17 +1394,16 @@ public class OverviewGenerationService {
         return List.copyOf(batches);
     }
 
-    private List<ModelSubjectInput> subjectInputFragments(OverviewMode mode, String instruction,
-                                                           ModelSubjectInput source,
-                                                           OverviewTaskDeadline deadline) {
+    private List<ModelSubjectInput> subjectInputFragments(GenerationContext context, OverviewMode mode, String instruction,
+                                                           ModelSubjectInput source) {
         List<ModelSubjectInput> fragments = new ArrayList<>();
         if (mode != OverviewMode.SUMMARY && source.outline() != null) {
             for (OverviewChapter chapter : source.outline()) {
-                deadline.remainingMillis();
+                context.deadline().remainingMillis();
                 if (chapter.sections().isEmpty()) {
                     ModelSubjectInput fragment = new ModelSubjectInput(source.sourceAlias(), source.title(),
                             List.of(chapter), null);
-                    if (!fits(mode, instruction, userData(mode, instruction, "sources", List.of(fragment)),
+                    if (!fits(context, mode, instruction, userData(mode, instruction, "sources", List.of(fragment)),
                             OutputStage.INTERMEDIATE, PromptPurpose.SUBJECT_MAP)) {
                         throw new DomainException("VALIDATION_FAILED", "Subject outline fragment exceeds the configured prompt limit");
                     }
@@ -773,11 +1411,11 @@ public class OverviewGenerationService {
                     continue;
                 }
                 for (OverviewSection section : chapter.sections()) {
-                    deadline.remainingMillis();
+                    context.deadline().remainingMillis();
                     Function<String, ModelSubjectInput> candidate = value -> new ModelSubjectInput(
                             source.sourceAlias(), source.title(), List.of(new OverviewChapter(chapter.title(),
                             List.of(new OverviewSection(section.title(), value, section.sourceIds(), null)))), null);
-                    fragments.addAll(splitSubjectText(mode, instruction, section.summary(), candidate, deadline));
+                    fragments.addAll(splitSubjectText(context, mode, instruction, section.summary(), candidate));
                 }
             }
         }
@@ -787,38 +1425,37 @@ public class OverviewGenerationService {
                     new ModelSubjectInput(source.sourceAlias(), source.title(), null, value);
             Function<String, ModelSubjectInput> overviewCandidate = value -> candidate.apply(
                     new OverviewDtos.OverviewSummary(value, List.of(), List.of()));
-            fragments.addAll(splitSubjectText(mode, instruction, summary.overview(), overviewCandidate, deadline));
+            fragments.addAll(splitSubjectText(context, mode, instruction, summary.overview(), overviewCandidate));
             for (String keyPoint : summary.keyPoints()) {
-                deadline.remainingMillis();
-                fragments.addAll(splitSubjectText(mode, instruction, keyPoint, value -> candidate.apply(
-                        new OverviewDtos.OverviewSummary(null, List.of(value), List.of())), deadline));
+                context.deadline().remainingMillis();
+                fragments.addAll(splitSubjectText(context, mode, instruction, keyPoint, value -> candidate.apply(
+                        new OverviewDtos.OverviewSummary(null, List.of(value), List.of()))));
             }
             for (String learningPath : summary.learningPath()) {
-                deadline.remainingMillis();
-                fragments.addAll(splitSubjectText(mode, instruction, learningPath, value -> candidate.apply(
-                        new OverviewDtos.OverviewSummary(null, List.of(), List.of(value))), deadline));
+                context.deadline().remainingMillis();
+                fragments.addAll(splitSubjectText(context, mode, instruction, learningPath, value -> candidate.apply(
+                        new OverviewDtos.OverviewSummary(null, List.of(), List.of(value)))));
             }
         }
         return List.copyOf(fragments);
     }
 
-    private List<ModelSubjectInput> splitSubjectText(OverviewMode mode, String instruction, String value,
-                                                      Function<String, ModelSubjectInput> candidate,
-                                                      OverviewTaskDeadline deadline) {
+    private List<ModelSubjectInput> splitSubjectText(GenerationContext context, OverviewMode mode, String instruction, String value,
+                                                      Function<String, ModelSubjectInput> candidate) {
         List<ModelSubjectInput> fragments = new ArrayList<>();
         int start = 0;
         int length = codePoints(value);
         while (start < length) {
-            deadline.remainingMillis();
+            context.deadline().remainingMillis();
             int low = 1;
             int high = length - start;
             int best = 0;
             while (low <= high) {
-                deadline.remainingMillis();
+                context.deadline().remainingMillis();
                 int size = low + (high - low) / 2;
                 String part = substringByCodePoints(value, start, start + size);
                 String data = userData(mode, instruction, "sources", List.of(candidate.apply(part)));
-                if (fits(mode, instruction, data, OutputStage.INTERMEDIATE, PromptPurpose.SUBJECT_MAP)) {
+                if (fits(context, mode, instruction, data, OutputStage.INTERMEDIATE, PromptPurpose.SUBJECT_MAP)) {
                     best = size;
                     low = size + 1;
                 } else {
@@ -859,19 +1496,27 @@ public class OverviewGenerationService {
         return value.substring(value.offsetByCodePoints(0, start), value.offsetByCodePoints(0, end));
     }
 
-    private List<List<OverviewResponse>> packDocuments(OverviewMode mode, String instruction,
-                                                       List<OverviewResponse> documents, OutputStage stage, PromptPurpose purpose) {
-        List<List<OverviewResponse>> groups = new ArrayList<>();
-        List<OverviewResponse> current = new ArrayList<>();
-        for (OverviewResponse document : documents) {
-            List<OverviewResponse> candidate = new ArrayList<>(current);
+    private List<List<ReduceInput>> packDocuments(GenerationContext context, OverviewMode mode, String instruction,
+                                                       List<ReduceInput> documents, OutputStage stage, PromptPurpose purpose) {
+        List<List<ReduceInput>> groups = new ArrayList<>();
+        List<ReduceInput> current = new ArrayList<>();
+        for (ReduceInput document : documents) {
+            List<ReduceInput> candidate = new ArrayList<>(current);
             candidate.add(document);
-            if (!fits(mode, instruction, userData(mode, instruction, "mapJson", candidate), stage, purpose)) {
-                if (current.isEmpty()) throw new DomainException("VALIDATION_FAILED", "Overview reduce input exceeds the configured prompt limit");
+            PromptPurpose candidatePurpose = candidate.stream().anyMatch(ReduceInput::partial)
+                    ? PromptPurpose.REDUCE_RECOVERY : purpose;
+            List<OverviewResponse> responses = candidate.stream().map(ReduceInput::response).toList();
+            if (!fits(context, mode, instruction, userData(mode, instruction, "mapJson", responses), stage, candidatePurpose)) {
+                if (current.isEmpty()) {
+                    throw promptBudgetFailure(context, "PROMPT_BUDGET",
+                            "Overview reduce input exceeds the configured prompt limit");
+                }
                 groups.add(List.copyOf(current));
                 current = new ArrayList<>(List.of(document));
-                if (!fits(mode, instruction, userData(mode, instruction, "mapJson", current), stage, purpose)) {
-                    throw new DomainException("VALIDATION_FAILED", "Overview reduce input exceeds the configured prompt limit");
+                PromptPurpose singlePurpose = document.partial() ? PromptPurpose.REDUCE_RECOVERY : purpose;
+                if (!fits(context, mode, instruction, userData(mode, instruction, "mapJson", List.of(document.response())), stage, singlePurpose)) {
+                    throw promptBudgetFailure(context, "PROMPT_BUDGET",
+                            "Overview reduce input exceeds the configured prompt limit");
                 }
             } else current = candidate;
         }
@@ -879,16 +1524,85 @@ public class OverviewGenerationService {
         return groups;
     }
 
-    private boolean fits(OverviewMode mode, String instruction, String userData, OutputStage stage, PromptPurpose purpose) {
-        return messageLength(mode, instruction, userData, stage, purpose) <= maximumPromptChars();
+    private boolean fits(GenerationContext context, OverviewMode mode, String instruction, String userData,
+                         OutputStage stage, PromptPurpose purpose) {
+        String systemText = systemInstruction(context, stage, purpose);
+        if (systemText.length() + userData.length() > maximumPromptChars()) return false;
+        OverviewModelBudget modelBudget = context.modelBudget();
+        if (modelBudget == null || modelBudget.contextWindowTokens().isEmpty()) return true;
+        OverviewBudgetPlanner.RequestAssessment assessment = OverviewBudgetPlanner.assessRequest(
+                systemText, userData, modelBudget, plannerStage(stage), Long.MAX_VALUE, Long.MAX_VALUE);
+        return assessment.contextFit().orElse(true);
     }
 
-    private int messageLength(OverviewMode mode, String instruction, String userData, OutputStage stage, PromptPurpose purpose) {
-        return systemInstruction(stage, purpose).length() + userData.length();
+    private int messageLength(GenerationContext context, OverviewMode mode, String instruction, String userData,
+                              OutputStage stage, PromptPurpose purpose) {
+        return systemInstruction(context, stage, purpose).length() + userData.length();
     }
 
     private int maxTokens(OutputStage stage) {
         return stage == OutputStage.INTERMEDIATE ? INTERMEDIATE_MAX_TOKENS : FINAL_MAX_TOKENS;
+    }
+
+    private AiSettingsService.ResolvedSettings resolveOverviewSettings(UUID userId) {
+        AiProviderType provider = configuredProvider();
+        return settingsService.resolve(userId, provider);
+    }
+
+    private OverviewModelBudget resolveModelBudget(AiSettingsService.ResolvedSettings settings) {
+        return OverviewModelBudget.resolve(settings.provider(), settings.credential().baseUrl(), settings.chatModel());
+    }
+
+    private OverviewBudgetPlanner.OutputStage plannerStage(OutputStage stage) {
+        return stage == OutputStage.INTERMEDIATE
+                ? OverviewBudgetPlanner.OutputStage.INTERMEDIATE : OverviewBudgetPlanner.OutputStage.FINAL;
+    }
+
+    private int overviewMaxCalls() {
+        AuralisProperties.Ai ai = properties == null ? null : properties.ai();
+        AuralisProperties.Limits limits = ai == null ? null : ai.limits();
+        return limits == null || limits.overviewMaxCalls() <= 0 ? 24 : limits.overviewMaxCalls();
+    }
+
+    private long overviewTaskTokens() {
+        AuralisProperties.Ai ai = properties == null ? null : properties.ai();
+        AuralisProperties.Limits limits = ai == null ? null : ai.limits();
+        return limits == null || limits.overviewTaskTokens() <= 0 ? 524_288 : limits.overviewTaskTokens();
+    }
+
+    private List<String> prependSourceTitle(String title, List<String> texts) {
+        List<String> values = new ArrayList<>(texts.size() + 1);
+        values.add(title);
+        values.addAll(texts);
+        return List.copyOf(values);
+    }
+
+    private OverviewContentStats subjectContentStats(List<ModelSubjectInput> inputs, List<SourceView> sources) {
+        List<String> texts = new ArrayList<>();
+        int knownSections = 0;
+        StringBuilder revisions = new StringBuilder();
+        for (int index = 0; index < inputs.size(); index++) {
+            ModelSubjectInput input = inputs.get(index);
+            SourceView source = sources.get(index);
+            revisions.append(source.id()).append('@').append(source.ingestionRevision()).append(';');
+            texts.add(input.title());
+            if (input.outline() != null) {
+                for (OverviewChapter chapter : input.outline()) {
+                    texts.add(chapter.title());
+                    for (OverviewSection section : chapter.sections()) {
+                        knownSections++;
+                        texts.add(section.title());
+                        texts.add(section.summary());
+                    }
+                }
+            }
+            if (input.summary() != null) {
+                texts.add(input.summary().overview());
+                texts.addAll(input.summary().keyPoints());
+                texts.addAll(input.summary().learningPath());
+            }
+        }
+        return OverviewContentStats.fromTexts(texts, inputs.size(), knownSections, revisions.toString());
     }
 
     private String userData(OverviewMode mode, String instruction, Object... fields) {
@@ -945,12 +1659,100 @@ public class OverviewGenerationService {
     private DomainException providerInvalid(String detail) { return new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid overview: " + detail); }
 
     private void requireCurrentSource(GenerationContext context) {
+        if (context.coordinatorRequest() != null && context.subjectRequest() != null) {
+            SubjectOverviewRequest request = context.subjectRequest();
+            subjectService.requireActiveSubject(context.userId(), request.subjectId());
+            List<SourceView> currentSources = new ArrayList<>();
+            for (SubjectOverviewSourceInput input : request.sources()) {
+                SourceView current = sourceService.requireActiveSource(context.userId(), input.sourceId());
+                if (!request.subjectId().equals(current.subjectId())
+                        || current.ingestionStatus() != SourceIngestionStatus.READY) {
+                    throw new DomainException("MUTATION_REJECTED", "Subject source changed during overview generation");
+                }
+                currentSources.add(current);
+            }
+            if (!Objects.equals(context.payloadFingerprint(), subjectPayloadFingerprint(request, currentSources))) {
+                throw new DomainException("MUTATION_REJECTED", "Subject overview inputs changed during generation");
+            }
+            return;
+        }
         if (context.sourceId() == null) return;
         SourceView current = sourceService.requireActiveSource(context.userId(), context.sourceId());
         if (current.ingestionStatus() != SourceIngestionStatus.READY
                 || !Objects.equals(current.ingestionRevision(), context.revision())) {
             throw new DomainException("MUTATION_REJECTED", "Source changed during overview generation");
         }
+        if (context.coordinatorRequest() != null && context.payloadFingerprint() != null) {
+            List<String> currentChunks = loadActiveChunks(context.userId(), context.sourceId());
+            String currentPayload = sourcePayloadFingerprint(current,
+                    new SourceOverviewRequest(context.sourceId(), context.mode(), context.instruction()), currentChunks);
+            if (!context.payloadFingerprint().equals(currentPayload)) {
+                throw new DomainException("MUTATION_REJECTED", "Source content changed during overview generation");
+            }
+        }
+    }
+
+    private List<String> loadActiveChunks(UUID userId, UUID sourceId) {
+        return chunkRepository.findAllByUserIdAndSourceIdAndActiveTrueOrderByOrdinalAsc(userId, sourceId)
+                .stream().map(chunk -> chunk.getContent()).filter(content -> content != null && !content.isBlank())
+                .map(String::trim).toList();
+    }
+
+    private String sourcePayloadFingerprint(SourceView source, SourceOverviewRequest request, List<String> chunks) {
+        return sha256(write(List.of("SOURCE", source.id(), source.ingestionRevision(), source.title(),
+                request.mode(), Objects.toString(request.instruction(), ""), chunks)));
+    }
+
+    private String subjectPayloadFingerprint(SubjectOverviewRequest request, List<SourceView> sources) {
+        List<Object> ordered = new ArrayList<>(sources.size());
+        for (int index = 0; index < sources.size(); index++) {
+            SourceView source = sources.get(index);
+            SubjectOverviewSourceInput selected = request.sources().get(index);
+            ordered.add(List.of(source.id(), Objects.toString(source.subjectId(), ""), source.title(),
+                    Objects.toString(source.ingestionRevision(), ""), selected.outline() == null ? "null" : selected.outline(),
+                    selected.summary() == null ? "null" : selected.summary()));
+        }
+        return sha256(write(List.of("SUBJECT", request.subjectId(), request.mode(),
+                Objects.toString(request.instruction(), ""), ordered)));
+    }
+
+    private Map<String, String> subjectUuidAliases(Map<String, String> aliases) {
+        Map<String, String> result = new LinkedHashMap<>();
+        aliases.values().forEach(sourceId -> result.put(sourceId, sourceId));
+        return result;
+    }
+
+    private String profileFingerprint(AiSettingsService.ResolvedSettings settings) {
+        String endpoint = settings.credential() == null ? "" : settings.credential().baseUrl();
+        String normalizedEndpoint;
+        try {
+            URI uri = URI.create(Objects.toString(endpoint, "").trim()).normalize();
+            normalizedEndpoint = Objects.toString(uri.getScheme(), "").toLowerCase(Locale.ROOT) + "://"
+                    + Objects.toString(uri.getHost(), "").toLowerCase(Locale.ROOT)
+                    + (uri.getPort() < 0 ? "" : ":" + uri.getPort())
+                    + Objects.toString(uri.getRawPath(), "").replaceAll("/+$", "");
+        } catch (IllegalArgumentException exception) {
+            normalizedEndpoint = Objects.toString(endpoint, "").trim();
+        }
+        String credentialIdentity = settings.credential() == null ? ""
+                : sha256(Objects.toString(settings.credential().apiKey(), ""));
+        return sha256(settings.provider() + "|" + normalizedEndpoint + "|"
+                + Objects.toString(settings.chatModel(), "") + "|" + credentialIdentity);
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private AiTaskContext taskContext(GenerationContext context, AiFeature feature) {
+        OverviewGenerationCoordinator.Acquisition binding = context.acquisition();
+        return new AiTaskContext(context.userId(), feature, context.generationId(),
+                binding == null ? null : binding.budgetTaskId());
     }
 
     private void requireRequest(UUID userId, Object request) { if (userId == null || request == null) throw new DomainException("VALIDATION_FAILED", "Overview request is required"); }
@@ -961,9 +1763,22 @@ public class OverviewGenerationService {
         catch (IllegalArgumentException exception) { throw new DomainException("MODEL_UNAVAILABLE", "AI default provider is invalid"); }
     }
     private int maximumPromptChars() { int value = properties == null || properties.ai() == null ? 0 : properties.ai().maxPromptChars(); return value > 0 ? value : 12_000; }
-    private String systemInstruction(OutputStage stage, PromptPurpose purpose) {
-        if (purpose == PromptPurpose.REDUCE) {
-            return SYSTEM_INSTRUCTION + "\n" + REDUCE_INSTRUCTION;
+    private String systemInstruction(GenerationContext context, OutputStage stage, PromptPurpose purpose) {
+        String base = baseSystemInstruction(stage, purpose);
+        OverviewContentStats stats = context.contentStats();
+        if (stats == null) return base;
+        OverviewBudgetPlanner.ContentPlan contentPlan = OverviewBudgetPlanner.planContent(stats, plannerStage(stage));
+        if (contentPlan.targetOutputTokens() <= 0) return base;
+        return base + "\n" + "Advisory output target: about " + contentPlan.targetOutputTokens()
+                + " JSON tokens. Preserve all distinct content; this is guidance, not a hard limit.";
+    }
+
+    private String baseSystemInstruction(OutputStage stage, PromptPurpose purpose) {
+        if (isReducePurpose(purpose)) {
+            String instruction = SYSTEM_INSTRUCTION + "\n" + REDUCE_INSTRUCTION;
+            return purpose == PromptPurpose.REDUCE_RECOVERY || purpose == PromptPurpose.REDUCE_RECOVERY_COMPACTION
+                    ? instruction + "\n" + RECOVERY_REDUCE_INSTRUCTION
+                    : instruction;
         }
         if (purpose == PromptPurpose.SUBJECT_MAP) {
             String instruction = SYSTEM_INSTRUCTION + "\n" + SUBJECT_MAP_INSTRUCTION;
@@ -975,6 +1790,12 @@ public class OverviewGenerationService {
             return SYSTEM_INSTRUCTION + "\n" + INTERMEDIATE_MAP_INSTRUCTION;
         }
         return SYSTEM_INSTRUCTION;
+    }
+
+    private boolean isReducePurpose(PromptPurpose purpose) {
+        return purpose == PromptPurpose.REDUCE || purpose == PromptPurpose.REDUCE_SELF_PAIR
+                || purpose == PromptPurpose.REDUCE_RECOVERY || purpose == PromptPurpose.REDUCE_COMPACTION
+                || purpose == PromptPurpose.REDUCE_RECOVERY_COMPACTION;
     }
     private long overviewResponseTimeoutMillis() {
         long value = properties == null || properties.ai() == null ? 0 : properties.ai().overviewResponseTimeoutMillis();
@@ -1048,19 +1869,85 @@ public class OverviewGenerationService {
 
     private record GenerationContext(UUID userId, UUID sourceId, UUID revision, OverviewMode mode,
                                      String requestId, String generationId, OverviewTaskDeadline deadline,
-                                     OverviewCancellation cancellation) {
+                                     OverviewCancellation cancellation,
+                                     AiSettingsService.ResolvedSettings settings,
+                                     OverviewModelBudget modelBudget,
+                                     OverviewContentStats contentStats,
+                                     AtomicInteger callsStarted,
+                                     OverviewGenerationCoordinator.Request coordinatorRequest,
+                                     OverviewGenerationCoordinator.Acquisition acquisition,
+                                     String payloadFingerprint,
+                                     String instruction,
+                                     SubjectOverviewRequest subjectRequest,
+                                     RecoveryTracker recoveryTracker,
+                                     SourceGenerationKey localFlightKey,
+                                     SourceGenerationFlight localFlight) {
+        private GenerationContext(UUID userId, UUID sourceId, UUID revision, OverviewMode mode,
+                                  String requestId, String generationId, OverviewTaskDeadline deadline,
+                                  OverviewCancellation cancellation) {
+            this(userId, sourceId, revision, mode, requestId, generationId, deadline, cancellation,
+                    null, null, null, new AtomicInteger(), null, null, null, null, null, new RecoveryTracker(), null, null);
+        }
         private GenerationContext withSource(UUID sourceId, UUID revision) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
-                    cancellation);
+                    cancellation, settings, modelBudget, contentStats, callsStarted,
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
         private GenerationContext withCancellation(OverviewCancellation cancellation) {
             return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
-                    cancellation);
+                    cancellation, settings, modelBudget, contentStats, callsStarted,
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
         }
+        private GenerationContext withSettings(AiSettingsService.ResolvedSettings settings,
+                                               OverviewModelBudget modelBudget) {
+            return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
+                    cancellation, settings, modelBudget, contentStats, callsStarted,
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+        }
+        private GenerationContext withContentStats(OverviewContentStats contentStats) {
+            return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
+                    cancellation, settings, modelBudget, contentStats, callsStarted,
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+        }
+        private GenerationContext withSourceRequest(OverviewGenerationCoordinator.Request request,
+                                                    String payloadFingerprint, String instruction) {
+            return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
+                    cancellation, settings, modelBudget, contentStats, callsStarted, request,
+                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+        }
+        private GenerationContext withAcquisition(OverviewGenerationCoordinator.Acquisition acquisition) {
+            return new GenerationContext(userId, sourceId, revision, mode, requestId,
+                    acquisition == null ? generationId : acquisition.generationId().toString(), deadline,
+                    cancellation, settings, modelBudget, contentStats, callsStarted,
+                    coordinatorRequest, acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, localFlightKey, localFlight);
+        }
+        private GenerationContext withSubjectRequest(OverviewGenerationCoordinator.Request request,
+                                                    String payloadFingerprint, SubjectOverviewRequest subjectRequest) {
+            return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
+                    cancellation, settings, modelBudget, contentStats, callsStarted, request,
+                    acquisition, payloadFingerprint, subjectRequest.instruction(), subjectRequest, recoveryTracker, localFlightKey, localFlight);
+        }
+        private GenerationContext withLocalFlight(SourceGenerationKey key, SourceGenerationFlight flight) {
+            return new GenerationContext(userId, sourceId, revision, mode, requestId, generationId, deadline,
+                    cancellation, settings, modelBudget, contentStats, callsStarted, coordinatorRequest,
+                    acquisition, payloadFingerprint, instruction, subjectRequest, recoveryTracker, key, flight);
+        }
+    }
+
+    private static final class RecoveryTracker {
+        private final AtomicInteger count = new AtomicInteger();
+        private final List<String> actions = new java.util.concurrent.CopyOnWriteArrayList<>();
+        void record(String action) {
+            count.incrementAndGet();
+            if (actions.size() < 64) actions.add(action);
+        }
+        int count() { return count.get(); }
+        List<String> actions() { return List.copyOf(actions); }
     }
 
     static final class SourceGenerationFlight {
         private final CompletableFuture<OverviewResponse> result = new CompletableFuture<>();
+        private final CompletableFuture<OverviewGenerationCoordinator.Acquisition> binding = new CompletableFuture<>();
         private final OverviewCancellation cancellation = new OverviewCancellation();
         private int interests;
         private boolean closed;
@@ -1079,6 +1966,10 @@ public class OverviewGenerationService {
 
         boolean isCancelled() {
             return cancellation.isCancelled();
+        }
+
+        synchronized void closeForNewInterests() {
+            closed = true;
         }
 
         void cancel(OverviewCancellation.Reason reason) {
@@ -1101,7 +1992,7 @@ public class OverviewGenerationService {
     }
 
     private record SourceGenerationKey(UUID userId, UUID sourceId, UUID revision, String title, OverviewMode mode,
-                                       String instruction) {
+                                       String instruction, String payloadFingerprint, String profileFingerprint) {
     }
 
     private record ModelSubjectInput(String sourceAlias, String title, List<OverviewChapter> outline, OverviewDtos.OverviewSummary summary) { }

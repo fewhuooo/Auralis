@@ -3,8 +3,12 @@ package com.auralis.app;
 import com.auralis.app.identity.AccountDeletionCleanupService;
 import com.auralis.app.identity.IdentityException;
 import com.auralis.app.identity.IdentityService;
+import com.auralis.app.ai.OverviewGenerationCoordinator;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -47,6 +51,15 @@ class AccountDeletionCleanupPostgresIntegrationTests {
 
     private static final String POSTGRES_IMAGE = "pgvector/pgvector:0.8.6-pg17-bookworm";
 
+    @TestConfiguration(proxyBeanMethods = false)
+    static class MicrosecondClockConfiguration {
+        @Bean
+        @Primary
+        Clock testClock() {
+            return Clock.fixed(Instant.parse("2026-10-13T03:11:06.432415Z"), ZoneOffset.UTC);
+        }
+    }
+
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
             DockerImageName.parse(POSTGRES_IMAGE).asCompatibleSubstituteFor("postgres"));
@@ -55,6 +68,7 @@ class AccountDeletionCleanupPostgresIntegrationTests {
     @Autowired private IdentityService identityService;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private PlatformTransactionManager transactionManager;
+    @Autowired private OverviewGenerationCoordinator overviewGenerationCoordinator;
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
@@ -120,6 +134,11 @@ class AccountDeletionCleanupPostgresIntegrationTests {
         appJdbc.update("insert into assets (id, user_id, object_key, original_name, size_bytes, mime_type, upload_status) "
                         + "values (?, ?, ?, 'account-deletion-regression.bin', 4, 'application/octet-stream', 'READY')",
                 assetId, userId, objectKey);
+        var generationRequest = new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SUBJECT",
+                UUID.randomUUID(), null, HASH_A, HASH_B, HASH_C, "overview-v1");
+        var generation = overviewGenerationCoordinator.acquire(generationRequest);
+        overviewGenerationCoordinator.saveCheckpoint(generation.lease(), "MAP:1", HASH_A, HASH_C,
+                "overview-v1", 1, "{\"schemaVersion\":1,\"title\":\"private map\"}");
 
         var response = identityService.requestAccountDeletion(userId, password);
 
@@ -143,6 +162,12 @@ class AccountDeletionCleanupPostgresIntegrationTests {
         assertThat(appJdbc.queryForObject("select count(*) from subjects where id = ?", Integer.class, subjectId)).isZero();
         assertThat(appJdbc.queryForObject("select count(*) from tasks where id = ?", Integer.class, taskId)).isZero();
         assertThat(appJdbc.queryForObject("select count(*) from assets where id = ?", Integer.class, assetId)).isZero();
+        assertThat(appJdbc.queryForObject("select count(*) from overview_generations where id = ?", Integer.class,
+                generation.generationId())).isZero();
+        assertThat(appJdbc.queryForObject("select count(*) from overview_generation_requests where request_id = ?",
+                Integer.class, generationRequest.requestId())).isZero();
+        assertThat(appJdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id = ?",
+                Integer.class, generation.generationId())).isZero();
     }
 
     @Test
@@ -165,6 +190,10 @@ class AccountDeletionCleanupPostgresIntegrationTests {
                         + "values (?, ?, ?, ?, 'ACTIVE')",
                 userId, "delete-test", "delete-test-" + userId, passwordHash);
     }
+
+    private static final String HASH_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    private static final String HASH_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    private static final String HASH_C = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
     private void cleansSyntheticJobAndReconcilesLateObjectsAcrossDifferentTimeZones() {
         assertThat(TimeZone.getDefault().getID()).isEqualTo("Asia/Hong_Kong");

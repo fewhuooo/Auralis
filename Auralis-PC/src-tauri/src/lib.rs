@@ -5,6 +5,7 @@ mod document_upload;
 mod local_asset_store;
 mod local_database;
 mod ocr_sidecar;
+mod window_theme;
 use tauri::Manager;
 use tauri_plugin_log::{Target, TargetKind};
 
@@ -39,9 +40,22 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            #[cfg(target_os = "windows")]
+            {
+                for window in app.webview_windows().values() {
+                    window_theme::apply_theme(window, false);
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            window_theme::update_window_theme,
+            window_theme::window_minimize,
+            window_theme::window_toggle_maximize,
+            window_theme::window_close,
+            window_theme::window_is_maximized,
             crypto::crypto_generate_master_key,
             crypto::crypto_has_master_key,
             crypto::crypto_encrypt,

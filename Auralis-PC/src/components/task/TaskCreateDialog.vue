@@ -437,25 +437,14 @@ html.dark .task-title {
   max-height: 240px;
   overflow-y: auto;
   padding: 3px 3px 8px 3px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 154, 110, 0.35) transparent;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .subject-grid::-webkit-scrollbar {
-  width: 5px;
-}
-
-.subject-grid::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.subject-grid::-webkit-scrollbar-thumb {
-  background: rgba(139, 154, 110, 0.28);
-  border-radius: 9999px;
-}
-
-.subject-grid::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 154, 110, 0.5);
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .subject-chip {

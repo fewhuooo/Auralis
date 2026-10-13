@@ -22,7 +22,7 @@ export interface ChatRequestOptions {
   subjectId?: string
   sourceId?: string
   sourceIds?: string[]
-  retrievalMode?: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT' | 'NONE'
+  retrievalMode?: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
   context?: string
   topK?: number
   selectionText?: string
@@ -356,8 +356,11 @@ export const useChatStore = defineStore('chat', () => {
     streamingContent.value = ''
     citations.value = []
     const options = message.requestOptions || {}
-    const referenceMode = options.retrievalMode ?? (options.sourceId && options.subjectId ? 'AUTO' : undefined)
-    const readingContext = options.subjectId && referenceMode && referenceMode !== 'NONE'
+    const storedReferenceMode = options.retrievalMode
+    const referenceMode = storedReferenceMode === 'AUTO' || storedReferenceMode === 'SELECTED_SOURCES' || storedReferenceMode === 'SUBJECT'
+      ? storedReferenceMode
+      : (options.sourceId && options.subjectId ? 'AUTO' : options.subjectId ? 'SUBJECT' : undefined)
+    const readingContext = options.subjectId && referenceMode
       ? {
           currentSourceId: options.sourceId,
           subjectId: options.subjectId,
@@ -370,11 +373,6 @@ export const useChatStore = defineStore('chat', () => {
       const result = await controller.run({
         conversationId: session.remoteId,
         content: message.content,
-        retrievalEnabled: referenceMode === 'NONE'
-          ? false
-          : referenceMode
-            ? Boolean(readingContext)
-            : Boolean(options.sourceId || options.selectionText || options.context),
         topK: options.topK ?? 8,
         clientRequestId: message.clientRequestId,
         readingContext,

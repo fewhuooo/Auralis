@@ -723,3 +723,49 @@ export const localAssetUploadPut = (command: LocalAssetUploadPutCommand): Promis
     }
   })
 }
+
+export const updateWindowTheme = async (isDark: boolean): Promise<void> => {
+  try {
+    await invokeRustCmd<void>('update_window_theme', { isDark })
+  } catch {
+    // 允许在非 Tauri 浏览器环境下优雅静默跳过
+  }
+}
+
+export const isTauriEnvironment = (): boolean => {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+}
+
+export const minimizeWindow = async (): Promise<void> => {
+  try {
+    await invokeRustCmd<void>('window_minimize')
+  } catch {
+    // 允许在非 Tauri 浏览器环境下优雅静默跳过
+  }
+}
+
+export const toggleMaximizeWindow = async (): Promise<void> => {
+  try {
+    await invokeRustCmd<void>('window_toggle_maximize')
+  } catch {
+    // 允许在非 Tauri 浏览器环境下优雅静默跳过
+  }
+}
+
+export const closeWindow = async (): Promise<void> => {
+  try {
+    await invokeRustCmd<void>('window_close')
+  } catch {
+    // 允许在非 Tauri 浏览器环境下优雅静默跳过
+  }
+}
+
+export const isWindowMaximized = async (): Promise<boolean> => {
+  try {
+    return await invokeRustCmd<boolean>('window_is_maximized')
+  } catch {
+    return false
+  }
+}
+
+

@@ -201,15 +201,6 @@
             <text class="group-title">AI 引擎</text>
             <view class="setting-row">
               <view class="setting-info">
-                <text class="setting-icon">◈</text>
-                <view><text class="setting-name">RAG 增强</text><text class="setting-desc">使用知识库增强 AI 回答</text></view>
-              </view>
-              <view class="toggle" :class="{ on: ragEnabled }" @click="ragEnabled = !ragEnabled">
-                <view class="toggle-knob"></view>
-              </view>
-            </view>
-            <view class="setting-row">
-              <view class="setting-info">
                 <text class="setting-icon">∥</text>
                 <view><text class="setting-name">自动标签</text><text class="setting-desc">AI 自动为知识块生成标签</text></view>
               </view>
@@ -323,7 +314,6 @@ const apiKeyInput = ref('')
 const compactLayout = ref(false)
 const autoSync = ref(true)
 const wifiOnly = ref(false)
-const ragEnabled = ref(true)
 const autoTag = ref(true)
 const taskReminder = ref(true)
 const weeklyReport = ref(false)

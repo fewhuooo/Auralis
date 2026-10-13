@@ -79,7 +79,7 @@ class MemoryStorage {
   clear() { this.#values.clear() }
 }
 
-test('chat store sends selectionText properly for NONE and AUTO retrieval modes and respects 4000 char cap', async () => {
+test('chat store omits retrieval flag, retains selectionText, and ignores unknown pending scope modes', async () => {
   globalThis.localStorage = new MemoryStorage()
   setActivePinia(createPinia())
   const auth = useAuthStore()
@@ -112,26 +112,45 @@ test('chat store sends selectionText properly for NONE and AUTO retrieval modes 
   }
 
   try {
-    await chat.sendMessage('none test', { retrievalMode: 'NONE', selectionText: 'short quote' })
+    await chat.sendMessage('subject test', { retrievalMode: 'SUBJECT', subjectId: 'subj1', selectionText: 'short quote' })
     await chat.sendMessage('auto test', { retrievalMode: 'AUTO', subjectId: 'subj1', sourceId: 'src1', selectionText: 'a'.repeat(5000) })
-    await chat.sendMessage('remove quote test', { retrievalMode: 'NONE', selectionText: '' })
+    await chat.sendMessage('remove quote test', { retrievalMode: 'SUBJECT', subjectId: 'subj1', selectionText: '' })
+    await chat.sendMessage('legacy no retrieval mode', { retrievalMode: 'NONE', subjectId: 'subj1' })
+    await chat.sendMessage('unknown scoped source', { retrievalMode: 'UNKNOWN', subjectId: 'subj1', sourceId: 'src1' })
+    await chat.sendMessage('default subject scope', { subjectId: 'subj1' })
   } finally {
     globalThis.fetch = originalFetch
   }
 
-  assert.equal(requests.length, 3)
+  assert.equal(requests.length, 6)
 
-  assert.equal(requests[0].content, 'none test')
-  assert.equal(requests[0].retrievalEnabled, false)
+  assert.equal(requests[0].content, 'subject test')
+  assert.equal('retrievalEnabled' in requests[0], false, 'retrievalEnabled must be omitted from requests')
   assert.equal(requests[0].selectionText, 'short quote')
-  assert.equal(requests[0].readingContext, undefined)
+  assert.equal(requests[0].readingContext?.retrievalMode, 'SUBJECT')
+  assert.equal(requests[0].readingContext?.subjectId, 'subj1')
 
   assert.equal(requests[1].content, 'auto test')
-  assert.equal(requests[1].retrievalEnabled, true)
+  assert.equal('retrievalEnabled' in requests[1], false, 'retrievalEnabled must be omitted from requests')
   assert.equal(requests[1].selectionText.length, 4000)
+  assert.equal(requests[1].readingContext?.retrievalMode, 'AUTO')
   assert.equal(requests[1].readingContext.selectionText.length, 4000)
   assert.equal(requests[1].readingContext.subjectId, 'subj1')
 
   assert.equal(requests[2].content, 'remove quote test')
+  assert.equal('retrievalEnabled' in requests[2], false, 'retrievalEnabled must be omitted from requests')
   assert.equal(requests[2].selectionText, undefined)
+  assert.equal(requests[2].readingContext?.retrievalMode, 'SUBJECT')
+  assert.equal(requests[2].readingContext?.subjectId, 'subj1')
+
+  assert.equal(requests[3].content, 'legacy no retrieval mode')
+  assert.equal('retrievalEnabled' in requests[3], false, 'retrievalEnabled must be omitted from requests')
+  assert.equal(requests[3].readingContext?.retrievalMode, 'SUBJECT', 'unknown modes must use the request subject')
+  assert.equal(requests[3].readingContext?.subjectId, 'subj1')
+  assert.equal(requests[4].readingContext?.retrievalMode, 'AUTO')
+  assert.equal(requests[4].readingContext?.currentSourceId, 'src1')
+  assert.equal(requests[4].readingContext?.subjectId, 'subj1')
+  assert.equal(requests[5].readingContext?.retrievalMode, 'SUBJECT')
+  assert.equal(requests[5].readingContext?.subjectId, 'subj1')
+  assert.ok(requests.every(request => !('retrievalEnabled' in request)))
 })

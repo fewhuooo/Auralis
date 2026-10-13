@@ -144,3 +144,29 @@ test('account deletion confirmation 401 does not trigger global auth recovery', 
   assert.match(requestSource, /error\.response\?\.status\s*===\s*401/, 'Other protected 401 responses must still use normal auth recovery')
 })
 
+test('avatar offline caching integrates IndexedDB with auth store and Profile', async () => {
+  const [profileSource, storeSource, cacheSource, headerSource] = await Promise.all([
+    readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/store/useAuthStore.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/services/avatarCache.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/components/layout/AppHeader.vue', import.meta.url), 'utf8'),
+  ])
+
+  // Profile delegates to store and does not overwrite avatarUrl on failure
+  assert.match(profileSource, /computed\(\(\)\s*=>\s*authStore\.avatarUrl\)/, 'Profile must compute userAvatarUrl directly from authStore')
+  assert.match(profileSource, /await\s+authStore\.loadAvatar\(\)/, 'Profile must delegate loadAvatar to authStore.loadAvatar()')
+  assert.doesNotMatch(profileSource, /catch\s*\{[\s\S]*?authStore\.setAvatarUrl\(['"]['"]\)/, 'Profile must not wipe authStore avatarUrl on network failure')
+
+  // Auth store loads local cache first and syncs in background
+  assert.match(storeSource, /import\s*\{[^}]*getAvatarCache[^}]*\}\s*from\s*['"]@\/services\/avatarCache['"]/, 'Store must import avatarCache service')
+  assert.match(storeSource, /await\s+getAvatarCache\(requestedUserId\)/, 'Store must read avatar from IndexedDB cache')
+  assert.match(storeSource, /await\s+saveAvatarCache\(requestedUserId,\s*blob\)/, 'Store must save fetched blob to IndexedDB cache')
+  assert.match(storeSource, /await\s+deleteAvatarCache\(requestedUserId\)/, 'Store must delete cache on 404 response')
+  assert.match(storeSource, /afterHydrate[\s\S]*?loadAvatar/, 'Hydration must trigger avatar loading')
+
+  // Header refreshes avatar when authenticated
+  assert.match(headerSource, /if\s*\(authStore\.isAuthenticated\)\s*\{\s*void\s+authStore\.loadAvatar\(\)/, 'AppHeader must trigger loadAvatar when authenticated')
+
+  // avatarCache guards
+  assert.match(cacheSource, /blob\.size\s*>\s*0/, 'Cache must verify non-empty blob')
+})

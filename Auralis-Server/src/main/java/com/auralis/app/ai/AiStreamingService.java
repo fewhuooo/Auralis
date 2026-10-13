@@ -64,9 +64,9 @@ public class AiStreamingService {
         String clientRequestId = normalizeClientRequestId(command.clientRequestId());
         long requestStartedAt = System.nanoTime();
         LOGGER.info(
-                "AI_STREAM_START userId={} conversationId={} requestedProvider={} retrievalEnabled={} topK={} contentLength={} clientRequestIdPresent={}",
+                "AI_STREAM_START userId={} conversationId={} requestedProvider={} topK={} contentLength={} clientRequestIdPresent={}",
                 userId, command.conversationId(), command.provider() == null ? "DEFAULT" : command.provider(),
-                command.retrievalEnabled(), command.topK(), content.length(), clientRequestId != null);
+                command.topK(), content.length(), clientRequestId != null);
         int topK;
         try {
             topK = validateTopK(command.topK());
@@ -120,12 +120,8 @@ public class AiStreamingService {
                     userId, conversationId, userMessage.id(), providerType, settings.chatModel(),
                     safeHost(settings.credential().baseUrl()));
             ReadingContext readingContext = command.readingContext();
-            List<Citation> citations;
-            if (command.retrievalEnabled() || readingContext != null) {
-                citations = retrieve(taskScope, userId, conversationId, userMessage.id(), content, topK, readingContext);
-            } else {
-                citations = List.of();
-            }
+            List<Citation> citations = retrieve(
+                    taskScope, userId, conversationId, userMessage.id(), content, topK, readingContext);
             for (Citation citation : citations) {
                 sink.emit(new AiStreamEvent("citation", citation.chunkId().toString(), toView(citation)));
             }

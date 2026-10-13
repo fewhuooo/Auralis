@@ -48,7 +48,13 @@ public class AiUsageGuard implements AiUsageQueryService {
 
     public TaskLease beginTask(AiTaskContext context) {
         Objects.requireNonNull(context);
-        String taskHash = sha256(context.userId() + ":" + context.feature() + ":" + context.taskKey());
+        if (context.budgetTaskId() != null && !isOverview(context.feature())) {
+            throw new IllegalArgumentException("Stable task budget ids are supported only for Overview features");
+        }
+        UUID overviewBudgetTaskId = context.budgetTaskId();
+        String taskIdentity = overviewBudgetTaskId == null
+                ? context.taskKey() : context.taskKey() + ":budget:" + overviewBudgetTaskId;
+        String taskHash = sha256(context.userId() + ":" + context.feature() + ":" + taskIdentity);
         String userKey = "USER:" + context.userId();
         String taskKey = "TASK:" + taskHash;
         return transactions.execute(status -> {
@@ -65,7 +71,8 @@ public class AiUsageGuard implements AiUsageQueryService {
             }
             UUID taskId = context.feature() == AiFeature.INGESTION
                     ? UUID.nameUUIDFromBytes((context.userId() + ":" + taskHash).getBytes(StandardCharsets.UTF_8))
-                    : UUID.randomUUID();
+                    : overviewBudgetTaskId == null ? UUID.randomUUID()
+                    : stableOverviewTaskId(context.userId(), context.feature(), overviewBudgetTaskId);
             UUID ownerId = UUID.randomUUID();
             Instant leaseUntil = now.plusMillis(limits.reservationLeaseMillis());
             jdbc.update("update ai_usage_locks set feature=?, task_key_hash=?, current_task_id=?, owner_id=?, "
@@ -75,6 +82,33 @@ public class AiUsageGuard implements AiUsageQueryService {
             return new TaskLease(context.userId(), context.feature(), taskHash, taskKey,
                     taskId, ownerId, leaseUntil);
         });
+    }
+
+    /** Reads cumulative safe reservation metrics for one stable Overview task across all retry attempts. */
+    public OverviewTaskUsageSummary overviewTaskUsage(AiTaskContext context) {
+        Objects.requireNonNull(context);
+        if (!isOverview(context.feature()) || context.budgetTaskId() == null) {
+            throw new IllegalArgumentException("A stable budget task id is required for Overview usage summaries");
+        }
+        UUID taskId = stableOverviewTaskId(context.userId(), context.feature(), context.budgetTaskId());
+        return jdbc.queryForObject("select coalesce(sum(estimated_input_tokens),0) estimated_input_tokens,"
+                        + "coalesce(sum(reserved_output_tokens),0) reserved_output_tokens,"
+                        + "coalesce(sum(case when actual_input_tokens is not null then actual_input_tokens else 0 end),0) actual_input_tokens,"
+                        + "coalesce(sum(case when actual_output_tokens is not null then actual_output_tokens else 0 end),0) actual_output_tokens,"
+                        + "coalesce(sum(charged_tokens),0) charged_tokens,"
+                        + "coalesce(sum(case when request_dispatched=true and (actual_input_tokens is null "
+                        + "or actual_output_tokens is null) then 1 else 0 end),0) unknown_dispatched_calls,"
+                        + "coalesce(sum(case when state='RESERVED' and request_dispatched=true then 1 else 0 end),0) "
+                        + "active_dispatched_reservations from ai_usage_reservations where task_id=? and user_id=? and feature=?",
+                (rs, rowNum) -> {
+                    long unknown = rs.getLong("unknown_dispatched_calls");
+                    long active = rs.getLong("active_dispatched_reservations");
+                    boolean complete = unknown == 0 && active == 0;
+                    return new OverviewTaskUsageSummary(rs.getLong("estimated_input_tokens"),
+                            rs.getLong("reserved_output_tokens"), complete ? rs.getLong("actual_input_tokens") : null,
+                            complete ? rs.getLong("actual_output_tokens") : null, rs.getLong("charged_tokens"),
+                            unknown, active, complete);
+                }, taskId, context.userId(), context.feature().name());
     }
 
     public CallReservation reserve(TaskLease task, AiStage stage, AiProviderType provider, String model,
@@ -408,6 +442,14 @@ public class AiUsageGuard implements AiUsageQueryService {
 
     private boolean isWindowQuotaExempt(AiStage stage) {
         return stage == AiStage.INGESTION_EMBEDDING || stage == AiStage.RETRIEVAL_EMBEDDING;
+    }
+
+    private boolean isOverview(AiFeature feature) {
+        return feature == AiFeature.SOURCE_OVERVIEW || feature == AiFeature.SUBJECT_OVERVIEW;
+    }
+
+    private UUID stableOverviewTaskId(UUID userId, AiFeature feature, UUID budgetTaskId) {
+        return UUID.nameUUIDFromBytes((userId + ":" + feature + ":" + budgetTaskId).getBytes(StandardCharsets.UTF_8));
     }
     private long sumTaskTokens(UUID taskId) {
         Long result = jdbc.queryForObject("select coalesce(sum(charged_tokens + case when state='RESERVED' "

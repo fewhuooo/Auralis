@@ -7,6 +7,8 @@ import com.auralis.app.ai.OverviewDtos.OverviewSection;
 import com.auralis.app.ai.OverviewDtos.OverviewSummary;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.TokenStreamLocation;
 import tools.jackson.databind.ObjectMapper;
 
 import java.util.ArrayList;
@@ -14,6 +16,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Validates untrusted provider JSON while keeping source aliases until final response mapping. */
 @Component
@@ -34,14 +37,57 @@ public class OverviewDocumentValidator {
 
     /** Parses only plain JSON or one JSON fenced block. Returned IDs are aliases, never real UUIDs. */
     public OverviewResponse validateProviderDocument(String content, Map<String, String> sourceAliases) {
-        String json = jsonOnly(content);
+        return validateProviderDocument(content, sourceAliases, null);
+    }
+
+    OverviewResponse validateProviderDocument(String content, Map<String, String> sourceAliases,
+                                             Consumer<ValidationDiagnostic> diagnostics) {
+        String json = jsonOnly(content, diagnostics);
+        OverviewResponse response;
         try {
-            OverviewResponse response = objectMapper.readValue(json, OverviewResponse.class);
-            return validate(response, sourceAliases == null ? Map.of() : sourceAliases);
+            response = objectMapper.readValue(json, OverviewResponse.class);
         } catch (DomainException exception) {
             throw exception;
         } catch (Exception exception) {
+            report(diagnostics, ValidationReason.JACKSON_READ_FAILURE, exception);
             throw invalid("overview JSON is malformed");
+        }
+        try {
+            return validate(response, sourceAliases == null ? Map.of() : sourceAliases);
+        } catch (DomainException exception) {
+            report(diagnostics, ValidationReason.SCHEMA_VALIDATION_FAILURE, exception);
+            throw exception;
+        } catch (Exception exception) {
+            report(diagnostics, ValidationReason.SCHEMA_VALIDATION_FAILURE, exception);
+            throw invalid("overview JSON is malformed");
+        }
+    }
+
+    enum ValidationReason {
+        EMPTY_RESPONSE,
+        INVALID_FENCE,
+        INVALID_FENCE_LANGUAGE,
+        NOT_JSON_OBJECT,
+        JACKSON_READ_FAILURE,
+        SCHEMA_VALIDATION_FAILURE
+    }
+
+    record ValidationDiagnostic(ValidationReason reason, String exceptionType, int line, int column, long charOffset) {
+    }
+
+    private void report(Consumer<ValidationDiagnostic> diagnostics, ValidationReason reason, Exception exception) {
+        if (diagnostics == null) return;
+        TokenStreamLocation location = exception instanceof JacksonException jacksonException
+                ? jacksonException.getLocation() : null;
+        ValidationDiagnostic diagnostic = new ValidationDiagnostic(reason,
+                exception == null ? "none" : exception.getClass().getSimpleName(),
+                location == null ? -1 : location.getLineNr(),
+                location == null ? -1 : location.getColumnNr(),
+                location == null ? -1 : location.getCharOffset());
+        try {
+            diagnostics.accept(diagnostic);
+        } catch (RuntimeException ignored) {
+            // Diagnostics must never change validation behavior.
         }
     }
 
@@ -144,27 +190,32 @@ public class OverviewDocumentValidator {
         return List.copyOf(safe);
     }
 
-    private String jsonOnly(String content) {
+    private String jsonOnly(String content, Consumer<ValidationDiagnostic> diagnostics) {
         if (content == null || content.isBlank()) {
+            report(diagnostics, ValidationReason.EMPTY_RESPONSE, null);
             throw invalid("overview provider response is blank");
         }
         String trimmed = content.trim();
         if (trimmed.startsWith("```")) {
             int firstBreak = trimmed.indexOf('\n');
             if (firstBreak < 0 || !trimmed.endsWith("\n```")) {
+                report(diagnostics, ValidationReason.INVALID_FENCE, null);
                 throw invalid("overview provider response must contain exactly one JSON block");
             }
             String language = trimmed.substring(3, firstBreak).trim();
             if (!language.isEmpty() && !"json".equalsIgnoreCase(language)) {
+                report(diagnostics, ValidationReason.INVALID_FENCE_LANGUAGE, null);
                 throw invalid("overview provider response fence must be JSON");
             }
             String body = trimmed.substring(firstBreak + 1, trimmed.length() - 4).trim();
             if (!body.startsWith("{") || !body.endsWith("}")) {
+                report(diagnostics, ValidationReason.NOT_JSON_OBJECT, null);
                 throw invalid("overview provider response must be a JSON object");
             }
             return body;
         }
         if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
+            report(diagnostics, ValidationReason.NOT_JSON_OBJECT, null);
             throw invalid("overview provider response must be a JSON object");
         }
         return trimmed;

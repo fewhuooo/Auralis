@@ -1,9 +1,38 @@
 # Spring Boot 后端模块
 
+### 2026-10-13 Overview recovery no-progress 修正（本地代码与隔离回归完成，未部署）
+
+- 用户 retry 曾反复恢复到同一个 5,787-char 无缩减 REDUCE checkpoint，并以 `OVERVIEW_REDUCE_NO_PROGRESS` 结束。Service 现把 recovery compaction 与普通 REDUCE 分开作 checkpoint identity；full 与 partial 分别使用专属 purpose，prompt/partial-mode规则保持。fresh输出在写 checkpoint 前、缓存输出在恢复后都须严格短于输入，否则维持原错误码。
+- Testcontainers PostgreSQL 回归植入旧 REDUCE purpose 的 poison checkpoint，验证它保留但新 recovery 不命中；普通 MAP/REDUCE checkpoint 继续复用，短合法压缩经现有 Gateway 成功，稳定预算 lineage 不变。相关隔离门禁 141/141 通过；210 项历史全门禁早于此修复。本地补丁尚未部署，Subject JSON 拒绝原因仍待安全诊断证据。
+
+### 2026-10-13 Overview 动态预算与私有恢复（实现、自动门禁与指定 P4 通过）
+
+- `OverviewContentStats` / `OverviewBudgetPlanner` 提供按内容与结构增长的输出软目标；UTF-8 byte estimate 是保守估算，不是 tokenizer。12000 字符实际 prompt、4608 intermediate / 6144 final `max_tokens`、24 次调用、524288 task token、240000ms 任务期限以及 Gateway 限额仍为硬边界。
+- Subject 超限按实际选择的 outline/summary 语义字段分片、精确分包并有限 MAP/REDUCE；5200 字符是内容软目标，不再用 self-pair 假造消费者输入。实际完整 prompt 才做硬预算判断。错误码区分 prompt 超限、Provider 输出截断与恢复耗尽。
+- V32 私有 generation/checkpoint/request mapping 已接入 Service：有效规范化 UUID 可重放同一请求；失败 generation 的预算 lineage 累计，恢复计数累计、恢复动作按安全集合去重。成功 response payload 满 14 天后清除，request mapping 与 generation/budget metadata 保留，过期 request ID 不可复用；失败 metadata 不因 payload 清理重置预算。私有状态不进入正式 Overview results / core Sync，生成成功仍由客户端通过独立 Overview results PUT 保存。
+- 私有失败详情保存六种既有用量错误的原status/retry/reset，waiter恢复 `AiUsageLimitException`；接管/成功清除，fence/lease及FAILED/code/status约束有效。最终需求核对后fresh门禁20 suites / 210 tests全通过，335 main / 111 test编译，test/package exit 0。唯一首审B0/I1/O0，主代理按完整diff与实际回归关闭I1；同reviewer复审工具受限，剩余B0/I0/O0为主代理裁决。
+- P4复用既有42 chunks，真实Source ALL / 单输入Subject ALL成功，分别9/1calls、69.595/6.414s，共60,035 charged tokens；预留/租约均释放，recovery=0。私有V32仅TEMP H2，输入只读业务PG，真实usage原账本；候选未保存到正式成果。八组主要正文主题已初步核对，后续章仅目录背景。单次样本不调整4608/6144硬上限或宣称通用最优预算；金额账单、真实恢复/取消、多文件、GUI、部署与业务V32分别验收。详见[动态预算与恢复计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+
+### 2026-10-13 Subject ALL 实际运行态 MAP2 JSON_PARSE 观察（只读）
+
+- 2026-10-13 03:34:43 首次只读观察 backend 镜像 `sha256:f0c3e886175dadd709876988c7570a395793ae67a637545cbe5825a570317593` healthy，业务库 Flyway V32 `success=true`；其后用户更新镜像并进行 retry。各次运行镜像 class/source provenance 均未核验。
+- 用户日志中 generation `18226745-50bc-4ce9-be30-97cf8c61f57c` 的 Subject ALL：MAP1 JSON/schema 成功并记录checkpoint，self-pair 12546 只是诊断超限。MAP2 响应 5076 chars、2511 output tokens、finishReason=stop，随后 JSON 相关 validator 失败、最终 `MODEL_PROVIDER_ERROR`。完整原文及 Jackson 精确错误原因不可取得；不推断 stop 保证JSON合法，也不因该失败改动冻结validator。
+- 首次只读账本快照核对两次 DEEPSEEK MAP 调用均已结算 COMPLETED：实际输入/输出 4672/2619 与 4502/2511，charged 7291 与 7013，合计 9174/5130/14304；usage 完整、unknown-dispatched/活动reservation均0，TASK锁无owner/lease。失败generation无结果。当时重试接管同 generation/budget 并复用匹配checkpoint只是代码预期；其后用户已实际 retry，运行日志没有显式 checkpoint hit/restore phase。安全诊断建议与命令/证据见[实施计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+
+### 2026-10-13 Overview validator 安全诊断增量
+
+- 当前工作树中实际 Provider 响应经现有 validator 时，可输出固定拒绝类别、异常类型和 Jackson 行/列/字符偏移；坐标针对 trim/fence 剥离后的 JSON。日志不含 exception message、响应正文、字段值、Jackson path 或 stack。2参数入口与原错误行为保持，checkpoint restore 不走新 sink；本次定向两个测试类 83/83 通过。日志实现当时未由 Codex 部署；其后用户更新镜像并 retry，但请求在 Provider 响应校验前以 no-progress 结束，没有验证诊断输出或运行镜像 class/source provenance，因此 JSON 拒绝原因仍未知。
+
+### 2026-10-12 聊天资料检索默认开启（后端实现与定向验证通过；真实 Provider 待验收）
+
+- 新聊天始终进入现有 `AiStreamingService` 检索路径，请求 DTO 不再包含 `retrievalEnabled` 字段。无 `ReadingContext` 时 PostgreSQL 查询按 owner、active chunks、embedding 非空及 Source 未软删除筛选；fallback 按 owner 与活动 Source 筛选，不额外要求 `READY`。提供 `ReadingContext` 时保留现有 scope：`AUTO` 当前文件沿用 `READY` 规则，显式 `SELECTED_SOURCES` / `SUBJECT` 沿用 owner、活动状态和 `READY` 校验。Spring mapper 会忽略额外未知 JSON 字段，因此历史 JSON 中的 `retrievalEnabled:false` 不会关闭检索；不保留兼容分支。
+- 检索无命中时可继续生成并返回空 citations；embedding 配置缺失或 Provider 失败继续返回现有明确错误，不降级为无检索回答。普通配额与预算行为不变。
+- `mvnw -B -ntp clean test -Dtest=AiStreamingTests,AiStreamingControllerTests,AiMessageCommandValidationTests,AiRetrievalTests,OpenApiArtifactTests` 退出码 0，47/47；`scripts/check-openapi.ps1` 退出码 0，包含运行时 artifact 12/12 和 PC/Mobile SDK 标准生成对比。真实 Provider 与客户端联调仍待验收，完整证据见[实施计划](../plans/2026-10-12-rag-always-on.md)。
+- Backend 最终 clean 定向测试与 OpenAPI/SDK 一致性门禁已通过；真实 Provider 和客户端联调仍待完成。计划与验证状态见[实施计划](../plans/2026-10-12-rag-always-on.md)。
+
 ### 2026-10-12 学科总览分批输入（代码、定向验证、只读审查与本机部署通过）
 
-- `OverviewGenerationService` 对能 fit 的 Subject 保留 direct；超限时将所选大纲 section 和总结 overview / key point / learning path 作为独立片段，长单字段按 code point 与真实 JSON 长度分割，再精确分包、同 task scope MAP 与既有 REDUCE。
-- 输入资料分配一次，仅必要标题上下文可重复；三个 mode、包内 Source 与合法跨 Source alias、最终 UUID 映射保持。新增规划阶段检查原绝对期限；Provider 仍经 Gateway，原 12000 prompt、intermediate 5200 / self-pair、调用 / 用量限制和取消机制保留。Subject INTERMEDIATE MAP 使用原 compact 指令，FINAL 不使用其中间目标。
+- `OverviewGenerationService` 对能 fit 的 Subject 保留 direct；超限时按所选大纲 / 总结字段进行语义拆分、精确分包并使用同 task scope MAP/REDUCE。输入资料只分配一次，三个 mode、包内 Source alias 与最终 UUID 映射保持。5200 是内容软目标；实际 prompt 仍受 12000 字符硬限，intermediate/final `max_tokens` 为 4608/6144，Gateway 的调用、用量和取消约束保留。
 - 最终 clean scratch 330 main / 107 test 编译、Surefire 73/73 与唯一只读 0 B / I / O 通过，两份主树 hash 与已测文件一致；最后 wrapper shell exit 未保留，不能推定 0。无新 route / DTO / 数据结构 / 配置；现行 Source 流程保留，详见 [证据与运行边界](../plans/2026-10-12-subject-overview-prompt-batching.md)。
 - 香港 13:57:23 本机 backend `a5a50bb7…` healthy / readiness 200，运行 Service class 与 fresh scratch 精确匹配，Guard class 保持现行 embedding 排除；db / MinIO、Flyway V31 和额度配置保持。真实 Provider / GUI 生成待实测。
 
@@ -104,7 +133,7 @@
 ### 2026-10-01 提问选中文本处理（代码与自动验证通过；真实 Provider 待验收）
 
 - AiMessageCommand 增加可选顶层 selectionText（最大 4000 字符），非 null 时优先；空白取消引用，否则保留现行 readingContext 引用路径。AiStreamingService 将有效引用送入模型请求，不修改普通 USER 消息持久化内容或 citation。
-- 无 readingContext 且 retrievalEnabled=false 时，仅传引用，不调用检索/embedding。已有资料范围、owner、READY 与请求回放规则保留。
+- 引用作为当前请求的 USER 资料处理；聊天始终执行检索，既有资料范围、owner、READY 与请求回放规则保留。
 - PromptAssembler 完整保留本次问题与引用，优先淘汰旧完整历史对。引用使用 USER 角色、固定 SYSTEM 说明将其视为资料；无法容纳必需内容时抛 VALIDATION_FAILED。AiController 在 SSE 开始前调用同一预算预检，返回 HTTP 400。
 - Server clean focused 47/47、OpenAPI export 8/8、SDK 生成和一致性检查退出 0；未新增数据库/迁移/配置。真实 Provider 与 GUI 未验收，完整命令见 [实施记录](../plans/2026-10-01-chat-selected-text.md)。
 

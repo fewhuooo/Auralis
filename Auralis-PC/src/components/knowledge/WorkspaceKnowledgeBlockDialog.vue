@@ -575,8 +575,6 @@ html.dark .kb-title {
   border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
   min-height: 180px;
-  max-height: 480px;
-  overflow-y: auto;
 }
 
 html.dark .kb-content-card {
@@ -740,8 +738,6 @@ html.dark .render-toggle-btn.is-active {
 
 .edit-rendered-card {
   min-height: 240px;
-  max-height: 380px;
-  overflow-y: auto;
   padding: 14px 16px;
   background: var(--modal-inset-bg, #FAF7F2);
   border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));

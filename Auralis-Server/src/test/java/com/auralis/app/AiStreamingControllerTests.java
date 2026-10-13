@@ -81,7 +81,7 @@ class AiStreamingControllerTests {
         mockMvc.perform(post("/api/ai/messages/stream")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"Question\",\"retrievalEnabled\":false,"
+                        .content("{\"content\":\"Question\","
                                 + "\"selectionText\":\"quote\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
@@ -99,7 +99,7 @@ class AiStreamingControllerTests {
         mockMvc.perform(post("/api/ai/messages/stream")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + auth.tokens().accessToken())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"content\":\"Question\",\"retrievalEnabled\":false,\"selectionText\":\""
+                        .content("{\"content\":\"Question\",\"selectionText\":\""
                                 + "x".repeat(4001) + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
@@ -111,7 +111,7 @@ class AiStreamingControllerTests {
         AiStreamingService streamingService = mock(AiStreamingService.class);
         UUID userId = UUID.randomUUID();
         AiMessageCommand command = new AiMessageCommand(
-                UUID.randomUUID(), "hello", AiProviderType.DEEPSEEK, false, 3, "request-controller");
+                UUID.randomUUID(), "hello", AiProviderType.DEEPSEEK, 3, "request-controller");
         doAnswer(invocation -> {
             AiStreamSink sink = invocation.getArgument(2);
             sink.emit(new AiStreamEvent("message.started", "user-1", Map.of("messageId", "user-1")));

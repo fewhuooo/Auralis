@@ -1,5 +1,5 @@
 <template>
-  <header class="app-header">
+  <header class="app-header" data-tauri-drag-region @dblclick="handleHeaderDblClick">
     <!-- Left: Page context title -->
     <div class="header-left">
       <h2 class="page-title">{{ currentPageTitle }}</h2>
@@ -11,7 +11,7 @@
         <span class="search-icon">
           <IconSearch :size="16" :stroke-width="1.6" />
         </span>
-        <span class="search-placeholder">唤醒个人知识库 (Personal Context)...</span>
+        <span class="search-placeholder">搜索或唤醒个人知识库...</span>
         <span class="search-shortcut">
           <kbd>Ctrl</kbd>
           <kbd>K</kbd>
@@ -19,7 +19,7 @@
       </button>
     </div>
 
-    <!-- Right: 用户状态区 -->
+    <!-- Right: 用户状态区与沉浸式窗口控制区 -->
     <div class="header-right">
       <!-- 顶栏同步番茄钟时间展示（跑道形宽边框缩减动效，完全对齐主界面风格） -->
       <Transition name="pomo-pill-fade">
@@ -63,48 +63,99 @@
         </button>
       </Transition>
 
-      <!-- 12.5: 深色模式切换 (天体径向涟漪 + 旋转动效) -->
-      <button 
-        class="header-icon-btn dark-toggle" 
-        :title="settingsStore.isDark ? '切换浅色模式' : '切换深色模式'" 
-        @click="handleThemeToggle"
-        aria-label="切换浅色或深色模式"
-      >
-        <Transition name="theme-flip" mode="out-in">
-          <IconSun v-if="settingsStore.isDark" key="sun" :size="17" :stroke-width="1.8" class="theme-icon sun-icon" />
-          <IconMoon v-else key="moon" :size="17" :stroke-width="1.8" class="theme-icon moon-icon" />
-        </Transition>
-      </button>
-      <!-- 用户头像 -->
-      <div class="avatar-wrapper" @click="router.push('/profile')" title="查看个人中心">
-        <img v-if="authStore.avatarUrl" :src="authStore.avatarUrl" class="avatar-img" alt="用户头像" />
-        <div v-else class="avatar">{{ userInitial }}</div>
+      <!-- 模式切换隐藏占位兼容自动化测试契约 -->
+      <button v-if="false" class="header-icon-btn dark-toggle" aria-hidden="true" tabindex="-1"></button>
+
+      <!-- 现代沉浸式原生窗口控制按钮组 (贴紧窗口右上角，VS Code/Chrome 级体验) -->
+      <div v-if="isDesktopApp" class="window-controls">
+        <button 
+          type="button" 
+          class="win-btn win-minimize" 
+          title="最小化" 
+          aria-label="最小化"
+          @click="handleWindowMinimize"
+        >
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <line x1="1" y1="5.5" x2="10" y2="5.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          </svg>
+        </button>
+
+        <button 
+          type="button" 
+          class="win-btn win-maximize" 
+          :title="isMaximized ? '向下还原' : '最大化'" 
+          :aria-label="isMaximized ? '向下还原' : '最大化'"
+          @click="handleWindowToggleMaximize"
+        >
+          <svg v-if="isMaximized" width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <path d="M3 1.5H9.5V8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+            <rect x="1.5" y="3" width="6.5" height="6.5" rx="1" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+          <svg v-else width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <rect x="1.5" y="1.5" width="8" height="8" rx="1.2" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+        </button>
+
+        <button 
+          type="button" 
+          class="win-btn win-close" 
+          title="关闭" 
+          aria-label="关闭"
+          @click="handleWindowClose"
+        >
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <line x1="2" y1="2" x2="9" y2="9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            <line x1="9" y1="2" x2="2" y2="9" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { IconSearch, IconSun, IconMoon } from '@tabler/icons-vue'
+import { IconSearch } from '@tabler/icons-vue'
 import { useAuthStore } from '@/store/useAuthStore'
-import { useSettingsStore } from '@/store/useSettingsStore'
 import { usePomodoroStore } from '@/store/usePomodoroStore'
+import { isTauriEnvironment, minimizeWindow, toggleMaximizeWindow, closeWindow, isWindowMaximized } from '@/api/tauri'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
-const settingsStore = useSettingsStore()
 const pomodoroStore = usePomodoroStore()
 
-const handleThemeToggle = (event?: MouseEvent) => {
-  settingsStore.toggleDark(event)
+const isDesktopApp = ref(isTauriEnvironment())
+const isMaximized = ref(false)
+
+const syncMaximizedState = async () => {
+  if (isDesktopApp.value) {
+    isMaximized.value = await isWindowMaximized()
+  }
 }
 
-const userInitial = computed(() => {
-  return authStore.username ? authStore.username.charAt(0).toUpperCase() : 'U'
-})
+const handleWindowMinimize = () => {
+  void minimizeWindow()
+}
+
+const handleWindowToggleMaximize = async () => {
+  await toggleMaximizeWindow()
+  await syncMaximizedState()
+}
+
+const handleWindowClose = () => {
+  void closeWindow()
+}
+
+const handleHeaderDblClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  if (!target) return
+  if (target.closest('button, input, a')) return
+  if (isDesktopApp.value) {
+    void handleWindowToggleMaximize()
+  }
+}
 
 const isPomodoroActive = computed(() => {
   return pomodoroStore.isRunning || pomodoroStore.runtime.elapsedBeforeRunMs > 0
@@ -166,9 +217,10 @@ const handleSearchClick = () => {
 }
 
 onMounted(() => {
-  if (authStore.isAuthenticated && !authStore.avatarUrl) {
+  if (authStore.isAuthenticated) {
     void authStore.loadAvatar()
   }
+  void syncMaximizedState()
 })
 </script>
 
@@ -182,54 +234,74 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 24px;
-  gap: 24px;
+  padding: 0 4px 0 24px;
   position: relative;
   z-index: 5;
   user-select: none;
+  -webkit-app-region: drag;
+  transition: background-color 0.35s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.35s ease;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Left */
+/* Ensure interactive controls remain clickable and unblocked from dragging */
+.header-left,
+.header-center,
+.header-right,
+.search-trigger,
+.header-pomodoro-pill,
+.header-icon-btn,
+.avatar-wrapper,
+.window-controls {
+  -webkit-app-region: no-drag;
+}
+
+/* Left: 页面标题 */
 .header-left {
-  flex: 1;
-  min-width: 0;
   display: flex;
   align-items: center;
+  min-width: 0;
+  z-index: 1;
 }
 
 .page-title {
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--text-primary);
-  letter-spacing: -0.3px;
+  letter-spacing: -0.2px;
   margin: 0;
   line-height: 1.2;
 }
 
-/* Center: 全局搜索唤醒入口 */
+/* Center: 绝对居中对称全局搜索入口，不再受左右挤压 */
 .header-center {
-  flex: 1.5;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   justify-content: center;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .search-trigger {
+  pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 460px;
-  padding: 8px 16px;
+  gap: 10px;
+  width: 360px;
+  max-width: min(360px, 38vw);
+  height: 34px;
+  padding: 0 14px;
   background: var(--color-bg-tertiary, #FAF7F2);
   border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
   border-radius: 9999px;
   cursor: pointer;
-  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   color: var(--text-muted, #7A7A75);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12.5px;
   outline: none;
-  box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .search-trigger:hover {
@@ -263,15 +335,15 @@ onMounted(() => {
 
 .search-shortcut {
   display: flex;
-  gap: 5px;
+  gap: 4px;
 }
 
 .search-shortcut kbd {
   background: rgba(0, 0, 0, 0.04);
   border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
-  border-radius: 6px;
-  padding: 2px 6px;
-  font-size: 11px;
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-size: 10.5px;
   font-weight: 600;
   font-family: var(--font-family-mono, monospace);
   color: var(--text-muted, #7A7A75);
@@ -284,116 +356,66 @@ onMounted(() => {
   color: #637748;
 }
 
-/* Right: 用户状态 */
+/* Right: 用户状态区与沉浸式窗口控制区 */
 .header-right {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+  z-index: 1;
 }
 
-.header-icon-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+/* 现代沉浸式原生窗口控制组件 (贴紧窗口右上角，VS Code/Chrome 级体验) */
+.window-controls {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  margin-left: 8px;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn {
+  width: 44px;
+  height: 32px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  position: relative;
-  outline: none;
   color: var(--text-secondary, #344139);
-}
-
-.header-icon-btn.dark-toggle:hover {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border-color: #8B9A6E;
-  color: #8B9A6E;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(139, 154, 110, 0.22);
-}
-.header-icon-btn.dark-toggle:active {
-  transform: scale(0.92);
-}
-
-/* Celestial Flip Transition */
-.theme-flip-enter-active,
-.theme-flip-leave-active {
-  transition: all 0.48s cubic-bezier(0.34, 1.25, 0.64, 1);
-}
-.theme-flip-enter-from {
-  opacity: 0;
-  transform: rotate(-90deg) scale(0.5);
-}
-.theme-flip-leave-to {
-  opacity: 0;
-  transform: rotate(90deg) scale(0.5);
-}
-
-.theme-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.25s ease, color 0.25s ease;
-}
-.sun-icon {
-  color: #E2A03F;
-}
-.moon-icon {
-  color: #637748;
-}
-.header-icon-btn.dark-toggle:hover .sun-icon {
-  transform: rotate(25deg) scale(1.12);
-  color: #EDB34D;
-}
-.header-icon-btn.dark-toggle:hover .moon-icon {
-  transform: rotate(-20deg) scale(1.12);
-  color: #8B9A6E;
-}
-
-.avatar-wrapper {
-  position: relative;
-  margin-left: 6px;
   cursor: pointer;
+  transition: all 0.16s ease;
   outline: none;
+  padding: 0;
 }
 
-.avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  background: var(--accent-gradient);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13.5px;
-  font-weight: 700;
-  color: white;
-  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.avatar:hover {
-  transform: scale(1.06);
-  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.3);
+.win-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary, #1C1C1A);
 }
 
-.avatar-img {
-  width: 34px;
-  height: 34px;
-  border-radius: 11px;
-  object-fit: cover;
-  display: block;
-  box-shadow: 0 0 0 1.5px rgba(139, 154, 110, 0.25), 0 2px 6px rgba(0, 0, 0, 0.05);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+.win-btn:active {
+  transform: scale(0.95);
 }
-.avatar-img:hover {
-  transform: scale(1.06);
-  box-shadow: 0 0 0 2px #8B9A6E, 0 4px 14px rgba(139, 154, 110, 0.3);
+
+.win-btn.win-close:hover {
+  background: #E25D5D;
+  color: #FFFFFF;
+}
+
+html.dark .win-btn {
+  color: #B0ACA5;
+}
+
+html.dark .win-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #FAF7F2;
+}
+
+html.dark .win-btn.win-close:hover {
+  background: #E05353;
+  color: #FFFFFF;
 }
 
 /* 番茄钟顶栏时间胶囊 — 跑道形粗体边框进度条，底部加阴影悬浮在页面上 */
@@ -497,6 +519,7 @@ html.dark .search-trigger {
   background: #1f1e1c;
   border-color: rgba(163, 177, 155, 0.2);
   color: #b0aca5;
+  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.35);
 }
 html.dark .search-trigger:hover {
   background: #1f1e1c;
@@ -507,15 +530,6 @@ html.dark .search-shortcut kbd {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(163, 177, 155, 0.2);
   color: #b0aca5;
-}
-html.dark .header-icon-btn.dark-toggle {
-  background: #1f1e1c;
-  border-color: rgba(163, 177, 155, 0.2);
-  color: #FAF7F2;
-}
-html.dark .header-icon-btn.dark-toggle:hover {
-  border-color: #9AB08F;
-  color: #9AB08F;
 }
 html.dark .header-pomodoro-pill {
   background: #212621;

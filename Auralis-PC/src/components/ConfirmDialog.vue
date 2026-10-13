@@ -4,6 +4,7 @@
     size="sm"
     :title="title"
     :aria-label="title"
+    body-class="confirm-modal-body"
     @update:model-value="handleOverlayUpdate"
     @close="handleCancel"
   >
@@ -70,6 +71,10 @@ const handleConfirm = () => {
 </script>
 
 <style scoped>
+:deep(.confirm-modal-body) {
+  overflow: hidden !important;
+}
+
 .confirm-title {
   font-size: 16px;
   font-weight: 700;
@@ -84,8 +89,9 @@ html.dark .confirm-title {
 .confirm-message {
   font-size: 14px;
   color: var(--text-secondary, #2C2C28);
-  line-height: 1.65;
-  margin: 4px 0 8px;
+  line-height: 1.6;
+  margin: 0;
+  word-break: break-word;
 }
 
 html.dark .confirm-message {

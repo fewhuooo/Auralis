@@ -345,10 +345,6 @@ html.dark .kb-meta-item:hover {
   border: 1px solid var(--modal-inset-border, rgba(0, 0, 0, 0.06));
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
   min-height: 180px;
-  max-height: 500px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(139, 154, 110, 0.35) transparent;
 }
 
 html.dark .kb-content-card {

@@ -73,6 +73,11 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         return new Scope(lease);
     }
 
+    @Override
+    public OverviewTaskUsageSummary overviewTaskUsage(AiTaskContext context) {
+        return guard.overviewTaskUsage(context);
+    }
+
     private final class Scope implements AiTaskScope {
         private final AiUsageGuard.TaskLease task;
         private final AtomicBoolean closed = new AtomicBoolean();

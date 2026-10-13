@@ -1,5 +1,34 @@
 # Auralis 变更记录
 
+### Overview recovery checkpoint no-progress 修正（2026-10-13；尚未部署）
+
+- Recovery compaction 使用独立 full/partial purpose，避免重用历史普通 REDUCE 的同输入检查点。只有严格缩短输入的 fresh/cached 压缩结果可继续；fresh 无进展输出不保存，仍返回 `OVERVIEW_REDUCE_NO_PROGRESS`。
+- 隔离 Service/Recovery、Coordinator、DynamicBudget、Gateway 与取消测试 141/141 通过；包含临时 PostgreSQL legacy-poison checkpoint 回归及 budget lineage 保持。此验证不代表部署或真实业务恢复验收；Subject JSON_PARSE 风险仍开放。
+
+### Overview JSON 拒绝原因的安全诊断（2026-10-13）
+
+- 当前工作树 provider 响应验证失败时记录固定拒绝类别、异常类型及 JSON 位置，不记录原始响应、异常消息、字段值或 Jackson path；原错误码和验证规则不变。本次隔离定向测试 83/83 通过。日志实现该轮未由 Codex 部署；之后用户更新镜像并 retry，但后续请求在 Provider 响应校验前以 no-progress 结束，运行镜像 class/source provenance 未核验，真实 JSON 拒绝原因仍待证据。
+
+### Overview 动态预算、错误分类与私有恢复（2026-10-13；实现与指定 P4 记录，后续运行观察见下）
+
+- 合法中间内容的 5200 字符目标改为软目标；Subject 按语义字段拆片与精确分包。实际序列化 prompt 的 12000 字符上限、4608/6144 输出上限和既有 Gateway 限额继续生效。UTF-8 byte estimate 只作保守估算。
+- API Error enum 新增 `OVERVIEW_PROMPT_BUDGET_EXCEEDED`、`OVERVIEW_PROVIDER_OUTPUT_TRUNCATED`、`OVERVIEW_RECOVERY_EXHAUSTED`。V32 已接入 Overview Service；有效规范化 UUID 可持久 replay，失败预算 lineage 与 recovery count 按 generation 累计，actions 按安全集合去重。成功 response payload 14 天后清理，request/generation/budget metadata 保留，过期 request ID 不可复用；2026-10-13 主代理只读观察到业务库 Flyway V32 `success=true`，本执行器未执行迁移或验证运行 class/source provenance。
+- 生成endpoint只返回候选，正式结果仍经独立PUT保存。持久waiter现保留六种用量错误的status/retry/reset；最终需求核对后fresh门禁210/210，test/package exit 0。唯一首审B0/I1/O0，I1经执行代理修复及主代理裁决关闭；同reviewer复审工具受限，不冒称独立复审。
+- 指定真实Source ALL / 单输入Subject ALL均成功，9/1calls、69.595/6.414s，共60,035 charged tokens，零活动预留/租约，未触发额外恢复；主要正文主题初步覆盖。真实usage进入原账本，私有V32与候选仅TEMP，未执行正式PUT、业务迁移、提交/推送或部署；GUI、多文件与真实恢复/取消待分别验收。详见[实施计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+
+### Subject ALL MAP2 JSON_PARSE 只读运行观察（2026-10-13）
+
+- 2026-10-13 03:34:43 首次只读观察到 backend 镜像 `sha256:f0c3e886175dadd709876988c7570a395793ae67a637545cbe5825a570317593` healthy，业务库 Flyway V32 `success=true`；之后用户更新镜像并 retry。各次运行镜像 class/source provenance 未核验。
+- 用户实际 Subject ALL generation `18226745-50bc-4ce9-be30-97cf8c61f57c` 的 MAP1 JSON/schema 成功并有一个 checkpoint；MAP2 response 5076 chars、2511 output tokens、finishReason=stop 后在 JSON 相关 validator 失败，generation FAILED / 无结果。两笔账本 reservation 均已结算 COMPLETED，charged 总计14304；unknown dispatch / 活动 reservation / TASK owner/lease为0。没有原始响应或可恢复的准确 Jackson 错误位置，未据此修改 validator；当时尚无 retry 证据，后续用户已实际 retry，结果与限制见实施计划。详细限制与只读证据见[实施计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+
+### 聊天资料检索默认开启（2026-10-12；跨端代码与定向验证完成，业务待实测）
+
+- 新聊天始终使用现有检索流程，请求 DTO 不再包含 `retrievalEnabled` 字段；历史 JSON 中的该额外字段按当前 Spring mapper 行为忽略，不会关闭检索。无命中可继续生成并返回空 citations；embedding 配置缺失或 Provider 失败继续使用现有错误路径。现有检索 scope 与过滤规则、AI 限额保持不变。
+- `mvnw -B -ntp clean test -Dtest=AiStreamingTests,AiStreamingControllerTests,AiMessageCommandValidationTests,AiRetrievalTests,OpenApiArtifactTests` 退出码 0，47/47；`scripts/check-openapi.ps1` 退出码 0，包含 OpenAPI artifact 12/12 与 PC/Mobile SDK 标准生成对比（12/12 已计入前述 47/47）。
+- PC 已移除关闭模式及个人中心语义搜索开关，保留当前文件 AUTO / 显式文件 / 当前学科范围；打开未就绪文件仍等待处理，全学科 READY 计数与失效选择保持一致。Mobile 请求字段与 Tablet 关闭控件已删除，历史正文/引用和本地数据保持。
+- 最终 PC 57/57、type-check / build，Mobile 24/24、static / H5 build 退出码 0。PC static 的既有 Rust 固定地址规则和 Mobile type-check 的既有 Review API 两个 TS2339 均在干净 HEAD 复现，未扩改。
+- Antigravity MCP 提供部分前端候选，Luna 与主 Agent 按失败证据补齐，Codex 唯一只读审查最终 BLOCKER / IMPORTANT / OPTIONAL 均 0；真实 Provider、GUI/真机未运行，本轮未提交、推送或部署。额度未调整，完整证据见[实施计划](../plans/2026-10-12-rag-always-on.md)。
+
 ### 学科总览合法输入分批（2026-10-12；代码、定向验证、只读审查与本机更新完成）
 
 - 修复各文件总览合法但合并超出 12000 prompt 上限时立即 `VALIDATION_FAILED`：大 Subject 资料完整分片 / 精确分包后归纳合并，小请求保留 direct。
