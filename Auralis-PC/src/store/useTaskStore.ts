@@ -12,7 +12,7 @@ import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } f
 import { uuidv7 } from '@/utils/uuid'
 import { isOnline, useSyncStore } from '@/store/useSyncStore'
 import { useSubjectStore } from '@/store/useSubjectStore'
-import { createStableMutation, isOfflineTransportFailure } from '@/services/offlineWritePolicy'
+import { createStableMutation } from '@/services/offlineWritePolicy'
 import { findScheduleConflict, getTasksForTimeline, isCompletedScheduledTask, isCompletedTask, isSchedulableTask, isScheduledAtInPast, isScheduledCompletionLocked, isOverdueTask, taskStatusToPresentation, isScheduleWithinDeadline, parseDueTimestamp, localDateEndOfDay } from '@/services/taskViewRules'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 
@@ -635,14 +635,6 @@ export const useTaskStore = defineStore('task', () => {
     await loadLocalTasks()
     const syncStore = useSyncStore()
     syncStore.requestBackgroundSync('write')
-    try {
-      await syncStore.flushNow()
-    } catch (error) {
-      if (!isOfflineTransportFailure(error)) throw error
-      return 'queued'
-    }
-    const scheduleError = syncStore.scheduleSyncErrors.find(error => error.clientMutationId === clientMutationId)
-    if (scheduleError) return 'rejected'
     return isOnline() ? 'saved' : 'queued'
   }
 

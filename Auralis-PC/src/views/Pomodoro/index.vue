@@ -269,7 +269,7 @@ onMounted(async () => {
 .panel-card {
   background: var(--color-bg-primary, #F7F2EB);
   border-radius: 24px;
-  border: 1px solid var(--border-subtle, #E6E6E4);
+  border: 0.5px solid var(--border-subtle, #E6E6E4);
   padding: 26px 28px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 12px 30px -4px rgba(0, 0, 0, 0.05), 0 2px 8px -2px rgba(0, 0, 0, 0.02);
   display: flex;
@@ -338,7 +338,7 @@ onMounted(async () => {
   padding: 14px 18px;
   border-radius: 16px;
   background: rgba(139, 154, 110, 0.07);
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  border: 0.5px solid rgba(139, 154, 110, 0.2);
   border-left: 3.5px solid #8B9A6E;
   transition: all 0.25s ease;
 }
@@ -372,7 +372,7 @@ onMounted(async () => {
   flex-wrap: wrap;
 }
 .banner-status-tag {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 600;
   padding: 2px 9px;
   border-radius: 9999px;
@@ -410,7 +410,7 @@ onMounted(async () => {
   transform: translateY(-1px);
 }
 .stat-divider {
-  width: 1px;
+  width: 0.5px;
   height: 52px;
   background: linear-gradient(180deg, transparent 0%, var(--border-default, #E6E6E4) 20%, var(--border-default, #E6E6E4) 80%, transparent 100%);
 }
@@ -502,7 +502,7 @@ html.dark .active-focus-banner.is-free .banner-status-tag {
   background: #FAF7F2 !important;
   border-radius: 18px !important;
   padding: 6px !important;
-  border: 1px solid rgba(139, 154, 110, 0.25) !important;
+  border: 0.5px solid rgba(139, 154, 110, 0.25) !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08) !important;
 }
 .pomodoro-task-popper .el-select-dropdown__item {
@@ -544,7 +544,7 @@ html.dark .active-focus-banner.is-free .banner-status-tag {
   text-overflow: ellipsis;
 }
 .task-option-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 2px 7px;
   border-radius: 9999px;
@@ -572,5 +572,31 @@ html.dark .pomodoro-task-popper .el-select-dropdown__item:hover {
 html.dark .pomodoro-task-popper .el-select-dropdown__item.is-selected {
   background: rgba(154, 176, 143, 0.25) !important;
   color: #b0c2a7 !important;
+}
+
+/* ===== Responsive Adaptation ===== */
+@media (max-width: 1150px) {
+  .main-content {
+    padding: 24px 20px;
+    gap: 32px;
+  }
+}
+
+@media (max-width: 960px) {
+  .main-content {
+    padding: 16px;
+    gap: 20px;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .left-column {
+    flex: none;
+    height: auto;
+    min-height: 380px;
+  }
+  .right-column {
+    flex: none;
+    height: auto;
+  }
 }
 </style>

@@ -1,0 +1,15 @@
+services:
+  backend:
+    environment:
+      AURALIS_OVERVIEW_TRACE_ENABLED: "true"
+      AURALIS_OVERVIEW_TRACE_CAPTURE_CONTENT: "true"
+      AURALIS_OVERVIEW_TRACE_DIRECTORY: /app/overview-traces
+      AURALIS_AI_OVERVIEW_ADAPTIVE_GENERATION_ENABLED: "true"
+      AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS: "0"
+      AURALIS_AI_OVERVIEW_INPUT_TOKEN_ESTIMATOR_MODE: "calibrated-category"
+    volumes:
+      - type: bind
+        source: ${AURALIS_OVERVIEW_TRACE_HOST_DIR:-D:/Temp/auralis-overview-traces}
+        target: /app/overview-traces
+        bind:
+          create_host_path: true

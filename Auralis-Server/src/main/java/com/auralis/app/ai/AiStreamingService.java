@@ -147,7 +147,7 @@ public class AiStreamingService {
                     request.messages().size(), citations.size());
             int[] chunkCount = {0};
             AtomicBoolean completed = new AtomicBoolean(false);
-            taskScope.stream(AiStage.CHAT_COMPLETION, providerType, request, settings.credential(), chunk -> {
+            taskScope.stream(AiStage.CHAT_COMPLETION, providerType, request, settings.credential(), settings.source(), chunk -> {
                 if (chunk == null) {
                     throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid chunk");
                 }
@@ -289,7 +289,7 @@ public class AiStreamingService {
                     userId, conversationId, userMessageId, AiProviderType.SILICONFLOW, embeddingModel,
                     safeHost(embeddingSettings.credential().baseUrl()));
             EmbeddingResult result = taskScope.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
-                    embeddingModel, List.of(content), embeddingSettings.credential()).value();
+                    embeddingModel, List.of(content), embeddingSettings.credential(), embeddingSettings.source()).value();
             if (result == null || result.vectors().isEmpty()) {
                 throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned no vector");
             }

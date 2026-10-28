@@ -208,7 +208,7 @@ onUnmounted(() => {
   letter-spacing: 0.6px;
   background: rgba(139, 154, 110, 0.12);
   color: #556B3D;
-  border: 1px solid rgba(139, 154, 110, 0.28);
+  border: 0.5px solid rgba(139, 154, 110, 0.28);
   box-shadow: 0 2px 8px rgba(139, 154, 110, 0.08);
   transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -286,7 +286,7 @@ onUnmounted(() => {
   padding: 9px 20px;
   border-radius: 9999px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-default, #E6E6E4);
+  border: 0.5px solid var(--border-default, #E6E6E4);
   cursor: pointer;
   box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04);
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);

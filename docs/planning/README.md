@@ -1,6 +1,6 @@
 # Auralis 计划目录
 
-更新时间：2026-08-16
+更新时间：2026-10-28
 
 文档状态：现行计划入口
 
@@ -27,7 +27,8 @@
 6. [基础设施与发布](InfraRelease.md)
 7. [Tablet 手写](TabletHandwritingNotes.md)
 8. [文档验收](DocsAcceptance.md)
-9. [文档重构实施计划](DocumentationReorganizationImplementation.md)
+
+2026-07-10 的文档重构执行计划已移入[维护历史](../archive/maintenance/2026-07-10-documentation-reorganization.md)，不再列为现行待办。
 
 ## 任务字段
 

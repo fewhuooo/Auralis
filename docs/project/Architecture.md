@@ -1,14 +1,46 @@
 # Auralis 系统架构
 
+### 2026-10-27 Overview direct 执行身份与内容复用身份
+
+直接JSON/SSE生成把输入/配置指纹用于检查点匹配，把request/generation用于执行幂等。主动重试建立独立generation/budget并以现有fence终止旧执行权；旧调用费用继续归原reservation，新调用仍受Guard窗口/并发控制。Coordinator的direct策略与既有durable job acquire/resume分离，可信祖先产物可复用，晚到旧业务结果不可发布。PC沿现有生成界面提交重试意图，不新增任务管理边界。实现/验证状态见[计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
 更新时间：2026-10-11
-
 文档状态：现行
-
 权威范围：系统边界、组件关系、关键数据流、信任边界与架构风险
-
 事实来源：当前 PC/Mobile/Server 代码、应用配置与 Docker Compose
+### 2026-10-22 Overview M4 Server 能力保留，PC consumer 已撤回
+
+Server 继续提供 owner-scoped Source/Subject durable jobs、`candidateInput(jobId,jobVersion)` formal PUT、CAS/receipt、publication intent、VERIFIED preview 与 version-fenced section reads；服务端重建 per-part raw descriptor 并校验 scope、source revision、profile/algorithm 与 assembled plan。此前 PC consumer 曾接入这些能力，但用户已撤回 M4 新增 PC 交互；当前 PC 回到原 Overview/SSE 流程，不消费新增 selector/preview/publish/adopt/section-reader 接口。Local schema 仍 v13、无本次 migration。
+
+当前保留的 PC 增量仅是 SSE 生成期间本机编辑保护和浏览器 fallback 跨 tab Web Lock；检测到本机编辑不 PUT AI 内容，保留原 cache/frozen mutation 并要求在原冲突位置显式选择。此前隔离浏览器、自动检查及 review 记录属于回退前或回退检查历史，不能作为当前 PC UI 验收。M5/M6 与最终兼容清理仍 open。
+
+### 2026-10-22 Overview M3.4 publication 与 section preview（源码、相关自动验证与唯一审查完成；未部署）
+
+M3.3 job completion 保持 private candidate；M3.4 候选通过独立持久 intent 接入唯一正式 OverviewResult store。Enqueue 绑定 formal baseline；发布事务复核 job/plan/candidate/raw input 与 baseline，并让 result、per-part descriptor、现行 identity/provenance、exact write receipt 和 intent state 原子提交。Source/Subject GET currentness 读取显式 input origin，避免将 native selected raw units 当作旧 Subject FILE-derived manifest。VERIFIED checkpoint 通过只读 preview projection 暴露，formal section GET 继续走结果身份与版本 fence。
+
+V37 migration、交易竞争/删除与 preview 测试矩阵、API artifact、package 及唯一 reviewer gate 已完成。full run04 的失败保留并以受影响组定向复验闭合，不称 full suite 全绿。未部署、未连接业务数据库/真实 Provider，也未完成 GUI 验收；M4 PC 新交互已撤回，M5/M6 仍 active。验证与余项见 [M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。
+
+### 2026-10-22 Overview M3.3 持久后台 jobs（源码、相关自动验证与唯一审查完成；未部署）
+
+自适应 Overview 在现有 Gateway/Guard 和 M3.2 generation 内增加 owner-scoped 持久 job 边界。请求入队只保存经验证的请求快照、source/revision/active-generation manifest 与 profile/algorithm identity；DB worker claim 后才取得现有 generation 与同一父预算。bounded executor/heartbeat 通过 worker fence、lease 与固定 deadline 协调跨实例接管。job 的 generation invocation journal 覆盖全部 Provider stage 与 repair，真实 reservation UUID 在派发前校验 job/generation fence 与控制意图；usage 不反向依赖 job。
+
+raw coordinator/job budget UUID 与 Guard 派生的真实 ledger task UUID 分开：generation/job budget_task_id 保持 raw UUID；invocation task_id 使用 (userId, feature, rawBudgetTaskId) 的既有确定性 UUID 映射。不会更换账本身份、额度或结算语义。恢复只复核原 job、generation、task、输入身份及精确 reservation ledger；未知派发 usage、缺失/错配关联保持 RECOVERY_REQUIRED 并 hold。Pause/cancel 以持久状态阻止后续派发或提交；取消提升 fence，迟到 owner 不能写 job/candidate，但不能声称撤回已派发远端请求。完成后候选以 owner/input 再校验读取，不写 overview_results、KB 或 Review；正式发布与分节预览留待 M3.4。PC UI 后续曾接入但已按用户决定撤回。相关自动验证与唯一 review 完成，未部署、未验收真实 Provider、业务数据库或 GUI。详细边界与验证证据见 [M3.3 计划](../plans/2026-10-19-overview-m33-background-jobs.md)。
+
+### 2026-10-19 Overview M3.2 私有恢复链路（源码、相关验证与唯一审查完成；未部署）
+
+This does not create a background worker, public job lifecycle, preview, or publication path. Related PostgreSQL/backend validation, package, and the sole review are complete; the full backend suite was not rerun after focused fixes. No public wire contract changes, deployment, real Provider, production database, or GUI acceptance are claimed.
+
+
+
+
 
 ## 总体结构
+
+统一 AI 操作策略扩展（2026-10-16，计划中）：ai/usage 的 Guard/Gateway 与同一账本执行全调用计量/运行保护；平台模型执行集中额度及任务预算，BYOK 不扣平台配额。OperationKind/PolicyResolver 管用途，设置服务按实际凭据为每次调用提供不可伪造的来源，同一任务可混合来源。保留内容组织、Overview planner/checkpoint、取消和平台配额数值，来源分流为尚未实现的新行为。见[统一方案](../plans/2026-10-16-ai-unified-limits.md)。
+
+拟议契约补充：平台总/stage 配额与全来源业务执行次数、技术边界分字段；ledger 增加 operation_kind/credential_source，scope 提供实际 task_id 供派发前持久绑定。学习通过 ai 定义的回调保存自身操作关联，ai/usage 不依赖 learning。全部来源共享服务容量，平台/历史未知保守项共享平台窗口；历史来源未知单列并自然过窗，BYOK 不受平台窗口拒绝。尚未实施数据/API 变更。
+
+学习 Agent 拟议边界（2026-10-16，计划中）：应用持有目标/步骤/进度和来源围栏，模型仅返回受校验教学内容及允许的后续动作。拟新增 learning 领域依赖 ai 的公开生成/消息能力，ai 不反向依赖 learning；资料补查走应用数据库读取，KB 保存沿 PC 既有 outbox/Core Sync，正式 Review 保持现有 lifecycle。持久节点身份、结构化学习状态和累计 usage 尚待实施；具体职责见[设计](../design/2026-10-16-learning-agent-design.md)与[实施计划](../plans/2026-10-16-learning-agent-implementation.md)，不作为当前代码能力。
 
 2026-10-09 本地范围更新（代码与自动验证通过，真实环境待验收）：PC Review/Stats 从本机读取，正式状态、历史和独立 outbox 与当前进程内轮次分开。沿现行 Tauri 单连接/JS 串行事务保存本地投影及命令意图，核心 KB 收敛后通过现有 lifecycle API 按 KB FIFO 补传，再导入权威状态/历史。真实操作时间用于调度与本地日统计，HTTP 载荷首次派发前固化，失败原样重试；后继仅由实际ACK前缀推进，未知首学需protocol2空历史证明。冲突保留，账号/设备/session 代际围栏沿现行票据，Review不读取无账号隔离旧缓存。Core Sync 白名单不扩展，Rust core snapshot 不触碰独立 Review 表。详细边界、实际命令与审查见 [本地计划](../plans/2026-10-09-review-stats-local-first.md)；以下 2026-10-08 outboxless 说明仅为此前范围。
 
@@ -235,10 +267,23 @@ PC、Mobile、Tablet 的现有个人中心通过当前 access token 请求 `GET 
 | ParsedDocument（计划中） | 服务端私有对象 + 元数据；本地仅在接收前以 keyring 主密钥的分块 AES-GCM envelope 暂存 | PC 解析、断点恢复和 Rust 流式上传，服务端确认后删除本地正文 |
 | Tablet 手写笔记 | 端侧 `tablet_notes` | 当前不进入 Server 同步 |
 
+### 内容规模自适应总览 M1（opt-in，2026-10-19）
+
+默认关闭的后端开关启用后，Source/Subject 的 ALL、OUTLINE 可通过所选 READY Source 原文执行轻量索引、一次有界目录路由、按节原文写作、校验和程序装配；SUMMARY 保持旧短摘要语义。调用共享既有 Gateway/Guard、TaskLease、凭据来源、期限和取消。平台预算预检读取 owner-fenced task occupancy snapshot，并采用与 Guard admission 一致的 occupancy 规则；audit count 不替代预算状态，BYOK 不扣平台财务额度。
+
+适配 inventory 合计最多 500 条 active raw rows（空白也计数），remaining+1 sentinel 命中时在完整 identity/hash 和 provider 前明确拒绝，不截断接受的输入。当前目录规划是单次有界请求，不能容纳时失败。分层组织轻量 metadata、保留原文来源绑定和已验证正文，是 M3 前置交付及验收。M2 实现、PostgreSQL/SQLite、最终 OpenAPI/SDK 与 PC 数据验证及唯一复审已完成；backend 和 PC full 首轮失败及 Mobile 两个旧类型错误按证据单列。M3–M6 尚未交付。源码、自动门禁、部署和业务验收分别报告。
+
+### Overview M2 稳定节点身份与原文关联（实现、相关验证与复审完成；未部署）
+
+Overview result 的 outline node identity 与内容 version/hash 独立存储于 V34 JSON metadata；Server 在现有 owner/revision/CAS/receipt 事务中分配并验证身份。来源 provenance 从 parser accepted blocks 经与现有 LF join/trim/chunk 切分一致的交集映射持久化到 source chunks，再由实际 writer inputs 生成 result sidecar。GET 返回保存时来源快照，不在读取时重绑定当前 active generation。Provider 的 canonical 四字段保持不变；这一能力记录关联位置，不声称语义引用正确。PostgreSQL migration/事务与最终 runtime OpenAPI/SDK artifact 验证通过；attempt13 OpenAPI 13/13，reviewer B0/I0/O0。完整测试和业务验收边界见 Status 与 M2 validation report。
+
 ## 当前架构风险
 
 | 风险 | 证据 | 架构影响 |
 | --- | --- | --- |
+| Overview M1 的全局目录仍为单次有界规划 | 当前 inventory 合计封顶 500 条 active raw rows（含空白），超限在 provider 前失败 | M3 需先交付有界分层 metadata 路由并验证来源绑定与已验证正文保留；当前不支持任意规模 |
+| Overview JSON 根因与语义质量尚未验收 | JSON 诊断仅定位失败，M1 自动门禁和结构校验不能证明语义完整 | 真实 Provider、GUI、内容质量与部署仍需独立验收 |
+
 | 本地 OCR 与安装包尚未完成人工验收 | 当前代码与自动测试已覆盖 OCR/ParsedDocument 路径，但尚无真实 Tauri/安装包证据 | 非文本型文件的实际 RAG 闭环仍不能视为业务验收完成 |
 | ParsedDocument ingestion 边界已实现但真实依赖未验收 | `ParsedDocumentIngestionPort`、V15 派生表和 complete/indexing 流程已有代码与 H2 证据；PostgreSQL/MinIO 仍受外部环境限制 | 客户端解析结果的真实对象存储、索引与 generation cutover 仍需端到端证据 |
 | 标准 Maven fresh testCompile 仍被并行测试 blocker 阻断 | `AiProviderSecurityTests.java:182` 的匿名 `ProviderHttpTransport` 缺少 `post(..., byte[])` 实现；架构隔离命令（含 `ArchitectureTests`）7 类合计 20/20，其中 `ArchitectureTests` 1/1 | 不能把隔离聚焦结果写成新鲜标准生命周期全绿 |

@@ -8,8 +8,9 @@ const props = withDefaults(defineProps<{
   sourceCount?: number
   isStale?: boolean
   isGenerating?: boolean
+  generationConflictResolving?: boolean
   error?: string | null
-}>(), { collapsed: true, sourceCount: 0, isStale: false, isGenerating: false, error: null })
+}>(), { collapsed: true, sourceCount: 0, isStale: false, isGenerating: false, generationConflictResolving: false, error: null })
 
 const emit = defineEmits<{
   'update:collapsed': [value: boolean]
@@ -18,6 +19,7 @@ const emit = defineEmits<{
   stop: []
   'open-summary': []
   'resolve-sync-conflict': [choice: 'LOCAL' | 'REMOTE']
+  'resolve-generation-conflict': [payload: { clientWriteId: string; choice: 'KEEP_LOCAL' | 'USE_AI' }]
 }>()
 
 const hasContent = () => Boolean(props.overview?.outline?.length || props.overview?.summary)
@@ -65,24 +67,17 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
             aria-label="停止学科总览生成"
             @click.stop="emit('stop')"
           >停止</button>
-          <!-- 重试胶囊（遇到意外错误说明 + 重试一体化胶囊） -->
-          <div
-            v-if="error"
-            class="header-retry-capsule"
+          <!-- 重试操作（仅在非生成中且存在错误时显示精简按钮，详细原因通过 tooltip 与正文提示呈现） -->
+          <button
+            v-else-if="error"
+            type="button"
+            class="retry-capsule__btn"
             :title="error + (hasContent() ? '；当前内容仍可查看。' : '')"
+            @click.stop="emit('generate')"
           >
-            <IconAlertTriangle :size="11" :stroke-width="1.8" class="retry-capsule__icon" />
-            <span class="retry-capsule__text">遇到意外错误，请重试</span>
-            <button
-              type="button"
-              class="retry-capsule__btn"
-              :disabled="isGenerating"
-              @click.stop="emit('generate')"
-            >
-              <IconRefresh :size="10.5" :stroke-width="2" :class="{ 'is-spinning': isGenerating }" />
-              <span>重试</span>
-            </button>
-          </div>
+            <IconRefresh :size="10.5" :stroke-width="2" />
+            <span>重试</span>
+          </button>
 
           <!-- 更多操作 -->
           <el-popover placement="bottom-end" trigger="click" width="130" popper-class="zen-popover zen-action-popover" :hide-after="0">
@@ -113,16 +108,34 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
         </span>
       </header>
 
+      <section v-for="conflict in overview?.generationConflicts ?? []" :key="conflict.clientWriteId" class="file-outline__notice generation-edit-conflict">
+        <IconAlertTriangle :size="12" :stroke-width="1.6" />
+        <div class="generation-edit-conflict__content">
+          <strong>生成期间本机内容有更新</strong>
+          <details>
+            <summary>查看生成结果</summary>
+            <p v-if="conflict.result.summary?.overview">{{ conflict.result.summary.overview }}</p>
+            <ul v-if="conflict.result.outline?.length">
+              <li v-for="chapter in conflict.result.outline" :key="chapter.title">
+                {{ chapter.title }}<span v-for="section in chapter.sections" :key="section.title"> · {{ section.title }}</span>
+              </li>
+            </ul>
+          </details>
+        </div>
+        <button type="button" class="retry-capsule__btn" :disabled="generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { clientWriteId: conflict.clientWriteId, choice: 'KEEP_LOCAL' })">保留我的修改</button>
+        <button type="button" class="retry-capsule__btn" :disabled="generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { clientWriteId: conflict.clientWriteId, choice: 'USE_AI' })">使用AI结果</button>
+      </section>
+
       <!-- 展开的内容主体 -->
       <div v-show="!collapsed" class="subject-overview__body">
-        <!-- 错误轻量提示条 -->
+        <!-- 错误轻量提示条（错误优先展示；无错误时才在必要时展示资料更新提示，避免双提示框同时堆叠） -->
         <p v-if="error && hasContent()" class="file-outline__notice">
           <IconAlertTriangle :size="12" :stroke-width="1.6" />
           <span class="file-outline__notice-text">{{ error }}；当前内容仍可查看。</span>
         </p>
 
         <!-- 资料变化提醒 -->
-        <p v-if="isStale && hasContent()" class="file-outline__notice subject-stale-notice">
+        <p v-else-if="isStale && hasContent()" class="file-outline__notice subject-stale-notice">
           <IconAlertTriangle :size="12" :stroke-width="1.6" />
           <span class="file-outline__notice-text">资料发生变化，当前内容仍可查看，建议重新生成。</span>
         </p>
@@ -172,6 +185,11 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   padding: 0 10px;
   margin-bottom: 10px;
 }
+.generation-edit-conflict{align-items:flex-start;flex-wrap:wrap}
+.generation-edit-conflict__content{flex:1;min-width:100px}
+.generation-edit-conflict__content strong{display:block}
+.generation-edit-conflict__content details{margin-top:4px}
+.generation-edit-conflict__content summary{cursor:pointer}
 .subject-overview {
   position: relative;
   border: 1.5px solid rgba(139, 154, 110, 0.4);
@@ -236,8 +254,7 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   color: var(--color-primary-accent);
 }
 .subject-overview-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  flex-shrink: 0;
   white-space: nowrap;
 }
 .subject-overview-meta {
@@ -245,6 +262,8 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   font-size: 11px;
   font-weight: 400;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .subject-icon {
   color: var(--color-primary-accent);
@@ -261,36 +280,13 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   font-size: 10px;
   font-weight: 500;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .file-outline__actions {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-.header-retry-capsule {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 3px 2px 6px;
-  border-radius: 999px;
-  background: rgba(176, 83, 83, 0.09);
-  border: 1px solid rgba(176, 83, 83, 0.28);
-  color: #9c4141;
-  font-size: 10px;
-  font-weight: 500;
-  white-space: nowrap;
-  user-select: none;
-  box-shadow: 0 1px 2px rgba(176, 83, 83, 0.04);
-}
-.retry-capsule__icon {
   flex-shrink: 0;
-  color: #b05353;
-}
-.retry-capsule__text {
-  line-height: 1;
-  white-space: nowrap;
-  font-size: 10px;
-  color: #9c4141;
 }
 .retry-capsule__btn {
   display: inline-flex;
@@ -345,12 +341,12 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   gap: 6px;
 }
 .file-outline__notice {
-  margin: 6px 0 0;
-  padding: 7px 9px;
+  margin: 4px 0 2px;
+  padding: 5px 8px;
   color: #995050;
   background: rgba(176, 83, 83, 0.06);
   font-size: 10.5px;
-  line-height: 1.45;
+  line-height: 1.4;
   border-radius: 6px;
   display: flex;
   align-items: center;

@@ -2,7 +2,7 @@ import { postOverviewSse } from './overviewSse.ts'
 import type {
   OverviewApi,
   OverviewRequestContext,
-  OverviewResponse,
+  GeneratedOverviewResponse,
   SourceOverviewRequest,
   SubjectOverviewRequest,
 } from '@/types/overview'
@@ -13,20 +13,22 @@ function overviewRequestId(): string {
 }
 
 export const useOverviewApi: OverviewApi = {
-  generateSourceOverview(request: SourceOverviewRequest, context?: OverviewRequestContext): Promise<OverviewResponse> {
+  generateSourceOverview(request: SourceOverviewRequest, context?: OverviewRequestContext): Promise<GeneratedOverviewResponse> {
     return postOverviewSse('/api/ai/source-overviews', request, {
       requestId: context?.requestId ?? overviewRequestId(),
       signal: context?.signal,
       scope: context?.scope,
       consumerId: context?.consumerId,
+      onRequestDispatched: context?.onRequestDispatched,
     })
   },
-  generateSubjectOverview(request: SubjectOverviewRequest, context?: OverviewRequestContext): Promise<OverviewResponse> {
+  generateSubjectOverview(request: SubjectOverviewRequest, context?: OverviewRequestContext): Promise<GeneratedOverviewResponse> {
     return postOverviewSse('/api/ai/subject-overviews', request, {
       requestId: context?.requestId ?? overviewRequestId(),
       signal: context?.signal,
       scope: context?.scope,
       consumerId: context?.consumerId,
+      onRequestDispatched: context?.onRequestDispatched,
     })
   },
 }

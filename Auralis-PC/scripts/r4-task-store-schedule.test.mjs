@@ -25,7 +25,7 @@ register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64
 
 const { createPinia, setActivePinia } = await import('pinia')
 const { useAuthStore } = await import('../src/store/useAuthStore.ts')
-const { useSyncStore } = await import('../src/store/useSyncStore.ts')
+const { isOnline, useSyncStore } = await import('../src/store/useSyncStore.ts')
 const { useTaskStore } = await import('../src/store/useTaskStore.ts')
 const { getLocalRepository } = await import('../src/services/localDb.ts')
 
@@ -152,7 +152,6 @@ test('Timeline immediately displays every queued schedule sync error after navig
   ])
   assert.match(timeline, /watch\(\(\) => syncStore\.scheduleSyncErrors, \(errors\) => \{[\s\S]*?for \(const error of errors\)[\s\S]*?\}, \{ immediate: true \}\)/)
   assert.match(timeline, /syncStore\.acknowledgeScheduleSyncError\(error\.clientMutationId\)/)
-  assert.match(source, /scheduleSyncErrors\.find\(error => error\.clientMutationId === clientMutationId\)/)
 })
 
 async function taskStoreSnapshot(fixture) {
@@ -286,6 +285,42 @@ test('ordinary slot drops persist an insertion command while swap is a separate 
   assert.match(source, /commitOfflineSchedule\(changedModels, 'SCHEDULE_INSERTION'/)
 })
 
+test('schedule writes release the local mutation queue without awaiting remote sync', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
+  const task = deadlineTask('background-schedule-sync', {
+    status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 30,
+  })
+  const fixture = await createTaskStoreFixture([task])
+  await fixture.taskStore.fetchTasks()
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+
+  let flushCalled = false
+  fixture.syncStore.flushNow = () => {
+    flushCalled = true
+    return new Promise(() => {})
+  }
+
+  let timeoutId
+  try {
+    const result = await Promise.race([
+      fixture.taskStore.scheduleTask(task.id, '09:00'),
+      new Promise((_, reject) => { timeoutId = setTimeout(() => reject(new Error('schedule waited for remote sync')), 500) }),
+    ])
+    assert.equal(result, isOnline() ? 'saved' : 'queued')
+  } finally {
+    clearTimeout(timeoutId)
+  }
+
+  assert.equal(flushCalled, false, 'the scheduling operation must not call flushNow')
+  assert.ok(fixture.requestedSyncs.includes('write'), 'the durable mutation must still request background sync')
+  const [mutation] = await fixture.repository.listPending('TASK')
+  assert.equal(mutation.mutationType, 'SCHEDULE_INSERTION')
+  assert.equal((await fixture.repository.read('TASK', task.id)).value.scheduledAt, d('09:00'))
+
+  await fixture.onlineFlush()
+  assert.deepEqual(await fixture.repository.listPending('TASK'), [], 'the background Sync cycle can later settle the outbox command')
+})
+
 test('task body drop places the dragged task after its target without shifting successors', () => {
   assert.equal(typeof taskViewRulesModule.getTimelineDropSlotTime, 'function')
   const getTimelineDropSlotTime = taskViewRulesModule.getTimelineDropSlotTime
@@ -300,8 +335,8 @@ test('task body drop places the dragged task after its target without shifting s
   assert.match(timeline, /const taskEndSlotTime = [\s\S]*?Math\.ceil\([\s\S]*?timeSlots\.value\.some/)
   assert.match(source, /\.\.\.\(targetTaskId \? \{ targetTaskId \} : \{\}\)/, 'body target id must be part of the persisted Sync command')
   const dropAtSlotSource = timeline.slice(timeline.indexOf('const handleDropAtSlot ='), timeline.indexOf('const handleDropOnTaskBody ='))
-  assert.match(dropAtSlotSource, /taskStore\.scheduleTask\(draggedItem\.value\.taskId, slotTime, targetTaskId\)/)
-  assert.match(dropAtSlotSource, /taskStore\.rescheduleTask\(draggedItem\.value\.taskId, slotTime, targetTaskId\)/)
+  assert.match(dropAtSlotSource, /const currentDrag = draggedItem\.value[\s\S]*?clearDragState\(\)[\s\S]*?taskStore\.scheduleTask\(currentDrag\.taskId, slotTime, targetTaskId\)/)
+  assert.match(dropAtSlotSource, /taskStore\.rescheduleTask\(currentDrag\.taskId, slotTime, targetTaskId\)/)
   assert.match(timeline, /class="task-header"[\s\S]*?@drop\.stop\.prevent="handleDropOnHeader\(/)
   assert.match(timeline, /\.time-slot\s*\{[^}]*flex-shrink:\s*0/s, 'long task rows must keep their duration height inside the scrolling flex column')
 })
@@ -889,6 +924,7 @@ test('deadline guard: a valid adjacent swap commits both local candidates in one
   await fixture.taskStore.swapScheduledTasks(t1.id, t2.id)
   assert.equal((await fixture.repository.read('TASK', t1.id)).value.scheduledAt, d('10:00'))
   assert.equal((await fixture.repository.read('TASK', t2.id)).value.scheduledAt, d('09:00'))
+  await fixture.onlineFlush()
   assert.deepEqual(await fixture.repository.listPending('TASK'), [], 'the test Sync server confirms the single swap command')
 })
 
@@ -984,6 +1020,7 @@ test('deadline guard: insertTaskAtSlot preflights dragged and shifted tasks befo
 
     await fixture.taskStore.scheduleTask(t1.id, '15:30')
     assert.equal(apiCalled, false, 'the Timeline store persists the insertion locally and Sync owns transport')
+    await fixture.onlineFlush()
     assert.deepEqual(await fixture.repository.listPending('TASK'), [], 'the test Sync server confirms the command')
     assert.equal((await fixture.repository.read('TASK', t1.id)).value.scheduledAt, d('15:30'))
   } finally {
@@ -1067,8 +1104,9 @@ test('date-fix 1: queued scheduling keeps the date captured before the queue wai
     assert.equal(localDateKey(new Date(fixture.taskStore.allTasks.find((task) => task.id === sourceTask.id).scheduledAt)), '2099-10-06')
     assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '09:00')?.task?.id, undefined,
       'the changed-day projection must not show a task scheduled on the previous date')
-    assert.equal((await fixture.repository.listPending('TASK')).some((mutation) => mutation.mutationType.startsWith('SCHEDULE_')), false,
-      'the test Sync server confirms the persisted schedule command')
+    assert.equal((await fixture.repository.listPending('TASK')).some((mutation) => mutation.mutationType.startsWith('SCHEDULE_')), true,
+      'the local schedule command remains pending until background sync settles it')
+    await fixture.onlineFlush()
 
     fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
     assert.equal(fixture.taskStore.timeSlots.find((slot) => slot.time === '09:00')?.task?.id, sourceTask.id,
@@ -1217,7 +1255,7 @@ function deferredApiResponse() {
   }
 }
 
-test('offline insertion persists one mutation and the full optimistic cascade', async () => {
+test('schedule insertion persists one mutation and the full optimistic cascade before remote sync', async () => {
   const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
   const sourceTask = deadlineTask('offline-insert-source', {
     status: 'TODO', scheduledAt: undefined, dueAt: d('20:00'), durationMinutes: 60, version: 2,
@@ -1232,7 +1270,7 @@ test('offline insertion persists one mutation and the full optimistic cascade', 
 
   const result = await fixture.taskStore.scheduleTask(sourceTask.id, '10:00')
   const pending = await fixture.repository.listPending('TASK')
-  assert.equal(result, 'queued')
+  assert.equal(result, isOnline() ? 'saved' : 'queued')
   assert.equal(pending.length, 1)
   assert.equal(pending[0].mutationType, 'SCHEDULE_INSERTION')
   assert.deepEqual(pending[0].payload._localAffectedTaskIds.sort(), [sourceTask.id, shiftedTask.id].sort())
@@ -1242,7 +1280,7 @@ test('offline insertion persists one mutation and the full optimistic cascade', 
   assert.equal((await fixture.repository.read('TASK', shiftedTask.id)).syncStatus, 'pending')
 })
 
-test('offline swap persists one command and reuses its id when connection returns', async () => {
+test('schedule swap persists one command and reuses its id when connection returns', async () => {
   const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString()
   const sourceTask = deadlineTask('offline-swap-source', {
     status: 'TODO', scheduledAt: d('09:00'), dueAt: d('20:00'), durationMinutes: 30, version: 2,
@@ -1255,7 +1293,7 @@ test('offline swap persists one command and reuses its id when connection return
   fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
   fixture.syncStore.flushNow = async () => { throw new TypeError('Network unavailable') }
 
-  assert.equal(await fixture.taskStore.swapScheduledTasks(sourceTask.id, targetTask.id), 'queued')
+  assert.equal(await fixture.taskStore.swapScheduledTasks(sourceTask.id, targetTask.id), isOnline() ? 'saved' : 'queued')
   const [mutation] = await fixture.repository.listPending('TASK')
   assert.equal(mutation.mutationType, 'SCHEDULE_SWAP')
   assert.deepEqual(mutation.payload._localAffectedTaskIds.sort(), [sourceTask.id, targetTask.id].sort())
@@ -1274,21 +1312,23 @@ test('offline swap persists one command and reuses its id when connection return
   assert.deepEqual(await fixture.repository.listUnresolved('TASK'), [])
 })
 
-test('non-transport schedule push errors are surfaced instead of reported as queued', async () => {
+test('schedule operation does not wait for non-transport sync failures', async () => {
   const task = deadlineTask('offline-nontransport', {
     status: 'TODO', scheduledAt: undefined, dueAt: '2099-10-06T20:00:00.000Z', durationMinutes: 30, version: 5,
   })
   const fixture = await createTaskStoreFixture([task])
   await fixture.taskStore.fetchTasks()
   fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
+  let flushCalled = false
   fixture.syncStore.flushNow = async () => {
+    flushCalled = true
     const error = new Error('server rejected the request')
     error.status = 422
     throw error
   }
 
-  const error = await fixture.taskStore.scheduleTask(task.id, '10:00').then(() => null, (reason) => reason)
-  assert.equal(error?.message, 'server rejected the request')
+  assert.equal(await fixture.taskStore.scheduleTask(task.id, '10:00'), isOnline() ? 'saved' : 'queued')
+  assert.equal(flushCalled, false, 'a server response must not hold the local scheduling operation')
   assert.equal((await fixture.repository.listPending('TASK')).filter((mutation) => mutation.mutationType === 'SCHEDULE_INSERTION').length, 1)
 })
 
@@ -1300,7 +1340,7 @@ test('pending offline schedule projection survives a pull until the command reso
   fixture.taskStore.setSelectedDay('Tue', '2099-10-06')
   fixture.syncStore.flushNow = async () => { throw new TypeError('Network unavailable') }
 
-  assert.equal(await fixture.taskStore.scheduleTask(task.id, '10:00'), 'queued')
+  assert.equal(await fixture.taskStore.scheduleTask(task.id, '10:00'), isOnline() ? 'saved' : 'queued')
   const optimistic = await fixture.repository.read('TASK', task.id)
   const [mutation] = await fixture.repository.listPending('TASK')
   await fixture.repository.saveCursor('cursor-before-offline-pull')

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "ad0d90c1-9522-4008-9415-ca38466a39b1",
+    "feature": "CHAT",
+    "stage": "CHAT_COMPLETION",
+    "provider": "DEEPSEEK",
+    "model": "requested-model",
+    "state": "COMPLETED",
+    "estimated_input_tokens": 13,
+    "reserved_output_tokens": 1,
+    "actual_input_tokens": 5,
+    "actual_output_tokens": 2,
+    "charged_tokens": 7,
+    "request_dispatched": true
+  }
+]

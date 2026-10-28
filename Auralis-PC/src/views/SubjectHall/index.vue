@@ -491,14 +491,14 @@ html.dark .hall-container {
   padding: 36px 44px;
   background: var(--color-bg-primary, #F7F2EB);
   border-radius: var(--radius-xl, 20px);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.04), 0 4px 12px -2px rgba(0, 0, 0, 0.02);
   box-sizing: border-box;
 }
 
 html.dark .hall-content {
   background: var(--color-bg-secondary);
-  border-color: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 20px 48px -8px rgba(0, 0, 0, 0.45);
 }
 
@@ -538,20 +538,20 @@ html.dark .hall-title {
 }
 
 .hall-count-badge {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   padding: 3px 10px;
   border-radius: var(--radius-full, 9999px);
   background: rgba(139, 154, 110, 0.12);
   color: var(--color-primary-accent, #8B9A6E);
-  border: 1px solid rgba(139, 154, 110, 0.2);
+  border: 0.5px solid rgba(139, 154, 110, 0.22);
   letter-spacing: 0.01em;
 }
 
 html.dark .hall-count-badge {
   background: rgba(163, 177, 155, 0.16);
   color: #B4C4AA;
-  border-color: rgba(163, 177, 155, 0.22);
+  border-color: rgba(163, 177, 155, 0.24);
 }
 
 .hall-desc {
@@ -625,14 +625,14 @@ html.dark .hall-count-badge {
   width: 100%;
   padding: 10px 38px 10px 38px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.08));
+  border: 0.5px solid var(--border-default, rgba(0, 0, 0, 0.08));
   border-radius: var(--radius-full, 9999px);
   color: var(--text-primary, #1C1C1A);
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
   box-sizing: border-box;
 }
 
@@ -640,7 +640,7 @@ html.dark .search-input {
   background: var(--color-bg-tertiary, #2e2c29);
   border-color: rgba(255, 255, 255, 0.08);
   color: var(--text-primary, #e6dfd8);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .search-input-box:focus-within .search-icon {
@@ -650,12 +650,12 @@ html.dark .search-input {
 .search-input:focus {
   border-color: var(--color-primary-accent, #8B9A6E);
   background: var(--color-bg-primary, #FFFFFF);
-  box-shadow: 0 0 0 3.5px rgba(139, 154, 110, 0.16), 0 3px 10px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.16), 0 3px 10px rgba(0, 0, 0, 0.03);
 }
 
 html.dark .search-input:focus {
   background: #252422;
-  box-shadow: 0 0 0 3.5px rgba(163, 177, 155, 0.22), 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 3px rgba(163, 177, 155, 0.22), 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 .search-clear-btn {
@@ -699,8 +699,8 @@ html.dark .search-clear-btn:hover {
 /* Subject Card */
 .subject-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
-  border-radius: var(--radius-xl, 18px);
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 16px;
   padding: 22px 24px;
   cursor: pointer;
   transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1);
@@ -708,29 +708,29 @@ html.dark .search-clear-btn:hover {
   flex-direction: column;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.035), 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 4px 14px -3px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
   user-select: none;
   box-sizing: border-box;
 }
 
 html.dark .subject-card {
   background: var(--color-bg-secondary);
-  border-color: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.35);
 }
 
 .subject-card:hover {
-  transform: translateY(-3.5px);
+  transform: translateY(-2.5px);
   border-color: var(--color-primary-accent, #8B9A6E);
-  box-shadow: 0 14px 30px -4px rgba(0, 0, 0, 0.06), 0 4px 12px -2px rgba(139, 154, 110, 0.15);
+  box-shadow: 0 12px 26px -4px rgba(0, 0, 0, 0.05), 0 4px 10px -2px rgba(139, 154, 110, 0.12);
 }
 
 html.dark .subject-card:hover {
-  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(163, 177, 155, 0.18);
+  box-shadow: 0 14px 32px -4px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(163, 177, 155, 0.16);
 }
 
 .subject-card:active {
-  transform: translateY(-1px) scale(0.985);
+  transform: translateY(-0.5px) scale(0.99);
 }
 
 .subject-card-header {
@@ -743,7 +743,7 @@ html.dark .subject-card:hover {
 .subject-card-icon {
   width: 44px;
   height: 44px;
-  border-radius: 12px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -759,13 +759,13 @@ html.dark .subject-card-icon {
 }
 
 .subject-card:hover .subject-card-icon {
-  transform: scale(1.08) rotate(3deg);
+  transform: scale(1.06) rotate(2deg);
 }
 
 .subject-card-actions {
   display: flex;
   gap: 6px;
-  opacity: 0.2;
+  opacity: 0.25;
   transition: opacity 0.2s ease;
 }
 
@@ -775,7 +775,7 @@ html.dark .subject-card-icon {
 
 .card-action-btn {
   background: rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 0.5px solid rgba(0, 0, 0, 0.06);
   color: var(--text-secondary, #7A7A75);
   cursor: pointer;
   width: 28px;
@@ -827,7 +827,7 @@ html.dark .subject-card-title {
 .subject-card-meta {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: 12px;
   color: var(--text-muted, #7A7A75);
   font-weight: 500;
@@ -838,7 +838,8 @@ html.dark .subject-card-title {
 }
 
 .meta-dot {
-  opacity: 0.5;
+  opacity: 0.45;
+  margin: 0 1px;
 }
 
 .subject-card-footer {
@@ -852,7 +853,7 @@ html.dark .subject-card-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .mastery-title {
@@ -903,7 +904,7 @@ html.dark .mastery-bar-track {
 
 /* Add Subject Card */
 .add-card {
-  border: 1.5px dashed rgba(139, 154, 110, 0.35) !important;
+  border: 0.5px dashed rgba(139, 154, 110, 0.4) !important;
   background: var(--color-bg-tertiary, #FAF7F2) !important;
   display: flex;
   align-items: center;
@@ -923,7 +924,7 @@ html.dark .add-card {
 .add-card:hover {
   background: rgba(139, 154, 110, 0.05) !important;
   border-color: var(--color-primary-accent, #8B9A6E) !important;
-  transform: translateY(-3.5px);
+  transform: translateY(-2.5px);
   box-shadow: 0 10px 24px -4px rgba(139, 154, 110, 0.12) !important;
 }
 
@@ -932,8 +933,8 @@ html.dark .add-card:hover {
 }
 
 .add-plus-btn {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: rgba(139, 154, 110, 0.12);
   color: var(--color-primary-accent, #8B9A6E);
@@ -951,7 +952,7 @@ html.dark .add-plus-btn {
 .add-card:hover .add-plus-btn {
   background: var(--color-primary-accent, #8B9A6E);
   color: #FFFFFF;
-  transform: rotate(90deg) scale(1.08);
+  transform: rotate(90deg) scale(1.06);
 }
 
 .add-text-group {
@@ -972,7 +973,7 @@ html.dark .add-label {
 }
 
 .add-sublabel {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
 }
 
@@ -991,7 +992,7 @@ html.dark .add-label {
   height: 80px;
   border-radius: 50%;
   background: rgba(139, 154, 110, 0.10);
-  border: 1px solid rgba(139, 154, 110, 0.18);
+  border: 0.5px solid rgba(139, 154, 110, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1027,7 +1028,7 @@ html.dark .empty-hall-title {
 
 .clear-search-btn {
   background: transparent;
-  border: 1px solid var(--border-default, rgba(0, 0, 0, 0.12));
+  border: 0.5px solid var(--border-default, rgba(0, 0, 0, 0.12));
   color: var(--color-primary-accent, #8B9A6E);
   font-size: 12.5px;
   font-weight: 600;
@@ -1040,5 +1041,38 @@ html.dark .empty-hall-title {
 .clear-search-btn:hover {
   background: rgba(139, 154, 110, 0.10);
   border-color: var(--color-primary-accent, #8B9A6E);
+}
+
+/* ===== Responsive Adaptation ===== */
+@media (max-width: 1200px) {
+  .hall-content {
+    padding: 28px 32px;
+  }
+  .subjects-grid {
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 16px;
+  }
+}
+
+@media (max-width: 960px) {
+  .hall-container {
+    padding: 12px 14px;
+  }
+  .hall-content {
+    padding: 20px 18px;
+    border-radius: 16px;
+  }
+  .hall-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .create-btn {
+    align-self: flex-start;
+  }
+  .subjects-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
 }
 </style>

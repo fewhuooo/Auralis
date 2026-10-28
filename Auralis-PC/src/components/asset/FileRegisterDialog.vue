@@ -47,7 +47,7 @@
       <!-- Upload Progress -->
       <div v-if="isUploading" class="upload-progress">
         <div class="progress-header">
-          <span class="stage-text">{{ displayPercent >= 100 ? '导入完成' : (uploadStage || '正在导入本地文件...') }}</span>
+          <span class="stage-text">{{ isCompleted ? '导入完成' : (uploadStage || '正在导入本地文件...') }}</span>
           <span class="progress-pct">{{ displayPercent }}%</span>
         </div>
         <div class="progress-track">
@@ -110,7 +110,7 @@
         @click="handleSubmit"
       >
         <IconRotate v-if="isUploading" :size="13" :stroke-width="2.2" class="is-spinning modal-btn-spinner" />
-        {{ isUploading ? (displayPercent >= 100 ? '导入完成' : '导入中...') : submitText }}
+        {{ isUploading ? (isCompleted ? '导入完成' : '导入中...') : submitText }}
       </button>
     </template>
   </ModalShell>
@@ -175,15 +175,18 @@ const isSubmitEnabled = computed(() => {
   return !!selectedFile.value && fileName.value.trim().length > 0 && selectedSubjectId.value.length > 0
 })
 
-// 极简平滑进度步进引擎，杜绝从 10% 瞬跳 100%
+// 真实平滑进度步进引擎，真实反映各阶段进度
 const displayProgress = ref(0)
 const displayPercent = computed(() => Math.min(100, Math.round(displayProgress.value)))
+const isCompleted = computed(() => {
+  return (props.uploadProgress ?? 0) >= 100 && displayPercent.value >= 100
+})
 
 let animFrameId: number | null = null
 
 const startProgressAnimation = () => {
   stopProgressAnimation()
-  displayProgress.value = 0
+  displayProgress.value = Math.max(0, Math.min(100, props.uploadProgress ?? 0))
 
   let lastTime = performance.now()
 
@@ -191,25 +194,25 @@ const startProgressAnimation = () => {
     const dt = Math.min(50, Math.max(10, now - lastTime))
     lastTime = now
 
-    const rawTarget = props.uploadProgress ?? 0
+    const rawTarget = Math.max(0, Math.min(100, props.uploadProgress ?? 0))
     const current = displayProgress.value
 
     if (rawTarget >= 100) {
       if (current < 100) {
-        // 当底层已完成时，以平滑匀速自然滑入 100%（约 350ms 内平稳滑过整段差距，杜绝瞬移）
-        const step = Math.max(1.6, dt * 0.18)
+        // 当底层确认已完成时，平滑匀速自然滑入 100%
+        const step = Math.max(2, dt * 0.25)
         displayProgress.value = Math.min(100, current + step)
         animFrameId = requestAnimationFrame(tick)
       } else {
         stopProgressAnimation()
       }
     } else {
-      // 在未到达 100% 前平滑平稳推进，以优雅速率攀升，并在 86% 处平稳巡航等待
-      const ceiling = Math.max(rawTarget, 86)
-      if (current < ceiling) {
-        const factor = Math.max(0.18, (ceiling - current) / ceiling)
-        const step = Math.max(0.12, dt * 0.08 * factor)
-        displayProgress.value = Math.min(ceiling, current + step)
+      // 真实跟随阶段进度目标值，平滑逼近，不虚构进度
+      if (current < rawTarget) {
+        const step = Math.max(0.2, (rawTarget - current) * 0.15)
+        displayProgress.value = Math.min(rawTarget, current + step)
+      } else if (current > rawTarget) {
+        displayProgress.value = rawTarget
       }
       animFrameId = requestAnimationFrame(tick)
     }
@@ -246,6 +249,7 @@ const resetForm = () => {
   selectedFile.value = null
   fileName.value = ''
   isDragover.value = false
+  displayProgress.value = 0
   if (props.defaultSubjectId) {
     selectedSubjectId.value = props.defaultSubjectId
   } else if (resolvedSubjects.value.length > 0) {
@@ -263,6 +267,9 @@ watch(
   (visible, prevVisible) => {
     if (visible && !prevVisible) {
       resetForm()
+    } else if (!visible) {
+      stopProgressAnimation()
+      displayProgress.value = 0
     }
   },
   { immediate: true }

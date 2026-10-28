@@ -1,10 +1,25 @@
 # AI 用量预算、并发保护与 Provider 资源隔离设计
 
+权威范围：Auralis Server 所有外部 AI Provider 调用的统一入口、单次与任务预算、并发限制、小时/每日配额、用量结算、后台任务退避，以及与 HTTP/数据库资源隔离相关的设计决策
+
+### 2026-10-16 来源与操作用途分账
+
+V33 preserves the existing reservation ledger and adds nullable `operation_kind` and `credential_source`. The source is selected from the immutable credential snapshot for each invocation, so mixed-source tasks are represented accurately. Platform quota admission includes `PLATFORM` plus historical NULL rows conservatively; BYOK remains in audit totals and shared capacity accounting. The operation matrix separates platform task quotas from all-origin protocol stage limits and checks the actual method and explicit Overview output role before reservation. See the [unified limits plan](../plans/2026-10-16-ai-unified-limits.md) for the full policy table and migration boundary.
+
 更新时间：2026-09-14
 
 文档状态：阶段 1/2 与个人中心额度已实现并通过相关自动验证；阶段 3 与真实环境验收独立
 
-权威范围：Auralis Server 所有外部 AI Provider 调用的统一入口、单次与任务预算、并发限制、小时/每日配额、用量结算、后台任务退避，以及与 HTTP/数据库资源隔离相关的设计决策
+
+### 2026-10-16 跨功能操作策略扩展（计划中）
+
+在现有 ai/usage 内集中操作策略：聊天、两类 Overview、摄入、Provider metadata/test 和后续学习都共用计量/运行入口。最新产品规则为平台提供模型执行额度与任务预算、BYOK 主要计量；两来源保留共有服务容量、技术边界和业务有限执行。来源由设置解析器按每次实际凭据确定，不是整个任务的单一标记；学习不另建账本/额度池。下文既有实现记录为当前基线，来源分流尚未实现。
+
+拟新增 AiOperationKind/PolicyResolver；旧 Feature 的默认映射保留行为，学习明确使用 LEARNING_TURN/LEARNING_DRAFT，初始分别最多 2/1 次 Provider 调用，由统一层强制。各业务继续负责内容分配、checkpoint 和安全重试，动态 Overview planner、合法 final MAP 6144、父预算身份、当前 embedding 窗口豁免、unknown usage 和影子模式均保留。当前已有共用 admission/ledger，不代表拟新增操作策略已实现。实施与验收以独立的[AI 统一限额与用量治理方案](../plans/2026-10-16-ai-unified-limits.md)为准。
+
+平台总/stage 配额与全来源业务执行次数分开检查，核对 scope 方法和 Overview 显式输出角色。原 reservations 拟增 operation_kind/credential_source，scope 暴露实际 task_id 供派发前可靠绑定。历史来源 NULL 不回填，单列保守占用至自然过窗，只在平台准入检查；新 BYOK 不扣平台额度，仍保留 actual/unknown/charged/reservation 审计。额度 DTO 与全调用计量分开说明；内部契约 500 和既有 413/422/429/503 分类保留。均为待实施契约，非现行 schema/API。
+
+后续先按实际负载评估，平台超预算顶在派发前给拆分建议，BYOK 仅展示预算估算、继续核对运行边界。Overview 后续归并/恢复只能估范围，Ingestion 在 chunks/checkpoint 已知后算 batch，恢复不能重建平台预算。有限修复与并发调优凭数据验证，沿用当前模型配置和字符/字节边界。
 
 ### 2026-10-12 embedding 额度排除与测试默认值
 

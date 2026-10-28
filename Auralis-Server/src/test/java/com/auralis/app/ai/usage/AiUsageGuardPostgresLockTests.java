@@ -1,5 +1,7 @@
 package com.auralis.app.ai.usage;
 
+
+
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.shared.config.AuralisProperties;
 import org.junit.jupiter.api.AfterEach;
@@ -18,7 +20,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,6 +57,7 @@ class AiUsageGuardPostgresLockTests {
                 + "attempt_count integer not null default 0, created_at timestamp with time zone not null)");
         try (Connection connection = dataSource.getConnection()) {
             ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V30__ai_usage_guard.sql"));
+                ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/migration/V33__ai_usage_operation_kind_and_source.sql"));
         }
     }
 
@@ -84,10 +89,10 @@ class AiUsageGuardPostgresLockTests {
             }
 
             Future<AiUsageGuard.CallReservation> waitingReservation = executor.submit(() -> guard.reserve(
-                    deletingTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", 10, 0));
+                    deletingTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 0));
             assertThat(awaitLockWait(Duration.ofSeconds(3))).isTrue();
             Future<AiUsageGuard.CallReservation> unrelatedReservation = executor.submit(() -> guard.reserve(
-                    otherTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", 10, 0));
+                    otherTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 0));
             boolean globalLockRemainsAvailable = completes(unrelatedReservation, Duration.ofSeconds(2));
 
             if (!globalLockRemainsAvailable) {
@@ -162,7 +167,7 @@ class AiUsageGuardPostgresLockTests {
                 assertThat(statement.executeUpdate()).isEqualTo(1);
             }
             Future<AiUsageGuard.CallReservation> waiting = executor.submit(() -> guard.reserve(
-                    task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", 10, 0));
+                    task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 0));
             assertThat(awaitLockWait(Duration.ofSeconds(3))).isTrue();
             disabling.commit();
             assertInactive(waiting);
@@ -179,7 +184,7 @@ class AiUsageGuardPostgresLockTests {
         AiUsageGuard guard = guard();
         AiUsageGuard.TaskLease task = guard.beginTask(new AiTaskContext(user, AiFeature.CHAT, "dispatch-disable-race"));
         AiUsageGuard.CallReservation call = guard.reserve(
-                task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", 10, 10);
+                task, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 10);
         AiUsageGuard.TaskLease otherTask = guard.beginTask(
                 new AiTaskContext(otherUser, AiFeature.CHAT, "dispatch-disable-unrelated"));
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -193,7 +198,7 @@ class AiUsageGuardPostgresLockTests {
             Future<?> waitingDispatch = executor.submit(() -> guard.markDispatched(task, call));
             assertThat(awaitLockWait(Duration.ofSeconds(3))).isTrue();
             Future<AiUsageGuard.CallReservation> unrelated = executor.submit(() -> guard.reserve(
-                    otherTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", 10, 0));
+                    otherTask, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 0));
             assertThat(completes(unrelated, Duration.ofSeconds(2)))
                     .as("dispatch must wait on the user row before holding the global quota lock")
                     .isTrue();
@@ -209,6 +214,84 @@ class AiUsageGuardPostgresLockTests {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void chatAndOverviewCannotOversellSharedPlatformHourlyQuota() throws Exception {
+        UUID user = createUser();
+        AuralisProperties.Limits tightWindow = new AuralisProperties.Limits(4, 2, 100, 200,
+                2_000_000, 300_000, 10_000, 4_096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+        AiUsageGuard guard = guard(tightWindow);
+
+        AiUsageGuard.TaskLease existingTask = guard.beginTask(
+                new AiTaskContext(user, AiFeature.CHAT, "shared-window-existing"));
+        AiUsageGuard.CallReservation existing = guard.reserve(existingTask, AiStage.CHAT_COMPLETION,
+                AiProviderType.DEEPSEEK, "chat-model", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 40, 0);
+        guard.markDispatched(existingTask, existing);
+        guard.settle(existingTask, existing, new AiTokenUsage(40L, 0L), true, null);
+        guard.closeTask(existingTask);
+
+        AiUsageGuard.TaskLease chatTask = guard.beginTask(
+                new AiTaskContext(user, AiFeature.CHAT, "shared-window-chat-contender"));
+        AiUsageGuard.TaskLease overviewTask = guard.beginTask(
+                new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "shared-window-overview-contender"));
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        ReserveOutcome chatOutcome = null;
+        ReserveOutcome overviewOutcome = null;
+        try {
+            Future<ReserveOutcome> chat = executor.submit(() -> reserveAtBarrier(
+                    ready, start, "CHAT", guard, chatTask, AiStage.CHAT_COMPLETION));
+            Future<ReserveOutcome> overview = executor.submit(() -> reserveAtBarrier(
+                    ready, start, "SOURCE_OVERVIEW", guard, overviewTask, AiStage.OVERVIEW_MAP));
+            assertThat(ready.await(3, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            chatOutcome = chat.get(5, TimeUnit.SECONDS);
+            overviewOutcome = overview.get(5, TimeUnit.SECONDS);
+
+            List<ReserveOutcome> outcomes = List.of(chatOutcome, overviewOutcome);
+            assertThat(outcomes.stream().filter(outcome -> outcome.reservation() != null)).hasSize(1);
+            assertThat(outcomes.stream().filter(outcome -> outcome.rejectionCode() != null)
+                    .map(ReserveOutcome::rejectionCode)).containsExactly("AI_HOURLY_QUOTA_EXCEEDED");
+            assertThat(platformWindowExposure(user)).isLessThanOrEqualTo(100L);
+
+            ReserveOutcome winner = outcomes.stream().filter(outcome -> outcome.reservation() != null)
+                    .findFirst().orElseThrow();
+            AiUsageGuard.TaskLease winningTask = winner.feature().equals("CHAT") ? chatTask : overviewTask;
+            guard.markDispatched(winningTask, winner.reservation());
+            guard.settle(winningTask, winner.reservation(), new AiTokenUsage(40L, 0L), true, null);
+            assertThat(platformWindowExposure(user)).isLessThanOrEqualTo(100L);
+        } finally {
+            executor.shutdownNow();
+            guard.closeTask(chatTask);
+            guard.closeTask(overviewTask);
+        }
+    }
+
+    private ReserveOutcome reserveAtBarrier(CountDownLatch ready, CountDownLatch start, String feature,
+                                            AiUsageGuard guard, AiUsageGuard.TaskLease task,
+                                            AiStage stage) throws InterruptedException {
+        ready.countDown();
+        if (!start.await(3, TimeUnit.SECONDS)) throw new IllegalStateException("quota race start barrier timed out");
+        try {
+            return new ReserveOutcome(feature, guard.reserve(task, stage, AiProviderType.DEEPSEEK,
+                    feature.equals("CHAT") ? "chat-model" : "overview-model", AiCredentialSource.PLATFORM,
+                    feature.equals("CHAT") ? AiOutputRole.GENERAL : AiOutputRole.INTERMEDIATE, 40, 0), null);
+        } catch (AiUsageLimitException exception) {
+            return new ReserveOutcome(feature, null, exception.code());
+        }
+    }
+
+    private long platformWindowExposure(UUID user) {
+        Long exposure = jdbc.queryForObject("select coalesce(sum(charged_tokens),0) + "
+                + "coalesce(sum(case when credential_source='PLATFORM' and state='RESERVED' "
+                + "and lease_until > now() then estimated_input_tokens+reserved_output_tokens else 0 end),0) "
+                + "from ai_usage_reservations where user_id=? and (credential_source='PLATFORM' "
+                + "or credential_source is null) and created_at >= date_trunc('hour', now())", Long.class, user);
+        return exposure == null ? 0 : exposure;
+    }
+
+    private record ReserveOutcome(String feature, AiUsageGuard.CallReservation reservation, String rejectionCode) { }
 
     private void lockUser(Connection connection, UUID userId) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement("select id from users where id=? for update")) {
@@ -265,6 +348,10 @@ class AiUsageGuardPostgresLockTests {
     private AiUsageGuard guard() {
         AuralisProperties.Limits limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000, 2_000_000,
                 300_000, 10_000, 4_096, 2, 32_000, 24, 524_288, 512, 16_777_216);
+        return guard(limits);
+    }
+
+    private AiUsageGuard guard(AuralisProperties.Limits limits) {
         return new AiUsageGuard(jdbc, new DataSourceTransactionManager(dataSource), Clock.systemUTC(), limits);
     }
 }

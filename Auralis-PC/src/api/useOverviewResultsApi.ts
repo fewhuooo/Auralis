@@ -1,5 +1,6 @@
 import request from './request.ts'
 import { ApiProblemError } from './httpError.ts'
+import { validateCanonicalOverviewProvenance } from './overviewResponseValidator.ts'
 import type { OverviewResultCommand, OverviewResultView } from '@/types/overview'
 
 function asOverviewResult(value: unknown): OverviewResultView {
@@ -10,7 +11,14 @@ function asOverviewResult(value: unknown): OverviewResultView {
     || !Number.isInteger(item.schemaVersion) || item.schemaVersion !== 1
     || typeof item.title !== 'string' || !Array.isArray(item.outline) || !item.summary
     || typeof item.updatedAt !== 'string') throw new Error('OVERVIEW_RESULT_INVALID')
-  return item as unknown as OverviewResultView
+  const outlineIdentity = item.outlineIdentity && typeof item.outlineIdentity === 'object'
+    && (item.outlineIdentity as Record<string, unknown>).schemaVersion === 1
+    && Array.isArray((item.outlineIdentity as Record<string, unknown>).nodes)
+    ? item.outlineIdentity : null
+  const outlineProvenance = item.outlineProvenance == null ? null
+    : validateCanonicalOverviewProvenance(item.outlineProvenance, item.outline as OverviewResultView['outline'])
+  return { ...item, identityReady: item.identityReady === true && outlineIdentity !== null,
+    outlineIdentity, outlineProvenance } as unknown as OverviewResultView
 }
 
 function notFound(error: unknown): boolean { return error instanceof ApiProblemError && error.status === 404 }

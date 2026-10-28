@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -68,7 +69,7 @@ class AiSourceChunkTests {
 
         chunkService.replace(userId, sourceId, generation, chunks, vectors);
 
-        verify(pgVectorRepository).replace(eq(userId), eq(sourceId), eq(generation), eq(chunks), eq(vectors));
+        verify(pgVectorRepository).replace(eq(userId), eq(sourceId), eq(generation), eq(chunks), eq(vectors), isNull());
         verifyNoInteractions(chunkRepository);
     }
 

@@ -19,7 +19,7 @@ import {
   type LocalParsedDocumentRecord,
 } from '@/types/localParsedDocument'
 
-export const LOCAL_SCHEMA_VERSION = 12
+export const LOCAL_SCHEMA_VERSION = 13
 
 export interface LocalSqlDatabase {
   execute(sql: string, bindValues?: unknown[]): Promise<unknown>
@@ -250,6 +250,9 @@ export const VERSIONED_LOCAL_SCHEMA_SQL = [
     scope_id TEXT NOT NULL, revision_key TEXT NOT NULL CHECK (length(trim(revision_key)) > 0),
     schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version = 1), title TEXT NOT NULL,
     outline_json TEXT, summary_json TEXT, outline_generated_at TEXT, summary_generated_at TEXT,
+    outline_identity_json TEXT, outline_identity_input_json TEXT,
+    outline_provenance_json TEXT, outline_provenance_input_json TEXT,
+    identity_ready INTEGER NOT NULL DEFAULT 0 CHECK (identity_ready IN (0, 1)),
     input_fingerprint TEXT, status TEXT NOT NULL CHECK (status IN ('READY', 'FAILED')),
     error_code TEXT, error_detail TEXT, updated_at TEXT NOT NULL,
     CHECK ((scope_type = 'SUBJECT' AND revision_key = 'subject-v1') OR (scope_type = 'FILE' AND revision_key <> 'subject-v1')),
@@ -488,6 +491,16 @@ async function migrateLocalMutationColumns(db: LocalSqlDatabase): Promise<void> 
   if (!columns.has('remote_version')) await db.execute('ALTER TABLE local_mutations ADD COLUMN remote_version INTEGER')
 }
 
+async function migrateOverviewIdentityColumns(db: LocalSqlDatabase): Promise<void> {
+  if (!(await tableExists(db, 'ai_overview_cache'))) return
+  const columns = await tableColumns(db, 'ai_overview_cache')
+  if (!columns.has('outline_identity_json')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN outline_identity_json TEXT')
+  if (!columns.has('outline_identity_input_json')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN outline_identity_input_json TEXT')
+  if (!columns.has('outline_provenance_json')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN outline_provenance_json TEXT')
+  if (!columns.has('outline_provenance_input_json')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN outline_provenance_input_json TEXT')
+  if (!columns.has('identity_ready')) await db.execute('ALTER TABLE ai_overview_cache ADD COLUMN identity_ready INTEGER NOT NULL DEFAULT 0')
+}
+
 async function moveLegacyTable(
   db: LocalSqlDatabase,
   tableName: string,
@@ -668,6 +681,7 @@ export async function createVersionedLocalSchema(db: LocalSqlDatabase): Promise<
     await db.execute(statement)
   }
   await migrateLocalMutationColumns(db)
+  await migrateOverviewIdentityColumns(db)
   await sanitizeTaskCognitiveLoad(db)
   await sanitizeTaskColors(db)
   await backupLegacySqlResources(db)

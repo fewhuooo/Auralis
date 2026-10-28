@@ -1,7 +1,7 @@
 package com.auralis.app;
 
 import com.auralis.app.subject.SubjectLockCoordinator;
-import com.auralis.app.review.ReviewContentHash;
+import com.auralis.app.knowledge.KnowledgeBlockContentHash;
 import com.auralis.app.review.ReviewLifecycleDtos;
 import com.auralis.app.review.ReviewLifecycleService;
 import com.auralis.app.review.internal.persistence.ReviewParameterSetEntity;
@@ -118,7 +118,7 @@ class SubjectLockCoordinatorPostgresIntegrationTests {
         UUID subjectId = UUID.randomUUID();
         UUID blockId = UUID.randomUUID();
         String content = "PostgreSQL lifecycle lock body";
-        String contentHash = ReviewContentHash.sha256(content);
+        String contentHash = KnowledgeBlockContentHash.sha256(content);
         insertUser(userId);
         insertSubject(userId, subjectId, "Lifecycle first learning subject");
         jdbcTemplate.update("insert into knowledge_blocks (id, user_id, subject_id, title, content) "
@@ -201,7 +201,7 @@ class SubjectLockCoordinatorPostgresIntegrationTests {
         UUID newSubjectId = UUID.randomUUID();
         UUID blockId = UUID.randomUUID();
         String content = "Lifecycle move-race content";
-        String contentHash = ReviewContentHash.sha256(content);
+        String contentHash = KnowledgeBlockContentHash.sha256(content);
         insertUser(userId);
         insertSubject(userId, oldSubjectId, "Move-race old subject");
         insertSubject(userId, newSubjectId, "Move-race new subject");
@@ -300,11 +300,11 @@ class SubjectLockCoordinatorPostgresIntegrationTests {
             Future<ReviewLifecycleDtos.CommandResponse> first = executor.submit(() ->
                     reviewLifecycleService.completeLearning(userId,
                             new ReviewLifecycleDtos.LearningCompletionRequest(UUID.randomUUID(), firstBlockId,
-                                    0L, 0L, ReviewContentHash.sha256(firstContent), null, null, null)));
+                                    0L, 0L, KnowledgeBlockContentHash.sha256(firstContent), null, null, null)));
             Future<ReviewLifecycleDtos.CommandResponse> second = executor.submit(() ->
                     reviewLifecycleService.completeLearning(userId,
                             new ReviewLifecycleDtos.LearningCompletionRequest(UUID.randomUUID(), secondBlockId,
-                                    0L, 0L, ReviewContentHash.sha256(secondContent), null, null, null)));
+                                    0L, 0L, KnowledgeBlockContentHash.sha256(secondContent), null, null, null)));
 
             boolean bothLookupsReachedBarrier = bothParameterLookupsCompleted.await(5, TimeUnit.SECONDS);
             releaseParameterLookups.countDown();

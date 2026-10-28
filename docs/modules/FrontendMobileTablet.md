@@ -1,5 +1,10 @@
 # Mobile / Tablet 前端模块
 
+更新时间：2026-09-12
+文档状态：现行
+权威范围：`Auralis-Mobile` 的当前依赖、页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
+事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/`、`scripts/` 与 2026-08-20 当前代码
+
 ### 2026-10-12 聊天资料检索默认开启（代码、协议测试与 H5 构建通过；类型检查受既有问题阻断）
 
 - Mobile 与 Tablet AI 聊天不发送 `retrievalEnabled`，沿用服务端新聊天的默认检索路径；`ReadingContext` 若存在，仍由其限定来源范围。Tablet Profile 已移除本地 `ragEnabled` 关闭控件。
@@ -23,13 +28,9 @@
 
 2026-09-12 Build/OpenAPI Task 3 最终回归：Mobile `npm.cmd run type-check` 退出 0，`node scripts/r4-mobile-protocol.test.mjs` 实际 23/23 通过；`check-openapi.ps1` 退出 0，生成 `schema.ts` 与 PC 及 OpenAPI artifact 一致，`subjectOverview`/`sourceOverview` 的 header 暴露可选 `X-Overview-Request-Id`。`useSyncStore` 的一行 `payload as SyncMutation['payload']` 只解决生成 `JsonNode` 结构窄类型的编译期边界，运行时序列化未改变；未来 contract-cleanup 风险仍开放，不代表已完成真实 API/设备验收。真实 Server、Provider、微信/H5、Tablet、GUI、设备和业务验收仍待完成。
 
-更新时间：2026-09-12
 
-文档状态：现行
 
-权威范围：`Auralis-Mobile` 的当前依赖、页面、条件编译、Store、API、端侧服务、手写开关、构建方式与限制
 
-事实来源：`Auralis-Mobile/package.json`、`src/pages.json`、`src/`、`scripts/` 与 2026-08-20 当前代码
 
 ## 模块定位
 

@@ -1,5 +1,61 @@
 # Auralis 部署指南
 
+### 2026-10-27 香港23:05 重试候选已部署
+
+按用户授权，以现有基础Compose及overview-trace overlay构建并recreate backend/frontend，均exit0。启动时Flyway验证41个迁移，数据库已为V41，本次无需重复执行迁移。backend healthy、readiness HTTP200，frontend HTTP200；db/MinIO容器ID及挂载前后相同。backend镜像abe74be55083…，frontend2321333dfca5…。未清缓存、未调用真实模型，重试业务效果待用户使用验收。日志：D:/Temp/auralis-overview-retry-deploy-20261027/。
+
+### 2026-10-26 香港22:42 动态容量本机部署完成
+
+用户已明确授权本次部署。实际执行 `docker compose --env-file .env -f docker-compose.yml -f docker-compose.overview-trace.yml build --progress plain backend frontend` 与同配置 `up -d --no-deps --force-recreate backend frontend`，均exit0。backend镜像 `sha256:6256eee92138f0cf197733a4a871266b78315b8dbab5fa68a54b2f0e687044aa`，frontend `sha256:28f9ff68c11547a9228baaa193ea7f5da500102a573542afd090915fbeb71c8c`。Docker引擎启动后仅恢复原db/MinIO，未recreate其容器或卷。旧两应用镜像已加rollback-dynamic-capacity-20261026标签。
+
+部署前pg_dump完整备份V39数据库并导出目标缓存，随后按用户选择清理六条FAILED的私有生成缓存/父行；SERIALIZABLE事务内检查状态/费用/关联及保留行hash，COMMIT成功。V40在新backend启动时应用。readiness、前端页面和entry bundle均HTTP200，运行JAR六关键class与候选一致；26项MAX全0，calls0，财务taskToken524288保持。22SUCCESS/22正式结果/25receipts/675账本及原资料等12组hash前后相同。部署后无新派发，不等于真实Provider或GUI验收。
+
+命令、退出码、镜像/卷身份、全库及定向备份hash、清理SQL和最终验证在D:/Temp/auralis-overview-deploy-20261026/。备份已生成并校验hash，未执行恢复演练。以下候选说明保留配置设计和部署前状态。
+
+### 2026-10-26 Overview 动态容量配置（候选未部署）
+
+26 项 `AURALIS_AI_OVERVIEW_MAX_*` 已由主 Compose 透传，完整清单见根 `.env.example`。0 表示不加静态帽，正数额外限幅；模型能力、实际请求输出预留及统一额度继续约束派发。Overview calls 默认 0，财务额度保持。单次响应超时仍默认 120000ms、最低 60000ms，已移除旧最大 120000ms 校验；任务期限默认值和 0 语义保持。新源码需重新构建后才生效，仅编辑 `.env` 不会改变旧镜像。
+
+精确官方 profile 可直接使用；其它模型需配置完整能力身份。直接 Java/backend 进程可用根 `.env.example` 所示五个 `AURALIS_AI_OVERVIEWMODELCAPACITIES_0_*` 环境变量。Compose 用户可在专用 override 文件中显式透传以下字段，再将该 override 加入自己的构建/启动命令；不向默认空列表注入空 slot：
+
+```yaml
+services:
+  backend:
+    environment:
+      AURALIS_AI_OVERVIEWMODELCAPACITIES_0_PROVIDER: ${AURALIS_AI_OVERVIEWMODELCAPACITIES_0_PROVIDER:?set provider}
+      AURALIS_AI_OVERVIEWMODELCAPACITIES_0_ENDPOINT: ${AURALIS_AI_OVERVIEWMODELCAPACITIES_0_ENDPOINT:?set exact endpoint}
+      AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MODEL: ${AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MODEL:?set exact model}
+      AURALIS_AI_OVERVIEWMODELCAPACITIES_0_CONTEXTWINDOWTOKENS: ${AURALIS_AI_OVERVIEWMODELCAPACITIES_0_CONTEXTWINDOWTOKENS:?set context window}
+      AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MAXOUTPUTTOKENS: ${AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MAXOUTPUTTOKENS:?set max output}
+```
+
+Provider 取 DEEPSEEK、OPENAI_COMPATIBLE 或 SILICONFLOW 的精确名称，endpoint/model 精确匹配；显式配置优先于内置能力，未知能力拒绝。能力配置为运营声明，不能视为实测 tokenizer 校准。package、Compose config、OpenAPI/SDK、PC 类型与接收检查已完成；唯一 full 失败及定向闭合情况见[本轮计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。V40 将在后续新后端启动时迁移，当前业务库未应用；本轮未部署。
+
+### 2026-10-24 Overview 直接请求整任务期限配置（实现候选；未部署）
+
+`AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS=0` 关闭 direct JSON/SSE 请求的整任务期限，单次 Provider response timeout 不变；Compose 已透传该变量。缺省仍 240000ms，后台持久 jobs 在 Worker claim 时仍使用 240000ms durable deadline。配置源码需先构建新 backend 镜像并由用户决定是否 recreate；仅改 `.env` 不会加载新代码。本轮未部署。
+
+更新时间：2026-10-24
+文档状态：现行，生产方案待加固
+权威范围：本地准备、各应用构建、Compose 部署、配置、冒烟、回滚与发布门禁
+事实来源：三个项目的构建清单、Server profiles、`docker-compose.yml` 与基础设施模块文档
+
+### 2026-10-24 AI Provider 思考开关（源码与本机 `.env` 已更新；未部署）
+
+`AURALIS_AI_THINKING_ENABLED=false` 是新的默认值，Compose 透传至 backend。DeepSeek 与精确 `api.xiaomimimo.com` MiMo completion/stream 请求会显式发送 enabled/disabled；其它 OpenAI-compatible host 不发送该字段。应用新值时需要用新源码 build backend 镜像，再 recreate backend；单独 recreate 旧镜像不会加载此代码。本机 `.env` 已写入 `false`，本轮没有部署、调用真实 Provider 或读取/变更其它凭据。
+
+### 2026-10-24 Overview 输入估算本机部署
+
+仅使用 `docker-compose.yml` 与 `docker-compose.overview-trace.yml` 构建并 recreate backend；两条命令退出 0，镜像 `sha256:72f6a41df02f8497fe32d2d0c3cbb18580ed2671b1c233ec9b41a95f658cc49d`，Docker healthy、readiness UP。本机有效模式为 `calibrated-category`，adaptive/trace/content capture 保持 true，Overview maxCalls 保持 0；未修改 Token/窗口上限或旧用量。db、MinIO、frontend 的容器与镜像身份逐项核对未变，无新 schema/migration。
+
+运行 JAR SHA-256 为 `6f6057149daa459fdca39c780534d32bab0b349a0bf8b22c158e735a347bb228`；旧镜像保留为 `auralis-backend:rollback-input-estimator-20261024-1234`。Docker 构建中的重新打包产物与本机 Maven JAR 分别记录，不能将两者 hash 混用。build/up 日志、运行设置、readiness 和前后容器身份见 `D:/Temp/auralis-budget-step3-20261024/deployment/`。
+
+相关 43 项、replay gate 与 package 已通过，唯一 review B0/I0/O0；不将曾有 harness error 且未完整重跑的 full suite 写成全绿，原始 full stdout 留存缺口见同目录上级 `final-handoff.md`。本次未主动调用真实 Provider；用户从原界面重试资料生成，再核对正文 usage/质量。
+
+### 2026-10-23 Overview 本机调用次数观测
+
+本机仅 backend 使用 `docker-compose.yml` + `docker-compose.overview-trace.yml` 重建并 recreate，镜像 sha256:1158fd2458a59bc8630f956ba8d91a48f0926f2414ef24df6d2e5460ec4f9665。容器环境 `AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS=0`，Docker healthy、`/actuator/health/readiness` HTTP 200。基础 Compose 默认24、Token预算及数据库/MinIO/前端容器未调整；追踪继续落在 D:/Temp/auralis-overview-traces。定向测试54/54、package成功；后端 full 829项 1F/46E/5S，详见 `D:/Temp/auralis-overview-unlimited-calls-20261023/full.log`，不能称完整门禁通过。尚未触发真实 Provider 或完成 GUI/资料内容验收。
+
 ### 2026-10-12 学科总览分批修复本机部署
 
 香港 13:57:23 仅 backend 更新为 `sha256:a5a50bb7ae02cb1cc93a3e17a46b2515552f4e434b50b9a5764cf8bfabf541f2`。实际执行 `docker compose --env-file .env build --progress plain backend` 和 `docker compose --env-file .env up -d --no-deps --force-recreate backend`，均退出 0；容器 healthy，readiness HTTP 200。旧镜像 `31f7dec…` 保留于 `auralis-backend:rollback-subject-overview-prompt-batching-20261012`。
@@ -28,13 +84,9 @@
 
 执行 `docker compose --env-file .env config --quiet`、`build backend` 与 `up -d --no-deps --force-recreate backend`，均退出 0；只替换 backend 容器，db/minio 容器和数据卷未重建。新容器 `ee3d733c00c8…` healthy，health/readiness UP；Flyway V23 成功且当前 schema 版本为 23。此证据只证明本机运行和迁移，尚无认证后的排期操作或 GUI 拖放验收。
 
-更新时间：2026-10-11
 
-文档状态：现行，生产方案待加固
 
-权威范围：本地准备、各应用构建、Compose 部署、配置、冒烟、回滚与发布门禁
 
-事实来源：三个项目的构建清单、Server profiles、`docker-compose.yml` 与基础设施模块文档
 
 测试账号：登录信息：
 - 用户名：pc-ai-test-20260821-180412@example.com
@@ -288,3 +340,4 @@ docker compose logs frontend
 已知风险：
 回滚版本：
 ```
+- 本批后端已部署：sha256:84c96a9c04c9e879a5f294b73cbedb156581931b1f0b5cd278992a66dcea8a8d，Docker healthy、readiness HTTP 200。仅backend更新，未触发真实Provider。

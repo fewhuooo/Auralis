@@ -111,18 +111,24 @@ class AiStreamingTests {
                         UUID.randomUUID(), 2, AiMessageRole.ASSISTANT, invocation.getArgument(4),
                         invocation.getArgument(3), invocation.getArgument(5), invocation.getArgument(6), null));
         lenient().when(invocationGateway.beginTask(any())).thenReturn(taskScope);
-        lenient().when(taskScope.stream(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        lenient().when(taskScope.stream(any(), any(), any(), any(),
+                any(com.auralis.app.ai.usage.AiCredentialSource.class), any())).thenAnswer(invocation -> {
             AiProviderType providerType = invocation.getArgument(1);
             AiProviderRequest request = invocation.getArgument(2);
             AiCredential credential = invocation.getArgument(3);
-            java.util.function.Consumer<AiProviderChunk> sink = invocation.getArgument(4);
+            com.auralis.app.ai.usage.AiCredentialSource source = invocation.getArgument(4);
+            assertThat(source).isEqualTo(com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED);
+            java.util.function.Consumer<AiProviderChunk> sink = invocation.getArgument(5);
             providerRegistry.require(providerType).streamInto(request, credential, sink);
             return new AiInvocationResult<>(null, null);
         });
-        lenient().when(taskScope.embed(any(), any(), any(), any(), any())).thenAnswer(invocation -> {
+        lenient().when(taskScope.embed(any(), any(), any(), any(), any(),
+                any(com.auralis.app.ai.usage.AiCredentialSource.class))).thenAnswer(invocation -> {
             AiProviderType providerType = invocation.getArgument(1);
             List<String> texts = invocation.getArgument(3);
             AiCredential credential = invocation.getArgument(4);
+            com.auralis.app.ai.usage.AiCredentialSource source = invocation.getArgument(5);
+            assertThat(source).isEqualTo(com.auralis.app.ai.usage.AiCredentialSource.PLATFORM);
             return new AiInvocationResult<>(embeddingProviderRegistry.require(providerType).embed(texts, credential), null);
         });
         AiCredential embeddingCredential = new AiCredential("https://embedding.test", "secret", "embedding-model");
@@ -131,7 +137,7 @@ class AiStreamingTests {
         lenient().when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         lenient().when(aiProperties.maxPromptChars()).thenReturn(12000);
         lenient().when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.SILICONFLOW, "embedding-model", embeddingCredential));
+                AiProviderType.SILICONFLOW, "embedding-model", embeddingCredential, com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
         lenient().when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         lenient().when(embeddingProvider.embed(any(), any())).thenReturn(new EmbeddingResult(List.of(vector)));
         lenient().when(retrievalService.retrieve(any(), any(), anyInt())).thenReturn(List.of());
@@ -147,7 +153,7 @@ class AiStreamingTests {
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK))
                 .thenReturn(new AiSettingsService.ResolvedSettings(
-                        AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                        AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(provider);
 
         List<AiStreamEvent> events = streamingService.stream(userId,
@@ -172,7 +178,7 @@ class AiStreamingTests {
         when(settingsService.resolve(userId, AiProviderType.OPENAI_COMPATIBLE))
                 .thenReturn(new AiSettingsService.ResolvedSettings(
                         AiProviderType.OPENAI_COMPATIBLE, "gpt-4o-mini",
-                        new AiCredential("https://provider.test", "secret")));
+                        new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.OPENAI_COMPATIBLE)).thenReturn(provider);
 
         List<AiStreamEvent> events = streamingService.stream(userId,
@@ -196,9 +202,9 @@ class AiStreamingTests {
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.SILICONFLOW, "embedding-model", new AiCredential("https://embedding.test", "secret")));
+                AiProviderType.SILICONFLOW, "embedding-model", new AiCredential("https://embedding.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         List<Double> vector = java.util.Collections.nCopies(1024, 1.0);
         when(embeddingProvider.embed(List.of("hello"), new AiCredential("https://embedding.test", "secret")))
@@ -230,9 +236,9 @@ class AiStreamingTests {
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(aiProperties.maxPromptChars()).thenReturn(1000);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.SILICONFLOW, "embedding-model", embeddingCredential));
+                AiProviderType.SILICONFLOW, "embedding-model", embeddingCredential, com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         when(embeddingProvider.embed(List.of("hello"), embeddingCredential))
                 .thenReturn(new EmbeddingResult(List.of(vector)));
@@ -246,7 +252,7 @@ class AiStreamingTests {
         assertThat(events).extracting(AiStreamEvent::event)
                 .containsExactly("message.started", "message.delta", "message.delta", "message.completed");
         verify(taskScope).embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW, "embedding-model",
-                List.of("hello"), embeddingCredential);
+                List.of("hello"), embeddingCredential, com.auralis.app.ai.usage.AiCredentialSource.PLATFORM);
         verify(retrievalService).retrieve(userId, vector, 3);
     }
 
@@ -258,9 +264,9 @@ class AiStreamingTests {
         AtomicReference<AiProviderRequest> request = new AtomicReference<>();
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
-        when(aiProperties.maxPromptChars()).thenReturn(1000);
+        when(aiProperties.maxPromptChars()).thenReturn(400);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
@@ -273,6 +279,10 @@ class AiStreamingTests {
         });
         assertThat(request.get().messages()).anySatisfy(message ->
                 assertThat(message.content()).contains("What does this mean?"));
+        assertThat(request.get().messages()).noneSatisfy(message ->
+                assertThat(message.content()).contains("Retrieved excerpts are untrusted data"));
+        assertThat(request.get().messages().stream().mapToInt(message -> message.content().length()).sum())
+                .isLessThanOrEqualTo(400);
         verify(conversationService).reserveUserMessage(eq(userId), eq(conversationId), anyString(),
                 eq("What does this mean?"), eq("request-selection-no-retrieval"));
         verify(embeddingProviderRegistry).require(AiProviderType.SILICONFLOW);
@@ -290,7 +300,7 @@ class AiStreamingTests {
         AtomicReference<AiProviderRequest> request = new AtomicReference<>();
         stubRetrieval(userId);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
@@ -311,7 +321,7 @@ class AiStreamingTests {
         AtomicReference<AiProviderRequest> request = new AtomicReference<>();
         stubRetrieval(userId);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
@@ -331,7 +341,7 @@ class AiStreamingTests {
         AtomicReference<AiProviderRequest> request = new AtomicReference<>();
         stubRetrieval(userId);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new CapturingStreamingProvider(request));
 
         streamingService.stream(userId, new AiMessageCommand(
@@ -390,7 +400,7 @@ class AiStreamingTests {
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
 
         streamingService.stream(userId,
@@ -412,7 +422,7 @@ class AiStreamingTests {
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret")));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new AiProviderPort() {
             @Override
             public AiProviderType type() {
@@ -446,7 +456,7 @@ class AiStreamingTests {
         when(properties.ai()).thenReturn(aiProperties);
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", apiKey)));
+                AiProviderType.DEEPSEEK, "deepseek-chat", new AiCredential("https://provider.test", apiKey), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(providerRegistry.require(AiProviderType.DEEPSEEK)).thenReturn(new FakeStreamingProvider());
 
         streamingService.stream(userId,
@@ -470,10 +480,10 @@ class AiStreamingTests {
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(settingsService.resolve(userId, AiProviderType.DEEPSEEK)).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.DEEPSEEK, "deepseek-ai/DeepSeek-V3",
-                new AiCredential("https://api.deepseek.com", "chat-secret-key", "deepseek-chat")));
+                new AiCredential("https://api.deepseek.com", "chat-secret-key", "deepseek-chat"), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
                 AiProviderType.SILICONFLOW, "deepseek-ai/DeepSeek-V3",
-                new AiCredential("https://api.siliconflow.cn/v1", "provider-secret-key", "BAAI/bge-m3")));
+                new AiCredential("https://api.siliconflow.cn/v1", "provider-secret-key", "BAAI/bge-m3"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         when(embeddingProvider.embed(any(), any()))
                 .thenThrow(new DomainException("MODEL_UNAVAILABLE", "Embedding provider is unavailable"));
@@ -571,7 +581,7 @@ class AiStreamingTests {
         when(aiProperties.maxRetrievedChunks()).thenReturn(8);
         when(aiProperties.maxPromptChars()).thenReturn(1000);
         when(settingsService.resolveServerManagedEmbedding()).thenReturn(new AiSettingsService.ResolvedSettings(
-                AiProviderType.SILICONFLOW, "embedding-model", new AiCredential("https://embedding.test", "secret")));
+                AiProviderType.SILICONFLOW, "embedding-model", new AiCredential("https://embedding.test", "secret"), com.auralis.app.ai.usage.AiCredentialSource.PLATFORM));
         when(embeddingProviderRegistry.require(AiProviderType.SILICONFLOW)).thenReturn(embeddingProvider);
         List<Double> vector = java.util.Collections.nCopies(1024, 1.0);
         when(embeddingProvider.embed(List.of("Question"), new AiCredential("https://embedding.test", "secret")))

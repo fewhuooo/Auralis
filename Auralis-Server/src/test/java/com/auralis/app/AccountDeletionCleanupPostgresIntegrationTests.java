@@ -18,21 +18,18 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DelegatingDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.testcontainers.containers.PostgreSQLContainer;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -43,26 +40,22 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Testcontainers
 @EnabledIfSystemProperty(named = "auralis.postgres.it", matches = "true")
-@SpringBootTest(classes = AuralisApplication.class)
+@SpringBootTest(classes = {AuralisApplication.class, AccountDeletionCleanupPostgresIntegrationTests.MicrosecondClockConfiguration.class})
 @ActiveProfiles("postgres-it")
 class AccountDeletionCleanupPostgresIntegrationTests {
 
-    private static final String POSTGRES_IMAGE = "pgvector/pgvector:0.8.6-pg17-bookworm";
+    private static final String TEST_SCHEMA = "account_deletion_it_"
+            + UUID.randomUUID().toString().replace("-", "");
 
     @TestConfiguration(proxyBeanMethods = false)
     static class MicrosecondClockConfiguration {
         @Bean
         @Primary
         Clock testClock() {
-            return Clock.fixed(Instant.parse("2026-10-13T03:11:06.432415Z"), ZoneOffset.UTC);
+            return Clock.fixed(Instant.parse("2026-10-13T03:11:06.432415600Z"), ZoneOffset.UTC);
         }
     }
-
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
-            DockerImageName.parse(POSTGRES_IMAGE).asCompatibleSubstituteFor("postgres"));
 
     @Autowired private JdbcTemplate appJdbc;
     @Autowired private IdentityService identityService;
@@ -71,11 +64,43 @@ class AccountDeletionCleanupPostgresIntegrationTests {
     @Autowired private OverviewGenerationCoordinator overviewGenerationCoordinator;
 
     @DynamicPropertySource
-    static void databaseProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    static void databaseProperties(DynamicPropertyRegistry registry) throws SQLException {
+        String url = taskOwnedPostgresUrl();
+        try (Connection connection = DriverManager.getConnection(url, "postgres", "");
+                Statement statement = connection.createStatement()) {
+            statement.execute("CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public");
+            String vectorSchema;
+            try (ResultSet result = statement.executeQuery(
+                    "SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
+                            + "WHERE e.extname = 'vector'")) {
+                if (!result.next()) {
+                    throw new SQLException("PostgreSQL vector extension was not installed");
+                }
+                vectorSchema = result.getString(1);
+            }
+            if (!"public".equals(vectorSchema)) {
+                statement.execute("ALTER EXTENSION vector SET SCHEMA public");
+            }
+            statement.execute("create schema " + TEST_SCHEMA);
+        }
+        registry.add("spring.datasource.url", () -> testSchemaUrl(url));
+        registry.add("spring.datasource.username", () -> "postgres");
+        registry.add("spring.datasource.password", () -> "");
         registry.add("spring.datasource.hikari.connection-init-sql", () -> "SET TIME ZONE 'America/Los_Angeles'");
+        registry.add("spring.flyway.default-schema", () -> TEST_SCHEMA);
+        registry.add("spring.flyway.schemas", () -> TEST_SCHEMA);
+    }
+
+    private static String taskOwnedPostgresUrl() {
+        String url = System.getProperty("auralis.usage.postgres.url");
+        if (url == null || !url.matches("jdbc:postgresql://127\\.0\\.0\\.1:\\d+/[A-Za-z0-9_]+")) {
+            throw new IllegalStateException("A task-owned loopback PostgreSQL URL is required");
+        }
+        return url;
+    }
+
+    private static String testSchemaUrl(String url) {
+        return url + "?currentSchema=" + TEST_SCHEMA + ",public";
     }
 
     @Test
@@ -96,6 +121,8 @@ class AccountDeletionCleanupPostgresIntegrationTests {
         try {
             JdbcTemplate jdbc = appJdbc;
             assertThat(jdbc.queryForObject("show time zone", String.class)).isEqualTo("America/Los_Angeles");
+            Instant requestedAt = Instant.parse("2026-10-13T03:11:06.432415600Z");
+            Instant persistedAt = Instant.parse("2026-10-13T03:11:06.432416Z");
             UUID userId = UUID.randomUUID();
             String passwordHash = passwordEncoder.encode("correct-password");
             jdbc.update("insert into users (id, username, normalized_username, password_hash, status) "
@@ -105,16 +132,29 @@ class AccountDeletionCleanupPostgresIntegrationTests {
             var response = identityService.requestAccountDeletion(userId, "correct-password");
 
             assertThat(response.status()).isEqualTo("PENDING");
-            assertThat(readJobInstant(jdbc, "requested_at", response.id()))
-                    .isEqualTo(response.requestedAt().truncatedTo(ChronoUnit.MICROS));
+            assertThat(response.requestedAt()).isEqualTo(requestedAt);
+            assertThat(readJobInstant(jdbc, "requested_at", response.id())).isEqualTo(persistedAt);
             assertThat(readJobInstant(jdbc, "not_before", response.id()))
-                    .isEqualTo(response.requestedAt().plusSeconds(360).truncatedTo(ChronoUnit.MICROS));
+                    .isEqualTo(persistedAt.plusSeconds(360));
             assertThat(jdbc.queryForObject(
                     "select user_id from account_deletion_jobs where id = ?", UUID.class, response.id()))
                     .isEqualTo(userId);
         } finally {
             TimeZone.setDefault(originalDefaultTimeZone);
         }
+    }
+
+    @Test
+    void offsetDateTimeBindingsRoundToPostgresMicrosecondsAcrossTieAndSecondCarry() {
+        JdbcTemplate jdbc = appJdbc;
+        assertThat(jdbc.queryForObject("show time zone", String.class)).isEqualTo("America/Los_Angeles");
+
+        assertThat(roundTripOffset(jdbc, OffsetDateTime.parse("2026-10-13T08:41:06.432415499+05:30")))
+                .isEqualTo(Instant.parse("2026-10-13T03:11:06.432415Z"));
+        assertThat(roundTripOffset(jdbc, OffsetDateTime.parse("2026-10-13T08:41:06.432415500+05:30")))
+                .isEqualTo(Instant.parse("2026-10-13T03:11:06.432416Z"));
+        assertThat(roundTripOffset(jdbc, OffsetDateTime.parse("2026-10-13T08:41:06.999999600+05:30")))
+                .isEqualTo(Instant.parse("2026-10-13T03:11:07Z"));
     }
 
     @Test
@@ -198,9 +238,11 @@ class AccountDeletionCleanupPostgresIntegrationTests {
     private void cleansSyntheticJobAndReconcilesLateObjectsAcrossDifferentTimeZones() {
         assertThat(TimeZone.getDefault().getID()).isEqualTo("Asia/Hong_Kong");
         DriverManagerDataSource dataSource = new DriverManagerDataSource(
-                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                testSchemaUrl(taskOwnedPostgresUrl()), "postgres", "");
         Flyway.configure()
                 .dataSource(dataSource)
+                .defaultSchema(TEST_SCHEMA)
+                .schemas(TEST_SCHEMA)
                 .locations("classpath:db/migration")
                 .load()
                 .migrate();
@@ -277,5 +319,10 @@ class AccountDeletionCleanupPostgresIntegrationTests {
         return jdbc.queryForObject(
                 "select deleted_at from account_deletion_objects where job_id = ? and object_key = ?",
                 (resultSet, rowNum) -> resultSet.getObject(1, OffsetDateTime.class).toInstant(), jobId, objectKey);
+    }
+
+    private Instant roundTripOffset(JdbcTemplate jdbc, OffsetDateTime value) {
+        return jdbc.queryForObject("select ?::timestamp with time zone",
+                (resultSet, rowNum) -> resultSet.getObject(1, OffsetDateTime.class).toInstant(), value);
     }
 }

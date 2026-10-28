@@ -12,5 +12,10 @@ public record ParsedDocumentReadView(
         UUID sourceId,
         UUID ingestionRevision,
         UUID generation,
+        String parserId,
         List<ParsedDocumentValidator.ValidatedBlock> blocks) {
+    public ParsedDocumentReadView(UUID parsedDocumentId, UUID sourceId, UUID ingestionRevision,
+                                  UUID generation, List<ParsedDocumentValidator.ValidatedBlock> blocks) {
+        this(parsedDocumentId, sourceId, ingestionRevision, generation, "unknown", blocks);
+    }
 }

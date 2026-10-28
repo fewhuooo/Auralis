@@ -194,6 +194,27 @@ class OverviewSseSocketIntegrationTests {
     }
 
     @Test
+    void sourceTaskBudgetLimitIsReturnedByTheDirectSseEndpoint() throws Exception {
+        var auth = register("sse-overview-task-budget-limit");
+        doAnswer(invocation -> {
+            Thread.sleep(1_000);
+            throw new AiUsageLimitException("AI_TASK_BUDGET_EXCEEDED", 422, 0, null);
+        }).when(generationService).generateSource(any(UUID.class),
+                any(OverviewDtos.SourceOverviewRequest.class), any(), any(), any());
+
+        HttpURLConnection connection = request(auth.tokens().accessToken(), "text/event-stream");
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                connection.getInputStream(), StandardCharsets.UTF_8))) {
+            String data = readTerminalError(reader, 3);
+            assertThat(connection.getContentType()).startsWith("text/event-stream");
+            assertThat(data).contains("AI_TASK_BUDGET_EXCEEDED", "422")
+                    .doesNotContain("retryAfterSeconds", "resetAt");
+        } finally {
+            connection.disconnect();
+        }
+    }
+
+    @Test
     void sourceGenerationRejectionAfterHeartbeatEmitsSafeServiceUnavailable() throws Exception {
         var auth = register("sse-source-overload");
         CountDownLatch entered = new CountDownLatch(1);

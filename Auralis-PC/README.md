@@ -1,5 +1,13 @@
-# Vue 3 + TypeScript + Vite
+# Auralis PC
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+更新时间：2026-10-28
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+文档状态：模块入口
+
+权威范围：PC 开发文档导航
+
+事实来源：`package.json`、`index.html` 与 PC 模块文档
+
+PC 使用 Vue 3、TypeScript、Vite 和 Tauri。开始修改前，从[文档中心](../docs/README.md)阅读必读规则；当前目录、运行命令和实现边界见 [PC 模块](../docs/modules/FrontendPC.md)，交互与视觉规范见[前端设计](../docs/design/Frontend.md)。
+
+应用入口是 `src/main.ts`。`src/` 中与 TypeScript、Vue 源码同名的编译输出应清理，不作为另一份源码维护；现有 TypeScript 配置继承 `noEmit: true`。

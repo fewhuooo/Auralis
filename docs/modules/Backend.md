@@ -1,5 +1,376 @@
 # Spring Boot 后端模块
 
+### 2026-10-28 Overview 按来源路由与遗漏补回（源码候选）
+
+针对8份无关资料的174主题路由只引用89个ID、在Writer前终止的问题，改为按最早BODY原文来源分域路由，源内沿原章顺序聚合；整源能放下则一次请求，超容量才按现有动态规则拆分。跨源主题只归一个域但保留所有原始引用。ROUTE解析接受非空合法子集，未知/重复ID仍拒收；程序将连续遗漏按原章、原序及完整Writer请求容量成组补入，最后校验完整唯一覆盖。无需额外模型修复，也不新增固定主题数或节数上限。背景/导航过滤、Writer证据及重试/费用语义保持。
+
+集中定向首轮Adaptive77项5F/4E，旧跨源fixture与prompt断言更新后的首次受影响复验77项仍有1F，最终含补回原序回归的Adaptive78/78通过；DynamicBudget17/17、Recovery23/23通过。未运行全量测试、部署、业务库/缓存操作或真实模型生成。唯一只读审查的顺序问题已修正，同一reviewer差量关闭后最终B0/I0/O0，审查结论见D:/Temp/auralis-local-route-20261028/review.md；本轮命令与证据位于同目录。实际生成质量与耗时待部署后验收。
+
+### 2026-10-27 独立执行重试（源码、分批验证及审查完成；未部署）
+
+Source/Subject direct JSON/SSE使用独立acquireDirect策略：失败request重放不复活；普通新请求在FAILED/租约过期后建立新generation和budget，显式retryOfRequestId可接替原执行，并按父代唯一后继收敛并发。失败父及重试祖先的已验证检查点按既有精确身份复用，未返回/未校验输出不复用。旧调用和费用保留，Guard计费/额度规则不改；durable job仍走原acquire/claim/resume。定向162/162及最终donor差量复验、隔离PG、OpenAPI15/15、PC84/84/类型/构建及skipTests package通过，唯一review B0/I0/O0。唯一full950项1F/55E/2S，环境/资源与旧版本断言分批闭合，未重跑或声称full全绿。详见[实施计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
+### 2026-10-27 导读实质内容补充（源码候选，未部署）
+
+仅补充ADAPTIVE_EDIT现有ALL导读提示：概览解释实际覆盖范围和章节联系，keyPoints按实际章节说明核心概念/关系及需要区分的问题，learningPath使用实际章节/小节标题组织顺序、承接和学习目标。成稿证据边界保留一处，不依据规划标签补教学事实；不用内部segment编号替代用户可读标题。未设字数/条数目标，未增加模型调用、发送全文或改变编辑补丁、schema、预算与界面。
+
+当前PC总结预览直接渲染overview/keyPoints/learningPath并可滚动，静态核对未见截断逻辑；本轮没有修改前端。已有prompt-contract方法1/1通过、Maven exit0，唯一只读审查B0/I0/O0；真实导读篇幅及效果待部署后新生成验证，现有结果不自动改写。证据 `D:/Temp/auralis-guide-prompt-enrich-20261027/`。
+
+### 2026-10-27 INDEX 缺失空 summary 规范化（源码修复，未部署）
+
+索引角色解析的既有严格JSON入口，对合法根对象缺失的 `summary` 补为 `null`，与通用投影的缺省语义一致。主响应、现有格式修复响应及角色恢复读取共用该入口；显式null或非null值不改动，其余必填字段、未知/重复字段、来源角色与授权引用检查保持。没有修改提示词、预算、公开响应或增加模型调用。
+
+隔离候选编译及 `OverviewAdaptiveGenerationTests` 76/76通过、Maven exit0；同步前核对主工作树基线未变，仅回写Validator与Adaptive测试两个文件，候选与工作树hash一致。唯一只读审查B0/I0/O0。未部署、清缓存、修改业务库或调用真实模型。证据 `D:/Temp/auralis-index-summary-normalize-20261027/`。
+
+### 2026-10-27 Writer JSON 外围清理（源码修复，未部署）
+
+Writer首次严格解码失败且Provider正常stop、未显式截断时，程序截取首个完整JSON对象，移除前后普通文本、围栏或尾随`<`等噪声，再走原严格字段/正文校验。移除原ASCII短标记尾缀白名单，不增加模型修复或重试。JSON字符串内文本保持原样，重复字段、错误schema、未闭合对象及第二JSON值仍拒收；首个`{`不是完整合法根对象时不猜测后续对象。INDEX/ROUTE/EDIT接受规则保持。
+
+定向Adaptive74项73通过，唯一前轮提示词旧断言修正后单项1/1；审查发现连续第二根漏检，最小修正后Writer方法1/1通过，同一reviewer差量关闭，最终B0/I0/O0。目标文件diff check通过，未重跑全量或真实模型。证据 `D:/Temp/auralis-writer-json-clean-20261027/`。
+
+### 2026-10-27 主题聚合与提示词精简（源码候选，未部署）
+
+INDEX按核心议题聚合同一或相邻原文单元的相关子要点，保留独立实质主题与原文先后顺序；ROUTE在原章容器内将相关主题组织为连贯教学小节，概括标题、具体写作目标与全部主题引用共同保留内容范围，独立议题可单独成节。Writer以本批原文决定展开内容，父级规划仅定位。COMMON和阶段字段说明去除重复警告及自查清单，保留一次指令隔离、来源角色和必要JSON契约；ROUTE不再附加建议输出Token数，程序容量/预算、章归属和校验逻辑保持。没有新增节数配额、程序合并或并发。
+
+隔离首轮合计91项为85通过/5失败/1错误（Adaptive74项为68通过/5失败/1错误，BoundaryEditor17/17），失败均为旧措辞断言及示例授权夹具；受影响6项复验5通过，残留旧schema措辞修正后单方法1/1通过。分批闭合，不称一次全绿。先前将合计91误记为Adaptive91，现已依据原始Surefire日志纠正。证据 `D:/Temp/auralis-cohesive-prompts-20261027/`。实际聚合率、耗时与内容质量尚未调用真实模型验证。
+
+### 2026-10-27 EDIT 空补丁处理（源码修复，未部署）
+
+EDIT 对身份及分段哈希合法、且没有标题或首尾编辑的补丁按无操作处理，保持原文并继续处理导读；仍登记该分段，重复条目、未知身份、过期哈希及非法编辑继续拒绝。提示词明确省略无需修改的分段，全局无需编辑时返回 `segment_patches:[]`、`terminology_map:[]`，guide 仍按 ALL/OUTLINE 模式生成。没有新增模型调用、恢复路径或公开字段。
+
+隔离候选定向验证18/18通过（BoundaryEditor17、提示词断言1），未运行full、部署、清缓存或真实模型验收。证据 `D:/Temp/auralis-empty-edit-fix-20261027/`。
+
+### 2026-10-27 原章顺序与柔性路由（源码候选，未部署）
+
+新私有算法 `overview-adaptive-v11-source-chapter-order`。INDEX按原文先后提取主题，可在section提供 `sourceChapterStart:{unitAlias,title}`；普通NAV、目录、预告或模型分组标题不构成章起点，只有声明且能在所引原文定位的正文章头才参与绑定。无法使用的章元信息丢弃，原引用/角色/严格JSON校验保持。标题位置以规范化后文本包含检查，不向模型要求字符偏移。
+
+程序按输入单元位置与INDEX主题输出顺序双键处理，同Source跨批顺延，跨Source重置；同单元A在声明前沿用旧章或进入前置导论，B才切换。可靠章即使只有一章仍固定；无锚点资料允许自由分章，再按最早BODY位置排章。目录仅做确定性名称对齐。ROUTE全局一轮以sourceChapters容器传主题，无归属主题为unanchoredTopics；超容量仍按原机制分桶。跨章混装由程序按绑定章拆回，不新增修复/重试，拆出标题和目标只描述对应主题，保留原章其它小节相对顺序。
+
+Writer、NAV阅读过滤、轻量EDIT及公开响应保持。索引primary/现有JSON repair/checkpoint贯通新章信息，私有checkpoint为v3，新算法隔离旧中间格式，不做兼容回填。编译通过；首轮119项中6失败（Adaptive72、Recovery30、Budget17），修正夹具/断言后受影响方法分别通过；补充同unit双键实现及边界测试通过，不能合称一次全量全绿。Recovery30/30、Budget17/17、原跨JVM用例首轮通过。唯一只读审查B0/I0/O0，两项IMPORTANT最小修正后受影响4/4通过、同一reviewer差量关闭；真实识别质量、原书结构恢复仍依赖INDEX，本轮未部署或调用模型。[本轮计划](../plans/2026-10-27-overview-original-chapter-order.md)。
+
+### 2026-10-26 动态容量运行态已部署
+
+香港22:42按用户授权重建并recreate本机backend/frontend；backend运行镜像 `sha256:6256eee92138f0cf197733a4a871266b78315b8dbab5fa68a54b2f0e687044aa`，readiness HTTP200/UP，运行JAR六个关键class与已验候选一致。V40已应用，26项MAX均0、Overview calls0、task tokens524288、adaptive=true、estimator=calibrated-category、response timeout120000/task timeout0。用户settings/BYOK解析路径保持；未发起真实生成验收。
+
+用户另授权全部6条FAILED缓存清理，主Agent备份后删除其私有子表与父行，22SUCCESS/22正式结果/675费用记录等12组hash保持。部署后无新增invocation/reservation/job。命令与运行证据见D:/Temp/auralis-overview-deploy-20261026/deploy-verification.md；下面候选条目记录部署前的实现与自动验证。
+
+### 2026-10-26 Overview 动态容量与链路简化（当前候选，未部署）
+
+当前算法为 `overview-adaptive-v10-dynamic-capacity-writer-body`。按完整实际请求分批 INDEX，容量允许时一次全局 ROUTE，仅真正超容量才分桶；相关主题共用学习小节，Writer 组内原文去重，完成后程序装配并调用轻量 EDIT/ALL 导读。多层 Metadata 调用已移除。Writer 私有响应只含 `schemaVersion`、`detailedContent`；来源、主题分配、范围和证明由本批程序对象绑定，不以模型抄写的声明证明语义覆盖。
+
+`Ai.overviewLimits()` 集中接收 26 项 `AURALIS_AI_OVERVIEW_MAX_*`，完整清单见根 `.env.example`：默认 0 不另加固定容量帽，正数额外限幅。单次请求依完整提示词、模型 context/output 能力及输出预留判断；保存和总体规模不套单次模型窗口。输出需求按请求字节与结构开销线性估算，再取模型、可用 context 和正数 ENV 的交集；不按任务余额压缩正文需求。估算不是 tokenizer 精确计数。Overview calls 默认 0，Token/窗口/并发额度不变；Chat 等其它功能原有限制保持。
+
+能力来自精确官方 profile 或服务器配置的 provider/endpoint/model，显式配置优先；未知能力在预留/派发前拒绝。配置 provider 使用合法名称字符串，公共配置不依赖 AI 业务枚举。INDEX/ROUTE 的 topic/unit aliases、Writer 内部 unit aliases 不套最终文档数量帽；严格结构与授权仍校验，最终按真实来源 UUID 去重后执行配置上限。V40 放宽存储长度约束，结果标题改为 TEXT，非空、身份、来源、事务围栏保留。
+
+编译、分批定向检查、隔离 PostgreSQL 43/43、受影响检查 44/44、package、OpenAPI/两端生成类型比较及 PC 接收 80/80 通过。唯一 full 为 933 项、4F/54E/7S，随后按失败归因定向关闭，未重跑 full；七项条件性跳过保留。唯一只读审查 B0/I0/O0。准确命令与边界见[本轮计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。
+
+### 2026-10-26 Overview 阅读区与EDIT输入收敛（分批定向验证，本轮未部署）
+
+当前算法为overview-adaptive-v10-body-reading-boundary-view。NAVIGATION原文不再装配成阅读小节，轻量chapterTitle/title/summary保留为navigationContext供结构参考和ALL导读使用，不能当已教授事实。纯导航小节移除后跳过空章，按最终章节重新生成provenance路径；没有BODY写作组时以既有MUTATION_REJECTED明确返回无可生成正文，不建立空Writer计划、不进入EDIT。
+
+OverviewBoundaryEditor完整Snapshot、散列、apply及缓存绑定保持；EDIT仅接收promptView：分段身份、标题、实际ATX小标题、去重后的首尾块及其kind/hash/text，不发送中间正文/逐块metadata。单段只发一项，两段各一项；CORE/PROTECTED边界只读，原编辑权限不扩大。术语映射仍在完整Snapshot按原作用域、保护和非级联规则应用，没有模型出现次数要求。Guide依据实际成稿可见证据，不将导航、INDEX摘要或writingGoal当成教学完成证明。
+
+Writer单批/多批使用统一规则：plannedChapter/plannedSection/writingGoal仅定位，本批originalTextUnits决定范围与深度，不为父节目标补宏观引言总结或展开缺少本批证据的概念。INDEX提示尽量提取所有实质主题与重要区别；Java仍接受非空合法子集，不恢复覆盖补齐。OUTLINE继续完整章节无导读，SUMMARY独立短摘要；无新增模型阶段、摘要调用、固定压缩比例、full/compact回退或EDIT修复。
+
+fresh candidate全源578/578 hash一致，编译通过；首轮124项为122通过/2测试断言或fixture失败，2项单独复验通过，不称一次全绿。BoundaryEditor15/15、隔离PG Recovery30/30、AiSchema3/3在首轮通过。package/full、真实模型、部署与质量验收未运行。唯一只读审查最终B0/I0/O0；命令和最终hash见D:/Temp/auralis-overview-reading-edit-20261026/。
+
+### 2026-10-26 Overview 索引契约与提示词减量（分批定向验证完成，本轮未部署）
+
+当前内部算法为 `overview-adaptive-v10-selected-index-local-writer-ranges`。总览尽量减少遗漏，不承诺替代原文；INDEX 接受当前授权单元的非空合法子集，未选单元保留在原资料中，不推断其必为背景。删除仅用于补齐原文单元的 INDEX_COVERAGE 模型分支；目录仍须处理已选主题。严格索引解析、summary=null、角色/引用配对和授权校验是主响应及既有 JSON 修复的共同成功条件，不再用通用投影解析代替索引用途解析。
+
+INDEX、metadata、route 及其修复/分桶输入中的 instruction 为空；Writer/EDIT 保留受阶段结构和来源授权约束的顶层用户偏好，资料/原模型输出中的嵌入命令不作指令。Writer 提示词不再含 writerInputRanges；现有批次对象向 checkpoint 保存/加载传递来源范围，范围参与 step 身份并与既有 manifest 精确比对，不增加存储或兼容层。
+
+干净编译通过。初轮定向108项为103通过/5断言失败；4个Adaptive方法复验通过，1个Recovery方法在统一writer+EDIT调用/预留计数后单独复验通过，未重跑整批并称全绿。审查差量的INDEX非null summary接受问题已最小修正，相关8方法复验8/8，同一reviewer最终B0/I0。Recovery使用隔离PostgreSQL；本轮未跑package或全量后端，未部署或调用真实模型。命令、差量与唯一审查见 `D:/Temp/auralis-overview-contract-trim-20261026/` 和[实施计划](../plans/2026-10-25-overview-boundary-edit-quality.md)。
+
+### 2026-10-26 Overview 独立分段与边界编辑（源码、分批验证及唯一审查完成；未部署）
+
+前一轮自适应算法 `overview-adaptive-v10-source-roles-boundary-edit` 引入内部 `sourceRoles`：每个主题的每个来源分别记录 BODY/NAVIGATION/BACKGROUND；同一原文单元可关联多个主题并有不同用途。当前已取消原文单元逐个覆盖要求，同一小节内引用唯一、已选主题主归属唯一仍保留。章节预告和目录不构成教学正文。用途随索引checkpoint与metadata归并保留；BODY提供Writer事实材料，NAVIGATION当前仅作路由和导读结构参考，背景默认排除出生成结果但原资料保留。
+
+索引与Writer各自只接收本批内容。正文完成后，ALL/OUTLINE执行一次 `ADAPTIVE_EDIT`，只读完整分段、用途与不可变快照，输出受控标题/首尾补丁、字面术语映射及ALL导读。OUTLINE导读为null，SUMMARY语义保持。补丁经ID/hash、结构保护、作用域与冲突检查后统一应用；原Writer checkpoint不变，核心正文不经模型重吐。导航没有Writer账单；最终编号按逻辑节点统一。新purpose使用原Gateway/Guard、预算根与Source/revision围栏，先检查有效缓存再进行新调用准入。
+
+新增显式选择的 `mimo-byte-category-candidate` 输入估算profile，仅匹配官方MiMo endpoint与 `mimo-v2.6-flash`；默认保持 `legacy-bytes`，未知身份及不支持形态保守回退。Java离线重放86个实际用量配对，24个留出调用中16个启用候选、无低估；限于当前样本，不是通用Token上界。规划与Gateway复用同一profile。
+
+验证为分批证据：审查前Adaptive/Schema 79/79、Java trace 1/1；受限后端821项为0F/2E/2S，两个TLS参数缺失错误随后affected-only 3/3通过，未重跑并宣称整批全绿。唯一审查的两项IMPORTANT已最小修复：混合路由显式保留去重导航，首尾编辑使用完整纯组织性句式白名单；修复后Adaptive/BoundaryEditor/Schema 91/91、package通过，同一审查者差量关闭，最终B0/I0。Docker引擎不可用，17个PG/MinIO类未纳入受限批次。真实Provider、GUI与内容质量未验收。详细命令、限制和审查状态见[实施计划](../plans/2026-10-25-overview-boundary-edit-quality.md)及 `D:/Temp/auralis-overview-boundary-edit-20261025/gate/summary.md`、`review.md`。
+
+### 2026-10-25 Adaptive GUIDE 按实际输入预算选择完整或紧凑上下文（源码候选）
+
+自适应 GUIDE 不再受通用 `maxPromptChars` 字符门限限制；其它 Overview purpose 的字符门限保持原样。GUIDE 完整版与现有 excerptless 紧凑版本按完整 system/user 消息调用既有 `AiInputTokenEstimator` 与 `OverviewBudgetPlanner` 评估，沿用 FINAL 输出预留、模型上下文安全边际、模型上下文未知语义及平台任务余额（charged + reserved）。先查找并恢复有效 GUIDE checkpoint，再应用新调用的 token 预算筛选，因此缓存命中不要求为已完成请求重新预留 tokens。若完整请求不适配已知上下文或平台余额，则选用紧凑版本；平台余额不足仍返回既有 `AI_TASK_BUDGET_EXCEEDED`，已知上下文仍走现有 prompt-budget error。BYOK 继续不受平台任务 quota 限制。Gateway 的 reservation/settlement、输出预留 2048、调用/任务配额、prompt data、checkpoint identity 与其它 stage 未更改。
+
+源码候选未部署；自动验证与人工/Provider 验收状态以当前状态文档为准。
+
+### 2026-10-25 Overview prompt 嵌套 JSON 字段顺序（源码候选）
+
+Adaptive INDEX context、writer probes、completed-guide body evidence 与 directory 的五个嵌套 JSON 对象使用显式插入顺序，避免 `Map.of` 在不同 JVM 中改变同一提示词的原始 JSON 字节。当前值、字段名、列表顺序、checkpointStep 哈希公式、模型/预算兼容围栏不变；未引入旧 key-order 兼容匹配。离线 trace 显示旧 INDEX key order 与本次选择一致；writer 选择匹配 de2 的 66 个有效请求 trace。新的跨 JVM prompt/checkpoint-step 用例通过：固定 source/revision/chunk/generation IDs、内容与时间，执行 INDEX、Writer、Guide 实际 prompt builder，并比较 user/system JSON hashes 与 checkpoint steps；显式断言 INDEX context 的对象与 null 情形，以及非空 sibling bounds。原有 Adaptive 66 项与新方法 1 项属于分批证据，不合并为单轮 67 项。API 和数据库结构不变；当前 generation cache replay、真实 Provider、业务 DB 写入、缓存清理和部署未验收。
+
+### 2026-10-25 Overview adaptive writer trailing identifier（源码与定向验证完成；未部署）
+
+首次 `ADAPTIVE_WRITE` 主响应只有在 `finishReason=stop` 且未命中现有截断检测时，才可尝试从首个完整 JSON 根对象后恢复一个 1–32 字符 ASCII identifier。专用严格 parser 拒绝根/嵌套重复键；恢复后完整私有 writer schema、source/topic coverage、正文容量、规范化和 provenance 流程不变。原 Provider 响应 trace 保持原文，只有 writer 校验成功后才记录安全字符计数事件。D 盘 fresh candidate clean 编译 379 production sources；Adaptive 66/66、Provider resilience 10/10，exit 0。Wire test 实际检查 `max_tokens=4608/4675/6144` 均序列化为 `response_format=json_object`。证据 `D:/Temp/auralis-writer-tail-fix-20261025/candidate-run2/`；未连接业务 DB、未调用真实 Provider、未部署或做 GUI 验收。
+
+### 2026-10-25 adaptive writer checkpoint 边界空白恢复一致性（源码与定向验证完成；未部署）
+
+Adaptive WRITE 与 composite writer 输出在保存 checkpoint/fragment manifest 前使用既有文档校验器的边界 trim 规则规范化；恢复时先校验存储 JSON 的精确序列化、payload hash、原始 fragment hash 与来源证明，再运行结构校验并将原始 payload 原样交给后续预览绑定。未放宽散列/来源校验，无 API/DB schema 变化。匹配当前源码 hash 的 D 盘候选完整 Adaptive 测试类为 64/65；新用例首次失败是模拟旧尾随空白时将摘要推过既有 4,000 字符上限。修正合成 fixture 并精确限制新增请求为 completed-guide 后，affected-only 用例 1/1 通过，覆盖旧边界空白恢复、payload/provenance hash、章节数、内部 code whitespace 与篡改拒绝。编译了 379 个 production 与 147 个 test source。未连接业务数据库、未调用真实 Provider、未部署或 GUI 验收。
+
+### 2026-10-25 direct Overview 终态未知 writer 恢复（源码与定向 PostgreSQL 验证完成；未部署）
+
+Direct Source/Subject JSON/SSE generation 可在后续用户请求时恢复一个精确关联的 adaptive writer node：原 reservation 必须为已结算 `FAILED`、已派发、actual input/output 均缺失，且 `charged_tokens` 至少覆盖完整 `estimated_input_tokens + reserved_output_tokens`；node 必须仍对应该 failed attempt，或已有后续 attempt 的有效 checkpoint。执行前由现有 generation/plan/node 锁与 fence 再次检查；恢复沿用父 generation 的 budget root，旧未知账本行和保守扣费保持不变，新调用创建独立 reservation 并继续通过 Gateway/Guard。
+
+该例外只覆盖能通过 `overview_execution_calls` 精确映射的单个 writer node。第一次允许的 replay 若再次产生 unknown-dispatched usage，节点上出现第二个未知调用后继续 hold；已完成且账务完整的后续 attempt 可沿用现有最多 8 次节点 attempt 限制。RESERVED/EXPIRED、未结算、费用低于完整 reserve、身份或关联缺失/冲突、checkpoint 无效、任何非 writer 未知调用仍 fail-closed。Durable-job 恢复 gate 仍维持严格 unknown hold。本次无 schema、migration 或 API 变化。
+
+在 D 盘候选中，`OverviewGenerationServiceRecoveryTests` 30/30、`OverviewExecutionJournalPostgresIntegrationTests` 8/8、`OverviewJobInvocationJournalTests` 2/2 同一 Maven 调用通过（40/40，exit 0）；覆盖 direct Service gate、13 个已验证节点加失败 writer、同一 budget root、保留旧 charge、新 checkpoint 后继续执行、第二 unknown 与负向账务/身份边界。测试仅使用 Provider 替身和隔离 PostgreSQL，未连接业务数据库；未部署、未调用真实 Provider 或进行 GUI 验收。
+
+### 2026-10-25 Overview metadata convergence、Chat retrieval boundary 与 Provider probe（源码候选）
+
+自适应 Overview metadata planner 的指令明确要求把相关条目合并到更少的 sections，一个 section 可绑定多个 plan alias；保持 alias 完整覆盖与应用侧不可变 topic/unit 绑定。每一层先检查 metadata route 是否已满足 prompt/output 预算，即使条目数未减少也可直接路由；route 仍不适配且新层 section 数不少于输入条目数时，立即回退到既有 bounded topic buckets。字符收敛和现有上限继续生效。
+
+Chat 检索 excerpt 作为 escaped text 放入完整闭合的 untrusted wrapper，并附明确的 system 指令：excerpt 只作证据数据，内部 source/chunk UUID 不主动向用户输出。检索范围、citation 事件与 12,000 字符 prompt 上限不变；自动回归只验证 prompt 结构，不证明模型在真实攻击样本下的行为。Provider connection probe 请求 32 个 output tokens，仍沿现有 Gateway 和 Provider setup policy；此值改善短回复的兼容性，不能保证所有模型或代理都按 token 参数工作。
+
+Selected-text preflight runs before retrieval and counts only the mandatory base and selection instructions, selected text, and current question. After retrieval, quoted assembly includes the retrieval warning and whole escaped excerpts only when the prompt can retain the complete selection boundary and current question; under a tight budget it omits retrieved excerpts instead of truncating required instructions or the question. The configured prompt-character ceiling remains enforced.
+
+Focused backend validation for the selection-budget correction: `PromptAssemblerTests` 7/7 and `AiStreamingTests` 17/17 passed in one Maven run. The earlier Overview metadata and ProviderDiscovery evidence remains separate targeted validation. Source candidate is not deployed; no real Provider or business acceptance was performed.
+
+### 2026-10-25 Overview 整任务期限可关闭（源码与自动验证完成；未部署）
+
+`AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS` 缺省仍为 240000ms，配置 `0` 同时关闭同步 JSON/SSE 直接请求和持久后台 job 的整任务 deadline/watchdog。直接 durable WAITER 使用 elapsed Duration 比较，避免无界毫秒值转纳秒溢出。后台新 claim 在 0 配置下以 `deadline_at=null` 表示无界，V39 允许 RUNNING 行为 null 但仍要求 worker/lease；已有正数 deadline 不被延长或清除。单次 Provider response 仍为配置窗口（默认 120000ms），取消、owner/fence/lease、Guard、计量和预算不变。负值配置仍不合法。
+
+验证：后端定向 195 项、全量 881 项均为 0 failure/0 error；全量仅 1 个需要私有 trace 目录的 replay 测试跳过，`-DskipTests package` 成功。PostgreSQL/Testcontainers 使用临时测试数据库，未连接业务库、未调用真实 Provider、未重建或 recreate 容器。
+
+### 2026-10-24 Overview 全链路提示词细化（主 Agent 直接实现；相关验证通过，未部署）
+
+本轮针对 MiMo 实测 `2a307651-cafc-488c-8e14-df002e149ccd` 第三批索引的 `chapterTitle` 错键问题，重新核对所有现行 Overview 提示词。前两批已通过索引校验，第三批五个 chapter 都没有 `title`；输入中的 `priorIndexContext.chapterTitle/sectionTitle` 是可能的干扰线索，不将其断言为唯一成因。
+
+| 阶段/用途 | 证据与授权编号 | 输出及主要约束 |
+| --- | --- | --- |
+| INDEX / INDEX_COVERAGE | 仅本批 `materials[].text/unitAlias`；前后文和 priorIndexContext 不授权新引用 | 标准 outline 结构；每个 unit 至少覆盖一次，同节 ID 不重复；显式索引次生概念、条件、例外和区别，纠偏诊断样本不代替完整材料集合 |
+| METADATA | metadataItems 与 authorizedPlanAliases | 每个 plan alias 全局恰好一次；应用保留不可变 topic 绑定，不把 topicIds/unit IDs 当 plan 引用 |
+| ROUTE / 分桶路由 | lightweightTopics 与 authorizedTopicIds | 每个 topic 全局恰好一个主要归属；保留原始探针，unitCount/rawChars 为容量线索，共用目录提示不扩充授权范围 |
+| METADATA_ROUTE | lightweightIndex 与 authorizedPlanAliases | 每个 plan alias 恰好一次；生成目录和写作目标，不写正文 |
+| WRITE | originalTextUnits 与 authorizedUnitAliases；assigned/expectedCoveredTopicIds | 私有 schemaVersion/detailedContent/sourceIds/coveredTopicIds；只写当前证据，补全相关条件和例外；分组避免重复开场/结尾；部分证据不得脑补其他批次 |
+| GUIDE | 已完成目录与有界正文摘录；seed 仅导航提示 | outline=null；summary 内必须有 overview/keyPoints/learningPath，不重写正文或承诺未见内容 |
+| Source MAP / Subject DIRECT / Subject MAP | 当前 chunks 或已验证 sources 的内容和源级 aliases | 按用户 ALL/OUTLINE/SUMMARY 输出短总览，跨源归类并保留条件与冲突，不把缺失输入段落解释为原资料未写 |
+| REDUCE / SELF_PAIR / COMPACTION | 已压缩的 mapJson 与既有 aliases | 只归并等价/重叠主题；邻接不等于等价，不为压缩删除条件/例外/冲突；不适用于 adaptive 正文 |
+| REDUCE_RECOVERY（含 COMPACTION） | 当前 mapJson 部分片段 | 中间阶段明确允许缺失部分 null；最终阶段按公开 mode 组装，不能混用中间阶段的部分输出要求 |
+| JSON repair | 既有 malformedOverviewJson、目标 schema 与 allowedSourceAliases | 独立修复提示，不叠加主请求对缺失 materials/chunks 的要求；只修已有内容的字段/嵌套/语法，不从摘要推导不存在的索引 |
+
+统一约定：精确字段名及大小写、chapter/section 都用 `title`、真实 JSON null、非空文本/数组与容量限制；共享结构示例使用占位 ID，并明确占位符不提供引用授权。每轮自检键/嵌套/类型、授权编号与覆盖，不引入新的自检 completion。`chapterTitle/sectionTitle` 仍可作为输入上下文，不能作为输出字段。私有 writer 请求已去掉无关 expectedSummary；其余内部 outline 请求的 expectedSummary 改为 JSON null。提示词与请求变更沿现有 systemText/userData 指纹隔离受影响 checkpoint，不清除缓存、资料或账本，不升级全局算法版本。
+
+本轮不增加字段兼容映射、不放宽 validator 或自动 repair 白名单/次数、不改 Provider/env/预算/timeout、API/DB/前端。无外部 Provider 调用和部署。验证：D 盘隔离候选 clean-source 编译 379 个生产源码和 145 个测试源码；Adaptive 62/62、Recovery PostgreSQL 28/28，以及 AiOverview 78 项加最终 affected-only 两项复跑均通过，合计170项最终通过；不是一次全绿或全量后端结果。首次验证暴露提示词过长及旧措辞断言，收紧公开短总览重复说明后，第二批只剩两个长度边界夹具失配；修正固定字符数断言及收紧测试窗口后，两个受影响用例2/2通过。静态检查exit 0，主 Agent 最终审查B0/I0。未运行full/package：本次仅后端单模块提示词/定向契约变化；证据目录 `D:/Temp/auralis-overview-prompts-refined-20261024/`。此前阶段隔离版本已由用户部署为 `sha256:e074fa81335e9ba5e9b7a7419d27210d859ee24cb43ec15790dd026d52f74489`（香港时间 23:09:49 创建）；该镜像尚不含本次细化。
+
+### 2026-10-24 Overview 自适应阶段提示词隔离（源码候选）
+
+- 自适应索引/coverage、metadata、route 和 metadata-route 提示词只共用不可信输入与 JSON 规则，并明确要求根 `outline` 为数组、根 `summary=null`；各阶段既有指令继续定义各自的 alias 授权。写作后的 guide 单独要求 `outline=null`、summary 必需且 `learningPath` 位于 summary 内；writer 保留私有 `detailedContent` 响应契约。旧 MAP/REDUCE/SUMMARY 路径继续使用公共 mode schema。
+- 自适应 JSON repair 按目标阶段 schema 及已授权 aliases 拼装，仅携带待修复输出；既有索引专用 repair 保持。提示词 system-text hash 已纳入自适应 checkpoint step，旧 prompt checkpoint 自然 miss；无需清缓存或整体升级算法版本。无 API/数据库契约变化。隔离候选 `OverviewAdaptiveGenerationTests` 59/59 通过；首轮同批 `AiOverviewServiceTests` 80/80、`OverviewGenerationServiceRecoveryTests` 28/28 通过。Recovery 测试启动了 Testcontainers 临时 PostgreSQL fixture，未连接业务库。未运行 full suite/package；本轮 prompt 候选未部署、未调用真实 Provider。
+
+### 2026-10-24 Provider 思考开关（默认关闭；本机镜像已部署）
+
+- `AURALIS_AI_THINKING_ENABLED` 默认 `false`，由 Provider bean 读取。所有普通/结构化 completion 与流式请求共用同一请求体控制：DeepSeek 显式发送 `thinking.type=enabled|disabled`；OpenAI-compatible 仅在 `AiCredential.baseUrl` 的 URI host 精确为 `api.xiaomimimo.com` 时发送该字段。
+- 该专有控制当前只覆盖 DeepSeek 与官方 MiMo host。未知 OpenAI-compatible endpoint 不注入字段；任意自定义代理或模型自身推理不能由此开关保证关闭。Structured JSON、输出 token 上限、温度和 usage 行为不变。
+- 本机 `.env` 为 `false`。本机 backend 镜像于 2026-10-24 22:46:29 更新，digest 为 `sha256:5f65ebbd89c097092109fde92067a6c4975deb808e5f6d904c9d4a92204d487c`；该镜像含 thinking 配置，不含本节前述的自适应阶段提示词候选。部署时 Provider class SHA-256 `6E9528319CD569502908FC9C266C826AD672A5DA2918627C3D467069DE4D76FB` 与 thinking 候选一致。本节不代表真实 Provider 验收。
+
+### 2026-10-24 ADAPTIVE_INDEX 根外 summary 窄结构修复（源码与定向用例已补充；未部署）
+
+- 首根局部严格 reader 必须自行创建并读取 parser，不能把 `STRICT_DUPLICATE_DETECTION` 只设置到 reader 后再传入普通 Mapper 创建的 parser；后者在 Jackson 3.1.4 不生效。已修复该首根重复字段误接受问题，新增根对象/嵌套 section 重复字段拒绝且不保存 checkpoint 的回归，隔离候选 Adaptive 58/58、exit 0；未部署、未调用真实 Provider。
+- `OverviewDocumentValidator` 增加独立于 `deferAliasValidation`、默认关闭的显式结构修复参数；Service 只对 `ADAPTIVE_INDEX` 主响应及其 JSON repair 响应开启，其它 purpose 保持原行为。`overviewOutputRecoveryEnabled` 仍只控制既有 Provider JSON/coverage 等恢复，不推断或开关该结构能力，未新增全局配置。
+- 仅首次正常 `readTree` 失败后，才以局部严格重复字段检测解析首个 object；首根不得已有 `summary`（包括 null）。首根结束后的后缀仅以严格 JSON wrapper 接受恰好一个 `summary` 字段、一个合法 JSON 值并消费到 EOF，局部启用 `FAIL_ON_TRAILING_TOKENS`；额外 `]`、重复字段、其它尾部和多根均拒绝，不使用正则截断或通用删逗号/括号。字符串中的括号、转义引号和嵌套 summary 不参与边界判断。
+- 合并结果重新经过原 schema、summary shape、alias/coverage/mode/内部 shape 校验，合法冗余 summary 仍由既有规范化置空。任何候选失败保持原解析失败语义。主索引 prompt、请求数据、通用算法版本及 checkpoint key 不变；成功保存正常 primary checkpoint，不新增 Provider 调用，原 `PROVIDER_RESPONSE` 与 `VALIDATED_OUTPUT` 继续分别记录。历史失败 trace 不作为 checkpoint 采纳。
+- `ADAPTIVE_INDEX` 的 Provider JSON repair 改用独立 system instruction，不再拼接公共 ALL 或原索引 materials 指令；保留不可信输入、禁止新增事实、授权 alias、locator=null、schema/数量长度限制及 summary=null。repair userData 使用专用 requiredSchema、`expectedSummary:null`，不含 materials；仍最多一次。其它 purpose repair 不变。
+- `OverviewAdaptiveGenerationTests` 已加入合成成功/拒绝/边界、coverage、专用 prompt、缓存键与重试复用、trace 分离回归；统一编译/定向测试证据见当前状态。无公开 API、数据库、前端或算法版本变化；未部署、未调用真实 Provider，真实资料与业务质量未验收。
+
+### 2026-10-24 Overview 阶段 3–7
+
+自适应路由从不可变 topic catalog 建目录，writer 使用私有 detailedContent 契约并经 `OverviewBodyFormatter` 分段到公开 section；输出容量恢复使用持久 PLAN/RESULT 与 child checkpoint。ALL 导读在正文完成后进行一次同预算根的 ADAPTIVE_GUIDE completion。Preview NodeView 返回带独立 provenance 的全部 fragments。隔离候选中 Adaptive 48/48、Recovery 28/28、Preview PostgreSQL 10/10、Formatter 9/9 通过；末次两个受影响 Adaptive 方法 2/2、package、OpenAPI artifact 与 PC type-check 通过。Mobile type-check 有既有 `EventRequest/EventResponse` 引用缺失失败；受污染 full 855 tests（6 failures/29 errors/1 skipped）不作为通过证据，未在隔离候选重跑 full。未部署或调用真实 Provider。唯一只读 review 为 B0/I0/O0，发现的三项行为问题均已关闭。
+
+更新时间：2026-10-24
+文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；V16 阅读会话 scope、完成历史 Prompt、readingContext 当前 Source 检索和同学科确定性升级已实现；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；Subject 专属颜色已由 V19 移除并在本地 PostgreSQL 升级验证；Overview 阶段一、阶段二自适应索引候选已完成定向验证但未部署；ADAPTIVE_INDEX summary 规范化已部署且 readiness HTTP 200，批次别名提示修正 37/37、runtime review B0/I0，及 ADAPTIVE_METADATA summary 规范化 40/40、review B0/I0/O1 均已部署且 readiness HTTP 200。真实 Provider 与外部验收仍未完成
+权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
+事实来源：当前 Auralis-Server 源码、模块测试和本文所列隔离验证证据。
+
+### 2026-10-24 Overview 阶段二轻量索引覆盖与一致性（源码与定向验证完成；未部署）
+
+- `ADAPTIVE_INDEX_INSTRUCTION` 现要求索引主要与次生概念、定义、条件、例外、区别和冲突；按连贯学习目标组织，禁止一批一节、逐琐碎事实成节或为减少节数合并无关概念。`ADAPTIVE_ALGORITHM_VERSION` 升为 `overview-adaptive-v8-index-coverage-continuity`，隔离旧候选身份。
+- 第二批起可携带前序索引最近 6 个 section 的只读元数据：chapter/section 标题分别最多 120 code points，summary 最多 240 code points，不含 unit/source alias 或 sourceIds。上下文仅在实际请求容量允许时加入，容量不足时从较旧条目开始省略；实际 `indexData` 同时用于 checkpoint、batch 复用和请求身份，不会把上下文视为授权材料。原始前后邻接上下文与 materials 规则保持不变。
+- alias 漏绑、未知 alias、同节重复和空 section 的索引候选在 `overviewOutputRecoveryEnabled` 启用时可触发一次专用 `ADAPTIVE_INDEX_COVERAGE` 纠偏。该 purpose 只重放原批 materials、授权 alias 数量/缺失统计和有界缺失 alias 样本，要求返回完整替代索引；仍经 Gateway/Guard、调用与 Token 预算、deadline、checkpoint 和 trace。纠偏后必须重新通过现有 `requireCoverage`、内部 summary shape 和后续阶段校验；失败立即终止，不派发路由或 writer。主索引与 batch checkpoint 只保存纠偏后的完整结果。
+- 为让未知 alias 进入 coverage 判定，`OverviewDocumentValidator` 新增仅内部索引候选使用的结构解析路径：只延后 alias 授权、重复与空引用判定，仍校验 schema、文本、chapter/section 数量和上限。该路径不可能返回未通过 `requireCoverage` 的结果，其他 purpose 和纠偏关闭路径继续严格校验。纠偏恢复动作使用符合 coordinator `[A-Z0-9_]{1,48}` 的稳定短标识，审计动作最多保留 64 条。
+- 索引阶段不再用无法得知真实前序输出的占位上下文做一次性缓存预检；每批先按真实 `indexData` 查询自身/batch checkpoint，派发前仍由 `ensureAdaptiveCallCapacity` 与 Guard 检查实际调用和 Token 预算。`AI_TASK_BUDGET_EXCEEDED` 保持既有可恢复语义。
+- 验证：`OverviewAdaptiveGenerationTests,OverviewGenerationCoordinatorTests,OverviewGenerationServiceRecoveryTests,AiOverviewServiceTests` 共 192/192，Maven exit 0；只读审查修复后 B0/I0/O1，OPTIONAL 为动作格式缺少直接回归断言。该缺口随后由 test-only 断言补齐：直接调用生产动作生成方法并验证固定前缀、47 字符和 `[A-Z0-9_]{1,48}`，`OverviewAdaptiveGenerationTests` 48/48、Maven exit 0；未在其他生产变更后再次复审。未运行全量、PostgreSQL/MinIO、真实 Provider、GUI 或部署。提示和合成测试只能证明结构、授权、纠偏接线与确定性容量行为，不能证明真实模型的知识完整度、粒度质量或术语稳定性；需真实资料验收。
+
+### 2026-10-24 Overview 阶段一结构感知原文准备（源码与定向验证完成；未部署）
+
+- `TextChunker` 在保留 ordinal、normalized-text UTF-16 range 与既有 overlap 契约的基础上，优先选择段落、句子与行边界，并保护容量内的 fenced code、Markdown 表格、多行公式和编号列表；超长结构回退到行或 Unicode code-point 安全边界，不切开 surrogate pair。仅自适应索引准备的二次拆分复用该结构边界逻辑，writer 分组拆分保持原实现。
+- Adaptive inventory 仅在相邻 chunk 的 ordinal、generation、range 与真实前后文本均吻合时裁去 overlap，同步前移 `charStart`；整段仅为明确 `Page N [of M]` / `第 N 页` 类页码的 chunk 不分配 unit alias。不按长度、相似度或主题猜测删除正文。
+- 索引批次在同 Source/revision 的批边界附带最多每侧 240 个 UTF-16 字符的只读前后文；上下文字段不含 unit alias，授权 materials、coverage 与 writer 输入仍只使用本批/已路由单元。算法版本升为 `overview-adaptive-v7-structure-aware-index-context`，隔离旧输入和 checkpoint；公开 API、数据库 schema 与后续规划/写作/装配规则未改。
+- 这些确定性保护只能降低边界断裂风险，不能证明条件—结论、指代或跨批主题在真实模型中语义完整；一般页眉页脚、短段落与参考文献不按“噪声”自动删除。真实 Provider 与内容质量验收仍未完成。
+- `AiIngestionTests,AiSourceChunkTests,SourceChunkProvenanceTests,OverviewAdaptiveGenerationTests,AiQualityFixtureContractTests` 共 61/61，Maven exit 0；唯一只读审查 B0/I0/O0。日志 `D:/Temp/auralis-overview-phase1-tests.log`。未运行全量、PostgreSQL/MinIO、真实 Provider、GUI 或部署。
+
+### 2026-10-24 输入估算本机候选已部署
+
+- Overview 输入估算、正文预算与恢复链路已随当前 backend 部署；本机 `calibrated-category` 有效，基础默认仍 `legacy-bytes`。镜像 `sha256:72f6a41df02f8497fe32d2d0c3cbb18580ed2671b1c233ec9b41a95f658cc49d`，healthy/readiness UP，唯一只读 review B0/I0/O0。
+- 离线 gate PASS、相关 43 项和 package 通过；没有真实 writer 样本，Provider/正文质量仍待用户实测。完整原始 full stdout 的留存缺口与未重跑范围见 `D:/Temp/auralis-budget-step3-20261024/final-handoff.md`，不得声称 full suite 全绿。部署没有主动触发 Provider，缓存及账本保留。
+
+### 2026-10-24 ADAPTIVE_WRITE 正文预算路径（源码与定向验证完成；未部署）
+
+- 正文 writer 输出预留按完整序列化 writer 输入与结构负载估算，范围为 4608–6144 tokens；4608 是缺少真实 writer 样本时的保守工程下限，不代表内容质量已验证。长材料继续使用 6144 上限与既有拆分，不按剩余额度压缩原文或输出目标。
+- 同一派生 cap 用于 packing/context fit、平台 writer preflight、Provider `maxTokens`、Gateway/Guard reservation、截断判断及 checkpoint/journal node 身份；descriptor 与 donor lookup 使用相同 writer step。预算拒绝继续沿原 generation/budgetTaskId、已结算 usage 和已验证 checkpoint 恢复。预算不足通过现有 `AI_TASK_BUDGET_EXCEEDED` 响应，不新增 PAUSED 状态、API 字段或数据库结构。
+- writer budget forecast 记录同一 generation/budgetTaskId 下的 verified 与剩余 writer 数、单次 reserve 和 aggregate upper forecast。平台进度记录 task-scoped charged（实际与保守估算可能混合）、reserved 在途额度和配置剩余额度；BYOK 只输出实际计量和 forecast，不执行平台 token 额度拒绝。预算停止、恢复与完成日志可按同一预算根关联，不包含 prompt、正文或其他用户/全局额度。
+- writer 进度与全 checkpoint 命中的预算快照、以及恢复时附加的预算根 trace 都是 best-effort 诊断：读取或记录失败只写安全诊断告警，不改变生成、缓存装配或 owner lease 生命周期。用于准入、Provider 派发前评估和 coordinator 结算/失败持久化的业务读取仍保持原有失败语义。
+- Maven 定向及 PostgreSQL service-level recovery 验证结果、命令和边界见 [当前状态](../current/Status.md)。真实 Provider writer 样本、内容质量、部署和 GUI 未由源码或合成测试证明。
+
+### 2026-10-24 Overview completion 输入估算接线（离线 holdout/full/package gate 待完成；未部署）
+
+- `AiInputTokenEstimator` 统一解析 Profile。仅显式 `calibrated-category` 模式、DEEPSEEK、精确 requested model `deepseek-v4-flash` 和规范化官方 `https://api.deepseek.com` endpoint 可选择分类 profile；其他身份维持 UTF-8 bytes。分类 profile 仅用于 Overview 非流式 MAP/REDUCE completion，Chat、stream、embedding 不变。
+- 分类 profile 对每条满足保守形态谓词的 message，将 Han 字符 run 按现有 category base estimate ×2 估算，其他字符保留 UTF-8 bytes；其它 message 原样按 bytes。全请求一次性加 `max(64, 4 × messageCount)` framing/margin，并 clamp 到 legacy `UTF-8 bytes + 4/message`。含异常 Unicode、unsupported script/shape、极长 Latin/digit run、未完整合法 JSON 的 JSON 形态或计算异常时，该 message 回到 bytes；resolver 身份未知则整个请求回 legacy bytes。Gateway 的原始请求 UTF-8 safety cap、Guard 原子 reservation 与 usage settlement 不变。
+- Overview context fit、preflight、`fits` 和 Gateway reservation 使用同一配置与 provider/baseURL/requested-model resolver；记录 estimator profile/strategy 与安全计数，不记录 prompt/key/credential。Estimator identity 仅用于预算评估与诊断，不改变已验证 checkpoint/content profile fingerprint。输出 cap、prompt 原文与已完成缓存命中预算行为不变。
+- `AURALIS_AI_OVERVIEW_INPUT_TOKEN_ESTIMATOR_MODE` 默认 `legacy-bytes`。纯离线 replay 对6个trace run的40次请求按 system/user hash 去重为34对；其中25个支持形态且完整 usage 的独立 prompt 对均未低估，INDEX覆盖15/24、METADATA 8/8、ROUTE 2/2；最低估算/actual coverage 322.86%，相对旧 bytes reservation 总量减少16.77%。该结果只覆盖当前本机 trace 形态，不构成通用 tokenizer 或模型行为校准；trace 运行结果均为 FAILED，writer 样本为0，不能推断写作正文场景。usage 缺失时仍以 reservation 保守结算。本轮 full suite 为836/837通过，唯一错误是 replay test stage 聚合的 null-safe 测试夹具问题；修正后相关定向批次43/43通过，package通过。review、部署和本机 Provider 验收状态见 [当前状态](../current/Status.md)。
+
+### 2026-10-23 ADAPTIVE_INDEX summary 规范化运行态（已部署；readiness HTTP 200）
+
+- 合法冗余 summary 的规范化修正已部署；当前后端 readiness 返回 HTTP 200。该运行态检查仅证明服务就绪，不代表真实 Provider、生成成功或内容质量验收。
+
+- ADAPTIVE_INDEX 批次别名提示修正已部署：backend healthy、readiness HTTP 200，追踪/adaptive 配置与 D 盘采集 bind 已确认。未调用 Provider；真实生成及内容质量仍待用户验收。`D:/Temp/auralis-index-alias-fix-20261023/startup/handoff.md`。
+### 2026-10-23 ADAPTIVE_METADATA summary 规范化（已部署）
+
+- 内部 ADAPTIVE_METADATA 在 ALL 模式下将 summary 规范化为 null，适用于新响应和恢复的旧 checkpoint；普通 INDEX summary 保持原样。backend healthy/readiness HTTP 200，trace/adaptive flags 与采集 bind 已确认。未触发 Provider；真实资料生成及内容质量验收待用户完成。证据：`D:/Temp/auralis-metadata-summary-fix-20261023/startup/handoff.md`。
+### 2026-10-23 Overview M5.4：正文 checkpoint 跨任务复用（源码、分批定向验证与唯一审查完成；未部署）
+
+- `findReusableAdaptiveWriterCheckpoint` 限同 owner/scope、完整 input/profile/algorithm 与 exact prompt-derived writer step 的 SUCCESS donor；连接 checkpoint 至 VERIFIED execution node 和 ASSEMBLED plan，校验 checkpoint/node hash、plan fingerprint、descriptor hash/inclusion，并要求 node 当前 attempt 的 `overview_execution_calls` 关联到 `ai_usage_reservations.request_dispatched=true`。无真实 dispatched reservation 的 cache-materialized node 不能作为 donor。
+- 当前 generation checkpoint 优先。writer `beginAttempt` 在执行期 donor lookup 前运行；unknown dispatch / `RECOVERY_REQUIRED` 保持 hold。命中后继续现有 response validator、current owner/source、shape/coverage 校验，并经既有 `verifyAndSaveCheckpoint` 事务物化本代恢复 checkpoint及 VERIFIED node。此操作不更新 donor checkpoint/TTL；命中不新增 reservation 或 usage-call，记录 donor ID，不依赖持久 origin 字段。
+- preflight 使用同一 donor predicate；donor 在 preflight 后到期时按原 miss/Guard 处理，可能预算拒绝。现有 assembly/provenance/assembled-plan/writer/journal 路径继续运行；M5.2 batch 与 M5.3 planning 复用保留。
+- 两份后端源码及两份测试变化；无 API/schema/migration/frontend 变化。首轮 55 项 52P/3E；affected 首轮 3P/1F；unknown-only 1/1、final affected-only 4/4 exit 0，未重跑55整批。唯一只读 reviewer B0/I0/O0。未运行 PostgreSQL/full/package/OpenAPI-SDK/Provider/GUI/Docker/部署。详见 `D:/Temp/auralis-overview-m54-20261023/final-handoff.md`。
+
+### 2026-10-23 Overview M5.3：目录规划跨任务复用（源码、分批验证与唯一审查完成；未部署）
+
+- 同 owner、scope、profile、algorithm、完整 generation input 与 exact prompt-derived step 匹配时，可只读复用 SUCCESS generation 的 `ADAPTIVE_ROUTE`、`ADAPTIVE_METADATA` 或 `ADAPTIVE_METADATA_ROUTE` checkpoint，包括必要层级 metadata。Donor 还须通过 result 到期、checkpoint 14 天窗口与 payload SHA/schema 校验；执行前保留现行 owner/current-source 与 route coverage/shape 校验。当前 generation checkpoint 优先；donor 不复制、不延寿。
+- 命中规划 checkpoint 后继续原 writer 与持久 journal；不跨任务复用正文，M5.2 index-batch path 保持不变。Planning cache hit 不产生虚假 Provider usage，writer 的现有 Provider 调用照常执行。
+- gpt-6-luna high 实现。首轮 Maven 批次 50 pass / 1 error（Adaptive 28/28，Coordinator 22/23）；fixture lease-order error 归因后，仅 affected test 复验 1/1、exit 0，未重跑整批。唯一只读 reviewer 结论 B0/I0/O1；O1仅为文档同步项，本次回写处理，未做文档更新后复审。四个源/测试文件之外未改本轮其他文件；无 API/schema/migration/frontend 变化。
+
+### 2026-10-23 Overview M5.2：索引 batch 指纹与 checkpoint 复用（源码、定向验证与唯一审查完成；未部署）
+
+- `index_batch_v1_SHA` 将 system prompt、`indexData` 与有序完整 `AdaptiveRawUnit` 记录绑定为 batch 身份。新生成任务先用自身 checkpoint；缺失时仅同 owner、scope、profile、algorithm 的 SUCCESS donor 可提供相同 batch。donor checkpoint 的 input fingerprint 必须与其 donor generation 相等；同时验证 payload SHA/schema、checkpoint 14 天有效期与 result 到期。原 M5.1 完全相同 task input 路径仍保留；使用前继续现行 Source/owner 与 index coverage/shape 校验。
+- donor checkpoint 只读，不复制、不延长寿命。只有本任务实际发起 Provider 生成并通过 coverage/shape 校验后，才保存关联当前请求 input fingerprint 的 batch checkpoint；变化 batch 不与旧结果拼接。命中仍继续当前目录与正文流程。
+- gpt-6-luna high 实现并验证；隔离 D 盘 Maven 定向批次 `-Dtest=OverviewGenerationCoordinatorTests,OverviewAdaptiveGenerationTests test` 为49/49（22+27），exit 0。唯一只读 reviewer（gpt-6-luna high）B0/I0/O0。初次 fixture 序号错误已归因并仅调整注入位置 8/9→14/15，原 dispatch 断言保留。无公开 API/schema/migration/前端变化；未做 full/PostgreSQL/package/Provider/GUI/部署验收。
+
+
+### 2026-10-23 ADAPTIVE_INDEX 冗余 summary 规范化
+
+- `ADAPTIVE_INDEX` Provider 响应若包含合法的冗余 `summary`，服务端在通用文档解析后将其规范化为 `null`，保留 outline 与 provenance；checkpoint 写入和恢复均使用规范化响应。原 Provider 响应仍由追踪记录，后续 index coverage、outline 形状及其它阶段校验保持现行规则。其它 purpose 不应用此规范化；无公开 API、数据结构或迁移变化。
+
+### 2026-10-23 ADAPTIVE_INDEX 批次别名提示
+
+- index 请求投影仅向 Provider 暴露本批 `unitAlias`、标题、ordinal 与文本，并明确 `sourceIds` 只能引用本批 unit alias；内部 `sourceAlias` 与真实 source UUID / chunk / revision provenance 保持原样，用于 owner/source 绑定、验证映射与最终 provenance。index batch 与 checkpoint fingerprint 已包含 system prompt 和请求数据，提示投影变化会自动隔离旧别名提示生成的缓存；validator、coverage 和 route/writer 围栏不放宽。无 API、数据库或前端变化。
+- `OverviewAdaptiveGenerationTests` 定向验证 37/37，Maven exit 0；未运行全量测试、PostgreSQL/MinIO 集成、真实 Provider、GUI 或部署。证据：`D:/Temp/auralis-index-alias-fix-20261023/final-handoff.md`。
+
+### 2026-10-23 Overview 全流程追踪采集器（实现、验证与唯一审查完成；未部署）
+
+- 新增独立 `ai.diagnostics` 追踪端口、不可变事件、配置和文件采集器；同步 Source/Subject 与 adaptive 后台执行路径发安全事件，覆盖输入、索引/规划/写作、Provider 前后、校验修复、缓存命中和终态。Provider 输出指 `AiProviderPort` 返回的 content，不是 HTTP envelope、网络流或模型私有推理。追踪只观察既有请求、dispatch binding 与响应 usage，不改变 Gateway/Guard、预算、Provider 次数、业务状态或事务；缓存回放不记作 Provider 调用。
+- `AURALIS_OVERVIEW_TRACE_ENABLED` 默认 false、`AURALIS_OVERVIEW_TRACE_CAPTURE_CONTENT` 默认 false，`AURALIS_OVERVIEW_TRACE_DIRECTORY` 默认 `/app/overview-traces`。关闭时不创建采集器、线程或目录；启用后仅元数据默认采集，正文由独立 opt-in 控制。文件落在 owner UUID/run UUID 目录，固定包含 NDJSON、JSON 汇总与 Markdown 报告。事件写盘采用有界单写者；采集错误只使记录不完整，不改变业务结果。
+- 字段/事件/队列和存储上限、24 小时 root-preparation 清理触发、内容采集语义及本地文件删除边界见[基础设施模块](Infrastructure.md)和[实施计划](../plans/2026-10-23-overview-test-tracing.md)。无 API 或数据库 schema 变化。
+- 验证：focused 87/87、全量 Maven 813/813（0 failures/errors/skips）、`-DskipTests package` exit 0；唯一只读 reviewer B0/I0/O0。未运行真实 Provider、部署、GUI 或业务内容验收。
+
+### 2026-10-22 M5.1：完全相同输入的跨任务轻量索引复用
+
+- 新生成任务先读取自身 checkpoint；缺失时，仅 ADAPTIVE_INDEX 可查询同 owner、scope、完整 input fingerprint、profile、算法和 prompt step 的 SUCCESS generation。读取同时检查 result 到期和 checkpoint 14 天有效期，以及 payload SHA/schema；使用前继续执行现行 Source/owner 校验和索引 coverage/shape 校验。
+- 复用现有 overview_generation_checkpoints，只读命中，不复制缓存、不延长原条目寿命、不新增表或迁移。目录和正文仍执行当前生成流程；命中不派发 Provider、不伪造 usage，记录 ADAPTIVE_INDEX_CACHE_RETURN。预算预检识别可复用索引。
+- 本小节只覆盖完整输入未变化时的新任务复用；资料局部变化、节点级依赖失效、目录/正文跨任务缓存及完整删除生命周期仍属于后续 M5，不能据此标记 M5 完成。现有前端流程保持。
+- 验证：D 盘隔离源码运行 OverviewGenerationCoordinatorTests 21/21、OverviewAdaptiveGenerationTests 26/26，共 47/47，Maven exit 0。覆盖跨 owner/输入/profile 隔离、过期、损坏拒绝及生成链路跳过索引而继续目录/正文。当前为 H2/合成 Gateway 证据，未运行 PostgreSQL、全量测试、打包、真实 Provider、GUI 或部署。本轮依用户要求由主模型直接实现并检查，未启用子代理。
+- 证据：D:/Temp/auralis-overview-m51-20261022/targeted-tests.log 与 handoff.md。更早前端回退的四项失败未由本轮处理；此前范围审计按用户最新要求暂置，尚无完整审计结论。
+### 2026-10-22 Overview M4 PC candidate adoption（源码、相关验证与唯一审查完成；隔离浏览器后端接口流程完成；未部署）
+
+此处记录的是 Server 侧能力：现行 formal PUT 继续支持 `candidateInput`，durable job/publication、receipt 与 preview/section API 保留。PC M4 consumer 已按用户决定撤回；当前 PC 不消费这些新增接口。回退前隔离浏览器流程只证明当时的 Server API 接线，不能作为当前 PC UI 验收。
+
+- 现有 Source/Subject formal result PUT 接受可空 `candidateInput {jobId,jobVersion}`；独立 resolver 按 owner、scope、job version、current raw snapshot、profile/algorithm 与 assembled plan 重建服务端 descriptor。继续使用 active authorization、source revision、identity/provenance、partial summary、CAS、clientWriteId 与 exact receipt；不依赖旧 Subject FILE part versions，不自动发布或 rebase publication intent。
+- M4 无 Server migration；PC local schema v13。backend full 774/771P/1F/2E，affected group 3/3；SQL NULL bind 42P18 fix 的 PG 回归 1/1，post-fix skipTests package Maven/Docker 0/0，新 JAR 93,458,173 bytes，SHA-256 `b3da690b3d9cae5c0d73f13e2f2c0fc44780274773b41533d9621b16ea0fe6ef`。唯一 final source-type-fence delta review B0/I0/O0 new，原 O1 保留。隔离浏览器通过合成 Provider 验证真实后端接口流程；未接用户业务数据库、真实 Provider 或部署。API artifacts 未因 SQL 修复重新生成；先前门禁证据保持独立。
+
+### 2026-10-22 Overview M3.4 正式发布与已验证分节读取（源码、相关自动验证与唯一审查完成；未部署）
+
+- 候选接线把 native Source/Subject job 的选定 raw source/chunk snapshot 显式绑定到正式 result 的 outline/summary part；保留现行 `OverviewResultService` owner/currentness/CAS/write receipt boundary，不伪造历史 Subject FILE part versions。
+- 新增 publication intent 两阶段入口、scope-filter reconnect list、VERIFIED-only plan preview 与 formal outline/section reads；正式 outline 仅返回稳定身份、路径、标题及 chapter metadata，不返回 section 正文或 summary，正文按当前版本通过单节读取。completion candidate、result、exact receipt、intent 状态分离并由本地 DB transaction fence。V37、API artifacts、package 和相关 PostgreSQL/API 测试已完成隔离门禁；完整 full run04 有失败并保留，受影响组定向复验闭合。未部署或调用真实 Provider；自动验证不代表 GUI/内容验收。详见 [M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。
+
+### 2026-10-22 Overview M3.3 持久后台作业（源码、相关自动验证与唯一审查完成；未部署）
+
+- OverviewJobController/Service/Repository/Worker 为自适应 Source/Subject ALL、OUTLINE 提供持久 job API、owner-scoped 查询、数据库 claim/fence/lease、限界 executor 与 pause/resume/cancel/reconcile 控制。worker 复用现行默认关闭的 overview-adaptive-generation-enabled 开关；同步生成路由保留。
+- 首次 claim 固定绝对 deadline；pause、resume 与 worker 接管沿原 job/generation/budget 继续，不重置期限或累计 usage。全部 Provider reservation（index、目录/metadata、writer、repair）由 generation invocation journal 精确关联，并在 dispatch 前通过 Guard transaction callback 校验 job/generation owner、fence、lease 和控制状态。
+- raw budget_task_id 保持原始预算 UUID；invocation task_id 使用 AiUsageGuard 的稳定派生 ledger UUID UUID.nameUUIDFromBytes((userId + ":" + feature + ":" + rawBudgetTaskId).getBytes(UTF_8))。预算、结算与同预算安全重试语义不变。未知派发 usage、缺失或错配关联继续 hold；cancel 不承诺撤回远端调用。候选不自动发布到正式 OverviewResult/KB/Review。
+- 相关自动验证、package、OpenAPI/SDK 对照与唯一 review 已完成，细节及失败批次限制见 [M3.3 计划结案](../plans/2026-10-19-overview-m33-background-jobs.md)。未部署，未使用真实 Provider/生产业务数据库，未完成 GUI/内容质量验收。正式发布与预览由 M3.4 完成；PC consumer 曾在后续接入，现已按用户决定撤回。
+
+### 2026-10-19 Overview M3.2 writer execution journal（源码、相关验证与唯一审查完成；未部署）
+
+- Adaptive Source/Subject ALL/OUTLINE 在 writer 分组和预算预检后，保存完整有序 plan 与每个 writer node 的来源/revision/chunk/generation/ordinal/content hash/range 描述。私有 JSON 不存原文正文、凭据或完整 prompt；不改变 Provider 四字段 canonical JSON。
+- `OverviewExecutionJournal` 在短事务内按 user→generation→plan→node→call 锁序执行当前 owner/fence 校验。scope reservation callback 在 Gateway 派发前保存真实 reservation UUID；主 writer 与递归 JSON repair 共享当前 node/attempt binding。writer 的完整结构、section shape 和授权 unit 覆盖校验成功后，主 checkpoint 与 node VERIFIED 原子提交；generic parse/repair checkpoint 不提前固化该 writer step。
+- Takeover 仅复用身份匹配且 hash 完整校验的 VERIFIED checkpoint；缺失 checkpoint 只在精确关联的历史 reservation 都已知安全后允许新 attempt。仍派发、派发后未知或关联不完整时显式 hold。新 profile/算法/输入保留旧 plan 与预算历史；不以另一个 profile 或 task 绕过 unknown。当前算法版本提升以隔离旧 checkpoint。
+- 相关验证：全量 backend attempt 为 737 tests / 731 passed / 2 failed / 4 errors / 0 skipped；之后对应六个失败用例定向 6/6，通过 reviewer 修复后新增 PostgreSQL 方法单独 1/1。全量套件未在修复后重跑。`-DskipTests package` 成功，JAR 93,303,380 bytes，SHA-256 `D6EA3279DD60D47BF7B8F8068162A2A828A6B1801063FD1C864848D296A046C4`。唯一 reviewer BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。未部署，真实 Provider/生产数据库及 GUI 未验收。详见 [M3.2 计划](../plans/2026-10-19-overview-m3-execution-journal.md) 与 D 盘验证报告。
+
+### 2026-10-19 Overview M3.1 分层目录规划（源码、相关验证与唯一审查完成；未部署）
+
+- 小输入继续使用现行单次有界目录调用；聚合索引 prompt 不适配时，分层 metadata 分组整理及最终目录路由仅重组 metadata。每个计划 alias 仅在应用私有映射中绑定有序原始 unit aliases；最终目录展开、按 inventory 顺序规范化后沿用现有 writer 分组及 M2 provenance。
+- 层级限制为最多 4 层、64 次 metadata 分组调用、累计 2000 个 metadata 输出项，raw inventory 仍最多 500 条；最终 60 章/500 节、每节 100 refs、payload、单元正文、Guard/父任务/总预算均沿用原限制。无进展、单条不适配或超限明确失败。metadata 不接收原文或已验证正文。
+- 算法版本已提升以隔离旧 checkpoint，不承诺跨算法读取/回退。focused 初始两类 batch 为 47/46P/1F；唯一失败方法 attempt 4 单独 1/1 通过；未重跑整套47项。唯一 review B0/I0/O0。未调用真实 Provider、业务数据库或部署，未完成 GUI/语义质量验收。完整证据见 `D:/Temp/auralis-overview-m3-planning-20261019/final-validation-report.md` 与 `reviewer-final-report.md`。
+
+### 2026-10-19 Overview M2 稳定身份与来源关联（实现、相关验证与复审完成；未部署）
+
+- `OverviewResultCommand` 接收独立 `outlineIdentity`（schemaVersion 与完整节点 path/nodeId）；服务端仅接受当前结果已有 nodeId 或为 null 的新节点，分配 UUID 并重新计算 contentHash/contentVersion。标题改名保留身份，实质内容变化升版，纯排序不升版；旧结果 GET 为 null/false，不隐式初始化。SUMMARY 写入保留当前 metadata。
+- `OverviewResponse` app-only `outlineProvenance` 在 Provider 四字段 canonical 校验后由应用附加，经过受信 alias 映射、缓存/replay 和结果保存。保存时从 owner/source/revision/active generation 的持久 chunk provenance 重建 canonical refs；缺少旧 chunk metadata 时不推断 block/page。
+- V34 clean/upgrade/事务 PostgreSQL 回归通过：`OverviewIdentityPostgresIntegrationTests` 4/4，`TaskColorRemovalMigrationTests` 6/6。此前 full clean run 为 723 tests/1F/4E/0S；各失败类随后均定向通过，未重复完整套件。最终 OpenAPI 13/13、官方 artifact 与两端 SDK byte-identical、PC type-check、package 均通过（详情及 hash 见 `D:/Temp/auralis-overview-m2-20261019/final-validation-report-attempt13.md`）。Mobile 仍有既有两个 Event SDK 类型错误。真实 Provider、生产业务库、部署和 GUI 未验收。
+
+### 2026-10-19 内容规模自适应总览 M1（源码、自动门禁与复审通过；未部署）
+
+- 默认关闭的 `auralis.ai.overview-adaptive-generation-enabled` 开启后，Source/Subject 的 ALL、OUTLINE 使用当前所选 READY Source 原文，经过轻量索引、单次有界目录规划、按节原文写作与程序装配；SUMMARY 保留现行短摘要语义。公开 `OverviewResponse` shape 不变。
+- 适配 inventory 通过 `SourceChunkRepository` 的 owner/source/active/ordinal 有界 List 查询读取所有选定来源，最多 500 条 active 原始 chunk row（空白 row 也计数）；读取剩余容量加一条 sentinel，命中即在完整 identity/hash 与 Provider dispatch 前明确拒绝。接受的输入不截断。适配 Source 不先读取 legacy 全量 List；preflight 在有界 inventory 后结束。来源修订围栏仍独立重读原文身份。
+- 调用沿用 Gateway/Guard、父任务、凭据来源、期限、取消、完整 JSON 校验、一次 repair 与 checkpoint。平台预算预检通过真实 TaskLease/Guard owner fence 取得 task scoped occupancy snapshot，admission occupancy 与 Guard 一致；charged 和活动 reservation 分开，审计 `taskUsageForOwner` count 语义不变。snapshot 契约不可用时按契约/服务错误失败；BYOK 保留技术限制与计量，不扣平台财务上限。
+- M1 初始目录规划仅为一次有界 aggregate-index 请求；该限制已由 M3.1 有界 metadata 层级规划取代。M3.1 不支持任意规模或语义无损保证；M3 后台 jobs、暂停/恢复和发布仍待交付。
+- focused attempt4：7 suites / 175 tests / 0 failures / 0 errors / 0 skipped，Maven exit 0。Full attempt6：122 suites / 711 tests / 0 failures / 0 errors / 0 skipped，Maven/Docker exit 0（4:17）。这些是 M1 证据。M3.1 验证结果见本页开头的新阶段记录。
+- Package `-DskipTests` Maven/Docker exit 0；JAR 93,205,090 bytes，SHA-256 `E9637F9615EC6B7EB445C36CE18E89F7ACC9948965067832A18DD12543E6305B`。Synthetic Compose false/true `config --format json` 均 exit 0，渲染值匹配开关；只渲染、未启动服务。Final input manifest SHA-256 `CC21E28C7D7C9C5F72158B1F25321BA901D62174DFE085308B05EEAD4A22FE31`，12 owned + 2 context paths 的 source/snapshot/workspace/live hash 一致。
+- 唯一 reviewer 的最终 correction delta 为 BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0；bounded-inventory 问题已关闭。之后仅增加测试 `Mockito.verify` 静态导入，focused/full 已覆盖该候选，逻辑和断言未变。中间环境、导入及 harness 重试仅保留在 D 盘历史证据中。
+- 未部署；本轮未调用真实 Provider、生产/业务数据库，未完成 GUI 或内容语义质量验收。任务隔离 PostgreSQL 测试不代表生产/业务数据库验收。完整 M2–M6 仍未交付。
+
+### 2026-10-16 unified AI operation policy and provenance
+
+All existing Provider entry points still use `AiInvocationGateway`. A central immutable operation matrix validates operation kind, feature, stage, actual scope method, and trusted output role. `AiSettingsService.ResolvedSettings` carries the resolved source beside the credential snapshot; Chat/Overview completions, Chat/Ingestion embeddings, and Provider setup metadata/test pass it explicitly on each call. Missing/unknown source fails before reservation as `AI_POLICY_CONTRACT_VIOLATION`.
+
+`AiUsageGuard` persists operation kind and source per reservation. Shared concurrency, leases, cancellation and settlement continue to cover all sources. Platform task/window quotas include confirmed platform calls and NULL-origin history; BYOK retains ledger audit without consuming platform task or window quotas. Learning Turn/Draft are registered synthetic operations with all-origin one-call stage rules and no learning business-layer dependency. Scope exposes its actual task ID, with an internal owner-scoped query restricted to an explicit operation-kind set.
+
+Overview passes FINAL/INTERMEDIATE into the Gateway and uses platform-only task usage for platform preflight. BYOK does not inherit the 24-call/524288-token platform precheck; its model-context, request, output, deadline, cancellation and existing finite recovery protections remain active. The `/api/ai/usage` window fields remain platform quota figures and `allCalls` adds all-time source-separated actual/unknown/charged/reserved audit totals. Automated verification, PostgreSQL migration/competition checks and runtime acceptance are reported separately.
+
+### 2026-10-16 离线 usage reader 分开报告实际 usage 与 shadow 覆盖（定向测试通过；未部署）
+
+- `scripts/aggregate-ai-token-shadow.mjs` 的 JSON summary、分层 CSV 与 CLI 摘要现在分别输出唯一、无冲突、已派发 ledger 中 actual usage 完整/未知数，以及 missing shadow event、matched shadow usage unknown 和歧义 join 数。actual 完整要求 ledger 的 input 与 output 都非 NULL；NULL 不从日志补填，charged exposure、legacy `unknownUsageCount`、accuracy 样本资格、`INCOMPLETE` 和 exit 2 语义保持。
+- 合成回归覆盖完整 actual 缺 shadow、完整 actual 匹配 unknown shadow、NULL actual 缺/unknown shadow、zero actual、未派发和冲突 duplicate。现有 27 项测试加 2 项新增用例共 29/29 通过。离线 46-ledger / 7-shadow 复算为 actual complete 46/46、actual unknown 0、missing shadow 39、matched unknown 0、ambiguous 0、accuracy sample 7；这些 39 项是比较覆盖缺口，不是实际用量未知。估算仍 uncalibrated，未减少 Provider 消耗；报告在 `D:/Temp/auralis-usage-research-20261016/research-report.md`。
+
+### 2026-10-16 RAG 引用证据片段改为有界 query-aware 选择（定向验证通过；真实 Provider 待验收）
+
+- `RetrievalService` 将当前 query 传入 citation 构建；每段仍最多 400 个 Java 字符。遇到通用定义/含义问题或明确引用术语时，会在 chunk 前 65,536 字符内以有界扫描寻找焦点词，并优先选取邻近定义线索的连续原文窗口；没有匹配时保留原前缀行为。截取会避开拆分 UTF-16 surrogate pair。
+- Citation 的 source/chunk ID、排序及相同 `excerpt` 进入 `PromptAssembler` 的行为保持。owner/active/revision/scope 过滤仍先于 TopK；TopK、12000 prompt 字符上限、Gateway 与两次 Chat 调用预算均未改。未新增 API 字段、DTO、DB schema 或 Provider 调用。
+- RED 在修正合成 fixture 的目标偏移后为 17 项中 4 项失败；GREEN 的 `AiRetrievalTests` 与 `PromptAssemblerTests` 共 21/21 通过，包含选定来源隔离、后置单字定义命中及 prompt 接线。完整定向命令与限制见 `D:/Temp/auralis-rag-pass-definition-20261015/implementation-20261016/implementation-report.md`。真实 Provider 回答质量与 GUI 未验收。
+
+### 2026-10-15 AI 影子观测与离线聚合（代码、定向、full/package 与复审完成）
+
+- 内部 `AiProviderResponse`、stream chunk 和 embedding result 带有独立 Provider model identity metadata。Gateway 继续以安全 sanitizer 记录 request model，并把实际 response model 记录为 `observedModel` / `observedModelStatus`；`MISSING`、`INVALID`、`CONFLICT` 不会复制 request model。日志不包含 prompt、回复正文、凭据、endpoint URL 或原始异常。当前能力校准仍为 `char-category-v1-uncalibrated`，影子估算不参与 reservation、上下文或准入；Overview 24 / 524288 / 240 秒、Chat 2 calls 均保持。
+- Compose 显式透传 `AURALIS_AI_SHADOW_TOKEN_ESTIMATE_ENABLED`，默认 true；false 只关闭观测日志，不切换 admission estimator。配置项和 internal model metadata 未改变公开 DTO、API 或 DB schema。
+- 离线工具 `scripts/aggregate-ai-token-shadow.mjs` 不连接网络、Provider 或数据库，输入必须由操作者显式提供日志和 reservation JSON/CSV 投影；可选 `--reservations-format json|csv`、synthetic `--manifest`，并要求新输出目录 `--out-dir`。调用形态：`node scripts/aggregate-ai-token-shadow.mjs --logs <selected-log> --reservations <reservation-export> [--reservations-format json|csv] [--manifest <synthetic-manifest.json>] --out-dir <new-directory>`。输出 `summary.json`、`groups.csv`、`issues.json`；其状态始终标为 shadow-only / uncalibrated，actual NULL、conservative charged 和旧/候选估算分开保留。
+- Reader 仅接受 bare marker、经验证的 `HH:mm:ss.SSS [thread] LEVEL logger -- AI_TOKEN_ESTIMATE_SHADOW` 前缀，以及 round4 实测的 ISO timestamp + INFO + numeric PID + 两个 bracket fields + `c.a.app.ai.usage.AiUsageGatewayService`（短名或全名）+ colon 前缀；不接受任意 logger。生产者和 reader 通过 reservation UUID 对齐，冲突身份隔离，原始行和值不写进输出。Incomplete join/输入输出 `INCOMPLETE` 并以 exit 2 返回，完整 synthetic CLI 示例 exit 0。
+- 定向结果：provider/config/gateway/security 39/39（Config 8、Identity 5、Gateway 7、Security 19），synthetic Compose true/false render exit 0；offline CLI 27/27 exit 0，synthetic CLI 示例 `COMPLETE`，1 reservation、1 group、0 issue。D 盘统一快照 clean backend gate 116 suites / 674 tests / 0 failures / 0 errors / 0 skipped，Maven 与 launcher exit 0，Guard lock PostgreSQL 4/4；116 XML/TXT 已保留。同一快照 package exit 0，artifact SHA-256 `723919B7517A21B7A1C458F8708B3E6BFDE1E70DCF2D3478A45BA2894204A236`，508 项 manifest 与 canonical/live 零差异。最终 reviewer B0/I0/O3，三项 OPTIONAL 保持未改，详情见[当前状态](../current/Status.md)与[最终 review](D:/Temp/auralis-ai-observability-step2-20261015/review-report.md)（SHA-256 `519A055B986F8BD044556DE45DE486454DD59FB2F4D27C4BBB87A57D76D657EC`）。早期 C 盘空间阻塞与 runner 尝试历史见 [attempt 4 报告](D:/Temp/auralis-ai-observability-step2-20261015/final/attempt3-pg-auth-fix/attempt4-report.md)。实际部署和真实 Provider /业务验收未进行。
+
+### 2026-10-15 四项历史门禁问题关闭与当前验证（round4 于 2026-10-14 通过）
+
+- `KnowledgeBlockContentHash` 是唯一 UTF-8 SHA-256 helper，归属 `knowledge`；KnowledgeBlockService 与 ReviewLifecycleService 共用，当前静态依赖方向只有 `review → knowledge`。UTF-8 输入、SHA-256、小写 hex、null 前置校验及 trim 后持久化 hash 行为保留；Source event、事务边界、锁序和业务字段不变。
+- Completion、Account deletion 与 embedding resume 修正是测试 fixture / assertion 更正，不改生产 retry、配额或时间 API。`AiOverviewServiceTests` 反射 fixture 明确选用 8 参数构造器；SlowDrip 的 synthetic TLS keystore 属测试运行输入。后端 clean test 115 suites / 666 tests 全通过；同快照 package BUILD SUCCESS。测试轮次、PostgreSQL 证据及 reviewer OPTIONAL 边界见 [当前状态](../current/Status.md) 与 [round4报告](D:/Temp/auralis-remaining-four-fix-20261014/final/round4/report.md)。
+- 四项唯一 reviewer 结果 B0/I0/O1；O1 为最多 1µs response / `TIMESTAMPTZ` 精度差异，未改生产规范化。API DTO、数据库 schema / migration 未改变。真实 Provider、部署、GUI、模型列表或业务验收不由自动门禁证明。
+
+### 2026-10-14 两项基线测试断言/namespace修正（历史定向验证；该时点未重跑完整后端门禁）
+
+- `TaskColorRemovalMigrationTests` 在clean schema验证中断言当前Flyway latest V32；原V20升级与数据保留测试不变。Jackson guard允许Jackson 3保留的`com.fasterxml.jackson.annotation`，并以完整Java import识别拒绝其它`com.fasterxml.jackson.*` namespace；AI quality fixture改用`tools.jackson.databind`。
+- 首轮定向命令覆盖migration/guard/fixture共11 tests、exit 0；reviewer提出whitespace import遗漏后只重跑Guard类2 tests、exit 0，最终只读复审B0/I0/O0。两次测试不合并计为13项。当前只改三个测试文件，没有生产代码、DTO、dependency、schema、API或configuration变更。
+- 历史full clean仍为114 suites / 659 tests / 5 failures / 1 error / 4 skipped、exit 1；原4 skips已由单独Guard PG测试补跑4/4，未重跑完整full gate。此次定向修复只涵盖前两项，剩余4个失败/错误未改，完整门禁仍未通过。详细证据见 `D:/Temp/auralis-baseline-gate-fix-20261014/implementation-report.md` 与 `review-report.md`。
+
+### 2026-10-14 AI 预算治理与 Overview 输出恢复（阶段0–3实现/定向记录；该时点 clean gate 未通过，后续 round4 已通过）
+
+- `AiUsageGuard` 对拒绝安全区分用户/全局并发、任务调用次数/任务 token、用户小时/日、系统日七类；事件包含内部 task UUID、阶段、受控 Provider/model 标识及申请/已用/剩余/上限与适用 resetAt，不含用户原文、凭证、endpoint URL 或异常 message。拒绝仍使用既有公共 code/status/retry/reset，不生成 reservation；旧真实 UTF-8 估算、预算准入、锁序、事务、embedding 窗口豁免和 dispatch/settlement 行为保持。
+- Gateway 增加 `char-category-v1-uncalibrated` 影子估算：按 Latin、CJK、数字、空白、标点/结构和其它 Unicode 字符类别计算候选，按 reservation UUID 输出旧估算、候选、完整 actual usage 或 unknown 及逐调用误差。completion/stream 候选沿用旧算法的每消息4-token framing；embedding 的 framing 为0。候选只供观测，不进入 reservation、上下文或任务预算；actual 不完整时保持 unknown，不新增 Provider 请求。
+- `auralis.ai.shadow-token-estimate-enabled` 默认 `true`，可由 `AURALIS_AI_SHADOW_TOKEN_ESTIMATE_ENABLED=false` 关闭影子日志；不改变真实估算或准入。无生产样本，版本标为 uncalibrated，不据合成 usage 宣称校准完成或调整估算系数。
+- 为阶段2恢复路径加入 `auralis.ai.overview-output-recovery-enabled` / `AURALIS_AI_OVERVIEW_OUTPUT_RECOVERY_ENABLED`，默认 `true`；开关仅控制新增 JSON/截断恢复，不关闭既有 semantic/no-progress 行为。配置绑定和false止损均已由定向测试覆盖。
+- 阶段2现已接入 `OverviewGenerationService`：单个安全可拆分的 Source/Subject MAP 或 REDUCE 的 truncation 可仅拆分失败 batch 一次；JSON syntax 与 allowlist top-level shape errors 可执行一次 purpose-keyed repair。Child/merge truncation 不递归。保留既有 validator acceptance、动态分片、semantic/no-progress recovery、fencing/checkpoint、配置的 Overview 调用上限（默认24；同一值限制总任务及每个 MAP/REDUCE 阶段的平台调用）、524288 task tokens 和每次通过 Gateway reservation。关闭开关仅停用上述新增 truncation/JSON recovery。
+- 最终 Recovery + Overview 定向为 101/101（`OverviewGenerationServiceRecoveryTests` 25、`AiOverviewServiceTests` 76），focused PostgreSQL replay 1/1；`OverviewBudgetIntegrationTests` 的 H2 Gateway/Guard 定向为7/7，其中包含新增 Subject MAP/REDUCE 故障回放。PostgreSQL Coordinator、Invocation Gateway、Usage Gateway、Guard 与 SQL reservation ledger 均真实；仅 `AiProviderRegistry` 使用合成响应。真实账本断言覆盖 7 次完整路径 reservation（相同 REDUCE child group 只共享已完成 checkpoint）及三 attempt 路径 13 次 reservation；同一 task/generation/budgetTaskId 与 durable checkpoint lineage 保持。早期 metadata-only audit 不是唯一 PG 证据；相关具体验证、限制见 `D:/Temp/auralis-ai-governance-20261013/review-fix/repeated-group-report.md`、`D:/Temp/auralis-ai-governance-20261013/review-fix/reduce-transition-report.md`。
+- 有效模型诊断仅记录受控 Provider/model 与能力 resolver 的 known/unknown。`deepseek-chat` 上下文仍 unknown；普通 DeepSeek Chat thinking 标记 `provider-default-or-unknown`，只有结构化 Overview wire 请求记录 `thinking=disabled`，使用既有实现与测试。未实际核对 Provider 模型列表。
+- Chat 阶段3新增固定故障回放测试，覆盖 RAG 两次调用顺序、embedding 失败、请求 replay、首 token 前/部分输出异常、缺 finish 标记、客户端断开与部分 usage；不改生产流式行为。阶段0/1 scratch 定向回归 62/62、Chat 回放 8/8。唯一 reviewer 最终 B0/I0/O0；最新 Service/Recovery source hashes 已与复审包匹配。profile-corrected clean backend test 为 659 项、5 failures、1 error、4 skipped，exit 1；六项在实际 HEAD 定向对照中重现。四个 skipped 是 `AiUsageGuardPostgresLockTests` 因未收到它读取的 `AURALIS_TEST_POSTGRES_URL` 环境变量而触发的 assumption；独立隔离PG补跑该类4/4通过，不改变full gate统计或失败状态。完整细节见 `D:/Temp/auralis-ai-governance-20261014/final/guard-lock-followup-report.md`。package -DskipTests exit 0，但不替代测试门禁。最终报告 `D:/Temp/auralis-ai-governance-20261014/final/report.md`。
+
 ### 2026-10-13 Overview recovery no-progress 修正（本地代码与隔离回归完成，未部署）
 
 - 用户 retry 曾反复恢复到同一个 5,787-char 无缩减 REDUCE checkpoint，并以 `OVERVIEW_REDUCE_NO_PROGRESS` 结束。Service 现把 recovery compaction 与普通 REDUCE 分开作 checkpoint identity；full 与 partial 分别使用专属 purpose，prompt/partial-mode规则保持。fresh输出在写 checkpoint 前、缓存输出在恢复后都须严格短于输入，否则维持原错误码。
@@ -7,7 +378,7 @@
 
 ### 2026-10-13 Overview 动态预算与私有恢复（实现、自动门禁与指定 P4 通过）
 
-- `OverviewContentStats` / `OverviewBudgetPlanner` 提供按内容与结构增长的输出软目标；UTF-8 byte estimate 是保守估算，不是 tokenizer。12000 字符实际 prompt、4608 intermediate / 6144 final `max_tokens`、24 次调用、524288 task token、240000ms 任务期限以及 Gateway 限额仍为硬边界。
+- `OverviewContentStats` / `OverviewBudgetPlanner` 提供按内容与结构增长的输出软目标；UTF-8 byte estimate 是保守估算，不是 tokenizer。12000 字符实际 prompt、4608 intermediate / 6144 final `max_tokens`、可配置 Overview 调用上限（默认24，平台总任务与各 MAP/REDUCE 阶段使用同值）、524288 task token、240000ms 任务期限以及 Gateway 限额仍为硬边界。
 - Subject 超限按实际选择的 outline/summary 语义字段分片、精确分包并有限 MAP/REDUCE；5200 字符是内容软目标，不再用 self-pair 假造消费者输入。实际完整 prompt 才做硬预算判断。错误码区分 prompt 超限、Provider 输出截断与恢复耗尽。
 - V32 私有 generation/checkpoint/request mapping 已接入 Service：有效规范化 UUID 可重放同一请求；失败 generation 的预算 lineage 累计，恢复计数累计、恢复动作按安全集合去重。成功 response payload 满 14 天后清除，request mapping 与 generation/budget metadata 保留，过期 request ID 不可复用；失败 metadata 不因 payload 清理重置预算。私有状态不进入正式 Overview results / core Sync，生成成功仍由客户端通过独立 Overview results PUT 保存。
 - 私有失败详情保存六种既有用量错误的原status/retry/reset，waiter恢复 `AiUsageLimitException`；接管/成功清除，fence/lease及FAILED/code/status约束有效。最终需求核对后fresh门禁20 suites / 210 tests全通过，335 main / 111 test编译，test/package exit 0。唯一首审B0/I1/O0，主代理按完整diff与实际回归关闭I1；同reviewer复审工具受限，剩余B0/I0/O0为主代理裁决。
@@ -22,6 +393,7 @@
 ### 2026-10-13 Overview validator 安全诊断增量
 
 - 当前工作树中实际 Provider 响应经现有 validator 时，可输出固定拒绝类别、异常类型和 Jackson 行/列/字符偏移；坐标针对 trim/fence 剥离后的 JSON。日志不含 exception message、响应正文、字段值、Jackson path 或 stack。2参数入口与原错误行为保持，checkpoint restore 不走新 sink；本次定向两个测试类 83/83 通过。日志实现当时未由 Codex 部署；其后用户更新镜像并 retry，但请求在 Provider 响应校验前以 no-progress 结束，没有验证诊断输出或运行镜像 class/source provenance，因此 JSON 拒绝原因仍未知。
+- 2026-10-16 诊断增量：validator 在失败路径记录原始响应及实际 Jackson 输入的字符数和 SHA-256、plain/fenced/invalid 包裹类型、固定 parser 分类、Jackson offset 处字符类别，以及行列偏移。Overview 的 `OVERVIEW_VALIDATION_DIAGNOSTIC` 与同 task/generation 关联，记录输出阶段、purpose、`PRIMARY`/`JSON_REPAIR` 尝试、finishReason 与原有显式截断判定；不含正文、片段、原始异常消息或字符值。诊断异常不改变原错误或额外调用 Provider。定向两类测试 92/92 通过，Maven native/container exit 0；唯一 reviewer B0/I0。未部署，JSON 生成根因仍待下一次运行样本确认。
 
 ### 2026-10-12 聊天资料检索默认开启（后端实现与定向验证通过；真实 Provider 待验收）
 
@@ -146,6 +518,10 @@
 
 2026-09-27 PC/Service 风险修复：Sync pull 对省略/零 cursor 也使用用户独立高水位和最早保留日志识别清理缺口；Subject Overview 在转换 outline 引用前先建立所有请求 Source 别名；Source Overview 同一进程内以 owner/source/revision/title/mode/instruction 合并进行中生成。TEXT/URL 解析输入变更轮换 Source ingestion revision，新旧修订使用不同 job；Source 与对应 job 在同一事务持久化，失败整体回滚；恢复处理中的 TEXT/URL Source 时按当前 revision 补建或复用 job。worker 的结果及失败写入按 revision、job/generation、attempt 与锁后新鲜时钟的有效 lease 栅栏化，成功的 Source/chunks/job 在短事务内提交。Server clean 聚焦 114/114、PostgreSQL pgvector 2/2 通过；跨服务实例 Overview 去重、真实 Provider/运行服务尚未验收。
 
+### 2026-10-23 自适应 metadata 冗余 summary 归一化
+
+`ADAPTIVE_METADATA` 的专用 prompt 要求顶层 `summary=null`，但通用 schema 仍允许 summary，ALL 模式公共规则也要求 summary，导致合法 schema 响应被后续内部 shape 检查拒绝。此内部 purpose 现在明确以 metadata 规则覆盖公共模式 summary 要求；通过通用 JSON/schema 校验后，Provider 响应与恢复 checkpoint 均在内存/规范化结果中清理顶层 summary，再继续执行原 alias coverage 与 shape 门禁。新写 checkpoint 保存规范化结果；旧 checkpoint 读取规范化后使用，不回写或改账本。此规则不扩展到 `ADAPTIVE_METADATA_ROUTE` 的 ALL summary、writer 或最终结果。
+
 2026-09-26 AI 显式检索范围补充：聊天 `ReadingContext` 保留既有 `AUTO` 当前 Source 行为，并支持用户显式选择的 Source ID 集合或全学科范围。检索前验证活动 Subject 属于当前用户；显式 Source 必须属于当前用户及该 Subject 且为活动 READY 状态，结果不得扩展到未选 Source。定向 `AiRetrievalTests` clean 12/12、`ArchitectureTests` 1/1 通过；真实 PostgreSQL/pgvector、Provider 和 GUI 尚未验收。
 
 2026-09-26 Source/RAG 修复：PostgreSQL pgvector 检索仍在 LIMIT 前过滤软删除 Source；H2/fallback 现先按 owner 批量解析活动 Source 再排序/TopK，删除 Source 的旧 chunk 不占有效引用名额。Source 列表、分页和含删除项列表的 Asset size 改为 owner-scoped 批量加载；Retrieval citation 复用一次批量 SourceView 查询，不再逐条 `sourceService.get()`。SourceView 排序、Asset 大小、citation 内容及 generation 语义不变。focused clean 8/8、PostgreSQL 17/pgvector 2/2；真实业务数据与负载性能未验收。
@@ -180,11 +556,8 @@
 
 2026-09-11 Overview Source Provider-boundary fence：文件总览生成在每一次共享 Map/Reduce Provider 调用前后，以现有 owner-scoped `SourceService.requireActiveSource` 重新验证 Source 为活动 `READY` 且 `ingestionRevision` 精确匹配；删除仍保留 `RESOURCE_NOT_FOUND`，状态或修订变化返回稳定 `MUTATION_REJECTED`。Provider 已在调用中的请求可能先完成，但其响应会在 post-call fence 被拒绝，且不会启动后续 Map/Reduce 调用。Subject 总览不启用该 Source fence，公开 API、DTO、数据库与同步契约未改变。本轮聚焦 `AiOverviewServiceTests` 19/19 通过；Overview 失败日志使用 allowlist，仅记录规范化 UUID `requestId`、关联字段、阶段、稳定 `errorCode`（或 `OVERVIEW_GENERATION_FAILED` 回退）及 exception/cause 类型；非法或含敏感内容的请求 ID 会替换为服务端新 UUID，不记录原始 exception/cause 文本或 throwable stack。Task 4 Server 标准聚焦为 40/40；全量 `test` 实际执行 239 项，0 failures、3 errors，错误仅为 MinIO/PgVector/Testcontainers Docker 不可用。一次 fresh `clean test-compile` 仍被 `AiProviderSecurityTests.java:182` 的 `ProviderHttpTransport` 缺少 `post(..., byte[])` 阻断；OpenAPI artifact 测试 8/8，但 `check-openapi.ps1` 仍报告 PC generated schema stale。真实 Provider、PostgreSQL/MinIO、HTTP 端到端与业务验收仍待完成。
 
-更新时间：2026-10-11
 
-文档状态：旧 Server 代码已归档；绿地重写阶段 5 AI/RAG 基线及 PC Tauri S1–S6 ParsedDocument schema/upload-intent/payload validator/complete 首胜/block indexing/cleanup 已实现；V16 阅读会话 scope、完成历史 Prompt、readingContext 当前 Source 检索和同学科确定性升级已实现；R1 已完成 pgvector、请求并发保留、会话恢复键和受控流式验证；Subject 专属颜色已由 V19 移除并在本地 PostgreSQL 升级验证，整体仍待真实 Provider 与外部验收
 
-权威范围：Auralis-Server 当前实现、绿地目标模块边界、运行配置、验证命令和阶段状态。
 
 ## 当前旧 Server 事实
 
@@ -276,7 +649,7 @@ Task 2A 统一数据库锁协议：所有涉及 Subject-owned 资源的写事务
 - Spring Modulith 2.1。
 - Maven Wrapper + Maven。
 - Spring MVC、Bean Validation、Actuator、springdoc OpenAPI。
-- Spring MVC converter 与所有 Auralis 自有生产/测试源码统一使用 Jackson 3 的 `tools.jackson` 命名空间；JSON object payload、流式 ParsedDocument 校验、WebSocket、Review 持久化和 Provider HTTP 均不混入 Jackson 2 类型。`JacksonNamespaceGuardTests` 会阻止重新导入 `com.fasterxml.jackson.*`。
+- Spring MVC converter 与所有 Auralis 自有生产/测试源码统一使用 Jackson 3 的 `tools.jackson` 命名空间；JSON object payload、流式 ParsedDocument 校验、WebSocket、Review 持久化和 Provider HTTP 均不混入 Jackson 2 类型。`JacksonNamespaceGuardTests` 允许 Jackson 3 保留的 `com.fasterxml.jackson.annotation`，并阻止其它 `com.fasterxml.jackson` 导入。
 - 当前持久化使用 Spring Data JPA + Flyway V1–V15；R1-03 的 pgvector 写入/检索通过 JDBC repository 接入，H2 保留 JSON fallback。V15 追加 PC Tauri ParsedDocument 派生表、Source ingestion revision、FILE 状态约束和 ingestion job 关联字段；ParsedDocument 不进入同步表。S3 已实现 `/api/sources/{sourceId}/parsed-documents/upload-intents`，仅按 owner/revision 创建 `UPLOADING` 派生记录并向现有 `AssetStoragePort` 请求限定 MIME/checksum/size 的私有签名。
 - 目标数据库使用 PostgreSQL 17 + pgvector；V9 创建 vector(1024)/HNSW，V10 提供 generation cutover，V11 回填历史 JSON embedding。
 - 后续对象存储使用 MinIO。
@@ -370,3 +743,50 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 ### 2026-09-15 Overview 最小 JSON 诊断（临时）
 
 为复核真实 DeepSeek 最终 `JSON_PARSE` 失败，Provider 在最终已序列化的请求体发送前，仅对识别为 Overview 阶段的 structured JSON 请求记录 `AI_JSON_MODE`：`structuredJson=true`、`responseFormat=json_object`、`maxTokens` 与由预算推导的 `stage`。Overview FINAL 在既有 validator 前使用同一 Jackson `ObjectMapper.readTree` 直接检查原始 `message.content`，记录 `FINAL_JSON_CHECK` 的合法性、字符数、行列号和异常类型；该检查不做 fence stripping 或其它预处理，因此 fenced JSON 会记录为 `valid=false`，不代表后续既有 validator 一定拒绝。不记录请求体、prompt、响应正文、原始异常 message、URL 或凭据。诊断失败不会吞掉或改变既有 Provider 输出错误映射；普通聊天/流式不变。自动测试已覆盖 DeepSeek FINAL wire body 日志、multi-batch 最终调用边界、合法/非法/fenced FINAL 检查和日志脱敏；未部署，真实请求待用户重跑。
+
+
+
+### 2026-10-23 Overview M5.5：完整 descriptor 相等的 writer node 复用
+
+- 实现私有 `ExecutionNodeDescriptor.globalRoutingFingerprint`，由有序章节/小节职责、(alias/sourceAlias/sourceId) 分组路由、mode、instruction 与 system policy 构成，不含其它组 text/revision/chunk。当前完整 descriptor 仍要求 JSON 与 SHA 同时完全相等，并包含目标组完整 unit refs 和 exact prompt-derived writer step。
+- Donor 约束：同 owner/scope/profile/algorithm/step、SUCCESS；generation、ASSEMBLED plan、VERIFIED node 与 checkpoint input 身份一致；hash/schema/14天/result expiry、source/coverage/shape 有效；且本代 node 必须由真实 dispatched reservation journal 证明资格，防止无 reservation 的 materialized node TTL 接力。M5.4 完整 input donor 仍先于 strict descriptor donor。
+- 顺序保持 current checkpoint 优先，beginAttempt 和 unknown-dispatch/RECOVERY_REQUIRED hold 在 lookup 前；命中沿原验证与事务 materialize 本代 node checkpoint，不创建 usage/reservation。提升 adaptive algorithm identity 隔离旧 descriptor 缓存；不迁移旧数据。
+- 验证记录：`targeted-tests.log` 的 Coordinator 26/26、Adaptive 30/30，合计 56/56，exit 0；新增 Service acceptance 两例 2/2，exit 0。后者证明 B revision/chunk/hash 改变而 global route 结构不变时 A 可命中而 B 派发；相同 raw input 仅改变 B goal 时，global fingerprint 变化使 A/B 都派发。属分批定向证据，不宣称完整 58-case 批次或完整 M5 验收。唯一只读 reviewer B0/I0/O0。
+
+
+
+### 2026-10-23 OverviewGenerationCoordinator expired-payload cleanup
+
+- cleanupExpiredPayloads 保留现有 REQUIRES_NEW 事务与调度入口；每批按确定性顺序锁定至多 100 个 terminal generation 父行，使用 ORDER BY id LIMIT ? FOR UPDATE SKIP LOCKED，随后重读锁定行。ACTIVE generation 即使 lease 超时也不会清理。
+- 独立判断对象过期：只清 SUCCESS 且自身 result_expires_at 已过期的 result；只删除 checkpoint.created_at 至少 14 天的 checkpoint。保留 generation 及 metadata/request mapping/budget/plan/node/call/reservation/unknown-dispatch hold lineage；返回实际清除的 result/checkpoint 行数。
+- focused Maven 统一批次中 Adaptive 32/32、Coordinator 29/30，合计 61/62 passed、1 race fixture error（exit 1）。补足 active_fingerprint 并停止测试 heartbeat scheduler 后，affected-only 两事务测试 1/1（exit 0）；未重跑完整 62 项。H2 测试覆盖锁定行跳过和 takeover 竞态，不证明 PostgreSQL 行为。
+- 仅 Coordinator 与其 tests 两文件变化。无 schema/API/migration/config、Service、journal、cache lookup、hard-delete/account-delete 改动。sole reviewer B0/I0/O0；无 PostgreSQL、full suite、package、Docker 或部署验证。
+
+### 2026-10-23 Overview M5 完整复用与 payload 生命周期
+
+- Donor lookup 延续 M5.1–M5.5 的 owner/scope、完整 input/source currentness、profile/algorithm/prompt step、descriptor/hash/schema/expiry、coverage/shape 校验。M5.4 完整输入 donor 在 M5.5 strict descriptor donor 前；unknown dispatch / RECOVERY_REQUIRED hold 先于查找。命中不新增 usage/reservation，也不延长 donor TTL。
+- Standalone reusable cache 默认上限为 256 MiB 和 1000 generations，由 AURALIS_AI_OVERVIEW_CACHE_MAX_BYTES、AURALIS_AI_OVERVIEW_CACHE_MAX_GENERATIONS 配置。V38 singleton DB guard 串行 admission，只统计 unpinned SUCCESS result/checkpoint 的 UTF-8 bytes 与 generation 数；每次最多淘汰 100 个旧候选。锁竞争、超大 payload 或无法 admission 时不保存可复用副本，成功响应及 usage/execution journal lineage 继续完成。任何 durable-job linked generation 均 pinned 并排除在共享 cache 池外。
+- Source/Subject deletion listener fence 相关 jobs/generations/publication intent，并按 owner/resource/job/generation 锁序清理私有 raw-derived copies。Receipt 保留幂等 key/hash，将 response snapshot 换成 revoked tombstone；旧 replay 映射为 RESOURCE_VERSION_CONFLICT。已完成 job 的 private request/manifest/candidate 及最后一个仍保留 job 到期后不再需要的 SUCCESS result/checkpoint/plan/node copies，按 14 天、有界事务回收；保留实际 recovery state、usage/reservation/journal metadata 与正式 saved result 的独立生命周期。
+- 账号硬删除通过现行清理路径清除 Overview 行；隔离 PostgreSQL integration 覆盖目标 owner 移除与另一 owner、capacity guard、charged usage evidence 保留。详细验证范围及 full-suite 限制见 D 盘结案 handoff；未部署、未运行真实 Provider 或 GUI。
+
+
+
+### 2026-10-23 总览阶段校验与本机预算收尾
+
+- 主 Agent 直接修复：索引、元数据、目录和正文的阶段覆盖/形状校验在通用调用保存检查点前执行，恢复读取执行相同校验；正文内部顶层冗余 summary 规范化为空，最终目录摘要保留。目录请求校验别名收窄到实际 unit aliases。
+- 预算拒绝日志增加阶段、资源、required/remaining；Overview MAP/REDUCE 与总任务共用 overviewMaxCalls，本机 trace overlay 临时设为64，默认24、Token预算524288及历史账本不变。
+- 主 Agent 定向验证 OverviewAdaptiveGenerationTests + AiOperationPolicyTests：44/44，0失败/错误/跳过。此前两轮分别发现目录别名集合过宽、异常包装改变既有错误消息，均修复。证据 D:/Temp/auralis-pipeline-fix-20261023/tests-final.log。未调用真实 Provider；完整业务验收待重试。
+- 既有不合格检查点会被拒绝，不自动删除；本轮没有增加全新任务预算入口，也未重置用量。当前仅修复新结果写入前的校验边界及恢复校验。
+
+### 2026-10-23 Overview 调用次数观测配置
+
+- `overviewMaxCalls=0` 表示 SOURCE_OVERVIEW、SUBJECT_OVERVIEW 的平台总任务及 MAP/REDUCE stage 不设累计调用次数预算；正数仍按原值限制，默认24不变。本机 trace overlay 选用0，以便记录这份长资料的实际调用次数后再定限额。
+- 0 不影响逐次用量记账、任务/窗口 Token 配额、上下文及输出预算、并发、deadline、目录深度和持久调用历史容量。恢复仍沿用同一 budgetTaskId，旧账本不清除。
+
+### 2026-10-23 Overview 预算路径第一批修正
+
+- 修复证据：两个实际 run 的索引原文相同，但 Map.of 材料字段顺序在进程重启后不同，使精确提示词 checkpoint 指纹变化。索引及正文材料改为 TreeMap 固定字段顺序；旧不同文本指纹不作兼容匹配，新请求稳定后可按原规则复用。
+- Writer preflight 不再将全部最大预留的总和作为硬拒绝条件；总和以 aggregateUpperBound 记录，先检查最大单请求预留能否装入当前余额，逐次派发仍由 Guard 原子预留并按实际 usage 结算。余额不足仍会中途停止，已有 verified checkpoint 保留，不保证整篇一定完成。
+- Adaptive 单次预算评估改读持久化 task charged + reserved，包含历史尝试，避免日志把本轮余额当累计余额。新增日志包含 uncachedWriters、aggregateUpperBound、largestRequestReserve、charged、reserved、remaining。
+- 定向 OverviewAdaptiveGenerationTests、OverviewBudgetIntegrationTests 共50/50通过（exit0），证据 D:/Temp/auralis-budget-path-20261023/tests.log；未运行全量、真实Provider或GUI。输入估算校准、动态输出预算、明确的预算暂停/恢复状态与用户可读预计成本仍待实现，本条不表示完整优化路线交付。
+- 2026-10-28：`ADAPTIVE_ROUTE_INSTRUCTION` 补充每个 topic ID 只归属一个 section（含合并或重组）；这是防止 topic000175 跨节重复的提示词源码候选，尚未部署，模型效果未验收。

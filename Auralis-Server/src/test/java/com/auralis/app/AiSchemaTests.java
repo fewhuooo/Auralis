@@ -32,10 +32,28 @@ class AiSchemaTests {
         assertThat(jdbcTemplate.queryForObject(
                 "select version from flyway_schema_history where version = '13'", String.class))
                 .isEqualTo("13");
+        assertThat(jdbcTemplate.queryForObject(
+                "select version from flyway_schema_history where version = '34'", String.class))
+                .isEqualTo("34");
+        assertThat(jdbcTemplate.queryForObject(
+                "select version from flyway_schema_history where version = '40'", String.class))
+                .isEqualTo("40");
         for (String table : new String[]{
                 "ai_credentials", "ingestion_jobs", "source_chunks", "conversations", "messages"}) {
             assertThat(tableExists(table)).as(table).isTrue();
         }
+    }
+
+    @Test
+    void overviewResultTitleUsesUnboundedTextStorage() {
+        var titleColumn = jdbcTemplate.queryForMap(
+                "select data_type, character_maximum_length, is_nullable "
+                        + "from information_schema.columns where lower(table_schema)='public' "
+                        + "and lower(table_name)='overview_results' and lower(column_name)='title'");
+        assertThat(titleColumn.get("data_type").toString()).isNotBlank();
+        assertThat(titleColumn.get("is_nullable").toString()).isEqualToIgnoringCase("NO");
+        Object maximumLength = titleColumn.get("character_maximum_length");
+        assertThat(maximumLength == null || ((Number) maximumLength).longValue() > 300).isTrue();
     }
 
     @Test
@@ -53,6 +71,8 @@ class AiSchemaTests {
                 "user_id", "source_id", "generation", "active", "ordinal", "content", "content_hash", "embedding_json"}) {
             assertThat(columnExists("source_chunks", column)).as(column).isTrue();
         }
+        assertThat(columnExists("source_chunks", "provenance_json")).isTrue();
+        assertThat(columnExists("overview_results", "outline_identity_json")).isTrue();
         assertThat(columnExists("messages", "conversation_id")).isTrue();
         assertThat(columnExists("messages", "message_sequence")).isTrue();
         assertThat(columnExists("conversations", "version")).isTrue();

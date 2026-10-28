@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
@@ -14,6 +16,71 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OverviewDynamicBudgetComponentTests {
+
+    @Test
+    void reportsSafeParserCategoryAndHashesTheExactNormalizedJson() throws Exception {
+        OverviewDocumentValidator validator = new OverviewDocumentValidator(new ObjectMapper());
+        String malformed = "{\"title\":\"secret-json-marker\",\"schemaVersion\":1,\"x\":@}";
+        String fenced = "```json\n" + malformed + "\n```";
+        OverviewDocumentValidator.ValidationDiagnostic plain = diagnosticFor(validator, malformed);
+        OverviewDocumentValidator.ValidationDiagnostic wrapped = diagnosticFor(validator, fenced);
+
+        assertThat(plain.parserCategory()).isEqualTo(OverviewDocumentValidator.ParserCategory.UNEXPECTED_CHAR);
+        assertThat(wrapped.parserCategory()).isEqualTo(OverviewDocumentValidator.ParserCategory.UNEXPECTED_CHAR);
+        assertThat(plain.wrapper()).isEqualTo(OverviewDocumentValidator.WrapperKind.PLAIN);
+        assertThat(wrapped.wrapper()).isEqualTo(OverviewDocumentValidator.WrapperKind.FENCED);
+        assertThat(plain.responseSha256()).isEqualTo(sha256(malformed));
+        assertThat(plain.parseSha256()).isEqualTo(sha256(malformed));
+        assertThat(wrapped.responseSha256()).isEqualTo(sha256(fenced));
+        assertThat(wrapped.parseSha256()).isEqualTo(sha256(malformed));
+        assertThat(wrapped.responseChars()).isEqualTo(fenced.length());
+        assertThat(wrapped.parseChars()).isEqualTo(malformed.length());
+        assertThat(wrapped.charOffset()).isBetween(0L, (long) malformed.length());
+        assertThat(wrapped.offsetCharacterClass()).isNotEqualTo(OverviewDocumentValidator.OffsetCharacterClass.UNKNOWN);
+        assertThat(wrapped.toString()).doesNotContain("secret-json-marker");
+    }
+
+    @Test
+    void distinguishesControlCharactersAndInvalidEscapes() {
+        OverviewDocumentValidator validator = new OverviewDocumentValidator(new ObjectMapper());
+        String controlCharacter = "{\"title\":\"secret-control-marker\na\"}";
+        String invalidEscape = "{\"title\":\"\\q\"}";
+        OverviewDocumentValidator.ValidationDiagnostic control = diagnosticFor(validator, controlCharacter);
+        OverviewDocumentValidator.ValidationDiagnostic escape = diagnosticFor(validator, invalidEscape);
+
+        assertThat(control.parserCategory()).isEqualTo(OverviewDocumentValidator.ParserCategory.CONTROL_CHAR);
+        assertThat(escape.parserCategory()).isEqualTo(OverviewDocumentValidator.ParserCategory.INVALID_ESCAPE);
+        for (OverviewDocumentValidator.ValidationDiagnostic diagnostic : List.of(control, escape)) {
+            assertThat(diagnostic.responseSha256()).matches("[0-9a-f]{64}");
+            assertThat(diagnostic.parseSha256()).matches("[0-9a-f]{64}");
+            assertThat(diagnostic.toString()).doesNotContain("secret-control-marker", "\\q");
+        }
+    }
+
+    @Test
+    void diagnosticCallbackFailureDoesNotReplaceValidationError() {
+        OverviewDocumentValidator validator = new OverviewDocumentValidator(new ObjectMapper());
+        assertThatThrownBy(() -> validator.validateProviderDocument(
+                "{\"title\":\"secret\",\"x\":@}", Map.of(),
+                diagnostic -> { throw new IllegalStateException("diagnostic-secret-marker"); }))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code()).isEqualTo("VALIDATION_FAILED");
+    }
+
+    private OverviewDocumentValidator.ValidationDiagnostic diagnosticFor(
+            OverviewDocumentValidator validator, String response) {
+        List<OverviewDocumentValidator.ValidationDiagnostic> diagnostics = new ArrayList<>();
+        assertThatThrownBy(() -> validator.validateProviderDocument(response, Map.of(), diagnostics::add))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(diagnostics).hasSize(1);
+        return diagnostics.get(0);
+    }
+
+    private String sha256(String value) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(value.getBytes(StandardCharsets.UTF_8)));
+    }
 
     @Test
     void validatorReportsFixedFenceAndObjectShapeReasonsWithoutChangingErrorCode() {
@@ -140,7 +207,7 @@ class OverviewDynamicBudgetComponentTests {
     }
 
     @Test
-    void contentTargetsGrowSublinearlySaturateAndOfferSourceCoverageSlots() {
+    void outputPlanningGrowsWithMaterialWithoutAStaticTokenOrGroupCeiling() {
         OverviewContentStats shortInput = stats("x".repeat(64), 1);
         OverviewContentStats mediumInput = stats("x".repeat(20_000), 3);
         OverviewContentStats longInput = stats("x".repeat(2_000_000), 12);
@@ -157,14 +224,30 @@ class OverviewDynamicBudgetComponentTests {
 
         assertThat(shortPlan.targetOutputTokens()).isLessThan(mediumPlan.targetOutputTokens());
         assertThat(mediumPlan.targetOutputTokens()).isLessThan(longPlan.targetOutputTokens());
-        assertThat(longPlan.targetOutputTokens()).isLessThanOrEqualTo(4_608);
-        assertThat(hugePlan.targetOutputTokens()).isEqualTo(4_608);
+        assertThat(longPlan.targetOutputTokens()).isGreaterThan(6_144);
+        assertThat(longPlan.targetOutputTokens()).isEqualTo(longInput.effectiveUtf8Bytes() + 256 + 12 * 32 + 64);
+        assertThat(hugePlan.targetOutputTokens()).isGreaterThan(longPlan.targetOutputTokens());
+        assertThat(hugePlan.targetOutputTokens()).isEqualTo(hugeInput.effectiveUtf8Bytes() + 256 + 100 * 32 + 64);
         assertThat(longPlan.suggestedMapGroups()).isGreaterThanOrEqualTo(12);
-        assertThat(hugePlan.suggestedMapGroups()).isLessThanOrEqualTo(24);
+        assertThat(hugePlan.suggestedMapGroups()).isEqualTo(100);
 
         OverviewBudgetPlanner.ContentPlan finalPlan = OverviewBudgetPlanner.planContent(
                 longInput, OverviewBudgetPlanner.OutputStage.FINAL);
-        assertThat(finalPlan.targetOutputTokens()).isLessThanOrEqualTo(6_144);
+        assertThat(finalPlan.targetOutputTokens()).isEqualTo(longPlan.targetOutputTokens());
+    }
+
+    @Test
+    void linearOutputDemandUsesWholeRequestBytesAndHasNoImplicitOutputCeiling() {
+        long small = OverviewBudgetPlanner.planOutputTokens(2_048, 1, 1,
+                OverviewBudgetPlanner.OutputStage.INTERMEDIATE);
+        long large = OverviewBudgetPlanner.planOutputTokens(100 * 1_024L, 100, 20,
+                OverviewBudgetPlanner.OutputStage.INTERMEDIATE);
+
+        assertThat(small).isEqualTo(2_400);
+        assertThat(large).isEqualTo(100 * 1_024L + 256 + 100 * 32L + 20 * 64L);
+        assertThat(large).isGreaterThan(6_144);
+        assertThat(OverviewBudgetPlanner.planOutputTokens(100 * 1_024L, 100, 20,
+                OverviewBudgetPlanner.OutputStage.FINAL)).isEqualTo(large);
     }
 
     @Test
@@ -225,9 +308,10 @@ class OverviewDynamicBudgetComponentTests {
 
         long promptBytes = system.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
                 + user.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        assertThat(assessment.estimatedInputTokensUpperBound()).isEqualTo(promptBytes
+        assertThat(assessment.estimatedInputTokens()).isEqualTo(promptBytes
                 + OverviewBudgetPlanner.MESSAGE_FRAMING_UPPER_BOUND_TOKENS);
-        assertThat(assessment.outputTokenReserve()).isEqualTo(4_608);
+        assertThat(assessment.outputTokenReserve()).isEqualTo(OverviewBudgetPlanner.planOutputTokens(
+                promptBytes, 1, 1, OverviewBudgetPlanner.OutputStage.INTERMEDIATE));
         assertThat(assessment.eligibility()).isEqualTo(OverviewBudgetPlanner.Eligibility.UNKNOWN_CAPABILITY);
         assertThat(assessment.contextFit()).isEmpty();
         assertThat(assessment.taskBudgetFit()).isTrue();
@@ -240,14 +324,14 @@ class OverviewDynamicBudgetComponentTests {
                 AiProviderType.OPENAI_COMPATIBLE, "https://api.openai.com/v1", "gpt-4o-mini");
         int outputReserve = 6_144;
         long fittingPromptBytes = known.contextWindowTokens().orElseThrow()
-                - outputReserve - OverviewBudgetPlanner.CONTEXT_SAFETY_MARGIN_TOKENS
+                - outputReserve - known.contextSafetyMarginTokens()
                 - OverviewBudgetPlanner.MESSAGE_FRAMING_UPPER_BOUND_TOKENS;
         String fittingUser = "x".repeat(Math.toIntExact(fittingPromptBytes));
 
         OverviewBudgetPlanner.RequestAssessment exact = OverviewBudgetPlanner.assessRequest(
-                "", fittingUser, known, OverviewBudgetPlanner.OutputStage.FINAL, 24, 524_288);
+                "", fittingUser, known, OverviewBudgetPlanner.OutputStage.FINAL, 24, 524_288, outputReserve);
         OverviewBudgetPlanner.RequestAssessment over = OverviewBudgetPlanner.assessRequest(
-                "", fittingUser + "x", known, OverviewBudgetPlanner.OutputStage.FINAL, 24, 524_288);
+                "", fittingUser + "x", known, OverviewBudgetPlanner.OutputStage.FINAL, 24, 524_288, outputReserve);
 
         assertThat(exact.contextFit()).hasValue(true);
         assertThat(exact.eligibility()).isEqualTo(OverviewBudgetPlanner.Eligibility.ELIGIBLE);

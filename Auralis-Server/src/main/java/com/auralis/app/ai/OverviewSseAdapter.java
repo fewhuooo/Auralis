@@ -115,7 +115,7 @@ public final class OverviewSseAdapter {
             requestPermits.release();
             throw failure;
         }
-        SseEmitter emitter = new SseEmitter(timeoutMillis + 5_000L);
+        SseEmitter emitter = new SseEmitter(timeoutMillis == 0 ? 0 : timeoutMillis + 5_000L);
         AtomicBoolean heartbeatBusy = new AtomicBoolean();
         AtomicBoolean workerDone = new AtomicBoolean();
         AtomicBoolean workerExited = new AtomicBoolean();
@@ -384,7 +384,7 @@ public final class OverviewSseAdapter {
 
     private long taskTimeoutMillis() {
         long timeout = properties.ai().overviewTaskTimeoutMillis();
-        return timeout > 0 ? timeout : 240_000;
+        return Math.max(0, timeout);
     }
 
     private OverviewCancellation requestCancellation() { return new OverviewCancellation(); }

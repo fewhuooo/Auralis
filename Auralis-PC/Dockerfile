@@ -3,6 +3,9 @@ FROM node:20 AS builder
 
 WORKDIR /app
 
+ARG VITE_OVERVIEW_SSE_DEADLINE_MS=300000
+ENV VITE_OVERVIEW_SSE_DEADLINE_MS=${VITE_OVERVIEW_SSE_DEADLINE_MS}
+
 # Install dependencies
 COPY package*.json ./
 RUN npm install

@@ -5,6 +5,7 @@ import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiSettingsService;
 import com.auralis.app.ai.EmbeddingResult;
+import com.auralis.app.ai.SourceChunkProvenance;
 import com.auralis.app.ai.usage.AiFeature;
 import com.auralis.app.ai.usage.AiInvocationGateway;
 import com.auralis.app.ai.usage.AiStage;
@@ -138,6 +139,9 @@ public class IngestionWorker {
         try {
             SourceView source;
             String text;
+            List<com.auralis.app.source.ParsedDocumentValidator.ValidatedBlock> parsedBlocks = null;
+            UUID parsedDocumentId = null;
+            String parserId = null;
             if (job.getParsedDocumentId() != null) {
                 source = sourceService.requireActiveSource(userId, job.getSourceId());
                 if (source.type() != SourceType.FILE
@@ -149,6 +153,9 @@ public class IngestionWorker {
                 if (!Objects.equals(parsed.generation(), job.getGeneration())) {
                     throw new DomainException("INGESTION_REVISION_STALE", "Parsed document generation is no longer current");
                 }
+                parsedBlocks = parsed.blocks();
+                parsedDocumentId = parsed.parsedDocumentId();
+                parserId = parsed.parserId();
                 text = parsed.blocks().stream()
                         .map(com.auralis.app.source.ParsedDocumentValidator.ValidatedBlock::text)
                         .collect(Collectors.joining("\n"));
@@ -181,6 +188,9 @@ public class IngestionWorker {
                 throw new DomainException("INGESTION_REVISION_STALE", "Source revision changed during parsing");
             }
             List<com.auralis.app.ai.ingestion.TextChunk> chunks = chunker.chunk(text);
+            List<String> provenanceJson = parsedBlocks == null ? null : SourceChunkProvenance.encode(
+                    SourceChunkProvenance.mapBlocksToChunks(parsedBlocks, chunks, sourceRevision,
+                            parsedDocumentId, parserId));
             java.util.Map<Integer, List<Double>> checkpoint = completionService.loadCheckpoint(
                     claim, sourceRevision, chunks);
             List<List<Double>> vectors = new ArrayList<>(java.util.Collections.nCopies(chunks.size(), null));
@@ -197,7 +207,7 @@ public class IngestionWorker {
                 EmbeddingResult batchEmbeddings = taskScope.embed(AiStage.INGESTION_EMBEDDING,
                         AiProviderType.SILICONFLOW, settings.credential().model(),
                         missing.stream().map(com.auralis.app.ai.ingestion.TextChunk::content).toList(),
-                        settings.credential()).value();
+                        settings.credential(), settings.source()).value();
                 if (batchEmbeddings == null || batchEmbeddings.vectors().size() != missing.size()) {
                     throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid vector count");
                 }
@@ -213,7 +223,7 @@ public class IngestionWorker {
                 throw new DomainException("INGESTION_FAILED", "Embedding checkpoint is incomplete");
             }
             completionService.complete(
-                    claim, sourceRevision, chunks, vectors, clock.instant());
+                    claim, sourceRevision, chunks, vectors, provenanceJson, clock.instant());
         } catch (AiUsageLimitException exception) {
             throw exception;
         } catch (DomainException exception) {

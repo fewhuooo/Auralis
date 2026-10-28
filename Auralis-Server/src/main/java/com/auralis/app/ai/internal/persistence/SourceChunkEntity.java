@@ -50,6 +50,9 @@ public class SourceChunkEntity {
     @Column(name = "embedding_json", nullable = false, columnDefinition = "TEXT")
     private String embeddingJson;
 
+    @Column(name = "provenance_json", columnDefinition = "TEXT")
+    private String provenanceJson;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -70,7 +73,7 @@ public class SourceChunkEntity {
             int charEnd,
             String embeddingJson) {
         this(id, userId, sourceId, ordinal, content, contentHash, charStart, charEnd,
-                embeddingJson, new UUID(0, 0), true);
+                embeddingJson, new UUID(0, 0), true, null);
     }
 
     public SourceChunkEntity(
@@ -85,6 +88,23 @@ public class SourceChunkEntity {
             String embeddingJson,
             UUID generation,
             boolean active) {
+        this(id, userId, sourceId, ordinal, content, contentHash, charStart, charEnd,
+                embeddingJson, generation, active, null);
+    }
+
+    public SourceChunkEntity(
+            UUID id,
+            UUID userId,
+            UUID sourceId,
+            int ordinal,
+            String content,
+            String contentHash,
+            int charStart,
+            int charEnd,
+            String embeddingJson,
+            UUID generation,
+            boolean active,
+            String provenanceJson) {
         this.id = id;
         this.userId = userId;
         this.sourceId = sourceId;
@@ -96,6 +116,7 @@ public class SourceChunkEntity {
         this.charStart = charStart;
         this.charEnd = charEnd;
         this.embeddingJson = embeddingJson;
+        this.provenanceJson = provenanceJson;
     }
 
     @PrePersist
@@ -124,4 +145,5 @@ public class SourceChunkEntity {
     public int getCharStart() { return charStart; }
     public int getCharEnd() { return charEnd; }
     public String getEmbeddingJson() { return embeddingJson; }
+    public String getProvenanceJson() { return provenanceJson; }
 }

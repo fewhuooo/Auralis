@@ -42,15 +42,29 @@ public class SourceChunkService {
             UUID generation,
             List<TextChunk> chunks,
             List<List<Double>> vectors) {
+        replace(userId, sourceId, generation, chunks, vectors, null);
+    }
+
+    @Transactional
+    public void replace(
+            UUID userId,
+            UUID sourceId,
+            UUID generation,
+            List<TextChunk> chunks,
+            List<List<Double>> vectors,
+            List<String> provenanceJson) {
         if (chunks == null || vectors == null || chunks.size() != vectors.size()) {
             throw new IllegalArgumentException("Chunk and embedding counts must match");
+        }
+        if (provenanceJson != null && provenanceJson.size() != chunks.size()) {
+            throw new IllegalArgumentException("Chunk provenance count must match chunks");
         }
         if (generation == null || chunks.isEmpty()) {
             throw new IllegalArgumentException("A non-empty generation is required");
         }
         vectors.forEach(vectorCodec::validate);
         if (pgVectorRepository.isAvailable()) {
-            pgVectorRepository.replace(userId, sourceId, generation, chunks, vectors);
+            pgVectorRepository.replace(userId, sourceId, generation, chunks, vectors, provenanceJson);
             return;
         }
         chunkRepository.deleteGeneration(userId, sourceId, generation);
@@ -60,7 +74,8 @@ public class SourceChunkService {
             replacements.add(new SourceChunkEntity(
                     UUID.randomUUID(), userId, sourceId, chunk.ordinal(), chunk.content(),
                     sha256(chunk.content()), chunk.charStart(), chunk.charEnd(),
-                    vectorCodec.encode(vectors.get(index)), generation, false));
+                    vectorCodec.encode(vectors.get(index)), generation, false,
+                    provenanceJson == null ? null : provenanceJson.get(index)));
         }
         chunkRepository.saveAll(replacements);
         chunkRepository.flush();

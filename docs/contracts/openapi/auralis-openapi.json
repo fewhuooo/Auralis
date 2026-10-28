@@ -2226,6 +2226,289 @@
         } ]
       }
     },
+    "/api/ai/overview-jobs" : {
+      "get" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "list_5",
+        "parameters" : [ {
+          "name" : "limit",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 20
+          }
+        }, {
+          "name" : "cursor",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "name" : "scope",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "SOURCE", "SUBJECT" ]
+          }
+        }, {
+          "name" : "scopeId",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobList"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      },
+      "post" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "start",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/StartRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "description" : "Created",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/resume" : {
+      "post" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "resume",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ControlRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/reconcile" : {
+      "post" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "reconcile",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ControlRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/publish" : {
+      "post" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "publish",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/PublishRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PublicationView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/pause" : {
+      "post" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "pause",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ControlRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/cancel" : {
+      "post" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "cancel",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ControlRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/ai/messages/stream" : {
       "post" : {
         "tags" : [ "ai-controller" ],
@@ -2563,6 +2846,158 @@
         } ]
       }
     },
+    "/api/overview-results/subjects/{subjectId}/sections/{sectionId}" : {
+      "get" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSubjectSection",
+        "parameters" : [ {
+          "name" : "subjectId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "sectionId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "version",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewSectionView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/overview-results/subjects/{subjectId}/outline" : {
+      "get" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSubjectOutline",
+        "parameters" : [ {
+          "name" : "subjectId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewOutlineView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/overview-results/sources/{sourceId}/sections/{sectionId}" : {
+      "get" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSourceSection",
+        "parameters" : [ {
+          "name" : "sourceId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "sectionId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "version",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewSectionView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/overview-results/sources/{sourceId}/outline" : {
+      "get" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSourceOutline",
+        "parameters" : [ {
+          "name" : "sourceId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewOutlineView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/auth/sessions" : {
       "get" : {
         "tags" : [ "auth-controller" ],
@@ -2625,6 +3060,188 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/AiModelListView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}" : {
+      "get" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "get_5",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/JobView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/publication" : {
+      "get" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "publication",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/PublicationView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/preview" : {
+      "get" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "preview",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "limit",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "default" : 20
+          }
+        }, {
+          "name" : "cursor",
+          "in" : "query",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Page"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/preview/{nodeId}" : {
+      "get" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "previewNode",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "nodeId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "planId",
+          "in" : "query",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/NodeView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/overview-jobs/{id}/candidate" : {
+      "get" : {
+        "tags" : [ "overview-job-controller" ],
+        "operationId" : "candidate",
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/Candidate"
                 }
               }
             }
@@ -2939,24 +3556,183 @@
           }
         }
       },
+      "CandidateInput" : {
+        "type" : "object",
+        "properties" : {
+          "jobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "jobVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "jobId", "jobVersion" ]
+      },
+      "OutlineIdentityInput" : {
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "nodes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineIdentityNodeInput"
+            }
+          }
+        },
+        "required" : [ "nodes", "schemaVersion" ]
+      },
+      "OutlineIdentityNodeInput" : {
+        "type" : "object",
+        "properties" : {
+          "path" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "maxItems" : 2,
+            "minItems" : 1
+          },
+          "nodeId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          }
+        },
+        "required" : [ "nodeId", "path" ]
+      },
+      "OutlineProvenanceInput" : {
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "sections" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineProvenanceSectionInput"
+            }
+          }
+        },
+        "required" : [ "schemaVersion", "sections" ]
+      },
+      "OutlineProvenanceSectionInput" : {
+        "type" : "object",
+        "properties" : {
+          "path" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            },
+            "maxItems" : 2,
+            "minItems" : 2
+          },
+          "sourceRefs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineProvenanceSourceRefInput"
+            },
+            "maxItems" : 2147483647,
+            "minItems" : 1
+          }
+        },
+        "required" : [ "path", "sourceRefs" ]
+      },
+      "OutlineProvenanceSourceRefInput" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "chunkId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "generation" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "charStart" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          },
+          "charEnd" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          }
+        },
+        "required" : [ "ingestionRevision", "sourceId" ]
+      },
       "OverviewChapter" : {
         "type" : "object",
         "properties" : {
           "title" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
+            "type" : "string"
           },
           "sections" : {
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/OverviewSection"
-            },
-            "maxItems" : 500,
-            "minItems" : 0
+            }
           }
         },
         "required" : [ "sections" ]
+      },
+      "OverviewInputDescriptor" : {
+        "type" : "object",
+        "properties" : {
+          "origin" : {
+            "type" : "string",
+            "enum" : [ "SOURCE_REVISION", "SOURCE_OVERVIEW_PARTS", "SOURCE_CONTENT" ]
+          },
+          "scopeType" : {
+            "type" : "string"
+          },
+          "scopeId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            }
+          },
+          "sourceRevisions" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/SourceRevision"
+            }
+          },
+          "rawUnits" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewPartInputUnit"
+            }
+          },
+          "overviewParts" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OverviewSourceManifestEntry"
+            }
+          },
+          "inputFingerprint" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "inputFingerprint", "origin", "overviewParts", "rawUnits", "scopeId", "scopeType", "sourceIds", "sourceRevisions" ]
       },
       "OverviewLocator" : {
         "type" : "object",
@@ -2972,6 +3748,45 @@
           }
         }
       },
+      "OverviewPartInputUnit" : {
+        "type" : "object",
+        "properties" : {
+          "alias" : {
+            "type" : "string"
+          },
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sourceRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "chunkId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "generation" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ordinal" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "contentHash" : {
+            "type" : "string"
+          },
+          "charStart" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "charEnd" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
       "OverviewResponse" : {
         "type" : "object",
         "properties" : {
@@ -2980,21 +3795,20 @@
             "format" : "int32"
           },
           "title" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
+            "type" : "string"
           },
           "outline" : {
             "type" : [ "array", "null" ],
             "items" : {
               "$ref" : "#/components/schemas/OverviewChapter"
-            },
-            "maxItems" : 60,
-            "minItems" : 0
+            }
           },
           "summary" : {
             "type" : [ "object", "null" ],
             "$ref" : "#/components/schemas/OverviewSummary"
+          },
+          "outlineProvenance" : {
+            "$ref" : "#/components/schemas/OutlineProvenanceInput"
           }
         },
         "required" : [ "outline", "schemaVersion", "summary", "title" ]
@@ -3037,6 +3851,28 @@
           },
           "result" : {
             "$ref" : "#/components/schemas/OverviewResponse"
+          },
+          "outlineIdentity" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/OutlineIdentityInput"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "outlineProvenance" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/OutlineProvenanceInput"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "inputDescriptor" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/OverviewInputDescriptor"
+          },
+          "candidateInput" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/CandidateInput"
           }
         },
         "required" : [ "baseVersion", "clientWriteId", "mode", "result" ]
@@ -3045,14 +3881,10 @@
         "type" : "object",
         "properties" : {
           "title" : {
-            "type" : "string",
-            "maxLength" : 300,
-            "minLength" : 0
+            "type" : "string"
           },
           "summary" : {
-            "type" : "string",
-            "maxLength" : 4000,
-            "minLength" : 0
+            "type" : "string"
           },
           "sourceIds" : {
             "type" : "array",
@@ -3061,7 +3893,6 @@
               "maxLength" : 300,
               "minLength" : 0
             },
-            "maxItems" : 100,
             "minItems" : 1
           },
           "locator" : {
@@ -3096,32 +3927,166 @@
         "type" : "object",
         "properties" : {
           "overview" : {
-            "type" : "string",
-            "maxLength" : 4000,
-            "minLength" : 0
+            "type" : "string"
           },
           "keyPoints" : {
             "type" : "array",
             "items" : {
-              "type" : "string",
-              "maxLength" : 4000,
-              "minLength" : 0
-            },
-            "maxItems" : 100,
-            "minItems" : 0
+              "type" : "string"
+            }
           },
           "learningPath" : {
             "type" : "array",
             "items" : {
-              "type" : "string",
-              "maxLength" : 4000,
-              "minLength" : 0
-            },
-            "maxItems" : 100,
-            "minItems" : 0
+              "type" : "string"
+            }
           }
         },
         "required" : [ "keyPoints", "learningPath" ]
+      },
+      "SourceRevision" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }
+      },
+      "CanonicalSourceRefView" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ingestionRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "chunkId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "generation" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "charStart" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          },
+          "charEnd" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          },
+          "contentHash" : {
+            "type" : [ "string", "null" ]
+          },
+          "precision" : {
+            "type" : "string",
+            "enum" : [ "SOURCE", "CHUNK", "BLOCK" ]
+          },
+          "parsedDocumentId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "parserId" : {
+            "type" : [ "string", "null" ]
+          },
+          "locations" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/ProvenanceLocationView"
+            }
+          }
+        },
+        "required" : [ "charEnd", "charStart", "chunkId", "contentHash", "generation", "ingestionRevision", "locations", "parsedDocumentId", "parserId", "precision", "sourceId" ]
+      },
+      "OutlineIdentityNodeView" : {
+        "type" : "object",
+        "properties" : {
+          "path" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "nodeId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "contentVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "contentHash" : {
+            "type" : "string"
+          },
+          "sourceRefs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CanonicalSourceRefView"
+            }
+          }
+        },
+        "required" : [ "contentHash", "contentVersion", "nodeId", "path", "sourceRefs" ]
+      },
+      "OutlineIdentityView" : {
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "nodes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineIdentityNodeView"
+            }
+          }
+        },
+        "required" : [ "nodes", "schemaVersion" ]
+      },
+      "OutlineProvenanceSectionView" : {
+        "type" : "object",
+        "properties" : {
+          "path" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "sourceRefs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CanonicalSourceRefView"
+            }
+          }
+        },
+        "required" : [ "path", "sourceRefs" ]
+      },
+      "OutlineProvenanceView" : {
+        "type" : "object",
+        "properties" : {
+          "schemaVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "sections" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineProvenanceSectionView"
+            }
+          }
+        },
+        "required" : [ "schemaVersion", "sections" ]
       },
       "OverviewResultView" : {
         "type" : "object",
@@ -3202,8 +4167,72 @@
           "updatedAt" : {
             "type" : "string",
             "format" : "date-time"
+          },
+          "identityReady" : {
+            "type" : "boolean"
+          },
+          "outlineIdentity" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/OutlineIdentityView"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "outlineProvenance" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/OutlineProvenanceView"
+            }, {
+              "type" : "null"
+            } ]
+          },
+          "outlineInputDescriptor" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/OverviewInputDescriptor"
+          },
+          "summaryInputDescriptor" : {
+            "type" : [ "object", "null" ],
+            "$ref" : "#/components/schemas/OverviewInputDescriptor"
           }
-        }
+        },
+        "required" : [ "identityReady", "outlineIdentity", "outlineInputDescriptor", "summaryInputDescriptor" ]
+      },
+      "ProvenanceLocationView" : {
+        "type" : "object",
+        "properties" : {
+          "blockOrdinal" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "pageNumber" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "anchorIndex" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "startLine" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "charStart" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "charEnd" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "blockCharStart" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "blockCharEnd" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        },
+        "required" : [ "anchorIndex", "blockCharEnd", "blockCharStart", "blockOrdinal", "charEnd", "charStart", "pageNumber", "startLine" ]
       },
       "PasswordChangeRequest" : {
         "type" : "object",
@@ -3454,13 +4483,28 @@
           "float" : {
             "type" : "boolean"
           },
-          "missingNode" : {
-            "type" : "boolean"
-          },
           "container" : {
             "type" : "boolean"
           },
           "object" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
+            "type" : "boolean"
+          },
+          "string" : {
+            "type" : "boolean"
+          },
+          "number" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "long" : {
+            "type" : "boolean"
+          },
+          "double" : {
             "type" : "boolean"
           },
           "textual" : {
@@ -3470,47 +4514,32 @@
           "short" : {
             "type" : "boolean"
           },
-          "long" : {
+          "int" : {
             "type" : "boolean"
           },
           "binary" : {
             "type" : "boolean"
           },
-          "string" : {
-            "type" : "boolean"
-          },
-          "int" : {
-            "type" : "boolean"
-          },
-          "double" : {
-            "type" : "boolean"
-          },
-          "pojo" : {
-            "type" : "boolean"
-          },
           "boolean" : {
             "type" : "boolean"
           },
-          "number" : {
+          "bigDecimal" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
+          "valueNode" : {
             "type" : "boolean"
           },
-          "bigInteger" : {
+          "integralNumber" : {
             "type" : "boolean"
           },
           "nodeType" : {
             "type" : "string",
             "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
           },
-          "integralNumber" : {
+          "bigInteger" : {
             "type" : "boolean"
           },
-          "valueNode" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
+          "missingNode" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -4556,8 +5585,12 @@
             "items" : {
               "$ref" : "#/components/schemas/SubjectOverviewSourceInput"
             },
-            "maxItems" : 100,
             "minItems" : 1
+          },
+          "retryOfRequestId" : {
+            "type" : "string",
+            "format" : "uuid",
+            "description" : "Previous X-Overview-Request-Id to explicitly replace with a new attempt"
           }
         },
         "required" : [ "mode", "sources", "subjectId" ]
@@ -4578,9 +5611,7 @@
             "type" : [ "array", "null" ],
             "items" : {
               "$ref" : "#/components/schemas/OverviewChapter"
-            },
-            "maxItems" : 60,
-            "minItems" : 0
+            }
           },
           "summary" : {
             "type" : [ "object", "null" ],
@@ -4604,6 +5635,11 @@
             "type" : "string",
             "maxLength" : 2000,
             "minLength" : 0
+          },
+          "retryOfRequestId" : {
+            "type" : "string",
+            "format" : "uuid",
+            "description" : "Previous X-Overview-Request-Id to explicitly replace with a new attempt"
           }
         },
         "required" : [ "mode", "sourceId" ]
@@ -4620,6 +5656,190 @@
           },
           "chatModel" : {
             "type" : "string"
+          }
+        }
+      },
+      "StartRequest" : {
+        "type" : "object",
+        "properties" : {
+          "clientRequestId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "scope" : {
+            "type" : "string",
+            "enum" : [ "SOURCE", "SUBJECT" ]
+          },
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            }
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "ALL", "OUTLINE" ]
+          },
+          "instruction" : {
+            "type" : "string",
+            "maxLength" : 2000,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "clientRequestId", "mode", "scope" ]
+      },
+      "JobView" : {
+        "type" : "object",
+        "properties" : {
+          "jobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string",
+            "enum" : [ "QUEUED", "RUNNING", "PAUSING", "PAUSED", "CANCELLING", "CANCELLED", "COMPLETED", "FAILED", "RECOVERY_REQUIRED", "EXPIRED" ]
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "scope" : {
+            "type" : "string",
+            "enum" : [ "SOURCE", "SUBJECT" ]
+          },
+          "sourceId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "subjectId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "sourceIds" : {
+            "type" : [ "array", "null" ],
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            }
+          },
+          "mode" : {
+            "type" : "string",
+            "enum" : [ "ALL", "OUTLINE" ]
+          },
+          "stage" : {
+            "type" : "string",
+            "enum" : [ "QUEUED", "VALIDATING", "INDEXING", "PLANNING", "WRITING", "ASSEMBLING", "COMPLETE" ]
+          },
+          "verifiedNodes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "totalNodes" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int32"
+          },
+          "deadlineAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "safeErrorCode" : {
+            "type" : [ "string", "null" ]
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "completedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          },
+          "publicationBaseVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "completedAt", "createdAt", "deadlineAt", "jobId", "mode", "publicationBaseVersion", "safeErrorCode", "scope", "sourceId", "sourceIds", "stage", "status", "subjectId", "totalNodes", "updatedAt", "verifiedNodes", "version" ]
+      },
+      "ControlRequest" : {
+        "type" : "object",
+        "properties" : {
+          "expectedVersion" : {
+            "type" : "integer",
+            "format" : "int32",
+            "minimum" : 1
+          }
+        },
+        "required" : [ "expectedVersion" ]
+      },
+      "PublishRequest" : {
+        "type" : "object",
+        "properties" : {
+          "clientPublishId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "expectedVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "baseVersion" : {
+            "type" : "integer",
+            "format" : "int64",
+            "minimum" : 0
+          }
+        },
+        "required" : [ "baseVersion", "clientPublishId", "expectedVersion" ]
+      },
+      "PublicationView" : {
+        "type" : "object",
+        "properties" : {
+          "publicationId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "jobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "state" : {
+            "type" : "string",
+            "enum" : [ "PENDING", "PUBLISHED", "CONFLICT", "FAILED" ]
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "resultId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "resultVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "safeErrorCode" : {
+            "type" : "string"
+          },
+          "retryAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
           }
         }
       },
@@ -5246,6 +6466,86 @@
           }
         }
       },
+      "OverviewSectionView" : {
+        "type" : "object",
+        "properties" : {
+          "resultId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sectionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "chapterTitle" : {
+            "type" : "string"
+          },
+          "path" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "section" : {
+            "$ref" : "#/components/schemas/OverviewSection"
+          },
+          "sourceRefs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CanonicalSourceRefView"
+            }
+          }
+        }
+      },
+      "OutlineNode" : {
+        "type" : "object",
+        "properties" : {
+          "sectionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "path" : {
+            "type" : "array",
+            "items" : {
+              "type" : "integer",
+              "format" : "int32"
+            }
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "chapter" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "OverviewOutlineView" : {
+        "type" : "object",
+        "properties" : {
+          "resultId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "scopeType" : {
+            "type" : "string"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "nodes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/OutlineNode"
+            }
+          }
+        }
+      },
       "SessionListResponse" : {
         "type" : "object",
         "properties" : {
@@ -5310,6 +6610,45 @@
           },
           "daily" : {
             "$ref" : "#/components/schemas/Window"
+          },
+          "allCalls" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "$ref" : "#/components/schemas/AiUsageTotals"
+            }
+          }
+        }
+      },
+      "AiUsageTotals" : {
+        "type" : "object",
+        "properties" : {
+          "actualInputTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "actualOutputTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "unknownDispatchedCalls" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "chargedTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "reservedTokens" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "reservedCalls" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "calls" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },
@@ -5352,6 +6691,186 @@
             }
           }
         }
+      },
+      "JobList" : {
+        "type" : "object",
+        "properties" : {
+          "jobs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/JobView"
+            }
+          },
+          "nextCursor" : {
+            "type" : [ "string", "null" ]
+          }
+        },
+        "required" : [ "jobs", "nextCursor" ]
+      },
+      "InputRef" : {
+        "type" : "object",
+        "properties" : {
+          "sourceId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "sourceRevision" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "chunkId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "generation" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ordinal" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "contentHash" : {
+            "type" : "string"
+          },
+          "charStart" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "charEnd" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "Node" : {
+        "type" : "object",
+        "properties" : {
+          "nodeId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ordinal" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "chapterIndex" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "chapterTitle" : {
+            "type" : "string"
+          },
+          "sectionTitle" : {
+            "type" : "string"
+          },
+          "sectionSummary" : {
+            "type" : "string"
+          },
+          "inputs" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/InputRef"
+            }
+          }
+        }
+      },
+      "Page" : {
+        "type" : "object",
+        "properties" : {
+          "jobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string",
+            "enum" : [ "QUEUED", "RUNNING", "PAUSING", "PAUSED", "CANCELLING", "CANCELLED", "COMPLETED", "FAILED", "RECOVERY_REQUIRED", "EXPIRED" ]
+          },
+          "planId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "planFingerprint" : {
+            "type" : "string"
+          },
+          "incomplete" : {
+            "type" : "boolean"
+          },
+          "nodes" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Node"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string"
+          }
+        }
+      },
+      "Fragment" : {
+        "type" : "object",
+        "properties" : {
+          "section" : {
+            "$ref" : "#/components/schemas/OverviewSection"
+          },
+          "provenance" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CanonicalSourceRefView"
+            }
+          }
+        }
+      },
+      "NodeView" : {
+        "type" : "object",
+        "properties" : {
+          "jobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "planId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "nodeId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "ordinal" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "chapterIndex" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "chapterTitle" : {
+            "type" : "string"
+          },
+          "fragments" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Fragment"
+            }
+          }
+        }
+      },
+      "Candidate" : {
+        "type" : "object",
+        "properties" : {
+          "jobId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "version" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "result" : {
+            "$ref" : "#/components/schemas/OverviewResponse"
+          }
+        },
+        "required" : [ "jobId", "result", "version" ]
       },
       "AccountDeletionRequest" : {
         "type" : "object",

@@ -78,10 +78,35 @@ public class ProviderHttpClient {
             String apiKey,
             Object body,
             Class<T> responseType,
+            OverviewCancellation cancellation,
+            long responseByteLimit) throws IOException {
+        return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
+                cancellation, responseByteLimit);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
             long responseTimeoutMillis,
             OverviewCancellation cancellation) throws IOException {
+        return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
+                cancellation, maxResponseBytes);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            long responseTimeoutMillis,
+            OverviewCancellation cancellation,
+            long responseByteLimit) throws IOException {
         if (endpoint == null || path == null || !path.startsWith("/")
-                || apiKey == null || apiKey.isBlank() || responseType == null) {
+                || apiKey == null || apiKey.isBlank() || responseType == null || responseByteLimit < 1) {
             throw new IllegalArgumentException("Provider request is invalid");
         }
         byte[] requestBody;
@@ -93,8 +118,8 @@ public class ProviderHttpClient {
         if (cancellation != null && cancellation.isCancelled()) throw new IOException("Provider call was cancelled");
         logStructuredJsonMode(requestBody);
         byte[] responseBody = transport.post(endpoint, path, apiKey, requestBody, connectTimeoutMillis,
-                requirePositiveTimeout(responseTimeoutMillis), cancellation);
-        if (responseBody == null || responseBody.length > maxResponseBytes) throw new ProviderResponseTooLargeException();
+                requirePositiveTimeout(responseTimeoutMillis), cancellation, responseByteLimit);
+        if (responseBody == null || responseBody.length > responseByteLimit) throw new ProviderResponseTooLargeException();
         try {
             return objectMapper.readValue(responseBody, responseType);
         } catch (JacksonException exception) {
@@ -308,6 +333,14 @@ public class ProviderHttpClient {
         public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody,
                            long connectTimeoutMillis, long responseTimeoutMillis,
                            OverviewCancellation cancellation) throws IOException {
+            return post(endpoint, path, apiKey, requestBody, connectTimeoutMillis, responseTimeoutMillis,
+                    cancellation, maxResponseBytes);
+        }
+
+        @Override
+        public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody,
+                           long connectTimeoutMillis, long responseTimeoutMillis,
+                           OverviewCancellation cancellation, long responseByteLimit) throws IOException {
             URI target = buildTargetUri(endpoint, path);
             HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
             ProviderSocketRegistry registry = new ProviderSocketRegistry();
@@ -335,7 +368,7 @@ public class ProviderHttpClient {
                     throw new ProviderHttpException(status);
                 }
                 try (InputStream input = connection.getInputStream()) {
-                    return readBounded(input, maxResponseBytes);
+                    return readBounded(input, responseByteLimit);
                 }
             } finally {
                 cancellationRegistration.close();

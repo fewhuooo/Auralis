@@ -1,5 +1,9 @@
 # Auralis 产品需求
 
+### Overview 直接生成的主动重试（2026-10-27）
+
+Source/Subject现有生成入口允许在失败或重启中断后建立新执行，复用已验证进度；相同请求的网络重送不得重复创建执行。主动重试不清旧费用、不绕过额度/并发限制，也不覆盖已有成功结果或用户编辑。该规则限定direct JSON/SSE，与下文durable job resume保持原generation/预算的规则分开；PC只保留会话内旧请求引用，刷新后普通请求仍可重新执行FAILED/过期任务。[实施与验收计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
 更新时间：2026-10-12
 
 文档状态：现行需求
@@ -40,7 +44,17 @@ Auralis 旨在把学习资料、知识理解、任务执行、复习反馈和多
 - **AI 可追溯**：AI 结果应保留来源上下文，用户能判断、修改和继续使用。
 - **安全隔离**：用户数据、资产、同步记录和长连接必须按用户隔离。
 
+### Overview M4：后台生成与正式采纳（源码、相关验证、唯一审查与隔离浏览器后端接口流程完成；未部署）
+
+PC 对 Source/Subject ALL、OUTLINE 使用显式来源选择和 durable job；候选完成后由用户查看 VERIFIED 预览并主动发布或采纳。正式结果按现行身份/来源校验、版本 CAS 与 receipt 写入，部分 OUTLINE 更新保留已有 summary。离开视图停止观察不等于取消 job；暂停、继续、取消和重连遵循服务端持久状态。FILE/TEXT/URL 的本地编辑沿现有 outbox 同步，并在源 revision 与 owner/device/scope fences 仍成立时提交。隔离浏览器合成 Provider 流程已完成后端接口验证；真实 Provider、native Tauri/SQLite、FILE/OCR、部署与内容质量仍属后续验收。M4 范围关闭不等于 M5/M6 或整体 M1–M6 路线完成。
+
 ## 核心场景
+
+### 学习目标与交互带学（计划中）
+
+- 用户可按总览大纲路线学习，也可用自然语言自由选择目标；AI 面板提供讲解、图形/交互活动、选择与问答，应用把提交答案自动编入下一轮，Agent 先反馈再继续。
+- 大纲展示节点进度和恢复入口；暂停后保留对话、当前问题、活动与完成草稿。结束本节经用户编辑确认知识块、本机保存、同步确认和进度关联，之后由用户进入现有正式学习/复习。
+- 验收覆盖自由会话无节点完成、断线/重复提交、资料范围与修订、受控渲染、草稿失败、KB 幂等及会话累计 usage。设计与计划见[学习 Agent 设计](../design/2026-10-16-learning-agent-design.md)及[实施计划](../plans/2026-10-16-learning-agent-implementation.md)；当前尚未实施。
 
 ### 2026-10-10 AI 完整额度与个人中心（代码与相关自动验证通过；GUI/Provider 待验收）
 
@@ -162,6 +176,7 @@ Auralis 旨在把学习资料、知识理解、任务执行、复习反馈和多
 
 ### AI / RAG
 
+- 跨功能用量治理（计划中）：平台提供模型执行统一额度与任务预算；用户 BYOK 主要提供计量，不扣平台额度、不套平台任务 token/调用配额。两类保留授权、服务容量、超时/输入资源与有限执行保护；每次实际凭据来源由服务端确定，混合来源分别记账，平台 embedding 仍沿原窗口豁免。全调用实际用量与平台额度分别展示。按[统一方案](../plans/2026-10-16-ai-unified-limits.md)实施，学习只消费策略，尚未实施。
 - 普通与流式聊天。
 - 聊天默认检索当前用户范围内可用的资料，产品不提供关闭资料检索的选项；请求范围由当前 Source、用户明确选择的 Source / Subject 或无显式上下文时的 owner 范围决定。未命中资料时仍可生成回答并返回空 citations；检索或 embedding 配置/Provider 错误须明确失败，不降级为无检索回答。
 - PC Tauri 对当前可预览文件执行本地原生提取或 OCR，并向服务端提交统一解析结果；PC Web 不作为发布目标。
@@ -176,6 +191,34 @@ Auralis 旨在把学习资料、知识理解、任务执行、复习反馈和多
 - 手动 Overview 生成须可停止；离开工作区只停止该页面发起的请求，后台自动生成继续。共享生成保留其他消费者的需求；取消保留上次成功内容，不显示为生成失败。服务端总期限须主动终止当前本地 Provider 传输，账号/runtime 或资料修订失效须拒绝旧结果。
 - 任务抽取、手写转换和排期建议。
 - 使用向量库检索学科或来源上下文。
+
+#### 内容规模自适应总览（M1 工程边界，2026-10-19）
+
+- 默认关闭。启用后文件与当前学科 Source 的 ALL、OUTLINE 从当前 READY 原文出发，经过轻量索引、单次有界目录规划、按节生成和应用侧装配；SUMMARY 维持短摘要。所选来源缺少可用原文或输入超过容量时明确失败，不回退旧摘要冒充详细正文。
+- adaptive inventory 的全局上限为 500 条 active raw chunk rows，空白 row 也计数；remaining+1 sentinel 在完整 identity/hash/provider 前拒绝超限。M1 只有单次有界目录请求，不保证任意规模或语义无损。M3 前置交付与验收必须包含分层组织 metadata、保留原文来源绑定及已验证正文。
+- 源码、focused/full/package/Compose 自动门禁及唯一复审通过；未部署，未完成真实 Provider、生产/业务数据库、GUI 或内容质量验收。M2 实现、数据库/PC/API artifact 验证与唯一复审已完成；backend/PC full 首轮失败及 Mobile 两个既有类型错误仍按 Status 单列。M3–M6 尚未交付。M1 本轮没有公开 API/DB/SDK 或 PC 学习能力变化。
+
+#### 总览大纲身份与原文关联（M2 工程边界，2026-10-19）
+
+- 源码候选在持久 Overview 结果中保存稳定节点 UUID 与服务端计算的内容版本/hash，并将按节写作实际使用的来源 chunk 与解析位置作为可验证 lineage 保存。旧结果不自动初始化；只在明确保存后具备身份。summary-only 更新保留大纲身份。
+- 来源位置表示生成时实际关联的原文范围，不构成逐句语义支持或答案正确性保证。PG clean/upgrade/receipt、PC 数据回归、最终 OpenAPI/SDK artifact 验证与唯一复审均完成（B0/I0/O0）。全量 backend/PC 首轮统计及 Mobile 两个既有 SDK 类型错误保留在 Status；未部署或完成真实 Provider、生产业务数据库和 PC GUI 验收；学习 Agent 与 M3–M6 均未交付。
+
+#### 2026-10-22 Overview M3.3 持久后台生成与控制（源码、相关自动验证与唯一审查完成；未部署）
+
+- 用户可启动 Source 或 Subject 的 ALL/OUTLINE 后台生成，在断线后按 owner 查询有界 job 列表、真实阶段/已验证节点进度和最终完整候选；队列、暂停、继续、取消和安全对账使用版本围栏。SUMMARY 继续使用现行短摘要路径。
+- 排队不占 Provider 调用期限；首次执行 claim 后固定当前 Overview 绝对期限。暂停、重启和 worker 接管不延长期限、不创建新 generation/task 或重置预算。raw coordinator/job budget_task_id 仍是原预算 UUID；invocation task_id 使用 Guard 稳定派生的真实 ledger UUID，不改变原额度、结算或同预算安全重试身份。恢复核验原输入/profile/source identity 和所有精确 Provider reservation；未知派发 usage 保持 hold，不能因用户声明或断线自动重发。
+- 本阶段 job 完成只提供重新校验的 private candidate，不自动写正式 OverviewResult/KB/Review。相关源码、自动验证与唯一审查已完成，但没有修复后第二次 full；未部署、未验收真实 Provider、生产业务数据库、GUI/用户流程或内容质量。M3.4 正式发布和分节预览已实现；PC consumer 曾在后续阶段接入，现按用户决定撤回，不作为待补产品范围；详见 [M3.3 计划](../plans/2026-10-19-overview-m33-background-jobs.md)。
+
+#### 2026-10-22 Overview PC 当前交互范围（M4 新 UI 已撤回）
+
+PC 当前继续使用原 Overview 入口、SSE 自动生成与既有冲突/同步流程。用户已撤回 M4 新增的 job selector、candidate preview/publish/adopt 与 section reader 交互，这些不属于当前或后续自动补齐的产品范围。只保留生成期间本机编辑保护：检测到编辑时不以 AI 输出覆盖本机值，保留本机 cache/frozen mutation，并在原冲突位置提供显式选择；浏览器 fallback 使用跨 tab Web Lock，SQLite 原路径不变。Server durable job、candidateInput、publication receipt、VERIFIED preview 与 formal section API 继续可用，但当前 PC 不消费。
+
+M4 新交互的隔离浏览器和自动验证记录均发生在撤回前，仅为历史事实；回退后的定向检查与残余失败见 [当前状态](../current/Status.md) 和总计划。该回退没有部署、数据库迁移、真实 Provider 或回退后 GUI 验收。
+
+#### 2026-10-22 Overview M3.4 正式发布与分节预览（源码、相关自动验证与唯一审查完成；未部署）
+
+- 已编码候选将选定原文 job candidate 以 explicit per-part input binding 正式 CAS 保存，并保留原有 Overview GET/PUT/write receipt 语义；提供 durable publish status、已验证节点预览与按稳定 section ID/version 读取。Job 列表可按配对 scope 过滤用于断线重连。
+- M3.4 相关 PostgreSQL/backend/API artifact/package 门禁及唯一 reviewer 已完成；full run04 的失败保留，定向复验闭合相关失败组，不称 full suite 全绿。未部署，无业务 DB/真实 Provider/GUI/内容质量验收。PC UI、M4–M6 与最终 compatibility cleanup 仍待交付；验证边界见 [M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。
 
 AI 输出属于辅助结果，用户必须能识别失败、超时和非结构化结果；不把模型回答当作不可修改的业务事实。
 

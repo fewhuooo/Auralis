@@ -5,6 +5,7 @@ import type {
   OverviewApi,
   OverviewMode,
   OverviewResponse,
+  OutlineProvenanceInput,
   FileOverviewTrigger,
   SubjectOverviewSourceInput,
   SourceOverviewRequest,
@@ -27,9 +28,10 @@ interface OverviewRepositoryLike {
   captureScopeFenceToken(scopeType: 'FILE' | 'SUBJECT', scopeId: string): { userId: string; serverDeviceId: string; scopeType: 'FILE' | 'SUBJECT'; scopeId: string; generation: number }
   isScopeFenceTokenCurrent(token: { userId: string; serverDeviceId: string; scopeType: 'FILE' | 'SUBJECT'; scopeId: string; generation: number }): boolean
   getFileOverview(sourceId: string, ingestionRevision: string): Promise<FileOverviewRecord | null>
-  saveFileOverviewPart(input: { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse; isStillCurrent?: () => boolean }): Promise<unknown>
+  captureGenerationBaseline?(scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, mode: OverviewMode): Promise<string>
+  saveFileOverviewPart(input: { sourceId: string; ingestionRevision: string; mode: OverviewMode; response: OverviewResponse; outlineProvenanceInput?: OutlineProvenanceInput; generationBaseline?: string; isStillCurrent?: () => boolean }): Promise<unknown>
   markFileOverviewFailed(sourceId: string, ingestionRevision: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
-  saveSubjectOverviewPart(input: { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string; isStillCurrent?: () => boolean }): Promise<unknown>
+  saveSubjectOverviewPart(input: { subjectId: string; mode: OverviewMode; response: OverviewResponse; inputFingerprint: string; outlineProvenanceInput?: OutlineProvenanceInput; generationBaseline?: string; isStillCurrent?: () => boolean }): Promise<unknown>
   markSubjectOverviewFailed(subjectId: string, mode: OverviewMode, errorCode: string, errorDetail: string): Promise<void>
   removeSubjectOverview(subjectId: string): Promise<void>
   removeFileOverviews(sourceId: string): Promise<void>
@@ -186,6 +188,7 @@ export class OverviewGenerationService {
   private readonly subjectGenerations = new Map<string, number>()
   private readonly subjectControllers = new Map<string, AbortController>()
   private readonly subjectContexts = new Map<string, SubjectGenerationContext>()
+  private readonly dispatchedRequestIds = new Map<string, string>()
 
   constructor(options: Options) {
     this.api = options.api
@@ -300,6 +303,7 @@ export class OverviewGenerationService {
       this.subjectGenerations.set(subjectId, (this.subjectGenerations.get(subjectId) ?? 0) + 1)
       controller.abort()
     }
+    this.dispatchedRequestIds.clear()
   }
 
   async discardFileOverview(sourceId: string): Promise<void> {
@@ -316,6 +320,8 @@ export class OverviewGenerationService {
     }
     await this.repository.removeFileOverviews(sourceId)
     await Promise.all([...affectedSubjects].map((subjectId) => this.repository.removeSubjectOverview(subjectId)))
+    this.clearDispatchedRequestIds('FILE', sourceId)
+    for (const subjectId of affectedSubjects) this.clearDispatchedRequestIds('SUBJECT', subjectId)
   }
 
   async restoreFileOverview(sourceId: string): Promise<boolean> {
@@ -387,10 +393,18 @@ export class OverviewGenerationService {
         outline: mode === 'SUMMARY' ? null : file.outline,
         summary: mode === 'OUTLINE' ? null : file.summary,
       }))
-      const request = withInstruction({ subjectId, mode, sources }, instruction) as SubjectOverviewRequest
+      const retryKey = this.dispatchedRequestKey('SUBJECT', subjectId, JSON.stringify([inputFingerprint, mode, instruction?.trim() ?? '']))
+      const previousRequestId = this.dispatchedRequestIds.get(retryKey)
+      const request = withInstruction({ subjectId, mode, sources,
+        ...(previousRequestId ? { retryOfRequestId: previousRequestId } : {}) }, instruction) as SubjectOverviewRequest
       if (!(await this.areSubjectSourcesCurrent(context.sources))) return skippedResult('SOURCE_NOT_ELIGIBLE')
       if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) return skippedResult('ABORTED')
-      const generated = await raceWithAbort(this.api.generateSubjectOverview(request, { requestId, signal: controller.signal }), controller.signal)
+      const generationBaseline = await this.repository.captureGenerationBaseline?.('SUBJECT',subjectId,'subject-v1',mode)
+      if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) return skippedResult('ABORTED')
+      const generated = await raceWithAbort(this.api.generateSubjectOverview(request, {
+        requestId, signal: controller.signal,
+        onRequestDispatched: () => this.dispatchedRequestIds.set(retryKey, requestId),
+      }), controller.signal)
       if (controller.signal.aborted || this.subjectGenerations.get(subjectId) !== generation) {
         return skippedResult('ABORTED')
       }
@@ -407,9 +421,13 @@ export class OverviewGenerationService {
       if (!(await this.canCommitSubjectGeneration(subjectId, generation, controller, context.sources))) {
         return skippedResult(this.subjectGenerationSkipCode(subjectId, generation, controller))
       }
+      const { outlineProvenance: outlineProvenanceInput, ...response } = generated
       try {
-        await this.repository.saveSubjectOverviewPart({ subjectId, mode, response: generated, inputFingerprint,
+        const saved = await this.repository.saveSubjectOverviewPart({ subjectId, mode, response, inputFingerprint,
+          ...(outlineProvenanceInput ? { outlineProvenanceInput } : {}), generationBaseline,
           isStillCurrent: () => this.isSubjectGenerationCurrent(subjectId, generation, controller, context.sources) })
+        const conflict = (saved as { generationConflicts?: Array<{ clientWriteId?: string }> } | null)?.generationConflicts?.[0]
+        if (conflict?.clientWriteId) return { status: 'LOCAL_EDIT_CONFLICT', requestId, clientWriteId: conflict.clientWriteId }
       } catch (error) {
         if (isOverviewSaveNotCurrent(error)) return skippedResult(this.subjectGenerationSkipCode(subjectId, generation, controller))
         throw error
@@ -488,26 +506,38 @@ export class OverviewGenerationService {
       return running.promise
     }
     const requestId = this.requestIdFactory()
+    const retryKey = this.dispatchedRequestKey('FILE', sourceId, JSON.stringify([revision, mode, instruction?.trim() ?? '']))
+    const previousRequestId = this.dispatchedRequestIds.get(retryKey)
     const controller = new AbortController()
     const startedAt = monotonicNow()
     const task: Promise<OverviewRegenerationResult> = (async () => {
-      const request = withInstruction({ sourceId, mode }, instruction) as SourceOverviewRequest
+      const request = withInstruction({ sourceId, mode,
+        ...(trigger === 'MANUAL_RETRY' && previousRequestId ? { retryOfRequestId: previousRequestId } : {}) }, instruction) as SourceOverviewRequest
       this.log({ event: 'START', trigger, requestId, sourceId, revision, mode, durationMs: elapsedSince(startedAt) })
       try {
         if (!(await this.isEligible(sourceId, revision))) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: 'SOURCE_NOT_ELIGIBLE' })
           return skippedResult('SOURCE_NOT_ELIGIBLE')
         }
-        const generated = await raceWithAbort(this.api.generateSourceOverview(request, { requestId, signal: controller.signal }), controller.signal)
+        const generationBaseline = await this.repository.captureGenerationBaseline?.('FILE',sourceId,revision,mode)
+        if (controller.signal.aborted || !(await this.isEligible(sourceId,revision))) return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
+        const generated = await raceWithAbort(this.api.generateSourceOverview(request, {
+          requestId, signal: controller.signal,
+          onRequestDispatched: () => this.dispatchedRequestIds.set(retryKey, requestId),
+        }), controller.signal)
         if (controller.signal.aborted || !(await this.isEligible(sourceId, revision)) || !(await this.isCurrentReady(sourceId, revision))) {
           this.log({ event: 'SKIPPED', trigger, requestId, sourceId, revision, mode, outcome: controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE' })
           return skippedResult(controller.signal.aborted ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
         }
+        const { outlineProvenance: outlineProvenanceInput, ...response } = generated
         try {
-          await this.repository.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode, response: generated,
+          const saved = await this.repository.saveFileOverviewPart({ sourceId, ingestionRevision: revision, mode, response,
+            ...(outlineProvenanceInput ? { outlineProvenanceInput } : {}), generationBaseline,
             isStillCurrent: () => !controller.signal.aborted && !this.blockedSourceIds.has(sourceId)
               && (!this.currentSourceRevisions.has(sourceId) || this.currentSourceRevisions.get(sourceId) === revision)
               && this.inFlight.get(key)?.controller === controller })
+          const conflict = (saved as { generationConflicts?: Array<{ clientWriteId?: string }> } | null)?.generationConflicts?.[0]
+          if (conflict?.clientWriteId) return { status: 'LOCAL_EDIT_CONFLICT', requestId, clientWriteId: conflict.clientWriteId }
         } catch (error) {
           if (isOverviewSaveNotCurrent(error)) return skippedResult(controller.signal.aborted || this.blockedSourceIds.has(sourceId) ? 'ABORTED' : 'SOURCE_NOT_ELIGIBLE')
           throw error
@@ -549,6 +579,26 @@ export class OverviewGenerationService {
       console.info(DIAGNOSTIC_PREFIX, payload)
     } catch {
       // Diagnostics are best effort and must never affect generation behavior.
+    }
+  }
+
+  private dispatchedRequestKey(scopeType: 'FILE' | 'SUBJECT', scopeId: string, inputIdentity: string): string {
+    const scope = this.repository.captureScopeFenceToken(scopeType, scopeId)
+    return `${JSON.stringify([scope.userId, scope.serverDeviceId, scopeType, scopeId, scope.generation])}|${inputIdentity}`
+  }
+
+  private clearDispatchedRequestIds(scopeType: 'FILE' | 'SUBJECT', scopeId: string): void {
+    const scope = this.repository.captureScopeFenceToken(scopeType, scopeId)
+    for (const key of this.dispatchedRequestIds.keys()) {
+      const identity = key.slice(0, key.indexOf('|'))
+      try {
+        const [userId, serverDeviceId, type, id] = JSON.parse(identity)
+        if (userId === scope.userId && serverDeviceId === scope.serverDeviceId && type === scopeType && id === scopeId) {
+          this.dispatchedRequestIds.delete(key)
+        }
+      } catch {
+        // A malformed in-memory key cannot be used for a retry.
+      }
     }
   }
 }

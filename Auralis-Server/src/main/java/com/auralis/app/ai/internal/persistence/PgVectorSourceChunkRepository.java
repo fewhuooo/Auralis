@@ -20,8 +20,8 @@ public class PgVectorSourceChunkRepository {
     private static final String INSERT_SQL = """
             insert into source_chunks (
                 id, user_id, source_id, generation, ordinal, content, content_hash,
-                char_start, char_end, embedding_json, embedding, active, created_at, updated_at)
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as vector), false, current_timestamp, current_timestamp)
+                char_start, char_end, embedding_json, embedding, provenance_json, active, created_at, updated_at)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, cast(? as vector), ?, false, current_timestamp, current_timestamp)
             """;
 
     private final JdbcTemplate jdbcTemplate;
@@ -42,8 +42,21 @@ public class PgVectorSourceChunkRepository {
             UUID generation,
             List<TextChunk> chunks,
             List<List<Double>> vectors) {
+        replace(userId, sourceId, generation, chunks, vectors, null);
+    }
+
+    public void replace(
+            UUID userId,
+            UUID sourceId,
+            UUID generation,
+            List<TextChunk> chunks,
+            List<List<Double>> vectors,
+            List<String> provenanceJson) {
         if (chunks.size() != vectors.size()) {
             throw new IllegalArgumentException("Chunk and embedding counts must match");
+        }
+        if (provenanceJson != null && provenanceJson.size() != chunks.size()) {
+            throw new IllegalArgumentException("Chunk provenance count must match chunks");
         }
         vectors.forEach(vectorCodec::validate);
         jdbcTemplate.update("""
@@ -66,6 +79,7 @@ public class PgVectorSourceChunkRepository {
                 statement.setInt(9, chunk.charEnd());
                 statement.setString(10, embeddingJson);
                 statement.setString(11, vectorLiteral(vectors.get(index)));
+                statement.setString(12, provenanceJson == null ? null : provenanceJson.get(index));
             }
 
             @Override

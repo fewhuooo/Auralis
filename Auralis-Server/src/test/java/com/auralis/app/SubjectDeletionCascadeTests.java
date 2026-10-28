@@ -257,6 +257,7 @@ class SubjectDeletionCascadeTests {
         var owner = register("subject-cascade-lock");
         SubjectView subject = subjectService.create(owner.user().id(),
                 new SubjectCommand("Lock", null, null, "001"));
+        CountDownLatch parentLockAcquired = new CountDownLatch(1);
         CountDownLatch childStarted = new CountDownLatch(1);
         CountDownLatch childReachedSave = new CountDownLatch(1);
         AtomicBoolean childReachedSaveBeforeDelete = new AtomicBoolean();
@@ -266,10 +267,13 @@ class SubjectDeletionCascadeTests {
         doAnswer(invocation -> {
             childReachedSave.countDown();
             return invocation.callRealMethod();
-        }).when(sourceRepository).save(any(SourceEntity.class));
+        }).when(sourceRepository).saveAndFlush(any(SourceEntity.class));
         try {
             CompletableFuture<Throwable> child = CompletableFuture.supplyAsync(() -> {
                 try {
+                    if (!parentLockAcquired.await(5, TimeUnit.SECONDS)) {
+                        return new AssertionError("parent must acquire the Subject row lock before child creation");
+                    }
                     childStarted.countDown();
                     template.executeWithoutResult(status -> sourceService.create(owner.user().id(), new SourceCommand(
                             subject.id(), SourceType.TEXT, "Late source", null, null, "text", null)));
@@ -281,9 +285,10 @@ class SubjectDeletionCascadeTests {
 
             template.executeWithoutResult(status -> {
                 subjectLockCoordinator.lockSubjects(owner.user().id(), List.of(subject.id()));
+                parentLockAcquired.countDown();
                 try {
                     assertThat(childStarted.await(1, TimeUnit.SECONDS))
-                            .as("concurrent child mutation must start before the delete scan")
+                            .as("child creation must start after the parent acquired the Subject row lock")
                             .isTrue();
                     childReachedSaveBeforeDelete.set(childReachedSave.await(1, TimeUnit.SECONDS));
                 } catch (InterruptedException interrupted) {
@@ -302,9 +307,15 @@ class SubjectDeletionCascadeTests {
             assertThat(sourceRepository.findAllByUserIdAndSubjectIdAndDeletedAtIsNullOrderByIdAsc(
                     owner.user().id(), subject.id())).isEmpty();
         } finally {
+            parentLockAcquired.countDown();
+            executor.shutdownNow();
+            try {
+                executor.awaitTermination(5, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
             reset(sourceRepository);
             reset(subjectLockCoordinator);
-            executor.shutdownNow();
         }
     }
 

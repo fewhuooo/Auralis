@@ -5,6 +5,7 @@ import com.auralis.app.ai.internal.persistence.AiCredentialRepository;
 import com.auralis.app.ai.internal.security.AiKeyCipher;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.shared.config.AuralisProperties;
+import com.auralis.app.ai.usage.AiCredentialSource;
 import com.auralis.app.shared.error.DomainException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -72,7 +79,8 @@ public class AiSettingsService {
             return new ResolvedSettings(
                     entity.getProvider(),
                     entity.getChatModel(),
-                    new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())));
+                    new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())),
+                    AiCredentialSource.USER_SUPPLIED);
         }
 
         AuralisProperties.Provider defaults = defaultProvider(provider);
@@ -85,7 +93,56 @@ public class AiSettingsService {
         return new ResolvedSettings(
                 provider,
                 defaults.chatModel(),
-                new AiCredential(defaults.baseUrl(), defaults.apiKey()));
+                new AiCredential(defaults.baseUrl(), defaults.apiKey()), AiCredentialSource.PLATFORM);
+    }
+
+    /**
+     * Returns a stable identity for queued work without decrypting a saved BYOK credential
+     * or constructing an {@link AiCredential}. The fingerprint is internal job metadata;
+     * it must never be returned by an API or included in logs.
+     */
+    @Transactional(readOnly = true)
+    public JobProfileMetadata jobProfileMetadata(UUID userId, AiProviderType provider) {
+        AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
+        if (entity != null && !blank(entity.getEncryptedApiKey())) {
+            return metadataForSavedCredential(entity);
+        }
+
+        AuralisProperties.Provider defaults = defaultProvider(provider);
+        if (defaults == null || blank(defaults.apiKey())) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
+        }
+        return metadataForDefault(provider, defaults);
+    }
+
+    @Transactional(readOnly = true)
+    public JobResolvedSettings resolveJobSettings(UUID userId, AiProviderType provider, String expectedFingerprint) {
+        AiCredentialEntity entity = credentialRepository.findByUserIdAndProvider(userId, provider).orElse(null);
+        if (entity != null && !blank(entity.getEncryptedApiKey())) {
+            JobProfileMetadata metadata = metadataForSavedCredential(entity);
+            requireExpectedFingerprint(expectedFingerprint, metadata);
+            ResolvedSettings resolved = new ResolvedSettings(entity.getProvider(), entity.getChatModel(),
+                    new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())),
+                    AiCredentialSource.USER_SUPPLIED);
+            return new JobResolvedSettings(metadata, resolved);
+        }
+        AuralisProperties.Provider defaults = defaultProvider(provider);
+        if (defaults == null || blank(defaults.apiKey())) {
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is not configured");
+        }
+        JobProfileMetadata metadata = metadataForDefault(provider, defaults);
+        requireExpectedFingerprint(expectedFingerprint, metadata);
+        ResolvedSettings resolved = new ResolvedSettings(provider, defaults.chatModel(),
+                new AiCredential(defaults.baseUrl(), defaults.apiKey()), AiCredentialSource.PLATFORM);
+        return new JobResolvedSettings(metadata, resolved);
+    }
+
+    public boolean matchesResolvedSettings(JobProfileMetadata metadata, ResolvedSettings settings) {
+        if (metadata == null || settings == null || settings.credential() == null) return false;
+        return metadata.provider() == settings.provider()
+                && metadata.source() == settings.source()
+                && Objects.equals(metadata.chatModel(), Objects.toString(settings.chatModel(), ""))
+                && Objects.equals(metadata.normalizedEndpoint(), normalizeEndpoint(settings.credential().baseUrl()));
     }
 
     @Transactional(readOnly = true)
@@ -96,7 +153,8 @@ public class AiSettingsService {
         LOGGER.info("AI_SETTINGS_RESOLVED userId={} provider={} source=BYOK endpointHost={} chatModel={}",
                 userId, provider, safeHost(entity.getBaseUrl()), entity.getChatModel());
         return new ResolvedSettings(entity.getProvider(), entity.getChatModel(),
-                new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())));
+                new AiCredential(entity.getBaseUrl(), keyCipher.decrypt(entity.getEncryptedApiKey())),
+                AiCredentialSource.USER_SUPPLIED);
     }
 
     @Transactional(readOnly = true)
@@ -109,7 +167,8 @@ public class AiSettingsService {
         LOGGER.info("AI_EMBEDDING_SETTINGS_RESOLVED provider={} source=SERVER_DEFAULT endpointHost={} model={}",
                 AiProviderType.SILICONFLOW, safeHost(defaults.baseUrl()), defaults.embeddingModel());
         return new ResolvedSettings(AiProviderType.SILICONFLOW, null,
-                new AiCredential(defaults.baseUrl(), defaults.apiKey(), defaults.embeddingModel()));
+                new AiCredential(defaults.baseUrl(), defaults.apiKey(), defaults.embeddingModel()),
+                AiCredentialSource.PLATFORM);
     }
 
     private AuralisProperties.Provider defaultProvider(AiProviderType provider) {
@@ -156,6 +215,64 @@ public class AiSettingsService {
         }
     }
 
-    public record ResolvedSettings(AiProviderType provider, String chatModel, AiCredential credential) {
+    private String normalizeEndpoint(String baseUrl) {
+        try {
+            java.net.URI uri = java.net.URI.create(Objects.toString(baseUrl, "").trim()).normalize();
+            return Objects.toString(uri.getScheme(), "").toLowerCase(Locale.ROOT) + "://"
+                    + Objects.toString(uri.getHost(), "").toLowerCase(Locale.ROOT)
+                    + (uri.getPort() < 0 ? "" : ":" + uri.getPort())
+                    + Objects.toString(uri.getRawPath(), "").replaceAll("/+$", "");
+        } catch (IllegalArgumentException exception) {
+            return Objects.toString(baseUrl, "").trim();
+        }
     }
+
+    private JobProfileMetadata metadataForSavedCredential(AiCredentialEntity entity) {
+        String endpoint = normalizeEndpoint(entity.getBaseUrl());
+        String model = Objects.toString(entity.getChatModel(), "");
+        AiCredentialSource source = AiCredentialSource.USER_SUPPLIED;
+        return new JobProfileMetadata(entity.getProvider(), model, endpoint, source,
+                fingerprint(entity.getProvider(), model, endpoint, source, sha256(entity.getEncryptedApiKey())));
+    }
+
+    private JobProfileMetadata metadataForDefault(AiProviderType provider, AuralisProperties.Provider defaults) {
+        String endpoint = normalizeEndpoint(defaults.baseUrl());
+        String model = Objects.toString(defaults.chatModel(), "");
+        AiCredentialSource source = AiCredentialSource.PLATFORM;
+        return new JobProfileMetadata(provider, model, endpoint, source,
+                fingerprint(provider, model, endpoint, source, sha256(defaults.apiKey())));
+    }
+
+    private void requireExpectedFingerprint(String expectedFingerprint, JobProfileMetadata metadata) {
+        if (expectedFingerprint == null || !expectedFingerprint.equals(metadata.fingerprint())) {
+            throw new DomainException("RESOURCE_VERSION_CONFLICT", "Overview provider profile changed after enqueue");
+        }
+    }
+
+    private String fingerprint(AiProviderType provider, String model, String endpoint,
+                               AiCredentialSource source, String secretIdentity) {
+        return sha256(Objects.toString(provider, "") + "|" + source.name() + "|" + endpoint
+                + "|" + model + "|" + secretIdentity);
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    public record ResolvedSettings(AiProviderType provider, String chatModel, AiCredential credential,
+                                   AiCredentialSource source) {
+        public ResolvedSettings {
+            java.util.Objects.requireNonNull(source, "source");
+        }
+    }
+
+    public record JobProfileMetadata(AiProviderType provider, String chatModel, String normalizedEndpoint,
+                                     AiCredentialSource source, String fingerprint) { }
+
+    public record JobResolvedSettings(JobProfileMetadata metadata, ResolvedSettings settings) { }
 }

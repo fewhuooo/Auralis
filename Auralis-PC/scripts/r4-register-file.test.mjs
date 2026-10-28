@@ -110,3 +110,16 @@ test('ordinary PC resource stores hydrate projections instead of resource list A
     assert.match(source, /requestBackgroundSync\('read'\)/)
   }
 })
+
+test('file register dialog and callers guard against fake 100% completion and reset progress on failure', async () => {
+  const dialog = await readFile(new URL('../src/components/asset/FileRegisterDialog.vue', import.meta.url), 'utf8')
+  const workspace = await readFile(new URL('../src/views/SubjectWorkspace/index.vue', import.meta.url), 'utf8')
+  const asset = await readFile(new URL('../src/views/Asset/index.vue', import.meta.url), 'utf8')
+
+  assert.match(dialog, /const isCompleted = computed\(/)
+  assert.match(dialog, /isCompleted \? '导入完成' :/)
+  assert.doesNotMatch(dialog, /ceiling = Math\.max\(rawTarget, 86\)/)
+  assert.match(workspace, /catch \(e: any\) \{[\s\S]*?uploadProgress\.value = 0/)
+  assert.match(asset, /catch \(err: any\) \{[\s\S]*?uploadProgress\.value = 0/)
+})
+

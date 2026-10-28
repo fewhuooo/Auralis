@@ -29,6 +29,19 @@ public class OverviewResultController {
         return service.getSource(user.userId(), sourceId, ingestionRevision);
     }
 
+    @GetMapping("/sources/{sourceId}/outline")
+    public OverviewOutlineView getSourceOutline(@AuthenticationPrincipal AuthenticatedUser user,
+                                                 @PathVariable UUID sourceId) {
+        return service.getSourceOutline(user.userId(), sourceId);
+    }
+
+    @GetMapping("/sources/{sourceId}/sections/{sectionId}")
+    public OverviewSectionView getSourceSection(@AuthenticationPrincipal AuthenticatedUser user,
+                                                 @PathVariable UUID sourceId, @PathVariable UUID sectionId,
+                                                 @RequestParam long version) {
+        return service.getSourceSection(user.userId(), sourceId, sectionId, version);
+    }
+
     @PutMapping("/sources/{sourceId}")
     public OverviewResultView putSource(@AuthenticationPrincipal AuthenticatedUser user,
                                         @PathVariable UUID sourceId,
@@ -40,6 +53,19 @@ public class OverviewResultController {
     public OverviewResultView getSubject(@AuthenticationPrincipal AuthenticatedUser user,
                                          @PathVariable UUID subjectId) {
         return service.getSubject(user.userId(), subjectId);
+    }
+
+    @GetMapping("/subjects/{subjectId}/outline")
+    public OverviewOutlineView getSubjectOutline(@AuthenticationPrincipal AuthenticatedUser user,
+                                                  @PathVariable UUID subjectId) {
+        return service.getSubjectOutline(user.userId(), subjectId);
+    }
+
+    @GetMapping("/subjects/{subjectId}/sections/{sectionId}")
+    public OverviewSectionView getSubjectSection(@AuthenticationPrincipal AuthenticatedUser user,
+                                                  @PathVariable UUID subjectId, @PathVariable UUID sectionId,
+                                                  @RequestParam long version) {
+        return service.getSubjectSection(user.userId(), subjectId, sectionId, version);
     }
 
     @PutMapping("/subjects/{subjectId}")

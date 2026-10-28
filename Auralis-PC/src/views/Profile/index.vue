@@ -1690,7 +1690,7 @@ onMounted(() => {
   overflow-y: auto;
   scrollbar-width: none;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 20px;
   box-shadow: 
     0 10px 30px -4px rgba(35, 45, 30, 0.08), 
@@ -1715,7 +1715,7 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
   padding: 18px 20px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
@@ -1833,7 +1833,7 @@ onMounted(() => {
 }
 
 .user-handle {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   margin: 0;
   white-space: nowrap;
@@ -1855,10 +1855,10 @@ onMounted(() => {
   align-items: center;
   gap: 5px;
   background: rgba(200, 155, 109, 0.12);
-  border: 1px solid rgba(200, 155, 109, 0.28);
+  border: 0.5px solid rgba(200, 155, 109, 0.3);
   padding: 3px 9px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 11.5px;
   color: #9E6D38;
   font-weight: 500;
   transition: all 0.2s ease;
@@ -1881,16 +1881,16 @@ onMounted(() => {
   align-items: center;
   padding: 3px 9px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 11.5px;
   background: rgba(0, 0, 0, 0.04);
   color: var(--text-secondary, #4A4A45);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
 }
 
 /* 2.2 核心学习指标 (Study Overview) */
 .study-stats-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
@@ -1920,7 +1920,7 @@ onMounted(() => {
 
 .stat-cell {
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 14px;
   padding: 12px 14px;
   display: flex;
@@ -1960,7 +1960,7 @@ onMounted(() => {
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 550;
   color: var(--text-muted, #7A7A75);
 }
@@ -1980,7 +1980,7 @@ onMounted(() => {
 /* 2.3 学科知识分布 (Subject Distribution) */
 .subject-dist-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
@@ -2003,14 +2003,14 @@ onMounted(() => {
 }
 
 .subject-dist-subtitle {
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 11px;
+  font-weight: 700;
   color: #637748;
   background: rgba(139, 154, 110, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.22);
-  letter-spacing: 0.5px;
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
+  letter-spacing: 0.4px;
 }
 
 .no-data-hint {
@@ -2065,7 +2065,7 @@ onMounted(() => {
 }
 
 .subject-count-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-primary, #1C1C1A);
   min-width: 42px;
@@ -2077,7 +2077,7 @@ onMounted(() => {
 /* 2.4 Document Processing Center Integration */
 .studio-left :deep(.processing-center) {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
   padding: 16px 18px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
@@ -2087,13 +2087,13 @@ onMounted(() => {
   font-weight: 750;
 }
 .studio-left :deep(.processing-center p) {
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* 2.5 账号与安全凭证管理 (Account & Security) */
 .account-card {
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 18px;
   padding: 16px 18px;
   display: flex;
@@ -2125,13 +2125,13 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   color: #637748;
   background: rgba(139, 154, 110, 0.12);
   padding: 2px 8px;
   border-radius: 9999px;
-  border: 1px solid rgba(139, 154, 110, 0.22);
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
 }
 
 .sec-dot {
@@ -2154,7 +2154,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 12px;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 13px;
   padding: 10px 14px;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2173,10 +2173,10 @@ onMounted(() => {
 }
 
 .cell-label {
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--text-muted, #7A7A75);
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
 }
 
 .cell-val {
@@ -2189,7 +2189,7 @@ onMounted(() => {
 }
 
 .cell-sub {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-secondary, #4A4A45);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2197,7 +2197,7 @@ onMounted(() => {
 }
 
 .cell-tag {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   padding: 3px 9px;
   border-radius: 9999px;
@@ -2206,12 +2206,12 @@ onMounted(() => {
 .cell-tag.success {
   background: rgba(139, 154, 110, 0.14);
   color: #637748;
-  border: 1px solid rgba(139, 154, 110, 0.25);
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
 }
 .cell-tag.default {
   background: rgba(0, 0, 0, 0.04);
   color: var(--text-muted, #7A7A75);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
 }
 
 .avatar-cell-preview {
@@ -2251,9 +2251,9 @@ onMounted(() => {
 .cell-btn {
   padding: 4px 12px;
   border-radius: 9999px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 650;
-  border: 1px solid var(--border-default, #E6E6E4);
+  border: 0.5px solid var(--border-default, #E6E6E4);
   background: #FFFFFF;
   color: var(--text-secondary, #344139);
   cursor: pointer;
@@ -2288,7 +2288,7 @@ onMounted(() => {
   font-size: 12px;
   padding: 5px 10px;
   border-radius: 8px;
-  border: 1px solid #8B9A6E;
+  border: 0.5px solid #8B9A6E;
   background: #FFFFFF;
   color: var(--text-primary, #1C1C1A);
   outline: none;
@@ -2322,7 +2322,7 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   font-family: inherit;
-  border: 1px solid transparent;
+  border: 0.5px solid transparent;
 }
 .account-btn.danger {
   background: rgba(217, 83, 79, 0.08);
@@ -2345,7 +2345,7 @@ onMounted(() => {
   overflow-y: auto;
   scrollbar-width: none;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 20px;
   box-shadow: 
     0 10px 30px -4px rgba(35, 45, 30, 0.08), 
@@ -2357,6 +2357,17 @@ onMounted(() => {
 }
 .studio-right::-webkit-scrollbar {
   display: none;
+}
+
+@media (max-width: 1150px) {
+  .studio-left {
+    min-width: 320px;
+    flex: 3.5;
+    padding: 16px 14px;
+  }
+  .studio-right {
+    padding: 20px 24px;
+  }
 }
 .studio-right > * {
   flex-shrink: 0;
@@ -2377,13 +2388,13 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   background: rgba(139, 154, 110, 0.12);
-  border: 1px solid rgba(139, 154, 110, 0.25);
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
   border-radius: 9999px;
   padding: 3px 10px;
-  font-size: 10px;
-  font-weight: 750;
+  font-size: 11px;
+  font-weight: 700;
   color: #637748;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   margin-bottom: 10px;
 }
 .settings-header-badge .badge-dot {
@@ -2415,7 +2426,7 @@ onMounted(() => {
   flex-shrink: 0;
   margin-bottom: 22px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.025);
@@ -2431,7 +2442,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 22px;
-  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-bottom: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   background: rgba(0, 0, 0, 0.012);
   min-height: 50px;
   box-sizing: border-box;
@@ -2463,7 +2474,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 15px 22px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.05);
   gap: 20px;
   min-height: 54px;
   box-sizing: border-box;
@@ -2492,7 +2503,7 @@ onMounted(() => {
 }
 
 .row-desc {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   line-height: 1.45;
 }
@@ -2546,11 +2557,11 @@ onMounted(() => {
   background-repeat: no-repeat !important;
   background-position: right 10px center !important;
   background-size: 14px 14px !important;
-  border: 1px solid var(--border-default, #E6E6E4);
+  border: 0.5px solid var(--border-default, #E6E6E4);
   border-radius: 12px;
   color: var(--text-primary, #1C1C1A);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 550;
   padding: 7px 32px 7px 12px;
   cursor: pointer;
@@ -2565,11 +2576,11 @@ onMounted(() => {
 
 .settings-input {
   background: #FFFFFF;
-  border: 1px solid var(--border-default, #E6E6E4);
+  border: 0.5px solid var(--border-default, #E6E6E4);
   border-radius: 12px;
   color: var(--text-primary, #1C1C1A);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   padding: 7px 12px;
   width: 230px;
   outline: none;
@@ -2587,7 +2598,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 650;
   cursor: pointer;
-  border: 1px solid var(--border-default, #E6E6E4);
+  border: 0.5px solid var(--border-default, #E6E6E4);
   background: #FFFFFF;
   color: var(--text-secondary, #344139);
   font-family: inherit;
@@ -2639,7 +2650,7 @@ onMounted(() => {
   padding: 5px 12px;
   border-radius: 9999px;
   background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   font-size: 12px;
   color: var(--text-secondary, #344139);
   font-weight: 600;
@@ -2692,7 +2703,7 @@ onMounted(() => {
 
 .usage-card {
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   border-radius: 14px;
   padding: 14px 16px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.02);
@@ -2718,7 +2729,7 @@ onMounted(() => {
 }
 
 .usage-reset-tag {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   background: rgba(0, 0, 0, 0.035);
   padding: 2px 8px;
@@ -2737,13 +2748,13 @@ onMounted(() => {
   flex-direction: column;
   gap: 3px;
   background: rgba(255, 255, 255, 0.6);
-  border: 1px solid rgba(0, 0, 0, 0.04);
+  border: 0.5px solid rgba(0, 0, 0, 0.06);
   border-radius: 10px;
   padding: 8px 10px;
 }
 
 .usage-stat-label {
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   font-weight: 550;
 }
@@ -2774,7 +2785,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 22px;
-  border-bottom: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-bottom: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   background: rgba(139, 154, 110, 0.06);
   gap: 16px;
 }
@@ -2785,10 +2796,10 @@ onMounted(() => {
   gap: 6px;
   padding: 4px 12px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 650;
   background: var(--color-bg-primary, #F7F2EB);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   color: var(--text-muted, #7A7A75);
   white-space: nowrap;
   flex-shrink: 0;
@@ -2836,7 +2847,7 @@ onMounted(() => {
 
 .byok-detect-btn {
   padding: 7px 14px;
-  font-size: 11.5px;
+  font-size: 12px;
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -2850,7 +2861,7 @@ onMounted(() => {
   gap: 6px;
 }
 .tray-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   font-weight: 550;
 }
@@ -2860,12 +2871,12 @@ onMounted(() => {
   gap: 6px;
 }
 .model-chip {
-  border: 1px solid var(--border-default, #E6E6E4);
+  border: 0.5px solid var(--border-default, #E6E6E4);
   background: #FFFFFF;
   color: var(--text-secondary, #344139);
   border-radius: 8px;
   padding: 4px 10px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 550;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2892,11 +2903,11 @@ onMounted(() => {
   justify-content: space-between;
   padding: 16px 22px;
   background: rgba(0, 0, 0, 0.015);
-  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-top: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
   gap: 16px;
 }
 .byok-tip {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
 }
 .byok-btn-group {
@@ -2917,8 +2928,8 @@ onMounted(() => {
   padding: 4px 12px;
   border-radius: 9999px;
   background: rgba(139, 154, 110, 0.12);
-  border: 1px solid rgba(139, 154, 110, 0.25);
-  font-size: 11.5px;
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
+  font-size: 12px;
   font-weight: 650;
   color: #637748;
 }
@@ -2948,12 +2959,12 @@ onMounted(() => {
   gap: 8px;
 }
 .session-current-pill {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 9999px;
   background: rgba(139, 154, 110, 0.16);
-  border: 1px solid rgba(139, 154, 110, 0.28);
+  border: 0.5px solid rgba(139, 154, 110, 0.28);
   color: #637748;
 }
 
@@ -2963,14 +2974,14 @@ onMounted(() => {
   flex-shrink: 0;
   margin-bottom: 24px;
   background: rgba(217, 83, 79, 0.035);
-  border: 1px solid rgba(217, 83, 79, 0.2);
+  border: 0.5px solid rgba(217, 83, 79, 0.2);
   border-radius: 20px;
   overflow: hidden;
   box-shadow: 0 2px 8px rgba(217, 83, 79, 0.03);
 }
 
 .danger-header {
-  border-bottom: 1px solid rgba(217, 83, 79, 0.15);
+  border-bottom: 0.5px solid rgba(217, 83, 79, 0.15);
   background: rgba(217, 83, 79, 0.04);
   padding: 16px 22px;
   display: flex;
@@ -2989,7 +3000,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 15px 22px;
-  border-bottom: 1px solid rgba(217, 83, 79, 0.08);
+  border-bottom: 0.5px solid rgba(217, 83, 79, 0.08);
   gap: 20px;
   min-height: 54px;
   box-sizing: border-box;
@@ -3241,7 +3252,7 @@ html.dark .settings-header-badge .badge-dot {
   font-weight: 700;
   color: #637748;
   background: rgba(139, 154, 110, 0.14);
-  border: 1px solid rgba(139, 154, 110, 0.25);
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
   padding: 1px 8px;
   border-radius: 9999px;
   font-variant-numeric: tabular-nums;
@@ -3283,7 +3294,7 @@ html.dark .settings-header-badge .badge-dot {
   flex-wrap: wrap;
 }
 .quick-preset-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   font-weight: 600;
   margin-right: 2px;
@@ -3291,10 +3302,10 @@ html.dark .settings-header-badge .badge-dot {
 .quick-preset-chip {
   padding: 3px 9px;
   border-radius: 9999px;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   background: rgba(0, 0, 0, 0.035);
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 0.5px solid rgba(0, 0, 0, 0.08);
   color: var(--text-secondary, #344139);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);

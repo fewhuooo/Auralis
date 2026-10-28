@@ -24,6 +24,32 @@ import java.util.stream.Collectors;
 @Service
 public class RetrievalService {
 
+    private static final int MAX_EXCERPT_CHARS = 400;
+    private static final int MAX_QUERY_CHARS = 2048;
+    private static final int MAX_CONTENT_SCAN_CHARS = 65_536;
+    private static final int MAX_FOCUS_TERMS = 8;
+    private static final int MAX_TERM_CHARS = 48;
+    private static final int MAX_TERM_OCCURRENCES = 256;
+    private static final int EXCERPT_LEADING_CONTEXT_CHARS = 80;
+    private static final int CUE_SCAN_CHARS = 64;
+    private static final List<String> QUERY_CUES = List.of(
+            "的定义", "定义", "的含义", "含义", "是什么意思", "是什么", "指什么",
+            "definition of", "meaning of", "what is");
+    private static final List<String> QUERY_PREFIXES = List.of(
+            "请问", "请", "解释", "说明", "阐述", "介绍", "描述", "关于",
+            "explain", "define");
+    private static final List<QuotePair> QUOTE_PAIRS = List.of(
+            new QuotePair('“', '”'), new QuotePair('‘', '’'), new QuotePair('"', '"'),
+            new QuotePair('\'', '\''), new QuotePair('【', '】'), new QuotePair('「', '」'),
+            new QuotePair('『', '』'));
+    private static final List<EvidenceCue> EVIDENCE_CUES = List.of(
+            new EvidenceCue("含义", 2000), new EvidenceCue("定义", 2000),
+            new EvidenceCue("definition", 2000), new EvidenceCue("meaning", 2000),
+            new EvidenceCue("refers to", 1800), new EvidenceCue("means", 1600),
+            new EvidenceCue("是", 1300), new EvidenceCue("指", 1300),
+            new EvidenceCue("is", 1200), new EvidenceCue("：", 900),
+            new EvidenceCue(":", 900));
+
     private final SourceChunkRepository chunkRepository;
     private final SourceService sourceService;
     private final PgVectorRetrievalRepository pgVectorRepository;
@@ -77,15 +103,15 @@ public class RetrievalService {
         }
         if (readingContext != null) {
             if (readingContext.retrievalMode() == ReadingContext.RetrievalMode.SELECTED_SOURCES) {
-                return retrieveSelectedSources(userId, queryVector, topK, readingContext);
+                return retrieveSelectedSources(userId, queryVector, topK, readingContext, queryText);
             }
             if (readingContext.retrievalMode() == ReadingContext.RetrievalMode.SUBJECT) {
-                return retrieveSubjectSources(userId, queryVector, topK, readingContext);
+                return retrieveSubjectSources(userId, queryVector, topK, readingContext, queryText);
             }
         }
         SourceView currentSource = validateReadingContext(userId, readingContext);
         UUID sourceId = currentSource == null ? null : currentSource.id();
-        List<Citation> currentHits = retrieveForSource(userId, queryVector, topK, sourceId);
+        List<Citation> currentHits = retrieveForSource(userId, queryVector, topK, sourceId, queryText);
         if (currentSource == null || queryText == null || queryText.isBlank()) return currentHits;
 
         List<SourceView> subjectSources = sourceService.list(userId);
@@ -96,7 +122,7 @@ public class RetrievalService {
 
         List<Citation> expanded = new ArrayList<>(currentHits);
         for (UUID targetId : decision.sourceIds()) {
-            expanded.addAll(retrieveForSource(userId, queryVector, topK, targetId));
+            expanded.addAll(retrieveForSource(userId, queryVector, topK, targetId, queryText));
         }
         return expanded.stream()
                 .collect(java.util.stream.Collectors.toMap(
@@ -113,7 +139,8 @@ public class RetrievalService {
             UUID userId,
             List<Double> queryVector,
             int topK,
-            ReadingContext readingContext) {
+            ReadingContext readingContext,
+            String queryText) {
         requireActiveSubject(userId, readingContext.subjectId());
         List<UUID> requestedIds = readingContext.sourceIds();
         if (requestedIds.isEmpty() || requestedIds.size() > 100
@@ -139,14 +166,15 @@ public class RetrievalService {
             }
             requireReady(current);
         }
-        return retrieveAcrossSources(userId, queryVector, topK, requestedSources);
+        return retrieveAcrossSources(userId, queryVector, topK, requestedSources, queryText);
     }
 
     private List<Citation> retrieveSubjectSources(
             UUID userId,
             List<Double> queryVector,
             int topK,
-            ReadingContext readingContext) {
+            ReadingContext readingContext,
+            String queryText) {
         if (!readingContext.sourceIds().isEmpty() || readingContext.currentSourceId() != null) {
             throw new DomainException("VALIDATION_FAILED", "subject retrieval does not accept source IDs");
         }
@@ -155,7 +183,7 @@ public class RetrievalService {
                 .filter(source -> readingContext.subjectId().equals(source.subjectId()))
                 .filter(source -> source.ingestionStatus() == SourceIngestionStatus.READY)
                 .toList();
-        return retrieveAcrossSources(userId, queryVector, topK, subjectSources);
+        return retrieveAcrossSources(userId, queryVector, topK, subjectSources, queryText);
     }
 
     private void requireActiveSubject(UUID userId, UUID subjectId) {
@@ -169,10 +197,11 @@ public class RetrievalService {
             UUID userId,
             List<Double> queryVector,
             int topK,
-            List<SourceView> sources) {
+            List<SourceView> sources,
+            String queryText) {
         Map<String, Citation> unique = new LinkedHashMap<>();
         for (SourceView source : sources) {
-            for (Citation citation : retrieveForSource(userId, queryVector, topK, source.id())) {
+            for (Citation citation : retrieveForSource(userId, queryVector, topK, source.id(), queryText)) {
                 unique.putIfAbsent(citation.sourceId() + ":" + citation.chunkId(), citation);
             }
         }
@@ -190,7 +219,8 @@ public class RetrievalService {
         }
     }
 
-    private List<Citation> retrieveForSource(UUID userId, List<Double> queryVector, int topK, UUID sourceId) {
+    private List<Citation> retrieveForSource(
+            UUID userId, List<Double> queryVector, int topK, UUID sourceId, String queryText) {
         if (pgVectorRepository != null) {
             Optional<List<PgVectorRetrievalRepository.PgVectorChunk>> databaseResults =
                     sourceId == null
@@ -202,7 +232,7 @@ public class RetrievalService {
                         hits.stream().map(PgVectorRetrievalRepository.PgVectorChunk::sourceId).collect(Collectors.toSet()));
                 return hits.stream()
                         .filter(chunk -> sources.containsKey(chunk.sourceId()))
-                        .map(chunk -> citation(chunk, sources.get(chunk.sourceId())))
+                        .map(chunk -> citation(chunk, sources.get(chunk.sourceId()), queryText))
                         .toList();
             }
         }
@@ -219,7 +249,7 @@ public class RetrievalService {
                         .thenComparing(scored -> scored.chunk().getId()))
                 .limit(topK)
                 .map(scored -> citation(scored.chunk(), sources.get(scored.chunk().getSourceId()),
-                        scored.similarity()))
+                        scored.similarity(), queryText))
                 .toList();
     }
 
@@ -265,20 +295,183 @@ public class RetrievalService {
         return new ScoredChunk(chunk, similarity);
     }
 
-    private Citation citation(SourceChunkEntity chunk, SourceView source, double similarity) {
+    private Citation citation(SourceChunkEntity chunk, SourceView source, double similarity, String queryText) {
         return new Citation(
                 chunk.getSourceId(), chunk.getId(), chunk.getOrdinal(), source.title(),
-                excerpt(chunk.getContent()), similarity);
+                excerpt(chunk.getContent(), queryText), similarity);
     }
 
-    private Citation citation(PgVectorRetrievalRepository.PgVectorChunk chunk, SourceView source) {
+    private Citation citation(PgVectorRetrievalRepository.PgVectorChunk chunk, SourceView source, String queryText) {
         return new Citation(
-                chunk.sourceId(), chunk.id(), chunk.ordinal(), source.title(), excerpt(chunk.content()),
+                chunk.sourceId(), chunk.id(), chunk.ordinal(), source.title(), excerpt(chunk.content(), queryText),
                 chunk.similarity());
     }
 
-    private String excerpt(String content) {
-        return content.length() > 400 ? content.substring(0, 400) : content;
+    private String excerpt(String content, String queryText) {
+        if (content == null || content.isEmpty()) return content;
+        if (content.length() <= MAX_EXCERPT_CHARS) return content;
+
+        FocusMatch match = findBestFocusMatch(content, extractFocusTerms(queryText));
+        if (match == null) return safeExcerptWindow(content, 0);
+        return safeExcerptWindow(content, match.offset());
+    }
+
+    private List<String> extractFocusTerms(String queryText) {
+        if (queryText == null || queryText.isBlank()) return List.of();
+        String query = queryText.length() <= MAX_QUERY_CHARS
+                ? queryText
+                : queryText.substring(0, MAX_QUERY_CHARS);
+        LinkedHashSet<String> terms = new LinkedHashSet<>();
+
+        for (QuotePair pair : QUOTE_PAIRS) {
+            int cursor = 0;
+            while (cursor < query.length() && terms.size() < MAX_FOCUS_TERMS) {
+                int opening = query.indexOf(pair.open(), cursor);
+                if (opening < 0) break;
+                int closing = query.indexOf(pair.close(), opening + 1);
+                if (closing < 0) break;
+                addFocusTerm(terms, query.substring(opening + 1, closing));
+                cursor = closing + 1;
+            }
+            if (terms.size() >= MAX_FOCUS_TERMS) break;
+        }
+
+        for (String cue : QUERY_CUES) {
+            int cursor = 0;
+            while (cursor < query.length() && terms.size() < MAX_FOCUS_TERMS) {
+                int cueIndex = indexOfIgnoreCase(query, cue, cursor, query.length());
+                if (cueIndex < 0) break;
+                int end = cueIndex;
+                int start = Math.max(0, end - MAX_TERM_CHARS - 16);
+                while (start < end && isQueryBoundary(query.charAt(start))) start++;
+                String candidate = query.substring(start, end).trim();
+                if (cue.equals("definition of") || cue.equals("meaning of") || cue.equals("what is")) {
+                    int after = cueIndex + cue.length();
+                    int limit = after;
+                    while (limit < query.length() && limit - after < MAX_TERM_CHARS
+                            && !isQueryBoundary(query.charAt(limit))) limit++;
+                    addFocusTerm(terms, query.substring(after, limit));
+                } else {
+                    if (candidate.endsWith("的")) candidate = candidate.substring(0, candidate.length() - 1);
+                    for (String prefix : QUERY_PREFIXES) {
+                        if (candidate.regionMatches(true, 0, prefix, 0, prefix.length())) {
+                            candidate = candidate.substring(prefix.length()).trim();
+                        }
+                    }
+                    addFocusTerm(terms, candidate);
+                }
+                cursor = cueIndex + cue.length();
+            }
+            if (terms.size() >= MAX_FOCUS_TERMS) break;
+        }
+        return List.copyOf(terms);
+    }
+
+    private void addFocusTerm(Set<String> terms, String candidate) {
+        String term = candidate == null ? "" : candidate.trim();
+        while (term.length() > MAX_TERM_CHARS) {
+            term = term.substring(term.length() - MAX_TERM_CHARS);
+        }
+        if (!term.isEmpty() && !term.isBlank()) terms.add(term);
+    }
+
+    private FocusMatch findBestFocusMatch(String content, List<String> focusTerms) {
+        if (focusTerms.isEmpty()) return null;
+        int scanLimit = Math.min(content.length(), MAX_CONTENT_SCAN_CHARS);
+        FocusMatch best = null;
+        for (String term : focusTerms) {
+            if (term.length() > MAX_TERM_CHARS) continue;
+            int occurrences = 0;
+            for (int offset = 0; offset <= scanLimit - term.length()
+                    && occurrences < MAX_TERM_OCCURRENCES; offset++) {
+                if (!content.regionMatches(true, offset, term, 0, term.length())) continue;
+                occurrences++;
+                int score = evidenceCueScore(content, offset, term.length(), scanLimit);
+                if (best == null || score > best.score()) best = new FocusMatch(offset, score);
+            }
+        }
+        return best;
+    }
+
+    private int evidenceCueScore(String content, int offset, int termLength, int scanLimit) {
+        int bestScore = 0;
+        int afterStart = offset + termLength;
+        int afterEnd = Math.min(scanLimit, afterStart + CUE_SCAN_CHARS);
+        for (EvidenceCue cue : EVIDENCE_CUES) {
+            int cueIndex = indexOfIgnoreCase(content, cue.text(), afterStart, afterEnd);
+            if (cueIndex >= 0 && !hasSentenceBoundary(content, afterStart, cueIndex)) {
+                bestScore = Math.max(bestScore, cue.weight() - (cueIndex - afterStart));
+            }
+            int beforeStart = Math.max(0, offset - CUE_SCAN_CHARS);
+            int previousCue = lastIndexOfIgnoreCase(content, cue.text(), beforeStart, offset);
+            if (previousCue >= 0 && !hasSentenceBoundary(content, previousCue + cue.text().length(), offset)) {
+                bestScore = Math.max(bestScore, cue.weight() - (offset - previousCue));
+            }
+        }
+        return bestScore;
+    }
+
+    private String safeExcerptWindow(String content, int focusOffset) {
+        int start = Math.max(0, focusOffset - EXCERPT_LEADING_CONTEXT_CHARS);
+        if (start > 0 && Character.isLowSurrogate(content.charAt(start))
+                && Character.isHighSurrogate(content.charAt(start - 1))) {
+            start--;
+        }
+        if (content.length() - start < MAX_EXCERPT_CHARS) {
+            start = Math.max(0, content.length() - MAX_EXCERPT_CHARS);
+            if (start > 0 && Character.isLowSurrogate(content.charAt(start))
+                    && Character.isHighSurrogate(content.charAt(start - 1))) {
+                start--;
+            }
+        }
+        int end = Math.min(content.length(), start + MAX_EXCERPT_CHARS);
+        if (end < content.length() && end > start && Character.isHighSurrogate(content.charAt(end - 1))
+                && Character.isLowSurrogate(content.charAt(end))) {
+            end--;
+        }
+        return content.substring(start, end);
+    }
+
+    private int indexOfIgnoreCase(String value, String needle, int from, int to) {
+        int end = Math.min(value.length(), to);
+        int lastStart = end - needle.length();
+        for (int index = Math.max(0, from); index <= lastStart; index++) {
+            if (value.regionMatches(true, index, needle, 0, needle.length())) return index;
+        }
+        return -1;
+    }
+
+    private int lastIndexOfIgnoreCase(String value, String needle, int from, int to) {
+        int start = Math.min(value.length() - needle.length(), to - needle.length());
+        for (int index = start; index >= Math.max(0, from); index--) {
+            if (value.regionMatches(true, index, needle, 0, needle.length())) return index;
+        }
+        return -1;
+    }
+
+    private boolean hasSentenceBoundary(String value, int from, int to) {
+        for (int index = Math.max(0, from); index < Math.min(value.length(), to); index++) {
+            char character = value.charAt(index);
+            if (character == '.' || character == '。' || character == '!' || character == '！'
+                    || character == '?' || character == '？' || character == ';' || character == '；'
+                    || character == ',' || character == '，') return true;
+        }
+        return false;
+    }
+
+    private boolean isQueryBoundary(char character) {
+        return character == '，' || character == ',' || character == '。' || character == '.'
+                || character == '；' || character == ';' || character == '！' || character == '!'
+                || character == '？' || character == '?' || character == '\n' || character == '\r';
+    }
+
+    private record QuotePair(char open, char close) {
+    }
+
+    private record EvidenceCue(String text, int weight) {
+    }
+
+    private record FocusMatch(int offset, int score) {
     }
 
     private record ScoredChunk(SourceChunkEntity chunk, double similarity) {

@@ -1,12 +1,14 @@
 # Auralis 部署测试前主任务清单
 
-更新时间：2026-08-16
+更新时间：2026-10-28
 
 文档状态：现行任务清单
 
 目标：完成进入部署测试前的代码收口、真实依赖验证、全端迁移、跨端验收和发布准备。
 
-依据：[整体项目未完成项综合审计](../current/OverallProjectCompletionAudit.md)
+现行依据：[当前状态](../current/Status.md)、[问题和审查](../current/IssuesAndReview.md)及各模块/契约。
+
+任务起源：[2026-08-16 历史审计](../archive/audits/2026-08-16-overall-project-completion-audit.md)，只追溯任务来源。R0–R6 保留验收框架和原执行记录；接续前核对最新状态，不把旧快照的缺口直接认作当前待办。
 
 ## 使用规则
 

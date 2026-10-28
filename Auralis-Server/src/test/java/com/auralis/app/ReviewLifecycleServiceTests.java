@@ -5,8 +5,8 @@ import com.auralis.app.identity.DeviceCommand;
 import com.auralis.app.identity.DevicePlatform;
 import com.auralis.app.identity.IdentityService;
 import com.auralis.app.knowledge.KnowledgeBlockCommand;
+import com.auralis.app.knowledge.KnowledgeBlockContentHash;
 import com.auralis.app.knowledge.KnowledgeBlockService;
-import com.auralis.app.review.ReviewContentHash;
 import com.auralis.app.review.ReviewLifecycleDtos;
 import com.auralis.app.review.ReviewLifecycleRating;
 import com.auralis.app.subject.SubjectCommand;
@@ -99,6 +99,30 @@ class ReviewLifecycleServiceTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{" + commonFields + ",\"knowledgeBlockVersion\":0}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsAStaleContentHashWhenTheKnowledgeBlockVersionMatches() throws Exception {
+        Owner owner = owner("stale-content-hash");
+        UUID subjectId = subjectService.create(owner.userId(), new SubjectCommand(
+                "Stale hash subject", null, null, "001")).id();
+        var block = knowledgeBlockService.create(owner.userId(), new KnowledgeBlockCommand(
+                subjectId, null, "Stale hash block", "current body", null));
+
+        mockMvc.perform(post("/api/reviews/lifecycle/learning-completions")
+                        .header("Authorization", owner.authorization())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(new ReviewLifecycleDtos.LearningCompletionRequest(
+                                UUID.randomUUID(), block.id(), block.version(), 0L, "0".repeat(64),
+                                null, null, true))))
+                .andExpect(status().isConflict())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("RESOURCE_VERSION_CONFLICT"));
+        assertThat(jdbcTemplate.queryForObject("select count(*) from review_lifecycle_commands "
+                        + "where user_id = ? and knowledge_block_id = ?", Long.class, owner.userId(), block.id()))
+                .isZero();
+        assertThat(jdbcTemplate.queryForObject("select count(*) from review_states "
+                + "where user_id = ? and knowledge_block_id = ?", Long.class, owner.userId(), block.id())).isZero();
     }
 
     @Test
@@ -220,7 +244,7 @@ class ReviewLifecycleServiceTests {
                         .content(objectMapper.writeValueAsString(offline(new ReviewLifecycleDtos.LearningReopenRequest(
                                 UUID.randomUUID(), block.id(), block.version(),
                                 first.path("state").path("version").longValue(),
-                                ReviewContentHash.sha256(block.content()), null, null, null), earlierAt, false))))
+                                KnowledgeBlockContentHash.sha256(block.content()), null, null, null), earlierAt, false))))
                 .andExpect(status().isConflict())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
                         .value("RESOURCE_VERSION_CONFLICT"));
@@ -246,7 +270,7 @@ class ReviewLifecycleServiceTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(offline(new ReviewLifecycleDtos.LearningReopenRequest(
                                 UUID.randomUUID(), existingBlock.id(), existingBlock.version(), 0L,
-                                ReviewContentHash.sha256(existingBlock.content()), null, null, null),
+                                KnowledgeBlockContentHash.sha256(existingBlock.content()), null, null, null),
                                 Instant.now().truncatedTo(ChronoUnit.MICROS), true))))
                 .andExpect(status().isConflict())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
@@ -271,7 +295,7 @@ class ReviewLifecycleServiceTests {
         Instant reopenedAt = Instant.now().truncatedTo(ChronoUnit.MICROS).minus(1, ChronoUnit.HOURS);
         JsonNode reopened = postCommand(owner, "/api/reviews/lifecycle/learning-reopens", offline(
                 new ReviewLifecycleDtos.LearningReopenRequest(UUID.randomUUID(), reopenBlock.id(),
-                        reopenBlock.version(), 0L, ReviewContentHash.sha256(reopenBlock.content()), null, null, null),
+                        reopenBlock.version(), 0L, KnowledgeBlockContentHash.sha256(reopenBlock.content()), null, null, null),
                 reopenedAt, true));
         assertThat(Instant.parse(reopened.path("occurredAt").asText())).isEqualTo(reopenedAt);
         assertThat(Instant.parse(reopened.path("state").path("dueAt").asText())).isEqualTo(reopenedAt);
@@ -537,7 +561,7 @@ class ReviewLifecycleServiceTests {
         JsonNode reopened = postCommand(owner, "/api/reviews/lifecycle/learning-reopens", offline(
                 new ReviewLifecycleDtos.LearningReopenRequest(UUID.randomUUID(), block.id(), block.version(),
                         again.path("state").path("version").longValue(),
-                        ReviewContentHash.sha256(block.content()), reviewId, null, null), reopenedAt, false));
+                        KnowledgeBlockContentHash.sha256(block.content()), reviewId, null, null), reopenedAt, false));
         events.add(fixtureEvent("LEARNING_REOPENED", null, reopenedAt,
                 again.path("state"), baseline, reopened));
         return fixtureScenario("again-then-reopen", events);
@@ -695,7 +719,12 @@ class ReviewLifecycleServiceTests {
         assertThat(afterMetadata.path("stableSuccessCount").intValue()).isEqualTo(3);
 
         knowledgeBlockService.update(owner.userId(), block.id(), metadata.version(),
-                new KnowledgeBlockCommand(subjectId, null, "Renamed block", "new body", null));
+                new KnowledgeBlockCommand(subjectId, null, "Renamed block", "  new body  ", null));
+        assertThat(knowledgeBlockService.get(owner.userId(), block.id()).content()).isEqualTo("new body");
+        assertThat(jdbcTemplate.queryForObject(
+                "select content_hash from review_states where user_id = ? and knowledge_block_id = ?",
+                String.class, owner.userId(), block.id()))
+                .isEqualTo("ae907ab9a383483e5c37beee966723544b9e6f12148a7dcd56ceea7ad44c5a7b");
         JsonNode afterContent = history(owner, block.id()).path("state");
         assertThat(afterContent.path("needsLearning").booleanValue()).isTrue();
         assertThat(afterContent.path("mastered").booleanValue()).isFalse();
@@ -789,7 +818,7 @@ class ReviewLifecycleServiceTests {
     private ReviewLifecycleDtos.LearningCompletionRequest learningCompletion(
             UUID commandId, UUID blockId, long blockVersion, long baseVersion, String content, UUID reviewId) {
         return new ReviewLifecycleDtos.LearningCompletionRequest(commandId, blockId, blockVersion,
-                baseVersion, ReviewContentHash.sha256(content), reviewId, null, null);
+                baseVersion, KnowledgeBlockContentHash.sha256(content), reviewId, null, null);
     }
 
     private ObjectNode offline(Object request, Instant occurredAt, Boolean expectedStateAbsent) {
@@ -803,13 +832,13 @@ class ReviewLifecycleServiceTests {
                                                               long baseVersion, String content, UUID reviewId,
                                                               ReviewLifecycleRating rating) {
         return new ReviewLifecycleDtos.ReviewAttemptRequest(commandId, blockId, blockVersion, baseVersion,
-                ReviewContentHash.sha256(content), reviewId, rating, 0, null, null);
+                KnowledgeBlockContentHash.sha256(content), reviewId, rating, 0, null, null);
     }
 
     private ReviewLifecycleDtos.ReviewResolutionRequest resolution(UUID commandId, UUID blockId, long blockVersion,
                                                                     long baseVersion, String content) {
         return new ReviewLifecycleDtos.ReviewResolutionRequest(commandId, blockId, blockVersion, baseVersion,
-                ReviewContentHash.sha256(content), null, null);
+                KnowledgeBlockContentHash.sha256(content), null, null);
     }
 
     private Owner owner(String prefix) {

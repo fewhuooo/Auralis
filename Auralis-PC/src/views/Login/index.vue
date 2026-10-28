@@ -223,8 +223,8 @@ const handleAction = async () => {
   background: var(--color-bg-primary);
   border-radius: 32px;
   overflow: hidden;
-  box-shadow: 0 40px 100px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--border-subtle);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 0.5px solid var(--border-subtle);
 }
 
 /* Brand Side */
@@ -235,7 +235,7 @@ const handleAction = async () => {
   display: flex;
   align-items: center;
   padding: 60px;
-  border-right: 1px solid var(--border-subtle);
+  border-right: 0.5px solid var(--border-subtle);
   overflow: hidden;
 }
 
@@ -316,6 +316,7 @@ const handleAction = async () => {
   padding: 3px;
   border-radius: 12px;
   margin-bottom: 32px;
+  border: 0.5px solid var(--border-subtle);
 }
 
 .toggle-btn {
@@ -328,7 +329,7 @@ const handleAction = async () => {
   color: var(--text-muted);
   cursor: pointer;
   border-radius: 9px;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .toggle-btn.active {
@@ -349,20 +350,21 @@ const handleAction = async () => {
 :deep(.minimal-input .el-input__wrapper) {
   background: var(--color-bg-tertiary) !important;
   box-shadow: none !important;
-  border: 1px solid transparent !important;
+  border: 0.5px solid transparent !important;
   border-radius: 12px;
   padding: 4px 16px;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 :deep(.minimal-input .el-input__wrapper.is-focus) {
   background: var(--color-bg-primary) !important;
-  border-color: var(--border-strong) !important;
+  border-color: var(--color-zen-sage, #8B9A6E) !important;
+  box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18) !important;
 }
 
 .general-error-banner {
   background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
+  border: 0.5px solid rgba(239, 68, 68, 0.25);
   color: #ef4444;
   font-size: 13px;
   padding: 8px 12px;
@@ -376,22 +378,24 @@ const handleAction = async () => {
   padding: 14px;
   background: var(--color-zen-sage);
   color: var(--color-white);
-  border: none;
+  border: 0.5px solid transparent;
   border-radius: 12px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   margin-top: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   letter-spacing: 2px;
+  box-shadow: 0 4px 14px rgba(110, 128, 82, 0.25);
 }
 
 .submit-btn:hover:not(:disabled) {
-  filter: brightness(1.2);
+  filter: brightness(1.1);
   transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(110, 128, 82, 0.35);
 }
 
 .submit-btn:disabled {
@@ -408,6 +412,7 @@ const handleAction = async () => {
 .footer-links a {
   color: var(--text-muted);
   text-decoration: none;
+  transition: color 0.2s ease;
 }
 
 .footer-links a:hover {

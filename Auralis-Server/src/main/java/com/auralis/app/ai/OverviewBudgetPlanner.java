@@ -1,29 +1,22 @@
 package com.auralis.app.ai;
 
+import com.auralis.app.ai.usage.AiInputTokenEstimator;
+
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 
 /** Pure Overview budget planning utilities; final authorization remains with AiUsageGuard. */
 public final class OverviewBudgetPlanner {
-    public static final int INTERMEDIATE_MAX_OUTPUT_TOKENS = 4_608;
-    public static final int FINAL_MAX_OUTPUT_TOKENS = 6_144;
-    public static final long CONTEXT_SAFETY_MARGIN_TOKENS = 8_192;
-    public static final long MESSAGE_FRAMING_UPPER_BOUND_TOKENS = 64;
-    private static final long CONTENT_SCALE_DIVISOR = 1_024;
+    /** Gateway reserves four framing tokens per message; Overview sends a system and user message. */
+    public static final long MESSAGE_FRAMING_UPPER_BOUND_TOKENS = 8;
+    private static final long ITEM_OUTPUT_OVERHEAD_TOKENS = 32;
+    private static final long SECTION_OUTPUT_OVERHEAD_TOKENS = 64;
+    private static final long STRUCTURAL_OUTPUT_OVERHEAD_TOKENS = 256;
 
     public enum OutputStage {
-        INTERMEDIATE(INTERMEDIATE_MAX_OUTPUT_TOKENS),
-        FINAL(FINAL_MAX_OUTPUT_TOKENS);
-
-        private final int maxOutputTokens;
-
-        OutputStage(int maxOutputTokens) {
-            this.maxOutputTokens = maxOutputTokens;
-        }
-
-        public int maxOutputTokens() {
-            return maxOutputTokens;
-        }
+        INTERMEDIATE,
+        FINAL
     }
 
     public enum Eligibility {
@@ -37,14 +30,18 @@ public final class OverviewBudgetPlanner {
     public record ContentPlan(long targetOutputTokens, int suggestedMapGroups) {
     }
 
-    public record RequestAssessment(long estimatedInputTokensUpperBound,
+    public record RequestAssessment(long estimatedInputTokens,
                                    long outputTokenReserve,
                                    long reservedTaskTokens,
                                    Optional<Boolean> contextFit,
                                    boolean taskBudgetFit,
                                    boolean callBudgetFit,
                                    Eligibility eligibility,
-                                   String reason) {
+                                   String reason,
+                                   String estimatorProfile,
+                                   String estimateStrategy,
+                                   int categoryMessages,
+                                   int byteMessages) {
     }
 
     private OverviewBudgetPlanner() {
@@ -58,21 +55,21 @@ public final class OverviewBudgetPlanner {
         if (bytes == 0) {
             return new ContentPlan(0, 0);
         }
-        long kibibytes = ceilDiv(bytes, CONTENT_SCALE_DIVISOR);
-        long contentGrowth = saturatedMultiply(128, integerSqrt(kibibytes));
-        long structureGrowth = saturatedMultiply(64, integerSqrt(Math.max(1, stats.sectionCount())));
-        long sourceGrowth = saturatedMultiply(48, integerSqrt(Math.max(1, stats.sourceCount())));
-        long target = saturatedAdd(256, saturatedAdd(contentGrowth, saturatedAdd(structureGrowth, sourceGrowth)));
-        if (stage == OutputStage.FINAL) {
-            target = saturatedAdd(target, Math.max(128, target / 4));
-        }
-        target = Math.min(target, stage.maxOutputTokens());
-
-        int sourceSlots = Math.min(24, Math.max(1, stats.sourceCount()));
-        long sizeGroups = ceilDiv(bytes, 32_768);
-        long structureGroups = ceilDiv(Math.max(0, stats.sectionCount()), 8);
-        int groups = (int) Math.min(24, Math.max(sourceSlots, Math.max(1, Math.max(sizeGroups, structureGroups))));
+        long target = planOutputTokens(bytes, stats.sourceCount(), stats.sectionCount(), stage);
+        int groups = Math.max(1, stats.sourceCount());
         return new ContentPlan(target, groups);
+    }
+
+    /** Material-dependent output demand estimate for one exact request, before model/context caps. */
+    public static long planOutputTokens(long serializedInputBytes, int sourceCount, int sectionCount,
+                                        OutputStage stage) {
+        if (serializedInputBytes < 0 || sourceCount < 0 || sectionCount < 0 || stage == null) {
+            throw new IllegalArgumentException("request size, structure counts and stage are required");
+        }
+        long itemOverhead = saturatedMultiply(ITEM_OUTPUT_OVERHEAD_TOKENS, sourceCount);
+        long sectionOverhead = saturatedMultiply(SECTION_OUTPUT_OVERHEAD_TOKENS, sectionCount);
+        return saturatedAdd(serializedInputBytes,
+                saturatedAdd(STRUCTURAL_OUTPUT_OVERHEAD_TOKENS, saturatedAdd(itemOverhead, sectionOverhead)));
     }
 
     /** Evaluates a complete candidate system/user prompt without mutating or rejecting the request. */
@@ -80,17 +77,47 @@ public final class OverviewBudgetPlanner {
                                                    OverviewModelBudget modelBudget,
                                                    OutputStage stage, long remainingCalls,
                                                    long remainingTaskTokens) {
+        long estimatedOutput = planOutputTokens(utf8Bytes(systemText) + utf8Bytes(userText), 1, 1, stage);
+        if (modelBudget != null && modelBudget.maxOutputTokens().isPresent()) {
+            estimatedOutput = Math.min(estimatedOutput, modelBudget.maxOutputTokens().getAsLong());
+        }
+        return assessRequest(systemText, userText, modelBudget, stage, remainingCalls,
+                remainingTaskTokens, (int) Math.min(Integer.MAX_VALUE, estimatedOutput));
+    }
+
+    /** Evaluates with the exact per-call output cap that will be sent through the Gateway. */
+    public static RequestAssessment assessRequest(String systemText, String userText,
+                                                   OverviewModelBudget modelBudget,
+                                                   OutputStage stage, long remainingCalls,
+                                                   long remainingTaskTokens, int outputTokenBudget) {
+        return assessRequest(systemText, userText, modelBudget, stage, remainingCalls,
+                remainingTaskTokens, outputTokenBudget, AiInputTokenEstimator.legacyProfile());
+    }
+
+    /** Evaluates with the same resolved estimator profile used for Gateway reservation. */
+    public static RequestAssessment assessRequest(String systemText, String userText,
+                                                   OverviewModelBudget modelBudget,
+                                                   OutputStage stage, long remainingCalls,
+                                                   long remainingTaskTokens, int outputTokenBudget,
+                                                   AiInputTokenEstimator.Profile inputEstimator) {
         if (modelBudget == null || stage == null) {
             throw new IllegalArgumentException("modelBudget and stage are required");
         }
-        long promptBytes = saturatedAdd(utf8Bytes(systemText), utf8Bytes(userText));
-        long estimatedInput = saturatedAdd(promptBytes, MESSAGE_FRAMING_UPPER_BOUND_TOKENS);
-        long outputReserve = stage.maxOutputTokens();
+        if (inputEstimator == null) throw new IllegalArgumentException("inputEstimator is required");
+        if (outputTokenBudget < 1 || (modelBudget.maxOutputTokens().isPresent()
+                && outputTokenBudget > modelBudget.maxOutputTokens().getAsLong())) {
+            throw new IllegalArgumentException("outputTokenBudget must fit the resolved model capability");
+        }
+        AiInputTokenEstimator.Estimate inputEstimate = inputEstimator.estimate(List.of(
+                new AiProviderRequest.Message(AiMessageRole.SYSTEM, systemText == null ? "" : systemText),
+                new AiProviderRequest.Message(AiMessageRole.USER, userText == null ? "" : userText)));
+        long estimatedInput = inputEstimate.inputTokens();
+        long outputReserve = outputTokenBudget;
         long reservedTask = saturatedAdd(estimatedInput, outputReserve);
         boolean callsFit = remainingCalls > 0;
         boolean taskFits = remainingTaskTokens >= reservedTask;
         Optional<Boolean> contextFit = modelBudget.contextWindowTokens().isPresent()
-                ? Optional.of(saturatedAdd(reservedTask, CONTEXT_SAFETY_MARGIN_TOKENS)
+                ? Optional.of(saturatedAdd(reservedTask, modelBudget.contextSafetyMarginTokens())
                         <= modelBudget.contextWindowTokens().getAsLong())
                 : Optional.empty();
 
@@ -113,32 +140,12 @@ public final class OverviewBudgetPlanner {
             reason = "Estimate fits the verified context and supplied remaining task budgets.";
         }
         return new RequestAssessment(estimatedInput, outputReserve, reservedTask, contextFit,
-                taskFits, callsFit, eligibility, reason);
+                taskFits, callsFit, eligibility, reason, inputEstimate.profileIdentity(),
+                inputEstimate.strategy(), inputEstimate.categoryMessages(), inputEstimate.byteMessages());
     }
 
     private static long utf8Bytes(String value) {
         return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
-    }
-
-    private static long ceilDiv(long value, long divisor) {
-        if (value <= 0) {
-            return 0;
-        }
-        return 1 + (value - 1) / divisor;
-    }
-
-    private static long integerSqrt(long value) {
-        if (value <= 0) {
-            return 0;
-        }
-        long estimate = (long) Math.sqrt(value);
-        while (estimate < Long.MAX_VALUE && (estimate + 1) <= value / (estimate + 1)) {
-            estimate++;
-        }
-        while (estimate > value / estimate) {
-            estimate--;
-        }
-        return estimate;
     }
 
     private static long saturatedMultiply(long value, long multiplier) {

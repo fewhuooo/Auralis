@@ -101,7 +101,7 @@ public final class ParsedDocumentValidator {
             }
             return new ValidatedParsedDocument(
                     parsed.sourceId(), parsed.ingestionRevision(), parsed.sourceAssetSha256(),
-                    parsed.blocks(), parsed.characterCount(), actualPlainHash, actualPayloadHash,
+                    parsed.parserId(), parsed.blocks(), parsed.characterCount(), actualPlainHash, actualPayloadHash,
                     compressedBytes, decompressed.count());
         } catch (DomainException exception) {
             throw exception;
@@ -125,6 +125,7 @@ public final class ParsedDocumentValidator {
         int schemaVersion = -1;
         long characterCount = -1;
         List<ValidatedBlock> blocks = new ArrayList<>();
+        String parserId = null;
         MessageDigest plainDigest = sha256Digest();
         long computedCharacters = 0;
         try (JsonParser parser = objectMapper.createParser(input)) {
@@ -145,7 +146,7 @@ public final class ParsedDocumentValidator {
                     case "sourceId" -> sourceId = uuid(parser, token, "sourceId");
                     case "ingestionRevision" -> ingestionRevision = uuid(parser, token, "ingestionRevision");
                     case "sourceAssetSha256" -> sourceAssetSha256 = hash(parser, token, "sourceAssetSha256");
-                    case "parser" -> parseParser(parser, token);
+                    case "parser" -> parserId = parseParser(parser, token);
                     case "blocks" -> {
                         requireToken(token, JsonToken.START_ARRAY, "blocks must be an array");
                         while (parser.nextToken() != JsonToken.END_ARRAY) {
@@ -172,18 +173,19 @@ public final class ParsedDocumentValidator {
             }
         }
         if (schemaVersion != 1 || sourceId == null || ingestionRevision == null || sourceAssetSha256 == null
+                || parserId == null
                 || plainTextSha256 == null || characterCount < 0 || blocks.isEmpty()
                 || !plainTextSha256.equals(plainTextSha256.toLowerCase(Locale.ROOT))) {
             throw invalid("payload envelope is incomplete or unsupported");
         }
-        return new Parsed(sourceId, ingestionRevision, sourceAssetSha256, blocks,
+        return new Parsed(sourceId, ingestionRevision, sourceAssetSha256, parserId, blocks,
                 characterCount, computedCharacters, plainDigest, plainTextSha256);
     }
 
-    private void parseParser(JsonParser parser, JsonToken token) throws IOException {
+    private String parseParser(JsonParser parser, JsonToken token) throws IOException {
         requireToken(token, JsonToken.START_OBJECT, "parser must be an object");
         Set<String> seen = new HashSet<>();
-        boolean id = false;
+        String parserId = null;
         boolean version = false;
         boolean normalization = false;
         while ((token = parser.nextToken()) != JsonToken.END_OBJECT) {
@@ -196,7 +198,7 @@ public final class ParsedDocumentValidator {
             }
             token = parser.nextToken();
             switch (field) {
-                case "id" -> { requiredString(parser, token, "parser.id"); id = true; }
+                case "id" -> parserId = requiredString(parser, token, "parser.id");
                 case "version" -> { requiredString(parser, token, "parser.version"); version = true; }
                 case "normalizationVersion" -> { requiredString(parser, token, "parser.normalizationVersion"); normalization = true; }
                 case "ocrModelVersion" -> {
@@ -207,9 +209,10 @@ public final class ParsedDocumentValidator {
                 default -> throw invalid("unknown parser field: " + field);
             }
         }
-        if (!id || !version || !normalization) {
+        if (parserId == null || !version || !normalization) {
             throw invalid("parser metadata is incomplete");
         }
+        return parserId;
     }
 
     private ValidatedBlock parseBlock(JsonParser parser, Metadata metadata, int expectedOrdinal) throws IOException {
@@ -218,6 +221,9 @@ public final class ParsedDocumentValidator {
         long ordinal = -1;
         String kind = null;
         String text = null;
+        Long pageNumber = null;
+        Long anchorIndex = null;
+        Long startLine = null;
         while (parser.nextToken() != JsonToken.END_OBJECT) {
             if (parser.currentToken() != JsonToken.PROPERTY_NAME) {
                 throw invalid("block field is malformed");
@@ -231,11 +237,9 @@ public final class ParsedDocumentValidator {
                 case "ordinal" -> ordinal = longValue(parser, token, "block.ordinal");
                 case "kind" -> kind = requiredString(parser, token, "block.kind");
                 case "text" -> text = requiredString(parser, token, "block.text");
-                case "pageNumber", "anchorIndex", "startLine" -> {
-                    if (token != JsonToken.VALUE_NUMBER_INT && token != JsonToken.VALUE_NULL) {
-                        throw invalid("block position field must be an integer or null");
-                    }
-                }
+                case "pageNumber" -> pageNumber = nullableInteger(parser, token, "block.pageNumber");
+                case "anchorIndex" -> anchorIndex = nullableInteger(parser, token, "block.anchorIndex");
+                case "startLine" -> startLine = nullableInteger(parser, token, "block.startLine");
                 default -> throw invalid("unknown block field: " + field);
             }
         }
@@ -249,7 +253,15 @@ public final class ParsedDocumentValidator {
         if (normalized.codePointCount(0, normalized.length()) > metadata.maxBlockChars()) {
             throw invalid("block text exceeds configured limit");
         }
-        return new ValidatedBlock(ordinal, kind, normalized);
+        return new ValidatedBlock(ordinal, kind, normalized, pageNumber, anchorIndex, startLine);
+    }
+
+    private Long nullableInteger(JsonParser parser, JsonToken token, String field) throws IOException {
+        if (token == JsonToken.VALUE_NULL) return null;
+        if (token != JsonToken.VALUE_NUMBER_INT) {
+            throw invalid(field + " must be an integer or null");
+        }
+        return parser.getLongValue();
     }
 
     private String normalizeText(String value) {
@@ -328,25 +340,38 @@ public final class ParsedDocumentValidator {
             int maxCompressionRatio) {
     }
 
-    public record ValidatedBlock(long ordinal, String kind, String text) {
+    public record ValidatedBlock(long ordinal, String kind, String text,
+                                 Long pageNumber, Long anchorIndex, Long startLine) {
+        public ValidatedBlock(long ordinal, String kind, String text) {
+            this(ordinal, kind, text, null, null, null);
+        }
     }
 
     public record ValidatedParsedDocument(
             UUID sourceId,
             UUID ingestionRevision,
             String sourceAssetSha256,
+            String parserId,
             List<ValidatedBlock> blocks,
             long characterCount,
             String plainTextSha256,
             String payloadSha256,
             long compressedBytes,
             long uncompressedBytes) {
+        public ValidatedParsedDocument(UUID sourceId, UUID ingestionRevision, String sourceAssetSha256,
+                                       List<ValidatedBlock> blocks, long characterCount,
+                                       String plainTextSha256, String payloadSha256,
+                                       long compressedBytes, long uncompressedBytes) {
+            this(sourceId, ingestionRevision, sourceAssetSha256, "unknown", blocks, characterCount,
+                    plainTextSha256, payloadSha256, compressedBytes, uncompressedBytes);
+        }
     }
 
     private record Parsed(
             UUID sourceId,
             UUID ingestionRevision,
             String sourceAssetSha256,
+            String parserId,
             List<ValidatedBlock> blocks,
             long characterCount,
             long computedCharacterCount,

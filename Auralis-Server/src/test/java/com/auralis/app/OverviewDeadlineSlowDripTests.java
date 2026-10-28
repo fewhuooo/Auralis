@@ -56,28 +56,44 @@ class OverviewDeadlineSlowDripTests {
         System.setProperty("javax.net.ssl.trustStoreType", "PKCS12");
         System.setProperty("javax.net.ssl.trustStorePassword", "changeit");
 
-        SSLServerSocket server = (SSLServerSocket) serverContext.getServerSocketFactory()
-                .createServerSocket(0, 1, InetAddress.getLoopbackAddress());
-        CountDownLatch handshakeComplete = new CountDownLatch(1);
-        CountDownLatch peerSawClose = new CountDownLatch(1);
+        SSLServerSocket server = (SSLServerSocket) serverContext.getServerSocketFactory().createServerSocket();
+        server.setReceiveBufferSize(1024);
+        server.bind(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 1);
+        CountDownLatch headersRead = new CountDownLatch(1);
+        CountDownLatch releaseBodyRead = new CountDownLatch(1);
+        CountDownLatch peerFinished = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicLong bodyBytesRead = new java.util.concurrent.atomic.AtomicLong();
+        java.util.concurrent.atomic.AtomicLong contentLength = new java.util.concurrent.atomic.AtomicLong(-1);
         ExecutorService serverExecutor = Executors.newSingleThreadExecutor();
+        ExecutorService clientExecutor = Executors.newSingleThreadExecutor();
+        ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor();
+        java.util.concurrent.atomic.AtomicLong monotonicNanos = new java.util.concurrent.atomic.AtomicLong();
+        OverviewTaskDeadline deadline = new OverviewTaskDeadline(500, monotonicNanos::get);
         Future<?> peer = serverExecutor.submit(() -> {
             try (SSLSocket socket = (SSLSocket) server.accept()) {
+                socket.setReceiveBufferSize(1024);
                 socket.startHandshake();
-                handshakeComplete.countDown();
-                // Deliberately do not consume the request body until the client watchdog closes its socket.
-                Thread.sleep(900);
-                while (socket.getInputStream().read() != -1) { }
-                peerSawClose.countDown();
+                String headers = readRequestHeaders(socket.getInputStream());
+                java.util.regex.Matcher length = java.util.regex.Pattern.compile("(?im)^Content-Length:\\s*(\\d+)\\s*$").matcher(headers);
+                if (length.find()) contentLength.set(Long.parseLong(length.group(1)));
+                headersRead.countDown();
+                // Pause after headers so the large TLS body remains in flight until the watchdog closes the socket.
+                if (!releaseBodyRead.await(5, TimeUnit.SECONDS)) throw new AssertionError("test did not release paused peer");
+                try {
+                    while (socket.getInputStream().read() != -1) bodyBytesRead.incrementAndGet();
+                } catch (java.io.IOException closedByDeadline) {
+                    // The watchdog closes the connection while the request body is in flight.
+                }
             } catch (java.io.IOException closedByClient) {
-                peerSawClose.countDown();
+                // The watchdog may close the socket before the peer resumes reading.
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
+            } finally {
+                peerFinished.countDown();
             }
             return null;
         });
-        ExecutorService clientExecutor = Executors.newSingleThreadExecutor();
-        ScheduledExecutorService watchdog = Executors.newSingleThreadScheduledExecutor();
+        Future<?> call = null;
         try {
             ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint("localhost",
                     server.getLocalPort(), List.of(InetAddress.getLoopbackAddress()), "/v1");
@@ -90,10 +106,7 @@ class OverviewDeadlineSlowDripTests {
             ProviderHttpClient client = new ProviderHttpClient(new ObjectMapper(), properties);
             // Larger than loopback/TLS buffers so the writer blocks while the server refuses to read.
             Map<String, String> requestBody = Map.of("payload", "x".repeat(32 * 1024 * 1024));
-            OverviewTaskDeadline deadline = new OverviewTaskDeadline(500, System::nanoTime);
-            deadline.startWatchdog(watchdog);
-            long started = System.nanoTime();
-            Future<?> call = clientExecutor.submit(() -> {
+            call = clientExecutor.submit(() -> {
                 try {
                     client.postJson(endpoint, "/chat/completions", "synthetic", requestBody,
                             JsonNode.class, 2_000, deadline.cancellation());
@@ -102,21 +115,48 @@ class OverviewDeadlineSlowDripTests {
                     return null;
                 }
             });
-            assertThat(handshakeComplete.await(2, TimeUnit.SECONDS)).isTrue();
-            Thread.sleep(150);
+            assertThat(headersRead.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(contentLength.get()).isGreaterThan(32L * 1024 * 1024);
+            Thread.sleep(100);
             assertThat(call.isDone()).isFalse();
+            // Keep the injected clock frozen through TLS/bootstrap. Start the real 500ms scheduled
+            // watchdog only after the peer has stopped consuming the request body.
+            deadline.startWatchdog(watchdog);
             call.get(2, TimeUnit.SECONDS);
-            assertThat(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)).isLessThan(1_500L);
-            assertThat(peerSawClose.await(2, TimeUnit.SECONDS)).isTrue();
-            deadline.finish();
+            assertThat(deadline.cancellation().reason()).isEqualTo(OverviewCancellation.Reason.DEADLINE);
+            releaseBodyRead.countDown();
+            assertThat(peerFinished.await(3, TimeUnit.SECONDS)).isTrue();
+            peer.get(1, TimeUnit.SECONDS);
+            assertThat(bodyBytesRead.get()).isLessThan(contentLength.get());
         } finally {
+            deadline.cancellation().cancel(OverviewCancellation.Reason.DEADLINE);
+            releaseBodyRead.countDown();
+            deadline.finish();
             server.close();
+            if (call != null) call.cancel(true);
             clientExecutor.shutdownNow();
             serverExecutor.shutdownNow();
             watchdog.shutdownNow();
             assertThat(clientExecutor.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
             assertThat(serverExecutor.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
         }
+    }
+
+    private static String readRequestHeaders(InputStream input) throws java.io.IOException {
+        java.io.ByteArrayOutputStream headers = new java.io.ByteArrayOutputStream();
+        int matched = 0;
+        while (matched < 4) {
+            int value = input.read();
+            if (value == -1) throw new java.io.IOException("connection closed before request headers completed");
+            headers.write(value);
+            matched = switch (matched) {
+                case 0 -> value == '\r' ? 1 : 0;
+                case 1 -> value == '\n' ? 2 : value == '\r' ? 1 : 0;
+                case 2 -> value == '\r' ? 3 : 0;
+                default -> value == '\n' ? 4 : 0;
+            };
+        }
+        return headers.toString(java.nio.charset.StandardCharsets.ISO_8859_1);
     }
 
     @Test

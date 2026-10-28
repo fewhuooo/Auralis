@@ -30,7 +30,6 @@ declare module 'vue' {
     FilePreview: typeof import('./src/components/FilePreview.vue')['default']
     FileRegisterDialog: typeof import('./src/components/asset/FileRegisterDialog.vue')['default']
     FileViewerRenderer: typeof import('./src/components/preview/FileViewerRenderer.vue')['default']
-    HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     KnowledgeBlockEditor: typeof import('./src/components/knowledge/KnowledgeBlockEditor.vue')['default']
     KnowledgeBlockViewDialog: typeof import('./src/components/knowledge/KnowledgeBlockViewDialog.vue')['default']
     KnowledgeGraph: typeof import('./src/components/subject/KnowledgeGraph.vue')['default']

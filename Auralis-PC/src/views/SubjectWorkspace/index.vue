@@ -441,12 +441,14 @@
             :source-count="activeSourceFiles.length"
             :is-stale="isSubjectOverviewStale"
             :is-generating="subjectOverviewGenerating"
+            :generation-conflict-resolving="Boolean(subjectOverviewRecord?.generationConflicts?.some(conflict => resolvingGenerationConflicts.has('SUBJECT:' + conflict.clientWriteId)))"
             :error="subjectOverviewError"
             @generate="handleOutlineAi"
             @generate-outline="handleSubjectOutlineRegenerate"
             @stop="stopManualOverview('subject', subjectId)"
             @open-summary="openSubjectSummary"
             @resolve-sync-conflict="resolveSubjectOverviewConflict"
+            @resolve-generation-conflict="resolveSubjectGenerationEditConflict"
           />
           <FileOutlineList
             :files="fileOverviewItems"
@@ -457,6 +459,7 @@
             @regenerate="regenerateFileOverview"
             @stop-regeneration="stopManualOverview('file', $event)"
             @resolve-sync-conflict="resolveFileOverviewConflict"
+            @resolve-generation-conflict="resolveFileGenerationEditConflict"
           />
         </div>
       </div>
@@ -976,7 +979,9 @@
             class="ai-input"
             :placeholder="quotedSelection ? '针对引用的内容输入问题，或直接发送...' : '问问 Auralis AI...'"
             rows="1"
-            @keydown.enter.exact.prevent="sendChat"
+            @keydown.enter.exact="handleChatKeydown"
+            @compositionstart="handleCompositionStart"
+            @compositionend="handleCompositionEnd"
             @input="autoResizeInput"
           ></textarea>
           <button
@@ -1126,9 +1131,11 @@ import { documentProcessingRuntime } from '@/services/documentProcessing/runtime
 import { useOverviewApi } from '@/api/useOverviewApi'
 import { useSourceApi } from '@/api/useSourceApi'
 import { computeSubjectInputFingerprint, type OverviewRepository } from '@/services/overviewRepository'
-import { OverviewResultsSyncService } from '@/services/overviewResultsSyncService'
+import { OverviewResultsSyncService, runOverviewConflictResolutionOnce } from '@/services/overviewResultsSyncService'
 import { subscribeOverviewCacheUpdated } from '@/services/overviewSyncWakeup'
-import type { FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
+import type { CanonicalSourceRefView, FileOverviewRecord, OverviewChapter, OverviewLocator, OverviewOperationHandle, OverviewRegenerationResult, SubjectOverviewRecord } from '@/types/overview'
+import { createOutlineIdentityInput, createOutlineProvenanceInput, createOutlineProvenanceInputForLinkedSources,
+  createOutlineProvenanceView, filterOutlineSourceRefs, shouldAdoptGeneratedOutline } from '@/services/outlineIdentity'
 import type { SourceFileModel } from '@/services/domainMappers'
 import { getLegacySubjectIcon, getSubjectIconComponent, isSubjectIconKey } from '@/utils/subjectIcon'
 import { SUPPORTED_UPLOAD_EXTENSIONS, validateUploadFile } from '@/utils/filePreview'
@@ -1329,6 +1336,7 @@ const generatingFileIds = ref<Set<string>>(new Set())
 const isSubjectOverviewStale = ref(false)
 const subjectOverviewManualError = ref<string | null>(null)
 const fileOverviewManualErrors = ref<Record<string, string>>({})
+const resolvingGenerationConflicts = ref<Set<string>>(new Set())
 const selectedSummaryScope = ref<{ kind: 'file' | 'subject'; id: string } | null>(null)
 let overviewRepository: OverviewRepository | null = null
 let overviewGeneration: OverviewGenerationService | null = null
@@ -1350,6 +1358,8 @@ const fileOverviewItems = computed<FileOverviewItem[]>(() => activeSourceFiles.v
     error: fileOverviewManualErrors.value[file.id]
       || (record?.status === 'FAILED' ? overviewFailureMessage(record?.errorCode) : null),
     syncStatus: record?.syncStatus,
+    generationConflicts: record?.generationConflicts ?? [],
+    generationConflictResolving: Boolean(record?.generationConflicts?.some(conflict => resolvingGenerationConflicts.value.has(`FILE:${conflict.clientWriteId}`))),
     isGenerating: generatingFileIds.value.has(file.id),
   }
 }))
@@ -1415,7 +1425,8 @@ const runManualOverview = async (scope: ManualOverviewScope, handle: OverviewOpe
     if (manualOverviewHandles.get(key) !== handle) return
     if (applyManualOverviewResult(result, scope)) {
       await refreshOverviewCache()
-      if (scope.kind === 'subject' && subjectOverviewRecord.value?.syncStatus === 'CONFLICT') {
+      if (scope.kind === 'subject' && result.status !== 'LOCAL_EDIT_CONFLICT'
+        && subjectOverviewRecord.value?.syncStatus === 'CONFLICT' && !subjectOverviewRecord.value.generationConflicts?.length) {
         void resolveSubjectOverviewConflict('LOCAL', true)
       }
     }
@@ -1426,6 +1437,68 @@ const runManualOverview = async (scope: ManualOverviewScope, handle: OverviewOpe
       else subjectOverviewGenerating.value = false
     }
   }
+}
+
+const resolveGenerationEditConflict = async (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string,
+  clientWriteId: string, choice: 'KEEP_LOCAL' | 'USE_AI') => {
+  const key = `${scopeType}:${clientWriteId}`
+  if (resolvingGenerationConflicts.value.has(key) || !overviewRepository) return
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  const capturedSubjectId = subjectId.value
+  const capturedSwitchGeneration = currentSubjectSwitchGen
+  const capturedRepository = overviewRepository
+  const capturedFenceToken = capturedRepository.captureScopeFenceToken(scopeType,scopeId)
+  const source = scopeType === 'FILE' ? activeSourceFiles.value.find(file => file.id === scopeId) : null
+  const isCurrent = () => isComponentMounted && authStore.isAuthenticated && authStore.user?.id === userId
+    && authStore.serverDeviceId === serverDeviceId && subjectId.value === capturedSubjectId
+    && currentSubjectSwitchGen === capturedSwitchGeneration && overviewRepository === capturedRepository
+    && capturedRepository.isScopeFenceTokenCurrent(capturedFenceToken)
+    && (scopeType === 'SUBJECT' ? capturedSubjectId === scopeId
+      : Boolean(source && activeSourceFiles.value.some(file => file.id === scopeId && file.subjectId === capturedSubjectId
+        && file.ingestionStatus === 'READY' && file.ingestionRevision === revisionKey)))
+  resolvingGenerationConflicts.value = new Set(resolvingGenerationConflicts.value).add(key)
+  try {
+    if (!isCurrent() || !userId || !serverDeviceId) return
+    const candidate = (await capturedRepository.listOverviewOutbox()).find(item => item.clientWriteId === clientWriteId
+      && item.scopeType === scopeType && item.scopeId === scopeId && item.revisionKey === revisionKey
+      && item.state === 'CONFLICT' && item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT')
+    if (!candidate || !isCurrent()) return
+    const validateInputs = async () => {
+      if (scopeType !== 'SUBJECT' || choice !== 'USE_AI') return isCurrent()
+      const files = (await Promise.all(activeSourceFiles.value.filter(file => file.ingestionStatus === 'READY' && file.ingestionRevision)
+        .map(file => capturedRepository.getFileOverview(file.id,file.ingestionRevision!))))
+        .filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
+      if (!isCurrent()) return false
+      const currentFingerprint = await computeSubjectInputFingerprint(files)
+      return isCurrent() && Boolean(candidate.inputFingerprint && currentFingerprint === candidate.inputFingerprint)
+    }
+    if (!await validateInputs()) throw new Error('OVERVIEW_INPUT_CHANGED')
+    const result = await capturedRepository.resolveGenerationEditConflict(clientWriteId,choice,isCurrent,validateInputs)
+    if (!isCurrent()) return
+    await refreshOverviewCache()
+    if (result.status === 'CHANGED') ElMessage.warning('本机内容又有更新，请检查双方内容后重新选择。')
+    else if (result.status === 'KEPT') ElMessage.success('已保留本机修改')
+    else ElMessage.success('已采用生成结果并加入正常同步队列')
+  } catch (error) {
+    if (!isCurrent()) return
+    const code = error instanceof Error ? error.message : ''
+    if (code === 'OVERVIEW_INPUT_CHANGED' || code.endsWith('_STALE')) ElMessage.warning('资料已变化，生成结果未覆盖本机内容。')
+    else if (code === 'OVERVIEW_GENERATION_CONFLICT_MISSING') ElMessage.warning('这项生成冲突已处理，请刷新后查看。')
+    else ElMessage.error('冲突处理失败，请稍后重试。')
+  } finally {
+    const next = new Set(resolvingGenerationConflicts.value)
+    next.delete(key)
+    resolvingGenerationConflicts.value = next
+  }
+}
+const resolveSubjectGenerationEditConflict = (payload: { clientWriteId: string; choice: 'KEEP_LOCAL' | 'USE_AI' }) => {
+  return resolveGenerationEditConflict('SUBJECT',subjectId.value,'subject-v1',payload.clientWriteId,payload.choice)
+}
+const resolveFileGenerationEditConflict = (payload: { fileId: string; clientWriteId: string; choice: 'KEEP_LOCAL' | 'USE_AI' }) => {
+  const revision = activeSourceFiles.value.find(file => file.id === payload.fileId)?.ingestionRevision
+  if (!revision) return Promise.resolve()
+  return resolveGenerationEditConflict('FILE',payload.fileId,revision,payload.clientWriteId,payload.choice)
 }
 
 const overviewSkipMessage = (code: string) => {
@@ -1449,6 +1522,7 @@ const clearFileOverviewManualError = (fileId: string) => {
 }
 
 const applyManualOverviewResult = (result: OverviewRegenerationResult, scope: ManualOverviewScope) => {
+  if (result.status === 'LOCAL_EDIT_CONFLICT') return true
   if (result.status === 'STARTED') {
     if (scope.kind !== 'subject') ElMessage.success('已更新')
     if (scope.kind === 'subject') subjectOverviewManualError.value = null
@@ -1483,7 +1557,7 @@ const refreshOverviewCache = async () => {
   const usable = records.filter((record): record is FileOverviewRecord => Boolean(record && hasUsableOverview(record)))
   isSubjectOverviewStale.value = Boolean(subjectOverviewRecord.value?.inputFingerprint
     && await computeSubjectInputFingerprint(usable) !== subjectOverviewRecord.value.inputFingerprint)
-  if (subjectOverviewRecord.value?.syncStatus === 'CONFLICT') {
+  if (subjectOverviewRecord.value?.syncStatus === 'CONFLICT' && !subjectOverviewRecord.value.generationConflicts?.length) {
     void resolveSubjectOverviewConflict('LOCAL', true)
   }
 }
@@ -1516,66 +1590,84 @@ const ensureOverviewRuntime = async () => {
   return true
 }
 
-const resolveOverviewSyncConflict = async (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, choice: 'LOCAL' | 'REMOTE', silent = false) => {
-  if (!(await ensureOverviewRuntime()) || !overviewRepository) return
+const resolveOverviewSyncConflict = (scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string, choice: 'LOCAL' | 'REMOTE', silent = false) => {
   const userId = authStore.user?.id
   const serverDeviceId = authStore.serverDeviceId
-  if (!userId || !serverDeviceId) return
-  const localRepository = await getLocalRepository(userId,serverDeviceId)
-  const isCurrent = () => authStore.isAuthenticated && authStore.user?.id === userId && authStore.serverDeviceId === serverDeviceId
-  const mapCurrentSources = async () => {
-    if (!isCurrent()) return []
-    const rows = await localRepository.list<Record<string, unknown>>('SOURCE', { includeDeleted: false })
-    if (!isCurrent()) return []
-    return rows.flatMap(row => {
-      const value = row.value
-      if (!value || typeof value.id !== 'string' || typeof value.type !== 'string'
-        || typeof value.subjectId !== 'string' || typeof value.ingestionStatus !== 'string') return []
-      return [{
-        id: value.id, type: value.type, subjectId: value.subjectId, ingestionStatus: value.ingestionStatus,
-        ingestionRevision: typeof value.ingestionRevision === 'string' ? value.ingestionRevision : null,
-        deletedAt: row.deletedAt,
-      }]
-    })
-  }
-  const options = {
-    sources: sourceStore.sources.map(source => ({
-      id: source.id, type: source.type ?? 'FILE', subjectId: source.subjectId,
-      ingestionStatus: source.ingestionStatus ?? '', ingestionRevision: source.ingestionRevision ?? null,
-      deletedAt: source.deletedAt,
-    })),
-    subjectIds: subjectStore.subjects.map(subject => subject.id),
-    isCurrent,
-    isSourceCurrent: async (source: { id: string; ingestionRevision: string | null }) => {
-      if (!isCurrent()) return false
-      const row = await localRepository.read<Record<string, unknown>>('SOURCE', source.id)
-      const value = row?.value
-      return isCurrent() && Boolean(row && !row.deletedAt && value && value.id === source.id && value.type === 'FILE'
-        && value.ingestionStatus === 'READY' && value.ingestionRevision === source.ingestionRevision)
-    },
-    isSubjectCurrent: async (id: string) => {
-      if (!isCurrent()) return false
-      const row = await localRepository.read<Record<string, unknown>>('SUBJECT', id)
-      return isCurrent() && Boolean(row && !row.deletedAt && row.id === id)
-    },
-    getCurrentSources: mapCurrentSources,
-  }
-  try {
-    await new OverviewResultsSyncService(overviewRepository,userId,serverDeviceId)
-      .resolveConflict(scopeType,scopeId,revisionKey,choice,options)
-    if (options.isCurrent()) await refreshOverviewCache()
-    if (!silent) {
-      ElMessage.success(choice === 'LOCAL' ? '已提交本机总览同步' : '已采用云端总览')
+  const capturedSubjectId = subjectId.value
+  if (!authStore.isAuthenticated || !userId || !serverDeviceId) return Promise.resolve()
+  const capturedRepository = overviewRepository
+  const capturedFenceToken = capturedRepository?.captureScopeFenceToken(scopeType, scopeId)
+  const isScopeCurrent = () => isComponentMounted && authStore.isAuthenticated && authStore.user?.id === userId
+    && authStore.serverDeviceId === serverDeviceId && subjectId.value === capturedSubjectId
+    && (!capturedRepository || Boolean(capturedFenceToken && overviewRepository === capturedRepository
+      && capturedRepository.isScopeFenceTokenCurrent(capturedFenceToken)))
+    && (scopeType === 'SUBJECT'
+      ? capturedSubjectId === scopeId
+      : activeSourceFiles.value.some(file => file.id === scopeId && file.ingestionRevision === revisionKey))
+  const key = JSON.stringify([userId, serverDeviceId, scopeType, scopeId, revisionKey])
+  const resolve = async () => {
+    if (!isScopeCurrent() || !(await ensureOverviewRuntime()) || !overviewRepository || !isScopeCurrent()) return
+    const localRepository = await getLocalRepository(userId,serverDeviceId)
+    if (!isScopeCurrent()) return
+    const isCurrent = isScopeCurrent
+    const mapCurrentSources = async () => {
+      if (!isCurrent()) return []
+      const rows = await localRepository.list<Record<string, unknown>>('SOURCE', { includeDeleted: false })
+      if (!isCurrent()) return []
+      return rows.flatMap(row => {
+        const value = row.value
+        if (!value || typeof value.id !== 'string' || typeof value.type !== 'string'
+          || typeof value.subjectId !== 'string' || typeof value.ingestionStatus !== 'string') return []
+        return [{
+          id: value.id, type: value.type, subjectId: value.subjectId, ingestionStatus: value.ingestionStatus,
+          ingestionRevision: typeof value.ingestionRevision === 'string' ? value.ingestionRevision : null,
+          deletedAt: row.deletedAt,
+        }]
+      })
     }
-  } catch (error) {
-    if (!silent) {
-      const code = error instanceof Error ? error.message : ''
-      if (code === 'OVERVIEW_INPUT_CHANGED') ElMessage.warning('资料已变化，本机总览未覆盖云端，请先重新生成。')
-      else if (code === 'OVERVIEW_REMOTE_MISSING') ElMessage.warning('云端没有当前版本，保留本机总览并重试。')
-      else if (code === 'OVERVIEW_SCOPE_CHANGED' || code.endsWith('_STALE')) ElMessage.warning('资料版本已变化，请刷新后重试。')
-      else ElMessage.error('总览同步处理失败，请稍后重试。')
+    const options = {
+      sources: sourceStore.sources.map(source => ({
+        id: source.id, type: source.type ?? 'FILE', subjectId: source.subjectId,
+        ingestionStatus: source.ingestionStatus ?? '', ingestionRevision: source.ingestionRevision ?? null,
+        deletedAt: source.deletedAt,
+      })),
+      subjectIds: subjectStore.subjects.map(subject => subject.id),
+      isCurrent,
+      isSourceCurrent: async (source: { id: string; ingestionRevision: string | null }) => {
+        if (!isCurrent()) return false
+        const row = await localRepository.read<Record<string, unknown>>('SOURCE', source.id)
+        const value = row?.value
+        return isCurrent() && Boolean(row && !row.deletedAt && value && value.id === source.id && value.type === 'FILE'
+          && value.ingestionStatus === 'READY' && value.ingestionRevision === source.ingestionRevision)
+      },
+      isSubjectCurrent: async (id: string) => {
+        if (!isCurrent()) return false
+        const row = await localRepository.read<Record<string, unknown>>('SUBJECT', id)
+        return isCurrent() && Boolean(row && !row.deletedAt && row.id === id)
+      },
+      getCurrentSources: mapCurrentSources,
+    }
+    try {
+      await new OverviewResultsSyncService(overviewRepository,userId,serverDeviceId)
+        .resolveConflict(scopeType,scopeId,revisionKey,choice,options)
+      if (options.isCurrent()) await refreshOverviewCache()
+      if (!silent) {
+        ElMessage.success(choice === 'LOCAL' ? '已提交本机总览同步' : '已采用云端总览')
+      }
+    } catch (error) {
+      if (!silent) {
+        const code = error instanceof Error ? error.message : ''
+        if (code === 'OVERVIEW_INPUT_CHANGED') ElMessage.warning('资料已变化，本机总览未覆盖云端，请先重新生成。')
+        else if (code === 'OVERVIEW_REMOTE_MISSING') ElMessage.warning('云端没有当前版本，保留本机总览并重试。')
+        else if (code === 'OVERVIEW_SCOPE_CHANGED' || code.endsWith('_STALE')) ElMessage.warning('资料版本已变化，请刷新后重试。')
+        else ElMessage.error('总览同步处理失败，请稍后重试。')
+      }
     }
   }
+  if (scopeType === 'SUBJECT' && choice === 'LOCAL' && silent) {
+    return runOverviewConflictResolutionOnce(key, resolve)
+  }
+  return resolve()
 }
 
 const resolveSubjectOverviewConflict = (choice: 'LOCAL' | 'REMOTE' = 'LOCAL', silent = false) => {
@@ -1700,13 +1792,15 @@ const handlePreviewPageChange = (page: number, total: number) => {
 // ===== Subject outline (visual prototype; not persisted) =====
 interface OutlineSection {
   id: string
+  nodeId?: string | null
+  sourceRefs?: CanonicalSourceRefView[]
   title: string
   fileId?: string
   sourceIds?: string[]
   summary?: string | null
   locator?: OverviewLocator | null
 }
-interface OutlineChapter { id: string; title: string; sections: OutlineSection[] }
+interface OutlineChapter { id: string; nodeId?: string | null; title: string; sections: OutlineSection[] }
 const isOutlineComposer = ref(false)
 const chapterDraft = ref('')
 const chapterDrafts = ref<Record<string, string>>({})
@@ -1718,17 +1812,22 @@ const isSavingOutline = ref(false)
 // ===== 各文件大纲编辑草稿与状态 =====
 interface FileDraftSection {
   id: string
+  nodeId?: string | null
+  sourceRefs?: CanonicalSourceRefView[]
   title: string
   locator?: OverviewLocator | null
   summary?: string | null
 }
 interface FileDraftChapter {
   id: string
+  nodeId?: string | null
   title: string
   sections: FileDraftSection[]
 }
 
 const fileOutlineDrafts = ref<Record<string, FileDraftChapter[]>>({})
+const fileDraftOutlineGeneratedAt = ref<Record<string, string | null>>({})
+const fileDraftBaselineFingerprint = ref<Record<string, string>>({})
 const savingFileIds = ref<Set<string>>(new Set())
 const fileSectionDrafts = ref<Record<string, string>>({})
 const fileChapterDrafts = ref<Record<string, string>>({})
@@ -1737,18 +1836,54 @@ const fileCardCollapsed = ref<Record<string, boolean>>({})
 const draggingFileChapter = ref<{ fileId: string; index: number } | null>(null)
 const draggingFileSection = ref<{ fileId: string; chapterIndex: number; sectionIndex: number } | null>(null)
 
+const overviewNodeId = (record: SubjectOverviewRecord | FileOverviewRecord | null | undefined, path: number[]): string | null => {
+  const inputNode = record?.outlineIdentityInput?.nodes.find(node => node.path.join('.') === path.join('.'))
+  if (inputNode) return inputNode.nodeId
+  return record?.identityReady
+    ? record.outlineIdentity?.nodes.find(node => node.path.join('.') === path.join('.'))?.nodeId ?? null
+    : null
+}
+const overviewSectionRefs = (record: SubjectOverviewRecord | FileOverviewRecord | null | undefined, path: number[]): CanonicalSourceRefView[] => {
+  const key = path.join('.')
+  return record?.outlineProvenance?.sections.find(section => section.path.join('.') === key)?.sourceRefs
+    ?? record?.outlineIdentity?.nodes.find(node => node.path.join('.') === key)?.sourceRefs
+    ?? []
+}
+
+const fileOutlineDraftFingerprint = (draft: FileDraftChapter[] | undefined): string => JSON.stringify((draft ?? []).map(chapter => ({
+  nodeId: chapter.nodeId ?? null,
+  title: chapter.title,
+  sections: chapter.sections.map(section => ({
+    nodeId: section.nodeId ?? null,
+    sourceRefs: section.sourceRefs ?? [],
+    title: section.title,
+    locator: section.locator ?? null,
+    summary: section.summary ?? null,
+  })),
+})))
+
+const fileOutlineDraftHasUnsavedChanges = (fileId: string): boolean => {
+  const baseline = fileDraftBaselineFingerprint.value[fileId]
+  if (baseline === undefined) return Boolean(fileOutlineDrafts.value[fileId]?.length)
+  return baseline !== fileOutlineDraftFingerprint(fileOutlineDrafts.value[fileId])
+}
+
 const initFileOutlineDraft = (fileId: string, force = false) => {
   const currentDraft = fileOutlineDrafts.value[fileId]
   if (!force && currentDraft && currentDraft.length > 0) return
 
   const item = fileOverviewItems.value.find(i => i.id === fileId)
   const outline = item?.outline || fileOverviewRecords.value[fileId]?.outline
+  const record = fileOverviewRecords.value[fileId]
   if (Array.isArray(outline) && outline.length > 0) {
     fileOutlineDrafts.value[fileId] = outline.map((chap, cIdx) => ({
       id: `fchap-${fileId}-${cIdx}-${Date.now()}`,
+      nodeId: overviewNodeId(record, [cIdx]),
       title: chap.title || `第 ${cIdx + 1} 章`,
       sections: (chap.sections || []).map((sec, sIdx) => ({
         id: `fsec-${fileId}-${cIdx}-${sIdx}-${Date.now()}`,
+        nodeId: overviewNodeId(record, [cIdx, sIdx]),
+        sourceRefs: overviewSectionRefs(record, [cIdx, sIdx]),
         title: sec.title || `第 ${sIdx + 1} 节`,
         locator: sec.locator ?? null,
         summary: sec.summary ?? null
@@ -1757,6 +1892,8 @@ const initFileOutlineDraft = (fileId: string, force = false) => {
   } else if (!currentDraft) {
     fileOutlineDrafts.value[fileId] = []
   }
+  fileDraftBaselineFingerprint.value[fileId] = fileOutlineDraftFingerprint(fileOutlineDrafts.value[fileId])
+  fileDraftOutlineGeneratedAt.value[fileId] = record?.outlineGeneratedAt ?? null
 }
 
 const initAllFileOutlineDrafts = (force = false) => {
@@ -1771,9 +1908,12 @@ const initSubjectOutlineFromExisting = (force = false) => {
   if (Array.isArray(subjectChapList) && subjectChapList.length > 0) {
     subjectOutline.value = subjectChapList.map((chap, i) => ({
       id: `chap-${i}-${Date.now()}`,
+      nodeId: overviewNodeId(subjectOverviewRecord.value, [i]),
       title: chap.title || `第 ${i + 1} 章`,
       sections: (chap.sections || []).map((sec, j) => ({
         id: `sec-${i}-${j}-${Date.now()}`,
+        nodeId: overviewNodeId(subjectOverviewRecord.value, [i, j]),
+        sourceRefs: overviewSectionRefs(subjectOverviewRecord.value, [i, j]),
         title: sec.title || `第 ${j + 1} 节`,
         fileId: sec.sourceIds?.[0] || '',
         sourceIds: Array.isArray(sec.sourceIds) ? [...sec.sourceIds] : (sec.sourceIds ? [sec.sourceIds] : []),
@@ -1784,31 +1924,11 @@ const initSubjectOutlineFromExisting = (force = false) => {
     return
   }
 
-  // 2. 如果学科总览尚未生成综合大纲：
-  // 若只有单一文件且已有大纲，载入该文件大纲；
-  // 若有多份文件，不将所有文件大纲无脑揉在一起，而是保持学科大纲独立，分文件大纲在下方各卡片独立展示
-  const filesWithOutline = fileOverviewItems.value.filter(item => Array.isArray(item.outline) && item.outline.length > 0)
-  if (filesWithOutline.length === 1) {
-    const singleFile = filesWithOutline[0]
-    subjectOutline.value = (singleFile.outline || []).map((chap, i) => ({
-      id: `chap-${i}-${Date.now()}`,
-      title: chap.title || `第 ${i + 1} 章`,
-      sections: (chap.sections || []).map((sec, j) => ({
-        id: `sec-${i}-${j}-${Date.now()}`,
-        title: sec.title || `第 ${j + 1} 节`,
-        fileId: singleFile.id,
-        sourceIds: Array.isArray(sec.sourceIds) && sec.sourceIds.length > 0 ? [...sec.sourceIds] : [singleFile.id],
-        summary: sec.summary ?? null,
-        locator: sec.locator ?? null
-      }))
-    }))
-    return
-  }
-
-  // 3. 多份文件且未生成学科综合大纲时，初始化默认起始章节供用户编排学科大纲
+  // 2. 如果学科总览尚未生成综合大纲，保持学科大纲独立，初始化默认起始章节供用户编排学科大纲
+  // 不从单一或部分文件大纲中自动填充，分文件大纲在下方各卡片独立展示与编排
   if (force || !subjectOutline.value.length) {
     subjectOutline.value = [
-      { id: `chapter-${Date.now()}`, title: '第一章 · 新建章节', sections: [] }
+      { id: `chapter-${Date.now()}`, nodeId: null, title: '第一章 · 新建章节', sections: [] }
     ]
   }
 }
@@ -1830,14 +1950,18 @@ watch(fileOverviewItems, (items) => {
   if (isOutlineComposer.value) {
     for (const item of items) {
       const draft = fileOutlineDrafts.value[item.id]
-      if ((!draft || draft.length === 0) && item.outline && item.outline.length > 0) {
-        initFileOutlineDraft(item.id, true)
-      }
-    }
-    if (!subjectOverviewRecord.value?.outline?.length) {
-      const filesWithOutline = items.filter(item => Array.isArray(item.outline) && item.outline.length > 0)
-      if (filesWithOutline.length === 1 && (!subjectOutline.value.length || subjectOutline.value[0]?.title?.includes('新建章节'))) {
-        initSubjectOutlineFromExisting(true)
+      const generatedAt = fileOverviewRecords.value[item.id]?.outlineGeneratedAt ?? null
+      const previousGeneratedAt = fileDraftOutlineGeneratedAt.value[item.id]
+      if (previousGeneratedAt !== undefined && previousGeneratedAt !== generatedAt) {
+        if (shouldAdoptGeneratedOutline(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges(item.id))) {
+          initFileOutlineDraft(item.id, true)
+        } else {
+          fileDraftOutlineGeneratedAt.value[item.id] = generatedAt
+        }
+      } else if ((!draft || draft.length === 0) && item.outline && item.outline.length > 0) {
+        if (!fileOutlineDraftHasUnsavedChanges(item.id)) initFileOutlineDraft(item.id, true)
+      } else {
+        fileDraftOutlineGeneratedAt.value[item.id] = generatedAt
       }
     }
   }
@@ -1873,6 +1997,25 @@ const saveCurrentOutline = async () => {
       })
     }))
 
+    const nodeIdsByPath = new Map<string, string | null>()
+    const refsByPath = new Map<string, CanonicalSourceRefView[]>()
+    const sourceIdsByPath = new Map<string, string[]>()
+    subjectOutline.value.forEach((chapter, chapterIndex) => {
+      nodeIdsByPath.set(String(chapterIndex), chapter.nodeId ?? null)
+      chapter.sections.forEach((section, sectionIndex) => {
+        const key = `${chapterIndex}.${sectionIndex}`
+        nodeIdsByPath.set(key, section.nodeId ?? null)
+        const linkedSourceIds = formattedOutline[chapterIndex].sections[sectionIndex].sourceIds
+        sourceIdsByPath.set(key, linkedSourceIds)
+        refsByPath.set(key, filterOutlineSourceRefs(section.sourceRefs ?? [], linkedSourceIds))
+      })
+    })
+    const outlineIdentityInput = createOutlineIdentityInput(formattedOutline, nodeIdsByPath)
+    const outlineProvenance = createOutlineProvenanceView(formattedOutline, refsByPath)
+    const ingestionRevisionsBySourceId = new Map(activeSourceFiles.value
+      .filter(file => Boolean(file.ingestionRevision))
+      .map(file => [file.id, file.ingestionRevision as string] as const))
+
     const fingerprint = subjectOverviewRecord.value?.inputFingerprint || 'manual-edit'
     const record = await overviewRepository.saveSubjectOverviewPart({
       subjectId: targetSubjectId,
@@ -1881,9 +2024,12 @@ const saveCurrentOutline = async () => {
         schemaVersion: 1,
         title: subjectOverviewRecord.value?.title || '学科总览',
         outline: formattedOutline,
-        summary: subjectOverviewRecord.value?.summary || null
+        summary: subjectOverviewRecord.value?.summary || null,
+        outlineProvenance,
       },
-      inputFingerprint: fingerprint
+      inputFingerprint: fingerprint,
+      outlineIdentityInput,
+      outlineProvenanceInput: createOutlineProvenanceInputForLinkedSources(outlineProvenance, sourceIdsByPath, ingestionRevisionsBySourceId),
     })
     // 检查保存返回后当前学科是否仍为目标学科，若已切换学科则不更新当前页面的 state 与提示，防止旧学科大纲污染新学科
     if (subjectId.value !== targetSubjectId) return
@@ -1901,14 +2047,14 @@ const fileById = (id?: string) => activeSourceFiles.value.find(file => file.id =
 const addChapter = () => {
   const title = chapterDraft.value.trim()
   if (!title) return
-  subjectOutline.value.push({ id: `chapter-${Date.now()}`, title, sections: [] })
+  subjectOutline.value.push({ id: `chapter-${Date.now()}`, nodeId: null, title, sections: [] })
   chapterDraft.value = ''
 }
 const addSection = (chapterId: string) => {
   const title = chapterDrafts.value[chapterId]?.trim()
   if (!title) return
   const chapter = subjectOutline.value.find(item => item.id === chapterId)
-  if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, title, sourceIds: [], summary: null, locator: null })
+  if (chapter) chapter.sections.push({ id: `section-${Date.now()}`, nodeId: null, sourceRefs: [], title, sourceIds: [], summary: null, locator: null })
   chapterDrafts.value[chapterId] = ''
 }
 const deleteChapter = (chapterIndex: number) => {
@@ -1953,6 +2099,19 @@ const saveFileOutline = async (fileId: string) => {
       }))
     }))
 
+    const nodeIdsByPath = new Map<string, string | null>()
+    const refsByPath = new Map<string, CanonicalSourceRefView[]>()
+    drafts.forEach((chapter, chapterIndex) => {
+      nodeIdsByPath.set(String(chapterIndex), chapter.nodeId ?? null)
+      chapter.sections.forEach((section, sectionIndex) => {
+        const key = `${chapterIndex}.${sectionIndex}`
+        nodeIdsByPath.set(key, section.nodeId ?? null)
+        refsByPath.set(key, filterOutlineSourceRefs(section.sourceRefs ?? [], [fileId]))
+      })
+    })
+    const outlineIdentityInput = createOutlineIdentityInput(formattedOutline, nodeIdsByPath)
+    const outlineProvenance = createOutlineProvenanceView(formattedOutline, refsByPath)
+
     const existingRecord = fileOverviewRecords.value[fileId]
     const revision = file.ingestionRevision || existingRecord?.ingestionRevision || 'manual-edit'
 
@@ -1964,14 +2123,19 @@ const saveFileOutline = async (fileId: string) => {
         schemaVersion: 1,
         title: existingRecord?.title || file.name,
         outline: formattedOutline,
-        summary: existingRecord?.summary || null
-      }
+        summary: existingRecord?.summary || null,
+        outlineProvenance,
+      },
+      outlineIdentityInput,
+      outlineProvenanceInput: createOutlineProvenanceInput(outlineProvenance),
     })
 
     fileOverviewRecords.value = {
       ...fileOverviewRecords.value,
       [fileId]: updatedRecord
     }
+    fileDraftBaselineFingerprint.value[fileId] = fileOutlineDraftFingerprint(fileOutlineDrafts.value[fileId])
+    fileDraftOutlineGeneratedAt.value[fileId] = updatedRecord.outlineGeneratedAt
 
     ElMessage.success(`《${file.name}》大纲已保存`)
   } catch (err) {
@@ -1983,9 +2147,11 @@ const saveFileOutline = async (fileId: string) => {
 }
 
 const createInitialFileOutline = (fileId: string) => {
+  fileDraftBaselineFingerprint.value[fileId] = fileOutlineDraftFingerprint([])
   fileOutlineDrafts.value[fileId] = [
     {
       id: `fchap-${fileId}-0-${Date.now()}`,
+      nodeId: null,
       title: '第一章 · 新建章节',
       sections: []
     }
@@ -2000,6 +2166,7 @@ const addFileChapter = (fileId: string) => {
   }
   fileOutlineDrafts.value[fileId].push({
     id: `fchap-${fileId}-${Date.now()}`,
+    nodeId: null,
     title,
     sections: []
   })
@@ -2018,6 +2185,8 @@ const addFileSection = (fileId: string, chapterId: string, chapterIndex: number)
   if (!chapter) return
   chapter.sections.push({
     id: `fsec-${fileId}-${chapterId}-${Date.now()}`,
+    nodeId: null,
+    sourceRefs: [],
     title
   })
   fileSectionDrafts.value[draftKey] = ''
@@ -2068,6 +2237,7 @@ const handleLinkFile = (chapterIndex: number, sectionIndex: number, fileId: stri
       if (!section.sourceIds.includes(fileId)) {
         section.sourceIds.push(fileId)
       }
+      section.sourceRefs = filterOutlineSourceRefs(section.sourceRefs ?? [], section.sourceIds)
       ElMessage.success('已关联文件')
     }
   }
@@ -2088,6 +2258,7 @@ const unlinkFile = (chapterIndex: number, sectionIndex: number, targetFileId?: s
     delete section.fileId
     section.sourceIds = []
   }
+  section.sourceRefs = filterOutlineSourceRefs(section.sourceRefs ?? [], section.sourceIds ?? [])
   ElMessage.success('已解除关联')
 }
 
@@ -2161,9 +2332,11 @@ const handleRegisterFile = async (data: { file: File; name: string; subjectId: s
 
   try {
     const asset = await assetStore.upload(currentFile, (percent, stage) => {
-      uploadProgress.value = percent
+      uploadProgress.value = percent < 100 ? Math.round(percent * 0.7) : 70 // uploadProgress.value = percent
       uploadStage.value = stage
     })
+    uploadProgress.value = 75
+    uploadStage.value = '正在关联学科资料...'
     const newId = await sourceStore.createFileSource(
       targetSubjectId,
       registerForm.value.name.trim(),
@@ -2177,11 +2350,15 @@ const handleRegisterFile = async (data: { file: File; name: string; subjectId: s
       centerView.value = 'preview'
     }
 
-    if (targetSubjectId === subjectId.value) await sourceStore.loadLocalSourceFiles(subjectId.value)
+    if (targetSubjectId === subjectId.value) {
+      uploadProgress.value = 90
+      uploadStage.value = '正在刷新资料列表...'
+      await sourceStore.loadLocalSourceFiles(subjectId.value)
+    }
 
     uploadProgress.value = 100
     uploadStage.value = '导入完成'
-    await new Promise(resolve => setTimeout(resolve, 550))
+    await new Promise(resolve => setTimeout(resolve, 400))
 
     showRegisterModal.value = false
     registerForm.value = { name: '', filePath: '', fileType: 'PDF', fileSize: 0, subjectId: '' }
@@ -2189,6 +2366,8 @@ const handleRegisterFile = async (data: { file: File; name: string; subjectId: s
     ElNotification({ title: '已保存到本地', message: `${currentFile.name} 将在后台同步`, type: 'success', position: 'top-right' })
   } catch (e: any) {
     console.error(e)
+    uploadProgress.value = 0
+    uploadStage.value = ''
     ElNotification({ title: '录入失败', message: e.message || '文件上传或创建失败，请重试', type: 'error', position: 'top-right' })
   } finally {
     isUploading.value = false
@@ -2548,6 +2727,28 @@ const aiSourceSummaryTitle = computed(() => {
 
 const aiGreetingName = computed(() => authStore.username || '同学')
 
+const isChatComposing = ref(false)
+let lastChatCompositionEndTime = 0
+
+const handleCompositionStart = () => {
+  isChatComposing.value = true
+}
+
+const handleCompositionEnd = () => {
+  isChatComposing.value = false
+  lastChatCompositionEndTime = Date.now()
+}
+
+const handleChatKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    if (isChatComposing.value || e.isComposing || Date.now() - lastChatCompositionEndTime < 200) {
+      return
+    }
+    e.preventDefault()
+    sendChat()
+  }
+}
+
 const autoResizeInput = () => {
   const el = chatInputRef.value
   if (!el) return
@@ -2853,6 +3054,8 @@ watch(subjectId, async (newId) => {
     sourceStore.clearActiveSourceFiles()
     subjectOutline.value = []
     fileOutlineDrafts.value = {}
+    fileDraftBaselineFingerprint.value = {}
+    fileDraftOutlineGeneratedAt.value = {}
     chapterDraft.value = ''
     chapterDrafts.value = {}
     fileSectionDrafts.value = {}
@@ -3052,15 +3255,15 @@ html.dark .workspace-container {
   align-items: center;
   padding: 22px 0 18px;
   background: var(--color-bg-primary, #F7F2EB);
-  border-radius: var(--radius-xl, 18px);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 16px;
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   box-shadow: var(--workspace-card-shadow);
   box-sizing: border-box;
 }
 
 html.dark .tier1-strip {
   background: var(--color-bg-secondary);
-  border-color: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .tier1-top, .tier1-bottom {
@@ -3095,7 +3298,7 @@ html.dark .tier1-strip {
 }
 
 .tier1-btn-text {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.01em;
@@ -3160,8 +3363,8 @@ html.dark .tier1-btn.is-active {
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary, #F7F2EB);
-  border-radius: var(--radius-xl, 18px);
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border-radius: 16px;
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   box-shadow: var(--workspace-card-shadow);
   overflow: hidden;
   transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.28s ease, border-width 0.28s ease;
@@ -3177,7 +3380,7 @@ html.dark .tier1-btn.is-active {
 
 html.dark .tier2-drawer {
   background: var(--color-bg-secondary);
-  border-color: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .drawer-content { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
@@ -3292,7 +3495,7 @@ html.dark .drawer-item:hover {
 
 .drawer-item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .drawer-item-name { font-size: 13.5px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; }
-.drawer-item-meta { font-size: 10.5px; color: var(--text-muted); font-feature-settings: "tnum"; }
+.drawer-item-meta { font-size: 12px; color: var(--text-muted); font-feature-settings: "tnum"; }
 
 .drawer-item-delete {
   display: flex;
@@ -3318,7 +3521,7 @@ html.dark .drawer-item:hover {
   align-items: center;
   gap: 7px;
   padding: 6px 10px;
-  border: 1px solid rgba(139, 154, 110, 0.28);
+  border: 0.5px solid rgba(139, 154, 110, 0.28);
   border-radius: var(--radius-full, 9999px);
   background: var(--color-bg-primary, #FFFFFF);
   box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(139, 154, 110, 0.18);
@@ -3343,7 +3546,7 @@ html.dark .selection-actions.floating-selection-bubble {
 
 .selection-actions .selection-summary {
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 550;
   padding: 0 4px 0 4px;
   font-feature-settings: "tnum";
@@ -3366,7 +3569,7 @@ html.dark .selection-actions .selection-divider {
   background: rgba(139, 154, 110, 0.12);
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -3425,7 +3628,7 @@ html.dark .selection-actions .selection-dismiss:hover {
   margin-bottom: 8px;
   padding: 8px 12px;
   background: rgba(139, 154, 110, 0.08);
-  border: 1px solid rgba(139, 154, 110, 0.25);
+  border: 0.5px solid rgba(139, 154, 110, 0.25);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
@@ -3442,14 +3645,14 @@ html.dark .selection-actions .selection-dismiss:hover {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-primary-accent, #8B9A6E);
 }
 .quote-length {
   font-weight: 400;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
 }
 .quote-remove-btn {
   display: flex;
@@ -3544,7 +3747,7 @@ html.dark .quote-remove-btn:hover {
   background: transparent;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3560,7 +3763,7 @@ html.dark .quote-remove-btn:hover {
 .drawer-select {
   width: 100%;
   background: rgba(255, 255, 255, 0.6);
-  border: 1px solid var(--border-default);
+  border: 0.5px solid var(--border-default);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 12px;
@@ -3572,7 +3775,7 @@ html.dark .quote-remove-btn:hover {
 .drawer-textarea {
   width: 100%;
   background: rgba(255, 255, 255, 0.6);
-  border: 1px solid var(--border-default);
+  border: 0.5px solid var(--border-default);
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 12px;
@@ -3614,7 +3817,7 @@ html.dark .quote-remove-btn:hover {
 }
 
 .outline-chapter-title:hover { background: rgba(255, 255, 255, 0.6); }
-.outline-arrow { font-size: 11px; color: var(--text-muted); width: 14px; text-align: center; }
+.outline-arrow { font-size: 12px; color: var(--text-muted); width: 14px; text-align: center; }
 
 .outline-sections { padding: 2px 0 4px 22px; display: flex; flex-direction: column; gap: 2px; }
 
@@ -3639,7 +3842,7 @@ html.dark .quote-remove-btn:hover {
   background: transparent;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4090,19 +4293,19 @@ html.dark .blocks-count-badge {
   height: 190px;
   box-sizing: border-box;
   flex-shrink: 0;
-  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
+  border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06));
   box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
   overflow: hidden;
 }
 
 html.dark .block-card {
   background: var(--color-bg-secondary, #252422);
-  border-color: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.08);
   box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.3);
 }
 
 .block-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-2.5px);
   border-color: rgba(139, 154, 110, 0.45);
   box-shadow: 0 10px 22px -3px rgba(0, 0, 0, 0.06), 0 3px 8px -2px rgba(139, 154, 110, 0.12);
   z-index: 2;
@@ -4191,7 +4394,7 @@ html.dark .block-title {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+  border: 0.5px solid rgba(0, 0, 0, 0.06);
   background: rgba(0, 0, 0, 0.04);
   color: var(--text-secondary, #7A7A75);
   display: flex;
@@ -4283,7 +4486,7 @@ html.dark .card-action-btn {
 
 .block-preview :deep(code) {
   font-family: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 1.5px 5px;
   border-radius: 4px;
   background: rgba(139, 154, 110, 0.10);
@@ -4315,10 +4518,10 @@ html.dark .block-preview {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted, #7A7A75);
   padding-top: 8px;
-  border-top: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.04));
+  border-top: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.04));
   gap: 12px;
   flex-shrink: 0;
   margin-top: auto;
@@ -4360,7 +4563,7 @@ html.dark .block-card:hover .block-source-wrapper {
   height: 76px;
   border-radius: 50%;
   background: rgba(139, 154, 110, 0.10);
-  border: 1.5px solid rgba(139, 154, 110, 0.22);
+  border: 0.5px solid rgba(139, 154, 110, 0.22);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5396,11 +5599,11 @@ html.dark .ai-input-wrapper {
 .composer-inline-section {
   flex: 1;
   min-width: 0;
-  border: 1px solid transparent;
+  border: 0.5px solid transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
   padding: 1px 4px;
   outline: none;
@@ -5424,9 +5627,9 @@ html.dark .ai-input-wrapper {
   padding: 1.5px 7px;
   border-radius: 999px;
   background: rgba(125, 147, 114, 0.12);
-  border: 1px solid rgba(125, 147, 114, 0.28);
+  border: 0.5px solid rgba(125, 147, 114, 0.28);
   color: var(--color-primary-accent);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 550;
   flex-shrink: 0;
   line-height: 1.2;
@@ -5490,17 +5693,17 @@ html.dark .ai-input-wrapper {
 }
 .composer-add-dot {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1;
   opacity: 0.45;
 }
 .composer-add-input {
   flex: 1;
-  border: 1px dashed transparent;
+  border: 0.5px dashed transparent;
   border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 10.5px;
+  font-size: 12px;
   padding: 2px 6px;
   outline: none;
   transition: all 0.15s ease;
@@ -5522,11 +5725,11 @@ html.dark .ai-input-wrapper {
 .composer-add-chapter-input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px dashed var(--border-default);
+  border: 0.5px dashed var(--border-default);
   border-radius: 8px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   text-align: center;
   padding: 6px 12px;
   outline: none;
@@ -5548,50 +5751,50 @@ html.dark .ai-input-wrapper {
 }
 
 .outline-overview-chapter { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
-.outline-overview-chapter strong { position: relative; color: var(--text-primary); font-size: 13.5px; font-weight: 700; padding: 0 0 8px 12px; margin-bottom: 4px; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; }
+.outline-overview-chapter strong { position: relative; color: var(--text-primary); font-size: 13.5px; font-weight: 700; padding: 0 0 8px 12px; margin-bottom: 4px; border-bottom: 0.5px solid rgba(0,0,0,0.04); display: flex; align-items: center; }
 .outline-overview-chapter strong::before { content: ''; position: absolute; left: 0; top: 8px; width: 4px; height: 12px; border-radius: 4px; background: var(--color-primary-accent, #8B9A6E); }
 .outline-section-container { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
 .outline-section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); padding-left: 12px; position: relative; display: flex; align-items: center; }
 .outline-section-title::before { content: ''; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); width: 4px; height: 4px; border-radius: 50%; background: rgba(0,0,0,0.15); }
-.outline-file-link { margin-left: 12px; padding: 10px 12px; border: 1px solid transparent; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: rgba(0,0,0,0.02); color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; }
+.outline-file-link { margin-left: 12px; padding: 10px 12px; border: 0.5px solid transparent; border-radius: 8px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; background: rgba(0,0,0,0.02); color: var(--text-primary); cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); text-align: left; }
 .outline-file-link:hover { background: rgba(139,154,110,0.1); border-color: rgba(139,154,110,0.22); transform: translateX(2px); color: var(--color-primary-accent, #8B9A6E); }
 .outline-file-link-icon { opacity: 0.7; }
 .outline-file-link-file { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
 .summary-markdown { color: var(--text-secondary); line-height: 1.85; font-size: 14.5px; word-break: break-word; }
 .summary-markdown :deep(h1), .summary-markdown :deep(h2), .summary-markdown :deep(h3), .summary-markdown :deep(h4) { color: var(--text-primary); font-weight: 700; margin: 1.5em 0 0.5em; line-height: 1.3; }
-.summary-markdown :deep(h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-default); padding-bottom: 0.3em; }
-.summary-markdown :deep(h2) { font-size: 1.25em; margin: 2em 0 1em; padding-bottom: 8px; border-bottom: 1px solid rgba(0,0,0,0.04); }
+.summary-markdown :deep(h1) { font-size: 1.5em; border-bottom: 0.5px solid var(--border-default); padding-bottom: 0.3em; }
+.summary-markdown :deep(h2) { font-size: 1.25em; margin: 2em 0 1em; padding-bottom: 8px; border-bottom: 0.5px solid rgba(0,0,0,0.04); }
 .summary-markdown :deep(h3) { font-size: 1.1em; margin: 1.5em 0 1em; }
 .summary-markdown :deep(p) { margin-bottom: 16px; }
 .summary-markdown :deep(ul), .summary-markdown :deep(ol) { margin: 0 0 16px 0; padding-left: 24px; }
 .summary-markdown :deep(li) { margin-bottom: 6px; }
 .summary-markdown :deep(li::marker) { color: var(--text-muted); }
 .summary-markdown :deep(blockquote) { margin: 0 0 16px; padding: 12px 16px; border-left: 3px solid #8B9A6E; background: rgba(139, 154, 110, 0.08); border-radius: 0 8px 8px 0; color: var(--text-muted); font-style: italic; }
-.summary-markdown :deep(pre) { background: #1C1C1A; padding: 16px; border-radius: 12px; overflow-x: auto; margin-bottom: 16px; border: 1px solid rgba(0,0,0,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+.summary-markdown :deep(pre) { background: #1C1C1A; padding: 16px; border-radius: 12px; overflow-x: auto; margin-bottom: 16px; border: 0.5px solid rgba(0,0,0,0.1); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
 .summary-markdown :deep(code) { font-family: var(--font-family-mono); font-size: 13px; background: rgba(0,0,0,0.04); padding: 3px 6px; border-radius: 6px; color: #8B9A6E; font-weight: 500; }
 .summary-markdown :deep(pre code) { background: transparent; padding: 0; color: #E6E6E4; font-weight: 400; font-size: 13.5px; }
-.summary-markdown :deep(a) { color: #8B9A6E; text-decoration: none; border-bottom: 1px solid transparent; transition: all 0.2s; }
+.summary-markdown :deep(a) { color: #8B9A6E; text-decoration: none; border-bottom: 0.5px solid transparent; transition: all 0.2s; }
 .summary-markdown :deep(a:hover) { border-bottom-color: #8B9A6E; }
 .summary-markdown :deep(img) { max-width: 100%; border-radius: 12px; margin: 16px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
 .summary-markdown :deep(table) { width: 100%; border-collapse: collapse; margin-bottom: 16px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
-.summary-markdown :deep(th), .summary-markdown :deep(td) { padding: 10px 14px; border: 1px solid var(--border-subtle); text-align: left; }
+.summary-markdown :deep(th), .summary-markdown :deep(td) { padding: 10px 14px; border: 0.5px solid var(--border-subtle); text-align: left; }
 .summary-markdown :deep(th) { background: rgba(0,0,0,0.02); font-weight: 600; color: var(--text-primary); }
 
 html.dark .summary-markdown :deep(h2) { border-color: rgba(255,255,255,0.04); }
 
 /* ===== Refined Zen Minimalist AI Visual Language (PC) ===== */
 .ai-header { position: relative; justify-content: space-between; background: transparent; backdrop-filter: blur(12px); border-bottom: none; z-index: 10; padding: 24px 20px 12px; }
-.ai-model-switch.ai-file-switch { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-subtle); background: var(--color-bg-tertiary, #FAF7F2); color: var(--text-secondary); font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 999px; transition: all 0.2s; font-size: 12.5px; box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04); max-width: 210px; }
+.ai-model-switch.ai-file-switch { display: flex; align-items: center; gap: 8px; border: 0.5px solid var(--border-subtle); background: var(--color-bg-tertiary, #FAF7F2); color: var(--text-secondary); font-weight: 600; cursor: pointer; padding: 6px 14px; border-radius: 999px; transition: all 0.2s; font-size: 12.5px; box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04); max-width: 210px; }
 .ai-model-switch.ai-file-switch:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 4px 12px rgba(139, 154, 110, 0.2); transform: translateY(-1px); }
 .ai-file-switch .model-icon-top { display: flex; align-items: center; color: var(--color-primary-accent, #8B9A6E); flex-shrink: 0; }
 .ai-file-switch .model-text { font-size: 12.5px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
 .chevron-icon { transition: transform 0.2s; opacity: 0.6; flex-shrink: 0; }
 .chevron-icon.is-rotated { transform: rotate(180deg); opacity: 1; }
-.ai-model-menu.ai-file-menu { position: absolute; top: 62px; left: 20px; z-index: 10; min-width: 240px; max-width: 300px; max-height: 380px; overflow-y: auto; padding: 8px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(16px); border: 1px solid var(--border-default); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; gap: 3px; }
+.ai-model-menu.ai-file-menu { position: absolute; top: 62px; left: 20px; z-index: 10; min-width: 240px; max-width: 300px; max-height: 380px; overflow-y: auto; padding: 8px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(16px); border: 0.5px solid var(--border-default); border-radius: 14px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04); display: flex; flex-direction: column; gap: 3px; }
 html.dark .ai-model-menu.ai-file-menu { background: var(--color-bg-secondary); border-color: var(--border-subtle); box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35); }
-.ai-menu-section-header { display: flex; justify-content: space-between; align-items: center; font-size: 10px; font-weight: 700; color: var(--text-muted); padding: 6px 10px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
-.ai-menu-header-count { font-size: 10px; color: var(--color-primary-accent, #8B9A6E); font-weight: 600; text-transform: none; }
-.ai-menu-divider { height: 1px; background: var(--border-subtle); margin: 4px 6px; }
+.ai-menu-section-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: var(--text-muted); padding: 6px 10px 4px; letter-spacing: 0.5px; text-transform: uppercase; }
+.ai-menu-header-count { font-size: 12px; color: var(--color-primary-accent, #8B9A6E); font-weight: 600; text-transform: none; }
+.ai-menu-divider { height: 0.5px; background: var(--border-subtle); margin: 4px 6px; }
 .mini-menu-item { position: relative; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 14px; border-radius: 8px; cursor: pointer; transition: all 0.15s ease; user-select: none; }
 .mini-menu-item:hover { background: rgba(0, 0, 0, 0.04); }
 html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
@@ -5602,12 +5805,12 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .mini-menu-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .mini-menu-label-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .mini-menu-label { font-size: 12.5px; font-weight: 500; color: var(--text-primary); line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
-.mini-menu-current-tag { font-size: 9.5px; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: rgba(139, 154, 110, 0.15); color: var(--color-primary-accent, #8B9A6E); line-height: 1.2; flex-shrink: 0; }
+.mini-menu-current-tag { font-size: 12px; font-weight: 600; padding: 1px 5px; border-radius: 4px; background: rgba(139, 154, 110, 0.15); color: var(--color-primary-accent, #8B9A6E); line-height: 1.2; flex-shrink: 0; }
 .mini-menu-item.is-active .mini-menu-current-tag { background: var(--color-primary-accent, #8B9A6E); color: #fff; }
 .mini-menu-item.is-active .mini-menu-label { color: var(--color-primary-accent); font-weight: 700; }
-.mini-menu-desc { font-size: 10.5px; color: var(--text-muted); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-menu-desc { font-size: 12px; color: var(--text-muted); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-menu-item.is-active .mini-menu-desc { color: var(--color-primary-accent); opacity: 0.8; }
-.ai-clear { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; border-radius: 50%; border: 1px solid var(--border-subtle); background: var(--color-bg-tertiary, #FAF7F2); color: var(--text-secondary); cursor: pointer; box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-clear { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0; border-radius: 50%; border: 0.5px solid var(--border-subtle); background: var(--color-bg-tertiary, #FAF7F2); color: var(--text-secondary); cursor: pointer; box-shadow: 0 2px 6px -1px rgba(0, 0, 0, 0.04); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
 .ai-clear svg { stroke: currentColor; }
 .ai-clear:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.4); color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 4px 12px rgba(139, 154, 110, 0.2); transform: rotate(-30deg); }
 
@@ -5618,21 +5821,21 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .welcome-title { font-size: 22.5px; font-weight: 650; color: var(--text-primary); margin: 0 0 8px; letter-spacing: -0.3px; line-height: 1.3; }
 .welcome-desc { font-size: 12.5px; font-weight: 400; color: var(--text-muted); margin: 0 0 26px; line-height: 1.55; max-width: 260px; }
 .preset-questions { display: flex; flex-direction: column; align-items: center; gap: 9px; width: 100%; max-width: 260px; box-sizing: border-box; }
-.preset-pill { width: 100%; padding: 9px 20px; border-radius: 999px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; font-weight: 550; letter-spacing: 0.8px; text-align: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02); user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
+.preset-pill { width: 100%; padding: 9px 20px; border-radius: 999px; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); color: var(--text-primary); font-size: 13px; font-weight: 550; letter-spacing: 0.8px; text-align: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02); user-select: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
 .preset-pill:hover { background: rgba(139, 154, 110, 0.14); border-color: rgba(139, 154, 110, 0.45); color: var(--color-primary-accent, #8B9A6E); font-weight: 600; transform: translateY(-1.5px); box-shadow: 0 6px 16px -2px rgba(139, 154, 110, 0.22), 0 2px 4px rgba(0, 0, 0, 0.03); }
 .preset-pill:active { transform: translateY(0); box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04); }
 
-.assistant-spark-avatar { width: 34px; height: 34px; border: 1px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
+.assistant-spark-avatar { width: 34px; height: 34px; border: 0.5px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .assistant-spark-avatar svg { width: 20px; height: 20px; }
 .chat-msg-row.user .chat-bubble { background: #303431; color: #FAF7F2; border-radius: 16px 4px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
-.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.03); }
+.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.03); }
 
 .ai-input-area { padding: 16px 20px 24px; background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
-.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(8px); border: 1px solid var(--border-default); box-shadow: 0 4px 16px -2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(8px); border: 0.5px solid var(--border-default); box-shadow: 0 4px 16px -2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .ai-chat-capsule:focus-within { border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0,0,0,0.05); transform: translateY(-1px); }
 .ai-input { flex: 1; background: transparent; font-size: 14.5px; line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
 .ai-input::placeholder { color: var(--text-muted); }
-.ai-send-btn { width: 36px; height: 36px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-subtle); color: var(--color-primary-accent, #8B9A6E); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ai-send-btn { width: 36px; height: 36px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); color: var(--color-primary-accent, #8B9A6E); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .ai-send-btn.is-ready { background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)) !important; color: #fff !important; box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4) !important; }
 .ai-send-btn.is-ready:hover { transform: scale(1.06); background: #76855B !important; box-shadow: 0 4px 14px rgba(139, 154, 110, 0.55) !important; }
 
@@ -5712,23 +5915,23 @@ html.dark .subject-capsule-item.is-active { background: rgba(154, 176, 143, 0.15
 .drag-drop-zone:hover { border-color: rgba(0,0,0,0.2); background: rgba(255,255,255,0.8); }
 .drag-drop-zone.is-active { border-color: #8B9A6E; background: rgba(139, 154, 110, 0.08); }
 .drag-text { font-size: 13px; color: var(--text-muted); font-weight: 500; }
-.drag-hint { margin-top: 6px; color: var(--text-muted); font-size: 11px; }
+.drag-hint { margin-top: 6px; color: var(--text-muted); font-size: 12px; }
 html.dark .drag-drop-zone { border-color: rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); }
 html.dark .drag-drop-zone:hover { border-color: rgba(255,255,255,0.2); background: rgba(0,0,0,0.4); }
 html.dark .drag-drop-zone.is-active { border-color: #9AB08F; background: rgba(154, 176, 143, 0.1); }
 
 /* Home Modal Styles for Register Modal */
-.modal-container { width: 90%; max-width: 520px; background: var(--color-bg-primary, #F7F2EB); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 1px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-container { width: 90%; max-width: 520px; background: var(--color-bg-primary, #F7F2EB); border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04); border: 0.5px solid var(--border-subtle); display: flex; flex-direction: column; overflow: hidden; animation: scale-up 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 html.dark .modal-container { background: var(--color-bg-primary, #1f1e1c); border-color: rgba(163, 177, 155, 0.25); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4); }
 @keyframes scale-up { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-.modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border-subtle); }
+.modal-container .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 0.5px solid var(--border-subtle); }
 .modal-container .modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: -0.3px; }
 .close-btn { background: none; border: none; font-size: 20px; color: var(--text-muted); cursor: pointer; padding: 4px 8px; border-radius: 4px; transition: all var(--transition-fast); }
 .close-btn:hover { background: rgba(0, 0, 0, 0.04); color: var(--text-primary); }
 html.dark .close-btn:hover { background: rgba(255, 255, 255, 0.06); }
 .modal-container .modal-body { padding: 22px 28px; display: flex; flex-direction: column; gap: 20px; max-height: 70vh; overflow-y: auto; }
 .form-group label { display: block; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
+.styled-input, .styled-textarea { width: 100%; padding: 12px 14px; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-default); border-radius: 12px; font-size: 13.5px; color: var(--text-primary); transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); outline: none; box-sizing: border-box; font-family: inherit; }
 .styled-input:focus, .styled-textarea:focus { border-color: #8B9A6E; background: var(--color-bg-tertiary, #FAF7F2); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18); }
 html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: #9AB08F; background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.2); }
 .styled-textarea { resize: vertical; line-height: 1.6; min-height: 100px; }
@@ -5736,8 +5939,8 @@ html.dark .styled-input:focus, html.dark .styled-textarea:focus { border-color: 
 .styled-el-select :deep(.el-input__wrapper) { background: var(--color-bg-tertiary, #FAF7F2); border-radius: 12px; box-shadow: 0 0 0 1px var(--border-default) inset; padding: 4px 14px; transition: all 0.2s; }
 .styled-el-select :deep(.el-input__wrapper.is-focus) { background: var(--color-bg-tertiary, #FAF7F2); box-shadow: 0 0 0 1px #8B9A6E inset, 0 0 0 3px rgba(139, 154, 110, 0.18) !important; }
 html.dark .styled-el-select :deep(.el-input__wrapper.is-focus) { background: rgba(255, 255, 255, 0.05); box-shadow: 0 0 0 1px #9AB08F inset, 0 0 0 3px rgba(139, 154, 110, 0.2) !important; }
-.modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 1px solid var(--border-subtle); background: transparent; }
-.btn-secondary { background: var(--color-bg-tertiary, #FAF7F2); border: 1px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.modal-container .modal-footer { display: flex; justify-content: flex-end; gap: 12px; padding: 16px 28px 22px; border-top: 0.5px solid var(--border-subtle); background: transparent; }
+.btn-secondary { background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-default); color: var(--text-secondary); padding: 8px 20px; border-radius: 9999px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
 .btn-secondary:hover { background: rgba(0, 0, 0, 0.05); color: var(--text-primary); }
 .btn-primary { background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)); border: none; color: #FFFFFF; padding: 8px 26px; border-radius: 9999px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); box-shadow: 0 2px 8px rgba(139, 154, 110, 0.3); }
 .btn-primary:hover:not(:disabled) { background: #76855B; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(139, 154, 110, 0.45); }
@@ -5773,7 +5976,7 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
 .chat-msg-citations {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed var(--border-subtle);
+  border-top: 0.5px dashed var(--border-subtle);
   font-size: 13px;
 }
 .chat-msg-citations .citation-title {
@@ -5800,5 +6003,35 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   top: 0;
   color: var(--text-muted);
   font-weight: bold;
+}
+
+/* ===== Responsive Flex Optimization for Smaller Screens & 125%/150% DPI ===== */
+@media (max-width: 1280px) {
+  .workspace-center {
+    min-width: 380px;
+  }
+  .tier2-drawer.is-open {
+    max-width: 270px;
+  }
+  .workspace-right.is-open {
+    max-width: 360px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .workspace-center {
+    min-width: 320px;
+  }
+  .tier1-strip {
+    width: 64px;
+    padding: 16px 0 12px;
+  }
+  .tier1-btn {
+    width: 52px;
+    height: 50px;
+  }
+  .tier2-drawer.is-open {
+    max-width: 240px;
+  }
 }
 </style>

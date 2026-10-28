@@ -38,6 +38,55 @@ class AiIngestionTests {
     }
 
     @Test
+    void preservesMarkdownStructuresAndUtf16RangesAcrossChunks() {
+        List<String> structures = List.of(
+                "```java\nif (ready) {\n    run();\n}\n```",
+                "| Term | Meaning |\n| --- | --- |\n| Alpha | First |",
+                "$$\nE = mc^2 \\\\\na + b = c\n$$",
+                "1. Keep the condition\n   including its exception\n2. Keep the conclusion");
+        String text = "Opening context.\n\n" + String.join("\n\n", structures) + "\n\nClosing context.";
+
+        List<TextChunk> chunks = new TextChunker(90, 12).chunk(text);
+
+        assertThat(chunks.getFirst().charStart()).isZero();
+        assertThat(chunks.getLast().charEnd()).isEqualTo(text.length());
+        for (int index = 0; index < chunks.size(); index++) {
+            TextChunk chunk = chunks.get(index);
+            assertThat(chunk.ordinal()).isEqualTo(index);
+            assertThat(chunk.content()).isEqualTo(text.substring(chunk.charStart(), chunk.charEnd()));
+            if (index > 0) {
+                assertThat(chunk.charStart()).isLessThanOrEqualTo(chunks.get(index - 1).charEnd());
+            }
+        }
+        for (String structure : structures) {
+            int structureStart = text.indexOf(structure);
+            int structureEnd = structureStart + structure.length();
+            for (TextChunk chunk : chunks) {
+                boolean intersects = chunk.charStart() < structureEnd && chunk.charEnd() > structureStart;
+                if (intersects) {
+                    assertThat(chunk.charStart()).isLessThanOrEqualTo(structureStart);
+                    assertThat(chunk.charEnd()).isGreaterThanOrEqualTo(structureEnd);
+                }
+            }
+        }
+    }
+
+    @Test
+    void splitsOversizedCodeAtLineBoundariesAndNeverInsideSurrogatePairs() {
+        String code = "```text\n" + "short line\n".repeat(12) + "```";
+        List<TextChunk> chunks = new TextChunker(50, 0).chunk(code);
+
+        assertThat(chunks).hasSizeGreaterThan(2);
+        assertThat(chunks).allSatisfy(chunk -> {
+            assertThat(chunk.content()).isEqualTo(code.substring(chunk.charStart(), chunk.charEnd()));
+            if (chunk.charEnd() < code.length()) assertThat(code.charAt(chunk.charEnd() - 1)).isEqualTo('\n');
+        });
+
+        List<TextChunk> unicode = new TextChunker(1, 0).chunk("😀A");
+        assertThat(unicode).extracting(TextChunk::content).containsExactly("😀", "A");
+    }
+
+    @Test
     void rejectsUnsafeUrlsAndAllowsOnlyPublicHttpSchemes() {
         UrlSecurityPolicy policy = new UrlSecurityPolicy();
 

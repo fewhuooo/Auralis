@@ -5,6 +5,7 @@ import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.EmbeddingProviderPort;
 import com.auralis.app.ai.EmbeddingResult;
+import com.auralis.app.ai.AiProviderModelIdentity;
 import com.auralis.app.ai.usage.AiTokenUsage;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
@@ -96,7 +97,8 @@ public class SiliconFlowEmbeddingProvider implements EmbeddingProviderPort {
                     ? outputTokensNode.longValue() : null;
             return new EmbeddingResult(vectors,
                     inputTokens == null && outputTokens == null
-                            ? null : new AiTokenUsage(inputTokens, outputTokens));
+                            ? null : new AiTokenUsage(inputTokens, outputTokens),
+                    responseModelIdentity(body));
         } catch (DomainException exception) {
             throw exception;
         } catch (ProviderHttpException exception) {
@@ -117,6 +119,14 @@ public class SiliconFlowEmbeddingProvider implements EmbeddingProviderPort {
             throw new DomainException("MODEL_PROVIDER_ERROR", "Embedding provider returned an invalid response", null,
                     exception);
         }
+    }
+
+    private AiProviderModelIdentity responseModelIdentity(JsonNode body) {
+        if (body == null || !body.has("model")) return AiProviderModelIdentity.missing();
+        JsonNode model = body.get("model");
+        return model != null && model.isTextual()
+                ? AiProviderModelIdentity.fromProviderValue(model.textValue())
+                : AiProviderModelIdentity.invalid();
     }
 
     private DomainException invalidResponse() {

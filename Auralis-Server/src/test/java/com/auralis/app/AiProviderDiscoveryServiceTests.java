@@ -6,11 +6,12 @@ import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiSettingsService;
 import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderResponse;
-import com.auralis.app.ai.AiProviderChunk;
-import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.usage.AiInvocationGateway;
 import com.auralis.app.ai.usage.AiInvocationResult;
 import com.auralis.app.ai.usage.AiTaskScope;
+import com.auralis.app.ai.usage.AiCredentialSource;
+import com.auralis.app.ai.usage.AiOutputRole;
+import com.auralis.app.ai.usage.AiStage;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpException;
@@ -26,7 +27,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
-import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,7 +47,7 @@ class AiProviderDiscoveryServiceTests {
         AiSettingsService settings = mock(AiSettingsService.class);
         ProviderEndpointPolicy endpointPolicy = mock(ProviderEndpointPolicy.class);
         when(settings.requireSavedByok(USER_ID, PROVIDER)).thenReturn(new AiSettingsService.ResolvedSettings(
-                PROVIDER, "configured-model", new AiCredential("https://provider.test/v1", API_KEY)));
+                PROVIDER, "configured-model", new AiCredential("https://provider.test/v1", API_KEY), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(endpointPolicy.resolve(PROVIDER, URI.create("https://provider.test/v1"))).thenReturn(ENDPOINT);
         ProviderHttpTransport transport = new ProviderHttpTransport() {
             @Override
@@ -57,7 +57,7 @@ class AiProviderDiscoveryServiceTests {
                 assertThat(apiKey).isEqualTo(API_KEY);
                 String body = new String(requestBody, StandardCharsets.UTF_8);
                 assertThat(body).contains("\"model\":\"configured-model\"")
-                        .contains("\"max_tokens\":1")
+                        .contains("\"max_tokens\":32")
                         .doesNotContain(API_KEY);
                 return "{\"choices\":[{\"message\":{\"content\":\"\"}}]}"
                         .getBytes(StandardCharsets.UTF_8);
@@ -78,7 +78,7 @@ class AiProviderDiscoveryServiceTests {
         AiProviderDiscoveryService service = new AiProviderDiscoveryService(settings, endpointPolicy,
                 new ProviderHttpClient(new ObjectMapper(), transport, 4096), gateway(request -> {
                     assertThat(request.model()).isEqualTo("configured-model");
-                    assertThat(request.maxTokens()).isEqualTo(1);
+                    assertThat(request.maxTokens()).isEqualTo(32);
                     return new AiProviderResponse("OK", null, null, null);
                 }));
 
@@ -99,7 +99,7 @@ class AiProviderDiscoveryServiceTests {
         AiSettingsService settings = mock(AiSettingsService.class);
         ProviderEndpointPolicy endpointPolicy = mock(ProviderEndpointPolicy.class);
         when(settings.requireSavedByok(USER_ID, PROVIDER)).thenReturn(new AiSettingsService.ResolvedSettings(
-                PROVIDER, "configured-model", new AiCredential("https://provider.test/v1", API_KEY)));
+                PROVIDER, "configured-model", new AiCredential("https://provider.test/v1", API_KEY), com.auralis.app.ai.usage.AiCredentialSource.USER_SUPPLIED));
         when(endpointPolicy.resolve(PROVIDER, URI.create("https://provider.test/v1"))).thenReturn(ENDPOINT);
         ProviderHttpTransport transport = new ProviderHttpTransport() {
             @Override
@@ -124,24 +124,26 @@ class AiProviderDiscoveryServiceTests {
 
     private AiInvocationGateway gateway(java.util.function.Function<AiProviderRequest, AiProviderResponse> complete) {
         return context -> new AiTaskScope() {
+            private final UUID taskId = UUID.randomUUID();
+            @Override public UUID taskId() { return taskId; }
             @Override public <T> AiInvocationResult<T> metadata(
-                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, String model, Supplier<T> operation) {
+                    AiStage stage, AiProviderType provider, String model, AiCredentialSource source,
+                    Supplier<T> operation) {
+                assertThat(stage).isEqualTo(AiStage.PROVIDER_METADATA);
+                assertThat(source).isEqualTo(AiCredentialSource.USER_SUPPLIED);
                 return new AiInvocationResult<>(operation.get(), null);
             }
             @Override public AiInvocationResult<AiProviderResponse> complete(
-                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, AiProviderRequest request,
-                    AiCredential credential, long timeout) {
+                    AiStage stage, AiProviderType provider, AiProviderRequest request,
+                    AiCredential credential, AiCredentialSource source, long timeout, AiOutputRole role) {
+                assertThat(stage).isEqualTo(AiStage.PROVIDER_TEST);
+                assertThat(source).isEqualTo(AiCredentialSource.USER_SUPPLIED);
+                assertThat(role).isEqualTo(AiOutputRole.GENERAL);
                 return new AiInvocationResult<>(complete.apply(request), null);
             }
-            @Override public AiInvocationResult<Void> stream(
-                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, AiProviderRequest request,
-                    AiCredential credential, Consumer<AiProviderChunk> sink) {
-                throw new UnsupportedOperationException();
-            }
-            @Override public AiInvocationResult<EmbeddingResult> embed(
-                    com.auralis.app.ai.usage.AiStage stage, AiProviderType provider, String model, List<String> texts,
-                    AiCredential credential) { throw new UnsupportedOperationException(); }
             @Override public com.auralis.app.ai.usage.AiProviderUsage usage() { return null; }
+            @Override public com.auralis.app.ai.usage.AiProviderUsage usage(
+                    com.auralis.app.ai.usage.AiCredentialSource source) { return null; }
             @Override public void close() { }
         };
     }

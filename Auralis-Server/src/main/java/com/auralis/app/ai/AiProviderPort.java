@@ -30,7 +30,7 @@ public interface AiProviderPort {
 
     default List<AiProviderChunk> stream(AiProviderRequest request, AiCredential credential) {
         AiProviderResponse response = complete(request, credential);
-        return List.of(new AiProviderChunk(response.content(), true, response.usage()));
+        return List.of(new AiProviderChunk(response.content(), true, response.usage(), response.modelIdentity()));
     }
 
     /**

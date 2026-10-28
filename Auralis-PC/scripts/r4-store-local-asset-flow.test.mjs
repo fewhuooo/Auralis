@@ -28,6 +28,16 @@ async function waitForSignal(promise, label, timeoutMs = 300) {
   assert.equal(result, true, `Timed out waiting for ${label}`)
 }
 
+async function waitForCondition(check, label, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const result = await check()
+    if (result) return result
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  assert.fail(`Timed out waiting for ${label}`)
+}
+
 const srcRootUrl = new URL('../src/', import.meta.url).href
 const loaderCode = `
 export async function resolve(specifier, context, nextResolve) {
@@ -47,6 +57,19 @@ export async function resolve(specifier, context, nextResolve) {
 }
 `
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
+
+function createTestLockManager() {
+  const tails = new Map()
+  return { request(name, _options, operation) {
+    const previous = tails.get(name) ?? Promise.resolve()
+    let release
+    const held = new Promise(resolve => { release = resolve })
+    const tail = previous.then(() => held, () => held)
+    tails.set(name, tail)
+    return previous.then(operation).finally(() => { release(); if (tails.get(name) === tail) tails.delete(name) })
+  } }
+}
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: createTestLockManager() } })
 
 const { setActivePinia, createPinia } = await import('pinia')
 const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
@@ -801,33 +824,44 @@ test('useSyncStore: switch during A queue wakeup lets B sync independently, pres
   const userB = 'user-core-switch-b'
   const deviceB = 'device-core-switch-b'
 
-  const originalGet = request.get
-  const originalPost = request.post
+  const originalAdapter = activeAssetFlowAdapter
   const originalWakeUp = LocalAssetSyncQueue.prototype.wakeUp
   const syncStore = useSyncStore()
   const subjectStore = useSubjectStore()
   const originalBackgroundSync = syncStore.requestBackgroundSync
   const aWakeStarted = createDeferred()
   const releaseA = createDeferred()
+  const aPushStarted = createDeferred()
   const bWakeStarted = createDeferred()
   const releaseB = createDeferred()
   const transportCalls = []
+  let switchedToB = false
   let promiseA
   let promiseB
 
-  request.get = async (url) => {
-    transportCalls.push({ method: 'GET', url })
-    if (url === '/api/auth/me/avatar') return new Blob([])
-    if (url === '/api/sync/snapshot') return {
+  activeAssetFlowAdapter = async (config) => {
+    const url = config.url ?? ''
+    const authorization = typeof config.headers?.get === 'function'
+      ? config.headers.get('Authorization')
+      : config.headers?.Authorization
+    const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+    const scope = config.__auralisSyncScope
+    const call = { method: config.method?.toUpperCase(), url, authorization, payload, scope, switchedToB: switchedToB }
+    transportCalls.push(call)
+    if (url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/sync/snapshot') return { data: {
       snapshotCursor: 'cursor-core-switch-b',
       subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [],
+    }, status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/sync/pull') return { data: { changes: [], nextCursor: 'cursor-core-switch-b', hasMore: false, resetRequired: false }, status: 200, statusText: 'OK', headers: {}, config }
+    if (url === '/api/sync/push') {
+      if (payload?.serverDeviceId === deviceA) {
+        aPushStarted.resolve()
+        await releaseA.promise
+      }
+      return { data: { results: [], serverCursor: 'cursor-core-switch-b' }, status: 200, statusText: 'OK', headers: {}, config }
     }
-    if (url === '/api/sync/pull') return { changes: [], nextCursor: 'cursor-core-switch-b', hasMore: false, resetRequired: false }
-    return {}
-  }
-  request.post = async (url, data) => {
-    transportCalls.push({ method: 'POST', url, data })
-    return { results: [], serverCursor: 'cursor-core-switch-b' }
+    return { data: {}, status: 200, statusText: 'OK', headers: {}, config }
   }
   setSession(userA, deviceA, 'session-core-switch-a', 'token-core-switch-a')
   syncStore.requestBackgroundSync = () => {}
@@ -855,7 +889,14 @@ test('useSyncStore: switch during A queue wakeup lets B sync independently, pres
 
     promiseA = syncStore.flushNow()
     await waitForSignal(aWakeStarted.promise, 'A asset queue wakeup')
+    await waitForSignal(aPushStarted.promise, 'A sync push adapter dispatch')
+    const aPush = transportCalls.find((call) => call.url === '/api/sync/push' && call.payload?.serverDeviceId === deviceA)
+    assert.ok(aPush, 'A sync must dispatch through its captured request scope')
+    assert.equal(aPush.authorization, 'Bearer token-core-switch-a')
+    assert.equal(aPush.scope?.isCurrent(), true)
+    assert.equal(aPush.payload.mutations[0]?.resourceId, subjectId)
 
+    switchedToB = true
     setSession(userB, deviceB, 'session-core-switch-b', 'token-core-switch-b')
     promiseB = syncStore.flushNow()
     await waitForSignal(bWakeStarted.promise, 'B asset queue wakeup')
@@ -866,7 +907,15 @@ test('useSyncStore: switch during A queue wakeup lets B sync independently, pres
     assert.equal(syncStore.isSyncing, true, 'A finally must not clear B cycle state')
     assert.equal(syncStore.lastSyncError, null, 'A stale completion must not write an error into B state')
     assert.deepEqual(await repoA.listUnresolved(), pendingBeforeSwitch, 'A outbox mutation must remain recoverable')
-    assert.deepEqual(transportCalls.filter((call) => call.url === '/api/sync/push'), [], 'A subject must not dispatch through B device scope')
+    assert.equal(aPush.scope?.isCurrent(), false, 'A request scope must expire after the account switch')
+    assert.deepEqual(transportCalls.filter((call) => call.switchedToB && call.scope?.key === aPush.scope?.key), [], 'a stale A request must not reach the adapter after B login')
+    assert.ok(transportCalls.filter((call) => call.authorization === 'Bearer token-core-switch-b')
+      .every((call) => call.payload?.serverDeviceId !== deviceA
+        && !(call.payload?.mutations ?? []).some((mutation) => mutation.resourceId === subjectId)),
+    'B credentials must never carry A device identity or A mutations')
+    assert.ok(transportCalls.filter((call) => call.url === '/api/sync/push')
+      .every((call) => call.authorization === 'Bearer token-core-switch-a' && call.payload?.serverDeviceId === deviceA),
+    'a dispatched A push must retain matching A credentials and device scope')
 
     releaseB.resolve()
     await promiseB
@@ -880,8 +929,7 @@ test('useSyncStore: switch during A queue wakeup lets B sync independently, pres
     releaseA.resolve()
     releaseB.resolve()
     await Promise.allSettled([promiseA, promiseB].filter(Boolean))
-    request.get = originalGet
-    request.post = originalPost
+    activeAssetFlowAdapter = originalAdapter
     syncStore.requestBackgroundSync = originalBackgroundSync
     LocalAssetSyncQueue.prototype.wakeUp = originalWakeUp
     releaseLocalAssetSyncQueue(userA, deviceA)
@@ -1501,6 +1549,8 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
   const originalUploadAssetToRemote = LocalAssetService.prototype.uploadAssetToRemote
   const requestLog = []
   const intentAttempts = new Map()
+  const aComplete = createDeferred()
+  const bComplete = createDeferred()
   let staleCycle
   syncStore.requestBackgroundSync = () => undefined
   LocalAssetService.prototype.uploadAssetToRemote = async function (args) {
@@ -1512,7 +1562,8 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
       ? config.headers.get('Authorization')
       : config.headers?.Authorization
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
-    requestLog.push({ url, authorization, payload })
+    const scope = config.__auralisSyncScope
+    requestLog.push({ url, authorization, payload, scope })
     if (url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
     if (url === '/api/auth/refresh') {
       assert.equal(payload?.refreshToken, 'refresh-asset-queue-a')
@@ -1538,7 +1589,12 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
         status: 200, statusText: 'OK', headers: {}, config,
       }
     }
-    if (url.includes('/complete')) return { data: { id: url.split('/')[3] }, status: 200, statusText: 'OK', headers: {}, config }
+    if (url.includes('/complete')) {
+      const completion = { authorization, scope, assetId: url.split('/')[3] }
+      if (completion.assetId === 'asset-a-refresh-retry') aComplete.resolve(completion)
+      if (completion.assetId === 'asset-b-normal') bComplete.resolve(completion)
+      return { data: { id: completion.assetId }, status: 200, statusText: 'OK', headers: {}, config }
+    }
     if (url === '/api/sync/snapshot') return {
       data: { snapshotCursor: 'asset-queue-cursor', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] },
       status: 200, statusText: 'OK', headers: {}, config,
@@ -1554,11 +1610,19 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
 
   try {
     const firstA = await assetStore.upload(new File(['first A file'], 'a-refresh-retry.pdf', { type: 'application/pdf' }))
-    await syncStore.flushNow()
+    const firstAFlush = syncStore.flushNow()
+    await waitForSignal(aComplete.promise, 'A retried upload completion')
+    await firstAFlush
 
     assert.equal(authStore.token, 'token-asset-queue-a2', 'the current A upload intent must refresh and retry under A')
-    assert.equal(requestLog.filter((call) => call.url === '/api/assets/upload-intents' && call.payload?.originalName === 'a-refresh-retry.pdf').length, 2)
-    assert.ok(requestLog.some((call) => call.url.includes('/complete') && call.authorization === 'Bearer token-asset-queue-a2'))
+    const aIntents = requestLog.filter((call) => call.url === '/api/assets/upload-intents' && call.payload?.originalName === 'a-refresh-retry.pdf')
+    assert.equal(aIntents.length, 2)
+    assert.deepEqual(aIntents.map((call) => call.authorization), ['Bearer token-asset-queue-a', 'Bearer token-asset-queue-a2'])
+    assert.equal(aIntents[0].scope?.key, aIntents[1].scope?.key, 'the 401 retry must preserve A request scope')
+    const completion = await aComplete.promise
+    assert.equal(completion.authorization, 'Bearer token-asset-queue-a2')
+    assert.equal(completion.scope?.isCurrent(), true)
+    assert.equal(completion.scope?.key, aIntents[1].scope?.key)
 
     const staleA = await assetStore.upload(new File(['private A file'], 'a-pre-dispatch-private.pdf', { type: 'application/pdf' }))
     const originalPostBound = originalPost.bind(request)
@@ -1578,6 +1642,8 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
 
     const modelB = await assetStore.upload(new File(['B file'], 'b-normal.pdf', { type: 'application/pdf' }))
     await syncStore.flushNow()
+    await waitForSignal(bComplete.promise, 'B upload completion')
+    assert.equal((await bComplete.promise).authorization, 'Bearer token-asset-queue-b')
     assert.ok(requestLog.some((call) => call.url === '/api/assets/upload-intents'
       && call.payload?.originalName === 'b-normal.pdf'
       && call.authorization === 'Bearer token-asset-queue-b'))
@@ -1588,6 +1654,7 @@ test('useSyncStore scopes queued asset API calls, preserves A refresh retry, and
     const repoA = await getLocalRepository(userA, deviceA)
     const assetRepoA = await getLocalAssetRepository(userA, deviceA)
     const assetRepoB = await getLocalAssetRepository(userB, deviceB)
+    await waitForCondition(async () => (await assetRepoB.getActiveSyncJobForAsset(modelB.id)) === null, 'B upload job completion')
     assert.ok(await repoA.read('ASSET', staleA.id), 'the A asset projection remains in A storage')
     assert.ok(await assetRepoA.getActiveSyncJobForAsset(staleA.id), 'the A upload job remains recoverable')
     assert.equal(await assetRepoB.getAssetFile(staleA.id), null, 'the A local file metadata must not enter B storage')
@@ -1626,6 +1693,7 @@ test('a queued A upload that returns 401 after B login cannot refresh or retry w
   const originalUploadAssetToRemote = LocalAssetService.prototype.uploadAssetToRemote
   const requestStarted = createDeferred()
   const releaseAResponse = createDeferred()
+  const bComplete = createDeferred()
   const requestLog = []
   let aIntentAttempts = 0
   let cycleA
@@ -1639,6 +1707,7 @@ test('a queued A upload that returns 401 after B login cannot refresh or retry w
       ? config.headers.get('Authorization')
       : config.headers?.Authorization
     const payload = typeof config.data === 'string' ? JSON.parse(config.data) : config.data
+    const scope = config.__auralisSyncScope
     requestLog.push({ url, authorization, payload })
     if (url === '/api/auth/me/avatar') return { data: new Blob([]), status: 200, statusText: 'OK', headers: {}, config }
     if (url === '/api/assets/upload-intents' && payload?.originalName === 'a-delayed-private.pdf') {
@@ -1661,7 +1730,11 @@ test('a queued A upload that returns 401 after B login cannot refresh or retry w
       data: { assetId: 'asset-b-delayed-test', uploadUrl: 'https://storage.invalid/b', uploadStatus: 'UPLOADING' },
       status: 200, statusText: 'OK', headers: {}, config,
     }
-    if (url.includes('/complete')) return { data: { id: url.split('/')[3] }, status: 200, statusText: 'OK', headers: {}, config }
+    if (url.includes('/complete')) {
+      const completion = { authorization, scope, assetId: url.split('/')[3] }
+      if (completion.assetId === 'asset-b-delayed-test') bComplete.resolve(completion)
+      return { data: { id: completion.assetId }, status: 200, statusText: 'OK', headers: {}, config }
+    }
     if (url === '/api/sync/snapshot') return {
       data: { snapshotCursor: 'delayed-401-cursor', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [] },
       status: 200, statusText: 'OK', headers: {}, config,
@@ -1678,6 +1751,10 @@ test('a queued A upload that returns 401 after B login cannot refresh or retry w
   try {
     await assetStore.upload(new File(['A delayed private file'], 'a-delayed-private.pdf', { type: 'application/pdf' }))
     cycleA = syncStore.flushNow()
+    const cycleASettlement = cycleA.then(
+      () => ({ status: 'fulfilled' }),
+      (error) => ({ status: 'rejected', error }),
+    )
     await waitForSignal(requestStarted.promise, 'A upload intent adapter dispatch')
     const initialARequest = requestLog.find((call) => call.url === '/api/assets/upload-intents'
       && call.payload?.originalName === 'a-delayed-private.pdf')
@@ -1686,12 +1763,18 @@ test('a queued A upload that returns 401 after B login cannot refresh or retry w
     setSession(userB, deviceB, 'session-asset-delayed-b', 'token-asset-delayed-b', 'refresh-asset-delayed-b')
     await assetStore.upload(new File(['B normal file'], 'b-delayed-normal.pdf', { type: 'application/pdf' }))
     await syncStore.flushNow()
+    await waitForSignal(bComplete.promise, 'B upload completion')
+    const completion = await bComplete.promise
+    assert.equal(completion.authorization, 'Bearer token-asset-delayed-b')
+    assert.equal(completion.scope?.isCurrent(), true)
     assert.ok(requestLog.some((call) => call.url === '/api/assets/upload-intents'
       && call.payload?.originalName === 'b-delayed-normal.pdf'
       && call.authorization === 'Bearer token-asset-delayed-b'))
 
     releaseAResponse.resolve()
-    await assert.rejects(cycleA, /SYNC_SCOPE_CHANGED/)
+    const aOutcome = await cycleASettlement
+    assert.equal(aOutcome.status, 'rejected')
+    assert.equal(aOutcome.error?.code, 'SYNC_SCOPE_CHANGED')
 
     assert.equal(requestLog.filter((call) => call.url === '/api/auth/refresh').length, 0,
       'the stale A 401 must not begin a refresh using B refresh token')

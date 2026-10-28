@@ -42,10 +42,29 @@ class ParsedDocumentValidatorTests {
 
         assertThat(result.sourceId()).isEqualTo(SOURCE_ID);
         assertThat(result.ingestionRevision()).isEqualTo(REVISION);
+        assertThat(result.parserId()).isEqualTo("pdfjs");
         assertThat(result.blocks()).hasSize(2);
         assertThat(result.characterCount()).isEqualTo(10);
         assertThat(result.plainTextSha256()).isEqualTo(sha256("hello\nworld\n"));
         assertThat(result.payloadSha256()).isEqualTo(sha256(gzip));
+    }
+
+    @Test
+    void retainsAcceptedBlockLocationFieldsForProvenanceMapping() throws Exception {
+        String json = payload("hello", null, null).replace(
+                "\"kind\":\"paragraph\",\"text\":\"hello\"",
+                "\"kind\":\"paragraph\",\"text\":\"hello\",\"pageNumber\":2,\"anchorIndex\":8,\"startLine\":12");
+        byte[] gzip = gzip(json);
+
+        ParsedDocumentValidator.ValidatedParsedDocument result = validator.validate(
+                new ByteArrayInputStream(gzip), metadata(gzip, 64_000, 100));
+
+        assertThat(result.parserId()).isEqualTo("pdfjs");
+        assertThat(result.blocks()).singleElement().satisfies(block -> {
+            assertThat(block.pageNumber()).isEqualTo(2L);
+            assertThat(block.anchorIndex()).isEqualTo(8L);
+            assertThat(block.startLine()).isEqualTo(12L);
+        });
     }
 
     @Test

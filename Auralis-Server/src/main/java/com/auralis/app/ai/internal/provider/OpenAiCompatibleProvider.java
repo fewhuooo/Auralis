@@ -5,6 +5,7 @@ import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiStreamAbortException;
 import com.auralis.app.ai.AiProviderChunk;
+import com.auralis.app.ai.AiProviderModelIdentity;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderRequest;
@@ -19,6 +20,7 @@ import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;
 import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -41,6 +43,9 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
     private final AiProviderType providerType;
     private final ProviderEndpointPolicy endpointPolicy;
     private final ProviderHttpClient httpClient;
+
+    @Value("${auralis.ai.thinking-enabled:false}")
+    private boolean thinkingEnabled;
 
     @Autowired
     public OpenAiCompatibleProvider(ProviderEndpointPolicy endpointPolicy, ProviderHttpClient httpClient) {
@@ -91,10 +96,22 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             ResolvedProviderEndpoint endpoint = cancellation == null
                     ? endpointPolicy.resolve(providerType, baseUri)
                     : endpointPolicy.resolve(providerType, baseUri, responseTimeoutMillis, cancellation);
-            JsonNode body = responseTimeoutMillis == null
-                    ? httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class)
-                    : httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(), requestBody(request), JsonNode.class,
-                    responseTimeoutMillis, cancellation);
+            JsonNode body;
+            if (!request.overviewCapacityRequest() && responseTimeoutMillis == null) {
+                body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
+                        requestBody(request, credential), JsonNode.class);
+            } else if (!request.overviewCapacityRequest()) {
+                body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
+                        requestBody(request, credential), JsonNode.class, responseTimeoutMillis, cancellation);
+            } else if (responseTimeoutMillis == null) {
+                body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
+                        requestBody(request, credential), JsonNode.class, cancellation,
+                        overviewResponseByteLimit(request));
+            } else {
+                body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
+                        requestBody(request, credential), JsonNode.class,
+                        responseTimeoutMillis, cancellation, overviewResponseByteLimit(request));
+            }
             return parseResponse(body, request);
         } catch (DomainException exception) {
             throw exception;
@@ -113,6 +130,11 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
     }
 
+    private long overviewResponseByteLimit(AiProviderRequest request) {
+        return request.overviewResponseByteLimit() > 0
+                ? request.overviewResponseByteLimit() : Long.MAX_VALUE;
+    }
+
     @Override
     public void streamInto(
             AiProviderRequest request,
@@ -123,7 +145,7 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         try {
             ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
                     providerType, URI.create(credential.baseUrl().trim()));
-            Map<String, Object> body = new LinkedHashMap<>(requestBody(request));
+            Map<String, Object> body = new LinkedHashMap<>(requestBody(request, credential));
             body.put("stream", true);
             if (providerType == AiProviderType.OPENAI_COMPATIBLE) {
                 body.put("stream_options", Map.of("include_usage", true));
@@ -157,7 +179,7 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
     }
 
-    protected Map<String, Object> requestBody(AiProviderRequest request) {
+    protected Map<String, Object> requestBody(AiProviderRequest request, AiCredential credential) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", request.model());
         body.put("messages", request.messages().stream().map(message -> Map.of(
@@ -171,11 +193,22 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
         if (request.structuredJson()) {
             body.put("response_format", Map.of("type", "json_object"));
-            if (providerType == AiProviderType.DEEPSEEK) {
-                body.put("thinking", Map.of("type", "disabled"));
-            }
+        }
+        if (supportsThinkingControl(credential)) {
+            body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
         }
         return body;
+    }
+
+    private boolean supportsThinkingControl(AiCredential credential) {
+        if (providerType == AiProviderType.DEEPSEEK) return true;
+        if (providerType != AiProviderType.OPENAI_COMPATIBLE || credential == null
+                || credential.baseUrl() == null) return false;
+        try {
+            return "api.xiaomimimo.com".equalsIgnoreCase(URI.create(credential.baseUrl().trim()).getHost());
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     protected AiProviderResponse parseResponse(JsonNode body, AiProviderRequest request) {
@@ -189,7 +222,16 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
                 content.asText(),
                 tokenCount(usage, "prompt_tokens"),
                 tokenCount(usage, "completion_tokens"),
-                normalizedFinishReason(body));
+                normalizedFinishReason(body),
+                responseModelIdentity(body));
+    }
+
+    private AiProviderModelIdentity responseModelIdentity(JsonNode body) {
+        if (body == null || !body.has("model")) return AiProviderModelIdentity.missing();
+        JsonNode model = body.get("model");
+        return model != null && model.isTextual()
+                ? AiProviderModelIdentity.fromProviderValue(model.textValue())
+                : AiProviderModelIdentity.invalid();
     }
 
     private Long tokenCount(JsonNode usage, String field) {
@@ -284,22 +326,30 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
         try {
             JsonNode body = STREAM_OBJECT_MAPPER.readTree(payload);
+            AiProviderModelIdentity modelIdentity = responseModelIdentity(body);
             AiTokenUsage usage = parseUsage(body == null ? null : body.path("usage"));
             JsonNode choices = body == null ? null : body.path("choices");
             if ((choices == null || !choices.isArray() || choices.isEmpty()) && usage != null) {
-                sink.accept(new AiProviderChunk("", false, usage));
+                sink.accept(new AiProviderChunk("", false, usage, modelIdentity));
                 return;
             }
             JsonNode choice = body.path("choices").path(0);
             JsonNode content = choice.path("delta").path("content");
+            boolean emitted = false;
             if (content.isTextual() && !content.asText().isEmpty()) {
-                sink.accept(new AiProviderChunk(content.asText(), false));
+                sink.accept(new AiProviderChunk(content.asText(), false, null, modelIdentity));
+                emitted = true;
             }
             JsonNode finishReason = choice.path("finish_reason");
             if (!finishReason.isMissingNode() && !finishReason.isNull()) {
-                sink.accept(new AiProviderChunk("", true, usage));
+                sink.accept(new AiProviderChunk("", true, usage, modelIdentity));
+                emitted = true;
             } else if (usage != null) {
-                sink.accept(new AiProviderChunk("", false, usage));
+                sink.accept(new AiProviderChunk("", false, usage, modelIdentity));
+                emitted = true;
+            }
+            if (!emitted && modelIdentity.status() != AiProviderModelIdentity.Status.MISSING) {
+                sink.accept(new AiProviderChunk("", false, null, modelIdentity));
             }
         } catch (AiStreamAbortException exception) {
             throw exception;

@@ -4,7 +4,8 @@ import com.auralis.app.ai.usage.AiTokenUsage;
 
 import java.util.Set;
 
-public record AiProviderResponse(String content, Long inputTokens, Long outputTokens, String finishReason) {
+public record AiProviderResponse(String content, Long inputTokens, Long outputTokens, String finishReason,
+                                AiProviderModelIdentity modelIdentity) {
 
     private static final int MAX_FINISH_REASON_CHARS = 64;
     private static final Set<String> ALLOWED_FINISH_REASONS = Set.of(
@@ -12,6 +13,11 @@ public record AiProviderResponse(String content, Long inputTokens, Long outputTo
 
     public AiProviderResponse {
         finishReason = normalizeFinishReason(finishReason);
+        modelIdentity = modelIdentity == null ? AiProviderModelIdentity.missing() : modelIdentity;
+    }
+
+    public AiProviderResponse(String content, Long inputTokens, Long outputTokens, String finishReason) {
+        this(content, inputTokens, outputTokens, finishReason, AiProviderModelIdentity.missing());
     }
 
     public AiProviderResponse(String content, long inputTokens, long outputTokens) {
@@ -19,7 +25,13 @@ public record AiProviderResponse(String content, Long inputTokens, Long outputTo
     }
 
     public AiProviderResponse(String content, long inputTokens, long outputTokens, String finishReason) {
-        this(content, Long.valueOf(inputTokens), Long.valueOf(outputTokens), finishReason);
+        this(content, Long.valueOf(inputTokens), Long.valueOf(outputTokens), finishReason,
+                AiProviderModelIdentity.missing());
+    }
+
+    public AiProviderResponse(String content, long inputTokens, long outputTokens, String finishReason,
+                              AiProviderModelIdentity modelIdentity) {
+        this(content, Long.valueOf(inputTokens), Long.valueOf(outputTokens), finishReason, modelIdentity);
     }
 
     public AiTokenUsage usage() {

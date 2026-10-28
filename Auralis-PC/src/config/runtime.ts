@@ -4,12 +4,21 @@ export interface RuntimeConfig {
   devApiTarget?: string;
   devWebsocketTarget?: string;
   isTauri: boolean;
+  overviewSseDeadlineMs: number;
 }
 
 type RuntimeEnv = Record<string, string | undefined>;
 
 function trimBaseUrl(value: string | undefined): string {
   return (value ?? '').trim().replace(/\/$/, '');
+}
+
+const DEFAULT_OVERVIEW_SSE_DEADLINE_MS = 300_000;
+
+function parseOverviewSseDeadlineMs(value: string | undefined): number {
+  if (value === undefined || value.trim() === '') return DEFAULT_OVERVIEW_SSE_DEADLINE_MS;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_OVERVIEW_SSE_DEADLINE_MS;
 }
 
 function isTauriEnvironment(env: RuntimeEnv): boolean {
@@ -31,6 +40,7 @@ export function getRuntimeConfig(env: RuntimeEnv): RuntimeConfig {
     devApiTarget: trimBaseUrl(env.VITE_DEV_API_TARGET) || undefined,
     devWebsocketTarget: trimBaseUrl(env.VITE_DEV_WS_TARGET) || undefined,
     isTauri,
+    overviewSseDeadlineMs: parseOverviewSseDeadlineMs(env.VITE_OVERVIEW_SSE_DEADLINE_MS),
   };
 }
 

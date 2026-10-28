@@ -1,5 +1,250 @@
 # Auralis 变更记录
 
+### 2026-10-28 Overview 按来源路由与遗漏补回（源码候选）
+
+针对8份无关资料的174主题路由只引用89个ID、在Writer前终止的问题，改为按最早BODY原文来源分域路由，源内沿原章顺序聚合；整源能放下则一次请求，超容量才按现有动态规则拆分。跨源主题只归一个域但保留所有原始引用。ROUTE解析接受非空合法子集，未知/重复ID仍拒收；程序将连续遗漏按原章、原序及完整Writer请求容量成组补入，最后校验完整唯一覆盖。无需额外模型修复，也不新增固定主题数或节数上限。背景/导航过滤、Writer证据及重试/费用语义保持。
+
+集中定向首轮Adaptive77项5F/4E，旧跨源fixture与prompt断言更新后的首次受影响复验77项仍有1F，最终含补回原序回归的Adaptive78/78通过；DynamicBudget17/17、Recovery23/23通过。未运行全量测试、部署、业务库/缓存操作或真实模型生成。唯一只读审查的顺序问题已修正，同一reviewer差量关闭后最终B0/I0/O0，审查结论见D:/Temp/auralis-local-route-20261028/review.md；本轮命令与证据位于同目录。实际生成质量与耗时待部署后验收。
+
+### 2026-10-27 香港23:05 重试候选已部署
+
+按用户授权，以现有基础Compose及overview-trace overlay构建并recreate backend/frontend，均exit0。启动时Flyway验证41个迁移，数据库已为V41，本次无需重复执行迁移。backend healthy、readiness HTTP200，frontend HTTP200；db/MinIO容器ID及挂载前后相同。backend镜像abe74be55083…，frontend2321333dfca5…。未清缓存、未调用真实模型，重试业务效果待用户使用验收。日志：D:/Temp/auralis-overview-retry-deploy-20261027/。
+
+### 2026-10-27 Overview 独立执行重试（未发布候选）
+
+- Source/Subject direct重新生成支持retryOfRequestId，新尝试独立generation/budget，旧执行以fence结束；相同请求幂等、同父并发单后继，已验证祖先进度复用，旧调用及费用保持。V41新增父关联与请求意图，PC沿用原入口且不加端侧schema；durable jobs保持原恢复合同。
+- OpenAPI/两端SDK、定向/隔离PG、PC类型84项测试与构建、backend package完成；唯一review B0/I0/O0。full950项首轮1F/55E/2S经环境修正和affected复验闭合，未重跑full。未部署或迁移业务库，真实重启重试/Provider/GUI待验收。见[计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
+### 2026-10-26 Overview动态容量本机部署
+
+- 按用户授权部署backend6256eee9…及frontend28f9ff68…，V40成功应用；readiness/前端与bundle HTTP200，运行六个关键class与已验证候选一致。26项MAX与Overview calls均0，原Token财务额度保持。
+- 按用户选择备份后清理全部6条FAILED生成缓存，保留22SUCCESS、22正式结果、675账本及原资料，12组hash一致。db/MinIO原容器和卷身份保持，旧应用镜像与D盘备份留存。未调用真实模型、未做GUI/内容质量验收。证据D:/Temp/auralis-overview-deploy-20261026/。
+
+### 2026-10-26 Overview 动态容量与链路简化（未发布候选）
+
+- 新增 26 项 Overview 专属容量 ENV，默认 0 按模型/完整请求动态处理，正数额外限幅；调用次数默认 0，财务额度保持。移除多层 Metadata 和 Writer 回声字段，程序绑定来源；中间 aliases 与最终来源数量分开校验。未知能力需精确服务器 profile，配置边界不引用 AI 业务枚举。
+- 新增 V40 放宽 Overview 存储长度并将结果标题改 TEXT；PC 接收与 OpenAPI/两端生成契约同步。隔离 PG 43/43、affected 44/44、OpenAPI 15/15、package、Compose config、PC 类型/接收 80/80 通过；唯一 full 933 项失败后按归因定向闭合，不称 full 全绿。唯一只读审查 B0/I0/O0；未部署或调用真实 Provider，业务库未迁移，GUI/质量未验收。见[实施计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。
+
+### 2026-10-25 Overview provenance generation/save contract alignment（源码候选）
+
+- PC 生成 SSE 现在按 raw provenance input 验证，并通过现有本地输入字段进入正式结果保存/同步；formal result API 仍严格要求 canonical provenance view，per-section refs 上限为后端定义的 500，Java UUID 形状接受 nil UUID。没有变更页面交互、API wire shape、数据库结构或 Provider 流程。`vue-tsc -b` 通过，Overview generation 定向测试 79/79，通过用例涵盖 nil/invalid UUID 与 101/501-ref 边界。真实 owner-scoped 成功 payload 的只读 replay 通过（23 章/87 节/111 refs；raw 接受、canonical 拒绝）。Tauri 显示和正式结果写入仍待用户在 HMR/重启后重试。
+
+### 2026-10-25 Adaptive Overview prompt serialization order（源码候选）
+
+- 将五个可能进入 prompt JSON 的嵌套 `Map.of` 对象改为显式顺序，保持字段和值不变。INDEX 旧 trace 顺序可由本次选择恢复；writer 顺序与 de2 的 66 个有效请求 trace 一致。未改变公开 API、数据库结构或 checkpoint hash 算法，也未增加模糊缓存匹配。
+- 自动验证分批完成：首轮 Adaptive 类已有的 66 个用例通过；随后新跨 JVM probe method-only 1/1 通过。Probe 使用固定输入执行实际 INDEX、Writer、Guide builders，并跨两个独立 JVM 对比 JSON hashes 与 checkpoint steps；空的末批 context、非空 writer sibling bounds 均受断言检查。分批证据不合并为一次 67/67。中间 harness 故障已修复。未执行当前数据库 cache replay、真实 Provider 或部署。
+
+### 2026-10-25 Adaptive writer trailing identifier recovery（源码与定向验证完成；未部署）
+
+- `ADAPTIVE_WRITE` 首次正常 stop 响应可在严格识别完整 writer JSON 对象后剥离一个单独 ASCII identifier；显式截断、重复字段、额外 JSON/标点、非法 schema/aliases 与非 writer 阶段仍失败。既有 writer 校验链不变，不增加 Provider 调用或公开 API/数据库结构。fresh D 盘候选 clean 编译 379 production sources，Adaptive 66/66 与 Provider resilience 10/10 通过；`response_format=json_object` 对 4608/4675/6144 token 预算的序列化边界均有实际 body 断言。未部署或调用真实 Provider；证据 `D:/Temp/auralis-writer-tail-fix-20261025/candidate-run2/`。
+
+### 2026-10-25 Adaptive writer checkpoint boundary normalization (source verified; not deployed)
+
+- Normalize adaptive writer/composite section boundaries before first persistence so manifest hashes match the exact saved bodies. Restore verifies raw payload identity and fragment hashes, validates structure, and preserves the stored representation for preview checkpoint binding. Internal Markdown whitespace and provenance checks remain intact; no API or database schema change. The matching-source Adaptive suite ran 64/65; its sole failure was a synthetic old checkpoint over the existing section size limit. After correcting the fixture and allowing only the expected completed-guide request, the affected method passed 1/1. Not deployed; no real Provider or GUI acceptance.
+
+### 2026-10-25 Overview metadata convergence、Chat retrieval isolation 与 Provider probe（源码候选）
+
+- Metadata planning prompt 现示范一个 section 绑定多个授权 plan alias，并要求将相关条目归并为更少的 sections、保留主题区别和不可变应用绑定。路由先于 count convergence 检查；当 route 不适配且 metadata section 数未下降时立即使用既有 bounded topic buckets。
+- Chat retrieval excerpts 现在经过 delimiter 字符转义并放入完整闭合的 untrusted wrapper；system 规则说明 excerpts 仅为证据数据，source/chunk UUID 是内部 metadata，除非用户要求不得披露。Provider setup connection probe 的请求输出上限为 32 tokens。未修改公开 API/DTO、检索范围、用户/历史预算或 Guard policy。
+- 自动回归只证明提示词包装、适配结构和请求参数，不证明真实模型服从安全提示。首轮 focused batch 为 87/88，唯一失败是既有 large fixture 对 direct route 的过窄断言；test-only 修正允许对应 bucket fallback 后，该 affected method 1/1 通过。其余类 PromptAssembler 5/5、AiStreaming 17/17、ProviderDiscovery 2/2 已通过；累计定向覆盖 88/88，分轮完成而非一次全绿。未部署、未调用真实 Provider，未完成用户业务验收。
+- 后续只读审查发现 selection preflight 误计了仅在有 retrieval excerpts 时需要的 system 指令。Preflight 现仅计必需的 selection 边界和当前问题；拿到 citations 后，若不能完整保留这些必需内容则省略 retrieval prompt context。`PromptAssemblerTests` 7/7、`AiStreamingTests` 17/17 通过，Maven exit 0；无真实 Provider/业务验收。
+
+### 2026-10-24 Overview 直接请求整任务期限开关（实现候选；未部署）
+
+- `AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS=0` 可关闭同步 JSON/SSE 的整体任务 deadline 与 SSE 容器 timeout；缺省仍为 240000ms，负值拒绝。取消保持有效，每次 Provider response 仍受原正数配置窗口、Guard、计量与预算约束。
+- 后台持久 jobs 的 durable deadline 继续为有限的 240000ms；无数据库/API/schema 变化。本机 `.env` 已设 0，未构建镜像、未部署或调用真实 Provider。
+
+### 2026-10-24 Overview 全链路提示词细化（相关验证通过，未部署）
+
+- 主 Agent 直接整理索引/coverage、元数据、topic/plan 路由、分组细讲、完成后导读、现行短总览 MAP/REDUCE 及各自修复提示词。明确 chapter/section 的 title 键、summary 内的 learningPath、真实 null、编号授权及覆盖规则，增加合法 JSON 结构示例与返回前自检。
+- 独立修复提示不再要求缺失的主请求材料；中间恢复与最终恢复各有明确完整度契约。未放宽解析器或增加自动调用，无 API/DB/前端、预算或配置变化。相关170项最终通过，包含修正长度边界夹具后的2项 affected-only 复跑；主 Agent 审查B0/I0。未跑full/package，未部署或进行真实 Provider 验收。
+
+### 2026-10-24 Overview 自适应阶段提示词隔离（源码候选）
+
+- 自适应生成提示词按阶段响应结构与 alias 授权范围隔离。outline 阶段要求根 `summary=null`；完成后的 guide 要求 `summary` 且 `learningPath` 位于其中。writer 私有结构与非自适应 mode 提示词保持不变。
+- 自适应 JSON repair 依目标阶段 schema 与已授权 aliases 拼装，不继承公共 ALL mode 或主请求材料指令；索引专用 repair 保留。提示词派生的 checkpoint identity 自然隔离变更请求。Adaptive 59/59、AiOverview 80/80、Recovery 28/28 通过；Recovery 测试启动 Testcontainers 临时 PostgreSQL fixture，未连接业务库。无 API/DB 变化、未清缓存；本轮候选未部署、未调用真实 Provider。
+
+### 2026-10-24 AI Provider 思考开关（实现候选；未部署）
+
+- 新增默认关闭的 `AURALIS_AI_THINKING_ENABLED`，Compose 与示例配置同步。本机 `.env` 已仅更新该开关为 `false`。
+- DeepSeek 的所有 completion/stream 请求、以及精确官方 MiMo endpoint 的 OpenAI-compatible 请求按开关显式控制 thinking。未知 OpenAI-compatible host 不带该专有字段；不保证任意自定义模型或代理的内部推理关闭。未部署、未调用真实 Provider。
+- 独立 D 盘候选 full backend 通过：144 suites / 868 tests，0 failure / 0 error / 1 个未设置私有 replay 目录的 assumption skip；随后 `-DskipTests package` 也通过。完整命令、日志和源码 hash 见 `D:/Temp/auralis-thinking-env-20261024/`。
+
+### 2026-10-24 本机后端部署（thinking 配置）
+
+- 22:46:29 创建的本机 backend 镜像 digest 为 `sha256:5f65ebbd89c097092109fde92067a6c4975deb808e5f6d904c9d4a92204d487c`，运行 `THINKING_ENABLED=false`。镜像内 Provider class SHA-256 与 thinking 配置候选相同。该部署不含本轮自适应阶段提示词源码候选，也不构成真实 Provider 验收。
+
+## 2026-10-24 ADAPTIVE_INDEX strict first-root parser correction (not deployed)
+
+- The local strict reader now creates and reads its own first-root parser, so duplicate outline and nested fields are rejected instead of silently overwritten during displaced-summary recovery. Shared Mapper settings, prompts, checkpoint identity and public contracts are unchanged. A fresh D-drive candidate compiled 379 production and 144 test sources; Adaptive tests passed 58/58 (exit 0), including duplicate-field rejection without checkpoint writes. No full suite, PostgreSQL, package, deployment or real Provider call was performed in this correction.
+
+## 2026-10-24 Overview routing and writing completion (source complete; no deployment)
+
+- Added v9 topic-catalog routing, private writer body formatting/recovery, post-writing guide generation, and multi-fragment verified preview contract. In the isolated D-drive candidate, Adaptive 48/48, Recovery 28/28, Preview PostgreSQL 10/10, Formatter 9/9, final affected Adaptive methods 2/2, OpenAPI artifact export, package, and PC type-check passed. Mobile type-check reports the existing `EventRequest/EventResponse` references absent from the current API contract. The original full batch failed (855 tests, 6 failures, 29 errors, 1 skipped) with contaminated compiler output among its errors; it was not rerun on the isolated candidate. The sole read-only review concluded B0/I0/O0 and confirmed all three behavior findings closed. No deployment or real-provider acceptance is claimed.
+
+更新时间：2026-10-24
+文档状态：现行历史记录
+权威范围：已发生且可确认的产品、代码、文档和验证变化
+事实来源：Git 提交、本轮实际验证记录与重构前快照
+
+### Overview completion 输入估算统一接线（2026-10-24；本机候选已部署）
+
+- 唯一只读 review B0/I0/O0；离线 gate、相关43项与package通过后，仅更新本机 backend。镜像 `sha256:72f6a41df02f8497fe32d2d0c3cbb18580ed2671b1c233ec9b41a95f658cc49d`，healthy/readiness UP，trace overlay 模式 `calibrated-category`；基础默认仍 legacy。部署未主动调用 Provider，db/MinIO/frontend 容器身份未变，正文实测待用户进行。全量 stdout 留存缺口详见 `D:/Temp/auralis-budget-step3-20261024/final-handoff.md`，下述 full 数字不得引用当前被覆盖的日志作原始证据。
+
+- 新增纯 Java `AiInputTokenEstimator`，统一 Overview context fit/preflight 与 MAP/REDUCE Gateway reservation 的 provider/endpoint/requested-model profile。默认 `legacy-bytes`；显式 `calibrated-category` 仅对精确 DEEPSEEK、官方 endpoint 与 `deepseek-v4-flash` 生效。支持 message 的 Han 字符类别估算乘2，非 Han 内容按 UTF-8 bytes，整体加一次 `max(64,4 × messageCount)` framing/margin 并 clamp 到 legacy；未知身份或不支持形态 fail closed 到 bytes。输出 cap、原文、checkpoint profile 和 API/schema 保持不变。
+- 40个请求按 system/user hash 去重34对；目标 run 11/11 distinct、request character metadata 均匹配。25个支持形态且 usage 完整的 unique prompt pair 零低估；INDEX覆盖15/24、METADATA 8/8、ROUTE 2/2，writer样本0。estimated input 597033，相对旧 bytes 717340 减少16.77%，actual input 166676；最低估算/actual coverage 322.86%，underestimate 0，gate PASS 仅限当前 trace 形态，不代表 tokenizer 精确或通用校准。所有 trace run outcome 为 FAILED。
+- Maven full：837 tests，836 passed，0 failures，1 error（唯一错误为 replay test stage aggregation 对缺 usage 样本的 null-handling）；该 test-only 问题修正后相关 estimator/replay/config/Guard/planner 批次43/43 passed（exit 0），并通过 replay gate 断言。`-DskipTests package` exit 0。逐请求无用户内容的 JSON replay 报告：`D:/Temp/auralis-budget-step3-20261024/token-estimator-replay-report.json`；测试与 package 日志在同目录。review B0/I0/O0 与本机部署已完成；真实 Provider 验收待用户实测，本轮未主动调用新 Provider。
+
+### Overview ADAPTIVE_WRITE 正文预算路径（2026-10-24；源码及定向验证完成；未部署）
+
+- 正文 writer 输出上限按序列化正文/结构负载确定，限定在 4608–6144；同一值用于 context fit、平台预检、Provider/Gateway/Guard、截断判断以及 generation/journal writer checkpoint 身份。长正文沿既有 6144 上限与内容拆分；不按剩余预算削减原文或质量目标。
+- 预算拒绝继续使用同一个 generation/budgetTaskId 和 charged ledger，保留已验证 checkpoint；现有同步 JSON/SSE 错误语义不变。未新增状态、API、schema 或 migration。
+- 预算日志按 generation/budgetTaskId 关联 stop/resume/complete，记录 verified/remaining writer 进度、单次 reserve、aggregate upper forecast，以及 task charged（实际与估算可能混合）、reserved 在途和配置余额。BYOK 记录实际 usage 与估算，不套用平台 token 额度拒绝。API 文档补充同 budget root 的 recoverable 语义，没有新增响应字段、PAUSED 状态或 schema。
+- 集中批次 138 tests / 137 passed / 1 failed / 0 errors / 0 skipped（exit 1）；唯一失败是新增 PostgreSQL 恢复用例的 fixture 断言，未将整批记为全绿。修正后只重跑 affected-only PostgreSQL 用例，1/1 passed（exit 0）。测试在隔离 Testcontainers PostgreSQL 17.11 上运行；模拟已结算 ledger 饱和后，Guard 拒绝第二 writer 且 Provider 派发数不变；同步提高测试中的 service 与 Guard 配置后，charged 保留、同 generation/budgetTaskId 恢复，且只派发未完成 writer。测试修改配置模拟重载；实际运行环境需统一更新配置并重启。命令、逐次日志和 exit 文件见 `D:/Temp/auralis-budget-step4-20261024/`。本轮未部署或调用真实 Provider，缺少真实 writer 样本，不能据此确认正文质量或预算估算已校准。
+- sole review 随后发现纯诊断 usage 读取可能影响 writer 成功处理或 RESUME lease 生命周期；已按最小范围对 writer-progress、全 checkpoint 命中预算快照、恢复 trace 读取/记录采取 fail-open。Guard 准入及 coordinator STOP/COMPLETE 所需读取维持既有失败语义。PostgreSQL stop/resume 注入场景在2项 affected-only 批次中通过；writer-progress 故障注入在夹具 SQL 状态名修正后 affected-only 1/1、exit 0，验证 generation SUCCESS 与 request-id replay 无 Provider 重发。该2项批次首轮结果 1 passed / 1 fixture assertion error（exit 1），未重复已通过测试；完整验证记录见 `D:/Temp/auralis-budget-step4-20261024/review-fix-handoff.md`。同一 reviewer 修复复审已完成，BLOCKER=0 / IMPORTANT=0，原 OPTIONAL 1 保留；证据 D:/Temp/auralis-budget-step4-20261024/review-final.md。
+
+### Overview 本机调用次数观测（2026-10-23）
+
+- 配置 `AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS=0` 时，Overview 平台任务与 MAP/REDUCE stage 不设累计次数预算；默认24保持，其他 AI 功能和 Token/窗口额度保持。trace overlay 使用0，以采集真实长资料生成用量并在后续重新定限额。本机 backend 已更新、healthy/readiness HTTP 200；定向54/54、package成功，full测试仍有环境与历史断言失败，真实生成尚未验收。
+
+### Overview ADAPTIVE_METADATA summary 规范化（2026-10-23；已部署，真实业务验收待进行）
+
+- 内部 ADAPTIVE_METADATA 的 summary=null 规则优先于 ALL 模式，仅规范化该 purpose 的响应和旧 checkpoint；普通 ADAPTIVE_INDEX summary 及最终目录摘要逻辑不变。定向验证 40/40，review B0/I0/O1。
+- 仅 backend 重建并启用既有 trace overlay；backend healthy、readiness HTTP 200，未执行真实生成或 Provider 调用。部署证据：`D:/Temp/auralis-metadata-summary-fix-20261023/startup/handoff.md`。
+### Overview M5.2 ADAPTIVE_INDEX 批次别名提示修正（2026-10-23；已部署，真实业务验收待进行）
+
+- Provider-facing index batch 仅接收当前批次 `unitAlias`，并约束返回 `sourceIds` 使用这些别名；内部 source owner/provenance 和 coverage validator 保持原样。定向测试 37/37、runtime review B0/I0。
+- 仅 backend 重建并启用既有 Overview trace overlay；backend healthy 且 readiness HTTP 200，未执行真实生成或 Provider 调用。部署证据：`D:/Temp/auralis-index-alias-fix-20261023/startup/handoff.md`。
+### Overview M5.4 正文跨任务复用（2026-10-23；源码、affected-only 定向复验与唯一审查完成；未部署）
+
+- 完全相同 owner/scope/input/profile/algorithm/prompt-derived writer step 的 SUCCESS donor，仅当其 checkpoint 与 ASSEMBLED plan 下 VERIFIED node hash 一致，且当前 attempt journal 关联真实 dispatched reservation 时可复用。命中经现有校验与事务物化本代恢复 checkpoint，不更新原 donor/TTL，不新增 reservation/usage-call；无 reservation 的 cache-materialized node 不可接力。unknown dispatch / `RECOVERY_REQUIRED` 优先 hold，预算预检计入同一 donor，过期竞态由原 Guard 处理。
+- 首轮定向批次 55 项为 52 passed / 3 errors；affected 首轮 4 项为 3 passed / 1 failed。归因包含 Mockito stub 重装、active lease fixture 与 unknown-dispatch 断言将 preflight reads 计作执行 lookup。随后 unknown-only 1/1、final affected-only 4/4（exit 0）；未重跑55项整批。唯一 reviewer B0/I0/O0。
+- 无 API/schema/migration/frontend 变化；未运行 PostgreSQL、full/package/OpenAPI-SDK、真实 Provider、GUI、Docker 或部署。M5 与不同 input 正文复用、依赖失效及完整生命周期仍待完成。
+
+### Overview M5.3 目录规划跨任务复用（2026-10-23；源码、分批验证与唯一审查完成；未部署）
+
+- `ADAPTIVE_ROUTE`、`ADAPTIVE_METADATA`、`ADAPTIVE_METADATA_ROUTE` 可在同 owner/scope/profile/algorithm、完整 generation input 和 prompt-derived step 匹配的 SUCCESS donor 间只读复用。保留 current-checkpoint 优先、14 天 checkpoint/result 到期、SHA/schema、当前 owner/source 与 coverage/shape 检查；命中不复制、不延寿、不伪造 usage。原 writer 与持久 journal 继续执行；正文不跨任务复用，M5.2 batch 逻辑保持冻结。
+- gpt-6-luna high 实现。首轮 51 项为 Adaptive 28/28、Coordinator 22 passed / 1 error；错误来自 lease 顺序测试 fixture。只复验受影响方法 1/1、exit 0，未重跑整批。唯一 reviewer B0/I0/O1；O1为文档同步项，由本次回写处理，未作回写后复审。
+- 无 API/schema/migration/frontend 变化；未运行 PostgreSQL、backend full、package、真实 Provider、GUI、Docker 或部署。
+
+### Overview M5.2 索引 batch 跨任务复用（2026-10-23；源码、定向验证与唯一审查完成；未部署）
+
+- `index_batch_v1_SHA` 绑定 system prompt、indexData 与有序完整 AdaptiveRawUnit 记录；同 owner/scope/profile/algorithm 的 SUCCESS donor 可供给相同 batch，并继续验证 donor checkpoint 与其 generation input fingerprint 一致、SHA/schema、过期、来源与 coverage/shape。命中不派发 Provider、不复制 donor checkpoint、不延长寿命；目录和正文仍运行当前流程。
+- gpt-6-luna high 实现/定向 Maven 验证49/49（Coordinator 22、Adaptive 27，exit 0）及唯一只读审查 B0/I0/O0。先前失败是 fixture 仍按读取序号8/9注入 writer checkpoint；新增读取后序号为14/15。只改 fixture，原断言保留，最终批次通过。
+- 未运行 PostgreSQL、full suite、package、OpenAPI/SDK、真实 Provider、GUI、Docker 或部署；无 API/schema/migration/前端变化。
+
+
+### 2026-10-23 Overview 全流程测试追踪导出
+
+- 增加默认关闭、有界的 Overview 本地追踪采集器，显式开启后按 owner/run 导出结构化事件、汇总和 Markdown 报告；完整内容另设 opt-in。增加 backend-only Compose overlay，默认 Compose 拓扑不变。没有 API/schema/migration 或前端变化。
+- focused 87/87、backend full 813/813、package、合成 Compose 配置与唯一只读 review 均通过；未部署、未调用真实 Provider、未完成 GUI 或业务内容验收。参见[实施计划](../plans/2026-10-23-overview-test-tracing.md)。
+
+### 2026-10-22 M5.1：完全相同输入的跨任务轻量索引复用
+
+- 新生成任务先读取自身 checkpoint；缺失时，仅 ADAPTIVE_INDEX 可查询同 owner、scope、完整 input fingerprint、profile、算法和 prompt step 的 SUCCESS generation。读取同时检查 result 到期和 checkpoint 14 天有效期，以及 payload SHA/schema；使用前继续执行现行 Source/owner 校验和索引 coverage/shape 校验。
+- 复用现有 overview_generation_checkpoints，只读命中，不复制缓存、不延长原条目寿命、不新增表或迁移。目录和正文仍执行当前生成流程；命中不派发 Provider、不伪造 usage，记录 ADAPTIVE_INDEX_CACHE_RETURN。预算预检识别可复用索引。
+- 本小节只覆盖完整输入未变化时的新任务复用；资料局部变化、节点级依赖失效、目录/正文跨任务缓存及完整删除生命周期仍属于后续 M5，不能据此标记 M5 完成。现有前端流程保持。
+- 验证：D 盘隔离源码运行 OverviewGenerationCoordinatorTests 21/21、OverviewAdaptiveGenerationTests 26/26，共 47/47，Maven exit 0。覆盖跨 owner/输入/profile 隔离、过期、损坏拒绝及生成链路跳过索引而继续目录/正文。当前为 H2/合成 Gateway 证据，未运行 PostgreSQL、全量测试、打包、真实 Provider、GUI 或部署。本轮依用户要求由主模型直接实现并检查，未启用子代理。
+- 证据：D:/Temp/auralis-overview-m51-20261022/targeted-tests.log 与 handoff.md。更早前端回退的四项失败未由本轮处理；此前范围审计按用户最新要求暂置，尚无完整审计结论。
+### Overview PC M4 新交互撤回与生成期间编辑保护（2026-10-22；源码、定向验证与唯一审查完成；未部署）
+
+- 按用户决定撤回 PC job selector、candidate preview/publish/adopt、section reader 与新 job consumer 接线，恢复原 Overview 入口、SSE 自动生成和原同步/冲突流程。Server durable jobs、candidateInput formal PUT、publication/receipt、VERIFIED preview 与 section API 保留，PC 当前不消费，不列为后续必补 UI。
+- 保留在途本机编辑冲突保护：本地 part/signature 在生成提交前复核；本机编辑时保留本地内容与冻结 mutation，AI 结果进既有 outbox 的 `OVERVIEW_GENERATION_EDIT_CONFLICT` 且不 PUT，显式选择仍走原 CAS/outbox。Browser fallback 写入共享 owner/device Web Lock；缺 Web Locks 时 fail-closed，SQLite事务路径不变。
+- 回退源码最终控制21项，1110 protected paths 未变；唯一 reviewer I1 delta B0/I0。回退后检查分批：noEmit 0、cache/sync/deletion 55/55、generation 75/76；旧 rollback R4 首轮169/3F，之后race/UI定向4/4与1/1。4个未通过项：Stop aria-label旧fixture/source不匹配1项，asset-flow owner-switch/auth-refresh 3项（无旧baseline，未作历史归因）。批次不合并全绿。无回退后GUI、Provider、Docker、backend/SDK、full suite、部署或数据库操作。
+
+### Overview M4 PC native job consumer（2026-10-22；回退前实现、验证与隔离浏览器流程的历史记录；未部署）
+
+- PC 接入持久 Source/Subject ALL、OUTLINE jobs、VERIFIED 候选预览与显式 `candidateInput` 正式采纳；复用 formal CAS/receipt/outbox，保留 summary partial update 与原 mutation intent。FILE/TEXT/URL 在 source/scope/revision fences 通过时由既有 outbox PUT。自动 FILE/ALL recovery 使用确定性 SHA-256 request identity，digest 不可用时 fail-closed；PC SQLite 保持 v13，无迁移。
+- Backend full 774/771P/1F/2E、affected 3/3；SQL 42P18 PG 修复用例 1/1、post-fix skipTests package Maven/Docker 0/0。PC full R4 745/716P/29F 的失败与归因保留；GEN 72/72、lifecycle 10/10 分批完成，Store/sync 30/30，noEmit/Vite 通过。唯一 source-type-fence delta review B0/I0/O0 new，原 O1 保留。隔离接口流程用合成 Provider；正式 Source/section v4 与 receipt 已读回。未部署；M5/M6 和最终兼容清理继续开放。
+
+### Overview M3.4 正式发布与已验证分节预览（2026-10-22；源码、相关自动验证与唯一审查完成；未部署）
+
+- 候选实现 durable publication intent → formal `overview_results` + exact write receipt transaction，per-part 原文输入 descriptor/currentness、bounded verified preview、formal outline/section reads 与配对 scope reconnect query。新增 V37 migration 候选；未改 PC/Mobile/generated OpenAPI/SDK。
+- 另以允许 null 的 canonical list 修复 snapshot hash 中 SOURCE/SUBJECT shape 引发的 `List.of(null)` NPE，并补真实 snapshot 路径回归。PostgreSQL/backend/API artifact/package 与唯一 reviewer 相关门禁完成；首次 full run04 失败历史保留，相关失败组定向复验闭合，不声称 full suite 全绿。未部署、无真实 Provider/业务 DB/GUI 验收。剩余 M4–M6 与最终 unused-compatibility cleanup 仍 active。详情：[M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。
+
+### Overview M3.3 后台 job/control API（2026-10-22；源码、相关自动验证与唯一审查完成；未部署）
+
+- 实现 /api/ai/overview-jobs、私有 V36 job/invocation schema、DB claim/worker 控制、稳定 deadline、pause/resume/cancel/reconcile 与精确 reservation lineage。raw budget UUID 保持原预算身份；invocation 记录 Guard 稳定派生的真实 ledger task UUID；未知派发 usage 继续 fail-closed/hold。完整候选需按 owner 与输入身份重校验后读取，不自动写正式 OverviewResult/KB/Review。M3.4 正式发布与分节预览、PC UI 留待后续阶段。
+- 首次 full 752 tests / 724 passed / 19 failures / 9 errors；随后受影响的 67 个测试 61 passed / 1 failure / 5 errors，五组通过；最后 7 个失败/负向方法 7/7 通过，Maven native exit 0，外层 Docker runner exit 2 是 wrapper CRLF 退出参数问题。修复后没有第二次 full 全绿运行。-DskipTests package Maven/Docker exit 0，JAR SHA-256 efd0911f72c05c1ff8678706beab18daf9ada1a7638393300792c6000e85f234。运行态 OpenAPI/固定 7.13.0 双 SDK 与单方法 artifact compare 完成；PC type-check 通过，Mobile 两个既有 TS2339 保留。官方 OpenAPI 整脚本未运行。
+- 唯一 reviewer 最终 BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。源码、相关自动验证和审查完成；未部署，未使用真实 Provider/生产业务数据库，未完成 GUI、真实用户流程或内容质量验收。完整验证见 D:/Temp/auralis-overview-m33-background-20261019/run/m33-final-validation-20261022.md，review D:/Temp/auralis-overview-m33-background-20261019/reviewer-final-report.md，candidate evidence reconciled 目录保留 44 条 manifest 及原 before/gap。
+
+### Overview M3.2 私有执行 journal（2026-10-19；源码、相关验证与唯一审查完成；未部署）
+
+- Adaptive Source/Subject 正文写作新增私有版本化 plan/node/call journal，并将节点级精确 reservation 关联、owner/fence 接管与校验后原子 checkpoint 纳入实现。未新增公开 API 或 Provider/SDK shape。
+- 新增 V35 私有数据库迁移，不改变公开 API、Provider schema 或 SDK。后台 worker、public job/control API、暂停/继续 UI 和正式发布仍在后续阶段。
+- 相关 backend/PostgreSQL 用例与 replacement package 完成；唯一 reviewer BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。full backend 737/731P/2F/4E 首轮结果保留，修复后只重跑对应六项及新增 PG 方法 1/1；没有修复后的 full-suite 全绿证据。未部署、未调用真实 Provider/生产业务数据库或 GUI。当时 M3.3 worker/control 尚未交付；现见上方 2026-10-22 M3.3 结案条目。M3.4 正式发布与分节预览仍待后续。
+
+### Overview M3.1 分层目录规划（2026-10-19；源码、相关验证与唯一审查完成；未部署）
+
+- 源码在单次目录请求不适配时对轻量索引 metadata 作有限层级整理；plan alias 通过私有有序映射展开回原始 units，沿用原 writer 分组和 M2 来源快照。保留原文、已验证正文及全部现行容量/Guard/预算限制。
+- 相关验证和唯一 review 已完成。初始两类 batch 47/46P/1F，唯一失败方法后来单独 1/1 通过；没有第二次完整47项全绿。BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。不代表部署或真实 Provider、业务数据库、GUI、语义质量验收。
+
+### Overview M2 稳定身份与原文关联（2026-10-19；实现、相关验证与复审完成；未部署）
+
+- Server/PC 实现加入 server-owned outline node identity/content version 与 chunk-level source provenance。V34 仅追加两个可空 metadata 列，旧结果不回填；Provider 四字段 schema 不变。PG migration/transaction 回归通过（4/4），最终 OpenAPI 13/13，四个 nullable reference 的官方 schema/双 SDK 类型通过验证；package exit 0。
+- Backend full clean 首轮记录 723 tests/1F/4E/0S（718 pass）；失败测试类后续定向通过，但未重复完整套件。PC full R4 首轮为 737/709 pass/28 fail，2 项 M2 问题修复后 sync 文件 27/27，另 26 项非 M2 基线失败保留。Mobile 仍有既有两个 Event SDK 类型错误。唯一 reviewer B0/I0/O0；未部署，真实 Provider、业务数据库、GUI 与语义质量验收未完成。
+
+### 内容规模自适应总览 M1 核心链路（2026-10-19；源码、自动门禁与复审通过；未部署）
+
+- 新增默认关闭的内部开关；Source/Subject ALL、OUTLINE 候选路径读取选定 READY 原文，构建轻量索引，经单次有界目录规划后按节写作并在应用内装配；SUMMARY 沿用现行短摘要。`SourceChunkRepository` 有界读取合计最多 500 条 active raw rows（含空白），以 remaining+1 sentinel 在 identity/hash/provider 前拒绝超限。公开 DTO/API、DB schema、OpenAPI/SDK shape 不变。
+- 平台预算预检读取真实 TaskLease/Guard owner-fenced task snapshot，采用与 Guard admission 一致的 occupancy 规则；charged/reserved 与 audit count 分离，BYOK 不扣平台财务上限。
+- focused attempt4 为 7 suites/175 tests、full attempt6 为 122 suites/711 tests，均 0F/0E/0S；Maven/Docker exit 0。唯一 reviewer correction delta B0/I0/O0。Package JAR 93,205,090 bytes / SHA-256 `E9637F9615EC6B7EB445C36CE18E89F7ACC9948965067832A18DD12543E6305B`；synthetic Compose false/true render 均 exit 0 且值匹配。证据及 baseline-relative review 包：`D:/Temp/auralis-overview-adaptive-20261018/`。未部署；真实 Provider、生产/业务数据库、GUI 和内容质量未验收。M3.1 已完成分层 metadata 规划及范围内验证/复审，M3其余后台 job 与M4–M6仍未交付。
+
+### AI 用量来源与平台额度分离（2026-10-16；U1–U3 候选，统一验证待完成）
+
+- 每次 Provider reservation 保存用途和实际凭据来源。平台来源及历史未知来源参与平台任务/窗口限额；BYOK 保留真实 actual/unknown/charged/reserved 审计和共有运行保护，但不扣平台额度。`/api/ai/usage` 保留平台窗口字段并新增来源分区 all-call 摘要。
+- 新 operation policy 校验阶段、scope 方法与 Overview 输出角色；Overview BYOK 预检不再使用平台 24-call/524288-token 配额门槛。新增 V33 可空字段，不回填历史来源。统一测试、只读 review、迁移运行态与真实 Provider/GUI 验收待单独报告。
+
+### 离线 usage reader 分离 actual usage 与 shadow coverage（2026-10-16；定向测试通过，未部署）
+
+- JSON、分层 CSV 与 CLI 单独报告 ledger actual usage complete/unknown、missing shadow、matched shadow usage unknown 和歧义 join；`unknownUsageCount` 保留旧兼容语义。NULL actual 不回填，charged、错误统计、accuracy membership、INCOMPLETE 与 exit 2 不变。
+- 离线 46-ledger / 7-event 复算：actual complete 46/46、actual unknown 0、shadow missing 39、accuracy 7。此修正确认报告覆盖缺口，不代表实际成本下降或估算已校准。
+
+### RAG 长 chunk 证据片段选择（2026-10-16；定向验证通过，未部署）
+
+- 对定义/含义类问题，citation 与模型共享的原文片段现可在有界 chunk 范围内按 query 选择相关连续窗口；未匹配时沿用前缀。单片段上限保持 400 字符，检索过滤、TopK、Prompt/Gateway 预算和 API/数据库契约不变。
+- `AiRetrievalTests` 与 `PromptAssemblerTests` 定向 21/21 通过。真实 Provider、用户问答和 GUI 待验收。
+
+### PC 学科总览离线冲突刷新重入保护（2026-10-15；定向测试和类型检查通过，GUI 待验收）
+
+- SubjectWorkspace 仅对静默 Subject/LOCAL 自动解析，在初始化/刷新本地 Overview cache 前按用户、设备、Subject 与 revision 合并同一 in-flight 解析；FILE scope 和显式 LOCAL/REMOTE choice 继续走原解析调用。网络失败保留本地成果，guard 释放后既有后续触发可重试；404、鉴权与冲突语义未改。生产尾部 cache refresh 只在成功 resolve 后执行；测试中的失败尾部刷新是受控重入回调。
+- 同步与页面回归 43/43，Vue TypeScript 检查退出码 0。没有修改 API、数据库、后端、FILE Overview 生成或预算流程。真实断网恢复与 Tauri/桌面 GUI 尚未验收。
+
+### PC 文件登记上传弹窗进度生命周期与状态卡死修复（2026-10-15；已通过自动化测试与类型检查，GUI 待验收）
+
+- 修复文件上传时因提前虚假上报 100% 导致的“未成功已显示导入完成”以及失败时弹窗卡死停留在 100% 的问题。进度条改为真实按资产导入、资料源关联及刷新阶段平滑递进，全流程确认成功后方标记完成；发生异常时显式重置进度为 0 并反馈错误。
+- 自动化测试与类型检查已通过（`r4-register-file.test.mjs` 6/6，`vue-tsc -b` 0 报错）。
+
+### PC 学科大纲编排独立性保证（2026-10-15；已通过自动化测试与类型检查，GUI 待验收）
+
+- 在未生成涵盖全文件的学科总览时，编排/编辑学科大纲不再自动拷贝填充单文件或部分文件大纲，避免出现非预期的拼接内容；学科大纲编辑区默认以独立的「第一章 · 新建章节」供用户自主编写，同时保留下方各文件大纲的独立编辑卡片。
+- 自动化测试与类型检查已通过（`r4-subject-overview-ui.test.mjs` 17/17，`vue-tsc -b` 0 报错）。
+
+### AI 观测前置 Step 2：Compose shadow 开关、returned model metadata 与离线聚合工具（2026-10-15；full/package 与复审完成，未部署）
+
+- Compose 与 `.env.example` 显式透传影子估算开关；内部 Provider metadata 与 Gateway 安全事件区分请求模型和实际返回模型。新增标准库 Node 离线工具聚合受控日志与 reservation 投影；未改公开 API、数据库、估算准入或硬预算。
+- Provider/config/Gateway/security 定向 39/39、offline CLI 27/27，synthetic Compose true/false render 均 exit 0。D 盘冻结快照 full 为 116 suites / 674 tests / 0 failure/error/skip，Maven 与 launcher exit 0；package exit 0，artifact SHA-256 `723919B7517A21B7A1C458F8708B3E6BFDE1E70DCF2D3478A45BA2894204A236`，508 项 manifest 零差异。最终 reviewer B0/I0/O3，三项 OPTIONAL 保持未改。C 盘先前低于 3 GiB 门线及 runner 中断/失败尝试保留在[当前状态](../current/Status.md)与[attempt 4 报告](D:/Temp/auralis-ai-observability-step2-20261015/final/attempt3-pg-auth-fix/attempt4-report.md)；复审证据见[最终 review](D:/Temp/auralis-ai-observability-step2-20261015/review-report.md)。未部署、未调用真实 Provider、未采集生产 usage 或校准、未进行 GUI/业务验收。Overview 24 calls / 524288 tokens / 240 秒、Chat 2 calls 保持。
+
+### 四项历史门禁问题修正与统一后端验证（2026-10-15 回写；round4 于 2026-10-14 通过，未部署）
+
+- 将唯一 UTF-8 SHA-256 helper 移至 `knowledge`，Knowledge 与 Review 共用；模块依赖只保留 `review → knowledge`，哈希结果与业务事件/事务行为保持。
+- 修正 completion failure-count、Account deletion timestamp round-trip 和 embedding resume 测试前提；另修正 Overview 测试构造器选择，并在隔离 runner 补齐 synthetic TLS keystore。没有改变 retry / 配额生产策略、API、DTO、数据库 schema 或 migration。
+- 后端 clean test 115 suites / 666 tests、0 failure/error/skip；独立 package exit 0。四项复核为 B0/I0/O1；Provider、GUI、部署及业务验收仍单独待验证。详细证据见 [round4报告](D:/Temp/auralis-remaining-four-fix-20261014/final/round4/report.md)。
+
+### 两项既有后端测试门禁失败修正（2026-10-14；历史仅测试文件定向验证，后续 round4 full 已通过）
+
+- 测试迁移断言随现行schema更新到V32；Jackson namespace guard识别任意空白格式且只允许Jackson 3保留的annotation namespace；AI quality fixture改用Jackson 3 databind类型。
+- 三类初始定向验证11/11、exit 0；reviewer提出I1后只重跑Guard 2/2、exit 0并接受关闭，最终review B0/I0/O0。两次验证分别报告，不相加。
+- 原完整clean test仍是659 tests / 5 failures / 1 error / 4 skipped、exit 1，未重跑；仅本次对应的前两项定向关闭，其余4个baseline failure/error仍待处理。原4 skip另有隔离PG 4/4补跑证据，不改变full统计。无生产DTO、API、依赖、schema、配置变化，未部署。
+
+### AI 执行预算治理、Overview 有界恢复与 Chat 安全回放（2026-10-14；阶段0–3实现与定向验证记录，当时全量门禁未通过；后续 round4 已通过，未部署）
+
+- Guard 增加七类预算拒绝安全诊断；Gateway 增加按字符类别的 shadow estimator，版本标记 `char-category-v1-uncalibrated`。新增开关 `auralis.ai.shadow-token-estimate-enabled` / `AURALIS_AI_SHADOW_TOKEN_ESTIMATE_ENABLED`，默认 true，false 仅关闭影子日志。旧估算及真实预算、预留和上下文行为保持。
+- 有效 Provider/model 与 capability known/unknown 增加安全可观测；`deepseek-chat` 上下文仍 unknown，DeepSeek thinking disabled 仅用于 structured Overview wire 请求。新增合成 Chat 流程故障回放测试，不修改 Chat 生产实现。
+- 新增 `AURALIS_AI_OVERVIEW_OUTPUT_RECOVERY_ENABLED` / `auralis.ai.overview-output-recovery-enabled` 默认 true 配置，作为 Overview 新增 truncation split / JSON repair 的回退开关；false 保留既有 semantic/no-progress。latest Recovery + Overview 定向101/101及PG replay 1/1覆盖checkpoint复用、精确transition和重复REDUCE group的真实Gateway/Guard/SQL账本；Provider registry为合成响应。
+- 阶段0/1隔离定向62/62、Chat合成回放8/8。唯一只读review最终B0/I0/O0。profile-corrected full clean test 114 suites / 659 tests / 5 failures / 1 error / 4 skipped，实际exit 1；六项均由实际HEAD定向对照重现。独立 `package -DskipTests` BUILD SUCCESS、exit 0。整体门禁未通过，不能写成全量验收通过。
+- API DTO、数据库 schema 与 migration 未变；新增的有界恢复请求仍通过既有 Gateway/Guard 逐次计量，任务硬预算上限未提高。未部署、未迁移、未调用真实 Provider。模型清单核对、生产影子校准、GUI和业务验收仍待完成。完整命令和归因见 `D:/Temp/auralis-ai-governance-20261014/final/report.md`。
+
 ### Overview recovery checkpoint no-progress 修正（2026-10-13；尚未部署）
 
 - Recovery compaction 使用独立 full/partial purpose，避免重用历史普通 REDUCE 的同输入检查点。只有严格缩短输入的 fresh/cached 压缩结果可继续；fresh 无进展输出不保存，仍返回 `OVERVIEW_REDUCE_NO_PROGRESS`。
@@ -532,9 +777,7 @@
 - complete 返回 `ACCEPTED` 后，PC coordinator 现在按现行本地状态机依次持久化 `SERVER_INDEXING`、`READY`，不再直接跨越中间阶段；未修改迁移表或 scheduler 的 READY 后 cache cleanup 责任。
 - TDD 回归先用真实 `DocumentProcessingJobRepository` 复现 `DOCUMENT_JOB_ILLEGAL_TRANSITION`，修复后 ParsedDocument upload 15/15、processing flow 1/1、job schema 16/16、source scheduler 27/27、完整 `npm.cmd run test:r4-pc` 251/251、`npm.cmd run type-check` 与 `git diff --check` 通过。真实 Tauri/Server/MinIO 与 GUI 仍待验收。
 
-更新时间：2026-10-11
 
-文档状态：现行历史记录
 
 ### PC ParsedDocument schema-v1 打包与兼容恢复（2026-09-08）
 
@@ -996,9 +1239,7 @@
 - 用户 BYOK 仍优先于 env 默认，API Key 仅在服务端运行时使用；不写入 `ai_credentials`，也不返回前端。
 - 新增配置绑定、env fallback、默认 Provider 流式回归测试；真实 Provider 网络与 PC 浏览器联调仍未验收。
 
-权威范围：已发生且可确认的产品、代码、文档和验证变化
 
-事实来源：Git 提交、本轮实际验证记录与重构前快照
 
 ## Unreleased
 
@@ -1285,3 +1526,42 @@
 
 - Issue 3/4 final review：同步错误在完整成功前持续可见，Sync/Chat/AI SSE 改用安全错误 code 与可行动文案；Overview skip 不再污染 FAILED 状态，Subject late provider response 增加 generation/abort/fingerprint fence。
 - 新增 PC 运行时回归覆盖同步错误清除边界、安全错误映射、SSE、聊天 retry 请求 ID、Subject 无输入与 revision late-result；`test:r4-pc` 374/374，type-check 通过。
+# 2026-10-16
+
+
+
+### Overview M5.5 严格 descriptor 正文复用（2026-10-23）
+
+- 增加私有 global routing fingerprint 与新的 adaptive algorithm identity；只接受完整 writer descriptor JSON/SHA 完全相同的跨 input donor，并沿用 M5.4 same-input 优先及 reservation、checkpoint、来源、coverage 等围栏。无 public API、DB column 或前端改动，无旧数据迁移。
+- 定向验证分批通过：Coordinator 26/26 + Adaptive 30/30（56/56，exit 0）；后续 Service acceptance 2/2（exit 0），覆盖组内正文修订与全局 goal 变化两种关键路由情形。未执行合并后的 58-case 全批；唯一只读 reviewer B0/I0/O0。此变更不代表完整 M5 完成。
+
+
+
+### Overview generation cleanup 与 takeover 安全互斥（2026-10-23；未部署）
+
+- Coordinator cleanup 限于非 ACTIVE generation 的过期 SUCCESS result 和至少 14 天的 checkpoint，以确定性、至多 100 个父行的 FOR UPDATE SKIP LOCKED 批次避开并发 takeover。保留 request/budget/execution lineage 和 usage reservation；无 schema/API/config/frontend 变化。
+- 验证分批：Coordinator+Adaptive 统一 62 项批次为 61 passed / 1 race fixture error（exit 1）；affected-only 修复复验 1/1（exit 0）。不是 62/62 全绿。H2 双事务场景通过，PostgreSQL integration 未运行。唯一 reviewer B0/I0/O0。
+
+### Overview M5 完整复用与生命周期收尾（2026-10-23；未部署）
+
+- 完成索引、batch、规划及 writer node 的跨任务复用，并增加 V38 singleton cache admission guard；standalone SUCCESS result/checkpoint cache 默认容量为 256 MiB / 1000 generations。Source/Subject revocation 会 fence 旧任务并清除私有 raw-derived copies；completed-job private payload 按 14 天有界 cleanup，账号删除覆盖 Overview 数据清理并保留已结算 usage evidence。无 public API/SDK wire-shape 变化；新增 V38 migration 与 cache 容量配置。
+- 自动验证按独立批次记录：有效 PostgreSQL 17.11 backend full 805 tests / 799 passed / 1 V33 migration fixture failure / 0 errors / 5 skipped；更新 fixture 到 V38 后 affected method 1/1 通过，五项原 skipped usage-guard lock tests 另批 5/5 通过。没有重跑 full，不称 805/805 全绿。最终 -DskipTests package exit 0；唯一 reviewer B0/I0/O0。未部署或完成真实 Provider/GUI/内容质量验收。
+
+
+
+### 2026-10-23 总览阶段校验与本机预算收尾
+
+- 主 Agent 直接修复：索引、元数据、目录和正文的阶段覆盖/形状校验在通用调用保存检查点前执行，恢复读取执行相同校验；正文内部顶层冗余 summary 规范化为空，最终目录摘要保留。目录请求校验别名收窄到实际 unit aliases。
+- 预算拒绝日志增加阶段、资源、required/remaining；Overview MAP/REDUCE 与总任务共用 overviewMaxCalls，本机 trace overlay 临时设为64，默认24、Token预算524288及历史账本不变。
+- 主 Agent 定向验证 OverviewAdaptiveGenerationTests + AiOperationPolicyTests：44/44，0失败/错误/跳过。此前两轮分别发现目录别名集合过宽、异常包装改变既有错误消息，均修复。证据 D:/Temp/auralis-pipeline-fix-20261023/tests-final.log。未调用真实 Provider；完整业务验收待重试。
+- 既有不合格检查点会被拒绝，不自动删除；本轮没有增加全新任务预算入口，也未重置用量。当前仅修复新结果写入前的校验边界及恢复校验。
+
+### 2026-10-23 Overview 预算路径第一批修正
+
+- 修复证据：两个实际 run 的索引原文相同，但 Map.of 材料字段顺序在进程重启后不同，使精确提示词 checkpoint 指纹变化。索引及正文材料改为 TreeMap 固定字段顺序；旧不同文本指纹不作兼容匹配，新请求稳定后可按原规则复用。
+- Writer preflight 不再将全部最大预留的总和作为硬拒绝条件；总和以 aggregateUpperBound 记录，先检查最大单请求预留能否装入当前余额，逐次派发仍由 Guard 原子预留并按实际 usage 结算。余额不足仍会中途停止，已有 verified checkpoint 保留，不保证整篇一定完成。
+- Adaptive 单次预算评估改读持久化 task charged + reserved，包含历史尝试，避免日志把本轮余额当累计余额。新增日志包含 uncachedWriters、aggregateUpperBound、largestRequestReserve、charged、reserved、remaining。
+- 定向 OverviewAdaptiveGenerationTests、OverviewBudgetIntegrationTests 共50/50通过（exit0），证据 D:/Temp/auralis-budget-path-20261023/tests.log；未运行全量、真实Provider或GUI。输入估算校准、动态输出预算、明确的预算暂停/恢复状态与用户可读预计成本仍待实现，本条不表示完整优化路线交付。
+# 2026-10-25 源码候选
+
+- Adaptive GUIDE 的完整与紧凑提示词按现有输入 token 估算、输出预留、已知模型上下文和平台任务余额选择。有效 checkpoint 在新调用预算筛选前复用；仅 GUIDE 越过通用 prompt 字符门限。其它 stage、Gateway 计量、固定调用/任务配额、输出预留和 BYOK 策略不变。GUIDE focused cases 3/3 通过；唯一只读 review BLOCKER 0 / IMPORTANT 0。未部署、未调用真实 Provider。

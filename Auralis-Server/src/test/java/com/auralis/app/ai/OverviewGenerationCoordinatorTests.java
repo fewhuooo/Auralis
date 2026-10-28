@@ -3,6 +3,7 @@ package com.auralis.app.ai;
 import com.auralis.app.ai.usage.AiProviderUsage;
 import com.auralis.app.ai.usage.AiUsageLimitException;
 import com.auralis.app.ai.usage.OverviewTaskUsageSummary;
+import com.auralis.app.shared.config.AuralisProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Connection;
 import java.time.Clock;
@@ -23,6 +25,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,9 +48,18 @@ class OverviewGenerationCoordinatorTests {
                 "jdbc:h2:mem:" + databaseName + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1", "sa", "");
         jdbc = new JdbcTemplate(dataSource);
         jdbc.execute("create table users (id UUID primary key, status varchar(16) not null default 'ACTIVE')");
+        jdbc.execute("create table ai_usage_reservations (id UUID primary key, user_id UUID, request_dispatched BOOLEAN not null default false)");
         try (Connection connection = dataSource.getConnection()) {
             ScriptUtils.executeSqlScript(connection,
                     new ClassPathResource("db/migration/V32__overview_private_generations.sql"));
+            ScriptUtils.executeSqlScript(connection,
+                    new ClassPathResource("db/migration/V35__overview_execution_journal.sql"));
+            ScriptUtils.executeSqlScript(connection,
+                    new ClassPathResource("db/migration/V36__overview_background_jobs.sql"));
+            ScriptUtils.executeSqlScript(connection,
+                    new ClassPathResource("db/migration/V38__overview_reusable_cache_capacity_guard.sql"));
+            ScriptUtils.executeSqlScript(connection,
+                    new ClassPathResource("db/migration/V41__overview_retry_lineage.sql"));
         }
         userId = UUID.randomUUID();
         subjectId = UUID.randomUUID();
@@ -59,6 +73,17 @@ class OverviewGenerationCoordinatorTests {
     @AfterEach
     void tearDown() {
         if (heartbeat != null) heartbeat.shutdownNow();
+    }
+
+    @Test
+    void acceptsAdaptiveIndexCoverageRepairRecoveryAction() {
+        var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        String action = "ADAPTIVE_INDEX_COVERAGE_REPAIR_0123456789ABCDEF";
+
+        assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 1, List.of(action)))
+                .isTrue();
+        assertThat(jdbc.queryForObject("select recovery_actions_json from overview_generations where id=?",
+                String.class, owner.generationId())).contains(action);
     }
 
     @Test
@@ -83,6 +108,357 @@ class OverviewGenerationCoordinatorTests {
         assertThat(fresh.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
         assertThat(fresh.generationId()).isNotEqualTo(owner.generationId());
         assertThat(fresh.budgetTaskId()).isNotEqualTo(owner.budgetTaskId());
+    }
+
+    @Test
+    void directAcquireCreatesNewAttemptAfterFailedGenerationAndKeepsMappedFailureTerminal() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        assertThat(coordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
+
+        var directReplay = coordinator.acquireDirect(parentRequest);
+        assertThat(directReplay.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
+        assertThat(directReplay.generationId()).isEqualTo(parent.generationId());
+
+        var freshRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var fresh = coordinator.acquireDirect(freshRequest);
+        assertThat(fresh.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(fresh.generationId()).isNotEqualTo(parent.generationId());
+        assertThat(fresh.budgetTaskId()).isNotEqualTo(parent.budgetTaskId());
+        assertThat(jdbc.queryForObject("select error_code from overview_generations where id=?", String.class,
+                parent.generationId())).isEqualTo("MODEL_PROVIDER_ERROR");
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
+                UUID.class, fresh.generationId())).isNull();
+    }
+
+    @Test
+    void directAcquireExpiresOldOwnerAndFencesLateBusinessResult() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        jdbc.update("update overview_generations set lease_until=? where id=?",
+                OffsetDateTime.now(ZoneId.of("UTC")).minusSeconds(2), parent.generationId());
+
+        var fresh = coordinator.acquireDirect(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+
+        assertThat(fresh.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(fresh.generationId()).isNotEqualTo(parent.generationId());
+        assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
+                parent.generationId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("select owner_id from overview_generations where id=?", UUID.class,
+                parent.generationId())).isNull();
+        assertThat(jdbc.queryForObject("select lease_until from overview_generations where id=?", OffsetDateTime.class,
+                parent.generationId())).isNull();
+        assertThat(jdbc.queryForObject("select fence from overview_generations where id=?", Long.class,
+                parent.generationId())).isEqualTo(parent.lease().fence() + 1);
+        assertThat(coordinator.complete(parent.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isFalse();
+    }
+
+    @Test
+    void explicitDirectRetryInterruptsParentAndOnlyCreatesOneChild() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        var childRequest = retryRequest(UUID.randomUUID(), parentRequest.requestId(), HASH_A, HASH_B, HASH_C);
+
+        var child = coordinator.acquireDirect(childRequest);
+        var duplicate = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), parentRequest.requestId(),
+                HASH_A, HASH_B, HASH_C));
+
+        assertThat(child.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(child.generationId()).isNotEqualTo(parent.generationId());
+        assertThat(child.budgetTaskId()).isNotEqualTo(parent.budgetTaskId());
+        assertThat(duplicate.generationId()).isEqualTo(child.generationId());
+        assertThat(duplicate.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.WAITER);
+        assertThatThrownBy(() -> coordinator.acquireDirect(request(childRequest.requestId(), HASH_A, HASH_B, HASH_C)))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations where retry_of_generation_id=?",
+                Integer.class, parent.generationId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select retry_of_request_id from overview_generation_requests where user_id=? and request_id=?",
+                UUID.class, userId, childRequest.requestId())).isEqualTo(parentRequest.requestId());
+        assertThat(jdbc.queryForObject("select input_fingerprint from overview_generations where id=?",
+                String.class, child.generationId())).isEqualTo(HASH_A);
+        assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
+                parent.generationId())).isEqualTo("FAILED");
+        assertThat(coordinator.complete(parent.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isFalse();
+
+        assertThat(coordinator.fail(child.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
+        assertThat(coordinator.acquireDirect(childRequest).state())
+                .isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
+        var duplicateAfterFailure = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), parentRequest.requestId(),
+                HASH_A, HASH_B, HASH_C));
+        assertThat(duplicateAfterFailure.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.FAILED);
+        assertThat(duplicateAfterFailure.generationId()).isEqualTo(child.generationId());
+    }
+
+    @Test
+    void concurrentDifferentRequestIdsForSameRetryParentConvergeOnOneChild() throws Exception {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        var firstRequest = retryRequest(UUID.randomUUID(), parentRequest.requestId(), HASH_A, HASH_B, HASH_C);
+        var secondRequest = retryRequest(UUID.randomUUID(), parentRequest.requestId(), HASH_A, HASH_B, HASH_C);
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<OverviewGenerationCoordinator.Acquisition> first = executor.submit(() -> {
+                start.await();
+                return coordinator.acquireDirect(firstRequest);
+            });
+            Future<OverviewGenerationCoordinator.Acquisition> second = executor.submit(() -> {
+                start.await();
+                return coordinator.acquireDirect(secondRequest);
+            });
+            start.countDown();
+            var firstResult = first.get(5, TimeUnit.SECONDS);
+            var secondResult = second.get(5, TimeUnit.SECONDS);
+
+            assertThat(firstResult.generationId()).isEqualTo(secondResult.generationId());
+            assertThat(List.of(firstResult.state(), secondResult.state()))
+                    .containsExactlyInAnyOrder(OverviewGenerationCoordinator.AcquisitionState.OWNER,
+                            OverviewGenerationCoordinator.AcquisitionState.WAITER);
+            assertThat(jdbc.queryForObject("select count(*) from overview_generations where retry_of_generation_id=?",
+                    Integer.class, parent.generationId())).isEqualTo(1);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void changedIdentityAfterExistingRetryChildStartsIndependentDirectGeneration() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        var child = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), parentRequest.requestId(),
+                HASH_A, HASH_B, HASH_C));
+        var changed = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), parentRequest.requestId(),
+                HASH_D, HASH_B, HASH_C));
+
+        assertThat(changed.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(changed.generationId()).isNotEqualTo(child.generationId());
+        assertThat(changed.generationId()).isNotEqualTo(parent.generationId());
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
+                UUID.class, changed.generationId())).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations where retry_of_generation_id=?",
+                Integer.class, parent.generationId())).isEqualTo(1);
+    }
+
+    @Test
+    void profileChangeStartsIndependentDirectGenerationWithoutChangingContentIdentity() {
+        var original = coordinator.acquireDirect(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        var changedProfile = coordinator.acquireDirect(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_D));
+
+        assertThat(changedProfile.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(changedProfile.generationId()).isNotEqualTo(original.generationId());
+        assertThat(changedProfile.budgetTaskId()).isNotEqualTo(original.budgetTaskId());
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations where status='ACTIVE' and input_fingerprint=?",
+                Integer.class, HASH_A)).isEqualTo(2);
+    }
+
+    @Test
+    void unresolvedOrForeignRetryRequestIdDoesNotAccessAnotherGeneration() {
+        UUID missing = UUID.randomUUID();
+        var missingTarget = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), missing,
+                HASH_A, HASH_B, HASH_C));
+        assertThat(missingTarget.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
+                UUID.class, missingTarget.generationId())).isNull();
+
+        UUID otherUser = UUID.randomUUID();
+        jdbc.update("insert into users(id,status) values (?, 'ACTIVE')", otherUser);
+        var foreignRequest = request(otherUser, UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var foreignGeneration = coordinator.acquire(foreignRequest);
+        var localRequest = retryRequest(UUID.randomUUID(), foreignRequest.requestId(), HASH_A, HASH_B, HASH_C);
+        var localGeneration = coordinator.acquireDirect(localRequest);
+        assertThat(localGeneration.generationId()).isNotEqualTo(foreignGeneration.generationId());
+        assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
+                foreignGeneration.generationId())).isEqualTo("ACTIVE");
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
+                UUID.class, localGeneration.generationId())).isNull();
+    }
+
+    @Test
+    void retryTargetInAnotherScopeIsRejectedBeforeParentIsFenced() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        UUID otherSubject = UUID.randomUUID();
+        var wrongScope = new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SUBJECT", otherSubject,
+                null, HASH_A, HASH_B, HASH_C, "overview-v1", List.of(), parentRequest.requestId());
+
+        assertThatThrownBy(() -> coordinator.acquireDirect(wrongScope))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+        assertThat(coordinator.owns(parent.lease())).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations where retry_of_generation_id=?",
+                Integer.class, parent.generationId())).isZero();
+    }
+
+    @Test
+    void retryChainReusesVerifiedIndexCheckpointFromOlderAncestor() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        String step = "step_" + HASH_D;
+        coordinator.saveCheckpoint(parent.lease(), step, HASH_A, HASH_C, "overview-v1", 1, "{\"valid\":true}");
+        assertThat(coordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
+
+        var childRequest = retryRequest(UUID.randomUUID(), parentRequest.requestId(), HASH_A, HASH_B, HASH_C);
+        var child = coordinator.acquireDirect(childRequest);
+        assertThat(coordinator.fail(child.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
+        var grandchild = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), childRequest.requestId(),
+                HASH_A, HASH_B, HASH_C));
+        assertThat(jdbc.queryForObject("select retry_of_generation_id from overview_generations where id=?",
+                UUID.class, grandchild.generationId())).isEqualTo(child.generationId());
+        assertThat(coordinator.findReusableIndexCheckpoint(grandchild.lease(), step, 1).payloadJson())
+                .isEqualTo("{\"valid\":true}");
+    }
+
+    @Test
+    void directRetryReusesVerifiedWriterFromFailedParentWithUnassembledPlan() {
+        var parentRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var parent = coordinator.acquire(parentRequest);
+        String step = "step_" + HASH_A;
+        String descriptor = "{\"checkpointStep\":\"" + step + "\",\"globalRoutingFingerprint\":\"route-a\"}";
+        String payload = "{\"writer\":\"verified\"}";
+        coordinator.saveCheckpoint(parent.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
+        addVerifiedWriterNode(parent.lease(), step, payload, true, descriptor);
+        jdbc.update("update overview_execution_plans set state='WRITING' where generation_id=?", parent.generationId());
+        assertThat(coordinator.fail(parent.lease(), "MODEL_PROVIDER_ERROR", usage(), 0, List.of())).isTrue();
+
+        var child = coordinator.acquireDirect(retryRequest(UUID.randomUUID(), parentRequest.requestId(),
+                HASH_A, HASH_B, HASH_C));
+        var reusable = coordinator.findReusableAdaptiveWriterCheckpoint(child.lease(), step, 1, descriptor, false);
+
+        assertThat(reusable).isNotNull();
+        assertThat(reusable.checkpoint().payloadJson()).isEqualTo(payload);
+        assertThat(reusable.donorGenerationId()).isEqualTo(parent.generationId());
+    }
+
+    @Test
+    void waiterSupportsVeryLargeDurationsWithoutNanoDeadlineOverflow() {
+        var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        var waiter = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+
+        var awaited = coordinator.await(waiter, Duration.ofMillis(Long.MAX_VALUE), () -> false);
+
+        assertThat(awaited.status()).isEqualTo("SUCCESS");
+        assertThat(awaited.resultJson()).isEqualTo("{\"schemaVersion\":1}");
+    }
+
+    @Test
+    void reusableCacheCapacityUsesUtf8BytesAndKeepsSuccessMetadataWhenCurrentPayloadIsOversized() {
+        OverviewGenerationCoordinator limited = capacityCoordinator(9, 1);
+        var original = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var owner = limited.acquire(original);
+        String payload = "{\"v\":\"汉\"}";
+        assertThat(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8).length).isGreaterThan(9);
+
+        assertThat(limited.complete(owner.lease(), payload, usage(), 0, List.of())).isTrue();
+        assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
+                owner.generationId())).isEqualTo("SUCCESS");
+        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
+                owner.generationId())).isNull();
+        assertThatThrownBy(() -> limited.acquire(original))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+    }
+
+    @Test
+    void reusableCacheEvictsOldestResultAndCheckpointsTogetherAtGenerationLimit() {
+        OverviewGenerationCoordinator limited = capacityCoordinator(128, 1);
+        var firstRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var first = limited.acquire(firstRequest);
+        limited.saveCheckpoint(first.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1, "{\"value\":\"一\"}");
+        assertThat(limited.complete(first.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+
+        var second = limited.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        assertThat(limited.complete(second.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+
+        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
+                first.generationId())).isNull();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
+                Integer.class, first.generationId())).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations g where g.status='SUCCESS' and "
+                        + "(g.result_json is not null or exists (select 1 from overview_generation_checkpoints c where c.generation_id=g.id))",
+                Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void reusableCacheAdmissionSkipsLockedOldestVictimAndRejectsOnlyNewPayload() throws Exception {
+        OverviewGenerationCoordinator limited = capacityCoordinator(128, 1);
+        var first = limited.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(limited.complete(first.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+        CountDownLatch locked = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> holder = executor.submit(() -> new org.springframework.transaction.support.TransactionTemplate(transactionManager)
+                    .executeWithoutResult(tx -> {
+                        jdbc.query("select id from overview_generations where id=? for update",
+                                (org.springframework.jdbc.core.ResultSetExtractor<Boolean>) rs -> rs.next(), first.generationId());
+                        locked.countDown();
+                        try {
+                            if (!release.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("lock release timed out");
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException(interrupted);
+                        }
+                    }));
+            assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
+            var second = limited.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+            assertThat(limited.complete(second.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+            assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
+                    second.generationId())).isNull();
+            assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
+                    first.generationId())).isNotNull();
+            release.countDown();
+            holder.get(10, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentCacheAdmissionsSerializeAcrossCoordinatorInstances() throws Exception {
+        OverviewGenerationCoordinator limited = capacityCoordinator(128, 1);
+        var first = limited.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        var second = limited.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<Boolean> a = executor.submit(() -> { start.await(); return limited.complete(first.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of()); });
+            OverviewGenerationCoordinator other = new OverviewGenerationCoordinator(jdbc, transactionManager,
+                    Clock.systemUTC(), 1_000, 100, heartbeat, 128, 1);
+            Future<Boolean> b = executor.submit(() -> { start.await(); return other.complete(second.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of()); });
+            start.countDown();
+            assertThat(a.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(b.get(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("select count(*) from overview_generations g where g.status='SUCCESS' and "
+                        + "(g.result_json is not null or exists (select 1 from overview_generation_checkpoints c where c.generation_id=g.id))",
+                Integer.class)).isLessThanOrEqualTo(1);
+    }
+
+    @Test
+    void revokedRequestMappingCannotResumeAfterResourceRestoreButFreshRequestCanRun() {
+        var original = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var owner = coordinator.acquire(original);
+        jdbc.update("update overview_generations set status='FAILED',active_fingerprint=null,owner_id=null,"
+                        + "fence=fence+1,lease_until=null,error_code='OVERVIEW_SOURCE_REVOKED',"
+                        + "error_status=null,error_retry_after_seconds=null,error_reset_at=null,"
+                        + "result_json=null,result_sha256=null,result_expires_at=null where id=?",
+                owner.generationId());
+
+        assertThatThrownBy(() -> coordinator.acquire(original))
+                .isInstanceOf(DomainException.class)
+                .extracting(error -> ((DomainException) error).code())
+                .isEqualTo("RESOURCE_VERSION_CONFLICT");
+        var fresh = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(fresh.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
+        assertThat(fresh.generationId()).isNotEqualTo(owner.generationId());
     }
 
     @Test
@@ -227,7 +603,7 @@ class OverviewGenerationCoordinatorTests {
     }
 
     @Test
-    void cleanupDropsAbandonedExpiredActiveCheckpointButRetainsBudgetLineage() {
+    void cleanupRetainsCheckpointForActiveGenerationEvenAfterLeaseExpiredBeyondRetention() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
         var original = coordinator.acquire(originalRequest);
         coordinator.saveCheckpoint(original.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
@@ -235,7 +611,7 @@ class OverviewGenerationCoordinatorTests {
         jdbc.update("update overview_generations set lease_until=?,updated_at=? where id=?",
                 OffsetDateTime.now().minusDays(15), OffsetDateTime.now().minusDays(15), original.generationId());
 
-        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
+        assertThat(coordinator.cleanupExpiredPayloads()).isZero();
         assertThat(jdbc.queryForObject("select count(*) from overview_generations where id=?", Integer.class,
                 original.generationId())).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from overview_generation_requests where generation_id=?",
@@ -245,7 +621,9 @@ class OverviewGenerationCoordinatorTests {
         assertThat(takeover.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
         assertThat(takeover.generationId()).isEqualTo(original.generationId());
         assertThat(takeover.budgetTaskId()).isEqualTo(original.budgetTaskId());
-        assertThat(coordinator.loadCheckpoint(takeover.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1)).isNull();
+        assertThat(coordinator.loadCheckpoint(takeover.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1))
+                .isNotNull().extracting(OverviewGenerationCoordinator.Checkpoint::payloadJson)
+                .isEqualTo("{\"schemaVersion\":1,\"title\":\"private map\"}");
     }
 
     @Test
@@ -254,12 +632,18 @@ class OverviewGenerationCoordinatorTests {
         var original = coordinator.acquire(originalRequest);
         coordinator.saveCheckpoint(original.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
                 "{\"schemaVersion\":1,\"title\":\"private map\"}");
+        coordinator.saveCheckpoint(original.lease(), "MAP:2", HASH_A, HASH_C, "overview-v1", 1,
+                "{\"schemaVersion\":1,\"title\":\"new private map\"}");
         var failedUsage = new OverviewTaskUsageSummary(120, 300, null, null, 420, 2, 0, false);
         assertThat(coordinator.fail(original.lease(), "MODEL_TIMEOUT", failedUsage, 1, List.of("REPACK"))).isTrue();
-        jdbc.update("update overview_generations set updated_at=? where id=?",
-                OffsetDateTime.now().minusDays(15), original.generationId());
+        jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=? and step_key=?",
+                OffsetDateTime.now().minusDays(15), original.generationId(), "MAP:1");
 
         assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
+                Integer.class, original.generationId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select step_key from overview_generation_checkpoints where generation_id=?",
+                String.class, original.generationId())).isEqualTo("MAP:2");
         assertThat(jdbc.queryForObject("select budget_task_id from overview_generations where id=?", UUID.class,
                 original.generationId())).isEqualTo(original.budgetTaskId());
         assertThat(jdbc.queryForObject("select charged_tokens from overview_generations where id=?", Long.class,
@@ -271,6 +655,140 @@ class OverviewGenerationCoordinatorTests {
         assertThat(retry.generationId()).isEqualTo(original.generationId());
         assertThat(retry.budgetTaskId()).isEqualTo(original.budgetTaskId());
         assertThat(coordinator.loadCheckpoint(retry.lease(), "MAP:1", HASH_A, HASH_D, "overview-v1", 1)).isNull();
+    }
+
+    @Test
+    void cleanupExpiresResultAndOldCheckpointIndependentlyWhileKeepingExecutionAndBudgetLineage() {
+        var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
+        var owner = coordinator.acquire(originalRequest);
+        coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
+                "{\"schemaVersion\":1,\"title\":\"private map\"}");
+        assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+        jdbc.update("update overview_generations set result_expires_at=? where id=?",
+                Instant.now().minusSeconds(1), owner.generationId());
+
+        UUID planId = UUID.randomUUID();
+        UUID nodeId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        jdbc.update("insert into ai_usage_reservations(id,user_id,request_dispatched) values (?,?,true)",
+                reservationId, userId);
+        jdbc.update("insert into overview_execution_plans(id,generation_id,input_fingerprint,profile_fingerprint,"
+                        + "algorithm_version,plan_fingerprint,mode,state,payload_json) values (?,?,?,?,?,?,?,?,?)",
+                planId, owner.generationId(), HASH_A, HASH_B, "algorithm-v1", HASH_C, "ALL", "ASSEMBLED", "{}");
+        jdbc.update("insert into overview_execution_nodes(id,plan_id,generation_id,node_ordinal,descriptor_json,"
+                        + "descriptor_sha256,checkpoint_step,state,attempt,checkpoint_sha256) values (?,?,?,?,?,?,?,?,?,?)",
+                nodeId, planId, owner.generationId(), 0, "{}", HASH_A, "MAP:1", "VERIFIED", 1, HASH_C);
+        jdbc.update("insert into overview_execution_calls(id,generation_id,plan_id,node_id,attempt,reservation_id,"
+                        + "task_id,user_id,operation_kind) values (?,?,?,?,?,?,?,?,?)",
+                UUID.randomUUID(), owner.generationId(), planId, nodeId, 1, reservationId, owner.budgetTaskId(),
+                userId, "SUBJECT_OVERVIEW");
+
+        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
+                owner.generationId())).isNull();
+        assertThat(jdbc.queryForObject("select result_sha256 from overview_generations where id=?", String.class,
+                owner.generationId())).isNull();
+        assertThat(jdbc.queryForObject("select status from overview_generations where id=?", String.class,
+                owner.generationId())).isEqualTo("SUCCESS");
+        assertThat(jdbc.queryForObject("select budget_task_id from overview_generations where id=?", UUID.class,
+                owner.generationId())).isEqualTo(owner.budgetTaskId());
+        assertThat(jdbc.queryForObject("select charged_tokens from overview_generations where id=?", Long.class,
+                owner.generationId())).isEqualTo(usage().chargedTokens());
+        assertThat(jdbc.queryForObject("select generation_id from overview_generation_requests where user_id=? and request_id=?",
+                UUID.class, userId, originalRequest.requestId())).isEqualTo(owner.generationId());
+        assertThat(jdbc.queryForObject("select request_dispatched from ai_usage_reservations where id=?",
+                Boolean.class, reservationId)).isTrue();
+        assertThat(jdbc.queryForObject("select count(*) from overview_execution_plans where id=?", Integer.class,
+                planId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from overview_execution_nodes where id=?", Integer.class,
+                nodeId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from overview_execution_calls where reservation_id=?",
+                Integer.class, reservationId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
+                Integer.class, owner.generationId())).isEqualTo(1);
+        assertThat(coordinator.cleanupExpiredPayloads()).isZero();
+    }
+
+    @Test
+    void cleanupIsBoundedToOneHundredGenerationsPerBatchAndIdempotent() {
+        for (int index = 0; index < 101; index++) {
+            String distinctInput = String.format("%064x", index + 1);
+            var owner = coordinator.acquire(request(UUID.randomUUID(), distinctInput, HASH_B, HASH_C));
+            coordinator.saveCheckpoint(owner.lease(), "MAP:" + index, HASH_A, HASH_C, "overview-v1", 1,
+                    "{\"schemaVersion\":1}");
+            assertThat(coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usageSummary(), 0, List.of())).isTrue();
+            jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
+                    OffsetDateTime.now().minusDays(15), owner.generationId());
+        }
+
+        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(100);
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints", Integer.class)).isEqualTo(1);
+        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints", Integer.class)).isZero();
+        assertThat(coordinator.cleanupExpiredPayloads()).isZero();
+    }
+
+    @Test
+    void cleanupDeletesExpiredCheckpointWithoutClearingUnexpiredSuccessResult() {
+        var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
+                "{\"schemaVersion\":1}");
+        assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+        jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
+                OffsetDateTime.now().minusDays(15), owner.generationId());
+
+        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("select result_json from overview_generations where id=?", String.class,
+                owner.generationId())).isEqualTo("{\"schemaVersion\":1}");
+        assertThat(jdbc.queryForObject("select result_sha256 from overview_generations where id=?", String.class,
+                owner.generationId())).isNotNull();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
+                Integer.class, owner.generationId())).isZero();
+    }
+
+    @Test
+    void cleanupSkipsLockedGenerationThatIsBeingRecovered() throws Exception {
+        var owner = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C, "overview-v1", 1,
+                "{\"schemaVersion\":1}");
+        assertThat(coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usageSummary(), 0, List.of())).isTrue();
+        heartbeat.shutdownNow();
+
+        CountDownLatch recoveredAndLocked = new CountDownLatch(1);
+        CountDownLatch allowCommit = new CountDownLatch(1);
+        var executor = Executors.newSingleThreadExecutor();
+        try {
+            Future<?> recovery = executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(tx -> {
+                jdbc.query("select id from overview_generations where id=? for update",
+                        (org.springframework.jdbc.core.ResultSetExtractor<Boolean>) rs -> rs.next(), owner.generationId());
+                jdbc.update("update overview_generations set status='ACTIVE',active_fingerprint=?,owner_id=?,"
+                                + "fence=fence+1,lease_until=? "
+                                + "where id=?",
+                        HASH_D, UUID.randomUUID(), OffsetDateTime.now().plusMinutes(5), owner.generationId());
+                recoveredAndLocked.countDown();
+                try {
+                    if (!allowCommit.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("Timed out waiting to commit recovered generation");
+                    }
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Recovery transaction interrupted", interrupted);
+                }
+            }));
+            boolean lockAcquired = recoveredAndLocked.await(10, TimeUnit.SECONDS);
+            if (!lockAcquired) recovery.get(1, TimeUnit.SECONDS);
+            assertThat(lockAcquired).isTrue();
+            assertThat(coordinator.cleanupExpiredPayloads()).isZero();
+            allowCommit.countDown();
+            recovery.get(10, TimeUnit.SECONDS);
+        } finally {
+            allowCommit.countDown();
+            executor.shutdownNow();
+        }
+
+        assertThat(coordinator.cleanupExpiredPayloads()).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from overview_generation_checkpoints where generation_id=?",
+                Integer.class, owner.generationId())).isEqualTo(1);
     }
 
     @Test
@@ -434,26 +952,33 @@ class OverviewGenerationCoordinatorTests {
     }
 
     @Test
-    void limitsPrivatePayloadAndRecoveryMetadataAndExpiresPayloadWithoutDeletingLineage() {
+    void appliesConfiguredPrivatePayloadCapAndKeepsRecoveryMetadataAndExpiryBehavior() {
         var originalRequest = request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C);
-        var owner = coordinator.acquire(originalRequest);
-        assertThatThrownBy(() -> coordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C,
-                "overview-v1", 1, "x".repeat(OverviewGenerationCoordinator.MAX_PAYLOAD_CHARS + 1)))
+        var limitedCoordinator = new OverviewGenerationCoordinator(jdbc, transactionManager,
+                Clock.systemUTC(), 1_000, 100, heartbeat, 268_435_456L, 1_000,
+                new AuralisProperties.OverviewLimits(0, 0, 0, 0, 0,
+                        0, 8, 0, 0, 0,
+                        0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0));
+        var owner = limitedCoordinator.acquire(originalRequest);
+        assertThatThrownBy(() -> limitedCoordinator.saveCheckpoint(owner.lease(), "MAP:1", HASH_A, HASH_C,
+                "overview-v1", 1, "x".repeat(9)))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> coordinator.fail(owner.lease(), "MODEL_TIMEOUT", usage(), 0,
+        assertThatThrownBy(() -> limitedCoordinator.fail(owner.lease(), "MODEL_TIMEOUT", usage(), 0,
                 List.of("provider secret"))).isInstanceOf(IllegalArgumentException.class);
-        assertThat(coordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
+        assertThat(limitedCoordinator.complete(owner.lease(), "{\"schemaVersion\":1}", usage(), 0, List.of())).isTrue();
         jdbc.update("update overview_generations set result_expires_at=? where id=?",
                 Instant.now().minusSeconds(1), owner.generationId());
 
-        assertThat(coordinator.cleanupExpiredPayloads()).isEqualTo(1);
+        assertThat(limitedCoordinator.cleanupExpiredPayloads()).isEqualTo(1);
         assertThat(jdbc.queryForObject("select count(*) from overview_generations where id=?", Integer.class,
                 owner.generationId())).isEqualTo(1);
-        assertThatThrownBy(() -> coordinator.acquire(originalRequest))
+        assertThatThrownBy(() -> limitedCoordinator.acquire(originalRequest))
                 .isInstanceOf(DomainException.class)
                 .extracting(error -> ((DomainException) error).code())
                 .isEqualTo("RESOURCE_VERSION_CONFLICT");
-        var regenerated = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        var regenerated = limitedCoordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
         assertThat(regenerated.state()).isEqualTo(OverviewGenerationCoordinator.AcquisitionState.OWNER);
         assertThat(regenerated.generationId()).isNotEqualTo(owner.generationId());
     }
@@ -516,6 +1041,224 @@ class OverviewGenerationCoordinatorTests {
         }
     }
 
+    @Test
+    void reusesIndexOnlyFromSuccessfulGenerationWithMatchingScopeInputAndProfile() {
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), "index-step", HASH_A, HASH_C, "overview-v1", 1, "{}");
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1).payloadJson()).isEqualTo("{}");
+        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "another-step", 1)).isNull();
+        assertThat(coordinator.loadCheckpoint(current.lease(), "index-step", HASH_A, HASH_C, "overview-v1", 1)).isNull();
+        var changed = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableIndexCheckpoint(changed.lease(), "index-step", 1)).isNull();
+        UUID otherUser = UUID.randomUUID();
+        jdbc.update("insert into users(id,status) values (?, 'ACTIVE')", otherUser);
+        var other = coordinator.acquire(request(otherUser, UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableIndexCheckpoint(other.lease(), "index-step", 1)).isNull();
+        jdbc.update("update overview_generations set profile_fingerprint=? where id=?", HASH_D, donor.generationId());
+        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1)).isNull();
+    }
+
+    @Test
+    void reusableIndexExpiresWithoutWaitingForCleanupAndRejectsCorruption() {
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), "index-step", HASH_A, HASH_C, "overview-v1", 1, "{}");
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        jdbc.update("update overview_generation_checkpoints set payload_json='corrupted' where generation_id=?", donor.generationId());
+        assertThatThrownBy(() -> coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1))
+                .isInstanceOf(DomainException.class);
+        jdbc.update("update overview_generations set result_expires_at=? where id=?",
+                OffsetDateTime.now().minusDays(1), donor.generationId());
+        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), "index-step", 1)).isNull();
+    }
+
+    @Test
+    void adaptivePlanReuseRequiresExactOwnerScopeInputProfileAlgorithmAndLivePayload() {
+        String step = "step_" + HASH_A;
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, "{}");
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(current.lease(), step, 1).payloadJson()).isEqualTo("{}");
+        assertThatThrownBy(() -> coordinator.findReusableAdaptivePlanCheckpoint(current.lease(), "arbitrary-step", 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        coordinator.fail(current.lease(), "TEST_FAILURE", usage(), 0, List.of());
+
+        var changedInput = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedInput.lease(), step, 1)).isNull();
+        coordinator.fail(changedInput.lease(), "TEST_FAILURE", usage(), 0, List.of());
+        var changedProfile = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_D));
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedProfile.lease(), step, 1)).isNull();
+        coordinator.fail(changedProfile.lease(), "TEST_FAILURE", usage(), 0, List.of());
+        var changedAlgorithmRequest = new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(), "SUBJECT",
+                subjectId, null, HASH_A, HASH_B, HASH_C, "overview-v2");
+        var changedAlgorithm = coordinator.acquire(changedAlgorithmRequest);
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedAlgorithm.lease(), step, 1)).isNull();
+        coordinator.fail(changedAlgorithm.lease(), "TEST_FAILURE", usage(), 0, List.of());
+        var changedScope = coordinator.acquire(new OverviewGenerationCoordinator.Request(userId, UUID.randomUUID(),
+                "SUBJECT", UUID.randomUUID(), null, HASH_A, HASH_B, HASH_C, "overview-v1"));
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(changedScope.lease(), step, 1)).isNull();
+        coordinator.fail(changedScope.lease(), "TEST_FAILURE", usage(), 0, List.of());
+
+        var expiryCurrent = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        jdbc.update("update overview_generation_checkpoints set created_at=? where generation_id=?",
+                OffsetDateTime.now().minusDays(15), donor.generationId());
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(expiryCurrent.lease(), step, 1)).isNull();
+        jdbc.update("update overview_generation_checkpoints set created_at=?,payload_json='corrupted' where generation_id=?",
+                OffsetDateTime.now(), donor.generationId());
+        assertThatThrownBy(() -> coordinator.findReusableAdaptivePlanCheckpoint(expiryCurrent.lease(), step, 1))
+                .isInstanceOf(DomainException.class);
+        jdbc.update("update overview_generations set result_expires_at=? where id=?",
+                OffsetDateTime.now().minusDays(1), donor.generationId());
+        assertThat(coordinator.findReusableAdaptivePlanCheckpoint(expiryCurrent.lease(), step, 1)).isNull();
+    }
+
+    @Test
+    void adaptiveWriterReuseRequiresVerifiedDispatchedNodeAndCannotChainMaterializedCheckpoints() {
+        String step = "step_" + HASH_A;
+        String payload = "{\"writer\":\"verified\"}";
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        addVerifiedWriterNode(donor.lease(), step, payload, true);
+
+        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        var reusable = coordinator.findReusableAdaptiveWriterCheckpoint(current.lease(), step, 1);
+        assertThat(reusable).isNotNull();
+        assertThat(reusable.checkpoint().payloadJson()).isEqualTo(payload);
+        assertThat(reusable.donorGenerationId()).isEqualTo(donor.generationId());
+        coordinator.fail(current.lease(), "TEST_FAILURE", usage(), 0, List.of());
+
+        var materialized = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(materialized.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
+        coordinator.complete(materialized.lease(), "{}", usage(), 0, List.of());
+        addVerifiedWriterNode(materialized.lease(), step, payload, null);
+        jdbc.update("update overview_generations set result_expires_at=? where id=?",
+                OffsetDateTime.now().minusDays(1), donor.generationId());
+
+        var next = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(next.lease(), step, 1)).isNull();
+    }
+
+    @Test
+    void adaptiveWriterReuseRejectsUndispatchedReservation() {
+        String step = "step_" + HASH_A;
+        String payload = "{\"writer\":\"reserved-only\"}";
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        addVerifiedWriterNode(donor.lease(), step, payload, false);
+
+        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(current.lease(), step, 1)).isNull();
+    }
+
+    @Test
+    void adaptiveWriterReuseAcrossInputsRequiresExactCurrentDescriptorAndDispatchedDonor() {
+        String step = "step_" + HASH_A;
+        String descriptor = "{\"checkpointStep\":\"" + step + "\",\"globalRoutingFingerprint\":\"route-a\"}";
+        String payload = "{\"writer\":\"reusable\"}";
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), step, HASH_A, HASH_C, "overview-v1", 1, payload);
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        addVerifiedWriterNode(donor.lease(), step, payload, true, descriptor);
+
+        var changedInput = coordinator.acquire(request(donor.lease().userId(), HASH_D, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(changedInput.lease(), step, 1,
+                descriptor, false)).isNull();
+        var reusable = coordinator.findReusableAdaptiveWriterCheckpoint(changedInput.lease(), step, 1,
+                descriptor, true);
+        assertThat(reusable).isNotNull();
+        assertThat(reusable.checkpoint().payloadJson()).isEqualTo(payload);
+        assertThat(reusable.donorGenerationId()).isEqualTo(donor.generationId());
+        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(changedInput.lease(), step, 1,
+                descriptor.replace("route-a", "route-b"), true)).isNull();
+        coordinator.fail(changedInput.lease(), "TEST_FAILURE", usage(), 0, List.of());
+
+        var changedRoute = coordinator.acquire(request(donor.lease().userId(), UUID.randomUUID(),
+                HASH_A, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(changedRoute.lease(), step, 1,
+                descriptor.replace("route-a", "route-b"), false)).isNull();
+        coordinator.fail(changedRoute.lease(), "TEST_FAILURE", usage(), 0, List.of());
+
+        String undispatchedStep = "step_" + HASH_B;
+        String undispatchedDescriptor = "{\"checkpointStep\":\"" + undispatchedStep
+                + "\",\"globalRoutingFingerprint\":\"route-a\"}";
+        var undispatched = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(undispatched.lease(), undispatchedStep, HASH_A, HASH_C, "overview-v1", 1, payload);
+        coordinator.complete(undispatched.lease(), "{}", usage(), 0, List.of());
+        addVerifiedWriterNode(undispatched.lease(), undispatchedStep, payload, false, undispatchedDescriptor);
+        var afterUndispatched = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableAdaptiveWriterCheckpoint(afterUndispatched.lease(), undispatchedStep, 1,
+                undispatchedDescriptor, true)).isNull();
+    }
+
+    private void addVerifiedWriterNode(OverviewGenerationCoordinator.GenerationLease lease, String step,
+                                       String payload, Boolean dispatched) {
+        addVerifiedWriterNode(lease, step, payload, dispatched, "{\"checkpointStep\":\"" + step + "\"}");
+    }
+
+    private void addVerifiedWriterNode(OverviewGenerationCoordinator.GenerationLease lease, String step,
+                                       String payload, Boolean dispatched, String descriptorJson) {
+        UUID planId = UUID.randomUUID();
+        UUID nodeId = UUID.randomUUID();
+        UUID reservationId = UUID.randomUUID();
+        String planJson = "{\"nodes\":[" + descriptorJson + "]}";
+        String descriptorHash = sha256(descriptorJson);
+        String planHash = sha256(planJson);
+        String payloadHash = sha256(payload);
+        jdbc.update("insert into overview_execution_plans (id,generation_id,input_fingerprint,profile_fingerprint,"
+                        + "algorithm_version,plan_fingerprint,mode,state,payload_json) values (?,?,?,?,?,?,?,'ASSEMBLED',?)",
+                planId, lease.generationId(), lease.inputFingerprint(), lease.profileFingerprint(),
+                lease.algorithmVersion(), planHash, "ALL", planJson);
+        jdbc.update("insert into overview_execution_nodes (id,plan_id,generation_id,node_ordinal,descriptor_json,"
+                        + "descriptor_sha256,checkpoint_step,state,attempt,checkpoint_sha256) "
+                        + "values (?,?,?,?,?,?,?,'VERIFIED',1,?)",
+                nodeId, planId, lease.generationId(), 0, descriptorJson, descriptorHash, step, payloadHash);
+        if (dispatched != null) {
+            jdbc.update("insert into ai_usage_reservations (id,user_id,request_dispatched) values (?,?,?)",
+                    reservationId, lease.userId(), dispatched);
+            jdbc.update("insert into overview_execution_calls (id,generation_id,plan_id,node_id,attempt,reservation_id,"
+                            + "task_id,user_id,operation_kind) values (?,?,?,?,1,?,?,?,'SUBJECT_OVERVIEW')",
+                    UUID.randomUUID(), lease.generationId(), planId, nodeId, reservationId, UUID.randomUUID(), lease.userId());
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    @Test
+    void batchReuseAllowsChangedTaskInputButRequiresExactDependencyKeyAndSuccessfulDonor() {
+        String key = "index_batch_v1_" + HASH_A;
+        var donor = coordinator.acquire(request(UUID.randomUUID(), HASH_A, HASH_B, HASH_C));
+        coordinator.saveCheckpoint(donor.lease(), key, HASH_A, HASH_C, "overview-v1", 1, "{}");
+        var current = coordinator.acquire(request(UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableIndexBatchCheckpoint(current.lease(), key, 1)).isNull();
+        coordinator.complete(donor.lease(), "{}", usage(), 0, List.of());
+        assertThat(coordinator.findReusableIndexBatchCheckpoint(current.lease(), key, 1).payloadJson()).isEqualTo("{}");
+        assertThat(coordinator.findReusableIndexCheckpoint(current.lease(), key, 1)).isNull();
+        assertThat(coordinator.findReusableIndexBatchCheckpoint(current.lease(), "index_batch_v1_" + HASH_B, 1)).isNull();
+        assertThatThrownBy(() -> coordinator.findReusableIndexBatchCheckpoint(current.lease(), "arbitrary-step", 1))
+                .isInstanceOf(IllegalArgumentException.class);
+        UUID otherUser = UUID.randomUUID();
+        jdbc.update("insert into users(id,status) values (?, 'ACTIVE')", otherUser);
+        var other = coordinator.acquire(request(otherUser, UUID.randomUUID(), HASH_D, HASH_B, HASH_C));
+        assertThat(coordinator.findReusableIndexBatchCheckpoint(other.lease(), key, 1)).isNull();
+    }
+
+    private OverviewGenerationCoordinator capacityCoordinator(long maxBytes, int maxGenerations) {
+        return new OverviewGenerationCoordinator(jdbc, transactionManager, Clock.systemUTC(),
+                1_000, 100, heartbeat, maxBytes, maxGenerations);
+    }
+
     private OverviewGenerationCoordinator.Request request(UUID requestId, String input, String payload, String profile) {
         return request(userId, requestId, input, payload, profile);
     }
@@ -524,6 +1267,12 @@ class OverviewGenerationCoordinatorTests {
                                                            String input, String payload, String profile) {
         return new OverviewGenerationCoordinator.Request(ownerId, requestId, "SUBJECT", subjectId, null,
                 input, payload, profile, "overview-v1");
+    }
+
+    private OverviewGenerationCoordinator.Request retryRequest(UUID requestId, UUID retryOfRequestId,
+                                                                 String input, String payload, String profile) {
+        return new OverviewGenerationCoordinator.Request(userId, requestId, "SUBJECT", subjectId, null,
+                input, payload, profile, "overview-v1", List.of(), retryOfRequestId);
     }
 
     private AiProviderUsage usage() {

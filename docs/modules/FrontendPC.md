@@ -1,5 +1,64 @@
 # PC 前端模块
 
+### 2026-10-28 示例模板清理
+
+已移除无业务引用的 `HelloWorld.vue`、专用 `hero.png` / `vite.svg` / `vue.svg` / `public/icons.svg`，并清理本地生成声明中的对应组件项。路由、应用入口、业务组件、favicon 与 File Viewer 资源保持原实现。文档与素材备份见 `D:/Temp/auralis-project-cleanup-20261028-round2/`；本轮不涉及交互或视觉变化。
+
+### 2026-10-27 Overview 重新生成请求身份（自动检查及审查完成，未部署）
+
+现有重新生成入口使用新X-Overview-Request-Id，并可携带同输入的上次已派发retryOfRequestId；网络/401重送保持本次ID。索引限当前service实例，按user/device/scope删除代次/revision/mode/输入隔离，取消全部或删除scope清理；PC刷新后不保留该索引，由普通新请求的服务端规则处理FAILED/过期任务。SSE仅当前执行可更新状态/落结果，已有编辑冲突保护保持。没有新增页面、按钮或端侧schema。type-check、Overview84/84及build通过，SDK与OpenAPI同步，唯一review B0/I0/O0；精确PC开工快照未保存，审查以当前逻辑及10/26已验候选的限定历史差量进行，未声称全树审查。当前未验证GUI。详见[实施计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
+### 2026-10-26 Web前端动态容量接收版本已部署
+
+本机frontend容器已重建至镜像28f9ff68…；页面与实际entry bundle均HTTP200，后端同步部署。entry `/assets/index-CugPHA9J.js` 的身份记录在D:/Temp/auralis-overview-deploy-20261026/deploy-verification.md。此项证明Web容器提供新bundle，不等于浏览器已刷新、桌面安装包更新或GUI生成/保存流程验收；没有浏览器自动化或清理用户本机编辑缓存。
+
+### 2026-10-26 Overview 大结果接收（自动检查通过，未部署）
+
+`overviewResponseValidator` 保留对象形状、类型、非空、UUID、路径、唯一性和来源/provenance 对应校验，容量由服务端 `OverviewLimits` 正数配置决定；PC 不再重复固定章节、正文或引用数量帽。生成 raw input 与正式 canonical view 仍分开，不改变页面、Store 或本地 schema。较早条目中的固定数量是当时记录，当前以本条与 API 契约为准。
+
+D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成 schema 比较通过。未做 GUI/Tauri、真实 Provider 或业务保存验收；后端单独变更不能证明 PC 业务验收，部署状态见[动态容量计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。
+
+### 2026-10-25 Overview 生成结果 provenance 接收
+
+生成 SSE 使用独立 `GeneratedOverviewResponse`，其中 `outlineProvenance` 按原始输入契约校验（Java UUID 字符串语法包含 nil UUID）；保存时拆开正文与 provenance 输入，保存在现有 `outlineProvenanceInput` 字段并沿正式 PUT outbox 发送。正式 Overview results 响应继续严格校验 canonical provenance view，按后端限制允许每节最多 500 refs，不把输入 refs 冒充为 canonical locators。没有改变页面交互或本地 schema。
+
+### 2026-10-25 Overview SSE 等待期限可配置（源码与自动验证完成；GUI 未验收）
+
+`VITE_OVERVIEW_SSE_DEADLINE_MS` 缺省为 300000ms；`0` 不创建 PC 自动等待计时器，正数仍覆盖响应头、401 refresh 和 body reading。调用方 AbortSignal、手动停止和 reader 取消不变。Docker Compose 构建 frontend 时从根 `.env` 注入该 build arg；本机根 `.env` 已设 0。直接用 `npm run dev` 或 Tauri 调试时不读取根 `.env`，需要在 shell 或 PC 本地 Vite env 文件中设置同一变量，否则仍使用默认 300000ms。类型检查、83 项 runtime/Overview 定向测试和生产构建通过；完整 R4 为 747 项中 719 通过、28 失败，失败位于既有 Review/Web Locks、Sidebar/Profile 静态断言和 Task 测试范围，不记为 full 通过。未做 GUI、Tauri 或真实 Provider 长请求验收。
+
+更新时间：2026-10-25
+文档状态：现行
+权威范围：`Auralis-PC` 的当前依赖、路由、页面、Store、API 边界、Tauri 集成、构建方式与限制
+事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-24 当前代码
+
+### 2026-10-23 Overview 与 asset sync 回归测试收尾（只改测试；唯一审查完成）
+
+- `r4-overview-generation.test.mjs` 只断言当前 Subject/summary 的 Stop 控件及现有文件列表 regenerate 行为；不再要求已撤回的文件 Stop aria-label，不恢复 job selector、preview/publish/adopt 或 section reader。
+- `r4-store-local-asset-flow.test.mjs` 使用真实 Axios adapter 检查 dispatch 时的 scope、bearer token、device ID、payload/mutation ID。A 仍为 active scope 时 fire-and-forget wakeup 可以先派发；切换到 B 后，A 旧 ticket 不进入 adapter，B 凭据/请求不携带 A 资源。Delayed A 401 即时安装 settlement observer，验证 `SYNC_SCOPE_CHANGED` 且不会用 B 凭据 refresh/retry。完成路径等待 `completeUpload` adapter 事件及持久 completed job，并核对 same-scope retry idempotency/token 行为。
+- 生产 UI、Store 与 API 未变。两脚本首轮106项104 passed/2 failed、exit 1；最终 affected-only 2/2、exit 0；未重跑整批。唯一只读 reviewer B0/I0/O0。没有 GUI/真实服务验收。
+### 2026-10-22 Overview 当前流程（M4 新交互撤回；保留本机编辑冲突保护）
+
+- 当前 PC 使用原 Overview 入口、SSE 自动生成与既有同步/冲突流程。M4 新增的 job selector、preview/publish/adopt、formal section reader 和 candidateInput 接线已按用户决定撤回，不是后续 PC 待办。Server 的 durable jobs、candidateInput、publication、preview/section API 继续存在，但当前 PC 不消费。
+- 只保留生成期间本机编辑保护：对比目标 part 内容与 identity/provenance 输入签名；若生成中发生编辑，保留本机 cache 与冻结 mutation，将 AI 结果留在现有 outbox 为 `OVERVIEW_GENERATION_EDIT_CONFLICT`，不发送 PUT。原冲突位置提供显式保留本机/采用 AI 操作，后者沿原 save/CAS/outbox。跨 tab browser fallback 共用 owner/device Web Lock；不可用时拒绝写入，SQLite 路径不变。唯一 reviewer delta B0/I0；回退后 noEmit、cache/sync/deletion、generation 检查分批通过或保留失败，详见当前状态和 D 盘结案报告。
+
+### 2026-10-22 Overview M4 native jobs 与显式候选采纳（回退前实现与验收历史；未部署）
+
+- Subject Workspace 消费 Source/Subject ALL、OUTLINE durable jobs，选择有序 READY FILE/TEXT/URL 子集（1–100），可重连、观察/停止观察、控制 job，并预览 VERIFIED 节点。完成仍是候选；显式采纳以 `candidateInput {jobId,jobVersion}` 走正式 PUT、服务端当前输入校验、CAS/receipt/outbox。OUTLINE 保留 summary 的内容、版本、时间与 descriptor；SUMMARY 继续现有 FILE-derived 路径。SQLite schema v13，无 M4 migration。
+- FILE/TEXT/URL 的本地变更通过既有 outbox 持久化，并在来源仍 READY 且 owner/device/scope、ID/type/revision 围栏匹配时 PUT；Store/sync 回归 30/30。自动 FILE/ALL recovery 使用 namespace + source UUID + ingestion revision + mode 的 SHA-256 request ID；Crypto 不可用时不 POST。手动身份保持随机；profile/raw currentness 在 candidate GET/publication 校验，须用户明确重新生成。定位只承诺已支持的 FILE positive-page seek；block-only 打开资料，TEXT/URL 不提供精确定位。
+- 隔离浏览器实际覆盖 Subject/URL 生成、verified preview、正式发布和分节读取、OUTLINE pause/resume 并保留 summary、TEXT cancel、URL CAS conflict 后 Keep Local 保存与候选采纳；最终 Source/section v4 可读。related GEN 72/72、lifecycle 10/10（分批）、noEmit/Vite 通过；唯一 source-type-fence delta review B0/I0/O0 new，原 O1 保留。前端源码变更与后端改动分别报告；未验收 native Tauri/SQLite、真实 Provider、FILE/PDF/OCR、部署或内容质量。
+
+### 2026-10-19 Overview M2 身份与来源 metadata（PC 数据往返已验证；GUI待验）
+
+- Overview cache 与独立 write outbox 保存并往返 `outlineIdentity`、`outlineProvenance` 输入/视图和 `identityReady`，PC 本地 SQLite schema 升至 v13。Server nodeId 与 UI 树临时标识分离；节点排序时 metadata 随 path/节点序列化，SUMMARY 只更新摘要并保留现存大纲身份。
+- HTTP request 首次发送后保留冻结 body 与 clientWriteId；旧结果未初始化身份时必须显式保存初始化，不能按标题/位置猜测继承。生成来源位置来自 Server 实际 writer/chunk lineage，PC 不把页码或 block 位置当作可编辑事实。
+- PC M2 同步/metadata focused 回归 27/27；PC type-check 与 Web build 退出码 0，最终 OpenAPI 生成后 PC type-check 再次退出 0。完整 R4 首轮 737 tests/709 pass/28 fail/0 skip，其中 2 项 M2 问题由后续定向回归修复，另 26 项既有非 M2 失败未修且未重跑全量。Mobile type-check 仍有既有 `EventRequest`/`EventResponse` 两个 TS2339；真实 Tauri 与 GUI 验收未完成。
+
+### 2026-10-15 Subject Overview 离线冲突刷新重入保护（定向验证通过；GUI 待验收）
+
+- `SubjectWorkspace` 仅对静默 Subject/LOCAL 自动解析，在 `ensureOverviewRuntime()` 可能刷新缓存前按当前用户、server device、Subject id 与 revision key 合并同一解析。FILE scope 与显式 LOCAL/REMOTE choice 直接执行原解析体；没有给 FILE 并发 choice 添加队列或互斥。
+- 解析在异步边界校验登录身份、挂载状态、当前学科和文件 revision；网络失败保留本地候选及冲突状态，后续显式或既有触发可重试。现有 API 将 404 作为无远端结果，其他错误沿原同步服务处理。生产解析仅在成功 resolve 后刷新尾部缓存；失败尾部刷新是受控回归回调模拟，不代表生产失败分支会执行该刷新。没有改 Source/FILE 生成 trigger、同步冲突策略、API、SQLite 或后端。
+- `r4-overview-sync.test.mjs` 与 `r4-subject-overview-ui.test.mjs` 定向共 43/43，`vue-tsc` app 检查退出码 0；RED 因 guard 导出缺失失败，GREEN 覆盖 Subject 自动路径接线、受控 cache refresh 重入、离线保留、后续 retry、同 scope coalescing 和不同 scope 隔离。真实离线恢复、Tauri/桌面 GUI 未验收。
+
 ### 2026-10-12 聊天资料检索默认开启（代码与定向测试通过；GUI 待验收）
 
 - PC 不提供关闭资料检索的模式或个人中心 RAG 语义搜索开关。打开文件时请求范围为 `AUTO` 当前 Source；没有当前文件且没有明确文件范围时为当前学科 `SUBJECT`。显式 Source 选择保持限定范围；手动撤销最后一项后，有当前文件回到 `AUTO`（未就绪仍等待），否则回到 `SUBJECT`，标签与实际范围一致。
@@ -50,7 +109,8 @@
 - Sync pull/snapshot 会保护未结算排期命令关联的 Task；SQLite 将 fence 读取与快照替换放在同一事务中，浏览器 LocalRepository 状态改写要求 Web Locks API 并通过同源锁串行化。浏览器不提供该 API 时，本地存储写入以 `LOCAL_STORAGE_LOCK_UNAVAILABLE` 失败，避免跨标签页覆盖整份状态；Tauri SQLite 不受此限制。服务器回执用 Task 数组原子结算；拒绝或版本冲突后恢复当前服务端排期，多个拒绝逐条通知。排期命令的本地成员 fence 不会发送到服务端；服务端 change log 仍是普通 Task UPDATE。
 - 若排期回执未包含所有本地受影响 Task，客户端先取得并校验完整快照，再结束命令；快照暂时不可用或缺少成员时命令留在待同步队列，沿用原 mutation ID 重试，避免保留未恢复的乐观排期。
 - Timeline 展示本地已保存、等待网络同步的状态，并在后台业务拒绝后显示错误。排期继续校验完整任务时长、窗口、冲突及精确 dueAt。
-- 四个 PC 定向套件合计 173/173（包括缺少换位目标 ID 且首轮快照失败后重试恢复），LocalRepository 单套 35/35，`npm run type-check` 退出码 0。Server Sync/Schema/Task controller 定向 Maven 测试 34/34；独立 `OpenApiArtifactTests` 12/12。只读复审 BLOCKER=0、IMPORTANT=0。`check:r4-pc` 命中未修改 Rust 文件中的固定本地地址扫描；`check-openapi.ps1` 的运行时 artifact 检查在 JUnit discovery 失败，报 `NoClassDefFoundError: JsonNode`。真实 Tauri 断网恢复仍待完成。实施和证据见[时间轴离线排期计划](../superpowers/plans/2026-10-11-offline-timeline-scheduling.md)。
+- 按槽插入/顺延与任务换位的 Store mutation queue 只覆盖本地校验和原子 repository 提交；提交及本地投影刷新完成后即释放队列，并请求后台同步，不等待远端 push。离线仍保留 outbox，后台服务拒绝继续由排期同步错误通知反馈。本地提交失败仍由当前 drop 错误提示处理。
+- 四个 PC 定向套件合计 173/173（包括缺少换位目标 ID 且首轮快照失败后重试恢复），LocalRepository 单套 35/35，`npm run type-check` 退出码 0。Server Sync/Schema/Task controller 定向 Maven 测试 34/34；独立 `OpenApiArtifactTests` 12/12。只读复审 BLOCKER=0、IMPORTANT=0。`check:r4-pc` 命中未修改 Rust 文件中的固定本地地址扫描；`check-openapi.ps1` 的运行时 artifact 检查在 JUnit discovery 失败，报 `NoClassDefFoundError: JsonNode`。真实 Tauri 断网恢复仍待完成。当前实现与当时验证记录见[本节](#2026-10-12-timeline-离线排期命令)。
 
 ### 2026-10-11 资产库界面（Asset Studio）Awwwards 获奖级视觉设计与微交互全面重构（代码与自动验证通过；GUI 待验收）
 
@@ -195,6 +255,34 @@
 - PC 复习页只从本地正式状态和 `/api/reviews/lifecycle/history` 恢复复习，不再请求 `/api/reviews/due`、`/api/reviews/events` 或旧 `/api/reviews/history`；新提交仅走生命周期命令。
 - 本轮删除 PC 旧 API wrapper、旧历史合并及旧事件存储兼容分支；生命周期 outbox、回执/冲突处理和正式本地记录保留。复习与自测的卡片池/天数逻辑继续以现行 lifecycle 状态为准。
 
+### 2026-10-15 文件登记上传弹窗进度生命周期与状态卡死修复（代码、测试与类型检查通过；GUI 待验收）
+
+- 现象与根因：
+  - 用户反馈“有时候会出现上传完然后弹窗卡住了，就是上传没成功也显示成功了”；
+  - 根因分析：
+    1. 时序颠倒与提前虚假完成：`assetStore.upload` 仅代表本地资产缓存写入（前序阶段），原代码在本地保存完成后即向 UI 回报 100% 进度，而真正的学科资料源创建 `createFileSource` 与列表加载尚未完成；`FileRegisterDialog` 仅根据 `displayPercent >= 100` 或内部擅自将上限写死为 86% 即提前将文本与按钮显示为“导入完成”，造成未真正成功已显示成功的假象；
+    2. 失败后弹窗卡死停留在 100%：当后续阶段（如 `createFileSource`、`loadLocalSourceFiles` 或 `loadAssetsFromBackend`）出现异常进入 catch 时，未重置 `uploadProgress` 为 0，也未关闭弹窗，导致弹窗继续挂在屏幕上并呈现 100%“导入完成”的错误假象；
+    3. 异步定时器悬挂：`Asset/index.vue` 使用脱离主调用链的 `setTimeout` 控制关闭，存在异常时无法可靠关闭弹窗的风险。
+- 调整与修复：
+  - `FileRegisterDialog.vue`：
+    - 移除未经授权的虚假进度上限（`ceiling = Math.max(rawTarget, 86)`），进度引擎平滑跟随各阶段真实目标值；
+    - 严格引入 `isCompleted` 校验（要求底层 `props.uploadProgress >= 100 && displayPercent >= 100`），未真正全部完成前禁止提前显示“导入完成”；
+    - 弹窗关闭时自动重置进度（`displayProgress.value = 0`）并终止动画，防止下次打开残余旧状态。
+  - `SubjectWorkspace/index.vue` 与 `Asset/index.vue`：
+    - 合理划分全生命周期进度阶梯：本地资产持久化（10%~70%）、学科资料源关联（75%）、列表加载（90%），全流程确认成功后方置为 100% / 导入完成；
+    - catch 块统一显式清理 `uploadProgress.value = 0` 并重置状态文本，杜绝失败时遗留 100% 成功假象；
+    - 成功时使用可靠的微延迟 `await new Promise` 顺序关闭弹窗，移除脆弱的无保护 `setTimeout`。
+- 验证：`scripts/r4-register-file.test.mjs` 增补进度守卫与失败重置断言，全量 6/6 通过；`vue-tsc -b` 0 报错。真实 GUI 视觉与真机交互待人工验收。
+
+### 2026-10-15 学科大纲编排独立性保证（未生成综合总览时不预填单文件大纲）
+
+- 现象与用户需求：在未生成涵盖全文件的学科总览时，用户进入大纲编排/编辑界面时，系统曾自动将单一文件的大纲内容填充进学科大纲编辑区（表现为拼接/混合单文件内容）；用户明确不需要此行为。
+- 调整与边界：
+  - `SubjectWorkspace/index.vue` 的 `initSubjectOutlineFromExisting` 在学科总览尚未生成时，保持学科大纲独立，直接初始化独立的新建章节（`第一章 · 新建章节`）供用户自主编写，不再自动拷贝单文件或部分文件的大纲；
+  - 移除 `watch(fileOverviewItems)` 中对未生成学科大纲的自动覆盖逻辑；
+  - 编排态下方各文件的独立大纲编辑卡片保持不变，依然支持单文件大纲独立编辑与保存。
+- 验证：`scripts/r4-subject-overview-ui.test.mjs` 增补独立性回归测试，17/17 测试全绿；`vue-tsc -b` 0 报错。真实 GUI / 编排交互待人工验收。
+
 ### 2026-10-11 学科总览后台返回后响应式自动刷新（代码与自动验证通过；GUI 待验收）
 
 - 现象与根因：文件总览与学科总览在后台由 `OverviewGenerationService` 或外部请求完成生成并写入 SQLite `ai_overview_cache` 后，仓储层未向 UI 广播更新通知；`SubjectWorkspace` 仅在初次加载和切科时读取缓存，未 watch `activeSourceFiles` 状态与版本跃迁，导致页面卡在“等待文件解析并生成大纲”或旧大纲，需手动刷新整页（F5）才读取显示。
@@ -202,10 +290,10 @@
   - `src/services/overviewSyncWakeup.ts` 新增导出 `OVERVIEW_CACHE_UPDATED_EVENT`（`auralis-overview-cache-updated`）、广播函数 `notifyOverviewCacheUpdated` 与订阅函数 `subscribeOverviewCacheUpdated`。
   - `src/services/overviewRepository.ts` 在 `saveFileOverviewPart`、`saveSubjectOverviewPart`、`installRemoteOverview`、`useRemoteOverview`、`markFailed` 持久化操作后统一派发更新事件；新增 `getLatestFileOverview(sourceId)` 在内存 revision 尚未同步时兜底回查本地最新缓存。
 - 视图层响应式响应：
-  - `SubjectWorkspace/index.vue` 在 mounted 中通过 `subscribeOverviewCacheUpdated` 注册监听；收到当前 `subjectId` 或关联 `activeSourceFiles` 的更新广播后，自动重置加载态、拉取最新缓存，并在编排模式且学科大纲未生成时自动载入最新单文件大纲；卸载时清理订阅。
+  - `SubjectWorkspace/index.vue` 在 mounted 中通过 `subscribeOverviewCacheUpdated` 注册监听；收到当前 `subjectId` 或关联 `activeSourceFiles` 的更新广播后，自动重置加载态、拉取最新缓存；卸载时清理订阅。
   - 增加对 `activeSourceFiles` 的 deep watch，原材料进入 READY 或 revision 变更时自动调用 `refreshOverviewCache()`。
-  - watch `fileOverviewItems`，在单文件大纲生成后自动同步未生成的学科大纲。
-- 验证：`scripts/r4-subject-overview-ui.test.mjs` 增补订阅广播、注销生命周期及兜底回查测试，全量 120/120 测试全绿；`vue-tsc` 0 报错。真实 GUI / Provider 待验收。
+  - watch `fileOverviewItems`，在文件大纲更新后同步刷新各文件对应草稿。
+- 验证：`scripts/r4-subject-overview-ui.test.mjs` 增补订阅广播、注销生命周期及兜底回查测试，全量测试通过；`vue-tsc` 0 报错。真实 GUI / Provider 待验收。
 
 ### 2026-10-11 个人中心 AI 额度与预算提示（代码、相关自动验证与只读审查通过；GUI 待验收）
 
@@ -869,13 +957,9 @@
 
 2026-09-11 Overview Source 删除 fence：文件总览生成在本地先要求当前用户/设备的活动 FILE Source 投影存在与请求完全一致的 `ingestionRevision`，且独立的本地文档任务阶段恰为 `READY`，因此自动恢复与手动重生成在任何 Server 预检前都会跳过不合格输入。Source 删除在本地 tombstone 与可见投影移除后同步阻断该 Source、abort 匹配的文件请求并移除文件总览缓存；晚到的成功或失败响应均不保存、不标记失败。Store-owned 删除顺序把该 fence 放在 `scheduleSync()` 与后台文档清理之前。Server 端的删除/修订保护见 Backend 模块；Subject 总览行为与既有 API/数据库契约未改变。本轮自动证据：PC `test:r4-pc` 322/322、type-check 退出 0、`check:r4-pc` 退出 0（93 个生产文件）；真实 Tauri 删除/重传、Axios 断开传播、Provider、GUI 与业务验收仍待完成。
 
-更新时间：2026-10-11
 
-文档状态：现行
 
-权威范围：`Auralis-PC` 的当前依赖、路由、页面、Store、API 边界、Tauri 集成、构建方式与限制
 
-事实来源：`Auralis-PC/package.json`、`src/`、`src-tauri/` 与 2026-08-24 当前代码
 
 2026-09-09 时间轴拖动边界修复：排期任务拖到空槽时，`useTaskStore` 只通过当前用户/设备的本地 repository/outbox 更新单 Task，不调用需要两个 UUID 的 `schedule-swaps`；拖到已占用槽时仍调用服务端原子 swap。不改变 Task API 契约或数据库结构。
 

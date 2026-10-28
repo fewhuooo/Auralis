@@ -5,6 +5,8 @@ import com.auralis.app.ai.retrieval.EmbeddingVectorCodec;
 import com.auralis.app.ai.retrieval.PgVectorRetrievalRepository;
 import com.auralis.app.ai.retrieval.RetrievalService;
 import com.auralis.app.ai.retrieval.ReadingContext;
+import com.auralis.app.ai.PromptAssembler;
+import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.internal.persistence.SourceChunkEntity;
 import com.auralis.app.ai.internal.persistence.SourceChunkRepository;
 import com.auralis.app.source.SourceIngestionStatus;
@@ -201,8 +203,9 @@ class AiRetrievalTests {
         SourceView unselected = source(unselectedId, subjectId, "Unselected", SourceIngestionStatus.READY);
         when(pgVectorRepository.search(userId, firstId, query, 3)).thenReturn(Optional.empty());
         when(pgVectorRepository.search(userId, secondId, query, 3)).thenReturn(Optional.empty());
+        String firstContent = "Background. ".repeat(60) + "compiler pass: a single traversal.";
         when(chunkRepository.findAllByUserIdAndActiveTrue(userId)).thenReturn(List.of(
-                chunk(userId, firstId, "first hit", query),
+                chunk(userId, firstId, firstContent, query),
                 chunk(userId, secondId, "second hit", query),
                 chunk(userId, unselectedId, "unselected hit", query)));
         Map<UUID, SourceView> activeSources = Map.of(
@@ -215,9 +218,11 @@ class AiRetrievalTests {
         List<Citation> citations = retrievalService.retrieve(userId, query, 3,
                 new ReadingContext(null, subjectId, ReadingContext.RetrievalMode.SELECTED_SOURCES,
                         List.of(firstId, secondId), null),
-                "比较其他文件中的结论");
+                "Compare the “compiler pass” definition across selected files.");
 
         assertThat(citations).extracting(Citation::sourceId).containsExactlyInAnyOrder(firstId, secondId);
+        assertThat(citations).filteredOn(citation -> firstId.equals(citation.sourceId())).singleElement()
+                .satisfies(citation -> assertThat(citation.excerpt()).contains("compiler pass: a single traversal."));
         verify(sourceService, never()).list(userId);
         verify(pgVectorRepository, never()).search(userId, unselectedId, query, 3);
     }
@@ -316,6 +321,112 @@ class AiRetrievalTests {
                 .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
                 .hasMessageContaining("Subject was not found");
         verify(sourceService, never()).list(userId);
+    }
+
+    @Test
+    void queryAwareExcerptIncludesLateSingleCharacterDefinitionAndReachesPrompt() {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID chunkId = UUID.randomUUID();
+        List<Double> query = vector(1.0, 0.0);
+        String definition = "1.3.6 遍\n遍\n含义：对源语言程序从头到尾扫描并完成规定任务的过程。";
+        String content = "普遍情况与遍历操作。" + "前置说明。".repeat(85) + "\n" + definition
+                + "\n后续材料。".repeat(60);
+        assertThat(content.indexOf("含义：")).isGreaterThan(400);
+        SourceChunkEntity chunk = new SourceChunkEntity(
+                chunkId, userId, sourceId, 6, content, "hash", 0, content.length(),
+                new EmbeddingVectorCodec().encode(query), UUID.randomUUID(), true);
+        when(pgVectorRepository.search(userId, sourceId, query, 8)).thenReturn(Optional.empty());
+        when(chunkRepository.findAllByUserIdAndActiveTrue(userId)).thenReturn(List.of(chunk));
+        when(sourceService.get(userId, sourceId)).thenReturn(source(sourceId, subjectId, "Compiler notes",
+                SourceIngestionStatus.READY));
+        when(sourceService.findActiveViewsByIds(userId, Set.of(sourceId))).thenReturn(List.of(
+                source(sourceId, subjectId, "Compiler notes", SourceIngestionStatus.READY)));
+
+        String question = "解释遍的定义、适用条件和例外；资料未明确写出的请说明未写。";
+        List<Citation> citations = retrievalService.retrieve(userId, query, 8,
+                new ReadingContext(sourceId, subjectId, ReadingContext.RetrievalMode.AUTO, null), question);
+
+        assertThat(citations).singleElement().satisfies(citation -> {
+            assertThat(citation.sourceId()).isEqualTo(sourceId);
+            assertThat(citation.chunkId()).isEqualTo(chunkId);
+            assertThat(citation.excerpt()).contains("1.3.6 遍", "含义：", "对源语言程序");
+            assertThat(citation.excerpt()).hasSizeLessThanOrEqualTo(400);
+            assertThat(content).contains(citation.excerpt());
+        });
+        List<AiProviderRequest.Message> prompt = PromptAssembler.assemble(
+                "system", List.of(), null, null, citations, question, 12_000);
+        assertThat(prompt).anySatisfy(message -> assertThat(message.content()).contains("含义：", "对源语言程序"));
+    }
+
+    @Test
+    void quotedChineseAndEnglishTermsSelectBoundedEvidenceWindows() {
+        assertQueryExcerptContains("请解释“循环不变量”的含义。",
+                "普通说明。".repeat(60) + "循环不变量：每次迭代前后保持为真的性质。" + "尾部说明。".repeat(60),
+                "循环不变量：", "保持为真的性质");
+        assertQueryExcerptContains("What does ‘compiler pass’ mean?",
+                "Background. ".repeat(70) + "A compiler pass is one traversal of an intermediate program. "
+                        + "Later notes. ".repeat(50),
+                "A compiler pass is", "one traversal");
+    }
+
+    @Test
+    void repeatedFocusUsesDefinitionOccurrenceInsteadOfEarlierNoise() {
+        assertQueryExcerptContains("解释遍的定义。",
+                "普遍观点与遍历步骤。".repeat(40) + "\n1.3.6 遍\n遍\n含义：定义段内容。",
+                "1.3.6 遍", "含义：定义段内容");
+    }
+
+    @Test
+    void absentFocusFallsBackToPrefixAndEmptyOrShortContentKeepsExistingBounds() {
+        String content = "prefix 文本。".repeat(60);
+        assertQueryExcerptContains("解释没有出现的术语。", content, "prefix 文本。", null);
+        assertThat(retrieveExcerpt("", content)).startsWith("prefix 文本。");
+        assertThat(retrieveExcerpt(null, content)).startsWith("prefix 文本。");
+        assertThat(retrieveExcerpt("无关问题", "short 文本")).isEqualTo("short 文本");
+        assertThat(retrieveExcerpt("短文本的定义", "短文本的定义：完整内容。"))
+                .isEqualTo("短文本的定义：完整内容。");
+        assertThat(retrieveExcerpt("术语", "")).isEmpty();
+    }
+
+    @Test
+    void excerptNeverExceedsFourHundredJavaCharactersOrSplitsSurrogatePairs() {
+        String content = "x".repeat(399) + "😀" + "后续".repeat(30);
+        String excerpt = retrieveExcerpt("没有匹配词", content);
+        assertThat(excerpt.length()).isLessThanOrEqualTo(400);
+        assertThat(excerpt.length() == 0 || !Character.isHighSurrogate(excerpt.charAt(excerpt.length() - 1)))
+                .isTrue();
+        assertThat(excerpt.length() < 2 || !Character.isHighSurrogate(excerpt.charAt(excerpt.length() - 2))
+                || !Character.isLowSurrogate(excerpt.charAt(excerpt.length() - 1))).isTrue();
+    }
+
+    private void assertQueryExcerptContains(String question, String content, String expected, String additional) {
+        String excerpt = retrieveExcerpt(question, content);
+        assertThat(excerpt).contains(expected);
+        if (additional != null) assertThat(excerpt).contains(additional);
+        assertThat(excerpt).hasSizeLessThanOrEqualTo(400);
+    }
+
+    private String retrieveExcerpt(String question, String content) {
+        UUID userId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        UUID sourceId = UUID.randomUUID();
+        UUID chunkId = UUID.randomUUID();
+        List<Double> query = vector(1.0, 0.0);
+        SourceChunkEntity chunk = new SourceChunkEntity(
+                chunkId, userId, sourceId, 0, content, "hash-" + UUID.randomUUID(), 0, content.length(),
+                new EmbeddingVectorCodec().encode(query), UUID.randomUUID(), true);
+        when(pgVectorRepository.search(userId, sourceId, query, 8)).thenReturn(Optional.empty());
+        when(chunkRepository.findAllByUserIdAndActiveTrue(userId)).thenReturn(List.of(chunk));
+        when(sourceService.get(userId, sourceId)).thenReturn(source(sourceId, subjectId, "Evidence",
+                SourceIngestionStatus.READY));
+        when(sourceService.findActiveViewsByIds(userId, Set.of(sourceId))).thenReturn(List.of(
+                source(sourceId, subjectId, "Evidence", SourceIngestionStatus.READY)));
+        List<Citation> citations = retrievalService.retrieve(userId, query, 8,
+                new ReadingContext(sourceId, subjectId, ReadingContext.RetrievalMode.AUTO, null), question);
+        assertThat(citations).hasSize(1);
+        return citations.get(0).excerpt();
     }
 
     @Test

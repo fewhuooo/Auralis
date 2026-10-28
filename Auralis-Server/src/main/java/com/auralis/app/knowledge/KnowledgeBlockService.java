@@ -7,7 +7,6 @@ import com.auralis.app.shared.domain.ResourceType;
 import com.auralis.app.shared.domain.KnowledgeBlockContentChangedEvent;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockEntity;
 import com.auralis.app.knowledge.internal.persistence.KnowledgeBlockRepository;
-import com.auralis.app.review.ReviewContentHash;
 import com.auralis.app.subject.SubjectLockCoordinator;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.shared.pagination.CursorCodec;
@@ -144,7 +143,7 @@ public class KnowledgeBlockService {
         KnowledgeBlockView result = view(knowledgeBlockRepository.saveAndFlush(entity));
         if (contentChanged) {
             eventPublisher.publishEvent(new KnowledgeBlockContentChangedEvent(
-                    userId, result.id(), ReviewContentHash.sha256(content)));
+                    userId, result.id(), KnowledgeBlockContentHash.sha256(content)));
         }
         publishChange(userId, result, "UPDATE");
         return result;

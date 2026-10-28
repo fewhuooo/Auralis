@@ -3,7 +3,8 @@ import type {
   FileOverviewRecord, OverviewCacheRecord, OverviewMode,
   OverviewResultCommand, OverviewResultView, OverviewSourceManifestEntry, OverviewSyncState,
 } from '@/types/overview'
-import { computeSubjectInputFingerprint, type OverviewRepository, type OverviewScopeFenceToken } from './overviewRepository.ts'
+import { createOutlineIdentityInput, hasCompleteOutlineIdentityInput } from './outlineIdentity.ts'
+import { computeSubjectInputFingerprint, isOverviewGenerationEditConflict, type OverviewRepository, type OverviewScopeFenceToken } from './overviewRepository.ts'
 
 export interface OverviewSyncSource {
   id: string
@@ -47,6 +48,21 @@ const lazyOverviewResultsApi: OverviewResultsApi = {
 
 const MAX_SYNC_SOURCES = 500
 const inFlightByScope = new Map<string, Promise<void>>()
+const inFlightConflictResolutions = new Map<string, Promise<void>>()
+
+export function runOverviewConflictResolutionOnce(key: string, resolve: () => Promise<void>): Promise<void> {
+  const existing = inFlightConflictResolutions.get(key)
+  if (existing) return existing
+
+  // Defer the body so the promise is registered before cache refresh can re-enter this resolver.
+  const pending = Promise.resolve().then(resolve)
+  inFlightConflictResolutions.set(key, pending)
+  const clear = (): void => {
+    if (inFlightConflictResolutions.get(key) === pending) inFlightConflictResolutions.delete(key)
+  }
+  void pending.then(clear, clear)
+  return pending
+}
 
 async function mapBounded<T>(items: T[], concurrency: number, task: (item: T) => Promise<void>): Promise<void> {
   let next = 0
@@ -86,6 +102,11 @@ async function remoteCacheRecord(
   return {
     scopeType, scopeId, revisionKey, schemaVersion: 1, title: view.title,
     outline: view.outline, summary: view.summary,
+    identityReady: view.identityReady === true && Boolean(view.outlineIdentity),
+    outlineIdentity: view.outlineIdentity ?? null,
+    outlineIdentityInput: null,
+    outlineProvenance: view.outlineProvenance ?? null,
+    outlineProvenanceInput: null,
     outlineGeneratedAt: view.outlineGeneratedAt ?? null,
     summaryGeneratedAt: view.summaryGeneratedAt ?? null,
     inputFingerprint, status: 'READY', errorCode: null, errorDetail: null, updatedAt: view.updatedAt,
@@ -177,7 +198,7 @@ export class OverviewResultsSyncService {
     const fenceToken = this.repository.captureScopeFenceToken(scopeType,scopeId)
     if (!this.repository.isScopeFenceTokenCurrent(fenceToken)) throw new Error('OVERVIEW_SCOPE_CHANGED')
     const conflicts = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === scopeType
-      && item.scopeId === scopeId && item.revisionKey === revisionKey && item.state === 'CONFLICT')
+      && item.scopeId === scopeId && item.revisionKey === revisionKey && item.state === 'CONFLICT' && !isOverviewGenerationEditConflict(item))
     if (!conflicts.length) return
     if (scopeType === 'FILE') {
       const source = options.sources.find(item => item.id === scopeId && item.type === 'FILE'
@@ -256,7 +277,24 @@ export class OverviewResultsSyncService {
     await mapBounded(sources,4,async source => {
       if (options.isCurrent()) await this.syncFile(source,options)
     })
-    const subjectIds = [...new Set([...options.subjectIds, ...outbox.filter(item => item.scopeType === 'SUBJECT' && item.state !== 'STALE').map(item => item.scopeId)])]
+    const generationConflicts = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
+      && item.state === 'CONFLICT' && isOverviewGenerationEditConflict(item))
+    for (const intent of generationConflicts) {
+      if (!options.subjectIds.includes(intent.scopeId)) continue
+      const files: FileOverviewRecord[] = []
+      for (const source of sources.filter(item => item.type === 'FILE' && item.subjectId === intent.scopeId && item.ingestionStatus === 'READY' && !item.deletedAt)) {
+        if (!source.ingestionRevision) continue
+        const record = await this.repository.getFileOverview(source.id,source.ingestionRevision)
+        if (record && (Array.isArray(record.outline) && record.outline.some(chapter => chapter.sections.length > 0)
+          || Boolean(record.summary?.overview.trim()))) files.push(record)
+      }
+      const fingerprint = files.length ? await computeSubjectInputFingerprint(files) : null
+      if (!fingerprint || !intent.inputFingerprint || fingerprint !== intent.inputFingerprint) {
+        await this.repository.setOverviewIntentState(intent.clientWriteId,'STALE','OVERVIEW_GENERATION_INPUT_STALE')
+      }
+    }
+    const subjectIds = [...new Set([...options.subjectIds, ...outbox.filter(item => item.scopeType === 'SUBJECT' && item.state !== 'STALE'
+      && !isOverviewGenerationEditConflict(item)).map(item => item.scopeId)])]
       .filter(id => options.subjectIds.includes(id)).slice(0, MAX_SYNC_SOURCES)
     await mapBounded(subjectIds,2,async subjectId => {
       if (options.isCurrent()) await this.syncSubject(subjectId,sources.filter(source => source.subjectId === subjectId),options)
@@ -270,7 +308,7 @@ export class OverviewResultsSyncService {
     if (!this.repository.isScopeFenceTokenCurrent(fenceToken)) return
     await this.repository.markFileRevisionStale(source.id, revision)
     let intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'FILE'
-      && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE')
+      && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     const stored = await this.repository.getFileOverview(source.id, revision)
     let state = await this.repository.getOverviewSyncState('FILE', source.id, revision)
 
@@ -288,7 +326,7 @@ export class OverviewResultsSyncService {
       if (remote) return
       if (validCompleteRecord(stored)) await this.repository.enqueueLegacySeed(stored)
       intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'FILE'
-        && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE')
+        && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
       if (!intents.length) return
       state = await this.repository.getOverviewSyncState('FILE', source.id, revision)
     } else if (!state && intents[0]?.requestBody === null) {
@@ -340,15 +378,24 @@ export class OverviewResultsSyncService {
     if (!revision) return
     let state = initialState
     let intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'FILE'
-      && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE')
+      && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     for (const intent of intents) {
       if (!await this.isSourceCurrent(source, options)) return
       if (intent.state === 'CONFLICT' || intent.state === 'ERROR') return
       let requestBody = intent.requestBody
       if (!requestBody) {
-        const result = intent.result
+        const result = { schemaVersion: 1 as const, title: intent.result.title, outline: intent.result.outline, summary: intent.result.summary }
         if (!result.outline?.length || !result.summary?.overview.trim()) return
         const mode: OverviewMode = !state ? 'ALL' : intent.mode
+        if (intent.origin === 'LEGACY_SEED' && !intent.outlineIdentityInput) {
+          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INITIALIZATION_REQUIRED')
+          return
+        }
+        const identity = mode === 'SUMMARY' ? undefined : intent.outlineIdentityInput ?? createOutlineIdentityInput(result.outline)
+        if (identity && !hasCompleteOutlineIdentityInput(result.outline, identity)) {
+          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INVALID')
+          return
+        }
         requestBody = {
           baseVersion: state?.version ?? 0,
           clientWriteId: intent.clientWriteId,
@@ -356,6 +403,8 @@ export class OverviewResultsSyncService {
           ingestionRevision: revision,
           outlineGeneratedAt: intent.outlineGeneratedAt,
           summaryGeneratedAt: intent.summaryGeneratedAt,
+          ...(identity ? { outlineIdentity: identity } : {}),
+          ...(mode === 'SUMMARY' || !intent.outlineProvenanceInput ? {} : { outlineProvenance: intent.outlineProvenanceInput }),
           result,
         }
         const materialized = await this.repository.materializeOverviewIntent(intent.clientWriteId, requestBody)
@@ -397,7 +446,7 @@ export class OverviewResultsSyncService {
       }
       state = await this.repository.getOverviewSyncState('FILE', source.id, revision)
       intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'FILE'
-        && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE')
+        && item.scopeId === source.id && item.revisionKey === revision && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     }
   }
 
@@ -406,7 +455,7 @@ export class OverviewResultsSyncService {
     const fenceToken = this.repository.captureScopeFenceToken('SUBJECT',subjectId)
     if (!this.repository.isScopeFenceTokenCurrent(fenceToken)) return
     let intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
-      && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE')
+      && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     let state = await this.repository.getOverviewSyncState('SUBJECT', subjectId, 'subject-v1')
     const local = await this.repository.getSubjectOverview(subjectId)
     if (!intents.length) {
@@ -424,7 +473,7 @@ export class OverviewResultsSyncService {
       if (remote) return
       if (validCompleteRecord(local)) await this.repository.enqueueLegacySeed(local)
       intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
-        && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE')
+        && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
       if (!intents.length) return
       state = await this.repository.getOverviewSyncState('SUBJECT', subjectId, 'subject-v1')
     } else if (!state && intents[0]?.requestBody === null) {
@@ -464,13 +513,13 @@ export class OverviewResultsSyncService {
     options: OverviewSyncOptions, fenceToken: OverviewScopeFenceToken): Promise<void> {
     let state = initialState
     let intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
-      && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE')
+      && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     for (const intent of intents) {
       if (!await this.isSubjectCurrent(subjectId, options) || !await this.subjectInputsCurrent(subjectId, sources, options)) return
       if (intent.state === 'CONFLICT' || intent.state === 'ERROR') return
       let requestBody = intent.requestBody
       if (!requestBody) {
-        const result = intent.result
+        const result = { schemaVersion: 1 as const, title: intent.result.title, outline: intent.result.outline, summary: intent.result.summary }
         if (!result.outline?.length || !result.summary?.overview.trim()) return
         const currentContentFingerprint = await this.subjectContentFingerprint(sources)
         if (!currentContentFingerprint || !intent.inputFingerprint || intent.inputFingerprint !== currentContentFingerprint) {
@@ -489,6 +538,15 @@ export class OverviewResultsSyncService {
         if (!modeInputsAvailable(allEntries, mode)) return
         const sourceManifest = projectManifest(allEntries,mode)
         const inputFingerprint = await computeOverviewManifestFingerprint(sourceManifest)
+        if (intent.origin === 'LEGACY_SEED' && !intent.outlineIdentityInput) {
+          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INITIALIZATION_REQUIRED')
+          return
+        }
+        const identity = mode === 'SUMMARY' ? undefined : intent.outlineIdentityInput ?? createOutlineIdentityInput(result.outline)
+        if (identity && !hasCompleteOutlineIdentityInput(result.outline, identity)) {
+          await this.repository.setOverviewIntentState(intent.clientWriteId, 'ERROR', 'OVERVIEW_IDENTITY_INVALID')
+          return
+        }
         requestBody = {
           baseVersion: state?.version ?? 0,
           clientWriteId: intent.clientWriteId,
@@ -497,6 +555,8 @@ export class OverviewResultsSyncService {
           inputFingerprint,
           outlineGeneratedAt: intent.outlineGeneratedAt,
           summaryGeneratedAt: intent.summaryGeneratedAt,
+          ...(identity ? { outlineIdentity: identity } : {}),
+          ...(mode === 'SUMMARY' || !intent.outlineProvenanceInput ? {} : { outlineProvenance: intent.outlineProvenanceInput }),
           result,
         }
         const materialized = await this.repository.materializeOverviewIntent(intent.clientWriteId, requestBody)
@@ -542,7 +602,7 @@ export class OverviewResultsSyncService {
       }
       state = await this.repository.getOverviewSyncState('SUBJECT', subjectId, 'subject-v1')
       intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
-        && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE')
+        && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
     }
   }
 }

@@ -468,8 +468,8 @@ Record irreversible loss of old Task color values, synchronized-client deploymen
 - [ ] **Step 4: Register both design and implementation plan in `docs/README.md` without replacing unrelated edits**
 
 ```markdown
-- [Task 颜色能力全栈移除设计（2026-09-07）](design/2026-09-07-remove-task-color-design.md)
-- [Task 颜色能力全栈移除实施计划（2026-09-07）](plans/2026-09-07-remove-task-color.md)
+- [Task 颜色能力全栈移除设计（2026-09-07）](../design/2026-09-07-remove-task-color-design.md)
+- [Task 颜色能力全栈移除实施计划（2026-09-07）](2026-09-07-remove-task-color.md)
 ```
 
 - [ ] **Step 5: Commit the documentation checkpoint**

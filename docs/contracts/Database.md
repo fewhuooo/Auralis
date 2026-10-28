@@ -1,14 +1,117 @@
 # Auralis 数据库与端侧数据契约
 
-更新时间：2026-10-10
+### V41 Overview 重试父关联与请求意图（源码候选，未应用业务库）
 
+`overview_generations.retry_of_generation_id UUID NULL`自引用原代，外键`ON DELETE SET NULL`，CHECK禁止引用自身；可空列唯一索引`uq_overview_generations_retry_successor`使用默认NULL DISTINCT语义，允许普通NULL父代并存、保证非NULL父代只有一个直接后继。`overview_generation_requests.retry_of_request_id UUID NULL`保存客户端重试意图供request幂等校验，无外键，也不进入内容指纹。现有表内扩展，无新任务表；新代独立budgetTaskId，父代失去执行权时fence递增，旧记录、检查点及usage ledger保留。
+
+可从指定retry祖先读取已验证INDEX/ROUTE/Writer检查点，不要求祖先整轮SUCCESS；仍校验owner/scope、来源revision、输入、prompt/profile/algorithm/schema、payload及Writer验证证明。PC最近派发ID只在内存维护，本地schema仍v13；不改Core Sync/change log/正式结果结构。H2/隔离PG迁移、重试并发/祖先复用定向通过；full中的隔离认证及旧latest=40断言失败已affected闭合，未重跑full。任务PG容器已移除，业务数据库未迁移。详见[实施计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
+### 2026-10-27 私有索引章起点元信息（无migration，未部署）
+
+私有INDEX checkpoint v3在既有sectionRoles旁保留可选sourceChapterStart（unitAlias/title），随既有payload完整性与来源校验恢复；primary、JSON修复结果和checkpoint读取使用同一元信息语义。主题输出顺序从私有索引顺序重建，同一unit中只对章声明及之后的主题生效。算法 `overview-adaptive-v11-source-chapter-order` 隔离旧中间计划/索引，不回填或兼容旧checkpoint。
+
+无新表/列或业务库迁移；正式结果、原资料、费用、既有成功记录和当前V40保持。本轮Recovery30/30首轮在隔离Testcontainers通过，新章元信息及复用的集成验证见D:/Temp/auralis-overview-chapter-order-20261026/implementation-validation-report.md；未操作运行态数据库或清缓存。
+
+### 2026-10-26 V40已应用本机数据库
+
+用户追加部署授权后，本机PostgreSQL由V39迁移至V40成功。此前已做完整pg_dump及定向缓存备份。按用户范围选择清理6条FAILED私有生成及子缓存；原SUCCESS22、正式结果22、receipts25、费用reservations675和Sources22（20 active）全部保持，12组计数/hash与部署前一致。原unknown-dispatch SUCCESS及其费用保持，不进行对账重分类或退款。
+
+执行与备份证据见D:/Temp/auralis-overview-deploy-20261026/。本次改变的是V40存储约束及明确授权的失败缓存，不修改正式内容或来源数据；下面“未应用业务库”条目为迁移验证阶段历史。
+
+### V40 Overview 可配置容量（隔离验证完成，未应用业务库）
+
+`V40__configurable_overview_payload_caps.sql` 放宽 generation result/checkpoint、execution plan/node descriptor、job request/manifest/candidate 和正式结果 input snapshot 的旧 SQL 最大长度约束，保留 JSON 最小非空长度及原有身份、状态、来源和事务约束。`overview_results.title` 由 VARCHAR(300) 扩为 TEXT；应用层按 `OverviewLimits` 正数配置限幅，0 不增设固定帽。迁移不删除旧结果或用量数据。
+
+当前算法 `overview-adaptive-v10-dynamic-capacity-writer-body` 隔离不同中间契约。Writer 不再保存模型回声作为覆盖证明，仍由授权输入绑定范围、manifest/hash/proof；现有正式来源和 provenance 结构保持。九个 direct PG 类在任务专用 PostgreSQL 17/V40 下 43/43 通过；H2 检查实际迁移后的标题列可容纳超过 300 字符。未对业务库执行 migration，未清理 SUCCESS、正式记录或账本。见[本轮计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。
+
+### 2026-10-26 EDIT轻量模型视图与完整程序快照（无migration）
+
+EDIT的完整Snapshot保留在本轮Java内存，包含完整正文并用于baseDocumentHash、segment身份和apply校验；仅promptView被序列化给模型。模型视图保留完整快照绑定的hash、真实标题/小标题与首尾块，省去中间正文及其中间逐块metadata；单段首尾不重复。checkpoint仍保存通过验证的patch JSON，恢复仍针对完整Snapshot校验和应用，未新增快照表、存储映射或兼容层。
+
+新算法overview-adaptive-v10-body-reading-boundary-view隔离旧中间计划。NAV阅读小节和空章移除后，公开provenance路径依最终BODY章节顺序重排；相关来源仍按原有source/revision绑定。原资料、成功结果、正式记录与账本不清理。本轮隔离Recovery30/30通过；未执行migration、业务库操作或部署。
+
+### 2026-10-26 Writer 来源范围留在程序侧（无migration，本轮未部署）
+
+Writer提示词移除writerInputRanges后，现有批次原文对象仍向保存/加载传递完整Source/revision/chunk/generation/hash/字符范围；这些范围参与checkpoint step身份，恢复时与原有manifest精确比对。文本相同不替代来源位置身份，不新建表、旁路映射或旧格式兼容层。新算法标识 `overview-adaptive-v10-selected-index-local-writer-ranges` 隔离不匹配的旧generation/plan；原SUCCESS、用量账本和正式结果不清理。
+
+索引checkpoint可保存合法的已选单元子集；它不再声明逐原文单元覆盖。既有manifest/proof结构和公开provenance保持。本轮在隔离PostgreSQL验证相关Recovery方法，没有读写业务数据库；未执行migration、部署或真实模型调用。分批结果见 `D:/Temp/auralis-overview-contract-trim-20261026/gate/final-evidence-summary.md` 及 `review-summary-null-delta.md`。
+
+### 2026-10-26 Overview 用途索引与边界补丁checkpoint（复用现有表，无migration）
+
+自适应v10在现有私有checkpoint保存索引响应及逐索引小节的来源用途绑定；同一原文单元可以在不同主题中拥有不同用途，不以全局unit标签替代。metadata组织保留原topic、unit及来源绑定，背景排除记录与教学完成状态分开。
+
+最终ADAPTIVE_EDIT的checkpoint绑定完整分段快照、用途投影、编辑schema与模型/指令身份；恢复时重新验证补丁ID、hash、结构和作用域，再应用到原快照副本。Writer已验证正文、proof和checkpoint保持原样，补丁不会写回原Writer记录。算法/请求指纹隔离不匹配的旧中间契约，不增加旧格式回退；原SUCCESS、用量账本和正式结果生命周期保持。
+
+本轮没有数据库schema或端侧存储结构变更，没有执行migration或业务库写入。Docker引擎不可用，PG/MinIO集成验证受限；不能以非Docker单测代替持久事务/恢复验收。见[实施计划](../plans/2026-10-25-overview-boundary-edit-quality.md)。
+
+### V39 无界 Overview job deadline（源码与自动迁移验证完成；未部署）
+
+V39 仅重建 `ck_overview_jobs_lease`：RUNNING 仍要求 `worker_owner_id` 和 `lease_until` 非空，但允许 `deadline_at=null` 表示无整任务期限。配置为 0 后的新 claim 保持 null，已有正数期限不回填、不延长；所有权、lease/fence、进度、dispatch 与完成校验继续生效，超时扫描忽略 null。无公开字段或端侧同步结构变化，未对业务数据库执行迁移。
+
+### 2026-10-24 Overview writer recovery checkpoints（复用现有结构，无 migration）
+
+Overview v9 writer 在现有 `overview_generation_checkpoints` 保存带独立 kind/version 的不可变 PLAN、RESULT 与 payload 记录；PLAN 绑定 parent prompt、确定性 child path 与原文 ranges/hash，RESULT 绑定 parent payload hash、每个 fragment 的 body hash、topic 声明及精确 source ranges。所有记录仍受 generation/input/profile/algorithm fingerprint 与现有 payload 限制。无 schema 或 migration 变化；未知 discriminator 不兼容复用。
+
+更新时间：2026-10-24
 文档状态：阶段 1 Identity V1、阶段 2A Subject/KnowledgeBlock/Task V2、阶段 2B Source/Asset/Relation V3、阶段 3 Sync V4/V6 与阶段 4 Review/Stats/Realtime V5、Task V7、阶段 5 AI/RAG V8–V14 已实现；R1 AI 并发保留与离线会话恢复键已通过测试，默认容器门禁已完成，真实 Provider 和前端验收仍未完成
-
 权威范围：新 Server PostgreSQL/pgvector 表、Entity 映射、同步字段、端侧离线副本和 Tablet 专有数据边界。
-
 事实来源：docs/plans/backend-greenfield-rewrite-plan.md、docs/contracts/ObjectModelMatrix.md、替换前旧 Server 的 DDL/Entity/Mapper 与 PC/Mobile localDb。
 
+### 2026-10-23 M5.4 正文 checkpoint 复用（无 schema/API/migration 变化；源码与唯一审查完成）
+
+- 复用沿用现有 checkpoint、V35 execution journal 与 execution plan/node：donor 须为 SUCCESS generation，其 ASSEMBLED plan 下 VERIFIED node 的 hash 与 checkpoint 一致，并由 node 当前 attempt 的 execution-call 关联到 `request_dispatched=true` 的真实 reservation。无 reservation 的 cache-materialized node 不得接力成为 donor。物化本代恢复 checkpoint不更新 donor checkpoint/TTL。
+- 源码差异未新增 schema、API 或 migration。未运行 PostgreSQL 或生产业务数据库验证；不据此声明数据库运行态验收。唯一 reviewer 结论 B0/I0/O0。
+- 证据：`D:/Temp/auralis-overview-m54-20261023/source-delta.patch`、`source-final-manifest.json`、`final-handoff.md`、`review.md`。
+
+### 2026-10-23 M5.3 目录规划 checkpoint 复用（无数据库结构变化；唯一审查完成）
+
+M5.3 沿用现有 `overview_generation_checkpoints`，支持 `ADAPTIVE_ROUTE`、`ADAPTIVE_METADATA` 和 `ADAPTIVE_METADATA_ROUTE` 规划 purpose 的跨 generation donor 读取；以同 owner/scope/profile/algorithm、完整 input、prompt-derived step、SUCCESS、checkpoint 14 天和 result 到期及 payload SHA/schema 限制命中。当前 generation checkpoint 优先；donor 只读、不复制、不延寿。此次源码范围没有 API、数据库 schema、migration 或端侧同步字段变化；本轮没有 PostgreSQL 或业务数据库验收证据。gpt-6-luna high 的首轮定向批次为50 pass/1 error；受影响方法后续1/1通过，未重跑整批。唯一 reviewer B0/I0/O1；O1为文档同步项，已由本次回写处理，文档回写后未复审。
+
+### 2026-10-23 M5.2 索引 batch checkpoint 复用（无 schema 变化；源码与相关验证/审查完成）
+
+M5.2 沿用现有 `overview_generation_checkpoints`，以 `index_batch_v1_SHA` 识别由 system prompt、`indexData` 与有序完整 `AdaptiveRawUnit` 记录决定的索引 batch；无新表、字段或 migration。跨任务读取受 owner/scope/profile/algorithm、SUCCESS donor、donor checkpoint 与其 generation input fingerprint 一致、payload SHA/schema、14 天 checkpoint 与 result 到期围栏约束。命中只读且不延寿；只有真实 Provider 新生成并通过 coverage/shape 后才写当前 generation checkpoint。gpt-6-luna high 实现与定向验证49/49；唯一只读 reviewer（gpt-6-luna high）B0/I0/O0。该批次不构成 PostgreSQL 或业务数据库验收。
+
+
+### 2026-10-22 M5.1：完全相同输入的跨任务轻量索引复用
+
+- 新生成任务先读取自身 checkpoint；缺失时，仅 ADAPTIVE_INDEX 可查询同 owner、scope、完整 input fingerprint、profile、算法和 prompt step 的 SUCCESS generation。读取同时检查 result 到期和 checkpoint 14 天有效期，以及 payload SHA/schema；使用前继续执行现行 Source/owner 校验和索引 coverage/shape 校验。
+- 复用现有 overview_generation_checkpoints，只读命中，不复制缓存、不延长原条目寿命、不新增表或迁移。目录和正文仍执行当前生成流程；命中不派发 Provider、不伪造 usage，记录 ADAPTIVE_INDEX_CACHE_RETURN。预算预检识别可复用索引。
+- 本小节只覆盖完整输入未变化时的新任务复用；资料局部变化、节点级依赖失效、目录/正文跨任务缓存及完整删除生命周期仍属于后续 M5，不能据此标记 M5 完成。现有前端流程保持。
+- 验证：D 盘隔离源码运行 OverviewGenerationCoordinatorTests 21/21、OverviewAdaptiveGenerationTests 26/26，共 47/47，Maven exit 0。覆盖跨 owner/输入/profile 隔离、过期、损坏拒绝及生成链路跳过索引而继续目录/正文。当前为 H2/合成 Gateway 证据，未运行 PostgreSQL、全量测试、打包、真实 Provider、GUI 或部署。本轮依用户要求由主模型直接实现并检查，未启用子代理。
+- 证据：D:/Temp/auralis-overview-m51-20261022/targeted-tests.log 与 handoff.md。更早前端回退的四项失败未由本轮处理；此前范围审计按用户最新要求暂置，尚无完整审计结论。
+### Overview M4 Server 候选采纳持久化说明（2026-10-22；无新迁移）
+
+Server formal result、write receipt 与 V37 publication intent schema 继续沿用 M3.4 契约；formal PUT 可通过 `jobId/jobVersion` 解析候选输入。PC M4 候选采纳 consumer 已撤回，当前不把候选采纳写入本地 `overview_sync_outbox`。Local SQLite 仍为 schema v13；本次无新 migration，也未执行用户业务数据库迁移。隔离浏览器读回的 formal Source/section v4 与 receipt 属于回退前历史。
+
+
+### V37 Overview publication 与 per-part input snapshot（源码与隔离 PostgreSQL 门禁验证完成；未部署）
+
+候选 V37 给 `overview_generation_jobs` 增加 enqueue 时观察的 formal logical version 与 physical result ID/version；为 `overview_results` 的 outline/summary 分别保存显式 input origin 与 bounded snapshot JSON，并按旧 scope 已知契约回填既有 non-null part；新增 `overview_publication_intents`，保存 owner/client/job/plan 唯一意图、stable write ID、expected job version、hash/profile/input/algorithm identity、baseline、状态、尝试次数/重试时间、安全错误及结果版本引用。Raw snapshot 不含正文、prompt 或 Provider 凭据，约束最多 262144 字符。
+
+Intent PENDING 持久化与最终 formal result + exact `overview_write_receipts` + PUBLISHED 更新分为两段短事务；最终提交按 user→Subject→Source→job/generation/plan→intent→result→receipt 序列化，删除通过 user/job/generation/plan 级联清理。V37 migration 与 publication PostgreSQL integration matrix 已在任务专用隔离 schema 验证；未修改用户业务数据库、未部署。完整验证边界见 [M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。
+
+
+
+### V36 Overview 后台 jobs 与精确调用关联（迁移源码与相关 PostgreSQL 验证完成；未部署）
+
+V36 新增私有表 overview_generation_jobs 与 overview_generation_invocations，不属于五类 Core Sync、change log 或客户端 mutation。job 表以 (user_id,client_request_id)、(user_id,generation_request_id) 唯一；保存请求 hash/JSON、有序 source manifest、input/profile/algorithm fingerprint、generation 与 budget task 关联、status/stage/node progress/version、worker owner/fence/lease、绝对 deadline、pause/cancel intent、安全错误码和可选完整 candidate JSON。source manifest 仅保存最多 500 个 raw unit 的 UUID、hash 与位置等元数据，不含原文；source_manifest_json 长度上限为 262144 字符，不截断内容。job profile metadata fingerprint 由内部 AiSettingsService.jobProfileMetadata(UUID userId, AiProviderType provider) 产生，包含 provider、chatModel、normalizedEndpoint、credential source 与 opaque fingerprint；enqueue 用该 fingerprint 固定稳定配置身份，BYOK 对存储密文做 hash，默认配置对已加载 API key 做 hash，不持久化原密文或 key。worker claim 时调用 AiSettingsService.resolveJobSettings(UUID userId, AiProviderType provider, String expectedFingerprint)，在一次只读事务中从同一 BYOK entity 或 default 配置对象计算并校验 metadata fingerprint，再解密同一 entity 密文或构造 default credential，返回配对的 JobResolvedSettings(metadata, settings) 并将该 settings pin 给后台生成；避免独立读取 metadata 与 credential 之间配置切换导致凭据错配。此 job fingerprint 与 resolve 后才计算的现有运行时 generation profileFingerprint 分开；原同步 resolve 行为不变，credential 解析事务不跨 Provider I/O。用户外键级联删除，generation 删除时 job 的 generation_id 置 NULL；请求快照、manifest、candidate 有长度约束。claim、scope 与 generation 查询分别有 (status,created_at,id)、(user_id,scope_type,scope_id,status,updated_at) 与 generation_id 索引。
+
+invocation 表逐次保存 job/generation/task/user、真实 reservation UUID、purpose/stage、generation owner/fence 和可空 job fence；generation/job 的 budget_task_id 保持原始预算 UUID，而 invocation task_id 保存 usage ledger UUID UUID.nameUUIDFromBytes((userId + ":" + feature + ":" + budgetTaskId).getBytes(UTF_8))，与 AiUsageGuard 的 Overview task 映射一致，不改变预算或结算身份；reservation UUID 唯一，generation/job/user 删除时关联行级联清理。每个 generation 最多 500 条关联，并有 (generation_id,created_at,id) 与 (job_id,created_at,id) 有序查询索引。恢复以精确关联查询 ai_usage_reservations 判定安全性；关联表不改写或清除 usage ledger。DDL 的全部约束、索引和字段见 V36__overview_background_jobs.sql。相关 PostgreSQL job/invocation 用例通过定向批次；首次 full 有失败项，受影响组修复后未重跑 full。migration/package 已经由 -DskipTests package 构建，但没有对运行中的业务数据库执行迁移。### V33 AI usage operation and credential source
+
+V33 adds nullable `operation_kind VARCHAR(32)` and `credential_source VARCHAR(32)` to `ai_usage_reservations`, plus an owner/source/time index. Existing rows stay NULL and are classified at read time as `LEGACY_UNCLASSIFIED` / `LEGACY_UNKNOWN`; migration does not infer or backfill either value. New reservations persist the server operation kind and the actual per-invocation credential source. The same task may contain different sources, while non-null operation kind cannot change within one actual `task_id`. This remains a private derived ledger and stores no credential or prompt content.
+
+Platform quota aggregation includes `PLATFORM` and historical NULL source rows conservatively. `USER_SUPPLIED` rows remain in all-origin audit and shared concurrency counts but do not consume platform window or task quota. Historical unknown occupancy naturally expires from time windows; account deletion keeps the source classification and charged exposure for system-wide accounting.
+
+
+### V34 Overview identity and source-chunk provenance（PG 门禁通过；M2 API closure 完成）
+
+V34 adds nullable `overview_results.outline_identity_json` and `source_chunks.provenance_json`. The first stores server-owned outline node IDs and content versions/hashes; the second stores parsed-document identity and original block position ranges for each generated chunk. Both are additive and existing rows remain NULL; reads do not backfill identity or rebind historical chunk references. Overview result metadata, CAS version, and write receipt continue to commit in the existing transaction. Task-owned PostgreSQL 17.11 clean V34, V33 row preservation, save/read/receipt/CAS and rollback tests passed (OverviewIdentityPostgresIntegrationTests 4/4); the migration regression class passed 6/6. These isolated tests are not production/business-database acceptance.
+
 ## 数据源边界
+
+### V35 Overview execution plan/node journal（迁移与相关 PostgreSQL 验证完成；未部署）
+
+These tables store no original body, provider credentials, or full prompt. They do not change overview result, public API, OpenAPI, or SDK shape. The isolated V33-to-V35 PostgreSQL migration and M3.2 recovery tests passed; the replacement package succeeded with tests skipped. The full backend suite was not rerun after focused fixes. No production/business database was migrated.
 
 ### 2026-10-09 Review 本地正式数据与待同步意图（代码与自动验证通过；真实Tauri待验收）
 
@@ -123,9 +226,11 @@ Flyway V32 新增私有生成状态并已接入 Overview Service，clean 与 V31
 
 | 表 | 用途及主要约束 |
 | --- | --- |
-| `overview_generations` | owner、scope/revision、input/profile/algorithm fingerprint、状态、fence/lease、累计 charged/unknown-dispatched/reservation 预算 lineage、累计 recovery count / 去重后的安全 recovery actions 和可选成功结果；结果大小受限，状态受 CHECK 约束。`error_status` / `error_retry_after_seconds` / `error_reset_at` 仅保存六种既有用量错误的安全状态与重试信息，可空 reset 时间不写零值替代；详情只允许合法 FAILED/code/status 组合，失败提交受 fence/lease 保护，接管或成功清除。成功 response payload 按 14 天期限清除；generation 与 budget metadata 保留，失败 lineage 不因重试或 payload 清理而重置。 |
+| `overview_generations` | owner、scope/revision、input/profile/algorithm fingerprint、状态、fence/lease、累计 charged/unknown-dispatched/reservation 预算 lineage、累计 recovery count / 去重后的安全 recovery actions 和可选成功结果；安全 action 为大写字母/数字/下划线短标识，当前包括既有 `REDUCE_RECOVERY`、`REDUCE_SPLIT` 与新增 `PROVIDER_TRUNCATION_SPLIT`、`PROVIDER_JSON_REPAIR`，generation 内按集合去重；结果大小受限，状态受 CHECK 约束。`error_status` / `error_retry_after_seconds` / `error_reset_at` 仅保存六种既有用量错误的安全状态与重试信息，可空 reset 时间不写零值替代；详情只允许合法 FAILED/code/status 组合，失败提交受 fence/lease 保护，接管或成功清除。成功 response payload 按 14 天期限清除；generation 与 budget metadata 保留，失败 lineage 不因重试或 payload 清理而重置。 |
 | `overview_generation_requests` | owner-scoped `request_id` 到 generation/input 的映射；`(user_id,request_id)` 唯一。只对规范化有效 UUID 提供客户端 replay；输入冲突拒绝。mapping 与 generation/budget metadata 保留，成功 payload 清理后旧 ID 仍不能再次绑定。缺失/空白/非法 ID 会被生成新的服务端 UUID，因此不构成客户端 idempotency key。 |
 | `overview_generation_checkpoints` | 按 generation、step、输入 fingerprint、schema version 记录已校验中间 payload/hash；唯一约束防止相同步骤身份重复写入，payload 有大小上限。checkpoint 按独立到期策略清理，不代表 request mapping 或 generation metadata 的保留期限。 |
+
+Direct Source/Subject adaptive generation 允许恢复唯一精确绑定的 terminal FAILED writer attempt，但只在 request 已 dispatched、actual usage 缺失、reservation 已结算且 `charged_tokens >= estimated_input_tokens + reserved_output_tokens > 0` 时。旧 reservation 不更新、不释放，budget root 和已验证 checkpoints 保留；新 attempt 建立自己的 execution-call/invocation/reservation lineage。generation/node attempt、精确 reservation 关联与有效 checkpoint 在现有 fence 下再次校验。一个 node 出现第二个 unknown-dispatched reservation、账务不足、EXPIRED/RESERVED、非 writer 或缺失/冲突关联仍 hold。该策略复用现有列、约束和 journal，无 schema/API/migration 变化；durable-job 恢复仍沿用严格 unknown hold。
 
 协调器以短事务执行 claim/fence/lease 仲裁，Provider I/O 不在事务中；Service 调用仍通过现有 Gateway 与用户用量账本。失败 payload 可按策略清理，但 generation budget lineage 不得因此重置；账户删除级联清理私有行。生成 endpoint 不写正式 Overview results，保存仍由客户端调用独立 PUT。
 
@@ -294,6 +399,8 @@ Tauri 初始化在 SQL 插件加载固定 `sqlite:auralis.db` 后、执行 PRAGM
 
 SQLite 自动测试与浏览器 fallback 验证不能证明真实 Tauri 重启迁移；具体命令和边界见实施计划。
 
+2026-10-19 Overview M2：PC 本地 schema v13 为 `ai_overview_cache` 增加可空 `outline_identity_json`、`outline_identity_input_json`、`outline_provenance_json`、`outline_provenance_input_json` 与默认 0 的 `identity_ready`。这是端侧派生缓存/outbox metadata，不进入五类核心 Sync 资源或 mutation schema；旧 cache 不会被伪造身份初始化。M2 SQLite/序列化 focused evidence 已完成；实际 Tauri 在用数据库升级仍待现场验收。
+
 ### PC AI 总览派生缓存（本地 schema v7，2026-09-10）
 
 - PC 本地 SQLite 新增 `ai_overview_cache`，主键为 `(user_id, device_id, scope_type, scope_id, revision_key)`；`device_id` 仍表示 `serverDeviceId`。该表保存 AI 生成的大纲、总结、生成时间、输入指纹和安全失败摘要，不进入 `local_resource_records`、`local_mutations` 或核心 Sync。2026-10-01 起，完整成功成果通过独立 Overview 接口与 Server 结果表对账；失败摘要仍只在本机。
@@ -397,3 +504,26 @@ Tablet NoteDocument 的 pages、strokes、snapshot、viewport、background 和�
 - PC 本地新增按 `userId:serverDeviceId` 隔离的 `document_processing_jobs` 元数据，并保存 `ingestion_revision`。SQLite 只保存任务 phase、页级检查点、哈希、parser/model 版本、重试和安全错误；正文使用现有 OS keyring 主密钥派生的分块 AES-256-GCM envelope 临时保存，AAD 绑定 user/serverDevice/source/job/revision/schema。服务端确认接收、退出登录、Source 删除或 Asset 替换后清理；不新增第二套独立 DPAPI 密钥。
 
 S1 已通过追加式 `V15__tauri_parsed_document_schema.sql` 落地上述数据库边界：`sources.ingestion_revision` 为服务端只读 UUID（历史行以 Source id 稳定回填，默认零 UUID 仅用于兼容尚未切换的旧写入路径）；`parsed_documents` 保存 schema/parser/normalization/OCR model、Asset/payload/plain-text SHA、对象 key、状态、generation 和生命周期时间；`ingestion_jobs` 增加可空 `parsed_document_id` 与 `ingestion_revision`。`parsed_documents` 没有 change log、snapshot 或 inbound mutation 外键。S2 已让 SourceEntity/SourceView 只读承载该 revision，并按 FILE/TEXT/URL 分流状态和事件；S3 已实现 owner-scoped upload-intent 与 `UPLOADING` 元数据落库，私有 object key 不由客户端提供；S4 已加入服务端有界流式 payload 校验和 legacy Asset 空 SHA 的条件回填；S5 已在 Source 行锁内实现 complete 首胜、同 payload 幂等、冲突/过期拒绝和唯一 revision indexing job 关联；S6 已完成 accepted ParsedDocument block reader、generation/revision 旧任务隔离、兼容 reingest 复用、旧 revision `SUPERSEDED` 标记和过期 payload 对象清理，保留 ParsedDocument 审计行。H2 clean/upgrade schema 4/4、Source/Ai ingestion 定向回归 11/11、`ParsedDocumentControllerTests` 3/3、`ParsedDocumentValidatorTests` 4/4、`AssetShaBackfillTests` 2/2、`ParsedDocumentCompleteTests` 3/3、S6 定向 21/21 通过，覆盖 READY FILE 与活动 chunk 保留、旧非 READY FILE 迁移为 `AWAITING_CLIENT`、owner/stale revision/hash/schema/size 校验、gzip bomb/UTF-8/ordinal/hash、并发 SHA 回填、complete 首胜、worker block 索引/revision fencing、generation 失败保护、兼容 reingest 和 cleanup；PostgreSQL upgrade 测试已补充但本机无 Docker，尚未取得容器执行证据。
+
+
+
+### 2026-10-23 M5.5 private execution descriptor cache identity
+
+- 实现为私有 execution descriptor JSON 增加 `globalRoutingFingerprint`，并提升 adaptive algorithm identity，使新算法不复用无法证明兼容的旧格式 checkpoint。无需新增数据库列或 migration；不转换或回填既有数据，既有 generation plan/node/checkpoint 容器承载私有数据。
+- donor 资格仍要求当前 attempt 有真实 dispatched reservation journal，并保持 generation/plan/node/checkpoint input 身份、checkpoint hash/schema/期限及来源/coverage/shape 校验。
+- 定向 Maven 验证为 Coordinator+Adaptive 56/56、exit 0；后续 Service acceptance 2/2、exit 0。未做数据库实例、migration 或生产环境验收；唯一只读 reviewer B0/I0/O0。
+
+
+
+### 2026-10-23 Overview generation result/checkpoint cleanup
+
+- 实现只回收既有 payload，不增删改 schema/migration/API/config。只清非 ACTIVE generation 的 SUCCESS result（自身 result_expires_at 已过期），以及 checkpoint.created_at 至少 14 天的 checkpoint。
+- 每批以确定性、至多 100 个 generation 父行锁定并使用 FOR UPDATE SKIP LOCKED 与 takeover 协调。保留 metadata/request mapping/budget/plan/node/call/reservation/unknown hold 与 generation lineage；不修改 usage reservation。
+- H2 PostgreSQL mode 双事务测试验证锁竞争边界；没有真实 PostgreSQL 集成证据。14 天 checkpoint 读取有效期未变；物理清理按批次运行，不保证到期即刻清除。sole reviewer B0/I0/O0。
+
+### 2026-10-23 Overview M5 reusable cache 与 private payload retention
+
+- V38 新增单行 overview_cache_capacity_guard（id=1）用于串行化 cache admission。应用配置默认 256 MiB / 1000 generations：AURALIS_AI_OVERVIEW_CACHE_MAX_BYTES、AURALIS_AI_OVERVIEW_CACHE_MAX_GENERATIONS。只统计 standalone、未由 durable job pin 的 SUCCESS generation result 与 checkpoint payload UTF-8 bytes/rows；每次最多处理 100 个 eviction candidates。此规则不构成整个数据库容量上限。
+- Durable-job generation、job request/manifest/candidate、execution journal 与 V37 publication/source snapshots 不计入该 reusable-cache cap。已完成 job 的 request/manifest/candidate 及不再被其它仍保留 job 需要的 SUCCESS result/checkpoint/plan/node payload 在 14 天后通过有界 cleanup 清除；job/generation/plan/node/call/reservation、usage 与真实 recovery metadata 保留。TTL cleanup 分批调度，不保证期限到达时立即物理删除。
+- Source/Subject revoke 按应用事务 fence jobs/generations/intents 并清除相应 raw-derived private copies。overview_write_receipts 保留 ID、client idempotency key 与 payload hash，响应 snapshot 替换为 revoked tombstone。正式 overview_results/receipt 不参加容量淘汰或普通 TTL；显式资源删除及 account hard-delete 沿现有清理和 FK cascade 路径处理。
+- 隔离 PostgreSQL 17.11 account-deletion integration 1/1 通过：目标账号 Overview lineage 清除，同时另一 owner 数据、capacity guard 与 charged usage evidence 保留。M5 validation 的批次边界见 D 盘结案 handoff。

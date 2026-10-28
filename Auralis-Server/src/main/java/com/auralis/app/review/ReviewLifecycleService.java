@@ -1,6 +1,7 @@
 package com.auralis.app.review;
 
 import com.auralis.app.knowledge.KnowledgeBlockService;
+import com.auralis.app.knowledge.KnowledgeBlockContentHash;
 import com.auralis.app.knowledge.KnowledgeBlockView;
 import com.auralis.app.review.ReviewLifecycleDtos.CommandHistory;
 import com.auralis.app.review.ReviewLifecycleDtos.CommandResponse;
@@ -348,7 +349,7 @@ public class ReviewLifecycleService {
         KnowledgeBlockView block = knowledgeBlockService.requireActiveKnowledgeBlockForMutation(userId, blockId);
         ReviewStateEntity current = stateRepository.findForUpdateByUserIdAndKnowledgeBlockId(userId, blockId)
                 .orElse(null);
-        if (block.version() != version || !ReviewContentHash.sha256(block.content()).equals(contentHash)) {
+        if (block.version() != version || !KnowledgeBlockContentHash.sha256(block.content()).equals(contentHash)) {
             throw new DomainException("RESOURCE_VERSION_CONFLICT", "Knowledge block content/version does not match",
                     current == null ? null : stateView(current, block.version()));
         }
@@ -373,7 +374,7 @@ public class ReviewLifecycleService {
         }
         ReviewLifecycleReviewEntity review = requireReview(userId, block.id(), reviewId);
         if (!ReviewRating.AGAIN.name().equals(review.getEffectiveRating())
-                || !sameContentVersion(review, block, ReviewContentHash.sha256(block.content()))) {
+                || !sameContentVersion(review, block, KnowledgeBlockContentHash.sha256(block.content()))) {
             throw rejected(reopen
                     ? "Learning reopen must reference the current AGAIN review attempt"
                     : "Learning completion reviewId must reference the current AGAIN review attempt");
@@ -388,7 +389,7 @@ public class ReviewLifecycleService {
     private boolean sameContentVersion(ReviewLifecycleReviewEntity review, KnowledgeBlockView block, String hash) {
         return review.getKnowledgeBlockVersion() == block.version()
                 && review.getContentHash().equals(hash)
-                && ReviewContentHash.sha256(block.content()).equals(hash);
+                && KnowledgeBlockContentHash.sha256(block.content()).equals(hash);
     }
 
     private Schedule selectSchedule(ReviewStateEntity current, ReviewRating rating, Instant selectedAt) {

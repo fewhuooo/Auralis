@@ -18,9 +18,23 @@ export async function resolve(specifier, context, nextResolve) {
 `
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
+function createTestLockManager() {
+  const tails = new Map()
+  return { request(name, _options, operation) {
+    const previous = tails.get(name) ?? Promise.resolve()
+    let release
+    const held = new Promise(resolve => { release = resolve })
+    const tail = previous.then(() => held, () => held)
+    tails.set(name, tail)
+    return previous.then(operation).finally(() => { release(); if (tails.get(name) === tail) tails.delete(name) })
+  } }
+}
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: createTestLockManager() } })
+
 const { createMemoryStorage } = await import('../src/services/localRepository.ts')
 const { OverviewRepository, computeSubjectInputFingerprint } = await import('../src/services/overviewRepository.ts')
-const { computeOverviewManifestFingerprint, OverviewResultsSyncService } = await import('../src/services/overviewResultsSyncService.ts')
+const { computeOverviewManifestFingerprint, OverviewResultsSyncService, runOverviewConflictResolutionOnce } = await import('../src/services/overviewResultsSyncService.ts')
+const { createOutlineProvenanceInputForLinkedSources, createOutlineProvenanceView, filterOutlineSourceRefs } = await import('../src/services/outlineIdentity.ts')
 const { OVERVIEW_INTENT_CREATED_EVENT, subscribeOverviewIntentCreated } = await import('../src/services/overviewSyncWakeup.ts')
 const { ApiProblemError } = await import('../src/api/httpError.ts')
 const syncStoreSource = await readFile(new URL('../src/store/useSyncStore.ts', import.meta.url), 'utf8')
@@ -97,6 +111,33 @@ test('partial cache parts merge locally without an upload intent until complete'
   assert.deepEqual(queued[0].result.summary, summary)
 })
 
+test('a generation-edit conflict stays local while the ordinary frozen edit intent still synchronizes', async () => {
+  const repository = new OverviewRepository('generation-conflict-sync-user', 'device-1', { storage: createMemoryStorage() })
+  const api = fakeApi()
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL',
+    response: { schemaVersion: 1, title: 'Local', outline, summary } })
+  await service(repository,api).reconcile(options())
+  assert.equal(api.calls.putFiles.length, 1)
+
+  const generationBaseline = await repository.captureGenerationBaseline('FILE','file-a','rev-1','OUTLINE')
+  const localOutline = [{ title: 'Locally edited', sections: [{ title: 'Local section', summary: 'Local edit', sourceIds: ['file-a'], locator: null }] }]
+  await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE',
+    response: { schemaVersion: 1, title: 'Local edit', outline: localOutline, summary: null } })
+  const ordinaryIntent = (await repository.listOverviewOutbox()).find(item => item.scopeType === 'FILE' && item.state === 'PREPARED')
+  const aiOutline = [{ title: 'AI result', sections: [{ title: 'AI section', summary: 'AI', sourceIds: ['file-a'], locator: null }] }]
+  const conflicted = await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'OUTLINE',
+    response: { schemaVersion: 1, title: 'Generated', outline: aiOutline, summary: null }, generationBaseline })
+  assert.equal(conflicted.generationConflicts?.[0]?.clientWriteId, (await repository.listOverviewOutbox()).find(item => item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT')?.clientWriteId)
+
+  await service(repository,api).reconcile(options())
+  const sent = api.calls.putFiles.slice(1)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0][1].clientWriteId, ordinaryIntent?.clientWriteId)
+  assert.deepEqual(sent[0][1].result.outline, localOutline)
+  assert.deepEqual((await repository.getFileOverview('file-a','rev-1'))?.outline, localOutline)
+  assert.equal((await repository.listOverviewOutbox()).find(item => item.errorCode === 'OVERVIEW_GENERATION_EDIT_CONFLICT')?.state, 'CONFLICT')
+})
+
 test('only committed complete local writes wake sync; failures, remote installs and ACKs do not loop', async () => {
   const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window')
   const target = new EventTarget()
@@ -154,7 +195,7 @@ test('terminal sync error notices are not shown in File and Subject Overview pan
   assert.doesNotMatch(subjectOverviewUiSource, /本机学科总览尚未同步/)
 })
 
-test('a complete legacy browser cache seeds only an empty server scope with a full base-zero write', async () => {
+test('a complete legacy browser cache stays local and unready until an explicit identity initialization', async () => {
   const storage = createMemoryStorage()
   const repository = new OverviewRepository('legacy-user', 'legacy-device', { storage })
   storage.setItem('auralis:v1:overviews:legacy-user:legacy-device', JSON.stringify([record()]))
@@ -163,14 +204,19 @@ test('a complete legacy browser cache seeds only an empty server scope with a fu
   await service(repository, api).reconcile(options())
 
   assert.equal(api.calls.getFiles.length, 1)
-  assert.equal(api.calls.putFiles.length, 1)
-  const body = api.calls.putFiles[0][1]
-  assert.equal(body.mode, 'ALL')
-  assert.equal(body.baseVersion, 0)
-  assert.equal(body.ingestionRevision, 'rev-1')
-  assert.match(body.clientWriteId, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-  assert.equal((await repository.listOverviewOutbox()).length, 0)
-  assert.equal((await repository.getOverviewSyncState('FILE', 'file-a', 'rev-1'))?.version, 1)
+  assert.equal(api.calls.putFiles.length, 0, 'an old cache has no trustworthy persistent node identity to initialize remotely')
+  const legacy = await repository.getFileOverview('file-a', 'rev-1')
+  assert.deepEqual(legacy?.outline, outline)
+  assert.deepEqual(legacy?.summary, summary)
+  assert.equal(legacy?.identityReady, false)
+  assert.equal(legacy?.outlineIdentity, null)
+  const [seed] = await repository.listOverviewOutbox()
+  assert.equal(seed?.origin, 'LEGACY_SEED')
+  assert.equal(seed?.state, 'ERROR')
+  assert.equal(seed?.errorCode, 'OVERVIEW_IDENTITY_INITIALIZATION_REQUIRED')
+  assert.equal(seed?.requestBody, null, 'the legacy cache remains visible without freezing a fabricated identity request')
+  assert.equal(typeof seed?.clientWriteId, 'string', 'the blocked seed intent remains available for explicit recovery')
+  assert.equal(await repository.getOverviewSyncState('FILE', 'file-a', 'rev-1'), null)
 })
 
 test('a transport retry replays the exact persisted Overview request and write id', async () => {
@@ -197,6 +243,55 @@ test('a transport retry replays the exact persisted Overview request and write i
   assert.equal(sent.length, 2)
   assert.equal(sent[0], sent[1])
   assert.equal((await repository.listOverviewOutbox()).length, 0)
+})
+
+test('a frozen pre-identity File request reaches the server unchanged for receipt replay or contract rejection', async () => {
+  for (const decision of ['receipt-replay', 'contract-reject']) {
+    const storage = createMemoryStorage()
+    const repository = new OverviewRepository(`old-receipt-${decision}`, 'device', { storage })
+    const cacheKey = `auralis:v1:overviews:old-receipt-${decision}:device`
+    const clientWriteId = `legacy-frozen-${decision}`
+    const result = { schemaVersion: 1, title: 'Frozen legacy candidate', outline, summary }
+    const frozenRequestBody = {
+      baseVersion: 0, clientWriteId, mode: 'ALL', ingestionRevision: 'rev-1',
+      outlineGeneratedAt: '2026-09-30T10:00:00.000Z', summaryGeneratedAt: '2026-09-30T10:01:00.000Z', result,
+    }
+    const frozenIntent = {
+      clientWriteId, scopeType: 'FILE', scopeId: 'file-a', revisionKey: 'rev-1', mode: 'ALL', origin: 'LOCAL_WRITE',
+      result, inputFingerprint: null, outlineGeneratedAt: frozenRequestBody.outlineGeneratedAt,
+      summaryGeneratedAt: frozenRequestBody.summaryGeneratedAt, state: 'PENDING', requestBody: frozenRequestBody,
+      errorCode: null, createdAt: '2026-09-30T10:02:00.000Z', updatedAt: '2026-09-30T10:02:00.000Z',
+    }
+    const frozenCacheRecord = { ...record('FILE', 'file-a', 'rev-1', 'Frozen legacy candidate'), identityReady: false,
+      outlineIdentity: null, outlineIdentityInput: null, outlineProvenance: null, outlineProvenanceInput: null }
+    storage.setItem(cacheKey, JSON.stringify({ records: [frozenCacheRecord], states: [], outbox: [frozenIntent] }))
+    const frozenBody = JSON.stringify(frozenRequestBody)
+    const sent = []
+    const api = fakeApi({ putFile: async (sourceId, command) => {
+      sent.push(JSON.stringify(command))
+      if (decision === 'contract-reject') {
+        throw new ApiProblemError({ title: 'Missing outline identity', status: 400, code: 'IDENTITY_REQUIRED' })
+      }
+      return fileView(sourceId, command.ingestionRevision, { title: command.result.title, version: 1 })
+    } })
+
+    await service(repository, api).reconcile(options())
+
+    assert.deepEqual(sent, [frozenBody], 'the immutable old-shape body must cross HTTP byte-for-byte')
+    assert.equal(api.calls.getFiles.length, 0, 'the receipt check must be performed by replaying the original PUT')
+    const remaining = (await repository.listOverviewOutbox()).find(item => item.clientWriteId === clientWriteId)
+    if (decision === 'receipt-replay') {
+      assert.equal(remaining, undefined)
+      const adopted = await repository.getFileOverview('file-a', 'rev-1')
+      assert.equal(adopted?.identityReady, false)
+      assert.equal(adopted?.outlineIdentity, null)
+      assert.equal((await repository.getOverviewSyncState('FILE', 'file-a', 'rev-1'))?.version, 1)
+    } else {
+      assert.equal(remaining?.state, 'ERROR')
+      assert.equal(remaining?.errorCode, 'OVERVIEW_SYNC_FAILED')
+      assert.equal(JSON.stringify(remaining?.requestBody), frozenBody)
+    }
+  }
 })
 
 test('a File PUT with failed local ACK retries the same request and does not create a second remote version', async () => {
@@ -483,6 +578,103 @@ test('a new Subject candidate stays conflicted until the user explicitly chooses
   assert.equal(sent[1].baseVersion, 9)
 })
 
+test('subject conflict refresh reentry is fenced through the failure tail and a later explicit retry can recover', async () => {
+  const repository = new OverviewRepository('conflict-reentry-user', 'conflict-reentry-device', { storage: createMemoryStorage() })
+  const inputSource = source()
+  const api = fakeApi({
+    getFile: async (sourceId, revision) => fileView(sourceId, revision, { version: 3, outlineVersion: 4, summaryVersion: 5 }),
+  })
+  const sync = service(repository, api)
+  const withSubject = options([inputSource], ['subject-a'])
+  await sync.reconcile(options([inputSource]))
+  const fingerprint = await computeSubjectInputFingerprint([await repository.getFileOverview(inputSource.id, inputSource.ingestionRevision)])
+  await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint: fingerprint,
+    response: { schemaVersion: 1, title: 'Local subject candidate', outline, summary } })
+  let subjectWrites = 0
+  api.putSubject = async () => {
+    subjectWrites += 1
+    throw new ApiProblemError({ title: 'Version conflict', status: 409, code: 'RESOURCE_VERSION_CONFLICT' })
+  }
+  api.getSubject = async () => null
+  await sync.reconcile(withSubject)
+  assert.equal((await repository.getSubjectOverview('subject-a'))?.syncStatus, 'CONFLICT')
+
+  const key = JSON.stringify(['conflict-reentry-user', 'conflict-reentry-device', 'SUBJECT', 'subject-a', 'subject-v1'])
+  let explicitRuns = 0
+  let cacheRefreshes = 0
+  let remoteGets = 0
+  const refreshOverviewCache = () => {
+    cacheRefreshes += 1
+    // SubjectWorkspace starts the same resolver when cache refresh sees CONFLICT.
+    void resolve()
+  }
+  const resolve = () => runOverviewConflictResolutionOnce(key, async () => {
+    explicitRuns += 1
+    // ensureOverviewRuntime refreshes the cache before conflict resolution starts.
+    refreshOverviewCache()
+    try {
+      await sync.resolveConflict('SUBJECT', 'subject-a', 'subject-v1', 'LOCAL', withSubject)
+    } catch { /* the page keeps the local conflict visible and allows a later trigger */ }
+    // The resolver's own tail refresh is still inside the guarded pass.
+    refreshOverviewCache()
+  })
+
+  api.getSubject = async () => {
+    remoteGets += 1
+    throw new ApiProblemError({ title: 'offline', status: 0 })
+  }
+  await resolve()
+  assert.equal(explicitRuns, 1)
+  assert.equal(cacheRefreshes, 2)
+  assert.equal(remoteGets, 1)
+  assert.equal((await repository.getSubjectOverview('subject-a'))?.syncStatus, 'CONFLICT')
+  assert.equal((await repository.getSubjectOverview('subject-a'))?.title, 'Local subject candidate')
+
+  // A later explicit retry sees the normal 404-as-no-remote-result behavior and can upload the local result.
+  api.getSubject = async () => { remoteGets += 1; return null }
+  api.putSubject = async (subjectId, command) => {
+    subjectWrites += 1
+    return subjectView(subjectId, command, 10)
+  }
+  await resolve()
+  assert.equal(explicitRuns, 2)
+  assert.equal(remoteGets, 3, 'the explicit conflict check and one normal reconcile read are allowed')
+  assert.equal(subjectWrites, 2, 'the failed original write and one explicit local retry are the only writes')
+  assert.equal((await repository.getSubjectOverview('subject-a'))?.syncStatus, 'SYNCED')
+})
+
+test('conflict resolution coalesces only the same owner/device/scope/revision key', async () => {
+  let firstCalls = 0
+  let secondCalls = 0
+  const release = deferred()
+  const firstKey = JSON.stringify(['owner-a', 'device-a', 'SUBJECT', 'subject-a', 'subject-v1'])
+  const sameKeyCall = runOverviewConflictResolutionOnce(firstKey, async () => {
+    firstCalls += 1
+    await release.promise
+  })
+  const coalescedCall = runOverviewConflictResolutionOnce(firstKey, async () => { firstCalls += 100 })
+  const otherScopeCall = runOverviewConflictResolutionOnce(
+    JSON.stringify(['owner-a', 'device-a', 'SUBJECT', 'subject-b', 'subject-v1']),
+    async () => { secondCalls += 1 },
+  )
+  await otherScopeCall
+  release.resolve()
+  await Promise.all([sameKeyCall, coalescedCall])
+  assert.equal(firstCalls, 1)
+  assert.equal(secondCalls, 1)
+})
+
+test('a rejected conflict pass releases only its own key for a later attempt', async () => {
+  const key = JSON.stringify(['owner-retry', 'device-retry', 'SUBJECT', 'subject-a', 'subject-v1'])
+  let attempts = 0
+  await assert.rejects(runOverviewConflictResolutionOnce(key, async () => {
+    attempts += 1
+    throw new Error('offline')
+  }), /offline/)
+  await runOverviewConflictResolutionOnce(key, async () => { attempts += 1 })
+  assert.equal(attempts, 2)
+})
+
 test('a new File result supersedes a terminal HTTP error and uploads without replaying the old request', async () => {
   const repository = new OverviewRepository('file-error-user', 'file-error-device', { storage: createMemoryStorage() })
   await repository.saveFileOverviewPart({ sourceId: 'file-a', ingestionRevision: 'rev-1', mode: 'ALL', response: { schemaVersion: 1, title: 'Old candidate', outline, summary } })
@@ -574,6 +766,51 @@ test('subject upload waits for ACKed file part versions and hashes the canonical
   const expected = createHash('sha256').update(canonical, 'utf8').digest('hex')
   assert.equal(command.inputFingerprint, expected)
   assert.equal((await repository.listOverviewOutbox()).length, 0)
+})
+
+test('Subject PUT omits empty section provenance, filters unlinked refs, and uses source-level provenance for new links', async () => {
+  const repository = new OverviewRepository('subject-provenance-user', 'subject-provenance-device', { storage: createMemoryStorage() })
+  const sources = [source('file-a', 'rev-a'), source('file-b', 'rev-b')]
+  const api = fakeApi({ getFile: async (sourceId, revision) => fileView(sourceId, revision) })
+  const syncService = service(repository, api)
+  await syncService.reconcile(options(sources))
+  const files = await Promise.all(sources.map(item => repository.getFileOverview(item.id, item.ingestionRevision)))
+  const inputFingerprint = await computeSubjectInputFingerprint(files)
+  const canonicalRef = (sourceId, ingestionRevision, chunkId) => ({
+    sourceId, ingestionRevision, chunkId, generation: 'gen-1', charStart: 2, charEnd: 8,
+    contentHash: 'hash', precision: 'CHUNK', parsedDocumentId: 'parsed', parserId: 'parser',
+    locations: [{ blockOrdinal: 0, charStart: 2, charEnd: 8, blockCharStart: 0, blockCharEnd: 12 }],
+  })
+  const refA = canonicalRef('file-a', 'rev-a', 'chunk-a')
+  const refB = canonicalRef('file-b', 'rev-b', 'chunk-b')
+  const sections = [
+    { title: 'New section', summary: null, sourceIds: ['file-a'], locator: null },
+    { title: 'Unlinked section', summary: null, sourceIds: [], locator: null },
+    { title: 'Partially unlinked', summary: null, sourceIds: ['file-b'], locator: null },
+    { title: 'New source association', summary: null, sourceIds: ['file-a', 'file-b'], locator: null },
+  ]
+  const outline = [{ title: 'Chapter', sections }]
+  const outlineProvenance = createOutlineProvenanceView(outline, new Map([
+    ['0.0', []],
+    ['0.1', []],
+    ['0.2', filterOutlineSourceRefs([refA, refB], ['file-b'])],
+    ['0.3', [refA]],
+  ]))
+  const outlineProvenanceInput = createOutlineProvenanceInputForLinkedSources(outlineProvenance,
+    new Map(sections.map((section, index) => [`0.${index}`, section.sourceIds])),
+    new Map([['file-a', 'rev-a'], ['file-b', 'rev-b']]))
+  await repository.saveSubjectOverviewPart({ subjectId: 'subject-a', mode: 'ALL', inputFingerprint,
+    response: { schemaVersion: 1, title: 'Subject', outline, summary, outlineProvenance }, outlineProvenanceInput })
+
+  await syncService.reconcile(options(sources, ['subject-a']))
+
+  const command = api.calls.putSubjects[0][1]
+  assert.deepEqual(command.outlineProvenance.sections.map(section => section.path), [[0, 2], [0, 3]])
+  assert.deepEqual(command.outlineProvenance.sections[0].sourceRefs.map(ref => ref.sourceId), ['file-b'])
+  assert.deepEqual(command.outlineProvenance.sections[1].sourceRefs, [
+    { sourceId: 'file-a', ingestionRevision: 'rev-a', chunkId: 'chunk-a', generation: 'gen-1', charStart: 2, charEnd: 8 },
+    { sourceId: 'file-b', ingestionRevision: 'rev-b', chunkId: null, generation: null, charStart: null, charEnd: null },
+  ])
 })
 
 test('source revision changes stale old intents without replaying their content', async () => {

@@ -20,6 +20,14 @@ test('Tauri config requires explicit service bases', () => {
   assert.throws(() => getRuntimeConfig({ TAURI_ENV: '1' }), /requires VITE_API_BASE_URL/)
 })
 
+test('Overview SSE deadline accepts zero and falls back for missing or invalid values', () => {
+  assert.equal(getRuntimeConfig({}).overviewSseDeadlineMs, 300000)
+  assert.equal(getRuntimeConfig({ VITE_OVERVIEW_SSE_DEADLINE_MS: '0' }).overviewSseDeadlineMs, 0)
+  assert.equal(getRuntimeConfig({ VITE_OVERVIEW_SSE_DEADLINE_MS: '450000' }).overviewSseDeadlineMs, 450000)
+  assert.equal(getRuntimeConfig({ VITE_OVERVIEW_SSE_DEADLINE_MS: '-1' }).overviewSseDeadlineMs, 300000)
+  assert.equal(getRuntimeConfig({ VITE_OVERVIEW_SSE_DEADLINE_MS: 'invalid' }).overviewSseDeadlineMs, 300000)
+})
+
 test('Vite proxy targets are environment-driven and Tauri permissions stay minimal', async () => {
   const vite = await readFile(new URL('../vite.config.ts', import.meta.url), 'utf8')
   const capabilities = await readFile(new URL('../src-tauri/capabilities/default.json', import.meta.url), 'utf8')

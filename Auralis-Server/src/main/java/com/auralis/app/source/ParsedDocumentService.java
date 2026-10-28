@@ -219,7 +219,7 @@ public class ParsedDocumentService {
             }
             return new ParsedDocumentReadView(
                     document.getId(), sourceId, source.getIngestionRevision(), document.getGeneration(),
-                    validated.blocks());
+                    validated.parserId(), validated.blocks());
         } catch (DomainException exception) {
             throw exception;
         } catch (RuntimeException exception) {

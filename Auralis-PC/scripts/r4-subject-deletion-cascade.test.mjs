@@ -20,6 +20,19 @@ export async function resolve(specifier, context, nextResolve) {
 `
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
 
+function createTestLockManager() {
+  const tails = new Map()
+  return { request(name, _options, operation) {
+    const previous = tails.get(name) ?? Promise.resolve()
+    let release
+    const held = new Promise(resolve => { release = resolve })
+    const tail = previous.then(() => held, () => held)
+    tails.set(name, tail)
+    return previous.then(operation).finally(() => { release(); if (tails.get(name) === tail) tails.delete(name) })
+  } }
+}
+Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { locks: createTestLockManager() } })
+
 const { DocumentProcessingJobRepository, LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts')
 const { createVersionedLocalSchema } = await import('../src/services/localSchema.ts')
 const { LocalAssetRepository } = await import('../src/services/localAssetRepository.ts')

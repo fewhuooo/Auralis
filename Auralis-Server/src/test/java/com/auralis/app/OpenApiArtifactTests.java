@@ -70,6 +70,31 @@ class OpenApiArtifactTests {
     }
 
     @Test
+    void overviewResultAndSourceCollectionsHaveNoFixedVolumeSchemaCaps() throws Exception {
+        JsonNode document = openApiDocument();
+        JsonNode response = document.at("/components/schemas/OverviewResponse/properties");
+        JsonNode chapter = document.at("/components/schemas/OverviewChapter/properties");
+        JsonNode section = document.at("/components/schemas/OverviewSection/properties");
+        JsonNode summary = document.at("/components/schemas/OverviewSummary/properties");
+        JsonNode subjectRequest = document.at("/components/schemas/SubjectOverviewRequest/properties/sources");
+        JsonNode jobRequest = document.at("/components/schemas/StartRequest/properties/sourceIds");
+
+        assertThat(response.at("/title/maxLength").isMissingNode()).isTrue();
+        assertThat(response.at("/outline/maxItems").isMissingNode()).isTrue();
+        assertThat(chapter.at("/title/maxLength").isMissingNode()).isTrue();
+        assertThat(chapter.at("/sections/maxItems").isMissingNode()).isTrue();
+        assertThat(section.at("/title/maxLength").isMissingNode()).isTrue();
+        assertThat(section.at("/summary/maxLength").isMissingNode()).isTrue();
+        assertThat(section.at("/sourceIds/maxItems").isMissingNode()).isTrue();
+        assertThat(section.at("/sourceIds/minItems").asInt()).isEqualTo(1);
+        assertThat(summary.at("/overview/maxLength").isMissingNode()).isTrue();
+        assertThat(summary.at("/keyPoints/maxItems").isMissingNode()).isTrue();
+        assertThat(summary.at("/learningPath/maxItems").isMissingNode()).isTrue();
+        assertThat(subjectRequest.at("/maxItems").isMissingNode()).isTrue();
+        assertThat(jobRequest.at("/maxItems").isMissingNode()).isTrue();
+    }
+
+    @Test
     void exposesScheduleCommandsOnPushWithoutAddingThemToChangeLog() throws Exception {
         JsonNode document = openApiDocument();
 
@@ -221,6 +246,94 @@ class OpenApiArtifactTests {
     }
 
     @Test
+    void documentsOverviewIdentityAndProvenanceNullabilityAndRequiredFields() throws Exception {
+        JsonNode document = openApiDocument();
+
+        JsonNode identityInput = document.at("/components/schemas/OutlineIdentityInput");
+        assertRequired(identityInput, "schemaVersion", "nodes");
+        JsonNode nodeInput = document.at("/components/schemas/OutlineIdentityNodeInput");
+        assertRequired(nodeInput, "path", "nodeId");
+        assertNullTypeUnion(nodeInput.at("/properties/nodeId"));
+        JsonNode identityView = document.at("/components/schemas/OutlineIdentityView");
+        assertRequired(identityView, "schemaVersion", "nodes");
+        JsonNode identityNodeView = document.at("/components/schemas/OutlineIdentityNodeView");
+        assertRequired(identityNodeView, "path", "nodeId", "contentVersion", "contentHash", "sourceRefs");
+
+        JsonNode provenanceInput = document.at("/components/schemas/OutlineProvenanceInput");
+        assertRequired(provenanceInput, "schemaVersion", "sections");
+        JsonNode provenanceSectionInput = document.at("/components/schemas/OutlineProvenanceSectionInput");
+        assertRequired(provenanceSectionInput, "path", "sourceRefs");
+        JsonNode provenanceRefInput = document.at("/components/schemas/OutlineProvenanceSourceRefInput");
+        assertRequired(provenanceRefInput, "sourceId", "ingestionRevision");
+        assertOptionalNullableTypeUnion(provenanceRefInput, "chunkId", "generation", "charStart", "charEnd");
+        JsonNode provenanceView = document.at("/components/schemas/OutlineProvenanceView");
+        assertRequired(provenanceView, "schemaVersion", "sections");
+        JsonNode provenanceSectionView = document.at("/components/schemas/OutlineProvenanceSectionView");
+        assertRequired(provenanceSectionView, "path", "sourceRefs");
+
+        JsonNode sourceRef = document.at("/components/schemas/CanonicalSourceRefView");
+        assertRequired(sourceRef, "sourceId", "ingestionRevision", "chunkId", "generation", "charStart",
+                "charEnd", "contentHash", "precision", "parsedDocumentId", "parserId", "locations");
+        assertNullTypeUnion(sourceRef.at("/properties/chunkId"));
+        assertNullTypeUnion(sourceRef.at("/properties/generation"));
+        assertNullTypeUnion(sourceRef.at("/properties/charStart"));
+        assertNullTypeUnion(sourceRef.at("/properties/charEnd"));
+        assertNullTypeUnion(sourceRef.at("/properties/contentHash"));
+        assertNullTypeUnion(sourceRef.at("/properties/parsedDocumentId"));
+        assertNullTypeUnion(sourceRef.at("/properties/parserId"));
+
+        JsonNode location = document.at("/components/schemas/ProvenanceLocationView");
+        assertRequired(location, "blockOrdinal", "pageNumber", "anchorIndex", "startLine", "charStart", "charEnd",
+                "blockCharStart", "blockCharEnd");
+        assertNullTypeUnion(location.at("/properties/pageNumber"));
+        assertNullTypeUnion(location.at("/properties/anchorIndex"));
+        assertNullTypeUnion(location.at("/properties/startLine"));
+
+        JsonNode resultView = document.at("/components/schemas/OverviewResultView");
+        assertRequired(resultView, "identityReady", "outlineIdentity");
+        assertNullableReferenceUnion(resultView.at("/properties/outlineIdentity"),
+                "#/components/schemas/OutlineIdentityView");
+        assertNullableReferenceUnion(resultView.at("/properties/outlineProvenance"),
+                "#/components/schemas/OutlineProvenanceView");
+        assertThat(resultView.at("/required").toString()).doesNotContain("outlineProvenance");
+        JsonNode resultCommand = document.at("/components/schemas/OverviewResultCommand");
+        assertThat(resultCommand.at("/required").toString()).doesNotContain("outlineIdentity", "outlineProvenance");
+        assertNullableReferenceUnion(resultCommand.at("/properties/outlineIdentity"),
+                "#/components/schemas/OutlineIdentityInput");
+        assertNullableReferenceUnion(resultCommand.at("/properties/outlineProvenance"),
+                "#/components/schemas/OutlineProvenanceInput");
+    }
+
+    @Test
+    void documentsOverviewJobRoutesAndNullableFirstClaimProgress() throws Exception {
+        JsonNode document = openApiDocument();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs/post").isObject()).isTrue();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs/get").isObject()).isTrue();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1pause/post").isObject()).isTrue();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1resume/post").isObject()).isTrue();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1cancel/post").isObject()).isTrue();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1reconcile/post").isObject()).isTrue();
+        assertThat(document.at("/paths/~1api~1ai~1overview-jobs~1{id}~1candidate/get").isObject()).isTrue();
+
+        JsonNode startRequest = document.at("/components/schemas/StartRequest");
+        assertRequired(startRequest, "clientRequestId", "scope", "mode");
+        assertThat(startRequest.at("/properties/mode/enum").toString())
+                .contains("ALL", "OUTLINE")
+                .doesNotContain("SUMMARY");
+        assertRequired(document.at("/components/schemas/ControlRequest"), "expectedVersion");
+
+        JsonNode jobView = document.at("/components/schemas/JobView");
+        assertRequired(jobView, "jobId", "status", "version", "scope", "mode", "stage", "verifiedNodes",
+                "totalNodes", "deadlineAt", "createdAt", "updatedAt");
+        assertNullTypeUnion(jobView.at("/properties/totalNodes"));
+        assertNullTypeUnion(jobView.at("/properties/deadlineAt"));
+        assertNullTypeUnion(jobView.at("/properties/completedAt"));
+        assertNullTypeUnion(jobView.at("/properties/sourceId"));
+        assertNullTypeUnion(jobView.at("/properties/subjectId"));
+        assertNullTypeUnion(jobView.at("/properties/sourceIds"));
+    }
+
+    @Test
     void overviewRoutesKeepJsonAndDocumentOptInEventStreamAndRequestId() throws Exception {
         JsonNode document = openApiDocument();
         for (String route : new String[]{"/api/ai/source-overviews", "/api/ai/subject-overviews"}) {
@@ -271,5 +384,40 @@ class OpenApiArtifactTests {
             for (JsonNode value : anyOf) if ("null".equals(value.at("/type").asText())) return true;
         }
         return false;
+    }
+
+    private void assertRequired(JsonNode schema, String... fieldNames) {
+        JsonNode required = schema.path("required");
+        assertThat(required.isArray()).isTrue();
+        for (String fieldName : fieldNames) {
+            assertThat(required.toString()).contains("\"" + fieldName + "\"");
+        }
+    }
+
+    private void assertNullTypeUnion(JsonNode schema) {
+        JsonNode type = schema.path("type");
+        assertThat(type.isArray()).isTrue();
+        boolean containsNull = false;
+        for (JsonNode typeValue : type) {
+            if ("null".equals(typeValue.asText())) containsNull = true;
+        }
+        assertThat(containsNull).isTrue();
+    }
+
+    private void assertNullableReferenceUnion(JsonNode schema, String expectedReference) {
+        JsonNode alternatives = schema.path("anyOf");
+        assertThat(alternatives.isArray()).isTrue();
+        assertThat(alternatives.size()).isEqualTo(2);
+        assertThat(schema.has("$ref")).isFalse();
+        assertThat(schema.has("type")).isFalse();
+        assertThat(alternatives.toString()).contains(expectedReference);
+        assertThat(alternatives.toString()).contains("\"type\":\"null\"");
+    }
+
+    private void assertOptionalNullableTypeUnion(JsonNode schema, String... fieldNames) {
+        for (String fieldName : fieldNames) {
+            assertNullTypeUnion(schema.at("/properties/" + fieldName));
+            assertThat(schema.at("/required").toString()).doesNotContain("\"" + fieldName + "\"");
+        }
     }
 }

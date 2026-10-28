@@ -421,8 +421,9 @@ class AuthControllerTests {
                 Instant.parse("2026-09-01T10:00:00Z"), Instant.parse("2026-09-01T10:02:00Z"));
         jdbcTemplate.update("insert into overview_results "
                         + "(id, user_id, scope_type, scope_id, subject_id, source_id, ingestion_revision, "
-                        + "version, outline_version, summary_version, title, schema_version, outline, summary) "
-                        + "values (?, ?, 'SOURCE', ?, ?, ?, ?, 1, 1, 1, 'Overview', 1, '[]', '{}')",
+                        + "version, outline_version, summary_version, title, schema_version, outline, summary, "
+                        + "outline_input_origin, summary_input_origin) "
+                        + "values (?, ?, 'SOURCE', ?, ?, ?, ?, 1, 1, 1, 'Overview', 1, '[]', '{}', 'SOURCE_REVISION', 'SOURCE_REVISION')",
                 overviewResultId, userId, sourceId, subjectId, sourceId, ingestionRevision);
         jdbcTemplate.update("insert into overview_write_receipts "
                         + "(id, user_id, client_write_id, scope_type, scope_id, base_version, payload_hash, response_snapshot) "

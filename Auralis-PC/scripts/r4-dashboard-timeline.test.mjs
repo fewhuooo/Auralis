@@ -63,6 +63,9 @@ test('completed scheduled cards block slot insertions and report rejected header
   const swapHandler = taskStore.slice(taskStore.indexOf('async function swapScheduledTasks('), taskStore.indexOf('async function unscheduleTask('))
   assert.match(headerDropHandler, /await taskStore\.swapScheduledTasks\([\s\S]*?catch \(error\) \{[\s\S]*?reportDragFailure\(error\)/)
   assert.match(swapHandler, /if \(isCompletedScheduledTask\(from\) \|\| isCompletedScheduledTask\(to\)\) throw new Error\('已完成的排期任务已固定'\)/)
+  const bodyDropHandler = timeline.slice(timeline.indexOf('const handleDropOnTaskBody ='), timeline.indexOf('const handleDropOnHeader ='))
+  assert.match(bodyDropHandler, /if \(draggedItem\.value\?\.taskId === task\.id\) \{\s*clearDragState\(\)\s*return\s*\}/,
+    'dropping a task onto its own body must release the drag state')
   // Dashboard uses non-draggable linear list
   assert.doesNotMatch(dashboard, /:draggable/)
 })
@@ -178,6 +181,6 @@ test('week-view day drops pass the column full dateKey to the Store', () => {
   assert.match(timeline, /v-for="day in timelineDays"[\s\S]*?@drop\.prevent="handleDropOnDay\(day\.dateKey\)"/,
     'each week column must pass its own full dateKey to the day-drop handler')
   const dayDropHandler = timeline.slice(timeline.indexOf('const handleDropOnDay'), timeline.indexOf('const handleDropOnPending'))
-  assert.match(dayDropHandler, /taskStore\.scheduleTaskToDay\(draggedItem\.value\.taskId, day\)/,
+  assert.match(dayDropHandler, /taskStore\.scheduleTaskToDay\(currentDrag\.taskId, day\)/,
     'the day-drop handler must forward that date to the Store scheduling operation')
 })

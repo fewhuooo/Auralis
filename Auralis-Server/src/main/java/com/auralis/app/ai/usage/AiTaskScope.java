@@ -11,15 +11,46 @@ import com.auralis.app.ai.OverviewCancellation;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.UUID;
 
 public interface AiTaskScope extends AutoCloseable {
 
-    <T> AiInvocationResult<T> metadata(
-            AiStage stage, AiProviderType provider, String model, Supplier<T> operation);
+    UUID taskId();
 
-    AiInvocationResult<AiProviderResponse> complete(
+    default <T> AiInvocationResult<T> metadata(
+            AiStage stage, AiProviderType provider, String model, Supplier<T> operation) {
+        throw new AiPolicyContractException();
+    }
+
+    default <T> AiInvocationResult<T> metadata(AiStage stage, AiProviderType provider, String model,
+            AiCredentialSource source, Supplier<T> operation) {
+        throw new AiPolicyContractException();
+    }
+
+    default AiInvocationResult<AiProviderResponse> complete(
             AiStage stage, AiProviderType provider, AiProviderRequest request,
-            AiCredential credential, long responseTimeoutMillis);
+            AiCredential credential, long responseTimeoutMillis) {
+        throw new AiPolicyContractException();
+    }
+
+    default AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
+            AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+            long responseTimeoutMillis, AiOutputRole role) {
+        return complete(stage, provider, request, credential, source, responseTimeoutMillis, role, null);
+    }
+
+    default AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
+            AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+            long responseTimeoutMillis, AiOutputRole role, OverviewCancellation cancellation) {
+        throw new AiPolicyContractException();
+    }
+
+    default AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
+            AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+            long responseTimeoutMillis, AiOutputRole role, OverviewCancellation cancellation,
+            AiInvocationBinding binding) {
+        throw new AiPolicyContractException();
+    }
 
     default AiInvocationResult<AiProviderResponse> complete(
             AiStage stage, AiProviderType provider, AiProviderRequest request,
@@ -27,15 +58,36 @@ public interface AiTaskScope extends AutoCloseable {
         return complete(stage, provider, request, credential, responseTimeoutMillis);
     }
 
-    AiInvocationResult<Void> stream(
+    default AiInvocationResult<Void> stream(
             AiStage stage, AiProviderType provider, AiProviderRequest request,
-            AiCredential credential, Consumer<AiProviderChunk> sink);
+            AiCredential credential, Consumer<AiProviderChunk> sink) {
+        throw new AiPolicyContractException();
+    }
 
-    AiInvocationResult<EmbeddingResult> embed(
+    default AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
+            AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+            Consumer<AiProviderChunk> sink) {
+        throw new AiPolicyContractException();
+    }
+
+    default AiInvocationResult<EmbeddingResult> embed(
             AiStage stage, AiProviderType provider, String model, List<String> texts,
-            AiCredential credential);
+            AiCredential credential) {
+        throw new AiPolicyContractException();
+    }
+
+    default AiInvocationResult<EmbeddingResult> embed(AiStage stage, AiProviderType provider,
+            String model, List<String> texts, AiCredential credential, AiCredentialSource source) {
+        throw new AiPolicyContractException();
+    }
 
     AiProviderUsage usage();
+
+    AiProviderUsage usage(AiCredentialSource source);
+
+    default AiPlatformTaskBudgetUsage platformTaskBudgetUsage() {
+        throw new AiPolicyContractException();
+    }
 
     @Override
     void close();

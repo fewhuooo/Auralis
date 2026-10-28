@@ -32,7 +32,7 @@ public class OverviewResultEntity {
     private long outlineVersion;
     @Column(name = "summary_version", nullable = false)
     private long summaryVersion;
-    @Column(nullable = false, length = 300)
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String title;
     @Column(name = "schema_version", nullable = false)
     private int schemaVersion;
@@ -40,6 +40,8 @@ public class OverviewResultEntity {
     private String outline;
     @Column(columnDefinition = "TEXT")
     private String summary;
+    @Column(name = "outline_identity_json", columnDefinition = "TEXT")
+    private String outlineIdentityJson;
     @Column(name = "outline_source_manifest", columnDefinition = "TEXT")
     private String outlineSourceManifest;
     @Column(name = "summary_source_manifest", columnDefinition = "TEXT")
@@ -48,6 +50,14 @@ public class OverviewResultEntity {
     private String outlineInputFingerprint;
     @Column(name = "summary_input_fingerprint", length = 64)
     private String summaryInputFingerprint;
+    @Column(name = "outline_input_origin", length = 32)
+    private String outlineInputOrigin;
+    @Column(name = "summary_input_origin", length = 32)
+    private String summaryInputOrigin;
+    @Column(name = "outline_input_snapshot_json", columnDefinition = "TEXT")
+    private String outlineInputSnapshotJson;
+    @Column(name = "summary_input_snapshot_json", columnDefinition = "TEXT")
+    private String summaryInputSnapshotJson;
     @Column(name = "outline_generated_at")
     private Instant outlineGeneratedAt;
     @Column(name = "summary_generated_at")
@@ -80,10 +90,21 @@ public class OverviewResultEntity {
                       String outlineInputFingerprint, String summaryInputFingerprint,
                       Instant outlineGeneratedAt, Instant summaryGeneratedAt,
                       boolean updateOutline, boolean updateSummary, UUID ingestionRevision) {
+        apply(title, schemaVersion, outline, summary, outlineIdentityJson,
+                outlineSourceManifest, summarySourceManifest, outlineInputFingerprint, summaryInputFingerprint,
+                outlineGeneratedAt, summaryGeneratedAt, updateOutline, updateSummary, ingestionRevision);
+    }
+
+    public void apply(String title, int schemaVersion, String outline, String summary, String outlineIdentityJson,
+                      String outlineSourceManifest, String summarySourceManifest,
+                      String outlineInputFingerprint, String summaryInputFingerprint,
+                      Instant outlineGeneratedAt, Instant summaryGeneratedAt,
+                      boolean updateOutline, boolean updateSummary, UUID ingestionRevision) {
         this.title = title;
         this.schemaVersion = schemaVersion;
         if (updateOutline) {
             this.outline = outline;
+            this.outlineIdentityJson = outlineIdentityJson;
             this.outlineSourceManifest = outlineSourceManifest;
             this.outlineInputFingerprint = outlineInputFingerprint;
             this.outlineGeneratedAt = outlineGeneratedAt;
@@ -101,6 +122,19 @@ public class OverviewResultEntity {
         this.updatedAt = Instant.now();
     }
 
+    public void applyInputDescriptors(String outlineOrigin, String outlineSnapshotJson,
+                                      String summaryOrigin, String summarySnapshotJson,
+                                      boolean updateOutline, boolean updateSummary) {
+        if (updateOutline) {
+            this.outlineInputOrigin = outlineOrigin;
+            this.outlineInputSnapshotJson = outlineSnapshotJson;
+        }
+        if (updateSummary) {
+            this.summaryInputOrigin = summaryOrigin;
+            this.summaryInputSnapshotJson = summarySnapshotJson;
+        }
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public String getScopeType() { return scopeType; }
@@ -115,10 +149,15 @@ public class OverviewResultEntity {
     public int getSchemaVersion() { return schemaVersion; }
     public String getOutline() { return outline; }
     public String getSummary() { return summary; }
+    public String getOutlineIdentityJson() { return outlineIdentityJson; }
     public String getOutlineSourceManifest() { return outlineSourceManifest; }
     public String getSummarySourceManifest() { return summarySourceManifest; }
     public String getOutlineInputFingerprint() { return outlineInputFingerprint; }
     public String getSummaryInputFingerprint() { return summaryInputFingerprint; }
+    public String getOutlineInputOrigin() { return outlineInputOrigin; }
+    public String getSummaryInputOrigin() { return summaryInputOrigin; }
+    public String getOutlineInputSnapshotJson() { return outlineInputSnapshotJson; }
+    public String getSummaryInputSnapshotJson() { return summaryInputSnapshotJson; }
     public Instant getOutlineGeneratedAt() { return outlineGeneratedAt; }
     public Instant getSummaryGeneratedAt() { return summaryGeneratedAt; }
     public Instant getUpdatedAt() { return updatedAt; }

@@ -15,20 +15,25 @@ public final class OverviewTaskDeadline {
     private final LongSupplier nanoTime;
     private final long startedAtNanos;
     private final long budgetNanos;
+    private final boolean unbounded;
     private final OverviewCancellation cancellation = new OverviewCancellation();
     private final AtomicInteger references = new AtomicInteger(1);
     private volatile ScheduledFuture<?> watchdog;
+    private boolean watchdogStarted;
 
     public OverviewTaskDeadline(long timeoutMillis, LongSupplier nanoTime) {
-        if (timeoutMillis <= 0) {
-            throw new IllegalArgumentException("Overview task timeout must be positive");
+        if (timeoutMillis < 0) {
+            throw new IllegalArgumentException("Overview task timeout must not be negative");
         }
         this.nanoTime = Objects.requireNonNull(nanoTime);
         this.startedAtNanos = nanoTime.getAsLong();
-        this.budgetNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+        this.unbounded = timeoutMillis == 0;
+        this.budgetNanos = unbounded ? 0 : TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
     }
 
     public long remainingMillis() {
+        if (cancellation.isCancelled()) throw expired();
+        if (unbounded) return Long.MAX_VALUE;
         long remainingNanos = budgetNanos - (nanoTime.getAsLong() - startedAtNanos);
         if (remainingNanos <= 0) {
             cancellation.cancel(OverviewCancellation.Reason.DEADLINE);
@@ -50,7 +55,9 @@ public final class OverviewTaskDeadline {
     }
 
     public synchronized void startWatchdog(ScheduledExecutorService scheduler) {
-        if (watchdog != null) throw new IllegalStateException("Overview deadline watchdog already started");
+        if (watchdogStarted) throw new IllegalStateException("Overview deadline watchdog already started");
+        watchdogStarted = true;
+        if (unbounded) return;
         long remaining = budgetNanos - (nanoTime.getAsLong() - startedAtNanos);
         if (remaining <= 0) {
             cancellation.cancel(OverviewCancellation.Reason.DEADLINE);

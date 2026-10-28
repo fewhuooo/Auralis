@@ -45,6 +45,17 @@ public class IngestionCompletionService {
             List<TextChunk> chunks,
             List<List<Double>> vectors,
             Instant now) {
+        return complete(claim, sourceRevision, chunks, vectors, null, now);
+    }
+
+    @Transactional
+    public boolean complete(
+            IngestionClaim claim,
+            java.util.UUID sourceRevision,
+            List<TextChunk> chunks,
+            List<List<Double>> vectors,
+            List<String> provenanceJson,
+            Instant now) {
         boolean currentRevision = sourceService.lockIngestionRevision(
                 claim.userId(), claim.sourceId(), sourceRevision);
         Optional<IngestionJobEntity> locked = lockOwnedClaim(claim);
@@ -60,7 +71,7 @@ public class IngestionCompletionService {
             failStale(job, now);
             return false;
         }
-        chunkService.replace(claim.userId(), claim.sourceId(), claim.generation(), chunks, vectors);
+        chunkService.replace(claim.userId(), claim.sourceId(), claim.generation(), chunks, vectors, provenanceJson);
         job.markReady(now);
         jobRepository.saveAndFlush(job);
         return true;

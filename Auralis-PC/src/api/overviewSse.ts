@@ -3,9 +3,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { ApiProblemError, toApiProblem } from './httpError.ts'
 import { refreshAccessToken, SyncScopeChangedError, type SyncRequestScopeTicket } from './request.ts'
 import { validateOverviewResponse } from './overviewResponseValidator.ts'
-import type { OverviewMode, OverviewRequestContext, OverviewResponse } from '@/types/overview'
-
-export const OVERVIEW_SSE_DEADLINE_MS = 300_000
+import type { GeneratedOverviewResponse, OverviewMode, OverviewRequestContext } from '@/types/overview'
 
 export interface OverviewSseTransportOptions {
   fetch?: typeof fetch
@@ -85,6 +83,12 @@ function getAuthToken(): string | null {
   }
 }
 
+function createDeadlineError(deadlineMs: number): Error {
+  const timeoutError = new Error(`Overview generation timed out after ${deadlineMs}ms`);
+  (timeoutError as unknown as { code: string }).code = 'MODEL_TIMEOUT';
+  return timeoutError;
+}
+
 function captureOverviewScope(): SyncRequestScopeTicket | undefined {
   try {
     const auth = useAuthStore()
@@ -141,7 +145,7 @@ function awaitRefreshOrAbort(
 /**
  * Opts in to SSE structured overview generation via POST with Accept: text/event-stream.
  * Enforces:
- * - 300-second absolute deadline across headers and reading
+ * - Configured positive absolute deadline across headers, refresh, and reading; 0 disables the timer
  * - SyncRequestScopeTicket assertion before transmission and after 401 refresh
  * - Terminal result validation through validateOverviewResponse
  * - Terminal error mapped safely
@@ -153,27 +157,26 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
   request: TRequest,
   context?: OverviewRequestContext,
   options?: OverviewSseTransportOptions,
-): Promise<OverviewResponse> {
+): Promise<GeneratedOverviewResponse> {
   const scope = context?.scope ?? captureOverviewScope()
   assertScopeCurrent(scope)
 
-  const deadlineMs = options?.deadlineMs ?? OVERVIEW_SSE_DEADLINE_MS
+  const runtime = getClientRuntimeConfig()
+  const deadlineMs = options?.deadlineMs ?? runtime.overviewSseDeadlineMs
   const internalController = new AbortController()
   let deadlineFired = false
 
-  const deadlineTimer = setTimeout(() => {
+  const deadlineTimer = deadlineMs > 0 ? setTimeout(() => {
     deadlineFired = true
-    const timeoutErr = new Error('MODEL_TIMEOUT')
-    ;(timeoutErr as unknown as { code: string }).code = 'MODEL_TIMEOUT'
-    internalController.abort(timeoutErr)
-  }, deadlineMs)
+    internalController.abort(createDeadlineError(deadlineMs))
+  }, deadlineMs) : undefined
 
   const onCallerAbort = () => {
     internalController.abort(context?.signal?.reason)
   }
   if (context?.signal) {
     if (context.signal.aborted) {
-      clearTimeout(deadlineTimer)
+      if (deadlineTimer !== undefined) clearTimeout(deadlineTimer)
       throw context.signal.reason || new DOMException('Operation aborted', 'AbortError')
     }
     context.signal.addEventListener('abort', onCallerAbort, { once: true })
@@ -181,12 +184,11 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
 
   const fetchFn = options?.fetch ?? (typeof fetch !== 'undefined' ? fetch : undefined)
   if (!fetchFn) {
-    clearTimeout(deadlineTimer)
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer)
     throw new Error('fetch is not available')
   }
 
   const doRefresh = options?.refreshAccessToken ?? refreshAccessToken
-  const runtime = getClientRuntimeConfig()
   const baseUrl = runtime.apiBaseUrl ? runtime.apiBaseUrl.replace(/\/+$/, '') : ''
   const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`
   const requestId = context?.requestId ?? defaultRequestId()
@@ -211,6 +213,7 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
 
       let response: Response
       try {
+        context?.onRequestDispatched?.()
         response = await fetchFn(url, {
           method: 'POST',
           headers,
@@ -219,9 +222,7 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
         })
       } catch (networkError) {
         if (deadlineFired) {
-          const timeoutError = new Error('Overview generation timed out after 300s')
-          ;(timeoutError as unknown as { code: string }).code = 'MODEL_TIMEOUT'
-          throw timeoutError
+          throw createDeadlineError(deadlineMs)
         }
         if (internalController.signal.aborted) {
           throw context?.signal?.reason || new DOMException('Operation aborted', 'AbortError')
@@ -233,9 +234,7 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
         hasRefreshed = true
         await awaitRefreshOrAbort(() => doRefresh(scope), internalController.signal, context?.signal)
         if (deadlineFired) {
-          const timeoutError = new Error('Overview generation timed out after 300s')
-          ;(timeoutError as unknown as { code: string }).code = 'MODEL_TIMEOUT'
-          throw timeoutError
+          throw createDeadlineError(deadlineMs)
         }
         if (internalController.signal.aborted) {
           throw context?.signal?.reason || internalController.signal.reason || new DOMException('Operation aborted', 'AbortError')
@@ -280,7 +279,7 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
         let buffer = ''
         let currentEvent: string | undefined
         let currentDataLines: string[] = []
-        let terminalResult: OverviewResponse | undefined
+        let terminalResult: GeneratedOverviewResponse | undefined
         let terminalError: SseErrorEventData | undefined
 
         const processLine = (line: string): void => {
@@ -354,9 +353,7 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
         }
 
         if (deadlineFired) {
-          const timeoutError = new Error('Overview generation timed out after 300s')
-          ;(timeoutError as unknown as { code: string }).code = 'MODEL_TIMEOUT'
-          throw timeoutError
+          throw createDeadlineError(deadlineMs)
         }
 
         if (internalController.signal.aborted) {
@@ -372,16 +369,14 @@ export async function postOverviewSse<TRequest extends { mode: OverviewMode }>(
     }
   } catch (error) {
     if (deadlineFired) {
-      const timeoutError = new Error('Overview generation timed out after 300s')
-      ;(timeoutError as unknown as { code: string }).code = 'MODEL_TIMEOUT'
-      throw timeoutError
+      throw createDeadlineError(deadlineMs)
     }
     if (context?.signal?.aborted) {
       throw context.signal.reason || new DOMException('Operation aborted', 'AbortError')
     }
     throw error
   } finally {
-    clearTimeout(deadlineTimer)
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer)
     if (context?.signal) {
       context.signal.removeEventListener('abort', onCallerAbort)
     }

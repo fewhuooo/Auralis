@@ -38,6 +38,19 @@ public interface ProviderHttpTransport {
         return post(endpoint, path, apiKey, requestBody, connectTimeoutMillis, responseTimeoutMillis);
     }
 
+    default byte[] post(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            byte[] requestBody,
+            long connectTimeoutMillis,
+            long responseTimeoutMillis,
+            OverviewCancellation cancellation,
+            long maxResponseBytes) throws IOException {
+        return post(endpoint, path, apiKey, requestBody, connectTimeoutMillis, responseTimeoutMillis,
+                cancellation);
+    }
+
     default void postStream(
             ResolvedProviderEndpoint endpoint,
             String path,

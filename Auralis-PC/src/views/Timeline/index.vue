@@ -640,34 +640,36 @@ const clearDragState = () => {
 }
 
 const handleDropAtSlot = async (slotTime: string, targetTaskId?: string) => {
+  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
+  clearDragState()
+  if (!currentDrag) return
   try {
     const targetTask = getCoveringTask(slotTime) || timeSlots.value.find((slot) => slot.time === slotTime)?.task
     if (!targetTaskId) {
       if (targetTask && isCompletedScheduledTask(targetTask)) throw new Error('已完成的排期任务已固定')
     }
-    if (draggedItem.value) {
-      if (draggedItem.value.type === 'pending') {
-        const result = await taskStore.scheduleTask(draggedItem.value.taskId, slotTime, targetTaskId)
+    if (currentDrag.type === 'pending') {
+      const result = await taskStore.scheduleTask(currentDrag.taskId, slotTime, targetTaskId)
+      if (result === 'queued') reportScheduleQueued()
+    } else if (currentDrag.type === 'scheduled') {
+      if (!currentDrag.sourceSlotTime) throw new Error('无法识别原排期任务，请从日程卡片拖动')
+      if (currentDrag.sourceSlotTime !== slotTime) {
+        const result = await taskStore.rescheduleTask(currentDrag.taskId, slotTime, targetTaskId)
         if (result === 'queued') reportScheduleQueued()
-      } else if (draggedItem.value.type === 'scheduled') {
-        if (!draggedItem.value.sourceSlotTime) throw new Error('无法识别原排期任务，请从日程卡片拖动')
-        if (draggedItem.value.sourceSlotTime !== slotTime) {
-          const result = await taskStore.rescheduleTask(draggedItem.value.taskId, slotTime, targetTaskId)
-          if (result === 'queued') reportScheduleQueued()
-        }
       }
     }
   } catch (error) {
     reportDragFailure(error)
-  } finally {
-    clearDragState()
   }
 }
 
 const handleDropOnTaskBody = async (task: Task, startSlotTime: string) => {
   try {
     if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
-    if (draggedItem.value?.taskId === task.id) return
+    if (draggedItem.value?.taskId === task.id) {
+      clearDragState()
+      return
+    }
     await handleDropAtSlot(taskEndSlotTime(task, startSlotTime), task.id)
   } catch (error) {
     reportDragFailure(error)
@@ -676,48 +678,48 @@ const handleDropOnTaskBody = async (task: Task, startSlotTime: string) => {
 }
 
 const handleDropOnHeader = async (targetTask: Task) => {
+  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
+  clearDragState()
+  if (!currentDrag) return
   try {
-    if (!draggedItem.value) return
-    if (draggedItem.value.type === 'pending') {
+    if (currentDrag.type === 'pending') {
       throw new Error('待排期任务请拖到任务主体或空槽进行插入')
     }
-    if (!draggedItem.value.sourceSlotTime) {
+    if (!currentDrag.sourceSlotTime) {
       throw new Error('无法识别原排期任务，请从日程卡片拖动')
     }
     if (targetTask && isCompletedScheduledTask(targetTask)) throw new Error('已完成的排期任务已固定')
-    if (draggedItem.value.taskId !== targetTask.id) {
-      const result = await taskStore.swapScheduledTasks(draggedItem.value.taskId, targetTask.id)
+    if (currentDrag.taskId !== targetTask.id) {
+      const result = await taskStore.swapScheduledTasks(currentDrag.taskId, targetTask.id)
       if (result === 'queued') reportScheduleQueued()
     }
   } catch (error) {
     reportDragFailure(error)
-  } finally {
-    clearDragState()
   }
 }
 
 const handleDropOnDay = async (day: string) => {
+  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
+  clearDragState()
+  if (!currentDrag) return
   try {
-    if (draggedItem.value) {
-      await taskStore.scheduleTaskToDay(draggedItem.value.taskId, day)
-    }
+    await taskStore.scheduleTaskToDay(currentDrag.taskId, day)
   } catch (error) {
     reportDragFailure(error)
-  } finally {
-    clearDragState()
   }
 }
 
 const handleDropOnPending = async () => {
+  const currentDrag = draggedItem.value ? { ...draggedItem.value } : null
+  clearDragState()
+  if (!currentDrag) return
   try {
-    if (draggedItem.value?.type === 'scheduled') {
-      const targetId = draggedItem.value.taskId || draggedItem.value.sourceSlotTime
+    if (currentDrag.type === 'scheduled') {
+      const targetId = currentDrag.taskId || currentDrag.sourceSlotTime
       if (targetId) await taskStore.unscheduleTask(targetId)
     }
   } catch (error) {
     reportDragFailure(error)
-  } finally {
-    clearDragState()
   }
 }
 
@@ -945,13 +947,13 @@ const handleDeleteTaskById = async (id: string) => {
   gap: 14px;
   overflow: hidden;
   box-sizing: border-box;
-  background: var(--color-bg-primary, #F7F2EB);
+  background: var(--color-bg-secondary, #EEEEEE);
   color: var(--text-primary);
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Zen Sage Theme Tokens */
+  /* Zen Sage Theme Tokens - 统一全局规范 */
   --color-primary-accent: #8B9A6E;
   --color-primary-accent-hover: #78875B;
   --color-primary-light: rgba(139, 154, 110, 0.12);
@@ -959,25 +961,25 @@ const handleDeleteTaskById = async (id: string) => {
   --color-primary-border: rgba(139, 154, 110, 0.22);
   --accent-gradient: linear-gradient(135deg, #9EAD80 0%, #7E8E62 100%);
   --accent-gradient-hover: linear-gradient(135deg, #8B9A6E 0%, #6E7D53 100%);
-  --surface-panel: #FFFFFF;
-  --surface-card: #FFFFFF;
-  --surface-card-hover: #FDFCF9;
-  --border-glass: rgba(139, 154, 110, 0.22);
-  --shadow-ambient: 0 6px 24px -2px rgba(45, 55, 38, 0.08), 0 2px 8px -1px rgba(0, 0, 0, 0.03);
-  --shadow-card: 0 4px 16px -2px rgba(35, 45, 30, 0.12), 0 2px 6px -1px rgba(0, 0, 0, 0.05);
-  --shadow-card-hover: 0 10px 28px -3px rgba(35, 45, 30, 0.18), 0 4px 12px -2px rgba(139, 154, 110, 0.24);
+  --surface-panel: var(--color-bg-primary, #F7F2EB);
+  --surface-card: var(--color-bg-tertiary, #FAF7F2);
+  --surface-card-hover: #FFFFFF;
+  --border-glass: var(--border-subtle, rgba(0, 0, 0, 0.08));
+  --shadow-ambient: 0 10px 30px -4px rgba(35, 45, 30, 0.08), 0 2px 8px -1px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.025);
+  --shadow-card-hover: 0 6px 18px rgba(35, 45, 30, 0.06);
   --spring-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html.dark .timeline-page {
-  background: #111411;
-  --surface-panel: #161A16;
-  --surface-card: #1F241F;
-  --surface-card-hover: #262D26;
-  --border-glass: rgba(139, 154, 110, 0.26);
-  --shadow-ambient: 0 8px 30px -4px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-card: 0 4px 18px -2px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
-  --shadow-card-hover: 0 10px 30px -4px rgba(0, 0, 0, 0.65), 0 0 12px rgba(139, 154, 110, 0.25);
+  background: var(--color-bg-secondary, #1B201B);
+  --surface-panel: #1F241F;
+  --surface-card: #252B25;
+  --surface-card-hover: #2E362E;
+  --border-glass: rgba(163, 177, 155, 0.16);
+  --shadow-ambient: 0 14px 36px rgba(0, 0, 0, 0.48), 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 /* 2. Top Header Navigation Card */
@@ -1037,7 +1039,7 @@ html.dark .timeline-page {
   padding: 0 12px;
   background: rgba(139, 154, 110, 0.06);
   border-radius: 9999px;
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   font-size: 12.5px;
   box-shadow: 0 2px 6px rgba(35, 45, 30, 0.05);
   transition: transform 0.2s var(--spring-ease), border-color 0.2s var(--spring-ease), box-shadow 0.2s var(--spring-ease), background 0.2s;
@@ -1073,7 +1075,7 @@ html.dark .timeline-page {
 .stat-label {
   color: var(--text-secondary);
   font-weight: 500;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* Header Actions & Segmented Control */
@@ -1087,7 +1089,7 @@ html.dark .timeline-page {
 .view-toggle {
   display: flex;
   background: rgba(139, 154, 110, 0.08);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-radius: 9999px;
   padding: 3px;
   gap: 3px;
@@ -1116,14 +1118,14 @@ html.dark .timeline-page {
 }
 
 .toggle-btn.is-active {
-  background: #FFFFFF;
+  background: var(--color-bg-primary, #F7F2EB);
   color: var(--color-primary-accent);
   font-weight: 750;
-  box-shadow: 0 3px 8px rgba(35, 45, 30, 0.12), 0 1px 3px rgba(139, 154, 110, 0.15);
+  box-shadow: 0 2px 6px rgba(35, 45, 30, 0.08);
 }
 
 html.dark .toggle-btn.is-active {
-  background: #252D25;
+  background: #2D352D;
   color: #D6E2D0;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
 }
@@ -1170,14 +1172,15 @@ html.dark .toggle-btn.is-active {
 }
 
 .btn-secondary {
-  background: #FFFFFF;
+  background: var(--color-bg-tertiary, #FAF7F2);
   color: var(--text-secondary);
-  border: 1px solid var(--border-glass);
-  box-shadow: 0 2px 6px rgba(35, 45, 30, 0.06);
+  border: 0.5px solid var(--border-default, #E6E6E4);
+  box-shadow: 0 1px 3px rgba(35, 45, 30, 0.04);
 }
 
 html.dark .btn-secondary {
-  background: #1F241F;
+  background: #252B25;
+  border-color: rgba(163, 177, 155, 0.22);
 }
 
 .btn-secondary:hover {
@@ -1195,7 +1198,7 @@ html.dark .btn-secondary {
 /* 3. Day Mode Layout (3-Column Architecture) */
 .timeline-body {
   display: grid;
-  grid-template-columns: 290px 1fr 390px;
+  grid-template-columns: minmax(220px, 280px) minmax(360px, 1fr) minmax(270px, 370px);
   gap: 14px;
   flex: 1;
   min-height: 0;
@@ -1207,7 +1210,7 @@ html.dark .btn-secondary {
 .weekly-overview-column {
   background: var(--surface-panel);
   border-radius: 18px;
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   box-shadow: var(--shadow-ambient);
   padding: 18px 20px;
   display: flex;
@@ -1232,7 +1235,7 @@ html.dark .btn-secondary {
 .next-week-title {
   margin-top: 18px;
   padding-top: 14px;
-  border-top: 1px dashed var(--border-glass);
+  border-top: 0.5px dashed var(--border-glass);
 }
 
 /* 4. Left Column: Weekly Overview */
@@ -1266,7 +1269,7 @@ html.dark .btn-secondary {
   gap: 7px;
   padding: 11px 14px;
   background: var(--surface-card);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-radius: 13px;
   cursor: pointer;
   box-shadow: 0 3px 10px -1px rgba(35, 45, 30, 0.08), 0 1px 4px rgba(0, 0, 0, 0.03);
@@ -1314,7 +1317,7 @@ html.dark .btn-secondary {
 }
 
 .weekly-overview-task-count {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
   margin-left: auto;
@@ -1327,7 +1330,7 @@ html.dark .btn-secondary {
 .day-dot {
   background: var(--color-primary-accent);
   color: #FFFFFF;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 800;
   padding: 1.5px 5px;
   border-radius: 5px;
@@ -1364,13 +1367,13 @@ html.dark .btn-secondary {
 }
 
 .weekly-overview-more {
-  font-size: 9.5px;
+  font-size: 12px;
   color: var(--text-secondary);
   font-weight: 700;
 }
 
 .weekly-overview-empty {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -1417,7 +1420,7 @@ html.dark .btn-secondary {
 
 .slot-time {
   width: 48px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--text-secondary);
   padding-top: 6px;
@@ -1447,7 +1450,7 @@ html.dark .btn-secondary {
   left: 0;
   right: 0;
   height: 1px;
-  border-top: 1px dashed rgba(139, 154, 110, 0.16);
+  border-top: 0.5px dashed rgba(139, 154, 110, 0.16);
   pointer-events: none;
   z-index: 1;
   transition: border-color 0.2s;
@@ -1458,20 +1461,20 @@ html.dark .btn-secondary {
 }
 
 html.dark .slot-grid-line {
-  border-top: 1px dashed rgba(139, 154, 110, 0.15);
+  border-top: 0.5px dashed rgba(139, 154, 110, 0.15);
 }
 
 .slot-empty {
   height: 100%;
   width: 100%;
   border-radius: 12px;
-  border: 1px solid transparent;
+  border: 0.5px solid transparent;
   transition: background 0.2s var(--spring-ease), border-color 0.2s var(--spring-ease);
 }
 
 .time-slot:hover .slot-empty {
   background: rgba(139, 154, 110, 0.025);
-  border: 1px dashed rgba(139, 154, 110, 0.16);
+  border: 0.5px dashed rgba(139, 154, 110, 0.16);
 }
 
 .time-slot.drag-over .slot-empty {
@@ -1527,7 +1530,7 @@ html.dark .slot-grid-line {
   right: 0;
   padding: 10px 14px;
   background: var(--surface-card);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-left: 4px solid var(--color-primary-accent);
   border-radius: 13px;
   box-shadow: var(--shadow-card);
@@ -1568,9 +1571,9 @@ html.dark .slot-grid-line {
   border-radius: 6px;
   color: var(--color-primary-accent);
   background: var(--surface-panel);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.3;
   pointer-events: none;
@@ -1606,10 +1609,10 @@ html.dark .slot-grid-line {
 .task-tag {
   background: rgba(139, 154, 110, 0.16);
   color: #384A30;
-  border: 1px solid rgba(139, 154, 110, 0.32);
+  border: 0.5px solid rgba(139, 154, 110, 0.32);
   padding: 2px 7px;
   border-radius: 9999px;
-  font-size: 9.5px;
+  font-size: 11.5px;
   font-weight: 750;
   pointer-events: none;
 }
@@ -1625,7 +1628,7 @@ html.dark .task-tag {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 5px;
   border-radius: 6px;
   pointer-events: auto;
@@ -1650,7 +1653,7 @@ html.dark .task-tag {
 }
 
 .task-detail {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.45;
   white-space: pre-wrap;
@@ -1662,11 +1665,11 @@ html.dark .task-tag {
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   background: rgba(197, 168, 128, 0.16);
   color: #8C6A3D;
-  border: 1px solid rgba(197, 168, 128, 0.32);
+  border: 0.5px solid rgba(197, 168, 128, 0.32);
   padding: 2.5px 8px;
   border-radius: 9999px;
   cursor: pointer;
@@ -1688,7 +1691,7 @@ html.dark .kb-relation-badge {
 
 .kb-relation-badge.mini {
   margin-top: 5px;
-  font-size: 9.5px;
+  font-size: 11.5px;
   padding: 1.5px 7px;
 }
 
@@ -1754,7 +1757,7 @@ html.dark .kb-relation-badge {
   align-items: center;
   padding: 12px 14px;
   background: var(--surface-card);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-radius: 14px;
   cursor: grab;
   position: relative;
@@ -1809,10 +1812,10 @@ html.dark .kb-relation-badge {
 .pending-subject {
   background: rgba(139, 154, 110, 0.16);
   color: #384A30;
-  border: 1px solid rgba(139, 154, 110, 0.32);
+  border: 0.5px solid rgba(139, 154, 110, 0.32);
   padding: 2px 7px;
   border-radius: 9999px;
-  font-size: 9.5px;
+  font-size: 11.5px;
   font-weight: 750;
   align-self: flex-start;
   margin-top: 4px;
@@ -1829,13 +1832,13 @@ html.dark .pending-subject {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
-  font-size: 10.5px;
+  font-size: 12px;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
 .pending-due-badge {
-  font-size: 9.5px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-secondary);
   background: rgba(139, 154, 110, 0.08);
@@ -1847,7 +1850,7 @@ html.dark .pending-subject {
 .pending-due-badge.is-overdue {
   color: #ef4444;
   background: rgba(239, 68, 68, 0.12);
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  border: 0.5px solid rgba(239, 68, 68, 0.25);
   font-weight: 700;
 }
 
@@ -1898,7 +1901,7 @@ html.dark .pending-due-badge.is-overdue {
 
 .weekly-column {
   background: var(--surface-panel);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-radius: 16px;
   padding: 12px;
   display: flex;
@@ -1927,7 +1930,7 @@ html.dark .pending-due-badge.is-overdue {
   display: flex;
   align-items: center;
   gap: 6px;
-  border-bottom: 1px solid var(--border-glass);
+  border-bottom: 0.5px solid var(--border-glass);
   padding-bottom: 8px;
 }
 
@@ -1939,7 +1942,7 @@ html.dark .pending-due-badge.is-overdue {
 }
 
 .weekly-column-count {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-secondary);
   margin-left: auto;
@@ -1968,7 +1971,7 @@ html.dark .pending-due-badge.is-overdue {
 .weekly-task-card {
   flex-shrink: 0;
   background: var(--surface-card);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-left: 3.5px solid var(--color-primary-accent);
   border-radius: 12px;
   padding: 10px 11px;
@@ -2006,7 +2009,7 @@ html.dark .pending-due-badge.is-overdue {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 9px;
+  font-size: 11px;
   padding: 2px 4px;
   border-radius: 4px;
   pointer-events: auto;
@@ -2017,7 +2020,7 @@ html.dark .pending-due-badge.is-overdue {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 9.5px;
+  font-size: 12px;
   color: var(--text-secondary);
   flex-wrap: wrap;
   gap: 4px;
@@ -2031,10 +2034,10 @@ html.dark .pending-due-badge.is-overdue {
 .weekly-task-tag {
   background: rgba(139, 154, 110, 0.16);
   color: #384A30;
-  border: 1px solid rgba(139, 154, 110, 0.32);
+  border: 0.5px solid rgba(139, 154, 110, 0.32);
   padding: 1.5px 6px;
   border-radius: 9999px;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 750;
   max-width: 65px;
   overflow: hidden;
@@ -2057,7 +2060,7 @@ html.dark .weekly-task-tag {
   min-height: 130px;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   transition: all 0.22s var(--spring-ease);
   overflow-y: auto;
 }
@@ -2090,7 +2093,7 @@ html.dark .weekly-task-tag {
   gap: 8px;
   padding: 7px 14px;
   background: var(--surface-card);
-  border: 1px solid var(--border-glass);
+  border: 0.5px solid var(--border-glass);
   border-radius: 9999px;
   cursor: grab;
   font-size: 12.5px;
@@ -2116,7 +2119,7 @@ html.dark .weekly-task-tag {
 }
 
 .pill-duration {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   opacity: 0.9;
   font-variant-numeric: tabular-nums;
@@ -2133,5 +2136,45 @@ html.dark .weekly-task-tag {
 .weekly-task-card.is-completed .weekly-task-name {
   text-decoration: line-through;
   color: var(--text-muted);
+}
+
+/* ===== Responsive Adaptation ===== */
+@media (max-width: 1280px) {
+  .timeline-page {
+    padding: 12px 14px 14px;
+    gap: 10px;
+  }
+  .timeline-header-card {
+    padding: 12px 16px;
+  }
+  .timeline-body {
+    grid-template-columns: 240px 1fr 310px;
+    gap: 10px;
+  }
+  .timeline-column,
+  .tasks-column,
+  .weekly-overview-column {
+    padding: 14px 16px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .timeline-page {
+    padding: 10px 12px 12px;
+    gap: 8px;
+  }
+  .timeline-body {
+    grid-template-columns: 210px 1fr 270px;
+    gap: 8px;
+  }
+  .timeline-column,
+  .tasks-column,
+  .weekly-overview-column {
+    padding: 12px 14px;
+  }
+  .stat-pill {
+    padding: 0 8px;
+    height: 28px;
+  }
 }
 </style>

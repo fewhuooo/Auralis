@@ -1,5 +1,46 @@
 # Auralis 运维与应急 Runbook
 
+### 2026-10-27 已执行单条Overview失败缓存清理
+
+用户授权清除阻塞新请求的失败缓存，并明确本次不备份、删除旧备份。目标为Subject generation `7685daa5-a125-4ff5-a175-b21bd4116edb`，状态FAILED/无owner或lease/unknown和active dispatch均0，62关联reservation均COMPLETED，无job/publication；三次请求均复用该代。精确单UUID SERIALIZABLE事务锁父行，按预期行数删除恢复子表及父行，COMMIT exit0。删除177checkpoint、3映射、1计划、126节点、58执行调用关联、62invocation及1失败代。
+
+22正式结果、25回执、该Subject7份资料、771账本记录、其它24代完整行hash前后保持；费用297243不归零。本次没有新建备份。旧7个DB/缓存备份删除命令被自动策略拒绝，文件仍保留，精确七文件清单在 `D:/Temp/auralis-failed-cache-clean-20261027/blocked-backup-deletion-7-files.csv`。未重启或部署、未替用户触发新任务。当前SQL只适用于本次精确ID与盘点，不作通用清理命令。
+
+### 2026-10-26 已执行Overview失败缓存清理
+
+本次用户明确选择全部6条FAILED。操作前backend未运行，确认0活动generation/job/reservation、目标派发均已结算；先做V39全库dump及528行定向备份，再锁精确六UUID、核对关联与预期PK/hash，事务删除6代/257检查点/19请求映射/134私有invocation/36执行调用关联/75节点/1计划。COMMIT及部署后的12组保留hash核对通过；22SUCCESS、22正式结果、675费用、25写入回执和原资料保持，unknown-dispatch SUCCESS也未触碰。
+
+本次SQL只适用于此次备份与当时六条ID，不是通用清缓存命令，不能直接对下一次失败复用。费用不因清缓存归零，原账本与历史charged保留。部署已应用V40，下一次清理须重新核实现场版本/状态及范围。D:/Temp/auralis-overview-deploy-20261026/内有备份、SQL、cleanup.log与deploy-verification.md；真实生成和GUI未验收。
+
+### 2026-10-26 Overview 容量诊断（候选未部署）
+
+先确认请求的 provider、精确 endpoint/model 和服务器 capacity profile；未知能力会在派发前以 MODEL_UNAVAILABLE 拒绝。再区分单次输入/输出容量、人工正数上限与任务/窗口额度。`AURALIS_AI_OVERVIEW_MAX_* = 0` 不额外限幅，正值收紧对应容量；`AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS=0` 仅关闭次数帽，不清除或关闭 Token 配额。只检查需要的配置键，不输出含密钥的完整 Compose 配置。
+
+输出 reserve 是随实际请求体积变化的预留估算，不能当作 Provider 实际用量；余额不足仍报额度错误，不通过压缩正文凑余额。中间 topic/unit alias 数与最终不同来源数是不同口径。容量配置不需要清理账本、checkpoint 或缓存。测试命令、失败归因、七项条件性跳过和隔离 PG/TLS 参数见 `D:/Temp/auralis-overview-dynamic-capacity-20261026/final-handoff.md`；真实模型成本、内容质量和 GUI 尚未验收。
+
+### 2026-10-24 Overview 全流程耗时测量
+
+本机可将 `.env` 中 `AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS` 设为 `0`，关闭服务端 JSON/SSE 直接请求的整任务期限；每个 Provider response 仍受 120000ms 配置窗口、取消、Guard、计量和预算约束。后台持久 jobs 仍是 240000ms durable deadline。源码需先构建新 backend 镜像并由用户决定是否 recreate；仅改 `.env` 不会影响既有运行容器。测量结束后将该项恢复为所需正值并重建 backend。
+
+更新时间：2026-10-24
+文档状态：现行，部分流程待生产演练
+权威范围：运行期诊断、恢复、备份与升级条件
+事实来源：当前 Compose 服务、Server 配置、客户端请求/同步实现与已知风险
+
+### 2026-10-24 AI Provider 思考开关
+
+设置 `AURALIS_AI_THINKING_ENABLED=false`、用新源码 build backend 镜像并 recreate backend 后，DeepSeek 与官方 MiMo (`api.xiaomimimo.com`) 的普通、结构化和流式 chat 请求会显式请求关闭 thinking。单独 recreate 旧镜像不会加载新代码。检查 Compose 生效值时只输出该单一变量；不得打印完整渲染配置，因为其中含凭据。其它 OpenAI-compatible endpoint 不发送专有字段，因此不能用该开关证明未知代理或任意模型内部推理已关闭。本机当前配置为 `false`，运行容器未由本轮更新。
+
+### 2026-10-24 Overview 输入估算实测
+
+本机 backend 已显式启用 `calibrated-category`；基础配置仍默认 `legacy-bytes`。使用现有 UI 选择原长资料生成总览，不清缓存、不清账本、不需重建前端。完成或明确失败后，按新 run / generation / budgetTaskId 对照 `AI_INPUT_TOKEN_ESTIMATE`、`ADAPTIVE_BUDGET_FORECAST`、`ADAPTIVE_WRITER_PROGRESS`、`BUDGET_ROOT_STOP/RESUME/COMPLETE` 与 D:/Temp/auralis-overview-traces 下的报告。`profile/strategy/categoryMessages/byteMessages` 说明使用分类还是回退；输入预留下降不是 Provider 实际 Token 消耗下降。
+
+离线验证覆盖 INDEX、METADATA 和 ROUTE，没有真实 writer 样本；本轮实测重点补正文输入估算与 Provider actual usage、未重复完成步骤、内容完整性。历史 charged 继续累计，旧消耗不会因换估算归零；合法预算耗尽仍返回原错误。若需关闭候选，只把本机 overlay 的该模式改回 `legacy-bytes` 后 recreate backend，不改模型、不删检查点或账本。
+
+### 2026-10-23 Overview 次数预算观测
+
+本机追踪 overlay 将 `AURALIS_AI_LIMITS_OVERVIEW_MAX_CALLS=0`，表示暂时不因 Overview 累计调用次数拒绝，但仍逐次记录 Provider usage，且继续受任务/窗口 Token、deadline、并发及结构性容量限制。复盘时按同一 `budgetTaskId` 对照账本累计 calls/charged tokens 与追踪文件的本轮 Provider 响应；追踪不包含旧轮次用量，不能拿单次 run 计数替代账本。调回正数时只改 overlay 配置并重新创建 backend，不清空账本。
+
 ### 2026-10-12 学科总览 preflight 后快速 VALIDATION_FAILED
 
 若日志在 `REQUEST_VALIDATE_SUCCESS` 后数毫秒失败且没有 `PROVIDER_REQUEST`，外层 `phase=FINAL` 不代表模型已生成；需区分完整 JSON 转义 prompt 校验与 quota 错误。合法文件总览合并也可能超过 12000 字符，本次当前三份缓存按空 instruction 重建为 16631，单份均能装下。原始请求体未记录，缓存重建仅作为候选证据。
@@ -22,13 +63,9 @@
 
 如果 backend 日志显示 `POST /api/tasks/schedule-insertions` 的 `HttpRequestMethodNotSupportedException`，先核对运行镜像是否早于包含 `TaskController.insertSchedule` 的当前版本。该接口在当前代码和 OpenAPI artifact 中使用 POST；旧镜像不含映射时客户端只看到通用 500。已验证恢复流程为单独重建并重启 backend，确认容器 healthy 和 readiness HTTP 200。若需启动数据库依赖，只启动现有 db/minio 容器，不重建或清除数据卷。默认 prod profile 关闭 `/v3/api-docs`，HTTP 404 是预期配置。
 
-更新时间：2026-10-11
 
-文档状态：现行，部分流程待生产演练
 
-权威范围：运行期诊断、恢复、备份与升级条件
 
-事实来源：当前 Compose 服务、Server 配置、客户端请求/同步实现与已知风险
 
 ## AI Provider 超时诊断
 

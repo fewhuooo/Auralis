@@ -3,6 +3,7 @@ package com.auralis.app;
 import com.auralis.app.ai.IngestionJobStatus;
 import com.auralis.app.ai.ingestion.IngestionClaim;
 import com.auralis.app.ai.ingestion.IngestionCompletionService;
+import com.auralis.app.ai.ingestion.IngestionJobService;
 import com.auralis.app.ai.ingestion.TextChunk;
 import com.auralis.app.ai.internal.persistence.IngestionJobEntity;
 import com.auralis.app.ai.internal.persistence.IngestionJobRepository;
@@ -26,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,7 +74,7 @@ class IngestionCompletionServiceTests {
         assertThat(completed).isFalse();
         assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.FAILED);
         assertThat(job.getErrorCode()).isEqualTo("INGESTION_REVISION_STALE");
-        verify(chunkService, never()).replace(any(), any(), any(), any(), any());
+        verify(chunkService, never()).replace(any(), any(), any(), any(), any(), any());
         verify(sourceService, never()).markReadyIfRevision(any(), any(), any());
         verify(sourceService, never()).markPendingIfRevision(any(), any(), any());
         verify(sourceService, never()).markFailedIfRevision(any(), any(), any(), any(), any());
@@ -90,7 +92,7 @@ class IngestionCompletionServiceTests {
         assertThat(completed).isFalse();
         assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PARSING);
         assertThat(job.getAttemptCount()).isEqualTo(2);
-        verify(chunkService, never()).replace(any(), any(), any(), any(), any());
+        verify(chunkService, never()).replace(any(), any(), any(), any(), any(), any());
         verify(sourceService, never()).markReadyIfRevision(any(), any(), any());
         verify(jobRepository, never()).saveAndFlush(any());
     }
@@ -110,7 +112,7 @@ class IngestionCompletionServiceTests {
         assertThat(completed).isFalse();
         assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PARSING);
         assertThat(job.getAttemptCount()).isEqualTo(1);
-        verify(chunkService, never()).replace(any(), any(), any(), any(), any());
+        verify(chunkService, never()).replace(any(), any(), any(), any(), any(), any());
         verify(sourceService, never()).markReadyIfRevision(any(), any(), any());
         verify(jobRepository, never()).saveAndFlush(any());
     }
@@ -126,7 +128,7 @@ class IngestionCompletionServiceTests {
         assertThat(lateService.fail(claim, revision, now, 3, "INGESTION_FAILED", "late failure")).isFalse();
 
         assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PARSING);
-        verify(chunkService, never()).replace(any(), any(), any(), any(), any());
+        verify(chunkService, never()).replace(any(), any(), any(), any(), any(), any());
         verify(sourceService, never()).markReadyIfRevision(any(), any(), any());
         verify(sourceService, never()).markPendingIfRevision(any(), any(), any());
         verify(sourceService, never()).markFailedIfRevision(any(), any(), any(), any(), any());
@@ -142,7 +144,8 @@ class IngestionCompletionServiceTests {
         assertThat(completed).isTrue();
         assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.READY);
         assertThat(job.getLeaseUntil()).isNull();
-        verify(chunkService).replace(eq(userId), eq(sourceId), eq(job.getGeneration()), eq(chunks()), eq(vectors()));
+        verify(chunkService).replace(eq(userId), eq(sourceId), eq(job.getGeneration()), eq(chunks()), eq(vectors()),
+                org.mockito.ArgumentMatchers.isNull());
         verify(sourceService).markReadyIfRevision(userId, sourceId, revision);
         verify(jobRepository).saveAndFlush(job);
     }
@@ -177,8 +180,17 @@ class IngestionCompletionServiceTests {
 
     @Test
     void retryExhaustionUpdatesCurrentSourceAndJobTogether() {
-        job.claim(now.minusSeconds(400), now.minusSeconds(300));
-        job.claim(now.minusSeconds(200), now.minusSeconds(1));
+        IngestionJobService jobService = new IngestionJobService(jobRepository, Clock.fixed(now, ZoneOffset.UTC));
+        when(jobRepository.findNextClaimable(any(), eq(IngestionJobStatus.PENDING),
+                eq(List.of(IngestionJobStatus.PARSING, IngestionJobStatus.INDEXING)), any()))
+                .thenReturn(List.of(job), List.of(job), List.of(job));
+        assertThat(jobService.claimNext(now.plusSeconds(301), now.plusSeconds(601), 3)).containsSame(job);
+        assertThat(jobService.claimNext(now.plusSeconds(602), now.plusSeconds(902), 3)).containsSame(job);
+        assertThat(jobService.claimNext(now.plusSeconds(903), now.plusSeconds(1203), 3)).containsSame(job);
+        assertThat(job.getAttemptCount()).isEqualTo(3);
+        assertThat(job.getFailureCount()).isEqualTo(3);
+        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PENDING);
+        assertThat(job.getLeaseUntil()).isNull();
         when(sourceService.lockIngestionRevision(userId, sourceId, revision)).thenReturn(true);
         when(sourceService.markFailedIfRevision(
                 userId, sourceId, revision, "INGESTION_RETRY_EXHAUSTED", "Ingestion retries exhausted"))
@@ -191,7 +203,35 @@ class IngestionCompletionServiceTests {
         assertThat(job.getErrorCode()).isEqualTo("INGESTION_RETRY_EXHAUSTED");
         verify(sourceService).markFailedIfRevision(
                 userId, sourceId, revision, "INGESTION_RETRY_EXHAUSTED", "Ingestion retries exhausted");
-        verify(jobRepository).saveAndFlush(job);
+        verify(jobRepository, times(4)).saveAndFlush(job);
+    }
+
+    @Test
+    void failExhaustedDoesNotTerminalizeBelowFailureThreshold() {
+        when(sourceService.lockIngestionRevision(userId, sourceId, revision)).thenReturn(true);
+        when(sourceService.markPendingIfRevision(userId, sourceId, revision)).thenReturn(true, true);
+
+        boolean firstFailure = completionService.fail(
+                claim, revision, now, 3, "INGESTION_FAILED", "attempt one");
+        IngestionJobService jobService = new IngestionJobService(jobRepository, Clock.fixed(now, ZoneOffset.UTC));
+        assertThat(jobService.claimById(
+                userId, job.getId(), now.plusSeconds(1), now.plusSeconds(301), 3)).containsSame(job);
+        IngestionClaim secondClaim = IngestionClaim.from(job);
+        boolean secondFailure = completionService.fail(
+                secondClaim, revision, now.plusSeconds(2), 3, "INGESTION_FAILED", "attempt two");
+
+        boolean failed = completionService.failExhausted(job, now.plusSeconds(903), 3);
+
+        assertThat(firstFailure).isTrue();
+        assertThat(secondFailure).isTrue();
+        assertThat(failed).isFalse();
+        assertThat(job.getAttemptCount()).isEqualTo(2);
+        assertThat(job.getFailureCount()).isEqualTo(2);
+        assertThat(job.getStatus()).isEqualTo(IngestionJobStatus.PENDING);
+        assertThat(job.getLeaseUntil()).isNull();
+        verify(sourceService, times(2)).markPendingIfRevision(userId, sourceId, revision);
+        verify(sourceService, never()).markFailedIfRevision(any(), any(), any(), any(), any());
+        verify(jobRepository, times(3)).saveAndFlush(job);
     }
 
     private List<TextChunk> chunks() {

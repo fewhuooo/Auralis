@@ -120,7 +120,7 @@ class AiProviderResilienceTests {
             return "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}"
                     .getBytes(java.nio.charset.StandardCharsets.UTF_8);
         });
-        for (int maxTokens : List.of(4_608, 6_144)) {
+        for (int maxTokens : List.of(4_608, 4_675, 6_144)) {
             provider.complete(new AiProviderRequest(
                     "chat-model", List.of(new AiProviderRequest.Message(AiMessageRole.USER, "return json")),
                     0.1, maxTokens, true), CREDENTIAL);
@@ -157,7 +157,7 @@ class AiProviderResilienceTests {
     }
 
     @Test
-    void serializesStructuredJsonControlsOnlyForStructuredDeepSeekRequests() throws Exception {
+    void serializesThinkingControlsForAllDeepSeekRequests() throws Exception {
         AtomicReference<byte[]> capturedBody = new AtomicReference<>();
         DeepSeekAiProvider provider = deepSeekProvider((endpoint, path, key, body) -> {
             capturedBody.set(body);
@@ -178,7 +178,7 @@ class AiProviderResilienceTests {
                 "deepseek-v4-flash", structured.messages(), 0.1, null), DEEPSEEK_CREDENTIAL);
         var ordinaryBody = new ObjectMapper().readTree(capturedBody.get());
         assertThat(ordinaryBody.has("response_format")).isFalse();
-        assertThat(ordinaryBody.has("thinking")).isFalse();
+        assertThat(ordinaryBody.path("thinking").path("type").asText()).isEqualTo("disabled");
     }
 
     @Test

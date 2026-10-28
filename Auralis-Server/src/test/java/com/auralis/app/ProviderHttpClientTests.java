@@ -58,6 +58,38 @@ class ProviderHttpClientTests {
     }
 
     @Test
+    void perCallOverviewResponseLimitBypassesSharedCapAndReachesTransport() throws Exception {
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "provider.test", 443, List.of(), "/v1");
+        AtomicLong responseLimit = new AtomicLong();
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override
+            public byte[] post(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] requestBody) {
+                throw new AssertionError("Expected explicit per-call transport policy");
+            }
+
+            @Override
+            public byte[] post(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] requestBody,
+                               long connectTimeoutMillis, long responseTimeoutMillis,
+                               com.auralis.app.ai.OverviewCancellation cancellation, long maxResponseBytes) {
+                responseLimit.set(maxResponseBytes);
+                return "{\"value\":\"a response larger than shared limit\"}".getBytes(StandardCharsets.UTF_8);
+            }
+        };
+        ProviderHttpClient client = new ProviderHttpClient(new ObjectMapper(), transport, 4);
+
+        JsonNode response = client.postJson(endpoint, "/chat/completions", "secret", Map.of(), JsonNode.class,
+                (com.auralis.app.ai.OverviewCancellation) null, Long.MAX_VALUE);
+
+        assertThat(response.path("value").asText()).contains("larger than shared limit");
+        assertThat(responseLimit).hasValue(Long.MAX_VALUE);
+        assertThatThrownBy(() -> client.postJson(endpoint, "/chat/completions", "secret", Map.of(), JsonNode.class,
+                (com.auralis.app.ai.OverviewCancellation) null, 8))
+                .isInstanceOf(ProviderResponseTooLargeException.class);
+        assertThat(responseLimit).hasValue(8);
+    }
+
+    @Test
     void getsJsonThroughResolvedEndpointWithTimeoutsAndResponseLimit() throws Exception {
         ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
                 "provider.test", 443, List.of(InetAddress.getByName("93.184.216.34")), "/v1");

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { IconAlertTriangle, IconChevronRight, IconDots, IconFileText, IconMapPin, IconRefresh } from '@tabler/icons-vue'
-import type { OverviewChapter, OverviewLocator, OverviewSummary } from '@/types/overview'
+import type { OverviewChapter, OverviewLocator, OverviewResponse, OverviewSummary } from '@/types/overview'
 
 export interface FileOverviewItem {
   id: string
@@ -10,6 +10,8 @@ export interface FileOverviewItem {
   status?: 'READY' | 'FAILED' | 'PENDING'
   error?: string | null
   syncStatus?: 'LOCAL' | 'PENDING' | 'SYNCED' | 'CONFLICT' | 'ERROR' | 'STALE'
+  generationConflicts?: Array<{ clientWriteId: string; result: OverviewResponse }>
+  generationConflictResolving?: boolean
   isGenerating?: boolean
 }
 
@@ -20,6 +22,7 @@ const emit = defineEmits<{
   'select-outline-node': [payload: { fileId: string; locator: OverviewLocator | null }]
   regenerate: [payload: { fileId: string; mode: 'OUTLINE' | 'ALL' }]
   'resolve-sync-conflict': [payload: { fileId: string; choice: 'LOCAL' | 'REMOTE' }]
+  'resolve-generation-conflict': [payload: { fileId: string; clientWriteId: string; choice: 'KEEP_LOCAL' | 'USE_AI' }]
 }>()
 </script>
 
@@ -57,6 +60,23 @@ const emit = defineEmits<{
         <button type="button" class="file-outline__retry" @click.stop="emit('resolve-sync-conflict', { fileId: file.id, choice: 'LOCAL' })">保留本机</button>
         <button type="button" class="file-outline__retry" @click.stop="emit('resolve-sync-conflict', { fileId: file.id, choice: 'REMOTE' })">采用云端</button>
       </p>
+      <section v-for="conflict in file.generationConflicts ?? []" :key="conflict.clientWriteId" class="file-outline__notice file-outline__generation-conflict">
+        <IconAlertTriangle :size="12" :stroke-width="1.6" />
+        <div class="file-outline__generation-content">
+          <strong>生成期间本机内容有更新</strong>
+          <details>
+            <summary>查看生成结果</summary>
+            <p v-if="conflict.result.summary?.overview">{{ conflict.result.summary.overview }}</p>
+            <ul v-if="conflict.result.outline?.length">
+              <li v-for="chapter in conflict.result.outline" :key="chapter.title">
+                {{ chapter.title }}<span v-for="section in chapter.sections" :key="section.title"> · {{ section.title }}</span>
+              </li>
+            </ul>
+          </details>
+        </div>
+        <button type="button" class="file-outline__retry" :disabled="file.generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { fileId: file.id, clientWriteId: conflict.clientWriteId, choice: 'KEEP_LOCAL' })">保留我的修改</button>
+        <button type="button" class="file-outline__retry" :disabled="file.generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { fileId: file.id, clientWriteId: conflict.clientWriteId, choice: 'USE_AI' })">使用AI结果</button>
+      </section>
       <div v-if="file.isGenerating && !file.outline" class="file-outline__pending"><IconRefresh :size="13" :stroke-width="1.6" class="is-spinning" />正在生成文件总览…</div>
       <div v-else-if="!file.outline?.length" class="file-outline__pending">
         <IconRefresh v-if="file.status !== 'FAILED'" :size="13" :stroke-width="1.6" class="is-spinning" />
@@ -105,6 +125,11 @@ const emit = defineEmits<{
 .file-outline__notice,.file-outline__pending{margin:0;padding:7px 9px;color:var(--text-muted);font-size:10.5px;line-height:1.45}
 .file-outline__notice{display:flex;align-items:center;gap:5px;color:#995050;background:rgba(176,83,83,.06)}
 .file-outline__notice-text{flex:1}
+.file-outline__generation-conflict{align-items:flex-start;flex-wrap:wrap}
+.file-outline__generation-content{flex:1;min-width:100px}
+.file-outline__generation-content strong{display:block}
+.file-outline__generation-content details{margin-top:4px}
+.file-outline__generation-content summary{cursor:pointer}
 .file-outline__pending{display:flex;align-items:center;justify-content:space-between;gap:6px}
 .file-outline__retry{display:inline-flex;align-items:center;justify-content:center;padding:2px 7px;border:1px solid rgba(176,83,83,.25);border-radius:5px;background:var(--color-bg-tertiary, #FAF7F2);color:#995050;font-size:10.5px;font-weight:600;cursor:pointer;margin-left:auto}
 .file-outline__retry:hover{background:rgba(176,83,83,.15)}

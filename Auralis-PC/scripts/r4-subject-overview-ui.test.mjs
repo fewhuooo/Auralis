@@ -52,6 +52,28 @@ test('middle summary view preserves old content during regeneration or error', a
   assert.doesNotMatch(source, /调整要求/)
 })
 
+test('automatic subject-local conflict resolution claims its authenticated scope before runtime refresh can re-enter', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  const start = workspace.indexOf('const resolveOverviewSyncConflict =')
+  const end = workspace.indexOf('\nconst resolveSubjectOverviewConflict', start)
+  assert.ok(start >= 0 && end > start)
+  const resolver = workspace.slice(start, end)
+  const resolverBody = resolver.indexOf('const resolve = async () => {')
+  const guardCondition = resolver.indexOf("if (scopeType === 'SUBJECT' && choice === 'LOCAL' && silent)")
+  const guard = resolver.indexOf('return runOverviewConflictResolutionOnce(key, resolve)')
+  const direct = resolver.indexOf('return resolve()', guardCondition)
+  const ensure = resolver.indexOf('await ensureOverviewRuntime()')
+  assert.ok(resolverBody >= 0 && ensure > resolverBody && guardCondition > ensure && guard > guardCondition,
+    'only the automatic SUBJECT/LOCAL path must pass its resolver callback through the in-flight guard')
+  assert.ok(direct > guard, 'other choices and FILE scopes must execute the original resolver body directly')
+  assert.match(resolver, /JSON\.stringify\(\[userId, serverDeviceId, scopeType, scopeId, revisionKey\]\)/)
+  assert.match(resolver, /isComponentMounted && authStore\.isAuthenticated/)
+  assert.match(resolver, /authStore\.user\?\.id === userId/)
+  assert.match(resolver, /capturedRepository\.isScopeFenceTokenCurrent\(capturedFenceToken\)/)
+  assert.match(resolver, /activeSourceFiles\.value\.some\(file => file\.id === scopeId && file\.ingestionRevision === revisionKey\)/)
+  assert.match(resolver, /if \(options\.isCurrent\(\)\) await refreshOverviewCache\(\)/)
+})
+
 test('SubjectWorkspace integrates overview UI with outline composer and unified overview cards', async () => {
   const source = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(source, /<h3 class="drawer-title">总览<\/h3>/)
@@ -84,6 +106,24 @@ test('file outline preserves old content with an actionable retry message', asyn
   assert.match(source, /当前内容仍可查看/)
   assert.match(source, /file\.error\s*&&\s*\(file\.outline\?\.length\s*\|\|\s*file\.summary\)/)
   assert.match(source, /重新生成/)
+})
+
+test('generation edit conflicts appear only with a persisted candidate and expose explicit safe Keep/Use actions', async () => {
+  const file = await read('src/components/subject/FileOutlineList.vue')
+  const subject = await read('src/components/subject/SubjectOverviewSection.vue')
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  assert.match(file, /v-for="conflict in file\.generationConflicts \?\? \[\]"/)
+  assert.match(subject, /v-for="conflict in overview\?\.generationConflicts \?\? \[\]"/)
+  for (const source of [file, subject]) {
+    assert.match(source, /保留我的修改/)
+    assert.match(source, /使用AI结果/)
+    assert.match(source, /conflict\.result\.summary\?\.overview/)
+    assert.doesNotMatch(source, /v-html/)
+  }
+  assert.match(workspace, /const resolveGenerationEditConflict = async \(scopeType:/)
+  assert.match(workspace, /capturedRepository\.isScopeFenceTokenCurrent\(capturedFenceToken\)/)
+  assert.match(workspace, /currentSubjectSwitchGen === capturedSwitchGeneration/)
+  assert.match(workspace, /capturedRepository\.resolveGenerationEditConflict\(clientWriteId,choice,isCurrent,validateInputs\)/)
 })
 
 test('SubjectWorkspace keeps chat failures in the chat region and retries the same pending request', async () => {
@@ -148,6 +188,21 @@ test('subject outline composer preserves section summary, sourceIds, locator and
   assert.doesNotMatch(workspace, /syncOutlineFileLinks/)
 })
 
+test('late file results preserve edited drafts and subject unlinking removes stale provenance before save', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  const outlineHelpers = await read('src/services/outlineIdentity.ts')
+  const fileWatcherStart = workspace.indexOf('watch(fileOverviewItems,')
+  const fileWatcherEnd = workspace.indexOf('\nwatch(activeSourceFiles', fileWatcherStart)
+  const unlinkStart = workspace.indexOf('const unlinkFile =')
+  const unlinkEnd = workspace.indexOf('\nconst handleOutlineAi', unlinkStart)
+  assert.ok(fileWatcherStart >= 0 && fileWatcherEnd > fileWatcherStart)
+  assert.ok(unlinkStart >= 0 && unlinkEnd > unlinkStart)
+  assert.match(workspace.slice(fileWatcherStart, fileWatcherEnd), /shouldAdoptGeneratedOutline\(previousGeneratedAt, generatedAt, fileOutlineDraftHasUnsavedChanges\(item\.id\)\)/)
+  assert.match(outlineHelpers, /previousGeneratedAt !== nextGeneratedAt && !hasUnsavedDraftChanges/)
+  assert.match(workspace.slice(unlinkStart, unlinkEnd), /section\.sourceRefs = filterOutlineSourceRefs\(section\.sourceRefs \?\? \[\], section\.sourceIds \?\? \[\]\)/)
+  assert.match(workspace, /outlineProvenanceInput: createOutlineProvenanceInputForLinkedSources\(/)
+})
+
 test('subject switch synchronously clears selectedFileId and chat guards against cross-subject file IDs', async () => {
   const workspace = await read('src/views/SubjectWorkspace/index.vue')
   assert.match(workspace, /watch\(subjectId,\s*async\s*\(newId\)\s*=>\s*\{[\s\S]*?selectedFileId\.value\s*=\s*null[\s\S]*?await startFreshChatSession/)
@@ -187,4 +242,12 @@ test('SubjectWorkspace subscribes to overview cache updates and refreshes view r
   assert.match(workspace, /watch\(activeSourceFiles/)
   assert.match(workspace, /getLatestFileOverview/)
 })
+
+test('subject outline composer keeps subject outline independent when ungenerated and does not auto-populate from single file outline', async () => {
+  const workspace = await read('src/views/SubjectWorkspace/index.vue')
+  assert.doesNotMatch(workspace, /filesWithOutline\.length === 1/)
+  assert.doesNotMatch(workspace, /singleFile\.outline/)
+  assert.match(workspace, /if \(force \|\| !subjectOutline\.value\.length\) \{[\s\S]*?第一章 · 新建章节/)
+})
+
 

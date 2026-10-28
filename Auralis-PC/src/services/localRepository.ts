@@ -227,7 +227,7 @@ export class LocalRepository {
         { code: 'LOCAL_STORAGE_LOCK_UNAVAILABLE' },
       ))
     }
-    return locks.request(`${this.namespace}:repository-state`, { mode: 'exclusive' }, operation)
+    return locks.request(`${this.namespace}:repository-state`, { mode: 'exclusive' }, async () => operation())
   }
 
   private async readSql<T>(resourceType: string, resourceId: string): Promise<LocalEntity<T> | null> {

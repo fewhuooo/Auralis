@@ -1,12 +1,115 @@
 # Auralis API 契约
 
-更新时间：2026-10-13
+### 2026-10-27 Overview direct 重试身份（契约自动检查通过，未部署）
 
+`POST /api/ai/source-overviews`及`/api/ai/subject-overviews`的JSON/SSE请求增加可选UUID字段`retryOfRequestId`，省略/null为普通生成；字段取上次的`X-Overview-Request-Id`，本次header仍用新的UUID。字段只控制执行/幂等，不参与内容、模型或阶段缓存指纹，公开OverviewResponse不变，不新增SSE事件。
+
+相同requestId重放同一尝试状态/结果，失败不复活；普通新request对有效ACTIVE合流，对FAILED/过期direct任务创建新尝试。显式重试同user/scope目标，父代同身份后继已存在则返回后继；已有后继身份不匹配按普通direct独立生成处理。当前user下未找到旧映射也按普通生成，不读取、接替或复用他人任务；已解析的跨scope目标返回冲突。同requestId变更payload或retryOf意图拒绝。显式重试碰到非目标后继的有效同身份ACTIVE时返回明确冲突，不终止无关执行；job-owned目标/过期job generation不由direct接替。
+
+`AI_*`额度/并发错误保持；旧调用按原Guard结算，重试不清账。现有durable-job接口及其原预算/恢复语义不变。runtime OpenAPI导出15/15通过，PC/Mobile以openapi-typescript7.13.0同步schema，二者字节一致；差分仅两处optional retry字段及JsonNode无语义属性顺序变化。最终SDK与验证证据见[实施计划](../plans/2026-10-27-overview-explicit-retry.md)。
+
+### 2026-10-27 原章顺序候选（公开shape不变，未部署）
+
+Source/Subject adaptive ALL/OUTLINE新增内部原章绑定：可靠原章按原文顺序固定，章内可重组小节；跨章混装程序分拆归位，不作为新的公开失败原因或增加模型重试。前置BODY保留为导论，无可靠章结构则允许自由组织并按首次BODY位置排章。原引用授权、唯一归属、最终容量与保存围栏保持；SUMMARY语义不变。
+
+`sourceChapterStart`、sourceChapters和位置双键均为内部索引/路由信息，不进入公开OverviewResponse、provenance输入或正式结果字段；端点、schemaVersion=1、鉴权和前端入口保持。本轮只做相关后端检查，不重新生成OpenAPI/SDK，未部署。[规则与验证](../plans/2026-10-27-overview-original-chapter-order.md)。
+
+### 2026-10-26 Overview 容量由环境配置控制（当前候选，未部署）
+
+JSON/SSE、正式结果 GET/PUT、mode、公开 `schemaVersion`、`sourceIds` 及 raw/canonical provenance 的字段形状保持。Overview 的请求、输出、章节、正文、导读、来源和 provenance 容量由服务端 `OverviewLimits` 正数配置执行，默认 0 不增加固定帽；必填、非空、合法 UUID、路径、唯一性及来源归属仍校验。OpenAPI 不再声明旧固定最大长度/数量，PC 接收端不复制这些容量上限。Writer 两字段输出是内部契约，不改变公开结果。
+
+未知模型能力使用既有 `MODEL_UNAVAILABLE` 在模型派发前明确拒绝，需要服务器提供完整 provider/endpoint/model capacity profile；不回退到聊天的小容量。最终来源数量按不同来源 UUID 计算，不按中间主题或原文单元数量计算。原模型调用额度、鉴权和保存围栏继续生效。OpenAPI artifact 与 PC/Mobile 生成类型比较通过，真实 Provider/GUI 未验收；验证详情见[动态容量计划](../plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)。以下较早日期条目保留当时的工程记录。
+
+### 2026-10-26 Overview导航与正文阅读边界（公开shape不变，本轮未部署）
+
+ALL/OUTLINE章节阅读区仅装配有BODY支撑的Writer结果，不直接插入NAVIGATION原始解析文本；删除纯导航小节后的空章不返回，provenance路径依最终输出重排。导航主题的轻量结构信息仍可辅助ALL导读，不能描述成已提供的教学正文。当本次索引/路由没有BODY写作组时，使用既有MUTATION_REJECTED返回无可生成正文的明确原因，不进入EDIT或输出空章节结果。
+
+EDIT只读取成稿标题、小标题和首尾块的轻量视图，完整正文由程序保留及应用补丁。Writer统一依据本批原文写作，父级目标只说明位置；INDEX提示尽量提取实质主题，合法子集校验保持。OUTLINE仍是无导读的完整章节模式，SUMMARY保持原语义。未新增API字段、模式、错误码或数据库schema；未运行真实Provider/GUI验收。
+
+### 2026-10-26 Overview 索引选择与 instruction 语义（公开shape不变，本轮未部署）
+
+总览是基于资料选择组织的学习入口，不保证原文无损替代；内部INDEX允许授权原文单元的非空合法子集，未引用不表示已确认属于背景，原资料不删除。不再为补齐每个原文编号触发模型修复，但已返回引用的授权和角色配对继续校验，目录继续处理已选主题。
+
+现有 instruction 字段及长度限制不变。自适应索引、metadata和route等结构阶段使用空instruction；Writer/EDIT接收顶层用户偏好且不得越过阶段输出结构和来源授权，资料内嵌命令不作为指令。Writer内部UUID/hash/range不再作为模型输入，程序侧来源绑定和公开provenance保持。未修改路由、响应字段、OpenAPI或数据库schema；验证与本轮未部署边界见[实施计划](../plans/2026-10-25-overview-boundary-edit-quality.md)。
+
+### 2026-10-26 Overview 内容组织与边界编辑（公开shape不变，未部署）
+
+自适应Source/Subject的ALL/OUTLINE采用内部用途索引与独立正文生成，完成后由一次边界编辑返回受控补丁；ALL同时返回summary导读，OUTLINE保持summary=null，SUMMARY保持现有独立短摘要语义。章节预告、目录只提供导航，背景默认不进入生成总览；原资料保留。新的用途字段、分段/块hash及补丁指令是内部契约，不加入公开OverviewResponse或provenance输入。现有路由、鉴权、正式GET/PUT、生成接收与冲突保护入口保持。
+
+补丁不重分配核心正文来源，生成响应继续使用raw OutlineProvenanceInput，正式结果继续返回canonical view；来源关联不证明逐句事实正确。内部新算法与checkpoint namespace隔离不匹配的中间产物，不清理已有成功结果或正式记录。源码与分批验证边界见[实施计划](../plans/2026-10-25-overview-boundary-edit-quality.md)；未部署、未运行真实Provider或GUI验收。
+
+### 2026-10-25 Overview 生成 provenance 与正式结果视图
+
+Source/Subject Overview 生成 SSE 的 `outlineProvenance` 使用 `OutlineProvenanceInput`：每个 section 按 path 提供 source refs，refs 只含 source/revision 与可选 chunk/generation/半开字符范围。PC 在接收时按 Java UUID 字符串形状（含 nil UUID）、section 覆盖、Source 绑定及范围配对校验，并原样作为 `outlineProvenance` 输入发送到正式结果 PUT；生成响应不含服务端尚未解析的 canonical locator 字段。正式 Overview results GET/PUT 响应仍是 canonical `OutlineProvenanceView`，要求精确度、解析文档/解析器信息和完整 locations；每节最多 500 refs，不能把生成输入当作正式视图。服务端生成响应字段的语义已存在，本次只修正 PC 接收与持久化接线，不改变 wire shape 或数据库结构。
+
+### 2026-10-25 Overview job 可空 deadline 语义（shape 不变；未部署）
+
+`AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS=0` 后，新 claim 的持久 job 以 `deadlineAt=null` 表示无整任务期限；该值也可能仍表示首次 claim 前尚未设期限，需结合 status 判断。正数配置和已有正数 deadline 的到期、EXPIRED、pause/resume/reconcile 语义不变，已有期限不会因重试而延长。`JobView.deadlineAt` 的 required-but-nullable wire shape、OpenAPI 和 SDK 类型不变；候选完成后的读取规则不变。
+
+### 2026-10-24 Overview 阶段 3–7 writer preview fragments
+
+`GET /api/ai/overview-jobs/{id}/preview/{nodeId}?planId=` 的 NodeView 正文由 `fragments` 返回；每项包含一个完整 Overview section 和该片段的 canonical provenance。旧单字段 `section` 与 `provenance` 已移除。服务端校验 VERIFIED parent checkpoint、片段哈希、source range manifest 和聚合输入覆盖后才返回全部片段。正式 OverviewResponse 与原 4000 字符 section.summary 上限不变。
+
+更新时间：2026-10-24
 文档状态：阶段 1 Auth、阶段 2A Subject/KnowledgeBlock/Task、阶段 2B Source/Asset/Relation、阶段 3 Sync、阶段 4 Review/Stats/Realtime 与阶段 5 AI/RAG 后端基线已构建；R3 已固定运行时 OpenAPI 产物并生成 PC/Mobile 类型 SDK；真实 PostgreSQL/MinIO/外部模型、前端联调和人工验收仍未完成
-
 权威范围：新后端 REST、SSE、WebSocket 的目标路径、鉴权、请求/响应规则和阶段状态。
-
 事实来源：docs/plans/backend-greenfield-rewrite-plan.md、阶段 0 对象差异矩阵、替换前旧 Server 代码盘点。
+
+### 2026-10-22 Overview M4 candidateInput（源码、相关 API 验证、唯一审查与隔离浏览器接口流程完成；未部署）
+
+此项是保留的 Server API 契约，不表示当前 PC 已接入：PC M4 selector/preview/publish/adopt/section-reader 交互已按用户决定撤回，当前 PC 恢复原 Overview/SSE 流程，不发送 `candidateInput`。此前隔离浏览器接口流程属于回退前历史。
+
+- 现行 formal Source/Subject result PUT 可选 nullable `candidateInput`：`{jobId: UUID, jobVersion: positive integer}`，用于 ALL/OUTLINE 候选。Server 按授权 owner/scope/current job version、raw snapshot、profile/algorithm 与 assembled plan 重建输入 descriptor；不接受客户端伪造内容。
+- 原 `baseVersion`/CAS、`clientWriteId` 幂等、identity/provenance、summary partial update 与 receipt hash 语义保留；候选引用不能改变既有 publication intent。Candidate GET wire shape 不变，无新 route。Job start 仍按 owner/clientRequestId 回放；profile/raw currentness 由 candidate GET/publication 校验，不承诺 start 返回 409。隔离浏览器已验证 publish/read/conflict/local save/adoption 后端接口流程；SQL bind 修复没有改变 API artifact，未重新生成 SDK。未部署，未进行正式用户业务验收。
+
+### 2026-10-22 Overview M3.4 publication/preview（源码与相关 API artifacts/验证完成；未部署）
+
+- Job list 新增可选配对的 `scope=SOURCE|SUBJECT` 与 `scopeId=UUID`；两者必须同时存在或同时省略。过滤查询先校验 authenticated owner 下的 active scope；opaque cursor 绑定 owner 与 filter domain。`limit` 仍为 1–50。
+- `POST /api/ai/overview-jobs/{id}/publish` 接收 `{clientPublishId,expectedVersion,baseVersion}`，`GET /{id}/publication` 读取 durable intent。意图绑定 completed candidate、assembled plan、captured enqueue baseline 与独立 write-receipt key；不会接受 client 自带 result 内容。冲突保留 private candidate，不自动 rebase。
+- `GET /api/ai/overview-jobs/{id}/preview?limit=&cursor=` 返回 active plan 的 VERIFIED writer node metadata；`GET /{id}/preview/{nodeId}?planId=` 读取单个已验证 node body。owner/job/plan/input/checkpoint fences 每次读取重验，非完成 job 标 incomplete，失败/暂停/恢复状态只读展示已验证节点。
+- `/api/overview-results/sources/{sourceId}/outline`、`/subjects/{subjectId}/outline` 返回正式稳定 section UUID、path、title、chapter metadata 与 result version，不包含 section 正文或 summary；相应 `/sections/{sectionId}?version={positive}` 才读取单节完整正文与 canonical provenance。全量结果 GET/PUT 仍是现行正式路径。
+- API artifacts、双 SDK 生成和 `export=false` 实际 artifact comparison 已在隔离门禁完成；相关 HTTP 契约测试通过。正式结案与 full-suite 失败边界见 [M3.4 计划](../plans/2026-10-22-overview-m34-publication.md)。未部署或进行 GUI 业务验收。
+
+### 2026-10-22 Overview M3.3 后台作业 API（源码与相关契约验证完成；未部署）
+
+自适应生成提供 /api/ai/overview-jobs：POST 返回 HTTP 201，创建或按 owner 与 clientRequestId 幂等返回 job；相同 key 绑定不同请求 hash 时冲突。GET 列表支持 limit（默认 20、1–50）和 opaque cursor，GET /{id} 查询单 job。POST /{id}/pause|resume|cancel|reconcile 均要求正数 expectedVersion 作并发版本围栏；GET /{id}/candidate 仅检查 job 为 COMPLETED、当前 owner/request/source manifest/profile/algorithm snapshot 匹配且已存 payload 可用，不检查执行 deadline。
+
+启动请求为 {clientRequestId,scope,sourceId?,subjectId?,sourceIds?,mode,instruction?}，其中 scope=SOURCE 只接受 sourceId；scope=SUBJECT 只接受 subjectId 与有序、去重的 1–100 个 sourceIds。mode 为 ALL|OUTLINE；instruction 最多 2,000 字符。不接收客户端 user、profile、manifest、budget、generation 或节点身份。响应 JobView 包含 jobId/status/version/scope、必要 scope ids、mode、stage、verifiedNodes、可空 totalNodes/deadlineAt/safeErrorCode/completedAt 与创建/更新时间；totalNodes=null 表示尚未规划，不伪造百分比。deadline 在首次 claim 前为 null。
+
+状态为 QUEUED/RUNNING/PAUSING/PAUSED/CANCELLING/CANCELLED/COMPLETED/FAILED/RECOVERY_REQUIRED/EXPIRED。暂停在安全边界阻止后续 dispatch；当前已授权调用可结算并仅在完整验证后保存 checkpoint。取消提升 fence 并撤销当前 generation owner，迟到 worker 不能提交候选；已发请求的远端执行不保证可撤回。恢复/对账只复核原 job、原 generation 与所有精确 reservation；未知派发、缺失或不一致关联保持 RECOVERY_REQUIRED，不得重发。raw budget UUID 保留在 job/generation；精确 invocation 的 task_id 是 Guard 按用户、feature 与 raw budget UUID 稳定派生的真实 ledger 身份，该内部身份不改变预算或结算语义，也不作为客户端请求字段。所有查询从认证用户推导 owner，列表有界。
+
+首次 claim 后固定的 deadline 约束未完成 job；暂停或运行中 job 到期后，经 resume 检查、worker claim 或每次有界 worker poll 最多处理一个到期 job 转为 EXPIRED 并撤销旧 generation fence。已 COMPLETED 的候选不因执行 deadline 过期而变为 EXPIRED，到期后仍可按前述 owner/snapshot/payload 条件读取；若候选 payload 按现有保留策略已清理或当前 snapshot 失效，则明确不可用且不会自动重发 Provider 请求。
+
+该 API 只提供私有完整候选读取，不写 overview_results、KB 或 Review；正式结果发布与分节预览由 M3.4 提供。PC consumer 曾在后续阶段接入，但当前已按用户决定撤回，不作为后续端侧待办。M3.3 相关 API、OpenAPI/SDK 自动对照与唯一 review 已完成；full backend 未在受影响组修复后重跑，未部署、未做真实 Provider/业务数据库/GUI 验收。
+
+Overview candidate retention remains owner- and current-input-fenced. A Source/Subject revocation fences the associated job/generation/publication path and clears its private raw-derived payload copies; formal saved results follow the existing explicit resource lifecycle. After revocation, replay of a retained write-receipt tombstone returns the existing RESOURCE_VERSION_CONFLICT outcome. An expired or revoked private candidate cannot be resumed by read/replay and does not trigger a new Provider dispatch. This closeout adds no route or wire-shape change.
+### 2026-10-19 Overview M3.2 内部 writer journal（无公开 API 变化；相关验证与唯一审查完成）
+
+M3.2 adds only private backend execution metadata for the existing adaptive Source/Subject ALL/OUTLINE generation flow. It does not add job/control/progress endpoints or change request/response, Provider canonical JSON, OpenAPI, or generated SDK shapes. Provider reservations bind to the current writer node before dispatch; precise recovery state remains internal and does not publish partial results. Related focused PostgreSQL/backend validation and the package completed, and the sole review closed with BLOCKER=0, IMPORTANT=0, OPTIONAL=0. The full backend suite was not rerun after focused fixes. It is not deployed.
+
+
+
+
+### 2026-10-19 Overview M1 内部生成路径（公开契约不变）
+
+本轮没有新增或修改 Overview endpoint、request/response DTO、`OverviewResponse` 字段、`schemaVersion=1`、`sourceIds` 或 `mode`，也没有数据库迁移；OpenAPI/SDK shape 不变。默认 false 的内部开关启用后，Source/Subject ALL、OUTLINE 使用当前 READY 原文按节生成并在应用内装配；SUMMARY 保持旧短摘要语义。错误继续使用既有错误投影。适配 inventory 合计最多 500 条 active 原始 chunk row（含空白），通过 bounded remaining+1 sentinel 在完整 identity/hash 与 Provider dispatch 前拒绝超限。小输入保持单次有界目录请求；聚合索引不适配时，M3.1 已实现并完成相关验证和唯一审查的有限层级 metadata 规划会将最终路由展开到原始单元后沿用既有写作与来源装配。分层仍受上限约束，无进展或超限明确失败；不改变 endpoint、DTO、OpenAPI 或 SDK shape。未部署。
+
+### 2026-10-19 Overview M3.1 分层规划路径（契约 shape 不变；未部署）
+
+有限层级只重组轻量索引 metadata，不传递原文，也不改写已完成正文；内部 plan alias 不作为 Source UUID 或 provenance。最终目录会展开到原始 unit aliases 并按原 inventory 顺序交给现有 writer。相关验证及唯一 review 已完成；验证报告见 `D:/Temp/auralis-overview-m3-planning-20261019/final-validation-report.md`。本阶段不改变公开契约 shape，也不等于部署或业务验收。
+
+### 2026-10-19 Overview M2 身份与来源 metadata（实现、artifact 与 SDK 验证完成）
+
+- Source/Subject Overview PUT 可带 `outlineIdentity:{schemaVersion,nodes:[{path,nodeId}]}`；`path` 与 `nodeId` 均为必需字段，nodeId 为 UUID 或 null（新节点必须显式传 null），现有节点必须使用当前结果内 ID。服务端生成/校验身份及版本，不接受客户端提供 hash/version。SUMMARY builder 省略身份和 provenance，服务端保留已有大纲 metadata。
+- 写入可带 `outlineProvenance:{schemaVersion,sections:[{path,sourceRefs:[{sourceId,ingestionRevision,chunkId?,generation?,charStart?,charEnd?}]}]}`；chunkId、generation 与范围可省略或为 null。输出必须包含 `identityReady` 与 `outlineIdentity`（旧结果显式 null），`outlineProvenance` 在不存在时省略；canonical refs 固定字段可为 null 的部分由 nullable schema 表达。坐标均为 UTF-16 半开范围；客户端页码、block 与位置不作事实来源。
+- Provider canonical Overview JSON 仍为 schemaVersion/title/outline/summary 四字段，模型提供的同名 app metadata 会在类型转换前丢弃；不改 Provider schema。最终 attempt13 OpenApiArtifactTests 13/13，官方 artifact SHA-256 `660b28e4a0e527d8779b9b7009ad31801b4e0e9c501489f40b7192f4e802c1b0`；四个对象引用字段使用 anyOf reference/null，PC/Mobile SDK 7.13.0 均 byte-identical，SHA-256 `9ae585615f8062cdb8d9a8b0b43a19a173701c9acd878df4d760d040cebd0002`。
+
+### 2026-10-16 AI usage provenance extension
+
+`GET /api/ai/usage` keeps the existing `hourly` and `daily` window fields. These windows represent platform quota charged/reserved tokens, including historical rows whose credential source is NULL as conservative legacy occupancy. The response adds `allCalls`, keyed by `PLATFORM`, `USER_SUPPLIED`, and `LEGACY_UNKNOWN`. Each entry reports nullable `actualInputTokens`/`actualOutputTokens`, `unknownDispatchedCalls`, `chargedTokens`, `reservedTokens`, `reservedCalls`, and ledger `calls`. The all-call summary is an audit view and does not change platform remaining quota. Token values are not currency amounts.
+
+New internal Provider invocations carry a server-resolved credential source with the exact credential snapshot used for dispatch. No request field accepts a source label. A missing or legacy-unknown source on a new call fails before reservation with HTTP 500 `AI_POLICY_CONTRACT_VIOLATION`; it is not a quota exemption. Existing JSON/SSE error projections use the sanitized code. This extension adds no public task-id lookup route; task usage lookup is owner-scoped inside the server and accepts only a server-supplied operation-kind set.
+
 
 ## 契约状态说明
 
@@ -281,7 +384,7 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 - `POST /api/ai/source-overviews` 接受 `{sourceId,mode,instruction?}`；`POST /api/ai/subject-overviews` 接受 `{subjectId,mode,instruction?,sources}`。客户端可通过 `X-Overview-Request-Id` 传递本次尝试的关联 ID；服务端日志为每次生成记录 `generationId`，并按 user/source/revision 和 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 阶段关联。两者都从 Bearer access token 推导 user，拒绝 `userId`、Provider 凭据及非当前 owner 的 Source/Subject。`mode` 只能为 `ALL`、`OUTLINE`、`SUMMARY`；响应固定为 `{schemaVersion:1,title,outline,summary}`，其中 `OUTLINE` 的 `summary` 为 `null`，`SUMMARY` 的 `outline` 为 `null`，`ALL` 两项均非 null；可空响应字段仍是契约的一部分而非缺省字段。
 - Overview 生成请求 ID 仅对服务端规范化后的有效 UUID 提供持久映射与重放：同一 owner 重放相同有效 ID 与相同输入时复用原生成；同一 ID 绑定不同输入时拒绝冲突。缺失、空白或非法 UUID 会生成新的服务端 UUID，因此这些输入值本身不构成客户端幂等键。成功 response payload 满 14 天后清除；request mapping、generation 与 budget metadata 保留，因此过期 ID 不可复用。失败元数据保留原 generation/budget lineage，新的有效请求 ID 可在协调器接管后继续该失败生成，不能重置累计预算。上述 V32 coordinator 已接入 Overview Service，最终 clean 与 V31→V32 PostgreSQL 自动集成门禁通过；2026-10-13 主代理只读运行态观察确认 backend healthy 且 Flyway V32 `success=true`，本执行器未部署或迁移，也未验证运行 class/source provenance。指定Source ALL和单输入Subject ALL真实评估已完成；唯一首审I1已修复并由主代理据208项门禁关闭，同reviewer复审工具受限，详见实施计划。`CACHE_RETURN` 仍是生成阶段名，不代表正式结果缓存；PC 收到完整结果后仍通过独立 Overview results PUT 保存。生成端点不会写正式 Overview results。
 - `instruction` 最长 2,000 字符，Subject `sources` 必须为 1–100 项且不能重复 Source；响应 title 最长 300 字符、最多 60 个 chapter/500 个 section/100 个 key point，所有 prose 字段最长 4,000 字符。Source overview 只读取 owner-scoped `READY` Source 的 active chunks；Subject overview 按请求 mode 要求每个输入拥有相应非空 outline/summary，逐项验证 Source 属于请求 Subject 和当前 user，并将服务端 Source UUID 映射为短别名后才交给模型。
-- 2026-10-12：Subject 超出完整 SYSTEM + JSON-转义 USER prompt 上限时，按所选语义片段精确分包并有界 MAP / REDUCE；单字段按 code point 分片，不截断资料。5200 字符是中间内容软目标，不再以自配对推测拒绝真实结果；每个实际消费者用完整序列化 prompt 做硬检查。实际 prompt 上限 12000 字符，INTERMEDIATE / FINAL `max_tokens` 硬上限分别 4608 / 6144；共享现有 Gateway、任务预算 / 调用数、deadline 和取消。Byte-based 输入估算是保守上界，不是 tokenizer 结果。OverviewModelBudget 仅对精确 DEEPSEEK + 官方 api.deepseek.com + deepseek-v4-flash 使用官方输入 1,000,000 / 输出 384,000 context profile（官方资料称由 V4.1 Flash serving）；同名自定义兼容 endpoint 保持 unknown。来源：[DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/)。公开路由/请求 DTO/模式不变。服务实现与业务验收状态见[计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
+- 2026-10-12：Subject 超出完整 SYSTEM + JSON-转义 USER prompt 上限时，按所选语义片段精确分包并有界 MAP / REDUCE；单字段按 code point 分片，不截断资料。5200 字符是中间内容软目标，不再以自配对推测拒绝真实结果；每个实际消费者用完整序列化 prompt 做硬检查。实际 prompt 上限 12000 字符，INTERMEDIATE / FINAL `max_tokens` 硬上限分别 4608 / 6144；共享现有 Gateway、任务预算 / 调用数、deadline 和取消。输入 reservation 默认按 UTF-8 bytes 加 framing 估算，不是 tokenizer 结果；显式配置的 Overview 分类 profile 只对受支持的精确 provider/endpoint/requested model 生效，未知身份和不支持的输入形态按 bytes，profile 估算会改变预算拒绝与 usage 缺失时的保守 charged accounting，但不改变公开 DTO、路由或数据库结构。OverviewModelBudget 仅对精确 DEEPSEEK + 官方 api.deepseek.com + deepseek-v4-flash 使用官方输入 1,000,000 / 输出 384,000 context profile（官方资料称由 V4.1 Flash serving）；同名自定义兼容 endpoint 保持 unknown。来源：[DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/)。公开路由/请求 DTO/模式不变。服务实现与业务验收状态见[计划](../plans/2026-10-12-overview-dynamic-budget-recovery.md)。
 - 持久跨实例等待者与owner保留同一用量错误类型和安全元数据：请求预算 `413 AI_REQUEST_BUDGET_EXCEEDED`、任务预算 `422 AI_TASK_BUDGET_EXCEEDED`、并发/个人小时/日额度 `429 AI_CONCURRENCY_LIMIT` / `AI_HOURLY_QUOTA_EXCEEDED` / `AI_DAILY_QUOTA_EXCEEDED`、系统日额度 `503 AI_GLOBAL_QUOTA_EXCEEDED`；JSON/SSE继续使用现有 `retryAfterSeconds` / `resetAt`，JSON保留适用的Retry-After header。私有failure details不新增公开DTO字段，失败不自动无限重试。
 - 模型只接收固定 SYSTEM schema/安全规则与独立的 USER 数据字段（instruction、title、chunks/map JSON、显式 alias）；USER 资料内命令不能改变 SYSTEM 规则。回复仅接受单个 JSON object 或单个 `json` fenced block；服务端拒绝包围 prose、malformed JSON、未知/重复 Source alias、过量节点及任何 locator（当前 chunks 没有可信页码/block alias，输出 `locator` 必须为 `null`），并只在最终响应映射为实际 Source UUID。多 batch Source MAP 与非最终 multi-group REDUCE 是 intermediate，使用 `max_tokens=4608`；single-batch Source MAP、Subject direct 与最终单 group REDUCE 是 final，使用 `max_tokens=6144`。中间 JSON 的 5200 字符为软目标；self-pair 只作日志诊断，不作拒绝。每个真实消费者仍受完整 prompt 12000 字符硬限，Reduce 每轮结果数量必须严格下降；有界恢复受原任务预算与 deadline 约束。UTF-8 byte-based token estimate 是保守估算，不是 tokenizer 输出。所有 Overview 调用继续使用内部 structured JSON 标记要求 OpenAI-compatible `json_object` response format；DeepSeek completion 同时关闭 thinking，且不会把 `reasoning_content` 回退为最终 JSON。普通聊天/流式请求不启用该标记，公开请求/响应 DTO 不变。V32 私有 generation/checkpoint/request mapping 已接入 Overview Service；有效规范化 UUID 可持久 replay，失败 lineage 跨新 request ID 累计，recovery_count 按 generation 累计且 recovery actions 按安全集合去重。14 天清理只删除成功 response payload 与到期 checkpoint，request mapping/generation/budget metadata 保留，旧 ID 不可复用。最终 clean 与 V31→V32 PostgreSQL 自动集成门禁通过；2026-10-13 主代理只读观察到业务库 Flyway V32 `success=true`，但本执行器未部署/迁移或验证部署 class/source；指定Source ALL和单输入Subject ALL真实评估已完成；唯一首审I1已修复并由主代理据208项门禁关闭，同reviewer复审工具受限，详见实施计划。生成 endpoint 不写正式 Overview results；完整成功产物仍经客户端独立 Overview results GET/PUT 持久化与对账。客户端字段/结构等输入验证返回 400 `VALIDATION_FAILED`；模型上下文或实际 prompt 预算超限映射为 502 `OVERVIEW_PROMPT_BUDGET_EXCEEDED`；Provider 输出截断返回 502 `OVERVIEW_PROVIDER_OUTPUT_TRUNCATED`，恢复耗尽返回 502 `OVERVIEW_RECOVERY_EXHAUSTED`，中间输出既有超限返回 `OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE`，Reduce 无进展返回 `OVERVIEW_REDUCE_NO_PROGRESS`；其它 Provider 输出 parse/schema/alias/locator 错误返回 502 `MODEL_PROVIDER_ERROR`，Provider 不可用返回 `MODEL_UNAVAILABLE`。公开 routes/request DTO 保持不变。
 - TEXT/URL Source 创建、更新和 reingest 与对应 ingestion job 在同一事务持久化，job 入队失败则 Source 与 change log 一起回滚；恢复处于 `PENDING/PARSING/INDEXING` 的 TEXT/URL Source 时，按当前 revision 原子补建或复用活跃 job，`READY/FAILED` 不自动重跑；FILE 继续等待 ParsedDocument complete。TEXT 正文或 URL 地址等解析输入变化轮换只读 `ingestionRevision`，不同修订分别建 job，同修订活跃 job 可复用。启用 `auralis.ai.ingestion-worker-enabled` 后，定时 worker 通过数据库锁定的 claim-next 自动执行；提交前核对 Source revision、job/generation、attempt 和在取得行锁后仍有效的 lease，旧 worker 不得覆盖新修订的 Source/chunks。租约过期任务可恢复，失败按 `auralis.ai.ingestion-max-attempts` 重试后进入 `FAILED` 终态。worker 执行 `PARSING → INDEXING → READY/FAILED`，文本/文本型文件/URL 解析后切块，生成 1024 维 embedding 并按 userId/sourceId 保存。PostgreSQL 使用 pgvector SQL/HNSW 执行用户隔离的 cosine 检索；H2 保留 JSON embedding 的确定性 cosine fallback。
@@ -303,7 +406,8 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 - charged 表示已结算额度消耗：Provider usage 完整时用实际 token，缺失或已派发但状态未知时按保守估算；reserved 是当前窗口内在途预留。只读查询不调用 Provider，不是金额账单或用量购买接口。
 - 2026-10-12 用户策略调整：`INGESTION_EMBEDDING` / `RETRIEVAL_EMBEDDING` 不计用户小时、每日和系统每日 token 额度；本人窗口的 charged / reserved / remaining 排除这两个 stage，包括历史记录。原调用审计不修改，接口字段和 UTC 窗口不变；生成调用仍按既有完整 / 未知 usage 规则计量。单人测试默认 limit 为 1000000 / 小时、2000000 / 日，允许现行环境变量覆盖，运行态以实际 backend 配置为准。实现与验收见 [策略计划](../plans/2026-10-12-embedding-quota-exemption-and-test-limits.md)。
 - 单次预算超限返回 `413 AI_REQUEST_BUDGET_EXCEEDED`，任务累计预算/调用次数耗尽返回 `422 AI_TASK_BUDGET_EXCEEDED`；并发、用户小时、用户每日额度分别为 `429 AI_CONCURRENCY_LIMIT`、`429 AI_HOURLY_QUOTA_EXCEEDED`、`429 AI_DAILY_QUOTA_EXCEEDED`；系统每日额度耗尽为 `503 AI_GLOBAL_QUOTA_EXCEEDED`。等待类拒绝包含安全 `retryAfterSeconds/resetAt` 与适用 `Retry-After`；不暴露其他用户或全局额度数值。
-- Chat 已进入 SSE 后继续发 `message.error`，持久化关联 assistant 失败与安全 usage；Overview 默认 JSON 或响应开始前用 Problem Details，SSE 已开始后用终端 `error` 保留业务 code/status 及额度等待字段。PC/Mobile/Tablet 显示明确预算/繁忙/等待反馈，不自动循环补发。额度延期的 ingestion job 保持非终态，按 next_attempt_at 领取并从已验证持久批次继续；请求/任务硬预算拒绝成为 fenced 终态，413/422 的 retryAfterSeconds 为 0、resetAt 为 null，不发送等待型 Retry-After。账户缺失/停用的锁后重查沿现行 UNAUTHENTICATED，不增加额度错误码。
+- Chat 已进入 SSE 后继续发 `message.error`，持久化关联 assistant 失败与安全 usage；Overview 默认 JSON 或响应开始前用 Problem Details，SSE 已开始后用终端 `error` 保留业务 code/status 及额度等待字段。PC/Mobile/Tablet 显示明确预算/繁忙/等待反馈，不自动循环补发。额度延期的 ingestion job 保持非终态，按 next_attempt_at 领取并从已验证持久批次继续；ingestion 请求/任务硬预算拒绝成为 fenced 终态，413/422 的 retryAfterSeconds 为 0、resetAt 为 null，不发送等待型 Retry-After。Overview durable generation 的预算停止遵循下一条所述可恢复语义。账户缺失/停用的锁后重查沿现行 UNAUTHENTICATED，不增加额度错误码。
+- Overview 的 `AI_TASK_BUDGET_EXCEEDED` 保持既有 422 响应，但 durable generation 将此预算停止记录为可恢复失败；相同有效输入重试继续原 generation 与 `budgetTaskId`，保留 verified checkpoint 和 charged usage。额度调整后可继续未完成工作，拒绝本身不派发 Provider 调用。此说明不增加响应字段或 `PAUSED` 状态；其余调用次数、token 上限和错误格式不变。
 - 应用的有界 MVC 异步线程池拒绝入队时，返回 `503 SERVICE_UNAVAILABLE` 的安全 Problem Details，`Retry-After: 1`、`retryAfterSeconds=1`、`resetAt=null`；它属于应用资源繁忙，与上述六种额度拒绝及 Provider `MODEL_UNAVAILABLE` 分开。响应不公开任务堆栈、线程池内部状态或原异常消息。
 - 运行时 OpenAPI 9/9 与 PC/Mobile 同源 schema 已更新，最终 schema SHA-256 为 `CDC86A9A4E0823AEA05A74F6ACE053EA414AE0BC5D007DAC9100C0D4EA41985B`，新 schema 下两端 type-check 退出 0。该契约的执行、最终审查与自动证据见 [B 实施计划](../plans/2026-10-10-ai-usage-guard-b.md)；未部署或完成真实 Provider/GUI 联调。
 

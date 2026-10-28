@@ -2,8 +2,8 @@ package com.auralis.app;
 
 import com.auralis.app.ai.ingestion.TextChunk;
 import com.auralis.app.ai.ingestion.TextChunker;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;

@@ -3,7 +3,7 @@
 
 # Auralis 历史文档归档
 
-更新时间：2026-07-10
+更新时间：2026-10-28
 
 文档状态：历史归档入口
 
@@ -22,6 +22,10 @@
 | `snapshots/2026-07-10-pre-reorganization/` | 2026-07-10 文档体系重构前的完整工作树镜像 | 仅用于追溯旧结构和旧表述 |
 | `legacy-project/` | StudyCore 阶段的项目全景材料 | 禁止作为 Auralis 当前目录、接口或技术栈依据 |
 | `legacy-demand/` | StudyCore 阶段的原始 PRD 与任务总表 | 禁止恢复旧需求、旧页面或旧任务状态 |
+| [文档维护历史](maintenance/2026-07-10-documentation-reorganization.md) | 2026-07-10 文档体系重构执行计划，保留归档时的工作树正文 | 仅追溯当时的迁移步骤，不作为现行待办或命令指南 |
+| [状态阶段历史](stages/2026-10-28-status-stage-records.md) | 从当前状态中提取的明确阶段历史区 | 保留当时证据；归档不关闭验收项 |
+| [问题与审查阶段历史](stages/2026-10-28-issues-stage-records.md) | 从问题登记中提取的明确阶段历史区 | 当前风险以现行登记为准，未验收边界继续保留 |
+| [2026-08-16 综合审计](audits/2026-08-16-overall-project-completion-audit.md) | 当时的全项目未完成项和验证快照 | 不作为当前缺口或现行实现依据 |
 
 ## Agent 禁止事项
 

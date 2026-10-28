@@ -46,7 +46,7 @@ public class AiProviderDiscoveryService {
         AiSettingsService.ResolvedSettings saved = settingsService.requireSavedByok(userId, provider);
         try (AiTaskScope scope = invocationGateway.beginTask(new AiTaskContext(
                 userId, AiFeature.PROVIDER_SETUP, "models:" + UUID.randomUUID()))) {
-            List<String> models = scope.metadata(AiStage.PROVIDER_METADATA, provider, null,
+            List<String> models = scope.metadata(AiStage.PROVIDER_METADATA, provider, null, saved.source(),
                     () -> loadModels(userId, provider, saved)).value();
             return new AiModelListView(provider, models);
         }
@@ -55,12 +55,12 @@ public class AiProviderDiscoveryService {
     public AiConnectionTestView testConnection(UUID userId, AiProviderType provider) {
         AiSettingsService.ResolvedSettings saved = settingsService.requireSavedByok(userId, provider);
         AiProviderRequest request = new AiProviderRequest(saved.chatModel(),
-                List.of(new AiProviderRequest.Message(AiMessageRole.USER, "Reply with OK.")), 0.0, 1);
+                List.of(new AiProviderRequest.Message(AiMessageRole.USER, "Reply with OK.")), 0.0, 32);
         try {
             try (AiTaskScope scope = invocationGateway.beginTask(new AiTaskContext(
                     userId, AiFeature.PROVIDER_SETUP, "test:" + UUID.randomUUID()))) {
                 AiProviderResponse response = scope.complete(AiStage.PROVIDER_TEST, provider, request,
-                        saved.credential(), 0).value();
+                        saved.credential(), saved.source(), 0, com.auralis.app.ai.usage.AiOutputRole.GENERAL).value();
                 if (response == null || response.content() == null || response.content().isBlank()) {
                     throw new DomainException("MODEL_PROVIDER_ERROR",
                             "AI provider returned an invalid chat completion response");
