@@ -6,7 +6,19 @@
 
 ### 2026-10-29 Chat Agent 计划的实施前置
 
-Chat 按[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)在独立分支 `codex/chat-agent-rewrite` 的原有入口重写。P0 必须闭合工具消息/流式取消经 Gateway 和安全 HTTP 的适配、stage 次数策略、原子会话互斥、会话保留与所有客户端消费点；切换后删除弃用 Chat 执行链和协议接线，避免留下双轨。共有基础和并行 Overview 改动按 dirty 基线保护。当前只完成分支与计划调整，未改业务实现或运行应用测试、部署、操作业务库。
+Chat 按[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)在 `codex/chat-agent-rewrite` 上现有入口重写。消费点与产品方向已盘点；P0 核心契约已冻结：稳定 `langchain4j-core:1.22.0` 配应用显式 orchestrator；逐 iteration 上下文与 owner/run/attempt fence、每次模型调用受同一 task budget 且保留独立 reservation；tool_calls 按 response/index 聚合，异常 EOF/cancel 不执行；结束/中断时确定性公开 Markdown 投影写入 `messages.content`；题卡提交短事务原子创建 submission、USER 消息、PENDING attempt、reply ID 和会话占位，模型调用在事务外，恢复后 query/显式 retry、无自动排队。
+
+财务核对依据 `AiUsageGuard.java:262-295,299-332,644-649`、`AiUsageGatewayService.java:287-322`：已派发但无完整 Provider usage 时沿当前规则保守计入 reservation，字符数不得冒充实际 token；只有未派发 reservation 可释放。业务 READY 与账务 settlement 分开，但仅在当前 owner/fence 校验并原子持久化 READY 后，后续主动取消/保守结算才不能倒改业务状态；若 accepted=false 表示 lease/owner/fence 失效且 READY 尚未保存，则不得忽略拒绝。当前 `AiStreamingService` 的 Gateway 异常到消息 FAILED 映射须由重写解决。execution mutex 只能在模型/工具 worker 确认退出后释放。以上是契约审查，不是代码实现或运行验证。
+
+兼容性子项已关闭：隔离 `langchain4j-core:1.22.0` + Boot 4.1.0/Jackson 3.1.4 探针 5/5，Maven exit 0；Jackson2 2.21.4 / Jackson3 3.1.4 共存，未引入 beta32 codec、LangChain4j starter 或 Provider HTTP。详情见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。
+
+仍开放的 P0：实现 Gateway adapter、Chat Agent operation/stage 次数与预算配置、DTO/status/cancel 路由，并依据现有结构冻结持久化、事务和重启恢复边界；完成 PC/Mobile/Tablet 接线及相应验证。探针没有验证真实 Provider 或 Auralis HTTP cancellation，也没有实施 Gateway tool protocol。
+
+### 2026-10-29 Chat parser review follow-up
+
+Server 候选树已有 `Auralis-Server/src/main/java/com/auralis/app/ai/internal/chat/ChatStreamParser.java` 和对应测试，15/15。唯一 reviewer 已复核并关闭 Markdown code fence info string IMPORTANT：delimiter run 先于 info 字符识别，tests 250–276 覆盖全部 split。未因此改源码或重跑测试。parser 尚未接入 Chat/SSE/PC 流程。
+
+PC 前端另已完成 P1 内容渲染基础：`Auralis-PC/src/services/chatContentProjection.ts`、`src/types/chatContent.ts`、`src/components/chat/{ChatContentRenderer,ChatContentBlock,ChatActivityCard}.vue` 与 `scripts/r4-chat-content.test.mjs`。type-check exit 0、Node 6/6，证据 `D:/Temp/auralis-chat-p1-components-20261029/`。唯一 reviewer 对前端基础未发现 BLOCKER/IMPORTANT。尚未接入 Workspace/Store/streamAPI/reducer，未挂载或做 GUI 验收。剩余 P1 是将 parser 与前端组件接入真实事件流、状态和页面，并验证时序/错误恢复。兼容探针 5/5 exit 0；review 结论不代表生产接线、Provider、部署或 GUI 验收。
 
 ### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
 

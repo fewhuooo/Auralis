@@ -1,5 +1,11 @@
 # Spring Boot 后端模块
 
+### 2026-10-29 Chat P0 兼容性探针与 P1 parser 候选（未接入生产运行链）
+
+- 隔离 Maven probe 固定 `dev.langchain4j:langchain4j-core:1.22.0`，Java 21 / Spring Boot 4.1.0 下验证 core 默认 Jackson2（annotations 2.21、core/databind 2.21.4）与应用 Jackson3 3.1.4 共存；最小 Boot context 仅注册 `tools.jackson.databind.ObjectMapper`，SDK 与应用 DTO 使用显式映射。最终统一命令 `clean test ...:dependency:3.7.0:tree` exit 0，5/5。未改生产 pom、调用真实 Provider 或证明 Gateway/HTTP 取消已接通。精确 API、dependency tree、日志与 hash 见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。
+- 当前候选树新增纯增量 `Auralis-Server/src/main/java/com/auralis/app/ai/internal/chat/ChatStreamParser.java`，对应 `ChatStreamParserTests.java` 15/15。唯一 reviewer 复核并关闭 Markdown code-fence info-string IMPORTANT：delimiter run 先于 info 字符识别，tests 250–276 覆盖全部 split。解析器尚未接入 `AiStreamingService`、认证 SSE、存储或 PC reducer；不代表 Chat 主链可运行。
+- 生产 Chat provider adapter 仍未改：`AiProviderChunk` 只有 content/complete/usage/model identity，`OpenAiCompatibleProvider` 当前读取 `delta.content`，没有 `delta.tool_calls`。`ProviderHttpClient.postStream(..., lineConsumer)` 没有向流式调用传播取消 handle；探针证明的是 SDK 合成 callback API，不是 HTTP 连接取消。Gateway/tool adapter、每次 completion reservation/settlement、配置策略、消息/执行持久化与端到端联接仍属后续 P0/P2。
+
 ### 2026-10-28 Overview 模型响应自动重试（源码候选，未部署）
 
 新增AURALIS_AI_OVERVIEW_MAX_RETRIES，默认3表示首次之外最多再试3次（最多4次尝试），0关闭，非负且没有额外固定小上限。.env.example、Spring与Compose已贯通，未改实际.env。覆盖adaptive INDEX/ROUTE/Writer单节与合批/EDIT在模型已返回且网关已结算后的空内容、JSON、字段、Schema、漏节及编辑校验错误；直接重发原stage输入，不重跑已完成检查点，不保存半批。adaptive JSON_REPAIR不另叠加模型调用；普通响应截断沿现有容量拆分。重试次数不进入内容/profile/checkpoint指纹。

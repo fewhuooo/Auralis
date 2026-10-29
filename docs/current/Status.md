@@ -6,7 +6,7 @@ PC type-check 与文档处理定向测试 51/51 本轮通过；check:r4-pc 唯�
 
 ### 2026-10-29 Chat Agent 与流式可视化教学（计划中）
 
-已整理用户确认的轻量 Chat 方向与[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)：LangChain4j 单 Agent Loop、正文逐字/组件逐项、选择与开放问答提交后由 LLM 接续。已创建独立工作树分支 `codex/chat-agent-rewrite` 并带入当前未提交文件状态；原目录及原分支未改变。实施策略为在原 Chat 入口直接替换专属代码、统一协议并删除弃用执行路径，共有鉴权/用量基础复用；目前只完成分支与文档，未增加依赖、接口、迁移或功能实现。工具 transport、completion stage 限额、流取消和会话生命周期为 P0 任务。应用自动检查、真实 Provider、部署及 PC GUI 尚未执行。
+已整理用户确认的轻量 Chat 方向与[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)：正文逐字/组件逐项、题卡提交后由 LLM 接续，不判分。`codex/chat-agent-rewrite` 现从已 push 的 `20b5c87` 基线继续；原工作树未提交变化保存在 stash 备份。P0 兼容性探针已在隔离 Maven 项目验证稳定 `langchain4j-core:1.22.0`、Jackson2 2.21.4 与 Boot Jackson3 3.1.4 共存，5/5、exit 0，详见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。Server 独立 `ChatStreamParser` 单元及测试 15/15；唯一 reviewer 已复核并关闭 code-fence info string IMPORTANT。PC P1 内容渲染基础已新增，type-check exit 0、Node 6/6，证据 `D:/Temp/auralis-chat-p1-components-20261029/`；唯一 reviewer 未发现前端 BLOCKER/IMPORTANT。组件尚未接入 Workspace/Store/SSE/reducer，无挂载或 GUI 验收。核心执行/账务/投影/事务契约已冻结；Gateway adapter、运行配置、DTO/schema、Chat 主链和各端完整接线仍待完成。未调用真实 Provider、未部署或操作业务库。
 
 ### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
 
