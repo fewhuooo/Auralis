@@ -2,8 +2,25 @@ import request, { refreshAccessToken } from './request.ts'
 import { streamWithAccessTokenRefresh } from './authenticatedSse.ts'
 import { getClientRuntimeConfig } from '../config/runtime.ts'
 import { useAuthStore } from '../store/useAuthStore.ts'
-import { fetchSseStream, parseSseStream, type AiStreamEvent, type SseEvent } from './sse.ts'
+import { fetchSseStream, parseSseStream, type SseEvent } from './sse.ts'
 import type { components } from './generated/schema.ts'
+import type {
+  ChatStreamEnvelope,
+  ChatConversationDetail,
+  ChatConversationListItem,
+  ChatRunStatus,
+  ChatActivityAnswer,
+  ActiveChatRun,
+} from '@/types/chatProtocol'
+
+export type {
+  ChatStreamEnvelope,
+  ChatConversationDetail,
+  ChatConversationListItem,
+  ChatRunStatus,
+  ChatActivityAnswer,
+  ActiveChatRun,
+}
 
 export type AiSettingsView = components['schemas']['AiSettingsView']
 export type AiSettingsCommand = components['schemas']['AiSettingsCommand']
@@ -12,6 +29,34 @@ export type ConversationCommand = components['schemas']['ConversationCommand']
 export type MessageView = components['schemas']['MessageView']
 export type AiMessageCommand = components['schemas']['AiMessageCommand']
 export type CitationView = components['schemas']['CitationView']
+
+export interface ReadingContextDto {
+  subjectId?: string
+  currentSourceId?: string
+  retrievalMode?: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
+  sourceIds?: string[]
+  selectionText?: string
+}
+
+export interface Protocol1MessageCommand {
+  protocolVersion: 1
+  action: 'turn' | 'activity_submission'
+  conversationId: string
+  requestId: string
+  content?: string
+  readingContext?: ReadingContextDto
+  selectionText?: string
+  activityId?: string
+  questionVersion?: number
+  submissionId?: string
+  answer?: ChatActivityAnswer
+}
+
+export interface TextGenerationCommand {
+  operation: 'summary' | 'extract' | 'format' | 'transcript'
+  input: string
+  requestId?: string
+}
 
 export interface AiQuotaInfo {
   limitTokens: number
@@ -75,16 +120,34 @@ export function testAiConnection(provider: CanonicalAiProvider): Promise<AiConne
   return request.post(`/api/ai/settings/${encodeURIComponent(provider)}/test-connection`) as unknown as Promise<AiConnectionTestView>
 }
 
-export function listConversations(): Promise<ConversationView[]> {
-  return request.get('/api/ai/conversations') as unknown as Promise<ConversationView[]>
+export function listConversations(): Promise<ChatConversationListItem[]> {
+  return request.get('/api/ai/conversations') as unknown as Promise<ChatConversationListItem[]>
 }
 
 export function createConversation(data: ConversationCommand): Promise<ConversationView> {
   return request.post('/api/ai/conversations', data) as unknown as Promise<ConversationView>
 }
 
-export function getConversation(conversationId: string): Promise<ConversationView> {
-  return request.get(`/api/ai/conversations/${encodeURIComponent(conversationId)}`) as unknown as Promise<ConversationView>
+export function getConversation(conversationId: string): Promise<ChatConversationDetail> {
+  return request.get(`/api/ai/conversations/${encodeURIComponent(conversationId)}`) as unknown as Promise<ChatConversationDetail>
+}
+
+export function getChatRunStatus(conversationId: string, runId: string): Promise<ChatRunStatus> {
+  return request.get(`/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}`) as unknown as Promise<ChatRunStatus>
+}
+
+export function cancelChatRun(conversationId: string, runId: string): Promise<ChatRunStatus> {
+  return request.post(`/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/cancel`) as unknown as Promise<ChatRunStatus>
+}
+
+export function retryChatRun(conversationId: string, runId: string, requestId: string, signal?: AbortSignal): AsyncIterable<ChatStreamEnvelope> {
+  return streamChatRequest(`/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/attempts`, { requestId }, signal)
+}
+
+export async function generateAiText(command: TextGenerationCommand): Promise<string> {
+  const result = (await request.post('/api/ai/text-generations', command)) as { text?: string }
+  if (typeof result?.text !== 'string') throw new Error('Text generation response is incomplete')
+  return result.text
 }
 
 export function deleteConversation(conversationId: string, baseVersion: number): Promise<void> {
@@ -95,12 +158,13 @@ export function deleteConversation(conversationId: string, baseVersion: number):
 
 /**
  * Streams AI message events via Server-Sent Events (SSE).
- * Returns an AsyncIterable of AiStreamEvent.
+ * Yields only valid protocolVersion 1 envelopes.
  */
-export async function* streamAiMessage(
-  data: AiMessageCommand,
+async function* streamChatRequest(
+  path: string,
+  data: Protocol1MessageCommand | { requestId: string },
   signal?: AbortSignal
-): AsyncIterable<AiStreamEvent> {
+): AsyncIterable<ChatStreamEnvelope> {
   const runtime = getClientRuntimeConfig()
   let token: string | null = null
   try {
@@ -110,7 +174,7 @@ export async function* streamAiMessage(
     // pinia may not be active in non-vue contexts
   }
 
-  const url = `${runtime.apiBaseUrl.replace(/\/+$/, '')}/api/ai/messages/stream`
+  const url = `${runtime.apiBaseUrl.replace(/\/+$/, '')}${path.startsWith('/') ? '' : '/'}${path}`
 
   const open = (accessToken: string | null) => {
     const headers: Record<string, string> = {
@@ -119,19 +183,28 @@ export async function* streamAiMessage(
     }
     if (accessToken) headers.Authorization = `Bearer ${accessToken}`
     return fetchSseStream<unknown>(
-        url,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(data),
-        },
-        { signal }
-      )
+      url,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(data),
+      },
+      { signal }
+    )
   }
 
   for await (const event of streamWithAccessTokenRefresh(token, open, refreshAccessToken, signal)) {
-    if (event.event) yield { event: event.event, data: event.data } as AiStreamEvent
+    if (event.event && event.data && typeof event.data === 'object') {
+      const envelope = event.data as ChatStreamEnvelope
+      if (envelope.protocolVersion === 1 && envelope.event === event.event) {
+        yield envelope
+      }
+    }
   }
+}
+
+export function streamAiMessage(data: Protocol1MessageCommand, signal?: AbortSignal): AsyncIterable<ChatStreamEnvelope> {
+  return streamChatRequest('/api/ai/messages/stream', data, signal)
 }
 
 export const useAiApi = {
@@ -147,6 +220,10 @@ export const useAiApi = {
   getConversation,
   deleteConversation,
   streamAiMessage,
+  getChatRunStatus,
+  cancelChatRun,
+  retryChatRun,
+  generateAiText,
 }
 
-export { parseSseStream, type AiStreamEvent, type SseEvent }
+export { parseSseStream, type SseEvent }

@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** One-shot cancellation signal with race-safe listener registration. */
-public final class OverviewCancellation {
+public final class OverviewCancellation implements AiProviderCallCancellation {
 
     public enum Reason { DEADLINE, REQUEST_DISCONNECTED, NO_INTEREST }
 
@@ -24,7 +24,12 @@ public final class OverviewCancellation {
     }
 
     public boolean isCancelled() { return reason.get() != null; }
+
+    @Override
+    public boolean cancel() { return cancel(Reason.NO_INTEREST); }
+
     public Reason reason() { return reason.get(); }
+    @Override
     public Registration onCancel(Runnable listener) {
         long id = listenerIds.incrementAndGet();
         if (isCancelled()) {
@@ -47,7 +52,5 @@ public final class OverviewCancellation {
     }
 
     @FunctionalInterface
-    public interface Registration extends AutoCloseable {
-        @Override void close();
-    }
+    public interface Registration extends AiProviderCallCancellation.Registration { }
 }

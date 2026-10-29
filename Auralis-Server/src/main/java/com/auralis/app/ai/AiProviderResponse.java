@@ -3,9 +3,10 @@ package com.auralis.app.ai;
 import com.auralis.app.ai.usage.AiTokenUsage;
 
 import java.util.Set;
+import java.util.List;
 
 public record AiProviderResponse(String content, Long inputTokens, Long outputTokens, String finishReason,
-                                AiProviderModelIdentity modelIdentity) {
+                                AiProviderModelIdentity modelIdentity, List<AiProviderToolCall> toolCalls) {
 
     private static final int MAX_FINISH_REASON_CHARS = 64;
     private static final Set<String> ALLOWED_FINISH_REASONS = Set.of(
@@ -14,6 +15,12 @@ public record AiProviderResponse(String content, Long inputTokens, Long outputTo
     public AiProviderResponse {
         finishReason = normalizeFinishReason(finishReason);
         modelIdentity = modelIdentity == null ? AiProviderModelIdentity.missing() : modelIdentity;
+        toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+    }
+
+    public AiProviderResponse(String content, Long inputTokens, Long outputTokens, String finishReason,
+                              AiProviderModelIdentity modelIdentity) {
+        this(content, inputTokens, outputTokens, finishReason, modelIdentity, List.of());
     }
 
     public AiProviderResponse(String content, Long inputTokens, Long outputTokens, String finishReason) {

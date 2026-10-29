@@ -35,6 +35,14 @@ public record AiTaskContext(UUID userId, AiFeature feature, String taskKey, UUID
         return UUID.nameUUIDFromBytes((userId + ":" + feature + ":" + budgetTaskId).getBytes(StandardCharsets.UTF_8));
     }
 
+    /** Stable ledger identity shared by every retry attempt of one Chat Agent logical run. */
+    public static UUID chatAgentLedgerTaskId(UUID userId, UUID runId) {
+        Objects.requireNonNull(userId, "userId");
+        Objects.requireNonNull(runId, "runId");
+        return UUID.nameUUIDFromBytes(("auralis:chat-agent:" + userId + ":" + runId)
+                .getBytes(StandardCharsets.UTF_8));
+    }
+
     private static AiOperationKind defaultKind(AiFeature feature) {
         if (feature == null) return null;
         return switch (feature) {

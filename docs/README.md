@@ -110,6 +110,7 @@
 - [后端模块](modules/Backend.md)
 - [基础设施模块](modules/Infrastructure.md)
 - [API 契约](contracts/API.md)
+- [Chat Runtime API protocol 1](contracts/chat-runtime-api.md)
 - [冻结 OpenAPI 产物](contracts/openapi/auralis-openapi.json)
 - [数据库契约](contracts/Database.md)
 - [对象模型差异矩阵](contracts/ObjectModelMatrix.md)
@@ -132,6 +133,7 @@
 
 - [实施方案分类索引](plans/README.md)
 - [Chat Agent 与流式可视化教学重写计划（2026-10-29；独立分支，计划中）](plans/2026-10-29-chat-agent-visual-teaching.md)
+- [Chat 前端接手说明（2026-10-29；PC 用户实施，P2 草稿未验证；Mobile / Tablet 暂停）](plans/2026-10-29-chat-frontend-handoff.md)
 - [Overview 独立执行重试实施计划](plans/2026-10-27-overview-explicit-retry.md)
 - [Overview 原章顺序与柔性路由实施计划](plans/2026-10-27-overview-original-chapter-order.md)
 - [Overview 动态容量与链路简化实施计划](plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)

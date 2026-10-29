@@ -894,7 +894,8 @@
                 <div>{{ msg.content }}</div>
               </div>
               <div class="chat-content ai-reply" v-else>
-                <div class="ai-reply-text" v-html="renderMarkdown(msg.content)"></div>
+                <ChatContentRenderer :parts="msg.parts" :busy="isAiStreaming" @submit="submitChatActivity" />
+                <div v-for="tool in msg.tools || []" :key="tool.id" class="chat-tool-capsule" :data-status="tool.status">{{ tool.name }} · {{ tool.status === 'RUNNING' ? '运行中' : tool.status === 'FAILED' ? '失败' : '完成' }}</div>
                 <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
                   <div class="citation-title">参考资料：</div>
                   <ul class="citation-list">
@@ -919,16 +920,9 @@
                 <span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>
               </div>
               <div class="chat-content ai-reply" v-else>
-                <div class="ai-reply-text">
-                  <span v-html="renderMarkdown(streamingContent)"></span>
-                  <span class="typing-cursor"></span>
-                </div>
-                <div class="chat-msg-citations" v-if="streamingCitationFileNames && streamingCitationFileNames.length > 0">
-                  <div class="citation-title">参考资料：</div>
-                  <ul class="citation-list">
-                    <li v-for="fileName in streamingCitationFileNames" :key="fileName">{{ fileName }}</li>
-                  </ul>
-                </div>
+                <ChatContentRenderer :parts="streamingParts" :busy="isAiStreaming" @submit="submitChatActivity" />
+                <div v-for="tool in streamingTools" :key="tool.id" class="chat-tool-capsule" :data-status="tool.status">{{ tool.name }} · {{ tool.status === 'RUNNING' ? '运行中' : tool.status === 'FAILED' ? '失败' : '完成' }}</div>
+                <span class="typing-cursor"></span>
               </div>
             </div>
           </div>
@@ -987,12 +981,13 @@
           <button
             class="ai-send-btn"
             :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
-            :disabled="(!chatInput.trim() && !quotedSelection) || isAiStreaming"
-            @click="sendChat"
-            title="发送消息"
-            aria-label="发送消息"
+            :disabled="!isAiStreaming && (!chatInput.trim() && !quotedSelection)"
+            @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
+            :title="isAiStreaming ? '停止生成' : '发送消息'"
+            :aria-label="isAiStreaming ? '停止生成' : '发送消息'"
           >
-            <IconArrowUp :size="16" :stroke-width="2" />
+            <IconX v-if="isAiStreaming" :size="16" :stroke-width="2" />
+            <IconArrowUp v-else :size="16" :stroke-width="2" />
           </button>
         </div>
       </div>
@@ -1066,7 +1061,6 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { renderMarkdown } from '@/utils/markdown'
-import { getAiCitationFileNames } from '@/utils/aiCitationFileNames'
 import { ElIcon, ElNotification, ElMessage, ElMessageBox } from 'element-plus'
 import {
   IconArrowLeft,
@@ -1104,6 +1098,7 @@ import 'element-plus/theme-chalk/el-select.css'
 import 'element-plus/theme-chalk/el-option.css'
 
 import FilePreview from '@/components/FilePreview.vue'
+import ChatContentRenderer from '@/components/chat/ChatContentRenderer.vue'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
@@ -1723,22 +1718,17 @@ const selectFile = async (id: string) => {
     centerView.value = 'preview'
     return
   }
-  const fileSelectGen = ++currentSubjectSwitchGen
+  ++currentSubjectSwitchGen
   const targetSubjectId = subjectId.value
-  await chatStore.endActiveSession().catch(() => undefined)
-  if (!isComponentMounted || currentSubjectSwitchGen !== fileSelectGen || subjectId.value !== targetSubjectId) {
-    return
-  }
   selectedFileId.value = id
   selectedSummaryScope.value = null
   centerView.value = 'preview'
   const file = activeSourceFiles.value.find((item) => item.id === id)
   if (file) {
-    const readingSessionId = await chatStore.startReadingSession(id, targetSubjectId, file.name).catch(() => undefined)
-    if (!isComponentMounted || currentSubjectSwitchGen !== fileSelectGen || subjectId.value !== targetSubjectId || selectedFileId.value !== id) {
-      if (readingSessionId) {
-        void chatStore.endSessionById(readingSessionId).catch(() => undefined)
-      }
+    selectedAiSourceIds.value = [id]
+    aiReferenceScope.value = 'AUTO'
+    if (!chatStore.activeSession) {
+      await chatStore.startSubjectConversation(targetSubjectId, activeSubject.value?.name || file.name).catch(() => undefined)
     }
   }
 }
@@ -2518,20 +2508,23 @@ const sendPreset = (q: string) => {
 
 
 // ===== AI Chat (Right Panel) =====
-interface ChatMsg { role: 'user' | 'assistant'; content: string; quoteText?: string; citationFileNames?: string[] }
+interface ChatMsg { role: 'user' | 'assistant'; content: string; parts: import('@/types/chatContent').ChatContentPart[]; tools?: readonly { id: string; name: string; status: string }[]; quoteText?: string; citationFileNames?: string[] }
 const chatMessages = computed<ChatMsg[]>(() => storedChatMessages.value
-  .filter((message) => message.role === 'USER' || message.role === 'ASSISTANT')
+  .filter((message) => (message.role === 'USER' || message.role === 'ASSISTANT') && !(message.role === 'ASSISTANT' && message.status === 'PENDING'))
   .map((message) => ({
     role: message.role === 'USER' ? 'user' : 'assistant',
     content: message.content,
+    parts: message.parts,
+    tools: message.tools,
     quoteText: message.requestOptions?.selectionText,
-    citationFileNames: getAiCitationFileNames(message.citations),
+    citationFileNames: [],
   })))
 const pendingChatMessage = computed(() => storedPendingMessage.value)
 const chatInput = ref('')
 const isAiStreaming = computed(() => storedChatStreaming.value)
 const streamingContent = computed(() => storedStreamingContent.value)
-const streamingCitationFileNames = computed(() => getAiCitationFileNames(chatStore.citations))
+const streamingParts = computed(() => [...storedChatMessages.value].reverse().find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING')?.parts || [])
+const streamingTools = computed(() => [...storedChatMessages.value].reverse().find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING')?.tools || [])
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const showProcessingRequired = computed(() => {
@@ -2792,18 +2785,8 @@ const sendChat = async () => {
 const retryChat = async () => {
   const pending = pendingChatMessage.value
   if (!pending?.clientRequestId || isAiStreaming.value) return
-  const reqOptions = { ...(pending.requestOptions || {}) }
-  if (reqOptions.sourceId && !activeSourceFiles.value.some(f => f.id === reqOptions.sourceId && f.subjectId === subjectId.value)) {
-    delete reqOptions.sourceId
-  }
-  if (reqOptions.subjectId && reqOptions.subjectId !== subjectId.value) {
-    reqOptions.subjectId = subjectId.value
-  }
   try {
-    await chatStore.sendMessage(pending.content, {
-      ...reqOptions,
-      pendingRequestId: pending.clientRequestId,
-    })
+    await chatStore.retryPendingMessage(pending.id)
   } catch (error) {
     const safe = classifyClientError(error, 'CHAT')
     logClientError('[SubjectWorkspace] chat retry failed', error, safe)
@@ -2813,7 +2796,19 @@ const retryChat = async () => {
   }
 }
 
-const clearChat = () => { chatStore.clearActiveConversation() }
+const clearChat = () => { void chatStore.startNewSubjectConversation(subjectId.value, activeSubject.value?.name || '学科对话') }
+
+const submitChatActivity = async (questionId: string, answer: import('@/types/chatContent').ChatActivityAnswer) => {
+  const block = storedChatMessages.value.flatMap((message) => message.parts)
+    .find((part): part is Extract<import('@/types/chatContent').ChatContentPart, { kind: 'block' }> => part.kind === 'block' && part.questionId === questionId)
+  if (!block) return
+  try {
+    await chatStore.submitActivity(questionId, answer, block)
+  } catch (error) {
+    const safe = classifyClientError(error, 'CHAT')
+    ElNotification({ title: '提交失败', message: safe.message, type: 'error', position: 'top-right' })
+  }
+}
 
 const updateSelectionPosition = () => {
   nextTick(() => {
@@ -2939,7 +2934,8 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
 
 // ===== Lifecycle =====
 const startFreshChatSession = async () => {
-  await chatStore.endActiveSession()
+  if (subjectId.value) await chatStore.startSubjectConversation(subjectId.value, activeSubject.value?.name || '学科对话')
+  else await chatStore.startNewSession()
 }
 
 let processingRefreshTimer: ReturnType<typeof setInterval> | null = null
@@ -3023,13 +3019,7 @@ onMounted(async () => {
       selectedAiSourceIds.value = [firstFile.id]
       selectedFileId.value = firstFile.id
       centerView.value = 'preview'
-      const readingSessionId = await chatStore.startReadingSession(firstFile.id, id, firstFile.name).catch(() => undefined)
-      if (!isComponentMounted || currentSubjectSwitchGen !== mountGen || subjectId.value !== id || selectedFileId.value !== firstFile.id) {
-        if (readingSessionId) {
-          void chatStore.endSessionById(readingSessionId).catch(() => undefined)
-        }
-        return
-      }
+      await chatStore.startSubjectConversation(id, activeSubject.value?.name || firstFile.name).catch(() => undefined)
     } else {
       centerView.value = 'overview'
       aiReferenceScope.value = 'SUBJECT'
@@ -3043,8 +3033,6 @@ watch(subjectId, async (newId) => {
   stopAllManualOverviews()
   if (newId) {
     // 立即同步清空草稿、大纲与选中文件状态，杜绝任何异步间隙内新学科携带旧文件或旧草稿
-    chatStore.abortStream()
-    chatStore.clearActiveConversation()
     selectedFileId.value = null
     selectedText.value = ''
     selectionPosition.value = null
@@ -3102,12 +3090,8 @@ watch(subjectId, async (newId) => {
       selectedAiSourceIds.value = [firstFile.id]
       selectedFileId.value = firstFile.id
       centerView.value = 'preview'
-      const readingSessionId = await chatStore.startReadingSession(firstFile.id, newId, firstFile.name).catch(() => undefined)
-      if (!isComponentMounted || currentSubjectSwitchGen !== switchGen || subjectId.value !== newId || selectedFileId.value !== firstFile.id) {
-        if (readingSessionId) {
-          void chatStore.endSessionById(readingSessionId).catch(() => undefined)
-        }
-        return
+      if (!chatStore.activeSession) {
+        await chatStore.startSubjectConversation(newId, activeSubject.value?.name || firstFile.name).catch(() => undefined)
       }
     } else {
       selectedFileId.value = null
@@ -3160,11 +3144,12 @@ onUnmounted(() => {
   stopAllManualOverviews()
   currentSubjectSwitchGen++
   stopProcessingRefresh()
-  void chatStore.endActiveSession().catch(() => undefined)
+  chatStore.abortStream()
 })
 </script>
 
 <style scoped>
+.chat-tool-capsule{display:inline-flex;align-items:center;margin:8px 8px 0 0;padding:5px 9px;border:1px solid var(--border-subtle);border-radius:999px;background:var(--color-bg-card);color:var(--text-muted);font-size:11px;line-height:1.3}.chat-tool-capsule[data-status="RUNNING"]{border-color:color-mix(in srgb,var(--color-zen-sage) 50%,var(--border-subtle));color:var(--color-sage-dark)}.chat-tool-capsule[data-status="FAILED"]{color:var(--color-warning)}
 /* ===== File Processing Alert Banner ===== */
 .file-processing-alert-banner {
   display: flex;

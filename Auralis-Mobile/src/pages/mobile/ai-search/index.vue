@@ -239,6 +239,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import { storeToRefs } from 'pinia'
 import { useBlockStore } from '@/store/useBlockStore'
 import { chatWithAI } from '@/api/aiClient'
+import { aiApi } from '@/api/aiApi'
 import { uuidv7 } from '@/utils/uuid'
 import LineIcon from '@/components/LineIcon.vue'
 import AppPageLayout from '@/components/AppPageLayout.vue'
@@ -255,6 +256,14 @@ const { recentBlocks } = storeToRefs(blockStore)
 
 const query = ref('')
 const messages = ref<{role: 'user' | 'assistant', content: string}[]>([])
+const currentConversationId = ref('')
+const ensureConversation = async () => {
+  if (currentConversationId.value) return currentConversationId.value
+  const conversation = await aiApi.createConversation({ title: 'AI 问答', baseVersion: 0, clientRequestId: uuidv7() })
+  if (!conversation.id) throw new Error('Conversation response is incomplete')
+  currentConversationId.value = conversation.id
+  return conversation.id
+}
 const isAiTyping = ref(false)
 const bottomId = ref('')
 const isInputFocused = ref(false)
@@ -442,11 +451,12 @@ const handleSearch = async () => {
   messages.value.push({ role: 'assistant', content: '' })
   const aiMsgIndex = messages.value.length - 1
   try {
+    const conversationId = await ensureConversation()
     const history = messages.value.slice(0, -1).map(m => ({ role: m.role, content: m.content }))
     await chatWithAI(text, history, (delta) => {
       messages.value[aiMsgIndex].content += delta
       scrollToBottom()
-    })
+    }, conversationId)
   } catch (err) {
     messages.value[aiMsgIndex].content = err instanceof Error ? err.message : '网络请求失败，请稍后再试。'
   } finally {

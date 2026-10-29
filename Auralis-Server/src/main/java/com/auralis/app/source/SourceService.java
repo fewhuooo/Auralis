@@ -19,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
@@ -27,6 +28,7 @@ import java.net.URISyntaxException;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -139,6 +141,32 @@ public class SourceService {
     @Transactional(readOnly = true)
     public SourceView requireActiveSource(UUID userId, UUID id) {
         return get(userId, id);
+    }
+
+    /**
+     * Locks all owner-scoped source rows in stable ID order and validates their
+     * current lifecycle/revision inside the caller's transaction. This is used
+     * by Chat terminal persistence so a concurrent delete, reingest, or failed
+     * ingestion cannot race the final publication decision.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public boolean lockAndCheckReadyRevisions(UUID userId, Map<UUID, UUID> expectedRevisions) {
+        if (expectedRevisions == null) return false;
+        if (expectedRevisions.isEmpty()) return true;
+        if (expectedRevisions.entrySet().stream()
+                .anyMatch(entry -> entry.getKey() == null || entry.getValue() == null)) return false;
+
+        boolean current = true;
+        for (Map.Entry<UUID, UUID> entry : expectedRevisions.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder())).toList()) {
+            SourceEntity source = sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(
+                    entry.getKey(), userId).orElse(null);
+            if (source == null || source.getIngestionStatus() != SourceIngestionStatus.READY
+                    || !Objects.equals(entry.getValue(), source.getIngestionRevision())) {
+                current = false;
+            }
+        }
+        return current;
     }
 
     @Transactional

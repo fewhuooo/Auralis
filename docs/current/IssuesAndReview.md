@@ -1,12 +1,30 @@
 # Auralis 当前问题与审查登记
 
+### 2026-10-29 Chat Agent 自查六项后端 IMPORTANT（源码问题已关闭）
+
+已修复并通过行为验证：retry 原子推进 conversation/run/attempt fence 后可 claim 与 settle；SYSTEM prompt 包含冻结 Auralis markers、NDJSON schemas、reference 规则及活动结束要求；public parts 仅合并连续文本；恢复只扫描到期且可处理的 foreign attempts，按 deadline/id 稳定排序，fresh RUNNING 不偷占，UNKNOWN 保持占位；partial component 的有效已解析行会进入 INVALID 快照且不可提交；V43 私有工具证据列可写入并进入下一轮实际模型请求，工具 call/result 在最终 assistant 回复前配对，public status/detail/trace 不泄漏。
+
+验证：Server focused clean/test 6 suites、21/21，0 failures/errors/skips；`mvn -B -ntp -DskipTests package` exit 0；只读差量 review B0/I0/O0。此前首次全量 940 tests / 2 failures / 58 errors / 7 skipped、exit 1，仍作为未通过的全量记录保留。未运行 PostgreSQL integration、真实 Provider、部署或 GUI/业务验收；V43 尚无生产库迁移证据。日志/报告目录：`D:/Temp/auralis-chat-six-fixes-20261029/`。
+
 ### 2026-10-29 提交前验证与受限检查
 
 已关闭明确构建阻塞：OverviewGenerationServiceRecoveryTests 的 Ai fixture 补传 currentAi.overviewMaxRetries()，最终 -DskipTests package 退出0；唯一只读审查B0/I0/O0。剩余验证限制：Recovery运行依赖Docker，当前daemon不可用，实际一次运行在Testcontainers初始化失败；PC静态扫描未改动Rust测试模块的localhost产生既有误报，命令退出1。PC类型检查及相关51项通过，后端原11文件与已有146/43/3证据哈希一致；历史全量未变为一次全绿。待Docker可用后补Recovery运行，扫描器问题独立处理，本次不扩大源码范围。证据D:/Temp/auralis-precommit-20261029/，不代表部署或GUI验收。
 
-### 2026-10-29 Chat Agent 计划的实施前置
+### 2026-10-29 Chat Agent 后端候选实施与验证边界
 
-Chat 按[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)在独立分支 `codex/chat-agent-rewrite` 的原有入口重写。P0 必须闭合工具消息/流式取消经 Gateway 和安全 HTTP 的适配、stage 次数策略、原子会话互斥、会话保留与所有客户端消费点；切换后删除弃用 Chat 执行链和协议接线，避免留下双轨。共有基础和并行 Overview 改动按 dirty 基线保护。当前只完成分支与计划调整，未改业务实现或运行应用测试、部署、操作业务库。
+Chat 按[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)重写现有 Server 执行入口。候选源码已包含 protocol-1 `POST /api/ai/messages/stream` turn/activity_submission、run retry/status/cancel、one-shot text route、显式 Agent loop、V42 `chat_runs/chat_attempts/chat_activities`、稳定 USER/run 与每 attempt 独立 reply ID、snapshot/fence/recovery 和 source read tools。字段级路线见[Chat Runtime API](../contracts/chat-runtime-api.md)。旧 NULL/旧协议会话保留但不能从新协议打开或继续；未增加旧格式 fallback。
+
+首次全量 940 tests / 2F / 58E / 7S，exit 1：PG 类测试主要缺少 task-owned loopback PostgreSQL URL，Testcontainers 明确无可用 Docker；此外2F为OpenAPI artifact与V41迁移fixture，3个非环境错误为旧protocol fixture与非法shadow fixture，均已修复。目标fixture回归18/18、OpenAPI官方导出/比较15/15通过。只读review指出来源revision失效时可能在持久化前公开chunk；现已在partial进入parser前检查来源revision与run owner/fence，并新增两个行为回归。受影响Chat回归18/18通过，`-DskipTests package` exit 0，review最终B0/I0/O0。全量仍不通过，未取得PostgreSQL/Docker integration验收。具体 profile/replay/deadline/recovery 行为与实现候选描述如下。并发 admission 在 HTTP response body 启动前完成，以便 active run 返回 409；worker 必须先 claim PENDING 再调用 Provider。`request_hash` 只覆盖规范化 client body；普通重放在 resolve 当前 provider settings 前进行。新 run 将 provider/model/normalized endpoint SHA-256 存入 `request_context_json`，不存明文 endpoint 或凭据；retry 先按原 provider profile 校验，profile 变化返回 409 `CHAT_PROFILE_CHANGED`，相同 provider/model/endpoint 的 credential rotation 允许。worker 在 Provider/tool dispatch 前再次检查 profile。deadline 使用 admission 持久化值；expired foreign PENDING 可以无派发证据地安全失败，fresh/same-instance PENDING 不回收；expired foreign RUNNING/CANCEL_REQUESTED 会 fence、写 FAILED reply 与公开 snapshot，再进入 UNKNOWN 并保留 slot。实际本地 worker/reader 退出后，usage 缺失仍按完整 reservation 保守计费但不单独将业务状态置 UNKNOWN。READY 原子写入后保留业务成功，并等 execution worker cleanup 后才释放槽。用户负责 PC/Mobile 前端实现；本分支草稿仅保留供后续接线，当前没有跨端验收结论。
+
+兼容性子项已关闭：隔离 `langchain4j-core:1.22.0` + Boot 4.1.0/Jackson 3.1.4 探针 5/5，Maven exit 0；Jackson2 2.21.4 / Jackson3 3.1.4 共存，未引入 beta32 codec、LangChain4j starter 或 Provider HTTP。详情见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。
+
+Runtime/controller/persistence/orchestrator/recovery/source tools、one-shot route 与对应测试源码已落地为候选实现；首次全量失败原因及已关闭的非环境问题见上。官方 OpenAPI artifact 已由 `scripts/export-openapi.ps1` 更新，生成端类型仍待用户完成前端后按流程更新。V42 有限测试及当前affected regression不等同 PostgreSQL/FK/账号清理验收。自动验证不代表真实 Provider、部署、跨端 GUI 或业务验收。P1 PC 内容基础已提交；PC/Mobile/Tablet 的未提交页面、Store、API 和生成类型由用户并行修改，本任务不审改也不将其记为已验收。兼容探针已通过，但不证明 Auralis runtime 的 Provider stream/cancellation 端到端行为。
+
+### 2026-10-29 Chat parser review follow-up
+
+Server 候选树已有 `Auralis-Server/src/main/java/com/auralis/app/ai/internal/chat/ChatStreamParser.java` 和对应测试，15/15。唯一 reviewer 已复核并关闭 Markdown code fence info string IMPORTANT：delimiter run 先于 info 字符识别，tests 250–276 覆盖全部 split。未因此改源码或重跑测试。parser 尚未接入 Chat/SSE/PC 流程。
+
+PC 前端另已完成 P1 内容渲染基础：`Auralis-PC/src/services/chatContentProjection.ts`、`src/types/chatContent.ts`、`src/components/chat/{ChatContentRenderer,ChatContentBlock,ChatActivityCard}.vue` 与 `scripts/r4-chat-content.test.mjs`。type-check exit 0、Node 6/6，证据 `D:/Temp/auralis-chat-p1-components-20261029/`。唯一 reviewer 对前端基础未发现 BLOCKER/IMPORTANT。尚未接入 Workspace/Store/streamAPI/reducer，未挂载或做 GUI 验收。剩余 P1 是将 parser 与前端组件接入真实事件流、状态和页面，并验证时序/错误恢复。兼容探针 5/5 exit 0；review 结论不代表生产接线、Provider、部署或 GUI 验收。
 
 ### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
 

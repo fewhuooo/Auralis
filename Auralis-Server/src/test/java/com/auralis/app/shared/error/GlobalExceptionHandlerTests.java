@@ -61,6 +61,18 @@ class GlobalExceptionHandlerTests {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"CHAT_RUN_ACTIVE", "CHAT_PROFILE_CHANGED"})
+    void mapsChatAdmissionAndProfileConflictsTo409(String code) {
+        var request = new MockHttpServletRequest("POST", "/api/ai/messages/stream");
+
+        var response = new GlobalExceptionHandler().handleDomain(
+                new DomainException(code, "Chat request conflicts with current run state"), request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().code()).isEqualTo(code);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"OVERVIEW_PROVIDER_OUTPUT_TOO_LARGE", "OVERVIEW_PROMPT_BUDGET_EXCEEDED",
             "OVERVIEW_PROVIDER_OUTPUT_TRUNCATED", "OVERVIEW_RECOVERY_EXHAUSTED", "OVERVIEW_REDUCE_NO_PROGRESS"})
     void mapsOverviewBudgetFailuresToBadGateway(String code) {

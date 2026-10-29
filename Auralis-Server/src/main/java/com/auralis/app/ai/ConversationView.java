@@ -13,7 +13,10 @@ public record ConversationView(
         Instant deletedAt,
         long version,
         ConversationPurpose purpose,
-        UUID sourceId) {
+        UUID sourceId,
+        Short chatProtocolVersion,
+        boolean chatSupported,
+        ActiveChatRunView activeRun) {
 
     public ConversationView(
             UUID id,
@@ -22,7 +25,7 @@ public record ConversationView(
             Instant createdAt,
             Instant updatedAt,
             Instant deletedAt) {
-        this(id, title, messages, createdAt, updatedAt, deletedAt, 0L, ConversationPurpose.GENERAL, null);
+        this(id, title, messages, createdAt, updatedAt, deletedAt, 0L, ConversationPurpose.GENERAL, null, null, false, null);
     }
 
     public ConversationView(
@@ -33,7 +36,12 @@ public record ConversationView(
             Instant updatedAt,
             Instant deletedAt,
             long version) {
-        this(id, title, messages, createdAt, updatedAt, deletedAt, version, ConversationPurpose.GENERAL, null);
+        this(id, title, messages, createdAt, updatedAt, deletedAt, version, ConversationPurpose.GENERAL, null, null, false, null);
+    }
+
+    public ConversationView(UUID id, String title, List<MessageView> messages, Instant createdAt,
+            Instant updatedAt, Instant deletedAt, long version, ConversationPurpose purpose, UUID sourceId) {
+        this(id, title, messages, createdAt, updatedAt, deletedAt, version, purpose, sourceId, null, false, null);
     }
 
     public ConversationView {

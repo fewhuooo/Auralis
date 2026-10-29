@@ -7,6 +7,7 @@ import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.AiProviderChunk;
 import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.OverviewCancellation;
+import com.auralis.app.ai.AiProviderCallCancellation;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -52,6 +53,12 @@ public interface AiTaskScope extends AutoCloseable {
         throw new AiPolicyContractException();
     }
 
+    default AiInvocationResult<AiProviderResponse> completeChat(AiStage stage, AiProviderType provider,
+            AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+            long responseTimeoutMillis, AiProviderCallCancellation cancellation) {
+        throw new AiPolicyContractException();
+    }
+
     default AiInvocationResult<AiProviderResponse> complete(
             AiStage stage, AiProviderType provider, AiProviderRequest request,
             AiCredential credential, long responseTimeoutMillis, OverviewCancellation cancellation) {
@@ -67,6 +74,12 @@ public interface AiTaskScope extends AutoCloseable {
     default AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
             AiProviderRequest request, AiCredential credential, AiCredentialSource source,
             Consumer<AiProviderChunk> sink) {
+        throw new AiPolicyContractException();
+    }
+
+    default AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
+            AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+            AiProviderCallCancellation cancellation, Consumer<AiProviderChunk> sink) {
         throw new AiPolicyContractException();
     }
 

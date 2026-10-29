@@ -2,6 +2,8 @@ package com.auralis.app.ai.internal.provider;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.core.StreamReadFeature;
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.AiStreamAbortException;
 import com.auralis.app.ai.AiProviderChunk;
@@ -12,6 +14,10 @@ import com.auralis.app.ai.AiProviderRequest;
 import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.OverviewCancellation;
+import com.auralis.app.ai.AiProviderCallCancellation;
+import com.auralis.app.ai.AiProviderToolCall;
+import com.auralis.app.ai.AiProviderToolCallDelta;
+import com.auralis.app.ai.AiProviderToolDefinition;
 import com.auralis.app.ai.usage.AiTokenUsage;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
@@ -29,6 +35,9 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.SocketTimeoutException;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -85,19 +94,31 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         return complete(request, credential, Long.valueOf(responseTimeoutMillis), cancellation);
     }
 
+    @Override
+    public AiProviderResponse completeChat(AiProviderRequest request, AiCredential credential,
+                                           long responseTimeoutMillis,
+                                           AiProviderCallCancellation cancellation) {
+        return complete(request, credential, Long.valueOf(responseTimeoutMillis), cancellation);
+    }
+
     private AiProviderResponse complete(
             AiProviderRequest request,
             AiCredential credential,
             Long responseTimeoutMillis,
-            OverviewCancellation cancellation) {
+            AiProviderCallCancellation cancellation) {
         validateCredential(credential);
         try {
             URI baseUri = URI.create(credential.baseUrl().trim());
-            ResolvedProviderEndpoint endpoint = cancellation == null
-                    ? endpointPolicy.resolve(providerType, baseUri)
-                    : endpointPolicy.resolve(providerType, baseUri, responseTimeoutMillis, cancellation);
+            ResolvedProviderEndpoint endpoint = cancellation instanceof OverviewCancellation overviewCancellation
+                    ? endpointPolicy.resolve(providerType, baseUri, responseTimeoutMillis, overviewCancellation)
+                    : endpointPolicy.resolve(providerType, baseUri);
             JsonNode body;
-            if (!request.overviewCapacityRequest() && responseTimeoutMillis == null) {
+            if (cancellation != null) {
+                body = httpClient.postJsonCancellable(endpoint, "/chat/completions", credential.apiKey(),
+                        requestBody(request, credential), JsonNode.class,
+                        responseTimeoutMillis == null ? 10_000 : responseTimeoutMillis, cancellation,
+                        overviewResponseByteLimit(request));
+            } else if (!request.overviewCapacityRequest() && responseTimeoutMillis == null) {
                 body = httpClient.postJson(endpoint, "/chat/completions", credential.apiKey(),
                         requestBody(request, credential), JsonNode.class);
             } else if (!request.overviewCapacityRequest()) {
@@ -115,6 +136,8 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             return parseResponse(body, request);
         } catch (DomainException exception) {
             throw exception;
+        } catch (AiStreamAbortException exception) {
+            throw exception;
         } catch (ProviderHttpException exception) {
             throw providerError(exception.status(), exception);
         } catch (ProviderResponseTooLargeException exception) {
@@ -123,6 +146,9 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         } catch (SocketTimeoutException exception) {
             throw new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
         } catch (IOException exception) {
+            if (cancellation != null && cancellation.isCancelled()) {
+                throw new AiStreamAbortException("Provider call was cancelled", exception);
+            }
             throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
         } catch (Exception exception) {
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
@@ -152,7 +178,7 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             }
             httpClient.postStream(
                     endpoint, "/chat/completions", credential.apiKey(), body,
-                    line -> parseStreamLine(line, sink));
+                    line -> parseLegacyStreamLine(line, sink));
         } catch (AiStreamAbortException exception) {
             throw exception;
         } catch (DomainException exception) {
@@ -172,6 +198,58 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         }
     }
 
+    @Override
+    public void streamInto(AiProviderRequest request, AiCredential credential,
+                           AiProviderCallCancellation cancellation, Consumer<AiProviderChunk> sink) {
+        validateCredential(credential);
+        Objects.requireNonNull(sink, "sink");
+        if (cancellation != null && cancellation.isCancelled()) {
+            throw new AiStreamAbortException("Provider call was cancelled");
+        }
+        try {
+            ResolvedProviderEndpoint endpoint = endpointPolicy.resolve(
+                    providerType, URI.create(credential.baseUrl().trim()));
+            Map<String, Object> body = new LinkedHashMap<>(requestBody(request, credential));
+            body.put("stream", true);
+            if (providerType == AiProviderType.OPENAI_COMPATIBLE) {
+                body.put("stream_options", Map.of("include_usage", true));
+            }
+            StreamState state = new StreamState();
+            httpClient.postStream(endpoint, "/chat/completions", credential.apiKey(), body,
+                    line -> parseStreamLine(line, state, sink), cancellation);
+            if (cancellation != null && cancellation.isCancelled()) {
+                throw new AiStreamAbortException("Provider call was cancelled");
+            }
+            if (!state.done || state.finishReason == null) {
+                throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an incomplete stream");
+            }
+            if (state.hasToolCallDeltas && !"tool_calls".equals(state.finishReason)) {
+                throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid tool-call terminal");
+            }
+            sink.accept(new AiProviderChunk("", true, state.usage, state.modelIdentity,
+                    state.responseId, null, null, state.finishReason, true));
+        } catch (AiStreamAbortException exception) {
+            throw exception;
+        } catch (DomainException exception) {
+            throw exception;
+        } catch (ProviderHttpException exception) {
+            throw providerError(exception.status(), exception);
+        } catch (ProviderResponseTooLargeException exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
+                    exception);
+        } catch (SocketTimeoutException exception) {
+            throw new DomainException("MODEL_TIMEOUT", "AI provider response timed out", null, exception);
+        } catch (IOException exception) {
+            if (cancellation != null && cancellation.isCancelled()) {
+                throw new AiStreamAbortException("Provider call was cancelled", exception);
+            }
+            throw new DomainException("MODEL_UNAVAILABLE", "AI provider is unavailable", null, exception);
+        } catch (Exception exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response", null,
+                    exception);
+        }
+    }
+
     protected void validateCredential(AiCredential credential) {
         if (credential == null || credential.baseUrl() == null || credential.baseUrl().isBlank()
                 || credential.apiKey() == null || credential.apiKey().isBlank()) {
@@ -182,9 +260,10 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
     protected Map<String, Object> requestBody(AiProviderRequest request, AiCredential credential) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", request.model());
-        body.put("messages", request.messages().stream().map(message -> Map.of(
-                "role", roleName(message.role()),
-                "content", message.content())).toList());
+        body.put("messages", request.messages().stream().map(this::wireMessage).toList());
+        if (!request.tools().isEmpty()) {
+            body.put("tools", request.tools().stream().map(this::wireTool).toList());
+        }
         if (request.temperature() != null) {
             body.put("temperature", request.temperature());
         }
@@ -200,6 +279,35 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         return body;
     }
 
+    private Map<String, Object> wireMessage(AiProviderRequest.Message message) {
+        Map<String, Object> wire = new LinkedHashMap<>();
+        wire.put("role", roleName(message.role()));
+        if (message.content() != null) wire.put("content", message.content());
+        if (!message.toolCalls().isEmpty()) {
+            wire.put("tool_calls", message.toolCalls().stream().map(call -> Map.of(
+                    "id", call.id(), "type", "function", "function", Map.of(
+                            "name", call.name(), "arguments", call.argumentsJson()))).toList());
+        }
+        if (message.role() == AiMessageRole.TOOL) wire.put("tool_call_id", message.toolCallId());
+        return wire;
+    }
+
+    private Map<String, Object> wireTool(AiProviderToolDefinition tool) {
+        try {
+            JsonNode schema = STREAM_OBJECT_MAPPER.reader().with(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(tool.schemaJson());
+            if (schema == null || !schema.isObject()) throw new IllegalArgumentException("Tool schema must be an object");
+            Map<String, Object> function = new LinkedHashMap<>();
+            function.put("name", tool.name());
+            if (tool.description() != null && !tool.description().isBlank()) function.put("description", tool.description());
+            function.put("parameters", schema);
+            return Map.of("type", "function", "function", function);
+        } catch (Exception exception) {
+            throw new DomainException("AI_POLICY_CONTRACT_VIOLATION", "Tool definition is invalid", null, exception);
+        }
+    }
+
     private boolean supportsThinkingControl(AiCredential credential) {
         if (providerType == AiProviderType.DEEPSEEK) return true;
         if (providerType != AiProviderType.OPENAI_COMPATIBLE || credential == null
@@ -213,17 +321,63 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
 
     protected AiProviderResponse parseResponse(JsonNode body, AiProviderRequest request) {
         JsonNode content = body == null ? null : body.path("choices").path(0).path("message").path("content");
-        if (content == null || content.isMissingNode() || !content.isTextual() || content.asText().isBlank()) {
+        JsonNode message = body == null ? null : body.path("choices").path(0).path("message");
+        List<AiProviderToolCall> toolCalls = parseToolCalls(message == null ? null : message.path("tool_calls"));
+        boolean hasText = content != null && content.isTextual() && !content.asText().isBlank();
+        if (!hasText && toolCalls.isEmpty()) {
             logInvalidResponseEnvelope(body, request);
             throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid response");
         }
+        if (!toolCalls.isEmpty() && request.tools().isEmpty()) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned unauthorized tool calls");
+        }
+        if (!toolCalls.isEmpty() && toolCalls.stream().anyMatch(call -> request.tools().stream()
+                .noneMatch(tool -> tool.name().equals(call.name())))) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned unauthorized tool calls");
+        }
+        String finishReason = normalizedFinishReason(body);
+        if (!toolCalls.isEmpty() && !"tool_calls".equals(finishReason)) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid tool-call terminal");
+        }
         JsonNode usage = body.path("usage");
         return new AiProviderResponse(
-                content.asText(),
+                hasText ? content.asText() : "",
                 tokenCount(usage, "prompt_tokens"),
                 tokenCount(usage, "completion_tokens"),
-                normalizedFinishReason(body),
-                responseModelIdentity(body));
+                finishReason,
+                responseModelIdentity(body), toolCalls);
+    }
+
+    private List<AiProviderToolCall> parseToolCalls(JsonNode calls) {
+        if (calls == null || calls.isMissingNode() || calls.isNull()) return List.of();
+        if (!calls.isArray()) throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned invalid tool calls");
+        List<AiProviderToolCall> result = new ArrayList<>();
+        HashSet<String> ids = new HashSet<>();
+        for (JsonNode call : calls) {
+            String id = call.path("id").asString(null);
+            String name = call.path("function").path("name").asString(null);
+            String arguments = call.path("function").path("arguments").asString(null);
+            if (id == null || name == null || arguments == null || !ids.add(id)) {
+                throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned invalid tool calls");
+            }
+            requireObjectArguments(arguments);
+            result.add(new AiProviderToolCall(id, name, arguments));
+        }
+        return List.copyOf(result);
+    }
+
+    private void requireObjectArguments(String arguments) {
+        try {
+            JsonNode parsed = STREAM_OBJECT_MAPPER.reader().with(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .readTree(arguments);
+            if (parsed == null || !parsed.isObject()) {
+                throw new IllegalArgumentException("Tool arguments must be an object");
+            }
+        } catch (Exception exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned invalid tool arguments", null,
+                    exception);
+        }
     }
 
     private AiProviderModelIdentity responseModelIdentity(JsonNode body) {
@@ -315,10 +469,77 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
         return Math.max(0, value);
     }
 
-    private void parseStreamLine(String line, Consumer<AiProviderChunk> sink) {
+    private void parseStreamLine(String line, StreamState state, Consumer<AiProviderChunk> sink) {
         if (line == null || line.isBlank() || !line.startsWith("data:")) {
             return;
         }
+        String payload = line.substring("data:".length()).trim();
+        if (payload.equals("[DONE]")) {
+            state.done = true;
+            return;
+        }
+        try {
+            JsonNode body = STREAM_OBJECT_MAPPER.readTree(payload);
+            JsonNode responseId = body == null ? null : body.path("id");
+            if (responseId != null && responseId.isTextual()) state.responseId = responseId.asString();
+            AiProviderModelIdentity modelIdentity = responseModelIdentity(body);
+            state.modelIdentity = state.modelIdentity.merge(modelIdentity);
+            AiTokenUsage usage = parseUsage(body == null ? null : body.path("usage"));
+            if (usage != null) state.usage = usage;
+            JsonNode choices = body == null ? null : body.path("choices");
+            if ((choices == null || !choices.isArray() || choices.isEmpty()) && usage != null) {
+                return;
+            }
+            JsonNode choice = body.path("choices").path(0);
+            JsonNode delta = choice.path("delta");
+            JsonNode content = delta.path("content");
+            boolean emitted = false;
+            if (content.isTextual() && !content.asText().isEmpty()) {
+                sink.accept(new AiProviderChunk(content.asText(), false, null, modelIdentity));
+                emitted = true;
+            }
+            JsonNode toolDeltas = delta.path("tool_calls");
+            if (toolDeltas.isArray()) {
+                for (JsonNode toolDelta : toolDeltas) {
+                    JsonNode indexNode = toolDelta.path("index");
+                    if (!indexNode.isIntegralNumber() || !indexNode.canConvertToInt() || indexNode.intValue() < 0) {
+                        throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned invalid tool-call index");
+                    }
+                    int index = indexNode.intValue();
+                    String id = toolDelta.path("id").asString(null);
+                    String name = toolDelta.path("function").path("name").asString(null);
+                    JsonNode arguments = toolDelta.path("function").path("arguments");
+                    String argumentsFragment = arguments.isTextual() ? arguments.asString() : null;
+                    if (id != null || name != null || argumentsFragment != null) {
+                        state.hasToolCallDeltas = true;
+                        sink.accept(new AiProviderChunk("", false, null, modelIdentity,
+                                state.responseId, index,
+                                new AiProviderToolCallDelta(id, name, argumentsFragment), null, false));
+                        emitted = true;
+                    }
+                }
+            }
+            JsonNode finishReason = choice.path("finish_reason");
+            if (!finishReason.isMissingNode() && !finishReason.isNull()) {
+                if (!finishReason.isTextual()) state.finishReason = "other";
+                else state.finishReason = switch (finishReason.asString()) {
+                    case "stop", "tool_calls", "length", "content_filter" -> finishReason.asString();
+                    default -> "other";
+                };
+                emitted = true;
+            }
+            if (!emitted && modelIdentity.status() != AiProviderModelIdentity.Status.MISSING) {
+                sink.accept(new AiProviderChunk("", false, null, modelIdentity));
+            }
+        } catch (AiStreamAbortException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event");
+        }
+    }
+
+    private void parseLegacyStreamLine(String line, Consumer<AiProviderChunk> sink) {
+        if (line == null || line.isBlank() || !line.startsWith("data:")) return;
         String payload = line.substring("data:".length()).trim();
         if (payload.equals("[DONE]")) {
             sink.accept(new AiProviderChunk("", true));
@@ -377,6 +598,15 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
 
     private String roleName(AiMessageRole role) {
         return role.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static final class StreamState {
+        private String responseId;
+        private String finishReason;
+        private boolean done;
+        private boolean hasToolCallDeltas;
+        private AiTokenUsage usage;
+        private AiProviderModelIdentity modelIdentity = AiProviderModelIdentity.missing();
     }
 
 }

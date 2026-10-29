@@ -6,23 +6,6 @@ export interface SseEvent<T = unknown> {
   id?: string
 }
 
-export interface AiStreamCitation {
-  sourceId?: string
-  chunkId?: string
-  ordinal?: number
-  title?: string
-  excerpt?: string
-  similarity?: number
-}
-
-export type AiStreamEvent =
-  | { event: 'message.started'; data: { conversationId?: string; messageId?: string } }
-  | { event: 'citation'; data: AiStreamCitation }
-  | { event: 'message.delta'; data: string }
-  | { event: 'message.completed'; data: { conversationId?: string; messageId?: string; content?: string } }
-  | { event: 'message.error'; data: { code?: string; message?: string; detail?: string; retryAfterSeconds?: number; resetAt?: string } }
-  | { event: string; data: unknown }
-
 export interface SseParserOptions {
   signal?: AbortSignal
 }

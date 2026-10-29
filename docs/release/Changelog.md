@@ -1,5 +1,11 @@
 # Auralis 变更记录
 
+### 2026-10-29 Chat P1 内容渲染基础（候选实现，未接入页面）
+
+- 新增 Chat 内容公开投影类型与服务、正文/结构块 renderer 和题卡 activity card，支持有序公开字段、稳定草稿与提交形状校验；不执行答案判分。
+- PC `npm.cmd run type-check` exit 0，`node scripts/r4-chat-content.test.mjs` 6/6 通过。证据 `D:/Temp/auralis-chat-p1-components-20261029/`。
+- 唯一 reviewer 对组件与纯逻辑基础未发现 BLOCKER/IMPORTANT。尚未连接 Workspace、Store、stream API 或 reducer；没有页面挂载或 GUI 验收。无生产 API、数据库或依赖变化；Chat 主链未接通。
+
 ### 2026-10-29 提交前修复测试构造器与核验工作树
 
 恢复测试的限额helper补传 currentAi.overviewMaxRetries()，修复新增配置参数导致的测试源码编译失败，并保留原重试设置。最终 -DskipTests package 成功；PC type-check、相关51项测试通过。后端原改动哈希与既有146/43/3定向证据一致。Recovery运行受Docker缺失限制，PC静态扫描有未改动Rust测试地址的既有误报；未声称全量通过、部署或业务验收。唯一只读审查B0/I0/O0，详细证据D:/Temp/auralis-precommit-20261029/。

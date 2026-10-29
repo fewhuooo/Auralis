@@ -693,7 +693,8 @@ import { isSubjectIconKey, getLegacySubjectIcon } from '@/utils/subjectIcon'
 import { useBlockStore, type KnowledgeBlock } from '@/store/useBlockStore'
 import { useSubjectStore, type CatalogItem } from '@/store/useSubjectStore'
 import { useAuthStore } from '@/store/useAuthStore'
-import { chatWithAI } from '@/api/aiClient'
+import { chatWithAI, generateAiText } from '@/api/aiClient'
+import { aiApi } from '@/api/aiApi'
 import { tabletHandwritingNotesEnabled } from '@/config/features'
 import { HandwritingEngine, type Stroke, type StrokePoint } from '@/services/handwritingEngine'
 import { NotebookStorage } from '@/services/notebookStorage'
@@ -1481,12 +1482,13 @@ const sendMessage = async () => {
   scrollToMsg.value = 'msg-' + assistantIdx
 
   try {
+    const conversationId = await ensureChatConversation()
     await chatWithAI(text, chatMessages.value.slice(0, -1), (chunk) => {
       chatMessages.value[assistantIdx].content += chunk
       nextTick(() => {
         scrollToMsg.value = 'msg-' + assistantIdx
       })
-    })
+    }, conversationId)
   } catch (e: any) {
     chatMessages.value[assistantIdx].content = '抱歉，发生了错误: ' + (e.message || '未知错误')
   } finally {
@@ -1502,6 +1504,14 @@ const askAi = (prompt: string) => {
 // 参照独立 AI 页：模型切换、富文本解析、复制与知识块提炼
 const isAiInputFocused = ref(false)
 const currentModel = ref('通用模式')
+const currentConversationId = ref('')
+const ensureChatConversation = async () => {
+  if (currentConversationId.value) return currentConversationId.value
+  const conversation = await aiApi.createConversation({ title: activeSubject.value?.name || '学科对话', baseVersion: 0, clientRequestId: uuidv7() })
+  if (!conversation.id) throw new Error('Conversation response is incomplete')
+  currentConversationId.value = conversation.id
+  return conversation.id
+}
 const isModelMenuOpen = ref(false)
 const isActionOpen = ref(false)
 
@@ -1696,10 +1706,8 @@ const generateAiSummary = async () => {
     let summary = ''
     const scope = activeFileId.value ? `当前材料《${targetName}》` : `当前学科《${targetName}》`
     const prompt = `请基于当前用户已授权的资料检索结果，为${scope}生成简洁、可核验的学习提纲。只返回正文，不要声称读取了不存在的内容；如果没有足够资料，请明确说明资料不足。`
-    await chatWithAI(prompt, [], (chunk) => {
-      summary += chunk
-      aiSummaryMap.value[key] = summary
-    })
+    summary = await generateAiText('summary', prompt)
+    aiSummaryMap.value[key] = summary
     if (!summary.trim()) throw new Error('AI 未返回总结内容')
     uni.showToast({ title: '总结提纲已生成', icon: 'success' })
   } catch (error: any) {

@@ -142,6 +142,13 @@ auralis:
       overview-task-tokens: ${AURALIS_AI_LIMITS_OVERVIEW_TASK_TOKENS:524288}
       ingestion-max-calls: ${AURALIS_AI_LIMITS_INGESTION_MAX_CALLS:512}
       ingestion-task-tokens: ${AURALIS_AI_LIMITS_INGESTION_TASK_TOKENS:16777216}
+    chat-agent:
+      max-model-and-embedding-calls: ${AURALIS_AI_CHAT_AGENT_MAX_MODEL_AND_EMBEDDING_CALLS:8}
+      max-iterations: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:8}
+      max-tool-calls: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:12}
+      max-tool-result-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES:65536}
+      max-serialized-request-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_SERIALIZED_REQUEST_UTF8_BYTES:524288}
+      attempt-deadline-seconds: ${AURALIS_AI_CHAT_AGENT_ATTEMPT_DEADLINE_SECONDS:300}
   sync:
     retention-cleanup-delay-millis: ${AURALIS_SYNC_RETENTION_CLEANUP_DELAY_MILLIS:3600000}
     retention-cleanup-initial-delay-millis: ${AURALIS_SYNC_RETENTION_CLEANUP_INITIAL_DELAY_MILLIS:60000}

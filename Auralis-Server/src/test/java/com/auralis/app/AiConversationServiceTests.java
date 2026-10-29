@@ -73,24 +73,25 @@ class AiConversationServiceTests {
     }
 
     @Test
-    void createsReadingSessionWithSourceBindingAndRejectsInvalidScope() {
+    void createsGeneralConversationAndRejectsPersistedReadingScope() {
         UUID userId = UUID.randomUUID();
         UUID sourceId = UUID.randomUUID();
         when(conversationRepository.saveAndFlush(any(ConversationEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
         ConversationView view = conversationService.create(userId,
-                new ConversationCommand("Chapter 1", 0L, null, ConversationPurpose.READING_SESSION, sourceId));
+                new ConversationCommand("Chapter 1", 0L, null));
 
-        assertThat(view.purpose()).isEqualTo(ConversationPurpose.READING_SESSION);
-        assertThat(view.sourceId()).isEqualTo(sourceId);
+        assertThat(view.purpose()).isEqualTo(ConversationPurpose.GENERAL);
+        assertThat(view.sourceId()).isNull();
         assertThatThrownBy(() -> conversationService.create(userId,
                 new ConversationCommand("Missing source", 0L, null, ConversationPurpose.READING_SESSION, null)))
                 .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
-                .hasMessageContaining("sourceId");
+                .hasMessageContaining("GENERAL purpose");
         assertThatThrownBy(() -> conversationService.create(userId,
                 new ConversationCommand("General", 0L, null, ConversationPurpose.GENERAL, sourceId)))
-                .isInstanceOf(com.auralis.app.shared.error.DomainException.class);
+                .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
+                .hasMessageContaining("GENERAL purpose");
     }
 
     @Test

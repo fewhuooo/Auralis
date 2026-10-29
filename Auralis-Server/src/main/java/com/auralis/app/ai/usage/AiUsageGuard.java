@@ -39,30 +39,44 @@ public class AiUsageGuard implements AiUsageQueryService {
 
     @Autowired
     public AiUsageGuard(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
-                        Clock clock, AuralisProperties properties) {
-        this(jdbc, transactionManager, clock, properties.ai().limits());
+                        Clock clock, AuralisProperties properties, ChatAgentProperties chatAgent) {
+        this(jdbc, transactionManager, clock, properties.ai().limits(), chatAgent);
     }
 
     AiUsageGuard(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
                  Clock clock, AuralisProperties.Limits limits) {
+        this(jdbc, transactionManager, clock, limits, ChatAgentProperties.defaults());
+    }
+
+    AiUsageGuard(JdbcTemplate jdbc, PlatformTransactionManager transactionManager,
+                 Clock clock, AuralisProperties.Limits limits, ChatAgentProperties chatAgent) {
         this.jdbc = Objects.requireNonNull(jdbc);
         this.transactions = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.clock = Objects.requireNonNull(clock);
         this.limits = Objects.requireNonNull(limits);
-        this.policies = new AiOperationPolicyResolver(limits);
+        this.policies = new AiOperationPolicyResolver(limits, chatAgent);
     }
 
     public TaskLease beginTask(AiTaskContext context) {
         Objects.requireNonNull(context);
         AiOperationPolicy policy = policies.resolve(context.operationKind());
         if (policy.feature() != context.feature()) throw new AiPolicyContractException();
-        if (context.budgetTaskId() != null && !isOverview(context.feature())) {
-            throw new IllegalArgumentException("Stable task budget ids are supported only for Overview features");
+        if (context.operationKind() == AiOperationKind.CHAT_AGENT_TURN && context.budgetTaskId() == null) {
+            throw new IllegalArgumentException("Chat Agent runs require a stable logical-run budget id");
+        }
+        boolean stableChatRun = context.operationKind() == AiOperationKind.CHAT_AGENT_TURN
+                && context.feature() == AiFeature.CHAT && context.budgetTaskId() != null;
+        if (context.budgetTaskId() != null && !isOverview(context.feature()) && !stableChatRun) {
+            throw new IllegalArgumentException("Stable task budget ids are supported only for Overview and Chat Agent runs");
         }
         UUID overviewBudgetTaskId = context.budgetTaskId();
-        String taskIdentity = overviewBudgetTaskId == null
-                ? context.taskKey() : context.taskKey() + ":budget:" + overviewBudgetTaskId;
+        boolean namespacedOperation = context.operationKind() == AiOperationKind.CHAT_AGENT_TURN
+                || context.operationKind() == AiOperationKind.TEXT_GENERATION;
+        String taskIdentity = namespacedOperation
+                ? context.operationKind().name() + ":" + context.taskKey()
+                : overviewBudgetTaskId == null ? context.taskKey()
+                : context.taskKey() + ":budget:" + overviewBudgetTaskId;
         String taskHash = sha256(context.userId() + ":" + context.feature() + ":" + taskIdentity);
         String userKey = "USER:" + context.userId();
         String taskKey = "TASK:" + taskHash;
@@ -81,7 +95,9 @@ public class AiUsageGuard implements AiUsageQueryService {
             UUID taskId = context.feature() == AiFeature.INGESTION
                     ? UUID.nameUUIDFromBytes((context.userId() + ":" + taskHash).getBytes(StandardCharsets.UTF_8))
                     : overviewBudgetTaskId == null ? UUID.randomUUID()
-                    : AiTaskContext.overviewLedgerTaskId(context.userId(), context.feature(), overviewBudgetTaskId);
+                    : stableChatRun
+                            ? AiTaskContext.chatAgentLedgerTaskId(context.userId(), context.budgetTaskId())
+                            : AiTaskContext.overviewLedgerTaskId(context.userId(), context.feature(), overviewBudgetTaskId);
             UUID ownerId = UUID.randomUUID();
             Instant leaseUntil = now.plusMillis(limits.reservationLeaseMillis());
             jdbc.update("update ai_usage_locks set feature=?, task_key_hash=?, current_task_id=?, owner_id=?, "
@@ -142,6 +158,15 @@ public class AiUsageGuard implements AiUsageQueryService {
             if (count("select count(*) from ai_usage_reservations where task_id=? and operation_kind is not null "
                     + "and operation_kind<>?", task.taskId(), task.operationKind().name()) > 0) {
                 throw new AiPolicyContractException();
+            }
+            if (policy.allOriginMaxCalls() > 0) {
+                int taskCalls = count("select count(*) from ai_usage_reservations where task_id=? "
+                        + "and (state='RESERVED' or request_dispatched=true)", task.taskId());
+                if (taskCalls >= policy.allOriginMaxCalls()) {
+                    diagnoseLimit("TASK_CALLS", task, stage, provider, model, 1, taskCalls,
+                            policy.allOriginMaxCalls(), null);
+                    throw new AiUsageLimitException("AI_TASK_BUDGET_EXCEEDED", 422, 0, null);
+                }
             }
             int activeGlobal = count("select count(*) from ai_usage_reservations where state='RESERVED' "
                     + "and lease_until > ?", sqlTimestamp(now));

@@ -4,6 +4,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.ai.OverviewCancellation;
+import com.auralis.app.ai.AiProviderCallCancellation;
 import com.auralis.app.shared.config.AuralisProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,6 +73,31 @@ public class ProviderHttpClient {
         return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis);
     }
 
+    public <T> T postJsonCancellable(ResolvedProviderEndpoint endpoint, String path, String apiKey,
+            Object body, Class<T> responseType, long responseTimeoutMillis,
+            AiProviderCallCancellation cancellation, long responseByteLimit) throws IOException {
+        if (endpoint == null || path == null || !path.startsWith("/")
+                || apiKey == null || apiKey.isBlank() || responseType == null || responseByteLimit < 1) {
+            throw new IllegalArgumentException("Provider request is invalid");
+        }
+        byte[] requestBody;
+        try {
+            requestBody = objectMapper.writeValueAsBytes(body);
+        } catch (JacksonException exception) {
+            throw new IOException("Could not serialize provider request", exception);
+        }
+        if (cancellation != null && cancellation.isCancelled()) throw new IOException("Provider call was cancelled");
+        long boundedResponseBytes = Math.min(maxResponseBytes, responseByteLimit);
+        byte[] responseBody = transport.postCancellable(endpoint, path, apiKey, requestBody,
+                connectTimeoutMillis, requirePositiveTimeout(responseTimeoutMillis), cancellation, boundedResponseBytes);
+        if (responseBody == null || responseBody.length > boundedResponseBytes) throw new ProviderResponseTooLargeException();
+        try {
+            return objectMapper.readValue(responseBody, responseType);
+        } catch (JacksonException exception) {
+            throw new IOException("Could not parse provider response", exception);
+        }
+    }
+
     public <T> T postJson(
             ResolvedProviderEndpoint endpoint,
             String path,
@@ -79,6 +105,18 @@ public class ProviderHttpClient {
             Object body,
             Class<T> responseType,
             OverviewCancellation cancellation,
+            long responseByteLimit) throws IOException {
+        return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
+                (AiProviderCallCancellation) cancellation, responseByteLimit);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            AiProviderCallCancellation cancellation,
             long responseByteLimit) throws IOException {
         return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
                 cancellation, responseByteLimit);
@@ -93,10 +131,56 @@ public class ProviderHttpClient {
             long responseTimeoutMillis,
             OverviewCancellation cancellation) throws IOException {
         return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
+                (AiProviderCallCancellation) cancellation, maxResponseBytes);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            long responseTimeoutMillis,
+            AiProviderCallCancellation cancellation) throws IOException {
+        return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
                 cancellation, maxResponseBytes);
     }
 
     public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            long responseTimeoutMillis,
+            OverviewCancellation cancellation,
+            long responseByteLimit) throws IOException {
+        return postJson(endpoint, path, apiKey, body, responseType, responseTimeoutMillis,
+                (AiProviderCallCancellation) cancellation, responseByteLimit);
+    }
+
+    public <T> T postJson(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Class<T> responseType,
+            long responseTimeoutMillis,
+            AiProviderCallCancellation cancellation,
+            long responseByteLimit) throws IOException {
+        if (cancellation == null) {
+            return postJsonWithOverviewCancellation(endpoint, path, apiKey, body, responseType,
+                    responseTimeoutMillis, null, responseByteLimit);
+        }
+        if (cancellation instanceof OverviewCancellation overviewCancellation) {
+            return postJsonWithOverviewCancellation(endpoint, path, apiKey, body, responseType,
+                    responseTimeoutMillis, overviewCancellation, responseByteLimit);
+        }
+        return postJsonCancellable(endpoint, path, apiKey, body, responseType,
+                responseTimeoutMillis, cancellation, responseByteLimit);
+    }
+
+    private <T> T postJsonWithOverviewCancellation(
             ResolvedProviderEndpoint endpoint,
             String path,
             String apiKey,
@@ -255,6 +339,16 @@ public class ProviderHttpClient {
             String apiKey,
             Object body,
             Consumer<String> lineConsumer) throws IOException {
+        postStream(endpoint, path, apiKey, body, lineConsumer, null);
+    }
+
+    public void postStream(
+            ResolvedProviderEndpoint endpoint,
+            String path,
+            String apiKey,
+            Object body,
+            Consumer<String> lineConsumer,
+            AiProviderCallCancellation cancellation) throws IOException {
         if (endpoint == null || path == null || !path.startsWith("/")
                 || apiKey == null || apiKey.isBlank() || lineConsumer == null) {
             throw new IllegalArgumentException("Provider streaming request is invalid");
@@ -272,11 +366,12 @@ public class ProviderHttpClient {
                 "AI_PROVIDER_HTTP_START kind=stream host={} port={} path={} resolvedAddressCount={} requestBytes={}",
                 endpoint.host(), endpoint.port(), path, endpoint.addresses().size(), requestBody.length);
         try {
+            if (cancellation != null && cancellation.isCancelled()) throw new IOException("Provider call was cancelled");
             transport.postStream(endpoint, path, apiKey, requestBody, line -> {
                 lineCount.incrementAndGet();
                 responseBytes.addAndGet(line == null ? 0 : line.getBytes(StandardCharsets.UTF_8).length + 1L);
                 lineConsumer.accept(line);
-            }, connectTimeoutMillis, responseTimeoutMillis);
+            }, connectTimeoutMillis, responseTimeoutMillis, cancellation);
             LOGGER.info(
                     "AI_PROVIDER_HTTP_SUCCESS kind=stream host={} port={} path={} status=2xx lineCount={} responseBytes={} elapsedMs={}",
                     endpoint.host(), endpoint.port(), path, lineCount.get(), responseBytes.get(),
@@ -341,10 +436,19 @@ public class ProviderHttpClient {
         public byte[] post(ResolvedProviderEndpoint endpoint, String path, String apiKey, byte[] requestBody,
                            long connectTimeoutMillis, long responseTimeoutMillis,
                            OverviewCancellation cancellation, long responseByteLimit) throws IOException {
+            return postCancellable(endpoint, path, apiKey, requestBody, connectTimeoutMillis,
+                    responseTimeoutMillis, cancellation, responseByteLimit);
+        }
+
+        @Override
+        public byte[] postCancellable(ResolvedProviderEndpoint endpoint, String path, String apiKey,
+                                      byte[] requestBody, long connectTimeoutMillis, long responseTimeoutMillis,
+                                      AiProviderCallCancellation cancellation, long responseByteLimit)
+                throws IOException {
             URI target = buildTargetUri(endpoint, path);
             HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
             ProviderSocketRegistry registry = new ProviderSocketRegistry();
-            OverviewCancellation.Registration cancellationRegistration = cancellation == null
+            AiProviderCallCancellation.Registration cancellationRegistration = cancellation == null
                     ? () -> { } : cancellation.onCancel(registry::abort);
             int connectTimeout = toIntTimeout(connectTimeoutMillis);
             int responseTimeout = toIntTimeout(responseTimeoutMillis);
@@ -425,6 +529,20 @@ public class ProviderHttpClient {
                 java.util.function.Consumer<String> lineConsumer,
                 long connectTimeoutMillis,
                 long responseTimeoutMillis) throws IOException {
+            postStream(endpoint, path, apiKey, requestBody, lineConsumer,
+                    connectTimeoutMillis, responseTimeoutMillis, null);
+        }
+
+        @Override
+        public void postStream(
+                ResolvedProviderEndpoint endpoint,
+                String path,
+                String apiKey,
+                byte[] requestBody,
+                java.util.function.Consumer<String> lineConsumer,
+                long connectTimeoutMillis,
+                long responseTimeoutMillis,
+                AiProviderCallCancellation cancellation) throws IOException {
             URI target = buildTargetUri(endpoint, path);
             HttpsURLConnection connection = (HttpsURLConnection) target.toURL().openConnection();
             int connectTimeout = toIntTimeout(connectTimeoutMillis);
@@ -438,9 +556,15 @@ public class ProviderHttpClient {
             connection.setRequestProperty("Content-Type", "application/json");
             connection.setRequestProperty("Authorization", "Bearer " + apiKey);
             connection.setFixedLengthStreamingMode(requestBody.length);
-            connection.setSSLSocketFactory(new PinnedSslSocketFactory(
-                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout));
             connection.setHostnameVerifier(HttpsURLConnection.getDefaultHostnameVerifier());
+            ProviderSocketRegistry registry = new ProviderSocketRegistry();
+            AiProviderCallCancellation.Registration cancellationRegistration = cancellation == null
+                    ? () -> { } : cancellation.onCancel(() -> {
+                        registry.abort();
+                        connection.disconnect();
+                    });
+            connection.setSSLSocketFactory(new PinnedSslSocketFactory(
+                    defaultSocketFactory, endpoint.addresses(), endpoint.port(), connectTimeout, registry));
             try {
                 connection.getOutputStream().write(requestBody);
                 int status = connection.getResponseCode();
@@ -460,6 +584,8 @@ public class ProviderHttpClient {
                     }
                 }
             } finally {
+                cancellationRegistration.close();
+                registry.clear();
                 connection.disconnect();
             }
         }

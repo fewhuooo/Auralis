@@ -28,6 +28,20 @@ public interface AiProviderPort {
         return complete(request, credential, responseTimeoutMillis);
     }
 
+    /** Chat completion entry point with run-owned cancellation; existing Overview overloads remain unchanged. */
+    default AiProviderResponse completeChat(AiProviderRequest request, AiCredential credential,
+                                            long responseTimeoutMillis,
+                                            AiProviderCallCancellation cancellation) {
+        if (cancellation != null && cancellation.isCancelled()) {
+            throw new com.auralis.app.ai.AiStreamAbortException("Provider call was cancelled");
+        }
+        AiProviderResponse response = complete(request, credential, responseTimeoutMillis);
+        if (cancellation != null && cancellation.isCancelled()) {
+            throw new com.auralis.app.ai.AiStreamAbortException("Provider call was cancelled");
+        }
+        return response;
+    }
+
     default List<AiProviderChunk> stream(AiProviderRequest request, AiCredential credential) {
         AiProviderResponse response = complete(request, credential);
         return List.of(new AiProviderChunk(response.content(), true, response.usage(), response.modelIdentity()));
@@ -44,6 +58,18 @@ public interface AiProviderPort {
         List<AiProviderChunk> chunks = stream(request, credential);
         if (chunks != null) {
             chunks.forEach(sink);
+        }
+    }
+
+    /** Chat-aware streaming entry point. Providers should bind cancellation to the active transport reader. */
+    default void streamInto(AiProviderRequest request, AiCredential credential,
+                            AiProviderCallCancellation cancellation, Consumer<AiProviderChunk> sink) {
+        if (cancellation != null && cancellation.isCancelled()) {
+            throw new AiStreamAbortException("Provider call was cancelled");
+        }
+        streamInto(request, credential, sink);
+        if (cancellation != null && cancellation.isCancelled()) {
+            throw new AiStreamAbortException("Provider call was cancelled");
         }
     }
 }

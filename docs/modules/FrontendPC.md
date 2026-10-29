@@ -1,5 +1,11 @@
 # PC 前端模块
 
+### 2026-10-29 Chat P1 内容投影与组件渲染基础（未接入现有 Chat 页面）
+
+- 新增 `src/services/chatContentProjection.ts` 与 `src/types/chatContent.ts`，以及 `src/components/chat/ChatContentRenderer.vue`、`ChatContentBlock.vue`、`ChatActivityCard.vue`。投影只输出各支持片段的公开字段；文本片段保留正文，结构化块映射到有限组件类型。Activity card 支持 READY/提交状态、答案草稿和结构校验，不做程序判分。
+- 新增 `scripts/r4-chat-content.test.mjs`，Node 6/6；PC `npm.cmd run type-check` exit 0。证据 `D:/Temp/auralis-chat-p1-components-20261029/`。
+- 当前仍是隔离的显示与纯逻辑基础，未连接 Workspace、`useChatStore`、SSE API/controller 或 reducer；尚无真实流挂载、浏览器/GUI验收。Server parser 及生产 Chat 主链接线仍待完成。
+
 ### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
 
 处理中心“开始本机处理”增加“正在同步资料…”/“正在启动本机处理…”两阶段反馈与重复点击保护。调度器SKIPPED/WAITING/FAILED结果不再静默丢弃，已知原因映射为安全中文；未知异常不回显原始详情。manualSourceResume无状态helper保留flush与synced检查，固定用户/设备/session/仓库及scheduler，在等待后重核上下文；界面迟到结果也按操作代次和scope隔离。

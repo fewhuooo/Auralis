@@ -45,7 +45,8 @@
 
 ### AI 与模型治理
 
-- [Chat Agent 与流式可视化教学重写计划（2026-10-29；codex/chat-agent-rewrite，P0 接线与契约冻结后实施）](2026-10-29-chat-agent-visual-teaching.md)
+- [Chat Agent 与流式可视化教学重写计划（2026-10-29；codex/chat-agent-rewrite，P0 runtime 契约已冻结，生产实现待开展）](2026-10-29-chat-agent-visual-teaching.md)
+- [Chat 前端接手说明（2026-10-29；PC 用户实施，P2 草稿未验证；Mobile / Tablet 暂停）](2026-10-29-chat-frontend-handoff.md)
 - [学习 Agent 原实施计划（2026-10-16；Chat 执行入口已由 2026-10-29 计划接替）](2026-10-16-learning-agent-implementation.md)
 - [AI 统一限额与用量治理独立方案（2026-10-16；待实施）](2026-10-16-ai-unified-limits.md)
 - [AI 执行预算治理近期阶段 0–3 计划（2026-10-13；模型/预算诊断、token 影子估算、Overview 有界恢复与 Chat 流式故障回放）](2026-10-13-ai-execution-budget-governance.md)

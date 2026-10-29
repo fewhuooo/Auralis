@@ -39,6 +39,37 @@ class AiOperationPolicyTests {
     }
 
     @Test
+    void chatAgentAndTextGenerationHaveIndependentBoundedContracts() {
+        AiOperationPolicy agent = POLICIES.resolve(AiOperationKind.CHAT_AGENT_TURN);
+        assertThat(agent.feature()).isEqualTo(AiFeature.CHAT);
+        assertThat(agent.platformMaxCalls()).isEqualTo(8);
+        assertThat(agent.allOriginMaxCalls()).isEqualTo(8);
+        assertThat(agent.platformTaskTokens()).isEqualTo(524_288);
+        assertThat(agent.stages().get(AiStage.CHAT_COMPLETION).allOriginMaxCalls()).isEqualTo(8);
+        assertThat(agent.stages().get(AiStage.RETRIEVAL_EMBEDDING).allOriginMaxCalls()).isEqualTo(8);
+
+        AiOperationPolicy text = POLICIES.resolve(AiOperationKind.TEXT_GENERATION);
+        assertThat(text.feature()).isEqualTo(AiFeature.CHAT);
+        assertThat(text.platformMaxCalls()).isEqualTo(1);
+        assertThat(text.allOriginMaxCalls()).isEqualTo(1);
+        assertThat(text.stages()).containsOnlyKeys(AiStage.CHAT_COMPLETION);
+        assertThat(text.stages().get(AiStage.CHAT_COMPLETION).methods())
+                .containsExactly(AiInvocationMethod.COMPLETE);
+
+        assertThat(POLICIES.resolve(AiOperationKind.CHAT_TURN).platformMaxCalls()).isEqualTo(2);
+        assertThat(POLICIES.resolve(AiOperationKind.LEARNING_TURN).platformMaxCalls()).isEqualTo(2);
+    }
+
+    @Test
+    void chatBudgetIdentityIsStableAndNamespacedByOwnerAndRun() {
+        var user = java.util.UUID.randomUUID();
+        var run = java.util.UUID.randomUUID();
+        assertThat(AiTaskContext.chatAgentLedgerTaskId(user, run))
+                .isEqualTo(AiTaskContext.chatAgentLedgerTaskId(user, run))
+                .isNotEqualTo(AiTaskContext.chatAgentLedgerTaskId(java.util.UUID.randomUUID(), run));
+    }
+
+    @Test
     void overviewStageCallLimitDefaultsToUnlimitedAndRespectsExplicitConfiguration() {
         for (AiOperationKind kind : java.util.List.of(
                 AiOperationKind.SOURCE_OVERVIEW, AiOperationKind.SUBJECT_OVERVIEW)) {
