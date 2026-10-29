@@ -2,9 +2,11 @@
 
 日期：2026-10-29（Asia/Hong_Kong）
 
-状态：Chat 需求/消费点与核心执行、投影、账务规则已冻结。稳定 `langchain4j-core:1.22.0` 与 Boot 4.1.0/Jackson 3.1.4 的隔离兼容探针通过 5/5；Server 纯 parser 单元 15/15，PC 内容投影/组件基础 type-check exit 0、Node 测试 6/6。唯一 reviewer 已复核围栏 info string 疑点并关闭，且未发现前端 BLOCKER/IMPORTANT。PC 尚未接入 Workspace、Store、SSE API 或 reducer，也未挂载/GUI 验收。Server Chat 生产接线尚未开始；Gateway adapter、运行配置、DTO 与持久化 schema 仍未冻结。本文件中的新接口、事件与对象字段均为目标契约，不代表现有生产能力。
+状态：Chat 需求、消费点、运行/API/事件/存储/事务/账务/恢复契约已冻结；Server Chat runtime、profile admission、V42 和候选测试源码已落地。首次全量 Maven 940 tests / 2 failures / 58 errors / 7 skipped，exit 1，主要受隔离 PG URL 与 Docker 缺失限制；旧 fixture 和 migration expected version 已修，目标回归18/18通过，OpenAPI artifact 官方导出/比较15/15通过。review 提出的来源失效时先公开 chunk 问题已修复；受影响 Chat 回归18/18通过，最终 `-DskipTests package` exit 0，review最终B0/I0/O0。全量未通过，PG integration 仍待具备隔离服务后独立验证。稳定 `langchain4j-core:1.22.0` 与 Boot 4.1.0/Jackson 3.1.4 的隔离兼容探针通过 5/5；Server 纯 parser 单元 15/15，PC 内容投影/组件基础 type-check exit 0、Node 测试 6/6。P1 PC 基础已提交，但 Workspace/Store/新 SSE 全面接线和 GUI 由用户接手，本任务不改前端源码。当前服务端字段级候选契约见[Chat Runtime API](../contracts/chat-runtime-api.md)；`API.md`、`Database.md`、OpenAPI artifact 已同步候选契约，生成端类型仍待用户完成前端后生成。证据 `D:/Temp/auralis-chat-p2-validation-20261029/` 与 `D:/Temp/auralis-chat-p2-final-review-20261029/review.md`；不代表 PostgreSQL、真实 Provider、部署、跨端或 GUI 验收。
 
-执行分支：`codex/chat-agent-rewrite`。工作区：`D:/CodeBase/CodexWorktree/chat-agent-rewrite/Auralis`。主 Agent 已将 `main` fast-forward 并 push 至 `20b5c87`；本分支从该基线继续。旧 main 工作副本的未提交变化已 stash 备份。并行改动不自动归入 Chat 交付。
+2026-10-29 后续验证更新：针对 6 项后端 IMPORTANT 的代码、行为测试完成。focused clean/test 为 6 suites、21/21、0 failures/errors/skips，随后 `-DskipTests package` exit 0；只读差量 review B0/I0/O0。具体修复和验证边界见本计划 P2/P4、[Backend](../modules/Backend.md) 与 [Issues](../current/IssuesAndReview.md)。首次全量仍失败且 PG integration 未运行；不代表生产迁移、真实 Provider、部署或客户端/GUI 验收。
+
+执行分支：`feat/pc-chat-frontend`。工作区：`D:/CodeBase/CodexWorktree/chat-agent-rewrite/Auralis`。本轮开始时基线 `6de8d3a`；并行改动不自动归入 Chat 交付。不得把当前未提交 PC/Mobile/Tablet 草稿算作本任务验收结果。
 
 范围：在现有仓库和业务基础上，直接重写 PC Tauri Chat 与 Server ai Chat 实现；所有调用该 Chat 契约的客户端完成必要接线。事实依据为当前源码、[PC 模块](../modules/FrontendPC.md)、[后端模块](../modules/Backend.md)、[API](../contracts/API.md)、[Database](../contracts/Database.md)。下文接口、对象与事件均为拟新增，不代表现有能力。
 
@@ -163,16 +165,17 @@ PC 输入 / 题卡提交
 - 用户切账号/学科/会话后的迟到事件不能覆盖新上下文。重复或乱序事件按身份和序号处理。
 - Chat 统一使用新协议，PC 直接消费时间线和组件。Mobile/Tablet 同步更新契约并按其现有展示能力消费公开文本投影，不能收到私有参考或未经解析的组件缓冲。具体入口与各端响应字段 P0 冻结，不保留旧执行协议协商。
 
-### P0 Chat API、事件和公开投影（拟案，未实现）
+### P0 Chat API、事件和公开投影（已冻结待实施契约）
 
-- 唯一 Chat Loop 复用 `POST /api/ai/messages/stream` 路径并更换为唯一新 DTO；它只承载 Chat，不接受旧字段/事件兼容。请求至少含 `action`（`turn` / `activity_submission` / `retry_reply`）、必填 `conversationId`、客户端幂等 `requestId` 和相应消息/题目身份。新会话先显式创建，再带 conversationId 执行。
-- 普通发言、题卡提交、对失败/取消回复的重试都进入同一执行与消息/事件协议。提交通过一个短数据库事务原子写入 `Submission + 关联 USER Message + PENDING attempt + 预分配 replyMessageId + 会话执行占位`，事务提交后才调用模型；事务内不做 Provider I/O。刷新/进程重启可 query pending/terminal 状态，只有用户显式 retry 才对稳定 submission 创建新 attempt；相同 attempt 的网络重送只回放状态，不重复保存关联消息或再次 dispatch/charge，该 submission 上的新 attempt 各自按实际模型派发记入 reservation。相同身份不同答案拒绝；不做自动排队或崩溃后自动重派。
-- 历史读取复用 `GET /api/ai/conversations/{conversationId}` detail，返回完整有序公开 snapshot；会话列表继续只作目录。Tablet 选历史会话时必须读 detail，而非期待 list 带 messages。独立 status/cancel operation 需要存在，但具体 route 与 DTO 名称仍待 P0 API 冻结。
-- 拟事件 envelope：`protocolVersion, conversationId, requestId, runId, attemptId, messageId, replyToMessageId, iterationId, blockId, sequence, event, payload`。应用生成除 `requestId` 外的运行/消息/块身份，`sequence` 在 run 内单调递增。
-- 拟事件名：`run.started`, `text.delta`, `tool.started`, `tool.completed`, `tool.error`, `block.started`, `block.item`, `block.completed`, `block.error`, `activity.ready`, `activity.submitted`, `run.completed`, `run.failed`, `run.cancelled`。工具事件描述真实调用；Chat text segment 逐字保留模型正文，组件只在整行校验后逐项公开。
-- 服务端在回复完成或中断收敛时，确定性地从已保存公开片段生成公开 Markdown 投影并写入 `messages.content`；结构化 segment/activity/tool 数据分别存储，不把它们塞进 `content` 后再解析。Mobile/Tablet 与 PC 历史文本统一消费同一个 `messages.content` 公开投影，实时端也只能用同一公开规则；原始 NDJSON 缓冲、`reference`/答案要点和私有工具证据不进入公开投影、客户端 DTO、历史快照或移动端日志。
-- `reference` 在服务端私有存储中保留，不能由普通消息内容或 snapshot 泄漏。模型自然语言可能在 reference 行之前提前说出答案属于已接受的生成偏差，不承诺绝不提前泄题，也不因此隔离整段后文。
-- 非 Chat 单次任务调用独立 `POST /api/ai/text-generations`，拟请求 `{operation, input, requestId?}`、响应 `{text}`；operation 白名单至少覆盖 summary、extract/JSON、format Markdown 与当前 transcript/text 生成。request/response 字段和限额仍待 API 冻结。
+- 唯一 Chat body 继续使用 `POST /api/ai/messages/stream`，普通 turn 与题卡提交共享新 DTO：`{protocolVersion:1, action:'turn'|'activity_submission', conversationId, requestId, content?, readingContext?, selectionText?, activityId?, questionVersion?, submissionId?, answer?}`。`conversationId`、非空且最多 128 字符的 `requestId`、`protocolVersion=1` 必填；action-specific 字段按白名单校验。新会话是用户显式操作，先调用现有 create，再使用返回 ID；不允许服务端在 stream 内隐式创建。旧字段/旧事件不协商、不 fallback。
+- Activity submission 的 `answer` 对齐已提交 PC canonical type：open question 为原始 `string`，single/multi choice 为 `string[]` option keys；不接受对象包装。客户端不发题干、reference、参考答案或解释。服务端根据 activityId/questionVersion 重建题目并只校验题型、选项归属、长度与单次提交幂等，不判分、不写学习进度。
+- retry/status/cancel 独立路由：`POST /api/ai/conversations/{conversationId}/runs/{runId}/attempts`，body `{requestId}`；`GET /api/ai/conversations/{conversationId}/runs/{runId}`；`POST /api/ai/conversations/{conversationId}/runs/{runId}/cancel`。详情仍由 `GET /api/ai/conversations/{conversationId}` 返回完整有序公开 snapshot；列表继续仅作目录。状态/重试/取消均 owner-scoped。
+- Status 响应固定字段：`{protocolVersion,conversationId,runId,requestId,userMessageId,currentAttemptId,currentReplyMessageId,status,fenceVersion,executionActive,accountingSummary,publicSnapshot,toolTrace,createdAt,updatedAt,attempts:[{attemptId,attemptNo,requestId,status,replyMessageId,createdAt,startedAt,endedAt,safeErrorCode}]}`。Conversation detail 顶层 `activeRun` 含 run/attempt 身份、status、executionActive、当前 publicSnapshot/toolTrace。`replyMessageId` 可在 attempt 尚未落 message 时表示其预分配 UUID；run 级 `accountingSummary` 由稳定 `budgetTaskId` 对应的现有 reservation ledger 汇总，覆盖所有 retries，只公开当前用户的本 run 数值，不复制账本行或 token 原始请求。
+- one-shot 文本能力使用独立 `POST /api/ai/text-generations`，请求 `{operation,input,requestId?}`、响应 `{text}`；白名单覆盖 summary、extract/JSON、format Markdown 与现有 transcript/text 生成。它复用认证、设置/BYOK、Gateway 和安全传输，不进入 Chat loop。Overview 两条 route 与行为保持不变。
+- SSE envelope 固定为 `{protocolVersion,conversationId,requestId,runId,attemptId,userMessageId,replyMessageId,iterationId?,blockId?,sequence,event,payload}`。运行/attempt/message/iteration/block/activity 身份由服务端生成，只有 requestId 来自客户端。`sequence` 在同 attempt 内严格递增；retry 是新 attempt，sequence 可重新从 1 开始，由 attemptId 区分。事件为 `run.started`, `text.delta`, `tool.started`, `tool.completed`, `tool.error`, `block.started`, `block.item`, `block.completed`, `block.error`, `activity.ready`, `activity.submitted`, `run.completed`, `run.failed`, `run.cancelled`, `run.unknown`。只发布完整、成功解析并校验的 NDJSON 行。
+- `messages.content` 是服务端从公开有序 parts 确定性生成的 Markdown 投影；结构 parts 保存在对应 `chat_attempts.public_parts_json`，每条 Assistant message 通过 attempt.replyMessageId 精确关联自己的 snapshot。PC 展示结构化 segment；Mobile/Tablet 只读相同 segment 的服务端 `publicTextProjection`。raw NDJSON、private reference、answer/explanation、私有工具证据不进入任何公开 DTO、SSE、detail/history、错误消息或日志。
+- `chat_activities.private_reference_json` 只允许内部服务读取；响应必须通过显式 DTO mapper，不能自动序列化 Entity。题卡公开题干/选项/placeholder 与 private reference 原子保存。自然语言在 reference 前提前泄露答案仍按已接受的生成偏差处理。
+- 会话和消息版本：`conversations.chat_protocol_version SMALLINT NULL`，仅新建 Chat conversation 写 `1`；`messages.chat_protocol_version SMALLINT NULL`，新 Chat USER 与每个 attempt 的 ASSISTANT message 写 `1`。历史行保持 NULL，不回填。Chat list 可返回目录元数据并将 NULL/未知会话标记 `chatSupported=false`；detail 只有 conversation version=1 且其中每条 Chat message version=1 才返回公开 snapshot，否则返回 `CHAT_PROTOCOL_UNSUPPORTED`，不给旧 content-only message 做兼容展示或执行。旧数据保留，用户可新建当前协议会话。
 
 ### 流式解析与宽松恢复
 
@@ -204,70 +207,110 @@ PC 输入 / 题卡提交
 
 ### 回合结束与重试
 
-- READY 题卡应在本轮末尾。结束行后完整校验并持久化成功，立即关闭本轮公开输出和新工具执行，发送 activity ready，再尝试取消底层生成。
-- 题卡只是本轮输出断点，不锁普通聊天。历史题卡在有效会话中可稍后提交。
-- 回复执行独立保存 PENDING/RUNNING/COMPLETED/FAILED/CANCELLED 等状态，不用“已经输出几个字”冒充完成。题卡 READY/提交成功等业务状态与 provider usage、费用结算状态独立；结束时没有 usage 按现行 Guard 保守结算，不能推导为零费用或业务失败。
-- 回复失败/取消时保留答案、已收到内容和关联消息，提供“重试回复”；同 submissionId 下创建新 attemptId，同 attemptId 的重复请求仅回放，不再收费派发。
-- 重试创建新助手尝试或可审计的尝试投影，不能覆盖此前部分回复或把同一消息插入两次；具体消息关系 P0 冻结。
-- 旧调用尚未真实结束或未知派发不满足恢复准入时，不创建新 attempt。只有 worker 实际退出后才释放执行互斥；费用、缺失/未知 usage 和先前消耗保持可追踪。业务已成功后出现独立的 settlement 拒绝不得改写业务成功状态；若 READY 写入前 fence/owner 已失效，则拒绝发布 READY。
+- READY 题卡在结束行完整解析和校验后，先用短事务核对当前 owner/fence 并原子保存公开题目与 private reference；事务提交后关闭本轮公开输出和新工具执行，再发 `activity.ready` 并请求取消底层生成。READY 的业务成功不等待后续账务状态；READY 写入前 owner/fence 失效时必须拒绝发布。
+- 题卡只是本轮输出断点，不锁其它会话。历史 READY 题卡在有效会话中可稍后提交。
+- Run、attempt 的业务状态独立于 Guard reservation/usage 账务状态。缺失/不完整 usage 继续按完整 reservation 保守结算，不能记 0 或用字符数冒充 token。Activity READY 或已保存的 Assistant message 不因 settlement `accepted=false`、未知 usage 或后续账务异常回滚；READY 前失去 owner/fence 则不发布。
+- 每个 attempt 有唯一 `replyMessageId`，每次显式 retry 创建新 attemptId 和新助手消息；stable USER messageId、runId 和原 submission 不变。旧 attempt 的 partial assistant message、公开 parts 与费用保留，不以相同 reply ID upsert 覆盖。重复 requestId 同 payload 只回放状态；同 requestId 改 payload 返回 409。
+- PENDING attempt 尚未经过 Provider dispatch 前的数据库 claim；启动恢复只终结过期 PENDING，释放 slot，不自动重派，随后由用户显式 retry。新实例遇到仍在持久化 attempt deadline 内的 foreign PENDING/RUNNING/CANCEL_REQUESTED 不干扰；超期 foreign RUNNING/CANCEL_REQUESTED 被 fencing 为 UNKNOWN 并继续占 slot，等人工可审计恢复，不自动重派。显式 retry 与 claim 在同一 Conversation→run→attempt 锁序竞争，只有一方胜出。
+- 取消请求只有请求态；本机 worker 通过持久 cancelRequested 轮询观察跨实例取消，并等待 LangChain4j handle、受治理 HTTP reader 和工具 worker 确认退出并 join 后，才 terminalize、关闭 AiTaskScope 并释放 Conversation slot。断开 SSE 只触发取消，不等于 worker 退出。
+- READY 后 settlement 被拒绝只更新 accounting 观察结果，不覆盖业务成功。attempt 在 READY 或 final message 持久化之前丢失 owner/fence 时拒绝发布；费用仍依据 reservation 保守结算。
 
 ## 6. 会话、持久化、互斥与清理
 
 ### 会话保留
 
-目标规则已冻结，物理 schema/事务仍待 P0 实施设计：
+以下均为待实施设计，API.md / Database.md 继续只描述现行已实现能力；本计划是 P0 新契约的唯一权威。新会话仍是显式用户操作，并受全局/用户 Guard 并发与额度限制。
 
-- PC 的会话身份按认证用户 + subject 保留；切换当前文件只改变本轮 `readingContext`，不创建另一条 Chat，也不删除会话。页面卸载、换学科前的组件清理只停止当前 UI 工作，不删服务端历史。
+- PC 当前会话选择以认证用户 + subject 为键保存在 PC 本地；它只是 UI 恢复映射，不是服务端鉴权依据。切换当前文件只改变本轮 `readingContext`，不创建另一条 Chat，也不删除会话。页面卸载、换学科前的组件清理只停止当前 UI 工作，不删服务端历史。
 - 不新建 `VISUAL_CHAT` 双轨 purpose、不引入全局学习目标/进度/掌握度。复用现有 Conversation/Message 语义，允许现有 purpose metadata 仅服务历史展示；具体列表筛选需按当前消费端核对。
 - 24h 是 `ReadingConversationCleanupService.cleanupInactive()` 的方法内截止条件；只读搜索没有找到生产 scheduler/caller，测试会直接调用该方法。当前实际运行删除由 PC `SubjectWorkspace/index.vue:1728-1740,2942,3163` 调 `endActiveSession`，再由 `useChatStore.ts:492-534` 调 `deleteConversation` 并 tombstone 本地记录。该删除行为在新 Chat 中移除。
-- 刷新/重登恢复按同一显式 conversationId 调 detail/snapshot；Conversation list 只作目录，现有 Server `ConversationService.list()` 返回空 messages，而 `get()` 才读有序消息。Tablet 历史选择必须获取 detail，不从 list 推断内容。
-- Mobile/Tablet 每个 Chat 命令显式携带 `conversationId`；删除 `Auralis-Mobile/src/api/aiClient.ts` 的进程内 user→conversation Map。PC 当前会话身份在 owner+subject 范围稳定。
-- 会话没有自动 24h/TTL 删除；只有显式删除或既有账号/学科清理生命周期可移除记录。新代码不删除已有用户数据，也不在运行时转换旧格式；没有新 schema 的旧记录可以保留但不进入新组件/活动执行。
-- 离线时只留本地草稿，不自动创建或重放新的收费执行；联网后由用户明确重发。未知派发仍依据账本证据处理，不自动重跑。
+- 刷新/重登使用相同显式 conversationId 和 detail/status snapshot。会话列表可展示旧行元数据并标记 `chatSupported=false`，不返回其旧消息正文或允许继续；detail 对 NULL/未知协议返回 `CHAT_PROTOCOL_UNSUPPORTED`。Tablet 选历史会话必须重新取 detail。Mobile/Tablet 命令始终显式带 conversationId；删除进程内 user→conversation map。PC 本地 owner+subject 映射不是服务端授权依据。
+- No automatic 24h/TTL deletion. Only explicit user deletion and existing account/resource lifecycle can remove data. Old rows remain in place without auto conversion or content-only fallback. `conversations.chat_protocol_version IS NULL` or unsupported versions return `CHAT_PROTOCOL_UNSUPPORTED` from Chat list/detail and cannot continue in the new Chat path. New conversations set version 1; new USER and ASSISTANT messages set message version 1. No old data is deleted or backfilled.
+- Offline state contains drafts only; reconnect never creates/dispatches a paid Chat command. The user explicitly resubmits. Unknown dispatch is never retried automatically.
 
-### 最小持久记录与字段（拟案，未实现）
+### 持久表与 V42/V43 迁移差量（源码落地，production migration 未验证）
 
-| 对象 | 拟字段与职责 |
-| --- | --- |
-| Conversation / Message | 现有 `ownerUserId`, `conversationId`, `messageSequence`, `role`, `status`, `replyToMessageId`; 增加/关联 `protocolVersion` 与公开有序 segment。 |
-| `ChatRun` | `runId`, `ownerUserId`, `conversationId`, `requestId`, `status`, `deadlineAt`, `fenceVersion`, `createdAt/updatedAt`；以 owner 和 fence 防止跨账号/迟到结果写入。 |
-| `ChatAttempt` | `attemptId`, `runId`, `attemptNumber`, `status`, `replyMessageId`, `cancelState`, `usage/reservation references`, `safeErrorCode`；每次用户重试新 attempt，不覆盖旧输出或费用。 |
-| `MessageSegment` | `segmentId`, `messageId`, `iterationId`, `sequence`, `kind(text/tool/block)`, `blockId`, `componentType`, `status`, `publicPayload`, `publicTextProjection`；供 detail snapshot 恢复。 |
-| `Activity` | `activityId`, `conversationId`, `messageId`, `blockId`, `questionVersion`, `questionType`, `state`，白名单公开 question/options/placeholder；不含 reference。 |
-| `PrivateReference` | `activityId`, answer key(s)/answer text, points, explanation；服务端私有存储与调用，不进入普通消息 DTO、日志和 snapshot。 |
-| `Submission` | `submissionId`, `activityId`, `questionVersion`, `answer`, `requestId`, `userMessageId`, `replyRunId`, `status`；唯一提交与原子关联短 USER 消息/回复执行意图。 |
-| `ToolTrace` | `runId`, `attemptId`, `toolCallId`, `toolName`, `sequence`, `status`，授权范围、结果/来源引用身份；结果按恢复/折叠需要保存。 |
+当前 Flyway latest 基线为 V41。源码追加 `V42__chat_agent_runtime.sql` 与 `V43__chat_private_tool_evidence.sql`，不修改既有迁移。`API.md`、`Database.md` 登记源码候选契约，不代表已在业务库应用；OpenAPI artifact 和生成端类型仍需按客户端实现状态更新。V43 新增 `chat_attempts.private_tool_evidence_json TEXT NOT NULL DEFAULT '[]'`，只保存成功工具结果/source revision 供后续模型上下文使用，不经公共 DTO、status/detail/trace 暴露。结构 JSON 列使用 TEXT 存储序列化 UTF-8 JSON；不进入 Sync、change_log、snapshot mutation 或客户端写模型。
 
-表中对象名和字段仍是契约建议，尚未进入 Database/API/OpenAPI；这不是新表清单或表数量承诺，不预设 6 张表。先评估 Conversation/Message、既有账本及可复用关系，再追加真正必要的结构；不按每个 token 写数据库。题目 READY 与私有 reference 保存必须原子；submission、关联 USER 消息、PENDING attempt、预分配 reply ID 和会话占位必须在一个短事务原子提交，之后事务外调用模型。崩溃后通过 query 显示持久状态，由用户显式 retry 创建新 attempt；相同 attempt 的请求重送不重复保存 message 或重复 dispatch/charge，新 retry attempt 的 Provider 调用各自按 reservation 结算。不创建自动队列。刷新读取快照和当前状态，不要求无限重放 SSE 日志，也不承诺后台自动续跑生成。
+**既有表差量**
+
+- `conversations` 新增 `chat_protocol_version SMALLINT NULL`、`active_chat_run_id UUID NULL`、`chat_fence BIGINT NOT NULL DEFAULT 0 CHECK(chat_fence >= 0)`。新建会话由应用写 `chat_protocol_version=1`；旧行 NULL。`active_chat_run_id` 不加 FK（与 chat_runs 双向生命周期循环），只允许在锁定该 conversation 行的事务内设置/清除；运行占位通过行锁和 fence 维护。
+- `messages` 新增 `chat_protocol_version SMALLINT NULL CHECK(chat_protocol_version IS NULL OR chat_protocol_version=1)`。旧行不回填。`content` 始终是面向客户端的 Markdown 投影；每 attempt 的结构 parts 独立放在 `chat_attempts.public_parts_json`。每个 attempt 插入自己的 ASSISTANT message，`reply_to_message_id` 指向稳定 USER message；不同 retry 不共用/覆盖 message ID。
+- `conversations.chat_protocol_version` 允许 NULL 或 1；Chat 新建时由服务显式设 1，而非给 SQL 全局 DEFAULT，避免其它创建用途隐式切换协议。
+
+**新表 `chat_runs`：一条稳定 USER turn / submission 执行意图**
+
+列：`id UUID PRIMARY KEY`, `user_id UUID NOT NULL`, `conversation_id UUID NOT NULL`, `request_id VARCHAR(128) NOT NULL`, `request_hash CHAR(64) NOT NULL`, `request_context_json TEXT NOT NULL`, `action VARCHAR(24) NOT NULL`, `user_message_id UUID NOT NULL`, `current_attempt_id UUID NULL`, `current_reply_message_id UUID NULL`, `budget_task_id UUID NOT NULL`, `status VARCHAR(16) NOT NULL`, `fence_version BIGINT NOT NULL`, `created_at/updated_at TIMESTAMP WITH TIME ZONE NOT NULL`, `completed_at TIMESTAMP WITH TIME ZONE NULL`。
+
+`request_context_json` retains the normalized turn readingContext/selectionText needed by explicit retry; the stable USER message remains the sole stored turn text. Every retry revalidates current owner, subject, source READY/active/revision/generation before using retained context.
+
+约束：`user_id→users(id) ON DELETE CASCADE`; `conversation_id→conversations(id) ON DELETE CASCADE`; `user_message_id→messages(id) ON DELETE CASCADE`; `UNIQUE(user_id,request_id)`, `UNIQUE(user_message_id)`, `UNIQUE(id,user_id)`；action 限 `turn/activity_submission`；status 限 `PENDING/RUNNING/COMPLETED/FAILED/CANCELLED/UNKNOWN`；`fence_version>=0`。`current_attempt_id/current_reply_message_id` 是运行期指针，前者在同一事务插 attempt 后设置，后者可先指向预分配 UUID，均由服务校验归属，不做循环 FK。索引 `(conversation_id,status,updated_at)`。
+
+**新表 `chat_attempts`：每次尝试独立保存回复与输出**
+
+列：`id UUID PRIMARY KEY`, `run_id UUID NOT NULL`, `user_id UUID NOT NULL`, `request_id VARCHAR(128) NOT NULL`, `request_hash CHAR(64) NOT NULL`, `attempt_no INTEGER NOT NULL`, `status VARCHAR(24) NOT NULL`, `worker_instance_id VARCHAR(128) NOT NULL`, `fence_version BIGINT NOT NULL`, `allocated_reply_message_id UUID NOT NULL`, `reply_message_id UUID NULL`, `public_parts_json TEXT NOT NULL`, `tool_trace_json TEXT NOT NULL`, `private_tool_evidence_json TEXT NOT NULL DEFAULT '[]'`, `last_sequence BIGINT NOT NULL DEFAULT 0`, `cancel_requested_at TIMESTAMP WITH TIME ZONE NULL`, `safe_error_code VARCHAR(64) NULL`, `started_at/heartbeat_at TIMESTAMP WITH TIME ZONE NULL`, `deadline_at TIMESTAMP WITH TIME ZONE NOT NULL`, `ended_at TIMESTAMP WITH TIME ZONE NULL`, `created_at/updated_at TIMESTAMP WITH TIME ZONE NOT NULL`。V43 私有工具证据只供历史模型上下文 projector 读取，不进入公共 DTO。`deadline_at` freezes the effective per-attempt timeout at admission; `created_at` preserves PENDING admission time; `updated_at` tracks later state/checkpoint changes.
+
+约束：`(run_id,user_id)→chat_runs(id,user_id) ON DELETE CASCADE`; `reply_message_id→messages(id) ON DELETE CASCADE`；`UNIQUE(user_id,request_id)`、`UNIQUE(run_id,attempt_no)`、`UNIQUE(allocated_reply_message_id)`、`UNIQUE(reply_message_id)`、`UNIQUE(id,run_id,user_id)`、`CHECK(reply_message_id IS NULL OR reply_message_id=allocated_reply_message_id)`；status 限 `PENDING/RUNNING/CANCEL_REQUESTED/COMPLETED/FAILED/CANCELLED/UNKNOWN`；attempt_no 正数、fence/sequence 非负。`allocated_reply_message_id` 是预分配 ID，不建 FK；只有对应 assistant Message 已插入并经 app 校验 user/conversation/reply-to 后，才写入有 FK 的 `reply_message_id`。索引 `(run_id,attempt_no)`、`(status,heartbeat_at)`。
+
+**新表 `chat_activities`：公开 activity、私有 reference、单次 submission**
+
+列：`id UUID PRIMARY KEY`, `run_id UUID NOT NULL`, `user_id UUID NOT NULL`, `attempt_id UUID NOT NULL`, `message_id UUID NOT NULL`, `block_id UUID NOT NULL`, `question_version INTEGER NOT NULL`, `question_type VARCHAR(16) NOT NULL`, `state VARCHAR(16) NOT NULL`, `public_payload_json TEXT NOT NULL`, `private_reference_json TEXT NULL`, `submission_id UUID NULL`, `answer_hash CHAR(64) NULL`, `answer_json TEXT NULL`, `submission_user_message_id UUID NULL`, `reply_run_id UUID NULL`, `created_at TIMESTAMP WITH TIME ZONE NOT NULL`, `submitted_at TIMESTAMP WITH TIME ZONE NULL`。
+
+约束：`(run_id,user_id)→chat_runs(id,user_id) ON DELETE CASCADE`; `(attempt_id,run_id,user_id)→chat_attempts(id,run_id,user_id) ON DELETE CASCADE`，因此 chat_attempts 增加 `UNIQUE(id,run_id,user_id)`；`user_id→users(id) ON DELETE CASCADE`; `message_id→messages(id) ON DELETE CASCADE`; `submission_user_message_id→messages(id) ON DELETE CASCADE`; `(reply_run_id,user_id)→chat_runs(id,user_id) ON DELETE CASCADE`; `UNIQUE(attempt_id,block_id)`、`UNIQUE(submission_id)`、`UNIQUE(reply_run_id)`；question_type 限 `single/multi/open`；state 限 `READY/SUBMITTED/INVALID`。索引 `(run_id,created_at)`。单次提交的 `submission_id/answer_hash/answer_json/submission_user_message_id/reply_run_id` 与公开题干/选项、private reference 共用一行，不另建 submission 表。重复 submissionId+同答案回放既有关联；不同答案冲突。`public_payload_json` 与 `private_reference_json` 分列且只经白名单 mapper 写读。
+
+删除语义：三个新表都沿 run/conversation/user/message FK cascade；现有 account hard-delete 的 `DELETE messages` 会先级联 run/attempt/activity，随后删除 conversations（`AccountDeletionCleanupService` 顺序不需新增表清理 SQL）。Conversation 用户软删只保留历史，不物理级联。新 Chat 用 GENERAL conversation，不绑定 source_id，Source 删除不级联对话。部署迁移不得清理旧数据。
+
+### 事务、并发、fence 与恢复
+
+所有事务采用同一锁序：`Conversation FOR UPDATE → ChatRun FOR UPDATE（若已存在）→ Activity FOR UPDATE（仅 submission）→ ChatAttempt FOR UPDATE`。不在事务内等待 Provider、工具或 SSE 客户端；消息序号只在 conversation 行锁内递增。跨实例互斥由 PostgreSQL 持久 `active_chat_run_id + chat_fence` 与行锁负责，不以单进程 mutex 替代。
+
+1. **接受普通 turn/activity submission**：鉴权并校验 conversation owner/version；锁 Conversation；先查同用户 requestId。相同 requestHash 返回同 run 状态，不同 hash 409。对 activity_submission，在该 conversation lock 下非锁读取 activity：若已 SUBMITTED，先锁其 reply_run，再锁 Activity，校验 submissionId/answerHash 后回放原回复 run或对不同答案返回 409（即使原 run 仍 active）；若 READY，再检查 active_chat_run_id，非空返回 409 `CHAT_RUN_ACTIVE`。新提交先创建关联 USER message 和 PENDING run（分配 runId、budgetTaskId、requestHash、fence），再锁 Activity 并复核 owner/conversation、READY/questionVersion、答案形状和单次提交，然后插入 PENDING attempt1（分配唯一 reply UUID）并更新 run.currentAttemptId/currentReplyMessageId，最后写 activity submission。普通 turn 先检查 active slot，再在 conversation 锁下写 USER message、PENDING run、PENDING attempt。两种新命令均设置 active_chat_run_id、增加 chat_fence，并在同一短事务提交；任何校验/唯一键失败整体回滚。提交后才启动模型。
+2. **worker claim / Provider 调用**：PENDING→RUNNING 使用 owner/current attempt/fence 条件更新，只有一个 worker 可 claim；构造显式 `ChatRunContext`，携带 AiTaskScope、provider/source、取消句柄与 fence，禁止 ThreadLocal。每次模型调用由 adapter 显式通过 Gateway reserve→dispatch→settle；每次 tool call 只在完整合法 Provider terminal 后执行。每次输出/工具写入前复核 owner+fence。
+3. **READY 与部分输出检查点**：完整 NDJSON 行合法后在短事务锁同一顺序并核对 fence，把 activity public/private 部分原子写为 READY 后再关闭公开输出、停止后续工具/请求取消。attempt `public_parts_json` 在完整 block/item 边界及每累计 4 KiB 或 1 秒（先到者）以短事务 checkpoint；不逐 token 写库。最终/取消/失败再次 flush，status snapshot 以持久 parts 为准。
+4. **terminal 与每次 Assistant Message**：worker/工具线程和 Provider reader 确认退出后，单个短事务按固定锁序检查 active run/fence/current attempt，写当前 attempt 的独立 ASSISTANT Message（ID=allocated_reply_message_id，protocol=1，replyTo 稳定 USER ID，content=该 attempt parts 的 Markdown projection），再写 attempt.reply_message_id、attempt/run terminal、更新 `currentReplyMessageId`、清除 active slot。历史 attempt 的消息和 parts 永不 upsert 覆盖。先前 READY activity 保持 READY，即使之后账务结算拒绝；若保存 READY 前 fence 失效则不发布。
+5. **重试**：显式 `POST .../attempts` 先锁 Conversation、run、current attempt；只有 prior attempt FAILED/CANCELLED 且 worker join/reader close 已确认、active slot 可清除时准入。相同 `(user_id,request_id)` 重放只返回既有 attempt；冲突 payload 409。创建 `attempt_no+1`、新 attemptId/new allocated reply ID/currentAttempt/currentReply；保留 stable USER/run/activity/submission和每个旧 Assistant Message；占位与 fence 更新同一事务。
+6. **取消**：route 只记录 `cancel_requested_at`/CANCEL_REQUESTED 并通过 run-scoped cancellation 传播到 SDK handle、安全 HTTP reader 和 tool worker。只有 worker 真正退出、工具 join、reservation 按真实或未知 usage settled/保守扣费后才写 CANCELLED 并释放 slot。SSE disconnect 同理。
+7. **崩溃/多实例恢复**：PENDING 表示 worker 未 claim/未 dispatch；恢复时确认没有 `request_dispatched=true` reservation 后安全 terminalize FAILED/CANCELLED，slot 仍维持直到该事务确认，再由用户显式 retry。PENDING 自提交起占 slot，防双 claim。RUNNING 若旧 instance/reader 无法被证明已退出，转或保持 UNKNOWN，返回状态并对新 turn/retry 返回 409；仅 lease 到期不能释放、不自动重派。手工恢复须在运维操作审计中确认旧 instance/reader 已隔离并已检查/保守结算全部 reservation；本阶段不造万能 unlock API。每次状态变更提升 fence，旧 worker 的迟到完成更新 0 行并禁止发布。
+8. **账务**：一个 logical run 在所有 attempts 间共享 Guard budget task id；每次 completion/embedding 仍各自一条 reservation。dispatch 后 usage 缺失按完整 `estimated_input_tokens + reserved_output_tokens` 保守收费；派发前才可 release。business READY/assistant terminal 与 accounting state 分离，accepted=false 不能覆盖已提交业务成功；READY 前失去 owner/fence 拒绝 publication。
+
+### Guard 与 Chat Agent 配置（待实施）
+
+新增独立不可变 `ChatAgentProperties`，绑定 `auralis.ai.chat-agent`，并贯通 `application.yml`、root Compose、`.env.example`。环境键及默认：`AURALIS_AI_CHAT_AGENT_MAX_MODEL_AND_EMBEDDING_CALLS=8`（logical run 跨 attempts 累计）、`AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS=8`、`AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS=12`、`AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES=65536`、`AURALIS_AI_CHAT_AGENT_MAX_SERIALIZED_REQUEST_UTF8_BYTES=524288`、`AURALIS_AI_CHAT_AGENT_ATTEMPT_DEADLINE_SECONDS=300`。对应字段为 `maxModelAndEmbeddingCalls`、`maxIterations`、`maxToolCalls`、`maxToolResultUtf8Bytes`、`maxSerializedRequestUtf8Bytes`、`attemptDeadlineSeconds`；按 1..8、1..8、1..12、positive、positive、1..300 校验。不得修改其它 operation 默认。保留现有 `AURALIS_AI_LIMITS_CHAT_TASK_TOKENS=32000` 与 `AURALIS_AI_LIMITS_CHAT_MAX_OUTPUT_TOKENS=4096`；retry 只重置 300 s attempt deadline，不重置 model+embedding calls 或 charged/reserved tokens。8 calls 是 completion+embedding 总量，不能再另加 embedding cap。
+
+新增独立 `CHAT_AGENT_TURN` operation kind 和 Chat Agent policy；总 calls=8 覆盖 completion+retrieval embedding，`CHAT_COMPLETION` per-stage cap=8，embedding stage cap 不超过 8 并允许多查询检索。另新增 `TEXT_GENERATION`，feature=`CHAT`、单 completion、无 embedding；用于 one-shot route，不进入 Agent loop。既有 `CHAT_TURN`、`LEARNING_*` 和 Overview operation 默认不改。`AiTaskContext.chatAgentLedgerTaskId(userId,runId)` 只供 `CHAT_AGENT_TURN` 生成稳定 run budgetTaskId；Guard task lock key 使用现有 `userId:feature:taskIdentity` 算法，taskKey 固定为 `chat-agent:<runId>`。ledger UUID 使用与 Overview 命名域隔离的 namespaced 名称 UUID；所有 attempt 使用同一 run ledger task id，因此历史 reservation/charged/reserved 累计，不复制或改写原账本。
+
+容量 admission 对完整实际 UTF-8 序列化请求计入 system/history、tool definitions、tool calls/arguments、tool results 与协议开销；每个完整序列化 tool result 按 64 KiB cap。token estimator 仍按 Gateway 当前策略执行，但不能代替字节 cap。模型工具增量按 `(provider responseId, tool index)` 聚合 id/name/arguments。只有收到明确、正常的 `tool_calls` terminal、所有 call ID 唯一且 name/完整 arguments 均可解析为 JSON object 并通过 schema、owner、source revision 和授权检查后才可执行工具。Text-only `stop` 可正常完成；`length`、`content_filter`、`aborted`、无/未知 finish、malformed terminal、EOF/error/断流/cancel 均不产生 executable call，即使已收到 partial tool delta 也不执行。
+
+LangChain4j 固定 core 1.22.0；显式应用 orchestrator 与 per-run adapter context，不用 `AiServices`、ThreadLocal、内置 Provider transport 或隐式 retry。若所选 adapter/HTTP 层暴露 retry 设置，固定 0；Loop 次数和 retry 全由应用控制并记入同一 Guard task。
 
 ### 单会话互斥
 
-- 准入在持久短事务中原子检查并占位。同请求重放优先；不同新请求遇有效执行返回 HTTP 409 / `SESSION_GENERATING`（拟新增），不创建新消息、不预留新费用。
-- 不在 Provider I/O 期间持有数据库行锁；不靠单进程 mutex 提供跨实例保证。进程重启后的占位恢复与旧结果 fence 需要明确实现。
-- 题卡提交事务与新 run 准入同一原子边界，持久化 submission、关联 USER 消息、PENDING attempt、预分配的助手回复身份和会话占位；模型调用发生在事务结束之后。服务端 query 暴露 pending/终态，用户显式 retry 才能开始新 attempt；无自动队列/自动重派。
+- 准入在持久短事务中原子检查并占位。同 requestId 重放优先；不同新请求遇有效执行返回 HTTP 409 / `CHAT_RUN_ACTIVE`，不创建新消息、不预留新费用。
+- 不在 Provider I/O 期间持有数据库行锁；跨实例依赖 conversation 行锁、active_chat_run_id 和 fence，不靠单进程 mutex。PENDING 自提交开始就占用 slot。
+- 题卡提交事务与新 run 准入同一原子边界，持久化 submission、关联 USER 消息、PENDING attempt、该 attempt 专属预分配 reply ID 和会话占位；模型调用发生在事务结束之后。服务端 query 暴露 pending/终态，用户显式 retry 才能开始新 attempt；无自动队列/自动重派。
 - 无服务端消息排队。生成中发送按钮提供停止，题卡提交 disabled；聊天/问答输入及选择草稿保留。
 - 停止展示、请求取消、实际 Provider/工具退出和互斥释放分别记录。取消确认后用户手动发送，不自动把草稿变成下一次收费请求。
-- 新协议断线后可读取状态/快照，不沿用旧离线队列自动新建收费执行。未知派发按账本证据处理。
+- 新协议断线后可读取状态/快照，不沿用旧离线队列自动新建收费执行。仅在原 worker/reader 确认退出后释放 slot；未知派发保持 UNKNOWN/409，不因 lease 到期自动重跑或解锁。
 - Conversation/Subject/Source 软删、硬删、账号注销和本地缓存清理接现有生命周期；新增记录不得变为孤儿或跨 owner 可读。
 
 ## 7. 分阶段任务与文件边界
 
 ### P0 接线与契约冻结
 
-- [x] 在 `codex/chat-agent-rewrite` 从 `20b5c87` 基线继续；main 已 fast-forward/push，旧 main 工作副本变化已 stash 备份。
+- [x] 在 `codex/chat-agent-rewrite` 从 `20b5c87` 基线继续；main 已 fast-forward/push，P1 parser/PC content foundations 已提交至 `6de8d3a`，旧 main 工作副本变化已 stash 备份。
 - [x] 盘点 Server、PC、Mobile、Tablet 的实际消费点，以及原入口替换、弃用路径删除和共享治理复用清单；证据见本计划 `P0 消费点盘点`。
 - [x] 选定稳定 `langchain4j-core:1.22.0`，不使用 starter、内置 HTTP client 或隐式 `AiServices` Loop；预期使用其内部 Jackson 2 codec，而应用 HTTP/持久化/NDJSON 保持 Jackson 3.1.4，不采用 beta32 Jackson 3 codec、不加静态 mapper bridge、不改 Boot BOM。
 - [x] 隔离验证 Boot mapper 共存及 LangChain4j core model/tool/usage/cancel API：`langchain4j-core:1.22.0`、Jackson2 core `2.21.4` 与 Boot Jackson3 `3.1.4` 共存，Boot context 仅有单一应用 Jackson3 mapper，探针 5/5、Maven exit 0；不含 LangChain4j starter、Provider HTTP 或 beta32 codec。详情见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。真实 Provider 与取消到 Auralis HTTP 的映射不在探针证明范围。
-- [ ] 定稿 Gateway model adapter、Chat Agent 操作用途和配置清单；保留现有安全 HTTP 出站路径。
+- [x] 冻结 Gateway adapter 边界、独立 `CHAT_AGENT_TURN` operation、Chat Agent 集中配置候选与稳定 run budget task；生产 adapter/配置仍待实现，保留现有安全 HTTP 出站路径。
 - [x] 冻结唯一 Chat Loop、非 Chat one-shot 分离、逐字正文/逐项 NDJSON、单/多选/开放问答提交与 LLM 衔接、不判分，以及 Mobile/Tablet publicTextProjection 和无旧 fallback 的方向。
 - [x] 冻结 PC owner+subject 会话保留、文件切换不删除、Mobile 显式 conversationId、Tablet detail/snapshot 历史恢复、无 TTL、离线不自动收费重放、旧数据保留且无运行时转换的最小产品语义。
 - [x] 冻结 P1 块行 schema；当前候选含 `Auralis-Server/src/main/java/com/auralis/app/ai/internal/chat/ChatStreamParser.java` 纯 parser 单元，15 项通过；它尚未接入 Chat 运行链。
 - [x] 唯一 reviewer 复核 parser code fence info string：delimiter run 在 info 字符前识别，tests 250–276 覆盖全部 split；原 IMPORTANT 关闭。PC 新增内容基础的实现复核未发现 BLOCKER/IMPORTANT。
-- [x] 冻结应用显式 iteration orchestrator、逐 iteration 上下文与 run/attempt fence、逐模型调用账本；工具 delta 按 response/index 聚合且异常 EOF/cancel 不执行；业务终态与财务 settlement 分离并沿用缺 usage 保守费用；结束/中断时确定性公开 Markdown 写回 `messages.content`；题卡提交短事务原子保存 submission、USER 消息、PENDING attempt、预分配 reply ID 与会话占位，事务外模型调用、query 后显式 retry、无自动排队。
-- [ ] 冻结 Chat/one-shot DTO 细节、run status/cancel 路由、完整数据库字段/迁移和物理 schema；本计划对象字段仍是拟案，后续实现前必须先评估复用现有结构，并同步 API/Database/OpenAPI。
-- [ ] 完成 P0 的 Gateway adapter、Loop 配置与物理持久化/并发/重启恢复契约；消费点清单不代表 P0 全部完成。
+- [x] 冻结显式 iteration orchestrator、逐 iteration 上下文与 run/attempt fence、逐模型调用账本；tool delta 按 response/index 聚合且异常 EOF/cancel 不执行；业务终态与账务分离；READY 先原子持久化；模型调用事务外；已冻结完整 DTO/routes/events/schema/迁移/锁顺序/重启与 UNKNOWN hold 契约。
+- [x] 冻结每 attempt 独立 replyMessageId 与 Assistant message、旧 partial/history 保留、旧 protocol=NULL 行 unsupported/no fallback、PC owner+subject 本地映射、Attempt deadline 及跨 retry 累计 Guard budget；契约完整内容见本计划 P0/section 6。
+- [x] P0 Gateway adapter、Guard operation/config 与 V42 持久化/并发/重启恢复已有候选源码；Maven、migration 与并发集成验证待 P4。
 
-允许目录：本计划、相关设计/产品/架构文档；依赖兼容探针放 D:/Temp，不修改生产实现。验收：关键适配与生命周期都有具体契约，无依赖“SDK 自动处理”的空白。
+允许目录：本计划、相关设计/产品/架构文档；依赖兼容探针放 D:/Temp，不修改生产实现。P0 设计验收：关键适配与生命周期有具体契约，无依赖“SDK 自动处理”的空白；API/Database/OpenAPI 的实现登记须等 V42 与业务代码落地后再回写。
 
 ### P1 流式协议与 PC 渲染纵切
 
@@ -282,20 +325,20 @@ PC 输入 / 题卡提交
 
 ### P2 LangChain4j、工具与执行治理
 
-- [ ] 重写现有 Chat 服务为 P0 冻结的模型/工具循环，工具请求和结果精确配对，覆盖 text/tool 混合和多迭代 usage；切换后删除旧固定检索生成链及其废弃接线。
-- [ ] 增加授权的搜索、原文和大纲工具；确定性上下文构建、历史折叠和精确来源。
-- [ ] 接入独立 Chat Agent operation 和既有 reserve/dispatch/settle；配置总/阶段/运行边界，处理 BYOK 与平台来源。
-- [ ] 实现原子会话准入、取消传播、重启后状态恢复与 late-result fence；工具和模型结束前不释放执行权。
-- [ ] 用合成 Provider 把真实 SSE 工具胶囊和 P1 组件接通，关闭框架隐式重试旁路。
+- [x] 已以 `ChatAgentOrchestrator` 替换固定 Chat 执行链，使用显式模型/工具循环；Adapter/provider 单测源码覆盖工具 call 聚合与 text/tool transport，完整 runtime 联合验证待 P4。
+- [x] 已增加 owner-scoped 搜索、原文和大纲工具；context 从存档 run/source scope 构建并在执行期间复核 source owner/active/READY/revision。
+- [x] 已接入独立 Chat Agent operation 与 reserve/dispatch/settle；总调用、阶段、请求 bytes、工具结果和 attempt deadline 使用集中配置，BYOK/platform 仍走既有 Gateway。
+- [x] 已实现原子会话准入、取消传播、restart recovery 和 fence；READY 先持久化并停止公开输出/新工具，实际 worker 退出后释放 slot。
+- [x] 用受控合成 adapter 的 Orchestrator 行为测试覆盖真实 runtime 的组件/SSE 发布路径、tool call-result 与下一轮上下文顺序；调用循环由应用显式控制，无 SDK 隐式 retry。未覆盖真实 Provider 网络或 GUI。
 
 允许目录：Server `pom.xml`、ai 与其 internal provider/security/persistence、必要共享配置及追加迁移、PC Chat API/controller/store，以及 Mobile/Tablet Chat 的必要协议/文本消费接线。共有 HTTP/Gateway 对 Overview、embedding 和其他业务的约束不回归；旧 Chat 实现不是回归目标，测试按新需求重写。
 
 ### P3 题卡提交、保存与恢复闭环
 
-- [ ] 接通可保留会话、公开/私有 DTO、组件快照、历史题卡恢复与删除。
-- [ ] 单/多选和开放问答单次提交；稳定 USER 消息身份，原子落库并自动触发回复。
-- [ ] 上下文来源分区，用户答案与原题精确关联；程序仅校验提交，不判分。
-- [ ] 题卡 READY 后硬停止；LLM 普通回复接续，失败/部分输出/取消后同提交的新 attempt 可控重试。
+- [x] Server 已接通可保留会话、公开/私有 DTO、组件快照、历史题卡恢复与显式删除边界。
+- [x] 单/多选和开放问答使用原始 array/string wire shape；稳定 USER identity、submission idempotency 和原子落库后接续回复已实现。
+- [x] 用户答案与原题精确关联；服务端校验提交形状/选项，不判分，私有 reference 不进 public DTO。
+- [x] 题卡 READY 先原子持久化并硬停止公开输出/新工具；worker 实际退出后释放 slot，失败/取消 attempt 可按原 run retry。
 - [ ] 前端忙碌互斥、停止确认、草稿保留、历史提交、刷新和账号切换都沿新契约，不自动收费重放。
 - [ ] 对照 P0 消费点清单完成各端新契约切换，删除旧 Chat fallback/协议分支和失效测试；保留真实业务历史数据，更新新需求对应测试。
 
@@ -303,22 +346,22 @@ PC 输入 / 题卡提交
 
 ### P4 整合验证与实际验收
 
-- [ ] 按契约变化完成相关、全量与构建门禁，汇总一次最终验证证据；已跑且文件未变的结果不重复执行。
+- [x] 完成本轮六项后端修复的 focused clean/test（6 suites、21/21）及 package；记录在 `D:/Temp/auralis-chat-six-fixes-20261029/`。首次全量结果仍失败，不标记为全量门禁通过。
 - [ ] 默认一个只读 reviewer 检查 correctness、并发、权限、数据完整性及需求；OPTIONAL 不在任务内顺手修改。
 - [ ] 实际 Provider、Tauri UI 的工具调用、流式组件、两类提交、停止、刷新和失败恢复分别记录，按当次授权执行，不自行部署/操作业务库。
 - [ ] 统计格式成功率、局部异常、首字/首项延迟、循环次数、token 和可恢复情况，不仅看是否成功返回。
 
 ## 8. 验证节奏和命令
 
-本轮仅文档：检查本计划、相对链接、登记及文档差量，不运行应用测试/构建。
+六项后端修复全部编辑完成后统一运行 focused clean/test 与 package；二者均通过。全量与 PostgreSQL integration 未通过/未运行，保持为未完成验收项。
 
 后续实施按 [BeforeCoding](../agent/BeforeCoding.md)：每个交付阶段全部编辑完成后统一检查；类型/静态 → 对应测试 → 构建。依赖、共有层、API/数据库/鉴权并发变化完成后需要全量与构建，可合并为阶段交付门禁，不在编辑过程中反复执行。同一失败最多三次重试，保留真实输出。
 
 现有命令基线（下列本轮未执行）：
 
 ```powershell
-# cwd: D:/CodeBase/Active/Auralis/Auralis-Server
-.\mvnw.cmd -B -ntp '-Dtest=AiStreamingTests,AiStreamingControllerTests,AiConversationServiceTests,AiConversationControllerTests,PromptAssemblerTests,ProviderHttpClientTests,ChatAiExecutionSafetyTests,AiInvocationGatewayTests' test
+# cwd: D:/CodeBase/CodexWorktree/chat-agent-rewrite/Auralis/Auralis-Server
+.\mvnw.cmd -B -ntp '-Dtest=AiMessageCommandValidationTests,ChatRuntimeControllerTests,ChatAgentProfileAdmissionTests,ChatRuntimePersistenceServiceTests,ChatRuntimeRecoveryServiceTests,ChatStreamParserTests,AiProviderRequestValidatorTests,ChatAgentModelAdapterTests,ChatPublicProjectionTests,OpenAiCompatibleChatToolStreamTests,AiInvocationGatewayTests,AiOperationPolicyTests,ProviderHttpClientTests,AiConversationServiceTests,AiConversationControllerTests' test
 .\mvnw.cmd -B -ntp test
 .\mvnw.cmd -B -ntp package
 

@@ -1,72 +1,69 @@
-import type { AiMessageCommand } from '@/api/aiClient'
-import type { AiStreamCitation, AiStreamEvent } from '@/api/sse'
-import { reduceAiStreamEvent as reduceStreamEvent } from './aiStreamReducer.ts'
-import { classifyClientError, logClientError, SafeClientError } from './clientErrorPolicy.ts'
+import type { Protocol1MessageCommand } from '../api/aiClient.ts'
+import type { ChatStreamEnvelope } from '../types/chatProtocol.ts'
+import { createChatStreamState, reduceChatStreamEvent, type ChatStreamState } from './aiStreamReducer.ts'
 
-type AiStreamSource = (
-  input: AiMessageCommand,
-  signal: AbortSignal,
-) => AsyncIterable<AiStreamEvent> | Promise<AsyncIterable<AiStreamEvent>>
+export type ChatStreamSource = (
+  input: Protocol1MessageCommand,
+  signal: AbortSignal
+) => AsyncIterable<ChatStreamEnvelope> | Promise<AsyncIterable<ChatStreamEnvelope>>
 
-async function defaultStreamSource(input: AiMessageCommand, signal: AbortSignal): Promise<AsyncIterable<AiStreamEvent>> {
-  const { streamAiMessage } = await import('@/api/aiClient')
+async function defaultStreamSource(
+  input: Protocol1MessageCommand,
+  signal: AbortSignal
+): Promise<AsyncIterable<ChatStreamEnvelope>> {
+  const { streamAiMessage } = await import('../api/aiClient.ts')
   return streamAiMessage(input, signal)
 }
 
-export interface AiStreamResult {
-  content: string
-  citations: AiStreamCitation[]
-}
-
-export interface AiStreamHandlers {
-  onDelta?: (content: string) => void
-  onCitation?: (citation: AiStreamCitation) => void
-  onStarted?: (data: unknown) => void
-}
-
-export function reduceAiStreamEvent(
-  result: AiStreamResult,
-  event: AiStreamEvent,
-): AiStreamResult {
-  return reduceStreamEvent(result, event) as AiStreamResult
+export interface ChatStreamHandlers {
+  onEvent?: (event: ChatStreamEnvelope, state: ChatStreamState) => void
 }
 
 export class AiStreamController {
   private abortController: AbortController | null = null
-  private readonly streamSource: AiStreamSource
+  private readonly streamSource: ChatStreamSource
 
-  constructor(streamSource: AiStreamSource = defaultStreamSource) {
+  constructor(streamSource: ChatStreamSource = defaultStreamSource) {
     this.streamSource = streamSource
   }
 
+  /**
+   * Transport abort is reserved for teardown / client disconnect.
+   * To cancel server execution, use the server cancel route.
+   */
   abort(): void {
     this.abortController?.abort()
     this.abortController = null
   }
 
-  async run(input: AiMessageCommand, handlers: AiStreamHandlers = {}): Promise<AiStreamResult> {
-    this.abort()
+  async run(
+    input: Protocol1MessageCommand,
+    handlers: ChatStreamHandlers = {},
+    initialState?: Partial<ChatStreamState>
+  ): Promise<ChatStreamState> {
+    if (this.abortController) {
+      throw new Error('A chat stream is already active')
+    }
     const controller = new AbortController()
     this.abortController = controller
-    let result: AiStreamResult = { content: '', citations: [] }
+    let state = createChatStreamState(initialState)
     try {
-      for await (const event of await this.streamSource(input, controller.signal)) {
-        if (event.event === 'message.started') handlers.onStarted?.(event.data)
-        const next = reduceAiStreamEvent(result, event)
-        if (next.content !== result.content) handlers.onDelta?.(next.content.slice(result.content.length))
-        if (next.citations.length > result.citations.length) handlers.onCitation?.(next.citations[next.citations.length - 1])
-        result = next
-        if (event.event === 'message.error') {
-          const data = event.data as { code?: string; message?: string; detail?: string; retryAfterSeconds?: number; resetAt?: string } | undefined
-          const info = classifyClientError(data, 'AI_STREAM')
-          logClientError('[AiStreamController] stream failed', data, info)
-          throw new SafeClientError(info)
+      const stream = await this.streamSource(input, controller.signal)
+      for await (const event of stream) {
+        const next = reduceChatStreamEvent(state, event)
+        if (next !== state) {
+          state = next
+          handlers.onEvent?.(event, state)
         }
       }
-      if (controller.signal.aborted) throw new DOMException('The operation was aborted.', 'AbortError')
-      return result
+      if (controller.signal.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError')
+      }
+      return state
     } finally {
-      if (this.abortController === controller) this.abortController = null
+      if (this.abortController === controller) {
+        this.abortController = null
+      }
     }
   }
 }

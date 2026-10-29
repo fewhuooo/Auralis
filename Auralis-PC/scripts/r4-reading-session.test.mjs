@@ -6,27 +6,25 @@ import path from 'node:path'
 const root = path.resolve(import.meta.dirname, '..')
 const source = (file) => readFile(path.join(root, file), 'utf8')
 
-test('reading sessions are source scoped and end without restoring history', async () => {
+test('chat sessions persist across file switches and restore full history from conversation detail', async () => {
   const store = await source('src/store/useChatStore.ts')
-  assert.match(store, /purpose: 'READING_SESSION'/)
-  assert.match(store, /startReadingSession\(sourceId: string, subjectId: string/)
-  assert.match(store, /purpose: 'READING_SESSION',[\s\S]*?sourceId,[\s\S]*?subjectId,/)
-  assert.match(store, /purpose: session\.purpose/)
-  assert.match(store, /storedReferenceMode === 'AUTO' \|\| storedReferenceMode === 'SELECTED_SOURCES' \|\| storedReferenceMode === 'SUBJECT'/)
-  assert.match(store, /options\.sourceId && options\.subjectId \? 'AUTO' : options\.subjectId \? 'SUBJECT' : undefined/)
-  assert.match(store, /currentSourceId: options\.sourceId/)
-  assert.match(store, /sourceIds: referenceMode === 'SELECTED_SOURCES' \? options\.sourceIds : undefined/)
-  assert.match(store, /controller\.run\(\{[\s\S]*?readingContext,/)
-  assert.match(store, /async function endActiveSession\(\)/)
-  assert.match(store, /if\s*\(activeSessionId\.value\s*===\s*targetSessionId\)\s*\{[\s\S]*?activeSessionId\.value\s*=\s*null/)
-  assert.match(store, /async function endSessionById\(sessionId:\s*string\)/)
-  assert.match(store, /if\s*\(activeSessionId\.value\s*===\s*sessionId\)\s*\{[\s\S]*?activeSessionId\.value\s*=\s*null/)
   const workspace = await source('src/views/SubjectWorkspace/index.vue')
-  assert.match(workspace, /startReadingSession\(/)
-  assert.match(workspace, /endActiveSession\(/)
-  assert.match(workspace, /endSessionById\(/)
-  const endSession = store.slice(store.indexOf('async function endActiveSession'), store.indexOf('function appendAssistantChunk'))
-  assert.match(endSession, /clearActiveConversation\(\)/)
-  assert.doesNotMatch(endSession, /loadMessages\(/)
-  assert.doesNotMatch(workspace, /loadMessages\(/)
+
+  // Chat sessions are not tied to file-level READING_SESSION lifecycle
+  assert.doesNotMatch(store, /purpose:\s*'READING_SESSION'/)
+  assert.doesNotMatch(store, /startReadingSession/)
+  assert.doesNotMatch(workspace, /startReadingSession/)
+  assert.doesNotMatch(workspace, /endActiveSession/)
+
+  // History is restored via loadMessages and getConversation detail
+  assert.match(store, /async function loadMessages\(sessionId:\s*string\)/)
+  assert.match(store, /getConversation\(session\.remoteId\)/)
+
+  // Switching files updates readingContext but preserves active session
+  assert.match(workspace, /selectedAiSourceIds\.value\s*=\s*\[id\]/)
+  assert.match(workspace, /aiReferenceScope\.value\s*=\s*'AUTO'/)
+
+  // Unsupported legacy protocol handling
+  assert.match(store, /CHAT_PROTOCOL_UNSUPPORTED/)
+  assert.match(store, /chatProtocolVersion\s*!==\s*1/)
 })

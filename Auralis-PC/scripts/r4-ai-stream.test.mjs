@@ -1,156 +1,355 @@
 import { register } from 'node:module'
 const srcRootUrl = new URL('../src/', import.meta.url).href
-const loaderCode = "export async function resolve(specifier, context, nextResolve) { if (specifier.startsWith('@/')) { const root = '" + srcRootUrl + "'; const subPath = specifier.slice(2); const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts'; return nextResolve(new URL(withExt, root).href, context); } if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs')) { return nextResolve(new URL(specifier + '.ts', context.parentURL).href, context); } return nextResolve(specifier, context); }"
+const loaderCode = `export async function resolve(specifier, context, nextResolve) {
+  if (specifier.startsWith('@/')) {
+    const withExt = specifier.endsWith('.ts') ? specifier : specifier + '.ts'
+    return nextResolve(new URL(withExt.slice(2), '${srcRootUrl}').href, context)
+  }
+  if ((specifier.startsWith('./') || specifier.startsWith('../')) && context.parentURL
+    && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs')) {
+    return nextResolve(new URL(specifier + '.ts', context.parentURL).href, context)
+  }
+  return nextResolve(specifier, context)
+}`
 register(`data:text/javascript;base64,${Buffer.from(loaderCode).toString('base64')}`, import.meta.url)
+
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { reduceAiStreamEvent } from '../src/services/aiStreamReducer.ts'
+import {
+  createChatStreamState,
+  reduceChatStreamEvent,
+} from '../src/services/aiStreamReducer.ts'
 import { AiStreamController } from '../src/services/aiStreamController.ts'
 
-test('reduces deltas into one assistant message and keeps citation order stable', () => {
-  let result = { content: '', citations: [] }
-  result = reduceAiStreamEvent(result, { event: 'message.started', data: { messageId: 'm-1' } })
-  result = reduceAiStreamEvent(result, { event: 'message.delta', data: '第一段' })
-  result = reduceAiStreamEvent(result, { event: 'message.delta', data: '第二段' })
-  result = reduceAiStreamEvent(result, { event: 'citation', data: { sourceId: 's-1', chunkId: 'c-1', ordinal: 1 } })
-  result = reduceAiStreamEvent(result, { event: 'citation', data: { sourceId: 's-1', chunkId: 'c-1', ordinal: 1 } })
-  result = reduceAiStreamEvent(result, { event: 'message.completed', data: { content: 'ignored because deltas exist' } })
-
-  assert.equal(result.content, '第一段第二段')
-  assert.equal(result.citations.length, 1)
-  assert.equal(result.citations[0].ordinal, 1)
+const makeEnvelope = (overrides = {}) => ({
+  protocolVersion: 1,
+  conversationId: 'c-1',
+  requestId: 'req-1',
+  runId: 'r-1',
+  attemptId: 'att-1',
+  userMessageId: 'user-1',
+  replyMessageId: 'reply-1',
+  iterationId: null,
+  blockId: null,
+  sequence: 1,
+  event: 'text.delta',
+  payload: { text: 'Hello', publicTextDelta: 'Hello' },
+  ...overrides,
 })
 
-test('uses completed content when a provider sends no delta', () => {
-  const result = reduceAiStreamEvent(
-    { content: '', citations: [] },
-    { event: 'message.completed', data: { content: '完整回答' } },
-  )
-  assert.equal(result.content, '完整回答')
+test('reduces text deltas into publicText and text part', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({ sequence: 1, payload: { text: 'Hello ', publicTextDelta: 'Hello ' } }))
+  state = reduceChatStreamEvent(state, makeEnvelope({ sequence: 2, payload: { text: 'World', publicTextDelta: 'World' } }))
+
+  assert.equal(state.publicText, 'Hello World')
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].kind, 'text')
+  assert.equal(state.parts[0].text, 'Hello World')
 })
 
-test('controller emits ordered deltas/citations and converts provider errors', async () => {
-  const observed = { deltas: [], citations: [] }
-  const controller = new AiStreamController(async function* () {
-    yield { event: 'message.started', data: { messageId: 'm-1' } }
-    yield { event: 'message.delta', data: 'first' }
-    yield { event: 'citation', data: { sourceId: 's-1', chunkId: 'c-1', ordinal: 1 } }
-    yield { event: 'citation', data: { sourceId: 's-1', chunkId: 'c-1', ordinal: 1 } }
-    yield { event: 'message.error', data: { message: 'provider unavailable' } }
-  })
-
-  await assert.rejects(
-    controller.run({ content: 'hello' }, {
-      onDelta: (delta) => observed.deltas.push(delta),
-      onCitation: (citation) => observed.citations.push(citation),
-    }),
-    (error) => error.code === 'AI_REQUEST_FAILED' && error.message === 'AI 请求失败，请重试',
-  )
-  assert.deepEqual(observed.deltas, ['first'])
-  assert.deepEqual(observed.citations, [{ sourceId: 's-1', chunkId: 'c-1', ordinal: 1 }])
-})
-
-test('controller propagates abort without resolving as a successful response', async () => {
-  let signal
-  const controller = new AiStreamController(async function* (_input, streamSignal) {
-    signal = streamSignal
-    await new Promise((resolve) => streamSignal.addEventListener('abort', resolve, { once: true }))
-    throw new DOMException('The operation was aborted.', 'AbortError')
-  })
-
-  const pending = controller.run({ content: 'hello' })
-  await new Promise((resolve) => setImmediate(resolve))
-  assert.ok(signal)
-  controller.abort()
-  await assert.rejects(pending, (error) => error instanceof DOMException && error.name === 'AbortError')
-})
-
-
-const { createPinia, setActivePinia } = await import('pinia');
-const { useAuthStore } = await import('../src/store/useAuthStore.ts');
-const { useChatStore } = await import('../src/store/useChatStore.ts');
-
-class MemoryStorage {
-  #values = new Map()
-  getItem(key) { return this.#values.has(key) ? this.#values.get(key) : null }
-  setItem(key, value) { this.#values.set(key, String(value)) }
-  removeItem(key) { this.#values.delete(key) }
-  clear() { this.#values.clear() }
-}
-
-test('chat store omits retrieval flag, retains selectionText, and ignores unknown pending scope modes', async () => {
-  globalThis.localStorage = new MemoryStorage()
-  setActivePinia(createPinia())
-  const auth = useAuthStore()
-  auth.setSession({
-    user: { id: 'test-user', username: 'test' },
-    tokens: { accessToken: 'access', refreshToken: 'refresh' },
-    sessionId: 'test-session',
-    serverDeviceId: 'test-device',
-  })
-  const chat = useChatStore()
-  chat.sessions.push({
-    id: 'test-conversation',
-    remoteId: 'remote-test-conversation',
-    creationRequestId: 'creation-request',
-    title: 'test',
-    version: 1,
-    localOnly: false,
-    purpose: 'GENERAL',
-  })
-  chat.activeSessionId = 'test-conversation'
-
-  const requests = []
-  const originalFetch = globalThis.fetch
-  globalThis.fetch = async (_url, init) => {
-    requests.push(JSON.parse(init.body))
-    return new Response('event: message.completed\ndata: {"content":"ok"}\n\n', {
-      status: 200,
-      headers: { 'content-type': 'text/event-stream' },
+test('reduces block start, item increments, and completed part', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      event: 'block.started',
+      blockId: 'b-1',
+      payload: { componentId: 'b-1', component: 'quiz' },
     })
+  )
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].kind, 'block')
+  assert.equal(state.parts[0].state, 'GENERATING')
+
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 2,
+      event: 'block.item',
+      blockId: 'b-1',
+      payload: {
+        componentId: 'b-1',
+        component: 'quiz',
+        row: { type: 'stem', question: 'What is 1+1?', questionType: 'single' },
+      },
+    })
+  )
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 3,
+      event: 'block.item',
+      blockId: 'b-1',
+      payload: {
+        componentId: 'b-1',
+        component: 'quiz',
+        row: { type: 'option', key: 'A', text: '2' },
+      },
+    })
+  )
+
+  const serverPart = {
+    id: 'b-1',
+    componentId: 'b-1',
+    kind: 'block',
+    component: 'quiz',
+    state: 'READY',
+    questionId: 'q-1',
+    meta: { question: 'What is 1+1?', questionType: 'single' },
+    items: [{ key: 'A', text: '2' }, { key: 'B', text: '3' }],
   }
 
-  try {
-    await chat.sendMessage('subject test', { retrievalMode: 'SUBJECT', subjectId: 'subj1', selectionText: 'short quote' })
-    await chat.sendMessage('auto test', { retrievalMode: 'AUTO', subjectId: 'subj1', sourceId: 'src1', selectionText: 'a'.repeat(5000) })
-    await chat.sendMessage('remove quote test', { retrievalMode: 'SUBJECT', subjectId: 'subj1', selectionText: '' })
-    await chat.sendMessage('legacy no retrieval mode', { retrievalMode: 'NONE', subjectId: 'subj1' })
-    await chat.sendMessage('unknown scoped source', { retrievalMode: 'UNKNOWN', subjectId: 'subj1', sourceId: 'src1' })
-    await chat.sendMessage('default subject scope', { subjectId: 'subj1' })
-  } finally {
-    globalThis.fetch = originalFetch
-  }
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 4,
+      event: 'block.completed',
+      blockId: 'b-1',
+      payload: { componentId: 'b-1', part: serverPart },
+    })
+  )
 
-  assert.equal(requests.length, 6)
-
-  assert.equal(requests[0].content, 'subject test')
-  assert.equal('retrievalEnabled' in requests[0], false, 'retrievalEnabled must be omitted from requests')
-  assert.equal(requests[0].selectionText, 'short quote')
-  assert.equal(requests[0].readingContext?.retrievalMode, 'SUBJECT')
-  assert.equal(requests[0].readingContext?.subjectId, 'subj1')
-
-  assert.equal(requests[1].content, 'auto test')
-  assert.equal('retrievalEnabled' in requests[1], false, 'retrievalEnabled must be omitted from requests')
-  assert.equal(requests[1].selectionText.length, 4000)
-  assert.equal(requests[1].readingContext?.retrievalMode, 'AUTO')
-  assert.equal(requests[1].readingContext.selectionText.length, 4000)
-  assert.equal(requests[1].readingContext.subjectId, 'subj1')
-
-  assert.equal(requests[2].content, 'remove quote test')
-  assert.equal('retrievalEnabled' in requests[2], false, 'retrievalEnabled must be omitted from requests')
-  assert.equal(requests[2].selectionText, undefined)
-  assert.equal(requests[2].readingContext?.retrievalMode, 'SUBJECT')
-  assert.equal(requests[2].readingContext?.subjectId, 'subj1')
-
-  assert.equal(requests[3].content, 'legacy no retrieval mode')
-  assert.equal('retrievalEnabled' in requests[3], false, 'retrievalEnabled must be omitted from requests')
-  assert.equal(requests[3].readingContext?.retrievalMode, 'SUBJECT', 'unknown modes must use the request subject')
-  assert.equal(requests[3].readingContext?.subjectId, 'subj1')
-  assert.equal(requests[4].readingContext?.retrievalMode, 'AUTO')
-  assert.equal(requests[4].readingContext?.currentSourceId, 'src1')
-  assert.equal(requests[4].readingContext?.subjectId, 'subj1')
-  assert.equal(requests[5].readingContext?.retrievalMode, 'SUBJECT')
-  assert.equal(requests[5].readingContext?.subjectId, 'subj1')
-  assert.ok(requests.every(request => !('retrievalEnabled' in request)))
+  assert.equal(state.parts.length, 1)
+  const block = state.parts[0]
+  assert.equal(block.kind, 'block')
+  assert.equal(block.state, 'READY')
+  assert.equal(block.items.length, 2)
 })
+
+test('activity.submitted in-place updates original card to SUBMITTED with submittedAnswer', () => {
+  let state = createChatStreamState()
+  const readyPart = {
+    id: 'b-1',
+    componentId: 'b-1',
+    kind: 'block',
+    component: 'quiz',
+    state: 'READY',
+    questionId: 'q-1',
+    meta: { question: 'What is 1+1?', questionType: 'single' },
+    items: [{ key: 'A', text: '2' }, { key: 'B', text: '3' }],
+  }
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      event: 'block.completed',
+      payload: { componentId: 'b-1', part: readyPart },
+    })
+  )
+  assert.equal(state.parts[0].state, 'READY')
+
+  const submittedPart = {
+    ...readyPart,
+    state: 'SUBMITTED',
+    submittedAnswer: ['A'],
+  }
+
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 2,
+      event: 'activity.submitted',
+      userMessageId: 'user-submit-id',
+      payload: { activityId: 'q-1', part: submittedPart },
+    })
+  )
+
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'SUBMITTED')
+  assert.deepEqual(state.parts[0].submittedAnswer, ['A'])
+})
+
+test('activity.submitted does not append a duplicate block part if not present in current stream', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      event: 'activity.submitted',
+      userMessageId: 'user-submit-id',
+      payload: {
+        activityId: 'q-history',
+        part: {
+          id: 'b-history',
+          componentId: 'b-history',
+          kind: 'block',
+          component: 'quiz',
+          state: 'SUBMITTED',
+          meta: {},
+          items: [],
+        },
+      },
+    })
+  )
+  assert.equal(state.parts.length, 0)
+})
+
+test('drops duplicate sequences and stale attempts', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({ sequence: 1, attemptId: 'att-1', payload: { text: 'A', publicTextDelta: 'A' } })
+  )
+  // Duplicate sequence
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({ sequence: 1, attemptId: 'att-1', payload: { text: 'A-dup', publicTextDelta: 'A-dup' } })
+  )
+  assert.equal(state.publicText, 'A')
+
+  // Smaller sequence
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({ sequence: 0, attemptId: 'att-1', payload: { text: 'old', publicTextDelta: 'old' } })
+  )
+  assert.equal(state.publicText, 'A')
+
+  // Different conversation
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({ sequence: 2, conversationId: 'other-convo', payload: { text: 'other', publicTextDelta: 'other' } })
+  )
+  assert.equal(state.publicText, 'A')
+})
+
+test('tracks tool started, completed, and error capsules', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      event: 'tool.started',
+      payload: { toolCallId: 't-1', name: 'search_materials' },
+    })
+  )
+  assert.equal(state.tools.length, 1)
+  assert.equal(state.tools[0].status, 'RUNNING')
+
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 2,
+      event: 'tool.completed',
+      payload: { toolCallId: 't-1' },
+    })
+  )
+  assert.equal(state.tools[0].status, 'COMPLETED')
+
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 3,
+      event: 'tool.started',
+      payload: { toolCallId: 't-2', name: 'read_excerpt' },
+    })
+  )
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 4,
+      event: 'tool.error',
+      payload: { toolCallId: 't-2', safeErrorCode: 'EXCERPT_NOT_FOUND' },
+    })
+  )
+  assert.equal(state.tools[1].status, 'FAILED')
+})
+
+test('controller runs protocol 1 stream and handles abort cleanly', async () => {
+  const controller = new AiStreamController(async function* (_input, signal) {
+    yield makeEnvelope({ sequence: 1, payload: { text: 'part 1', publicTextDelta: 'part 1' } })
+    if (signal.aborted) return
+    yield makeEnvelope({
+      sequence: 2,
+      event: 'run.completed',
+      payload: { executionActive: false },
+    })
+  })
+
+  const state = await controller.run({
+    protocolVersion: 1,
+    action: 'turn',
+    conversationId: 'c-1',
+    requestId: 'r-1',
+    content: 'hello',
+  })
+
+  assert.equal(state.publicText, 'part 1')
+  assert.equal(state.executionActive, false)
+  assert.equal(state.terminal, 'COMPLETED')
+})
+
+test('controller abort throws AbortError', async () => {
+  const controller = new AiStreamController(async function* (_input, signal) {
+    yield makeEnvelope({ sequence: 1, payload: { text: 'start' } })
+    await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+  })
+
+  const pending = controller.run({
+    protocolVersion: 1,
+    action: 'turn',
+    conversationId: 'c-1',
+    requestId: 'r-1',
+    content: 'hello',
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  controller.abort()
+  await assert.rejects(pending, (err) => err instanceof DOMException && err.name === 'AbortError')
+})
+
+test('preserves sequential order for text -> block -> text and starts new text part', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({ sequence: 1, payload: { text: '正文 A', publicTextDelta: '正文 A' } }))
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].kind, 'text')
+  assert.equal(state.parts[0].text, '正文 A')
+
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2,
+    event: 'block.started',
+    blockId: 'chart-1',
+    payload: { componentId: 'chart-1', component: 'chart' },
+  }))
+  assert.equal(state.parts.length, 2)
+  assert.equal(state.parts[1].kind, 'block')
+
+  state = reduceChatStreamEvent(state, makeEnvelope({ sequence: 3, payload: { text: '正文 B', publicTextDelta: '正文 B' } }))
+  assert.equal(state.parts.length, 3)
+  assert.equal(state.parts[0].text, '正文 A')
+  assert.equal(state.parts[1].kind, 'block')
+  assert.equal(state.parts[2].kind, 'text')
+  assert.equal(state.parts[2].text, '正文 B')
+})
+
+test('captures safeErrorCode in run.failed', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 1,
+    event: 'run.failed',
+    payload: { safeErrorCode: 'RATE_LIMIT_EXCEEDED' },
+  }))
+  assert.equal(state.terminal, 'FAILED')
+  assert.equal(state.executionActive, false)
+  assert.equal(state.safeErrorCode, 'RATE_LIMIT_EXCEEDED')
+})
+
+test('controller returns state with undefined terminal when stream EOF occurs prematurely', async () => {
+  const controller = new AiStreamController(async function* () {
+    yield makeEnvelope({ sequence: 1, payload: { text: 'partial content', publicTextDelta: 'partial content' } })
+  })
+
+  const state = await controller.run({
+    protocolVersion: 1,
+    action: 'turn',
+    conversationId: 'c-1',
+    requestId: 'r-1',
+    content: 'hello',
+  })
+
+  assert.equal(state.publicText, 'partial content')
+  assert.equal(state.terminal, undefined)
+  assert.equal(state.executionActive, true)
+})
+

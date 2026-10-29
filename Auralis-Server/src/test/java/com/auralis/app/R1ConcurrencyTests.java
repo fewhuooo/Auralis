@@ -59,6 +59,7 @@ class R1ConcurrencyTests {
             var second = executor.submit(() -> append(userId, conversation.id(), "second"));
             assertThat(first.get().messageSequence()).isNotEqualTo(second.get().messageSequence());
         }
+        markMessagesAsProtocolOne(conversation.id());
 
         assertThat(conversationService.get(userId, conversation.id()).messages())
                 .extracting(MessageView::messageSequence)
@@ -91,6 +92,7 @@ class R1ConcurrencyTests {
 
             assertThat(first.get().started()).isNotEqualTo(second.get().started());
         }
+        markMessagesAsProtocolOne(conversation.id());
 
         assertThat(conversationService.get(userId, conversation.id()).messages())
                 .filteredOn(message -> message.role() == AiMessageRole.USER)
@@ -110,5 +112,9 @@ class R1ConcurrencyTests {
                         + "values (?, ?, ?, ?, 'ACTIVE')",
                 id, username, username, "{noop}r1-test-password");
         return id;
+    }
+
+    private void markMessagesAsProtocolOne(UUID conversationId) {
+        jdbcTemplate.update("update messages set chat_protocol_version = 1 where conversation_id = ?", conversationId);
     }
 }

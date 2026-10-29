@@ -56,6 +56,9 @@ public class MessageEntity {
     @Column(name = "usage_json", columnDefinition = "TEXT")
     private String usageJson;
 
+    @Column(name = "chat_protocol_version")
+    private Short chatProtocolVersion;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -122,6 +125,14 @@ public class MessageEntity {
         this.replyToMessageId = replyToMessageId;
     }
 
+    public void enableChatProtocolOne() {
+        this.chatProtocolVersion = (short) 1;
+    }
+
+    public void replacePublicProjection(String content) {
+        this.content = content;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
@@ -149,5 +160,6 @@ public class MessageEntity {
     public String getClientRequestId() { return clientRequestId; }
     public UUID getReplyToMessageId() { return replyToMessageId; }
     public String getUsageJson() { return usageJson; }
+    public Short getChatProtocolVersion() { return chatProtocolVersion; }
     public Instant getCreatedAt() { return createdAt; }
 }

@@ -2,6 +2,7 @@ package com.auralis.app;
 
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import com.auralis.app.ai.AiProviderCallCancellation;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpTransport;
 import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;
@@ -87,6 +88,42 @@ class ProviderHttpClientTests {
                 (com.auralis.app.ai.OverviewCancellation) null, 8))
                 .isInstanceOf(ProviderResponseTooLargeException.class);
         assertThat(responseLimit).hasValue(8);
+    }
+
+    @Test
+    void genericCancellationUsesCancellableTransportAndPerCallLimit() throws Exception {
+        ResolvedProviderEndpoint endpoint = new ResolvedProviderEndpoint(
+                "provider.test", 443, List.of(), "/v1");
+        AtomicLong responseLimit = new AtomicLong();
+        AiProviderCallCancellation cancellation = new AiProviderCallCancellation() {
+            @Override public boolean isCancelled() { return false; }
+            @Override public boolean cancel() { return false; }
+            @Override public Registration onCancel(Runnable listener) { return () -> { }; }
+        };
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override
+            public byte[] post(ResolvedProviderEndpoint resolved, String path, String apiKey, byte[] requestBody) {
+                throw new AssertionError("Expected cancellation-aware transport");
+            }
+
+            @Override
+            public byte[] postCancellable(ResolvedProviderEndpoint resolved, String path, String apiKey,
+                    byte[] requestBody, long connectTimeoutMillis, long responseTimeoutMillis,
+                    AiProviderCallCancellation actualCancellation, long maxResponseBytes) {
+                assertThat(resolved).isSameAs(endpoint);
+                assertThat(path).isEqualTo("/chat/completions");
+                assertThat(actualCancellation).isSameAs(cancellation);
+                responseLimit.set(maxResponseBytes);
+                return "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+            }
+        };
+
+        JsonNode response = new ProviderHttpClient(new ObjectMapper(), transport, 1024, 100, 200)
+                .postJson(endpoint, "/chat/completions", "secret", Map.of(), JsonNode.class,
+                        300L, cancellation, 512L);
+
+        assertThat(response.path("ok").asBoolean()).isTrue();
+        assertThat(responseLimit).hasValue(512);
     }
 
     @Test

@@ -54,6 +54,15 @@ public class ConversationEntity {
     @Column(name = "next_message_sequence", nullable = false)
     private long nextMessageSequence;
 
+    @Column(name = "chat_protocol_version")
+    private Short chatProtocolVersion;
+
+    @Column(name = "active_chat_run_id")
+    private UUID activeChatRunId;
+
+    @Column(name = "chat_fence", nullable = false)
+    private long chatFence;
+
     protected ConversationEntity() {
     }
 
@@ -78,6 +87,10 @@ public class ConversationEntity {
         this.clientRequestId = clientRequestId;
         this.purpose = purpose == null ? ConversationPurpose.GENERAL : purpose;
         this.sourceId = sourceId;
+    }
+
+    public void enableChatProtocolOne() {
+        this.chatProtocolVersion = (short) 1;
     }
 
     @PrePersist
@@ -105,6 +118,42 @@ public class ConversationEntity {
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
     public long getVersion() { return version; }
+    public Short getChatProtocolVersion() { return chatProtocolVersion; }
+    public UUID getActiveChatRunId() { return activeChatRunId; }
+    public long getChatFence() { return chatFence; }
+
+    public long reserveChatRun(UUID runId) {
+        if (activeChatRunId != null) {
+            throw new IllegalStateException("Conversation already has an active Chat run");
+        }
+        activeChatRunId = java.util.Objects.requireNonNull(runId, "runId");
+        chatFence++;
+        return chatFence;
+    }
+
+    public long advancePendingChatRunFence(UUID runId) {
+        if (!java.util.Objects.equals(activeChatRunId, runId)) {
+            throw new IllegalStateException("Pending Chat run no longer owns the conversation slot");
+        }
+        chatFence++;
+        return chatFence;
+    }
+
+    public long fenceUnknownChatRun(UUID runId) {
+        if (!java.util.Objects.equals(activeChatRunId, runId)) {
+            throw new IllegalStateException("Unknown Chat run no longer owns the conversation slot");
+        }
+        chatFence++;
+        return chatFence;
+    }
+
+    public void releaseChatRun(UUID runId, long ownerFence) {
+        if (!java.util.Objects.equals(activeChatRunId, runId) || chatFence != ownerFence) {
+            throw new IllegalStateException("Chat run no longer owns the conversation fence");
+        }
+        activeChatRunId = null;
+        chatFence++;
+    }
 
     public long allocateNextMessageSequence() {
         nextMessageSequence++;

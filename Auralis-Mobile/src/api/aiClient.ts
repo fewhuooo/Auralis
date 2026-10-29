@@ -8,8 +8,34 @@ import { getRuntimeConfig } from '@/config/runtime'
 import { useAuthStore } from '@/store/useAuthStore'
 import { uuidv7 } from '@/utils/uuid'
 
-type AiMessageCommand = components['schemas']['AiMessageCommand']
-type Provider = NonNullable<AiMessageCommand['provider']>
+type Provider = NonNullable<components['schemas']['AiSettingsCommand']['provider']>
+
+export interface Protocol1MessageCommand {
+  protocolVersion: 1
+  action: 'turn' | 'activity_submission'
+  conversationId: string
+  requestId: string
+  content?: string
+  readingContext?: Record<string, unknown>
+  selectionText?: string
+  activityId?: string
+  questionVersion?: number
+  submissionId?: string
+  answer?: { optionKeys?: string[]; text?: string }
+}
+
+export interface ChatStreamEnvelope {
+  protocolVersion: 1
+  conversationId: string
+  requestId: string
+  runId: string
+  attemptId: string
+  userMessageId: string
+  replyMessageId: string
+  sequence: number
+  event: string
+  payload: Record<string, unknown>
+}
 
 export interface AiConfig {
   provider: Provider
@@ -86,7 +112,7 @@ function decodeChunk(value: unknown, decoder: TextDecoder): string {
 }
 
 async function streamMessage(
-  body: AiMessageCommand,
+  body: Protocol1MessageCommand,
   onMessage: (content: string) => void,
   retried = false,
 ): Promise<string> {
@@ -94,36 +120,40 @@ async function streamMessage(
   const runtime = getRuntimeConfig()
   return new Promise((resolve, reject) => {
     let content = ''
+    let activeAttempt = ''
+    const seen = new Set<string>()
     let receivedChunk = false
     let settled = false
     const textDecoder = new TextDecoder('utf-8')
     const sse = createSseDecoder((event) => {
-      if (event.event === 'message.delta' && typeof event.data === 'string') {
-        content += event.data
-        onMessage(event.data)
-      }
-      if (event.event === 'message.completed' && !content && event.data && typeof event.data === 'object') {
-        const completed = event.data as { content?: unknown }
-        if (typeof completed.content === 'string') {
-          content = completed.content
-          onMessage(completed.content)
+      if (event.data && typeof event.data === 'object') {
+        const envelope = event.data as ChatStreamEnvelope
+        if (envelope.protocolVersion !== 1 || envelope.event !== event.event || envelope.conversationId !== body.conversationId) return
+        if (activeAttempt && envelope.attemptId !== activeAttempt) return
+        activeAttempt = envelope.attemptId
+        const key = `${envelope.runId}:${envelope.attemptId}:${envelope.sequence}`
+        if (seen.has(key)) return
+        seen.add(key)
+        const delta = envelope.payload.publicTextDelta
+        if (typeof delta === 'string' && delta) {
+          content += delta
+          onMessage(delta)
         }
       }
-      if (event.event === 'message.error' && !settled) {
-        const value = event.data as { message?: string; detail?: string; code?: string; retryAfterSeconds?: number; resetAt?: string }
+      if (event.event === 'run.failed' && !settled) {
+        const value = event.data as ChatStreamEnvelope
         settled = true
+        const payload = value.payload as { safeErrorCode?: string; message?: string }
         reject(new ApiProblemError(parseProblemDetails({
           status: 500,
-          title: value?.message || 'AI stream failed',
-          detail: value?.detail || value?.message || '',
-          code: value?.code,
-          retryAfterSeconds: value?.retryAfterSeconds,
-          resetAt: value?.resetAt,
+          title: payload?.message || 'AI stream failed',
+          detail: payload?.message || '',
+          code: payload?.safeErrorCode || 'AI_REQUEST_FAILED',
         }, 500)))
       }
     })
     const task = uni.request({
-      url: `${runtime.apiBaseUrl}/api/ai/messages/stream`,
+      url: `${runtime.apiBaseUrl.replace(/\/+$/, '')}/api/ai/messages/stream`,
       method: 'POST',
       enableChunked: true,
       header: {
@@ -190,43 +220,38 @@ async function streamMessage(
   })
 }
 
-const conversationIds = new Map<string, string>()
-
-async function conversationForCurrentUser(title: string): Promise<string> {
-  const userId = useAuthStore().user?.id || 'anonymous'
-  const existing = conversationIds.get(userId)
-  if (existing) return existing
-  const created = await aiApi.createConversation({ title, baseVersion: 0, clientRequestId: uuidv7() })
-  if (!created.id) throw new Error('Conversation response is incomplete')
-  conversationIds.set(userId, created.id)
-  return created.id
+export async function generateAiText(operation: 'summary' | 'extract' | 'format' | 'transcript', input: string): Promise<string> {
+  const result = await mobileRequest.post<unknown>('/api/ai/text-generations', { operation, input, requestId: uuidv7() }) as { text?: unknown }
+  if (typeof result?.text !== 'string') throw new Error('Text generation response is incomplete')
+  return result.text
 }
 
 export async function completeAiText(text: string): Promise<string> {
-  return streamMessage({ content: text, clientRequestId: uuidv7() }, () => undefined)
+  return generateAiText('extract', text)
 }
 
 export async function transcribeAndExtractTasks(text: string) {
-  const result = await completeAiText(`从以下备忘录提取待办任务，只返回 JSON：\n${text}`)
+  const result = await generateAiText('transcript', `从以下备忘录提取待办任务，只返回 JSON：\n${text}`)
   return JSON.parse(result.replace(/^```json\s*|\s*```$/g, '').trim())
 }
 
 export function convertHandwritingToMarkdown(rawOcrText: string): Promise<string> {
-  return completeAiText(`将以下文本整理为结构化 Markdown，只返回正文：\n${rawOcrText}`)
+  return generateAiText('format', `将以下文本整理为结构化 Markdown，只返回正文：\n${rawOcrText}`)
 }
 
 export async function chatWithAI(
   text: string,
   _history: unknown[],
   onMessage: (content: string) => void,
-  conversationId?: string,
+  conversationId: string,
 ): Promise<void> {
-  const activeConversationId = conversationId || await conversationForCurrentUser(text.slice(0, 60))
+  if (!conversationId) throw new Error('A conversationId is required for chat')
   await streamMessage({
-    conversationId: activeConversationId,
+    protocolVersion: 1,
+    action: 'turn',
+    conversationId,
+    requestId: uuidv7(),
     content: text,
-    topK: 8,
-    clientRequestId: uuidv7(),
   }, onMessage)
 }
 

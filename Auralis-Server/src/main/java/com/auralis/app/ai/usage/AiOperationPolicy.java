@@ -6,7 +6,12 @@ import java.util.Set;
 /** Immutable operation contract separating platform quota from all-origin protocol limits. */
 public record AiOperationPolicy(AiOperationKind kind, AiFeature feature,
                                 int platformMaxCalls, long platformTaskTokens,
-                                Map<AiStage, StageRule> stages) {
+                                Map<AiStage, StageRule> stages, int allOriginMaxCalls) {
+    public AiOperationPolicy(AiOperationKind kind, AiFeature feature, int platformMaxCalls,
+                             long platformTaskTokens, Map<AiStage, StageRule> stages) {
+        this(kind, feature, platformMaxCalls, platformTaskTokens, stages, 0);
+    }
+
     public AiOperationPolicy {
         stages = Map.copyOf(stages);
     }

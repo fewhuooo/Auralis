@@ -1,10 +1,22 @@
 # Spring Boot 后端模块
 
-### 2026-10-29 Chat P0 兼容性探针与 P1 parser 候选（未接入生产运行链）
+### 2026-10-29 Chat protocol 1 runtime（后端代码候选，定向验证通过）
 
-- 隔离 Maven probe 固定 `dev.langchain4j:langchain4j-core:1.22.0`，Java 21 / Spring Boot 4.1.0 下验证 core 默认 Jackson2（annotations 2.21、core/databind 2.21.4）与应用 Jackson3 3.1.4 共存；最小 Boot context 仅注册 `tools.jackson.databind.ObjectMapper`，SDK 与应用 DTO 使用显式映射。最终统一命令 `clean test ...:dependency:3.7.0:tree` exit 0，5/5。未改生产 pom、调用真实 Provider 或证明 Gateway/HTTP 取消已接通。精确 API、dependency tree、日志与 hash 见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。
-- 当前候选树新增纯增量 `Auralis-Server/src/main/java/com/auralis/app/ai/internal/chat/ChatStreamParser.java`，对应 `ChatStreamParserTests.java` 15/15。唯一 reviewer 复核并关闭 Markdown code-fence info-string IMPORTANT：delimiter run 先于 info 字符识别，tests 250–276 覆盖全部 split。解析器尚未接入 `AiStreamingService`、认证 SSE、存储或 PC reducer；不代表 Chat 主链可运行。
-- 生产 Chat provider adapter 仍未改：`AiProviderChunk` 只有 content/complete/usage/model identity，`OpenAiCompatibleProvider` 当前读取 `delta.content`，没有 `delta.tool_calls`。`ProviderHttpClient.postStream(..., lineConsumer)` 没有向流式调用传播取消 handle；探针证明的是 SDK 合成 callback API，不是 HTTP 连接取消。Gateway/tool adapter、每次 completion reservation/settlement、配置策略、消息/执行持久化与端到端联接仍属后续 P0/P2。
+### 2026-10-29 六项后端 IMPORTANT 修复（focused 验证完成）
+
+- Retry 在同一事务内推进 conversation/run fence、切换当前 attempt，再由该 fence claim 与 settle；行为测试覆盖 retry → claim → finish。
+- 实际模型 SYSTEM 指令包含冻结 Auralis markers、各 NDJSON schema、reference 必须为最后一行及活动结束规则；同一 Orchestrator 行为测试检查模型实际收到的 request。
+- Snapshot 仅合并相邻 text parts；text→component→text 保持顺序。解析错误前已产生的有效组件行保留在 `INVALID` part，不带私有 reference 且不可提交。
+- Recovery 使用固定 5 秒调度，查询仅覆盖 deadline 已到且可处理的 foreign 状态，按 deadline/id 排序并限制 100 条；fresh foreign RUNNING 不偷占，UNKNOWN 不释放 slot。
+- V43 增加 `chat_attempts.private_tool_evidence_json` 私有列。只记录成功工具结果与 source revision，下一轮历史投影以真实 mapped request 大小（含 tool definitions）控制折叠；历史顺序为 user → tool call/result → assistant final，public status/detail/trace 不含该列。
+- `mvn -B -ntp clean '-Dtest=ChatRuntimePersistenceServiceTests,ChatAgentProtocolPublicationTests,ChatRuntimeRecoveryServiceTests,ChatEvidenceHistoryProjectorTests,ChatAgentModelAdapterTests,ChatAgentProfileAdmissionTests' test`：21/21，0 failures/errors/skips，exit 0；`mvn -B -ntp -DskipTests package` exit 0。只读 review B0/I0/O0。首次全量仍 940 tests / 2 failures / 58 errors / 7 skipped、exit 1；未验证 PostgreSQL integration、生产迁移、真实 Provider、部署或 GUI/业务流程。证据 `D:/Temp/auralis-chat-six-fixes-20261029/`。
+
+- `POST /api/ai/messages/stream` 已切为 protocol-1 turn/activity_submission body；新增 run retry/status/cancel 与 one-shot text-generation routes。`ChatAgentOrchestrator` 使用应用显式 loop 和受治理 `ChatAgentModelAdapter`；Provider 工具定义由服务端注册，只有完整合法 terminal tool call 才执行 read-only source tools。
+- `ChatRuntimePersistenceService` 将 admit、USER、PENDING run/attempt 与会话 slot 放入短事务；模型在事务外运行。V42 新增 `chat_runs/chat_attempts/chat_activities`，Conversation/Message protocol 标记、attempt deadline、独立 reply IDs、公开 snapshot 和 fence。Activity READY 事务先写实际 ASSISTANT message 再写非空 message_id 外键；业务成功与 worker 清理/usage settlement 分离。
+- Run identity 在首次 admission 固定 provider/model/规范化 endpoint 的 SHA-256 hash；request hash 只覆盖规范化 client body，不混入 requestId 或 profile。重放先查 requestId+body，再读取当前 provider settings。Retry 在建立 attempt/reservation 前比对原 provider profile，worker 在 Provider/tool 调用前再次核验；profile 变化返回 409 `CHAT_PROFILE_CHANGED`，同一 provider/model/endpoint 下凭据轮换允许，默认 provider 变化不改现有 run。
+- Startup recovery 对未过持久 deadline 的 foreign owner 不干扰；过期 PENDING 安全终结并释放、不重派；过期 foreign RUNNING/CANCEL_REQUESTED 进入 UNKNOWN 并 fence，保持 slot。UNKNOWN 无自动 retry/unlock。同步 worker 实际退出后，本地 failed/cancelled/usage-incomplete run 按业务结果结算，Guard 仍按完整 reservation 保守计费。
+- 进入 UNKNOWN 的恢复会用已分配 reply ID 写入 FAILED assistant message 和最后公开 snapshot；attempt/run 保留 UNKNOWN 且 Conversation slot 继续占用。`UNKNOWN` 表示实际 worker/provider reader 退出状态不可证明，不由 usage 缺失触发。
+- 首次全量 Maven 为 940 tests / 2F / 58E / 7S，exit 1；主要受缺少 task-owned PostgreSQL URL 与 Docker 环境限制，另有已修的旧 fixture、迁移版本期望和 OpenAPI artifact 陈旧问题。目标 fixture 回归18/18、`scripts/export-openapi.ps1` 导出与比较15/15、fence/persistence/recovery/profile/controller/source affected集合18/18通过；最终 `-DskipTests package` exit 0。只读 review 最终 B0/I0/O0。全量未转为通过，PG integration、真实 Provider/部署/业务库验收仍未完成。证据目录 `D:/Temp/auralis-chat-p2-validation-20261029/`，review `D:/Temp/auralis-chat-p2-final-review-20261029/review.md`。详细字段与事件见 [Chat Runtime API](../contracts/chat-runtime-api.md)、[API 契约](../contracts/API.md)、[Database 契约](../contracts/Database.md) 与实施[计划](../plans/2026-10-29-chat-agent-visual-teaching.md)。
 
 ### 2026-10-28 Overview 模型响应自动重试（源码候选，未部署）
 

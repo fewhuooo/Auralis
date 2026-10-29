@@ -1,12 +1,22 @@
 # Auralis 当前状态
 
+### 2026-10-29 Chat protocol 1 首次全量门禁记录（未全绿）
+
+### 2026-10-29 Chat Agent 六项后端修复（focused 完成，外部验收待做）
+
+针对自查 6 项 IMPORTANT 的后端修复已完成：retry 原子 fence advance/claim/settle；实际模型 SYSTEM 完整冻结协议提示；parts 仅合并相邻 text；过期 foreign attempt 以有界、deadline/id 有序扫描且保留 fresh 与 UNKNOWN 语义；partial block 错误时保留有效已解析行并标 INVALID；V43 私有工具证据持久化与历史上下文投影。第5项的真实第二轮 provider request 测试验证 tool call/result、assistant 最终回复顺序，且 status/detail/trace 不含私有结果。
+
+最终 focused clean/test 覆盖 6 suites、21 tests，0 failures/errors/skips，exit 0；随后 `mvn -B -ntp -DskipTests package` exit 0。首次 focused 失败的 partial 用例追到 target 缺少 Javac synthetic `ChatPublicProjection$1.class`；clean 重建后同一行为测试通过。首次全量 Server 仍为 940 tests / 2 failures / 58 errors / 7 skipped、exit 1，未把全量结果写成通过。未运行 PostgreSQL integration、真实 Provider、部署、SDK 生成或 GUI/业务验收；源码验证不代表运行环境已迁移到 V43。证据 `D:/Temp/auralis-chat-six-fixes-20261029/`。
+
+首次 Server 全量 Maven 运行实际为 940 tests / 2 failures / 58 errors / 7 skipped，exit 1。多数错误来自 PostgreSQL integration 测试未配置 task-owned loopback PostgreSQL URL；Testcontainers 测试明确报告 Docker 环境不可用，均未作为业务实现失败，也未改成 skip。独立非环境问题已定位并修复：Chat 旧并发 fixture 未标记 protocol 1、token-shadow fixture 构造非法 null role、迁移测试仍固定期待 V41、运行时 OpenAPI artifact 落后。相应 fixture 回归 18/18 通过，官方 OpenAPI 导出/比较 15/15 通过。只读 review 的来源失效时 chunk 先公开问题已修复；source revision 与 owner/fence 失效的行为回归及 persistence/recovery/profile/controller/source 受影响集合18/18通过，review最终B0/I0/O0。最终 `-DskipTests package` exit 0。不是全量测试通过。未执行 PostgreSQL/Docker integration、真实 Provider、部署、前端 SDK 生成或 GUI/业务验收。证据 `D:/Temp/auralis-chat-p2-validation-20261029/`；review `D:/Temp/auralis-chat-p2-final-review-20261029/review.md`。
+
 ### 2026-10-29 工作树提交前检查
 
 PC type-check 与文档处理定向测试 51/51 本轮通过；check:r4-pc 唯一命中未改动 Rust cfg(test) 模块的 localhost，属于既有扫描误报，该命令仍为失败。后端原 11 个改动文件与既有最终证据 SHA-256 完全一致，复用定向146/146、隔离PG受影响43/43及TLS3/3；本轮打包发现 Recovery fixture 漏传新增 overviewMaxRetries，已补 currentAi.overviewMaxRetries() 保持配置。最终 -DskipTests package 退出0，151个测试源码编译成功。Recovery测试因Docker daemon不可用在Testcontainers初始化失败，主体未执行；未重跑全量，不称全量通过。唯一只读审查最终B0/I0/O0。Chat仍处于计划阶段；未部署、访问业务库或验收真实Provider/GUI。证据D:/Temp/auralis-precommit-20261029/。
 
-### 2026-10-29 Chat Agent 与流式可视化教学（计划中）
+### 2026-10-29 Chat Agent 与流式可视化教学（后端代码候选，统一验证待执行）
 
-已整理用户确认的轻量 Chat 方向与[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)：正文逐字/组件逐项、题卡提交后由 LLM 接续，不判分。`codex/chat-agent-rewrite` 现从已 push 的 `20b5c87` 基线继续；原工作树未提交变化保存在 stash 备份。P0 兼容性探针已在隔离 Maven 项目验证稳定 `langchain4j-core:1.22.0`、Jackson2 2.21.4 与 Boot Jackson3 3.1.4 共存，5/5、exit 0，详见 `D:/Temp/auralis-chat-p0-20261029/adapter/reports/report.md`。Server 独立 `ChatStreamParser` 单元及测试 15/15；唯一 reviewer 已复核并关闭 code-fence info string IMPORTANT。PC P1 内容渲染基础已新增，type-check exit 0、Node 6/6，证据 `D:/Temp/auralis-chat-p1-components-20261029/`；唯一 reviewer 未发现前端 BLOCKER/IMPORTANT。组件尚未接入 Workspace/Store/SSE/reducer，无挂载或 GUI 验收。核心执行/账务/投影/事务契约已冻结；Gateway adapter、运行配置、DTO/schema、Chat 主链和各端完整接线仍待完成。未调用真实 Provider、未部署或操作业务库。
+已整理用户确认的轻量 Chat 方向与[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)：正文逐字/组件逐项、题卡提交后由 LLM 接续，不判分。`codex/chat-agent-rewrite` 基线为 `6de8d3a`，main 仍为已 push 的 `20b5c87`。Server 当前源码候选包含 protocol-1 controller/DTO/SSE、显式 Agent loop、持久化三表与 V42、attempt deadline/fence/recovery、source 工具和 one-shot endpoint。新 run 锁存 provider/model/规范化 endpoint hash；request replay 先比较仅由规范化 body 形成的 hash，retry 先按原 profile 校验，worker 派发前再核对；凭据轮换不改变 profile identity。UNKNOWN 恢复会写 FAILED reply 和最后公开 snapshot，同时保留 UNKNOWN 与会话 slot。`docs/contracts/chat-runtime-api.md` 是当前字段级候选契约。已补 adapter/provider、profile admission、controller、persistence、recovery 相关测试源码；尚未运行 Maven、V42 migration、OpenAPI artifact 或共享构建验证，不能把源码存在写成构建/测试通过。P1 PC 内容基础已提交，用户接手所有前端实现；当前未验证的前端草稿不代表完成。未调用真实 Provider、未部署或操作业务库。证据目录 `D:/Temp/auralis-chat-p2-runtime-20261029/` 将记录本轮源码交接。
 
 ### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
 

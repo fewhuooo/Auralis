@@ -19,12 +19,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -96,8 +99,54 @@ class SourceServiceReadBatchTests {
         verify(assetRepository).findAllByUserIdAndIdIn(userId, List.of(assetId));
     }
 
+    @Test
+    void readyRevisionValidationLocksEveryActiveOwnedSourceInStableIdOrder() {
+        UUID userId = UUID.randomUUID();
+        UUID firstId = new UUID(0, 1);
+        UUID secondId = new UUID(0, 2);
+        SourceEntity first = sourceWithId(userId, firstId);
+        SourceEntity second = sourceWithId(userId, secondId);
+        when(sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(firstId, userId))
+                .thenReturn(Optional.of(first));
+        when(sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(secondId, userId))
+                .thenReturn(Optional.of(second));
+
+        boolean current = sourceService.lockAndCheckReadyRevisions(userId,
+                Map.of(secondId, second.getIngestionRevision(), firstId, first.getIngestionRevision()));
+
+        assertThat(current).isTrue();
+        var order = inOrder(sourceRepository);
+        order.verify(sourceRepository).findForUpdateByIdAndUserIdAndDeletedAtIsNull(firstId, userId);
+        order.verify(sourceRepository).findForUpdateByIdAndUserIdAndDeletedAtIsNull(secondId, userId);
+    }
+
+    @Test
+    void readyRevisionValidationReturnsFalseForRevisionMismatchAfterLockingAllSources() {
+        UUID userId = UUID.randomUUID();
+        UUID firstId = new UUID(0, 1);
+        UUID secondId = new UUID(0, 2);
+        SourceEntity first = sourceWithId(userId, firstId);
+        SourceEntity second = sourceWithId(userId, secondId);
+        when(sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(firstId, userId))
+                .thenReturn(Optional.of(first));
+        when(sourceRepository.findForUpdateByIdAndUserIdAndDeletedAtIsNull(secondId, userId))
+                .thenReturn(Optional.of(second));
+
+        boolean current = sourceService.lockAndCheckReadyRevisions(userId,
+                Map.of(firstId, UUID.randomUUID(), secondId, second.getIngestionRevision()));
+
+        assertThat(current).isFalse();
+        verify(sourceRepository).findForUpdateByIdAndUserIdAndDeletedAtIsNull(firstId, userId);
+        verify(sourceRepository).findForUpdateByIdAndUserIdAndDeletedAtIsNull(secondId, userId);
+    }
+
     private SourceEntity source(UUID userId, UUID subjectId, String title, UUID assetId) {
         return new SourceEntity(UUID.randomUUID(), userId, SourceType.FILE, subjectId, title, assetId,
+                null, null, null, SourceIngestionStatus.READY);
+    }
+
+    private SourceEntity sourceWithId(UUID userId, UUID sourceId) {
+        return new SourceEntity(sourceId, userId, SourceType.FILE, UUID.randomUUID(), "ready", null,
                 null, null, null, SourceIngestionStatus.READY);
     }
 

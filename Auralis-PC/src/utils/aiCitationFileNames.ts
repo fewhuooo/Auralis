@@ -1,4 +1,7 @@
-import type { AiStreamCitation } from '@/api/sse'
+export interface AiStreamCitation {
+  title?: string
+  [key: string]: unknown
+}
 
 export function getAiCitationFileNames(citations?: AiStreamCitation[] | null): string[] {
   if (!citations || !Array.isArray(citations)) {
@@ -6,7 +9,7 @@ export function getAiCitationFileNames(citations?: AiStreamCitation[] | null): s
   }
 
   const names = citations
-    .map(c => (c && typeof c === 'object' && typeof c.title === 'string' ? c.title.trim() : ''))
+    .map((c) => (c && typeof c === 'object' && typeof c.title === 'string' ? c.title.trim() : ''))
     .filter(Boolean)
 
   return Array.from(new Set(names))

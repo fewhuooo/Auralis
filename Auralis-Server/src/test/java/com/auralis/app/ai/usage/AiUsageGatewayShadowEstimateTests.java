@@ -188,12 +188,12 @@ class AiUsageGatewayShadowEstimateTests {
     }
 
     @Test
-    void comparesCompletionOnSameMessageProjectionWithStableNullRoleAndEmptyContentFraming(CapturedOutput output)
+    void comparesCompletionOnSameMessageProjectionWithEmptyContentFraming(CapturedOutput output)
             throws Exception {
         Fixture fixture = new Fixture(new AiProviderResponse("ok", 25L, 2L));
         List<AiProviderRequest.Message> messages = List.of(
                 new AiProviderRequest.Message(AiMessageRole.USER, "abc"),
-                new AiProviderRequest.Message(null, null),
+                new AiProviderRequest.Message(AiMessageRole.SYSTEM, ""),
                 new AiProviderRequest.Message(AiMessageRole.ASSISTANT, ""),
                 new AiProviderRequest.Message(AiMessageRole.USER, "中文"));
         try (AiTaskScope task = fixture.gateway.beginTask(new AiTaskContext(

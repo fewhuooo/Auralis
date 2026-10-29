@@ -1,7 +1,7 @@
 package com.auralis.app;
 
 import com.auralis.app.ai.AiProviderDiscoveryService;
-import com.auralis.app.ai.AiStreamingService;
+import com.auralis.app.ai.internal.chat.ChatAgentOrchestrator;
 import com.auralis.app.ai.OverviewGenerationService;
 import com.auralis.app.ai.ingestion.IngestionWorker;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
@@ -23,7 +23,7 @@ class ArchitectureTests {
 
     @Test
     void providerCallingBusinessAdaptersCannotInjectProviderRegistriesOrPorts() {
-        List<Class<?>> adapters = List.of(AiStreamingService.class, OverviewGenerationService.class,
+        List<Class<?>> adapters = List.of(ChatAgentOrchestrator.class, OverviewGenerationService.class,
                 AiProviderDiscoveryService.class, IngestionWorker.class);
         List<Class<?>> forbidden = List.of(AiProviderRegistry.class, EmbeddingProviderRegistry.class,
                 AiProviderPort.class, EmbeddingProviderPort.class);

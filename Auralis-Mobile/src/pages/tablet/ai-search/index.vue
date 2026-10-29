@@ -276,6 +276,8 @@ interface HistorySession {
   title: string
   time: string
   version: number
+  chatSupported: boolean
+  chatProtocolVersion: number | null
   messages: { role: 'user' | 'assistant', content: string }[]
 }
 
@@ -294,11 +296,10 @@ const toHistorySession = (conversation: ConversationView): HistorySession | null
     id: conversation.id,
     title: conversation.title || '未命名对话',
     time: formatConversationTime(conversation.updatedAt || conversation.createdAt),
-    messages: (conversation.messages || []).flatMap((message) => {
-      const role = message.role === 'USER' ? 'user' : message.role === 'ASSISTANT' ? 'assistant' : null
-      return role && message.content ? [{ role, content: message.content }] : []
-    }),
+    messages: [],
     version: Number(conversation.version || 0),
+    chatSupported: Boolean((conversation as ConversationView & { chatSupported?: boolean }).chatSupported),
+    chatProtocolVersion: (conversation as ConversationView & { chatProtocolVersion?: number | null }).chatProtocolVersion ?? null,
   }
 }
 
@@ -357,10 +358,22 @@ const selectModel = (label: string) => {
 }
 
 const switchSession = (session: HistorySession) => {
-  currentSessionId.value = session.id
-  messages.value = [...session.messages]
-  scrollToBottom()
-  uni.showToast({ title: `已进入：${session.title.slice(0, 8)}...`, icon: 'none' })
+  if (!session.chatSupported || session.chatProtocolVersion !== 1) {
+    currentSessionId.value = session.id
+    messages.value = []
+    uni.showToast({ title: '此历史会话不可继续', icon: 'none' })
+    return
+  }
+  void aiApi.getConversation(session.id).then((detail) => {
+    const canonical = detail as ConversationView & { messages?: Array<{ role?: string; content?: string }> }
+    currentSessionId.value = session.id
+    messages.value = (canonical.messages || []).flatMap((message) => {
+      const role = message.role === 'USER' ? 'user' : message.role === 'ASSISTANT' ? 'assistant' : null
+      return role && message.content ? [{ role, content: message.content }] : []
+    })
+    scrollToBottom()
+    uni.showToast({ title: `已进入：${session.title.slice(0, 8)}...`, icon: 'none' })
+  }).catch((error) => uni.showToast({ title: error instanceof Error ? error.message : '历史详情加载失败', icon: 'none' }))
 }
 
 const startNewChat = () => {
@@ -470,7 +483,7 @@ const handleSearch = async () => {
   messages.value.push({ role: 'assistant', content: '' })
   const aiMsgIndex = messages.value.length - 1
   try {
-    await chatWithAI(text, [], (delta) => { messages.value[aiMsgIndex].content += delta; scrollToBottom() }, currentSessionId.value || undefined)
+    await chatWithAI(text, [], (delta) => { messages.value[aiMsgIndex].content += delta; scrollToBottom() }, currentSessionId.value)
     await loadHistory()
   } catch (error) {
     messages.value[aiMsgIndex].content = error instanceof Error ? error.message : '网络异常，请重试。'

@@ -2,6 +2,7 @@ package com.auralis.app.ai.usage;
 
 import com.auralis.app.ai.AiCredential;
 import com.auralis.app.ai.OverviewCancellation;
+import com.auralis.app.ai.AiProviderCallCancellation;
 import com.auralis.app.ai.AiProviderChunk;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderModelIdentity;
@@ -14,6 +15,8 @@ import com.auralis.app.ai.OverviewModelBudget;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.shared.config.AuralisProperties;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,6 +50,8 @@ public class AiUsageGatewayService implements AiInvocationGateway {
     private final EmbeddingProviderRegistry embeddingProviders;
     private final AuralisProperties.Ai ai;
     private final AuralisProperties.Limits limits;
+    private final ChatAgentProperties chatAgent;
+    private final ObjectMapper objectMapper;
     private final ScheduledExecutorService heartbeatExecutor;
     private final TransactionTemplate providerIo;
     private final AiTokenShadowEstimator shadowEstimator = new AiTokenShadowEstimator();
@@ -56,9 +61,12 @@ public class AiUsageGatewayService implements AiInvocationGateway {
     public AiUsageGatewayService(AiUsageGuard guard, AiProviderRegistry providers,
                                  EmbeddingProviderRegistry embeddingProviders,
                                  AuralisProperties properties,
+                                 ChatAgentProperties chatAgent,
+                                 ObjectMapper objectMapper,
                                  @Qualifier("aiUsageHeartbeatExecutor") ScheduledExecutorService heartbeatExecutor,
                                  PlatformTransactionManager transactionManager) {
-        this(guard, providers, embeddingProviders, properties.ai(), heartbeatExecutor, transactionManager);
+        this(guard, providers, embeddingProviders, properties.ai(), chatAgent, objectMapper,
+                heartbeatExecutor, transactionManager);
     }
 
     AiUsageGatewayService(AiUsageGuard guard, AiProviderRegistry providers,
@@ -66,12 +74,25 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                           AuralisProperties.Ai ai,
                           ScheduledExecutorService heartbeatExecutor,
                           PlatformTransactionManager transactionManager) {
+        this(guard, providers, embeddingProviders, ai, ChatAgentProperties.defaults(),
+                new ObjectMapper(), heartbeatExecutor, transactionManager);
+    }
+
+    AiUsageGatewayService(AiUsageGuard guard, AiProviderRegistry providers,
+                          EmbeddingProviderRegistry embeddingProviders,
+                          AuralisProperties.Ai ai,
+                          ChatAgentProperties chatAgent,
+                          ObjectMapper objectMapper,
+                          ScheduledExecutorService heartbeatExecutor,
+                          PlatformTransactionManager transactionManager) {
         this.guard = Objects.requireNonNull(guard);
         this.providers = Objects.requireNonNull(providers);
         this.embeddingProviders = Objects.requireNonNull(embeddingProviders);
         this.ai = Objects.requireNonNull(ai);
         this.limits = ai.limits();
-        this.policies = new AiOperationPolicyResolver(this.limits);
+        this.chatAgent = Objects.requireNonNull(chatAgent);
+        this.objectMapper = Objects.requireNonNull(objectMapper);
+        this.policies = new AiOperationPolicyResolver(this.limits, this.chatAgent);
         this.heartbeatExecutor = Objects.requireNonNull(heartbeatExecutor);
         this.providerIo = new TransactionTemplate(Objects.requireNonNull(transactionManager));
         this.providerIo.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
@@ -143,6 +164,31 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         }
 
         @Override
+        public AiInvocationResult<AiProviderResponse> completeChat(AiStage stage, AiProviderType provider,
+                AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+                long responseTimeoutMillis, AiProviderCallCancellation cancellation) {
+            requirePolicy(stage, AiInvocationMethod.COMPLETE, AiOutputRole.GENERAL, source);
+            Objects.requireNonNull(request);
+            requireToolsAllowed(request);
+            Objects.requireNonNull(credential);
+            AiProviderPort port = providers.require(provider);
+            AiProviderRequest bounded = boundedRequest(stage, provider, credential.baseUrl(), request,
+                    AiOutputRole.GENERAL, null);
+            long inputTokens = estimateAgentRequestTokens(bounded);
+            List<String> contents = bounded.messages().stream().map(AiProviderRequest.Message::content)
+                    .filter(Objects::nonNull).toList();
+            AiTokenShadowEstimator.Estimate shadow = shadowEstimator.estimate(contents,
+                    Math.multiplyExact(COMPLETION_MESSAGE_FRAMING_TOKENS, bounded.messages().size()));
+            return invoke(stage, provider, bounded.model(), source, AiOutputRole.GENERAL, inputTokens,
+                    bounded.maxTokens(),
+                    () -> providerIo.execute(status -> port.completeChat(bounded, credential,
+                            responseTimeoutMillis, cancellation)),
+                    AiProviderResponse::usage,
+                    response -> response == null ? AiProviderModelIdentity.missing() : response.modelIdentity(),
+                    shadow, "CHAT_AGENT_REQUEST", bounded.messages().size(), null, null);
+        }
+
+        @Override
         public AiInvocationResult<AiProviderResponse> complete(AiStage stage, AiProviderType provider,
                 AiProviderRequest request, AiCredential credential, long responseTimeoutMillis,
                 OverviewCancellation cancellation) {
@@ -180,6 +226,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                 AiInvocationBinding binding) {
             requirePolicy(stage, AiInvocationMethod.COMPLETE, role, source);
             Objects.requireNonNull(request);
+            requireToolsAllowed(request);
             Objects.requireNonNull(credential);
             AiProviderPort port = providers.require(provider);
             OverviewModelBudget overviewCapability = isOverviewCompletion(stage)
@@ -223,15 +270,25 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         public AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
                 AiProviderRequest request, AiCredential credential, AiCredentialSource source,
                 java.util.function.Consumer<AiProviderChunk> sink) {
+            return stream(stage, provider, request, credential, source, null, sink);
+        }
+
+        @Override
+        public AiInvocationResult<Void> stream(AiStage stage, AiProviderType provider,
+                AiProviderRequest request, AiCredential credential, AiCredentialSource source,
+                AiProviderCallCancellation cancellation, java.util.function.Consumer<AiProviderChunk> sink) {
             requirePolicy(stage, AiInvocationMethod.STREAM, AiOutputRole.GENERAL, source);
             Objects.requireNonNull(request);
+            requireToolsAllowed(request);
             Objects.requireNonNull(credential);
             Objects.requireNonNull(sink);
             AiProviderPort port = providers.require(provider);
             AiProviderRequest bounded = boundedRequest(stage, provider, credential.baseUrl(), request,
                     AiOutputRole.GENERAL, null);
-            long inputTokens = estimateRequestTokens(bounded);
-            List<String> contents = bounded.messages().stream().map(AiProviderRequest.Message::content).toList();
+            long inputTokens = task.operationKind() == AiOperationKind.CHAT_AGENT_TURN
+                    ? estimateAgentRequestTokens(bounded) : estimateRequestTokens(bounded);
+            List<String> contents = bounded.messages().stream().map(AiProviderRequest.Message::content)
+                    .filter(Objects::nonNull).toList();
             AiTokenShadowEstimator.Estimate shadow = shadowEstimator.estimate(contents,
                     Math.multiplyExact(COMPLETION_MESSAGE_FRAMING_TOKENS, bounded.messages().size()));
             logEffectiveModel(provider, bounded.model(), credential.baseUrl(), stage, bounded.structuredJson());
@@ -239,13 +296,14 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             AtomicReference<AiProviderModelIdentity> modelIdentity = new AtomicReference<>(
                     AiProviderModelIdentity.missing());
             return invoke(stage, provider, bounded.model(), source, AiOutputRole.GENERAL, inputTokens, bounded.maxTokens(), () -> {
-                providerIo.executeWithoutResult(status -> port.streamInto(bounded, credential, chunk -> {
+                providerIo.executeWithoutResult(status -> port.streamInto(bounded, credential, cancellation, chunk -> {
                     if (chunk != null) {
                         if (chunk.usage() != null) rawUsage.set(chunk.usage());
                         modelIdentity.updateAndGet(current -> current.merge(chunk.modelIdentity()));
                     }
                     if (chunk == null || chunk.content() == null || !chunk.content().isEmpty()
                             || chunk.complete() || chunk.usage() != null
+                            || chunk.toolCallDelta() != null || chunk.terminal()
                             || chunk.modelIdentity().status() == AiProviderModelIdentity.Status.MISSING) {
                         sink.accept(chunk);
                     }
@@ -410,6 +468,31 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             return Math.addExact(bytes, Math.multiplyExact(4L, request.messages().size()));
         }
 
+        private long estimateAgentRequestTokens(AiProviderRequest request) {
+            long messageBytes = 0;
+            long serializedBytes;
+            try {
+                for (AiProviderRequest.Message message : request.messages()) {
+                    if (message.content() != null) {
+                        messageBytes = Math.addExact(messageBytes,
+                                message.content().getBytes(StandardCharsets.UTF_8).length);
+                    }
+                    if (message.role() == com.auralis.app.ai.AiMessageRole.TOOL
+                            && message.content().getBytes(StandardCharsets.UTF_8).length
+                            > chatAgent.maxToolResultUtf8Bytes()) throw requestBudgetExceeded();
+                }
+                serializedBytes = objectMapper.writeValueAsBytes(request).length;
+                if (serializedBytes > chatAgent.maxSerializedRequestUtf8Bytes()) throw requestBudgetExceeded();
+            } catch (ArithmeticException | JacksonException exception) {
+                throw requestBudgetExceeded();
+            }
+            long legacyMessageByteLimit = Math.multiplyExact((long) ai.maxPromptChars(), 4L);
+            if (messageBytes > legacyMessageByteLimit) throw requestBudgetExceeded();
+            // Count the complete request, including schemas, tool-call arguments and results.
+            return Math.addExact(serializedBytes,
+                    Math.multiplyExact(4L, request.messages().size()));
+        }
+
         private void enforceRequestByteLimit(AiProviderRequest request) {
             long bytes = 0;
             for (AiProviderRequest.Message message : request.messages()) {
@@ -514,7 +597,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             if (overview && requested == null) throw requestBudgetExceeded();
             if (requested != null && (requested < 1 || requested > outputLimit)) throw requestBudgetExceeded();
             int bounded = requested == null ? Math.toIntExact(outputLimit) : requested;
-            return new AiProviderRequest(request.model(), request.messages(), request.temperature(), bounded,
+            return new AiProviderRequest(request.model(), request.messages(), request.tools(), request.temperature(), bounded,
                     request.structuredJson(), overview,
                     overview ? ai.overviewLimits().maxResponseBytes() : 0);
         }
@@ -524,6 +607,12 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             AiCredentialSource.requireKnown(source);
             policies.require(new AiTaskContext(task.userId(), task.feature(), "gateway", null, task.operationKind()),
                     stage, method, role);
+        }
+
+        private void requireToolsAllowed(AiProviderRequest request) {
+            if (!request.tools().isEmpty() && task.operationKind() != AiOperationKind.CHAT_AGENT_TURN) {
+                throw new AiPolicyContractException();
+            }
         }
 
         private AiUsageLimitException requestBudgetExceeded() {

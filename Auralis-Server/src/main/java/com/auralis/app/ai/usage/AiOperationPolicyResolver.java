@@ -11,7 +11,21 @@ public final class AiOperationPolicyResolver {
     private final Map<AiOperationKind, AiOperationPolicy> policies;
 
     public AiOperationPolicyResolver(AuralisProperties.Limits limits) {
+        this(limits, ChatAgentProperties.defaults());
+    }
+
+    public AiOperationPolicyResolver(AuralisProperties.Limits limits, ChatAgentProperties chatAgent) {
         EnumMap<AiOperationKind, AiOperationPolicy> matrix = new EnumMap<>(AiOperationKind.class);
+        add(matrix, AiOperationKind.CHAT_AGENT_TURN, AiFeature.CHAT,
+                chatAgent.maxModelAndEmbeddingCalls(), limits.chatTaskTokens(),
+                Map.of(AiStage.RETRIEVAL_EMBEDDING, rule(method(AiInvocationMethod.EMBED), roles(),
+                                chatAgent.maxModelAndEmbeddingCalls(), chatAgent.maxModelAndEmbeddingCalls()),
+                        AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.STREAM, AiInvocationMethod.COMPLETE),
+                                roles(), chatAgent.maxModelAndEmbeddingCalls(), chatAgent.maxModelAndEmbeddingCalls())),
+                chatAgent.maxModelAndEmbeddingCalls());
+        add(matrix, AiOperationKind.TEXT_GENERATION, AiFeature.CHAT, 1, limits.chatTaskTokens(),
+                Map.of(AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.COMPLETE),
+                        roles(), 1, 1)), 1);
         add(matrix, AiOperationKind.CHAT_TURN, AiFeature.CHAT, limits.chatMaxCalls(), limits.chatTaskTokens(),
                 Map.of(AiStage.RETRIEVAL_EMBEDDING, rule(method(AiInvocationMethod.EMBED), roles(), null, 1),
                         AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.STREAM, AiInvocationMethod.COMPLETE), roles(), null, 1)));
@@ -52,7 +66,12 @@ public final class AiOperationPolicyResolver {
     }
     private static void add(Map<AiOperationKind, AiOperationPolicy> out, AiOperationKind kind, AiFeature feature,
                             int calls, long tokens, Map<AiStage, AiOperationPolicy.StageRule> stages) {
-        out.put(kind, new AiOperationPolicy(kind, feature, calls, tokens, stages));
+        add(out, kind, feature, calls, tokens, stages, 0);
+    }
+    private static void add(Map<AiOperationKind, AiOperationPolicy> out, AiOperationKind kind, AiFeature feature,
+                            int calls, long tokens, Map<AiStage, AiOperationPolicy.StageRule> stages,
+                            int allOriginMaxCalls) {
+        out.put(kind, new AiOperationPolicy(kind, feature, calls, tokens, stages, allOriginMaxCalls));
     }
     private static AiOperationPolicy.StageRule rule(Set<AiInvocationMethod> methods, Set<AiOutputRole> roles, Integer allCalls) {
         return new AiOperationPolicy.StageRule(methods, roles, allCalls, null);

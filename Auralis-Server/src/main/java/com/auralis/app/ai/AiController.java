@@ -20,7 +20,6 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.http.MediaType;
 import io.swagger.v3.oas.annotations.Operation;
@@ -38,7 +37,6 @@ public class AiController {
     private final AiSettingsService settingsService;
     private final AiProviderDiscoveryService providerDiscoveryService;
     private final ConversationService conversationService;
-    private final AiStreamingService streamingService;
     private final SuggestionService suggestionService;
     private final OverviewGenerationService overviewGenerationService;
     private final ObjectMapper objectMapper;
@@ -49,7 +47,6 @@ public class AiController {
             AiSettingsService settingsService,
             AiProviderDiscoveryService providerDiscoveryService,
             ConversationService conversationService,
-            AiStreamingService streamingService,
             SuggestionService suggestionService,
             OverviewGenerationService overviewGenerationService,
             ObjectMapper objectMapper,
@@ -58,7 +55,6 @@ public class AiController {
         this.settingsService = settingsService;
         this.providerDiscoveryService = providerDiscoveryService;
         this.conversationService = conversationService;
-        this.streamingService = streamingService;
         this.suggestionService = suggestionService;
         this.overviewGenerationService = overviewGenerationService;
         this.objectMapper = objectMapper;
@@ -126,29 +122,6 @@ public class AiController {
             @RequestParam long baseVersion) {
         conversationService.delete(principal.userId(), conversationId, baseVersion);
         return ResponseEntity.status(NO_CONTENT).build();
-    }
-
-    @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public ResponseEntity<StreamingResponseBody> streamMessage(
-            @AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody AiMessageCommand command) {
-        streamingService.validatePromptBudget(command);
-        StreamingResponseBody body = output -> {
-            streamingService.stream(principal.userId(), command, event -> writeEvent(output, event));
-        };
-        return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM).body(body);
-    }
-
-    private void writeEvent(java.io.OutputStream output, AiStreamEvent event) {
-        try {
-            output.write(("id: " + event.id() + "\n" +
-                    "event: " + event.event() + "\n" +
-                    "data: " + objectMapper.writeValueAsString(event.data()) + "\n\n")
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            output.flush();
-        } catch (java.io.IOException exception) {
-            throw new AiStreamAbortException("SSE client disconnected", exception);
-        }
     }
 
     @PostMapping("/suggestions")

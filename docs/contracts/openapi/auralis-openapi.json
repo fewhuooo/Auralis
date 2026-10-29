@@ -2057,6 +2057,37 @@
         } ]
       }
     },
+    "/api/ai/text-generations" : {
+      "post" : {
+        "tags" : [ "chat-runtime-controller" ],
+        "operationId" : "generateText",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TextGenerationCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TextGenerationView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/ai/suggestions" : {
       "post" : {
         "tags" : [ "ai-controller" ],
@@ -2511,7 +2542,7 @@
     },
     "/api/ai/messages/stream" : {
       "post" : {
-        "tags" : [ "ai-controller" ],
+        "tags" : [ "chat-runtime-controller" ],
         "operationId" : "streamMessage",
         "requestBody" : {
           "content" : {
@@ -2583,6 +2614,92 @@
               "*/*" : {
                 "schema" : {
                   "$ref" : "#/components/schemas/ConversationView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/conversations/{conversationId}/runs/{runId}/cancel" : {
+      "post" : {
+        "tags" : [ "chat-runtime-controller" ],
+        "operationId" : "cancel_1",
+        "parameters" : [ {
+          "name" : "conversationId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "runId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChatRunStatusView"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/conversations/{conversationId}/runs/{runId}/attempts" : {
+      "post" : {
+        "tags" : [ "chat-runtime-controller" ],
+        "operationId" : "retry",
+        "parameters" : [ {
+          "name" : "conversationId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "runId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ChatRetryCommand"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "text/event-stream" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StreamingResponseBody"
                 }
               }
             }
@@ -3304,6 +3421,44 @@
         "responses" : {
           "204" : {
             "description" : "No Content"
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/conversations/{conversationId}/runs/{runId}" : {
+      "get" : {
+        "tags" : [ "chat-runtime-controller" ],
+        "operationId" : "status",
+        "parameters" : [ {
+          "name" : "conversationId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "runId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ChatRunStatusView"
+                }
+              }
+            }
           }
         },
         "security" : [ {
@@ -4483,63 +4638,63 @@
           "float" : {
             "type" : "boolean"
           },
-          "container" : {
-            "type" : "boolean"
-          },
           "object" : {
             "type" : "boolean"
           },
-          "floatingPointNumber" : {
+          "container" : {
             "type" : "boolean"
           },
-          "string" : {
-            "type" : "boolean"
-          },
-          "number" : {
+          "missingNode" : {
             "type" : "boolean"
           },
           "pojo" : {
             "type" : "boolean"
           },
-          "long" : {
+          "number" : {
             "type" : "boolean"
           },
-          "double" : {
+          "short" : {
+            "type" : "boolean"
+          },
+          "string" : {
             "type" : "boolean"
           },
           "textual" : {
             "type" : "boolean",
             "deprecated" : true
           },
-          "short" : {
-            "type" : "boolean"
-          },
           "int" : {
             "type" : "boolean"
           },
-          "binary" : {
+          "long" : {
             "type" : "boolean"
           },
           "boolean" : {
             "type" : "boolean"
           },
-          "bigDecimal" : {
+          "binary" : {
+            "type" : "boolean"
+          },
+          "double" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
             "type" : "boolean"
           },
           "valueNode" : {
-            "type" : "boolean"
-          },
-          "integralNumber" : {
             "type" : "boolean"
           },
           "nodeType" : {
             "type" : "string",
             "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
           },
-          "bigInteger" : {
+          "integralNumber" : {
             "type" : "boolean"
           },
-          "missingNode" : {
+          "bigDecimal" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -5488,6 +5643,36 @@
           }
         }
       },
+      "TextGenerationCommand" : {
+        "type" : "object",
+        "properties" : {
+          "operation" : {
+            "type" : "string",
+            "enum" : [ "summary", "extract", "format", "transcript" ],
+            "maxLength" : 32,
+            "minLength" : 0
+          },
+          "input" : {
+            "type" : "string",
+            "maxLength" : 48000,
+            "minLength" : 0
+          },
+          "requestId" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "input", "operation" ]
+      },
+      "TextGenerationView" : {
+        "type" : "object",
+        "properties" : {
+          "text" : {
+            "type" : "string"
+          }
+        }
+      },
       "SuggestionCommand" : {
         "type" : "object",
         "properties" : {
@@ -5846,28 +6031,31 @@
       "AiMessageCommand" : {
         "type" : "object",
         "properties" : {
+          "protocolVersion" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "Chat protocol version; only 1 is supported",
+            "example" : 1
+          },
+          "action" : {
+            "type" : "string",
+            "description" : "turn or activity_submission",
+            "enum" : [ "turn", "activity_submission" ],
+            "maxLength" : 32,
+            "minLength" : 0
+          },
           "conversationId" : {
             "type" : "string",
             "format" : "uuid"
           },
+          "requestId" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          },
           "content" : {
             "type" : "string",
             "maxLength" : 12000,
-            "minLength" : 0
-          },
-          "provider" : {
-            "type" : "string",
-            "enum" : [ "DEEPSEEK", "OPENAI_COMPATIBLE", "SILICONFLOW" ]
-          },
-          "topK" : {
-            "type" : "integer",
-            "format" : "int32",
-            "maximum" : 32,
-            "minimum" : 1
-          },
-          "clientRequestId" : {
-            "type" : "string",
-            "maxLength" : 128,
             "minLength" : 0
           },
           "readingContext" : {
@@ -5877,9 +6065,34 @@
             "type" : "string",
             "maxLength" : 4000,
             "minLength" : 0
+          },
+          "activityId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "questionVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "submissionId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "answer" : {
+            "$ref" : "#/components/schemas/JsonNode",
+            "description" : "For open questions, a raw nonblank string. For single or multi choice, a raw array of option keys.",
+            "example" : [ "A" ],
+            "oneOf" : [ {
+              "type" : "string"
+            }, {
+              "type" : "array",
+              "items" : {
+                "type" : "string"
+              }
+            } ]
           }
         },
-        "required" : [ "content" ]
+        "required" : [ "action", "conversationId", "protocolVersion", "requestId" ]
       },
       "ReadingContext" : {
         "type" : "object",
@@ -5942,6 +6155,51 @@
         },
         "required" : [ "baseVersion" ]
       },
+      "ActiveChatRunView" : {
+        "type" : "object",
+        "properties" : {
+          "runId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "userMessageId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "currentAttemptId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "currentReplyMessageId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "executionActive" : {
+            "type" : "boolean"
+          },
+          "publicSnapshot" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : { }
+            }
+          },
+          "toolTrace" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : { }
+            }
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }
+      },
       "ConversationView" : {
         "type" : "object",
         "properties" : {
@@ -5981,6 +6239,16 @@
           "sourceId" : {
             "type" : "string",
             "format" : "uuid"
+          },
+          "chatProtocolVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "chatSupported" : {
+            "type" : "boolean"
+          },
+          "activeRun" : {
+            "$ref" : "#/components/schemas/ActiveChatRunView"
           }
         }
       },
@@ -5997,7 +6265,7 @@
           },
           "role" : {
             "type" : "string",
-            "enum" : [ "USER", "ASSISTANT", "SYSTEM" ]
+            "enum" : [ "USER", "ASSISTANT", "SYSTEM", "TOOL" ]
           },
           "status" : {
             "type" : "string",
@@ -6015,8 +6283,145 @@
           "createdAt" : {
             "type" : "string",
             "format" : "date-time"
+          },
+          "parts" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : { }
+            }
+          },
+          "chatProtocolVersion" : {
+            "type" : "integer",
+            "format" : "int32"
           }
         }
+      },
+      "Attempt" : {
+        "type" : "object",
+        "properties" : {
+          "attemptId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "attemptNo" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "requestId" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "replyMessageId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "startedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "endedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "safeErrorCode" : {
+            "type" : "string"
+          }
+        }
+      },
+      "ChatRunStatusView" : {
+        "type" : "object",
+        "properties" : {
+          "protocolVersion" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "conversationId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "runId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "requestId" : {
+            "type" : "string"
+          },
+          "userMessageId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "currentAttemptId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "currentReplyMessageId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "fenceVersion" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "executionActive" : {
+            "type" : "boolean"
+          },
+          "accountingSummary" : {
+            "type" : "object",
+            "additionalProperties" : {
+              "type" : "integer",
+              "format" : "int64"
+            }
+          },
+          "publicSnapshot" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : { }
+            }
+          },
+          "toolTrace" : {
+            "type" : "array",
+            "items" : {
+              "type" : "object",
+              "additionalProperties" : { }
+            }
+          },
+          "createdAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "updatedAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "attempts" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Attempt"
+            }
+          }
+        }
+      },
+      "ChatRetryCommand" : {
+        "type" : "object",
+        "properties" : {
+          "requestId" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "requestId" ]
       },
       "ListResponse" : {
         "type" : "object",
