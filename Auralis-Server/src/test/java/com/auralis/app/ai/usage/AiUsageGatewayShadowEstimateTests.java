@@ -313,7 +313,7 @@ class AiUsageGatewayShadowEstimateTests {
                     3_000, 10_000, 120_000, 240_000, 12_000, 8, 5_242_880,
                     32, 32_768, 3_000, 10_000, 3, 1_048_576, List.of(), false,
                     1_000, 60_000, 3, limits, shadowEnabled, true, estimatorMode, List.of(),
-                    AuralisProperties.OverviewLimits.withoutAdditionalCaps());
+                    AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
             AiUsageGuard guard = new AiUsageGuard(jdbc, transactions, Clock.systemUTC(), limits);
             AiProviderPort provider = new AiProviderPort() {
                 @Override public AiProviderType type() { return AiProviderType.DEEPSEEK; }

@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-10-28
+更新时间：2026-10-29
 
 文档状态：现行
 
@@ -131,6 +131,7 @@
 ### 实施方案、运维与交付
 
 - [实施方案分类索引](plans/README.md)
+- [Chat Agent 与流式可视化教学重写计划（2026-10-29；独立分支，计划中）](plans/2026-10-29-chat-agent-visual-teaching.md)
 - [Overview 独立执行重试实施计划](plans/2026-10-27-overview-explicit-retry.md)
 - [Overview 原章顺序与柔性路由实施计划](plans/2026-10-27-overview-original-chapter-order.md)
 - [Overview 动态容量与链路简化实施计划](plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)

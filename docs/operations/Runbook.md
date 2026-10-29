@@ -1,5 +1,9 @@
 # Auralis 运维与应急 Runbook
 
+### 2026-10-28 Overview 自动重试配置（源码候选，未部署）
+
+AURALIS_AI_OVERVIEW_MAX_RETRIES=3，含义为首发失败后最多额外重试3次；0关闭，负数启动校验拒绝。Spring属性auralis.ai.overview-max-retries与Compose透传同步；实际.env未修改，重建后端后方生效，无新数据库迁移或前端要求。仅重试已返回且结算的模型内容校验失败，网络未知派发、预算/额度和取消等直接停止；次数不影响既有检查点身份，每次重发仍计费。重试日志phase=ADAPTIVE_MODEL_RETRY；阶段INVALID/校验失败日志后可能继续重试，最终结果以RUN_FINISHED/最终任务状态确认。配置与定向/affected检查已完成，完整验证边界见D:/Temp/auralis-overview-auto-retry-20261028/final-report.md；未部署或调用真实模型。
+
 ### 2026-10-27 已执行单条Overview失败缓存清理
 
 用户授权清除阻塞新请求的失败缓存，并明确本次不备份、删除旧备份。目标为Subject generation `7685daa5-a125-4ff5-a175-b21bd4116edb`，状态FAILED/无owner或lease/unknown和active dispatch均0，62关联reservation均COMPLETED，无job/publication；三次请求均复用该代。精确单UUID SERIALIZABLE事务锁父行，按预期行数删除恢复子表及父行，COMMIT exit0。删除177checkpoint、3映射、1计划、126节点、58执行调用关联、62invocation及1失败代。

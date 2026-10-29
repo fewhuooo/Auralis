@@ -15,6 +15,8 @@ import { createStableMutation } from '@/services/offlineWritePolicy'
 import { subscribeProjectionChange } from '@/services/localProjectionEvents'
 import { shouldScheduleAwaitingClientDocument } from '@/utils/sourceSchedulingPolicy'
 import type { FileOverviewTrigger, OverviewRegenerationResult } from '@/types/overview'
+import type { SourceScheduleResult } from '@/services/documentProcessing/sourceJobScheduler'
+import { runManualSourceResume } from '@/services/documentProcessing/manualSourceResume'
 import {
   beginOverviewScopeDeletion, cancelOverviewScopeDeletion, completeOverviewScopeDeletion,
   reactivateRestoredOverviewScope,
@@ -35,7 +37,7 @@ function scheduleSync(): void {
 }
 
 interface SourceDocumentScheduler {
-  schedule(sourceId: string): Promise<unknown>
+  schedule(sourceId: string, options?: { revalidateNotFound?: boolean }): Promise<SourceScheduleResult>
   discard(sourceId: string): Promise<void>
 }
 
@@ -498,29 +500,51 @@ export const useSourceStore = defineStore('source', () => {
     fileOverviewGenerator = generator
   }
 
-  async function resumeDocumentProcessing(sourceId: string): Promise<void> {
-    if (!useAuthStore().isAuthenticated) throw new Error('AUTHENTICATION_REQUIRED')
-    if (!documentScheduler) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
-    await useSyncStore().flushNow()
-
-    const localSource = await (await repository()).read<SourceView>('SOURCE', sourceId)
-    if (!localSource || localSource.syncStatus !== 'synced') {
-      if (localSource?.syncStatus === 'conflict') {
-        throw new Error('资料登记发生版本冲突，请刷新后重试')
-      }
-      if (localSource?.syncStatus === 'error') {
-        throw new Error('资料登记同步失败，请检查网络或资料所属学科后重试')
-      }
-      throw new Error('资料尚未同步到服务端，请稍后再试')
+  async function resumeDocumentProcessing(
+    sourceId: string,
+    onProgress?: (stage: 'sync' | 'schedule') => void,
+  ): Promise<SourceScheduleResult> {
+    const authStore = useAuthStore()
+    const userId = authStore.user?.id
+    const serverDeviceId = authStore.serverDeviceId
+    const sessionId = authStore.sessionId
+    const scheduler = documentScheduler
+    if (!authStore.isAuthenticated || !userId || !serverDeviceId || !sessionId) {
+      throw new Error('AUTHENTICATION_REQUIRED')
     }
+    if (!scheduler) throw new Error('DOCUMENT_JOB_RUNNER_UNAVAILABLE')
+    const isScopeCurrent = () => authStore.isAuthenticated
+      && authStore.user?.id === userId
+      && authStore.serverDeviceId === serverDeviceId
+      && authStore.sessionId === sessionId
+      && documentScheduler === scheduler
 
-    const result = await documentScheduler.schedule(sourceId)
-    const status = result && typeof result === 'object' ? (result as { status?: unknown }).status : undefined
+    const result = await runManualSourceResume({
+      isScopeCurrent,
+      onProgress,
+      flushSync: () => useSyncStore().flushNow(),
+      readLocalSource: async () => {
+        const repo = await getLocalRepository(userId, serverDeviceId)
+        if (!isScopeCurrent()) throw new Error('DOCUMENT_PROCESSING_SCOPE_CHANGED')
+        return repo.read<SourceView>('SOURCE', sourceId)
+      },
+      assertSourceSynced: (localSource) => {
+        if (!localSource || localSource.syncStatus !== 'synced') {
+          if (localSource?.syncStatus === 'conflict') throw new Error('SOURCE_SYNC_CONFLICT')
+          if (localSource?.syncStatus === 'error') throw new Error('SOURCE_SYNC_FAILED')
+          throw new Error('SOURCE_NOT_SYNCED')
+        }
+      },
+      schedule: () => scheduler.schedule(sourceId, { revalidateNotFound: true }),
+    })
+    if (!isScopeCurrent()) return result
+    const status = result.status
     const current = sources.value.find((source) => source.id === sourceId)
     if (status === 'READY' && current?.ingestionRevision && fileOverviewGenerator) {
       void fileOverviewGenerator.generateReadyFileOverview(sourceId, current.ingestionRevision, 'MANUAL_RETRY')
         .catch(() => console.warn('[SourceStore] file overview generation failed'))
     }
+    return result
   }
 
   async function retrySourceProcessing(sourceId: string): Promise<SourceFileModel> {

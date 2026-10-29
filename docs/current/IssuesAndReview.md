@@ -1,5 +1,35 @@
 # Auralis 当前问题与审查登记
 
+### 2026-10-29 提交前验证与受限检查
+
+已关闭明确构建阻塞：OverviewGenerationServiceRecoveryTests 的 Ai fixture 补传 currentAi.overviewMaxRetries()，最终 -DskipTests package 退出0；唯一只读审查B0/I0/O0。剩余验证限制：Recovery运行依赖Docker，当前daemon不可用，实际一次运行在Testcontainers初始化失败；PC静态扫描未改动Rust测试模块的localhost产生既有误报，命令退出1。PC类型检查及相关51项通过，后端原11文件与已有146/43/3证据哈希一致；历史全量未变为一次全绿。待Docker可用后补Recovery运行，扫描器问题独立处理，本次不扩大源码范围。证据D:/Temp/auralis-precommit-20261029/，不代表部署或GUI验收。
+
+### 2026-10-29 Chat Agent 计划的实施前置
+
+Chat 按[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)在独立分支 `codex/chat-agent-rewrite` 的原有入口重写。P0 必须闭合工具消息/流式取消经 Gateway 和安全 HTTP 的适配、stage 次数策略、原子会话互斥、会话保留与所有客户端消费点；切换后删除弃用 Chat 执行链和协议接线，避免留下双轨。共有基础和并行 Overview 改动按 dirty 基线保护。当前只完成分支与计划调整，未改业务实现或运行应用测试、部署、操作业务库。
+
+### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
+
+处理中心“开始本机处理”增加“正在同步资料…”/“正在启动本机处理…”两阶段反馈与重复点击保护。调度器SKIPPED/WAITING/FAILED结果不再静默丢弃，已知原因映射为安全中文；未知异常不回显原始详情。manualSourceResume无状态helper保留flush与synced检查，固定用户/设备/session/仓库及scheduler，在等待后重核上下文；界面迟到结果也按操作代次和scope隔离。
+
+手动操作可重验曾404的临时NOT_FOUND缓存，普通自动调度仍节流；显式删除、并发删除及迟到处理fence保持。该资料本地/后端元数据齐备但无job的现场已只读确认；本次是否实际命中过404缓存尚未证实，不能将该候选路径当作唯一根因。无需重传资料或数据库迁移；未改变后端生成/额度。
+
+type-check exit0、相关scheduler/UI测试最终51/51通过；首轮旧静态断言/泛型推断问题及唯一审查发现已修正，同一reviewer差量关闭后B0/I0。未操作GUI、手动触发真实解析或部署。后续23:39:56香港时间的只读本地快照确认该job与source均READY、无错误，证据post-fix-state.txt；这仅确认队列运行结果，未验收GUI或解析内容质量，也不能证明本次历史404候选根因。基线、逐轮验证与审查见D:/Temp/auralis-desktop-queue-feedback-20261028/；只读现场见D:/Temp/auralis-pre-generation-stall-20261028/。
+
+### 2026-10-28 Overview 模型响应自动重试（源码候选，未部署）
+
+新增AURALIS_AI_OVERVIEW_MAX_RETRIES，默认3表示首次之外最多再试3次（最多4次尝试），0关闭，非负且没有额外固定小上限。.env.example、Spring与Compose已贯通，未改实际.env。覆盖adaptive INDEX/ROUTE/Writer单节与合批/EDIT在模型已返回且网关已结算后的空内容、JSON、字段、Schema、漏节及编辑校验错误；直接重发原stage输入，不重跑已完成检查点，不保存半批。adaptive JSON_REPAIR不另叠加模型调用；普通响应截断沿现有容量拆分。重试次数不进入内容/profile/checkpoint指纹。
+
+网络/连接超时或未知派发不自动重发；预算/额度/限流、取消/中断、总期限、来源变化、租约失效与本地bug不重试。每次真实重发仍走独立invocation/reservation并受现有费用额度约束。阶段重试日志为ADAPTIVE_MODEL_RETRY，带purpose/retryIndex/maxRetries/safeCode，耗尽返回最后具体错误，用户仍可手动断点续跑。
+
+定向146/146（含先前104，不重复计数）、受影响PG十类43/43及TLS3/3通过。唯一full964项0F/90E/2S，90E由PG/TLS参数设置及四个测试文件中的构造器调用导致，分别修正后affected闭合，未重跑full或声称一次全绿。唯一只读审查B0/I0；未部署、未调用真实模型或做GUI验收，未操作业务库/清缓存。证据D:/Temp/auralis-overview-auto-retry-20261028/。
+
+### 2026-10-28 Overview 相邻小节合批写作（源码候选，未部署）
+
+路由提示明确相关主题可合成教学小节，并保留主题唯一分配提醒。Writer可将同源、同章、按目录连续且共享精确原文范围的待写小节合为一次请求；共享原文去重，各节题目、主题与来源独立绑定，成稿按原目录回填。批次大小由完整请求和多节输出预留动态判断，没有固定节数帽。已验证单节保留并跳过，容量拆分parts不跨节合批；合批一个执行节点，完整响应验证成功才保存整批检查点，重试恢复整批，不保存半批。
+
+单节现行操作保持；多节私有操作为write_adjacent_sections_v1，模型仅回sectionIndex与detailedContent，来源/主题由程序回填。未改PC、公开API、数据库结构、额度或执行fence。定向169项在修正构建产物/注解错误后通过；随后审查及新增恢复用例暴露的顶层operation识别和单节manifest误入问题已最小修正，最终受影响Adaptive83/83通过，同一只读reviewer差量关闭后B0/I0。不是一次全绿；未跑全量、部署或真实模型生成，实际输出质量/用量节省未验收。证据D:/Temp/auralis-coalesced-writer-20261028/。
+
 ### 2026-10-28 历史记录与现行风险分层
 
 明确的阶段历史区和旧综合审计已移入归档，现行风险登记及验收边界保持；原阶段历史中的未验收项不因迁移而关闭。空壳规范文件只有标题，已移除入口，工作树原文留在仓库外备份；代码保护规则仍以 `AGENTS.md` 与 `docs/agent/BeforeCoding.md` 为准。

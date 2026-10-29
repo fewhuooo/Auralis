@@ -1,6 +1,6 @@
 # Auralis 实施方案索引
 
-更新时间：2026-10-26
+更新时间：2026-10-29
 
 文档状态：现行分类索引
 
@@ -45,7 +45,8 @@
 
 ### AI 与模型治理
 
-- [学习 Agent 实施计划（2026-10-16；模型接入依赖统一限额方案，待执行）](2026-10-16-learning-agent-implementation.md)
+- [Chat Agent 与流式可视化教学重写计划（2026-10-29；codex/chat-agent-rewrite，P0 接线与契约冻结后实施）](2026-10-29-chat-agent-visual-teaching.md)
+- [学习 Agent 原实施计划（2026-10-16；Chat 执行入口已由 2026-10-29 计划接替）](2026-10-16-learning-agent-implementation.md)
 - [AI 统一限额与用量治理独立方案（2026-10-16；待实施）](2026-10-16-ai-unified-limits.md)
 - [AI 执行预算治理近期阶段 0–3 计划（2026-10-13；模型/预算诊断、token 影子估算、Overview 有界恢复与 Chat 流式故障回放）](2026-10-13-ai-execution-budget-governance.md)
 - [RAG 默认开启实施计划与证据（2026-10-12；跨端代码、定向测试与构建完成，业务待实测）](2026-10-12-rag-always-on.md)

@@ -473,7 +473,7 @@ class OverviewBudgetIntegrationTests {
                     maxPromptChars > 0
                             ? new AuralisProperties.OverviewLimits(maxPromptChars, 0, 0, 0, 0,
                                     0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-                            : AuralisProperties.OverviewLimits.withoutAdditionalCaps());
+                            : AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
             AuralisProperties properties = mock(AuralisProperties.class);
             when(properties.ai()).thenReturn(ai);
             AiSettingsService settings = mock(AiSettingsService.class);

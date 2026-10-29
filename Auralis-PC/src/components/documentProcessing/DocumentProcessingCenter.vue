@@ -43,10 +43,17 @@
           <span class="processing-phase">{{ sourcePhaseLabel(source.ingestionStatus) }}</span>
         </div>
         <div class="processing-item-meta">
-          <span v-if="source.safeErrorDetail || sourceActionErrors[source.id]" class="processing-error">{{ source.safeErrorDetail || sourceActionErrors[source.id] }}</span>
+          <span v-if="resumingSourceIds.has(source.id)">{{ resumeProgressLabel(source.id) }}</span>
+          <span v-else-if="source.safeErrorDetail || sourceActionErrors[source.id]" class="processing-error">{{ source.safeErrorDetail || sourceActionErrors[source.id] }}</span>
+          <span v-else-if="sourceActionResults[source.id]">{{ sourceActionResults[source.id] }}</span>
           <span v-else>{{ sourceDetail(source) }}</span>
           <div class="processing-actions">
-            <button v-if="source.ingestionStatus === 'AWAITING_CLIENT'" type="button" @click="resumeSource(source.id)">开始本机处理</button>
+            <button
+              v-if="source.ingestionStatus === 'AWAITING_CLIENT'"
+              type="button"
+              :disabled="resumingSourceIds.has(source.id)"
+              @click="resumeSource(source.id)"
+            >{{ resumingSourceIds.has(source.id) ? resumeProgressLabel(source.id) : '开始本机处理' }}</button>
             <button
               v-else-if="source.ingestionStatus === 'FAILED'"
               type="button"
@@ -63,25 +70,44 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useAuthStore } from '@/store/useAuthStore'
 import { useDocumentProcessingStore } from '@/store/useDocumentProcessingStore'
 import { useSourceStore } from '@/store/useSourceStore'
 import type { SourceFileModel } from '@/services/domainMappers'
+import { resumeActionErrorLabel } from '@/services/documentProcessing/manualSourceResume'
 import { sourceDetailLabel, sourcePhaseLabel } from '@/utils/documentProcessingStatus'
 import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback, type OcrDiagnosticsView } from '@/utils/ocrDiagnostics'
 
 const store = useDocumentProcessingStore()
 const sourceStore = useSourceStore()
+const authStore = useAuthStore()
 const jobs = computed(() => store.jobs.filter((job) => job.phase !== 'READY'))
 const serverProcessingSources = computed(() => sourceStore.sources
   .filter((source) => source.type === 'FILE' && source.ingestionStatus && source.ingestionStatus !== 'READY')
   .filter((source) => !jobs.value.some((job) => job.sourceId === source.id)))
 const sourceActionErrors = ref<Record<string, string>>({})
+const sourceActionResults = ref<Record<string, string>>({})
+const resumingSourceIds = ref<Set<string>>(new Set())
+const resumeStages = ref<Record<string, 'sync' | 'schedule'>>({})
+let resumeScopeGeneration = 0
 const retryingSourceIds = ref<Set<string>>(new Set())
 const copyFeedback = ref<Record<string, string>>({})
 const jobViews = computed(() => new Map(store.jobs.map((job) => [job.jobId, formatOcrDiagnostics(job)])))
 let timer: ReturnType<typeof setInterval> | null = null
 let sourcePollTicks = 0
+
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id ?? '', authStore.serverDeviceId ?? '', authStore.sessionId ?? ''],
+  () => {
+    resumeScopeGeneration += 1
+    sourceActionErrors.value = {}
+    sourceActionResults.value = {}
+    resumingSourceIds.value = new Set()
+    resumeStages.value = {}
+  },
+  { flush: 'sync' },
+)
 
 const sourceName = (sourceId: string) => sourceStore.sources.find((source) => source.id === sourceId)?.name || '未命名文件'
 const sourceDetail = (source: SourceFileModel): string => {
@@ -116,23 +142,76 @@ const copyDiagnostics = async (jobId: string, text: string) => {
   copyFeedback.value = updateCopyFeedback(copyFeedback.value, jobId, await copyOcrDiagnostics(text))
 }
 const refreshSources = async () => { await sourceStore.loadSources().catch(() => undefined) }
+const resumeProgressLabel = (sourceId: string) => resumeStages.value[sourceId] === 'schedule'
+  ? '正在启动本机处理…'
+  : '正在同步资料…'
+const resumeResultLabel = (result: { status?: string; reason?: string }): string => {
+  if (result.status === 'READY' || result.status === 'LOCAL_READY' || result.reason === 'ALREADY_READY') return '处理完成'
+  if (result.status === 'WAITING_SERVER_REVISION') return '本机处理完成，等待资料版本同步。'
+  if (result.status === 'PAUSED_NETWORK') return '等待网络恢复后继续处理。'
+  if (result.status === 'FAILED_LOCAL') return '本机处理失败，请重试。'
+  if (result.status === 'FAILED_SERVER') return '服务端处理失败，请重试。'
+  if (result.reason === 'SOURCE_NOT_FOUND') return '服务端暂时无法读取这份资料，请刷新后重试。'
+  if (result.reason === 'SOURCE_DELETED') return '这份资料已删除，无法启动处理。'
+  if (result.reason === 'NON_FILE_SOURCE') return '这类资料不支持本机文件解析。'
+  if (result.reason === 'FILE_SOURCE_NOT_READY_FOR_CLIENT') return '资料尚未准备好，请稍后刷新。'
+  if (result.reason === 'SOURCE_NOT_AWAITING_CLIENT') return '资料当前不需要本机处理，请刷新状态。'
+  if (result.reason === 'SOURCE_ASSET_SHA_MISMATCH') return '本机资料与服务端版本不一致，请重新同步后重试。'
+  if (result.reason === 'SOURCE_ASSET_SHA_INVALID') return '本机资料校验失败，请重新同步后重试。'
+  if (result.reason === 'DOCUMENT_CACHE_OWNERSHIP_MISMATCH') return '本机处理记录与资料不匹配，无法继续。'
+  if (result.reason === 'DOCUMENT_CACHE_CLEANUP_FAILED') return '本机处理缓存清理失败，请重试。'
+  if (result.reason === 'DOCUMENT_LEGACY_CACHE_REBUILD_FAILED') return '本机处理缓存无法重建，请重试。'
+  if (result.reason === 'DOCUMENT_CACHE_RECEIPT_UNAVAILABLE') return '本机处理结果暂不可用，请重试。'
+  return '本机处理未启动，请刷新后重试。'
+}
 const refresh = async () => {
   await Promise.all([store.refresh().catch(() => undefined), refreshSources()])
 }
 const retry = async (jobId: string) => { await store.retry(jobId).catch(() => undefined); await refresh() }
 const cancel = async (jobId: string) => { await store.cancel(jobId).catch(() => undefined); await refresh() }
 const resumeSource = async (sourceId: string) => {
+  if (resumingSourceIds.value.has(sourceId)) return
+  const scopeGeneration = resumeScopeGeneration
+  const userId = authStore.user?.id
+  const serverDeviceId = authStore.serverDeviceId
+  const sessionId = authStore.sessionId
+  const authenticated = authStore.isAuthenticated
+  const isCurrentAction = () => scopeGeneration === resumeScopeGeneration
+    && authStore.isAuthenticated === authenticated
+    && authStore.user?.id === userId
+    && authStore.serverDeviceId === serverDeviceId
+    && authStore.sessionId === sessionId
   const { [sourceId]: _ignored, ...remaining } = sourceActionErrors.value
   sourceActionErrors.value = remaining
+  const { [sourceId]: _oldResult, ...remainingResults } = sourceActionResults.value
+  sourceActionResults.value = remainingResults
+  resumingSourceIds.value = new Set(resumingSourceIds.value).add(sourceId)
+  resumeStages.value = { ...resumeStages.value, [sourceId]: 'sync' }
   try {
-    await sourceStore.resumeDocumentProcessing(sourceId)
+    const result = await sourceStore.resumeDocumentProcessing(sourceId, (stage) => {
+      if (!isCurrentAction()) return
+      resumeStages.value = { ...resumeStages.value, [sourceId]: stage }
+    })
+    if (isCurrentAction()) {
+      sourceActionResults.value = { ...sourceActionResults.value, [sourceId]: resumeResultLabel(result) }
+    }
   } catch (error) {
-    sourceActionErrors.value = {
-      ...sourceActionErrors.value,
-      [sourceId]: error instanceof Error ? error.message : String(error),
+    if (isCurrentAction()) {
+      const stage = resumeStages.value[sourceId] ?? 'sync'
+      sourceActionErrors.value = {
+        ...sourceActionErrors.value,
+        [sourceId]: resumeActionErrorLabel(error, stage),
+      }
     }
   } finally {
-    await refresh()
+    if (isCurrentAction()) {
+      const pending = new Set(resumingSourceIds.value)
+      pending.delete(sourceId)
+      resumingSourceIds.value = pending
+      const { [sourceId]: _stage, ...remainingStages } = resumeStages.value
+      resumeStages.value = remainingStages
+      await refresh()
+    }
   }
 }
 const retrySource = async (sourceId: string) => {

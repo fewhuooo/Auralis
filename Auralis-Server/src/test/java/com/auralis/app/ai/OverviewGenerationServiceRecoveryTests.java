@@ -637,7 +637,7 @@ class OverviewGenerationServiceRecoveryTests {
                 currentAi.ingestionLeaseMillis(), currentAi.ingestionMaxAttempts(), raised,
                 currentAi.shadowTokenEstimateEnabled(), currentAi.overviewOutputRecoveryEnabled(),
                 currentAi.overviewInputTokenEstimatorMode(), currentAi.overviewModelCapacities(),
-                currentAi.overviewLimits());
+                currentAi.overviewLimits(), currentAi.overviewMaxRetries());
         ReflectionTestUtils.setField(service, "properties", new AuralisProperties(properties.environment(),
                 properties.api(), properties.upload(), properties.identity(), raisedAi));
         ReflectionTestUtils.setField(usageGuard, "limits", raised);

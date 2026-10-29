@@ -86,14 +86,16 @@ function input(name = '讲义.pdf', cleanup = async () => {}) {
   return { file: { name, type: 'application/pdf', size: 12 }, cleanup }
 }
 
-function schedulerHarness({ currentSource = source(), sourceError, repository = createRepository(), local = input(), downloadAsset, expectedSha256, actualSha256 = 'f'.repeat(64), runPhase = 'PACKAGING', runJobOverride, uploadOverride, onUpload, onPrepare, onJobChanged, deleteCacheOverride } = {}) {
+function schedulerHarness({ currentSource = source(), sourceError, sourceApiGet, repository = createRepository(), local = input(), downloadAsset, expectedSha256, actualSha256 = 'f'.repeat(64), runPhase = 'PACKAGING', runJobOverride, uploadOverride, onUpload, onPrepare, onJobChanged, deleteCacheOverride } = {}) {
   const calls = { run: 0, download: 0, hash: 0, cleanup: 0, prepare: 0, sourceGet: 0, cancelled: [], deletedCaches: [] }
   const scheduler = new SourceJobScheduler({
     repository,
     sourceApi: {
       async get() {
         calls.sourceGet += 1
-        if (sourceError) throw sourceError
+        if (sourceApiGet) return sourceApiGet()
+        const error = typeof sourceError === 'function' ? sourceError() : sourceError
+        if (error) throw error
         return currentSource
       },
     },
@@ -151,6 +153,60 @@ test('404 Source lookup discards its owner-scoped jobs and stays skipped as SOUR
   assert.deepEqual(calls.deletedCaches, ['cache-1'])
   assert.equal(calls.sourceGet, 1)
   assert.deepEqual(await scheduler.schedule('source-1'), { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' })
+  assert.equal(calls.sourceGet, 1)
+})
+
+test('manual revalidation retries a cached 404 after the server Source becomes visible', async () => {
+  let missing = true
+  const { scheduler, repository, calls } = schedulerHarness({
+    sourceError: () => missing ? new ApiProblemError({
+      title: 'Source was not found', status: 404, detail: 'The Source does not exist', code: 'RESOURCE_NOT_FOUND',
+    }) : null,
+  })
+
+  assert.deepEqual(await scheduler.schedule('source-1'), { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' })
+  missing = false
+  const result = await scheduler.schedule('source-1', { revalidateNotFound: true })
+
+  assert.equal(result.status, 'READY')
+  assert.equal(calls.sourceGet, 2)
+  assert.equal((await repository.list()).length, 1)
+})
+
+test('manual revalidation preserves the explicit delete fence after a prior 404', async () => {
+  const sourceError = new ApiProblemError({
+    title: 'Source was not found', status: 404, detail: 'The Source does not exist', code: 'RESOURCE_NOT_FOUND',
+  })
+  const { scheduler, calls } = schedulerHarness({ sourceError })
+
+  await scheduler.schedule('source-1')
+  await scheduler.discard('source-1')
+
+  assert.deepEqual(await scheduler.schedule('source-1', { revalidateNotFound: true }), {
+    status: 'SKIPPED', reason: 'SOURCE_DELETED',
+  })
+  assert.equal(calls.sourceGet, 1)
+})
+
+test('a concurrent explicit delete wins over an in-flight 404 and cannot be revalidated', async () => {
+  let releaseSourceGet
+  const sourceGetGate = new Promise((resolve) => { releaseSourceGet = resolve })
+  const sourceError = new ApiProblemError({
+    title: 'Source was not found', status: 404, detail: 'The Source does not exist', code: 'RESOURCE_NOT_FOUND',
+  })
+  const { scheduler, calls } = schedulerHarness({ sourceApiGet: async () => {
+    await sourceGetGate
+    throw sourceError
+  } })
+  const inFlight = scheduler.schedule('source-1')
+  while (!calls.sourceGet) await new Promise((resolve) => setImmediate(resolve))
+  await scheduler.discard('source-1')
+  releaseSourceGet()
+
+  assert.deepEqual(await inFlight, { status: 'SKIPPED', reason: 'SOURCE_DELETED' })
+  assert.deepEqual(await scheduler.schedule('source-1', { revalidateNotFound: true }), {
+    status: 'SKIPPED', reason: 'SOURCE_DELETED',
+  })
   assert.equal(calls.sourceGet, 1)
 })
 

@@ -1,5 +1,9 @@
 # Auralis 数据库与端侧数据契约
 
+### 2026-10-28 Writer 多小节私有执行载荷（无数据库迁移）
+
+多节操作write_adjacent_sections_v1的执行descriptor绑定有序members及其目录位置、主题、原文范围和prompt身份；singleton不序列化空members。每个合批对应一个现有execution node，模型回传request-local sectionIndex/detailedContent；程序按成员自己的授权原文范围绑定各节，全部校验成功后通过现有journal原子保存完整batch checkpoint，再拆回公开outline。合批恢复保持成员组合，已验证singleton保持独立，parts沿现行单节路径；不新增表列、旁路映射或公开响应字段。费用、未知派发与lease/fence规则保持。定向及同一只读审查B0/I0；未部署、未操作业务库或验证真实模型。证据D:/Temp/auralis-coalesced-writer-20261028/。
+
 ### V41 Overview 重试父关联与请求意图（源码候选，未应用业务库）
 
 `overview_generations.retry_of_generation_id UUID NULL`自引用原代，外键`ON DELETE SET NULL`，CHECK禁止引用自身；可空列唯一索引`uq_overview_generations_retry_successor`使用默认NULL DISTINCT语义，允许普通NULL父代并存、保证非NULL父代只有一个直接后继。`overview_generation_requests.retry_of_request_id UUID NULL`保存客户端重试意图供request幂等校验，无外键，也不进入内容指纹。现有表内扩展，无新任务表；新代独立budgetTaskId，父代失去执行权时fence递增，旧记录、检查点及usage ledger保留。

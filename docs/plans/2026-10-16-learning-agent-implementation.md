@@ -1,5 +1,7 @@
 # 学习 Agent 实施计划
 
+> 2026-10-29：本文的 Chat 实施入口已由[Chat Agent 与流式可视化教学计划](2026-10-29-chat-agent-visual-teaching.md)接替。下文保留原计划与当时前置证据，不再执行学习专属任务；当前任务以新计划的范围、协议、LangChain4j 接线及验收为准。新功能尚未实施。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** 在现有 PC AI 面板实现沿大纲或自由目标的可恢复交互带学，并以可编辑、可安全重试的知识块完成本节，衔接现有正式学习/复习。

@@ -31,7 +31,7 @@ class AiConfigurationTests {
         assertThat(java.util.Arrays.stream(AuralisProperties.Ai.class.getRecordComponents())
                 .map(java.lang.reflect.RecordComponent::getName))
                 .contains("overviewTaskTimeoutMillis", "ingestionEmbeddingBatchMaxItems",
-                        "ingestionEmbeddingBatchMaxUtf8Bytes");
+                        "ingestionEmbeddingBatchMaxUtf8Bytes", "overviewMaxRetries");
     }
 
     @Autowired
@@ -50,6 +50,7 @@ class AiConfigurationTests {
         assertThat(properties.ai().requestTimeoutMillis()).isEqualTo(10_000L);
         assertThat(properties.ai().overviewResponseTimeoutMillis()).isEqualTo(120_000L);
         assertThat(properties.ai().overviewTaskTimeoutMillis()).isEqualTo(240_000L);
+        assertThat(properties.ai().overviewMaxRetries()).isEqualTo(3);
         assertThat(properties.ai().shadowTokenEstimateEnabled()).isTrue();
         assertThat(properties.ai().overviewInputTokenEstimatorMode()).isEqualTo("legacy-bytes");
         assertThat(properties.ai().overviewOutputRecoveryEnabled()).isTrue();
@@ -167,8 +168,27 @@ class AiConfigurationTests {
     }
 
     @Test
+    void bindsOverviewRetryCountAndRejectsNegativeValues() {
+        var disabled = new Binder(new MapConfigurationPropertySource(java.util.Map.of(
+                "auralis.ai.overview-max-retries", "0")))
+                .bind("auralis.ai", AuralisProperties.Ai.class).get();
+        var configured = new Binder(new MapConfigurationPropertySource(java.util.Map.of(
+                "auralis.ai.overview-max-retries", "7")))
+                .bind("auralis.ai", AuralisProperties.Ai.class).get();
+        var invalid = new Binder(new MapConfigurationPropertySource(java.util.Map.of(
+                "auralis.ai.overview-max-retries", "-1")))
+                .bind("auralis.ai", AuralisProperties.Ai.class).get();
+
+        assertThat(disabled.overviewMaxRetries()).isZero();
+        assertThat(configured.overviewMaxRetries()).isEqualTo(7);
+        assertThat(Validation.buildDefaultValidatorFactory().getValidator().validate(invalid))
+                .anyMatch(error -> error.getPropertyPath().toString().equals("overviewMaxRetries"));
+    }
+
+    @Test
     void bindsOverviewModelCapacityFromSpringEnvironmentListSyntax() {
         var source = new SystemEnvironmentPropertySource("overview-capacity-systemEnvironment", java.util.Map.of(
+                "AURALIS_AI_OVERVIEW_MAX_RETRIES", "0",
                 "AURALIS_AI_OVERVIEWMODELCAPACITIES_0_PROVIDER", "OPENAI_COMPATIBLE",
                 "AURALIS_AI_OVERVIEWMODELCAPACITIES_0_ENDPOINT", "https://provider.test/v1",
                 "AURALIS_AI_OVERVIEWMODELCAPACITIES_0_MODEL", "custom-model",
@@ -182,6 +202,7 @@ class AiConfigurationTests {
                 new AuralisProperties.OverviewModelCapacity(
                         "OPENAI_COMPATIBLE",
                         "https://provider.test/v1", "custom-model", 900_000, 64_000));
+        assertThat(bound.overviewMaxRetries()).isZero();
     }
 
     @Test
@@ -204,6 +225,9 @@ class AiConfigurationTests {
         String compose = Files.readString(root.resolve("docker-compose.yml"));
         String exampleEnv = Files.readString(root.resolve(".env.example"));
         String application = Files.readString(root.resolve("Auralis-Server/src/main/resources/application.yml"));
+        assertThat(compose).contains("AURALIS_AI_OVERVIEW_MAX_RETRIES");
+        assertThat(exampleEnv).contains("AURALIS_AI_OVERVIEW_MAX_RETRIES=3");
+        assertThat(application).contains("overview-max-retries: ${AURALIS_AI_OVERVIEW_MAX_RETRIES:3}");
         List<String> variables = List.of(
                 "AURALIS_AI_OVERVIEW_MAX_PROMPT_CHARS",
                 "AURALIS_AI_OVERVIEW_MAX_REQUEST_BYTES",
@@ -357,6 +381,6 @@ class AiConfigurationTests {
                         4, 2, 100_000, 200_000, 2_000_000, 300_000,
                         10_000, 4096, 2, 32_000, 0, 524_288, 512, 16_777_216),
                 true, true, estimatorMode, java.util.List.of(),
-                AuralisProperties.OverviewLimits.withoutAdditionalCaps());
+                AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 3);
     }
 }

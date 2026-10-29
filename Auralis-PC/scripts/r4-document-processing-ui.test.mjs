@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createPinia, setActivePinia } from 'pinia'
 import { useDocumentProcessingStore } from '../src/store/useDocumentProcessingStore.ts'
 import { sourceDetailLabel, sourcePhaseLabel } from '../src/utils/documentProcessingStatus.ts'
+import { resumeActionErrorLabel, runManualSourceResume } from '../src/services/documentProcessing/manualSourceResume.ts'
 import { copyOcrDiagnostics, formatOcrDiagnostics, updateCopyFeedback } from '../src/utils/ocrDiagnostics.ts'
 
 const root = path.resolve(import.meta.dirname, '..')
@@ -47,6 +48,19 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /sourceStore\.loadSources\(\)/)
   assert.match(center, /开始本机处理/)
   assert.match(center, /sourceStore\.resumeDocumentProcessing/)
+  assert.match(center, /:disabled="resumingSourceIds\.has\(source\.id\)"/)
+  assert.match(center, /正在同步资料/)
+  assert.match(center, /正在启动本机处理/)
+  assert.match(center, /if \(resumingSourceIds\.value\.has\(sourceId\)\) return/)
+  assert.match(center, /sourceActionResults\[source\.id\]/)
+  assert.match(center, /SOURCE_NOT_FOUND/)
+  assert.match(center, /ALREADY_READY/)
+  assert.match(center, /resumeActionErrorLabel\(error, stage\)/)
+  assert.match(center, /resumeScopeGeneration/)
+  assert.match(center, /if \(!isCurrentAction\(\)\) return/)
+  const resumeAction = center.slice(center.indexOf('const resumeSource ='), center.indexOf('const retrySource ='))
+  assert.doesNotMatch(resumeAction, /error\.message|String\(error\)/,
+    'manual resume must not render raw exception details')
   assert.match(center, /store\.retry/)
   assert.match(center, /store\.cancel/)
   assert.match(center, /v-else-if="source\.ingestionStatus === 'FAILED'"/)
@@ -58,20 +72,23 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(processingStore, /scheduler\.retry\(jobId\)/)
   assert.doesNotMatch(processingStore, /return this\.runner\.retry\(jobId\)/)
   const sourceStore = await source('src/store/useSourceStore.ts')
-  assert.match(sourceStore, /async function resumeDocumentProcessing\(sourceId: string\)/)
+  assert.match(sourceStore, /async function resumeDocumentProcessing\([\s\S]*?onProgress\?\:/)
   assert.match(sourceStore, /async function retrySourceProcessing\(sourceId: string\)/)
   assert.match(sourceStore, /useSourceApi\.reingest\(sourceId, \{ baseVersion \}\)/)
   assert.match(sourceStore, /retrySourceProcessing,/)
   assert.match(sourceStore, /DOCUMENT_JOB_RUNNER_UNAVAILABLE/)
-  const resumeIndex = sourceStore.indexOf('async function resumeDocumentProcessing(sourceId: string)')
-  const syncIndex = sourceStore.indexOf('await useSyncStore().flushNow()', resumeIndex)
-  const sourceScheduleIndex = sourceStore.indexOf('await documentScheduler.schedule(sourceId)', resumeIndex)
+  const resumeIndex = sourceStore.indexOf('async function resumeDocumentProcessing(')
   assert.ok(resumeIndex >= 0, 'Source Store must expose the manual resume action')
-  assert.ok(syncIndex > resumeIndex && syncIndex < sourceScheduleIndex,
-    'manual processing must finish Source synchronization before scheduler reads the server Source')
-  assert.match(sourceStore, /const localSource = await \(await repository\(\)\)\.read<SourceView>\('SOURCE', sourceId\)/)
-  assert.match(sourceStore, /localSource\.syncStatus !== 'synced'/)
-  assert.match(sourceStore, /资料尚未同步到服务端/)
+  assert.match(sourceStore, /schedule\(sourceId, \{ revalidateNotFound: true \}\)/)
+  assert.match(sourceStore, /const userId = authStore\.user\?\.id/)
+  assert.match(sourceStore, /const serverDeviceId = authStore\.serverDeviceId/)
+  assert.match(sourceStore, /const scheduler = documentScheduler/)
+  assert.match(sourceStore, /sessionId === sessionId[\s\S]*documentScheduler === scheduler/)
+  assert.match(sourceStore, /runManualSourceResume\(/)
+  const resumeHelper = await source('src/services/documentProcessing/manualSourceResume.ts')
+  assert.match(resumeHelper, /onProgress\?\.\('sync'\)/)
+  assert.match(resumeHelper, /onProgress\?\.\('schedule'\)/)
+  assert.match(resumeHelper, /await options\.flushSync\(\)[\s\S]*assertCurrentScope\(\)[\s\S]*await options\.readLocalSource\(\)[\s\S]*assertCurrentScope\(\)[\s\S]*options\.assertSourceSynced\(source\)[\s\S]*options\.schedule\(\)/)
   assert.match(sourceStore, /acceptHMRUpdate/)
   assert.match(sourceStore, /import\.meta\.hot\.accept\(acceptHMRUpdate\(useSourceStore, import\.meta\.hot\)\)/)
   const profile = await source('src/views/Profile/index.vue')
@@ -82,6 +99,54 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(workspace, /showProcessingRequired/)
   assert.match(workspace, /selectedFile\.ingestionStatus === 'FAILED'/)
   assert.match(workspace, /handleRetryFileProcessing\(selectedFile\.id\)/)
+})
+
+test('manual resume does not read or schedule after logout, account/device switch, or scheduler replacement during sync', async () => {
+  const variants = [
+    ['logout', (scope) => { scope.authenticated = false }],
+    ['account switch', (scope) => { scope.userId = 'user-2' }],
+    ['device switch', (scope) => { scope.deviceId = 'device-2' }],
+    ['scheduler replacement', (scope) => { scope.scheduler = {} }],
+  ]
+
+  for (const [name, changeScope] of variants) {
+    const current = { authenticated: true, userId: 'user-1', deviceId: 'device-1', sessionId: 'session-1', scheduler: {} }
+    const expected = { ...current }
+    let releaseSync
+    let startSync
+    const syncGate = new Promise((resolve) => { releaseSync = resolve })
+    const syncStarted = new Promise((resolve) => { startSync = resolve })
+    let reads = 0
+    let schedules = 0
+    let notFoundFence = true
+    const attempt = runManualSourceResume({
+      isScopeCurrent: () => current.authenticated
+        && current.userId === expected.userId
+        && current.deviceId === expected.deviceId
+        && current.sessionId === expected.sessionId
+        && current.scheduler === expected.scheduler,
+      flushSync: async () => { startSync(); await syncGate },
+      readLocalSource: async () => { reads += 1; return { syncStatus: 'synced' } },
+      assertSourceSynced: (source) => { assert.equal(source?.syncStatus, 'synced') },
+      schedule: async () => { schedules += 1; notFoundFence = false; return { status: 'READY' } },
+    })
+    await syncStarted
+    changeScope(current)
+    releaseSync()
+
+    await assert.rejects(attempt, /DOCUMENT_PROCESSING_SCOPE_CHANGED/, name)
+    assert.equal(reads, 0, `${name}: must not read a different scope`)
+    assert.equal(schedules, 0, `${name}: must not invoke the replacement scheduler`)
+    assert.equal(notFoundFence, true, `${name}: must not clear the scheduler's cached not-found fence`)
+  }
+})
+
+test('manual resume exception labels allow known errors and never echo unknown details', () => {
+  assert.equal(resumeActionErrorLabel(new Error('SOURCE_SYNC_CONFLICT'), 'sync'), '资料同步发生版本冲突，请刷新后重试。')
+  assert.equal(resumeActionErrorLabel({ status: 503, detail: 'server-secret /private/path' }, 'schedule'), '服务暂时不可用，请稍后重试。')
+  const unknown = resumeActionErrorLabel(new Error('parser-token /private/path/source.pdf'), 'schedule')
+  assert.equal(unknown, '本机处理暂未启动，请刷新后重试。')
+  assert.doesNotMatch(unknown, /parser-token|private\/path|source\.pdf/)
 })
 
 test('DocumentProcessingStore.start schedules by Source instead of starting the Runner directly', async () => {

@@ -177,7 +177,22 @@ export class SourceJobScheduler {
     this.idFactory = options.idFactory ?? randomJobId
   }
 
-  async schedule(sourceId: string): Promise<SourceScheduleResult> {
+  async schedule(sourceId: string, options: { revalidateNotFound?: boolean } = {}): Promise<SourceScheduleResult> {
+    if (options.revalidateNotFound) {
+      let running = this.active.get(sourceId)
+      while (running) {
+        await running.catch(() => undefined)
+        if (this.active.get(sourceId) === running) await Promise.resolve()
+        running = this.active.get(sourceId)
+      }
+      if (this.discardedSources.has(sourceId) && !this.sourceNotFoundSources.has(sourceId)) {
+        return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+      }
+      if (this.sourceNotFoundSources.has(sourceId)) {
+        this.sourceNotFoundSources.delete(sourceId)
+        this.discardedSources.delete(sourceId)
+      }
+    }
     if (this.sourceNotFoundSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
     const running = this.active.get(sourceId)
@@ -234,8 +249,10 @@ export class SourceJobScheduler {
    * first prevents an already running OCR parser from recreating a package
    * after the persistent job rows are gone.
    */
-  async discard(sourceId: string): Promise<void> {
+  async discard(sourceId: string, reason: 'DELETED' | 'NOT_FOUND' = 'DELETED'): Promise<void> {
     if (!sourceId.trim()) return
+    if (reason === 'NOT_FOUND') this.sourceNotFoundSources.add(sourceId)
+    else this.sourceNotFoundSources.delete(sourceId)
     this.discardedSources.add(sourceId)
     await this.localParsedCoordinator?.cancel(sourceId)
     const jobs = (await this.repository.list()).filter((job) => job.sourceId === sourceId)
@@ -324,8 +341,8 @@ export class SourceJobScheduler {
         }
         throw error
       }
-      this.sourceNotFoundSources.add(sourceId)
-      await this.discard(sourceId)
+      if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }
+      await this.discard(sourceId, 'NOT_FOUND')
       return { status: 'SKIPPED', reason: 'SOURCE_NOT_FOUND' }
     }
     if (this.discardedSources.has(sourceId)) return { status: 'SKIPPED', reason: 'SOURCE_DELETED' }

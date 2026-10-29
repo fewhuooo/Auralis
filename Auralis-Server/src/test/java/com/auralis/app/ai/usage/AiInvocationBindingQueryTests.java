@@ -384,7 +384,7 @@ class AiInvocationBindingQueryTests {
                     1_048_576, List.of(), false, 1_000, 60_000, 3, limits, true, true,
                     "legacy-bytes", List.of(new AuralisProperties.OverviewModelCapacity(
                     AiProviderType.DEEPSEEK.name(), "https://provider.test/v1", "synthetic-model", 100_000, 16_384)),
-                    AuralisProperties.OverviewLimits.withoutAdditionalCaps());
+                    AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
             return new AiUsageGatewayService(guard, new AiProviderRegistry(List.of(provider)),
                     new EmbeddingProviderRegistry(List.of(new SyntheticEmbeddingProvider())), ai,
                     heartbeat, transactions);

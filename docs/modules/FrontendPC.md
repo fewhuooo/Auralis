@@ -1,5 +1,13 @@
 # PC 前端模块
 
+### 2026-10-28 桌面资料处理入口反馈与手动重验（源码修复，队列READY已只读确认）
+
+处理中心“开始本机处理”增加“正在同步资料…”/“正在启动本机处理…”两阶段反馈与重复点击保护。调度器SKIPPED/WAITING/FAILED结果不再静默丢弃，已知原因映射为安全中文；未知异常不回显原始详情。manualSourceResume无状态helper保留flush与synced检查，固定用户/设备/session/仓库及scheduler，在等待后重核上下文；界面迟到结果也按操作代次和scope隔离。
+
+手动操作可重验曾404的临时NOT_FOUND缓存，普通自动调度仍节流；显式删除、并发删除及迟到处理fence保持。该资料本地/后端元数据齐备但无job的现场已只读确认；本次是否实际命中过404缓存尚未证实，不能将该候选路径当作唯一根因。无需重传资料或数据库迁移；未改变后端生成/额度。
+
+type-check exit0、相关scheduler/UI测试最终51/51通过；首轮旧静态断言/泛型推断问题及唯一审查发现已修正，同一reviewer差量关闭后B0/I0。未操作GUI、手动触发真实解析或部署。后续23:39:56香港时间的只读本地快照确认该job与source均READY、无错误，证据post-fix-state.txt；这仅确认队列运行结果，未验收GUI或解析内容质量，也不能证明本次历史404候选根因。基线、逐轮验证与审查见D:/Temp/auralis-desktop-queue-feedback-20261028/；只读现场见D:/Temp/auralis-pre-generation-stall-20261028/。
+
 ### 2026-10-28 示例模板清理
 
 已移除无业务引用的 `HelloWorld.vue`、专用 `hero.png` / `vite.svg` / `vue.svg` / `public/icons.svg`，并清理本地生成声明中的对应组件项。路由、应用入口、业务组件、favicon 与 File Viewer 资源保持原实现。文档与素材备份见 `D:/Temp/auralis-project-cleanup-20261028-round2/`；本轮不涉及交互或视觉变化。

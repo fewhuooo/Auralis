@@ -76,6 +76,7 @@ auralis:
     request-timeout-millis: ${AURALIS_AI_REQUEST_TIMEOUT_MILLIS:10000}
     overview-response-timeout-millis: ${AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS:120000}
     overview-task-timeout-millis: ${AURALIS_AI_OVERVIEW_TASK_TIMEOUT_MILLIS:240000}
+    overview-max-retries: ${AURALIS_AI_OVERVIEW_MAX_RETRIES:3}
     overview-model-capacities: []
     # Zero disables each extra Overview cap; model capacity and usage quotas remain enforced.
     overview-limits:

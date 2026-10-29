@@ -1,6 +1,6 @@
 # Auralis 设计文档索引
 
-更新时间：2026-10-24
+更新时间：2026-10-29
 
 文档状态：现行分类索引
 
@@ -28,7 +28,8 @@
 
 ### AI 与模型治理
 
-- [学习 Agent 产品与交互设计（2026-10-16；书面评审后修订，尚未实施）](2026-10-16-learning-agent-design.md)
+- [Chat Agent 与流式可视化教学现行方案（2026-10-29；需求已确认，实施计划）](../plans/2026-10-29-chat-agent-visual-teaching.md)
+- [学习 Agent 原产品与交互设计（2026-10-16；Chat 范围已由 2026-10-29 方案接替）](2026-10-16-learning-agent-design.md)
 - [AI 用量预算、并发保护与 Provider 资源隔离设计（2026-09-14）](2026-09-14-ai-usage-guard-design.md)
 - [AI env 默认 Provider 与 BYOK 覆盖设计（2026-08-21）](2026-08-21-ai-env-provider-fallback-design.md)
 

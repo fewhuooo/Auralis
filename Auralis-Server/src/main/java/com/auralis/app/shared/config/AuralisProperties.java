@@ -84,7 +84,8 @@ public record AuralisProperties(
             @Pattern(regexp = "legacy-bytes|calibrated-category|mimo-byte-category-candidate")
             String overviewInputTokenEstimatorMode,
             @Valid List<@Valid OverviewModelCapacity> overviewModelCapacities,
-            @Valid OverviewLimits overviewLimits) {
+            @Valid OverviewLimits overviewLimits,
+            @Min(0) int overviewMaxRetries) {
 
         @ConstructorBinding
         public Ai {
@@ -116,7 +117,7 @@ public record AuralisProperties(
                     ingestionEmbeddingBatchMaxUtf8Bytes, urlConnectTimeoutMillis, urlReadTimeoutMillis,
                     urlMaxRedirects, providerMaxResponseBytes, allowedProviderHosts, ingestionWorkerEnabled,
                     ingestionPollDelayMillis, ingestionLeaseMillis, ingestionMaxAttempts, limits,
-                    true, true, "legacy-bytes", List.of(), OverviewLimits.withoutAdditionalCaps());
+                    true, true, "legacy-bytes", List.of(), OverviewLimits.withoutAdditionalCaps(), 3);
         }
 
         /** Convenience fixture constructor with the default estimator mode and no custom model capacities. */
@@ -137,7 +138,7 @@ public record AuralisProperties(
                     urlMaxRedirects, providerMaxResponseBytes, allowedProviderHosts, ingestionWorkerEnabled,
                     ingestionPollDelayMillis, ingestionLeaseMillis, ingestionMaxAttempts, limits,
                     shadowTokenEstimateEnabled, overviewOutputRecoveryEnabled, "legacy-bytes", List.of(),
-                    OverviewLimits.withoutAdditionalCaps());
+                    OverviewLimits.withoutAdditionalCaps(), 3);
         }
     }
 

@@ -1,5 +1,9 @@
 # Auralis 系统架构
 
+### 2026-10-29 Chat Agent 与流式可视化教学（计划中）
+
+在 `codex/chat-agent-rewrite` 分支直接重写现有 ai Chat 与客户端接线，以 LangChain4j 单 Agent Loop 和唯一消息/组件协议替换原执行链；复用 Conversation/Message 身份、凭据、安全 HTTP 与 Gateway/Guard。正文和 NDJSON 组件转换为有序事件，PC 在同一时间线逐字/逐项展示；其他 Chat 消费端同步契约。题卡提交构建关联原题的用户消息，由模型继续教学。当前工具结构、stage 次数和会话保留规则须随重写更新，旧专属执行路径在切换后删除。本段为计划，不表示代码已支持。范围与验收见[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)。Overview、Review 和核心 Sync 不进入该改造范围。
+
 ### 2026-10-27 Overview direct 执行身份与内容复用身份
 
 直接JSON/SSE生成把输入/配置指纹用于检查点匹配，把request/generation用于执行幂等。主动重试建立独立generation/budget并以现有fence终止旧执行权；旧调用费用继续归原reservation，新调用仍受Guard窗口/并发控制。Coordinator的direct策略与既有durable job acquire/resume分离，可信祖先产物可复用，晚到旧业务结果不可发布。PC沿现有生成界面提交重试意图，不新增任务管理边界。实现/验证状态见[计划](../plans/2026-10-27-overview-explicit-retry.md)。

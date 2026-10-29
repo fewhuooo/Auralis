@@ -376,7 +376,7 @@ class AiInvocationGatewayTests {
                 new AuralisProperties.Defaults(null, null, null), 3_000, 10_000, 120_000, 240_000,
                 12_000, 8, 5_242_880, 32, 32_768, 3_000, 10_000, 3, 1_048_576,
                 List.of(), false, 1_000, 60_000, 3, limits, true, true, "legacy-bytes", List.of(),
-                AuralisProperties.OverviewLimits.withoutAdditionalCaps());
+                AuralisProperties.OverviewLimits.withoutAdditionalCaps(), 0);
         AiInvocationGateway gateway = new AiUsageGatewayService(guard,
                 new AiProviderRegistry(List.of(provider)),
                 new EmbeddingProviderRegistry(List.of(new TestEmbeddingProvider())), ai, heartbeat,
@@ -767,7 +767,7 @@ class AiInvocationGatewayTests {
                                 "https://provider.test/v1", "test-model", 100_000, 16_384),
                         new AuralisProperties.OverviewModelCapacity(AiProviderType.DEEPSEEK.name(),
                                 "https://other-provider.test/v1", "test-model", 100_000, 16_384)),
-                overviewLimits);
+                overviewLimits, 0);
     }
 
     private AiInvocationGateway gateway(AiUsageGuard guard, TestProvider provider, Clock clock,
