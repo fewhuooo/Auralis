@@ -1,5 +1,226 @@
 # Auralis 当前问题与审查登记
 
+### 2026-11-10 PC 知识总览与大纲重新生成视觉反馈失效问题关闭
+
+- **问题现象**：在学科工作区左侧总览抽屉中点击“重新生成大纲”或“重新生成全部”时，页面完全无视觉变化，操作弹窗未自动收起，卡片上既有大纲保持静态呈现，无加载旋转动画或提示条，造成“按下去没反应、但后端控制台却在正常执行生成”的交互假死体验。
+- **定位与根因**：
+  1. `SubjectWorkspace` 中 `handleOutlineAi`、`handleSubjectOutlineRegenerate` 与 `regenerateFileOverview` 均在 `await ensureOverviewRuntime()` 之后才设置生成状态标志，由于读取本地缓存的前置异步延时，导致首屏响应存在空档；
+  2. `FileOutlineList.vue` 中未将 `isGenerating` 映射到已有大纲的场景，`file-more-button` 仅显示静态三点图标未接入旋转图标，缺少“停止”按钮发射，且未对展开的大纲列表进行弱化呈现；
+  3. `el-popover` 点击内部菜单项后未主动关闭，常态化悬浮遮盖卡片操作区。
+- **修复与闭环**：
+  1. 在事件触发入口同步置位 `generating` 标志，实现 0ms 视觉即时响应；
+  2. Popover 点击后即刻自动收回并禁用正在生成的文件/学科操作菜单；
+  3. `FileOutlineList` 与 `SubjectOverviewSection` 统一补齐“正在重新生成…”微晶提示条、更多按钮旋转动画、头部“停止”胶囊按钮及旧大纲 60% 弱化呈现；`OverviewSummaryView` 同步补齐总结重新生成提示条。
+- **验证与审查**：
+  1. `npm run type-check` exit 0；
+  2. `npm run build` exit 0（全量打包成功，无语法与类型错误）；
+  3. 定向套件 `r4-overview-generation.test.mjs` 84/84 通过，`r4-overview-sync.test.mjs` 38/38 通过，`r4-subject-overview-ui.test.mjs` 18/20 通过。未执行真实客户端 GUI 走查。
+
+### 2026-11-05 Chat 来源总览读取边界与有界目录检查（PostgreSQL事务问题已修复源码并验证；未部署）
+
+Chat 使用 `read_source_overview` 只读获取授权范围内当前正式 SOURCE 总览；缺失或失效时按正常 `UNAVAILABLE` 继续原文检索，页版本变化以 `STALE` 从第一页重读。工具继续复用 `OverviewResultService` 的完整结果和精确 input descriptor 有效性检查；目录 `hasOverview` 也只对同一正式有效结果置真。目录结果页最多 20 条并批量读取正式结果，但 `SOURCE_CONTENT` descriptor 仍需按每条 source 重建 raw inventory，成本受页大小约束但随页内来源数增长。实现没有缓存、向量总览索引或生成副作用；如后续实测显示 inventory 开销明显，应先基于证据再评估。
+
+定向 H2/backend 测试分两批共 53/53 通过（核心五类 43/43，`DisplayToolOrchestratorTests` 10/10），package exit 0；涵盖当前正式结果、owner/revision 边界、工具分页/缺失/历史压缩、native call/result 配对及 tool orchestrator 纠错/收敛。唯一只读 reviewer 结论 BLOCKER=0、IMPORTANT=0、OPTIONAL=0，报告 `D:/Temp/auralis-chat-overview-tool-20261105/review.md`。未验收真实 Provider、部署及 PC UI；PC 通用 tool event 与名称 fallback 已只读核对，本轮无前端接入。
+
+本机两次最新 Chat attempt（同 run 的首次与 retry）都在 `read_source_overview` 工具执行时由 PostgreSQL 拒绝 `SELECT FOR NO KEY UPDATE`，因为 `OverviewResultService.readCurrentSource` 的只读事务复用了需要锁定 Subject 的 `requireReadySource` 路径。最小源码修复将该入口改成普通 `@Transactional`，保留现有 lock order、owner/revision 校验和 formal predicate；批量 `currentSourceOverviewIds` 经源码核对及真实 PG SOURCE_CONTENT 回归仍保留只读事务。新增 PG + H2 定向测试 9/9，package exit 0。此前 53/53 H2 结果未覆盖 PostgreSQL read-only 事务与行锁组合。修复尚未部署，运行容器仍会保留旧行为；未进行真实 Provider 重放或业务/GUI 验收。
+
+### 2026-11-05 Chat conversation scope drift and catalog overclaim（源码、验证和审查完成；PC 接入已完成）
+
+- **问题**：读取上下文原来只固定在每个 run；同一对话换资料后，历史 Catalog 的 sourceId 可被后续模型工具参数误用。目录分页遍历完成也不能证明正文完整阅读。
+- **处理**：新 conversation 首个 turn 在 USER/run 事务中绑定 retrieval mode 与 scope IDs；后续省略上下文继承绑定，显式不同返回 409 `CHAT_SCOPE_CONFLICT` 且不持久化该 turn。每 attempt 重新校验 owner/subject/READY/revision，selectionText 不固定。模型显式请求快照外 ID 是受限可纠正参数错误，不查询或返回越界资料；内部越界和真实授权/版本变化仍终止。提示词区分目录与正文阅读并隐藏内部分页字段。
+- **历史与接入**：既有 conversation 标为 `LEGACY`，保留查看，不从混合旧 run 推断范围；新 turn/retry 要求新建对话。PC 端接入已于 2026-11-05 完成：在 `useChatStore.ts` 中接入 `chatScopeState`（UNBOUND / BOUND / LEGACY）与 `chatScope`，首轮携带 `readingContext` 准入后自动转为 BOUND，后续轮次省略 `readingContext`（传 undefined）继承 committed scope，捕获 409 `CHAT_SCOPE_CONFLICT` 清除乐观消息并引导开启新会话，LEGACY 会话只读封存禁用提问与重试；在 `SubjectWorkspace/index.vue` 中提供 409/LEGACY 引导按钮、输入框禁用和范围切换拦截（已绑定或历史会话锁定文档切换按钮，保持自然极简视觉（去除锁图标），点击时拦截下拉展开并在右上角给出通知提示，引导用户点击右上角刷新按钮开启新对话重选；引入 `boundScope` 实现工作区文件预览与已绑定范围完全解耦，切文件不篡改范围选项或文案，杜绝 409 误触）；定向回归测试 `scripts/r4-chat-recovery-handoff.test.mjs` 8/8 全部通过。
+- **验证状态**：目标套件与新增 PostgreSQL 首 turn 边界用例通过；OpenAPI 导出及 artifact 19/19，package exit 0。正确配置 task-owned PostgreSQL 的 backend full 为 1096 tests / 3 failures / 0 errors / 2 skipped，失败为 `AiFeaturePolicyParityTests` stage=0、TaskColor 旧断言 V42 vs V44、OverviewIdentity fixture V41 vs V44；未改这些无关断言。唯一只读 reviewer B0/I0/O0。完整命令与日志见 `D:/Temp/auralis-chat-screenshot-failure-20261105/implementation.md`。全局 `git diff --check` 的两个报告项位于预先 dirty 的 `AGENTS.md` EOF 与 PC `reviewSyncService.ts` 尾随空格，本轮未改；目标文件差量检查在报告中单列。未进行 Provider、部署、服务重启、PC GUI 或业务验收。
+
+### 2026-11-04 Chat UNKNOWN 没有用户可控终结出口（本步修复、定向验证和审查完成；部署/人工验收未做）
+
+- **问题**：`UNKNOWN` 表示服务端无法证明原 worker/provider reader 已退出。该状态没有自动 retry/unlock；用户因此无法安全结束被占用的 conversation slot。
+- **处理**：新增按 `conversationId/runId/attemptId` 定位的显式恢复路由，并在 conversation→run→attempt 锁序下校验 owner、active run 和 current attempt。无已提交活动时推进 conversation fence，保留公开内容/有效行与私有 evidence，GENERATING block 转 INVALID，run/attempt 以 `FAILED/CHAT_UNKNOWN_ABANDONED` 结尾；usage/task/reservation/charge 不清账、不退款。已有 READY/SUBMITTED activity 时保持活动及私有 reference 并按业务 `COMPLETED` 收尾。已解决旧目标的重复/迟到调用不改变新 attempt/其他 run，迟到 worker 因 fence 失效不能发布。
+- **正确性修正**：启动恢复会先检查已提交活动，避免 READY 原子事务后 run 已 COMPLETED、attempt 仍 RUNNING 时被改成 UNKNOWN；`finish` 按有效业务终态决定是否释放 slot，使已提交活动路径能用当前 conversation fence 释放。
+- **测试价值与边界**：opt-in PostgreSQL 用例覆盖真实服务事务、owner 拒绝、重复恢复、同 run retry 后旧 target、迟到旧 worker、usage ledger 保留及 READY/private reference 恢复；controller、persistence 与现有 HTTP handler 测试补充路由目标参数、有效终态释放和 `CHAT_RECOVERY_NOT_ALLOWED` → HTTP 409。定向 46/46、PostgreSQL 4/4、OpenAPI export 18/18；只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。最终全量 1090/3 failures/0 errors/2 skipped，失败为已知 OverviewIdentity migration、TaskColor migration、AiFeaturePolicyParity 三项；package 成功。首次 full 的额外 Source 删除版本冲突未在隔离类或最终 full 复现，响应显示 request baseVersion 落后于当前 version 2/INDEXING，触发者未证实。报告及命令、范围和日志见 `D:/Temp/auralis-chat-agent-loop-evolution-20261104/step7.md`。PC 端接入已于 2026-11-05 完成：接入 `recoverChatRunAttempt`、状态机 Ticket Guard 门禁、409 刷新防重发、取消自动轮询 UNKNOWN、UI 恢复条与气泡内联操作；定向回归套件 `scripts/r4-chat-recovery-handoff.test.mjs` 3/3 通过，类型检查与构建通过，独立只读 Reviewer 审查通过。真实 Provider 是否停止、部署和移动端 UI/业务验收仍未证明。
+
+### 2026-11-04 Chat 合法空 STOP 留下无正文完成（源码、定向验证与审查完成，人工验收待做）
+
+- **问题**：Provider 可用合法 `STOP` 且无可见正文结束；reasoning-only、空白 chunk 或 invalid display preview 不能构成用户可见回答，可能留下空白完成气泡。
+- **处理**：仅在正常 STOP 无 native tool calls 分支，按当前公开 parts 判断非空白正文或 READY 非题卡 block。空时在同一 attempt 内最多发一次 continuation，且只在现有迭代额度有余量时进行；无迭代机会或再次空时，发布可见短说明后正常结束。纯 READY 展示组件无需正文，READY 题卡仍立即结束。Step3 evidence projector 按实际工具 exchange/iteration ID 对账；空 STOP 不生成 exchange/evidence，后续 native call/result 仍使用自己的原 ID 配对。
+- **边界**：不改变模型/工具/令牌/期限限额，不新建 attempt/run，不创建通用重试层。真实预算、Provider、权限、版本、取消、deadline 与 owner 异常仍走原终止路径；无 API/SSE/DB/UI schema 变化。
+- **验证/审查**：Orchestrator + scripted Provider/mapper 定向测试 22/22；主 Agent 唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0，范围见 `D:/Temp/auralis-chat-agent-loop-evolution-20261104/step6.md`。未调用真实 Provider、AGY、业务数据库、部署或 GUI。
+
+### 2026-11-04 Chat Catalog 到定向检索的闭环（源码、定向验证与review完成）
+
+- **问题**：`list_sources` 已返回当前授权范围内真实文档 ID，但 native `search` 原本只有 query 参数。模型虽能从 SUBJECT Catalog 选中文档，却无法据其 sourceId 获得该文档下合法 chunkId；最近两次失败证据分别是无效 chunk ID 与请求容量拒绝，不证明向量排序缺陷。
+- **处理**：`search` 可选 `sourceIds` 只缩窄至冻结 owner/subject/READY/revision 范围内。省略时保持旧行为；空、null、重复、非法 UUID、未知字段返回可纠正参数错误；任何 scope 外 ID 均拒绝，绝不交集或回退到全范围。检索前后仍核对 owner、active/READY、subject/revision。HTTP `ReadingContext.sourceIds` 与 per-call native tool 参数不同；SUBJECT HTTP 字段约束不变。global/null scope 可在当前 user 的已授权快照内定向选择跨 subject sources，不扩大原全局 owner scope。
+- **验证/验收**：定向检索、Chat tool 与 Provider request publication 30/30 通过；最后加强 Catalog→search 集成用例实际消费 Catalog ID 后，受影响类 8/8 通过。唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。可控向量不证明语义质量。没有引入 Hybrid/BM25/RRF/Rerank；真实中文术语、自然语言、跨文档质量仍待带标签安全样例验收。
+
+### 2026-11-04 Chat 全学科资料发现范围声明（源码、定向验证与 review 完成）
+
+- **问题**：SUBJECT 读取范围可授权当前学科 READY 来源，但模型没有真实文档目录，难以自主判断文档分布或完成跨文档检索。
+- **处理**：新增有界 `list_sources(offset,limit)`，基于 attempt 捕获的 owner/subject/READY/revision 快照分页，返回真实 ID/title/revision 与 total/hasMore/nextOffset；不附摘要/outline，不依赖 Overview，不做外部存储 N+1。模型必须根据分页状态说明覆盖边界，不能把部分清单称为全部学科资料。`SUBJECT` 只接受空 `currentSourceId` 与空 `sourceIds`；非空值返回 `VALIDATION_FAILED`，不静默扩展或忽略。Catalog 不能扩大 AUTO 当前文件或手选范围；参数错误仅沿用一次安全修正，权限/范围/版本错误仍终止。后续 native `search.sourceIds` 可仅在该冻结范围内进一步缩窄；见本节 Step5 记录。
+- **容量/数据边界**：首屏 Catalog 不注入 protected required context；工具定义和返回照常进入真实 mapped-request 容量判断。无接口路由、公开字段、数据库字段、PC/Mobile 代码变化。
+- **验证/验收**：Catalog、Provider request publication、tool allowlist 定向测试 22/22；覆盖范围、READY、revision、分页、SUBJECT非法ID拒绝和原问题上下文不被目录注入。唯一只读 review BLOCKER=0、IMPORTANT=0、OPTIONAL=0，报告 `D:/Temp/auralis-chat-agent-loop-evolution-20261104/step4-review.md`。PC 端接入已于 2026-11-05 完成：在 `useChatStore` 中接入规范化 `buildReadingContext`，`SUBJECT` 模式严格输出 `currentSourceId: null` 与 `sourceIds: []`，默认学科提问接入全学科范围声明，保留窄范围手选；定向回归测试 3/3 通过。真实 Provider、移动端接入由用户后续验收。
+
+### 2026-11-04 Chat 当前轮资料证据容量压缩（源码、定向验证与审查完成，人工验收待做）
+
+- **问题**：已有 history 投影只能减少旧轮证据；当前轮多次成功资料读取仍可能使真实 mapped request 在 Gateway 容量检查时失败。
+- **处理**：projector 对成功资料读取结果的投影副本按 source/chunk/revision 与完整内容去重，复用旧历史折叠，再确定性缩短较早摘录；必要时保留可识别的来源 metadata。协议配对、授权/用户上下文和私有原始 evidence 均保持原样。最终无法 fit 时复用同一容量 Check 记录一次数值分层 warning，然后在 reservation/Provider 前返回既有容量错误。
+- **收尾**：工具额度耗尽使用已有最后迭代收尾且停止执行新工具，不新增预算或 ledger；来源读取证据仍可依据当前请求预算被重读。
+- **验证/审查/边界**：clean 定向测试 48/48，0 failures/errors/skips；目标差量 `git diff --check` 通过；唯一 reviewer 最终差量复核 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。未改变限额、公开 API/SSE、数据库或 Provider 配置；未调用真实 Provider、部署、重启进程或进行 GUI/业务验收。
+
+### 2026-11-04 Chat 容量拒绝缺少可定位统计（源码、定向验证与审查完成）
+
+- **问题**：请求容量拒绝沿用正确的 `AI_REQUEST_BUDGET_EXCEEDED`，但运行日志缺少触发维度/实际值/上限及请求安全分布，难以辨认由工具结果、序列化请求或消息正文触发。
+- **处理**：仅在 Gateway 对映射后的真实请求最终拒绝时记录限制维度与 UTF-8 统计；试裁剪和成功请求无附加诊断开销。正文按真实 SYSTEM/USER/ASSISTANT/TOOL role 汇总，另统计 reasoning、参数、工具定义与完整序列化；不输出内容或秘密。
+- **统计边界**：mapped request 无可靠的历史/当前轮边界，且 USER role 也可承载选择/活动 context，因此日志不伪造 current-question 或 current-turn evidence 分项。准确分层应放在能观察真实 turn/history 边界的 projector 上评估。
+- **验证**：`AiChatRequestCapacityTests`、`AiInvocationGatewayTests` 共 28/28；包括实际 Gateway 最终拒绝日志具有 dimension/actual/limit 和脱敏断言。目标文件 `git diff --check` exit 0。唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。
+- **边界**：不改任何容量/预算判定、外部错误码、HTTP/SSE/API 字段、持久化结构或 Provider 派发行为。未调用真实 Provider、未部署，无 GUI/业务验收。
+
+### 2026-11-04 Chat 资料读取容错与回答收敛（源码修复完成，人工验收待做）
+
+- **问题**：`read_source_excerpt` 对同一已授权 source 中不存在的 chunk 抛出 `RESOURCE_NOT_FOUND`，Orchestrator 将其记录为 `tool.error` 后又抛出，使整轮对话失败；空/明显无关搜索也缺少单次定向搜索后的明确收敛规则。
+- **处理**：仅对已知读取工具的 `CHAT_TOOL_ARGUMENT_INVALID` 与 `read_source_excerpt` 的 `RESOURCE_NOT_FOUND`，在错误前后 source scope/revision 均有效时回传私有 native tool result；每 attempt 最多一次纠正，第二次停止工具并要求一次受现有迭代/调用/usage/deadline 限制的最终回答。若模型仍请求工具，后端不执行并加入固定资料不足说明。权限、scope/revision、取消、预算、Provider、系统错误不转成成功。空/无关搜索最多改写/定向搜索一次，严格依资料请求保留资料不足语义。
+- **协议与数据**：沿用现有 `tool.error` SSE 标记和私有 evidence/history 配对；没有 public SSE/API/DB schema 变化。Model tool definitions 在收尾请求中保留，以校验既有 native tool history；后端控制器在收尾状态不执行新的工具。
+- **验证与审查**：`mvnw.cmd -B -ntp "-Dtest=DisplayToolOrchestratorTests,ChatEvidenceHistoryProjectorTests,ChatAgentProtocolPublicationTests" test` exit 0（22/22，0 failures/errors/skips）；扩展历史 projector 用例后 affected class 8/8；`git diff --check` exit 0。唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。未调用真实 Provider、未部署、未运行 GUI 或修改业务数据；真实 Provider/产品表现仍需后续验收。
+
+### 2026-11-04 空头像 GET 404 预检问题关闭（后端契约已更新）
+
+- **问题**：客户端缺少头像存在提示，无法区分无头像与请求失败，导致无头像账号可能重复 GET 并得到 404。
+- **修复**：共享 `UserView` 增加读取时头像表存在提示 `hasAvatar`，覆盖注册/登录/刷新及 `/api/auth/me` 资料响应；头像图片仍独立读写，上传/删除 HTTP 204、用户 version 和无头像 GET 404 不变。
+- **接入边界**：`false` 时跳过 GET 并清除当前用户旧缓存/显示；`true` 才读取，但跨设备删除/竞态仍可能 404，应保留默认头像 fallback。上传/删除成功可本地切换标志或刷新 `/me`。本轮 PC/Mobile 接入由用户自行完成。
+- **验证结果**：头像/资料用例 16/16，OpenAPI artifact 17/17（含 required 断言）；全量 1063 tests / 3 failures / 0 errors / 2 skipped，失败仅是既有 stage 与迁移版本断言，Auth/OpenAPI 用例通过；package exit 0。唯一只读 Reviewer B0/I0/O0。完整日志和未覆盖范围见 `D:/Temp/auralis-avatar-presence-20261104/implementation.md`。
+
+### 2026-11-04 PC 学科复习仪表盘暗色模式（Dark Mode）渲染异常问题关闭
+
+- **问题现象**：在暗色模式（`html.dark`）下，PC 端学科复习页面（`SubjectReviewPane.vue`）中的主要计划卡片（`.subject-review__plan-card`）呈现突兀的大面积米白色背景（`#FAF7F2`），内部文本在暗色模式全局样式下变为浅色，形成严重的“白底浅字”对比度失效与不可读问题；同时内部的番茄钟药丸指标、每组题量开关及复习操作面板呈现深色块漂浮在白色底板上的严重视觉割裂。
+- **定位与修复**：
+  1. 根因在于全局设计系统（`src/styles/index.css`）在 `html.dark` 中遗漏了 `--color-bg-card: #252422;` 与 `--color-bg-page: #191816;`，导致暗色下依赖卡片底色变量的组件均继承亮色米白底；
+  2. 在 `src/styles/index.css` 的 `html.dark` 覆盖块中补齐 `--color-bg-card: #252422;`、`--color-bg-page: #191816;` 以及别名 `--bg-card: var(--color-bg-card);`；
+  3. 在 `SubjectReviewPane.vue` 中为 `.subject-review__plan-card` 建立 `html.dark` 专属规则（深灰基底 `#252422`、高质感发丝边框 `rgba(255, 255, 255, 0.08)`、深层立体阴影）；为 `.subject-review__plan-badge` 补齐暗色 Sage 配色；为圆环背景轨道 `.subject-review__pomodoro-track` 设置低反差柔和线条；同步为单轮复习卡片 `.subject-review__card`、提示条 `.subject-review__notice`、进度标签 `.subject-review__round-progress-tag` 与轮次总结 `.subject-review__round-summary` 建立统一暗色规则；
+- **验证与审查**：`npm run type-check` exit 0；全量生产打包 `npm run build` exit 0；定向测试套件 `scripts/r4-subject-review.test.mjs` 50/50 全绿；Reviewer 子代理差量审查待执行。未执行真实客户端 GUI 走查。
+
+### 2026-11-04 PC 窗口物理最小尺寸与窄窗响应式布局验证问题关闭
+
+- **问题现象**：Tauri 配置中仅设定了 `minWidth: 960`，缺失 `minHeight` 限制导致极低窗口高度下元素重叠；核心工作台 `SubjectWorkspace` 缺乏 960px 断点适配导致三栏同时展开时宽度溢出（968px > 960px），且缺少专门的窄窗与物理边界自动化测试。
+- **定位与修复**：在 `tauri.conf.json` 中补齐 `"minHeight": 600`，在 `App.vue` 的 `.app-shell` 上增加 `min-width: 960px; min-height: 600px;` 兜底守卫；在 `SubjectWorkspace/index.vue` 补齐 `@media (max-width: 960px)` 弹性收敛规则，将三栏总宽严格限制在 868px 内部；新增 `scripts/r4-window-boundary.test.mjs` 定向回归测试。
+- **验证与审查**：`npm run type-check` exit 0；`npm run build` exit 0（全量打包成功，无语法与类型错误）；定向套件 `r4-window-boundary.test.mjs` 4/4 全绿；Reviewer 子代理差量复审 BLOCKER=0、IMPORTANT=0、OPTIONAL=0，问题关闭。未执行真实客户端 GUI 走查。
+
+### 2026-11-03 PC 文件解析处理中心渲染异常问题关闭
+
+- **问题现象**：文件解析处理中心（DocumentProcessingCenter.vue）存在任务完成后状态瞬时回跳为服务端未处理并闪烁、动态 OCR 识别页码被静态操作提示遮蔽、超长文件名撑破 Flex 布局将操作按钮挤出屏幕，以及暗色模式下对比度严重失真等问题。
+- **定位与修复**：将服务端未完成列表的本地任务排除条件调整为基于包含完成状态的全局 `store.jobs`，彻底消除回跳闪烁；调整文案判断优先级，实时本地识别页码进度优先呈现；对行容器与文本设置 `min-width: 0` 和 `flex: 1` 溢出省略防护；全面补齐 `html.dark` 高对比度微晶质感配色，状态徽标与按钮全面微晶药丸化，诊断面板增加高度与滚动条约束。
+- **验证与审查**：`npm run type-check` exit 0；定向套件 `r4-document-processing-ui.test.mjs` 15/15 全绿；只读 Reviewer 审查结论 BLOCKER=0、IMPORTANT=0、OPTIONAL=0，问题关闭。未执行真实客户端 GUI 走查。
+
+### 2026-11-03 PC Chat 重试助手气泡重复堆叠问题关闭
+
+- **问题现象**：在流式输出中途失败后点击重试，界面在重试完成后同一提问下残留旧失败气泡，并堆叠新成功气泡。多次重试导致气泡重复累加。
+- **定位与修复**：重试时服务端分配新 attempt 及独立的 `replyMessageId`，Store 原先仅重置当前 USER 消息为 PENDING，未清理该 turn 紧随的旧未完成助手实体。现于 `useChatStore.retryPendingMessage` 中增加同回合未完成助手消息（`status !== 'COMPLETED'`）的严格识别与清除，杜绝追加新消息后并存双气泡；前序已完成回合不受影响。
+- **验证与审查**：`npm run type-check` exit 0；定向套件 `r4-chat-content.test.mjs` 与 `r4-ai-stream.test.mjs` 28/28 全绿；只读 Reviewer 审查结论 BLOCKER=0、IMPORTANT=0、OPTIONAL=0，问题关闭。未执行真实客户端 GUI 走查。
+
+### 2026-11-03 PC 验收问题分层修复（后端候选、PC 待实施）
+
+- **Overview 阻塞 Chat：后端调度候选已修复并通过定向验证。**现场是两路同用户 SOURCE_OVERVIEW 调用占满用户 2 个槽位；新准入合并限制 Overview 占用并有界等待。仅明确容量不足可等待，task owner/fence 丢失的同码错误立即失败；该 IMPORTANT 已由唯一 Luna reviewer 复核关闭。单槽及全局容量耗尽不承诺 Chat 即时可用；未部署、未真实 Provider/GUI 验收。
+- **复习误冲突：后端新回执精度候选已修，PC 恢复仍开放。**本机 8 confirmed、2 selected 均在 prepared=false 阶段误判；元数据对照显示 audit timestamps 纳秒/微秒差异，未证明其他设备写入。新命令冻结数据库 refresh 后状态，隔离 PostgreSQL 验证完整生命周期 state/history/replay 一致。已有冻结回执及本机操作保留；PC 必须按完整血缘，仅对审计精度差异定向恢复，不能自动采用云端进度。
+- **拖回待办：PC 命令协调仍开放。**现场排期 clientMutationId 后来 applied，错误来自普通 UPDATE 遇未结算排期的本地保护；本轮不移除保护、不改 PC 代码。用户实施同一持久排期队列的取消语义、版本衔接与回执保护，见[交接](../plans/2026-11-03-pc-review-unschedule-handoff.md)。关闭条件为相关回归及真实离线重启、连续取消/重排的客户端证据。
+- **全量测试仍非全绿。**首轮 1062 项 2F/48E/7S；使用任务专用临时 PostgreSQL 补跑原环境受阻类后为 43 项 42 passed/1F/0E。仍有策略阶段数断言及两处迁移版本断言未通过，具体类与证据见 Status.md。不能以新定向通过替代全量结论。
+
+### 2026-11-03 Chat admission 并发覆盖补充
+
+原 Chat persistence/recovery/profile 测试以 mock 与顺序状态断言为主，不能证明 PostgreSQL 行锁下的并行准入。新增 opt-in PG 测试复核了同会话 turn/turn、turn/READY 题卡提交两种竞争；reviewer 指出的 barrier-only 弱点已关闭：最终测试通过 `pg_stat_activity` 与 `pg_blocking_pids` 确认两个不同 admission actor 均在 conversation 锁等待链中，再放开 gate。两场景均得到唯一胜者、`CHAT_RUN_ACTIVE` 拒绝并验证 message/run/attempt 及题卡关联状态。测试禁用 Provider、不启动执行 worker；隔离条件与最终证据见[当前状态](Status.md)。其余跨实例运行、真实 Provider 和界面验收仍未覆盖。
+
+### 2026-11-03 Chat 可见 reasoning 的中文表达（源码候选）
+
+SYSTEM prompt 与九个工具 description 使用中文；新增默认中文教学/回答及可见原生 `reasoning_content` 优先简明中文的语言偏好，并明确说明型 render 组件两阶段迭代、自然流程/比较/学习路线意图的正向触发和活动卡片触发语义。调用 `render_steps`、`render_compare`、`render_roadmap`、`render_chart` 前，单次请求迭代最多只写一句简短过渡并立即发送原生 `tool_calls`；服务端 TOOL 结果返回并进入下一次模型调用后继续完整 Markdown 背景说明和深入讲解。Activity READY 保持 terminal。高 index 未执行调用的当前及历史 TOOL result 带固定安全重试提示；history projector 按 status/code/reason 白名单重建，不透传任意 hint。schema/执行门禁、native pairing、公开 API shape 不变。定向四类测试25/25、0F/0E/0S；本轮将该提示具体化后，`ChatAgentProtocolPublicationTests` clean 重编译定向5/5、0F/0E/0S。Provider 对提示的实际遵循仍需真实模型请求观察；合成映射和定向测试不代表运行态输出改变。
+
+### 2026-11-02 PC Chat 流式输出体验与正确性问题修复（源码完成，待验）
+
+- 已确认问题与修复：
+  1. 重试流事件无 `replyMessageId` 导致追加空 ID 消息：在 `useChatStore.ts` 的 `retryPendingMessage` 中增加回退提取并加判空守卫；
+  2. 文本与块交错时前段文本跳变：在 `ChatContentRenderer.vue` 中引入 `currentStreamingTextId` 并在切换至块或新文本前显式 `flush`；
+  3. `SubjectWorkspace` 逐事件全历史 O(N) 扫描：`useChatStore.ts` 直接导出 `streamingParts` 与 `streamingTools`，消除长会话卡顿；
+  4. 思考链与正文放行竞争：只要正文内容到达（`content || partsLen > 0`），立即放行正文渲染；
+  5. 代码块内字符污染行内语法补全：`autoCloseMarkdown` 排除已闭合代码块内部的字符。
+- 验证：类型检查 `npm.cmd --prefix Auralis-PC run type-check` exit 0；定向测试 25/25 全部通过。
+
+### 2026-11-01 PC 复习数据库对象误传与同步等待（候选修复，现场待验）
+
+- 已确认问题：同步将不含 SQL `select` 的 `localDb` 管理对象传入 `ReviewSyncService`，用户日志重复 72 次 `this.db.select is not a function`。调用点现改传初始化后的 `getLocalSqlDatabase()`，且初始化等待后重核 scope；定向参数身份与迟到结果隔离测试通过。
+- 等待放大路径：本地复习对每个正文块在事务后重复读记录，已复用事务返回值消除该次查询；复习历史原逐知识块串行远读，现最多 3 个 worker，同块命令顺序不变，scope/401 终止时等在途 worker 结束。并发上限、去重、失败继续、scope 和单块命令顺序替身测试通过。
+- 验证限制：最终类型检查通过，定向检查分批 5 项通过；较大集合受 Node Web Locks harness 缺失影响而失败，尚未以 HEAD 对照证明全部既有。不能声称全量测试或实际客户端验收通过。剩余关闭条件是实际桌面客户端不再出现上述类型错误，复习/统计打开及同步在真实数据规模下完成，并补充耗时记录。未运行全量、构建、真实服务写入或部署；保留用户并行改动。
+- Overview 404 与重复查询噪声已通过 2026-11-04 新增的 `POST /api/overview-results/subjects/statuses` 批量状态接口并在 PC 端接入（`useOverviewResultsApi.getSubjectStatuses`、`overviewResultsSyncService.ts`）完成闭环解决：13 个无总览学科仅发 1 次批量状态查询，不再发起 13 次必然 404 的 GET 请求，彻底消除 404 循环网络噪声。历史诊断证据见：`D:/Temp/auralis-review-load-performance-20261101/execution-report.md`、`sync-execution-report.md`、`overview-sync-loop-findings.md`。
+- 唯一只读审查 BLOCKER/IMPORTANT/OPTIONAL 均为 0，已按开工基线排除用户并行改动；报告 `D:/Temp/auralis-review-load-performance-20261101/review.md`。
+
+### 2026-10-31 Timeline “其他窗口更新”持续误报
+
+本轮在连续本地排期后收到正常拖动全部失败的用户反馈。确认的可复现路径是：未删除 CANCELLED 任务在 Store 中展示为 `cancelled`，重建基线的转换漏映射成 TODO，与仓储原值不等；本地重读无法消除该确定差异。补齐映射后，在异日取消任务存在时首次排期与连续改期均通过真实 Store 回归，取消记录保持原值，仓储原子基线保护继续生效。
+
+相关检查同时确认 `updateTaskStatus` 会携带展示用 HH:mm 覆盖真实 scheduledAt，跨自然周可能误解为过去时间；现仅在该状态更新入口清除 startTime，保留完整 instant。类型检查和两套定向 138/138 通过，唯一只读审查 B0/I0/O0；未重跑全量/构建，未做真实页面复验，先前 PC 全量失败与真实客户端验收边界继续保留。证据 `D:/Temp/auralis-timeline-baseline-fix-20261031/execution-report.md`。
+
+### 2026-10-31 Chat render 参数单次修正（源码候选，定向验证有限）
+
+现在完整正常 `tool_calls` 中，已识别 render tool 的 strict schema/semantic validator 拒绝可向模型回传一次固定安全错误码、受控字段路径及缺少必填字段；原调用与 result 配对进入当前 iteration 和私有历史 evidence。JSON 语法、preview mismatch、identity/finish门禁、data tool、owner/source fence、取消、预算与 provider 异常不触发修正。第一次坏块保持 INVALID，同批较高 index calls 形成 `not_executed/PREVIOUS_DISPLAY_ARGUMENT_INVALID` 配对结果并带固定重试 hint，不能执行 Activity READY；后续历史投影仅按安全状态白名单重建固定 hint，不透传任意 hint、raw arguments 或 reference；此前已成功内容保留。attempt 级修正轮只一次，第二次验证拒绝仍按原安全失败结束。四类定向共25 tests、0 failures/errors/skips；`ChatDisplayToolArgumentRepairTests` 2/2、`DisplayToolPayloadValidatorTests` 11/11、`ChatEvidenceHistoryProjectorTests` 7/7、`ChatAgentProtocolPublicationTests` 5/5。历史工具 evidence 测试 fixture 加入真实运行所有者与未取消状态 stub，避免 owner heartbeat 将 synthetic run 取消。只读 review B0/I0。真实模型是否能根据反馈生成有效参数仍待验收，本逻辑不保证修正成功或漏调用补生成；source/fence/cancel/provider异常分支未由本组新测试覆盖。
+
+### 2026-10-31 Chat 历史工具协议与组件重复表达（代码候选，验证待执行）
+
+旧历史 evidence 缺少 reasoningContent 时，投影原先降为 System observations，导致模型后续请求没有原生 assistant tool_calls/result 配对。实现已改为始终重建原生配对；reasoning passback 仍仅取 provider 显式值。公开消息 Markdown 与工具调用历史仍会同时保留，本轮有意不回写或清洗历史正文。SYSTEM prompt 与 display tool descriptions 明确要求卡片作为短标题、简短结论构成的高密度结构骨架，把完整教学解释留给正文；steps 限定有序程序/状态流/因果链，compare 限定至少两项对等主体的共同维度，roadmap 限定有依赖的阶段。用户明确请求检验理解/练习/巩固时调用对应 quiz/question 工具；核心知识点的主动学习轮可给一个 checkpoint；局部澄清、未消化补讲、纯导航不机械追加。依赖指定资料但上下文不足时先搜索，不得基于未返回结果声称组件依据。仍要求真实 provider tool_calls，保留简短过渡句与组件后补充解释；规则只作用于提示和工具说明，不改 schema/执行逻辑。`ChatAgentProtocolPublicationTests` 结果见状态文档；真实模型是否遵循仍待外部验收。
+
+### 2026-10-31 Chat 展示工具重写与旧 parser 项替代说明
+
+当前实现已删除 `ChatStreamParser`、`:::auralis-*` marker/NDJSON 生成与尾逗号修复路径，新增独立 provider tool arguments collector、严格 final payload validator、展示 parts projector 与 Activity 原子 READY 持久化。旧历史消息保持原存储，不自动转成新 parts；新运行路径不读取旧格式。此前本文件及状态/模块文档中关于 Chat parser 多行收集、pretty JSON、尾逗号修复和 parser 诊断的条目是对应历史源码快照，不再描述现行协议。focused backend suite 126/126 通过，唯一只读 reviewer 结果 B0/I0。受限全量排除 `IngestionBudgetCalibrationTests` 后为 1036 tests/3F/2E/2S、exit 1；剩余失败包括既有策略/迁移版本断言，TLS keystore 参数缺失的 `OverviewDeadlineSlowDripTests` 补参数后 3/3 通过；`-DskipTests package` exit 0。未调用真实 Provider、未部署、未操作业务数据库、未进行 PC GUI/业务验收；见 [Chat Runtime API](../contracts/chat-runtime-api.md) 与[新计划](../plans/2026-10-31-chat-display-tools.md)。
+
+### 2026-10-31 Chat 容量门槛此前不一致（代码候选，待验证）
+
+已定位并修复：Chat projector 只检查序列化 request 上限，而 Gateway 还检查 `maxPromptChars * 4` 的正文 UTF-8 字节与单条 tool result 上限，因此 projector 可能认为 request 可通过、Gateway却在预留前以 `AI_REQUEST_BUDGET_EXCEEDED` 拒绝。现在两处调用同一纯 evaluator，并覆盖完整 mapped request（含 tools、reasoning、arguments/results）。5 个定向测试类 39/39，`-DskipTests package` BUILD SUCCESS。Token 余额/调用数、输出上限、非 Chat/Overview 容量和用户配置未改变；未调用真实 Provider 或部署。
+
+### 2026-10-31 Timeline 连续拖动同步阻挡修复与验证边界
+
+本轮关闭代码中“一次排期未同步便阻挡当天后续拖动”的问题，保留普通 CRUD 写入保护及现有落点算法。唯一只读审查发现的跨窗口陈旧计算、inflight 队首无法恢复、墓碑使同批回执结算饥饿三项 IMPORTANT 均以最小修复和对应回归关闭，最终 B0/I0/O0。
+
+类型检查、176 项定向与构建通过；PC 全量 exit 1（784 总/752 通过/32 失败）。其中 23 项缺 Web Locks 的测试条件已以独立单例和 HEAD owning 方法比较确认；另 9 项位于范围外 Chat、工作区、侧栏和 Profile 测试，未在本轮修复。逐项失败与完整命令见 `D:/Temp/auralis-timeline-continuous-drag-20261031/execution-report.md` 及 `full-test-failures.json`，不宣称全量通过。
+
+`P1-PC-Task-Scheduling-Atomicity` 的真实客户端边界继续开放：需浏览器/Tauri 在连续拖动、断网重启、联网恢复、真实服务拒绝和跨设备冲突下取得证据。自动测试与源码审查不替代上述验收。
+
+### 2026-10-31 Chat component multiline JSON parser limitation
+
+已复现并修复一种逐行解析局限：组件 JSON object 若 pretty-print 跨行，旧 parser 会把首行 `{` 当作完整 row 过早报 `INVALID_JSON`，后续题干/选项无法进入 `block.item`。Parser 现在有界收集嵌套 object/array，在闭合后逐项走现有校验与发布；NDJSON 一行一项仍是推荐格式，SSE/frontend event contract 不变。单行多对象、截断、raw newline in string、超限与独立结束 marker 前未闭合仍失败，已发布有效 row 保留。历史原始模型输出不可恢复，无法确认此前空卡是否由此触发；此结论只针对当前可复现机制。`ChatStreamParserTests` 24/24、`ChatPublicProjectionTests` 3/3、指定 Orchestrator publication 方法 2/2（合计29/29），`-DskipTests package` 成功。完整 publication 测试类未运行；未部署、未使用真实 Provider 或业务数据库。
+
+### 2026-10-30 Chat 教学解释的可视化选择提示（模型遵循待验收）
+
+已有组件协议定义了 steps、compare、roadmap、chart、quiz、question 的格式，但 SYSTEM prompt 原先只要求遵守格式，没有说明何时应选择这些组件。现补按教学内容匹配组件的选择规则，明确图表只呈现有来源支持的数值，假设示例须标明，简短事实、澄清和普通闲聊不强制结构化，测验仅在适合时置于回答末尾，并要求图文互补避免重复。复杂内容通常建议选择一至两种组件，但没有硬性配额。该方案是模型提示指导，不构成真实输出保证。定向验证 parser/projection/request-capture 24/24、package 成功；request capture 验证了初始与工具继续轮 mapped request。完整 protocol publication 类本轮未运行。真实模型生成效果待实际验收。
+
+### 2026-10-30 Chat quiz 空卡：采用逐行呈现、reference 可选与有限尾逗号修复
+
+现有线上空卡 run 的原始模型输出未取得，根因仍未知。新的生成契约不再让 private reference 阻塞公开题目：模型必须产出完整 stem 和至少两个不同 key 的 option；服务端按行流式发布，只有正常闭合且公开结构有效才 READY。Reference 可省略；可解析但语义无效时只丢私有参考并留安全诊断。真正 JSON 语法错误仍使组件 INVALID，不能推断它是 reference 并吞掉。
+
+只增加严格解析失败后的单次 Jackson trailing-comma fallback，并对恢复节点重用严格 schema/allowlist；不补字段、修复引号/括号或猜测选项。Parser 20/20、Projection 3/3、本次 publication 用例 2/2，package 成功。完整 publication 类有一个未解决的既有断言：`successfulToolEvidenceIsPrivateAndRestoredIntoTheNextTurnProviderRequest` 实际观察到 private tool evidence 为 `[]`；本次不改或放宽该断言。未部署、未请求真实模型，故尚无证据证明真实模型遵守“单选恰一合理答案、多选至少一合理答案”的语义要求，也不据此关闭历史空卡故障；语义正确性由下一轮 LLM 根据提交原题与答案判断，Server 不评分。API envelope/DB 列无变化。
+
+### 2026-10-30 Chat 检索质量与比较组件语义（提示候选，真实模型待验收）
+
+既有问题是 compare 组件每个 item 被当前前端按奇偶标成 A/B 横向行，难以直接阅读。后端新协议把每个 item 定义为一个比较维度 `{title,entries:[{label,text},...]}`，至少两条非空 entry，单条 NDJSON item row 完整携带该维度；严格 parser 校验并只投影 allowlist 字段，public parts 与 Markdown 均按标题后纵向列表输出。旧 title/description-only compare 协议被替代，不做兼容或自动迁移，旧历史数据保留但新 renderer 不支持。前端需更新 projector allowlist、类型及 renderer，具体 live `block.item`、`block.completed` 和 history `MessageView.parts` shape 见 [Chat Runtime API handoff](../contracts/chat-runtime-api.md)。
+
+检索提示仍要求按具体问题决定是否检索、无关结果停止同义词搜索、严格资料请求不以通识代答；不增加固定 search 次数帽。Compare parser/projection 定向20/20通过，package成功，compare源码审查B0/I0。合并运行 protocol class 3/4，剩余既有工具证据用例在 compare prompt 断言前发现 evidence JSON 实际为 `[]`；Surefire未记录该次 run.failed 诊断或 SSE events。该问题未在本轮 compare 范围修复，且阻止 request-capture 用例完成其后续 prompt assertions；其它协议测试未重跑。真实模型、前端/GUI与部署尚未验收。
+
+`mvn -B -ntp clean '-Dtest=ChatAgentProtocolPublicationTests' test` 4/4、0 failures/errors/skips；`mvn -B -ntp -DskipTests package` 成功。request capture 证明合成无关资料结果与规则同在后续 provider request；不能证明真实模型会遵循停搜规则。真实 Provider 相关性、连续无关检索是否收敛仍待验收。前端奇偶 A/B 标签由用户自行修改，本轮未改前端。
+
+### 2026-10-30 Chat SSE 被 MVC 默认异步期限中断（源码修复候选，未部署）
+
+run `6a825643-2e2b-4fb3-860f-8fb37f169c5f` 从 `2026-10-30T04:03:43.354Z` 到终止约31秒；同请求 `/api/ai/messages/stream` 在 `04:04:14.308Z` 明确抛 `AsyncRequestTimeoutException`，稍后 SSE 写入见 `AsyncRequestNotUsableException`。生产 profile 未覆盖 MVC async timeout，Chat attempt deadline=300秒，Nginx `/api/` 已关闭 buffering 且默认读超时60秒，不符合本次约31秒终止。仅普通 Chat turn/retry controller 在准入后为当前 MVC async request 设 timeout=0，沿用 attempt deadline 和取消/断流收尾；其它 async endpoint 不变。MockMvc 两路由均验证 framework async request/context 实际 timeout=0，受控流跨过25ms短默认期限完成。Nginx 的长空窗约60秒边界及真实断流/部署行为仍待运行环境验收；本次未部署。
+
+### 2026-10-30 Chat 重试累计调用限额被映射为通用失败码（源码已修，未部署）
+
+新版本日志定位为 `AiUsageGuard.reserve` 第168行：`TASK_CALLS used=8 limit=8`。owner-scoped run ledger 在三次 attempt 间累计 Chat completion 4 次与 retrieval embedding 4 次；第3 attempt 的工具 search 已开始，但第9次 embedding 在创建 reservation 前被正确拒绝。总 charged tokens 为14,792，当前无活动/保留中的调用；其中一笔已派发 Chat reservation usage unknown，已经保守计费。`AiUsageLimitException` 明确携带 `AI_TASK_BUDGET_EXCEEDED` / HTTP 422，原 `safeCode` 仅识别 `DomainException`，所以 run 的 safeError 错误地退化为 `CHAT_RUN_FAILED`。现只增加 `AiUsageLimitException` 类型的安全码转发及真实 Orchestrator 合成回归；预算、ledger、usage settle、cancel/owner fencing均不改。该 run 的8调用额度已消耗完，后续应开启新的 Chat turn；同一 run retry共享原 ledger。源码尚未部署，未触发真实 Provider、未改账本或提高上限。证据 `D:/Temp/auralis-chat-reasoning-live-20261030/orchestrator-failure-observability.md`。
+
+### 2026-10-30 Chat 模型、Embedding 与工具次数配置拆分（源码候选）
+
+旧 `maxModelAndEmbeddingCalls=8` 同时限制聚合 task、模型 stage 与 embedding stage，导致无法单独观察/调节。候选改为独立模型和 embedding 配置，0 为无限次数、负数无效；Chat 的 stage admission 仍由同一 Guard reservation ledger 执行并跨 retry 累计，平台 Token 限额及真实用量结算保留。工具限额继续是独立配置并按当前 attempt trace 计数。状态接口的既有 `accountingSummary` Map 增加 run 级 model/embedding admitted-call 数与 attempt 级 distinct tool-call 数，不添加 DTO 形状或 DB 列。Iteration 8 仍限每个 attempt 的模型循环次数。统一 targeted tests/review 尚待完成；未修改账本或部署。
+
+### 2026-10-30 Chat reasoning 与 request-level thinking（源码问题已关闭）
+
+只接受 provider 显式 string reasoning delta；与 text 分流后经独立 SSE 过程事件发布。工具迭代保留必要 assistant reasoning protocol 字段用于后续 provider request，公开 DTO/parts/trace 不含该字段。Chat/Overview 两个配置按可信 operation/feature 注入 immutable request，不共享可变全局状态。历史折叠 fit 已使用含候选 reasoning、工具定义的实际 mapped request bytes；若一轮超额则整组移除。合成混合工具 loop 与跨 run mapped request 测试通过。
+
+验证：clean focused suites 40/40、0 failures/errors/skips；package exit 0；唯一只读 review B0/I0/O0。日志 `D:/Temp/auralis-reasoning-target-tests-final.log`、package `D:/Temp/auralis-reasoning-package.log`。未部署、未调用真实 Provider，未核实 Docker 新运行值；前端展示由用户负责。
+
+### 2026-10-30 Chat quiz 空卡：运行态原因未确认，parser 诊断已补
+
+运行快照未持久化 quiz block，现有证据不能确认模型输出缺 stem/reference、解析错误或 SSE 时序是哪一种。SYSTEM schema 与 parser 的 stem/options/final private reference 约束一致；真实 Orchestrator 的合成分片回归证明 valid quiz 能进入 READY，且 malformed quiz 错误可区分为 `UNEXPECTED_ROW` / `validRows=0`。此前 parser `ErrorCode` 未进入后端日志，已补仅含 run/attempt/block UUID、component、枚举错误码和有效行数的 WARN；SSE 合同不变。定向 17/17、package 成功。该观测性改进不等同于确认或修复截图对应 run 的模型输出根因；待部署后若再次出现，可按 run/attempt 查安全日志。未部署或重发模型请求。
+
 ### 2026-10-29 Chat Agent 自查六项后端 IMPORTANT（源码问题已关闭）
 
 已修复并通过行为验证：retry 原子推进 conversation/run/attempt fence 后可 claim 与 settle；SYSTEM prompt 包含冻结 Auralis markers、NDJSON schemas、reference 规则及活动结束要求；public parts 仅合并连续文本；恢复只扫描到期且可处理的 foreign attempts，按 deadline/id 稳定排序，fresh RUNNING 不偷占，UNKNOWN 保持占位；partial component 的有效已解析行会进入 INVALID 快照且不可提交；V43 私有工具证据列可写入并进入下一轮实际模型请求，工具 call/result 在最终 assistant 回复前配对，public status/detail/trace 不泄漏。
@@ -323,9 +544,9 @@ PC 真实 Source 文件预览已收敛为 `FilePreview`：旧 `PdfViewer`、Home
 
 | P1-Phase5-External-Infra | 阶段 5 的 PostgreSQL/pgvector、MinIO 主链路、默认容器门禁和 SiliconFlow embedding 单次 smoke 已通过；真实聊天服务与异常路径仍未验收 | 2026-08-21 `mvn -B -ntp test` 148/0/0：PostgreSQL 17.11 + pgvector V1→V14 clean/upgrade 与 MinIO 主链路均实际运行；真实 Java Provider 链路调用 SiliconFlow `BAAI/bge-m3` 返回 1 条 embedding。2026-10-12 新聊天检索默认开启：后端 clean 定向测试 47/47，`scripts/check-openapi.ps1` 退出码 0，包含 OpenAPI artifact 12/12 与 PC/Mobile SDK 标准生成对比 | 真实聊天响应、限流/断流网络、对象异常和完整部署拓扑仍可能与基线不同；客户端代码与定向验证已完成，真实 Provider / GUI 验收未运行 | 增加 chat smoke、MinIO 异常路径和生产 Compose 验证；针对 [RAG 默认开启计划](../plans/2026-10-12-rag-always-on.md) 完成跨端范围行为验证及真实 Provider 验收 | migration、JPA validate、embedding 检索、对象链路、异常路径和真实 Provider 在真实依赖上通过；新聊天检索路径、错误反馈和客户端范围有对应自动及真实环境证据 |
 | P1-Phase5-Ingestion-Fencing | 2026-09-27 已加入同事务 Source/job 入队、恢复处理中 Source 补 job、revision/job/generation/attempt/锁后 lease 栅栏及同事务完成 | Server clean 聚焦 114/114、PostgreSQL pgvector 2/2，覆盖入队失败回滚、恢复与迟到结果拒绝；未做真实进程崩溃/长耗时 Provider | 代码级提交/入队及恢复缺口已关闭；真实运行稳定性仍待验收 | 受控环境演练进程重启、重复执行和真实 Provider 超时 | 真实部署验证已提交或恢复的处理中 Source 必有匹配 job，stale worker 无法提交旧结果 |
-| P1-Phase5-Provider-Security | BYOK/URL 已具备 HTTPS allowlist、IPv4/IPv6 SSRF、DNS 公网地址过滤与固定连接、重定向关闭/复核、超时和响应体上限；除 Overview 失败事件外，既有 AI 失败日志保留脱敏后的异常类名/message/root cause，Overview 现改为 allowlisted errorCode、关联字段、阶段和 exception/cause 类型；真实网络、限流、审计和密钥轮换仍未验收 | `ProviderEndpointPolicy`、`ProviderHttpClient`、`PinnedSslSocketFactory`、`UrlSourceFetcher`、`AiStreamingService`；2026-08-23 原始异常日志/Authorization 脱敏回归与 `AiStreamingTests` 12/12 通过，真实 SiliconFlow embedding smoke 通过；Task 2 Overview 日志/requestId 安全回归 19/19 | 真实 DNS/证书/代理环境仍可能暴露网络策略或 provider 异常映射问题；截断日志不替代完整上游诊断 | 补受控 DNS rebinding、redirect、超时、429/5xx、日志采集/轮转、审计和密钥轮换专项 | 安全专项测试和生产 secret/网络策略、日志采集记录通过 |
+| P1-Phase5-Provider-Security | BYOK/URL 已具备 HTTPS allowlist、IPv4/IPv6 SSRF、DNS 公网地址过滤与固定连接、重定向关闭/复核、超时和响应体上限；Overview 使用 allowlisted errorCode、关联字段、阶段和 exception/cause 类型；Provider SSE 新增 HTTP status、JSON/protocol frame、consumer callback、transport 阶段和 safe error/cause 类型，仍不采集异常文本或流正文 | `ProviderEndpointPolicy`、`ProviderHttpClient`、`PinnedSslSocketFactory`、`UrlSourceFetcher`、`AiStreamingService`；原有 2026-08-23 与 Task 2 验证证据见既有记录；2026-10-30 合成 Provider diagnostics 测试及 package 结果见 `D:/Temp/auralis-chat-reasoning-live-20261030/diagnostic-fix.md` | 真实 DNS/证书/代理、限流、审计和密钥轮换仍未验收；安全日志不会记录 Provider 原始错误正文，因此具体拒绝原因可能仍不可见 | 补受控 DNS rebinding、redirect、超时、429/5xx、日志采集/轮转、审计和密钥轮换专项 | 安全专项测试和生产 secret/网络策略、日志采集记录通过 |
 | P1-Phase5-Suggestion-Quality | Suggestions 是确定性基线，未接入真实 LLM、RAG citation 或质量评估 | `SuggestionService` owner check 与 controller 测试通过，返回 citations 当前为空 | 产品可能误认为已具备 AI 总结/提问质量 | 接入受控模型与 RetrievalService，增加 schema、引用正确性、提示注入和人工质量验收 | 质量指标、引用回链和人工样例验收记录完成 |
-| P2-Phase5-Stream-Granularity | SSE 回调链和 OpenAI-compatible 上游增量解析已构建，但真实 Provider 网络/证书/背压和前端消费仍未验收 | `AiStreamingService`、`AiController`、`OpenAiCompatibleProvider`、`AiProviderSecurityTests`；2026-08-17 受控 SSE/超时/断流/错误测试通过 | 真实网络断线、代理缓冲、Provider 特有 SSE 变体或客户端背压仍可能影响 UI 流式体验 | 在 R2 受控真实 Provider 环境验证首包、增量、取消、断流、429/5xx、超时和前端消费 | 真实 Provider 的增量、断线、取消、超时、错误事件和前端消费契约通过 |
+| P2-Phase5-Stream-Granularity | SSE 回调链与上游增量解析已构建；已关闭 Chat 工具 delta 未齐时构造 SDK PartialToolCall 导致的本地 IllegalArgumentException；真实 Provider 网络/证书/背压和前端消费仍未验收 | `AiStreamingService`、`AiController`、`OpenAiCompatibleProvider`、`ChatAgentModelAdapter`；langchain4j-core 1.22.0 合成分片回归和最终定向结果见 `D:/Temp/auralis-chat-reasoning-live-20261030/adapter-fix.md`；2026-08-17 受控 SSE/超时/断流/错误测试通过 | 真实网络断线、代理缓冲、Provider 特有 SSE 变体或客户端背压仍可能影响 UI 流式体验；修复未部署 | 在 R2 受控真实 Provider 环境验证首包、增量、取消、断流、429/5xx、超时和前端消费 | 真实 Provider 的增量、断线、取消、超时、错误事件和前端消费契约通过 |
 
 ## 审查结论
 
@@ -573,3 +794,10 @@ R1-06、G1、G2 与 G3 契约迁移前置门禁已完成代码、配置和自动
 - 无 API、DB、配额、输出 reserve 或 BYOK 策略变化。D 盘隔离候选中三个 GUIDE focused cases 通过：>12k BYOK 请求实际到达 mock scope 且保留 2048 输出上限；当完整候选预留超过 PLATFORM 余额而紧凑候选正好装入余额时选择紧凑输入；不足以预留新调用时读取有效指南 checkpoint 且不派发 Provider。Maven exit 0，日志 `D:/Temp/auralis-guide-dynamic-capacity-20261025/candidate/guide-focused-final.log`，源码/test hash `candidate-source-hashes.csv`。唯一只读 review BLOCKER 0 / IMPORTANT 0（主代理报告）。未部署、未连业务数据库、未调用真实 Provider；GUI 与真实 GUIDE 业务验收未执行。mock Gateway 测试不证明持久 Guard/账本 reservation 的集成行为。
 
 - 2026-10-28：topic000175 曾出现跨节重复；`ADAPTIVE_ROUTE_INSTRUCTION` 已增加每个 topic ID 单一 section 归属提醒（含合并/重组），源码候选尚未部署，模型效果未验收。
+
+### 2026-10-31 Chat 诊断文件保留边界
+
+临时 raw assistant content capture 仅在显式本机开关打开时写入容器 `/tmp/auralis-chat-diagnostics`，每个 attempt 累计最多为 provider 响应字节上限，I/O 故障不影响 Chat。文件不会自动清理并会随现有容器生命周期处理；完成目标复现后应关闭开关。此能力只记录解码后的 assistant content 文本，不是原始 HTTP/SSE wire 数据；未部署或发起新模型调用。
+### 2026-11-01 Chat 正文输出 render_* 参数 JSON 的观测
+
+一次运行的诊断记录中，assistant 正文出现单独的 `render_steps` 行及其参数 JSON，而数据库公开内容只有文本、没有对应组件。仅有这一案例，不能确认其成因或出现范围。本轮仅在 SYSTEM prompt 增加约束：组件须经真实 provider `tool_calls` 调用；正文可引介、解释、总结，不得以伪调用文本或原始参数 JSON 代替组件；用户询问工具协议或代码时保留示例说明空间。对应初始及后续 mapped request 断言纳入 `ChatAgentProtocolPublicationTests`，该类 5/5 通过（0 failures/errors/skips，exit 0）。未调用真实 Provider、未部署，运行时是否改善仍待后续验收。证据 `D:/Temp/auralis-literal-render-steps-20261101/findings.md`。

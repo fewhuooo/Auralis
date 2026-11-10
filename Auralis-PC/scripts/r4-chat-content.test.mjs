@@ -26,6 +26,10 @@ import {
   projectChatContentParts,
   updateChatActivityDraft,
 } from '../src/services/chatContentProjection.ts'
+import {
+  autoCloseMarkdown,
+  wrapTrailingToken,
+} from '../src/utils/markdown.ts'
 
 const quiz = (overrides = {}) => ({
   id: 'part-quiz',
@@ -57,7 +61,15 @@ test('projects only public fields for each supported part and rejects unknown pr
     {
       id: 'compare-1', componentId: 'compare-a', kind: 'block', component: 'compare', state: 'READY',
       meta: { title: 'Two approaches', description: 'Use the same evidence.' },
-      items: [{ title: 'Approach A', description: 'Direct.' }, { title: 'Approach B', description: 'Incremental.' }],
+      items: [
+        {
+          title: 'Communication pattern',
+          entries: [
+            { label: 'HTTP polling', text: 'The client periodically requests updates.', private: 'drop' },
+            { label: 'SSE', text: 'The server streams updates over one connection.' },
+          ],
+        },
+      ],
     },
     {
       id: 'steps-1', componentId: 'steps-a', kind: 'block', component: 'steps', state: 'GENERATING',
@@ -87,7 +99,15 @@ test('projects only public fields for each supported part and rejects unknown pr
   assert.deepEqual(projected[1], {
     id: 'compare-1', componentId: 'compare-a', kind: 'block', component: 'compare', state: 'READY',
     meta: { title: 'Two approaches', description: 'Use the same evidence.' },
-    items: [{ title: 'Approach A', description: 'Direct.' }, { title: 'Approach B', description: 'Incremental.' }],
+    items: [
+      {
+        title: 'Communication pattern',
+        entries: [
+          { label: 'HTTP polling', text: 'The client periodically requests updates.' },
+          { label: 'SSE', text: 'The server streams updates over one connection.' },
+        ],
+      },
+    ],
   })
   assert.deepEqual(projected[2], {
     id: 'steps-1', componentId: 'steps-a', kind: 'block', component: 'steps', state: 'GENERATING',
@@ -184,4 +204,61 @@ test('chart ratios remain finite for large values and zero-only data', () => {
   })
   assert.ok(invalidValues && invalidValues.kind === 'block')
   assert.deepEqual(invalidValues.items, [])
+})
+
+test('autoCloseMarkdown optimistic closures and prefix hold-back', () => {
+  // 1. Tag & container prefix hold-back
+  assert.equal(autoCloseMarkdown('这是前文<quiz-'), '这是前文')
+  assert.equal(autoCloseMarkdown('这是前文:::flow'), '这是前文')
+  assert.equal(autoCloseMarkdown('这是前文```type'), '这是前文')
+
+  // 2. Unclosed code block
+  assert.equal(autoCloseMarkdown('```python\nprint("hello")'), '```python\nprint("hello")\n```')
+
+  // 3. Unclosed LaTeX math
+  assert.equal(autoCloseMarkdown('公式 $$x = 1'), '公式 $$x = 1$$')
+  assert.equal(autoCloseMarkdown('行内公式 \\(x + y'), '行内公式 \\(x + y\\)')
+  assert.equal(autoCloseMarkdown('块级公式 \\[A = B'), '块级公式 \\[A = B\\]')
+
+  // 4. Unclosed link
+  assert.equal(autoCloseMarkdown('参考 [深度解析](https://example.com/doc'), '参考 [深度解析](https://example.com/doc)')
+
+  // 5. Unclosed bold & inline code
+  assert.equal(autoCloseMarkdown('核心 **关键机制'), '核心 **关键机制**')
+  assert.equal(autoCloseMarkdown('执行命令 `npm test'), '执行命令 `npm test`')
+
+  // 6. Code block interior does not leak into inline markers
+  assert.equal(
+    autoCloseMarkdown('```python\nx = 2 ** 8\n```\n这是普通文本'),
+    '```python\nx = 2 ** 8\n```\n这是普通文本'
+  )
+
+  // 7. Inline code interior does not leak into bold / math markers (both closed and unclosed inline code)
+  assert.equal(
+    autoCloseMarkdown('使用 `x = 2 ** 8` 进行计算'),
+    '使用 `x = 2 ** 8` 进行计算'
+  )
+  assert.equal(
+    autoCloseMarkdown('使用 `x = 2 ** 8'),
+    '使用 `x = 2 ** 8`'
+  )
+  assert.equal(
+    autoCloseMarkdown('变量 `echo $$` 打印PID'),
+    '变量 `echo $$` 打印PID'
+  )
+  assert.equal(
+    autoCloseMarkdown('变量 `echo $$'),
+    '变量 `echo $$`'
+  )
+})
+
+test('wrapTrailingToken wraps trailing characters with token-fade span', () => {
+  const htmlWithTags = '<p>正在讲解<strong>核心概念</strong></p>'
+  const wrapped = wrapTrailingToken(htmlWithTags)
+  assert.ok(wrapped.includes('<span class="token-fade">核心概念</span>'))
+  assert.ok(wrapped.endsWith('</strong></p>'))
+
+  const htmlWithTrailingWhitespace = '<p>正在讲解知识点</p>\n'
+  const wrappedWs = wrapTrailingToken(htmlWithTrailingWhitespace)
+  assert.ok(wrappedWs.includes('<span class="token-fade">解知识点</span>'))
 })

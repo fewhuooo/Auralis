@@ -32,6 +32,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -66,6 +69,8 @@ class ChatRuntimePersistenceServiceTests {
         conversation = new ConversationEntity(conversationId, userId, "Chat", null,
                 ConversationPurpose.GENERAL, null);
         conversation.enableChatProtocolOne();
+        conversation.markChatScopeUnbound();
+        conversation.bindChatScope(null);
         fence = conversation.reserveChatRun(runId);
         UUID userMessageId = UUID.randomUUID();
         run = new ChatRunEntity(runId, userId, conversationId, "request-1", "request-hash",
@@ -96,7 +101,7 @@ class ChatRuntimePersistenceServiceTests {
         UUID blockId = UUID.randomUUID();
 
         ChatActivityEntity activity = persistence.readyActivity(userId, conversationId, runId, attemptId,
-                fence, Map.of(), activityId, blockId, 1, "open", "{}", "{}", "[]", "question", "model", 4);
+                fence, Map.of(), activityId, blockId, 1, "open", "{}", "{}", "[]", "[]", "[]", "question", "model", 4);
 
         assertThat(activity.getState()).isEqualTo("READY");
         assertThat(run.getStatus()).isEqualTo("COMPLETED");
@@ -109,6 +114,65 @@ class ChatRuntimePersistenceServiceTests {
         assertThat(terminal.run().getStatus()).isEqualTo("COMPLETED");
         assertThat(attempt.getStatus()).isEqualTo("COMPLETED");
         assertThat(conversation.getActiveChatRunId()).isNull();
+    }
+
+    @Test
+    void unknownFinishAfterReadyActivityUsesBusinessCompletionToReleaseSlot() {
+        when(messages.existsById(replyId)).thenReturn(false, true);
+        persistence.readyActivity(userId, conversationId, runId, attemptId, fence, Map.of(), UUID.randomUUID(),
+                UUID.randomUUID(), 1, "open", "{}", "{}", "[]", "[]", "[]", "question", "model", 4);
+
+        ChatRuntimePersistenceService.Terminal terminal = persistence.finish(userId, conversationId, runId,
+                attemptId, fence, Map.of(), "UNKNOWN", "[]", "[]", 5, "", "model",
+                "CHAT_WORKER_OWNERSHIP_UNKNOWN");
+
+        assertThat(terminal.run().getStatus()).isEqualTo("COMPLETED");
+        assertThat(terminal.attempt().getStatus()).isEqualTo("COMPLETED");
+        assertThat(terminal.attempt().getSafeErrorCode()).isNull();
+        assertThat(conversation.getActiveChatRunId()).isNull();
+    }
+
+    @Test
+    void readyActivityRejectsCancelCommittedBeforeItsAtomicTransaction() {
+        persistence.requestCancel(userId, conversationId, runId);
+
+        assertThatThrownBy(() -> persistence.readyActivity(userId, conversationId, runId, attemptId,
+                fence, Map.of(), UUID.randomUUID(), UUID.randomUUID(), 1, "open", "{}", null,
+                "[]", "[]", "[]", "question", "model", 4))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("CHAT_RUN_CANCELLED"));
+
+        assertThat(attempt.getStatus()).isEqualTo("CANCEL_REQUESTED");
+        assertThat(run.getStatus()).isEqualTo("RUNNING");
+        verify(attempts, times(1)).saveAndFlush(attempt);
+        verify(activities, never()).saveAndFlush(any());
+        verify(messages, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void localDisplayCheckpointRejectsCancelCommittedBeforeItsAtomicTransaction() {
+        persistence.requestCancel(userId, conversationId, runId);
+
+        assertThatThrownBy(() -> persistence.checkpointLocalToolEvidence(userId, conversationId, runId,
+                attemptId, fence, Map.of(), "[]", "[]", 3, "[]"))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("CHAT_RUN_CANCELLED"));
+
+        assertThat(attempt.getStatus()).isEqualTo("CANCEL_REQUESTED");
+        verify(attempts, times(1)).saveAndFlush(attempt);
+    }
+
+    @Test
+    void localDisplayCheckpointChecksExistingSourceRevisionFence() {
+        when(sources.lockAndCheckReadyRevisions(org.mockito.ArgumentMatchers.eq(userId),
+                org.mockito.ArgumentMatchers.anyMap())).thenReturn(false);
+
+        assertThatThrownBy(() -> persistence.checkpointLocalToolEvidence(userId, conversationId, runId,
+                attemptId, fence, Map.of(sourceId, UUID.randomUUID()), "[]", "[]", 3, "[]"))
+                .isInstanceOfSatisfying(DomainException.class,
+                        exception -> assertThat(exception.code()).isEqualTo("SOURCE_SCOPE_CHANGED"));
+
+        verify(attempts, never()).saveAndFlush(any());
     }
 
     @Test

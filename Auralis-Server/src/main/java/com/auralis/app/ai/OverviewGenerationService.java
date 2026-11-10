@@ -4858,6 +4858,27 @@ public class OverviewGenerationService {
                             "systemCharacters", String.valueOf(systemText.length()),
                             "userCharacters", String.valueOf(userData.length()), "dispatchState", "UNKNOWN_BEFORE_GATEWAY")),
                     () -> Map.of("systemPrompt", systemText, "userPrompt", userData));
+            if (effectiveBinding != null || context.acquisition() != null) {
+                AiInvocationBinding admissionDelegate = effectiveBinding;
+                effectiveBinding = new AiInvocationBinding() {
+                @Override public void beforeReservation() {
+                    context.deadline().remainingMillis();
+                    requireCurrentSource(context);
+                    requireOwnerActive(context);
+                    if (admissionDelegate != null) admissionDelegate.beforeReservation();
+                }
+                @Override public long responseTimeoutMillis(long requestedMillis) {
+                    return context.deadline().responseTimeoutMillis(requestedMillis);
+                }
+                @Override public void onReserved(UUID reservationId) {
+                    if (admissionDelegate != null) admissionDelegate.onReserved(reservationId);
+                }
+                @Override public void beforeDispatch(UUID reservationId) {
+                    beforeReservation();
+                    if (admissionDelegate != null) admissionDelegate.beforeDispatch(reservationId);
+                }
+                };
+            }
             long providerStartedAt = monotonicNanos.getAsLong();
             response = (effectiveBinding == null
                     ? taskScope.complete(usageStage, providerType, providerRequest, settings.credential(),

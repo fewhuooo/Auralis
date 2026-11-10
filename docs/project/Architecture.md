@@ -1,8 +1,12 @@
 # Auralis 系统架构
 
-### 2026-10-29 Chat Agent 与流式可视化教学（计划中）
+### 2026-10-31 Chat display-tool 生成数据流（现行后端实现）
 
-在 `codex/chat-agent-rewrite` 分支直接重写现有 ai Chat 与客户端接线，以 LangChain4j 单 Agent Loop 和唯一消息/组件协议替换原执行链；复用 Conversation/Message 身份、凭据、安全 HTTP 与 Gateway/Guard。正文和 NDJSON 组件转换为有序事件，PC 在同一时间线逐字/逐项展示；其他 Chat 消费端同步契约。题卡提交构建关联原题的用户消息，由模型继续教学。当前工具结构、stage 次数和会话保留规则须随重写更新，旧专属执行路径在切换后删除。本段为计划，不表示代码已支持。范围与验收见[重写计划](../plans/2026-10-29-chat-agent-visual-teaching.md)。Overview、Review 和核心 Sync 不进入该改造范围。
+Chat Agent 以 provider `render_*` function tools 生成结构化展示；typed tool-argument deltas 进入独立的 bounded assembler 与严格 payload validator，合法预览按事件首次出现次序进入有序 public parts。Data tools 使用 conversation 固定的策略/ID及每 attempt 重新捕获的 owner/source revision scope；模型参数请求越界可安全纠正，但不会读取或返回范围外资料。Visual tools 本地生成并经 owner/source revision fence 持久化，Activity tools 以 source/fence 校验和锁内 RUNNING 检查原子保存 READY 后终止该轮。普通 provider content 仍按 Markdown text segment 保序，展示协议不再从正文解析 marker/NDJSON。字段与边界见 [Chat Runtime API](../contracts/chat-runtime-api.md)，范围与顺序语义见[重写计划](../plans/2026-10-31-chat-display-tools.md)。后端 focused suite 126/126，review B0/I0；受限 full 与 package 状态见[当前状态](../current/Status.md)。PC consumer 由用户修改与验收。
+
+### 2026-10-29 Chat Agent 与流式可视化教学（历史方案，已由 10-31 重写替代）
+
+本段保留为旧实施计划的历史摘要，不作为当前代码或契约事实。当前 Chat 展示生成协议及后端/前端交接以 [2026-10-31 重写计划](../plans/2026-10-31-chat-display-tools.md) 和 [Chat Runtime API](../contracts/chat-runtime-api.md) 为准。
 
 ### 2026-10-27 Overview direct 执行身份与内容复用身份
 

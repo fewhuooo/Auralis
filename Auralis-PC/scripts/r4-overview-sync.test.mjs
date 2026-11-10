@@ -13,6 +13,11 @@ export async function resolve(specifier, context, nextResolve) {
     const withExt = subPath.endsWith('.ts') ? subPath : subPath + '.ts';
     return nextResolve(new URL(withExt, root).href, context);
   }
+  if ((specifier.startsWith('./') || specifier.startsWith('../')) && !specifier.endsWith('.ts') && !specifier.endsWith('.js') && !specifier.endsWith('.mjs') && !specifier.endsWith('.json')) {
+    try {
+      return await nextResolve(specifier + '.ts', context);
+    } catch {}
+  }
   return nextResolve(specifier, context);
 }
 `
@@ -74,13 +79,42 @@ function subjectView(subjectId, command, version = 1) {
 }
 
 function fakeApi(overrides = {}) {
-  const calls = { getFiles: [], putFiles: [], getSubjects: [], putSubjects: [] }
+  const calls = { getFiles: [], putFiles: [], getSubjects: [], putSubjects: [], getSubjectStatuses: [] }
   return {
     calls,
     async getFile(...args) { calls.getFiles.push(args); return overrides.getFile ? overrides.getFile(...args) : null },
     async putFile(...args) { calls.putFiles.push(args); return overrides.putFile ? overrides.putFile(...args) : fileView(args[0], args[1].ingestionRevision) },
     async getSubject(...args) { calls.getSubjects.push(args); return overrides.getSubject ? overrides.getSubject(...args) : null },
     async putSubject(...args) { calls.putSubjects.push(args); return overrides.putSubject ? overrides.putSubject(...args) : subjectView(args[0], args[1]) },
+    async getSubjectStatuses(...args) {
+      calls.getSubjectStatuses.push(args)
+      if (overrides.getSubjectStatuses) return overrides.getSubjectStatuses(...args)
+      const subjectIds = args[0]
+      const items = await Promise.all(subjectIds.map(async subjectId => {
+        if (overrides.getSubject) {
+          const remote = await overrides.getSubject(subjectId)
+          if (remote) {
+            return {
+              subjectId,
+              status: 'AVAILABLE',
+              version: remote.version,
+              outlineVersion: remote.outlineVersion,
+              summaryVersion: remote.summaryVersion,
+              updatedAt: remote.updatedAt,
+            }
+          }
+        }
+        return {
+          subjectId,
+          status: 'MISSING',
+          version: null,
+          outlineVersion: null,
+          summaryVersion: null,
+          updatedAt: null,
+        }
+      }))
+      return { items }
+    },
   }
 }
 
@@ -891,4 +925,263 @@ test('manifest fingerprint helper sorts UUIDs and lowercases identifiers like th
   ])
   const canonical = 'AURALIS-SUBJECT-OVERVIEW-MANIFEST-V1\naaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\trev-a\t2\t-\nbbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\trev-b\t-\t9\n'
   assert.equal(actual, createHash('sha256').update(canonical, 'utf8').digest('hex'))
+})
+
+test('13 missing subjects trigger exactly 1 batch status call and 0 getSubject GETs', async () => {
+  const repository = new OverviewRepository('batch-13-missing-user', 'device-1', { storage: createMemoryStorage() })
+  const subjectIds = Array.from({ length: 13 }, (_, i) => `subj-${i + 1}`)
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => ({
+      items: ids.map(id => ({
+        subjectId: id,
+        status: 'MISSING',
+        version: null,
+        outlineVersion: null,
+        summaryVersion: null,
+        updatedAt: null,
+      })),
+    }),
+  })
+  await service(repository, api).reconcile(options([], subjectIds))
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.equal(api.calls.getSubjectStatuses[0][0].length, 13)
+  assert.equal(api.calls.getSubjects.length, 0)
+})
+
+test('1 available and remaining missing subjects trigger 1 batch status call and only 1 getSubject GET', async () => {
+  const repository = new OverviewRepository('batch-1-avail-user', 'device-1', { storage: createMemoryStorage() })
+  const subjectIds = Array.from({ length: 13 }, (_, i) => `subj-${i + 1}`)
+  const availableId = 'subj-3'
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => ({
+      items: ids.map(id => ({
+        subjectId: id,
+        status: id === availableId ? 'AVAILABLE' : 'MISSING',
+        version: id === availableId ? 1 : null,
+        outlineVersion: id === availableId ? 1 : null,
+        summaryVersion: id === availableId ? 1 : null,
+        updatedAt: id === availableId ? '2026-11-04T10:00:00.000Z' : null,
+      })),
+    }),
+    getSubject: async (id) => {
+      if (id === availableId) {
+        return subjectView(id, { result: { title: 'Available Subj', outline, summary } }, 1)
+      }
+      return null
+    },
+  })
+  await service(repository, api).reconcile(options([], subjectIds))
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.equal(api.calls.getSubjects.length, 1)
+  assert.equal(api.calls.getSubjects[0][0], availableId)
+  assert.equal((await repository.getSubjectOverview(availableId))?.title, 'Available Subj')
+})
+
+test('AVAILABLE subject with matching local complete copy skips getSubject GET', async () => {
+  const storage = createMemoryStorage()
+  const repository = new OverviewRepository('batch-matching-user', 'device-1', { storage })
+  const subjectId = 'subj-matched'
+  const matchingRecord = record('SUBJECT', subjectId, 'subject-v1', 'Local Matched')
+  const matchingState = {
+    scopeType: 'SUBJECT', scopeId: subjectId, revisionKey: 'subject-v1',
+    version: 5, outlineVersion: 2, summaryVersion: 3,
+    outlineSourceManifest: null, summarySourceManifest: null,
+    outlineInputFingerprint: null, summaryInputFingerprint: null,
+    updatedAt: '2026-11-04T12:00:00.000Z',
+  }
+  const token = repository.captureScopeFenceToken('SUBJECT', subjectId)
+  await repository.installRemoteOverview(matchingRecord, matchingState, false, token)
+
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => ({
+      items: [{
+        subjectId,
+        status: 'AVAILABLE',
+        version: 5,
+        outlineVersion: 2,
+        summaryVersion: 3,
+        updatedAt: '2026-11-04T12:00:00.000Z',
+      }],
+    }),
+  })
+  await service(repository, api).reconcile(options([], [subjectId]))
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.equal(api.calls.getSubjects.length, 0)
+  assert.equal((await repository.getSubjectOverview(subjectId))?.title, 'Local Matched')
+})
+
+test('AVAILABLE subject with version=0 is recognized as valid and pulled without being treated as missing', async () => {
+  const repository = new OverviewRepository('batch-version-0-user', 'device-1', { storage: createMemoryStorage() })
+  const subjectId = 'subj-v0'
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => ({
+      items: [{
+        subjectId,
+        status: 'AVAILABLE',
+        version: 0,
+        outlineVersion: 0,
+        summaryVersion: 0,
+        updatedAt: '2026-11-04T12:00:00.000Z',
+      }],
+    }),
+    getSubject: async (id) => subjectView(id, { result: { title: 'Version Zero Subj', outline, summary } }, 1),
+  })
+  await service(repository, api).reconcile(options([], [subjectId]))
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.equal(api.calls.getSubjects.length, 1)
+  assert.equal(api.calls.getSubjects[0][0], subjectId)
+  const installed = await repository.getSubjectOverview(subjectId)
+  assert.equal(installed?.title, 'Version Zero Subj')
+  const syncState = await repository.getOverviewSyncState('SUBJECT', subjectId, 'subject-v1')
+  assert.equal(syncState?.version, 1)
+})
+
+test('more than 100 subjects (e.g. 105) are partitioned into batches of <= 100', async () => {
+  const repository = new OverviewRepository('batch-105-user', 'device-1', { storage: createMemoryStorage() })
+  const subjectIds = Array.from({ length: 105 }, (_, i) => `subj-${i + 1}`)
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => {
+      assert.ok(ids.length <= 100, `batch size must be <= 100 but was ${ids.length}`)
+      return {
+        items: ids.map(id => ({
+          subjectId: id,
+          status: 'MISSING',
+          version: null,
+          outlineVersion: null,
+          summaryVersion: null,
+          updatedAt: null,
+        })),
+      }
+    },
+  })
+  await service(repository, api).reconcile(options([], subjectIds))
+  assert.equal(api.calls.getSubjectStatuses.length, 2)
+  assert.equal(api.calls.getSubjectStatuses[0][0].length, 100)
+  assert.equal(api.calls.getSubjectStatuses[1][0].length, 5)
+})
+
+test('duplicate subject IDs are deduplicated before issuing status request', async () => {
+  const repository = new OverviewRepository('batch-dedup-user', 'device-1', { storage: createMemoryStorage() })
+  const subjectIds = ['subj-1', 'subj-2', 'subj-1', 'subj-3', 'subj-2']
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => ({
+      items: ids.map(id => ({
+        subjectId: id,
+        status: 'MISSING',
+        version: null,
+        outlineVersion: null,
+        summaryVersion: null,
+        updatedAt: null,
+      })),
+    }),
+  })
+  await service(repository, api).reconcile(options([], subjectIds))
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.deepEqual(api.calls.getSubjectStatuses[0][0], ['subj-1', 'subj-2', 'subj-3'])
+})
+
+test('empty subject ID list triggers 0 getSubjectStatuses calls', async () => {
+  const repository = new OverviewRepository('batch-empty-user', 'device-1', { storage: createMemoryStorage() })
+  const api = fakeApi()
+  await service(repository, api).reconcile(options([], []))
+  assert.equal(api.calls.getSubjectStatuses.length, 0)
+  assert.equal(api.calls.getSubjects.length, 0)
+})
+
+test('status endpoint returning 404 throws error and does not fallback to getSubject GET', async () => {
+  const repository = new OverviewRepository('batch-404-user', 'device-1', { storage: createMemoryStorage() })
+  const api = fakeApi({
+    getSubjectStatuses: async () => {
+      throw new ApiProblemError({ title: 'Not Found', status: 404 })
+    },
+  })
+  await assert.rejects(
+    () => service(repository, api).reconcile(options([], ['subj-1', 'subj-2'])),
+    (err) => err instanceof ApiProblemError && err.status === 404,
+  )
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.equal(api.calls.getSubjects.length, 0)
+})
+
+test('local seed/draft is not deleted when remote is MISSING and gets uploaded', async () => {
+  const storage = createMemoryStorage()
+  const repository = new OverviewRepository('batch-seed-missing-user', 'device-1', { storage })
+  const subjectId = 'subj-seed'
+  const localRecord = record('SUBJECT', subjectId, 'subject-v1', 'Local Draft Subject')
+  storage.setItem('auralis:v1:overviews:batch-seed-missing-user:device-1', JSON.stringify([localRecord]))
+
+  const api = fakeApi({
+    getSubjectStatuses: async (ids) => ({
+      items: ids.map(id => ({
+        subjectId: id,
+        status: 'MISSING',
+        version: null,
+        outlineVersion: null,
+        summaryVersion: null,
+        updatedAt: null,
+      })),
+    }),
+  })
+  await service(repository, api).reconcile(options([], [subjectId]))
+  assert.equal(api.calls.getSubjectStatuses.length, 1)
+  assert.equal(api.calls.getSubjects.length, 0, 'must not GET when MISSING')
+  const outbox = await repository.listOverviewOutbox()
+  const [seed] = outbox
+  assert.ok(seed, 'seed intent must be created')
+  assert.equal(seed.scopeId, subjectId)
+  assert.equal(seed.origin, 'LEGACY_SEED')
+  const local = await repository.getSubjectOverview(subjectId)
+  assert.equal(local?.title, 'Local Draft Subject')
+})
+
+test('useOverviewResultsApi.getSubjectStatuses validates request bounds and response contract', async () => {
+  const { useOverviewResultsApi } = await import('../src/api/useOverviewResultsApi.ts')
+  const { default: request } = await import('../src/api/request.ts')
+  const originalPost = request.post
+
+  try {
+    await assert.rejects(() => useOverviewResultsApi.getSubjectStatuses([]), /OVERVIEW_SUBJECT_IDS_INVALID/)
+    await assert.rejects(
+      () => useOverviewResultsApi.getSubjectStatuses(Array.from({ length: 101 }, (_, i) => `id-${i}`)),
+      /OVERVIEW_SUBJECT_IDS_INVALID/,
+    )
+
+    request.post = async () => ({
+      items: [{ subjectId: 's1', status: 'AVAILABLE', version: null, outlineVersion: 1, summaryVersion: 1, updatedAt: '2026-11-04' }],
+    })
+    await assert.rejects(() => useOverviewResultsApi.getSubjectStatuses(['s1']), /OVERVIEW_STATUS_ITEM_INVALID/)
+
+    request.post = async () => ({
+      items: [{ subjectId: 's1', status: 'AVAILABLE', version: 1, outlineVersion: 1, summaryVersion: 1, updatedAt: '' }],
+    })
+    await assert.rejects(() => useOverviewResultsApi.getSubjectStatuses(['s1']), /OVERVIEW_STATUS_ITEM_INVALID/)
+
+    request.post = async () => ({
+      items: [{ subjectId: 's1', status: 'MISSING', version: 99, outlineVersion: 99, summaryVersion: 99, updatedAt: 'fake' }],
+    })
+    const resMissing = await useOverviewResultsApi.getSubjectStatuses(['s1'])
+    assert.deepEqual(resMissing.items[0], {
+      subjectId: 's1',
+      status: 'MISSING',
+      version: null,
+      outlineVersion: null,
+      summaryVersion: null,
+      updatedAt: null,
+    })
+
+    request.post = async () => ({
+      items: [{ subjectId: 's1', status: 'AVAILABLE', version: 0, outlineVersion: 0, summaryVersion: 0, updatedAt: '2026-11-04T00:00:00.000Z' }],
+    })
+    const resV0 = await useOverviewResultsApi.getSubjectStatuses(['s1'])
+    assert.deepEqual(resV0.items[0], {
+      subjectId: 's1',
+      status: 'AVAILABLE',
+      version: 0,
+      outlineVersion: 0,
+      summaryVersion: 0,
+      updatedAt: '2026-11-04T00:00:00.000Z',
+    })
+  } finally {
+    request.post = originalPost
+  }
 })

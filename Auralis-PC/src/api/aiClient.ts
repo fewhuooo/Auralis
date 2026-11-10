@@ -31,9 +31,9 @@ export type AiMessageCommand = components['schemas']['AiMessageCommand']
 export type CitationView = components['schemas']['CitationView']
 
 export interface ReadingContextDto {
-  subjectId?: string
-  currentSourceId?: string
-  retrievalMode?: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
+  subjectId: string
+  currentSourceId?: string | null
+  retrievalMode: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
   sourceIds?: string[]
   selectionText?: string
 }
@@ -140,6 +140,16 @@ export function cancelChatRun(conversationId: string, runId: string): Promise<Ch
   return request.post(`/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/cancel`) as unknown as Promise<ChatRunStatus>
 }
 
+export function recoverChatRunAttempt(
+  conversationId: string,
+  runId: string,
+  attemptId: string
+): Promise<ChatRunStatus> {
+  return request.post(
+    `/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/recover`
+  ) as unknown as Promise<ChatRunStatus>
+}
+
 export function retryChatRun(conversationId: string, runId: string, requestId: string, signal?: AbortSignal): AsyncIterable<ChatStreamEnvelope> {
   return streamChatRequest(`/api/ai/conversations/${encodeURIComponent(conversationId)}/runs/${encodeURIComponent(runId)}/attempts`, { requestId }, signal)
 }
@@ -222,6 +232,7 @@ export const useAiApi = {
   streamAiMessage,
   getChatRunStatus,
   cancelChatRun,
+  recoverChatRunAttempt,
   retryChatRun,
   generateAiText,
 }

@@ -1,5 +1,164 @@
 # PC 前端模块
 
+### 2026-11-05 Chat 会话级资料读取范围绑定与生命周期治理（PC Handoff 完成，定向验证通过，待部署）
+
+- **会话资料读取范围状态感知与生命周期（Reading Scope Lifecycle）**：
+  - 基于 OpenAPI 同步的必填契约，在 `src/types/chatProtocol.ts` 与 `src/store/useChatStore.ts` 中建立会话范围状态体系：
+    - `chatScopeState: 'LEGACY' | 'UNBOUND' | 'BOUND'`；
+    - `chatScope: ChatConversationScope | null`（包含 `retrievalMode`, `subjectId`, `currentSourceId`, `sourceIds`）；
+  - **首轮绑定与后续轮次省略继承（Turn Request & Scope Inheritance）**：
+    - 新会话初始处于 `UNBOUND` 状态，首轮提问前允许用户自由选择范围（当前学科 `SUBJECT`、当前文件 `AUTO` 或勾选文档 `SELECTED_SOURCES`）；
+    - 首轮发送携带完整规范化的 `readingContext`（通过 `buildReadingContext(options)`）；首轮成功准入（admitted turn）后，端侧原子将会话状态转为 `BOUND` 并持久化 committed scope；
+    - 恢复会话（Resume）或后续普通提问（ordinary later turns）：对已 `BOUND` 会话在 scope 匹配时，**前端显式省略 `readingContext`（传 `undefined`，JSON 序列化中剔除）**，由服务端依据数据库中已锁定的会话 scope 自动继承并在每 attempt 独立捕获资料 READY/revision 状态；
+  - **范围冲突（409 `CHAT_SCOPE_CONFLICT`）与转换治理**：
+    - 对已 `BOUND` 会话若用户显式请求不同资料范围，服务端准入事务返回 HTTP 409 `code: "CHAT_SCOPE_CONFLICT"`；
+    - 前端捕获后将其视为范围转换请求（scope transition），**从 `messages` 列表中剔除本地乐观追加的 USER 消息**，提示用户并提供【开启新会话】操作按钮，**严禁**作为传输故障重发回当前会话；
+  - **历史旧会话（`LEGACY`）只读封存**：
+    - 服务端 V44 迁移前历史会话标记为 `chatScopeState: 'LEGACY'`，严禁从旧消息推断范围；
+    - 前端彻底禁用新提问与重试：`isLegacySession` 守卫拦截发送、输入框禁用加提示文案、`pendingMessage` 计算属性直接返回 `null` 禁用重试，并在错误条提供开启新会话入口；
+  - **工作区联动与恢复（SubjectWorkspace/index.vue）**：
+    - 监听切换会话事件，自动依据活跃会话的 `chatScope` 还原 committed scope 选项目标；
+    - 范围切换拦截与极简视觉：已绑定或历史会话锁定文档切换按钮（`isScopeLocked`），保持自然极简视觉（不显示生硬锁图标），点击时拦截下拉展开并在右上角弹出轻量通知，引导用户点击右上角刷新按钮开启新对话重选；
+    - **工作区文件预览与已锁定范围完全解耦**：引入 `boundScope` 单一事实来源，已绑定会话下 `aiChatReferenceOptions()`、`aiSourceSummaryText`、`aiSourceSummaryTitle`、`isAllAiSourcesSelected`、`isAiSourceSelected`、`showProcessingRequired` 严格依据 `boundScope` 计算，用户在工作区预览切换其他文件时不会篡改已锁定的资料选项或胶囊文案，后续轮次继续继承已绑定资料，彻底避免误发 409 `CHAT_SCOPE_CONFLICT`。
+- **验证与审查**：
+  - 定向自动化测试套件 `scripts/r4-chat-recovery-handoff.test.mjs` 8/8 全部通过（含 `isScopeMatching` 乱序 sourceIds 判定、UNBOUND 首轮绑定、BOUND 次轮省略 readingContext 继承、409 拦截并清除乐观消息、LEGACY 禁用提问与重试、已锁定会话工作区切文件不篡改范围选项与继承）；
+  - 关联套件 `r4-chat-content.test.mjs`、`r4-ai-stream.test.mjs` 与 `r4-chat-session-guard.test.mjs` 28/28 全部通过（全量 36/36）；
+  - PC 类型检查 `npm run type-check` exit 0；生产构建 `npm run build` exit 0。
+
+### 2026-11-05 Chat 全学科资料读取请求契约与 UNKNOWN 显式恢复接入（源码完成，定向验证通过，待部署）
+
+- **全学科自主选资料请求映射契约（Step 4 Frontend Handoff）**：
+  - 在 `src/api/aiClient.ts` 中更新强类型定义 `ReadingContextDto`（`subjectId: string; retrievalMode: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'; currentSourceId?: string | null; sourceIds?: string[]`）；
+  - 在 `src/store/useChatStore.ts` 中实现统一规范化构造器 `buildReadingContext(options)`：
+    - `retrievalMode === 'SUBJECT'`：严格输出 `currentSourceId: null` 与 `sourceIds: []`（杜绝遗漏或传错导致服务端 `VALIDATION_FAILED` 拒绝）；
+    - `retrievalMode === 'AUTO'`：输出 `currentSourceId: options.sourceId || null` 与 `sourceIds: []`；
+    - `retrievalMode === 'SELECTED_SOURCES'`：输出 `currentSourceId: null` 与 `sourceIds: options.sourceIds`；
+    - `selectionText` 截断守卫保留至前 4000 字符；
+  - 在 `useChatStore` 的 `sendMessage` 与 `retryPendingMessage` 统一接入 `buildReadingContext`，`SubjectWorkspace` 默认提问直接以 `SUBJECT` 模式发送，保留显式选择资料时的窄范围模式。
+- **Chat UNKNOWN 显式恢复与状态机门禁（Chat UNKNOWN Recovery PC Handoff）**：
+  - 在 `src/api/aiClient.ts` 中接入 `recoverChatRunAttempt(conversationId, runId, attemptId)`，对应 `POST /api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover`；
+  - **显式用户操作与反自循环守卫**：
+    - 严禁将恢复作为自动轮询、超时清理或自动重试执行；
+    - 在 `pollRunStatusUntilSettled` 中，当服务端返回 `status === 'UNKNOWN'` 时立即终止 60 次轮询并置 `isStreaming = false`，记录当前 UNKNOWN 目标，消除无谓网络消耗；
+    - 在 `loadMessages` 中，对处于 `UNKNOWN` 状态的活跃 run 保持 `isStreaming = false`，不发起自动轮询，暴露显式恢复入口；
+  - **请求与响应 Ticket Guards**：在 `recoverUnknownAttempt` 中记录 `targetUserId`、`targetSessionId`、`targetRunId`、`targetAttemptId`，仅在网络返回时四者仍完全吻合才应用变更，杜绝迟到恢复响应覆盖新 attempt 或会话；
+  - **HTTP 409（`CHAT_RECOVERY_NOT_ALLOWED`）处理**：捕获 409 异常后仅主动刷新当前 run 状态（`getChatRunStatus` 与必要时 `getConversation`），**严禁**自动重复 recover 或发起 retry；
+  - **终端状态流转与重试闭环**：未解决 attempt 恢复后服务端终结为 `FAILED`（错误码 `CHAT_UNKNOWN_ABANDONED`），释放会话槽位；刷新后消息列表原位更新为 `FAILED`，用户可通过既有重试按钮发起新 attempt；若已提交 activity 则保留为 `COMPLETED`；
+  - **UI 交互与呈现**：在 `SubjectWorkspace/index.vue` 中为 UNKNOWN 状态增加专属微晶提示条（`.chat-recover-banner`）与气泡内联操作按钮；输入框发送按钮感知 `recoverableTarget` 并禁用加提示，防范锁槽期间重复敲回车；统一使用“恢复状态”文案，绝不呈现为“取消 Provider”。
+- **验证与审查**：
+  - 定向自动化测试套件 `scripts/r4-chat-recovery-handoff.test.mjs` 3/3 全部通过（覆盖三种检索模式契约、UNKNOWN 识别与 Ticket Guard、409 刷新防重发）；
+  - 关联套件 `r4-chat-content.test.mjs` 与 `r4-ai-stream.test.mjs` 28/28 全部通过（全量 31/31）；
+  - PC 类型检查 `npm run type-check` exit 0；全量生产打包 `npm run build` exit 0；
+  - 独立 Reviewer 子代理只读审查通过（BLOCKER=0、IMPORTANT=0、OPTIONAL=2）。未部署，尚未执行真实桌面环境联调走查。
+
+### 2026-11-04 用户资料头像存在提示（hasAvatar）契约接入与 404 抑制（源码与自动验证完成，未部署）
+
+- **UserView 强类型与按需拉取守卫（Avatar Presence Contract）**：
+  - 同步 OpenAPI 生成契约，`UserView` 包含必填布尔字段 `hasAvatar: boolean;`；
+  - `src/store/useAuthStore.ts` 的 `loadAvatar()`：
+    - `hasAvatar === false` 时彻底跳过 `GET /api/auth/me/avatar` 网络请求，清理本地显示并删除 IndexedDB 离线缓存，直接返回空字符串；
+    - `hasAvatar === true` 时才读取离线缓存并向远端发起 GET；
+  - **404 平滑回退**：若远端返回 404（跨设备删除或并发变更），将本地 `user.hasAvatar` 置为 `false`，清理缓存并平滑回退至首字母占位默认头像；
+  - **状态即时同步**：在 `uploadAvatar`（上传成功）、`resetAvatar`（重置成功）及 `updateProfile`（资料更新成功）后，即时同步 `authStore.user.hasAvatar`；`fetchMe()` 亦同步按 `hasAvatar` 调度展示与清理。
+- **验证与审查**：
+  - 定向测试套件 `scripts/r4-profile-live-links.test.mjs` 8/8 通过，`scripts/r4-auth-session.test.mjs` 3/3 通过；
+  - PC 类型检查 `npm run type-check` exit 0；只读 Reviewer 差量复审通过（BLOCKER=0、IMPORTANT=0、OPTIONAL=0）。
+
+### 2026-11-04 学科总览批量状态查询与 404 循环抑制（源码与自动验证完成，未部署）
+
+- **总览批量状态协议与接入（Overview Batch Status Query）**：
+  - 在 `src/api/useOverviewResultsApi.ts` 中实现 `getSubjectStatuses(subjectIds: string[])`，对应 `POST /api/overview-results/subjects/statuses`；
+  - 响应校验拦截器 `asOverviewSubjectStatusesResponse`：严格校验 `AVAILABLE` 项的 `version`（允许 `version >= 0`）、`outlineVersion`、`summaryVersion` 与 `updatedAt`（非空字符串）；缺失元数据抛出协议错误；`MISSING`/`UNAVAILABLE` 项四个元数据字段统一规范化为 `null`；
+  - 状态接口 404、网络或鉴权错误直接上抛中断，禁止降级掩盖或退回逐学科 GET。
+- **总同步调度与草稿/种子保护（Overview Results Sync Service）**：
+  - 在 `src/services/overviewResultsSyncService.ts` 的 `reconcileInternal` 中：对学科 ID 列表去重，按每批最多 100 个 ID 进行切片批量查询；空学科列表不发出 HTTP 请求；
+  - `syncSubject` 调度逻辑：优先保障本地 outbox 写入队列；无 intent 时：
+    - `MISSING`：直接返回跳过单 GET，同时检查本地若有完整记录 `validCompleteRecord(local)`，则安全排队 `enqueueLegacySeed(local)` 执行首传并 flush；
+    - `UNAVAILABLE`：跳过，不发 GET，不直接删除本地草稿或资源；
+    - `AVAILABLE`：检查本地完整副本匹配性（`state && validCompleteRecord(local) && state.version === status.version && state.outlineVersion === status.outlineVersion && state.summaryVersion === status.summaryVersion && state.updatedAt === status.updatedAt`），完全吻合时跳过 GET；缺失或不匹配时发起单 GET，并发 404 正常收敛为空结果。
+- **验证与审查**：
+  - 定向测试套件 `scripts/r4-overview-sync.test.mjs`（38/38 通过，含 10 组批量状态、分批、去重、404 阻断、本地种子上传等新增断言）；
+  - PC 类型检查 `npm run type-check` exit 0；关联测试 `r4-overview-cache.test.mjs`、`r4-overview-generation.test.mjs`、`r4-sync.test.mjs` 均通过；只读 Reviewer 差量复审通过（BLOCKER=0、IMPORTANT=0、OPTIONAL=0）。
+
+### 2026-10-31 Chat Display Tool 协议接入与有序时间线状态机（源码与自动验证完成，真实客户端待验收）
+
+- **有序多片段时间线状态机（Ordered Timeline State Machine）**：重写 `src/services/aiStreamReducer.ts` 与 `src/store/useChatStore.ts`。彻底废除原本单一字符串聚合模式，一条回复内部按到达顺序维护 `ChatContentPart[]`：过程区（`reasoning_content` 与工具胶囊）与内容区（Markdown 文本片段和结构化卡片）按时间线严格交叉保序，收到 `text.delta` 逐字追加，收到 `block.*` 原位渲染/更新，绝不把前后文字合并推到末尾。每个事件校验 `runId`、`attemptId` 与严格单调递增的 `sequence`，丢弃乱序与迟到事件，杜绝跨会话串台。
+- **三段式组件渐进渲染**：`src/components/chat/ChatContentBlock.vue` 与 `ChatActivityCard.vue` 消费标准事件：
+  - 收到 `block.started` 率先渲染外框壳体与类型徽标（GENERATING 态）；
+  - 收到 `block.item` 校验后推入数组，以 140ms 节奏逐项弹出；
+  - `steps` 顺次展示步骤；`compare` 严格保持每个维度的垂直列表和源顺序（不跨维度误横向配对）；`roadmap` 呈现节点与标签/当前位置；`chart` 仅渲染 `bar` 或 `proportion`；
+  - 收到 `block.completed` 原位全量替换为最终 part；若遇到 `block.error` 或异常断流，保留已渲染有效项并将卡片置为 `INVALID`，隔离异常不影响其他正文。
+- **题卡交互、草稿保护与重试闭环**：
+  - `quiz` 与 `question` 收到 `block.started` 或题目仅展示生成态骨架，只有收到持久化 `activity.ready` 事务后才解锁单选/多选/文本输入与提交按钮；
+  - 纯粹输入收集体验：提交后变为 `SUBMITTED`，仅展示已作答项，不渲染红绿对错与分数，不重复生成原题冗长气泡；未提交的输入在端侧本地受保护；
+  - 提交携带幂等 `submissionId`、`questionId` 与答案发起请求，服务端持久化后自动接续下一轮助手流式点评；
+  - 若点评中断或失败，提供内联“重试回复”按钮，复用同 `submissionId` 发起新 attempt 重试，无需用户重新做题；READY 状态下不锁死底部聊天框。
+- **并发控制与端侧互斥**：流式生成中时底部发送按钮变为“停止”，未提交题卡的提交按钮处于禁用；停止操作等待服务端状态确认，不自动将草稿变成二次扣费请求。
+
+- **真实时间戳驱动的弹簧阻尼蓄洪池（Fluid Reservoir Stream Buffer）**：重写 `src/services/smoothStreamBuffer.ts`。彻底废弃原本按帧率固定累加（导致高刷屏吐字极快、几帧内抽干缓冲后陷入 300ms 死等停顿的“一顿一顿”现象），升级为基于 `performance.now()` 的 Delta-Time 真实物理时间戳驱动机制：
+  - **低水位保底拉伸（Low-Water Stretching）**：当蓄洪池余量偏低（<= 4 字）时，自动转为平稳拉伸速度（18 字/秒，每字约 55ms），用平滑打字时间跨越下一个 SSE 网络包到达前的 200~300ms 空窗期，杜绝池子见底造成的硬停滞；
+  - **高水位平滑消峰（High-Water Damped Absorption）**：当网络集中到达大批字符时，以指数平滑滤波（IIR Damping）逐步匀速过渡至最佳巡航速度（28 字/秒）或适度追赶速度，峰值严格封顶于 70~75 字/秒，杜绝文字瞬闪倾泻；
+  - **收尾自然连贯**：修复了此前流结束时直接根据 `props.streaming === false` 瞬间爆显剩余文本的问题，改由 `isTextStreamingActive` 守护，直到蓄洪池真正平滑排空才切换终态，打字手感如行云流水。
+- **先外框后内部逐个渲染与极简无干扰设计**：`ChatContentBlock.vue` 挂载或生成时优先渲染极简卡片最外层框架（去除点阵网格底纹与 [R]/[S]/[V]/[D] 图标徽章，保留 Zen Sage 纤细边框与纯净底色）；移除“学习脉络”、“步骤拆解”等预设类型标签与无标题保底 fallback，仅当下发显式 title 时渲染标题，无标题时不占位；内部条目首项即时呈现并按 75ms 节奏逐项顺畅涌现，配合 `@keyframes node-mount` 弹性淡入；在 `GENERATING` 状态下且等待后续条目到达期间，卡片底部动态展示柔和的生成中占位符（呼吸闪烁节点与骨架虚线），彻底消除条目生成间隔期间界面卡死假象；移除卡片冗余的“追问”按钮，保持结构纯粹、轻量与极致极简。
+- **后端可视化失败重试的原位替换与生成期静默防御（Visualization Retry In-Place Replacement）**：在 `src/services/aiStreamReducer.ts` 的 `setPart` 中加入重试感知：当流式正在进行（`executionActive`）且推入新块级组件时，自动检查是否存在同类型或未生成有效条目的 `INVALID` 前序失败块，并在原位执行替换，杜绝在聊天流中堆叠两张卡片（一张失败一张成功）；在 `ChatContentBlock.vue` 与 `ChatActivityCard.vue` 中建立生成期防御，当会话处于活跃生成/重试期（`busy` 或 `streaming` 为 true）时，若块组件遇到 `block.error` 或 `INVALID`，保持优雅骨架屏，绝不提前端出“内容生成未完成或格式异常”等失败页面，直至重试块平滑就位。
+- **AI 对话最外层框架与滚动槽位锁定（Layout Shift & Frame Stability）**：在 `SubjectWorkspace/index.vue` 的 `.ai-messages` 容器上启用 `scrollbar-gutter: stable`，永久预留垂直滚动条槽位，彻底消除长消息输出触发滚动条显隐时整个对话气泡与卡片发生 15px 横向突跳移位的问题；彻底移除流式期间动态注入并在结束时突兀销毁的 `chat-viewport-spacer`（避免 700px 视口高度骤缩引起的严重跳动）；在分栏拖拽调整尺寸期间引入 `isResizing` 状态切断 CSS `transition: width 0.3s`，杜绝拖动手柄时 AI 面板滞后跳动，并规范 `.workspace-right` 边界（`min-width: 300px; max-width: 650px`）；统一流式与历史助手的 DOM 层级包裹结构并增加 `align-items: flex-start`，彻底锁定头像与最外层框架的物理定位。
+- **流式 Markdown 暂扣与镜像补全**：在 `src/utils/markdown.ts` 中增强前瞻暂扣缓冲（`hold-back` 标签/容器前缀与未断行代码围栏）；补全未闭合数学公式（`$$`、`\(`、`\[`）、粗体、行内代码与链接语法；完善末尾 Token 水墨淡入动画包裹。
+- **字段完整性守卫 (Field Completeness Guard)**：在 `src/services/aiStreamReducer.ts` 的 `streamingBlock` 中增加实质性校验，过滤打字过程中的残缺空节点，避免未封口节点导致结构重排抖动。
+- **正文输出后思考链即刻完成与静默冻结（Reasoning Flush on Content Arrival）**：在 `src/services/smoothStreamBuffer.ts` 中为控制器扩展 `flush()` 方法（瞬间取消 RAF 调度、将游标推进至末尾并触发完成回调）。在 `src/components/chat/ChatProcessArea.vue` 中明确思考生命周期：
+  - 仅在真正的思考流式期（`streaming && !hasContent`）启用平滑蓄水池缓冲；
+  - 一旦正文到达（`hasContent` 为 true）或整条回复完成流式（`!streaming`），思考阶段彻底结束，立即调用 `reasoningBuffer.flush()` 瞬间全量呈现思考文本与字数统计，并关闭思考光标与 Shimmer 流光；
+  - 杜绝正文输出完毕后、历史消息回放或重新展开折叠面板时思考链仍在后台以 55 字/秒低速“假性逐字打字”的卡顿体验。
+- **思考链默认展开、按钮原位常驻与正文输出完阻尼折叠动效（Auto-Expand & Smooth Retract Animation）**：
+  - **默认自动展开**：在流式生成期间，`ChatProcessArea` 默认将思考链明细展开（`isOpen = true`），用户无需手动点击即可实时观察模型的思考步骤与工具调用；
+  - **硬件加速折叠动效（CSS Grid Accordion）**：彻底废弃原本 `v-if` 的生硬骤显骤隐，改用 `grid-template-rows: 0fr <-> 1fr` 配合 `cubic-bezier(0.16, 1, 0.3, 1)`（iOS 风格弹簧缓动曲线），实现纯硬件加速的平滑折叠/展开；小箭头伴随 0.34s 平滑旋转 90 度；
+  - **思考链展开按钮原位常驻与正文回复完自动折叠**：
+    - 修复了 `aiStreamReducer.ts` 与 `useChatStore.ts` 中服务端 `run.completed` 终端包导致 `replyMessageId` 被置为 undefined、助手消息停留在 `PENDING` 态而在流结束后被列表过滤消失的深层缺陷；
+    - 确保「深度思考」状态胶囊按钮（如 `已深度思考 · 398 字 ›`）无论在流式生成前、流式生成中、正文生成中、正文生成完毕后或历史重载后，均**绝对原位常驻于 AI 回复气泡顶部**，绝不突兀消失或跳位；
+    - 思考链在流式生成阶段保持展开，在正文全部输出完毕（`isAiStreaming` 结束）时触发优雅收起动效，以 0.38s 自然折叠回原位胶囊按钮；生成完毕后用户可随时点击胶囊自由再次展开或收起；
+  - **正文输出完无缝交接**：在 `SubjectWorkspace/index.vue` 中引入 `isStreamSettling`（450ms 优雅缓冲期），保证收起动效在原气泡内流畅播放完毕后再无缝切换为历史消息状态，彻底杜绝切流时 DOM 突兀重排。
+- **正文、代码块与提问气泡/输入框白底原色统一**：
+  - 将 AI 回复内 Markdown 代码块与 ASCII 关系图（`pre / code`）由深色 `#1e1e2e` 改回应用统一的纸质温润白底（`var(--color-bg-card, #ffffff)`），配以细微圆角边框与主文本色；
+  - 将用户提问气泡（`.chat-msg-row.user .chat-bubble`）由原本深黑色 `#2b302c` 调整为干净通透的纸质白底（`var(--color-bg-card, #ffffff)`），文字使用主色（`var(--text-primary)`），配以 `1px solid var(--border-subtle)` 纤细微边框与柔和阴影，引用片段自适应更新为微绿浅底；
+  - 将底部提问输入胶囊框（`.ai-chat-capsule` / `.ai-input-wrapper`）背景由偏黄米色 `#FAF7F2` 统一调整为纯净白底（`var(--color-bg-card, #ffffff)`），全屏色彩调性归一，暗色模式下自适应切换为深炭灰卡片色。
+- **AI 头像移除与思考触发器去框极简设计**：移除对话列表与流式气泡最左侧的圆形助手星火头像，AI 回复与思考触发器靠左直接自然对齐；彻底移除「深度思考」触发器外层的生硬圆角框（去除 capsule 外边框与底色，保持透明无框），星火图标、流光状态字（12px 严格不变）与旋转小箭头自然呈现于页面，hover 时提供柔和微光底衬，下方时间线轴距精准对齐图标中轴，通透开阔且轻盈无干扰。
+- **验证**：PC `npm.cmd run type-check` exit 0；`node --experimental-strip-types --test scripts/r4-chat-content.test.mjs scripts/r4-ai-stream.test.mjs` 25/25 全部通过。未执行真实桌面 GUI 人工验收。
+- **流式输出健壮性与多片段无缝过渡优化 (2026-11-02 修复)**：
+  - **重试消息 ID 安全守护**：修复 `retryPendingMessage` 中重试流部分中间事件缺少 `replyMessageId` 导致向 Store 堆叠未定义 ID 幽灵消息的问题，严格统一回退与空保护；
+  - **文本与块组件交织流式平滑过渡**：在 `ChatContentRenderer.vue` 中引入 `currentStreamingTextId` 追踪；当文本片段之后插入结构化块组件或新文本段时，先行平滑 `flush` 结清前序文本，彻底杜绝文本被块截断时蓄洪池强行 reset 造成的瞬间跳字；
+  - **流式 Parts / Tools 响应式直通与 O(N) 扫描清零**：在 `useChatStore.ts` 中直接维护并导出响应式 `streamingParts` 与 `streamingTools`，彻底替换 `SubjectWorkspace` 在每个 SSE 事件上全量 `.reverse().find()` 历史消息的深层高开销，长会话流式吐字 CPU 占用大幅下降；
+  - **思考链向正文无缝即时放行**：解除正文内容到达时对思考链计时器的等待竞争，只要正文内容或结构化块产生，正文立刻顺畅挂载；
+  - **代码块内字符隔离**：在 `markdown.ts` 的 `autoCloseMarkdown` 中排除已闭合代码块内部文本（如 Python 乘方 `2 ** 8` 或注释中的 `$`），杜绝代码块内符号干扰外部粗体与数学公式的未闭合乐观补全。
+- **Chat 重试旧失败气泡残留并存修复 (2026-11-03 修复)**：
+  - **重试清理同轮未完成消息**：在 `useChatStore.ts` 的 `retryPendingMessage` 中，无论通过用户问题还是失败助手消息触发重试，均向前/后定位当前提问轮次，在发起新请求前严格收集并从 `messages.value` 中清除当前轮次下所有未完成（`status !== 'COMPLETED'`）的旧助手消息；
+  - **杜绝多助手气泡堆叠**：服务端为重试 attempt 下发全新 `replyMessageId` 后，新助手消息独立追加并完成，彻底消除“旧生成失败气泡 + 新回复气泡”并存残留或重复重试无限累加的问题；
+  - **严格边界保护**：前序已成功的其他回合助手消息完整保留，非活动会话或未关联用户提问的安全退出。
+  - **验证**：PC `npm.cmd run type-check` exit 0；定向测试 `scripts/r4-chat-content.test.mjs` 与 `scripts/r4-ai-stream.test.mjs` 合计 28/28 全部通过；唯一只读 Reviewer 审查 BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。未执行桌面端 GUI 验收。
+- **文件解析处理中心渲染与状态流转修复 (2026-11-03 修复)**：
+  - **任务完成回跳闪烁消除**：在 `DocumentProcessingCenter.vue` 中将 `serverProcessingSources` 的本地任务排除条件调整为基于全部 `store.jobs`，杜绝本地任务完成变为 `READY` 且从活跃 `jobs.value` 离开时、服务端短时未同步而短暂将该文件作为“未处理/服务端处理中”回跳展示的闪烁问题；
+  - **动态识别页码进度优先呈现**：调整 `processing-item-meta` 状态文案优先级，只要存在实时识别页码进度（`store.localOcrProgressBySource[source.id]`），优先展示动态页码进度，防止静态操作反馈（`sourceActionResults`）长期覆盖识别进展；
+  - **长文件名与错误截断保护**：对 `.processing-item-main`、`.processing-item-meta` 及 `strong`、`.processing-error` 引入 `min-width: 0` 和 `flex: 1` 守卫，杜绝超长文件名或错误将右侧状态微标与操作按钮挤爆或挤出屏幕；
+  - **暗色模式（Dark Mode）与微晶质感全覆盖**：为处理中心补充完整 `html.dark` 高对比度配色方案，状态徽标升级为微晶圆角药丸胶囊，按钮全圆角药丸化并支持优雅弹簧微交互；诊断展开区域设置最大高度与内嵌微滚动条，防止长文本拉伸面板。
+  - **验证**：PC `npm.cmd run type-check` exit 0；定向测试 `scripts/r4-document-processing-ui.test.mjs` 15/15 全部通过；Reviewer 子代理只读审查 BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。未执行桌面端 GUI 验收。
+- **桌面窗口最小尺寸契约与窄窗响应式布局验证 (2026-11-04 完成)**：
+  - **窗口物理最小尺寸补齐**：在 `Auralis-PC/src-tauri/tauri.conf.json` 的主窗口配置中补齐 `"minHeight": 600`，与既有 `"minWidth": 960`、`"width": 1280`、`"height": 800` 形成完整桌面窗口边界契约；
+  - **应用外壳双层兜底**：在 `Auralis-PC/src/App.vue` 的 `.app-shell` 上增加 `min-width: 960px; min-height: 600px;` 兜底守卫，杜绝未受约束的浏览器视口崩塌；
+  - **SubjectWorkspace 960px 窄窗断点适配**：在 `SubjectWorkspace/index.vue` 中新增 `@media (max-width: 960px)` 媒体查询，将中间主工作区最小宽度由 320px 弹性收敛至 280px，Tier-2 抽屉最大宽度收敛为 200px，右侧 AI 助手面板最小宽度收敛为 260px，确保三栏同时展开时总宽度严格收敛在 868px <= 960px，杜绝水平挤爆或横向滚动条；
+  - **自动化边界与窄窗布局套件**：新增 `scripts/r4-window-boundary.test.mjs`，覆盖 Tauri 窗口边界配置、外壳尺寸守卫、工作台 960px 窄窗断点与核心主视图（SubjectStatsPane、Asset、Pomodoro、SubjectHall）响应式断点；
+  - **验证**：类型检查 `npm run type-check` exit 0；全量构建 `npm run build` exit 0；定向套件 `scripts/r4-window-boundary.test.mjs` 4/4 全部通过；Reviewer 子代理差量复审 BLOCKER=0 / IMPORTANT=0 / OPTIONAL=0。未执行桌面端 GUI / Tauri 拖动人工走查。
+- **学科复习仪表盘暗色模式（Dark Mode）渲染异常修复 (2026-11-04 完成)**：
+  - **根因定位**：全局设计系统（`src/styles/index.css`）在 `:root` 中定义了卡片底色 `--color-bg-card: #FAF7F2;`，但在 `html.dark` 块中遗漏了 `--color-bg-card`、`--color-bg-page` 与 `--bg-card` 覆盖，导致暗色模式下依赖 `--color-bg-card` 的卡片依然继承亮色米白底色；且 `SubjectReviewPane.vue` 中的整合计划大卡片（`.subject-review__plan-card`）缺少 `html.dark` 样式规则，内部字体在暗色模式下被继承为高亮淡色，引发严重的“亮白底 + 浅色字”对比度失效与底部嵌套面板反差割裂；
+  - **全局暗色卡片变量闭环**：在 `src/styles/index.css` 的 `html.dark` 覆盖块中补齐 `--color-bg-card: #252422;`、`--color-bg-page: #191816;` 以及语义别名 `--bg-card: var(--color-bg-card);`；
+  - **复习面板暗色层级与对比度对齐**：在 `SubjectReviewPane.vue` 中为 `.subject-review__plan-card` 增加 `html.dark` 规则（采用 Zen 深色基底 `background: var(--color-bg-secondary, #252422);`、深色微光边框 `border-color: rgba(255, 255, 255, 0.08);` 与立体深邃阴影）；为 `.subject-review__plan-badge` 补齐暗色淡 Sage 衬底与对比文本色（`#A3B19B`）；为仪表盘圆环背景轨道 `.subject-review__pomodoro-track` 补充低对比度柔和线条；同步为单轮复习卡片 `.subject-review__card`、提示条 `.subject-review__notice`、进度标签 `.subject-review__round-progress-tag` 与轮次总结 `.subject-review__round-summary` 补齐暗色规则；为 `.subject-review__panel` 的悬浮态提供暗色微光边框提升可交互感；
+  - **验证**：类型检查 `npm run type-check` exit 0；全量构建 `npm run build` exit 0；定向测试套件 `scripts/r4-subject-review.test.mjs` 50/50 全部通过。未执行真实客户端 GUI 走查。
+
+
+### 2026-10-31 Timeline 连续本地拖动（源码与定向验证完成，真实客户端待验收）
+
+- 保留空槽插入顺延、卡片主体后接、标题交换规则。未结算的排期命令允许继续追加本地排期；普通 CRUD 未解决写入仍受原有保护。每次原子保存任务投影与排期命令后释放操作队列，后台按持久顺序只发送队首。
+- 成功回执保留后继命令的最新乐观位置，并衔接尚未发送命令的源/交换目标版本。首发后的命令保持同一 ID 和 wire 载荷；进程重启或 PROCESSING 后的下一次同步可重发队首，单轮不因 PROCESSING 自旋。成功结算后自动继续处理剩余排期。
+- Store 计算前捕获当前用户活动 Task 的排期基线，仓储在写事务/浏览器锁内原子核对；跨窗口陈旧计算先重读本地数据并拒绝保存。业务拒绝、预测偏差或回执与较新墓碑/普通写入冲突时，先取得完整恢复数据，再终止未发送后继并恢复权威排期，保留受保护写入并通知用户。
+- `type-check` exit 0；四套定向测试 176/176；`build` exit 0。PC 全量 784 项中 752 通过、32 失败，未全绿；失败集中在 Web Locks 测试条件以及范围外 Chat/工作区/侧栏/Profile，明细见 `D:/Temp/auralis-timeline-continuous-drag-20261031/execution-report.md`。唯一只读审查 B0/I0/O0。未做真实浏览器/Tauri/Server 联调或部署。
+
 ### 2026-10-29 Chat P1 内容投影与组件渲染基础（未接入现有 Chat 页面）
 
 - 新增 `src/services/chatContentProjection.ts` 与 `src/types/chatContent.ts`，以及 `src/components/chat/ChatContentRenderer.vue`、`ChatContentBlock.vue`、`ChatActivityCard.vue`。投影只输出各支持片段的公开字段；文本片段保留正文，结构化块映射到有限组件类型。Activity card 支持 READY/提交状态、答案草稿和结构校验，不做程序判分。
@@ -116,6 +275,22 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
   - **深色模式（Dark Mode System）极致适配**：
     - 建立全覆盖的深色墨玉与冷翠调色板，确保暗黑模式下所有文字对比度出色，高光透亮克制，彻底杜绝发灰糊成一片；
 - **门禁验证**：`vue-tsc -b` 0 报错；`scripts/r4-profile-live-links.test.mjs`、`scripts/r4-profile-logout.test.mjs`（9/9 项测试）全量通过；`npm run build` 生产构建成功。真实桌面端 GUI 待人工走查。
+
+### 2026-11-03 PC 复习同步微秒等价性与取消排期（Unschedule）排期队列对齐
+
+- **复习同步微秒等价性与误报冲突确定性 CAS 恢复**：
+  - 复习同步（`reviewSyncService.ts`）引入针对 PostgreSQL 审计时间戳 round-trip 微秒截断与四舍五入（第 7 位纳秒数 >= 5 向上进位跨秒溢出）的微秒精度等价比对（`parseAuditTimestampMicros`、`sameAuditInstant`、`sameCanonicalReviewState`）。
+  - 范围明确收敛：仅对审计字段（`createdAt` / `updatedAt`）进行微秒截断/四舍五入等价性比对，业务时间戳（`dueAt`、`lastPracticeAt`、`selectedAt`）严格保持精确全值匹配。
+  - 在复习意向处理（`processBlock`）FIFO 队列头增加对存量误报冲突（`status === 'conflict' && prepared === false`）的确定性 CAS 恢复检测（`tryRecoverFalseConflict`）。通过校验 protocolVersion 2、知识块与学科活跃状态、内容哈希、严格锚点失败但规范微秒锚点一致性，执行原子 CAS（`recoverConflictIntentToPending`）重置为 pending，解除积压。
+- **取消排期（Unschedule Task）原子事务与排期队列对齐**：
+  - `useTaskStore.ts` 中的 `unscheduleTask` 重构为复用排期原子事务（`commitOfflineSchedule`），生成 `SCHEDULE_UNSCHEDULE` 本地 mutation，本地 Task 立即投影为未排期状态（`scheduledAt: undefined`，移入待分配队列），避免产生 schedule fence 冲突。
+  - `localRepository.ts` 将 `SCHEDULE_UNSCHEDULE` 纳入排期命令（`isScheduleCommand`）统一管控，对齐受影响任务提取（`localScheduleAffectedIds`）、基线核对、FIFO 认领、前序版本号自动串联更新（`baseVersion`）、重复回执幂等结算与崩溃重启队列恢复。
+  - `useSyncApi.ts` 在推送到服务端时将 `SCHEDULE_UNSCHEDULE` 转换为线协议 `TASK` / `UPDATE` 变更（设置 `scheduledAt: null`，仅保留白名单任务字段，剥离 `_local*` 私有字段）。
+  - `syncCycle.ts` 识别 `SCHEDULE_UNSCHEDULE` 单任务回执，在 `settleSchedulePushResult` 中将单记录结果包装为数组进入排期结算通道，正确将任务标记为 `synced` 并将 mutation 标记为 `applied`。
+- **门禁验证**：
+  - 类型检查：`npm run type-check`（`vue-tsc -b`）0 错误。
+  - 核心定向测试：`r4-review-local-first.test.mjs`（47/47）、`r4-review-sync-concurrency.test.mjs`（10/10）、`r4-task-store-schedule.test.mjs`（92/92）、`r4-local-repository.test.mjs`（49/49）、`r4-sync.test.mjs`（36/36），合计 234 项定向测试全部一次性通过。
+  - 全量构建：`npm run build` 顺利打包成功（dist 产物生成正常）。
 
 ### 2026-10-12 Timeline 离线排期命令
 
@@ -386,6 +561,8 @@ D 盘候选 type-check、Overview generation/接收测试 80/80、OpenAPI/生成
 
 - 复用 `SubjectReviewPane`、`SubjectStatsPane` 及现行 Store。主树增加 `reviewRepository`、`reviewLifecycleEngine`、`localReviewService`、`localSubjectStats`、`reviewSyncService`，由当前 localDb v12 保存正式投影、历史和待同步意图；页面读取/反馈不等待 Review/Stats HTTP。
 - `useStatsStore` 仅学科路径改本地，个人页统计及 Focus 归属保持现行实现。学科本地聚合活动资源概况、适用墓碑历史、独立学习完成和按 reviewId 的有效复习，按 IANA 自然日补齐近7/30天。未知云端状态不计入确定的新学习数，导入完整度另行显示。
+- `LocalReviewService.getSubjectStates` 保留逐块原子事务/浏览器锁，复用锁内读取或更新后的 `ReviewRecord`，为每个有正文 hash 的知识块减少一次事务后重复查询；正文变化失效仍在同一事务中完成。
+- `useSyncStore.runCycle` 初始化本地数据库、重核账号 scope 后，将 `getLocalSqlDatabase()` 返回的连接传给 `ReviewSyncService`。不同知识块最多由三个 worker 并发处理，同学科共享一次在途状态投影；同一知识块的命令保持顺序执行。scope 变化或 401 后停止分配新任务，等在途 worker 结束再退出同步周期。
 - `useSyncStore` 在 core Sync 后唤醒独立 Review Sync，逐 KB FIFO，core mutation 未收敛先 defer。网络失败原载荷重试，409保留本地冲突；显式采用云端进度归档未采用意图。既有五类 core mutation 不增加 Review 类型。
 - 临时轮次仅 Pinia 内存切页恢复；刷新/重启清轮次，正式数据/outbox保留。结束本轮返回规划页只清临时轮次。账号/设备/session 代际、活动父/KB、实际正文 hash、版本与存在性约束贯穿提交/派发/结算。
 - 本地冲突按标准409识别；重新确认仅读取严格完整的本地历史，未知或资格变化安全结束卡片，正式记录/outbox保留。浏览器资源只读当前账号的现行 LocalRepository，忽略未隔离的旧缓存，不做隐式兼容或数据删除。

@@ -26,6 +26,7 @@ import com.auralis.app.subject.SubjectService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -41,10 +42,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.Optional;
 
 @Service
 public class OverviewResultService {
@@ -131,6 +135,34 @@ public class OverviewResultService {
                 .filter(value -> isCurrentSourceResult(userId, value, source))
                 .orElseThrow(() -> notFound("Current source overview was not found"));
         return view(entity, source.subjectId());
+    }
+
+    @Transactional
+    public Optional<OverviewResultView> readCurrentSource(UUID userId, UUID sourceId, UUID expectedRevision) {
+        SourceView source = requireReadySource(userId, sourceId, null);
+        if (!Objects.equals(expectedRevision, source.ingestionRevision())) {
+            throw new DomainException("SOURCE_SCOPE_CHANGED", "Source changed during this Chat run");
+        }
+        return resultRepository.findByUserIdAndScopeTypeAndScopeId(userId, SOURCE_SCOPE, sourceId)
+                .filter(entity -> isCurrentSourceResult(userId, entity, source))
+                .map(entity -> view(entity, source.subjectId()));
+    }
+
+    @Transactional(readOnly = true)
+    public Set<UUID> currentSourceOverviewIds(UUID userId, Map<UUID, UUID> expectedRevisions) {
+        if (expectedRevisions.isEmpty()) return Set.of();
+        Map<UUID, SourceView> currentSources = sourceService.findActiveViewsByIds(userId, expectedRevisions.keySet())
+                .stream().collect(java.util.stream.Collectors.toMap(SourceView::id, source -> source));
+        Map<UUID, OverviewResultEntity> results = resultRepository.findAllByUserIdAndScopeTypeAndScopeIdIn(
+                        userId, SOURCE_SCOPE, expectedRevisions.keySet()).stream()
+                .collect(java.util.stream.Collectors.toMap(OverviewResultEntity::getScopeId, result -> result));
+        return expectedRevisions.entrySet().stream().filter(entry -> {
+            SourceView source = currentSources.get(entry.getKey());
+            OverviewResultEntity result = results.get(entry.getKey());
+            return source != null && entry.getValue().equals(source.ingestionRevision())
+                    && source.ingestionStatus() == SourceIngestionStatus.READY
+                    && result != null && isCurrentSourceResult(userId, result, source);
+        }).map(Map.Entry::getKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     @Transactional(noRollbackFor = DomainException.class)
@@ -279,6 +311,51 @@ public class OverviewResultService {
                 .filter(value -> isCurrentSubjectResult(userId, value, allInputs))
                 .orElseThrow(() -> notFound("Current subject overview was not found"));
         return view(entity);
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public OverviewSubjectStatusesResponse getSubjectStatuses(UUID userId, OverviewSubjectStatusesRequest request) {
+        List<UUID> subjectIds = new ArrayList<>(new LinkedHashSet<>(request.subjectIds()));
+        Map<UUID, OverviewResultEntity> resultsBySubjectId = new HashMap<>();
+        for (OverviewResultEntity result : resultRepository.findAllByUserIdAndScopeTypeAndScopeIdIn(
+                userId, SUBJECT_SCOPE, subjectIds)) {
+            resultsBySubjectId.put(result.getScopeId(), result);
+        }
+        Set<UUID> activeSubjectIds = subjectService.findActiveSubjectIds(userId, subjectIds);
+
+        List<OverviewSubjectStatusesResponse.Item> items = new ArrayList<>(subjectIds.size());
+        for (UUID subjectId : subjectIds) {
+            if (!activeSubjectIds.contains(subjectId)) {
+                items.add(new OverviewSubjectStatusesResponse.Item(subjectId,
+                        OverviewSubjectStatusesResponse.Status.UNAVAILABLE, null, null, null, null));
+                continue;
+            }
+
+            OverviewResultEntity result = resultsBySubjectId.get(subjectId);
+            if (result == null) {
+                items.add(new OverviewSubjectStatusesResponse.Item(subjectId,
+                        OverviewSubjectStatusesResponse.Status.MISSING, null, null, null, null));
+                continue;
+            }
+
+            boolean current;
+            try {
+                List<OverviewSourceManifestEntry> currentInputs = currentSubjectManifest(userId, subjectId);
+                current = isCurrentSubjectResult(userId, result, currentInputs);
+            } catch (DomainException invalidInputs) {
+                if (!"VALIDATION_FAILED".equals(invalidInputs.code())) throw invalidInputs;
+                current = false;
+            }
+            if (!current) {
+                items.add(new OverviewSubjectStatusesResponse.Item(subjectId,
+                        OverviewSubjectStatusesResponse.Status.MISSING, null, null, null, null));
+                continue;
+            }
+            items.add(new OverviewSubjectStatusesResponse.Item(subjectId,
+                    OverviewSubjectStatusesResponse.Status.AVAILABLE, result.getVersion(), result.getOutlineVersion(),
+                    result.getSummaryVersion(), result.getUpdatedAt()));
+        }
+        return new OverviewSubjectStatusesResponse(items);
     }
 
     @Transactional

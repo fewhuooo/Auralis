@@ -2,8 +2,12 @@ package com.auralis.app.ai;
 
 import com.auralis.app.ai.internal.chat.ChatAgentOrchestrator;
 import com.auralis.app.ai.internal.chat.ChatRuntimePersistenceService;
+import com.auralis.app.shared.error.ApiProblemDetails;
 import com.auralis.app.shared.security.AuthenticatedUser;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -13,7 +17,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.context.request.async.WebAsyncUtils;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
+import jakarta.servlet.http.HttpServletRequest;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -33,10 +39,14 @@ public class ChatRuntimeController {
     }
 
     @PostMapping(value = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @ApiResponse(responseCode = "409", description = "Chat conversation reading scope conflicts with the fixed scope",
+            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                    schema = @Schema(implementation = ApiProblemDetails.class)))
     public ResponseEntity<StreamingResponseBody> streamMessage(
             @AuthenticationPrincipal AuthenticatedUser principal,
-            @Valid @RequestBody AiMessageCommand command) {
+            @Valid @RequestBody AiMessageCommand command, HttpServletRequest request) {
         ChatRuntimePersistenceService.Admission admission = orchestrator.admit(principal.userId(), command);
+        disableMvcAsyncTimeout(request);
         StreamingResponseBody body = output -> orchestrator.executeAdmission(principal.userId(), admission,
                 command.requestId(), command, event -> writeEvent(output, event));
         return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
@@ -47,12 +57,16 @@ public class ChatRuntimeController {
 
     @PostMapping(value = "/conversations/{conversationId}/runs/{runId}/attempts",
             produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @ApiResponse(responseCode = "409", description = "Chat conversation reading scope conflicts with the fixed scope",
+            content = @Content(mediaType = MediaType.APPLICATION_PROBLEM_JSON_VALUE,
+                    schema = @Schema(implementation = ApiProblemDetails.class)))
     public ResponseEntity<StreamingResponseBody> retry(
             @AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID conversationId, @PathVariable UUID runId,
-            @Valid @RequestBody ChatRetryCommand command) {
+            @Valid @RequestBody ChatRetryCommand command, HttpServletRequest request) {
         ChatRuntimePersistenceService.Admission admission = orchestrator.admitRetry(principal.userId(),
                 conversationId, runId, command.requestId());
+        disableMvcAsyncTimeout(request);
         StreamingResponseBody body = output -> orchestrator.executeAdmission(principal.userId(), admission,
                 command.requestId(), null, event -> writeEvent(output, event));
         return ResponseEntity.ok().contentType(MediaType.TEXT_EVENT_STREAM)
@@ -61,10 +75,20 @@ public class ChatRuntimeController {
                 .body(body);
     }
 
+    private void disableMvcAsyncTimeout(HttpServletRequest request) {
+        WebAsyncUtils.getAsyncManager(request).getAsyncWebRequest().setTimeout(0L);
+    }
+
     @GetMapping("/conversations/{conversationId}/runs/{runId}")
     public ChatRunStatusView status(@AuthenticationPrincipal AuthenticatedUser principal,
             @PathVariable UUID conversationId, @PathVariable UUID runId) {
         return orchestrator.status(principal.userId(), conversationId, runId);
+    }
+
+    @PostMapping("/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover")
+    public ChatRunStatusView recoverUnknown(@AuthenticationPrincipal AuthenticatedUser principal,
+            @PathVariable UUID conversationId, @PathVariable UUID runId, @PathVariable UUID attemptId) {
+        return orchestrator.recoverUnknown(principal.userId(), conversationId, runId, attemptId);
     }
 
     @PostMapping("/conversations/{conversationId}/runs/{runId}/cancel")

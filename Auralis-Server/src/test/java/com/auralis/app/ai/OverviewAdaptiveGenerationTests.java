@@ -114,8 +114,14 @@ class OverviewAdaptiveGenerationTests {
         UUID sourceId = fixture.addSource(null, "Retry index", List.of("Original index evidence."));
         AtomicInteger indexCalls = new AtomicInteger();
         when(fixture.scope.complete(any(AiStage.class), any(AiProviderType.class), any(AiProviderRequest.class),
-                any(AiCredential.class), any(AiCredentialSource.class), anyLong(), any(AiOutputRole.class), any()))
+                any(AiCredential.class), any(AiCredentialSource.class), anyLong(), any(AiOutputRole.class), any(),
+                any(AiInvocationBinding.class)))
                 .thenAnswer(invocation -> {
+                    AiInvocationBinding binding = invocation.getArgument(8);
+                    UUID reservationId = UUID.randomUUID();
+                    binding.beforeReservation();
+                    binding.onReserved(reservationId);
+                    binding.beforeDispatch(reservationId);
                     AiProviderRequest request = invocation.getArgument(2);
                     fixture.requests.add(request);
                     String data = fixture.userData(request);
@@ -220,14 +226,16 @@ class OverviewAdaptiveGenerationTests {
                 any(AiInvocationBinding.class))).thenAnswer(invocation -> {
                     AiInvocationBinding binding = invocation.getArgument(8);
                     UUID reservationId = UUID.randomUUID();
-                    reservationIds.add(reservationId);
+                    binding.beforeReservation();
                     binding.onReserved(reservationId);
                     AiProviderRequest request = invocation.getArgument(2);
                     fixture.requests.add(request);
                     String data = fixture.userData(request);
                     if (data.contains("write_adjacent_sections_v1")) {
+                        reservationIds.add(reservationId);
                         fixture.writerResponseMutation = batchCalls.incrementAndGet() == 1 ? "batch-missing-index" : null;
                     }
+                    binding.beforeDispatch(reservationId);
                     return new AiInvocationResult<>(new AiProviderResponse(fixture.responseFor(data), 1L, 40L, null), null);
                 });
 

@@ -300,6 +300,8 @@ watch(
           source: props.block.source || '手动添加'
         }
       }
+    } else {
+      currentMode.value = 'view'
     }
   },
   { immediate: true }
@@ -351,6 +353,8 @@ const handleOverlayClose = (val: boolean) => {
 }
 
 const handleClose = () => {
+  currentMode.value = 'view'
+  emit('update:mode', 'view')
   emit('update:modelValue', false)
   emit('close')
 }

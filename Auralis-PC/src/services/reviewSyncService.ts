@@ -5,24 +5,60 @@ import { LocalReviewService } from './localReviewService'
 import { ReviewRepository, type LocalReviewCanonicalAnchor, type LocalReviewIntent, type LocalReviewRecord } from './reviewRepository'
 import type { LocalRepository } from './localRepository'
 
+const REVIEW_SYNC_BLOCK_CONCURRENCY = 3
+
 export interface ReviewSyncResult {
   protocolBlocked: boolean
   conflictCount: number
   syncedCommandCount: number
 }
 
-function instantMicros(value: unknown): number | null {
+function parseAuditTimestampMicros(value: unknown): bigint | null {
   if (typeof value !== 'string') return null
-  const milliseconds = Date.parse(value)
-  if (!Number.isFinite(milliseconds)) return null
-  const fraction = value.match(/\.(\d+)(?=Z|[+-]\d\d:\d\d$)/)?.[1] ?? ''
-  return milliseconds * 1000 + Number(fraction.slice(3, 6).padEnd(3, '0'))
+  const match = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$/i)
+  if (!match) return null
+  const [, baseTime, fractionStr = '', tz] = match
+  const baseIso = `${baseTime}${tz}`
+  const baseMs = Date.parse(baseIso)
+  if (!Number.isFinite(baseMs)) return null
+  const baseSeconds = BigInt(Math.floor(baseMs / 1000))
+  const padded = fractionStr.padEnd(7, '0')
+  const microsPart = BigInt(padded.slice(0, 6))
+  const seventhDigit = Number(padded[6])
+  const roundedMicros = seventhDigit >= 5 ? microsPart + 1n : microsPart
+  return baseSeconds * 1_000_000n + roundedMicros
+}
+
+function sameAuditInstant(actual: unknown, expected: unknown): boolean {
+  const actualMicros = parseAuditTimestampMicros(actual)
+  const expectedMicros = parseAuditTimestampMicros(expected)
+  return actualMicros !== null && expectedMicros !== null && actualMicros === expectedMicros
 }
 
 function sameFrozenInstant(actual: unknown, expected: unknown): boolean {
-  const actualMicros = instantMicros(actual)
-  const expectedMicros = instantMicros(expected)
-  return actualMicros !== null && actualMicros === expectedMicros
+  return sameAuditInstant(actual, expected)
+}
+
+function sameAuditField(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (typeof left === 'string' && typeof right === 'string') {
+    return sameAuditInstant(left, right)
+  }
+  return false
+}
+
+function sameCanonicalReviewState(
+  left: LifecycleHistoryResponse['state'],
+  right: LifecycleHistoryResponse['state'],
+): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  if (typeof left !== 'object' || typeof right !== 'object') return false
+  if (!sameAuditField(left.createdAt, right.createdAt)) return false
+  if (!sameAuditField(left.updatedAt, right.updatedAt)) return false
+  const { createdAt: _lc, updatedAt: _lu, ...leftRest } = left as Record<string, unknown>
+  const { createdAt: _rc, updatedAt: _ru, ...rightRest } = right as Record<string, unknown>
+  return stableJson(leftRest) === stableJson(rightRest)
 }
 
 function isScopeCurrent(scope?: SyncRequestScopeTicket): boolean {
@@ -142,9 +178,13 @@ function matchesContentInvalidation(
   ])
   for (const key of new Set([...Object.keys(anchor.state), ...Object.keys(remote)])) {
     if (allowedChanged.has(key)) continue
+    if (key === 'createdAt') {
+      if (!sameAuditField(anchor.state.createdAt, remote.createdAt)) return false
+      continue
+    }
     if (stableJson((anchor.state as any)[key]) !== stableJson((remote as any)[key])) return false
   }
-  if (remote.updatedAt !== undefined && (typeof remote.updatedAt !== 'string' || !Number.isFinite(Date.parse(remote.updatedAt)))) return false
+  if (remote.updatedAt !== undefined && (typeof remote.updatedAt !== 'string' || parseAuditTimestampMicros(remote.updatedAt) === null)) return false
   return true
 }
 
@@ -159,7 +199,7 @@ function sameRemoteAnchor(
     && anchor.knowledgeBlockVersion === fetched.knowledgeBlockVersion
     && anchor.subjectId === fetched.subjectId
     && anchor.contentHash === fetched.contentHash
-    && stableJson(anchor.state) === stableJson(fetched.state)
+    && sameCanonicalReviewState(anchor.state, fetched.state)
     && sameCommands(anchor.commands, fetched.commands)
     && sameEffectiveReviews(anchor.effectiveReviews, fetched.effectiveReviews)
 }
@@ -175,7 +215,7 @@ function matchesMetadataOnlyUpdate(
   // hash here while allowing its scope/version metadata to advance.
   if (anchor.contentHash !== currentHash
     || history.knowledgeBlockVersion < anchor.knowledgeBlockVersion
-    || stableJson(anchor.state) !== stableJson(canonicalState(history.state))
+    || !sameCanonicalReviewState(anchor.state, canonicalState(history.state))
     || !sameCommands(anchor.commands, history.commands)
     || !sameEffectiveReviews(anchor.effectiveReviews, history.effectiveReviews)) return false
   return true
@@ -291,6 +331,87 @@ export class ReviewSyncService {
     this.repository = new ReviewRepository(db, localRepository)
     this.localReview = new LocalReviewService(db, localRepository)
     this.localRepository = localRepository
+  }
+
+  private async tryRecoverFalseConflict(
+    userId: string,
+    deviceId: string,
+    kbId: string,
+    subjectId: string,
+    head: LocalReviewIntent,
+    scope?: SyncRequestScopeTicket,
+  ): Promise<boolean> {
+    if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
+    if (head.status !== 'conflict' || head.prepared) return false
+
+    const history = await useReviewApi.getLifecycleHistory({ knowledgeBlockId: kbId }, scope)
+    if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
+    if (!validateHistory(history, kbId)) return false
+
+    let recovered = false
+    await this.repository.executeAtomicReviewCommit(userId, deviceId, kbId, async (tx, currentRecord, kbResource, subjectResource) => {
+      if (!isScopeCurrent(scope)) return
+      const latest = await this.repository.getIntent(tx, userId, deviceId, head.clientCommandId)
+      if (!latest || latest.prepared || latest.status !== 'conflict'
+        || stableJson(latest.payload) !== stableJson(head.payload)
+        || stableJson(latest.preparation) !== stableJson(head.preparation)
+        || !kbResource || kbResource.deleted_at || !subjectResource || subjectResource.deleted_at) return
+      if (await this.repository.hasUnresolvedCoreMutation(tx, userId, kbId)) return
+
+      const payload = JSON.parse(kbResource.payload) as Record<string, unknown>
+      const actualSubjectId = payload.subject_id ?? payload.subjectId
+      const actualHash = await currentContentHash(payload)
+      if (actualSubjectId !== subjectId || !actualHash
+        || Number(kbResource.version) !== history.knowledgeBlockVersion
+        || head.payload.contentHash !== actualHash
+        || !currentRecord || currentRecord.subjectId !== subjectId
+        || currentRecord.contentHash !== actualHash) return
+
+      const anchor = currentRecord.canonicalAnchor
+      const preparation = latest.preparation
+      if (!anchor || !preparation.anchorFingerprint) return
+
+      const currentFingerprint = stableJson(anchor)
+      const initialAnchorStillCurrent = currentFingerprint === preparation.anchorFingerprint
+      let acknowledgedPredecessorExtension = false
+      if (!initialAnchorStillCurrent && preparation.predecessorClientCommandIds.length > 0
+        && anchor.subjectId === preparation.anchorSubjectId
+        && anchor.contentHash === preparation.anchorContentHash) {
+        const currentIds = new Set(anchor.commands.map(command => command.clientCommandId))
+        const originalIds = new Set(preparation.anchorCommandIds)
+        const addedIds = [...currentIds].filter(id => !originalIds.has(id))
+        const predecessorIds = new Set(preparation.predecessorClientCommandIds)
+        acknowledgedPredecessorExtension = preparation.anchorCommandIds.every(id => currentIds.has(id))
+          && preparation.predecessorClientCommandIds.every(id => currentIds.has(id))
+          && addedIds.every(id => predecessorIds.has(id))
+      }
+      const allowedLineage = initialAnchorStillCurrent || acknowledgedPredecessorExtension
+      if (!allowedLineage || anchor.contentHash !== actualHash) return
+      if (preparation.predecessorClientCommandIds.length > 0
+        && !preparation.predecessorClientCommandIds.every(id => anchor.commands.some(command => command.clientCommandId === id))) return
+
+      if (anchor.subjectId !== subjectId
+        || !sameCommands(anchor.commands, history.commands)
+        || !sameEffectiveReviews(anchor.effectiveReviews, history.effectiveReviews)
+        || head.payload.expectedStateAbsent !== (history.state === null)) return
+
+      // Prove that strict JSON comparison failed, but canonical equivalence passes:
+      const fetchedCanonical = canonicalState(history.state)
+      const strictAnchorMatches = anchor.knowledgeBlockVersion === history.knowledgeBlockVersion
+        && stableJson(anchor.state) === stableJson(fetchedCanonical)
+      const canonicalAnchorMatches = (anchor.knowledgeBlockVersion === history.knowledgeBlockVersion
+        || history.knowledgeBlockVersion >= anchor.knowledgeBlockVersion)
+        && sameCanonicalReviewState(anchor.state, fetchedCanonical)
+
+      if (strictAnchorMatches || !canonicalAnchorMatches) return
+
+      const updated = await this.repository.recoverConflictIntentToPending(
+        tx, userId, deviceId, head.clientCommandId, latest.payload, latest.preparation,
+      )
+      if (updated) recovered = true
+    })
+
+    return recovered
   }
 
   private async prepareIntent(
@@ -427,45 +548,100 @@ export class ReviewSyncService {
     // each KB. The atomic claim below checks the same KB again before POST.
     const unresolvedCoreIds = new Set((await this.localRepository.listUnresolved('KNOWLEDGE_BLOCK'))
       .map(mutation => mutation.resourceId))
-    const qualifiedSubjects = new Set<string>()
-    for (const block of blocks) {
+    const uniqueBlocks = [...new Map(blocks.map(block => [block.id, block])).values()]
+    const subjectProjectionPromises = new Map<string, Promise<void>>()
+    let nextBlockIndex = 0
+    let fatalError: unknown = null
+
+    const ensureSubjectProjection = (subjectId: string): Promise<void> => {
+      const existing = subjectProjectionPromises.get(subjectId)
+      if (existing) return existing
+      const projection = this.localReview.getSubjectStates(userId, deviceId, subjectId).then(() => {
+        if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
+      })
+      subjectProjectionPromises.set(subjectId, projection)
+      // A transient failure may be retried by a later block in this subject;
+      // concurrent blocks still share the same in-flight projection attempt.
+      void projection.catch(() => {
+        if (subjectProjectionPromises.get(subjectId) === projection) subjectProjectionPromises.delete(subjectId)
+      })
+      return projection
+    }
+
+    const processBlock = async (block: { id: string; subjectId: string }): Promise<void> => {
       if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
       try {
         // A subject read checks and persists body-hash invalidation for every
-        // block in that subject. Do that once per sync pass, not once per KB.
-        if (!qualifiedSubjects.has(block.subjectId)) {
-          await this.localReview.getSubjectStates(userId, deviceId, block.subjectId)
-          if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
-          qualifiedSubjects.add(block.subjectId)
-        }
-        if (unresolvedCoreIds.has(block.id)) continue
+        // block in that subject. Concurrent workers share the same Promise.
+        await ensureSubjectProjection(block.subjectId)
+        if (unresolvedCoreIds.has(block.id)) return
         const unresolved = await this.repository.getUnresolvedIntents(userId, deviceId, [block.id])
+        if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
         if (unresolved.some(intent => intent.status === 'conflict')) {
-          result.conflictCount += 1
-          continue
+          const head = unresolved[0]
+          if (head.status === 'conflict' && !head.prepared) {
+            const recovered = await this.tryRecoverFalseConflict(userId, deviceId, block.id, block.subjectId, head, scope)
+            if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
+            if (!recovered) {
+              result.conflictCount += 1
+              return
+            }
+          } else {
+            result.conflictCount += 1
+            return
+          }
         }
-        const pending = await this.repository.getPendingIntents(userId, deviceId, block.id)
+        const pending = await this.repository.getPendingIntents(userId, deviceId, block.id); 
+        if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
         if (!pending.length) {
           const history = await useReviewApi.getLifecycleHistory({ knowledgeBlockId: block.id }, scope)
+          if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
           if (!validateHistory(history, block.id)) {
             result.protocolBlocked = true
-            continue
+            return
           }
           await this.localReview.importLifecycleHistory(userId, deviceId, block.id, history)
-          continue
+          if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
+          return
         }
 
         const synced = await this.syncKbQueue(userId, deviceId, block.id, block.subjectId, pending, scope)
+        if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
         result.syncedCommandCount += synced.synced
         result.conflictCount += synced.conflict ? 1 : 0
         result.protocolBlocked ||= synced.protocolBlocked
-      } catch (error) {
+      } catch (error) { 
         if (!isScopeCurrent(scope)) throw new Error('SYNC_SCOPE_CHANGED')
         // The normal auth interceptor remains responsible for real 401s.
         if (classifyStatus(error) === 401) throw error
         if (error instanceof Error && error.message === 'SYNC_SCOPE_CHANGED') throw error
         console.warn('[ReviewSyncService] review reconciliation deferred', error)
       }
+    }
+
+    const worker = async (): Promise<void> => {
+      while (fatalError === null && isScopeCurrent(scope)) {
+        const blockIndex = nextBlockIndex++
+        if (blockIndex >= uniqueBlocks.length) return
+        try {
+          await processBlock(uniqueBlocks[blockIndex])
+        } catch (error) {
+          if ((error instanceof Error && error.message === 'SYNC_SCOPE_CHANGED')
+            || classifyStatus(error) === 401) fatalError ??= error
+          throw error
+        }
+      }
+      if (fatalError === null) fatalError = new Error('SYNC_SCOPE_CHANGED')
+    }
+    const workerCount = Math.min(REVIEW_SYNC_BLOCK_CONCURRENCY, uniqueBlocks.length)
+    // Observe every worker before returning or propagating a fatal error so the
+    // surrounding sync cycle cannot release its lifecycle while work continues.
+    await Promise.allSettled(Array.from({ length: workerCount }, () => worker()))
+    if (fatalError !== null) {
+      if ((fatalError instanceof Error && fatalError.message === 'SYNC_SCOPE_CHANGED') || !isScopeCurrent(scope)) {
+        throw new Error('SYNC_SCOPE_CHANGED')
+      }
+      throw fatalError
     }
     return result
   }

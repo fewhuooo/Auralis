@@ -13,8 +13,16 @@ export default defineConfig(({ mode }) => {
   const devApiTarget = env.VITE_DEV_API_TARGET?.trim()
   const devWebsocketTarget = env.VITE_DEV_WS_TARGET?.trim()
 
-  const proxy: Record<string, { target: string; changeOrigin: boolean; ws?: boolean }> = {}
-  if (devApiTarget) proxy['/api'] = { target: devApiTarget, changeOrigin: true }
+  const proxy: Record<string, { target: string; changeOrigin: boolean; ws?: boolean; headers?: Record<string, string> }> = {}
+  if (devApiTarget) {
+    proxy['/api'] = {
+      target: devApiTarget,
+      changeOrigin: true,
+      headers: {
+        'Accept-Encoding': 'identity', // 告诉代理和后端不进行 Gzip 压缩，防止本地代理为了攒包缓冲 SSE
+      },
+    }
+  }
   if (devWebsocketTarget) proxy['/ws'] = { target: devWebsocketTarget, ws: true, changeOrigin: true }
 
   return {

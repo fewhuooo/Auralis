@@ -13,6 +13,8 @@ public interface ChatActivityRepository extends JpaRepository<ChatActivityEntity
     Optional<ChatActivityEntity> findByIdAndUserId(UUID id, UUID userId);
     Optional<ChatActivityEntity> findByIdAndRunIdAndUserId(UUID id, UUID runId, UUID userId);
     List<ChatActivityEntity> findAllByRunIdOrderByCreatedAtAsc(UUID runId);
+    List<ChatActivityEntity> findAllByAttemptIdAndRunIdAndUserIdOrderByCreatedAtAsc(
+            UUID attemptId, UUID runId, UUID userId);
     Optional<ChatActivityEntity> findByReplyRunIdAndUserId(UUID replyRunId, UUID userId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select a from ChatActivityEntity a where a.id = :id and a.runId = :runId and a.userId = :userId")

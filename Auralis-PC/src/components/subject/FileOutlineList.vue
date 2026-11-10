@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { IconAlertTriangle, IconChevronRight, IconDots, IconFileText, IconMapPin, IconRefresh } from '@tabler/icons-vue'
 import type { OverviewChapter, OverviewLocator, OverviewResponse, OverviewSummary } from '@/types/overview'
 
@@ -15,12 +16,15 @@ export interface FileOverviewItem {
   isGenerating?: boolean
 }
 
+const popoverVisibles = ref<Record<string, boolean>>({})
+
 withDefaults(defineProps<{ files: FileOverviewItem[]; selectedFileId?: string | null }>(), { selectedFileId: null })
 const emit = defineEmits<{
   'select-file': [fileId: string]
   'select-summary': [fileId: string]
   'select-outline-node': [payload: { fileId: string; locator: OverviewLocator | null }]
   regenerate: [payload: { fileId: string; mode: 'OUTLINE' | 'ALL' }]
+  'stop-regeneration': [fileId: string]
   'resolve-sync-conflict': [payload: { fileId: string; choice: 'LOCAL' | 'REMOTE' }]
   'resolve-generation-conflict': [payload: { fileId: string; clientWriteId: string; choice: 'KEEP_LOCAL' | 'USE_AI' }]
 }>()
@@ -32,14 +36,29 @@ const emit = defineEmits<{
       <header class="file-outline__header">
         <button type="button" class="file-outline__name" @click="emit('select-file', file.id)"><IconFileText :size="14" :stroke-width="1.6" /><span>{{ file.name }}</span></button>
         <span class="file-outline__actions">
+          <button
+            v-if="file.isGenerating"
+            type="button"
+            class="retry-capsule__btn"
+            aria-label="停止文件总览生成"
+            @click.stop="emit('stop-regeneration', file.id)"
+          >停止</button>
           <button type="button" class="file-summary-button" :disabled="!file.summary" @click="emit('select-summary', file.id)">总结</button>
-          <el-popover placement="bottom-end" trigger="click" width="130" popper-class="zen-popover zen-action-popover" :hide-after="0">
+          <el-popover v-model:visible="popoverVisibles[file.id]" placement="bottom-end" trigger="click" width="130" popper-class="zen-popover zen-action-popover" :hide-after="0">
             <template #reference>
-              <button type="button" class="file-more-button" aria-label="更多总览操作"><IconDots :size="14" :stroke-width="1.6" /></button>
+              <button
+                type="button"
+                class="file-more-button"
+                aria-label="更多总览操作"
+                :disabled="file.isGenerating"
+              >
+                <IconRefresh v-if="file.isGenerating" :size="13" :stroke-width="1.6" class="is-spinning" />
+                <IconDots v-else :size="14" :stroke-width="1.6" />
+              </button>
             </template>
             <div style="display:flex;flex-direction:column;gap:4px;">
-              <button class="zen-menu-item" @click="emit('regenerate', { fileId: file.id, mode: 'OUTLINE' })">重新生成大纲</button>
-              <button class="zen-menu-item" @click="emit('regenerate', { fileId: file.id, mode: 'ALL' })">重新生成全部</button>
+              <button class="zen-menu-item" :disabled="file.isGenerating" @click="popoverVisibles[file.id] = false; emit('regenerate', { fileId: file.id, mode: 'OUTLINE' })">重新生成大纲</button>
+              <button class="zen-menu-item" :disabled="file.isGenerating" @click="popoverVisibles[file.id] = false; emit('regenerate', { fileId: file.id, mode: 'ALL' })">重新生成全部</button>
             </div>
           </el-popover>
         </span>
@@ -77,7 +96,7 @@ const emit = defineEmits<{
         <button type="button" class="file-outline__retry" :disabled="file.generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { fileId: file.id, clientWriteId: conflict.clientWriteId, choice: 'KEEP_LOCAL' })">保留我的修改</button>
         <button type="button" class="file-outline__retry" :disabled="file.generationConflictResolving" @click.stop="emit('resolve-generation-conflict', { fileId: file.id, clientWriteId: conflict.clientWriteId, choice: 'USE_AI' })">使用AI结果</button>
       </section>
-      <div v-if="file.isGenerating && !file.outline" class="file-outline__pending"><IconRefresh :size="13" :stroke-width="1.6" class="is-spinning" />正在生成文件总览…</div>
+      <div v-if="file.isGenerating && !file.outline?.length" class="file-outline__pending"><IconRefresh :size="13" :stroke-width="1.6" class="is-spinning" />正在生成文件总览…</div>
       <div v-else-if="!file.outline?.length" class="file-outline__pending">
         <IconRefresh v-if="file.status !== 'FAILED'" :size="13" :stroke-width="1.6" class="is-spinning" />
         <span>{{ file.status === 'FAILED' ? (file.error || '生成失败') : '等待文件解析并生成大纲' }}</span>
@@ -89,18 +108,24 @@ const emit = defineEmits<{
           @click.stop="emit('regenerate', { fileId: file.id, mode: file.summary ? 'OUTLINE' : 'ALL' })"
         >重新生成</button>
       </div>
-      <ol v-else class="file-outline__chapters">
-        <li v-for="chapter in file.outline" :key="chapter.title">
-          <strong class="chapter-header">
-            <span class="chapter-title">{{ chapter.title }}</span>
-          </strong>
-          <button v-for="section in chapter.sections" :key="section.title" type="button" @click="emit('select-outline-node', { fileId: file.id, locator: section.locator })">
-            <span>{{ section.title }}</span>
-            <IconMapPin v-if="section.locator" :size="11" :stroke-width="1.6" class="section-arrow" />
-            <IconChevronRight v-else :size="11" :stroke-width="1.6" class="section-arrow" />
-          </button>
-        </li>
-      </ol>
+      <template v-else>
+        <div v-if="file.isGenerating" class="file-outline__pending file-outline__pending--regenerating">
+          <IconRefresh :size="12" :stroke-width="1.6" class="is-spinning" />
+          <span>正在重新生成文件大纲…</span>
+        </div>
+        <ol class="file-outline__chapters" :class="{ 'is-generating': file.isGenerating }">
+          <li v-for="chapter in file.outline" :key="chapter.title">
+            <strong class="chapter-header">
+              <span class="chapter-title">{{ chapter.title }}</span>
+            </strong>
+            <button v-for="section in chapter.sections" :key="section.title" type="button" @click="emit('select-outline-node', { fileId: file.id, locator: section.locator })">
+              <span>{{ section.title }}</span>
+              <IconMapPin v-if="section.locator" :size="11" :stroke-width="1.6" class="section-arrow" />
+              <IconChevronRight v-else :size="11" :stroke-width="1.6" class="section-arrow" />
+            </button>
+          </li>
+        </ol>
+      </template>
     </article>
     <div v-if="!files.length" class="file-outline-list__empty">暂无学习文件</div>
   </div>
@@ -149,6 +174,11 @@ const emit = defineEmits<{
 .file-outline__chapters button:active{transform:scale(0.98) translateX(2px)}
 .file-outline-list__empty{padding:24px 10px;color:var(--text-muted);font-size:12px;text-align:center}
 .is-spinning{animation:outline-spin 1s linear infinite}@keyframes outline-spin{to{transform:rotate(360deg)}}
+.retry-capsule__btn{display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:2px 7px;border-radius:999px;border:1px solid rgba(125,147,114,.35);background:var(--color-bg-tertiary, #FAF7F2);color:var(--color-primary-accent);font-size:10px;font-weight:600;line-height:1.4;cursor:pointer;white-space:nowrap;transition:all 0.15s ease}
+.retry-capsule__btn:hover:not(:disabled){background:rgba(125,147,114,.2);border-color:rgba(125,147,114,.5);transform:scale(1.02)}
+.retry-capsule__btn:disabled{opacity:.45;cursor:not-allowed}
+.file-outline__chapters.is-generating{opacity:.6;pointer-events:none;transition:opacity .2s ease}
+.file-outline__pending--regenerating{background:rgba(125,147,114,.08);color:var(--color-primary-accent);border-bottom:1px dashed rgba(125,147,114,.25)}
 .zen-menu-item{display:flex;align-items:center;gap:6px;width:100%;padding:6px 10px;border:0;border-radius:999px;background:transparent;color:var(--text-primary);font-size:11px;font-weight:500;cursor:pointer;text-align:left;transition:background 0.15s ease, color 0.15s ease, transform 0.15s ease}
 .zen-menu-item:hover{background:rgba(125,147,114,.12);color:var(--color-primary-accent);transform:translateX(1px)}
 .zen-menu-item:disabled{opacity:.45;cursor:not-allowed}

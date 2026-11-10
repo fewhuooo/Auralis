@@ -58,6 +58,11 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
         value.sourceId ? sourceTitles.get(value.sourceId) : undefined,
         value.subjectId ? subjectNames.get(value.subjectId) : undefined,
       ))
+      .sort((a, b) => {
+        const timeA = a.createdAt || a.time || ''
+        const timeB = b.createdAt || b.time || ''
+        return timeB.localeCompare(timeA)
+      })
   }
 
   async function fetchBlocks(_subject?: string, subjectId?: string): Promise<KnowledgeBlockModel[]> {

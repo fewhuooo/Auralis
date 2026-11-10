@@ -54,6 +54,8 @@ auralis:
   ai:
     enabled: ${AURALIS_AI_ENABLED:false}
     thinking-enabled: ${AURALIS_AI_THINKING_ENABLED:false}
+    chat-thinking-enabled: ${AURALIS_AI_CHAT_THINKING_ENABLED:true}
+    overview-thinking-enabled: ${AURALIS_AI_OVERVIEW_THINKING_ENABLED:false}
     encryption-key: ${AURALIS_AI_ENCRYPTION_KEY:}
     default-provider: ${AURALIS_AI_DEFAULT_PROVIDER:DEEPSEEK}
     defaults:
@@ -143,7 +145,10 @@ auralis:
       ingestion-max-calls: ${AURALIS_AI_LIMITS_INGESTION_MAX_CALLS:512}
       ingestion-task-tokens: ${AURALIS_AI_LIMITS_INGESTION_TASK_TOKENS:16777216}
     chat-agent:
-      max-model-and-embedding-calls: ${AURALIS_AI_CHAT_AGENT_MAX_MODEL_AND_EMBEDDING_CALLS:8}
+      raw-content-capture-enabled: ${AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_ENABLED:false}
+      raw-content-capture-directory: ${AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_DIR:/tmp/auralis-chat-diagnostics}
+      max-model-calls: ${AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS:0}
+      max-embedding-calls: ${AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS:0}
       max-iterations: ${AURALIS_AI_CHAT_AGENT_MAX_ITERATIONS:8}
       max-tool-calls: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS:12}
       max-tool-result-utf8-bytes: ${AURALIS_AI_CHAT_AGENT_MAX_TOOL_RESULT_UTF8_BYTES:65536}

@@ -24,6 +24,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import java.time.Instant;
 import java.time.Clock;
@@ -48,6 +50,8 @@ public class ReviewLifecycleService {
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public ReviewLifecycleService(ReviewStateRepository stateRepository,
                                   ReviewLifecycleCommandRepository commandRepository,
@@ -320,6 +324,10 @@ public class ReviewLifecycleService {
                                         String action, Instant occurredAt, long baseVersion, String contentHash,
                                         UUID reviewId, ReviewRating rating, Integer durationSeconds, String payload,
                                         ReviewStateEntity state, ReviewLifecycleReviewEntity lifecycleReview) {
+        // All command paths have flushed the state. Freeze the actual database
+        // representation (including timestamp precision), not the managed
+        // entity's pre-round-trip audit timestamps.
+        entityManager.refresh(state);
         CommandResponse response = new CommandResponse(UUID.randomUUID(), clientCommandId, action, occurredAt,
                 block.version(), stateView(state, block.version()), lifecycleReview == null ? null : view(lifecycleReview));
         String responseText = json(response);

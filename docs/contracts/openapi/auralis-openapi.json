@@ -1666,6 +1666,37 @@
         } ]
       }
     },
+    "/api/overview-results/subjects/statuses" : {
+      "post" : {
+        "tags" : [ "overview-result-controller" ],
+        "operationId" : "getSubjectStatuses",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/OverviewSubjectStatusesRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK",
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OverviewSubjectStatusesResponse"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
     "/api/knowledge-blocks" : {
       "get" : {
         "tags" : [ "knowledge-block-controller" ],
@@ -2555,12 +2586,12 @@
           "required" : true
         },
         "responses" : {
-          "200" : {
-            "description" : "OK",
+          "409" : {
+            "description" : "Chat conversation reading scope conflicts with the fixed scope",
             "content" : {
-              "text/event-stream" : {
+              "application/problem+json" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/StreamingResponseBody"
+                  "$ref" : "#/components/schemas/ApiProblemDetails"
                 }
               }
             }
@@ -2694,12 +2725,58 @@
           "required" : true
         },
         "responses" : {
+          "409" : {
+            "description" : "Chat conversation reading scope conflicts with the fixed scope",
+            "content" : {
+              "application/problem+json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security" : [ {
+          "bearerAuth" : [ ]
+        } ]
+      }
+    },
+    "/api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover" : {
+      "post" : {
+        "tags" : [ "chat-runtime-controller" ],
+        "operationId" : "recoverUnknown",
+        "parameters" : [ {
+          "name" : "conversationId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "runId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        }, {
+          "name" : "attemptId",
+          "in" : "path",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "format" : "uuid"
+          }
+        } ],
+        "responses" : {
           "200" : {
             "description" : "OK",
             "content" : {
-              "text/event-stream" : {
+              "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/StreamingResponseBody"
+                  "$ref" : "#/components/schemas/ChatRunStatusView"
                 }
               }
             }
@@ -4439,8 +4516,12 @@
           "version" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "hasAvatar" : {
+            "type" : "boolean"
           }
-        }
+        },
+        "required" : [ "hasAvatar" ]
       },
       "AiSettingsCommand" : {
         "type" : "object",
@@ -4638,35 +4719,35 @@
           "float" : {
             "type" : "boolean"
           },
-          "object" : {
-            "type" : "boolean"
-          },
           "container" : {
             "type" : "boolean"
           },
           "missingNode" : {
             "type" : "boolean"
           },
-          "pojo" : {
+          "object" : {
+            "type" : "boolean"
+          },
+          "integralNumber" : {
+            "type" : "boolean"
+          },
+          "bigInteger" : {
+            "type" : "boolean"
+          },
+          "nodeType" : {
+            "type" : "string",
+            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
+          },
+          "bigDecimal" : {
+            "type" : "boolean"
+          },
+          "valueNode" : {
+            "type" : "boolean"
+          },
+          "floatingPointNumber" : {
             "type" : "boolean"
           },
           "number" : {
-            "type" : "boolean"
-          },
-          "short" : {
-            "type" : "boolean"
-          },
-          "string" : {
-            "type" : "boolean"
-          },
-          "textual" : {
-            "type" : "boolean",
-            "deprecated" : true
-          },
-          "int" : {
-            "type" : "boolean"
-          },
-          "long" : {
             "type" : "boolean"
           },
           "boolean" : {
@@ -4675,26 +4756,26 @@
           "binary" : {
             "type" : "boolean"
           },
+          "int" : {
+            "type" : "boolean"
+          },
+          "pojo" : {
+            "type" : "boolean"
+          },
+          "string" : {
+            "type" : "boolean"
+          },
           "double" : {
             "type" : "boolean"
           },
-          "bigInteger" : {
+          "textual" : {
+            "type" : "boolean",
+            "deprecated" : true
+          },
+          "short" : {
             "type" : "boolean"
           },
-          "valueNode" : {
-            "type" : "boolean"
-          },
-          "nodeType" : {
-            "type" : "string",
-            "enum" : [ "ARRAY", "BINARY", "BOOLEAN", "MISSING", "NULL", "NUMBER", "OBJECT", "POJO", "STRING" ]
-          },
-          "integralNumber" : {
-            "type" : "boolean"
-          },
-          "bigDecimal" : {
-            "type" : "boolean"
-          },
-          "floatingPointNumber" : {
+          "long" : {
             "type" : "boolean"
           },
           "embeddedValue" : {
@@ -5354,6 +5435,65 @@
             "type" : "string"
           }
         }
+      },
+      "OverviewSubjectStatusesRequest" : {
+        "type" : "object",
+        "description" : "Subject IDs whose current Overview result status should be checked",
+        "properties" : {
+          "subjectIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            },
+            "maxItems" : 100,
+            "minItems" : 1
+          }
+        },
+        "required" : [ "subjectIds" ]
+      },
+      "Item" : {
+        "type" : "object",
+        "properties" : {
+          "subjectId" : {
+            "type" : "string",
+            "format" : "uuid"
+          },
+          "status" : {
+            "type" : "string",
+            "enum" : [ "AVAILABLE", "MISSING", "UNAVAILABLE" ]
+          },
+          "version" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "outlineVersion" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "summaryVersion" : {
+            "type" : [ "integer", "null" ],
+            "format" : "int64"
+          },
+          "updatedAt" : {
+            "type" : [ "string", "null" ],
+            "format" : "date-time"
+          }
+        },
+        "required" : [ "status", "subjectId" ]
+      },
+      "OverviewSubjectStatusesResponse" : {
+        "type" : "object",
+        "description" : "Current Overview metadata for requested active owned subjects",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/Item"
+            }
+          }
+        },
+        "required" : [ "items" ]
       },
       "FocusSessionCommand" : {
         "type" : "object",
@@ -6126,7 +6266,6 @@
         },
         "required" : [ "retrievalMode", "subjectId" ]
       },
-      "StreamingResponseBody" : { },
       "ConversationCommand" : {
         "type" : "object",
         "properties" : {
@@ -6200,6 +6339,31 @@
           }
         }
       },
+      "ChatConversationScope" : {
+        "type" : "object",
+        "properties" : {
+          "currentSourceId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "subjectId" : {
+            "type" : [ "string", "null" ],
+            "format" : "uuid"
+          },
+          "retrievalMode" : {
+            "type" : "string",
+            "enum" : [ "AUTO", "SELECTED_SOURCES", "SUBJECT" ]
+          },
+          "sourceIds" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "format" : "uuid"
+            }
+          }
+        },
+        "required" : [ "currentSourceId", "retrievalMode", "sourceIds", "subjectId" ]
+      },
       "ConversationView" : {
         "type" : "object",
         "properties" : {
@@ -6249,8 +6413,20 @@
           },
           "activeRun" : {
             "$ref" : "#/components/schemas/ActiveChatRunView"
+          },
+          "chatScopeState" : {
+            "type" : "string",
+            "enum" : [ "LEGACY", "UNBOUND", "BOUND" ]
+          },
+          "chatScope" : {
+            "anyOf" : [ {
+              "$ref" : "#/components/schemas/ChatConversationScope"
+            }, {
+              "type" : "null"
+            } ]
           }
-        }
+        },
+        "required" : [ "chatScope", "chatScopeState" ]
       },
       "MessageView" : {
         "type" : "object",

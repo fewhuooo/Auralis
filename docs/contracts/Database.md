@@ -1,5 +1,11 @@
 # Auralis 数据库与端侧数据契约
 
+### 2026-10-31 PC 排期命令本地串行队列（无 schema 迁移）
+
+排期 outbox 沿用现有 JSON payload，新增私有 `_localExpectedTasks` 保存本命令预期成员投影、`_localScheduleSent` 持久化首次领取标记，继续以 `_localAffectedTaskIds` 建立成员围栏；这些元数据均不进入 Sync wire payload。提交时的排期基线 fingerprint 仅作为本次仓储事务的瞬时前置条件，不持久化为新字段。命令顺序以持久化 createdAt/ID 确定，同毫秒追加保持实际提交先后。
+
+每轮仅派发最早未结算排期；inflight 队首可按原 ID/载荷重试。成功回执在同一写边界保留后继乐观位置并更新权威版本，只调整从未发送后继的版本字段。拒绝、预测偏差或需保护墓碑/普通本地写入时，完整恢复数据就绪后再结算队首和终止未发送后继；受保护记录不被覆盖。浏览器和 SQLite 均原子校验排期计算基线，防止同版本的跨窗口本地修改被陈旧计算覆盖。现有用户数据保留，无旧格式转换、表列新增或业务数据迁移；未结算命令继续走现行 Sync 路径。
+
 ### 2026-10-28 Writer 多小节私有执行载荷（无数据库迁移）
 
 多节操作write_adjacent_sections_v1的执行descriptor绑定有序members及其目录位置、主题、原文范围和prompt身份；singleton不序列化空members。每个合批对应一个现有execution node，模型回传request-local sectionIndex/detailedContent；程序按成员自己的授权原文范围绑定各节，全部校验成功后通过现有journal原子保存完整batch checkpoint，再拆回公开outline。合批恢复保持成员组合，已验证singleton保持独立，parts沿现行单节路径；不新增表列、旁路映射或公开响应字段。费用、未知派发与lease/fence规则保持。定向及同一只读审查B0/I0；未部署、未操作业务库或验证真实模型。证据D:/Temp/auralis-coalesced-writer-20261028/。
@@ -188,7 +194,7 @@ Subject、Source、KnowledgeBlock、Task、Relation 等同步资源至少包含�
 | ingestion_jobs | 文档解析与索引任务 | status/available_at/lease 索引 |
 | source_chunks | RAG 文本块和向量 | user/source/generation/ordinal 唯一；active generation 查询索引；PostgreSQL vector(1024) HNSW 索引 |
 | ai_credentials | 用户 BYOK 密文 | user_id + provider 唯一；只存密文 |
-| conversations | AI 会话 | user/updated/deleted 索引；version 乐观版本、next_message_sequence 并发序号计数器及 user + client request id 恢复键 |
+| conversations | AI 会话 | user/updated/deleted 索引；version 乐观版本、next_message_sequence 并发序号计数器、user + client request id 恢复键及 Chat scope state |
 | messages | AI 消息 | conversation + sequence 唯一；user + client request id 幂等键；assistant 的 reply_to_message_id 精确关联 USER 消息 |
 
 ## 阶段 1 Identity V1 已实现 schema
@@ -285,6 +291,8 @@ V5 同时将 change log、inbound mutation 的 owner 外键改为级联删除，
 ### V29 学习、复习纠正与掌握退出（2026-10-08，代码、相关自动验证及临时PG迁移通过）
 
 `V29__review_lifecycle_protocol.sql` 扩展既有Review状态并新增独立命令与有效结果表，不增加核心Sync资源或端侧持久队列。
+
+2026-11-03 源码候选：生命周期命令在 `review_states` flush 后 refresh 持久实体，再序列化新 `review_lifecycle_commands.response_payload`，避免内存审计时间纳秒值与 PostgreSQL 微秒值不一致。既有冻结 response、request fingerprint 与表结构不改写；无迁移。PC 原有 canonicalAnchor 与误冲突操作仍保留，按[交接方案](../plans/2026-11-03-pc-review-unschedule-handoff.md)由 PC 实施定向恢复。
 
 - `review_states` 增加 `needs_learning BOOLEAN NOT NULL DEFAULT FALSE`、`mastered BOOLEAN NOT NULL DEFAULT FALSE`、`stable_success_count INTEGER NOT NULL DEFAULT 0`、可空 `next_review_stage VARCHAR(32)`、`last_practice_at TIMESTAMPTZ`、`last_review_id UUID`、`pending_review_id UUID`、`content_hash VARCHAR(64)`。稳定次数CHECK 0–3；阶段仅EARLY_RECALL/CROSS_DAY/FINAL_VERIFICATION；needs_learning与mastered互斥；mastered要求stable_success_count=3。新增user/learning/mastery/due联合索引。
 - `review_lifecycle_commands` 保存 `id,user_id,knowledge_block_id,client_command_id,action,occurred_at,knowledge_block_version,base_version,review_id,rating,duration_seconds,content_hash,request_payload,response_payload,created_at`。请求及冻结回执为TEXT；`(user_id,client_command_id)`唯一。action限定LEARNING_COMPLETED/REVIEW_SELECTED/REVIEW_CONFIRMED/REVIEW_CORRECTED/LEARNING_REOPENED；rating可空或AGAIN/HARD/GOOD；版本及耗时非负；按user/KB/occurred_at/id索引读取审计。
@@ -542,6 +550,20 @@ S1 已通过追加式 `V15__tauri_parsed_document_schema.sql` 落地上述数据
 - 三表不进入 Sync snapshot、change log、client mutation 或通用 TTL。Conversation 用户删除仍软删；显式账号 hard-delete 现有 `DELETE messages` 会 cascade 删除相连 runs/attempts/activities，再删除 conversations，无需额外 SQL。Source 删除不级联 Chat 历史。V42 没有转换、回填或删除历史消息。
 - 迁移源码在 `Auralis-Server/src/main/resources/db/migration/V42__chat_agent_runtime.sql`。retry 使用 run 中锁存的 provider/model/endpoint hash；配置变化时以 `CHAT_PROFILE_CHANGED` 拒绝新 attempt，credential rotation 不改变 profile identity。UNKNOWN 恢复为预分配的 assistant reply 写入 FAILED 消息及最后公开 snapshot，但保留 UNKNOWN run/attempt 状态和 Conversation slot。当前文档记录源码候选；H2/PostgreSQL migration、FK cascade、并发锁序和账号删除测试待统一后端验证。生产业务库未操作。
 
-### 2026-10-29 Chat 私有工具证据（V43 源码候选）
+### 2026-11-05 Chat conversation reading scope（V44）
 
-`V43__chat_private_tool_evidence.sql` 仅在 `chat_attempts` 增加 `private_tool_evidence_json TEXT NOT NULL DEFAULT '[]'`。内容包含成功工具调用/结果和当时 source revision，用于后续模型上下文的历史恢复；不得进入公开消息、snapshot、status/detail、toolTrace、Sync 或客户端 DTO。V43 migration 尚未在业务 PostgreSQL 验证或部署；focused H2/Mock 行为测试覆盖私有持久化与下一轮 provider request 恢复。
+`V44__chat_conversation_reading_scope.sql` adds `conversations.chat_scope_state` (`LEGACY`, `UNBOUND`, `BOUND`, default `LEGACY`) and nullable `chat_scope_json`. Existing conversations remain `LEGACY` without inferred scope. New Chat conversations start `UNBOUND`; the first admitted user turn changes the row to `BOUND` in the same transaction as USER/run persistence. A JSON scope stores retrieval mode, subject/current source IDs, and normalized selected source IDs; owner-wide binding uses `BOUND` with JSON `NULL`. It excludes selection text and ingestion revision so each attempt can capture and validate current owner, subject, READY state, and source revisions. LEGACY history remains readable; new turn/retry admission returns `CHAT_SCOPE_CONFLICT` and requires a new conversation. No history is deleted or auto-converted.
+
+### 2026-10-31 Chat 展示工具私有证据与 READY 快照（无新增 migration）
+
+现有 `chat_attempts.private_tool_evidence_json` 保存 display tool 的实际 arguments、紧凑 tool result 与配对 reasoning（若有），用于下一模型轮次/历史折叠时重建合法 assistant tool-call/result 上下文。Activity READY 的公开 parts、tool trace、私有 evidence、message 与 activity 仍在现有事务中原子持久化；可选 reference 只写既有 `chat_activities.private_reference_json`。Display arguments 计入既有请求/证据容量限制；公开 parts 存规范化 component facts，不暴露 reference。没有新增表、列、migration、进度存储或旧历史转换；旧消息保持原样。
+
+### 2026-10-29 Chat 私有工具证据（V43 migration 历史）
+
+`V43__chat_private_tool_evidence.sql` 仅在 `chat_attempts` 增加 `private_tool_evidence_json TEXT NOT NULL DEFAULT '[]'`。内容包含工具调用/结果、当时 source revision，以及模型显式返回且与该 iteration 工具调用配对的可选 `reasoningContent`，用于后续模型上下文的协议恢复；reasoning 不进入公开消息、snapshot、status/detail、toolTrace、Sync 或客户端 DTO。当前 display tools 复用此列保存实际 arguments、紧凑结果与 reasoning；历史 evidence 没有 reasoning 时，投影为中性事实数据，不构造孤立 tool result 或伪造 reasoning。Chat display rewrite 没有新增数据库结构。V43 migration 尚未在业务 PostgreSQL 验证或部署。
+
+### 2026-10-31 Chat display-tool public parts（无数据库迁移）
+
+Steps、compare、roadmap、chart、quiz、question 的规范化公开 rows 在 `chat_attempts.public_parts_json` 保存，Markdown message content 是相同有序 parts 的确定性投影。Compare item 为 `{title,entries:[{label,text},...]}`。旧 marker-era 历史 parts/message 保留原样，不自动迁移；新渲染协议不提供旧格式转换。没有新增列、表、同步字段或 migration。
+
+验证记录：focused backend suite 126/126，review B0/I0；受限全量排除 `IngestionBudgetCalibrationTests` 后 1036 tests/3F/2E/2S，exit 1，且 `-DskipTests package` exit 0。具体差异及 TLS fixture 限制见[当前状态](../current/Status.md)。未在业务数据库验证或操作。

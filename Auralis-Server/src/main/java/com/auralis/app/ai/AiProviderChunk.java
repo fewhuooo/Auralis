@@ -4,7 +4,8 @@ import com.auralis.app.ai.usage.AiTokenUsage;
 
 public record AiProviderChunk(String content, boolean complete, AiTokenUsage usage,
                               AiProviderModelIdentity modelIdentity, String responseId, Integer toolIndex,
-                              AiProviderToolCallDelta toolCallDelta, String finishReason, boolean terminal) {
+                              AiProviderToolCallDelta toolCallDelta, String finishReason, boolean terminal,
+                              String reasoningContent) {
     public AiProviderChunk {
         modelIdentity = modelIdentity == null ? AiProviderModelIdentity.missing() : modelIdentity;
     }
@@ -20,5 +21,12 @@ public record AiProviderChunk(String content, boolean complete, AiTokenUsage usa
     public AiProviderChunk(String content, boolean complete, AiTokenUsage usage,
                            AiProviderModelIdentity modelIdentity) {
         this(content, complete, usage, modelIdentity, null, null, null, null, complete);
+    }
+
+    public AiProviderChunk(String content, boolean complete, AiTokenUsage usage,
+                           AiProviderModelIdentity modelIdentity, String responseId, Integer toolIndex,
+                           AiProviderToolCallDelta toolCallDelta, String finishReason, boolean terminal) {
+        this(content, complete, usage, modelIdentity, responseId, toolIndex, toolCallDelta,
+                finishReason, terminal, null);
     }
 }

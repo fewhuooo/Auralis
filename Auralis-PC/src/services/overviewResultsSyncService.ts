@@ -2,6 +2,7 @@ import { ApiProblemError } from '@/api/httpError'
 import type {
   FileOverviewRecord, OverviewCacheRecord, OverviewMode,
   OverviewResultCommand, OverviewResultView, OverviewSourceManifestEntry, OverviewSyncState,
+  OverviewSubjectStatusItem, OverviewSubjectStatusesResponse,
 } from '@/types/overview'
 import { createOutlineIdentityInput, hasCompleteOutlineIdentityInput } from './outlineIdentity.ts'
 import { computeSubjectInputFingerprint, isOverviewGenerationEditConflict, type OverviewRepository, type OverviewScopeFenceToken } from './overviewRepository.ts'
@@ -29,6 +30,7 @@ export interface OverviewResultsApi {
   putFile(sourceId: string, command: OverviewResultCommand): Promise<OverviewResultView>
   getSubject(subjectId: string): Promise<OverviewResultView | null>
   putSubject(subjectId: string, command: OverviewResultCommand): Promise<OverviewResultView>
+  getSubjectStatuses(subjectIds: string[]): Promise<OverviewSubjectStatusesResponse>
 }
 
 const lazyOverviewResultsApi: OverviewResultsApi = {
@@ -43,6 +45,9 @@ const lazyOverviewResultsApi: OverviewResultsApi = {
   },
   async putSubject(subjectId, command) {
     return (await import('@/api/useOverviewResultsApi')).useOverviewResultsApi.putSubject(subjectId, command)
+  },
+  async getSubjectStatuses(subjectIds) {
+    return (await import('@/api/useOverviewResultsApi')).useOverviewResultsApi.getSubjectStatuses(subjectIds)
   },
 }
 
@@ -80,7 +85,7 @@ function validCompleteRecord(record: OverviewCacheRecord | null): record is Over
     && record.summary && record.summary.overview.trim())
 }
 
-function versionOrNull(value: number): number | null { return Number.isInteger(value) && value > 0 ? value : null }
+function versionOrNull(value: number): number | null { return Number.isInteger(value) && value >= 0 ? value : null }
 
 function stateFromView(view: OverviewResultView, scopeType: 'FILE' | 'SUBJECT', scopeId: string, revisionKey: string): OverviewSyncState {
   return {
@@ -296,8 +301,30 @@ export class OverviewResultsSyncService {
     const subjectIds = [...new Set([...options.subjectIds, ...outbox.filter(item => item.scopeType === 'SUBJECT' && item.state !== 'STALE'
       && !isOverviewGenerationEditConflict(item)).map(item => item.scopeId)])]
       .filter(id => options.subjectIds.includes(id)).slice(0, MAX_SYNC_SOURCES)
-    await mapBounded(subjectIds,2,async subjectId => {
-      if (options.isCurrent()) await this.syncSubject(subjectId,sources.filter(source => source.subjectId === subjectId),options)
+
+    const statusMap = new Map<string, OverviewSubjectStatusItem>()
+    if (subjectIds.length > 0) {
+      const BATCH_SIZE = 100
+      for (let i = 0; i < subjectIds.length; i += BATCH_SIZE) {
+        if (!options.isCurrent()) return
+        const batchIds = subjectIds.slice(i, i + BATCH_SIZE)
+        const response = await this.api.getSubjectStatuses(batchIds)
+        if (!options.isCurrent()) return
+        for (const item of response.items) {
+          statusMap.set(item.subjectId, item)
+        }
+      }
+    }
+
+    await mapBounded(subjectIds, 2, async subjectId => {
+      if (options.isCurrent()) {
+        await this.syncSubject(
+          subjectId,
+          sources.filter(source => source.subjectId === subjectId),
+          options,
+          statusMap.get(subjectId),
+        )
+      }
     })
   }
 
@@ -450,9 +477,14 @@ export class OverviewResultsSyncService {
     }
   }
 
-  private async syncSubject(subjectId: string, subjectSources: OverviewSyncSource[], options: OverviewSyncOptions): Promise<void> {
+  private async syncSubject(
+    subjectId: string,
+    subjectSources: OverviewSyncSource[],
+    options: OverviewSyncOptions,
+    status?: OverviewSubjectStatusItem,
+  ): Promise<void> {
     if (subjectSources.length > 100) return
-    const fenceToken = this.repository.captureScopeFenceToken('SUBJECT',subjectId)
+    const fenceToken = this.repository.captureScopeFenceToken('SUBJECT', subjectId)
     if (!this.repository.isScopeFenceTokenCurrent(fenceToken)) return
     let intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
       && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
@@ -460,6 +492,35 @@ export class OverviewResultsSyncService {
     const local = await this.repository.getSubjectOverview(subjectId)
     if (!intents.length) {
       if (!this.repository.isScopeFenceTokenCurrent(fenceToken) || !await this.isSubjectCurrent(subjectId, options)) return
+
+      if (status?.status === 'MISSING') {
+        if (validCompleteRecord(local)) await this.repository.enqueueLegacySeed(local)
+        intents = (await this.repository.listOverviewOutbox()).filter(item => item.scopeType === 'SUBJECT'
+          && item.scopeId === subjectId && item.revisionKey === 'subject-v1' && item.state !== 'STALE' && !isOverviewGenerationEditConflict(item))
+        if (!intents.length) return
+        state = await this.repository.getOverviewSyncState('SUBJECT', subjectId, 'subject-v1')
+        await this.flushSubjectIntents(subjectId, subjectSources, state, options, fenceToken)
+        return
+      }
+
+      if (status?.status === 'UNAVAILABLE') {
+        return
+      }
+
+      if (status?.status === 'AVAILABLE') {
+        const isUpToDate = Boolean(
+          state
+          && validCompleteRecord(local)
+          && state.version === status.version
+          && state.outlineVersion === status.outlineVersion
+          && state.summaryVersion === status.summaryVersion
+          && state.updatedAt === status.updatedAt
+        )
+        if (isUpToDate) {
+          return
+        }
+      }
+
       let remote: OverviewResultView | null
       try { remote = await this.api.getSubject(subjectId) }
       catch (error) { if (isMissing(error)) remote = null; else return }
@@ -467,7 +528,7 @@ export class OverviewResultsSyncService {
       if (remote && matchesSubjectView(remote, subjectId)) {
         const fingerprint = await this.subjectContentFingerprint(subjectSources)
         const record = await remoteCacheRecord(remote, 'SUBJECT', subjectId, 'subject-v1', fingerprint)
-        await this.repository.installRemoteOverview(record, stateFromView(remote, 'SUBJECT', subjectId, 'subject-v1'),false,fenceToken)
+        await this.repository.installRemoteOverview(record, stateFromView(remote, 'SUBJECT', subjectId, 'subject-v1'), false, fenceToken)
         return
       }
       if (remote) return

@@ -182,7 +182,7 @@ public class AiUsageGuard implements AiUsageQueryService {
                     diagnoseLimit("GLOBAL_CONCURRENCY", task, stage, provider, model, 1,
                             activeGlobal, limits.globalConcurrent(), activeReset);
                 }
-                throw limit("AI_CONCURRENCY_LIMIT", 429,
+                throw capacityLimit("AI_CONCURRENCY_LIMIT", 429,
                         activeReset == null ? now.plusSeconds(1) : activeReset);
             }
 
@@ -249,6 +249,19 @@ public class AiUsageGuard implements AiUsageQueryService {
                     diagnoseLimit("GLOBAL_DAILY", task, stage, provider, model, requestedTokens, globalDaily,
                             limits.globalDailyTokens(), reset);
                     throw limit("AI_GLOBAL_QUOTA_EXCEEDED", 503, reset);
+                }
+            }
+
+            if (task.feature() == AiFeature.SOURCE_OVERVIEW || task.feature() == AiFeature.SUBJECT_OVERVIEW) {
+                int overviewLimit = Math.max(1, limits.perUserConcurrent() - 1);
+                int activeOverview = count("select count(*) from ai_usage_reservations where user_id=? "
+                        + "and feature in ('SOURCE_OVERVIEW','SUBJECT_OVERVIEW') "
+                        + "and state='RESERVED' and lease_until > ?", task.userId(), sqlTimestamp(now));
+                if (activeOverview >= overviewLimit) {
+                    diagnoseLimit("OVERVIEW_CONCURRENCY", task, stage, provider, model, 1,
+                            activeOverview, overviewLimit, activeReset);
+                    throw capacityLimit("AI_CONCURRENCY_LIMIT", 429,
+                            activeReset == null ? now.plusSeconds(1) : activeReset);
                 }
             }
 
@@ -526,7 +539,19 @@ public class AiUsageGuard implements AiUsageQueryService {
                     return result;
                 }, prepend(sqlTimestamp(clock.instant()), sqlTimestamp(clock.instant()), args));
         if (groups.isEmpty()) throw new DomainException("RESOURCE_NOT_FOUND", "AI task usage is unavailable");
-        return new AiTaskUsageSnapshot(taskId, groups);
+        java.util.Map<AiStage, Long> stageCalls = jdbc.query(
+                "select stage,count(*) calls from ai_usage_reservations where task_id=? and user_id=? "
+                        + "and operation_kind in (" + placeholders + ") and (state='RESERVED' or request_dispatched=true) "
+                        + "group by stage",
+                rs -> {
+                    java.util.Map<AiStage, Long> result = new java.util.EnumMap<>(AiStage.class);
+                    while (rs.next()) {
+                        AiStage stage = AiStage.valueOf(rs.getString("stage"));
+                        result.put(stage, rs.getLong("calls"));
+                    }
+                    return result;
+                }, args.toArray());
+        return new AiTaskUsageSnapshot(taskId, groups, stageCalls);
     }
 
     @Override
@@ -760,6 +785,11 @@ public class AiUsageGuard implements AiUsageQueryService {
     private AiUsageLimitException limit(String code, int status, Instant resetAt) {
         long retry = Math.max(1, Duration.between(clock.instant(), resetAt).toSeconds());
         return new AiUsageLimitException(code, status, retry, resetAt);
+    }
+
+    private AiUsageLimitException capacityLimit(String code, int status, Instant resetAt) {
+        long retry = Math.max(1, Duration.between(clock.instant(), resetAt).toSeconds());
+        return AiUsageLimitException.capacityUnavailable(code, status, retry, resetAt);
     }
 
     private void diagnoseLimit(String dimension, TaskLease task, AiStage stage, AiProviderType provider,

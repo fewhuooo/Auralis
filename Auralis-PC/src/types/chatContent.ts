@@ -9,6 +9,16 @@ export interface ChatTextPart {
   text: string
 }
 
+export interface ChatCompareEntry {
+  readonly label: string
+  readonly text: string
+}
+
+export interface ChatCompareItem {
+  readonly title: string
+  readonly entries: readonly ChatCompareEntry[]
+}
+
 export interface ChatBlockPart {
   id: string
   componentId: string

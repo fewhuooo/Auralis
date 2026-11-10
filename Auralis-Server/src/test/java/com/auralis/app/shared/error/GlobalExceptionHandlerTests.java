@@ -61,8 +61,8 @@ class GlobalExceptionHandlerTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"CHAT_RUN_ACTIVE", "CHAT_PROFILE_CHANGED"})
-    void mapsChatAdmissionAndProfileConflictsTo409(String code) {
+    @ValueSource(strings = {"CHAT_RUN_ACTIVE", "CHAT_SCOPE_CONFLICT", "CHAT_PROFILE_CHANGED", "CHAT_RECOVERY_NOT_ALLOWED"})
+    void mapsChatStateConflictsTo409(String code) {
         var request = new MockHttpServletRequest("POST", "/api/ai/messages/stream");
 
         var response = new GlobalExceptionHandler().handleDomain(

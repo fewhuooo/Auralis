@@ -370,7 +370,15 @@ public class ProviderHttpClient {
             transport.postStream(endpoint, path, apiKey, requestBody, line -> {
                 lineCount.incrementAndGet();
                 responseBytes.addAndGet(line == null ? 0 : line.getBytes(StandardCharsets.UTF_8).length + 1L);
-                lineConsumer.accept(line);
+                try {
+                    lineConsumer.accept(line);
+                } catch (com.auralis.app.ai.AiStreamAbortException abort) {
+                    throw abort;
+                } catch (ProviderStreamDiagnosticException diagnosticFailure) {
+                    throw diagnosticFailure;
+                } catch (RuntimeException callbackFailure) {
+                    throw ProviderStreamDiagnosticException.consumerCallback(callbackFailure);
+                }
             }, connectTimeoutMillis, responseTimeoutMillis, cancellation);
             LOGGER.info(
                     "AI_PROVIDER_HTTP_SUCCESS kind=stream host={} port={} path={} status=2xx lineCount={} responseBytes={} elapsedMs={}",
@@ -378,23 +386,51 @@ public class ProviderHttpClient {
                     elapsedMillis(startedAt));
         } catch (ProviderHttpException exception) {
             LOGGER.warn(
-                    "AI_PROVIDER_HTTP_FAILED kind=stream host={} port={} path={} status={} lineCount={} responseBytes={} elapsedMs={}",
-                    endpoint.host(), endpoint.port(), path, exception.status(), lineCount.get(), responseBytes.get(),
+                    "AI_PROVIDER_HTTP_FAILED kind=stream phase=http_status host={} port={} path={} status={} errorType={} errorCode=none causeType=none lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.status(), exception.getClass().getSimpleName(),
+                    lineCount.get(), responseBytes.get(),
+                    elapsedMillis(startedAt));
+            throw exception;
+        } catch (ProviderStreamDiagnosticException exception) {
+            LOGGER.warn(
+                    "AI_PROVIDER_HTTP_FAILED kind=stream phase={} host={} port={} path={} errorType={} errorCode={} causeType={} lineCount={} responseBytes={} elapsedMs={}",
+                    exception.phase(), endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(),
+                    safeErrorCode(exception), safeCauseType(exception), lineCount.get(), responseBytes.get(),
                     elapsedMillis(startedAt));
             throw exception;
         } catch (IOException exception) {
             LOGGER.warn(
-                    "AI_PROVIDER_HTTP_FAILED kind=stream host={} port={} path={} errorType={} lineCount={} responseBytes={} elapsedMs={}",
-                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(), lineCount.get(),
+                    "AI_PROVIDER_HTTP_FAILED kind=stream phase=transport host={} port={} path={} errorType={} errorCode=none causeType={} lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(),
+                    safeCauseType(exception), lineCount.get(),
                     responseBytes.get(), elapsedMillis(startedAt));
             throw exception;
         } catch (RuntimeException exception) {
             LOGGER.warn(
-                    "AI_PROVIDER_HTTP_FAILED kind=stream host={} port={} path={} errorType={} lineCount={} responseBytes={} elapsedMs={}",
-                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(), lineCount.get(),
+                    "AI_PROVIDER_HTTP_FAILED kind=stream phase=transport host={} port={} path={} errorType={} errorCode={} causeType={} lineCount={} responseBytes={} elapsedMs={}",
+                    endpoint.host(), endpoint.port(), path, exception.getClass().getSimpleName(),
+                    safeErrorCode(exception), safeCauseType(exception), lineCount.get(),
                     responseBytes.get(), elapsedMillis(startedAt));
             throw exception;
         }
+    }
+
+    private String safeErrorCode(Throwable throwable) {
+        if (throwable instanceof ProviderStreamDiagnosticException diagnostic
+                && diagnostic.diagnosticErrorCode() != null) {
+            return diagnostic.diagnosticErrorCode();
+        }
+        for (Throwable current = throwable; current != null; current = current.getCause()) {
+            if (current instanceof com.auralis.app.shared.error.DomainException domainException) {
+                return domainException.code();
+            }
+        }
+        return "none";
+    }
+
+    private String safeCauseType(Throwable throwable) {
+        Throwable cause = throwable.getCause();
+        return cause == null ? "none" : cause.getClass().getSimpleName();
     }
 
     private static final class HttpsUrlConnectionTransport implements ProviderHttpTransport {

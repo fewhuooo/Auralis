@@ -170,3 +170,72 @@ test('avatar offline caching integrates IndexedDB with auth store and Profile', 
   // avatarCache guards
   assert.match(cacheSource, /blob\.size\s*>\s*0/, 'Cache must verify non-empty blob')
 })
+
+test('hasAvatar contract skips avatar fetch when false, queries when true, and synchronizes state', async () => {
+  const [storeSource, profileSource, schemaSource] = await Promise.all([
+    readFile(new URL('../src/store/useAuthStore.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/views/Profile/index.vue', import.meta.url), 'utf8'),
+    readFile(new URL('../src/api/generated/schema.ts', import.meta.url), 'utf8'),
+  ])
+
+  // Schema verification: hasAvatar is required boolean in UserView
+  const userViewSchema = schemaSource.slice(schemaSource.indexOf('UserView: {'), schemaSource.indexOf('AiSettingsCommand: {'))
+  assert.match(userViewSchema, /hasAvatar:\s*boolean;/, 'UserView schema must define required boolean hasAvatar')
+
+  // Auth store loadAvatar behavior: skips getAvatarBlob when hasAvatar is false
+  assert.match(
+    storeSource,
+    /user\.value\s*&&\s*user\.value\.hasAvatar\s*===\s*false[\s\S]*?invalidateAvatarRequest\(\)[\s\S]*?clearAvatarDisplay\(\)[\s\S]*?await\s+deleteAvatarCache\(requestedUserId\)[\s\S]*?return\s*['"]['"]/,
+    'loadAvatar must skip getAvatarBlob, clear display and delete cache when hasAvatar === false',
+  )
+
+  // Auth store loadAvatar behavior: only GETs avatar when hasAvatar === true
+  assert.match(
+    storeSource,
+    /user\.value\?\.hasAvatar\s*===\s*true[\s\S]*?useAuthApi\.getAvatarBlob\(\)/,
+    'loadAvatar must only call getAvatarBlob when hasAvatar === true',
+  )
+
+  // Auth store 404 error handling sets hasAvatar to false and clears display/cache
+  assert.match(
+    storeSource,
+    /status\s*===\s*404[\s\S]*?hasAvatar\s*=\s*false[\s\S]*?clearAvatarDisplay\(\)[\s\S]*?await\s+deleteAvatarCache\(requestedUserId\)/,
+    '404 on getAvatarBlob must set hasAvatar = false and clear avatar display and cache',
+  )
+
+  // setAvatarFromBlob and clearAvatar maintain hasAvatar
+  assert.match(
+    storeSource,
+    /async\s+function\s+setAvatarFromBlob[\s\S]*?user\.value\.hasAvatar\s*=\s*true/,
+    'setAvatarFromBlob must set hasAvatar = true for the matched user',
+  )
+  assert.match(
+    storeSource,
+    /async\s+function\s+clearAvatar[\s\S]*?user\.value\.hasAvatar\s*=\s*false/,
+    'clearAvatar must set hasAvatar = false for the matched user',
+  )
+
+  // fetchMe handles hasAvatar transitions
+  assert.match(
+    storeSource,
+    /me\.hasAvatar\s*===\s*false[\s\S]*?clearAvatarDisplay\(\)[\s\S]*?deleteAvatarCache\(me\.id\)[\s\S]*?me\.hasAvatar\s*===\s*true[\s\S]*?loadAvatar\(\)/,
+    'fetchMe must clear avatar when me.hasAvatar is false and trigger loadAvatar when true',
+  )
+
+  // Profile/index.vue syncs hasAvatar on upload, reset, and profile update
+  assert.match(
+    profileSource,
+    /useAuthApi\.uploadAvatar\(file\)[\s\S]*?authStore\.user\.hasAvatar\s*=\s*true/,
+    'Profile must set authStore.user.hasAvatar = true upon avatar upload',
+  )
+  assert.match(
+    profileSource,
+    /useAuthApi\.resetAvatar\(\)[\s\S]*?authStore\.user\.hasAvatar\s*=\s*false/,
+    'Profile must set authStore.user.hasAvatar = false upon avatar reset',
+  )
+  assert.match(
+    profileSource,
+    /useAuthApi\.updateProfile[\s\S]*?authStore\.user\.hasAvatar\s*=\s*updated\.hasAvatar/,
+    'Profile must synchronize authStore.user.hasAvatar = updated.hasAvatar upon profile update',
+  )
+})

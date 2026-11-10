@@ -65,7 +65,7 @@
     </nav>
 
     <!-- ===== TIER-2: Expandable Drawer ===== -->
-    <aside class="tier2-drawer" :class="{ 'is-open': tier2Open }" :style="{ width: tier2Open ? tier2Width + '%' : '0px' }">
+    <aside class="tier2-drawer" :class="{ 'is-open': tier2Open, 'is-resizing': isResizing }" :style="{ width: tier2Open ? tier2Width + '%' : '0px' }">
       <!-- Files Mode -->
       <div v-if="tier2Mode === 'files'" class="drawer-content">
         <div class="drawer-header">
@@ -654,6 +654,7 @@
                 v-for="block in filteredBlocks"
                 :key="block.id"
                 class="block-card"
+                :class="{ 'is-selected': selectedBlock?.id === block.id }"
                 role="button"
                 tabindex="0"
                 :aria-label="`查看知识块 ${block.title || '未命名知识块'}`"
@@ -777,16 +778,16 @@
     <div class="resizer" v-show="!rightCollapsed" @mousedown="startResizeRight"></div>
 
     <!-- ===== RIGHT: AI Assistant ===== -->
-    <aside class="workspace-right" :class="{ 'is-open': !rightCollapsed }" :style="{ width: !rightCollapsed ? rightWidth + '%' : '0px' }">
+    <aside class="workspace-right" :class="{ 'is-open': !rightCollapsed, 'is-resizing': isResizing }" :style="{ width: !rightCollapsed ? rightWidth + '%' : '0px' }">
       <div class="ai-header">
         <button
           class="ai-model-switch ai-file-switch"
-          :title="aiSourceSummaryTitle"
-          @click="showModelMenu = !showModelMenu"
+          :title="isScopeLocked ? '当前对话已固定参考资料范围（如需更换请点击右上角刷新开启新对话）' : aiSourceSummaryTitle"
+          @click="handleScopeSwitchClick"
         >
           <span class="model-icon-top">
             <IconSparkles v-if="isAllAiSourcesSelected" :size="15" :stroke-width="1.8" />
-            <IconFiles v-else-if="selectedAiSourceIds.length > 1" :size="15" :stroke-width="1.8" />
+            <IconFiles v-else-if="aiSourceSelectedCount > 1" :size="15" :stroke-width="1.8" />
             <IconFileText v-else :size="15" :stroke-width="1.8" />
           </span>
           <span class="model-text">{{ aiSourceSummaryText }}</span>
@@ -833,13 +834,19 @@
             </div>
           </template>
         </div>
-        <button class="ai-clear" @click="clearChat" title="清空对话" aria-label="清空对话">
+        <button class="ai-clear" @click="clearChat" title="刷新对话（开启新对话）" aria-label="刷新对话">
           <IconRotate :size="16" :stroke-width="2" />
         </button>
       </div>
 
         <!-- Chat Flow -->
-        <div class="ai-messages" ref="chatScrollRef">
+        <div
+          class="ai-messages"
+          ref="chatScrollRef"
+          @wheel="handleChatWheel"
+          @touchstart.passive="handleTouchStart"
+          @touchmove.passive="handleTouchMove"
+        >
           <div class="ai-welcome" v-if="chatMessages.length === 0">
             <div class="ai-brand-wrap" aria-hidden="true">
               <div class="ai-spark-ring" style="display: none;"></div>
@@ -872,18 +879,11 @@
           </div>
         
         <div
-          v-for="(msg, i) in chatMessages"
-          :key="i"
+          v-for="msg in chatMessages"
+          :key="msg.id"
           class="chat-msg-row"
           :class="msg.role"
         >
-          <div class="assistant-spark-avatar" v-if="msg.role === 'assistant'" aria-hidden="true">
-            <svg viewBox="0 0 52 52" fill="none">
-              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-avatar-gradient)" />
-              <defs><linearGradient id="workspace-ai-avatar-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#8B9A6E" /><stop offset="1" stop-color="#76855B" /></linearGradient></defs>
-            </svg>
-          </div>
-
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
               <div class="chat-content" v-if="msg.role === 'user'">
@@ -894,44 +894,96 @@
                 <div>{{ msg.content }}</div>
               </div>
               <div class="chat-content ai-reply" v-else>
-                <ChatContentRenderer :parts="msg.parts" :busy="isAiStreaming" @submit="submitChatActivity" />
-                <div v-for="tool in msg.tools || []" :key="tool.id" class="chat-tool-capsule" :data-status="tool.status">{{ tool.name }} · {{ tool.status === 'RUNNING' ? '运行中' : tool.status === 'FAILED' ? '失败' : '完成' }}</div>
+                <ChatProcessArea
+                  v-if="msg.reasoningText || (msg.tools && msg.tools.length > 0)"
+                  :reasoning="msg.reasoningText"
+                  :tools="msg.tools"
+                  :streaming="false"
+                  :has-content="true"
+                />
+                <ChatContentRenderer :parts="msg.parts" :streaming="false" :busy="isAiStreaming" @submit="submitChatActivity" />
                 <div class="chat-msg-citations" v-if="msg.citationFileNames && msg.citationFileNames.length > 0">
-                  <div class="citation-title">参考资料：</div>
-                  <ul class="citation-list">
-                    <li v-for="fileName in msg.citationFileNames" :key="fileName">{{ fileName }}</li>
-                  </ul>
+                  <div class="citation-title">
+                    <IconFileText :size="12" :stroke-width="2" class="citation-title-icon" />
+                    <span>参考资料</span>
+                    <span class="citation-count">{{ msg.citationFileNames.length }}</span>
+                  </div>
+                  <div class="citation-chips">
+                    <button
+                      v-for="(fileName, idx) in msg.citationFileNames"
+                      :key="fileName"
+                      type="button"
+                      class="citation-chip"
+                      :title="`定位并查看: ${fileName}`"
+                      @click="handleCitationClick(fileName)"
+                    >
+                      <span class="citation-idx">[{{ idx + 1 }}]</span>
+                      <span class="citation-name">{{ fileName }}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="chatStore.recoverableTarget && chatStore.recoverableTarget.attemptId === msg.attemptId" class="chat-msg-interrupted-bar is-unknown">
+                  <span class="interrupted-hint">执行状态未知</span>
+                  <button type="button" class="chat-retry-reply-btn" :disabled="chatStore.isRecovering" @click="handleRecoverUnknown">
+                    <IconRotate :size="12" :stroke-width="2" />
+                    <span>{{ chatStore.isRecovering ? '恢复中...' : '恢复状态' }}</span>
+                  </button>
+                </div>
+                <div v-else-if="(msg.status === 'FAILED' || msg.status === 'INTERRUPTED') && !isAiStreaming" class="chat-msg-interrupted-bar">
+                  <span class="interrupted-hint">{{ msg.status === 'FAILED' ? '生成失败' : '回复未完整输出' }}</span>
+                  <button type="button" class="chat-retry-reply-btn" @click="handleRetryAssistantMessage(msg.id)">
+                    <IconRotate :size="12" :stroke-width="2" />
+                    <span>重试回复</span>
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="chat-msg-row assistant" v-if="isAiStreaming">
-          <div class="assistant-spark-avatar" aria-hidden="true">
-            <svg viewBox="0 0 52 52" fill="none">
-              <path d="M26 4C26 4 27.8 16 32 20.5C36.2 25 48 26 48 26C48 26 36.2 27 32 31.5C27.8 36 26 48 26 48C26 48 24.2 36 20 31.5C15.8 27 4 26 4 26C4 26 15.8 25 20 20.5C24.2 16 26 4 26 4Z" fill="url(#workspace-ai-stream-gradient)" />
-              <defs><linearGradient id="workspace-ai-stream-gradient" x1="4" y1="4" x2="48" y2="48"><stop stop-color="#8B9A6E" /><stop offset="1" stop-color="#76855B" /></linearGradient></defs>
-            </svg>
-          </div>
+        <div class="chat-msg-row assistant" v-if="isAiDisplayStreaming">
           <div class="chat-bubble-wrapper">
             <div class="chat-bubble">
-              <div class="ai-typing-dots" v-if="!streamingContent" aria-label="AI 正在思考">
-                <span class="ai-typing-dot"></span><span class="ai-typing-dot"></span><span class="ai-typing-dot"></span>
-              </div>
-              <div class="chat-content ai-reply" v-else>
-                <ChatContentRenderer :parts="streamingParts" :busy="isAiStreaming" @submit="submitChatActivity" />
-                <div v-for="tool in streamingTools" :key="tool.id" class="chat-tool-capsule" :data-status="tool.status">{{ tool.name }} · {{ tool.status === 'RUNNING' ? '运行中' : tool.status === 'FAILED' ? '失败' : '完成' }}</div>
-                <span class="typing-cursor"></span>
+              <div class="chat-content ai-reply">
+                <ChatProcessArea
+                  v-if="(isAiDisplayStreaming && !streamingContent && streamingParts.length === 0) || Boolean(streamingReasoning) || (streamingTools && streamingTools.length > 0)"
+                  :reasoning="streamingReasoning"
+                  :tools="streamingTools"
+                  :streaming="isAiStreaming"
+                  :has-content="Boolean(streamingContent || streamingParts.length > 0)"
+                  @complete="handleThinkingComplete"
+                />
+                <template v-if="isThinkingComplete && (streamingContent || streamingParts.length > 0)">
+                  <ChatContentRenderer :parts="streamingParts" :streaming="isAiStreaming" :busy="isAiDisplayStreaming" @submit="submitChatActivity" />
+                  <span class="typing-cursor" v-if="isAiStreaming"></span>
+                </template>
               </div>
             </div>
           </div>
         </div>
 
-        <div v-if="chatStore.lastError" class="chat-error" role="alert">
+        <div v-if="chatStore.recoverableTarget" class="chat-recover-banner" role="alert">
+          <span class="chat-recover-message">当前会话执行状态未知，请恢复状态以释放会话。</span>
+          <button
+            type="button"
+            class="chat-recover-btn"
+            :disabled="chatStore.isRecovering"
+            @click="handleRecoverUnknown"
+          >
+            {{ chatStore.isRecovering ? '正在恢复...' : '恢复状态' }}
+          </button>
+        </div>
+        <div v-else-if="chatStore.lastError" class="chat-error" role="alert">
           <span class="chat-error-message">{{ chatStore.lastError }}</span>
           <button
-            v-if="pendingChatMessage"
+            v-if="chatStore.lastErrorCode === 'CHAT_SCOPE_CONFLICT' || chatStore.lastErrorCode === 'CHAT_SCOPE_LEGACY'"
+            type="button"
+            class="chat-error-retry"
+            @click="clearChat"
+          >开启新会话</button>
+          <button
+            v-else-if="pendingChatMessage"
             type="button"
             class="chat-error-retry"
             :disabled="isAiStreaming"
@@ -939,6 +991,20 @@
           >重试</button>
         </div>
       </div>
+
+      <!-- 意图感知磁吸悬浮胶囊：向上滚动时脱离自动跟随，浮现平滑小胶囊 -->
+      <Transition name="scroll-pill-fade">
+        <button
+          v-if="isAiStreaming && isAutoScrollLocked"
+          type="button"
+          class="chat-scroll-resume-pill"
+          @click="resumeAutoScroll"
+        >
+          <span class="resume-pill-pulse-dot" />
+          <span class="resume-pill-arrow">↓</span>
+          <span class="resume-pill-text">正在生成后续内容</span>
+        </button>
+      </Transition>
 
       <!-- Input Box -->
       <div class="ai-input-area">
@@ -971,7 +1037,8 @@
             ref="chatInputRef"
             v-model="chatInput"
             class="ai-input"
-            :placeholder="quotedSelection ? '针对引用的内容输入问题，或直接发送...' : '问问 Auralis AI...'"
+            :placeholder="chatStore.isLegacySession ? '此历史会话未绑定资料范围，请开启新会话' : (quotedSelection ? '针对引用的内容输入问题，或直接发送...' : '问问 Auralis AI...')"
+            :disabled="chatStore.isLegacySession"
             rows="1"
             @keydown.enter.exact="handleChatKeydown"
             @compositionstart="handleCompositionStart"
@@ -981,10 +1048,10 @@
           <button
             class="ai-send-btn"
             :class="{ 'is-ready': chatInput.trim() || quotedSelection }"
-            :disabled="!isAiStreaming && (!chatInput.trim() && !quotedSelection)"
+            :disabled="(!isAiStreaming && (!chatInput.trim() && !quotedSelection)) || Boolean(chatStore.recoverableTarget) || chatStore.isLegacySession"
             @click="isAiStreaming ? chatStore.requestCancel() : sendChat()"
-            :title="isAiStreaming ? '停止生成' : '发送消息'"
-            :aria-label="isAiStreaming ? '停止生成' : '发送消息'"
+            :title="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
+            :aria-label="chatStore.isLegacySession ? '此历史会话未绑定资料范围，不可继续提问' : (chatStore.recoverableTarget ? '会话状态未知，请先点击恢复状态' : (isAiStreaming ? '停止生成' : '发送消息'))"
           >
             <IconX v-if="isAiStreaming" :size="16" :stroke-width="2" />
             <IconArrowUp v-else :size="16" :stroke-width="2" />
@@ -1099,6 +1166,7 @@ import 'element-plus/theme-chalk/el-option.css'
 
 import FilePreview from '@/components/FilePreview.vue'
 import ChatContentRenderer from '@/components/chat/ChatContentRenderer.vue'
+import ChatProcessArea from '@/components/chat/ChatProcessArea.vue'
 import DocumentProcessingDot from '@/components/documentProcessing/DocumentProcessingDot.vue'
 import DocumentNotReadyDialog from '@/components/documentProcessing/DocumentNotReadyDialog.vue'
 import KnowledgeBlockEditor from '@/components/knowledge/KnowledgeBlockEditor.vue'
@@ -1151,9 +1219,19 @@ const {
   messages: storedChatMessages,
   isStreaming: storedChatStreaming,
   streamingContent: storedStreamingContent,
+  streamingReasoning: storedStreamingReasoning,
+  streamingParts: storedStreamingParts,
+  streamingTools: storedStreamingTools,
   pendingMessage: storedPendingMessage,
 } = storeToRefs(chatStore)
 const taskStore = useTaskStore()
+const isScopeLocked = computed(() => Boolean(chatStore.isBoundSession || chatStore.isLegacySession))
+const boundScope = computed(() => {
+  if (isScopeLocked.value && chatStore.activeSession?.chatScope) {
+    return chatStore.activeSession.chatScope
+  }
+  return null
+})
 
 const subjectId = computed(() => route.params.id as string)
 const timeAgo = (iso: string) => {
@@ -1239,9 +1317,11 @@ const toggleTier2Panel = () => { tier2Open.value = !tier2Open.value }
 // ===== Left Resizer =====
 const tier2Width = ref(25)
 const rightWidth = ref(25)
+const isResizing = ref(false)
 
 const startResizeLeft = (e: MouseEvent) => {
   e.preventDefault()
+  isResizing.value = true
   const startX = e.clientX
   const startW = tier2Width.value
   const containerEl = document.querySelector('.workspace-container')
@@ -1251,7 +1331,13 @@ const startResizeLeft = (e: MouseEvent) => {
     const deltaPercent = (deltaX / containerWidth) * 100
     tier2Width.value = Math.max(15, Math.min(45, startW + deltaPercent))
   }
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.cursor = ''; document.body.style.userSelect = '' }
+  const onUp = () => {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onMove)
@@ -1260,6 +1346,7 @@ const startResizeLeft = (e: MouseEvent) => {
 
 const startResizeRight = (e: MouseEvent) => {
   e.preventDefault()
+  isResizing.value = true
   const startX = e.clientX
   const startW = rightWidth.value
   const containerEl = document.querySelector('.workspace-container')
@@ -1269,7 +1356,13 @@ const startResizeRight = (e: MouseEvent) => {
     const deltaPercent = (deltaX / containerWidth) * 100
     rightWidth.value = Math.max(15, Math.min(45, startW - deltaPercent))
   }
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); document.body.style.cursor = ''; document.body.style.userSelect = '' }
+  const onUp = () => {
+    isResizing.value = false
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onMove)
@@ -1696,19 +1789,48 @@ const openOverviewLocator = async ({ fileId }: { fileId: string }) => {
 
 const regenerateFileOverview = async ({ fileId, mode }: { fileId: string; mode: 'OUTLINE' | 'ALL' }) => {
   const launchSubjectId = subjectId.value
-  if (!await ensureOverviewRuntime() || !overviewGeneration) return
-  if (!isComponentMounted || subjectId.value !== launchSubjectId || !activeSourceFiles.value.some(file => file.id === fileId)) return
-  await runManualOverview({ kind: 'file', id: fileId }, overviewGeneration.regenerateFileOverview(fileId, mode))
+  setFileGenerating(fileId, true)
+  try {
+    if (!await ensureOverviewRuntime() || !overviewGeneration) {
+      setFileGenerating(fileId, false)
+      return
+    }
+    if (!isComponentMounted || subjectId.value !== launchSubjectId || !activeSourceFiles.value.some(file => file.id === fileId)) {
+      setFileGenerating(fileId, false)
+      return
+    }
+    await runManualOverview({ kind: 'file', id: fileId }, overviewGeneration.regenerateFileOverview(fileId, mode))
+  } catch (e) {
+    setFileGenerating(fileId, false)
+    throw e
+  }
 }
 
 const regenerateSelectedSummary = async (instruction?: string) => {
   const scope = selectedSummaryScope.value
-  if (!scope || !await ensureOverviewRuntime() || !overviewGeneration) return
-  if (!isComponentMounted || selectedSummaryScope.value?.kind !== scope.kind || selectedSummaryScope.value?.id !== scope.id) return
-  if (scope.kind === 'subject') {
-    await runManualOverview(scope, overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction))
-  } else {
-    await runManualOverview(scope, overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction))
+  if (!scope) return
+  if (scope.kind === 'subject') subjectOverviewGenerating.value = true
+  else setFileGenerating(scope.id, true)
+  try {
+    if (!await ensureOverviewRuntime() || !overviewGeneration) {
+      if (scope.kind === 'subject') subjectOverviewGenerating.value = false
+      else setFileGenerating(scope.id, false)
+      return
+    }
+    if (!isComponentMounted || selectedSummaryScope.value?.kind !== scope.kind || selectedSummaryScope.value?.id !== scope.id) {
+      if (scope.kind === 'subject') subjectOverviewGenerating.value = false
+      else setFileGenerating(scope.id, false)
+      return
+    }
+    if (scope.kind === 'subject') {
+      await runManualOverview(scope, overviewGeneration.regenerateSubjectOverview(scope.id, 'SUMMARY', instruction))
+    } else {
+      await runManualOverview(scope, overviewGeneration.regenerateFileOverview(scope.id, 'SUMMARY', instruction))
+    }
+  } catch (e) {
+    if (scope.kind === 'subject') subjectOverviewGenerating.value = false
+    else setFileGenerating(scope.id, false)
+    throw e
   }
 }
 
@@ -1724,7 +1846,7 @@ const selectFile = async (id: string) => {
   selectedSummaryScope.value = null
   centerView.value = 'preview'
   const file = activeSourceFiles.value.find((item) => item.id === id)
-  if (file) {
+  if (file && !isScopeLocked.value) {
     selectedAiSourceIds.value = [id]
     aiReferenceScope.value = 'AUTO'
     if (!chatStore.activeSession) {
@@ -2256,18 +2378,42 @@ const handleOutlineAi = async () => {
   const launchSubjectId = subjectId.value
   tier2Open.value = true
   subjectOverviewCollapsed.value = false
-  if (!await ensureOverviewRuntime() || !overviewGeneration) return
-  if (!isComponentMounted || subjectId.value !== launchSubjectId) return
-  await runManualOverview({ kind: 'subject', id: launchSubjectId }, overviewGeneration.regenerateSubjectOverview(launchSubjectId, 'ALL'))
+  subjectOverviewGenerating.value = true
+  try {
+    if (!await ensureOverviewRuntime() || !overviewGeneration) {
+      subjectOverviewGenerating.value = false
+      return
+    }
+    if (!isComponentMounted || subjectId.value !== launchSubjectId) {
+      subjectOverviewGenerating.value = false
+      return
+    }
+    await runManualOverview({ kind: 'subject', id: launchSubjectId }, overviewGeneration.regenerateSubjectOverview(launchSubjectId, 'ALL'))
+  } catch (e) {
+    subjectOverviewGenerating.value = false
+    throw e
+  }
 }
 
 const handleSubjectOutlineRegenerate = async () => {
   const launchSubjectId = subjectId.value
   tier2Open.value = true
   subjectOverviewCollapsed.value = false
-  if (!await ensureOverviewRuntime() || !overviewGeneration) return
-  if (!isComponentMounted || subjectId.value !== launchSubjectId) return
-  await runManualOverview({ kind: 'subject', id: launchSubjectId }, overviewGeneration.regenerateSubjectOverview(launchSubjectId, 'OUTLINE'))
+  subjectOverviewGenerating.value = true
+  try {
+    if (!await ensureOverviewRuntime() || !overviewGeneration) {
+      subjectOverviewGenerating.value = false
+      return
+    }
+    if (!isComponentMounted || subjectId.value !== launchSubjectId) {
+      subjectOverviewGenerating.value = false
+      return
+    }
+    await runManualOverview({ kind: 'subject', id: launchSubjectId }, overviewGeneration.regenerateSubjectOverview(launchSubjectId, 'OUTLINE'))
+  } catch (e) {
+    subjectOverviewGenerating.value = false
+    throw e
+  }
 }
 
 // ===== Knowledge Blocks =====
@@ -2402,7 +2548,12 @@ const themeColors = [
   { name: '黄', value: 'rgba(230,223,216,0.5)' }
 ]
 
-const handleBlockClick = (b: any) => { selectedBlock.value = b; isEditMode.value = false; blockDialogVisible.value = true }
+const handleBlockClick = (b: any) => {
+  selectedBlock.value = b
+  isCreateMode.value = false
+  isEditMode.value = false
+  blockDialogVisible.value = true
+}
 const openCreateDialog = () => { selectedBlock.value = null; isEditMode.value = true; isCreateMode.value = true; blockDialogVisible.value = true }
 const blockDialogMode = computed<'view' | 'edit' | 'create'>({
   get: () => {
@@ -2438,7 +2589,7 @@ const handleSaveBlockFromDialog = async (data: {
     return
   }
   if (isCreateMode.value) {
-    await blockStore.addBlock({
+    const newId = await blockStore.addBlock({
       subject: data.subject || activeSubject.value?.name || '',
       title: data.title,
       content: data.content,
@@ -2449,6 +2600,10 @@ const handleSaveBlockFromDialog = async (data: {
       sourceFileId: selectedSourceId.value || undefined
     })
     ElNotification({ title: '已录入', type: 'success', position: 'top-right' })
+    const createdBlock = recentBlocks.value.find((b) => b.id === newId)
+    if (createdBlock) {
+      selectedBlock.value = createdBlock
+    }
   } else {
     await blockStore.updateBlock({
       ...selectedBlock.value,
@@ -2458,6 +2613,15 @@ const handleSaveBlockFromDialog = async (data: {
       color: data.color,
       time: new Date().toLocaleString()
     })
+    if (selectedBlock.value) {
+      selectedBlock.value = {
+        ...selectedBlock.value,
+        title: data.title,
+        content: data.content,
+        color: data.color,
+        time: new Date().toLocaleString()
+      }
+    }
     ElNotification({ title: '已更新', type: 'success', position: 'top-right' })
   }
   closeBlockDialog()
@@ -2465,9 +2629,19 @@ const handleSaveBlockFromDialog = async (data: {
 
 const closeBlockDialog = () => {
   blockDialogVisible.value = false
+  isCreateMode.value = false
+  isEditMode.value = false
 }
 
-const handleDeleteBlock = async (id: string) => { if (!id || !confirm('确定删除？')) return; await blockStore.removeBlock(id); blockDialogVisible.value = false; ElNotification({ title: '已删除', type: 'success', position: 'top-right' }) }
+const handleDeleteBlock = async (id: string) => {
+  if (!id || !confirm('确定删除？')) return
+  await blockStore.removeBlock(id)
+  if (selectedBlock.value?.id === id) {
+    selectedBlock.value = null
+  }
+  closeBlockDialog()
+  ElNotification({ title: '已删除', type: 'success', position: 'top-right' })
+}
 const handleCopyBlockContent = (c: string) => { if (c) { navigator.clipboard.writeText(c); ElNotification({ title: '已复制', type: 'success', position: 'top-right', duration: 2000 }) } }
 const copiedBlockId = ref<string | null>(null)
 let copyTimeout: ReturnType<typeof setTimeout> | null = null
@@ -2508,31 +2682,107 @@ const sendPreset = (q: string) => {
 
 
 // ===== AI Chat (Right Panel) =====
-interface ChatMsg { role: 'user' | 'assistant'; content: string; parts: import('@/types/chatContent').ChatContentPart[]; tools?: readonly { id: string; name: string; status: string }[]; quoteText?: string; citationFileNames?: string[] }
-const chatMessages = computed<ChatMsg[]>(() => storedChatMessages.value
-  .filter((message) => (message.role === 'USER' || message.role === 'ASSISTANT') && !(message.role === 'ASSISTANT' && message.status === 'PENDING'))
-  .map((message) => ({
+interface ChatMsg {
+  id: string
+  role: 'user' | 'assistant'
+  status?: import('@/store/useChatStore').ChatMessage['status']
+  content: string
+  parts: import('@/types/chatContent').ChatContentPart[]
+  reasoningText?: string
+  tools?: readonly import('@/services/aiStreamReducer').ChatToolActivity[]
+  quoteText?: string
+  citationFileNames?: string[]
+  runId?: string
+  attemptId?: string
+}
+const isStreamSettling = ref(false)
+let streamSettleTimer: ReturnType<typeof setTimeout> | null = null
+const isAiStreaming = computed(() => storedChatStreaming.value)
+const isAiDisplayStreaming = computed(() => storedChatStreaming.value || isStreamSettling.value)
+
+const chatMessages = computed<ChatMsg[]>(() => {
+  let list = storedChatMessages.value.filter(
+    (message) => (message.role === 'USER' || message.role === 'ASSISTANT') && !(message.role === 'ASSISTANT' && message.status === 'PENDING')
+  )
+  if (isStreamSettling.value) {
+    // 思考链收起动效缓冲期内，最后一条刚完成的助手消息仍在活跃流气泡内执行收回动效，暂不在历史列表并存展示
+    const lastAssistantIdx = list.map((m) => m.role).lastIndexOf('ASSISTANT')
+    if (lastAssistantIdx >= 0) {
+      list = list.filter((_, idx) => idx !== lastAssistantIdx)
+    }
+  }
+  return list.map((message) => ({
+    id: message.id,
     role: message.role === 'USER' ? 'user' : 'assistant',
+    status: message.status,
     content: message.content,
     parts: message.parts,
+    reasoningText: message.reasoningText,
     tools: message.tools,
     quoteText: message.requestOptions?.selectionText,
     citationFileNames: [],
-  })))
+    runId: message.runId,
+    attemptId: message.attemptId,
+  }))
+})
 const pendingChatMessage = computed(() => storedPendingMessage.value)
 const chatInput = ref('')
-const isAiStreaming = computed(() => storedChatStreaming.value)
 const streamingContent = computed(() => storedStreamingContent.value)
-const streamingParts = computed(() => [...storedChatMessages.value].reverse().find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING')?.parts || [])
-const streamingTools = computed(() => [...storedChatMessages.value].reverse().find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING')?.tools || [])
+const streamingReasoning = computed(() => {
+  if (!isAiDisplayStreaming.value) return ''
+  if (storedStreamingReasoning.value) return storedStreamingReasoning.value
+  // 仅在真实流已结束但处于 450ms 收起动效缓冲期时，才回退显示刚完成的助手消息以保持平滑过渡
+  if (isStreamSettling.value && !isAiStreaming.value) {
+    const target = [...storedChatMessages.value].reverse().find((m) => m.role === 'ASSISTANT')
+    return target?.reasoningText || ''
+  }
+  return ''
+})
+const streamingParts = computed(() => {
+  if (!isAiDisplayStreaming.value) return []
+  if (storedStreamingParts.value && storedStreamingParts.value.length > 0) {
+    return storedStreamingParts.value
+  }
+  // 仅在真实流已结束但处于 450ms 收起动效缓冲期时，才回退显示刚完成的助手消息以保持平滑过渡
+  if (isStreamSettling.value && !isAiStreaming.value) {
+    const target = [...storedChatMessages.value].reverse().find((m) => m.role === 'ASSISTANT')
+    return target?.parts || []
+  }
+  return []
+})
+const streamingTools = computed(() => {
+  if (!isAiDisplayStreaming.value) return []
+  if (storedStreamingTools.value && storedStreamingTools.value.length > 0) {
+    return storedStreamingTools.value
+  }
+  // 仅在真实流已结束但处于 450ms 收起动效缓冲期时，才回退显示刚完成的助手消息以保持平滑过渡
+  if (isStreamSettling.value && !isAiStreaming.value) {
+    const target = [...storedChatMessages.value].reverse().find((m) => m.role === 'ASSISTANT')
+    return target?.tools || []
+  }
+  return []
+})
+const isThinkingComplete = ref(true)
+
+function handleThinkingComplete() {
+  isThinkingComplete.value = true
+}
 const chatScrollRef = ref<HTMLElement | null>(null)
 const chatInputRef = ref<HTMLTextAreaElement | null>(null)
 const showProcessingRequired = computed(() => {
-  const sourceIds = aiReferenceScope.value === 'AUTO'
-    ? (selectedFileId.value ? [selectedFileId.value] : [])
-    : aiReferenceScope.value === 'SELECTED_SOURCES'
-      ? selectedAiSourceIds.value
-      : []
+  if (chatStore.isLegacySession) return false
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  const sourceIds = bound
+    ? (bound.retrievalMode === 'AUTO'
+        ? (bound.currentSourceId ? [bound.currentSourceId] : [])
+        : bound.retrievalMode === 'SELECTED_SOURCES'
+          ? (bound.sourceIds || [])
+          : [])
+    : (aiReferenceScope.value === 'AUTO'
+        ? (selectedFileId.value ? [selectedFileId.value] : [])
+        : aiReferenceScope.value === 'SELECTED_SOURCES'
+          ? selectedAiSourceIds.value
+          : [])
   return sourceIds.some((sourceId) => {
     const file = activeSourceFiles.value.find((item) => item.id === sourceId)
     return !file || file.ingestionStatus !== 'READY'
@@ -2541,6 +2791,29 @@ const showProcessingRequired = computed(() => {
 })
 const showFileMenu = ref(false)
 const showModelMenu = showFileMenu
+
+const notifyScopeLocked = () => {
+  ElNotification({
+    title: '参考范围已固定',
+    message: '当前对话已固定参考资料范围，如需更换请点击右上角刷新按钮开启新对话重选。',
+    type: 'info',
+    position: 'top-right',
+  })
+}
+
+const handleScopeSwitchClick = () => {
+  if (isScopeLocked.value) {
+    notifyScopeLocked()
+    return
+  }
+  showModelMenu.value = !showModelMenu.value
+}
+
+watch(isScopeLocked, (locked) => {
+  if (locked) {
+    showModelMenu.value = false
+  }
+})
 
 type AiReferenceScope = 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
 const MAX_AI_REFERENCE_SOURCES = 100
@@ -2565,6 +2838,7 @@ const addAiReferenceSourceWithinLimit = (selected: Set<string>, sourceId: string
 watch(
   selectedFileId,
   (newId) => {
+    if (typeof isScopeLocked !== 'undefined' && isScopeLocked.value) return
     const current = activeSourceFiles.value.find((file) => file.id === newId)
     if (aiReferenceScope.value === 'AUTO') {
       selectedAiSourceIds.value = newId ? [newId] : []
@@ -2584,6 +2858,7 @@ watch(
 watch(
   [activeSourceFiles, subjectId],
   () => {
+    if (typeof isScopeLocked !== 'undefined' && isScopeLocked.value) return
     if (aiReferenceScope.value !== 'SELECTED_SOURCES') return
     const selected = selectedAiSourceIds.value.filter((id) =>
       activeSourceFiles.value.some((file) => file.id === id && file.subjectId === subjectId.value))
@@ -2600,10 +2875,28 @@ watch(
 )
 
 const isAllAiSourcesSelected = computed(() => {
+  if (chatStore.isLegacySession) return false
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  if (bound) {
+    return bound.retrievalMode === 'SUBJECT'
+  }
   return aiReferenceScope.value === 'SUBJECT'
 })
 
 const isAiSourceSelected = (id: string) => {
+  if (chatStore.isLegacySession) return false
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  if (bound) {
+    if (bound.retrievalMode === 'SUBJECT') {
+      return activeSourceFiles.value.some((file) =>
+        file.id === id && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')
+    }
+    if (bound.retrievalMode === 'AUTO') {
+      return bound.currentSourceId === id
+    }
+    return (bound.sourceIds || []).includes(id)
+  }
+
   if (aiReferenceScope.value === 'SUBJECT') {
     return activeSourceFiles.value.some((file) =>
       file.id === id && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')
@@ -2611,7 +2904,30 @@ const isAiSourceSelected = (id: string) => {
   return selectedAiSourceIds.value.includes(id)
 }
 
+const aiSourceSelectedCount = computed(() => {
+  if (chatStore.isLegacySession) return 0
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  if (bound) {
+    if (bound.retrievalMode === 'SUBJECT') {
+      return activeSourceFiles.value.filter((file) =>
+        file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
+    }
+    if (bound.retrievalMode === 'AUTO') return 1
+    return bound.sourceIds?.length || 0
+  }
+  if (aiReferenceScope.value === 'SUBJECT') {
+    return activeSourceFiles.value.filter((file) =>
+      file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
+  }
+  if (aiReferenceScope.value === 'AUTO') return 1
+  return selectedAiSourceIds.value.length
+})
+
 const toggleAiSource = (id: string) => {
+  if (typeof isScopeLocked !== 'undefined' && isScopeLocked.value) {
+    if (typeof notifyScopeLocked === 'function') notifyScopeLocked()
+    return
+  }
   const file = activeSourceFiles.value.find((item) => item.id === id)
   if (!file || file.ingestionStatus !== 'READY') return
   if (id === selectedFileId.value) {
@@ -2645,6 +2961,10 @@ const toggleAiSource = (id: string) => {
 }
 
 const selectCurrentAiSource = () => {
+  if (typeof isScopeLocked !== 'undefined' && isScopeLocked.value) {
+    if (typeof notifyScopeLocked === 'function') notifyScopeLocked()
+    return
+  }
   const current = activeSourceFiles.value.find((file) => file.id === selectedFileId.value)
   if (current) {
     aiReferenceScope.value = 'AUTO'
@@ -2655,12 +2975,66 @@ const selectCurrentAiSource = () => {
   }
 }
 
+
+watch(
+  [() => chatStore.activeSession?.id, () => chatStore.activeSession?.chatScopeState, () => chatStore.activeSession?.chatScope],
+  ([, scopeState, scope]) => {
+    if (scopeState === 'BOUND' && scope) {
+      if (scope.retrievalMode === 'SUBJECT') {
+        aiReferenceScope.value = 'SUBJECT'
+        selectedAiSourceIds.value = []
+      } else if (scope.retrievalMode === 'AUTO') {
+        aiReferenceScope.value = 'AUTO'
+        selectedAiSourceIds.value = scope.currentSourceId ? [scope.currentSourceId] : []
+      } else if (scope.retrievalMode === 'SELECTED_SOURCES') {
+        aiReferenceScope.value = 'SELECTED_SOURCES'
+        selectedAiSourceIds.value = [...(scope.sourceIds || [])]
+      }
+    } else if (scopeState === 'UNBOUND' || !scopeState) {
+      if (selectedFileId.value) {
+        aiReferenceScope.value = 'AUTO'
+        selectedAiSourceIds.value = [selectedFileId.value]
+      } else {
+        aiReferenceScope.value = 'SUBJECT'
+        selectedAiSourceIds.value = []
+      }
+    }
+  },
+  { immediate: true }
+)
+
 const selectAllAiSources = () => {
+  if (typeof isScopeLocked !== 'undefined' && isScopeLocked.value) {
+    if (typeof notifyScopeLocked === 'function') notifyScopeLocked()
+    return
+  }
   aiReferenceScope.value = 'SUBJECT'
   selectedAiSourceIds.value = []
 }
 
 const aiChatReferenceOptions = () => {
+  if (chatStore.isLegacySession) {
+    return { subjectId: subjectId.value, retrievalMode: 'SUBJECT' as const }
+  }
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  if (bound) {
+    if (bound.retrievalMode === 'SUBJECT') {
+      return { subjectId: bound.subjectId || subjectId.value, retrievalMode: 'SUBJECT' as const }
+    }
+    if (bound.retrievalMode === 'AUTO') {
+      return {
+        subjectId: bound.subjectId || subjectId.value,
+        sourceId: bound.currentSourceId || undefined,
+        retrievalMode: 'AUTO' as const,
+      }
+    }
+    return {
+      subjectId: bound.subjectId || subjectId.value,
+      sourceIds: bound.sourceIds?.length ? [...bound.sourceIds] : undefined,
+      retrievalMode: 'SELECTED_SOURCES' as const,
+    }
+  }
+
   const current = activeSourceFiles.value.find((file) =>
     file.id === selectedFileId.value && file.subjectId === subjectId.value && file.ingestionStatus === 'READY')
   if (aiReferenceScope.value === 'SUBJECT') {
@@ -2689,6 +3063,22 @@ const aiChatReferenceOptions = () => {
 }
 
 const aiSourceSummaryText = computed(() => {
+  if (chatStore.isLegacySession) return '未绑定资料'
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  if (bound) {
+    if (bound.retrievalMode === 'SUBJECT') return '全学科资料'
+    if (bound.retrievalMode === 'AUTO') {
+      const boundFile = activeSourceFiles.value.find(f => f.id === bound.currentSourceId)
+      return boundFile?.name || '当前文件'
+    }
+    const count = bound.sourceIds?.length || 0
+    if (count === 1) {
+      const file = activeSourceFiles.value.find(f => f.id === bound.sourceIds[0])
+      return file?.name || '1 份资料'
+    }
+    return `已选 ${count} 份资料`
+  }
+
   if (aiReferenceScope.value === 'SUBJECT') return '全学科资料'
   if (aiReferenceScope.value === 'AUTO') return selectedFile.value?.name || '当前文件'
   const count = selectedAiSourceIds.value.length
@@ -2700,6 +3090,30 @@ const aiSourceSummaryText = computed(() => {
 })
 
 const aiSourceSummaryTitle = computed(() => {
+  if (chatStore.isLegacySession) return '当前为历史会话（未绑定资料范围，不可继续提问）'
+  const bound = typeof boundScope !== 'undefined' ? boundScope.value : null
+  if (bound) {
+    if (bound.retrievalMode === 'SUBJECT') {
+      const count = activeSourceFiles.value.filter((file) =>
+        file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
+      return `当前参考：全学科资料 (共 ${count} 份)`
+    }
+    if (bound.retrievalMode === 'AUTO') {
+      const boundFile = activeSourceFiles.value.find(f => f.id === bound.currentSourceId)
+      return `当前参考：${boundFile?.name || '当前文件'}`
+    }
+    const count = bound.sourceIds?.length || 0
+    if (count === 1) {
+      const file = activeSourceFiles.value.find(f => f.id === bound.sourceIds[0])
+      return `当前参考：${file?.name || '1 份资料'}`
+    }
+    const names = (bound.sourceIds || [])
+      .map(id => activeSourceFiles.value.find(f => f.id === id)?.name)
+      .filter(Boolean)
+      .join('、')
+    return `当前参考 (${count} 份)：${names}`
+  }
+
   if (aiReferenceScope.value === 'SUBJECT') {
     const count = activeSourceFiles.value.filter((file) =>
       file.subjectId === subjectId.value && file.ingestionStatus === 'READY').length
@@ -2745,13 +3159,105 @@ const handleChatKeydown = (e: KeyboardEvent) => {
 const autoResizeInput = () => {
   const el = chatInputRef.value
   if (!el) return
+  if (!chatInput.value?.trim() && !el.value?.trim()) {
+    el.style.height = '36px'
+    return
+  }
   el.style.height = '36px'
   el.style.height = Math.min(el.scrollHeight, 36 * 6) + 'px'
+}
+
+watch(chatInput, (val) => {
+  if (!val || !val.trim()) {
+    nextTick(() => {
+      if (chatInputRef.value) {
+        chatInputRef.value.style.height = '36px'
+      }
+    })
+  }
+})
+
+const isAutoScrollLocked = ref(false)
+let touchStartY = 0
+
+const handleTouchStart = (e: TouchEvent) => {
+  if (e.touches[0]) {
+    touchStartY = e.touches[0].clientY
+  }
+}
+
+const handleTouchMove = (e: TouchEvent) => {
+  if (e.touches[0] && e.touches[0].clientY > touchStartY + 12) {
+    isAutoScrollLocked.value = true
+  }
+}
+
+const handleChatWheel = (e: WheelEvent) => {
+  if (e.deltaY < 0) {
+    // 物理滚轮向上：意图查阅上方内容，立即断开自动跟随
+    isAutoScrollLocked.value = true
+  } else if (e.deltaY > 0 && isNearBottom()) {
+    // 滚轮滑至底部：恢复自动跟随
+    isAutoScrollLocked.value = false
+  }
+}
+
+const resumeAutoScroll = () => {
+  isAutoScrollLocked.value = false
+  scrollChatToBottom()
 }
 
 const scrollChatToBottom = () => {
   nextTick(() => { if (chatScrollRef.value) chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight })
 }
+
+const isNearBottom = () => {
+  if (!chatScrollRef.value) return true
+  const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.value
+  return scrollHeight - (scrollTop + clientHeight) < 140
+}
+
+const autoScrollChatIfNeeded = () => {
+  if (!isAutoScrollLocked.value && isNearBottom()) {
+    scrollChatToBottom()
+  }
+}
+
+watch([streamingContent, streamingReasoning, () => streamingParts.value.length], () => {
+  if (isAiStreaming.value && !isAutoScrollLocked.value) {
+    autoScrollChatIfNeeded()
+  }
+})
+
+watch(isAiStreaming, (streaming, oldVal) => {
+  if (oldVal && !streaming) {
+    // 正文输出完，流式结束：启动 450ms 收起动效缓冲期，让展开的思考链平滑执行收起动效
+    isStreamSettling.value = true
+    if (streamSettleTimer) clearTimeout(streamSettleTimer)
+    streamSettleTimer = setTimeout(() => {
+      isStreamSettling.value = false
+      streamSettleTimer = null
+    }, 450)
+    isAutoScrollLocked.value = false
+    isThinkingComplete.value = true
+  } else if (streaming) {
+    if (streamSettleTimer) {
+      clearTimeout(streamSettleTimer)
+      streamSettleTimer = null
+    }
+    isStreamSettling.value = false
+    isThinkingComplete.value = false
+  }
+})
+
+watch([streamingReasoning, streamingTools, streamingContent, () => streamingParts.value.length], ([_reasoning, _tools, content, partsLen]) => {
+  if (isAiStreaming.value && !isThinkingComplete.value) {
+    // 只要有正文内容或结构化块到达，思考阶段已经结束，立即放行正文渲染，杜绝被延时或竞争卡死
+    if (content || partsLen > 0) {
+      isThinkingComplete.value = true
+    }
+  }
+})
 
 const sendChat = async () => {
   const msg = chatInput.value.trim()
@@ -2764,7 +3270,14 @@ const sendChat = async () => {
   const contentToSend = msg || '请围绕我引用的这段内容进行详细讲解和要点梳理。'
   chatInput.value = ''
   quotedSelection.value = ''
-  autoResizeInput()
+  if (chatInputRef.value) {
+    chatInputRef.value.value = ''
+    chatInputRef.value.style.height = '36px'
+  }
+  nextTick(() => {
+    autoResizeInput()
+  })
+  isAutoScrollLocked.value = false
   scrollChatToBottom()
   try {
     await chatStore.sendMessage(contentToSend, {
@@ -2777,22 +3290,50 @@ const sendChat = async () => {
       logClientError('[SubjectWorkspace] chat send failed', error, safe)
       ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
     }
-  } finally {
-    scrollChatToBottom()
   }
 }
 
 const retryChat = async () => {
   const pending = pendingChatMessage.value
-  if (!pending?.clientRequestId || isAiStreaming.value) return
+  if (!pending || isAiStreaming.value) return
+  isAutoScrollLocked.value = false
+  scrollChatToBottom()
   try {
     await chatStore.retryPendingMessage(pending.id)
   } catch (error) {
     const safe = classifyClientError(error, 'CHAT')
     logClientError('[SubjectWorkspace] chat retry failed', error, safe)
     ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
-  } finally {
-    scrollChatToBottom()
+  }
+}
+
+const handleRetryAssistantMessage = (msgId: string) => {
+  if (isAiStreaming.value) return
+  isAutoScrollLocked.value = false
+  try {
+    void chatStore.retryPendingMessage(msgId)
+  } catch (error) {
+    const safe = classifyClientError(error, 'CHAT')
+    logClientError('[SubjectWorkspace] assistant retry failed', error, safe)
+    ElNotification({ title: 'AI 请求失败', message: safe.message, type: 'error', position: 'top-right' })
+  }
+}
+
+const handleRecoverUnknown = async () => {
+  try {
+    const ok = await chatStore.recoverUnknownAttempt()
+    if (ok) {
+      ElNotification({
+        title: '会话已恢复',
+        message: '未知状态已结束并释放，您可以继续提问或重试未完成的回复。',
+        type: 'success',
+        position: 'top-right',
+      })
+    }
+  } catch (error) {
+    const safe = classifyClientError(error, 'CHAT')
+    logClientError('[SubjectWorkspace] recover attempt failed', error, safe)
+    ElNotification({ title: '恢复失败', message: safe.message, type: 'error', position: 'top-right' })
   }
 }
 
@@ -2807,6 +3348,15 @@ const submitChatActivity = async (questionId: string, answer: import('@/types/ch
   } catch (error) {
     const safe = classifyClientError(error, 'CHAT')
     ElNotification({ title: '提交失败', message: safe.message, type: 'error', position: 'top-right' })
+  }
+}
+
+const handleCitationClick = (fileName: string) => {
+  const match = activeSourceFiles.value.find(
+    (f) => f.name === fileName || f.name.toLowerCase() === fileName.toLowerCase() || f.name.includes(fileName) || fileName.includes(f.name)
+  )
+  if (match) {
+    void selectFile(match.id)
   }
 }
 
@@ -2919,7 +3469,7 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
   const validSourceFileId = activeSourceFiles.value.some(f => f.id === selectedFileId.value && f.subjectId === subjectId.value)
     ? (selectedFileId.value || undefined)
     : undefined
-  await blockStore.addBlock({
+  const newId = await blockStore.addBlock({
     subjectId: subjectId.value,
     sourceFileId: validSourceFileId,
     subject: activeSubject.value.name,
@@ -2929,6 +3479,10 @@ const saveKnowledgeBlock = async (value: { title: string; content: string }) => 
   })
   showKnowledgeEditor.value = false
   clearSelection()
+  const createdBlock = recentBlocks.value.find((b) => b.id === newId)
+  if (createdBlock) {
+    selectedBlock.value = createdBlock
+  }
   ElNotification({ title: '已保存为知识块', type: 'success', position: 'top-right' })
 }
 
@@ -3135,6 +3689,10 @@ watch(() => route.query.view, (newView) => {
 })
 
 onUnmounted(() => {
+  if (streamSettleTimer) {
+    clearTimeout(streamSettleTimer)
+    streamSettleTimer = null
+  }
   if (typeof window !== 'undefined') {
     document.removeEventListener('selectionchange', handleDocSelectionChange)
   }
@@ -3544,7 +4102,8 @@ html.dark .selection-actions.floating-selection-bubble {
 }
 
 html.dark .selection-actions .selection-divider {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 8%, rgba(0, 0, 0, 0.03));
+  color: var(--text-secondary);
 }
 
 .selection-actions .selection-btn {
@@ -3595,7 +4154,8 @@ html.dark .selection-actions .selection-divider {
 }
 
 html.dark .selection-actions .selection-dismiss:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 8%, rgba(0, 0, 0, 0.03));
+  color: var(--text-secondary);
 }
 
 .selection-bubble-pop-enter-active,
@@ -3695,7 +4255,8 @@ html.dark .quote-remove-btn:hover {
   padding: 4px 8px;
   margin-bottom: 6px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--color-primary-accent, #8B9A6E) 8%, rgba(0, 0, 0, 0.03));
+  color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.4;
   opacity: 0.9;
@@ -4289,6 +4850,16 @@ html.dark .block-card {
   box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.3);
 }
 
+.block-card.is-selected {
+  border-color: var(--color-primary-accent, #8B9A6E);
+  box-shadow: 0 0 0 1.5px var(--color-primary-accent, #8B9A6E), 0 8px 20px -3px rgba(139, 154, 110, 0.15);
+}
+
+html.dark .block-card.is-selected {
+  border-color: rgba(163, 177, 155, 0.7);
+  box-shadow: 0 0 0 1.5px rgba(163, 177, 155, 0.7), 0 10px 22px -3px rgba(0, 0, 0, 0.45);
+}
+
 .block-card:hover {
   transform: translateY(-2.5px);
   border-color: rgba(139, 154, 110, 0.45);
@@ -4734,6 +5305,7 @@ html.dark .onboarding-card {
 
 /* ===== Right: AI Assistant (Rounded Card) ===== */
 .workspace-right {
+  position: relative;
   height: 100%;
   flex-shrink: 0;
   display: flex;
@@ -4743,7 +5315,14 @@ html.dark .onboarding-card {
   border: 1px solid var(--border-subtle);
   box-shadow: var(--workspace-card-shadow);
   overflow: hidden;
+  min-width: 300px;
+  max-width: 650px;
   transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, border-width 0.3s ease;
+}
+
+.workspace-right.is-resizing,
+.tier2-drawer.is-resizing {
+  transition: none !important;
 }
 
 .workspace-right:not(.is-open) {
@@ -4793,7 +5372,8 @@ html.dark .ai-header {
 .ai-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 16px;
+  scrollbar-gutter: stable;
+  padding: 20px 16px 28px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -4804,10 +5384,12 @@ html.dark .ai-header {
   gap: 12px;
   max-width: 92%;
   align-self: flex-start;
+  align-items: flex-start;
 }
 
 .chat-msg-row.user {
   align-self: flex-end;
+  max-width: 80%;
   flex-direction: row;
 }
 
@@ -4819,24 +5401,37 @@ html.dark .ai-header {
 .chat-bubble {
   border-radius: 14px;
   padding: 12px 16px;
-  font-size: 13.5px;
-  line-height: 1.6;
+  font-size: 14px;
+  line-height: 1.68;
   word-break: break-word;
-  box-shadow: rgba(0, 0, 0, 0.02) 0px 2px 8px;
 }
 
 .chat-msg-row.user .chat-bubble {
-  background: #303431;
-  color: white;
-  border-radius: 14px 2px 14px 14px;
+  background: var(--color-bg-card, #ffffff);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle, #e0deda);
+  border-radius: 20px 20px 6px 20px;
+  padding: 11px 18px;
+  font-size: 14px;
+  line-height: 1.55;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.chat-msg-row.assistant {
+  max-width: 100%;
+  width: 100%;
+  align-items: flex-start;
 }
 
 .chat-msg-row.assistant .chat-bubble {
-  background: var(--color-bg-tertiary, #FAF7F2);
-  border: 1px solid var(--border-subtle);
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 2px 0 14px !important;
+  font-size: 14.5px;
+  line-height: 1.74;
   color: var(--text-primary);
-  border-radius: 2px 14px 14px 14px;
-  box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.03);
+  box-shadow: none !important;
 }
 
 .chat-error {
@@ -4873,6 +5468,126 @@ html.dark .ai-header {
   opacity: 0.55;
 }
 
+.chat-recover-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 10px;
+  background: rgba(234, 179, 8, 0.08);
+  color: #a16207;
+  font-size: 12px;
+}
+
+html.dark .chat-recover-banner {
+  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.12);
+  color: #facc15;
+}
+
+.chat-recover-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-recover-btn {
+  flex-shrink: 0;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.chat-recover-btn:hover:not(:disabled) {
+  background: rgba(234, 179, 8, 0.15);
+}
+
+.chat-recover-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+
+/* 意图感知磁吸悬浮胶囊：向上滚动时脱离自动跟随，浮现平滑小胶囊 */
+.chat-scroll-resume-pill {
+  position: absolute;
+  bottom: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px 0 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-bg-card, #ffffff) 90%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 45%, var(--border-default, #dcd8d0));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.09), 0 1px 3px rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.chat-scroll-resume-pill:hover {
+  background: var(--color-bg-card, #ffffff);
+  border-color: var(--color-zen-sage, #8b9a6e);
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 24%, transparent);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.resume-pill-pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-zen-sage, #8b9a6e);
+  animation: resume-dot-pulse 1.4s infinite ease-in-out;
+}
+
+@keyframes resume-dot-pulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
+.resume-pill-arrow {
+  font-size: 13px;
+  color: var(--color-sage-dark, #5c6b44);
+  font-weight: 700;
+}
+
+.resume-pill-text {
+  letter-spacing: -0.01em;
+  color: var(--text-secondary);
+}
+
+.scroll-pill-fade-enter-active,
+.scroll-pill-fade-leave-active {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scroll-pill-fade-enter-from,
+.scroll-pill-fade-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(8px);
+}
+
 .chat-content {
   font-size: 13.5px;
 }
@@ -4905,8 +5620,8 @@ html.dark .ai-header {
 .ai-reply :deep(p:last-child) { margin-bottom: 0; }
 .ai-reply :deep(strong) { color: inherit; font-weight: 700; }
 .ai-reply :deep(code) { background: rgba(0, 0, 0, 0.05); padding: 2px 5px; border-radius: 4px; font-size: 12px; font-family: var(--font-family-mono); }
-.ai-reply :deep(pre) { background: #1e1e2e; color: #cdd6f4; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 10px 0; font-size: 12px; line-height: 1.45; }
-.ai-reply :deep(pre code) { background: none; padding: 0; color: inherit; }
+.ai-reply :deep(pre) { background: var(--color-bg-card, #ffffff); color: var(--text-primary); border: 1px solid var(--border-subtle, #e0deda); padding: 12px 14px; border-radius: 10px; overflow-x: auto; margin: 10px 0; font-size: 12.5px; line-height: 1.55; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); }
+.ai-reply :deep(pre code) { background: transparent; padding: 0; color: inherit; font-size: inherit; font-family: inherit; }
 .ai-reply :deep(ul), .ai-reply :deep(ol) { padding-left: 20px; margin: 8px 0; }
 .ai-reply :deep(li) { margin-bottom: 4px; }
 
@@ -4934,7 +5649,7 @@ html.dark .ai-header {
   display: flex;
   align-items: flex-end;
   gap: 10px;
-  background: var(--color-bg-tertiary, #FAF7F2);
+  background: var(--color-bg-card, #ffffff);
   border: 1px solid var(--border-default);
   border-radius: 14px;
   padding: 8px 12px;
@@ -4948,7 +5663,7 @@ html.dark .ai-input-wrapper {
 
 .ai-input-wrapper:focus-within {
   border-color: var(--color-primary-accent, #8B9A6E);
-  background: var(--color-bg-tertiary, #FAF7F2);
+  background: var(--color-bg-card, #ffffff);
   box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 2px 6px rgba(0, 0, 0, 0.04);
 }
 
@@ -5812,15 +6527,15 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 
 .assistant-spark-avatar { width: 34px; height: 34px; border: 0.5px solid var(--border-subtle); border-radius: 50%; display: grid; place-items: center; background: var(--color-bg-tertiary, #FAF7F2); flex: 0 0 auto; box-shadow: 0 2px 8px rgba(0,0,0,0.02); }
 .assistant-spark-avatar svg { width: 20px; height: 20px; }
-.chat-msg-row.user .chat-bubble { background: #303431; color: #FAF7F2; border-radius: 16px 4px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
-.chat-msg-row.assistant .chat-bubble { background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); border-radius: 4px 16px 16px 16px; padding: 12px 18px; font-size: 14.5px; line-height: 1.6; color: var(--text-primary); box-shadow: 0 2px 8px -1px rgba(0, 0, 0, 0.03); }
+.chat-msg-row.user .chat-bubble { background: var(--color-bg-card, #ffffff); color: var(--text-primary); border: 1px solid var(--border-subtle, #e0deda); border-radius: 20px 20px 6px 20px; padding: 11px 18px; font-size: 14px; line-height: 1.55; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.chat-msg-row.assistant .chat-bubble { background: transparent; border: none; border-radius: 0; padding: 2px 0 14px; font-size: 14.5px; line-height: 1.74; color: var(--text-primary); box-shadow: none; }
 
 .ai-input-area { padding: 16px 20px 24px; background: transparent; backdrop-filter: blur(12px); border-top: none; width: 100%; box-sizing: border-box; }
-.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: var(--color-bg-tertiary, #FAF7F2); backdrop-filter: blur(8px); border: 0.5px solid var(--border-default); box-shadow: 0 4px 16px -2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
-.ai-chat-capsule:focus-within { border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0,0,0,0.05); transform: translateY(-1px); }
+.ai-chat-capsule { display: flex; align-items: flex-end; width: 100%; box-sizing: border-box; min-height: 52px; border-radius: 26px; padding: 6px 6px 6px 18px; gap: 10px; background: var(--color-bg-card, #ffffff); border: 1px solid var(--border-default, #e0deda); box-shadow: 0 4px 16px -2px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.02); transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.ai-chat-capsule:focus-within { background: var(--color-bg-card, #ffffff); border-color: var(--color-primary-accent, #8B9A6E); box-shadow: 0 0 0 3px rgba(139, 154, 110, 0.18), 0 4px 14px rgba(0,0,0,0.05); transform: translateY(-1px); }
 .ai-input { flex: 1; background: transparent; font-size: 14.5px; line-height: 1.5; padding: 6px 0; color: var(--text-primary); border: none; outline: none; resize: none; overflow-y: auto; }
 .ai-input::placeholder { color: var(--text-muted); }
-.ai-send-btn { width: 36px; height: 36px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: var(--color-bg-tertiary, #FAF7F2); border: 0.5px solid var(--border-subtle); color: var(--color-primary-accent, #8B9A6E); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.ai-send-btn { width: 36px; height: 36px; border-radius: 50%; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); flex-shrink: 0; background: var(--color-bg-card, #ffffff); border: 0.5px solid var(--border-subtle); color: var(--color-primary-accent, #8B9A6E); display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .ai-send-btn.is-ready { background: var(--btn-primary-bg, linear-gradient(135deg, #9EAD80 0%, #8B9A6E 100%)) !important; color: #fff !important; box-shadow: 0 2px 8px rgba(139, 154, 110, 0.4) !important; }
 .ai-send-btn.is-ready:hover { transform: scale(1.06); background: #76855B !important; box-shadow: 0 4px 14px rgba(139, 154, 110, 0.55) !important; }
 
@@ -5830,7 +6545,10 @@ html.dark .mini-menu-item:hover { background: rgba(255, 255, 255, 0.04); }
 .ai-typing-dot:nth-child(2) { animation-delay: -.16s; }
 
 
-html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html.dark .assistant-spark-avatar, html.dark .chat-msg-row.assistant .chat-bubble { background: #1C1C1C; border-color: rgba(255,255,255,0.08); }
+html.dark .ai-header, html.dark .ai-model-menu, html.dark .ai-chat-capsule, html.dark .assistant-spark-avatar { background: #1C1C1C; border-color: rgba(255,255,255,0.08); }
+html.dark .chat-msg-row.user .chat-bubble { background: var(--color-bg-secondary, #232220) !important; color: var(--text-primary, #e6e4df) !important; border-color: rgba(255,255,255,0.08) !important; }
+html.dark .chat-msg-row.assistant .chat-bubble { background: transparent !important; border: none !important; }
+html.dark .ai-reply :deep(pre) { background: #232220; border-color: rgba(255, 255, 255, 0.08); color: #e6e4df; }
 html.dark .preset-pill { background: rgba(255, 255, 255, 0.03); border-color: rgba(255, 255, 255, 0.07); color: var(--text-secondary); box-shadow: 0 3px 8px -1px rgba(0, 0, 0, 0.35); }
 html.dark .preset-pill:hover { background: rgba(125, 147, 114, 0.12); border-color: rgba(125, 147, 114, 0.4); color: #A3B899; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); }
 html.dark .ai-brand-wrap { filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.45)); }
@@ -5960,46 +6678,131 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
 }
 .chat-msg-citations {
   margin-top: 12px;
-  padding-top: 12px;
-  border-top: 0.5px dashed var(--border-subtle);
-  font-size: 13px;
+  padding-top: 10px;
+  border-top: 1px dashed color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 22%, var(--border-subtle, #E0DEDA));
+  font-size: 12px;
 }
 .chat-msg-citations .citation-title {
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 650;
+  color: var(--color-sage-dark, #5C6B44);
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  letter-spacing: -0.01em;
+}
+.chat-msg-citations .citation-title-icon {
+  color: var(--color-zen-sage, #8B9A6E);
+  flex-shrink: 0;
+}
+.chat-msg-citations .citation-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 14%, var(--color-bg-card, #FFFFFF));
+  color: var(--color-sage-dark, #5C6B44);
+  font-size: 10px;
+  font-weight: 700;
+}
+.chat-msg-citations .citation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chat-msg-citations .citation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 22%, var(--border-subtle, #E0DEDA));
+  background: color-mix(in srgb, var(--color-bg-card, #FFFFFF) 85%, var(--color-bg-primary, #F5F1EB));
+  color: var(--text-primary);
+  font-size: 11.5px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.16s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.chat-msg-citations .citation-chip:hover {
+  background: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 12%, var(--color-bg-card, #FFFFFF));
+  border-color: color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 45%, var(--border-subtle, #E0DEDA));
+  color: var(--color-sage-dark, #5C6B44);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-zen-sage, #8B9A6E) 10%, transparent);
+}
+.chat-msg-citations .citation-idx {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+  font-size: 10.5px;
+  color: var(--color-zen-sage, #8B9A6E);
+  flex-shrink: 0;
+}
+.chat-msg-citations .citation-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
   color: var(--text-secondary);
-  margin-bottom: 6px;
 }
-.chat-msg-citations .citation-list {
-  list-style-type: none;
-  padding-left: 0;
-  margin: 0;
+.chat-msg-citations .citation-chip:hover .citation-name {
+  color: var(--color-sage-dark, #5C6B44);
 }
-.chat-msg-citations .citation-list li {
+
+.chat-msg-interrupted-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--color-warning, #d9822b) 8%, var(--color-bg-card, #ffffff));
+  border: 1px solid color-mix(in srgb, var(--color-warning, #d9822b) 22%, transparent);
+}
+
+.interrupted-hint {
+  font-size: 12px;
   color: var(--text-muted);
-  position: relative;
-  padding-left: 14px;
-  margin-bottom: 4px;
-  line-height: 1.5;
 }
-.chat-msg-citations .citation-list li::before {
-  content: '·';
-  position: absolute;
-  left: 0;
-  top: 0;
-  color: var(--text-muted);
-  font-weight: bold;
+
+.chat-retry-reply-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 30%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-zen-sage, #8b9a6e) 12%, var(--color-bg-card, #ffffff));
+  color: var(--color-sage-dark, #5c6b44);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.chat-retry-reply-btn:hover {
+  background: var(--color-zen-sage, #8b9a6e);
+  color: #ffffff;
 }
 
 /* ===== Responsive Flex Optimization for Smaller Screens & 125%/150% DPI ===== */
 @media (max-width: 1280px) {
   .workspace-center {
-    min-width: 380px;
+    min-width: 340px;
   }
   .tier2-drawer.is-open {
-    max-width: 270px;
+    max-width: 280px;
   }
   .workspace-right.is-open {
-    max-width: 360px;
+    min-width: 280px;
+    max-width: 480px;
   }
 }
 
@@ -6017,6 +6820,19 @@ html.dark .btn-primary:hover { background: #b0c2a7; box-shadow: 0 4px 12px rgba(
   }
   .tier2-drawer.is-open {
     max-width: 240px;
+  }
+}
+
+@media (max-width: 960px) {
+  .workspace-center {
+    min-width: 280px;
+  }
+  .tier2-drawer.is-open {
+    max-width: 200px;
+  }
+  .workspace-right.is-open {
+    min-width: 260px;
+    max-width: 360px;
   }
 }
 </style>

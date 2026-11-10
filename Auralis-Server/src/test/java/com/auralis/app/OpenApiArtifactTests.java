@@ -70,6 +70,46 @@ class OpenApiArtifactTests {
     }
 
     @Test
+    void documentsAttemptScopedUnknownRecovery() throws Exception {
+        JsonNode operation = openApiDocument().at(
+                "/paths/~1api~1ai~1conversations~1{conversationId}~1runs~1{runId}~1attempts~1{attemptId}~1recover/post");
+
+        assertThat(operation.isObject()).isTrue();
+        assertThat(operation.at("/security/0/bearerAuth").isArray()).isTrue();
+        assertThat(operation.at("/parameters").toString()).contains("conversationId", "runId", "attemptId");
+        assertThat(operation.at("/responses/200").isObject()).isTrue();
+    }
+
+    @Test
+    void documentsConversationReadingScopeBinding() throws Exception {
+        JsonNode document = openApiDocument();
+        JsonNode view = document.at("/components/schemas/ConversationView");
+        JsonNode scope = document.at("/components/schemas/ChatConversationScope");
+        JsonNode turn = document.at("/paths/~1api~1ai~1messages~1stream/post");
+        JsonNode conflict = turn.at("/responses/409/content/application~1problem+json/schema/$ref");
+
+        assertThat(view.at("/properties/chatScopeState/type").asText()).isEqualTo("string");
+        assertThat(view.at("/properties/chatScopeState").isObject()).isTrue();
+        assertThat(view.at("/properties/chatScope").isObject()).isTrue();
+        assertThat(view.at("/required").toString()).contains("chatScopeState", "chatScope");
+        assertThat(view.at("/properties/chatScope/anyOf").toString())
+                .contains("ChatConversationScope", "null");
+        assertThat(scope.at("/properties/retrievalMode/type").asText()).isEqualTo("string");
+        assertThat(scope.at("/properties/sourceIds/type").asText()).isEqualTo("array");
+        assertThat(scope.at("/properties/subjectId/type").toString()).contains("string", "null");
+        assertThat(conflict.asText()).endsWith("/ApiProblemDetails");
+    }
+
+    @Test
+    void declaresUserAvatarPresenceAsRequired() throws Exception {
+        JsonNode document = openApiDocument();
+        JsonNode userView = document.at("/components/schemas/UserView");
+
+        assertThat(userView.at("/properties/hasAvatar/type").asText()).isEqualTo("boolean");
+        assertThat(userView.at("/required").toString()).contains("\"hasAvatar\"");
+    }
+
+    @Test
     void overviewResultAndSourceCollectionsHaveNoFixedVolumeSchemaCaps() throws Exception {
         JsonNode document = openApiDocument();
         JsonNode response = document.at("/components/schemas/OverviewResponse/properties");
@@ -92,6 +132,39 @@ class OpenApiArtifactTests {
         assertThat(summary.at("/learningPath/maxItems").isMissingNode()).isTrue();
         assertThat(subjectRequest.at("/maxItems").isMissingNode()).isTrue();
         assertThat(jobRequest.at("/maxItems").isMissingNode()).isTrue();
+    }
+
+    @Test
+    void documentsBatchSubjectOverviewStatusesContract() throws Exception {
+        JsonNode document = openApiDocument();
+        JsonNode operation = document.at("/paths/~1api~1overview-results~1subjects~1statuses/post");
+        JsonNode subjectIds = document.at("/components/schemas/OverviewSubjectStatusesRequest/properties/subjectIds");
+        JsonNode itemSchema = document.at("/components/schemas/OverviewSubjectStatusesResponse/properties/items/items");
+        if (itemSchema.has("$ref")) {
+            String itemSchemaName = itemSchema.path("$ref").asText().substring(
+                    itemSchema.path("$ref").asText().lastIndexOf('/') + 1);
+            itemSchema = document.path("components").path("schemas").path(itemSchemaName);
+        }
+        JsonNode item = itemSchema.path("properties");
+
+        assertThat(operation.isObject()).isTrue();
+        assertThat(operation.at("/requestBody/required").asBoolean()).isTrue();
+        assertThat(operation.at("/responses/200").isObject()).isTrue();
+        assertThat(subjectIds.at("/minItems").asInt()).isEqualTo(1);
+        assertThat(subjectIds.at("/maxItems").asInt()).isEqualTo(100);
+        assertThat(subjectIds.at("/items/format").asText()).isEqualTo("uuid");
+        assertThat(itemSchema.isObject()).isTrue();
+        JsonNode statusSchema = item.path("status");
+        if (statusSchema.has("$ref")) {
+            String statusSchemaName = statusSchema.path("$ref").asText().substring(
+                    statusSchema.path("$ref").asText().lastIndexOf('/') + 1);
+            statusSchema = document.path("components").path("schemas").path(statusSchemaName);
+        }
+        assertThat(statusSchema.path("enum").toString()).contains("AVAILABLE", "MISSING", "UNAVAILABLE");
+        assertThat(item.path("version").toString()).contains("null");
+        assertThat(item.path("updatedAt").toString()).contains("null");
+        assertThat(item.has("outline")).isFalse();
+        assertThat(item.has("summary")).isFalse();
     }
 
     @Test

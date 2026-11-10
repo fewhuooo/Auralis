@@ -73,7 +73,11 @@ AURALIS_AI_OVERVIEW_MAX_RETRIES=3，含义为首发失败后最多额外重试3�
 
 ## AI Provider 超时诊断
 
-`MODEL_TIMEOUT`（HTTP 504）表示 Provider socket response/read 超时；`MODEL_UNAVAILABLE`（HTTP 503）保留给其它不可用/IOException。检查 backend 的 `AI_PROVIDER_HTTP_FAILED` 中 `errorType=SocketTimeoutException`、host/path 和 elapsedMs，不记录 key 或 prompt。默认连接超时为 3000ms，普通聊天/流式/embedding response-read 为 10000ms，Overview map/reduce 非流式窗口为 120000ms（允许 60000–120000ms）；仅在确认上游生成耗时确实较长时调整 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`，不要把普通请求窗口改成 Overview 窗口。
+Chat 运行以 `CHAT_RUN_FAILED` 结束且没有 `AI_PROVIDER_HTTP_FAILED` 时，检查同一时间的 `CHAT_RUN_FAILED` WARN。该事件带 run/attempt、iteration、`stage`、`safeErrorCode`、exception/cause 类型和 `frameClass/frameMethod/frameLine`，可以定位 Orchestrator 中的本地失败点；它不包含 throwable message、模型内容、reasoning 或工具调用原文。旧运行曾由 `AiUsageLimitException` 被误映射为 `CHAT_RUN_FAILED`；旧日志中的 `AI_BUDGET_REJECT dimension=TASK_CALLS used=N limit=N` 表示当时同一 Chat run 在各 retry attempt 间累计的 combined all-origin provider/embedding 调用上限已耗尽。当前源码改为独立 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS` 和 `AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` stage 帽（默认0表示不限制），并提供跨 retry 的 `accountingSummary.modelCalls` 与 `embeddingCalls`。配置新源码后，`STAGE_CALLS` 拒绝表示相应单类上限已用尽；budget rejection 前没有新 reservation。保留既有账本并以新 Chat run 继续，不在同一 run 上反复 retry。`accountingSummary.currentAttemptToolCalls` 只按当前 attempt 的 toolTrace 中 distinct call ID 计数；工具上限 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS` 独立配置（当前12、attempt 范围）。Iteration 8 和 Token/并发/窗口额度继续限制运行。源码变更需重建 backend 才在新请求生效。
+
+`MODEL_TIMEOUT`（HTTP 504）表示 Provider socket response/read 超时；`MODEL_UNAVAILABLE`（HTTP 503）保留给其它不可用/IOException。检查 backend 的 `AI_PROVIDER_HTTP_FAILED` 中 `phase`、`errorType`、安全 `errorCode` / `causeType`、host/path 和 `elapsedMs`，不记录 key 或 prompt。`phase=http_status` 的 `status` 表示真实 HTTP 非 2xx；`provider_frame_json` / `provider_frame_protocol` 表示上游 SSE 帧解析或协议错误；`consumer_callback` 表示本地消费链抛错；`transport` 表示传输阶段异常。日志不采集响应正文，不能从中还原 Provider 的私有错误消息。默认连接超时为 3000ms，普通聊天/流式/embedding response-read 为 10000ms，Overview map/reduce 非流式窗口为 120000ms（允许 60000–120000ms）；仅在确认上游生成耗时确实较长时调整 `AURALIS_AI_OVERVIEW_RESPONSE_TIMEOUT_MILLIS`，不要把普通请求窗口改成 Overview 窗口。
+
+Chat 若出现 `phase=consumer_callback` 且 `causeType=IllegalArgumentException`，它表示上游 HTTP 已通过状态校验并进入本地流回调。曾知问题是工具名/arguments 分片未齐时过早构造 langchain4j `PartialToolCall`；当前源码已等待 SDK 所需字段非空后才发 partial callback。检查部署镜像是否含该修复后再安排用户触发新的 Chat 请求；不要用旧 request 重放。
 
 ## 2026-09-09 Task 16 运行观察
 
@@ -217,6 +221,8 @@ chat/ingest 超时、401、模型不存在、无效 JSON 或空结果。
 
 PC 请求使用同路由 SSE：注释心跳仅维持连接，最终 `result` 才是结构化成果；已开始响应后，错误在 `error` 事件中携带业务 `code/status`，此时 HTTP 200 不代表生成成功。缺少最终事件的断流须按状态不确定处理。JSON 消费者仍按 HTTP ProblemDetails 判断失败，等待时不能保证及时感知断连。
 
+Chat `/messages/stream` 与 retry 的 MVC async request timeout 由 controller 对该 request 单独关闭；Chat `attemptDeadlineSeconds`（当前配置300秒）仍负责任务上限。若流在约30秒被截断，先查同一请求是否有 `AsyncRequestTimeoutException`；若新版本中持续空窗约60秒后断流，则再核对反向代理 `proxy_read_timeout`，不要据此推断模型输出长度。部署修复后需验证长时间无 chunk 的 SSE、用户取消及浏览器关闭分别能正常终止本地 worker/reader 和结算。
+
 入口预算扣除 preflight 和数据库等待时间，但 socket 关闭不打断 JDBC/数据库锁等待。同步 preflight 若卡住，SSE 尚未建立，HTTP 响应可能晚于期限；区分此类数据库等待与已经进入 Provider 传输的慢流。原生 DNS 也可能忽略线程中断，只能由有界解析等待隔离，不能将 Future.cancel 当作 OS lookup 已结束。
 
 验收取消时同时查看连接关闭、生成工作退出、在途预留完成结算和任务释放；用户已派发但 usage 未知的调用沿 B 保守计账，取消不能被当作零费用。共享生成中的一个消费者离开后，其余需求可以继续；只有最后消费者退出或总期限到达才终止当前传输。远端 Provider 已收到的计算能否撤回不由本地 socket 关闭证明，完整证据见 [实施计划](../plans/2026-10-11-overview-hard-timeout-cancellation.md)。
@@ -357,3 +363,7 @@ node scripts\check-tablet-sidebar-transition.mjs
 - 涉及主流程不可用但数据安全：P1 升级。
 - 单平台体验退化且有替代路径：P2 记录并排期。
 - 无证据时不得把问题标为已恢复。
+
+### Temporary Chat assistant content capture for local diagnosis
+
+This local diagnostic is disabled by default. Set `AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_ENABLED=true` in the local `.env` to enable it for the backend container; the default output directory inside the container is `/tmp/auralis-chat-diagnostics` and can be changed with `AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_DIR`. It writes decoded assistant `delta.content` text as UTF-8 files, one per iteration, up to `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` per attempt (default 1 MiB). It does not capture prompts, reasoning, tools, headers, or credentials, and logs only IDs/path/size/completeness/truncation metadata. The files persist until manually removed. Turn the flag back off after the intended diagnosis; a running container needs a rebuild/recreate to use source/config changes. This does not automatically send a model request or deploy anything.

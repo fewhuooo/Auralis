@@ -1,5 +1,9 @@
 # 基础设施与数据服务模块
 
+### Chat 调用次数限额（源码候选，未部署）
+
+Compose 与 `.env.example` 独立透传 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS`、`AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS`。模型与 embedding 次数默认 0（不设次数帽），可分别设正数；负数拒绝启动。工具次数默认12并保持现有 attempt 范围。8次 iteration、Provider deadline、Token 预算、并发与窗口额度仍分别生效。重新构建并 recreate backend 后配置进入运行态；本轮未改本机 `.env`，未部署或触发真实 Provider。
+
 ### 2026-10-28 Overview 自动重试配置（源码候选，未部署）
 
 AURALIS_AI_OVERVIEW_MAX_RETRIES=3，含义为首发失败后最多额外重试3次；0关闭，负数启动校验拒绝。Spring属性auralis.ai.overview-max-retries与Compose透传同步；实际.env未修改，重建后端后方生效，无新数据库迁移或前端要求。仅重试已返回且结算的模型内容校验失败，网络未知派发、预算/额度和取消等直接停止；次数不影响既有检查点身份，每次重发仍计费。重试日志phase=ADAPTIVE_MODEL_RETRY；阶段INVALID/校验失败日志后可能继续重试，最终结果以RUN_FINISHED/最终任务状态确认。配置与定向/affected检查已完成，完整验证边界见D:/Temp/auralis-overview-auto-retry-20261028/final-report.md；未部署或调用真实模型。

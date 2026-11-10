@@ -3,6 +3,8 @@ package com.auralis.app.ai.internal.chat;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiMessageStatus;
 import com.auralis.app.ai.AiMessageCommand;
+import com.auralis.app.ai.ChatConversationScope;
+import com.auralis.app.ai.ChatConversationScopeState;
 import com.auralis.app.ai.internal.persistence.ChatActivityEntity;
 import com.auralis.app.ai.internal.persistence.ChatActivityRepository;
 import com.auralis.app.ai.internal.persistence.ChatAttemptEntity;
@@ -13,11 +15,13 @@ import com.auralis.app.ai.internal.persistence.ConversationEntity;
 import com.auralis.app.ai.internal.persistence.ConversationRepository;
 import com.auralis.app.ai.internal.persistence.MessageEntity;
 import com.auralis.app.ai.internal.persistence.MessageRepository;
+import com.auralis.app.ai.retrieval.ReadingContext;
 import com.auralis.app.source.SourceService;
 import com.auralis.app.ai.usage.AiTaskContext;
 import com.auralis.app.ai.usage.ChatAgentProperties;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -44,19 +48,28 @@ public class ChatRuntimePersistenceService {
     private final ChatAttemptRepository attempts;
     private final ChatActivityRepository activities;
     private final SourceService sources;
+    private final ChatReadTools readTools;
     private final ObjectMapper mapper;
     private final ChatAgentProperties properties;
     private final String workerInstanceId;
 
+    @Autowired
     public ChatRuntimePersistenceService(ConversationRepository conversations, MessageRepository messages,
             ChatRunRepository runs, ChatAttemptRepository attempts, ChatActivityRepository activities,
-            SourceService sources, ObjectMapper mapper, ChatAgentProperties properties,
+            SourceService sources, ChatReadTools readTools, ObjectMapper mapper, ChatAgentProperties properties,
             @Value("${auralis.instance-id:local}") String workerInstanceId) {
         this.conversations = conversations; this.messages = messages; this.runs = runs;
-        this.attempts = attempts; this.activities = activities; this.sources = sources; this.mapper = mapper;
+        this.attempts = attempts; this.activities = activities; this.sources = sources; this.readTools = readTools;
+        this.mapper = mapper;
         this.properties = properties;
         String instance = workerInstanceId == null || workerInstanceId.isBlank() ? "local" : workerInstanceId.trim();
         this.workerInstanceId = instance.substring(0, Math.min(instance.length(), 90)) + ":" + UUID.randomUUID();
+    }
+
+    public ChatRuntimePersistenceService(ConversationRepository conversations, MessageRepository messages,
+            ChatRunRepository runs, ChatAttemptRepository attempts, ChatActivityRepository activities,
+            SourceService sources, ObjectMapper mapper, ChatAgentProperties properties, String workerInstanceId) {
+        this(conversations, messages, runs, attempts, activities, sources, null, mapper, properties, workerInstanceId);
     }
 
     @Transactional(readOnly = true)
@@ -93,6 +106,7 @@ public class ChatRuntimePersistenceService {
             requireSameHash(run.getRequestHash(), hash);
             return current(run, true);
         }
+        ChatConversationScope conversationScope = resolveConversationScope(conversation, command);
         ChatActivityEntity activity = null;
         if ("activity_submission".equals(command.action())) {
             activity = activities.findByIdAndUserId(command.activityId(), userId)
@@ -100,7 +114,8 @@ public class ChatRuntimePersistenceService {
             if (!activitiesBelongToConversation(activity, command.conversationId(), userId)) {
                 throw notFound("Activity was not found");
             }
-            lockRun(activity.getRunId(), userId, command.conversationId());
+            ChatRunEntity activityRun = lockRun(activity.getRunId(), userId, command.conversationId());
+            if (!java.util.Objects.equals(conversationScope, runScope(activityRun))) throw scopeConflict();
             activity = activities.findForUpdate(activity.getId(), activity.getRunId(), userId)
                     .orElseThrow(() -> notFound("Activity was not found"));
             String submittedHash = answerHash(command.answer());
@@ -132,7 +147,7 @@ public class ChatRuntimePersistenceService {
         userMessage.enableChatProtocolOne();
         messages.saveAndFlush(userMessage);
         ChatRunEntity run = runs.saveAndFlush(new ChatRunEntity(runId, userId, conversation.getId(),
-                command.requestId(), hash, requestContext(command, executionProfile), command.action(), userMessageId,
+                command.requestId(), hash, requestContext(command, executionProfile, conversationScope), command.action(), userMessageId,
                 AiTaskContext.chatAgentLedgerTaskId(userId, runId), fence));
         ChatAttemptEntity attempt = attempts.saveAndFlush(new ChatAttemptEntity(attemptId, runId, userId,
                 command.requestId(), hash, 1, workerInstanceId, fence, replyId, EMPTY_ARRAY, EMPTY_ARRAY,
@@ -187,6 +202,7 @@ public class ChatRuntimePersistenceService {
             if (!runId.equals(replay.get().getRunId())) throw requestConflict();
             return new Admission(run, replay.get(), run.getUserMessageId(), true);
         }
+        requireBoundScopeForRun(conversation, run);
         boolean safePendingRecovery = "PENDING".equals(previous.getStatus())
                 && !workerInstanceId.equals(previous.getWorkerInstanceId())
                 && !previous.getDeadlineAt().isAfter(Instant.now());
@@ -258,6 +274,22 @@ public class ChatRuntimePersistenceService {
         attempts.saveAndFlush(attempt);
     }
 
+    /** Persists local display-tool evidence after checking the existing source revision fence. */
+    @Transactional
+    public void checkpointLocalToolEvidence(UUID userId, UUID conversationId, UUID runId, UUID attemptId,
+            long fence, Map<UUID, UUID> sourceRevisions, String publicPartsJson, String toolTraceJson,
+            long sequence, String privateToolEvidenceJson) {
+        ConversationEntity conversation = lockConversation(userId, conversationId);
+        ChatRunEntity run = lockRun(runId, userId, conversationId);
+        ChatAttemptEntity attempt = lockAttempt(attemptId, runId, userId);
+        requireOwner(conversation, run, attempt, fence);
+        requireRunning(attempt);
+        requireSourceRevisions(userId, sourceRevisions);
+        attempt.updateSnapshot(publicPartsJson, toolTraceJson, sequence);
+        attempt.updatePrivateToolEvidence(privateToolEvidenceJson);
+        attempts.saveAndFlush(attempt);
+    }
+
     /** Short, lock-free ownership check for gating public stream output. */
     @Transactional(readOnly = true)
     public void validatePublicationOwner(UUID userId, UUID conversationId, UUID runId, UUID attemptId, long fence) {
@@ -274,11 +306,12 @@ public class ChatRuntimePersistenceService {
     public ChatActivityEntity readyActivity(UUID userId, UUID conversationId, UUID runId, UUID attemptId,
             long fence, Map<UUID, UUID> sourceRevisions, UUID activityId, UUID blockId, int questionVersion, String questionType,
             String publicPayloadJson, String privateReferenceJson, String partsJson,
-            String markdown, String model, long sequence) {
+            String toolTraceJson, String privateToolEvidenceJson, String markdown, String model, long sequence) {
         ConversationEntity conversation = lockConversation(userId, conversationId);
         ChatRunEntity run = lockRun(runId, userId, conversationId);
         ChatAttemptEntity attempt = lockAttempt(attemptId, runId, userId);
         requireOwner(conversation, run, attempt, fence);
+        requireRunning(attempt);
         requireSourceRevisions(userId, sourceRevisions);
         UUID replyId = attempt.getAllocatedReplyMessageId();
         if (!messages.existsById(replyId)) {
@@ -289,7 +322,8 @@ public class ChatRuntimePersistenceService {
             reply.enableChatProtocolOne();
             messages.saveAndFlush(reply);
         }
-        attempt.updateSnapshot(partsJson, attempt.getToolTraceJson(), sequence);
+        attempt.updateSnapshot(partsJson, toolTraceJson, sequence);
+        attempt.updatePrivateToolEvidence(privateToolEvidenceJson);
         attempt.attachCompletedBusinessMessage(replyId);
         run.mark("COMPLETED");
         attempts.saveAndFlush(attempt);
@@ -326,11 +360,11 @@ public class ChatRuntimePersistenceService {
             reply.enableChatProtocolOne();
             messages.saveAndFlush(reply);
         }
-        attempt.completeMessage(replyId, activityBusinessComplete ? "COMPLETED" : status,
-                activityBusinessComplete ? null : safeErrorCode);
+        String effectiveTerminalStatus = activityBusinessComplete ? "COMPLETED" : status;
+        attempt.completeMessage(replyId, effectiveTerminalStatus, activityBusinessComplete ? null : safeErrorCode);
         if (!activityBusinessComplete) run.mark(status);
         runs.saveAndFlush(run); attempts.saveAndFlush(attempt);
-        if (!"UNKNOWN".equals(status)) conversation.releaseChatRun(runId, fence);
+        if (!"UNKNOWN".equals(effectiveTerminalStatus)) conversation.releaseChatRun(runId, fence);
         conversations.saveAndFlush(conversation);
         return new Terminal(run, attempt, replyId);
     }
@@ -378,6 +412,11 @@ public class ChatRuntimePersistenceService {
         ChatAttemptEntity attempt = lockAttempt(attemptId, runId, userId);
         if (!runId.equals(conversation.getActiveChatRunId()) || !run.getCurrentAttemptId().equals(attemptId)) return;
         if (workerInstanceId.equals(attempt.getWorkerInstanceId()) || attempt.getDeadlineAt().isAfter(Instant.now())) return;
+        if (hasCommittedActivity(attemptId, runId, userId)) {
+            settleCommittedActivity(conversation, run, attempt);
+            conversations.saveAndFlush(conversation);
+            return;
+        }
         if ("PENDING".equals(attempt.getStatus())) {
             settleUndispatched(conversation, run, attempt, "FAILED", "CHAT_ATTEMPT_NOT_DISPATCHED", attempt.getLastSequence());
             conversation.releaseChatRun(runId, attempt.getFenceVersion());
@@ -404,6 +443,95 @@ public class ChatRuntimePersistenceService {
             attempt.attachCompletedBusinessMessage(replyId);
             runs.saveAndFlush(run); attempts.saveAndFlush(attempt); conversations.saveAndFlush(conversation);
         }
+    }
+
+    @Transactional
+    public void recoverUnknown(UUID userId, UUID conversationId, UUID runId, UUID attemptId) {
+        ConversationEntity conversation = lockConversation(userId, conversationId);
+        requireProtocolOne(conversation);
+        ChatRunEntity run = lockRun(runId, userId, conversationId);
+        ChatAttemptEntity attempt = lockAttempt(attemptId, runId, userId);
+        boolean targetIsCurrent = attemptId.equals(run.getCurrentAttemptId());
+        boolean alreadyResolved = isResolvedUnknown(attempt);
+        if (alreadyResolved && (!targetIsCurrent || !runId.equals(conversation.getActiveChatRunId()))) return;
+        if (!targetIsCurrent || !runId.equals(conversation.getActiveChatRunId())) {
+            throw new DomainException("CHAT_RECOVERY_NOT_ALLOWED", "This Chat attempt cannot be recovered");
+        }
+        if (alreadyResolved) return;
+        if (!"UNKNOWN".equals(run.getStatus()) || !"UNKNOWN".equals(attempt.getStatus())) {
+            throw new DomainException("CHAT_RECOVERY_NOT_ALLOWED", "Only an unknown Chat attempt can be recovered");
+        }
+        if (hasCommittedActivity(attemptId, runId, userId)) {
+            settleCommittedActivity(conversation, run, attempt);
+            conversations.saveAndFlush(conversation);
+            return;
+        }
+
+        conversation.fenceUnknownChatRun(runId);
+        List<Map<String, Object>> publicParts;
+        try { publicParts = invalidateGeneratingParts(readPublicList(attempt.getPublicPartsJson())); }
+        catch (DomainException corruptedSnapshot) { publicParts = List.of(); }
+        String markdown = ChatPublicProjection.markdown(publicParts);
+        attempt.updateSnapshot(mapper.writeValueAsString(publicParts), attempt.getToolTraceJson(),
+                attempt.getLastSequence());
+        attempt.completeMessage(attempt.getAllocatedReplyMessageId(), "FAILED", "CHAT_UNKNOWN_ABANDONED");
+        MessageEntity reply = messages.findById(attempt.getAllocatedReplyMessageId()).orElse(null);
+        if (reply == null) {
+            reply = new MessageEntity(attempt.getAllocatedReplyMessageId(), conversationId, userId,
+                    conversation.allocateNextMessageSequence(), AiMessageRole.ASSISTANT,
+                    AiMessageStatus.FAILED, markdown, null, "CHAT_UNKNOWN_ABANDONED", null, null,
+                    run.getUserMessageId());
+            reply.enableChatProtocolOne();
+        } else {
+            reply.replacePublicProjection(markdown, AiMessageStatus.FAILED, "CHAT_UNKNOWN_ABANDONED");
+        }
+        run.mark("FAILED");
+        conversation.releaseChatRun(runId, conversation.getChatFence());
+        messages.saveAndFlush(reply);
+        runs.saveAndFlush(run);
+        attempts.saveAndFlush(attempt);
+        conversations.saveAndFlush(conversation);
+    }
+
+    private boolean hasCommittedActivity(UUID attemptId, UUID runId, UUID userId) {
+        return activities.findAllByAttemptIdAndRunIdAndUserIdOrderByCreatedAtAsc(attemptId, runId, userId)
+                .stream().anyMatch(activity -> "READY".equals(activity.getState())
+                        || "SUBMITTED".equals(activity.getState()));
+    }
+
+    private void settleCommittedActivity(ConversationEntity conversation, ChatRunEntity run,
+            ChatAttemptEntity attempt) {
+        conversation.fenceUnknownChatRun(run.getId());
+        UUID replyId = attempt.getAllocatedReplyMessageId();
+        attempt.completeMessage(replyId, "COMPLETED", null);
+        run.mark("COMPLETED");
+        messages.findById(replyId).ifPresent(reply -> {
+            if (reply.getStatus() != AiMessageStatus.COMPLETED) {
+                List<Map<String, Object>> publicParts;
+                try { publicParts = readPublicList(attempt.getPublicPartsJson()); }
+                catch (DomainException corruptedSnapshot) { publicParts = List.of(); }
+                reply.replacePublicProjection(ChatPublicProjection.markdown(publicParts), AiMessageStatus.COMPLETED, null);
+                messages.saveAndFlush(reply);
+            }
+        });
+        attempts.saveAndFlush(attempt);
+        runs.saveAndFlush(run);
+        conversation.releaseChatRun(run.getId(), conversation.getChatFence());
+    }
+
+    private boolean isResolvedUnknown(ChatAttemptEntity attempt) {
+        return "COMPLETED".equals(attempt.getStatus())
+                || ("FAILED".equals(attempt.getStatus())
+                        && "CHAT_UNKNOWN_ABANDONED".equals(attempt.getSafeErrorCode()));
+    }
+
+    private List<Map<String, Object>> invalidateGeneratingParts(List<Map<String, Object>> parts) {
+        return parts.stream().map(part -> {
+            if (!"block".equals(part.get("kind")) || !"GENERATING".equals(part.get("state"))) return part;
+            Map<String, Object> invalid = new LinkedHashMap<>(part);
+            invalid.put("state", "INVALID");
+            return Map.copyOf(invalid);
+        }).toList();
     }
 
     public String workerInstanceId() { return workerInstanceId; }
@@ -505,6 +633,14 @@ public class ChatRuntimePersistenceService {
     }
     private void requireOwner(ConversationEntity c, ChatRunEntity r, ChatAttemptEntity a, long fence) {
         if (!owns(c, r, a, fence)) throw new DomainException("CHAT_RUN_FENCE_LOST", "Chat run no longer owns this conversation");
+    }
+    private void requireRunning(ChatAttemptEntity attempt) {
+        if ("CANCEL_REQUESTED".equals(attempt.getStatus())) {
+            throw new DomainException("CHAT_RUN_CANCELLED", "Chat run was cancelled");
+        }
+        if (!"RUNNING".equals(attempt.getStatus())) {
+            throw new DomainException("CHAT_RUN_FENCE_LOST", "Chat run no longer owns this conversation");
+        }
     }
     private boolean owns(ConversationEntity c, ChatRunEntity r, ChatAttemptEntity a, long fence) {
         return fence == c.getChatFence() && fence == r.getFenceVersion() && fence == a.getFenceVersion()
@@ -613,13 +749,70 @@ public class ChatRuntimePersistenceService {
         }
         catch (Exception e) { throw new IllegalStateException("Unable to fingerprint Chat request", e); }
     }
-    private String requestContext(AiMessageCommand command, ExecutionProfile executionProfile) {
+    private ChatConversationScope resolveConversationScope(ConversationEntity conversation, AiMessageCommand command) {
+        if (conversation.getChatScopeState() == ChatConversationScopeState.LEGACY) throw scopeConflict();
+        if (conversation.getChatScopeState() == ChatConversationScopeState.UNBOUND) {
+            if (!"turn".equals(command.action())) throw scopeConflict();
+            ReadingContext requested = command.readingContext();
+            if (requested != null) {
+                if (readTools == null) throw new IllegalStateException("Chat scope validation is unavailable");
+                readTools.begin(conversation.getUserId(), requested);
+            }
+            ChatConversationScope scope = ChatConversationScope.from(requested);
+            conversation.bindChatScope(scopeJson(scope));
+            return scope;
+        }
+        ChatConversationScope bound = conversationScope(conversation);
+        ChatConversationScope requested = ChatConversationScope.from(command.readingContext());
+        if (requested != null && !requested.equals(bound)) throw scopeConflict();
+        return bound;
+    }
+
+    private void requireBoundScopeForRun(ConversationEntity conversation, ChatRunEntity run) {
+        if (conversation.getChatScopeState() != ChatConversationScopeState.BOUND
+                || !java.util.Objects.equals(conversationScope(conversation), runScope(run))) {
+            throw scopeConflict();
+        }
+    }
+
+    private ChatConversationScope conversationScope(ConversationEntity conversation) {
+        if (conversation.getChatScopeJson() == null) return null;
+        try { return mapper.readValue(conversation.getChatScopeJson(), ChatConversationScope.class); }
+        catch (RuntimeException exception) {
+            throw new DomainException("CHAT_CONTEXT_UNAVAILABLE", "Chat conversation scope is unavailable");
+        }
+    }
+
+    private ChatConversationScope runScope(ChatRunEntity run) {
+        try {
+            JsonNode readingContext = mapper.readTree(run.getRequestContextJson()).get("readingContext");
+            return readingContext == null || readingContext.isString()
+                    ? null : ChatConversationScope.from(mapper.treeToValue(readingContext, ReadingContext.class));
+        } catch (RuntimeException exception) {
+            throw new DomainException("CHAT_CONTEXT_UNAVAILABLE", "Chat request context is unavailable");
+        }
+    }
+
+    private String scopeJson(ChatConversationScope scope) {
+        if (scope == null) return null;
+        try { return mapper.writeValueAsString(scope); }
+        catch (RuntimeException exception) {
+            throw new IllegalStateException("Unable to persist Chat conversation scope", exception);
+        }
+    }
+
+    private String requestContext(AiMessageCommand command, ExecutionProfile executionProfile,
+            ChatConversationScope conversationScope) {
         try { return mapper.writeValueAsString(Map.of("action", command.action(),
-                "readingContext", command.readingContext() == null ? "" : command.readingContext(),
+                "readingContext", conversationScope == null ? "" : conversationScope.toReadingContext(),
                 "selectionText", command.effectiveSelectionText() == null ? "" : command.effectiveSelectionText(),
                 "executionProfile", Map.of("provider", executionProfile.provider().name(),
                         "chatModel", executionProfile.chatModel(), "endpointHash", executionProfile.endpointHash()))); }
         catch (Exception e) { throw new IllegalStateException("Unable to persist Chat request context", e); }
+    }
+    private DomainException scopeConflict() {
+        return new DomainException("CHAT_SCOPE_CONFLICT",
+                "This conversation has a different or legacy reading scope; start a new conversation");
     }
     private String answerHash(Object answer) { return requestHash(answer); }
     private Instant deadlineFromNow() { return Instant.now().plusSeconds(properties.attemptDeadlineSeconds()); }

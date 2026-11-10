@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import jakarta.persistence.LockModeType;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,6 +16,10 @@ import java.util.UUID;
 public interface SubjectRepository extends JpaRepository<SubjectEntity, UUID> {
 
     Optional<SubjectEntity> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
+
+    @Query("select subject.id from SubjectEntity subject where subject.userId = :userId "
+            + "and subject.deletedAt is null and subject.id in :ids")
+    List<UUID> findActiveIdsByUserIdAndIdIn(@Param("userId") UUID userId, @Param("ids") Collection<UUID> ids);
 
     Optional<SubjectEntity> findByIdAndUserId(UUID id, UUID userId);
 

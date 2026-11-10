@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,6 +54,13 @@ public class OverviewResultController {
     public OverviewResultView getSubject(@AuthenticationPrincipal AuthenticatedUser user,
                                          @PathVariable UUID subjectId) {
         return service.getSubject(user.userId(), subjectId);
+    }
+
+    @PostMapping("/subjects/statuses")
+    public OverviewSubjectStatusesResponse getSubjectStatuses(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Valid @RequestBody OverviewSubjectStatusesRequest request) {
+        return service.getSubjectStatuses(user.userId(), request);
     }
 
     @GetMapping("/subjects/{subjectId}/outline")

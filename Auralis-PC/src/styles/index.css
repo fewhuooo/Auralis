@@ -9,19 +9,23 @@
 
 :root {
   /* ===== Zen Minimalist System Colors (Custom Palette) ===== */
-  --color-zen-ivory: #F7F2EB;     /* 主内容底色 rgb(247, 242, 235) */
+  --color-zen-ivory: #F7F2EB;
+  /* 主内容底色 rgb(247, 242, 235) */
   --color-zen-graphite: #1C1C1A;
-  --color-zen-sage: #8B9A6E;      /* 主色 rgb(139, 154, 110) */
-  --color-zen-hairline: #DDD5C7;  /* 柔和中性发丝边框 */
+  --color-zen-sage: #8B9A6E;
+  /* 主色 rgb(139, 154, 110) */
+  --color-zen-hairline: #DDD5C7;
+  /* 柔和中性发丝边框 */
   --color-zen-white: #FFFFFF;
   --color-zen-stone: #A8A8A5;
-  --color-sage-dark: #76855B;     /* 主色深一度，用于悬浮与渐变收尾 */
+  --color-sage-dark: #76855B;
+  /* 主色深一度，用于悬浮与渐变收尾 */
 
   /* ===== 1. Base Palette ===== */
   --color-white: var(--color-zen-white);
   --color-black: var(--color-zen-graphite);
   --color-transparent: transparent;
-  
+
   /* Clean Neutral Grays & Oatmeal Bases */
   --color-gray-50: #F7F2EB;
   --color-gray-100: #EAE2D6;
@@ -43,19 +47,25 @@
 
   /* ===== 2. Semantic Colors (Light Mode) ===== */
   /* Backgrounds */
-  --color-bg-page: #EEEEEE;       /* 页面大背景 / 次级中性底 rgb(238, 238, 238) */
-  --color-bg-primary: #F7F2EB;    /* 主内容底色 rgb(247, 242, 235) */
-  --color-bg-secondary: #EEEEEE;  /* 页面大背景 / 次级中性底 */
-  --color-bg-tertiary: #FAF7F2;   /* 次级背景 / 模块卡片色 (比#F7F2EB更浅一点点的暖米白 rgb(250, 247, 242)) */
-  --color-bg-elevated: #FAF7F2;   /* 模块卡片色 / 浮层底色 */
-  --color-bg-card: #FAF7F2;       /* 模块卡片色 */
+  --color-bg-page: #EEEEEE;
+  /* 页面大背景 / 次级中性底 rgb(238, 238, 238) */
+  --color-bg-primary: #F7F2EB;
+  /* 主内容底色 rgb(247, 242, 235) */
+  --color-bg-secondary: #EEEEEE;
+  /* 页面大背景 / 次级中性底 */
+  --color-bg-tertiary: #FAF7F2;
+  /* 次级背景 / 模块卡片色 (比#F7F2EB更浅一点点的暖米白 rgb(250, 247, 242)) */
+  --color-bg-elevated: #FAF7F2;
+  /* 模块卡片色 / 浮层底色 */
+  --color-bg-card: #FAF7F2;
+  /* 模块卡片色 */
 
   /* Semantic Aliases */
   --bg-primary: var(--color-bg-primary);
   --bg-secondary: var(--color-bg-secondary);
   --bg-tertiary: var(--color-bg-tertiary);
   --bg-card: var(--color-bg-card);
-  
+
   /* Text */
   --text-primary: var(--color-zen-graphite);
   --text-secondary: #2C2C28;
@@ -92,17 +102,27 @@
   /* ===== 3. Typography ===== */
   --font-family-base: 'DM Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-family-mono: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  
-  --font-size-caption: 0.75rem;   /* 12px */
-  --font-size-label: 0.875rem;    /* 14px */
-  --font-size-body-sm: 0.8125rem; /* 13px */
-  --font-size-body: 1rem;         /* 16px */
-  --font-size-body-lg: 1.125rem;  /* 18px */
-  --font-size-title-sm: 1.25rem;  /* 20px */
-  --font-size-title: 1.5rem;      /* 24px */
-  --font-size-title-lg: 1.875rem; /* 30px */
-  --font-size-display-sm: 3rem;   /* 48px */
-  --font-size-display: 4.5rem;    /* 72px */
+
+  --font-size-caption: 0.75rem;
+  /* 12px */
+  --font-size-label: 0.875rem;
+  /* 14px */
+  --font-size-body-sm: 0.8125rem;
+  /* 13px */
+  --font-size-body: 1rem;
+  /* 16px */
+  --font-size-body-lg: 1.125rem;
+  /* 18px */
+  --font-size-title-sm: 1.25rem;
+  /* 20px */
+  --font-size-title: 1.5rem;
+  /* 24px */
+  --font-size-title-lg: 1.875rem;
+  /* 30px */
+  --font-size-display-sm: 3rem;
+  /* 48px */
+  --font-size-display: 4.5rem;
+  /* 72px */
 
   /* Backwards-compatible aliases for existing component styles. */
   --font-size-xs: var(--font-size-caption);
@@ -118,15 +138,24 @@
   --line-height-relaxed: 1.75;
 
   /* ===== 4. Spacing System ===== */
-  --spacing-1: 0.25rem;  /* 4px */
-  --spacing-2: 0.5rem;   /* 8px */
-  --spacing-3: 0.75rem;  /* 12px */
-  --spacing-4: 1rem;     /* 16px */
-  --spacing-5: 1.25rem;  /* 20px */
-  --spacing-6: 1.5rem;   /* 24px */
-  --spacing-8: 2rem;     /* 32px */
-  --spacing-10: 2.5rem;  /* 40px */
-  --spacing-12: 3rem;    /* 48px */
+  --spacing-1: 0.25rem;
+  /* 4px */
+  --spacing-2: 0.5rem;
+  /* 8px */
+  --spacing-3: 0.75rem;
+  /* 12px */
+  --spacing-4: 1rem;
+  /* 16px */
+  --spacing-5: 1.25rem;
+  /* 20px */
+  --spacing-6: 1.5rem;
+  /* 24px */
+  --spacing-8: 2rem;
+  /* 32px */
+  --spacing-10: 2.5rem;
+  /* 40px */
+  --spacing-12: 3rem;
+  /* 48px */
 
   /* ===== 5. Borders & Radius ===== */
   --radius-sm: 6px;
@@ -167,13 +196,28 @@
 
 html.dark {
   /* Backgrounds: Higher contrast between layers */
-  --color-bg-primary: #1f1e1c;       /* Warm Charcoal Base */
-  --color-bg-secondary: #292825;     /* Sidebar / Header */
-  --color-bg-tertiary: #33312e;      /* Cards / Inputs */
-  --color-bg-elevated: #3d3b38;      /* Modals */
+  --color-bg-primary: #1f1e1c;
+  /* Warm Charcoal Base */
+  --color-bg-secondary: #292825;
+  /* Sidebar / Header */
+  --color-bg-tertiary: #33312e;
+  /* Cards / Inputs */
+  --color-bg-elevated: #3d3b38;
+  /* Modals */
+  --color-bg-card: #252422;
+  /* 模块卡片底色 */
+  --color-bg-page: #191816;
+  /* 页面大背景 */
+
+  /* Semantic Aliases */
+  --bg-primary: var(--color-bg-primary);
+  --bg-secondary: var(--color-bg-secondary);
+  --bg-tertiary: var(--color-bg-tertiary);
+  --bg-card: var(--color-bg-card);
 
   /* Text */
-  --text-primary: #e6dfd8;           /* Light Oatmeal Text */
+  --text-primary: #e6dfd8;
+  /* Light Oatmeal Text */
   --text-secondary: #b0aca5;
   --text-muted: #8a867e;
   --text-accent: #d9d0c7;
@@ -193,7 +237,7 @@ html.dark {
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
-  
+
   /* Accent Glow */
   --accent-glow: 0 0 24px rgba(125, 147, 114, 0.22);
 }
@@ -234,7 +278,12 @@ select {
 }
 
 /* ===== Typography Global Styles ===== */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-weight: 600;
   line-height: var(--line-height-tight);
   color: var(--text-primary);
@@ -251,7 +300,8 @@ a:hover {
   text-decoration: underline;
 }
 
-code, pre {
+code,
+pre {
   font-family: var(--font-family-mono);
   font-size: 0.9em;
 }
@@ -394,7 +444,9 @@ select:focus {
 }
 
 @keyframes shimmer {
-  100% { transform: translateX(100%); }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* ===== 9. Popover & Context Menus ===== */
@@ -420,7 +472,7 @@ html.theme-in-transition,
 html.theme-in-transition *,
 html.theme-in-transition *::before,
 html.theme-in-transition *::after {
-  transition: 
+  transition:
     background-color 0.48s cubic-bezier(0.16, 1, 0.3, 1),
     border-color 0.48s cubic-bezier(0.16, 1, 0.3, 1),
     color 0.48s cubic-bezier(0.16, 1, 0.3, 1),
@@ -439,10 +491,12 @@ html.theme-in-transition *::after {
   opacity: 0;
   will-change: opacity, transform;
 }
+
 .theme-ambient-curtain.to-dark {
   background: radial-gradient(circle at var(--curtain-x, 88%) var(--curtain-y, 24px), rgba(22, 27, 22, 0.5) 0%, rgba(16, 20, 16, 0.28) 50%, rgba(10, 12, 10, 0.08) 80%, transparent 100%);
   animation: curtain-fade 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
 .theme-ambient-curtain.to-light {
   background: radial-gradient(circle at var(--curtain-x, 88%) var(--curtain-y, 24px), rgba(255, 248, 235, 0.55) 0%, rgba(247, 242, 235, 0.3) 50%, rgba(238, 238, 238, 0.08) 80%, transparent 100%);
   animation: curtain-fade 0.48s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -453,14 +507,17 @@ html.theme-in-transition *::after {
     opacity: 0;
     transform: scale(0.98);
   }
+
   40% {
     opacity: 1;
     transform: scale(1);
   }
+
   70% {
     opacity: 0.7;
     transform: scale(1.005);
   }
+
   100% {
     opacity: 0;
     transform: scale(1.02);
@@ -496,8 +553,8 @@ html.theme-in-transition *::after {
   backdrop-filter: blur(16px) !important;
   -webkit-backdrop-filter: blur(16px) !important;
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.08)) !important;
-  box-shadow: 
-    0 10px 28px -4px rgba(35, 45, 30, 0.12), 
+  box-shadow:
+    0 10px 28px -4px rgba(35, 45, 30, 0.12),
     0 2px 6px -1px rgba(0, 0, 0, 0.04) !important;
   transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
@@ -517,6 +574,7 @@ html.theme-in-transition *::after {
 .el-message--success {
   border-color: rgba(139, 154, 110, 0.35) !important;
 }
+
 .el-message--success .el-message__icon {
   color: #6E8052 !important;
 }
@@ -524,6 +582,7 @@ html.theme-in-transition *::after {
 .el-message--warning {
   border-color: rgba(200, 155, 109, 0.35) !important;
 }
+
 .el-message--warning .el-message__icon {
   color: #C89B6D !important;
 }
@@ -531,6 +590,7 @@ html.theme-in-transition *::after {
 .el-message--error {
   border-color: rgba(217, 83, 79, 0.35) !important;
 }
+
 .el-message--error .el-message__icon {
   color: #C2413E !important;
 }
@@ -538,6 +598,7 @@ html.theme-in-transition *::after {
 .el-message--info {
   border-color: var(--border-default, rgba(0, 0, 0, 0.1)) !important;
 }
+
 .el-message--info .el-message__icon {
   color: var(--text-muted, #7A7A75) !important;
 }
@@ -545,13 +606,15 @@ html.theme-in-transition *::after {
 html.dark .el-message {
   background: rgba(31, 36, 31, 0.94) !important;
   border-color: rgba(163, 177, 155, 0.18) !important;
-  box-shadow: 
-    0 12px 32px rgba(0, 0, 0, 0.45), 
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
+
 html.dark .el-message .el-message__content {
   color: #FAF7F2 !important;
 }
+
 html.dark .el-message--success .el-message__icon {
   color: #9AB08F !important;
 }
@@ -570,8 +633,8 @@ html.dark .el-message--success .el-message__icon {
   border-radius: 20px !important;
   background: var(--color-bg-primary, #F7F2EB) !important;
   border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.1)) !important;
-  box-shadow: 
-    0 24px 60px -8px rgba(35, 45, 30, 0.18), 
+  box-shadow:
+    0 24px 60px -8px rgba(35, 45, 30, 0.18),
     0 4px 14px -2px rgba(0, 0, 0, 0.06) !important;
 }
 
@@ -591,6 +654,7 @@ html.dark .el-message--success .el-message__icon {
   font-size: 16px !important;
   transition: all 0.2s ease !important;
 }
+
 .el-message-box__close:hover {
   color: var(--text-primary, #1C1C1A) !important;
 }
@@ -624,6 +688,7 @@ html.dark .el-message--success .el-message__icon {
   border: 0.5px solid var(--border-default, #E6E6E4) !important;
   color: var(--text-secondary, #344139) !important;
 }
+
 .el-message-box__btns button:first-child:hover {
   border-color: #8B9A6E !important;
   color: #637748 !important;
@@ -637,6 +702,7 @@ html.dark .el-message--success .el-message__icon {
   color: #FAF7F2 !important;
   box-shadow: 0 3px 10px rgba(139, 154, 110, 0.28) !important;
 }
+
 .el-message-box__btns button.el-button--primary:hover {
   background: linear-gradient(135deg, #768759 0%, #637748 100%) !important;
   box-shadow: 0 4px 14px rgba(139, 154, 110, 0.38) !important;
@@ -647,25 +713,29 @@ html.dark .el-message--success .el-message__icon {
 html.dark .el-overlay.is-message-box {
   background-color: rgba(0, 0, 0, 0.6) !important;
 }
+
 html.dark .el-message-box {
   background: #202620 !important;
   border-color: rgba(163, 177, 155, 0.16) !important;
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6) !important;
 }
+
 html.dark .el-message-box__title {
   color: #FAF7F2 !important;
 }
+
 html.dark .el-message-box__content {
   color: #D6D2CA !important;
 }
+
 html.dark .el-message-box__btns button:first-child {
   background: #191E19 !important;
   border-color: rgba(163, 177, 155, 0.22) !important;
   color: #FAF7F2 !important;
 }
+
 html.dark .el-message-box__btns button:first-child:hover {
   background: #242A24 !important;
   border-color: #9AB08F !important;
   color: #9AB08F !important;
 }
-

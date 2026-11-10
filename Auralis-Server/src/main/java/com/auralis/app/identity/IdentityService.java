@@ -372,7 +372,12 @@ public class IdentityService {
     }
 
     private UserView toUserView(UserEntity user) {
-        return new UserView(user.getId(), user.getUsername(), user.getDisplayName(), user.getVersion());
+        Boolean hasAvatar = jdbcTemplate.queryForObject(
+                "select exists (select 1 from user_avatars where user_id = ?)",
+                Boolean.class,
+                user.getId());
+        return new UserView(
+                user.getId(), user.getUsername(), user.getDisplayName(), user.getVersion(), Boolean.TRUE.equals(hasAvatar));
     }
 
     private void requireVersion(UserEntity user, long baseVersion) {

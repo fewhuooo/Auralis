@@ -6,11 +6,17 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface OverviewResultRepository extends JpaRepository<OverviewResultEntity, UUID> {
     Optional<OverviewResultEntity> findByUserIdAndScopeTypeAndScopeId(UUID userId, String scopeType, UUID scopeId);
+
+    List<OverviewResultEntity> findAllByUserIdAndScopeTypeAndScopeIdIn(
+            UUID userId, String scopeType, Collection<UUID> scopeIds);
+
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select result from OverviewResultEntity result where result.userId = :userId "

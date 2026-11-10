@@ -96,6 +96,55 @@ class OpenAiCompatibleChatToolStreamTests {
         assertThat(chunks).noneMatch(AiProviderChunk::terminal);
     }
 
+    @Test
+    void lateToolCallsFinishCannotReplaceLengthFinishReason() {
+        String body = "data: {\"id\":\"r\",\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n"
+                + "data: {\"id\":\"r\",\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n"
+                + "data: [DONE]\n";
+        OpenAiCompatibleProvider provider = provider(new ProviderHttpTransportStub(body, new AtomicReference<>()));
+        List<AiProviderChunk> chunks = new ArrayList<>();
+
+        assertThatThrownBy(() -> provider.streamInto(request(), credential(), new TestCancellation(), chunks::add))
+                .isInstanceOf(DomainException.class);
+
+        assertThat(chunks).noneMatch(AiProviderChunk::terminal);
+        assertThat(chunks).noneMatch(chunk -> chunk.toolCallDelta() != null);
+    }
+
+    @Test
+    void toolDeltaAfterLengthFinishIsRejectedBeforeTypedEmission() {
+        String body = "data: {\"id\":\"r\",\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n"
+                + "data: {\"id\":\"r\",\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,"
+                + "\"id\":\"call-1\",\"function\":{\"name\":\"lookup\","
+                + "\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\"}}]},\"finish_reason\":null}]}\n"
+                + "data: [DONE]\n";
+        OpenAiCompatibleProvider provider = provider(new ProviderHttpTransportStub(body, new AtomicReference<>()));
+        List<AiProviderChunk> chunks = new ArrayList<>();
+
+        assertThatThrownBy(() -> provider.streamInto(request(), credential(), new TestCancellation(), chunks::add))
+                .isInstanceOf(DomainException.class);
+
+        assertThat(chunks).noneMatch(AiProviderChunk::terminal);
+        assertThat(chunks).noneMatch(chunk -> chunk.toolCallDelta() != null);
+    }
+
+    @Test
+    void streamsExplicitReasoningContentAsASeparateTypedChunk() {
+        String body = "data: {\"id\":\"r\",\"choices\":[{\"delta\":{"+
+                "\"reasoning_content\":\"check the evidence\",\"content\":null},\"finish_reason\":null}]}\n"
+                + "data: {\"id\":\"r\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n"
+                + "data: [DONE]\n";
+        OpenAiCompatibleProvider provider = provider(new ProviderHttpTransportStub(body, new AtomicReference<>()));
+        List<AiProviderChunk> chunks = new ArrayList<>();
+
+        provider.streamInto(request(), credential(), new TestCancellation(), chunks::add);
+
+        assertThat(chunks).filteredOn(chunk -> chunk.reasoningContent() != null)
+                .extracting(AiProviderChunk::reasoningContent).containsExactly("check the evidence");
+        assertThat(chunks).filteredOn(chunk -> chunk.content() != null && !chunk.content().isEmpty())
+                .isEmpty();
+    }
+
     private OpenAiCompatibleProvider provider(ProviderHttpTransportStub transport) {
         ProviderEndpointPolicy policy = ProviderEndpointPolicyTestFactory.fakeDns();
         ProviderHttpClient client = new ProviderHttpClient(new ObjectMapper(), transport, 128 * 1024, 100, 100);

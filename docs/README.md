@@ -1,6 +1,6 @@
 # Auralis 文档中心
 
-更新时间：2026-10-29
+更新时间：2026-11-04
 
 文档状态：现行
 
@@ -20,6 +20,12 @@
 `docs/README.md` 是唯一现行入口。当前项目阶段与验收边界见[当前状态](current/Status.md)；`docs/archive/` 只保存历史，`docs/showcase/` 只保存展示材料，两者都不是工程事实来源。
 
 ## 30 秒开始
+
+Chat Agent Loop 顺序实施：[容错、收敛与上下文治理](plans/2026-11-04-chat-agent-loop-evolution.md)。
+
+学科总览批量状态接口与 PC 接入：[2026-11-04 交接](plans/2026-11-04-overview-batch-status-handoff.md)。
+
+本轮 PC 修复交接：[复习同步与取消排期（2026-11-03；待实施）](plans/2026-11-03-pc-review-unschedule-handoff.md)。
 
 修改任何内容前：
 
@@ -110,7 +116,7 @@
 - [后端模块](modules/Backend.md)
 - [基础设施模块](modules/Infrastructure.md)
 - [API 契约](contracts/API.md)
-- [Chat Runtime API protocol 1](contracts/chat-runtime-api.md)
+- [Chat Runtime API — Display Tool protocol 1（当前源码候选，验证待完成）](contracts/chat-runtime-api.md)
 - [冻结 OpenAPI 产物](contracts/openapi/auralis-openapi.json)
 - [数据库契约](contracts/Database.md)
 - [对象模型差异矩阵](contracts/ObjectModelMatrix.md)
@@ -132,8 +138,10 @@
 ### 实施方案、运维与交付
 
 - [实施方案分类索引](plans/README.md)
-- [Chat Agent 与流式可视化教学重写计划（2026-10-29；独立分支，计划中）](plans/2026-10-29-chat-agent-visual-teaching.md)
-- [Chat 前端接手说明（2026-10-29；PC 用户实施，P2 草稿未验证；Mobile / Tablet 暂停）](plans/2026-10-29-chat-frontend-handoff.md)
+- [Overview 动态窗口重构方向（2026-11-10；设计提案）](plans/2026-11-10-overview-dynamic-window-refactor.md)
+- [Chat Agent Display Tool 重写实施计划（2026-10-31；实施与验证进行中）](plans/2026-10-31-chat-display-tools.md)
+- [Chat Display Tool 前端接手说明（2026-10-31；PC 源码和 GUI 验收待进行）](plans/2026-10-29-chat-frontend-handoff.md)
+- [Chat Agent 与流式可视化教学重写计划（2026-10-29；历史计划，已由 2026-10-31 Display Tool 计划替代）](plans/2026-10-29-chat-agent-visual-teaching.md)
 - [Overview 独立执行重试实施计划](plans/2026-10-27-overview-explicit-retry.md)
 - [Overview 原章顺序与柔性路由实施计划](plans/2026-10-27-overview-original-chapter-order.md)
 - [Overview 动态容量与链路简化实施计划](plans/2026-10-26-overview-dynamic-capacity-and-simplification.md)

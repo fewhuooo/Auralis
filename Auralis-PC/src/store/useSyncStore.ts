@@ -370,8 +370,10 @@ export const useSyncStore = defineStore('sync', () => {
 
       try {
         const { ReviewSyncService } = await import('@/services/reviewSyncService')
-        const { localDb } = await import('@/services/localDb')
-        const reviewSync = new ReviewSyncService(localDb as any, repositoryForSync)
+        const { localDb, getLocalSqlDatabase } = await import('@/services/localDb')
+        await localDb.init()
+        requireCurrentSyncScope(scope)
+        const reviewSync = new ReviewSyncService(getLocalSqlDatabase(), repositoryForSync)
         const reviewResult = await reviewSync.syncAllPending(scope.userId, scope.serverDeviceId, scope)
         requireCurrentSyncScope(scope)
         reviewSyncError.value = reviewResult.protocolBlocked
@@ -390,6 +392,19 @@ export const useSyncStore = defineStore('sync', () => {
       // A previous failure remains visible until this complete cycle succeeds.
       lastSyncError.value = null
       lastSyncErrorCode.value = null
+      // A settled schedule unlocks the next persisted intention. Drain without
+      // requiring another mouse drop or network event; PROCESSING/failure does
+      // not request another cycle.
+      if (result.scheduleApplied > 0) {
+        const pending = await repositoryForSync.listPending('TASK')
+        requireCurrentSyncScope(scope)
+        if (pending.some((mutation) => mutation.mutationType === 'SCHEDULE_INSERTION'
+          || mutation.mutationType === 'SCHEDULE_SWAP'
+          || mutation.mutationType === 'SCHEDULE_UNSCHEDULE')) {
+          syncRequestedKey = scope.key
+          syncRequested = true
+        }
+      }
     } catch (error) {
       if (!scope.isCurrent()) {
         if (error instanceof QueueReleasedError) throw error

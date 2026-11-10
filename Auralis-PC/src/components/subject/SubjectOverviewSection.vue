@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { IconAlertTriangle, IconBook, IconChevronDown, IconChevronRight, IconDots, IconRefresh } from '@tabler/icons-vue'
 import type { SubjectOverviewRecord } from '@/types/overview'
 
@@ -11,6 +12,8 @@ const props = withDefaults(defineProps<{
   generationConflictResolving?: boolean
   error?: string | null
 }>(), { collapsed: true, sourceCount: 0, isStale: false, isGenerating: false, generationConflictResolving: false, error: null })
+
+const morePopoverVisible = ref(false)
 
 const emit = defineEmits<{
   'update:collapsed': [value: boolean]
@@ -80,7 +83,7 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
           </button>
 
           <!-- 更多操作 -->
-          <el-popover placement="bottom-end" trigger="click" width="130" popper-class="zen-popover zen-action-popover" :hide-after="0">
+          <el-popover v-model:visible="morePopoverVisible" placement="bottom-end" trigger="click" width="130" popper-class="zen-popover zen-action-popover" :hide-after="0">
             <template #reference>
               <button
                 type="button"
@@ -88,7 +91,7 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
                 aria-label="更多总览操作"
                 :disabled="isGenerating"
               >
-                <IconRefresh v-if="isGenerating && !error" :size="13" :stroke-width="1.6" class="is-spinning" />
+                <IconRefresh v-if="isGenerating" :size="13" :stroke-width="1.6" class="is-spinning" />
                 <IconDots v-else :size="14" :stroke-width="1.6" />
               </button>
             </template>
@@ -96,12 +99,12 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
               <button
                 class="zen-menu-item"
                 :disabled="isGenerating"
-                @click="emit('generate-outline')"
+                @click="morePopoverVisible = false; emit('generate-outline')"
               >重新生成大纲</button>
               <button
                 class="zen-menu-item"
                 :disabled="isGenerating"
-                @click="emit('generate')"
+                @click="morePopoverVisible = false; emit('generate')"
               >{{ hasContent() ? '重新生成全部' : '生成总览' }}</button>
             </div>
           </el-popover>
@@ -163,7 +166,11 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
 
         <!-- 章节大纲展示 -->
         <template v-else>
-          <ol v-if="overview?.outline?.length" class="file-outline__chapters">
+          <div v-if="isGenerating && hasContent()" class="file-outline__pending subject-overview__regenerating-banner">
+            <IconRefresh :size="12" :stroke-width="1.6" class="is-spinning" />
+            <span>正在重新生成学科总览与大纲…</span>
+          </div>
+          <ol v-if="overview?.outline?.length" class="file-outline__chapters" :class="{ 'is-generating': isGenerating }">
             <li v-for="chapter in overview.outline" :key="chapter.title">
               <strong class="chapter-header">
                 <span class="chapter-title">{{ chapter.title }}</span>
@@ -434,6 +441,17 @@ const hasContent = () => Boolean(props.overview?.outline?.length || props.overvi
   margin: 4px 0 2px;
   padding: 4px 4px 6px;
   list-style: none;
+}
+.file-outline__chapters.is-generating {
+  opacity: 0.6;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.subject-overview__regenerating-banner {
+  background: rgba(139, 154, 110, 0.08);
+  color: var(--color-primary-accent);
+  border-bottom: 1px dashed rgba(139, 154, 110, 0.25);
+  margin-bottom: 6px;
 }
 .file-outline__chapters li {
   display: flex;

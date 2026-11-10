@@ -26,6 +26,42 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class AiUsageLedgerBehaviorTests {
 
     @Test
+    void overviewLeavesUserCapacityForChatAcrossGuardInstancesAndBothOverviewFeatures() throws Exception {
+        TestDb db = database();
+        UUID user = db.user();
+        Clock clock = Clock.systemUTC();
+        var policy = limits(4, 2, 100_000, 200_000, 2_000_000,
+                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216);
+        AiUsageGuard first = guard(db, clock, policy);
+        AiUsageGuard second = guard(db, clock, policy);
+        var source = first.beginTask(new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "source"));
+        var subject = second.beginTask(new AiTaskContext(user, AiFeature.SUBJECT_OVERVIEW, "subject"));
+        var chat = second.beginTask(new AiTaskContext(user, AiFeature.CHAT, "chat"));
+        var reserved = first.reserve(source, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                "test", AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10);
+        assertThatThrownBy(() -> second.reserve(subject, AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK,
+                "test", AiCredentialSource.USER_SUPPLIED, AiOutputRole.FINAL, 10, 10))
+                .isInstanceOf(AiUsageLimitException.class).hasMessage("AI_CONCURRENCY_LIMIT");
+        second.reserve(chat, AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+                "test", AiCredentialSource.PLATFORM, AiOutputRole.GENERAL, 10, 10);
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class))
+                .isEqualTo(2);
+        first.settle(source, reserved, null, false, "NOT_DISPATCHED");
+        assertThat(second.reserve(subject, AiStage.OVERVIEW_REDUCE, AiProviderType.DEEPSEEK,
+                "test", AiCredentialSource.PLATFORM, AiOutputRole.FINAL, 10, 10)).isNotNull();
+    }
+
+    @Test
+    void singleUserSlotStillAllowsOverview() throws Exception {
+        TestDb db = database();
+        AiUsageGuard guard = guard(db, Clock.systemUTC(), limits(1, 1, 100_000, 200_000, 2_000_000,
+                300_000, 10_000, 32_000, 2, 24, 524_288, 512, 16_777_216));
+        var task = guard.beginTask(new AiTaskContext(db.user(), AiFeature.SOURCE_OVERVIEW, "single-slot"));
+        assertThat(guard.reserve(task, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                "test", AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10)).isNotNull();
+    }
+
+    @Test
     void reservesBudgetBeforeDispatchAndEnforcesTaskAndUserConcurrencyAcrossGuardInstances() throws Exception {
         TestDb db = database();
         UUID user = db.user();

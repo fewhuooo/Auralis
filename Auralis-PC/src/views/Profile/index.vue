@@ -161,8 +161,7 @@
 
           <!-- 账号快捷操作 -->
           <div class="account-card-actions">
-            <button class="account-btn danger" @click="handleLogout">退出登录
-            </button>
+            <button class="account-btn danger" type="button" @click="handleLogout">退出登录</button>
           </div>
         </div>
       </aside>
@@ -769,6 +768,9 @@ const handleAvatarFileSelected = async (event: Event) => {
   try {
     await useAuthApi.uploadAvatar(file)
     if (requestedUserId && authStore.user?.id === requestedUserId) {
+      if (authStore.user) {
+        authStore.user.hasAvatar = true
+      }
       await authStore.setAvatarFromBlob(file, requestedUserId)
       void authStore.loadAvatar()
     }
@@ -794,6 +796,9 @@ const resetAvatar = async () => {
   const requestedUserId = authStore.user?.id
   try {
     await useAuthApi.resetAvatar()
+    if (authStore.user) {
+      authStore.user.hasAvatar = false
+    }
     if (requestedUserId) await authStore.clearAvatar(requestedUserId)
     ElNotification({
       title: '已重置头像',
@@ -859,6 +864,7 @@ const saveNickname = async () => {
     if (authStore.user) {
       authStore.user.displayName = updated.displayName
       authStore.user.version = updated.version
+      authStore.user.hasAvatar = updated.hasAvatar
     }
     isEditingNickname.value = false
     ElNotification({
@@ -1495,22 +1501,29 @@ watch(() => pomodoroStore.syncRevision, (revision, previous) => {
 
 const handleLogout = async () => {
   try {
-    await ElMessageBox.confirm('确定要退出当前设备的登录状态吗？', '退出登录', {
+    const action = await ElMessageBox.confirm('确定要退出当前设备的登录状态吗？', '退出登录', {
       confirmButtonText: '退出',
       cancelButtonText: '取消',
       type: 'warning',
     })
-  } catch {
-    return
+    if (action !== 'confirm') return
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    console.warn('[Profile] ElMessageBox confirm exception, proceeding with logout:', error)
   }
 
   try {
     await authStore.logout()
     ElNotification({ title: '已退出登录', message: '期待您的再次使用', type: 'success', duration: 2000 })
-  } catch {
+  } catch (error) {
+    console.warn('[Profile] authStore.logout error, local session cleared:', error)
     ElNotification({ title: '登出异常', message: '无法连接到服务器完成会话清理，本地状态已强制清除', type: 'warning', duration: 3000 })
   } finally {
-    await router.push('/login')
+    await router.push('/login').catch(() => {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.assign('/login')
+      }
+    })
   }
 }
 

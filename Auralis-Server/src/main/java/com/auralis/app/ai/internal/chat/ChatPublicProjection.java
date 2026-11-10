@@ -13,19 +13,23 @@ public final class ChatPublicProjection {
 
     public static String blockBoundary() { return "\n"; }
 
-    public static String publicTextDelta(ChatStreamParser.Component component, Map<String, Object> row) {
+    public static String publicTextDelta(DisplayComponent component, Map<String, Object> row) {
         Object type = row.get("type");
         if ("meta".equals(type)) {
+            if (blank(row.get("title"))) return "";
             return line("### " + safe(row.get("title"))
                     + (blank(row.get("description")) ? "" : "\n" + safe(row.get("description"))));
         }
-        if ("stem".equals(type)) return line("**" + safe(row.get("question")) + "**");
+        if ("stem".equals(type)) return blank(row.get("question"))
+                ? "" : line("**" + safe(row.get("question")) + "**");
         if ("option".equals(type)) return line("- " + safe(row.get("key")) + ". " + safe(row.get("text")));
         if ("question".equals(type) || "stem".equals(type)) return line("**" + safe(row.get("question")) + "**");
         if (!"item".equals(type)) return "";
+        if (component == DisplayComponent.COMPARE) return compareItemMarkdown(row.get("title"), row.get("entries"));
         return switch (component) {
-            case STEPS, COMPARE -> line("- **" + safe(row.get("title")) + "**"
+            case STEPS -> line("- **" + safe(row.get("title")) + "**"
                     + (blank(row.get("description")) ? "" : ": " + safe(row.get("description"))));
+            case COMPARE -> "";
             case ROADMAP -> line("- " + safe(row.get("title"))
                     + (blank(row.get("description")) ? "" : ": " + safe(row.get("description")))
                     + (blank(row.get("tag")) ? "" : " (" + safe(row.get("tag")) + ")"));
@@ -35,17 +39,17 @@ public final class ChatPublicProjection {
         };
     }
 
-    public static Map<String, Object> blockPart(String blockId, ChatStreamParser.Component component,
+    public static Map<String, Object> blockPart(String blockId, DisplayComponent component,
             List<Map<String, Object>> rows, boolean validActivity) {
         return blockPart(blockId, component, rows, validActivity ? "READY" : "INVALID");
     }
 
-    public static Map<String, Object> blockPart(String blockId, ChatStreamParser.Component component,
+    public static Map<String, Object> blockPart(String blockId, DisplayComponent component,
             List<Map<String, Object>> rows, String state) {
         return blockPart(blockId, component, rows, state, null);
     }
 
-    public static Map<String, Object> blockPart(String blockId, ChatStreamParser.Component component,
+    public static Map<String, Object> blockPart(String blockId, DisplayComponent component,
             List<Map<String, Object>> rows, String state, String questionId) {
         Map<String, Object> meta = new LinkedHashMap<>();
         List<Map<String, Object>> items = new ArrayList<>();
@@ -57,8 +61,11 @@ public final class ChatPublicProjection {
                         copy(row, meta, "title", "description", "tag", "current", "chartType", "unit");
                     } else if ("item".equals(type)) {
                         Map<String, Object> item = new LinkedHashMap<>();
-                        if (component == ChatStreamParser.Component.CHART) copy(row, item, "label", "value");
-                        else copy(row, item, "title", "description", "tag", "current");
+                        if (component == DisplayComponent.CHART) copy(row, item, "label", "value");
+                        else if (component == DisplayComponent.COMPARE) {
+                            copy(row, item, "title");
+                            item.put("entries", compareEntries(row.get("entries")));
+                        } else copy(row, item, "title", "description", "tag", "current");
                         items.add(item);
                     }
                 }
@@ -84,7 +91,7 @@ public final class ChatPublicProjection {
         part.put("component", component.name().toLowerCase(java.util.Locale.ROOT));
         part.put("state", state);
         part.put("meta", meta); part.put("items", List.copyOf(items));
-        if (component == ChatStreamParser.Component.QUIZ || component == ChatStreamParser.Component.QUESTION) {
+        if (component == DisplayComponent.QUIZ || component == DisplayComponent.QUESTION) {
             part.put("questionId", questionId == null ? blockId : questionId);
         }
         return Map.copyOf(part);
@@ -122,8 +129,9 @@ public final class ChatPublicProjection {
             for (Object value : items) if (value instanceof Map<?, ?> item) {
                 switch (Objects.toString(component, "")) {
                     case "chart" -> markdown.append("- ").append(safe(item.get("label"))).append(": ").append(number(item.get("value"))).append('\n');
-                    case "steps", "compare" -> markdown.append("- **").append(safe(item.get("title"))).append("**")
+                    case "steps" -> markdown.append("- **").append(safe(item.get("title"))).append("**")
                             .append(blank(item.get("description")) ? "" : ": " + safe(item.get("description"))).append('\n');
+                    case "compare" -> markdown.append(compareItemMarkdown(item.get("title"), item.get("entries")));
                     case "roadmap" -> markdown.append("- ").append(safe(item.get("title")))
                             .append(blank(item.get("description")) ? "" : ": " + safe(item.get("description"))).append('\n');
                     default -> { }
@@ -144,6 +152,27 @@ public final class ChatPublicProjection {
 
     private static void copy(Map<String, Object> source, Map<String, Object> target, String... keys) {
         for (String key : keys) if (source.containsKey(key)) target.put(key, source.get(key));
+    }
+    private static List<Map<String, Object>> compareEntries(Object rawEntries) {
+        if (!(rawEntries instanceof List<?> entries)) return List.of();
+        List<Map<String, Object>> projected = new ArrayList<>();
+        for (Object value : entries) {
+            if (value instanceof Map<?, ?> entry) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                if (entry.get("label") instanceof String) item.put("label", entry.get("label"));
+                if (entry.get("text") instanceof String) item.put("text", entry.get("text"));
+                projected.add(Map.copyOf(item));
+            }
+        }
+        return List.copyOf(projected);
+    }
+    private static String compareItemMarkdown(Object title, Object rawEntries) {
+        StringBuilder markdown = new StringBuilder("### ").append(safe(title)).append('\n');
+        for (Map<String, Object> entry : compareEntries(rawEntries)) {
+            markdown.append("- **").append(safe(entry.get("label"))).append("**: ")
+                    .append(safe(entry.get("text"))).append('\n');
+        }
+        return markdown.toString();
     }
     private static String line(String value) { return value + "\n"; }
     private static boolean blank(Object value) { return value == null || value.toString().isBlank(); }

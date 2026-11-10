@@ -45,6 +45,7 @@
         <div class="processing-item-meta">
           <span v-if="resumingSourceIds.has(source.id)">{{ resumeProgressLabel(source.id) }}</span>
           <span v-else-if="source.safeErrorDetail || sourceActionErrors[source.id]" class="processing-error">{{ source.safeErrorDetail || sourceActionErrors[source.id] }}</span>
+          <span v-else-if="store.localOcrProgressBySource[source.id]">{{ sourceDetail(source) }}</span>
           <span v-else-if="sourceActionResults[source.id]">{{ sourceActionResults[source.id] }}</span>
           <span v-else>{{ sourceDetail(source) }}</span>
           <div class="processing-actions">
@@ -85,7 +86,7 @@ const authStore = useAuthStore()
 const jobs = computed(() => store.jobs.filter((job) => job.phase !== 'READY'))
 const serverProcessingSources = computed(() => sourceStore.sources
   .filter((source) => source.type === 'FILE' && source.ingestionStatus && source.ingestionStatus !== 'READY')
-  .filter((source) => !jobs.value.some((job) => job.sourceId === source.id)))
+  .filter((source) => !store.jobs.some((job) => job.sourceId === source.id)))
 const sourceActionErrors = ref<Record<string, string>>({})
 const sourceActionResults = ref<Record<string, string>>({})
 const resumingSourceIds = ref<Set<string>>(new Set())
@@ -248,23 +249,61 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .processing-center-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .processing-center h3 { margin: 0; font-size: 16px; color: var(--text-primary); }
 .processing-center p { margin: 5px 0 0; color: var(--text-muted); font-size: 12px; }
-.processing-refresh, .processing-actions button { border: 1px solid var(--border-subtle); border-radius: 8px; padding: 5px 10px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px; }
+.processing-refresh, .processing-actions button { border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.1)); border-radius: 9999px; padding: 4px 10px; background: var(--color-bg-card, #ffffff); color: var(--text-secondary); cursor: pointer; font-size: 11.5px; font-weight: 500; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.processing-refresh:hover:not(:disabled), .processing-actions button:hover:not(:disabled) { border-color: var(--color-zen-sage, #8b9a6e); color: var(--text-primary); transform: translateY(-0.5px); }
 .processing-empty { padding: 20px 0 4px; color: var(--text-muted); font-size: 13px; }
 .processing-list { display: grid; gap: 10px; margin-top: 16px; }
-.processing-item { padding: 12px; border-radius: 10px; background: rgba(127, 147, 114, .08); }
-.processing-item-main, .processing-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.processing-item-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 13px; }
-.processing-phase { color: #9b742e; font-size: 12px; white-space: nowrap; }
+.processing-item { padding: 12px 14px; border-radius: 12px; background: var(--color-bg-primary, #FAF7F2); border: 0.5px solid var(--border-subtle, rgba(0, 0, 0, 0.06)); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02); transition: background 0.3s ease, border-color 0.3s ease; }
+.processing-item-main, .processing-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; }
+.processing-item-main strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); font-size: 13px; }
+.processing-phase { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0; background: rgba(217, 119, 6, 0.08); color: #B45309; border: 0.5px solid rgba(217, 119, 6, 0.22); }
 .processing-item-meta { margin-top: 7px; color: var(--text-muted); font-size: 11px; }
-.processing-error { color: #b4534d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.processing-error { flex: 1; min-width: 0; color: #dc2626; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .processing-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .processing-actions button.danger { color: #b4534d; }
 .processing-warning { margin-top: 8px; color: #9b742e; font-size: 11px; }
-.processing-diagnostics { margin-top: 10px; color: var(--text-secondary); font-size: 11px; }
+.processing-diagnostics { margin-top: 10px; padding-top: 8px; border-top: 0.5px dashed var(--border-subtle, rgba(0, 0, 0, 0.08)); color: var(--text-secondary); font-size: 11px; max-height: 220px; overflow-y: auto; scrollbar-width: thin; }
 .processing-diagnostics summary { cursor: pointer; color: var(--text-secondary); margin-bottom: 4px; }
 .diagnostic-group h4 { margin: 8px 0 4px 0; color: #9b742e; font-size: 11px; font-weight: 500; }
 .diagnostic-group dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 4px 0 8px 0; }
 .diagnostic-group dt { color: var(--text-muted); }
 .diagnostic-group dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
-.processing-diagnostics > button { margin-top: 4px; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 4px 8px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 11px; }
+.processing-diagnostics > button { margin-top: 4px; border: 1px solid var(--border-subtle); border-radius: 9999px; padding: 3px 8px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 11px; }
+
+html.dark .processing-item {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(163, 177, 155, 0.14);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+html.dark .processing-phase {
+  background: rgba(245, 158, 11, 0.14);
+  color: #FBBF24;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+html.dark .processing-refresh,
+html.dark .processing-actions button {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary, #A3B899);
+}
+html.dark .processing-refresh:hover:not(:disabled),
+html.dark .processing-actions button:hover:not(:disabled) {
+  border-color: var(--color-zen-sage, #8b9a6e);
+  color: #ffffff;
+}
+html.dark .processing-error,
+html.dark .processing-actions button.danger {
+  color: #F87171;
+  border-color: rgba(248, 113, 113, 0.28);
+}
+html.dark .processing-warning,
+html.dark .diagnostic-group h4 {
+  color: #FBBF24;
+}
+html.dark .processing-diagnostics {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .diagnostic-group dd {
+  color: rgba(255, 255, 255, 0.88);
+}
 </style>

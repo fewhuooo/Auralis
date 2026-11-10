@@ -119,6 +119,52 @@ test('reduces block start, item increments, and completed part', () => {
   assert.equal(block.items.length, 2)
 })
 
+test('field completeness guard rejects incomplete item fragments during streaming', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      event: 'block.started',
+      blockId: 'steps-1',
+      payload: { componentId: 'steps-1', component: 'steps' },
+    })
+  )
+
+  // Empty title fragment should be guarded
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 2,
+      event: 'block.item',
+      blockId: 'steps-1',
+      payload: {
+        componentId: 'steps-1',
+        component: 'steps',
+        row: { type: 'item', title: '' },
+      },
+    })
+  )
+  assert.equal(state.parts[0].items.length, 0)
+
+  // Substantive complete item passes through
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 3,
+      event: 'block.item',
+      blockId: 'steps-1',
+      payload: {
+        componentId: 'steps-1',
+        component: 'steps',
+        row: { type: 'item', title: '初始化状态机', description: '构建分块解析器' },
+      },
+    })
+  )
+  assert.equal(state.parts[0].items.length, 1)
+  assert.equal(state.parts[0].items[0].title, '初始化状态机')
+})
+
 test('activity.submitted in-place updates original card to SUBMITTED with submittedAnswer', () => {
   let state = createChatStreamState()
   const readyPart = {
@@ -351,5 +397,254 @@ test('controller returns state with undefined terminal when stream EOF occurs pr
   assert.equal(state.publicText, 'partial content')
   assert.equal(state.terminal, undefined)
   assert.equal(state.executionActive, true)
+})
+
+
+test('block.error transitions GENERATING block into INVALID state', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 1,
+    event: 'block.started',
+    blockId: 'quiz-block-1',
+    payload: { componentId: 'quiz-block-1', component: 'quiz' },
+  }))
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'GENERATING')
+
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2,
+    event: 'block.error',
+    blockId: 'quiz-block-1',
+    payload: {
+      componentId: 'quiz-block-1',
+      safeErrorCode: 'CHAT_BLOCK_INVALID',
+      publicTextDelta: '\n',
+    },
+  }))
+
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'INVALID')
+})
+
+test('visualization retry replaces preceding invalid block in place without stacking error card', () => {
+  let state = createChatStreamState()
+  // Iteration 1: bad display tool started then encountered error
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 1,
+    event: 'block.started',
+    blockId: 'bad-display',
+    payload: { componentId: 'bad-display', component: 'steps' },
+  }))
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2,
+    event: 'block.error',
+    blockId: 'bad-display',
+    payload: { componentId: 'bad-display', safeErrorCode: 'CHAT_TOOL_ARGUMENT_INVALID', publicTextDelta: '\n' },
+  }))
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'INVALID')
+
+  // Iteration 2: backend retried with corrected display tool while stream is active
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 3,
+    event: 'block.started',
+    blockId: 'corrected-display',
+    payload: { componentId: 'corrected-display', component: 'steps' },
+  }))
+
+  // The invalid block should be replaced in place rather than stacked as a second card
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].componentId, 'corrected-display')
+  assert.equal(state.parts[0].state, 'GENERATING')
+
+  // Completing the retried block
+  const serverPart = {
+    id: 'corrected-display',
+    componentId: 'corrected-display',
+    kind: 'block',
+    component: 'steps',
+    state: 'READY',
+    meta: { title: 'Corrected Steps' },
+    items: [{ title: 'Step 1' }],
+  }
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 4,
+    event: 'block.completed',
+    blockId: 'corrected-display',
+    payload: { componentId: 'corrected-display', part: serverPart },
+  }))
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'READY')
+  assert.equal(state.parts[0].meta.title, 'Corrected Steps')
+})
+
+test('run.completed and run.failed transition any dangling GENERATING blocks to INVALID', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 1,
+    event: 'block.started',
+    blockId: 'quiz-block-2',
+    payload: { componentId: 'quiz-block-2', component: 'quiz' },
+  }))
+  assert.equal(state.parts[0].state, 'GENERATING')
+
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2,
+    event: 'run.completed',
+    payload: { executionActive: false },
+  }))
+  assert.equal(state.parts[0].state, 'INVALID')
+})
+
+test('reduces reasoning deltas into reasoningText', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 1,
+    event: 'reasoning.delta',
+    payload: { text: '先检索第一点证据。' },
+  }))
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2,
+    event: 'reasoning.delta',
+    payload: { text: '然后总结结论。' },
+  }))
+  assert.equal(state.reasoningText, '先检索第一点证据。然后总结结论。')
+  // reasoning does not pollute publicText or parts
+  assert.equal(state.publicText, '')
+  assert.equal(state.parts.length, 0)
+})
+
+test('preserves replyMessageId and reasoningText on terminal run.completed', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 1,
+    replyMessageId: 'reply-msg-42',
+    event: 'reasoning.delta',
+    payload: { text: 'Deep thinking process' },
+  }))
+  assert.equal(state.replyMessageId, 'reply-msg-42')
+  assert.equal(state.reasoningText, 'Deep thinking process')
+
+  // On run.completed, server sends null replyMessageId at top level and ID in payload
+  state = reduceChatStreamEvent(state, makeEnvelope({
+    sequence: 2,
+    replyMessageId: undefined,
+    event: 'run.completed',
+    payload: { replyMessageId: 'reply-msg-42', executionActive: false },
+  }))
+
+  assert.equal(state.replyMessageId, 'reply-msg-42')
+  assert.equal(state.reasoningText, 'Deep thinking process')
+  assert.equal(state.terminal, 'COMPLETED')
+})
+
+test('activity.ready injects questionId and marks block READY', () => {
+  let state = createChatStreamState()
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      event: 'block.started',
+      payload: {
+        componentId: 'card-1',
+        component: 'quiz',
+        partId: 'part-card-1',
+      },
+    })
+  )
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'GENERATING')
+  assert.equal(state.parts[0].questionId, undefined)
+
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 2,
+      event: 'activity.ready',
+      payload: {
+        componentId: 'card-1',
+        activityId: 'activity-uuid-1',
+        questionId: 'question-uuid-1',
+        questionVersion: 1,
+        publicTextDelta: '',
+      },
+    })
+  )
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].state, 'READY')
+  assert.equal(state.parts[0].questionId, 'question-uuid-1')
+})
+
+test('text.delta falls back to state replyMessageId for part id when event lacks top-level replyMessageId', () => {
+  let state = createChatStreamState({ replyMessageId: 'fallback-reply-id' })
+  state = reduceChatStreamEvent(
+    state,
+    makeEnvelope({
+      sequence: 1,
+      replyMessageId: undefined,
+      event: 'text.delta',
+      payload: { text: 'Hello', publicTextDelta: 'Hello' },
+    })
+  )
+  assert.equal(state.parts.length, 1)
+  assert.equal(state.parts[0].id, 'fallback-reply-id:text')
+})
+
+test('retryPendingMessage logic cleans stale failed assistant messages for the retried user turn', () => {
+  let messages = [
+    { id: 'user-1', role: 'USER', content: 'hello', status: 'COMPLETED' },
+    { id: 'asst-1', role: 'ASSISTANT', content: 'hi', status: 'COMPLETED' },
+    { id: 'user-2', role: 'USER', content: 'draw a diagram', status: 'FAILED' },
+    { id: 'asst-2', role: 'ASSISTANT', content: 'generating...', status: 'FAILED' },
+  ]
+
+  const messageId = 'asst-2'
+  const targetMsg = messages.find((item) => item.id === messageId)
+  assert.ok(targetMsg)
+
+  let message
+  const staleAssistantIds = []
+
+  if (targetMsg.role === 'USER') {
+    message = targetMsg
+    const userIndex = messages.findIndex((m) => m.id === messageId)
+    for (let i = userIndex + 1; i < messages.length; i++) {
+      if (messages[i].role === 'USER') break
+      if (messages[i].role === 'ASSISTANT' && messages[i].status !== 'COMPLETED') {
+        staleAssistantIds.push(messages[i].id)
+      }
+    }
+  } else {
+    staleAssistantIds.push(targetMsg.id)
+    const targetIndex = messages.findIndex((m) => m.id === messageId)
+    for (let i = targetIndex - 1; i >= 0; i--) {
+      if (messages[i].role === 'USER') {
+        message = messages[i]
+        break
+      }
+    }
+    if (message) {
+      const userIndex = messages.findIndex((m) => m.id === message.id)
+      for (let i = userIndex + 1; i < messages.length; i++) {
+        if (messages[i].role === 'USER') break
+        if (messages[i].role === 'ASSISTANT' && messages[i].status !== 'COMPLETED') {
+          if (!staleAssistantIds.includes(messages[i].id)) {
+            staleAssistantIds.push(messages[i].id)
+          }
+        }
+      }
+    }
+  }
+
+  assert.equal(message.id, 'user-2')
+  assert.deepEqual(staleAssistantIds, ['asst-2'])
+
+  if (staleAssistantIds.length > 0) {
+    messages = messages.filter((m) => !staleAssistantIds.includes(m.id))
+  }
+
+  assert.equal(messages.length, 3)
+  assert.equal(messages.find((m) => m.id === 'asst-2'), undefined)
+  assert.equal(messages.find((m) => m.id === 'asst-1').status, 'COMPLETED')
 })
 

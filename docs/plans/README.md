@@ -1,6 +1,6 @@
 # Auralis 实施方案索引
 
-更新时间：2026-10-29
+更新时间：2026-11-04
 
 文档状态：现行分类索引
 
@@ -12,11 +12,19 @@
 
 ## 总体计划
 
+- [Chat Agent Loop 容错、收敛与上下文治理（2026-11-04）](2026-11-04-chat-agent-loop-evolution.md)
+
+- [学科总览批量状态查询与 PC 接入（2026-11-04）](2026-11-04-overview-batch-status-handoff.md)
+
+- [PC 复习同步与取消排期修复交接（2026-11-03；待 PC 实施）](2026-11-03-pc-review-unschedule-handoff.md)
+
 - [后端绿地重写完整实施计划](backend-greenfield-rewrite-plan.md)
 
 ## 按领域索引
 
 ### Overview
+
+- [Overview 动态窗口重构方向（2026-11-10；设计提案）](2026-11-10-overview-dynamic-window-refactor.md)
 
 - [Overview 独立执行重试实施计划（2026-10-27）](2026-10-27-overview-explicit-retry.md)
 
@@ -45,8 +53,9 @@
 
 ### AI 与模型治理
 
-- [Chat Agent 与流式可视化教学重写计划（2026-10-29；codex/chat-agent-rewrite，P0 runtime 契约已冻结，生产实现待开展）](2026-10-29-chat-agent-visual-teaching.md)
-- [Chat 前端接手说明（2026-10-29；PC 用户实施，P2 草稿未验证；Mobile / Tablet 暂停）](2026-10-29-chat-frontend-handoff.md)
+- [Chat Agent Display Tool 重写实施计划（2026-10-31；实现与自动验证进行中）](2026-10-31-chat-display-tools.md)
+- [Chat Display Tool 前端接手说明（2026-10-31；PC 源码和 GUI 验收待进行）](2026-10-29-chat-frontend-handoff.md)
+- [Chat Agent 与流式可视化教学重写计划（2026-10-29；历史计划，已由 2026-10-31 Display Tool 计划替代）](2026-10-29-chat-agent-visual-teaching.md)
 - [学习 Agent 原实施计划（2026-10-16；Chat 执行入口已由 2026-10-29 计划接替）](2026-10-16-learning-agent-implementation.md)
 - [AI 统一限额与用量治理独立方案（2026-10-16；待实施）](2026-10-16-ai-unified-limits.md)
 - [AI 执行预算治理近期阶段 0–3 计划（2026-10-13；模型/预算诊断、token 影子估算、Overview 有界恢复与 Chat 流式故障回放）](2026-10-13-ai-execution-budget-governance.md)

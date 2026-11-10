@@ -24,6 +24,7 @@ import com.auralis.app.ai.internal.security.ProviderHttpClient;
 import com.auralis.app.ai.internal.security.ProviderHttpException;
 import com.auralis.app.ai.internal.security.ProviderResponseTooLargeException;
 import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
+import com.auralis.app.ai.internal.security.ProviderStreamDiagnosticException;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -183,6 +184,13 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             throw exception;
         } catch (DomainException exception) {
             throw exception;
+        } catch (ProviderStreamDiagnosticException exception) {
+            if ("consumer_callback".equals(exception.phase())
+                    && exception.getCause() instanceof DomainException domainException) {
+                throw domainException;
+            }
+            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event", null,
+                    exception);
         } catch (ProviderHttpException exception) {
             throw providerError(exception.status(), exception);
         } catch (ProviderResponseTooLargeException exception) {
@@ -214,7 +222,7 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             if (providerType == AiProviderType.OPENAI_COMPATIBLE) {
                 body.put("stream_options", Map.of("include_usage", true));
             }
-            StreamState state = new StreamState();
+            StreamState state = new StreamState(!request.tools().isEmpty());
             httpClient.postStream(endpoint, "/chat/completions", credential.apiKey(), body,
                     line -> parseStreamLine(line, state, sink), cancellation);
             if (cancellation != null && cancellation.isCancelled()) {
@@ -274,7 +282,9 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             body.put("response_format", Map.of("type", "json_object"));
         }
         if (supportsThinkingControl(credential)) {
-            body.put("thinking", Map.of("type", thinkingEnabled ? "enabled" : "disabled"));
+            boolean requestedThinking = request.thinkingEnabled() == null
+                    ? thinkingEnabled : request.thinkingEnabled();
+            body.put("thinking", Map.of("type", requestedThinking ? "enabled" : "disabled"));
         }
         return body;
     }
@@ -289,6 +299,9 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
                             "name", call.name(), "arguments", call.argumentsJson()))).toList());
         }
         if (message.role() == AiMessageRole.TOOL) wire.put("tool_call_id", message.toolCallId());
+        if (message.role() == AiMessageRole.ASSISTANT && message.reasoningContent() != null) {
+            wire.put("reasoning_content", message.reasoningContent());
+        }
         return wire;
     }
 
@@ -478,8 +491,13 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             state.done = true;
             return;
         }
+        JsonNode body;
         try {
-            JsonNode body = STREAM_OBJECT_MAPPER.readTree(payload);
+            body = STREAM_OBJECT_MAPPER.readTree(payload);
+        } catch (Exception exception) {
+            throw ProviderStreamDiagnosticException.providerFrameJson(exception);
+        }
+        try {
             JsonNode responseId = body == null ? null : body.path("id");
             if (responseId != null && responseId.isTextual()) state.responseId = responseId.asString();
             AiProviderModelIdentity modelIdentity = responseModelIdentity(body);
@@ -493,12 +511,29 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
             JsonNode choice = body.path("choices").path(0);
             JsonNode delta = choice.path("delta");
             JsonNode content = delta.path("content");
+            JsonNode reasoningContent = delta.path("reasoning_content");
+            JsonNode toolDeltas = delta.path("tool_calls");
+            JsonNode finishReason = choice.path("finish_reason");
+            String nextFinishReason = finishReason.isMissingNode() || finishReason.isNull()
+                    ? null : normalizedStreamFinishReason(finishReason);
+            if (state.lockToolFinishReason && state.finishReason != null) {
+                if (hasNonemptyStreamDelta(content, reasoningContent, toolDeltas)) {
+                    throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid tool stream");
+                }
+                if (nextFinishReason != null && !state.finishReason.equals(nextFinishReason)) {
+                    throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid tool stream");
+                }
+            }
             boolean emitted = false;
             if (content.isTextual() && !content.asText().isEmpty()) {
-                sink.accept(new AiProviderChunk(content.asText(), false, null, modelIdentity));
+                emitStreamChunk(sink, new AiProviderChunk(content.asText(), false, null, modelIdentity));
                 emitted = true;
             }
-            JsonNode toolDeltas = delta.path("tool_calls");
+            if (reasoningContent.isTextual()) {
+                emitStreamChunk(sink, new AiProviderChunk("", false, null, modelIdentity, state.responseId,
+                        null, null, null, false, reasoningContent.asText()));
+                emitted = true;
+            }
             if (toolDeltas.isArray()) {
                 for (JsonNode toolDelta : toolDeltas) {
                     JsonNode indexNode = toolDelta.path("index");
@@ -512,30 +547,68 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
                     String argumentsFragment = arguments.isTextual() ? arguments.asString() : null;
                     if (id != null || name != null || argumentsFragment != null) {
                         state.hasToolCallDeltas = true;
-                        sink.accept(new AiProviderChunk("", false, null, modelIdentity,
+                        emitStreamChunk(sink, new AiProviderChunk("", false, null, modelIdentity,
                                 state.responseId, index,
                                 new AiProviderToolCallDelta(id, name, argumentsFragment), null, false));
                         emitted = true;
                     }
                 }
             }
-            JsonNode finishReason = choice.path("finish_reason");
-            if (!finishReason.isMissingNode() && !finishReason.isNull()) {
-                if (!finishReason.isTextual()) state.finishReason = "other";
-                else state.finishReason = switch (finishReason.asString()) {
-                    case "stop", "tool_calls", "length", "content_filter" -> finishReason.asString();
-                    default -> "other";
-                };
+            if (nextFinishReason != null) {
+                if (state.lockToolFinishReason) {
+                    if (state.finishReason == null) state.finishReason = nextFinishReason;
+                } else {
+                    state.finishReason = nextFinishReason;
+                }
                 emitted = true;
             }
             if (!emitted && modelIdentity.status() != AiProviderModelIdentity.Status.MISSING) {
-                sink.accept(new AiProviderChunk("", false, null, modelIdentity));
+                emitStreamChunk(sink, new AiProviderChunk("", false, null, modelIdentity));
             }
         } catch (AiStreamAbortException exception) {
             throw exception;
+        } catch (ProviderStreamDiagnosticException exception) {
+            throw exception;
+        } catch (DomainException exception) {
+            throw ProviderStreamDiagnosticException.providerFrameProtocol(exception);
         } catch (Exception exception) {
-            throw new DomainException("MODEL_PROVIDER_ERROR", "AI provider returned an invalid stream event");
+            throw ProviderStreamDiagnosticException.providerFrameProtocol(exception);
         }
+    }
+
+    private void emitStreamChunk(Consumer<AiProviderChunk> sink, AiProviderChunk chunk) {
+        try {
+            sink.accept(chunk);
+        } catch (AiStreamAbortException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw ProviderStreamDiagnosticException.consumerCallback(exception);
+        }
+    }
+
+    private String normalizedStreamFinishReason(JsonNode value) {
+        if (!value.isTextual()) return "other";
+        return switch (value.asString()) {
+            case "stop", "tool_calls", "length", "content_filter" -> value.asString();
+            default -> "other";
+        };
+    }
+
+    private boolean hasNonemptyStreamDelta(JsonNode content, JsonNode reasoningContent, JsonNode toolDeltas) {
+        if (content != null && content.isTextual() && !content.asString().isEmpty()) return true;
+        if (reasoningContent != null && reasoningContent.isTextual() && !reasoningContent.asString().isEmpty()) {
+            return true;
+        }
+        if (toolDeltas == null || !toolDeltas.isArray()) return false;
+        for (JsonNode toolDelta : toolDeltas) {
+            if (nonemptyText(toolDelta.path("id")) || nonemptyText(toolDelta.path("function").path("name"))
+                    || nonemptyText(toolDelta.path("function").path("arguments"))) return true;
+        }
+        return false;
+    }
+
+    private boolean nonemptyText(JsonNode value) {
+        return value != null && value.isTextual() && !value.asString().isEmpty();
     }
 
     private void parseLegacyStreamLine(String line, Consumer<AiProviderChunk> sink) {
@@ -601,12 +674,17 @@ public class OpenAiCompatibleProvider implements AiProviderPort {
     }
 
     private static final class StreamState {
+        private final boolean lockToolFinishReason;
         private String responseId;
         private String finishReason;
         private boolean done;
         private boolean hasToolCallDeltas;
         private AiTokenUsage usage;
         private AiProviderModelIdentity modelIdentity = AiProviderModelIdentity.missing();
+
+        private StreamState(boolean lockToolFinishReason) {
+            this.lockToolFinishReason = lockToolFinishReason;
+        }
     }
 
 }

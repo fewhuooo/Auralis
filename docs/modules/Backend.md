@@ -1,6 +1,169 @@
 # Spring Boot 后端模块
 
+### 2026-11-05 Chat 已保存 Source 总览只读工具（PostgreSQL事务边界修复）
+
+Chat 以 `read_source_overview(sourceId,offset?,limit?,overviewVersion?)` 读取授权范围内已保存且当前有效的正式 SOURCE 总览。读取先通过当前 attempt 的 source scope/READY/revision 校验，再复用 `OverviewResultService` 的完整结果及各输入 descriptor 有效性判断；不读 SUBJECT 聚合、候选或进行中结果，也不触发生成。总览标题、大纲和三类总结信息被确定性渲染为 Markdown，按 Unicode code point 分页，返回完整 JSON；延续页必须带 `overviewVersion`，不匹配以正常 `STALE` 结果要求从第一页读取。缺失或当前无效以正常 `UNAVAILABLE` 返回，调用端可继续检索/读摘录；每页仍受原 `maxToolResultUtf8Bytes` 限制。
+
+`list_sources` 对每个不超过 20 条的返回页批量读取正式 SOURCE 记录，并以同一当前有效性谓词生成模型可见 `hasOverview`。对于 `SOURCE_CONTENT` 来源，精确谓词会在该页最多 20 个结果上分别重建 raw input descriptor；此项有界但可能产生按来源数增长的 chunk inventory 查询。未引入向量总览索引、缓存或正式结果之外的数据源。旧 `read_outline` 不再注册；历史调用沿未知工具历史处理，不自动别名或转换。PC 的通用工具事件和名称展示路径已只读核对，本次无前端代码变化。没有 HTTP/API 路由或数据库 schema 变化。
+
+PostgreSQL 运行态诊断发现 `readCurrentSource` 复用 `requireReadySource` 的 Source mutation owner-lock 边界；在只读事务中调用时，`SubjectLockCoordinator` 的 `SELECT ... FOR NO KEY UPDATE` 会被 PostgreSQL 拒绝。该入口使用普通 `@Transactional`，保留原有 Subject/Source 锁、revision 检查和正式结果有效性判断。`currentSourceOverviewIds` 的 `SOURCE_CONTENT` 谓词只使用当前 source 和 raw chunk inventory 的只读查询，仍为 `readOnly = true`；真实 PostgreSQL 测试覆盖这条 predicate 路径。
+
+### 2026-11-04 Chat 真正空回复保护
+
+正常 `STOP` 收尾时，Orchestrator 检查当前 attempt 的公开 parts：非空白正文或 `READY` 的非题卡展示组件都算有效内容；reasoning、空白正文及 `INVALID`/`GENERATING` block 不算。没有有效内容时，只追加一次受现有迭代上限约束的 continuation 指令，并沿原有投影、Provider、Gateway、取消、授权与 deadline 路径继续。若没有剩余迭代机会，或 continuation 再次空收尾，则发布短的可见说明并正常结束。有效纯展示组件可独立结束；READY 题卡仍在既有原子提交点立即结束，不生成答案泄漏或额外模型请求。
+
+补答不创建 attempt/run，也不扩展 model/tool/token/deadline 限额。model/token/Provider/权限/版本/取消/owner 错误继续按现有失败或取消语义结束，不被包装成成功。无新增公开字段、API/SSE schema、数据库结构或前端动作。定向验证 22/22，主 Agent 唯一只读 reviewer：BLOCKER=0、IMPORTANT=0、OPTIONAL=0；命令与范围见 `D:/Temp/auralis-chat-agent-loop-evolution-20261104/step6.md`。
+
+### 2026-11-04 Chat 目录文档定向搜索（源码、定向验证与review完成）
+
+`search` 保持一次 query embedding 和当前 attempt 的授权快照；可选 `sourceIds` 只允许选择 READY/owner/subject/revision 范围中的非空、唯一、最多 100 个来源。显式空值、空数组、重复项、非法 UUID、未知参数或模型明确指定快照外 ID 返回可修复 `CHAT_TOOL_ARGUMENT_INVALID`；该请求不查询也不返回越界资料，修复仍在原快照内进行。若内部读取结果越界或实际 owner、READY、subject/revision 校验变化，继续按 `SOURCE_SCOPE_DENIED` 或对应版本/范围错误终止，不做交集、不扩大范围。SUBJECT 请求的客户端 `sourceIds` 仍禁止；native search 参数是单次调用缩窄。检索前后继续验证授权快照，`RetrievalService.retrieveWithinSources` 独立校验 owner、活动来源、READY、subject（有 subject 时）和最多 100 个唯一 ID，再复用现有跨来源候选合并。
+
+此变化只闭合 Catalog sourceId 到合法 search chunkId 的能力，不调整 topK、embedding 额度或检索排序；未引入关键词/BM25/RRF/reranker。当前没有真实资料漏召回或排序对照证据，真实中文术语、自然语言及跨文档检索质量仍待标注样例验收。定向测试使用可控向量仅证明 source 隔离和真实 chunk ID 输出，不代表语义质量提升。
+
+最终验证：`mvnw.cmd -B -ntp "-Dtest=AiRetrievalTests,ChatReadToolsCatalogTests,ChatAgentProtocolPublicationTests" test` exit 0，30/30；随后增强 Catalog→search 集成用例以实际读取 Catalog ID，重跑 `mvnw.cmd -B -ntp "-Dtest=ChatReadToolsCatalogTests" test` exit 0，8/8。目标差量 `git diff --check` exit 0。唯一只读 reviewer 复核 BLOCKER=0、IMPORTANT=0、OPTIONAL=0。未调用真实 Provider、未部署、未操作业务数据库。
+
+### 2026-11-04 Chat 学科资料目录发现（源码、定向验证与 review 完成）
+
+Chat 读取工具在 attempt 开始时冻结 owner、subject、READY 状态与 ingestion revision 范围，并保留轻量文档快照。`SUBJECT` 范围新增只读 `list_sources(offset, limit)` 工具，默认每页 20、最多 20，只返回真实 source ID、标题、revision、范围内总量、`hasMore` 和 `nextOffset`。目录是快照分页，不能扩展到快照之外的资料；使用前后复用来源范围与版本校验，批量校验不逐文档查询。首版不带摘要/outline、不读外部存储、不依赖 Overview。
+
+系统提示要求 SUBJECT 下的资料分布/跨文档覆盖任务按需发现目录；目录分页只证明已检查的清单项，不代表正文已全部阅读。不得向用户输出 `hasMore`/`nextOffset` 等内部分页字段；模型应自然说明实际读取了哪些资料或片段及覆盖范围。Catalog 标题是不可信数据；`sourceId` 可用于 `read_source_overview`、与真实 `chunkId` 一起用于 `read_source_excerpt`，或作为 `search.sourceIds` 在当前授权范围内缩窄搜索。目录不注入受保护的 required context，仍由现有 mapped-request 容量检查约束。SUBJECT 请求的 `currentSourceId` 必须为空、`sourceIds` 必须为空数组，否则在读取范围建立时返回 `VALIDATION_FAILED`。当前 PC 默认 SUBJECT 的请求集成历史记录于对应 handoff；本轮 conversation scope 前端接入由用户完成。
+
+`ChatReadToolsCatalogTests`、`ChatAgentProtocolPublicationTests`、`DisplayToolPayloadValidatorTests` 定向合计 22/22 通过，覆盖READY/subject/selected/current-source范围、SUBJECT非法ID拒绝、revision变化、分页、工具注册与真实Provider请求入口。唯一只读 reviewer 复核 BLOCKER=0、IMPORTANT=0、OPTIONAL=0，见 `D:/Temp/auralis-chat-agent-loop-evolution-20261104/step4-review.md`。未调用真实 Provider、未部署、未操作业务数据库。
+
+### 2026-11-04 Chat 当前轮工具证据分层压缩（源码、定向验证与 review 完成）
+
+`ChatEvidenceHistoryProjector` 在真实 mapped request capacity evaluator 上处理当前轮成功资料读取结果：先按 source/chunk/revision 与完整行内容去重并留下省略计数，再复用旧 history 折叠/删除规则，之后按确定顺序缩短较早结果摘录及已保存总览文本，必要时仅保留来源、revision、overviewVersion 与分页等识别 metadata。最新读取结果优先保留。仅处理 search/read excerpt/read source overview 成功结果；display/activity/error/control 与系统、当前问题、选择上下文、题卡提交和授权 scope 都在保护集内。压缩仅作用于 provider request 投影副本，私有 evidence 原账本不变，native tool-call/result 继续按 ID 成对保留。
+
+投影按 iteration 顺序验证完整 native assistant tool call/result 配对和 reasoning 映射；call id 仅在该配对组内使用，不能跨 iteration 合并。无法无损定位配对时不压缩该组。最终仍不适配时复用相同 evaluator 返回的真实维度/actual/limit，日志仅记历史、受保护当前上下文、当前工具结果与参数等数值分层；随后使用既有 `AI_REQUEST_BUDGET_EXCEEDED` 在 reservation 与 Provider dispatch 前拒绝。正常工具额度耗尽时沿现有最后迭代收尾，不再执行新工具；收尾指令优先于修复旧工具错误，只有当前 attempt 尚有工具和迭代额度、且未发出收尾指令时才允许纠错。流程仍受原有调用、迭代、任务额度与 deadline ledger 约束。没有摘要模型、额外限额、API/SSE/数据库字段或跨资料 scope 扩展。
+
+验证：`mvnw.cmd -B -ntp "-Dtest=ChatEvidenceHistoryProjectorTests,ChatAgentProtocolPublicationTests,ChatAgentOrchestratorPublicationTests,ChatDisplayToolArgumentRepairTests,AiInvocationGatewayTests" clean test` exit 0，48/48 tests，0 failures/errors/skips；生产与测试源码均经 clean compile。`git diff --check` 目标 tracked 文件 exit 0，step3新增的 untracked display-tool test 无尾随空格。唯一只读 reviewer 最终差量复核 BLOCKER=0、IMPORTANT=0、OPTIONAL=0；命令、归因和边界见 step3 report。
+
+### 2026-11-04 Chat 请求容量拒绝诊断（源码完成，定向验证通过）
+
+Gateway 对映射后的完整 `AiProviderRequest` 执行现行容量拒绝时，只在最终拒绝路径记录一条结构化 warning，包含拒绝维度、该维度实际值/上限、完整序列化请求 UTF-8 字节、按 `SYSTEM`/`USER`/`ASSISTANT`/`TOOL` role 汇总的正文 UTF-8 字节、reasoning content 与 tool-call 参数 UTF-8 字节、tool definition 数量与序列化 UTF-8 字节。role 正文字节可解释现行消息正文容量的来源，但不能加总推导完整序列化请求大小：工具参数、定义、字段名、JSON 结构与转义由独立统计/完整序列化值反映。Gateway 的 mapped request 不含可靠的历史/当前轮边界；`USER` role 也可能表示追加的选择或活动消息，因此不从 role 推断 current question 或 current-turn evidence。准确区分留待掌握上下文边界的 projector 阶段处理。
+
+日志不记录 prompt、正文、工具参数值、凭据或模型响应。历史投影的试裁剪检查和通过容量检查的请求不计算这些附加分桶、不发警告。拒绝维度、限额、`AI_REQUEST_BUDGET_EXCEEDED`、预算/次数逻辑及 Provider 预留和派发边界保持不变；不增加公开字段、HTTP 行为或持久化结构。
+
+`AiChatRequestCapacityTests` 与 `AiInvocationGatewayTests` 合计 28/28 通过，覆盖各类 UTF-8 分类、拒绝实际值/限额和实际 Gateway 拒绝日志脱敏；目标文件 `git diff --check` exit 0。唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0；未调用真实 Provider、未部署、未执行 GUI 或业务验收。
+
+### 2026-11-04 Chat 资料读取容错与回答收敛（源码完成，定向验证通过）
+
+Chat read tools 仅将可识别的 `CHAT_TOOL_ARGUMENT_INVALID` 与 `read_source_excerpt` 的 `RESOURCE_NOT_FOUND` 转为安全 native tool result；错误后必须再次验证本 attempt 的 owner source scope 与 revision。模型参数明确引用快照外 ID 属于可修复参数错误；内部返回越界资料、实际权限/READY/revision变化、取消、预算、Provider 和系统错误仍按原失败路径处理。每个 attempt 最多接纳一次读取错误后的纠正；第二次错误要求模型停止工具调用并按已收到证据收尾，若模型仍请求工具，后端不执行并在复核 scope/owner 后给出明确资料不足说明。原 `tool.error` SSE 仍只标记单个工具失败，不结束 run；工具调用和结果按现有私有 evidence/history 路径配对。
+
+检索为空或明显无关时，prompt 允许一次改写或线索定向查询；仍无支持时停止检索，严格依资料请求不补一般知识。历史投影把修正/收尾状态表述为前次 attempt 的结果，不限制新 attempt。没有新增 route、公开字段、SSE schema、数据库字段、全局配置或检索架构。本条未改变 PC/Mobile，未部署，真实 Provider 行为待验收。
+
+验证：`mvnw.cmd -B -ntp "-Dtest=DisplayToolOrchestratorTests,ChatEvidenceHistoryProjectorTests,ChatAgentProtocolPublicationTests" test` exit 0，22 tests / 0 failures / 0 errors / 0 skipped；追加历史 `repairable=false` 收尾历史用例后，`mvnw.cmd -B -ntp "-Dtest=ChatEvidenceHistoryProjectorTests" test` exit 0，8/8；目标差量 `git diff --check` exit 0。首轮曾发现 projector 缺 import 与测试筛选断言问题，均在最终结果前修正。唯一只读 reviewer BLOCKER=0、IMPORTANT=0、OPTIONAL=0。全量 suite、package、真实 Provider、部署和 GUI 未运行。
+
+### 2026-11-04 Auth 用户资料头像存在提示
+
+`UserView` 新增必填布尔值 `hasAvatar`。统一构造器按当前用户在 `user_avatars` 中是否有行查询，因此注册/登录/刷新 `AuthResult`、GET `/api/auth/me` 和 PUT `/api/auth/me` 一致反映当前持久化状态。该提示不新增 schema 字段或 Flyway migration，也不递增用户 profile version。上传/删除头像仍为 HTTP 204，头像 GET 无头像仍为 404；客户端以该提示减少无头像 GET，并处理跨设备删除/竞态下仍可能出现的 404 fallback。
+
+`AuthControllerTests` 16/16、`OpenApiArtifactTests` 17/17（含必填字段断言）通过，官方 OpenAPI artifact 已同步。专用 loopback trust-auth/tmpfs PostgreSQL + test-only TLS 全量执行 1063 tests / 3 failures / 0 errors / 2 skipped；仅有已知 `AiFeaturePolicyParityTests` stage 数、`TaskColorRemovalMigrationTests` V42 对实际 V43、`OverviewIdentityPostgresIntegrationTests` V41 对实际 V43 三项断言失败。`mvnw -B -ntp -DskipTests package` exit 0。唯一只读 reviewer 结果 B0/I0/O0。命令与日志见 `D:/Temp/auralis-avatar-presence-20261104/implementation.md`；全量不代表业务 GUI 或真实账号验收。
+
+### 2026-11-04 学科总览批量状态（源码完成，未部署）
+
+新增 `POST /api/overview-results/subjects/statuses`，在现有 OverviewResult 模块内提供最多 100 个输入 ID 的有界批量只读状态。结果记录按 owner/scope/IDs 批量读取，空记录跳过 manifest 构造；活动/归属通过 Subject 公开服务检查，当前结果沿用现有输入有效性判断。AVAILABLE/MISSING/UNAVAILABLE 状态、版本和时间语义见 API.md；无新数据库字段或迁移。PC 接入由用户实施，详见[交接](../plans/2026-11-04-overview-batch-status-handoff.md)，后端新增接口本身不会自动替换旧客户端请求。
+
+批量入口使用 `Propagation.NOT_SUPPORTED`，避免失效来源的既有嵌套读取异常把整个批量查询标记为 rollback-only；各依赖保留自己的读取事务。活动学科通过 owner/active/IDs 投影批量获取，结果作为读取时提示，详情与写入仍做原有校验。Controller 与 OpenAPI 定向检查 23/23 通过，唯一只读审查 BLOCKER=0、IMPORTANT=0；全量检查及打包结果见当前状态。
+
+### 2026-11-03 PC 验收后端修复（源码候选，定向验证通过，全量另记）
+
+- `AiUsageGuard.reserve` 在现有数据库锁事务中合并限制同用户 SOURCE_OVERVIEW/SUBJECT_OVERVIEW 的有效 RESERVED 占用，最大 `max(1, perUserConcurrent-1)`；用户与全局总上限不变。默认用户上限 2 时总览最多占 1 槽；单槽配置仍可运行总览，但不保证 Chat 即时可用，全局繁忙仍可拒绝。
+- Overview completion 仅在 reservation 尚未建立且并发准入不足时有界等候：每实例最多 4 个等待者、最多 120 秒，事务外等待；超限保留 AI_CONCURRENCY_LIMIT。每次尝试重核 scope，已绑定的生成重核 source/owner/deadline，派发前再核对并重新计算剩余响应时间。取消、额度不足、Provider 已派发失败均不作为容量等待重试；等待不创建 reservation、不扣 token、不增加 ledger 调用数。
+- Review 生命周期在已 flush 的 state 上 refresh 数据库表示，再冻结新回执；不改旧命令回放或 occurredAt 指纹。无新接口字段、数据库迁移、运行配置或部署。
+- PC 端复习旧锚点与误冲突恢复、取消排期队列由用户实施，见 [交接](../plans/2026-11-03-pc-review-unschedule-handoff.md)。后端修复不代表既有本机冲突已经恢复或真实 GUI 已验收。
+- 合并定向 164/164，含 Overview 89/89、ReviewLifecycle 15/15、隔离 Testcontainers PostgreSQL 2/2（独立事务复习回执/历史及锁门闩下两路总览与 Chat 准入）；后续容量标记修正的受影响集合 53/53。唯一 Luna reviewer 的 IMPORTANT 已关闭，未发现未关闭 BLOCKER/IMPORTANT。编译及最终 package 通过；全量首轮 1062 项为 2F/48E/7S，环境受阻类补验 43 项为 42 passed/1F/0E，仍有策略/迁移断言失败，最终状态见 Status.md。所有命令证据位于 `D:/Temp/auralis-pc-three-fixes-20261103/luna-validation.md`，未调用真实 Provider、未部署。
+
+### 2026-11-03 Chat admission PostgreSQL 并发测试
+
+新增 opt-in `ChatRuntimeConcurrencyPostgresIntegrationTests`，在真实 PostgreSQL 17 事务中验证同会话 turn/turn 与 turn/READY activity_submission 竞争下 conversation 行锁、slot admission 和题卡 submission 原子性。独立 JDBC gate 等待两个 admission backend 经 `pg_blocking_pids` 证实处于 conversation `FOR ... UPDATE` 锁等待链后才释放；两场景定向 2/2 通过。测试直接调用 `ChatRuntimePersistenceService.admit`，AI Provider 关闭，不运行 Orchestrator；专用临时容器使用 tmpfs 和随机映射端口，细节见[当前状态](../current/Status.md)。
+
+### 2026-11-03 Chat 提示、自然组件选择与单次修正反馈（源码候选，未部署）
+
+`ChatAgentOrchestrator.SYSTEM_PROMPT` 按主题使用中文表述，默认中文教学回答，并偏好以简明中文呈现 Provider 原生可见 `reasoning_content`；代码、API 名称、工具名称、Schema 键与协议标识原样保留。保留资料相关性与授权边界、原生 `tool_calls`、正文/组件职责、图表数值来源及活动规则。用户明确要求结构化视觉内容时调用对应 `render_*`；同时表达“带我走一遍过程/追踪状态变化”“对比概念/怎么选/代价差异”“规划学习路径/先学什么/拆解主题”等自然意图时分别优先选 `render_steps`、`render_compare`、`render_roadmap`，并保留有序性、对等共同维度、阶段依赖条件；普通并列清单、短答澄清仍可使用普通 Markdown。需要调用 `render_steps`、`render_compare`、`render_roadmap` 或 `render_chart` 时，单次请求迭代中工具前最多写一句简短过渡，并立即发出原生 `tool_calls`；收到服务端 TOOL 结果并进入下一次模型调用后，继续完整 Markdown 背景说明与深入讲解，无需逐项复述组件内容。Activity READY 仍结束业务回合。用户要求考查、检验理解、练习、巩固或复述检查时，即使未点名卡片，也按选择题 `render_quiz` 或开放回答 `render_question` 创建活动。本轮更精确限定该过渡与后续正文措辞后，`ChatAgentProtocolPublicationTests` clean 重编译定向运行5/5通过；真实 Provider 遵循与部署未验证。
+
+六个展示工具与三个资料工具的 description 使用中文并补足对应自然触发语；工具标识及 Schema 字段、枚举、约束不变。首次可修复的 display schema/语义拒绝触发后，同批更高 index TOOL result 现在包含固定重试 hint；历史 `ChatEvidenceHistoryProjector` 仅在 `not_executed/CHAT_TOOL_NOT_EXECUTED/PREVIOUS_DISPLAY_ARGUMENT_INVALID` 白名单状态下按服务端常量重建该 hint，不透传任意历史 hint、arguments 或 reference。当前和历史均保持原生 call/result 配对。一次修正预算与 finish、取消、source/fence、预算门禁不变；Activity READY 仍是 terminal barrier。没有改变公共 HTTP/SSE 字段、Schema、数据库或 Provider 行为。最终定向四类测试共 25/25、0 failures/errors/skips；命令与报告见[当前状态](../current/Status.md)。源码候选未部署，提示遵循和端到端客户端行为未验收。
+
+### 2026-10-31 Chat 历史 tool exchange 与展示提示增量（源码候选，验证待执行）
+
+历史私有 evidence 对每个 iteration 始终还原为原生 assistant tool_calls 和按 call id 配对的 ToolExecutionResult；reasoningContent 不再决定是否保留调用协议。仅显式持久化的 reasoning 通过独立映射回传。预算折叠缩减旧工具结果内容但保持调用/结果成组；若仍超限才按既有策略移除完整较旧 evidence。历史 assistant `MessageView.content`（含公开 Markdown 投影）不改写，因此可能与结构化工具上下文并存。SYSTEM prompt 与六个 display tool descriptions 将组件约束为简短、高密度结构骨架，教学解释留在 Markdown 正文；steps 仅用于有序程序/状态流/因果链，compare 用于至少两个对等主体的共同维度，roadmap 用于有依赖的阶段。明确请求的理解检查、练习或巩固通过相应 activity tool 生成，完成核心概念后可作为自然 checkpoint；局部澄清、未消化补讲和纯导航轮不机械追加。依赖指定资料且上下文不足时先取回相关资料，不基于尚未返回的检索结果声称组件依据。仍使用真实 provider tool_calls；未加 schema 字段校验、工具调度或生成轮次规则。本轮定向 `ChatAgentProtocolPublicationTests` 结果见状态文档；完整后端套件及真实模型遵循未验证。
+
+### 2026-10-31 Chat 展示工具重写（源码候选，统一验证待执行）
+
+Chat 结构化内容现由六个 provider function tools 生成：`render_steps`、`render_compare`、`render_roadmap`、`render_chart`、`render_quiz`、`render_question`。Data search/read 工具保持独立。展示工具只本地校验参数并生成 Markdown/public parts，不查询领域数据；增量 arguments collector 只发布完整且已校验的 meta/stem 与 item/options。完整参数再经严格 JSON、重复键拒绝、字段白名单和组件 schema 校验；final 与 preview 不一致时失败，已公开有效行保留在 INVALID block。普通 content 全部作为 Markdown text segment，marker 字符串不触发解析。
+
+Visual 工具通过现有 owner fence 持久化公开 part 与私有工具证据后发布 `block.completed`，以极简 rendered tool result 接续模型循环。Activity 工具只接受第一张按 provider index 排序的有效题卡，题目及可选 private reference 经 source/fence 校验后与 READY 快照在同一事务落库，再发布 completed/ready 并短路本轮模型调用；其后已 preview 的 display block 持久化为 INVALID。Data/Visual 可在 Activity 前按工具序执行。provider 非正常终态、取消、参数错误、owner/source fence 失败均不发布 READY；run reader 退出后才释放执行 slot。展示工具计入既有每 attempt 12 次 tool-call 上限，不计作额外模型/embedding 请求。
+
+完整正常 `tool_calls` 批次中，已注册 render tool 的严格 schema/语义 validator 首次拒绝可生成一次 attempt 级修正反馈。反馈只含固定错误码、安全字段路径和缺少的必填字段；JSON 语法、provider/preview/身份门禁、source/fence、取消和预算错误不触发修正。坏 block 保持 `INVALID`，该批更高 index calls 以固定 `not_executed` result 与原调用配对后跳过；其中的 Activity 不会 READY。原 assistant calls/result 一并进入当前和私有历史 evidence。再次出现参数拒绝走原失败路径；反馈轮使用现有 model/iteration/tool/token/deadline限制。无新增 API 或数据库字段。
+
+本轮四类定向命令执行25 tests、0 failures/errors/skips：修正行为2/2、payload validator11/11、history projector7/7、`ChatAgentProtocolPublicationTests`5/5。该历史工具测试的 synthetic run 显式 stub execution owner 与未取消状态，避免250ms heartbeat取消执行。只读review B0/I0。真实 Provider、source/fence/cancel异常、部署和 GUI 未验收。
+
+`ChatStreamParser` 与旧 `:::auralis-*` 正文协议已删除；旧历史记录保留原样，不自动转换或 fallback。字段/event schema、限制、示例及 PC handoff 以 [Chat Runtime API](../contracts/chat-runtime-api.md) 和[重写计划](../plans/2026-10-31-chat-display-tools.md)为准。诊断参数捕获 `auralis.ai.chat-agent.raw-content-capture-enabled` 默认 `false`，仅捕获展示工具 arguments，沿用每 attempt provider response byte cap。focused backend suite 126/126 通过，review B0/I0。受限全量排除 CPU 卡死的 `IngestionBudgetCalibrationTests` 后仍为 1036 tests/3F/2E/2S、exit 1，三项既有版本/策略断言失败与两项缺 TLS keystore 错误见当前状态记录；单独补参数的 `OverviewDeadlineSlowDripTests` 3/3 通过。`-DskipTests package` exit 0。真实模型、前端 GUI 与部署尚未验收。
+
+### 2026-10-31 Chat 请求容量门槛一致（源码候选，未部署）
+
+Chat 历史投影与 Gateway 预留前校验共用 `AiChatRequestCapacity`：对最终映射的完整 `AiProviderRequest` 检查序列化 UTF-8 字节、所有消息正文 UTF-8 字节和单条 tool result UTF-8 字节。投影会先按原策略折叠/删除较早历史；不可裁的当前/必需内容仍由 Gateway 返回既有 `AI_REQUEST_BUDGET_EXCEEDED`，且拒绝发生在 reservation 与 Provider dispatch 前。Gateway 的 `maxTokens` 输出上限校验仍在 `boundedRequest` 独立执行，不会通过删历史规避；Token 任务额度/调用数及非 Chat/Overview 容量策略不变。容量拒绝外部错误码和 0/unlimited 配置语义不变。`AiChatRequestCapacityTests`、`AiInvocationGatewayTests`、`ChatEvidenceHistoryProjectorTests`、`ChatAgentModelAdapterTests`、`ChatRawContentCaptureTests` 合计 39/39；`mvn -B -ntp -DskipTests package` BUILD SUCCESS。未改 token 额度或容量环境设置，未调用真实 Provider、未部署。
+
+### 2026-10-30 Chat 可视化教学组件选择提示（源码候选，未部署）
+
+`ChatAgentOrchestrator.SYSTEM_PROMPT` 在既有协议格式规则之外，增加组件选择指导：明确可视化请求优先；有意义的流程选 steps、同维度多方案比较选 compare、学习阶段有依赖时选 roadmap；chart 使用用户给定或已收到相关证据支持的数值，假设示例须明确标注，不把编造数值说成事实；quiz/question 仅在适合检验理解时放在回答末尾。复杂解释通常选一至两种最有用的结构；简短事实、澄清和闲聊不强插组件，正文与组件互补且避免重复。生成是模型判断，提示不保证每次输出组件。最终 focused 命令中 parser 20/20、projection 3/3、Orchestrator mapped-request 方法 1/1；`-DskipTests package` 成功。本轮未运行完整 `ChatAgentProtocolPublicationTests`。未改变 schema、工具权限、调用/检索预算或控制流；真实模型遵循情况未验证。
+
+### 2026-10-30 Chat quiz 渐进发布与有限 JSON 容错（源码候选，未部署）
+
+Quiz parser 在 `block.started` 即创建 block 外框；题干和选项按完整 NDJSON 行分别经 `block.item` 发布，完整 quiz 在 `:::` 正常闭合且 stem、至少两条唯一 key 的选项有效时即可 READY，无须 private reference。合法 reference 仍只存服务端私有列并供后续 LLM turn 使用；模型负责题目语义，Server 不判分。已解析出 `type=reference` 但其字段/语义无效时，保留完整公开 quiz 并记录安全枚举诊断；无法解析的 JSON 行仍使 block INVALID。
+
+严格 JSON 行解析失败后仅尝试一次局部 Jackson `ALLOW_TRAILING_COMMA` 读取；返回节点仍经过同一结构 schema 和 allowlist。不会补引号、括号、字段或选项，不改原行，不作用于普通 Markdown；诊断仅记录 `JSON_REPAIRED` 等枚举和安全标识，不带原文。未改变 SSE envelope、API route 或 DB schema。
+
+### 2026-10-31 Chat 组件多行 JSON 收集（源码候选，未部署）
+
+`ChatStreamParser` 在组件内部按字符串/escape 与 `{}`/`[]` 嵌套状态收集一个 JSON object；chunk 与换行不会触发对未完成对象的解析。闭合对象在当前物理行剩余字符仅为空白时，立即走现有 strict parse、局部 trailing-comma retry、schema 和 allowlist 路径，公开完整 row 仍逐项 `block.item`。协议仍推荐一行一项；一行多个对象拒绝。原物理行 `maxLineChars` 与整 block `maxBlockChars` 都保留，单对象累计字符也受 `maxLineChars` 限制。字符串内的括号、markers 与转义引号不作为边界；JSON 字符串跨物理换行、marker 前未闭合对象和 EOF 截断都不 READY。已有有效公开 row 在后续错误时仍保留于 INVALID block。
+
+不改变 SSE 事件 shape，PC 继续消费既有 `block.started` / `block.item` / `block.completed`。该修复对应多行 JSON 逐行解析这一种可复现局限；原始历史 Provider 输出无法恢复，因此不宣称已确认既有空卡的历史根因。`ChatStreamParserTests` 24/24、`ChatPublicProjectionTests` 3/3、指定 Orchestrator publication 方法 2/2（合计29/29），`mvn -B -ntp -DskipTests package` 成功。完整 `ChatAgentProtocolPublicationTests` 类未运行；无真实 Provider、部署、业务数据库或 GUI 验收。
+
+定向验证：`ChatStreamParserTests` 20/20；`ChatPublicProjectionTests` 3/3；本次两个 Orchestrator publication 用例 2/2；合并命令共 25/25。`-DskipTests package` 成功。完整 `ChatAgentProtocolPublicationTests` 有一个未解决的既有失败：`successfulToolEvidenceIsPrivateAndRestoredIntoTheNextTurnProviderRequest` 断言 `privateToolEvidenceJson` 含工具证据，实际为 `[]`；本次未放宽或修改该断言。未运行全量测试；无真实 Provider、部署或 GUI 验收。
+
+### 2026-10-30 Chat 检索收敛与 compare 语义（源码候选，未部署）
+
+`ChatAgentOrchestrator` 的实际模型 SYSTEM prompt 要求先判断当前问题是否依赖用户资料；普通通识问题直接回答，除非用户要求基于来源。来源问题按片段是否支持具体问题判断相关性；只得到无关结果时停止同义词盲搜，如实说明已搜来源未找到支持内容；用户要求严格基于资料时不改用通识答案。可信相关线索仍可继续定向检索或读取。该指导没有增加固定 search 次数帽，不改变既有工具、task 与 iteration 限制；检索返回内容仍是不可信数据，不是指令。
+
+Compare item 表示一个比较维度：`{title,entries:[{label,text},...]}`，至少两条 entry 且 label/text 非空；每个维度是一条 NDJSON 行，公开 part 和 Markdown 都按标题后纵向列出条目。Parser 严格校验并丢弃未知字段；旧 title/description-only compare 不兼容、不自动迁移。Steps item 保持原有 title/optional-description。没有 DB schema、API route、OpenAPI/SDK 或 migration 变化。完整 SSE/history handoff 见 [Chat Runtime API](../contracts/chat-runtime-api.md)。
+
+Compare parser/projection 定向 20/20 通过，package 成功。`ChatAgentProtocolPublicationTests` 为 3/4；唯一失败在既有工具证据测试断言 `privateToolEvidenceJson` 实际为 `[]`，发生在该用例的后续 SYSTEM prompt capture 断言之前，因此本轮未取得 compare prompt request-capture 证据。该失败未在 compare 范围内修改；只读 reviewer 对 compare 源码差量 B0/I0/O0。真实模型、前端/GUI验收尚未做。
+
+### Chat SSE 请求期限（2026-10-30，源码候选未部署）
+
+`POST /api/ai/messages/stream` 与 run attempts retry 均在同步 admission 成功后、返回 `StreamingResponseBody` 前将当前 `WebAsyncRequest` timeout 设为 `0`，避免 Spring MVC 默认约30秒 async timer 截断长时间 Chat 思考/工具过程。该设置只作用于当前 Chat SSE turn/retry，不改变 Overview 或其它异步路由；admission 冲突仍在 SSE response 创建前返回。Chat 自身既有可配置 `attemptDeadlineSeconds`（当前300秒）、取消与执行/Provider reader cleanup 保持为生命周期边界。反向代理无持续输出时仍可能在约60秒默认 read timeout断开；部署后须分别验证长空窗、取消和客户端断流。
+
+### Chat 通用失败诊断（2026-10-30，候选未部署）
+
+`ChatAgentOrchestrator` 对既有 `FAILED` 收尾记录 `CHAT_RUN_FAILED` WARN，字段限于 run/attempt、iteration/iterationId、stage、safe error code、异常与 cause 类名、cause 链中首个 `com.auralis.app.*` stack frame 的 class/method/line。不会输出 throwable、异常消息、prompt/content/reasoning 或工具原文。现已在该入口为 `AiUsageLimitException` 加稳定码格式校验并保留 `AI_TASK_BUDGET_EXCEEDED` 等预算码；普通本地异常仍为 `CHAT_RUN_FAILED`，其它终态、usage/计费和 fencing 不变。Chat Agent provider reservation 分别由 `AURALIS_AI_CHAT_AGENT_MAX_MODEL_CALLS` 与 `AURALIS_AI_CHAT_AGENT_MAX_EMBEDDING_CALLS` 管理，0 表示不设次数帽，负数拒绝启动；两项 all-origin/platform stage 配额均使用独立设置，聚合 task 调用帽关闭，平台 token 预算继续生效。默认模型/embedding 次数不设帽；8 次 iteration 仍限制每个 attempt 的模型循环轮数。retry 沿同一个 run ledger 继续计数。Run status 的 `accountingSummary` 提供跨 retry 的 `modelCalls` / `embeddingCalls`，以及按当前 attempt trace 去重后的 `currentAttemptToolCalls`；工具调用次数仍受独立 `AURALIS_AI_CHAT_AGENT_MAX_TOOL_CALLS` 限制，当前12且按 attempt 计。源码及自动验证候选未部署。
+
+### 2026-10-30 Chat reasoning 流与按 operation thinking（源码候选，未部署）
+
+- `AURALIS_AI_CHAT_THINKING_ENABLED=true` 仅由服务端 `CHAT_AGENT_TURN` 注入 Chat provider request；`AURALIS_AI_OVERVIEW_THINKING_ENABLED=false` 按可信 Overview feature 注入 Source/Subject Overview 的全部 completion stage。两项均为请求级不可变选项，不经客户端 DTO、共享全局状态或 ThreadLocal；旧 `AURALIS_AI_THINKING_ENABLED` 继续服务其它既有调用。thinking 字段只对 DeepSeek 和 host 精确为 `api.xiaomimimo.com` 的 OpenAI-compatible endpoint 发送。
+- Provider 仅读取上游显式 string `delta.reasoning_content`，通过 `reasoning.delta {text}` 作为独立 SSE 事件发布；不送入 `text.delta`、Chat parser、Markdown/content parts。reasoning 与 `tool.started/completed/error` 在同一 SSE sequence 中均属于过程区，正文/可视化回答区仍接收 `text.delta`/block events。
+- Thinking tool protocol 要求回传历史 assistant `reasoning_content`：当前 run 以 tool-call id 关联内存映射，跨 run 同 iteration reason 仅写入既有 `private_tool_evidence_json`，供 provider history request 配对回传；不进 public parts、message content、status/detail/toolTrace 或日志。无 reasoning 的旧/非 thinking 工具证据改为中性事实数据投影，不构造无配对 tool result。
+- 历史折叠的每个候选容量检查使用与派发相同的 `AiProviderRequest`，包含候选 iteration 的 reasoning passback 和 tool definitions；超预算的旧 iteration 按完整 assistant/tool 组移除，不截断 reasoning 或保留孤立 tool result。
+- Reasoning bytes 计入现有 provider 总响应字节上限；completion usage 缺失时沿用 bounded `maxTokens` 保守结算。此变更未新增 DB 列或 migration。测试与部署边界以当前状态/审查记录为准。
+
+### 2026-10-30 Chat quiz parser 诊断日志（源码候选，未部署）
+
+### 2026-10-30 Chat quiz parser 诊断日志（源码候选，未部署）
+
+`ChatAgentOrchestrator` 在 `ChatStreamParser.BlockError` 时记录 WARN：run/attempt/block UUID、component、原 parser `ErrorCode` 与已解析有效行数。日志不带原始模型输出、题干、选项、私有答案/explanation 或工具参数；公开 SSE 继续使用通用 `CHAT_BLOCK_INVALID`。Parser/Orchestrator 合成分片测试确认 valid quiz 的 stem/options/reference schema 可正常形成 READY；此次不改变 parser、activity 状态、API 或数据库结构。运行态空卡的具体模型输出根因仍未确认，日志增强仅提供下次错误归因证据。定向 17/17 与 package 成功；未部署、未请求真实 Provider、未写业务库。
+
+`ProviderHttpClient` 的 SSE 失败日志按 `http_status`、`provider_frame_json`、`provider_frame_protocol`、`consumer_callback`、`transport` 标记阶段；只记录稳定错误码、异常类和 cause 类，不记录 request/response body、异常消息、prompt、reasoning 或凭据。OpenAI-compatible stream 的内部诊断异常在 Provider 边界仍映射为既有 `MODEL_PROVIDER_ERROR`；真实上游错误正文保持不采集，因此这组日志用于区分 HTTP 状态、帧解析和本地回调，不保证得知 Provider 拒绝原因。自动化用合成 HTTP/SSE 验证脱敏与错误分类；源码未部署。
+
+`ChatAgentModelAdapter` 按 index 累积工具名与 arguments；只有 SDK `PartialToolCall` 必需的非空 name/arguments 到齐后才发 partial callback。完整工具仍须通过既有 terminal/schema 校验后才形成 complete callback。langchain4j-core 1.22.0 合成首片 id-only、arguments 先到和并行 index 测试覆盖增量顺序；不改变 Provider、SSE/API、工具执行或 invalid-terminal 契约。
+
 ### 2026-10-29 Chat protocol 1 runtime（后端代码候选，定向验证通过）
+
+### 2026-11-04 Chat UNKNOWN 显式终结（源码、定向验证与只读审查完成；未部署）
+
+- 增加 `POST /api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover`，返回既有 `ChatRunStatusView`。服务端按 conversation→run→目标 attempt 的行锁顺序校验复合 owner、active run 与 current attempt；不自动派发，也不因 deadline 推断 Provider 已停止。
+- 无已提交 READY/SUBMITTED activity 时 fence 并将目标 UNKNOWN 终结为 FAILED/`CHAT_UNKNOWN_ABANDONED`，保留公开正文、有效展示行和私有 evidence，仅将 GENERATING block 标为 INVALID；usage task、reservation 与 charged ledger 不清零、不退款。已有 READY/SUBMITTED activity 则修复为业务 COMPLETED，保留 activity/private reference。
+- 已解决 target 的重复或迟到恢复请求只读返回当前 run 状态，不改较新的 attempt 或其他 run；恢复后的 conversation fence 阻止迟到 worker 发布。`CHAT_RECOVERY_NOT_ALLOWED` 映射为 HTTP 409。无数据库字段或 migration 变化。
+- 定向 controller/persistence/error/OpenAPI 46/46，PostgreSQL 4/4，OpenAPI export/artifact 18/18；唯一只读 reviewer B0/I0/O0。最终完整 Maven 为 1090 tests / 3F / 0E / 2S，失败仅为已知 OverviewIdentity V33、TaskColor V42 期望版本断言和 AiFeaturePolicyParity stage 断言；`-DskipTests package` 成功。首轮的 Source 删除版本冲突未在隔离3/3或最终 full 复现，报告仅记录了 stale baseVersion/INDEXING 现场，不认定具体触发者。完整命令、日志和未覆盖边界见 `D:/Temp/auralis-chat-agent-loop-evolution-20261104/step7.md`。
 
 ### 2026-10-29 六项后端 IMPORTANT 修复（focused 验证完成）
 
@@ -765,6 +928,8 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 - ingestion 由 Source 提交后事件触发，`IngestionJobService` 做用户/Source 归属和活动任务去重，并通过数据库锁定的 claim-next 分配租约；条件化 `IngestionWorkerScheduler` 自动轮询，lease 过期可恢复，失败按最大次数回到 PENDING，耗尽后进入 FAILED。`IngestionWorker` 负责解析、固定大小重叠切块、1024 维 embedding 和 chunk 替换。
 - `RetrievalService` 只查询当前 userId 的活动 generation chunks。PostgreSQL 通过 `PgVectorRetrievalRepository` 执行带 user/source/active/deleted 过滤的 pgvector cosine SQL，由 HNSW 索引支持 top-k；非 PostgreSQL 环境使用活动 chunk 的 JSON cosine fallback。`SourceChunkService` 使用 generation 写入新 chunks，事务成功后切换 active，失败保留旧 generation。
 - Conversation/Message 服务提供 owner-scoped CRUD、软删除、`@Version` 会话版本、写锁保护的消息序号、会话和 USER 消息的 `clientRequestId` 幂等回放及安全错误/断流状态持久化。流式请求先在短事务中锁定会话并保留唯一 USER 消息，Provider I/O 不持有数据库事务；assistant 以 `reply_to_message_id` 精确关联该 USER 消息。SSE 使用 Spring MVC，不引入 WebFlux；Controller 通过 sink 直接转发 Provider 增量，OpenAI-compatible 上游 SSE 解析为 `message.delta`，检索命中转为可回链 `citation` 事件。
+- Chat conversations 持久化 `LEGACY`/`UNBOUND`/`BOUND` 读取范围状态。首次成功 admission 在保存 USER/run 的同一事务内绑定策略和 ID；同会话后续 omitted context 继承绑定，冲突以 HTTP 409 `CHAT_SCOPE_CONFLICT` 拒绝且不保存 USER/run。绑定不含 selectionText 或 revision，每 attempt 重新捕获和校验当前 owner/subject/READY/revision。V44 将既有会话显式保留为 LEGACY；旧会话仅查看，用户需新建会话。详情/list response 返回 scope state 与 bound scope，PC 接入待用户完成。
+- Chat scope/tool 修复的目标测试、OpenAPI export 及 artifact 19/19、`-DskipTests package` 均通过。正确配置 task-owned PostgreSQL 的 backend full 为 1096 tests / 3 failures / 0 errors / 2 skipped；失败是 AiFeaturePolicyParity stage=0、TaskColor 旧断言 V42 vs V44、OverviewIdentity fixture V41 vs V44。未更改这些无关断言。唯一只读 reviewer B0/I0/O0；未部署、未重启、未调用真实 Provider，未执行 GUI/客户端验收。证据与日志见 `D:/Temp/auralis-chat-screenshot-failure-20261105/implementation.md`。
 - Suggestions 当前是类型化、可替换的确定性输出层，已完成 KnowledgeBlock owner check，但尚未接入真实 LLM 生成或 RetrievalService citation 组装。
 - `POST /api/ai/source-overviews` 与 `POST /api/ai/subject-overviews` 是不创建持久作业的结构化生成边界，默认 JSON、可选 SSE。前者经 `SourceService` owner/active/READY 校验后只通过 active 定向查询读取 ai 模块中的 chunks，并按完整 `auralis.ai.max-prompt-chars` prompt 长度分批归纳、分层归并且每次调用前精确检查上限；后者 owner-check Subject，并验证每个输入 Source 归属该 Subject、无重复且按 mode 有可用 part。服务端为模型分配短 alias，固定 SYSTEM 与独立 USER 数据隔离，map/reduce 全程只保留 alias；输出仅接受一个 JSON object/JSON fenced block，经数量、长度、alias 和 mode nullability 校验，当前无可信页码/block alias 因而强制 `locator=null`，仅最终响应回映射真实 Source UUID。Provider 输出解析/结构错误统一为 `502 MODEL_PROVIDER_ERROR`，客户端输入仍为 `400 VALIDATION_FAILED`。它们重用 `AiSettingsService`、`AiProviderRegistry` 和 `AiProviderPort.complete`，不创建 Conversation/Message，不写 sync/change log，也不新增数据库 schema、表或 Flyway migration；PC 先保存本地派生结果，再通过独立 Overview results GET/PUT 持久化完整成功产物；生成接口本身仍保持无状态。Overview 请求可携带 `X-Overview-Request-Id`；服务端将其规范为 UUID（非法或含敏感内容时生成新 UUID），为每次 user/source/revision 生成 `generationId`，并按 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 输出阶段；失败日志只记录规范化 `requestId`、关联字段、阶段、allowlisted `errorCode`（DomainException 或六类已知 AiUsageLimitException code；未知码为 `OVERVIEW_GENERATION_FAILED` 回退）及 exception/cause 类型，不记录原始 exception/cause 文本或 throwable stack。
 - `CACHE_RETURN` 仅是 alias 映射/返回前的诊断阶段，不读取或持久化结果；`X-Overview-Request-Id` 也只做日志关联。Provider 成功但 HTTP 响应未到达 PC 时，客户端尚未执行独立 Overview results PUT，之后手动重新生成会创建新 request/generation ID、再次调用 Provider 并单独结算用量。当前 Controller 同时提供默认 JSON 和明确 opt-in 的 SSE；对不支持的 Accept，`HttpMediaTypeNotAcceptableException` 返回 HTTP 406 `NOT_ACCEPTABLE` Problem Details，不归类成 500。
@@ -822,3 +987,10 @@ Source 删除是可恢复的软删除：`AssetRetentionCleanupService` 默认保
 - Adaptive 单次预算评估改读持久化 task charged + reserved，包含历史尝试，避免日志把本轮余额当累计余额。新增日志包含 uncachedWriters、aggregateUpperBound、largestRequestReserve、charged、reserved、remaining。
 - 定向 OverviewAdaptiveGenerationTests、OverviewBudgetIntegrationTests 共50/50通过（exit0），证据 D:/Temp/auralis-budget-path-20261023/tests.log；未运行全量、真实Provider或GUI。输入估算校准、动态输出预算、明确的预算暂停/恢复状态与用户可读预计成本仍待实现，本条不表示完整优化路线交付。
 - 2026-10-28：`ADAPTIVE_ROUTE_INSTRUCTION` 补充每个 topic ID 只归属一个 section（含合并或重组）；这是防止 topic000175 跨节重复的提示词源码候选，尚未部署，模型效果未验收。
+
+### 2026-10-31 Chat assistant content capture for local diagnosis (source candidate, not deployed)
+
+`ChatRawContentCapture` optionally records decoded provider `delta.content` strings before parser input. Each iteration is written to a separate UTF-8 `.txt` file, preserving delta order, whitespace, line endings, and fences; UTF-8 bytes are re-encoded from the decoded text and are not the original provider SSE/JSON wire bytes. Reasoning, prompts, tool deltas/results, headers, and credentials are excluded. Capture is off by default; `AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_ENABLED=true` enables it and `AURALIS_AI_CHAT_DIAGNOSTIC_RAW_CONTENT_DIR` defaults to `/tmp/auralis-chat-diagnostics`. Total captured content across iterations in one attempt is capped by `AURALIS_AI_PROVIDER_MAX_RESPONSE_BYTES` (default 1 MiB). Log metadata contains only run/attempt/iteration IDs, path, byte count, complete, and truncated. Local I/O failure does not affect Chat. Files persist until manually removed; disable capture after the intended reproduction. No API or database changes; source candidate has not been deployed or used for a new model request.
+### 2026-11-01 Chat 展示工具正文伪调用约束（源码候选，未部署）
+
+SYSTEM prompt 明确要求结构化视觉组件通过 provider 的真实 `tool_calls` 协议调用对应 `render_*` 工具，不在 assistant content 或代码块中打印“工具名 + 参数 JSON”来伪装调用，也不以原始工具参数 JSON 替代渲染后的组件。正文仍可作简短引介、解释或总结；用户询问工具协议或要求代码时，仍可直接给出示例。协议、工具 schema、执行控制流及普通 Markdown 规则不变。`ChatAgentProtocolPublicationTests` 对映射后的初始与后续 Provider 请求检查该规则；该类 5/5 通过（0 failures/errors/skips，exit 0）。源码候选未部署，未调用真实 Provider；报告 `D:/Temp/auralis-literal-render-steps-20261101/findings.md` 记录了先前一次正文出现 render_steps 与参数 JSON 的观测，不能据此确认所有出现的根因。

@@ -34,6 +34,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.HashMap;
+import java.util.function.Consumer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** One-run LangChain4j model facade; every call is exactly one Gateway invocation. */
@@ -44,16 +46,34 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
     private final ChatAgentProperties properties;
     private final int maxOutputTokens;
     private final long responseTimeoutMillis;
+    private final Boolean thinkingEnabled;
+    private final Consumer<String> reasoningSink;
+    private final Map<String, String> reasoningByToolCallId = new HashMap<>();
+    private Map<String, String> projectedReasoningByToolCallId = Map.of();
     private final AtomicBoolean closed = new AtomicBoolean();
 
     ChatAgentModelAdapter(ChatAgentRunContext context, AiTaskScope scope, AiChatRequestMapper mapper,
                           ChatAgentProperties properties, int maxOutputTokens, long responseTimeoutMillis) {
+        this(context, scope, mapper, properties, maxOutputTokens, responseTimeoutMillis, ignored -> { });
+    }
+
+    ChatAgentModelAdapter(ChatAgentRunContext context, AiTaskScope scope, AiChatRequestMapper mapper,
+                          ChatAgentProperties properties, int maxOutputTokens, long responseTimeoutMillis,
+                          Consumer<String> reasoningSink) {
+        this(context, scope, mapper, properties, maxOutputTokens, responseTimeoutMillis, null, reasoningSink);
+    }
+
+    ChatAgentModelAdapter(ChatAgentRunContext context, AiTaskScope scope, AiChatRequestMapper mapper,
+                          ChatAgentProperties properties, int maxOutputTokens, long responseTimeoutMillis,
+                          Boolean thinkingEnabled, Consumer<String> reasoningSink) {
         this.context = Objects.requireNonNull(context);
         this.scope = Objects.requireNonNull(scope);
         this.mapper = Objects.requireNonNull(mapper);
         this.properties = Objects.requireNonNull(properties);
         this.maxOutputTokens = maxOutputTokens;
         this.responseTimeoutMillis = responseTimeoutMillis;
+        this.thinkingEnabled = thinkingEnabled;
+        this.reasoningSink = Objects.requireNonNull(reasoningSink);
         if (!scope.taskId().equals(AiTaskContext.chatAgentLedgerTaskId(context.userId(), context.runId()))) {
             throw new IllegalArgumentException("Gateway task identity does not match the logical Chat run");
         }
@@ -78,16 +98,57 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
     @Override
     public void doChat(ChatRequest request, StreamingChatResponseHandler handler) {
         Objects.requireNonNull(handler);
+        doChat(request, handler, ignored -> { });
+    }
+
+    void chatWithRawCapture(ChatRequest request, StreamingChatResponseHandler handler,
+                           Consumer<String> rawContentSink) {
+        chatWithRawCapture(request, handler, rawContentSink, ignored -> { });
+    }
+
+    void chatWithRawCapture(ChatRequest request, StreamingChatResponseHandler handler,
+                            Consumer<String> rawContentSink, Consumer<ToolCallProgress> toolProgressSink) {
+        Objects.requireNonNull(handler);
+        doChat(request, handler, Objects.requireNonNull(rawContentSink), Objects.requireNonNull(toolProgressSink));
+    }
+
+    private void doChat(ChatRequest request, StreamingChatResponseHandler handler,
+                        Consumer<String> rawContentSink) {
+        doChat(request, handler, rawContentSink, ignored -> { });
+    }
+
+    private void doChat(ChatRequest request, StreamingChatResponseHandler handler,
+                        Consumer<String> rawContentSink, Consumer<ToolCallProgress> toolProgressSink) {
         requireOpen();
-        StreamAccumulator accumulator = new StreamAccumulator(request, handler);
+        StreamAccumulator accumulator = new StreamAccumulator(request, handler, rawContentSink, toolProgressSink);
         try {
-            AiProviderRequest mapped = mapper.toProviderRequest(request, context.model(), maxOutputTokens);
+            AiProviderRequest mapped = mapRequest(request);
             scope.stream(AiStage.CHAT_COMPLETION, context.provider(), mapped, context.credential(),
                     context.credentialSource(), context.cancellation(), accumulator::accept);
             accumulator.finish();
         } catch (Throwable exception) {
             accumulator.fail(exception);
         }
+    }
+
+    AiProviderRequest mapRequest(ChatRequest request) {
+        return mapRequest(request, projectedReasoningByToolCallId);
+    }
+
+    AiProviderRequest mapRequest(ChatRequest request, Map<String, String> projectedReasoningByToolCallId) {
+        Map<String, String> reasoning = new HashMap<>(projectedReasoningByToolCallId == null
+                ? Map.of() : projectedReasoningByToolCallId);
+        reasoning.putAll(reasoningByToolCallId);
+        return mapper.toProviderRequest(request, context.model(), maxOutputTokens, Map.copyOf(reasoning))
+                .withThinkingEnabled(thinkingEnabled);
+    }
+
+    void setProjectedReasoningByToolCallId(Map<String, String> reasoning) {
+        projectedReasoningByToolCallId = reasoning == null ? Map.of() : Map.copyOf(reasoning);
+    }
+
+    String reasoningForToolCall(String toolCallId) {
+        return reasoningByToolCallId.get(toolCallId);
     }
 
     private ChatResponse toSdkResponse(String content, List<AiProviderToolCall> calls,
@@ -149,7 +210,11 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
 
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true)) scope.close();
+        if (closed.compareAndSet(false, true)) {
+            reasoningByToolCallId.clear();
+            projectedReasoningByToolCallId = Map.of();
+            scope.close();
+        }
     }
 
     private final class StreamAccumulator {
@@ -164,25 +229,51 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
         private final AtomicBoolean terminalCallback = new AtomicBoolean();
         private String responseId;
         private String finishReason;
+        private boolean finishBoundarySeen;
+        private boolean terminalSeen;
         private Long inputTokens;
         private Long outputTokens;
         private StringBuilder text;
+        private StringBuilder reasoning;
+        private boolean reasoningPresent;
+        private final Consumer<String> rawContentSink;
+        private final Consumer<ToolCallProgress> toolProgressSink;
 
-        private StreamAccumulator(ChatRequest request, StreamingChatResponseHandler handler) {
+        private StreamAccumulator(ChatRequest request, StreamingChatResponseHandler handler,
+                                  Consumer<String> rawContentSink, Consumer<ToolCallProgress> toolProgressSink) {
             this.request = request;
             this.handler = handler;
+            this.rawContentSink = rawContentSink;
+            this.toolProgressSink = toolProgressSink;
         }
 
         private void accept(AiProviderChunk chunk) {
             if (chunk == null || handle.isCancelled()) return;
+            boolean hasStreamDelta = (chunk.content() != null && !chunk.content().isEmpty())
+                    || (chunk.reasoningContent() != null && !chunk.reasoningContent().isEmpty())
+                    || chunk.toolCallDelta() != null;
+            String incomingFinishReason = chunk.finishReason();
+            if (finishBoundarySeen && hasStreamDelta) invalidStream();
+            if (finishBoundarySeen && incomingFinishReason != null
+                    && (finishReason == null || !finishReason.equals(incomingFinishReason))) invalidStream();
+            if (incomingFinishReason != null && finishReason == null) finishReason = incomingFinishReason;
             if (chunk.responseId() != null) {
                 if (responseId == null) responseId = chunk.responseId();
                 else if (!responseId.equals(chunk.responseId())) invalidStream();
             }
             if (chunk.content() != null && !chunk.content().isEmpty()) {
+                rawContentSink.accept(chunk.content());
                 if (text == null) text = new StringBuilder();
                 text.append(chunk.content());
                 handler.onPartialResponse(new PartialResponse(chunk.content()), partialContext);
+            }
+            if (chunk.reasoningContent() != null) {
+                reasoningPresent = true;
+                if (!chunk.reasoningContent().isEmpty()) {
+                    if (reasoning == null) reasoning = new StringBuilder();
+                    reasoning.append(chunk.reasoningContent());
+                    reasoningSink.accept(chunk.reasoningContent());
+                }
             }
             if (chunk.toolCallDelta() != null) acceptToolDelta(chunk);
             if (chunk.usage() != null) {
@@ -191,8 +282,9 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
             }
             if (chunk.terminal()) {
                 if (terminalCallback.get()) invalidStream();
-                finishReason = chunk.finishReason();
+                terminalSeen = true;
             }
+            if (incomingFinishReason != null || chunk.terminal()) finishBoundarySeen = true;
         }
 
         private void acceptToolDelta(AiProviderChunk chunk) {
@@ -206,8 +298,14 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
             }
             if (delta.name() != null) call.name.append(delta.name());
             if (delta.argumentsFragment() != null) call.arguments.append(delta.argumentsFragment());
-            handler.onPartialToolCall(PartialToolCall.builder().index(chunk.toolIndex())
-                    .id(call.id).name(call.name.toString()).partialArguments(call.arguments.toString()).build());
+            toolProgressSink.accept(new ToolCallProgress(responseId, chunk.toolIndex(), call.id,
+                    call.name.toString(), delta.argumentsFragment()));
+            String partialName = call.name.toString();
+            String partialArguments = call.arguments.toString();
+            if (!partialName.isBlank() && !partialArguments.isEmpty()) {
+                handler.onPartialToolCall(PartialToolCall.builder().index(chunk.toolIndex())
+                        .id(call.id).name(partialName).partialArguments(partialArguments).build());
+            }
         }
 
         private void finish() {
@@ -216,8 +314,15 @@ public final class ChatAgentModelAdapter implements StreamingChatModel, AutoClos
                 return;
             }
             try {
+                if (!terminalSeen) invalidStream();
                 List<AiProviderToolCall> completeCalls = completeCalls();
                 validateTerminal(finishReason, completeCalls);
+                if (reasoningPresent && !completeCalls.isEmpty()) {
+                    String completedReasoning = reasoning == null ? "" : reasoning.toString();
+                    for (AiProviderToolCall call : completeCalls) {
+                        reasoningByToolCallId.put(call.id(), completedReasoning);
+                    }
+                }
                 for (int index = 0; index < completeCalls.size(); index++) {
                     AiProviderToolCall call = completeCalls.get(index);
                     ToolExecutionRequest execution = ToolExecutionRequest.builder().id(call.id())

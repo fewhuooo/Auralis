@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 import com.auralis.app.ai.ConversationPurpose;
+import com.auralis.app.ai.ChatConversationScopeState;
 
 @Entity
 @Table(name = "conversations")
@@ -62,6 +63,13 @@ public class ConversationEntity {
 
     @Column(name = "chat_fence", nullable = false)
     private long chatFence;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "chat_scope_state", nullable = false, length = 16)
+    private ChatConversationScopeState chatScopeState = ChatConversationScopeState.LEGACY;
+
+    @Column(name = "chat_scope_json", columnDefinition = "text")
+    private String chatScopeJson;
 
     protected ConversationEntity() {
     }
@@ -121,6 +129,23 @@ public class ConversationEntity {
     public Short getChatProtocolVersion() { return chatProtocolVersion; }
     public UUID getActiveChatRunId() { return activeChatRunId; }
     public long getChatFence() { return chatFence; }
+    public ChatConversationScopeState getChatScopeState() { return chatScopeState; }
+    public String getChatScopeJson() { return chatScopeJson; }
+
+    public void markChatScopeUnbound() {
+        if (chatScopeState != ChatConversationScopeState.LEGACY) {
+            throw new IllegalStateException("Only new Chat conversations can start unbound");
+        }
+        chatScopeState = ChatConversationScopeState.UNBOUND;
+    }
+
+    public void bindChatScope(String scopeJson) {
+        if (chatScopeState != ChatConversationScopeState.UNBOUND) {
+            throw new IllegalStateException("Only an unbound Chat conversation can be bound");
+        }
+        chatScopeJson = scopeJson;
+        chatScopeState = ChatConversationScopeState.BOUND;
+    }
 
     public long reserveChatRun(UUID runId) {
         if (activeChatRunId != null) {

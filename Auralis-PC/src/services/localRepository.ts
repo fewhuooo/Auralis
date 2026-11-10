@@ -58,6 +58,7 @@ export interface LocalCommitInput<T = unknown> extends LocalResourceKey {
 export interface LocalScheduleBatchCommitInput<T = unknown> {
   items: Array<Omit<LocalCommitInput<T>, 'mutation'>>
   mutation: LocalMutationInput
+  expectedScheduleState?: string
 }
 
 export interface LocalScheduleMutationResolution {
@@ -65,6 +66,9 @@ export interface LocalScheduleMutationResolution {
   status: 'applied' | 'rejected'
   error?: string
   items: readonly LocalSnapshotItem[]
+  /** A complete authoritative snapshot is supplied before cancelling queued intentions. */
+  cancelQueued?: boolean
+  recoverySnapshot?: boolean
 }
 
 export interface LocalSubjectCascadeResource extends LocalEntity<unknown> {
@@ -142,6 +146,29 @@ function encodePart(value: string): string {
 
 function resourceKey(resourceType: string, resourceId: string): string {
   return `${resourceType}\u0000${resourceId}`
+}
+
+function isScheduleCommand(mutation: Pick<LocalMutation, 'mutationType'>): boolean {
+  return mutation.mutationType === 'SCHEDULE_INSERTION'
+    || mutation.mutationType === 'SCHEDULE_SWAP'
+    || mutation.mutationType === 'SCHEDULE_UNSCHEDULE'
+}
+
+function isUnresolved(mutation: Pick<LocalMutation, 'status'>): boolean {
+  return ['pending', 'inflight', 'conflict', 'error'].includes(mutation.status)
+}
+
+function mutationOrder(left: LocalMutation, right: LocalMutation): number {
+  return left.createdAt.localeCompare(right.createdAt) || left.clientMutationId.localeCompare(right.clientMutationId)
+}
+
+/** Detect optimistic schedule edits too: they intentionally retain server versions. */
+export function taskScheduleState(rows: ReadonlyArray<Pick<LocalEntity<unknown>, 'id' | 'version' | 'deletedAt' | 'value'>>): string {
+  const instant = (value: unknown) => typeof value === 'string' && Number.isFinite(Date.parse(value)) ? Date.parse(value) : value ?? null
+  return JSON.stringify(rows.filter((row) => row.deletedAt === null).map((row) => {
+    const value = row.value as Record<string, unknown>
+    return [row.id, row.version, value.status, instant(value.scheduledAt), instant(value.dueAt), value.durationMinutes ?? 30]
+  }).sort((left, right) => String(left[0]).localeCompare(String(right[0]))))
 }
 
 interface StoredBrowserState {
@@ -271,7 +298,7 @@ export class LocalRepository {
   }
 
   private localScheduleAffectedIds(mutation: Pick<LocalMutation, 'mutationType' | 'payload'>): string[] {
-    if (mutation.mutationType !== 'SCHEDULE_INSERTION' && mutation.mutationType !== 'SCHEDULE_SWAP') return []
+    if (mutation.mutationType !== 'SCHEDULE_INSERTION' && mutation.mutationType !== 'SCHEDULE_SWAP' && mutation.mutationType !== 'SCHEDULE_UNSCHEDULE') return []
     const ids = mutation.payload?._localAffectedTaskIds
     return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
   }
@@ -283,7 +310,7 @@ export class LocalRepository {
               payload, status, created_at, error, in_flight_at, remote_payload, remote_version
        FROM local_mutations
        WHERE user_id = $1 AND resource_type = 'TASK'
-         AND mutation_type IN ('SCHEDULE_INSERTION', 'SCHEDULE_SWAP')
+         AND mutation_type IN ('SCHEDULE_INSERTION', 'SCHEDULE_SWAP', 'SCHEDULE_UNSCHEDULE')
          AND status IN ('pending', 'inflight', 'conflict', 'error')`,
       [this.userId],
     )
@@ -696,7 +723,9 @@ export class LocalRepository {
     const mutation = this.mutationFromInput(input.mutation)
     const taskIds = input.items.map((item) => item.resourceId)
     if (mutation.resourceType !== 'TASK'
-      || mutation.mutationType !== 'SCHEDULE_INSERTION' && mutation.mutationType !== 'SCHEDULE_SWAP'
+      || (mutation.mutationType !== 'SCHEDULE_INSERTION'
+        && mutation.mutationType !== 'SCHEDULE_SWAP'
+        && mutation.mutationType !== 'SCHEDULE_UNSCHEDULE')
       || !taskIds.includes(mutation.resourceId)
       || input.items.length === 0
       || new Set(taskIds).size !== taskIds.length
@@ -713,10 +742,32 @@ export class LocalRepository {
       || !taskIds.every((taskId) => affectedTaskIds.includes(taskId))) {
       throw new Error('A schedule mutation must fence every optimistic Task row')
     }
+    mutation.payload._localExpectedTasks = input.items.map((item) => ({ id: item.resourceId, value: clone(item.value) }))
+    const prepareAppend = (unresolved: LocalMutation[]) => {
+      const schedules = unresolved.filter(isScheduleCommand).sort(mutationOrder)
+      if (unresolved.some((pending) => isScheduleCommand(pending)
+        ? pending.status !== 'pending' && pending.status !== 'inflight'
+        : affectedTaskIds.includes(pending.resourceId))) {
+        throw new LocalConflictError(null, 'A Task in the schedule batch has an unresolved local mutation')
+      }
+      // Preserve the append order across same-millisecond commits and restarts.
+      const last = schedules.at(-1)
+      if (last && mutationOrder(mutation, last) <= 0) {
+        mutation.createdAt = new Date(Date.parse(last.createdAt) + 1).toISOString()
+      }
+    }
 
     if (this.sql) {
       return this.runSqlTransaction(async (database) => {
-        await this.assertNoScheduleFence(database, affectedTaskIds)
+        if (input.expectedScheduleState !== undefined) {
+          const currentRows = await database.select<LocalResourceRow>(
+            `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
+             FROM local_resource_records WHERE user_id = $1 AND resource_type = 'TASK'`, [this.userId],
+          )
+          if (taskScheduleState(currentRows.map(resourceFromRow)) !== input.expectedScheduleState) {
+            throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
+          }
+        }
         const resourcePredicates = input.items.map((_, index) =>
           `(resource_type = $${index * 2 + 2} AND resource_id = $${index * 2 + 3})`)
         const existingRows = await database.select<LocalResourceRow>(
@@ -737,13 +788,10 @@ export class LocalRepository {
                   payload, status, created_at, error, in_flight_at, remote_payload, remote_version
            FROM local_mutations
            WHERE user_id = $1 AND resource_type = 'TASK'
-             AND status IN ('pending', 'inflight', 'conflict', 'error')
-             AND (${resourcePredicates.join(' OR ')})`,
-          [this.userId, ...input.items.flatMap((item) => [item.resourceType, item.resourceId])],
+             AND status IN ('pending', 'inflight', 'conflict', 'error')`,
+          [this.userId],
         )
-        if (unresolvedRows.length > 0) {
-          throw new LocalConflictError(null, `A Task in the schedule batch has an unresolved local mutation`)
-        }
+        prepareAppend(unresolvedRows.map(mutationFromRow))
         const duplicateId = await database.select<Pick<LocalMutationRow, 'client_mutation_id'>>(
           'SELECT client_mutation_id FROM local_mutations WHERE user_id = $1 AND client_mutation_id = $2',
           [this.userId, mutation.clientMutationId],
@@ -784,7 +832,12 @@ export class LocalRepository {
 
     return this.withBrowserStateLock(() => {
       const state = this.readBrowserState()
-      this.assertNoScheduleFenceInBrowser(state, affectedTaskIds)
+      if (input.expectedScheduleState !== undefined && taskScheduleState(state.resources.filter((row) =>
+        row.userId === this.userId && row.resourceType === 'TASK')) !== input.expectedScheduleState) {
+        throw new LocalConflictError(null, '排期已在其他窗口更新，请重试')
+      }
+      prepareAppend(state.mutations.filter((pending) => pending.userId === this.userId
+        && pending.resourceType === 'TASK' && isUnresolved(pending)))
       for (const item of input.items) {
         const existing = state.resources.find((resource) => resource.userId === this.userId
           && resource.resourceType === item.resourceType && resource.id === item.resourceId) ?? null
@@ -792,10 +845,6 @@ export class LocalRepository {
           throw new LocalConflictError(existing, `TASK/${item.resourceId} is not active locally`)
         }
         this.assertBaseVersion(existing, item.expectedLocalVersion, item.resourceType, item.resourceId)
-        if (state.mutations.some((pending) => pending.userId === this.userId && pending.resourceType === 'TASK'
-          && pending.resourceId === item.resourceId && ['pending', 'inflight', 'conflict', 'error'].includes(pending.status))) {
-          throw new LocalConflictError(existing, `TASK/${item.resourceId} has an unresolved local mutation`)
-        }
       }
       if (state.mutations.some((item) => item.userId === this.userId && item.clientMutationId === mutation.clientMutationId)) {
         throw new LocalConflictError(null, `Mutation ${mutation.clientMutationId} already exists`)
@@ -820,133 +869,153 @@ export class LocalRepository {
     })
   }
 
+  private reconcileScheduleResult(
+    mutation: LocalMutation,
+    mutations: LocalMutation[],
+    resources: LocalEntity<unknown>[],
+    input: LocalScheduleMutationResolution,
+  ): boolean {
+    if (!isScheduleCommand(mutation)) throw new Error('Only a schedule mutation can be resolved with a Task batch')
+    if (mutation.status === 'applied' || mutation.status === 'rejected') return true
+    const queued = mutations.filter((item) => item.clientMutationId !== mutation.clientMutationId
+      && isScheduleCommand(item) && isUnresolved(item))
+    // Only the oldest schedule is sent. A younger command must never be settled or
+    // rebased while an older delivery is still unknown.
+    if (queued.some((item) => mutationOrder(item, mutation) < 0)
+      || queued.some((item) => item.payload._localScheduleSent === true)) {
+      throw new Error('SCHEDULE_COMMAND_ORDER_INVALID')
+    }
+    const affectedIds = new Set(this.localScheduleAffectedIds(mutation))
+    const cancelling = input.cancelQueued === true || input.status === 'rejected'
+    if (cancelling) {
+      for (const next of queued) for (const id of this.localScheduleAffectedIds(next)) affectedIds.add(id)
+      const returnedIds = new Set(input.items.map((item) => item.resourceId))
+      if ([...affectedIds].some((id) => !returnedIds.has(id))) throw new Error('SYNC_SCHEDULE_SNAPSHOT_INCOMPLETE')
+    }
+    const otherWrites = mutations.filter((item) => item.clientMutationId !== mutation.clientMutationId
+      && !isScheduleCommand(item) && isUnresolved(item))
+    const protectedIds = new Set(input.items.filter((item) => {
+      const current = resources.find((row) => row.resourceType === 'TASK' && row.id === item.resourceId)
+      return otherWrites.some((pending) => pending.resourceType === 'TASK' && pending.resourceId === item.resourceId)
+        || current !== undefined && (item.version < current.version || current.deletedAt !== null && item.deletedAt === null)
+    }).map((item) => item.resourceId))
+    const unsafeBatch = protectedIds.size > 0
+    if (unsafeBatch && queued.length > 0 && !input.recoverySnapshot) throw new Error('SCHEDULE_REFRESH_REQUIRED')
+    mutation.status = input.status
+    mutation.error = unsafeBatch ? input.error ?? 'SCHEDULE_REFRESH_REQUIRED' : input.error
+    mutation.remoteValue = clone(input.items)
+    if (cancelling) {
+      for (const next of queued) {
+        next.status = 'rejected'
+        next.error = 'SCHEDULE_PREDECESSOR_REJECTED'
+      }
+    }
+    if (!unsafeBatch || input.recoverySnapshot) {
+      const stillQueued = cancelling ? [] : queued
+      const fenced = new Set(stillQueued.flatMap((next) => this.localScheduleAffectedIds(next)))
+      for (const item of input.items) {
+        if (protectedIds.has(item.resourceId)) continue
+        const current = resources.find((row) => row.resourceType === 'TASK' && row.id === item.resourceId)
+        const keepProjection = fenced.has(item.resourceId) && current !== undefined
+        const value = keepProjection ? clone(current.value) : clone(item.value)
+        if (value && typeof value === 'object') (value as Record<string, unknown>).version = item.version
+        const entity: LocalEntity<unknown> = {
+          id: item.resourceId, resourceType: 'TASK', userId: this.userId,
+          version: item.version, deletedAt: item.deletedAt,
+          syncStatus: keepProjection ? 'pending' : 'synced', value,
+        }
+        const index = resources.findIndex((row) => row.resourceType === 'TASK' && row.id === item.resourceId)
+        if (index >= 0) resources[index] = entity
+        else resources.push(entity)
+        for (const next of stillQueued) {
+          // These commands have never left the device. Their first delivery must
+          // use the authoritative predecessor versions, with the same stable ID.
+          if (next.resourceId === item.resourceId) {
+            next.baseVersion = item.version
+            const field = next.mutationType === 'SCHEDULE_INSERTION' ? 'baseVersion'
+              : next.mutationType === 'SCHEDULE_SWAP' ? 'sourceBaseVersion'
+              : 'baseVersion'
+            if (Object.prototype.hasOwnProperty.call(next.payload, field)) next.payload[field] = item.version
+          }
+          if (next.mutationType === 'SCHEDULE_SWAP' && next.payload.targetTaskId === item.resourceId
+            && Object.prototype.hasOwnProperty.call(next.payload, 'targetBaseVersion')) {
+            next.payload.targetBaseVersion = item.version
+          }
+        }
+      }
+    }
+    for (const id of affectedIds) {
+      const current = resources.find((row) => row.resourceType === 'TASK' && row.id === id)
+      if (input.recoverySnapshot && protectedIds.has(id)) continue
+      if (current) current.syncStatus = unsafeBatch && !input.recoverySnapshot ? 'error'
+        : mutations.some((next) => next.resourceType === 'TASK' && isUnresolved(next)
+          && (next.resourceId === id || this.localScheduleAffectedIds(next).includes(id)))
+          ? 'pending' : 'synced'
+    }
+    return !unsafeBatch || input.recoverySnapshot === true
+  }
+
   async resolveScheduleMutation(input: LocalScheduleMutationResolution): Promise<boolean> {
-    const items = input.items
-    const itemKeys = items.map((item) => resourceKey(item.resourceType, item.resourceId))
-    if (items.some((item) => item.resourceType !== 'TASK') || new Set(itemKeys).size !== itemKeys.length) {
+    const keys = input.items.map((item) => resourceKey(item.resourceType, item.resourceId))
+    if (input.items.some((item) => item.resourceType !== 'TASK') || new Set(keys).size !== keys.length) {
       throw new Error('A schedule result must contain unique Task rows')
     }
-
     if (this.sql) {
       return this.runSqlTransaction(async (database) => {
         const mutationRows = await database.select<LocalMutationRow>(
           `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
                   payload, status, created_at, error, in_flight_at, remote_payload, remote_version
-           FROM local_mutations WHERE user_id = $1 AND client_mutation_id = $2`,
+           FROM local_mutations WHERE user_id = $1
+             AND (client_mutation_id = $2 OR status IN ('pending', 'inflight', 'conflict', 'error'))`,
           [this.userId, input.clientMutationId],
         )
-        const mutation = mutationRows[0] ? mutationFromRow(mutationRows[0]) : null
+        const mutations = mutationRows.map(mutationFromRow)
+        const mutation = mutations.find((item) => item.clientMutationId === input.clientMutationId)
         if (!mutation) return false
-        if (mutation.mutationType !== 'SCHEDULE_INSERTION' && mutation.mutationType !== 'SCHEDULE_SWAP') {
-          throw new Error('Only a schedule mutation can be resolved with a Task batch')
-        }
+        if (!isScheduleCommand(mutation)) throw new Error('Only a schedule mutation can be resolved with a Task batch')
         if (mutation.status === 'applied' || mutation.status === 'rejected') return true
-        const affectedTaskIds = this.localScheduleAffectedIds(mutation)
-        const resourcePredicates = items.map((_, index) =>
-          `(resource_type = $${index * 2 + 3} AND resource_id = $${index * 2 + 4})`)
-        const unresolvedRows = items.length === 0 ? [] : await database.select<LocalMutationRow>(
-          `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
-                  payload, status, created_at, error, in_flight_at, remote_payload, remote_version
-           FROM local_mutations
-           WHERE user_id = $1 AND client_mutation_id <> $2 AND status IN ('pending', 'inflight', 'conflict', 'error')
-             AND (${resourcePredicates.join(' OR ')})`,
-          [this.userId, input.clientMutationId, ...items.flatMap((item) => [item.resourceType, item.resourceId])],
-        )
-        const currentRows = items.length === 0 ? [] : await database.select<LocalResourceRow>(
+        const affected = new Set([...input.items.map((item) => item.resourceId),
+          ...mutations.filter(isScheduleCommand).flatMap((next) => this.localScheduleAffectedIds(next))])
+        const taskIds = [...affected]
+        const rows = taskIds.length === 0 ? [] : await database.select<LocalResourceRow>(
           `SELECT resource_id, resource_type, user_id, version, deleted_at, sync_status, payload
-           FROM local_resource_records WHERE user_id = $1 AND (${resourcePredicates.join(' OR ')})`,
-          [this.userId, ...items.flatMap((item) => [item.resourceType, item.resourceId])],
+           FROM local_resource_records WHERE user_id = $1 AND resource_type = 'TASK'
+             AND resource_id IN (${taskIds.map((_, index) => `$${index + 2}`).join(', ')})`,
+          [this.userId, ...taskIds],
         )
-        const currentByKey = new Map(currentRows.map((row) => [resourceKey(row.resource_type, row.resource_id), row]))
-        const unsafeBatch = unresolvedRows.length > 0 || items.some((item) => {
-          const current = currentByKey.get(resourceKey(item.resourceType, item.resourceId))
-          return current !== undefined && (item.version < current.version
-            || current.deleted_at !== null && item.deletedAt === null)
-        })
-        const terminalError = unsafeBatch ? input.error ?? 'SCHEDULE_REFRESH_REQUIRED' : input.error
-        await database.execute(
-          `UPDATE local_mutations SET status = $1, error = $2, in_flight_at = NULL,
-             remote_payload = $3, remote_version = NULL
-           WHERE user_id = $4 AND client_mutation_id = $5`,
-          [input.status, terminalError ?? null, JSON.stringify(items), this.userId, input.clientMutationId],
-        )
-        if (!unsafeBatch) {
-          for (const item of items) {
-            await database.execute(
-              `INSERT INTO local_resource_records
-                (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
-               VALUES ($1, 'TASK', $2, $3, $4, 'synced', $5)
-               ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET
-                version = excluded.version, deleted_at = excluded.deleted_at,
-                sync_status = 'synced', payload = excluded.payload`,
-              [this.userId, item.resourceId, item.version, item.deletedAt, JSON.stringify(item.value)],
-            )
-          }
-        }
-        for (const taskId of affectedTaskIds) {
-          const unresolvedForTask = await database.select<Pick<LocalMutationRow, 'client_mutation_id'>>(
-            `SELECT client_mutation_id FROM local_mutations WHERE user_id = $1 AND resource_type = 'TASK'
-             AND resource_id = $2 AND status IN ('pending', 'inflight', 'conflict', 'error')`,
-            [this.userId, taskId],
-          )
+        const resources = rows.map(resourceFromRow)
+        const accepted = this.reconcileScheduleResult(mutation, mutations, resources, input)
+        for (const next of mutations.filter(isScheduleCommand)) {
           await database.execute(
-            `UPDATE local_resource_records SET sync_status = $1
-             WHERE user_id = $2 AND resource_type = 'TASK' AND resource_id = $3`,
-            [unsafeBatch ? 'error' : unresolvedForTask.length > 0 ? 'pending' : 'synced', this.userId, taskId],
+            `UPDATE local_mutations SET status = $1, error = $2, in_flight_at = NULL,
+               base_version = $3, payload = $4, remote_payload = $5, remote_version = NULL
+             WHERE user_id = $6 AND client_mutation_id = $7`,
+            [next.status, next.error ?? null, next.baseVersion, JSON.stringify(next.payload),
+              next.remoteValue === undefined ? null : JSON.stringify(next.remoteValue), this.userId, next.clientMutationId],
           )
         }
-        return !unsafeBatch
+        for (const entity of resources.filter((item) => affected.has(item.id))) {
+          await database.execute(
+            `INSERT INTO local_resource_records
+              (user_id, resource_type, resource_id, version, deleted_at, sync_status, payload)
+             VALUES ($1, 'TASK', $2, $3, $4, $5, $6)
+             ON CONFLICT (user_id, resource_type, resource_id) DO UPDATE SET
+               version = excluded.version, deleted_at = excluded.deleted_at,
+               sync_status = excluded.sync_status, payload = excluded.payload`,
+            [this.userId, entity.id, entity.version, entity.deletedAt, entity.syncStatus, JSON.stringify(entity.value)],
+          )
+        }
+        return accepted
       })
     }
-
     return this.withBrowserStateLock(() => {
       const state = this.readBrowserState()
-      const mutation = state.mutations.find((item) => item.userId === this.userId
-        && item.clientMutationId === input.clientMutationId)
-    if (!mutation) return false
-    if (mutation.mutationType !== 'SCHEDULE_INSERTION' && mutation.mutationType !== 'SCHEDULE_SWAP') {
-      throw new Error('Only a schedule mutation can be resolved with a Task batch')
-    }
-    if (mutation.status === 'applied' || mutation.status === 'rejected') return true
-    const affectedTaskIds = this.localScheduleAffectedIds(mutation)
-    const keys = new Set(itemKeys)
-    const unresolved = state.mutations.some((item) => item.userId === this.userId
-      && item.clientMutationId !== input.clientMutationId
-      && ['pending', 'inflight', 'conflict', 'error'].includes(item.status)
-      && keys.has(resourceKey(item.resourceType, item.resourceId)))
-    const unsafeBatch = unresolved || items.some((item) => {
-      const current = state.resources.find((resource) => resource.userId === this.userId
-        && resource.resourceType === item.resourceType && resource.id === item.resourceId)
-      return current !== undefined && (item.version < current.version
-        || current.deletedAt !== null && item.deletedAt === null)
-    })
-    mutation.status = input.status
-    mutation.error = unsafeBatch ? input.error ?? 'SCHEDULE_REFRESH_REQUIRED' : input.error
-    mutation.remoteValue = clone(items)
-    for (const taskId of affectedTaskIds) {
-      const current = state.resources.find((resource) => resource.userId === this.userId
-        && resource.resourceType === 'TASK' && resource.id === taskId)
-      if (current) current.syncStatus = unsafeBatch ? 'error' : 'synced'
-    }
-    if (!unsafeBatch) {
-      for (const item of items) {
-        const index = state.resources.findIndex((resource) => resource.userId === this.userId
-          && resource.resourceType === item.resourceType && resource.id === item.resourceId)
-        const entity: LocalEntity<unknown> = {
-          id: item.resourceId,
-          resourceType: 'TASK',
-          userId: this.userId,
-          version: item.version,
-          deletedAt: item.deletedAt,
-          syncStatus: 'synced',
-          value: clone(item.value),
-        }
-        if (index >= 0) state.resources[index] = entity
-        else state.resources.push(entity)
-      }
-    }
-    this.writeBrowserState(state)
-    return !unsafeBatch
+      const mutation = state.mutations.find((item) => item.userId === this.userId && item.clientMutationId === input.clientMutationId)
+      if (!mutation) return false
+      const accepted = this.reconcileScheduleResult(mutation,
+        state.mutations.filter((item) => item.userId === this.userId), state.resources, input)
+      this.writeBrowserState(state)
+      return accepted
     })
   }
 
@@ -955,7 +1024,9 @@ export class LocalRepository {
     if (mutation.resourceType !== input.resourceType || mutation.resourceId !== input.resourceId) {
       throw new Error('Local mutation must target the committed resource')
     }
-    if (mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP') {
+    if (mutation.mutationType === 'SCHEDULE_INSERTION'
+      || mutation.mutationType === 'SCHEDULE_SWAP'
+      || mutation.mutationType === 'SCHEDULE_UNSCHEDULE') {
       throw new Error('Schedule mutations must use commitScheduleMutation')
     }
 
@@ -1249,22 +1320,33 @@ export class LocalRepository {
 
   async claimPending(limit: number): Promise<LocalMutation[]> {
     const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+    const selectClaimable = (mutations: LocalMutation[]) => {
+      const firstSchedule = mutations.filter((item) => isScheduleCommand(item) && isUnresolved(item)).sort(mutationOrder)[0]
+      const claimed = mutations.filter((item) => isScheduleCommand(item)
+        ? item.clientMutationId === firstSchedule?.clientMutationId && (item.status === 'pending' || item.status === 'inflight')
+        : item.status === 'pending')
+        .sort(mutationOrder).slice(0, boundedLimit)
+      for (const mutation of claimed) {
+        if (isScheduleCommand(mutation)) mutation.payload._localScheduleSent = true
+      }
+      return claimed
+    }
     if (this.sql) {
       return this.runSqlTransaction(async (database) => {
         const rows = await database.select<LocalMutationRow>(
           `SELECT client_mutation_id, user_id, resource_type, resource_id, mutation_type, base_version,
                   payload, status, created_at, error, in_flight_at, remote_payload, remote_version
-           FROM local_mutations WHERE user_id = $1 AND status = 'pending'
-           ORDER BY created_at ASC, client_mutation_id ASC LIMIT $2`,
-          [this.userId, boundedLimit],
+           FROM local_mutations WHERE user_id = $1 AND status IN ('pending', 'inflight', 'conflict', 'error')
+           ORDER BY created_at ASC, client_mutation_id ASC`,
+          [this.userId],
         )
-        const claimed = rows.map(mutationFromRow)
+        const claimed = selectClaimable(rows.map(mutationFromRow))
         const claimedAt = this.now()
         for (const mutation of claimed) {
           await database.execute(
-            `UPDATE local_mutations SET status = 'inflight', in_flight_at = $1
-             WHERE user_id = $2 AND client_mutation_id = $3 AND status = 'pending'`,
-            [claimedAt, this.userId, mutation.clientMutationId],
+            `UPDATE local_mutations SET status = 'inflight', in_flight_at = $1, payload = $2
+              WHERE user_id = $3 AND client_mutation_id = $4 AND status IN ('pending', 'inflight')`,
+            [claimedAt, JSON.stringify(mutation.payload), this.userId, mutation.clientMutationId],
           )
         }
         return claimed.map((mutation) => ({ ...mutation, status: 'inflight' as const }))
@@ -1272,10 +1354,7 @@ export class LocalRepository {
     }
     return this.withBrowserStateLock(() => {
       const state = this.readBrowserState()
-      const claimed = state.mutations
-        .filter((item) => item.userId === this.userId && item.status === 'pending')
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.clientMutationId.localeCompare(right.clientMutationId))
-        .slice(0, boundedLimit)
+      const claimed = selectClaimable(state.mutations.filter((item) => item.userId === this.userId))
       for (const mutation of claimed) mutation.status = 'inflight'
       if (claimed.length > 0) this.writeBrowserState(state)
       return claimed.map(clone)

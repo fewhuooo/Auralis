@@ -202,15 +202,15 @@ export class LocalReviewService {
     deviceId: string,
     kbId: string,
     expectedHash: string,
-  ): Promise<void> {
-    await this.repo.executeAtomicReviewCommit(userId, deviceId, kbId, async (tx, currentRecord, kbResource, subjectResource) => {
-      if (!currentRecord || !kbResource || kbResource.deleted_at || (subjectResource && subjectResource.deleted_at)) return
+  ): Promise<LocalReviewRecord | null> {
+    return this.repo.executeAtomicReviewCommit(userId, deviceId, kbId, async (tx, currentRecord, kbResource, subjectResource) => {
+      if (!currentRecord || !kbResource || kbResource.deleted_at || (subjectResource && subjectResource.deleted_at)) return currentRecord
       const payload = safeJson<Record<string, unknown>>(kbResource.payload, {})
       const observedHash = await currentContentHash(payload)
       const latestSubjectId = subjectIdOf(payload)
-      if (!latestSubjectId) return
+      if (!latestSubjectId) return currentRecord
       const subjectChanged = !!latestSubjectId && currentRecord.subjectId !== latestSubjectId
-      if (!observedHash || (observedHash === currentRecord.contentHash && !subjectChanged)) return
+      if (!observedHash || (observedHash === currentRecord.contentHash && !subjectChanged)) return currentRecord
       const [reread, rereadSubject] = await Promise.all([
         this.repo.getKbResource(tx, userId, kbId),
         latestSubjectId ? this.repo.getSubjectResource(tx, userId, latestSubjectId) : Promise.resolve(null),
@@ -219,7 +219,7 @@ export class LocalReviewService {
         || reread.payload !== kbResource.payload || !rereadSubject || rereadSubject.deleted_at) {
         throw localReviewConflict()
       }
-      if (observedHash !== expectedHash) return
+      if (observedHash !== expectedHash) return currentRecord
       if (subjectChanged && latestSubjectId && observedHash === currentRecord.contentHash) {
         // A pure parent move changes scope and KB revision, but unchanged body
         // content keeps its schedule and mastery. Old-scope commands remain
@@ -237,7 +237,7 @@ export class LocalReviewService {
           updatedAt: new Date().toISOString(),
         }
         await this.repo.saveSubjectMoveCommit(tx, userId, deviceId, kbId, movedRecord)
-        return
+        return movedRecord
       }
       const state = currentRecord.canonicalAnchor?.state
         ? stateForChangedContent(currentRecord.canonicalAnchor.state, reread.version, observedHash)
@@ -255,6 +255,7 @@ export class LocalReviewService {
         updatedAt: new Date().toISOString(),
       }
       await this.repo.saveInvalidationCommit(tx, userId, deviceId, kbId, record)
+      return record
     })
   }
 
@@ -267,8 +268,12 @@ export class LocalReviewService {
     if (row.deleted_at) return null
     const payload = safeJson<Record<string, unknown>>(row.payload, {})
     const hash = await currentContentHash(payload)
-    if (hash) await this.invalidateChangedContent(userId, deviceId, row.id, hash)
-    const record = await this.repo.getReviewRecord(userId, deviceId, row.id)
+    // Reuse the record read under the existing transaction/lock. A second
+    // post-transaction read adds one repository round trip per block and can
+    // observe a different revision from the one used for invalidation.
+    const record = hash
+      ? await this.invalidateChangedContent(userId, deviceId, row.id, hash)
+      : await this.repo.getReviewRecord(userId, deviceId, row.id)
     const state = record?.state
       ? { ...record.state }
       : makeUnlearnedState(row.id, row.version, hash ?? '', new Date().toISOString())

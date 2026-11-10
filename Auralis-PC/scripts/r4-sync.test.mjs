@@ -469,7 +469,8 @@ test('sync cycle atomically reconciles an applied schedule command and records o
   assert.equal((await repository.read('TASK', 'task-b')).value.scheduledAt, 'server-b');
   assert.deepEqual(await repository.listPending('TASK'), []);
   assert.equal(result.scheduleApplied, 1);
-  assert.deepEqual(result.scheduleErrors, []);
+  assert.deepEqual(result.scheduleErrors, [{ clientMutationId: 'schedule-applied', code: 'SCHEDULE_REFRESH_REQUIRED' }],
+    'a changed server prediction notifies even if the outer queue appeared empty');
 });
 
 test('sync cycle restores the server Task cohort and terminates a rejected schedule command', async () => {
@@ -1440,4 +1441,141 @@ test('an A refresh failure followed by B setSession before the outer catch canno
     activeRequestAdapter = originalAdapter;
     restoreWindow();
   }
+});
+
+
+test('schedule wire payloads contain only current server fields and never local queue metadata', async () => {
+  const originalPost = request.post;
+  const sent = [];
+  try {
+    request.post = async (_url, data) => { sent.push(data); return { results: [] }; };
+    for (const mutationType of ['SCHEDULE_INSERTION', 'SCHEDULE_SWAP']) {
+      const fields = mutationType === 'SCHEDULE_INSERTION'
+        ? { taskId: 'a', baseVersion: 2, scheduledAt: '2099-10-06T10:00:00Z', windowStartAt: '2099-10-06T08:00:00Z',
+            windowLastStartAt: '2099-10-06T22:30:00Z', targetTaskId: 'b' }
+        : { sourceTaskId: 'a', sourceBaseVersion: 2, targetTaskId: 'b', targetBaseVersion: 4 };
+      await useSyncApi.pushChanges({ serverDeviceId: 'device', mutations: [{
+        clientMutationId: `wire-${mutationType}`, resourceType: 'TASK', resourceId: 'a', mutationType, baseVersion: 2,
+        status: 'pending', createdAt: 'now', userId: 'user', payload: { ...fields,
+          _localAffectedTaskIds: ['a', 'b'], _localExpectedTasks: [{ id: 'a', value: { title: 'private-local-only' } }],
+          _localScheduleSent: true, futureLocalMetadata: 'must not leak' },
+      }] });
+      assert.deepEqual(sent.at(-1).mutations[0].payload, fields);
+    }
+    await useSyncApi.pushChanges({ serverDeviceId: 'device', mutations: [{
+      clientMutationId: 'missing-target', resourceType: 'TASK', resourceId: 'a', mutationType: 'SCHEDULE_SWAP',
+      baseVersion: 2, status: 'pending', createdAt: 'now', userId: 'user', payload: { sourceTaskId: 'a', _localScheduleSent: true },
+    }] });
+    assert.deepEqual(sent.at(-1).mutations[0].payload, { sourceTaskId: 'a' }, 'missing required values remain missing for server validation');
+  } finally { request.post = originalPost; }
+});
+
+
+test('SCHEDULE_UNSCHEDULE sends wire mutation UPDATE with scheduledAt: null, whitelisted fields, and strips _local* metadata', async () => {
+  const originalPost = request.post;
+  const sent = [];
+  try {
+    request.post = async (_url, data) => { sent.push(data); return { results: [] }; };
+    await useSyncApi.pushChanges({
+      serverDeviceId: 'device',
+      mutations: [{
+        clientMutationId: 'wire-unschedule',
+        resourceType: 'TASK',
+        resourceId: 'task-u',
+        mutationType: 'SCHEDULE_UNSCHEDULE',
+        baseVersion: 3,
+        status: 'pending',
+        createdAt: '2026-11-03T10:00:00Z',
+        userId: 'user-1',
+        payload: {
+          id: 'task-u',
+          title: 'My Task',
+          description: 'Task details',
+          status: 'TODO',
+          scheduledAt: '2099-10-06T10:00:00Z',
+          dueAt: '2099-10-06T18:00:00Z',
+          durationMinutes: 30,
+          sortKey: 'sort-key-1',
+          subjectId: 'sub-1',
+          baseVersion: 3,
+          _localAffectedTaskIds: ['task-u'],
+          _localExpectedTasks: [{ id: 'task-u', value: {} }],
+          _localScheduleSent: true,
+          unwantedField: 'must be stripped',
+        },
+      }],
+    });
+    assert.equal(sent.length, 1);
+    const wireMutation = sent[0].mutations[0];
+    assert.equal(wireMutation.mutationType, 'UPDATE');
+    assert.equal(wireMutation.resourceType, 'TASK');
+    assert.equal(wireMutation.resourceId, 'task-u');
+    assert.equal(wireMutation.baseVersion, 3);
+    assert.deepEqual(wireMutation.payload, {
+      title: 'My Task',
+      description: 'Task details',
+      status: 'TODO',
+      scheduledAt: null,
+      dueAt: '2099-10-06T18:00:00Z',
+      durationMinutes: 30,
+      sortKey: 'sort-key-1',
+      subjectId: 'sub-1',
+      baseVersion: 3,
+    });
+    assert.equal(wireMutation.payload._localAffectedTaskIds, undefined);
+    assert.equal(wireMutation.payload.unwantedField, undefined);
+  } finally {
+    request.post = originalPost;
+  }
+});
+
+test('push settlement handles single Task DTO response for SCHEDULE_UNSCHEDULE through schedule pathway', async () => {
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const { LocalRepository, createMemoryStorage } = await import('../src/services/localRepository.ts');
+  const repository = new LocalRepository('unschedule-sync-user', 'device', { storage: createMemoryStorage() });
+  await repository.saveCursor('cursor-before-unschedule');
+  await repository.upsert('TASK', 'task-u', { id: 'task-u', status: 'TODO', scheduledAt: '2099-10-06T10:00:00Z' }, { version: 2 });
+  await repository.commitScheduleMutation({
+    items: [{ resourceType: 'TASK', resourceId: 'task-u', value: { id: 'task-u', status: 'TODO' }, version: 2, expectedLocalVersion: 2, deletedAt: null }],
+    mutation: {
+      clientMutationId: 'unschedule-push-1',
+      resourceType: 'TASK',
+      resourceId: 'task-u',
+      mutationType: 'SCHEDULE_UNSCHEDULE',
+      baseVersion: 2,
+      payload: { id: 'task-u', scheduledAt: null, baseVersion: 2, _localAffectedTaskIds: ['task-u'] },
+    },
+  });
+
+  const api = {
+    async pushChanges({ mutations }) {
+      const m = mutations[0];
+      return {
+        results: [{
+          clientMutationId: m.clientMutationId,
+          decision: 'APPLIED',
+          resourceType: 'TASK',
+          mutationType: 'UPDATE',
+          current: {
+            id: 'task-u',
+            status: 'TODO',
+            scheduledAt: null,
+            version: 3,
+          },
+        }],
+        serverCursor: 'cursor-after-unschedule',
+      };
+    },
+    async pullChanges() { return { changes: [], nextCursor: 'cursor-after-unschedule', hasMore: false, resetRequired: false }; },
+    async getSnapshot() { assert.fail('unexpected snapshot'); },
+  };
+
+  const result = await runSyncCycle({ repository, api, serverDeviceId: 'device' });
+  assert.equal(result.scheduleApplied, 1);
+  const taskRow = await repository.read('TASK', 'task-u');
+  assert.equal(taskRow.version, 3);
+  assert.equal(taskRow.syncStatus, 'synced');
+  assert.equal(taskRow.value.scheduledAt, null);
+  const unresolved = await repository.listUnresolved('TASK');
+  assert.equal(unresolved.length, 0);
 });

@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -141,6 +142,12 @@ public class SubjectService {
     @Transactional(readOnly = true)
     public SubjectView requireActiveSubject(UUID userId, UUID id) {
         return get(userId, id);
+    }
+
+    @Transactional(readOnly = true)
+    public Set<UUID> findActiveSubjectIds(UUID userId, Collection<UUID> ids) {
+        if (ids.isEmpty()) return Set.of();
+        return Set.copyOf(subjectRepository.findActiveIdsByUserIdAndIdIn(userId, ids));
     }
 
     /**

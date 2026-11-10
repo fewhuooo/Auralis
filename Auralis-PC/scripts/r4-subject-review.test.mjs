@@ -67,6 +67,7 @@ const originalApi = { ...useReviewApi }
 const originalGet = request.get
 const originalPost = request.post
 const originalNavigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+const nativeLocks = globalThis.navigator?.locks
 const originalLocalReviewReads = {
   getSubjectStates: LocalReviewService.prototype.getSubjectStates,
   getLifecycleHistory: LocalReviewService.prototype.getLifecycleHistory,
@@ -880,7 +881,7 @@ test('late local material reads stay scoped to the captured account and do not w
 })
 
 test('a first local formal score invalidates stats for the still-current subject', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-stats-invalidation-user')
   useSyncStore().requestBackgroundSync = () => undefined
   const subjectId = `subject-stats-invalidation-${Date.now()}`
@@ -910,7 +911,7 @@ test('a first local formal score invalidates stats for the still-current subject
 })
 
 test('review history follows the current card and the round summary shows first ratings and due dates', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-history-pane-user')
   const subjectId = `subject-review-history-pane-${Date.now()}`
   const blockA = `kb-history-a-${Date.now()}`
@@ -972,7 +973,7 @@ test('review history follows the current card and the round summary shows first 
 })
 
 test('review choice saves first, same-review correction enters learning, and practice completion is separate', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-two-actions-user')
   const subjectId = `subject-two-actions-${Date.now()}`
   const blockId = `kb-two-actions-${Date.now()}`
@@ -1043,7 +1044,7 @@ test('review choice saves first, same-review correction enters learning, and pra
 })
 
 test('review pane provides distinct 进入学习 and 进入复习 actions and queues eligible blocks accurately', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-early-practice-pane-user')
   const subjectId = `subject-early-practice-pane-${Date.now()}`
   const dueAt = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -1113,7 +1114,7 @@ test('review pane provides distinct 进入学习 and 进入复习 actions and qu
 })
 
 test('review pane defaults 待复习 to due blocks only and provides voluntary review entrance for early and mastered review', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-voluntary-pane-user')
   const subjectId = `subject-voluntary-${Date.now()}`
   const futureA = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
@@ -1162,7 +1163,7 @@ test('review pane defaults 待复习 to due blocks only and provides voluntary r
 })
 
 test('review pane exposes hidden HARD group-end recall and completes a successful recall locally', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-hard-fuzzy-pane-user')
   const subjectId = `subject-hard-fuzzy-${Date.now()}`
   const blockId = `kb-hard-fuzzy-${Date.now()}`
@@ -1488,7 +1489,7 @@ test('forgetting during the hidden fuzzy recall corrects the same confirmed HARD
 })
 
 test('lifecycle retry preserves the exact local command and late A responses cannot write after account switch', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore } = fixture('lifecycle-user-a')
   const subjectId = `subject-lifecycle-${Date.now()}`
   const blockId = `kb-lifecycle-${Date.now()}`
@@ -1557,7 +1558,7 @@ test('lifecycle retry preserves the exact local command and late A responses can
 })
 
 test('a stale local command response cannot roll back newer lifecycle state or continue an obsolete review id', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore } = fixture('lifecycle-stale-replay-user')
   const subjectId = `subject-stale-replay-${Date.now()}`
   const blockId = `kb-stale-replay-${Date.now()}`
@@ -1810,7 +1811,7 @@ test('SubjectWorkspace back handler restores workspace view and review pane hier
 })
 
 test('voluntary pane rejects an empty round returned by a stale store action', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-voluntary-stale-action-user')
   const subjectId = 'subject-voluntary-stale-action-' + Date.now()
   const blockIds = ['kb-voluntary-stale-a-' + Date.now(), 'kb-voluntary-stale-b-' + Date.now()]
@@ -1923,7 +1924,7 @@ test('an existing empty lifecycle round does not render a false zero-completion 
 })
 
 test('a remounted review pane preserves its active round until the local knowledge-block read completes', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-remount-local-block-load-user')
   const subjectId = 'subject-remount-local-block-load-' + Date.now()
   const blockId = 'kb-remount-local-block-load-' + Date.now()
@@ -1980,7 +1981,7 @@ test('a remounted review pane preserves its active round until the local knowled
 })
 
 test('a subject switch does not reconcile a valid target round against the temporary empty active-block list', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-subject-switch-local-block-load-user')
   const oldSubjectId = 'subject-switch-old-' + Date.now()
   const targetSubjectId = 'subject-switch-target-' + Date.now()
@@ -2034,7 +2035,7 @@ test('a subject switch does not reconcile a valid target round against the tempo
 })
 
 test('a failed local block read keeps the active round and offers retry instead of treating missing data as an empty round', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const { authStore, reviewStore, pinia } = fixture('review-local-block-read-error-user')
   const subjectId = 'subject-local-block-read-error-' + Date.now()
   const blockId = 'kb-local-block-read-error-' + Date.now()
@@ -2088,7 +2089,7 @@ test('a failed local block read keeps the active round and offers retry instead 
 })
 
 test('voluntary pane shows the actual selected group size for the default and selected counts', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   for (const { candidateCount, selectedSize } of [
     { candidateCount: 7, selectedSize: 5 },
     { candidateCount: 12, selectedSize: 10 },
@@ -2124,7 +2125,7 @@ test('voluntary pane shows the actual selected group size for the default and se
 })
 
 test('real learning and review completion summaries report completed cards', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   {
     const { authStore, reviewStore, pinia } = fixture('review-real-completion-' + Date.now())
     const subjectId = 'subject-real-review-completion-' + Date.now()
@@ -2168,7 +2169,7 @@ test('real learning and review completion summaries report completed cards', asy
 })
 
 test('review-store HMR reloads the page and keeps formal review state and outbox on local storage', async () => {
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false } })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: false, locks: nativeLocks } })
   const userId = 'review-hmr-outbox-user-' + Date.now()
   const { authStore, reviewStore } = fixture(userId)
   const dueSubjectId = 'subject-hmr-due-' + Date.now()

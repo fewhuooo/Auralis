@@ -3,6 +3,8 @@ package com.auralis.app;
 import com.auralis.app.ai.OverviewDtos;
 import com.auralis.app.ai.OverviewMode;
 import com.auralis.app.ai.OverviewResultCommand;
+import com.auralis.app.ai.OverviewResultService;
+import com.auralis.app.ai.OverviewInputDescriptor;
 import com.auralis.app.ai.OverviewSourceManifestEntry;
 import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityInput;
 import com.auralis.app.ai.OverviewIdentityDtos.OutlineIdentityNodeInput;
@@ -36,7 +38,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -50,6 +54,7 @@ class OverviewResultControllerTests {
     @Autowired private SubjectService subjectService;
     @Autowired private SourceService sourceService;
     @Autowired private SourceRepository sourceRepository;
+    @Autowired private OverviewResultService overviewResultService;
     @Autowired private JdbcTemplate jdbcTemplate;
     @Autowired private ObjectMapper objectMapper;
 
@@ -264,6 +269,30 @@ class OverviewResultControllerTests {
     }
 
     @Test
+    void currentSourceOverviewReadsOnlyTheOwnersCurrentFormalResult() throws Exception {
+        var owner = owner();
+        String token = bearer(owner.tokens().accessToken());
+        UUID subjectId = subjectService.create(owner.user().id(),
+                new SubjectCommand("Current source overview", null, null, "001")).id();
+        SourceEntity source = createReadySource(owner.user().id(), subjectId, "Current source overview");
+        putSourceOverview(owner.user().id(), token, source, 0, "Saved source overview");
+
+        assertThat(overviewResultService.readCurrentSource(owner.user().id(), source.getId(),
+                source.getIngestionRevision())).isPresent();
+        assertThat(overviewResultService.currentSourceOverviewIds(owner.user().id(),
+                java.util.Map.of(source.getId(), source.getIngestionRevision()))).containsExactly(source.getId());
+        assertThat(overviewResultService.currentSourceOverviewIds(UUID.randomUUID(),
+                java.util.Map.of(source.getId(), source.getIngestionRevision()))).isEmpty();
+
+        UUID nextRevision = UUID.randomUUID();
+        jdbcTemplate.update("update sources set ingestion_revision = ? where id = ?", nextRevision, source.getId());
+        assertThatThrownBy(() -> overviewResultService.readCurrentSource(owner.user().id(), source.getId(),
+                source.getIngestionRevision())).hasMessageContaining("Source changed during this Chat run");
+        assertThat(overviewResultService.currentSourceOverviewIds(owner.user().id(),
+                java.util.Map.of(source.getId(), source.getIngestionRevision()))).isEmpty();
+    }
+
+    @Test
     void subjectResultsValidateNumericPartManifestAndInvalidateOnSourceOverviewChangeAndDelete() throws Exception {
         var owner = owner();
         String token = bearer(owner.tokens().accessToken());
@@ -354,6 +383,153 @@ class OverviewResultControllerTests {
                         .header(HttpHeaders.AUTHORIZATION, token)).andExpect(status().isNotFound());
         mockMvc.perform(get("/api/overview-results/sources/{id}", source.getId())
                         .header(HttpHeaders.AUTHORIZATION, token)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void subjectStatusesBatchReturnsOnlyCurrentMetadataAndHidesUnavailableScopes() throws Exception {
+        var owner = owner();
+        var otherOwner = owner();
+        String token = bearer(owner.tokens().accessToken());
+        UUID availableSubjectId = subjectService.create(owner.user().id(),
+                new SubjectCommand("Available batch status", null, null, "001")).id();
+        UUID staleSubjectId = subjectService.create(owner.user().id(),
+                new SubjectCommand("Stale batch status", null, null, "002")).id();
+        UUID missingSubjectId = subjectService.create(owner.user().id(),
+                new SubjectCommand("Missing batch status", null, null, "003")).id();
+        UUID deletedSubjectId = subjectService.create(owner.user().id(),
+                new SubjectCommand("Deleted batch status", null, null, "004")).id();
+        UUID foreignSubjectId = subjectService.create(otherOwner.user().id(),
+                new SubjectCommand("Foreign batch status", null, null, "001")).id();
+        UUID randomSubjectId = UUID.randomUUID();
+
+        SourceEntity availableSource = createReadySource(owner.user().id(), availableSubjectId,
+                "Available batch source", SourceType.FILE);
+        putSourceOverview(owner.user().id(), token, availableSource, 0, "Available source");
+        var availableManifest = List.of(new OverviewSourceManifestEntry(availableSource.getId(),
+                availableSource.getIngestionRevision(), 1L, 1L));
+        var availableSeed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
+                availableManifest, fingerprint(availableSource.getId(), availableSource.getIngestionRevision(), 1, 1),
+                null, null, fullResult(availableSource.getId(), "Available subject"),
+                newIdentity(fullResult(availableSource.getId(), "Available subject")), null);
+        mockMvc.perform(put("/api/overview-results/subjects/{id}", availableSubjectId)
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(availableSeed)))
+                .andExpect(status().isOk());
+
+        SourceEntity staleSource = createReadySource(owner.user().id(), staleSubjectId,
+                "Stale batch source", SourceType.FILE);
+        JsonNode staleSourceResult = putSourceOverview(owner.user().id(), token, staleSource, 0, "Stale source");
+        var staleManifest = List.of(new OverviewSourceManifestEntry(staleSource.getId(),
+                staleSource.getIngestionRevision(), 1L, 1L));
+        var staleSeed = new OverviewResultCommand(0L, UUID.randomUUID(), OverviewMode.ALL, null,
+                staleManifest, fingerprint(staleSource.getId(), staleSource.getIngestionRevision(), 1, 1),
+                null, null, fullResult(staleSource.getId(), "Stale subject"),
+                newIdentity(fullResult(staleSource.getId(), "Stale subject")), null);
+        mockMvc.perform(put("/api/overview-results/subjects/{id}", staleSubjectId)
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(staleSeed)))
+                .andExpect(status().isOk());
+        var staleSourceUpdate = new OverviewResultCommand(1L, UUID.randomUUID(), OverviewMode.OUTLINE,
+                staleSource.getIngestionRevision(), null, null, null, null,
+                outlineOnlyResult(staleSource.getId(), "Changed source"),
+                identityFrom(staleSourceResult.path("outlineIdentity")), null);
+        mockMvc.perform(put("/api/overview-results/sources/{id}", staleSource.getId())
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(staleSourceUpdate)))
+                .andExpect(status().isOk());
+        OverviewInputDescriptor deletedRawInput = new OverviewInputDescriptor(
+                OverviewInputDescriptor.Origin.SOURCE_CONTENT, "SUBJECT", staleSubjectId, List.of(staleSource.getId()),
+                List.of(), List.of(), List.of(), "stale-raw-input-fingerprint");
+        jdbcTemplate.update("update overview_results set outline_input_origin='SOURCE_CONTENT', outline_input_snapshot_json=? "
+                        + "where user_id=? and scope_type='SUBJECT' and scope_id=?",
+                objectMapper.writeValueAsString(deletedRawInput), owner.user().id(), staleSubjectId);
+        jdbcTemplate.update("update sources set deleted_at=? where id=?", Instant.now(), staleSource.getId());
+        subjectService.delete(owner.user().id(), deletedSubjectId, 0);
+
+        JsonNode existingGet = objectMapper.readTree(mockMvc.perform(get(
+                                "/api/overview-results/subjects/{id}", availableSubjectId)
+                        .header(HttpHeaders.AUTHORIZATION, token))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        int resultCountBefore = jdbcTemplate.queryForObject("select count(*) from overview_results where user_id=?",
+                Integer.class, owner.user().id());
+        int receiptCountBefore = jdbcTemplate.queryForObject("select count(*) from overview_write_receipts where user_id=?",
+                Integer.class, owner.user().id());
+        String request = objectMapper.writeValueAsString(java.util.Map.of("subjectIds", List.of(
+                availableSubjectId, missingSubjectId, availableSubjectId, staleSubjectId, deletedSubjectId,
+                foreignSubjectId, randomSubjectId)));
+        JsonNode response = objectMapper.readTree(mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+        assertThat(response.path("items").size()).isEqualTo(6);
+        assertThat(response.at("/items/0/subjectId").asString()).isEqualTo(availableSubjectId.toString());
+        assertThat(response.at("/items/0/status").asString()).isEqualTo("AVAILABLE");
+        assertThat(response.at("/items/0/version").longValue()).isEqualTo(existingGet.path("version").longValue());
+        assertThat(response.at("/items/0/outlineVersion").longValue()).isEqualTo(existingGet.path("outlineVersion").longValue());
+        assertThat(response.at("/items/0/summaryVersion").longValue()).isEqualTo(existingGet.path("summaryVersion").longValue());
+        assertThat(response.at("/items/0/updatedAt").asString()).isEqualTo(existingGet.path("updatedAt").asString());
+        assertThat(response.at("/items/0/title").isMissingNode()).isTrue();
+        assertThat(response.at("/items/0/outline").isMissingNode()).isTrue();
+        assertThat(response.at("/items/0/summary").isMissingNode()).isTrue();
+        assertThat(response.at("/items/1/status").asString()).isEqualTo("MISSING");
+        assertThat(response.at("/items/2/subjectId").asString()).isEqualTo(staleSubjectId.toString());
+        assertThat(response.at("/items/2/status").asString()).isEqualTo("MISSING");
+        assertThat(response.at("/items/2/version").isNull()).isTrue();
+        assertThat(response.at("/items/2/outlineVersion").isNull()).isTrue();
+        assertThat(response.at("/items/2/summaryVersion").isNull()).isTrue();
+        assertThat(response.at("/items/2/updatedAt").isNull()).isTrue();
+        for (int index = 1; index < 6; index++) {
+            if (index == 2) continue;
+            assertThat(response.at("/items/" + index + "/version").isNull()).isTrue();
+            assertThat(response.at("/items/" + index + "/outlineVersion").isNull()).isTrue();
+            assertThat(response.at("/items/" + index + "/summaryVersion").isNull()).isTrue();
+            assertThat(response.at("/items/" + index + "/updatedAt").isNull()).isTrue();
+        }
+        assertThat(response.at("/items/3/status").asString()).isEqualTo("UNAVAILABLE");
+        assertThat(response.at("/items/4/status").asString()).isEqualTo("UNAVAILABLE");
+        assertThat(response.at("/items/5/status").asString()).isEqualTo("UNAVAILABLE");
+        assertThat(jdbcTemplate.queryForObject("select count(*) from overview_results where user_id=?",
+                Integer.class, owner.user().id())).isEqualTo(resultCountBefore);
+        assertThat(jdbcTemplate.queryForObject("select count(*) from overview_write_receipts where user_id=?",
+                Integer.class, owner.user().id())).isEqualTo(receiptCountBefore);
+    }
+
+    @Test
+    void subjectStatusesRequireAuthenticationAndValidateRawRequestBeforeDeduplication() throws Exception {
+        var owner = owner();
+        String token = bearer(owner.tokens().accessToken());
+        UUID repeated = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of("subjectIds", List.of(repeated)))))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectIds\":[]}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectIds\":null}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content("null"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectIds\":[null]}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"subjectIds\":[\"not-a-uuid\"]}"))
+                .andExpect(status().isBadRequest());
+        String oversizedDuplicates = objectMapper.writeValueAsString(java.util.Map.of("subjectIds",
+                java.util.Collections.nCopies(101, repeated)));
+        mockMvc.perform(post("/api/overview-results/subjects/statuses")
+                        .header(HttpHeaders.AUTHORIZATION, token).contentType(MediaType.APPLICATION_JSON)
+                        .content(oversizedDuplicates))
+                .andExpect(status().isBadRequest());
     }
 
     private com.auralis.app.identity.AuthResult owner() {

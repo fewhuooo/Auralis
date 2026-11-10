@@ -1,5 +1,33 @@
 # Auralis API 契约
 
+### 2026-11-04 Chat UNKNOWN 显式恢复
+
+新增需 Bearer access token 鉴权的 `POST /api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover`，无请求 body，返回现有 `ChatRunStatusView`。它只对当前 active run 的 current attempt 执行 UNKNOWN 终结，不会重新派发模型请求。目标与会话、run、attempt 通过 owner 复合归属验证；目标已被解决或成为旧 attempt 时只返回该 run 当前状态，不改变后续 attempt 或其他 run。状态不允许恢复时返回 HTTP 409 `CHAT_RECOVERY_NOT_ALLOWED`。
+
+当前 UNKNOWN attempt 没有已提交 READY/SUBMITTED activity 时，显式恢复把 run/attempt 终结为 `FAILED`，错误码 `CHAT_UNKNOWN_ABANDONED`，保留已验证公开正文和行；未闭合 GENERATING block 转为 INVALID。私有 tool evidence、activity/ref 和 usage task/reservation/charged 状态保留，不退款。若已有 READY/SUBMITTED activity，按已提交业务结果完成 run/attempt 并释放执行槽，不撤销 activity 或 private reference。两种路径均通过 conversation fence 阻止迟到 worker 发布；TTL 不证明 Provider 已停止，恢复不代表取消上游请求。
+
+### 2026-11-04 用户资料头像存在提示
+
+AuthResult 中的 `user`、`GET /api/auth/me` 和 `PUT /api/auth/me` 共用 `UserView { id, username, displayName, version, hasAvatar }`，其中 `hasAvatar` 是必填布尔字段。它在响应读取时根据当前用户 `user_avatars` 行是否存在计算，不增加数据库字段，不修改用户 `version`。注册、登录、刷新、资料读取和资料更新均使用相同语义。头像图片仍通过独立头像接口读取和写入，不进入 UserView。
+
+客户端收到 `hasAvatar=false` 时应跳过头像 GET 并清除当前用户头像缓存/显示；为 true 时才 GET。头像可在其他设备删除，因此 true 后仍可能遇到现有 404，客户端应保留默认头像 fallback。上传和删除继续返回 HTTP 204，不返回新的 UserView；成功后客户端可本地更新标志，或重新读取 `/api/auth/me`。无头像时 `GET /api/auth/me/avatar` 仍返回 404。
+
+运行时 OpenAPI 已导出到本文件对应的 artifact，`OpenApiArtifactTests` 17/17 通过并确认 `hasAvatar` 为必填。PC/Mobile generated schema 已通过项目既有脚本同步；PC 端已完成 `hasAvatar` 契约接入（`useAuthStore`、`Profile/index.vue`、`r4-profile-live-links.test.mjs`）：`hasAvatar=false` 时跳过头像 GET 并清理显示/缓存，`true` 时按需拉取，404 时平滑 fallback 到默认首字母头像，上传/重置头像及更新资料正确同步本地标志位。测试全量与 package 状态见[后端模块](../modules/Backend.md)和[当前状态](../current/Status.md)。
+
+### 2026-11-04 学科总览批量状态（后端与 PC 源码均已完成，定向验证通过，未部署）
+
+新增只读 `POST /api/overview-results/subjects/statuses`，现有 Bearer access token 鉴权。请求 `{subjectIds:[UUID...]}`，数组必填、原始长度 1–100、元素不得为 null；非法输入返回 400，未认证沿用 401。重复 ID 按首次出现去重，响应按去重后请求顺序返回。
+
+HTTP 200 响应为 `{items:[{subjectId,status,version,outlineVersion,summaryVersion,updatedAt}]}`。`AVAILABLE` 表示当前用户活动学科存在完整且符合现行来源/输入有效性校验的总览，版本与更新时间和单 GET 一致（整体 version 可以为 0）；`MISSING` 表示本人活动学科没有当前有效结果，包括无记录、不完整和已失效；`UNAVAILABLE` 统一表示不存在、已删除或非当前用户学科，不披露是否有结果。后两态的三个版本字段及 updatedAt 均为 null，正常缺失不产生逐学科 404。
+
+批量读取仅返回状态元数据，不返回目录/摘要/正文，不写入记录、不触发生成或更新事件；并发变更后的详情 GET/PUT 仍执行原有版本和输入校验。结果状态复用现行有效性规则，不将表中存在等同于 AVAILABLE。服务错误不能包装成缺失。完整客户端接入与验收见[交接](../plans/2026-11-04-overview-batch-status-handoff.md)。PC 端已完成批量请求接入、<=100 分批切片、去重、MISSING/AVAILABLE 判定与草稿/种子上传保护，避免了无总览学科逐个 GET 的 404 循环噪声。
+
+### 2026-11-03 Overview 并发准入（源码候选，未部署）
+
+同用户 SOURCE_OVERVIEW/SUBJECT_OVERVIEW 的有效调用预留合并限制为 `max(1, perUserConcurrent-1)`，所有阶段及凭据来源共用，仍同时受原用户和全局总并发上限约束。默认用户总上限 2 时总览最多占 1 槽；单槽配置可运行总览但不承诺 Chat 即时可用，全局额度被占满时仍返回繁忙。
+
+Overview completion 仅在创建 reservation 前遇并发容量不足时，允许后端内部有界等候（每实例最多 4 个等待者、最多 120 秒）。等待不产生 reservation、模型调用次数或 token 消耗；超出等待人数或时间仍返回现行 `AI_CONCURRENCY_LIMIT` 及安全重试元数据。等待期间检查取消、deadline 和绑定生成的 owner/source 资格，派发前复核并按剩余期限计算响应超时；额度不足和已派发 Provider 失败不进入这条等候重试路径。此为服务端单次调用内的准入，不改变客户端不自动循环补发的规则，不增加 HTTP/SSE 字段。
+
 ### 2026-10-27 Overview direct 重试身份（契约自动检查通过，未部署）
 
 `POST /api/ai/source-overviews`及`/api/ai/subject-overviews`的JSON/SSE请求增加可选UUID字段`retryOfRequestId`，省略/null为普通生成；字段取上次的`X-Overview-Request-Id`，本次header仍用新的UUID。字段只控制执行/幂等，不参与内容、模型或阶段缓存指纹，公开OverviewResponse不变，不新增SSE事件。
@@ -214,8 +242,8 @@ New internal Provider invocations carry a server-resolved credential source with
 - `POST /api/auth/register` 请求字段为 `username`、`password`、`displayName`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 201、`Location: /api/auth/sessions/{sessionId}` 和 AuthResult。
 - `POST /api/auth/login` 请求字段为 `username`、`password`、`clientDeviceKey`、`deviceName`、`platform`；成功返回 HTTP 200 和 AuthResult。
 - `POST /api/auth/refresh` 请求字段为 `refreshToken`；成功返回 HTTP 200 和新的 AuthResult。旧 refresh token 立即失效。
-- AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`serverDeviceId`。
-- `GET /api/auth/me` 返回 `UserView { id, username, displayName, version }`。`PUT /api/auth/me` 接受 `{baseVersion,displayName}`，服务端修剪昵称并限制为 1–120 字符，版本不一致返回 `409 RESOURCE_VERSION_CONFLICT`；头像单独读取，不进入 UserView。
+- AuthResult 使用直接 DTO，不使用 `Result<T>` 包装：`user { id, username, displayName, version, hasAvatar }`、`tokens { accessToken, refreshToken, accessTokenExpiresInSeconds, refreshTokenExpiresInSeconds }`、`sessionId`、`serverDeviceId`。
+- `GET /api/auth/me` 返回 `UserView { id, username, displayName, version, hasAvatar }`。`PUT /api/auth/me` 接受 `{baseVersion,displayName}`，服务端修剪昵称并限制为 1–120 字符，版本不一致返回 `409 RESOURCE_VERSION_CONFLICT`；`hasAvatar` 按读取时 `user_avatars` 行存在性计算，不递增用户版本。头像图片单独读写，不进入 UserView。
 - `PUT /api/auth/password` 接受 `{baseVersion,currentPassword,newPassword}`，新密码为 12–200 字符且不得与原密码相同。服务端校验原密码和用户版本，更新密码哈希并撤销该用户全部 refresh sessions；已签发的 access JWT 仍遵循原 15 分钟有效期边界。原密码错误返回身份凭据错误，不返回敏感字段。
 - 当前 Auth API 没有忘记密码/密码找回流程；`PUT /api/auth/password` 是已登录且持有当前密码的改密接口。API 也没有通用用户偏好同步或完整数据备份/导出端点。
 - `POST /api/auth/me/avatar` 使用 `multipart/form-data` 的 `file` 字段，只接受实际 PNG/JPEG、原文件最大 5 MiB、边长不超过 4096 像素且总像素不超过 1600 万；Spring multipart 单文件接收上限为 5 MiB，完整请求上限为 6 MiB，以容纳表单封装开销。服务端解码并统一重编码为 PNG，私有存储于当前用户头像表。`GET /api/auth/me/avatar` 只返回当前用户头像且设置 no-store/nosniff；客户端须接受 `image/png`，并可同时接受 `application/problem+json` 用于错误响应，不能仅发送 `Accept: application/json`。`DELETE /api/auth/me/avatar` 删除当前用户头像。头像不复用资料 Asset 上传协议。
@@ -264,6 +292,8 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 
 ## 阶段 3 离线同步已实现契约
 
+PC 连续排期使用原有 `SCHEDULE_INSERTION` / `SCHEDULE_SWAP` wire 契约；客户端对排期 payload 使用现行字段白名单，本地队列预测、成员围栏及首发标记不上传。后继排期只在前驱终态结算后首次派发；已发送命令以同一 ID 和相同内容重试，不改变现有服务端幂等约束。端侧持久化细节见 [数据库与端侧数据契约](Database.md#2026-10-31-pc-排期命令本地串行队列无-schema-迁移)。
+
 - `POST /api/sync/push` 接受 `serverDeviceId` 和 `mutations[]`；每条 mutation 包含 `clientMutationId`、`resourceType`、`resourceId`、`mutationType`、`baseVersion` 和可选 `payload`。首批资源为 `SUBJECT`、`SOURCE`、`KNOWLEDGE_BLOCK`、`TASK`、`RELATION`，操作为 `CREATE`、`UPDATE`、`DELETE`、`RESTORE`。
 - PC Timeline 的 `TASK` inbound mutation 额外支持 `SCHEDULE_INSERTION` 和 `SCHEDULE_SWAP`。插入命令 payload 为 `{taskId,baseVersion,scheduledAt,windowStartAt,windowLastStartAt,targetTaskId?}`，换位命令 payload 为 `{sourceTaskId,sourceBaseVersion,targetTaskId,targetBaseVersion}`；换位的目标 ID 和版本必填，外层 `resourceId/baseVersion` 标识命令源 Task。一个命令承载整次插入顺延或换位，服务端在单个幂等事务中执行并以 `MutationResponse.current` 返回当前 Task 数组；缺少换位目标字段等格式错误会将该 mutation 记为 `REJECTED/VALIDATION_FAILED`，拒绝或版本冲突也返回相关当前排期，版本冲突决策为 `CONFLICT`。成功时受影响 Task 仍各自产生普通 `UPDATE` change-log，pull 的 `ChangeResponse.mutationType` 仍只有 CRUD。相同用户/设备和 mutation ID、相同请求内容会回放首次结果。
 - Push 返回 `results` 和 `serverCursor`。结果 decision 为 `APPLIED`、`CONFLICT` 或 `REJECTED`，包含资源、mutation、change cursor、当前 DTO/快照、稳定 code 和 `recordedAt`。同一用户/设备/`clientMutationId` 重放时返回首次结果；同键不同内容只拒绝该条 mutation，并返回 `MUTATION_REJECTED`，不会中止同批其他 mutation。
@@ -282,6 +312,7 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 - 资源活动/版本/hash 验证仍适用于重放；精确回执早于新时间/存在性验证。同 ID/载荷回放冻结回执，换时间或存在性字段拒绝。两个字段均省略时 fingerprint 保持原结构，不能额外写入两个 null 字段破坏已有回执。
 - 命令 effectiveReview 与 lifecycle/history effectiveReviews 增加可空 `schedulingBaseline`：`{dueAt,mastered,stableSuccessCount,nextReviewStage,lastPracticeAt,stability}`，时间/阶段可空。它是初选前调度快照的公开投影；导入未确认 GOOD/HARD 后本地确认使用该快照，不能从暂定当前状态推断。
 - lifecycle/history 顶层固定 `protocolVersion:2`。PC 在任何 lifecycle POST（包括 prepared 重试）前读取并确认该版本；旧后端无字段则保留 pending 并提示更新，不上传。已固化/结果未知的请求不因后续查询而重基；回执 occurredAt 与固化请求规范时间不一致时不得 ACK 或覆盖本机投影。
+- 2026-11-03 源码候选：新生命周期命令在状态 flush 后从数据库 refresh，再冻结完整 `state` 回执，使 `createdAt/updatedAt` 使用数据库实际保存的时间精度，与后续独立事务的 history 一致。旧冻结回执和请求指纹保持原样，不迁移历史命令；PC 对既有纳秒锚点及未发送误冲突的处理见 [PC 修复交接](../plans/2026-11-03-pc-review-unschedule-handoff.md)，尚待 PC 实施。
 - 旧五档事件读取与 firstLearning 派生曾用于迁移统计，相关 HTTP 路由于 2026-10-11 移除；生命周期审计仍由本节的 lifecycle/history 提供。
 
 ### 学科复习生命周期（2026-10-08，代码、相关自动验证及只读审查通过；真实联调待验收）
@@ -378,7 +409,8 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 - `GET /api/ai/settings` 返回当前用户各 Provider 的配置摘要；`PUT /api/ai/settings` 接受 `provider`、`baseUrl`、`chatModel` 和可选 `apiKey`，不接受用户 Embedding 模型配置。返回值只暴露 `hasApiKey`，不返回明文或密文。Provider 配置按用户隔离，首次创建必须提供 key，更新时可保留原 key。客户端只能在本请求 body 中提交 key，禁止持久化明文或在普通请求中附加 BYOK header。普通聊天运行时解析顺序为当前用户有效 BYOK 优先，其次是服务端 env 默认 Provider（`DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`SILICONFLOW_API_KEY`）；env key 不写入 `ai_credentials` 或 API 响应。检索及入库的 Embedding 使用服务端 SiliconFlow 配置，与用户聊天 Provider 分离。
 - `GET /api/ai/settings/{provider}/models` 返回 `{provider,models}`，可选地读取已保存 BYOK Provider 的 `GET /models`，按 `data[].id` 最多提取 200 个模型；不支持该端点的服务仍可手动填写 `chatModel`。`POST /api/ai/settings/{provider}/test-connection` 使用已保存的聊天模型发起最小 `POST /chat/completions` 请求，返回 `{provider,reachable,chatModel}`，不依赖 `/models`。两者均不读取 env 默认凭据，也不接收临时明文密钥。未保存配置返回 `503 MODEL_UNAVAILABLE`；无效/不安全地址返回 `400 VALIDATION_FAILED`；上游认证拒绝或响应格式无效返回 `502 MODEL_PROVIDER_ERROR`；超时返回 `504 MODEL_TIMEOUT`，429 返回 `RATE_LIMITED`，上游 5xx 返回 `503 MODEL_UNAVAILABLE`。`OPENAI_COMPATIBLE` 是通用协议类型，服务商名称不单独持久化。
 - `POST /api/ai/conversations` 创建会话；请求可选 `clientRequestId`，同一用户重放同一非空值必须返回同一会话，供离线会话恢复使用。`GET /api/ai/conversations` 列出当前用户未删除会话；`GET /api/ai/conversations/{conversationId}` 返回消息和会话 `version`；`DELETE /api/ai/conversations/{conversationId}?baseVersion=<n>` 必须携带当前 `baseVersion` 并执行 owner-scoped 软删除，版本冲突返回 `409 RESOURCE_VERSION_CONFLICT`。
-- Chat API、DTO、SSE、content projection、attempt/retry/status/cancel、activity submission、one-shot text generation 与旧数据处理以 [Chat Runtime API protocol 1](chat-runtime-api.md) 为准。协议 1 统一 `POST /api/ai/messages/stream` 的 turn/activity_submission，使用 run 子路由与 `POST /api/ai/text-generations`；当前 Server 源码已有实现候选，统一后端构建/测试和 OpenAPI artifact 更新尚未完成。
+- 新建 Chat 会话返回 `chatScopeState=UNBOUND`、`chatScope=null`；首次成功准入 `turn` 时在持久化 USER/run 的同一事务中绑定规范化 reading scope，之后 detail/list 返回 `BOUND` 及 scope。后续省略 `readingContext` 继承绑定；显式不同的策略或 ID 返回 `409 CHAT_SCOPE_CONFLICT`，不保存 USER/run。范围固定 retrieval mode 与 source/subject IDs，不固定 `selectionText` 或 ingestion revision；每次 attempt 仍按当下 owner、subject、READY 和 revision 校验。数据库既有会话标记为 `LEGACY`，可查看但不能创建新 turn/retry；必须新建会话，不从历史 run 自动推断。Owner-wide 会话为 `BOUND` 且 `chatScope=null`；AUTO 保持原语义。Activity submission 只能继承绑定，且来源 run scope 必须一致。
+- Chat API、DTO、SSE、content projection、attempt/retry/status/cancel、activity submission、one-shot text generation 与旧数据处理以 [Chat Runtime API protocol 1](chat-runtime-api.md) 为准。现行展示组件由六个 provider function tools 生成；compare item 采用 `{title,entries:[{label,text},...]}` 且至少两个 entry，每个完整维度经 `block.item` 发布。旧正文 marker/NDJSON 协议已删除，历史 parts 保留但不自动转换。此为既有 Chat public parts 语义调整，不改变 HTTP 路由、外层 SSE envelope 或 OpenAPI/SDK schema。后端 focused suite 126/126，review B0/I0；受限全量及 package 边界见[当前状态](../current/Status.md)。
 
 - `POST /api/ai/suggestions` 接受 `type`（`SUMMARY`、`QUESTIONS`、`NEXT_STEPS`、`REVIEW_PROMPT`）、`knowledgeBlockId` 和 `limit`（1–20），仅允许访问当前用户 KnowledgeBlock；当前输出为可替换的确定性后端基线，引用列表可能为空。
 - `POST /api/ai/source-overviews` 接受 `{sourceId,mode,instruction?}`；`POST /api/ai/subject-overviews` 接受 `{subjectId,mode,instruction?,sources}`。客户端可通过 `X-Overview-Request-Id` 传递本次尝试的关联 ID；服务端日志为每次生成记录 `generationId`，并按 user/source/revision 和 MAP、REDUCE、JSON_PARSE、SCHEMA_VALIDATE、CACHE_RETURN 阶段关联。两者都从 Bearer access token 推导 user，拒绝 `userId`、Provider 凭据及非当前 owner 的 Source/Subject。`mode` 只能为 `ALL`、`OUTLINE`、`SUMMARY`；响应固定为 `{schemaVersion:1,title,outline,summary}`，其中 `OUTLINE` 的 `summary` 为 `null`，`SUMMARY` 的 `outline` 为 `null`，`ALL` 两项均非 null；可空响应字段仍是契约的一部分而非缺省字段。
@@ -432,7 +464,8 @@ PC 任务日期输入约束（2026-10-09）：日期选择器的 `YYYY-MM-DD` �
 - C4 已将 PC Tauri 的加密 cache receipt 接入 upload coordinator：Rust 只解密流式 PUT 到服务端签名 URL，URL/headers 只保留在内存；PUT 过期可重新申请 intent，网络错误进入 `PAUSED_NETWORK`，随后调用幂等 complete。SQLite 任务 `ingestion_revision` 使用服务端 UUID 文本，旧数字 v3 行迁移到可恢复 legacy 表；正文不穿过 Vue/HTTP coordinator。C5 的 FILE Source scheduler 只在 `AWAITING_CLIENT + ingestionRevision` 下创建本地 job，重启/跨设备通过 owner-scoped Asset download adapter 恢复，签名 URL 不落库。
 - C5 将本地 job 的完整 `DocumentCacheReceipt` 元数据（cache id、大小、hash、chunk/envelope 信息）持久化为任务元数据，正文仍只在加密 Tauri cache；`PACKAGING/UPLOADING/PAUSED_NETWORK` 可恢复上传而不重复 OCR/package。Asset SHA mismatch、旧 revision 和非 FILE Source 在客户端边界拒绝或跳过。2026-08-26 起 `DocumentProcessingRuntime` 在 Tauri 登录后负责组装并绑定这些组件，sync/online 事件触发 Source 重载与 pending job 恢复；带 receipt 的网络暂停会回到 `UPLOADING` 边界。
 - FILE Source 创建、Asset 替换和缺少兼容 ParsedDocument 的 reingest 不发布现有服务端解析事件；只有 complete 接受成功后创建 indexing job。`POST /api/sources/{id}/reingest` 在存在最新兼容 ParsedDocument 时复用该派生对象；原 Asset/schema 变化或显式重新解析时轮换 `ingestionRevision` 并回到 `AWAITING_CLIENT`。
-- `readingContext` 可按请求提供 AUTO/currentSource、SELECTED_SOURCES 或 SUBJECT；服务端逐次校验当前 owner、Subject 和 Source READY/revision，不能由会话的本地选择映射授权。省略 readingContext 时按当前 owner 范围提供资料检索；`selectionText` 仅为本次模型上下文。字段、范围规则与错误码详见 [Chat Runtime API protocol 1](chat-runtime-api.md)。
-- 新协议创建 GENERAL conversation，source scope 随每次请求提交，不绑定 `source_id`，不进入 ReadingConversationCleanupService 的 24 小时清理。conversation detail 对 NULL/未知 protocol 返回 `CHAT_PROTOCOL_UNSUPPORTED`；列表保留旧行并标 `chatSupported=false`。
-- Chat 历史保持 stable USER/run、每 attempt 独立 assistant reply message 与公开 snapshot；私有 reference、工具结果和答案资料不进入 public DTO。具体事件投影、activeRun 恢复和消息状态以 [Chat Runtime API protocol 1](chat-runtime-api.md) 为准。
+- `readingContext` 包含 AUTO/currentSource、SELECTED_SOURCES 或 SUBJECT；首次 turn 将选择策略和 ID 固定到 conversation，之后省略时继承，切换范围需新建会话。服务端逐次校验当前 owner、Subject 和 Source READY/revision；不能由会话的本地选择映射授权。`selectionText` 仅为本次模型上下文，不进入绑定范围。字段、范围规则与错误码详见 [Chat Runtime API protocol 1](chat-runtime-api.md)。
+- 新协议创建 GENERAL conversation，不绑定旧 `source_id`，不进入 ReadingConversationCleanupService 的 24 小时清理。detail 对 NULL/未知 protocol 返回 `CHAT_PROTOCOL_UNSUPPORTED`；列表保留旧行并标 `chatSupported=false`。协议 1 的既有行 `chatScopeState=LEGACY`，仅可查看既有历史，新的 turn/retry 返回 `409 CHAT_SCOPE_CONFLICT`；不自动迁移其历史读取范围。
+- Chat 历史保持 stable USER/run、每 attempt 独立 assistant reply message 与公开 snapshot；私有 reference、工具结果和答案资料不进入 public DTO。`reasoning.delta` 仅转发 provider 明确返回的 reasoning 字符串，和工具调用事件同属过程流，不进入正文/parts；字段、过程/正文事件边界、thinking 回传规则与 activeRun 恢复以 [Chat Runtime API protocol 1](chat-runtime-api.md) 为准。
+- Chat run status 的既有 `accountingSummary` Map 仅增加 `modelCalls`、`embeddingCalls`（同一 run ledger，跨 retry 按 RESERVED/已派发 reservation 统计）和 `currentAttemptToolCalls`（当前 attempt trace 内 distinct tool call ID）；不增加数据库列或改变 DTO Map 形状。
 - Chat `request_hash` 仅使用规范化客户端 body 字段，不包含独立的 `requestId`、解析后的 provider profile 或凭据。retry 通过 `CHAT_PROFILE_CHANGED`（409）告知客户端该 run 的 provider/model/endpoint 已变化；失败前不会新增 attempt 或 reservation。详见 [Chat Runtime API protocol 1](chat-runtime-api.md)。

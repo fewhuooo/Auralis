@@ -42,11 +42,22 @@ class AiOperationPolicyTests {
     void chatAgentAndTextGenerationHaveIndependentBoundedContracts() {
         AiOperationPolicy agent = POLICIES.resolve(AiOperationKind.CHAT_AGENT_TURN);
         assertThat(agent.feature()).isEqualTo(AiFeature.CHAT);
-        assertThat(agent.platformMaxCalls()).isEqualTo(8);
-        assertThat(agent.allOriginMaxCalls()).isEqualTo(8);
+        assertThat(agent.platformMaxCalls()).isZero();
+        assertThat(agent.allOriginMaxCalls()).isZero();
         assertThat(agent.platformTaskTokens()).isEqualTo(524_288);
-        assertThat(agent.stages().get(AiStage.CHAT_COMPLETION).allOriginMaxCalls()).isEqualTo(8);
-        assertThat(agent.stages().get(AiStage.RETRIEVAL_EMBEDDING).allOriginMaxCalls()).isEqualTo(8);
+        assertThat(agent.stages().get(AiStage.CHAT_COMPLETION).allOriginMaxCalls()).isNull();
+        assertThat(agent.stages().get(AiStage.RETRIEVAL_EMBEDDING).allOriginMaxCalls()).isNull();
+
+        ChatAgentProperties separateLimits = new ChatAgentProperties(3, 2, 8, 12,
+                65_536, 524_288, 300);
+        AiOperationPolicy configuredAgent = new AiOperationPolicyResolver(limits(), separateLimits)
+                .resolve(AiOperationKind.CHAT_AGENT_TURN);
+        assertThat(configuredAgent.platformMaxCalls()).isZero();
+        assertThat(configuredAgent.allOriginMaxCalls()).isZero();
+        assertThat(configuredAgent.stages().get(AiStage.CHAT_COMPLETION).allOriginMaxCalls()).isEqualTo(3);
+        assertThat(configuredAgent.stages().get(AiStage.CHAT_COMPLETION).platformMaxCalls()).isEqualTo(3);
+        assertThat(configuredAgent.stages().get(AiStage.RETRIEVAL_EMBEDDING).allOriginMaxCalls()).isEqualTo(2);
+        assertThat(configuredAgent.stages().get(AiStage.RETRIEVAL_EMBEDDING).platformMaxCalls()).isEqualTo(2);
 
         AiOperationPolicy text = POLICIES.resolve(AiOperationKind.TEXT_GENERATION);
         assertThat(text.feature()).isEqualTo(AiFeature.CHAT);
@@ -58,6 +69,16 @@ class AiOperationPolicyTests {
 
         assertThat(POLICIES.resolve(AiOperationKind.CHAT_TURN).platformMaxCalls()).isEqualTo(2);
         assertThat(POLICIES.resolve(AiOperationKind.LEARNING_TURN).platformMaxCalls()).isEqualTo(2);
+    }
+
+    @Test
+    void chatCallLimitsAcceptZeroAsUnlimitedAndRejectNegativeValues() {
+        assertThat(new ChatAgentProperties(0, 0, 8, 12, 65_536, 524_288, 300)
+                .maxEmbeddingCalls()).isZero();
+        assertThatThrownBy(() -> new ChatAgentProperties(-1, 0, 8, 12, 65_536, 524_288, 300))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ChatAgentProperties(0, -1, 8, 12, 65_536, 524_288, 300))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

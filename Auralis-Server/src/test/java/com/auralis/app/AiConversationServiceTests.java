@@ -6,6 +6,8 @@ import com.auralis.app.ai.ConversationCommand;
 import com.auralis.app.ai.ConversationPurpose;
 import com.auralis.app.ai.ConversationService;
 import com.auralis.app.ai.ConversationView;
+import com.auralis.app.ai.ChatConversationScope;
+import com.auralis.app.ai.ChatConversationScopeState;
 import com.auralis.app.ai.ReadingConversationCleanupService;
 import com.auralis.app.ai.MessageView;
 import com.auralis.app.ai.internal.persistence.ConversationEntity;
@@ -84,6 +86,8 @@ class AiConversationServiceTests {
 
         assertThat(view.purpose()).isEqualTo(ConversationPurpose.GENERAL);
         assertThat(view.sourceId()).isNull();
+        assertThat(view.chatScopeState()).isEqualTo(ChatConversationScopeState.UNBOUND);
+        assertThat(view.chatScope()).isNull();
         assertThatThrownBy(() -> conversationService.create(userId,
                 new ConversationCommand("Missing source", 0L, null, ConversationPurpose.READING_SESSION, null)))
                 .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
@@ -92,6 +96,31 @@ class AiConversationServiceTests {
                 new ConversationCommand("General", 0L, null, ConversationPurpose.GENERAL, sourceId)))
                 .isInstanceOf(com.auralis.app.shared.error.DomainException.class)
                 .hasMessageContaining("GENERAL purpose");
+    }
+
+    @Test
+    void conversationDetailRestoresBoundScopeWithoutSelectionText() {
+        UUID userId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        UUID subjectId = UUID.randomUUID();
+        ChatConversationScope scope = new ChatConversationScope(null, subjectId,
+                com.auralis.app.ai.retrieval.ReadingContext.RetrievalMode.SUBJECT, List.of());
+        ConversationEntity entity = new ConversationEntity(conversationId, userId, "Scoped chat");
+        entity.enableChatProtocolOne();
+        entity.markChatScopeUnbound();
+        entity.bindChatScope("{\"currentSourceId\":null,\"subjectId\":\"" + subjectId
+                + "\",\"retrievalMode\":\"SUBJECT\",\"sourceIds\":[]}");
+        when(conversationRepository.findByIdAndUserIdAndDeletedAtIsNull(conversationId, userId))
+                .thenReturn(Optional.of(entity));
+        when(messageRepository.findAllByConversationIdAndUserIdOrderByMessageSequenceAsc(conversationId, userId))
+                .thenReturn(List.of());
+
+        ConversationService service = new ConversationService(conversationRepository, messageRepository, null,
+                tools.jackson.databind.json.JsonMapper.builder().build());
+        ConversationView view = service.get(userId, conversationId);
+
+        assertThat(view.chatScopeState()).isEqualTo(ChatConversationScopeState.BOUND);
+        assertThat(view.chatScope()).isEqualTo(scope);
     }
 
     @Test

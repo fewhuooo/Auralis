@@ -1,9 +1,12 @@
 package com.auralis.app.ai.usage;
 
 import com.auralis.app.ai.AiCredential;
+import com.auralis.app.ai.AiChatRequestCapacity;
 import com.auralis.app.ai.AiMessageRole;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderRequest;
+import com.auralis.app.ai.AiProviderToolCall;
+import com.auralis.app.ai.AiProviderToolDefinition;
 import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.OverviewCancellation;
@@ -11,6 +14,8 @@ import com.auralis.app.ai.EmbeddingProviderPort;
 import com.auralis.app.ai.EmbeddingResult;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
+import com.auralis.app.ai.internal.chat.AiChatRequestMapper;
+import com.auralis.app.ai.internal.chat.ChatEvidenceHistoryProjector;
 import com.auralis.app.ai.internal.provider.SiliconFlowEmbeddingProvider;
 import com.auralis.app.ai.internal.security.ProviderEndpointPolicy;
 import com.auralis.app.ai.internal.security.ProviderHttpClient;
@@ -19,6 +24,9 @@ import com.auralis.app.ai.internal.security.ResolvedProviderEndpoint;
 import com.auralis.app.shared.config.AuralisProperties;
 import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -34,8 +42,11 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.UUID;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -47,8 +58,355 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
+import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 
+@ExtendWith(OutputCaptureExtension.class)
 class AiInvocationGatewayTests {
+
+    @Test
+    void waitingOverviewHasNoReservationAndDispatchesOnceAfterCapacityIsReleased() throws Exception {
+        TestDb db = database();
+        UUID user = db.user();
+        var policy = limits(100_000, 200_000);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), Clock.systemUTC(), policy);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        var gateway = gateway(guard, provider, Clock.systemUTC(), policy, heartbeat, db.transactions());
+        var blocker = guard.beginTask(new AiTaskContext(user, AiFeature.SOURCE_OVERVIEW, "blocker"));
+        var active = guard.reserve(blocker, AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, "test-model",
+                AiCredentialSource.PLATFORM, AiOutputRole.INTERMEDIATE, 10, 10);
+        CountDownLatch waiting = new CountDownLatch(1);
+        AtomicInteger validations = new AtomicInteger();
+        AtomicInteger reservations = new AtomicInteger();
+        AtomicInteger timeouts = new AtomicInteger();
+        try (var executor = Executors.newSingleThreadExecutor();
+             var scope = gateway.beginTask(new AiTaskContext(user, AiFeature.SUBJECT_OVERVIEW, "waiting"))) {
+            var future = executor.submit(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                    request(), new AiCredential("https://provider.test/v1", "test-key"),
+                    AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE,
+                    new OverviewCancellation(), new AiInvocationBinding() {
+                        @Override public void beforeReservation() {
+                            if (validations.incrementAndGet() == 2) waiting.countDown();
+                        }
+                        @Override public void onReserved(UUID id) { reservations.incrementAndGet(); }
+                        @Override public long responseTimeoutMillis(long requested) {
+                            timeouts.incrementAndGet();
+                            return Math.min(500, requested);
+                        }
+                    }));
+            try {
+                assertThat(waiting.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class))
+                        .isEqualTo(1);
+                assertThat(provider.completeCalls()).isZero();
+            } finally {
+                guard.settle(blocker, active, null, false, "NOT_DISPATCHED");
+            }
+            assertThat(future.get(5, TimeUnit.SECONDS)).isNotNull();
+            assertThat(provider.completeCalls()).isEqualTo(1);
+            assertThat(reservations.get()).isEqualTo(1);
+            assertThat(timeouts.get()).isEqualTo(1);
+            assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class))
+                    .isEqualTo(2);
+        } finally {
+            guard.closeTask(blocker);
+            heartbeat.shutdownNow();
+        }
+    }
+
+    @Test
+    void providerConcurrencyFailureIsNotRetriedByOverviewAdmission() throws Exception {
+        TestDb db = database();
+        var policy = limits(100_000, 200_000);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), Clock.systemUTC(), policy);
+        TestProvider provider = new TestProvider();
+        provider.beforeComplete = () -> { throw new AiUsageLimitException("AI_CONCURRENCY_LIMIT", 429, 1, null); };
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(1);
+        try (var scope = gateway(guard, provider, Clock.systemUTC(), policy, heartbeat, db.transactions())
+                .beginTask(new AiTaskContext(db.user(), AiFeature.SOURCE_OVERVIEW, "provider-failure"))) {
+            assertThatThrownBy(() -> scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(),
+                    new AiCredential("https://provider.test/v1", "test-key"), AiCredentialSource.PLATFORM,
+                    1_000, AiOutputRole.INTERMEDIATE, new OverviewCancellation()))
+                    .isInstanceOf(AiUsageLimitException.class);
+            assertThat(provider.completeCalls()).isEqualTo(1);
+        } finally {
+            heartbeat.shutdownNow();
+        }
+    }
+
+    @Test
+    void chatHistoryProjectionFitsTheSameMessageAndSerializedCapsTheGatewayEnforces() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = new AuralisProperties.Limits(4, 2, 100_000, 200_000,
+                2_000_000, 60_000, 1_000, 16, 2, 100_000, 24, 524_288, 512, 16_777_216);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        ChatAgentProperties chatLimits = new ChatAgentProperties(0, 0, 8, 12,
+                65_536, 524_288, 300);
+        ObjectMapper objectMapper = new ObjectMapper();
+        AiChatRequestMapper requestMapper = new AiChatRequestMapper(objectMapper);
+        ChatEvidenceHistoryProjector projector = new ChatEvidenceHistoryProjector(objectMapper);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits, chatLimits);
+        AiUsageGatewayService gateway = new AiUsageGatewayService(guard,
+                new AiProviderRegistry(List.of(provider)),
+                new EmbeddingProviderRegistry(List.of(new TestEmbeddingProvider())),
+                ai(limits), chatLimits, objectMapper, heartbeat, db.transactions());
+        ToolSpecification tool = ToolSpecification.builder().name("read_source")
+                .description("Read source evidence").parameters(JsonObjectSchema.builder().build()).build();
+        List<ChatEvidenceHistoryProjector.HistoryTurn> history = List.of(
+                new ChatEvidenceHistoryProjector.HistoryTurn(
+                        List.of(UserMessage.from("old user ".repeat(2_000)), AiMessage.from("old answer ".repeat(1_500))),
+                        List.of()),
+                new ChatEvidenceHistoryProjector.HistoryTurn(
+                        List.of(UserMessage.from("newer user ".repeat(2_000)), AiMessage.from("newer answer ".repeat(1_500))),
+                        List.of()));
+        List<ChatMessage> required = List.of(SystemMessage.from("required context ".repeat(400)));
+        List<ChatMessage> current = List.of(UserMessage.from("current question ".repeat(30)));
+        long legacyMessageLimit = (long) ai(limits).maxPromptChars() * 4L;
+        var unprojected = new ArrayList<ChatMessage>(required);
+        history.forEach(turn -> unprojected.addAll(turn.publicMessages()));
+        unprojected.addAll(current);
+        AiProviderRequest unprojectedMapped = requestMapper.toProviderRequest(ChatRequest.builder()
+                .messages(unprojected).toolSpecifications(tool).build(), "test-model", 16);
+        AiChatRequestCapacity.Check unprojectedCheck = AiChatRequestCapacity.inspect(unprojectedMapped,
+                objectMapper, chatLimits.maxSerializedRequestUtf8Bytes(), chatLimits.maxToolResultUtf8Bytes(),
+                legacyMessageLimit);
+        assertThat(unprojectedCheck.dimension()).isEqualTo(AiChatRequestCapacity.Dimension.LEGACY_MESSAGE_BYTES);
+        assertThat(unprojectedCheck.secondaryBytes()).isLessThan(chatLimits.maxSerializedRequestUtf8Bytes());
+
+        var projection = projector.project(required, history, current, List.of(), List.of(), (messages, reasoning) -> {
+            AiProviderRequest mapped = requestMapper.toProviderRequest(ChatRequest.builder()
+                    .messages(messages).toolSpecifications(tool).build(), "test-model", 16, reasoning);
+            return AiChatRequestCapacity.inspect(mapped, objectMapper,
+                    chatLimits.maxSerializedRequestUtf8Bytes(), chatLimits.maxToolResultUtf8Bytes(),
+                    legacyMessageLimit);
+        });
+        assertThat(projection.fits()).isTrue();
+        assertThat(projection.messages()).hasSizeLessThan(unprojected.size())
+                .noneMatch(message -> message instanceof UserMessage user
+                        && user.singleText().startsWith("old user "));
+        AiProviderRequest projected = requestMapper.toProviderRequest(ChatRequest.builder()
+                .messages(projection.messages()).toolSpecifications(tool).build(), "test-model", 16,
+                projection.reasoningByToolCallId());
+        assertThat(AiChatRequestCapacity.inspect(projected, objectMapper,
+                chatLimits.maxSerializedRequestUtf8Bytes(), chatLimits.maxToolResultUtf8Bytes(),
+                legacyMessageLimit).fits()).isTrue();
+
+        UUID runId = UUID.randomUUID();
+        AiTaskContext context = new AiTaskContext(userId, AiFeature.CHAT, "chat-agent:" + runId,
+                runId, AiOperationKind.CHAT_AGENT_TURN);
+        try (AiTaskScope scope = gateway.beginTask(context)) {
+            scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, projected,
+                    new AiCredential("https://provider.test/v1", "synthetic-key"),
+                    AiCredentialSource.PLATFORM, ignored -> { });
+        } finally {
+            heartbeat.shutdownNow();
+        }
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations where stage='CHAT_COMPLETION'",
+                Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void chatCapacityRejectsRequiredMessageToolResultAndOutputCapsBeforeReservation(CapturedOutput output)
+            throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = limits(100_000, 200_000);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        ChatAgentProperties chatLimits = new ChatAgentProperties(0, 0, 8, 12,
+                65_536, 524_288, 300);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits, chatLimits);
+        AiUsageGatewayService gateway = new AiUsageGatewayService(guard,
+                new AiProviderRegistry(List.of(provider)),
+                new EmbeddingProviderRegistry(List.of(new TestEmbeddingProvider())),
+                ai(limits), chatLimits, new ObjectMapper(), heartbeat, db.transactions());
+        UUID runId = UUID.randomUUID();
+        AiTaskContext context = new AiTaskContext(userId, AiFeature.CHAT, "chat-agent:" + runId,
+                runId, AiOperationKind.CHAT_AGENT_TURN);
+        try (AiTaskScope scope = gateway.beginTask(context)) {
+            assertChatRequestRejected(scope, requestWithText("必需内容".repeat(12_100), 16));
+            AiProviderRequest oversizedToolResult = new AiProviderRequest("test-model", List.of(
+                    new AiProviderRequest.Message(AiMessageRole.ASSISTANT, null,
+                            List.of(new AiProviderToolCall("call-1", "read_source", "{}")), null, null),
+                    new AiProviderRequest.Message(AiMessageRole.TOOL, "工具结果".repeat(22_000), List.of(),
+                            "call-1", "read_source")),
+                    List.of(new AiProviderToolDefinition("read_source", "Read source", "{}")),
+                    0.0, 16, false, false, 0, null);
+            assertChatRequestRejected(scope, oversizedToolResult);
+            assertChatRequestRejected(scope, requestWithOutput(16_385));
+        } finally {
+            heartbeat.shutdownNow();
+        }
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class)).isZero();
+        assertThat(provider.completeCalls()).isZero();
+        assertThat(output.getOut()).contains("Chat request capacity rejected dimension=LEGACY_MESSAGE_BYTES",
+                "Chat request capacity rejected dimension=TOOL_RESULT_BYTES", "actualBytes=", "limitBytes=",
+                "serializedRequestBytes=", "messageContentBytes=", "systemContentBytes=",
+                "userContentBytes=", "assistantContentBytes=", "toolResultContentBytes=",
+                "toolCallArgumentBytes=",
+                "reasoningContentBytes=", "toolDefinitionCount=", "toolDefinitionsBytes=")
+                .doesNotContain("必需内容", "工具结果");
+        assertThat(output.getOut().split("Chat request capacity rejected", -1)).hasSize(3);
+    }
+
+    private void assertChatRequestRejected(AiTaskScope scope, AiProviderRequest request) {
+        assertThatThrownBy(() -> scope.stream(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request,
+                new AiCredential("https://provider.test/v1", "synthetic-key"),
+                AiCredentialSource.PLATFORM, ignored -> { }))
+                .isInstanceOf(AiUsageLimitException.class)
+                .extracting(error -> ((AiUsageLimitException) error).code())
+                .isEqualTo("AI_REQUEST_BUDGET_EXCEEDED");
+    }
+
+    @Test
+    void chatEmbeddingUnlimitedAllowsMoreThanEightReservationsAndModelLimitIsIndependent() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = limits(100_000, 200_000);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        ChatAgentProperties chatLimits = new ChatAgentProperties(1, 0, 8, 12,
+                65_536, 524_288, 300);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits, chatLimits);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
+        UUID runId = UUID.randomUUID();
+        AiTaskContext context = new AiTaskContext(userId, AiFeature.CHAT, "chat-agent:" + runId,
+                runId, AiOperationKind.CHAT_AGENT_TURN);
+        AiCredential credential = new AiCredential("https://provider.test/v1", "synthetic-key");
+
+        try (AiTaskScope scope = gateway.beginTask(context)) {
+            for (int i = 0; i < 9; i++) {
+                scope.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
+                        "embedding-model", List.of("text"), credential, AiCredentialSource.PLATFORM);
+            }
+            scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+                    AiCredentialSource.PLATFORM, 1_000, null);
+            assertThatThrownBy(() -> scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK,
+                    request(), credential, AiCredentialSource.PLATFORM, 1_000, null))
+                    .isInstanceOf(AiUsageLimitException.class)
+                    .extracting(error -> ((AiUsageLimitException) error).code())
+                    .isEqualTo("AI_TASK_BUDGET_EXCEEDED");
+        } finally {
+            heartbeat.shutdownNow();
+        }
+
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations where stage='RETRIEVAL_EMBEDDING'", Integer.class))
+                .isEqualTo(9);
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations where stage='CHAT_COMPLETION'", Integer.class))
+                .isEqualTo(1);
+        var usage = guard.taskUsageForOwner(userId,
+                AiTaskContext.chatAgentLedgerTaskId(userId, runId), Set.of(AiOperationKind.CHAT_AGENT_TURN));
+        assertThat(usage.stageCalls()).containsEntry(AiStage.RETRIEVAL_EMBEDDING, 9L)
+                .containsEntry(AiStage.CHAT_COMPLETION, 1L);
+    }
+
+    @Test
+    void chatEmbeddingLimitIsIndependentAndSharedAcrossRetryAttempts() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = limits(100_000, 200_000);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        ChatAgentProperties chatLimits = new ChatAgentProperties(0, 1, 8, 12,
+                65_536, 524_288, 300);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits, chatLimits);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
+        UUID runId = UUID.randomUUID();
+        AiTaskContext context = new AiTaskContext(userId, AiFeature.CHAT, "chat-agent:" + runId,
+                runId, AiOperationKind.CHAT_AGENT_TURN);
+        AiCredential credential = new AiCredential("https://provider.test/v1", "synthetic-key");
+
+        try {
+            try (AiTaskScope firstAttempt = gateway.beginTask(context)) {
+                firstAttempt.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
+                        "embedding-model", List.of("text"), credential, AiCredentialSource.PLATFORM);
+            }
+            try (AiTaskScope retry = gateway.beginTask(context)) {
+                assertThatThrownBy(() -> retry.embed(AiStage.RETRIEVAL_EMBEDDING, AiProviderType.SILICONFLOW,
+                        "embedding-model", List.of("text"), credential, AiCredentialSource.PLATFORM))
+                        .isInstanceOf(AiUsageLimitException.class)
+                        .extracting(error -> ((AiUsageLimitException) error).code())
+                        .isEqualTo("AI_TASK_BUDGET_EXCEEDED");
+                retry.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+                        AiCredentialSource.PLATFORM, 1_000, null);
+            }
+        } finally {
+            heartbeat.shutdownNow();
+        }
+
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations where stage='RETRIEVAL_EMBEDDING'", Integer.class))
+                .isEqualTo(1);
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations where stage='CHAT_COMPLETION'", Integer.class))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void chatAgentAndOverviewThinkingPoliciesStayRequestScopedDuringConcurrentCalls() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = limits(100_000, 200_000);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
+        CountDownLatch arrivals = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        provider.beforeComplete = () -> {
+            arrivals.countDown();
+            try {
+                if (!release.await(5, TimeUnit.SECONDS)) throw new AssertionError("concurrent calls did not overlap");
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(exception);
+            }
+        };
+        UUID chatRunId = UUID.randomUUID();
+        AiTaskContext chatContext = new AiTaskContext(userId, AiFeature.CHAT, "chat-thinking",
+                AiTaskContext.chatAgentLedgerTaskId(userId, chatRunId), AiOperationKind.CHAT_AGENT_TURN);
+        AiTaskContext overviewContext = new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "overview-thinking");
+        AiCredential credential = new AiCredential("https://provider.test/v1", "synthetic-key");
+        var executor = Executors.newFixedThreadPool(2);
+        Future<?> chat = executor.submit(() -> {
+            try (AiTaskScope scope = gateway.beginTask(chatContext)) {
+                scope.completeChat(AiStage.CHAT_COMPLETION, AiProviderType.DEEPSEEK, request(), credential,
+                        AiCredentialSource.PLATFORM, 1_000, null);
+            }
+        });
+        Future<?> overview = executor.submit(() -> {
+            try (AiTaskScope scope = gateway.beginTask(overviewContext)) {
+                scope.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK, request(), credential,
+                        AiCredentialSource.PLATFORM, 1_000, AiOutputRole.FINAL);
+            }
+        });
+        try {
+            assertThat(arrivals.await(5, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            release.countDown();
+        }
+        try {
+            chat.get(10, TimeUnit.SECONDS);
+            overview.get(10, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+            heartbeat.shutdownNow();
+        }
+
+        assertThat(provider.requests).extracting(AiProviderRequest::thinkingEnabled)
+                .containsExactlyInAnyOrder(true, false);
+    }
 
     @Test
     void byokCallInMixedTaskIsAuditedButDoesNotConsumePlatformTaskQuota() throws Exception {
@@ -471,6 +829,40 @@ class AiInvocationGatewayTests {
     }
 
     @Test
+    void overviewTaskOwnerFenceFailureWithConcurrencyCodeDoesNotWaitForCapacity() throws Exception {
+        TestDb db = database();
+        UUID userId = db.user();
+        MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
+        AuralisProperties.Limits limits = limits(100_000, 200_000);
+        TestProvider provider = new TestProvider();
+        ScheduledExecutorService heartbeat = Executors.newScheduledThreadPool(2);
+        AiUsageGuard guard = new AiUsageGuard(db.jdbc(), db.transactions(), clock, limits);
+        AiInvocationGateway gateway = gateway(guard, provider, clock, limits, heartbeat, db.transactions());
+        OverviewCancellation cancellation = new OverviewCancellation();
+        ScheduledExecutorService cancelAfterBound = Executors.newSingleThreadScheduledExecutor();
+        cancelAfterBound.schedule(() -> cancellation.cancel(OverviewCancellation.Reason.NO_INTEREST),
+                300, TimeUnit.MILLISECONDS);
+
+        try (AiTaskScope task = gateway.beginTask(
+                new AiTaskContext(userId, AiFeature.SOURCE_OVERVIEW, "overview-owner-lost"))) {
+            db.jdbc().update("update ai_usage_locks set owner_id=? where current_task_id=?",
+                    UUID.randomUUID(), task.taskId());
+            assertThatThrownBy(() -> task.complete(AiStage.OVERVIEW_MAP, AiProviderType.DEEPSEEK,
+                    request(), new AiCredential("https://provider.test/v1", "synthetic-key"),
+                    AiCredentialSource.PLATFORM, 1_000, AiOutputRole.INTERMEDIATE, cancellation))
+                    .isInstanceOf(AiUsageLimitException.class)
+                    .extracting(error -> ((AiUsageLimitException) error).code())
+                    .isEqualTo("AI_CONCURRENCY_LIMIT");
+        } finally {
+            cancelAfterBound.shutdownNow();
+            heartbeat.shutdownNow();
+        }
+
+        assertThat(provider.completeCalls()).isZero();
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class)).isZero();
+    }
+
+    @Test
     void doesNotDispatchAfterAccountIsDisabledBetweenReservationAndDispatch() throws Exception {
         TestDb db = database();
         UUID userId = db.user();
@@ -503,7 +895,7 @@ class AiInvocationGatewayTests {
     }
 
     @Test
-    void cancellationPropagationKeepsConservativeSettlementAndReleasesTaskLease() throws Exception {
+    void cancellationBeforeAdmissionDoesNotDispatchOrChargeAndReleasesTaskLease() throws Exception {
         TestDb db = database();
         UUID userId = db.user();
         MutableClock clock = new MutableClock(Instant.parse("2026-10-10T10:00:00Z"));
@@ -528,8 +920,7 @@ class AiInvocationGatewayTests {
         }
 
         assertThat(provider.completeCalls()).isZero();
-        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations "
-                + "where state='FAILED' and charged_tokens > 0", Integer.class)).isEqualTo(1);
+        assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_reservations", Integer.class)).isZero();
         assertThat(db.jdbc().queryForObject("select count(*) from ai_usage_locks "
                 + "where scope_key like 'TASK:%' and owner_id is not null", Integer.class)).isZero();
     }
@@ -825,6 +1216,8 @@ class AiInvocationGatewayTests {
 
     private static final class TestProvider implements AiProviderPort {
         private final AtomicInteger calls = new AtomicInteger();
+        private final java.util.concurrent.CopyOnWriteArrayList<AiProviderRequest> requests =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
         private volatile Runnable beforeComplete = () -> { };
         private volatile AiProviderRequest lastRequest;
 
@@ -836,6 +1229,7 @@ class AiInvocationGatewayTests {
                                                     long timeoutMillis) {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
             lastRequest = request;
+            requests.add(request);
             calls.incrementAndGet();
             beforeComplete.run();
             return new AiProviderResponse("ok", 4L, 4L, "stop");

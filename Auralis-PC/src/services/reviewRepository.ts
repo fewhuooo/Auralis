@@ -830,6 +830,47 @@ export class ReviewRepository {
     // serialized; a matching pre-read and successful update is the commit proof.
     return result !== false
   }
+
+  async recoverConflictIntentToPending(
+    tx: LocalSqlDatabase | 'localstorage',
+    userId: string,
+    deviceId: string,
+    clientCommandId: string,
+    expectedPayload: Record<string, unknown>,
+    expectedPreparation: Record<string, unknown> | LocalReviewPreparation,
+  ): Promise<boolean> {
+    if (tx === 'localstorage') {
+      const store = readBrowserStore(userId, deviceId)
+      const intent = store.intents.find(item => item.deviceId === deviceId && item.clientCommandId === clientCommandId)
+      if (!intent || intent.prepared || intent.status !== 'conflict'
+        || JSON.stringify(intent.payload) !== JSON.stringify(expectedPayload)
+        || JSON.stringify(intent.preparation) !== JSON.stringify(expectedPreparation)) {
+        return false
+      }
+      intent.status = 'pending'
+      writeBrowserStore(userId, deviceId, store)
+      return true
+    }
+    const rows = await tx.select<LocalReviewIntentRow>(
+      `SELECT payload_json, preparation_json, prepared, status FROM local_review_intents
+       WHERE user_id = ? AND device_id = ? AND client_command_id = ?`,
+      [userId, deviceId, clientCommandId],
+    )
+    const row = rows[0]
+    if (!row || row.prepared !== 0 || row.status !== 'conflict'
+      || row.payload_json !== JSON.stringify(expectedPayload)
+      || row.preparation_json !== JSON.stringify(expectedPreparation)) {
+      return false
+    }
+    const result = await tx.execute(
+      `UPDATE local_review_intents SET status = 'pending'
+       WHERE user_id = ? AND device_id = ? AND client_command_id = ?
+         AND prepared = 0 AND status = 'conflict'
+         AND payload_json = ? AND preparation_json = ?`,
+      [userId, deviceId, clientCommandId, JSON.stringify(expectedPayload), JSON.stringify(expectedPreparation)],
+    )
+    return result !== false
+  }
   
   async deleteIntent(tx: LocalSqlDatabase | 'localstorage', userId: string, deviceId: string, clientCommandId: string) {
     if (tx === 'localstorage') {

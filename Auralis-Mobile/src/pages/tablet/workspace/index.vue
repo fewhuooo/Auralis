@@ -1429,7 +1429,7 @@ const handleCreateBlock = async () => {
     return
   }
   const subject = activeSubject.value
-  await blockStore.addBlock({
+  const created = await blockStore.addBlock({
     subject: subject?.name || '未分类',
     title: newBlock.value.title,
     preview: newBlock.value.preview,
@@ -1441,6 +1441,11 @@ const handleCreateBlock = async () => {
   })
   showCreateBlock.value = false
   newBlock.value = { title: '', preview: '', source: '', difficulty: 'medium' }
+  if (created?.id) {
+    activeBlockId.value = created.id
+    activeFileId.value = null
+    activePanel.value = 'blocks'
+  }
   uni.showToast({ title: '知识块已创建', icon: 'success' })
 }
 

@@ -234,3 +234,18 @@ export interface OverviewScopeSnapshot {
   revisionKey: string
   record: OverviewCacheRecord
 }
+
+export type OverviewSubjectStatusKind = 'AVAILABLE' | 'MISSING' | 'UNAVAILABLE'
+
+export interface OverviewSubjectStatusItem {
+  subjectId: string
+  status: OverviewSubjectStatusKind
+  version: number | null
+  outlineVersion: number | null
+  summaryVersion: number | null
+  updatedAt: string | null
+}
+
+export interface OverviewSubjectStatusesResponse {
+  items: OverviewSubjectStatusItem[]
+}

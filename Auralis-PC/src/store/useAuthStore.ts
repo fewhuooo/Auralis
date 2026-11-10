@@ -199,6 +199,13 @@ export const useAuthStore = defineStore(
       const me = await useAuthApi.getMe()
       if (me) {
         user.value = me
+        if (me.hasAvatar === false) {
+          invalidateAvatarRequest()
+          clearAvatarDisplay()
+          if (me.id) void deleteAvatarCache(me.id)
+        } else if (me.hasAvatar === true) {
+          void loadAvatar()
+        }
       }
       return me
     }
@@ -224,6 +231,13 @@ export const useAuthStore = defineStore(
         return ''
       }
 
+      if (user.value && user.value.hasAvatar === false) {
+        invalidateAvatarRequest()
+        clearAvatarDisplay()
+        await deleteAvatarCache(requestedUserId)
+        return ''
+      }
+
       if (currentAvatarUserId && currentAvatarUserId !== requestedUserId) clearAvatarDisplay()
       if (loadAvatarPromise && currentLoadUser === requestedUserId) return loadAvatarPromise
 
@@ -238,31 +252,38 @@ export const useAuthStore = defineStore(
             if (cachedBlob) showAvatarBlob(requestedUserId, cachedBlob)
           }
 
-          try {
-            const blob = await useAuthApi.getAvatarBlob()
-            if (!isCurrentRequest()) return avatarUrl.value
+          if (user.value?.hasAvatar === true) {
+            try {
+              const blob = await useAuthApi.getAvatarBlob()
+              if (!isCurrentRequest()) return avatarUrl.value
 
-            if (blob && blob.size > 0) {
-              showAvatarBlob(requestedUserId, blob)
-              await saveAvatarCache(requestedUserId, blob)
+              if (blob && blob.size > 0) {
+                showAvatarBlob(requestedUserId, blob)
+                await saveAvatarCache(requestedUserId, blob)
+                return avatarUrl.value
+              }
+
+              // Contract uses HTTP 404 to signal an unset avatar. An empty 200
+              // response is not authoritative and must not erase the offline copy.
+              return avatarUrl.value
+            } catch (error: any) {
+              if (!isCurrentRequest()) return avatarUrl.value
+
+              const status = error?.status ?? error?.problem?.status ?? error?.response?.status
+              if (status === 404) {
+                if (user.value && user.value.id === requestedUserId) {
+                  user.value.hasAvatar = false
+                }
+                clearAvatarDisplay()
+                await deleteAvatarCache(requestedUserId)
+              }
+
+              // 网络错误和服务端故障保留已显示的本地头像。
               return avatarUrl.value
             }
-
-            // Contract uses HTTP 404 to signal an unset avatar. An empty 200
-            // response is not authoritative and must not erase the offline copy.
-            return avatarUrl.value
-          } catch (error: any) {
-            if (!isCurrentRequest()) return avatarUrl.value
-
-            const status = error?.status ?? error?.problem?.status ?? error?.response?.status
-            if (status === 404) {
-              clearAvatarDisplay()
-              await deleteAvatarCache(requestedUserId)
-            }
-
-            // 网络错误和服务端故障保留已显示的本地头像。
-            return avatarUrl.value
           }
+
+          return avatarUrl.value
         } finally {
           if (avatarRequestGeneration === generation && currentLoadUser === requestedUserId) {
             currentLoadUser = null
@@ -276,8 +297,9 @@ export const useAuthStore = defineStore(
 
     async function setAvatarFromBlob(blob: Blob, expectedUserId: string): Promise<string> {
       const currentUserId = user.value?.id
-      if (!currentUserId || currentUserId !== expectedUserId || blob.size === 0) return avatarUrl.value
+      if (!user.value || !currentUserId || currentUserId !== expectedUserId || blob.size === 0) return avatarUrl.value
 
+      user.value.hasAvatar = true
       invalidateAvatarRequest()
       const url = showAvatarBlob(currentUserId, blob)
       await saveAvatarCache(currentUserId, blob)
@@ -286,6 +308,9 @@ export const useAuthStore = defineStore(
 
     async function clearAvatar(expectedUserId: string): Promise<void> {
       if (user.value?.id === expectedUserId || currentAvatarUserId === expectedUserId) {
+        if (user.value && user.value.id === expectedUserId) {
+          user.value.hasAvatar = false
+        }
         invalidateAvatarRequest()
         clearAvatarDisplay()
       }

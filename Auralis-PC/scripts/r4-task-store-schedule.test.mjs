@@ -105,6 +105,7 @@ async function createTaskStoreFixture(records) {
     }
     await useTaskStore().loadLocalTasks()
   }
+  const realFlushNow = syncStore.flushNow
   syncStore.flushNow = onlineFlush
 
   return {
@@ -112,6 +113,7 @@ async function createTaskStoreFixture(records) {
     requestedSyncs,
     syncStore,
     onlineFlush,
+    realFlushNow,
     taskStore: useTaskStore(),
   }
 }
@@ -181,7 +183,7 @@ test('store derives scheduling queue from unscheduled active tasks', () => {
 })
 
 test('status changes preserve schedule and unschedule is explicit', () => {
-  assert.match(source, /const model = toTaskModel\(\{ \.\.\.current, status: newStatus, scheduledAt: current\.scheduledAt \}\)/)
+  assert.match(source, /const model = toTaskModel\(\{ \.\.\.current, status: newStatus, scheduledAt: current\.scheduledAt, startTime: undefined \}\)/)
   assert.match(source, /scheduledAt: undefined, startTime: undefined/)
   assert.doesNotMatch(source, /status: newStatus, scheduledAt: newStatus === 'scheduled' \? current\.scheduledAt : undefined/)
 })
@@ -1623,3 +1625,255 @@ test('Store rejects exact timestamp-midnight deadlines before API calls or local
   }
 })
 
+
+
+test('consecutive Timeline moves commit locally while the first push remains deferred', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString();
+  const a = deadlineTask('continuous-a', { scheduledAt: d('09:00'), dueAt: d('20:00'), durationMinutes: 30, version: 2 });
+  const b = deadlineTask('continuous-b', { scheduledAt: d('12:00'), dueAt: d('20:00'), durationMinutes: 30, version: 4 });
+  const fixture = await createTaskStoreFixture([a, b]);
+  await fixture.taskStore.fetchTasks();
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06');
+  await fixture.repository.saveCursor('continuous-before');
+  await fixture.taskStore.rescheduleTask(a.id, '10:00');
+  let releasePush;
+  let notifyPushing;
+  const pushing = new Promise((resolve) => { notifyPushing = resolve; });
+  const pushGate = new Promise((resolve) => { releasePush = resolve; });
+  const versions = new Map([[a.id, 2], [b.id, 4]]);
+  const sent = [];
+  const { runSyncCycle } = await import('../src/services/syncCycle.ts');
+  const api = {
+    async pushChanges({ mutations }) {
+      sent.push(mutations);
+      if (sent.length === 1) { notifyPushing(); await pushGate; }
+      return { results: mutations.map((mutation) => ({
+        clientMutationId: mutation.clientMutationId, decision: 'APPLIED', resourceType: 'TASK', mutationType: mutation.mutationType,
+        current: mutation.payload._localExpectedTasks.map(({ id, value }) => {
+          const version = versions.get(id) + 1;
+          versions.set(id, version);
+          return { ...value, version,
+            scheduledAt: value.scheduledAt.replace('.000Z', 'Z'), dueAt: value.dueAt.replace('.000Z', 'Z') };
+        }),
+      })) };
+    },
+    async pullChanges() { return { changes: [], nextCursor: 'continuous-before', hasMore: false, resetRequired: false }; },
+    async getSnapshot() { assert.fail('equivalent Instant formatting does not invalidate queued moves'); },
+  };
+  const firstCycle = runSyncCycle({ repository: fixture.repository, api, serverDeviceId: 'continuous-device' });
+  await pushing;
+  await fixture.taskStore.rescheduleTask(a.id, '11:00');
+  await fixture.taskStore.swapScheduledTasks(a.id, b.id);
+  assert.equal((await fixture.repository.listUnresolved('TASK')).length, 3);
+  assert.equal((await fixture.repository.read('TASK', a.id)).value.scheduledAt, d('12:00'));
+  assert.equal((await fixture.repository.read('TASK', b.id)).value.scheduledAt, d('11:00'));
+  releasePush();
+  await firstCycle;
+  assert.equal((await fixture.repository.read('TASK', a.id)).value.scheduledAt, d('12:00'), 'first receipt preserves the latest local position');
+  await runSyncCycle({ repository: fixture.repository, api, serverDeviceId: 'continuous-device' });
+  await runSyncCycle({ repository: fixture.repository, api, serverDeviceId: 'continuous-device' });
+  assert.equal(sent.length, 3);
+  assert.equal(sent[1][0].baseVersion, 3);
+  assert.equal(sent[2][0].baseVersion, 4);
+  assert.equal(sent[2][0].payload.targetBaseVersion, 4);
+  assert.deepEqual(await fixture.repository.listUnresolved('TASK'), []);
+});
+
+
+test('one real sync-store flush drains saved schedule intentions and stops on PROCESSING', async () => {
+  const { useSyncApi } = await import('../src/api/useSyncApi.ts');
+  const originalPush = useSyncApi.pushChanges;
+  const originalPull = useSyncApi.pullChanges;
+  const originalSnapshot = useSyncApi.getSnapshot;
+  try {
+    for (const processing of [false, true]) {
+      const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString();
+      const task = deadlineTask(`drain-${processing}`, { scheduledAt: d('09:00'), dueAt: d('20:00'), durationMinutes: 30, version: 2 });
+      const fixture = await createTaskStoreFixture([task]);
+      useAuthStore().sessionId = `drain-session-${processing}`;
+      await fixture.taskStore.fetchTasks();
+      fixture.taskStore.setSelectedDay('Tue', '2099-10-06');
+      await fixture.repository.saveCursor('drain-cursor');
+      for (const time of ['10:00', '11:00', '12:00']) await fixture.taskStore.rescheduleTask(task.id, time);
+      let pushes = 0;
+      useSyncApi.pushChanges = async ({ mutations }) => {
+        pushes += 1;
+        assert.equal(mutations.length, 1);
+        const mutation = mutations[0];
+        if (processing) return { results: [{ clientMutationId: mutation.clientMutationId, decision: 'PROCESSING' }] };
+        return { results: [{ clientMutationId: mutation.clientMutationId, decision: 'APPLIED',
+          resourceType: 'TASK', mutationType: mutation.mutationType,
+          current: mutation.payload._localExpectedTasks.map(({ value }) => ({ ...value, version: mutation.baseVersion + 1 })),
+        }] };
+      };
+      useSyncApi.pullChanges = async () => ({ changes: [], nextCursor: 'drain-cursor', hasMore: false, resetRequired: false });
+      useSyncApi.getSnapshot = async () => assert.fail('draining the same device schedule does not require a snapshot');
+      await fixture.realFlushNow();
+      assert.equal(pushes, processing ? 1 : 3);
+      assert.equal((await fixture.repository.listUnresolved('TASK')).length, processing ? 3 : 0);
+      assert.equal((await fixture.repository.read('TASK', task.id)).value.scheduledAt, d('12:00'));
+      useAuthStore().sessionId = null;
+    }
+  } finally {
+    useSyncApi.pushChanges = originalPush;
+    useSyncApi.pullChanges = originalPull;
+    useSyncApi.getSnapshot = originalSnapshot;
+  }
+});
+
+
+test('a stale Timeline Store reloads another window optimistic schedule instead of committing overlapping same-version tasks', async () => {
+  const d = (time) => new Date(`2099-10-06T${time}:00`).toISOString();
+  const a = deadlineTask('window-a', { scheduledAt: d('09:00'), dueAt: d('20:00'), durationMinutes: 30, version: 2 });
+  const b = deadlineTask('window-b', { scheduledAt: d('10:00'), dueAt: d('20:00'), durationMinutes: 30, version: 4 });
+  const fixture = await createTaskStoreFixture([a, b]);
+  await fixture.taskStore.fetchTasks();
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06');
+  await fixture.repository.commitScheduleMutation({
+    items: [{ resourceType: 'TASK', resourceId: a.id, value: { ...a, scheduledAt: d('11:00') },
+      version: 2, expectedLocalVersion: 2, deletedAt: null }],
+    mutation: { clientMutationId: 'another-window', resourceType: 'TASK', resourceId: a.id, mutationType: 'SCHEDULE_INSERTION', baseVersion: 2,
+      payload: { taskId: a.id, baseVersion: 2, _localAffectedTaskIds: [a.id] } },
+  });
+  await assert.rejects(fixture.taskStore.rescheduleTask(b.id, '11:00'), /排期已在其他窗口更新/);
+  assert.equal(fixture.taskStore.allTasks.find((task) => task.id === a.id).scheduledAt, d('11:00'));
+  assert.equal(fixture.taskStore.allTasks.find((task) => task.id === b.id).scheduledAt, d('10:00'));
+  assert.equal((await fixture.repository.listUnresolved('TASK')).length, 1);
+});
+
+
+test('an unrelated cancelled task on another day permits initial scheduling and consecutive local moves', async () => {
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString();
+  const moving = deadlineTask('cancelled-baseline-moving', {
+    scheduledAt: undefined, dueAt: d('2099-10-06', '20:00'), durationMinutes: 30, version: 2,
+  });
+  const cancelled = deadlineTask('cancelled-baseline-other-day', {
+    status: 'CANCELLED', scheduledAt: d('2099-10-07', '10:00'),
+    dueAt: d('2099-10-07', '20:00'), durationMinutes: null, version: 4,
+  });
+  const fixture = await createTaskStoreFixture([moving, cancelled]);
+  await fixture.taskStore.fetchTasks();
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06');
+  assert.equal(fixture.taskStore.allTasks.find((task) => task.id === cancelled.id).status, 'cancelled');
+  const cancelledBefore = await fixture.repository.read('TASK', cancelled.id);
+  await fixture.taskStore.scheduleTask(moving.id, '10:00');
+  await fixture.taskStore.rescheduleTask(moving.id, '11:00');
+  await fixture.taskStore.rescheduleTask(moving.id, '12:00');
+  assert.equal((await fixture.repository.read('TASK', moving.id)).value.scheduledAt, d('2099-10-06', '12:00'));
+  assert.deepEqual(await fixture.repository.read('TASK', cancelled.id), cancelledBefore,
+    'baseline construction must not alter or enqueue the cancelled task');
+  assert.equal((await fixture.repository.listUnresolved('TASK')).length, 3);
+});
+
+test('canonical Task states retain the same schedule baseline through Store presentation mapping', async (t) => {
+  const { taskScheduleState } = await import('../src/services/localRepository.ts');
+  const d = (date, time) => new Date(`${date}T${time}:00`).toISOString();
+  for (const status of ['TODO', 'IN_PROGRESS', 'DONE', 'CANCELLED']) {
+    for (const scheduled of [false, true]) {
+      await t.test(`${status}; ${scheduled ? 'scheduled' : 'unscheduled'}; null duration`, async () => {
+        const moving = deadlineTask(`canonical-moving-${status}-${scheduled}`, {
+          scheduledAt: undefined, dueAt: d('2099-10-06', '20:00'), durationMinutes: 30, version: 2,
+        });
+        const other = deadlineTask(`canonical-other-${status}-${scheduled}`, {
+          status, scheduledAt: scheduled ? d('2099-10-07', '10:00') : null,
+          dueAt: null, durationMinutes: null, version: 4,
+        });
+        const fixture = await createTaskStoreFixture([moving, other]);
+        await fixture.taskStore.fetchTasks();
+        fixture.taskStore.setSelectedDay('Tue', '2099-10-06');
+        const expected = taskScheduleState(await fixture.repository.list('TASK'));
+        const originalCommit = fixture.repository.commitScheduleMutation.bind(fixture.repository);
+        let checked = false;
+        fixture.repository.commitScheduleMutation = async (input) => {
+          checked = true;
+          assert.equal(input.expectedScheduleState, expected,
+            'a normal DTO collection must equal the Store roundtrip before any concurrent write');
+          return originalCommit(input);
+        };
+        await fixture.taskStore.scheduleTask(moving.id, '10:00');
+        assert.equal(checked, true);
+        assert.equal((await fixture.repository.read('TASK', other.id)).value.status, status);
+        assert.equal((await fixture.repository.read('TASK', other.id)).value.durationMinutes, null);
+      });
+    }
+  }
+});
+
+
+test('status changes retain the exact scheduled date across natural weeks instead of reparsing the display time', async (t) => {
+  const scheduledAt = new Date('2099-11-01T10:00:00').toISOString();
+  const dueAt = new Date('2099-11-01T13:00:00').toISOString();
+  for (const [before, target, canonical] of [['TODO', 'learning', 'IN_PROGRESS'], ['CANCELLED', 'pending', 'TODO']]) {
+    await t.test(`${before} to ${target}`, async () => {
+      const task = deadlineTask(`status-fixed-week-${before}`, { status: before, scheduledAt, dueAt, durationMinutes: 30 });
+      const fixture = await createTaskStoreFixture([task]);
+      await fixture.taskStore.fetchTasks();
+      await fixture.taskStore.updateTaskStatus(task.id, target);
+      const saved = await fixture.repository.read('TASK', task.id);
+      assert.equal(saved.value.scheduledAt, scheduledAt, 'a status-only edit must preserve the original full instant');
+      assert.equal(saved.value.status, canonical);
+      assert.equal(saved.value.dueAt, dueAt);
+      const [mutation] = await fixture.repository.listPending('TASK');
+      assert.equal(mutation.mutationType, 'UPDATE');
+      assert.equal(mutation.payload.scheduledAt, scheduledAt);
+    });
+  }
+});
+
+
+test('unscheduleTask commits atomically through schedule queue without fence errors', async () => {
+  const task = deadlineTask('unschedule-queue-task', {
+    status: 'TODO',
+    scheduledAt: '2099-10-06T10:00:00.000Z',
+    dueAt: '2099-10-06T18:00:00.000Z',
+    durationMinutes: 30,
+    version: 2,
+  });
+  const fixture = await createTaskStoreFixture([task]);
+  await fixture.taskStore.fetchTasks();
+
+  // Test 1: Completed task unschedule must throw and be rejected
+  const completedTask = deadlineTask('completed-scheduled', {
+    status: 'DONE',
+    scheduledAt: '2099-10-06T09:00:00.000Z',
+    dueAt: '2099-10-06T18:00:00.000Z',
+    durationMinutes: 30,
+    version: 1,
+  });
+  await fixture.repository.upsert('TASK', completedTask.id, completedTask, { version: 1, syncStatus: 'synced' });
+  await fixture.taskStore.fetchTasks();
+  await assert.rejects(
+    () => fixture.taskStore.unscheduleTask(completedTask.id),
+    /已完成的排期任务已固定/,
+    'completed scheduled task must reject unscheduling'
+  );
+
+  // Test 2: Unschedule active task immediately moves it to pending/unassigned
+  await fixture.taskStore.unscheduleTask(task.id);
+  const localRow = await fixture.repository.read('TASK', task.id);
+  assert.equal(localRow.value.scheduledAt, undefined, 'local entity projection must clear scheduledAt');
+  const [mutation] = await fixture.repository.listPending('TASK');
+  assert.equal(mutation.mutationType, 'SCHEDULE_UNSCHEDULE');
+  assert.equal(mutation.resourceId, task.id);
+  assert.equal(mutation.baseVersion, 2);
+  assert.equal(mutation.payload.scheduledAt, null);
+  assert.deepEqual(mutation.payload._localAffectedTaskIds, [task.id]);
+
+  // UI state: task is now in pendingTasks
+  assert.ok(fixture.taskStore.pendingTasks.some((t) => t.id === task.id));
+  assert.ok(!fixture.taskStore.timeSlots.some((slot) => slot.task?.id === task.id));
+
+  // Test 3: Sequence: unschedule -> reschedule -> move
+  // User schedules the task again
+  fixture.taskStore.setSelectedDay('Tue', '2099-10-06');
+  await fixture.taskStore.scheduleTask(task.id, '14:00');
+  const rescheduledRow = await fixture.repository.read('TASK', task.id);
+  const projectedTask = fixture.taskStore.allTasks.find((t) => t.id === task.id);
+  assert.ok(projectedTask?.startTime?.includes("14:00"), "must reflect latest reschedule in UI projection");
+  assert.ok(rescheduledRow?.value?.scheduledAt, "must have scheduledAt in local repository");
+
+  const pendingMutations = await fixture.repository.listPending('TASK');
+  assert.equal(pendingMutations.length, 2);
+  assert.equal(pendingMutations[0].mutationType, 'SCHEDULE_UNSCHEDULE');
+  assert.equal(pendingMutations[1].mutationType, 'SCHEDULE_INSERTION');
+});

@@ -19,6 +19,7 @@ import com.auralis.app.ai.usage.AiTaskContext;
 import com.auralis.app.ai.usage.ChatAgentProperties;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -32,6 +33,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.ArrayList;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -93,7 +96,51 @@ class ChatAgentModelAdapterTests {
         assertEquals(3, response.tokenUsage().outputTokenCount());
     }
 
+    @Test
+    void streamsReasoningSeparatelyAndMapsItBackOnlyWithItsToolCall() {
+        TestCancellation cancellation = new TestCancellation();
+        TestScope scope = new TestScope(cancellation, false, "Use the authorized lookup tool.");
+        List<String> reasoningDeltas = new ArrayList<>();
+        ChatAgentModelAdapter adapter = adapter(scope, cancellation, reasoningDeltas::add);
+        List<ChatResponse> responses = new ArrayList<>();
+
+        adapter.doChat(request(), new StreamingChatResponseHandler() {
+            @Override public void onCompleteResponse(ChatResponse response) { responses.add(response); }
+            @Override public void onError(Throwable error) { throw new AssertionError(error); }
+        });
+
+        assertEquals(List.of("Use the authorized lookup tool."), reasoningDeltas);
+        AiProviderRequest mapped = adapter.mapRequest(ChatRequest.builder()
+                .messages(List.of(responses.getFirst().aiMessage(),
+                        ToolExecutionResultMessage.from("call-1", "lookup", "{}")))
+                .toolSpecifications(request().toolSpecifications()).build());
+        assertEquals("Use the authorized lookup tool.", mapped.messages().getFirst().reasoningContent());
+    }
+
+    @Test
+    void rawContentSinkReceivesProviderDeltaBeforeParserHandler() {
+        TestCancellation cancellation = new TestCancellation();
+        ChatAgentModelAdapter adapter = adapter(new TestScope(cancellation, false), cancellation);
+        List<String> order = new ArrayList<>();
+
+        adapter.chatWithRawCapture(request(), new StreamingChatResponseHandler() {
+            @Override public void onPartialResponse(dev.langchain4j.model.chat.response.PartialResponse partial,
+                    dev.langchain4j.model.chat.response.PartialResponseContext context) {
+                order.add("handler:" + partial.text());
+            }
+            @Override public void onCompleteResponse(ChatResponse response) { }
+            @Override public void onError(Throwable error) { throw new AssertionError(error); }
+        }, content -> order.add("raw:" + content));
+
+        assertEquals(List.of("raw:text", "handler:text"), order.subList(0, 2));
+    }
+
     private ChatAgentModelAdapter adapter(TestScope scope, TestCancellation cancellation) {
+        return adapter(scope, cancellation, ignored -> { });
+    }
+
+    private ChatAgentModelAdapter adapter(TestScope scope, TestCancellation cancellation,
+                                          Consumer<String> reasoningSink) {
         UUID userId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID budgetTaskId = runId;
@@ -104,7 +151,7 @@ class ChatAgentModelAdapterTests {
         assertEquals(runId, context.budgetTaskId());
         assertEquals(AiTaskContext.chatAgentLedgerTaskId(userId, runId), scope.taskId());
         return new ChatAgentModelAdapter(context, scope, new AiChatRequestMapper(new ObjectMapper()),
-                ChatAgentProperties.defaults(), 4096, 10_000);
+                ChatAgentProperties.defaults(), 4096, 10_000, reasoningSink);
     }
 
     private ChatRequest request() {
@@ -119,11 +166,17 @@ class ChatAgentModelAdapterTests {
     private static final class TestScope implements AiTaskScope {
         private final TestCancellation cancellation;
         private final boolean lengthTerminal;
+        private final String reasoningContent;
         private UUID id;
 
         private TestScope(TestCancellation cancellation, boolean lengthTerminal) {
+            this(cancellation, lengthTerminal, null);
+        }
+
+        private TestScope(TestCancellation cancellation, boolean lengthTerminal, String reasoningContent) {
             this.cancellation = cancellation;
             this.lengthTerminal = lengthTerminal;
+            this.reasoningContent = reasoningContent;
         }
 
         @Override public UUID taskId() { return id; }
@@ -145,6 +198,10 @@ class ChatAgentModelAdapterTests {
                 AiProviderRequest request, AiCredential credential, AiCredentialSource source,
                 AiProviderCallCancellation callCancellation, java.util.function.Consumer<AiProviderChunk> sink) {
             sink.accept(new AiProviderChunk("text", false, null, AiProviderModelIdentity.missing()));
+            if (reasoningContent != null) {
+                sink.accept(new AiProviderChunk("", false, null, AiProviderModelIdentity.missing(),
+                        null, null, null, null, false, reasoningContent));
+            }
             sink.accept(new AiProviderChunk("", false, null, AiProviderModelIdentity.missing(), "resp-1", 0,
                     new AiProviderToolCallDelta("call-1", "lookup", "{\"q\":"), null, false));
             sink.accept(new AiProviderChunk("", false, null, AiProviderModelIdentity.missing(), "resp-1", 0,

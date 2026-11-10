@@ -2767,7 +2767,7 @@ test('a late ReviewSync result cannot publish or set an error after the SyncStor
   const { useSyncStore } = await import('../src/store/useSyncStore.ts')
   const { useSyncApi } = await import('../src/api/useSyncApi.ts')
   const { ReviewSyncService } = await import('../src/services/reviewSyncService.ts')
-  const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
+  const { localDb, getLocalRepository, getLocalSqlDatabase } = await import('../src/services/localDb.ts')
   await localDb.init()
 
   const originalSnapshot = useSyncApi.getSnapshot
@@ -2778,6 +2778,7 @@ test('a late ReviewSync result cannot publish or set an error after the SyncStor
   const oldSetTimeout = globalThis.setTimeout
   let settleReviewSync
   let reviewSyncStarted
+  let reviewSyncDatabase
   const enteredReviewSync = new Promise(resolve => { reviewSyncStarted = resolve })
   useSyncApi.getSnapshot = async () => ({
     snapshotCursor: 'review-scope-cursor', subjects: [], sources: [], knowledgeBlocks: [], tasks: [], relations: [],
@@ -2785,10 +2786,17 @@ test('a late ReviewSync result cannot publish or set an error after the SyncStor
   useSyncApi.pullChanges = async () => ({ changes: [], nextCursor: 'review-scope-cursor', hasMore: false, resetRequired: false })
   useSyncApi.pushChanges = async () => ({ results: [], serverCursor: 'review-scope-cursor' })
   ReviewSyncService.prototype.syncAllPending = function () {
+    reviewSyncDatabase = this.localReview.db
     reviewSyncStarted()
     return new Promise(resolve => { settleReviewSync = resolve })
   }
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      onLine: true,
+      locks: { request: (_name, _options, operation) => operation() },
+    },
+  })
 
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -2814,6 +2822,8 @@ test('a late ReviewSync result cannot publish or set an error after the SyncStor
     })
     settleReviewSync({ protocolBlocked: false, conflictCount: 1 })
     await assert.rejects(runningCycle, /SYNC_SCOPE_CHANGED/)
+    assert.equal(reviewSyncDatabase, getLocalSqlDatabase(),
+      'ReviewSyncService must receive the initialized LocalSqlDatabase/fallback sentinel, not the localDb facade')
     assert.equal(syncStore.reviewSyncError, null, 'the stale account result cannot set the current account review error')
     assert.deepEqual(updatedEvents, [], 'the stale account result cannot publish a projection refresh')
     assert.equal(syncStore.isSyncing, false, 'the old cycle cannot change the new account activity flags')
@@ -3228,6 +3238,78 @@ test('unprepared first learning after multiple local body edits binds to the act
   }
 })
 
+test('subject state projection reads each review record once for missing and unchanged records', async () => {
+  const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
+  const { LocalReviewService } = await import('../src/services/localReviewService.ts')
+  const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
+  const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { ...(globalThis.navigator ?? {}), locks: { request: (_name, _options, operation) => operation() } },
+  })
+  const originalGetReviewRecord = ReviewRepository.prototype.getReviewRecord
+  let reviewRecordReads = 0
+  ReviewRepository.prototype.getReviewRecord = async function (...args) {
+    reviewRecordReads += 1
+    return originalGetReviewRecord.apply(this, args)
+  }
+  try {
+    await localDb.init()
+    const userId = 'subject-state-read-count-user'
+    const deviceId = 'subject-state-read-count-device'
+    const subjectId = 'subject-state-read-count-subject'
+    const repository = await getLocalRepository(userId, deviceId)
+    await repository.upsert('SUBJECT', subjectId, { id: subjectId, name: 'Read count' }, { version: 1, syncStatus: 'synced' })
+    const blocks = ['missing-a', 'unchanged', 'missing-b'].map(id => ({
+      id: `subject-state-read-count-${id}`,
+      subjectId,
+      title: id,
+      content: `Content for ${id}`,
+    }))
+    for (const block of blocks) {
+      await repository.upsert('KNOWLEDGE_BLOCK', block.id, block, { version: 1, syncStatus: 'synced' })
+    }
+
+    const unchangedBlock = blocks[1]
+    const contentHash = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest(
+      'SHA-256', new TextEncoder().encode(unchangedBlock.content),
+    )), value => value.toString(16).padStart(2, '0')).join('')
+    const reviewRepository = new ReviewRepository('localstorage', repository)
+    await reviewRepository.saveReviewRecord('localstorage', userId, deviceId, {
+      knowledgeBlockId: unchangedBlock.id,
+      subjectId,
+      localRevision: 1,
+      serverKnowledgeBlockVersion: 1,
+      contentHash,
+      state: null,
+      history: [],
+      effectiveReviews: [],
+      historyImported: true,
+      canonicalAnchor: {
+        knowledgeBlockVersion: 1,
+        subjectId,
+        contentHash,
+        state: null,
+        commands: [],
+        effectiveReviews: [],
+      },
+      isPresenceMarker: true,
+      updatedAt: new Date().toISOString(),
+    })
+
+      const states = await new LocalReviewService('localstorage', repository)
+        .getSubjectStates(userId, deviceId, subjectId)
+      assert.equal(states.items.length, blocks.length)
+      assert.deepEqual(new Set(states.items.map(state => state.knowledgeBlockId)), new Set(blocks.map(block => block.id)))
+      assert.equal(reviewRecordReads, blocks.length,
+        'N blocks with missing or unchanged records should perform N lock-scoped record reads, not a second read per block')
+  } finally {
+    ReviewRepository.prototype.getReviewRecord = originalGetReviewRecord
+    if (originalNavigator) Object.defineProperty(globalThis, 'navigator', originalNavigator)
+    else delete globalThis.navigator
+  }
+})
+
 test('an external lifecycle command after a body edit prevents automatic request rebase', async () => {
   const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
   const { LocalReviewService } = await import('../src/services/localReviewService.ts')
@@ -3544,5 +3626,308 @@ test('canonical preparation compares same-time command and review histories by i
   } finally {
     useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
     useReviewApi.completeLearning = originals.completeLearning
+  }
+})
+
+
+test('review sync audit timestamp equivalence and false conflict CAS recovery', async () => {
+  const { createPinia, setActivePinia } = await import('pinia')
+  const { localDb, getLocalRepository } = await import('../src/services/localDb.ts')
+  const { ReviewRepository } = await import('../src/services/reviewRepository.ts')
+  const { ReviewSyncService } = await import('../src/services/reviewSyncService.ts')
+  const { useReviewApi } = await import('../src/api/useReviewApi.ts')
+  await localDb.init()
+
+  const userId = 'audit-equiv-user'
+  const deviceId = 'audit-equiv-device'
+  const subjectId = 'audit-equiv-subject'
+  const kbId = 'audit-equiv-kb'
+  const kbContent = 'Test knowledge block content for audit equivalence'
+  const contentHash = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest(
+    'SHA-256', new TextEncoder().encode(kbContent),
+  )), value => value.toString(16).padStart(2, '0')).join('')
+
+  const repo = await getLocalRepository(userId, deviceId)
+  await repo.upsert('SUBJECT', subjectId, { id: subjectId, name: 'Subject' }, { version: 1, syncStatus: 'synced' })
+  await repo.upsert('KNOWLEDGE_BLOCK', kbId, { id: kbId, subjectId, title: 'KB', content: kbContent }, { version: 1, syncStatus: 'synced' })
+
+  const reviewRepo = new ReviewRepository('localstorage', repo)
+
+  // Test field comparison with PostgreSQL microsecond round-trip cases
+  // Local receipt has nanoseconds, PG re-read has microseconds (half-up rounded)
+  const localCreatedAt = '2026-11-03T11:53:24.375032699Z'
+  const pgCreatedAt = '2026-11-03T11:53:24.375033Z'
+  const localUpdatedAt = '2026-11-03T11:53:25.555019533Z'
+  const pgUpdatedAt = '2026-11-03T11:53:25.555020Z'
+
+  const anchorState = {
+    knowledgeBlockId: kbId,
+    version: 1,
+    knowledgeBlockVersion: 1,
+    contentHash,
+    dueAt: '2026-11-04T10:00:00.000Z',
+    needsLearning: false,
+    mastered: false,
+    stableSuccessCount: 1,
+    nextReviewStage: 'EARLY_RECALL',
+    lastPracticeAt: '2026-11-03T11:53:25.000Z',
+    lastReviewId: 'review-1',
+    pendingReviewId: null,
+    createdAt: localCreatedAt,
+    updatedAt: localUpdatedAt,
+  }
+
+  const record = {
+    knowledgeBlockId: kbId,
+    subjectId,
+    localRevision: 1,
+    serverKnowledgeBlockVersion: 1,
+    contentHash,
+    state: anchorState,
+    history: [{
+      commandId: 'cmd-1',
+      clientCommandId: 'client-cmd-1',
+      action: 'LEARNING_COMPLETED',
+      occurredAt: '2026-11-03T11:53:24.000Z',
+      reviewId: null,
+      rating: null,
+      durationSeconds: null,
+      baseVersion: 0,
+      knowledgeBlockVersion: 1,
+    }],
+    effectiveReviews: [],
+    historyImported: true,
+    canonicalAnchor: {
+      knowledgeBlockVersion: 1,
+      subjectId,
+      contentHash,
+      state: anchorState,
+      commands: [{
+        commandId: 'cmd-1',
+        clientCommandId: 'client-cmd-1',
+        action: 'LEARNING_COMPLETED',
+        occurredAt: '2026-11-03T11:53:24.000Z',
+        reviewId: null,
+        rating: null,
+        durationSeconds: null,
+        baseVersion: 0,
+        knowledgeBlockVersion: 1,
+      }],
+      effectiveReviews: [],
+    },
+    isPresenceMarker: false,
+    updatedAt: localUpdatedAt,
+  }
+
+  await reviewRepo.saveReviewRecord('localstorage', userId, deviceId, record)
+
+  // Seed two false-conflict intents (both prepared=false, status='conflict')
+  const intent1 = {
+    clientCommandId: 'conflict-intent-1',
+    userId,
+    deviceId,
+    knowledgeBlockId: kbId,
+    action: 'REVIEW_SELECTED',
+    occurredAt: '2026-11-03T11:55:00.000Z',
+    payload: {
+      clientCommandId: 'conflict-intent-1',
+      knowledgeBlockId: kbId,
+      knowledgeBlockVersion: 1,
+      baseVersion: 1,
+      contentHash,
+      expectedStateAbsent: false,
+      rating: 'GOOD',
+      reviewId: 'review-2',
+      durationSeconds: 15,
+      occurredAt: '2026-11-03T11:55:00.000Z',
+    },
+    status: 'conflict',
+    createdAt: '2026-11-03T11:55:01.000Z',
+    prepared: false,
+    preparation: {
+      anchorFingerprint: JSON.stringify(record.canonicalAnchor),
+      anchorCommandIds: ['client-cmd-1'],
+      anchorSubjectId: subjectId,
+      anchorContentHash: contentHash,
+      predecessorClientCommandIds: ['client-cmd-1'],
+      knownLocalCreate: false,
+      allowContentInvalidation: false,
+      sequence: 1,
+    },
+  }
+
+  const intent2 = {
+    clientCommandId: 'conflict-intent-2',
+    userId,
+    deviceId,
+    knowledgeBlockId: kbId,
+    action: 'REVIEW_CONFIRMED',
+    occurredAt: '2026-11-03T11:55:10.000Z',
+    payload: {
+      clientCommandId: 'conflict-intent-2',
+      knowledgeBlockId: kbId,
+      knowledgeBlockVersion: 1,
+      baseVersion: 1,
+      contentHash,
+      expectedStateAbsent: false,
+      reviewId: 'review-2',
+      occurredAt: '2026-11-03T11:55:10.000Z',
+    },
+    status: 'conflict',
+    createdAt: '2026-11-03T11:55:11.000Z',
+    prepared: false,
+    preparation: {
+      anchorFingerprint: JSON.stringify(record.canonicalAnchor),
+      anchorCommandIds: ['client-cmd-1'],
+      anchorSubjectId: subjectId,
+      anchorContentHash: contentHash,
+      predecessorClientCommandIds: ['client-cmd-1', 'conflict-intent-1'],
+      knownLocalCreate: false,
+      allowContentInvalidation: false,
+      sequence: 2,
+    },
+  }
+
+  await reviewRepo.saveIntent('localstorage', userId, deviceId, intent1)
+  await reviewRepo.saveIntent('localstorage', userId, deviceId, intent2)
+
+  // Remote history returns PG timestamps (which differ by sub-microsecond precision)
+  const remoteHistory = {
+    protocolVersion: 2,
+    knowledgeBlockId: kbId,
+    knowledgeBlockVersion: 1,
+    state: {
+      ...anchorState,
+      createdAt: pgCreatedAt,
+      updatedAt: pgUpdatedAt,
+    },
+    commands: record.canonicalAnchor.commands,
+    effectiveReviews: [],
+  }
+
+  const originals = {
+    getLifecycleHistory: useReviewApi.getLifecycleHistory,
+    selectReview: useReviewApi.selectReview,
+    confirmReview: useReviewApi.confirmReview,
+  }
+
+  const dispatched = []
+  useReviewApi.getLifecycleHistory = async () => structuredClone(remoteHistory)
+  useReviewApi.selectReview = async (req) => {
+    dispatched.push(req)
+    const effectiveReview = {
+      reviewId: req.reviewId,
+      selectedRating: req.rating,
+      effectiveRating: req.rating,
+      selectedAt: req.occurredAt,
+      resolvedAt: null,
+      resolution: null,
+      schedulingBaseline: {
+        dueAt: '2026-11-05T10:00:00.000Z',
+        mastered: false,
+        stableSuccessCount: 2,
+        nextReviewStage: 'EARLY_RECALL',
+        lastPracticeAt: req.occurredAt,
+        stability: 2.5,
+      },
+    }
+    const response = {
+      commandId: 'server-cmd-2',
+      clientCommandId: req.clientCommandId,
+      action: 'REVIEW_SELECTED',
+      occurredAt: req.occurredAt,
+      knowledgeBlockVersion: 1,
+      state: {
+        ...remoteHistory.state,
+        version: 2,
+        pendingReviewId: req.reviewId,
+        createdAt: localCreatedAt,
+        updatedAt: req.occurredAt,
+      },
+      effectiveReview,
+    }
+    remoteHistory.state = {
+      ...response.state,
+      createdAt: pgCreatedAt,
+    }
+    remoteHistory.commands.push({
+      commandId: response.commandId,
+      clientCommandId: response.clientCommandId,
+      action: response.action,
+      occurredAt: response.occurredAt,
+      reviewId: req.reviewId,
+      rating: req.rating,
+      durationSeconds: req.durationSeconds,
+      baseVersion: req.baseVersion,
+      knowledgeBlockVersion: 1,
+    })
+    remoteHistory.effectiveReviews.push(effectiveReview)
+    return response
+  }
+
+  useReviewApi.confirmReview = async (_reviewId, req) => {
+    dispatched.push(req)
+    const effectiveReview = {
+      ...remoteHistory.effectiveReviews[0],
+      resolvedAt: req.occurredAt,
+      resolution: 'CONFIRMED',
+    }
+    const response = {
+      commandId: 'server-cmd-3',
+      clientCommandId: req.clientCommandId,
+      action: 'REVIEW_CONFIRMED',
+      occurredAt: req.occurredAt,
+      knowledgeBlockVersion: 1,
+      state: {
+        ...remoteHistory.state,
+        version: 3,
+        pendingReviewId: null,
+        createdAt: localCreatedAt,
+        updatedAt: req.occurredAt,
+      },
+      effectiveReview,
+    }
+    remoteHistory.state = {
+      ...response.state,
+      createdAt: pgCreatedAt,
+    }
+    remoteHistory.commands.push({
+      commandId: response.commandId,
+      clientCommandId: response.clientCommandId,
+      action: response.action,
+      occurredAt: response.occurredAt,
+      reviewId: req.reviewId,
+      rating: null,
+      durationSeconds: null,
+      baseVersion: req.baseVersion,
+      knowledgeBlockVersion: 1,
+    })
+    remoteHistory.effectiveReviews[0] = effectiveReview
+    return response
+  }
+
+  try {
+    const sync = new ReviewSyncService('localstorage', repo)
+
+    // First sync cycle: recovers FIFO head (intent1), executes prepare -> freeze -> dispatch -> ACK
+    const res1 = await sync.syncAllPending(userId, deviceId)
+    assert.equal(res1.syncedCommandCount, 1, 'FIFO head must recover and sync')
+    assert.equal(dispatched.length, 1)
+    assert.equal(dispatched[0].clientCommandId, 'conflict-intent-1')
+    assert.equal(dispatched[0].occurredAt, intent1.occurredAt)
+
+    // Second sync cycle: intent2 is now the FIFO head; recovers and syncs along ACK prefix
+    const res2 = await sync.syncAllPending(userId, deviceId)
+    assert.equal(res2.syncedCommandCount, 1, 'successor head must recover in next cycle')
+    assert.equal(dispatched.length, 2)
+    assert.equal(dispatched[1].clientCommandId, 'conflict-intent-2')
+
+    // All intents now resolved
+    const unresolved = await reviewRepo.getUnresolvedIntents(userId, deviceId, [kbId])
+    assert.equal(unresolved.length, 0)
+  } finally {
+    useReviewApi.getLifecycleHistory = originals.getLifecycleHistory
+    useReviewApi.selectReview = originals.selectReview
+    useReviewApi.confirmReview = originals.confirmReview
   }
 })

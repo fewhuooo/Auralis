@@ -22,6 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,6 +67,42 @@ class AiThinkingPreferenceTests {
             assertThinking(AiProviderType.OPENAI_COMPATIBLE, credential, "true", true, false, false);
             assertThinking(AiProviderType.OPENAI_COMPATIBLE, credential, "true", true, false, true);
         }
+    }
+
+    @Test
+    void concurrentRequestPoliciesOverrideLegacyGlobalSettingIndependently() throws Exception {
+        var policy = mock(ProviderEndpointPolicy.class);
+        when(policy.resolve(eq(AiProviderType.OPENAI_COMPATIBLE), any(URI.class))).thenReturn(ENDPOINT);
+        var wireBodies = new ConcurrentHashMap<String, JsonNode>();
+        ProviderHttpTransport transport = new ProviderHttpTransport() {
+            @Override public byte[] post(ResolvedProviderEndpoint endpoint, String path, String key, byte[] body) {
+                JsonNode parsed = parse(body);
+                wireBodies.put(parsed.path("model").asString(), parsed);
+                return bytes("{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
+            }
+            @Override public void postStream(ResolvedProviderEndpoint endpoint, String path, String key,
+                    byte[] body, java.util.function.Consumer<String> sink) {
+                throw new UnsupportedOperationException();
+            }
+        };
+        var provider = new OpenAiCompatibleProvider(policy, new ProviderHttpClient(new ObjectMapper(), transport, 16_384));
+        var executor = Executors.newFixedThreadPool(2);
+        try {
+            var chat = executor.submit(() -> provider.complete(request("chat", true), MIMO));
+            var overview = executor.submit(() -> provider.complete(request("overview", false), MIMO));
+            chat.get(5, TimeUnit.SECONDS);
+            overview.get(5, TimeUnit.SECONDS);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        assertThat(wireBodies.get("chat").path("thinking").path("type").asText()).isEqualTo("enabled");
+        assertThat(wireBodies.get("overview").path("thinking").path("type").asText()).isEqualTo("disabled");
+    }
+
+    private AiProviderRequest request(String model, boolean thinkingEnabled) {
+        return new AiProviderRequest(model, List.of(new AiProviderRequest.Message(AiMessageRole.USER, "hello")),
+                List.of(), null, 128, false, false, 0, thinkingEnabled);
     }
 
     private void assertThinking(

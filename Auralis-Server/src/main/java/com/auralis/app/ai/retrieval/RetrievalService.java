@@ -143,22 +143,7 @@ public class RetrievalService {
             String queryText) {
         requireActiveSubject(userId, readingContext.subjectId());
         List<UUID> requestedIds = readingContext.sourceIds();
-        if (requestedIds.isEmpty() || requestedIds.size() > 100
-                || requestedIds.stream().anyMatch(java.util.Objects::isNull)
-                || new LinkedHashSet<>(requestedIds).size() != requestedIds.size()) {
-            throw new DomainException("VALIDATION_FAILED", "readingContext.sourceIds must contain unique source IDs");
-        }
-
-        List<SourceView> requestedSources = sourceService.findActiveViewsByIds(userId, requestedIds);
-        if (requestedSources.size() != requestedIds.size()) {
-            throw new DomainException("RESOURCE_NOT_FOUND", "A selected source was not found");
-        }
-        for (SourceView source : requestedSources) {
-            if (!readingContext.subjectId().equals(source.subjectId())) {
-                throw new DomainException("VALIDATION_FAILED", "A selected source does not belong to the reading subject");
-            }
-            requireReady(source);
-        }
+        List<SourceView> requestedSources = requireReadySources(userId, requestedIds, readingContext.subjectId());
         if (readingContext.currentSourceId() != null) {
             SourceView current = sourceService.get(userId, readingContext.currentSourceId());
             if (!readingContext.subjectId().equals(current.subjectId())) {
@@ -167,6 +152,39 @@ public class RetrievalService {
             requireReady(current);
         }
         return retrieveAcrossSources(userId, queryVector, topK, requestedSources, queryText);
+    }
+
+    public List<Citation> retrieveWithinSources(
+            UUID userId,
+            List<Double> queryVector,
+            int topK,
+            List<UUID> sourceIds,
+            UUID subjectId,
+            String queryText) {
+        vectorCodec.validate(queryVector);
+        if (topK <= 0) throw new IllegalArgumentException("topK must be positive");
+        if (subjectId != null) requireActiveSubject(userId, subjectId);
+        return retrieveAcrossSources(userId, queryVector, topK,
+                requireReadySources(userId, sourceIds, subjectId), queryText);
+    }
+
+    private List<SourceView> requireReadySources(UUID userId, List<UUID> sourceIds, UUID subjectId) {
+        if (sourceIds == null || sourceIds.isEmpty() || sourceIds.size() > 100
+                || sourceIds.stream().anyMatch(java.util.Objects::isNull)
+                || new LinkedHashSet<>(sourceIds).size() != sourceIds.size()) {
+            throw new DomainException("VALIDATION_FAILED", "sourceIds must contain unique source IDs");
+        }
+        List<SourceView> requestedSources = sourceService.findActiveViewsByIds(userId, sourceIds);
+        if (requestedSources.size() != sourceIds.size()) {
+            throw new DomainException("RESOURCE_NOT_FOUND", "A selected source was not found");
+        }
+        for (SourceView source : requestedSources) {
+            if (subjectId != null && !subjectId.equals(source.subjectId())) {
+                throw new DomainException("VALIDATION_FAILED", "A selected source does not belong to the reading subject");
+            }
+            requireReady(source);
+        }
+        return requestedSources;
     }
 
     private List<Citation> retrieveSubjectSources(

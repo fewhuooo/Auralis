@@ -33,8 +33,15 @@ public final class AiChatRequestMapper {
     }
 
     public AiProviderRequest toProviderRequest(ChatRequest request, String model, int maxOutputTokens) {
+        return toProviderRequest(request, model, maxOutputTokens, Map.of());
+    }
+
+    public AiProviderRequest toProviderRequest(ChatRequest request, String model, int maxOutputTokens,
+                                               Map<String, String> reasoningByToolCallId) {
         List<AiProviderRequest.Message> messages = new ArrayList<>();
-        for (ChatMessage message : request.messages()) messages.add(toProviderMessage(message));
+        for (ChatMessage message : request.messages()) {
+            messages.add(toProviderMessage(message, reasoningByToolCallId));
+        }
         List<AiProviderToolDefinition> tools = request.toolSpecifications().stream()
                 .map(this::toProviderTool).toList();
         AiProviderRequest mapped = new AiProviderRequest(model, messages, tools,
@@ -43,7 +50,8 @@ public final class AiChatRequestMapper {
         return mapped;
     }
 
-    private AiProviderRequest.Message toProviderMessage(ChatMessage message) {
+    private AiProviderRequest.Message toProviderMessage(ChatMessage message,
+                                                         Map<String, String> reasoningByToolCallId) {
         return switch (message.type()) {
             case SYSTEM -> new AiProviderRequest.Message(AiMessageRole.SYSTEM,
                     ((SystemMessage) message).text());
@@ -56,8 +64,18 @@ public final class AiChatRequestMapper {
                 AiMessage assistant = (AiMessage) message;
                 List<AiProviderToolCall> calls = assistant.toolExecutionRequests().stream()
                         .map(call -> new AiProviderToolCall(call.id(), call.name(), call.arguments())).toList();
+                String reasoningContent = null;
+                for (ToolExecutionRequest call : assistant.toolExecutionRequests()) {
+                    String mapped = reasoningByToolCallId.get(call.id());
+                    if (mapped != null) {
+                        if (reasoningContent != null && !reasoningContent.equals(mapped)) {
+                            throw new IllegalArgumentException("Tool calls in one assistant message must share reasoning");
+                        }
+                        reasoningContent = mapped;
+                    }
+                }
                 yield new AiProviderRequest.Message(AiMessageRole.ASSISTANT,
-                        assistant.text(), calls, null, null);
+                        assistant.text(), calls, null, null, reasoningContent);
             }
             case TOOL_EXECUTION_RESULT -> {
                 ToolExecutionResultMessage result = (ToolExecutionResultMessage) message;

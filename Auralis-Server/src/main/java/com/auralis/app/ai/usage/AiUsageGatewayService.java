@@ -7,6 +7,7 @@ import com.auralis.app.ai.AiProviderChunk;
 import com.auralis.app.ai.AiProviderPort;
 import com.auralis.app.ai.AiProviderModelIdentity;
 import com.auralis.app.ai.AiProviderRequest;
+import com.auralis.app.ai.AiChatRequestCapacity;
 import com.auralis.app.ai.AiProviderResponse;
 import com.auralis.app.ai.AiProviderType;
 import com.auralis.app.ai.EmbeddingProviderPort;
@@ -15,12 +16,12 @@ import com.auralis.app.ai.OverviewModelBudget;
 import com.auralis.app.ai.internal.provider.AiProviderRegistry;
 import com.auralis.app.ai.internal.provider.EmbeddingProviderRegistry;
 import com.auralis.app.shared.config.AuralisProperties;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import com.auralis.app.shared.error.DomainException;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -56,6 +57,13 @@ public class AiUsageGatewayService implements AiInvocationGateway {
     private final TransactionTemplate providerIo;
     private final AiTokenShadowEstimator shadowEstimator = new AiTokenShadowEstimator();
     private final AiOperationPolicyResolver policies;
+    // At most four executor threads per instance may wait for Overview capacity;
+    // excess requests retain the existing explicit busy response.
+    private final OverviewAdmission overviewAdmission = new OverviewAdmission(120_000, 4);
+    @Value("${auralis.ai.chat-thinking-enabled:true}")
+    private boolean chatThinkingEnabled = true;
+    @Value("${auralis.ai.overview-thinking-enabled:false}")
+    private boolean overviewThinkingEnabled;
 
     @Autowired
     public AiUsageGatewayService(AiUsageGuard guard, AiProviderRegistry providers,
@@ -253,10 +261,13 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                     Math.multiplyExact(COMPLETION_MESSAGE_FRAMING_TOKENS, bounded.messages().size()));
             logEffectiveModel(provider, bounded.model(), credential.baseUrl(), stage, bounded.structuredJson());
             return invoke(stage, provider, bounded.model(), source, role, inputTokens, bounded.maxTokens(),
-                    () -> providerIo.execute(status -> port.complete(bounded, credential, responseTimeoutMillis, cancellation)),
+                    () -> providerIo.execute(status -> port.complete(bounded, credential,
+                            binding == null ? responseTimeoutMillis : binding.responseTimeoutMillis(responseTimeoutMillis),
+                            cancellation)),
                     AiProviderResponse::usage,
                     response -> response == null ? AiProviderModelIdentity.missing() : response.modelIdentity(),
-                    shadow, shadow.textType(), contents.size(), binding, admissionEstimate);
+                    shadow, shadow.textType(), contents.size(), binding, admissionEstimate,
+                    cancellation, isOverviewFeature(task.feature()));
         }
 
         @Override
@@ -303,6 +314,7 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                     }
                     if (chunk == null || chunk.content() == null || !chunk.content().isEmpty()
                             || chunk.complete() || chunk.usage() != null
+                            || chunk.reasoningContent() != null
                             || chunk.toolCallDelta() != null || chunk.terminal()
                             || chunk.modelIdentity().status() == AiProviderModelIdentity.Status.MISSING) {
                         sink.accept(chunk);
@@ -342,18 +354,45 @@ public class AiUsageGatewayService implements AiInvocationGateway {
                 java.util.function.Function<T, AiProviderModelIdentity> modelIdentityExtractor,
                 AiTokenShadowEstimator.Estimate shadow, String textType, int messageCount,
                 AiInvocationBinding binding, AiInputTokenEstimator.Estimate admissionEstimate) {
+            return invoke(stage, provider, model, source, role, estimatedInput, reservedOutput,
+                    operation, usageExtractor, modelIdentityExtractor, shadow, textType, messageCount,
+                    binding, admissionEstimate, null, false);
+        }
+
+        private <T> AiInvocationResult<T> invoke(AiStage stage, AiProviderType provider, String model,
+                AiCredentialSource source, AiOutputRole role,
+                long estimatedInput, long reservedOutput, Supplier<T> operation,
+                java.util.function.Function<T, AiTokenUsage> usageExtractor,
+                java.util.function.Function<T, AiProviderModelIdentity> modelIdentityExtractor,
+                AiTokenShadowEstimator.Estimate shadow, String textType, int messageCount,
+                AiInvocationBinding binding, AiInputTokenEstimator.Estimate admissionEstimate,
+                OverviewCancellation cancellation, boolean waitForOverview) {
             requireUsable();
-            AiUsageGuard.CallReservation call = guard.reserve(task, stage, provider, model, source, role,
-                    estimatedInput, reservedOutput);
+            Runnable revalidate = () -> {
+                requireUsable();
+                OverviewAdmission.checkCancelled(cancellation);
+                if (binding != null) binding.beforeReservation();
+            };
+            Supplier<AiUsageGuard.CallReservation> reserve = () -> guard.reserve(task, stage, provider, model,
+                    source, role, estimatedInput, reservedOutput);
+            AiUsageGuard.CallReservation call;
+            if (waitForOverview) {
+                call = providerIo.execute(status -> overviewAdmission.reserve(reserve, revalidate, cancellation));
+            } else {
+                call = reserve.get();
+            }
             activeCall.set(call);
             boolean settledAlready = false;
             try {
                 if (admissionEstimate != null) logAdmissionEstimate(call, stage, provider, model, admissionEstimate);
                 if (binding != null) binding.onReserved(call.id());
-                if (binding == null) {
+                if (!waitForOverview && binding == null) {
                     guard.markDispatched(task, call);
                 } else {
-                    guard.markDispatched(task, call, () -> binding.beforeDispatch(call.id()));
+                    guard.markDispatched(task, call, () -> {
+                        if (waitForOverview) OverviewAdmission.checkCancelled(cancellation);
+                        if (binding != null) binding.beforeDispatch(call.id());
+                    });
                 }
                 T value = operation.get();
                 AiTokenUsage rawUsage = usageExtractor.apply(value);
@@ -469,27 +508,28 @@ public class AiUsageGatewayService implements AiInvocationGateway {
         }
 
         private long estimateAgentRequestTokens(AiProviderRequest request) {
-            long messageBytes = 0;
-            long serializedBytes;
-            try {
-                for (AiProviderRequest.Message message : request.messages()) {
-                    if (message.content() != null) {
-                        messageBytes = Math.addExact(messageBytes,
-                                message.content().getBytes(StandardCharsets.UTF_8).length);
-                    }
-                    if (message.role() == com.auralis.app.ai.AiMessageRole.TOOL
-                            && message.content().getBytes(StandardCharsets.UTF_8).length
-                            > chatAgent.maxToolResultUtf8Bytes()) throw requestBudgetExceeded();
-                }
-                serializedBytes = objectMapper.writeValueAsBytes(request).length;
-                if (serializedBytes > chatAgent.maxSerializedRequestUtf8Bytes()) throw requestBudgetExceeded();
-            } catch (ArithmeticException | JacksonException exception) {
+            long legacyMessageByteLimit = Math.multiplyExact((long) ai.maxPromptChars(), 4L);
+            AiChatRequestCapacity.Check capacity = AiChatRequestCapacity.inspect(request, objectMapper,
+                    chatAgent.maxSerializedRequestUtf8Bytes(), chatAgent.maxToolResultUtf8Bytes(),
+                    legacyMessageByteLimit);
+            if (!capacity.fits()) {
+                AiChatRequestCapacity.Diagnostic diagnostic = AiChatRequestCapacity.diagnose(request, objectMapper);
+                LOGGER.warn("Chat request capacity rejected dimension={} actualBytes={} limitBytes={} "
+                                + "serializedRequestBytes={} messageContentBytes={} systemContentBytes={} "
+                                + "userContentBytes={} assistantContentBytes={} toolResultContentBytes={} "
+                                + "reasoningContentBytes={} toolCallArgumentBytes={} toolDefinitionCount={} "
+                                + "toolDefinitionsBytes={}",
+                        capacity.dimension(), capacity.comparedBytes(), capacity.limitBytes(),
+                        diagnostic.serializedRequestBytes(), diagnostic.messageContentBytes(),
+                        diagnostic.systemContentBytes(), diagnostic.userContentBytes(),
+                        diagnostic.assistantContentBytes(), diagnostic.toolResultContentBytes(),
+                        diagnostic.reasoningContentBytes(), diagnostic.toolCallArgumentBytes(),
+                        diagnostic.toolDefinitionCount(),
+                        diagnostic.toolDefinitionsBytes());
                 throw requestBudgetExceeded();
             }
-            long legacyMessageByteLimit = Math.multiplyExact((long) ai.maxPromptChars(), 4L);
-            if (messageBytes > legacyMessageByteLimit) throw requestBudgetExceeded();
             // Count the complete request, including schemas, tool-call arguments and results.
-            return Math.addExact(serializedBytes,
+            return Math.addExact(capacity.comparedBytes(),
                     Math.multiplyExact(4L, request.messages().size()));
         }
 
@@ -597,9 +637,15 @@ public class AiUsageGatewayService implements AiInvocationGateway {
             if (overview && requested == null) throw requestBudgetExceeded();
             if (requested != null && (requested < 1 || requested > outputLimit)) throw requestBudgetExceeded();
             int bounded = requested == null ? Math.toIntExact(outputLimit) : requested;
+            Boolean thinkingEnabled = null;
+            if (task.operationKind() == AiOperationKind.CHAT_AGENT_TURN && task.feature() == AiFeature.CHAT) {
+                thinkingEnabled = chatThinkingEnabled;
+            } else if (isOverviewFeature(task.feature())) {
+                thinkingEnabled = overviewThinkingEnabled;
+            }
             return new AiProviderRequest(request.model(), request.messages(), request.tools(), request.temperature(), bounded,
                     request.structuredJson(), overview,
-                    overview ? ai.overviewLimits().maxResponseBytes() : 0);
+                    overview ? ai.overviewLimits().maxResponseBytes() : 0, thinkingEnabled);
         }
 
         private void requirePolicy(AiStage stage, AiInvocationMethod method, AiOutputRole role,

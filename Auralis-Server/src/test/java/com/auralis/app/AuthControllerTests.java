@@ -376,6 +376,11 @@ class AuthControllerTests {
         JsonNode bob = register("bob@example.com", "avatar-bob", "Bob's browser");
         String token = alice.path("tokens").path("accessToken").asText();
         String bobToken = bob.path("tokens").path("accessToken").asText();
+        assertThat(alice.path("user").path("hasAvatar").asBoolean()).isFalse();
+        assertThat(bob.path("user").path("hasAvatar").asBoolean()).isFalse();
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasAvatar").value(false));
         byte[] png = java.util.Base64.getDecoder().decode(
                 "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/pV8AAAAASUVORK5CYII=");
 
@@ -383,9 +388,27 @@ class AuthControllerTests {
                         .file(new MockMultipartFile("file", "avatar.png", "image/png", png))
                         .header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasAvatar").value(true));
         mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.IMAGE_PNG));
+        JsonNode loggedIn = login("alice@example.com", "avatar-alice");
+        assertThat(loggedIn.path("user").path("hasAvatar").asBoolean()).isTrue();
+        MvcResult refreshed = mockMvc.perform(post("/api/auth/refresh")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"refreshToken\":\"" + loggedIn.path("tokens").path("refreshToken").asText() + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user.hasAvatar").value(true))
+                .andReturn();
+        String refreshedToken = json(refreshed).path("tokens").path("accessToken").asText();
+        mockMvc.perform(put("/api/auth/me")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(refreshedToken))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseVersion\":0,\"displayName\":\"Alice Updated\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasAvatar").value(true));
         mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(bobToken)))
                 .andExpect(status().isNotFound());
         mockMvc.perform(multipart("/api/auth/me/avatar")
@@ -394,6 +417,9 @@ class AuthControllerTests {
                 .andExpect(status().isBadRequest());
         mockMvc.perform(delete("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/auth/me").header(HttpHeaders.AUTHORIZATION, bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.hasAvatar").value(false));
         mockMvc.perform(get("/api/auth/me/avatar").header(HttpHeaders.AUTHORIZATION, bearer(token)))
                 .andExpect(status().isNotFound());
     }

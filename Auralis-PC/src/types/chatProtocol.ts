@@ -11,7 +11,7 @@ export interface ChatStreamEnvelope {
   iterationId?: string | null
   blockId?: string | null
   sequence: number
-  event: 'run.started' | 'text.delta' | 'tool.started' | 'tool.completed' | 'tool.error'
+  event: 'run.started' | 'reasoning.delta' | 'text.delta' | 'tool.started' | 'tool.completed' | 'tool.error'
     | 'block.started' | 'block.item' | 'block.completed' | 'block.error' | 'activity.ready'
     | 'activity.submitted' | 'run.completed' | 'run.failed' | 'run.cancelled'
   payload: Record<string, unknown>
@@ -71,6 +71,17 @@ export interface ChatMessageDetail {
   createdAt?: string
   parts: ChatContentPart[]
   chatProtocolVersion?: number | null
+  reasoningText?: string
+  tools?: import('../services/aiStreamReducer').ChatToolActivity[]
+}
+
+export type ChatScopeState = 'LEGACY' | 'UNBOUND' | 'BOUND'
+
+export interface ChatConversationScope {
+  retrievalMode: 'AUTO' | 'SELECTED_SOURCES' | 'SUBJECT'
+  subjectId: string | null
+  currentSourceId: string | null
+  sourceIds: string[]
 }
 
 export interface ChatConversationDetail {
@@ -86,6 +97,8 @@ export interface ChatConversationDetail {
   purpose?: string
   sourceId?: string
   activeRun?: ActiveChatRun | null
+  chatScopeState?: ChatScopeState
+  chatScope?: ChatConversationScope | null
 }
 
 export interface ChatConversationListItem {
@@ -96,6 +109,8 @@ export interface ChatConversationListItem {
   chatSupported: boolean
   createdAt?: string
   updatedAt?: string
+  chatScopeState?: ChatScopeState
+  chatScope?: ChatConversationScope | null
 }
 
 /**

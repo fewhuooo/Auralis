@@ -1260,6 +1260,17 @@ defineExpose({
   transform: translateX(-2px);
 }
 
+html.dark .subject-review__btn-back {
+  background: var(--color-bg-secondary, #252422) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: var(--text-primary) !important;
+}
+
+html.dark .subject-review__btn-back:hover:not(:disabled) {
+  background: var(--color-bg-tertiary, #33312e) !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
 .subject-review__header h2 {
   margin: 0;
   font-size: 24px;
@@ -1336,6 +1347,16 @@ defineExpose({
   background: color-mix(in srgb, var(--color-danger) 10%, transparent);
 }
 
+html.dark .subject-review__notice:not(.subject-review__notice--error) {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .subject-review__notice--error {
+  border-color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+}
+
 /* 1. 仪表盘计划总览：既饱满、又舒展的居中整合计划卡片（占据页面七至八成，宽度增加，高度舒适） */
 .subject-review__dashboard {
   display: flex;
@@ -1359,6 +1380,12 @@ defineExpose({
   position: relative;
   overflow: hidden;
   width: 100%;
+}
+
+html.dark .subject-review__plan-card {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 36px -4px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 /* 顶部左右两端视觉对称与充裕留白 */
@@ -1416,6 +1443,11 @@ defineExpose({
   flex-shrink: 0;
 }
 
+html.dark .subject-review__plan-badge {
+  background: rgba(163, 177, 155, 0.15);
+  color: #A3B19B;
+}
+
 /* 番茄钟式大圆环掌握度仪表：放大尺寸与字号 */
 .subject-review__pomodoro-ring {
   position: relative;
@@ -1436,6 +1468,10 @@ defineExpose({
 .subject-review__pomodoro-track {
   stroke: color-mix(in srgb, var(--color-zen-sage) 12%, var(--border-subtle));
   stroke-width: 5.6;
+}
+
+html.dark .subject-review__pomodoro-track {
+  stroke: rgba(255, 255, 255, 0.08);
 }
 
 .subject-review__pomodoro-progress {
@@ -1492,6 +1528,7 @@ defineExpose({
 
 html.dark .subject-review__pomodoro-pill {
   background: var(--color-bg-secondary);
+
   border-color: rgba(163, 177, 155, 0.2);
 }
 
@@ -1644,7 +1681,13 @@ html.dark .subject-review__progress-track {
 html.dark .subject-review__panel {
   background: var(--color-bg-secondary, #252422);
   border-color: rgba(255, 255, 255, 0.09);
+
   box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.35);
+}
+
+html.dark .subject-review__panel:hover:not(.subject-review__panel--disabled) {
+  border-color: rgba(163, 177, 155, 0.45);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(163, 177, 155, 0.12);
 }
 
 .subject-review__panel--disabled {
@@ -2013,6 +2056,11 @@ html.dark .subject-review__action-btn {
   letter-spacing: 0.02em;
 }
 
+html.dark .subject-review__round-progress-tag {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 /* 卡片容器：高度自然收紧，宽度加宽饱满，整体比例和谐占据七至八成 */
 .subject-review__card {
   display: flex;
@@ -2028,6 +2076,12 @@ html.dark .subject-review__action-btn {
   min-height: clamp(520px, 64vh, 720px);
   width: 100%;
   transition: all var(--transition-normal);
+}
+
+html.dark .subject-review__card {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 14px 36px -4px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.3);
 }
 
 /* 卡片头部：放大上层文字与展开留白 */
@@ -2628,6 +2682,11 @@ html.dark .subject-review__milestone-icon {
   background: var(--color-bg-card);
   padding: 20px 24px;
   box-shadow: var(--shadow-sm);
+}
+
+html.dark .subject-review__round-summary {
+  background: var(--color-bg-secondary, #252422);
+  border-color: rgba(255, 255, 255, 0.08);
 }
 
 .subject-review__summary-lead {

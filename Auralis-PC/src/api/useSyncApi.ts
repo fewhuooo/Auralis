@@ -22,15 +22,34 @@ function assertMutationValue<T extends string>(value: string, values: Set<string
 }
 
 function toMutationRequest(mutation: LocalMutation): SyncMutationRequest {
-  const payload = { ...mutation.payload }
+  let payload = { ...mutation.payload }
+  let wireMutationType = mutation.mutationType
   if (mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP') {
-    delete payload._localAffectedTaskIds
+    const fields = mutation.mutationType === 'SCHEDULE_INSERTION'
+      ? ['taskId', 'baseVersion', 'scheduledAt', 'windowStartAt', 'windowLastStartAt', 'targetTaskId']
+      : ['sourceTaskId', 'sourceBaseVersion', 'targetTaskId', 'targetBaseVersion']
+    payload = Object.fromEntries(fields.filter((field) => Object.prototype.hasOwnProperty.call(payload, field))
+      .map((field) => [field, payload[field]]))
+  } else if (mutation.mutationType === 'SCHEDULE_UNSCHEDULE') {
+    wireMutationType = 'UPDATE'
+    const allowedFields = [
+      'title', 'description', 'status', 'scheduledAt', 'dueAt',
+      'durationMinutes', 'sortKey', 'subjectId', 'baseVersion',
+    ]
+    const filtered: Record<string, unknown> = {}
+    for (const key of allowedFields) {
+      if (Object.prototype.hasOwnProperty.call(payload, key)) {
+        filtered[key] = payload[key]
+      }
+    }
+    filtered.scheduledAt = null
+    payload = filtered
   }
   return {
     clientMutationId: mutation.clientMutationId,
     resourceType: assertMutationValue(mutation.resourceType, RESOURCE_TYPES, 'resourceType'),
     resourceId: mutation.resourceId,
-    mutationType: assertMutationValue(mutation.mutationType, PUSH_MUTATION_TYPES, 'mutationType') as SyncMutationRequest['mutationType'],
+    mutationType: assertMutationValue(wireMutationType, PUSH_MUTATION_TYPES, 'mutationType') as SyncMutationRequest['mutationType'],
     baseVersion: mutation.baseVersion,
     payload,
   }

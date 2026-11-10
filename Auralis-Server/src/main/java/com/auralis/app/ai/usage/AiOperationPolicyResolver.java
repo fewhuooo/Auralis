@@ -17,12 +17,12 @@ public final class AiOperationPolicyResolver {
     public AiOperationPolicyResolver(AuralisProperties.Limits limits, ChatAgentProperties chatAgent) {
         EnumMap<AiOperationKind, AiOperationPolicy> matrix = new EnumMap<>(AiOperationKind.class);
         add(matrix, AiOperationKind.CHAT_AGENT_TURN, AiFeature.CHAT,
-                chatAgent.maxModelAndEmbeddingCalls(), limits.chatTaskTokens(),
+                0, limits.chatTaskTokens(),
                 Map.of(AiStage.RETRIEVAL_EMBEDDING, rule(method(AiInvocationMethod.EMBED), roles(),
-                                chatAgent.maxModelAndEmbeddingCalls(), chatAgent.maxModelAndEmbeddingCalls()),
+                                boundedCalls(chatAgent.maxEmbeddingCalls()), boundedCalls(chatAgent.maxEmbeddingCalls())),
                         AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.STREAM, AiInvocationMethod.COMPLETE),
-                                roles(), chatAgent.maxModelAndEmbeddingCalls(), chatAgent.maxModelAndEmbeddingCalls())),
-                chatAgent.maxModelAndEmbeddingCalls());
+                                roles(), boundedCalls(chatAgent.maxModelCalls()), boundedCalls(chatAgent.maxModelCalls()))),
+                0);
         add(matrix, AiOperationKind.TEXT_GENERATION, AiFeature.CHAT, 1, limits.chatTaskTokens(),
                 Map.of(AiStage.CHAT_COMPLETION, rule(method(AiInvocationMethod.COMPLETE),
                         roles(), 1, 1)), 1);
@@ -80,6 +80,7 @@ public final class AiOperationPolicyResolver {
                                                      Integer allCalls, Integer platformCalls) {
         return new AiOperationPolicy.StageRule(methods, roles, allCalls, platformCalls);
     }
+    private static Integer boundedCalls(int calls) { return calls == 0 ? null : calls; }
     private static Set<AiInvocationMethod> method(AiInvocationMethod... methods) { return Set.of(methods); }
     private static Set<AiOutputRole> roles() { return Set.of(AiOutputRole.GENERAL); }
 }

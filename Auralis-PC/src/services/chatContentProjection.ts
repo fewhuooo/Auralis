@@ -28,6 +28,20 @@ function projectOptionalStrings(source: Record<string, unknown>, keys: readonly 
   return result
 }
 
+function projectEntries(value: unknown): { label: string; text: string }[] {
+  if (!Array.isArray(value)) return []
+  const entries: { label: string; text: string }[] = []
+  for (const candidate of value) {
+    if (!isRecord(candidate)) continue
+    if (!nonEmptyString(candidate.label) || !nonEmptyString(candidate.text)) continue
+    entries.push({
+      label: candidate.label,
+      text: candidate.text,
+    })
+  }
+  return entries
+}
+
 function projectMeta(component: ChatComponent, value: unknown): Record<string, unknown> {
   if (!isRecord(value)) return {}
   switch (component) {
@@ -47,13 +61,25 @@ function projectMeta(component: ChatComponent, value: unknown): Record<string, u
     }
     case 'quiz': {
       const meta = projectOptionalStrings(value, ['question'])
+      if (typeof value.stem === 'string' && !meta.question) {
+        meta.question = value.stem
+      } else if (typeof value.title === 'string' && !meta.question) {
+        meta.question = value.title
+      }
       if (value.questionType === 'single' || value.questionType === 'multiple') {
         meta.questionType = value.questionType
       }
       return meta
     }
-    case 'question':
-      return projectOptionalStrings(value, ['question', 'placeholder'])
+    case 'question': {
+      const meta = projectOptionalStrings(value, ['question', 'placeholder'])
+      if (typeof value.stem === 'string' && !meta.question) {
+        meta.question = value.stem
+      } else if (typeof value.title === 'string' && !meta.question) {
+        meta.question = value.title
+      }
+      return meta
+    }
   }
 }
 
@@ -63,12 +89,19 @@ function projectItems(component: ChatComponent, value: unknown): Record<string, 
   for (const candidate of value) {
     if (!isRecord(candidate)) continue
     switch (component) {
-      case 'steps':
-      case 'compare': {
+      case 'steps': {
         if (!nonEmptyString(candidate.title)) continue
         result.push({
           title: candidate.title,
           ...projectOptionalStrings(candidate, ['description']),
+        })
+        break
+      }
+      case 'compare': {
+        if (!nonEmptyString(candidate.title)) continue
+        result.push({
+          title: candidate.title,
+          entries: projectEntries(candidate.entries),
         })
         break
       }
@@ -88,11 +121,14 @@ function projectItems(component: ChatComponent, value: unknown): Record<string, 
         result.push({ label: candidate.label, value: candidate.value })
         break
       }
-      case 'quiz':
-        if (nonEmptyString(candidate.key) && nonEmptyString(candidate.text)) {
-          result.push({ key: candidate.key, text: candidate.text })
+      case 'quiz': {
+        const key = candidate.key ?? candidate.label
+        const text = candidate.text ?? candidate.content ?? candidate.title
+        if (nonEmptyString(key) && nonEmptyString(text)) {
+          result.push({ key, text })
         }
         break
+      }
       case 'question':
         break
     }

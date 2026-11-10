@@ -66,6 +66,10 @@ test('document processing exposes a compact status dot and profile progress cent
   assert.match(center, /v-else-if="source\.ingestionStatus === 'FAILED'"/)
   assert.match(center, /retrySource\(source\.id\)/)
   assert.doesNotMatch(center, /blockOrdinal > 0|已处理 .*内容块/)
+  assert.match(center, /!store\.jobs\.some\(\(job\) => job\.sourceId === source\.id\)/,
+    'serverProcessingSources must exclude sources with any existing job to prevent completion flash')
+  assert.match(center, /min-width: 0/)
+  assert.match(center, /html\.dark/)
   assert.match(center, /准备中|正在处理/)
   const processingStore = await source('src/store/useDocumentProcessingStore.ts')
   assert.match(processingStore, /attachScheduler\(/)

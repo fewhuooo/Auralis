@@ -109,7 +109,9 @@ export async function applyPullPage(
   for (const mutation of unresolved) {
     protectedResources.add(resourceKey(mutation.resourceType, mutation.resourceId))
     if (mutation.resourceType === 'TASK'
-      && (mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP')) {
+      && (mutation.mutationType === 'SCHEDULE_INSERTION'
+        || mutation.mutationType === 'SCHEDULE_SWAP'
+        || mutation.mutationType === 'SCHEDULE_UNSCHEDULE')) {
       const taskIds = mutation.payload._localAffectedTaskIds
       if (Array.isArray(taskIds)) {
         for (const taskId of taskIds) {
@@ -174,9 +176,11 @@ async function settlePushResult(
   return result.resourceType
 }
 
-function isScheduleMutation(mutation: LocalMutation | undefined): mutation is LocalMutation & { mutationType: 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP' } {
+function isScheduleMutation(mutation: LocalMutation | undefined): mutation is LocalMutation & { mutationType: 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP' | 'SCHEDULE_UNSCHEDULE' } {
   return mutation?.resourceType === 'TASK'
-    && (mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP')
+    && (mutation.mutationType === 'SCHEDULE_INSERTION'
+      || mutation.mutationType === 'SCHEDULE_SWAP'
+      || mutation.mutationType === 'SCHEDULE_UNSCHEDULE')
 }
 
 function scheduleResultItems(value: unknown): Array<{
@@ -215,10 +219,14 @@ async function settleSchedulePushResult(
   scope?: SyncRequestScopeTicket,
 ): Promise<{ changed: boolean; refreshRequired: boolean; scheduleApplied: number; scheduleError?: { clientMutationId: string; code: string } } | null> {
   if (!result.clientMutationId || !result.decision || result.decision === 'PROCESSING') return null
-  if (result.resourceType !== 'TASK' || result.mutationType !== mutation.mutationType) {
+  const expectedMutationType = mutation.mutationType === 'SCHEDULE_UNSCHEDULE' ? 'UPDATE' : mutation.mutationType
+  if (result.resourceType !== 'TASK' || result.mutationType !== expectedMutationType) {
     throw new Error('SYNC_SCHEDULE_RESULT_INVALID')
   }
-  const items = scheduleResultItems(result.current)
+  const currentItems = mutation.mutationType === 'SCHEDULE_UNSCHEDULE' && isRecord(result.current) && !Array.isArray(result.current)
+    ? [result.current]
+    : result.current
+  const items = scheduleResultItems(currentItems)
   if (!items) throw new Error('SYNC_SCHEDULE_RESULT_INVALID')
 
   const applied = result.decision === 'APPLIED'
@@ -228,10 +236,41 @@ async function settleSchedulePushResult(
     : []
   const responseIds = new Set(items.map((item) => item.resourceId))
   const responseMissesAffected = affectedTaskIds.some((id) => !responseIds.has(id))
+  const queued = (await repository.listUnresolved('TASK')).filter((item) =>
+    isScheduleMutation(item) && item.clientMutationId !== mutation.clientMutationId)
+  checkCurrent()
+  const expected = mutation.payload._localExpectedTasks
+  const expectedTasks = Array.isArray(expected) ? expected.filter(isRecord) : []
+  const expectedById = new Map(expectedTasks.map((item) => [item.id, item.value]))
+  const predictionChanged = expectedTasks.length > 0 && (items.some((item) => {
+    const before = expectedById.get(item.resourceId)
+    if (!isRecord(before) || !isRecord(item.value)) return true
+    const value = item.value
+    return ['scheduledAt', 'dueAt', 'status', 'durationMinutes'].some((key) => {
+      const normalize = (field: unknown) => {
+        if (key === 'scheduledAt' || key === 'dueAt') {
+          if (typeof field !== 'string') return null
+          const timestamp = Date.parse(field)
+          return Number.isFinite(timestamp) ? timestamp : field
+        }
+        return field ?? (key === 'durationMinutes' ? 30 : null)
+      }
+      return !Object.is(normalize(before[key]), normalize(value[key]))
+    })
+  }) || responseMissesAffected)
+  // Keep the decision even when the queue currently looks empty: a local drop
+  // can append while this response/snapshot is awaited. The repository checks
+  // the complete affected set again inside its commit transaction.
+  let cancelQueued = !applied || predictionChanged
+  const recoveryIds = new Set([...affectedTaskIds,
+    ...(cancelQueued ? queued.flatMap((item) => {
+      const ids = item.payload._localAffectedTaskIds
+      return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+    }) : []), ...items.map((item) => item.resourceId)])
   let snapshot: SyncSnapshotResponse | null = null
   let resolutionItems = items
 
-  if (responseMissesAffected) {
+  if (responseMissesAffected || cancelQueued && queued.length > 0) {
     // The mutation must remain unresolved until a complete authoritative Task
     // set is available. Otherwise a transient snapshot failure would make the
     // partial rejection terminal while leaving other optimistic rows in place.
@@ -239,10 +278,10 @@ async function settleSchedulePushResult(
     checkCurrent()
     const snapshotTasks = scheduleResultItems(snapshot.tasks)
     const snapshotTasksById = new Map((snapshotTasks ?? []).map((item) => [item.resourceId, item]))
-    if (!snapshotTasks || affectedTaskIds.some((id) => !snapshotTasksById.has(id))) {
+    if (!snapshotTasks || [...recoveryIds].some((id) => !snapshotTasksById.has(id))) {
       throw new Error('SYNC_SCHEDULE_SNAPSHOT_INCOMPLETE')
     }
-    resolutionItems = affectedTaskIds.map((id) => {
+    resolutionItems = [...recoveryIds].map((id) => {
       const item = snapshotTasksById.get(id)
       if (!item) throw new Error('SYNC_SCHEDULE_SNAPSHOT_INCOMPLETE')
       return item
@@ -251,15 +290,45 @@ async function settleSchedulePushResult(
     checkCurrent()
   }
 
-  const accepted = await repository.resolveScheduleMutation({
-    clientMutationId: mutation.clientMutationId,
-    status: applied ? 'applied' : 'rejected',
-    error: applied ? undefined : result.code ?? 'MUTATION_REJECTED',
-    items: resolutionItems,
-  })
+  let accepted: boolean
+  let recoveredUnsafe = false
+  try {
+    accepted = await repository.resolveScheduleMutation({
+      clientMutationId: mutation.clientMutationId,
+      status: applied ? 'applied' : 'rejected',
+      error: applied ? undefined : result.code ?? 'MUTATION_REJECTED',
+      items: resolutionItems,
+      cancelQueued,
+    })
+  } catch (error) {
+    if (!(error instanceof Error) || error.message !== 'SCHEDULE_REFRESH_REQUIRED') throw error
+    // A newer tombstone or ordinary local write can make the receipt unsafe.
+    // Resolve it in this same cycle after obtaining recovery data, so later
+    // CRUD receipts are not starved by replaying the immutable head forever.
+    const pending = await repository.listUnresolved('TASK')
+    for (const next of pending.filter(isScheduleMutation)) {
+      const ids = next.payload._localAffectedTaskIds
+      if (Array.isArray(ids)) for (const id of ids) if (typeof id === 'string') recoveryIds.add(id)
+    }
+    snapshot = await api.getSnapshot(scope)
+    checkCurrent()
+    const snapshotTasks = scheduleResultItems(snapshot.tasks)
+    const byId = new Map((snapshotTasks ?? []).map((item) => [item.resourceId, item]))
+    if (!snapshotTasks || [...recoveryIds].some((id) => !byId.has(id))) throw new Error('SYNC_SCHEDULE_SNAPSHOT_INCOMPLETE')
+    resolutionItems = [...recoveryIds].map((id) => byId.get(id)!)
+    await repository.replaceSnapshotPreservingPending(snapshotItems(snapshot))
+    checkCurrent()
+    cancelQueued = true
+    accepted = await repository.resolveScheduleMutation({
+      clientMutationId: mutation.clientMutationId, status: applied ? 'applied' : 'rejected',
+      error: applied ? 'SCHEDULE_REFRESH_REQUIRED' : result.code ?? 'MUTATION_REJECTED',
+      items: resolutionItems, cancelQueued: true, recoverySnapshot: true,
+    })
+    recoveredUnsafe = true
+  }
   checkCurrent()
 
-  const refreshRequired = !accepted || responseMissesAffected
+  const refreshRequired = !accepted || responseMissesAffected || cancelQueued && queued.length > 0 || recoveredUnsafe
   if (refreshRequired) {
     if (!snapshot) {
       snapshot = await api.getSnapshot(scope)
@@ -278,8 +347,8 @@ async function settleSchedulePushResult(
     changed: true,
     refreshRequired,
     scheduleApplied: applied ? 1 : 0,
-    ...(!applied ? {
-      scheduleError: { clientMutationId: mutation.clientMutationId, code: result.code ?? 'MUTATION_REJECTED' },
+    ...(!applied || predictionChanged || recoveredUnsafe ? {
+      scheduleError: { clientMutationId: mutation.clientMutationId, code: applied ? 'SCHEDULE_REFRESH_REQUIRED' : result.code ?? 'MUTATION_REJECTED' },
     } : {}),
   }
 }

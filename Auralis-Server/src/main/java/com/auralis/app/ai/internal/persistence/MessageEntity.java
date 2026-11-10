@@ -133,6 +133,12 @@ public class MessageEntity {
         this.content = content;
     }
 
+    public void replacePublicProjection(String content, AiMessageStatus status, String errorCode) {
+        this.content = content;
+        this.status = status;
+        this.errorCode = errorCode;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();

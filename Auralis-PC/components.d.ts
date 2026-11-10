@@ -18,6 +18,7 @@ declare module 'vue' {
     ChatActivityCard: typeof import('./src/components/chat/ChatActivityCard.vue')['default']
     ChatContentBlock: typeof import('./src/components/chat/ChatContentBlock.vue')['default']
     ChatContentRenderer: typeof import('./src/components/chat/ChatContentRenderer.vue')['default']
+    ChatProcessArea: typeof import('./src/components/chat/ChatProcessArea.vue')['default']
     ConfirmDialog: typeof import('./src/components/ConfirmDialog.vue')['default']
     DocumentNotReadyDialog: typeof import('./src/components/documentProcessing/DocumentNotReadyDialog.vue')['default']
     DocumentProcessingCenter: typeof import('./src/components/documentProcessing/DocumentProcessingCenter.vue')['default']

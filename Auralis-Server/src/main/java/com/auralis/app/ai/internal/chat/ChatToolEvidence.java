@@ -13,7 +13,15 @@ public record ChatToolEvidence(
         String argumentsJson,
         String resultJson,
         String status,
-        List<SourceRevision> sourceRevisions) {
+        List<SourceRevision> sourceRevisions,
+        String reasoningContent) {
+
+    public ChatToolEvidence(String iterationId, int iterationOrder, int callOrder, String toolCallId,
+                            String toolName, String argumentsJson, String resultJson, String status,
+                            List<SourceRevision> sourceRevisions) {
+        this(iterationId, iterationOrder, callOrder, toolCallId, toolName, argumentsJson, resultJson,
+                status, sourceRevisions, null);
+    }
 
     public ChatToolEvidence {
         if (iterationId == null || iterationId.isBlank() || iterationOrder < 0 || callOrder < 0

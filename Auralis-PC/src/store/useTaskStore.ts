@@ -7,7 +7,7 @@ import {
 } from '@/api/useTaskApi'
 import { useAuthStore } from '@/store/useAuthStore'
 import { getLocalRepository } from '@/services/localDb'
-import { LocalConflictError, type LocalRepository } from '@/services/localRepository'
+import { LocalConflictError, taskScheduleState, type LocalRepository } from '@/services/localRepository'
 import { isCanonicalTaskStatus, mapTaskView, type TaskModel, type TaskStatus } from '@/services/domainMappers'
 import { uuidv7 } from '@/utils/uuid'
 import { isOnline, useSyncStore } from '@/store/useSyncStore'
@@ -82,6 +82,7 @@ function statusFromLegacy(value: TaskInput['status'], hasSchedule: boolean): Tas
   if (value === 'TODO' || value === 'IN_PROGRESS' || value === 'DONE' || value === 'CANCELLED') return value
   if (value === 'completed') return 'DONE'
   if (value === 'learning') return 'IN_PROGRESS'
+  if (value === 'cancelled') return 'CANCELLED'
   if (value === 'scheduled' || hasSchedule) return 'TODO'
   return 'TODO'
 }
@@ -582,7 +583,17 @@ export const useTaskStore = defineStore('task', () => {
       repo.listUnresolved(),
     ])
     const targetDate = localDateKey(scheduledAt)
-    const pendingIds = new Set(pendingMutations.map((mutation) => mutation.resourceId))
+    const scheduleMutations = pendingMutations.filter((mutation) =>
+      mutation.mutationType === 'SCHEDULE_INSERTION' || mutation.mutationType === 'SCHEDULE_SWAP' || mutation.mutationType === 'SCHEDULE_UNSCHEDULE')
+    const scheduleIds = new Set(scheduleMutations.flatMap((mutation) => {
+      const ids = mutation.payload._localAffectedTaskIds
+      return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []
+    }))
+    const pendingIds = new Set(pendingMutations.filter((mutation) =>
+      mutation.mutationType !== 'SCHEDULE_INSERTION' && mutation.mutationType !== 'SCHEDULE_SWAP' && mutation.mutationType !== 'SCHEDULE_UNSCHEDULE')
+      .map((mutation) => mutation.resourceId))
+    const needsSync = (row: { id: string; syncStatus: string }) =>
+      pendingIds.has(row.id) || row.syncStatus !== 'synced' && !scheduleIds.has(row.id)
     const sourceRow = rows.find((row) => row.id === sourceTaskId)
     const affected = rows.flatMap((row) => {
       const model = dtoFromLocal(row.value)
@@ -590,8 +601,8 @@ export const useTaskStore = defineStore('task', () => {
       return [{ row, model }]
     })
     if (pendingIds.has(sourceTaskId)
-      || (sourceRow && sourceRow.syncStatus !== 'synced')
-      || affected.some(({ row, model }) => row.syncStatus !== 'synced' || pendingIds.has(model.id))) {
+      || (sourceRow && needsSync(sourceRow))
+      || affected.some(({ row }) => needsSync(row))) {
       throw new Error('当天排期包含尚未同步的任务，请同步后再调整')
     }
   }
@@ -602,11 +613,19 @@ export const useTaskStore = defineStore('task', () => {
     return model
   }
 
+  function currentScheduleState(): string {
+    return taskScheduleState(allTasks.value.map((task) => ({
+      id: task.id, version: task.version, deletedAt: task.deletedAt ?? null,
+      value: taskDto(toTaskModel({ ...task, startTime: undefined })),
+    })))
+  }
+
   async function commitOfflineSchedule(
     models: TaskModel[],
-    mutationType: 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP',
+    mutationType: 'SCHEDULE_INSERTION' | 'SCHEDULE_SWAP' | 'SCHEDULE_UNSCHEDULE',
     sourceTaskId: string,
     payload: Record<string, unknown>,
+    expectedScheduleState: string,
   ): Promise<ScheduleInsertionResult> {
     if (models.length === 0) return 'saved'
     const source = models.find((model) => model.id === sourceTaskId)
@@ -614,7 +633,9 @@ export const useTaskStore = defineStore('task', () => {
     const clientMutationId = uuidv7()
     const affectedTaskIds = models.map((model) => model.id)
     const repo = await repository()
-    await repo.commitScheduleMutation({
+    try {
+      await repo.commitScheduleMutation({
+      expectedScheduleState,
       items: models.map((model) => ({
         resourceType: 'TASK',
         resourceId: model.id,
@@ -631,7 +652,11 @@ export const useTaskStore = defineStore('task', () => {
         baseVersion: source.version,
         payload: { ...payload, _localAffectedTaskIds: affectedTaskIds },
       }),
-    })
+      })
+    } catch (error) {
+      if (error instanceof LocalConflictError) await loadLocalTasks()
+      throw error
+    }
     await loadLocalTasks()
     const syncStore = useSyncStore()
     syncStore.requestBackgroundSync('write')
@@ -639,6 +664,7 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function insertTaskAtSlot(taskId: string, slotTime: string, day: string, targetTaskId?: string): Promise<ScheduleInsertionResult | void> {
+    const expectedScheduleState = currentScheduleState()
     const task = findTask(taskId)
     if (!task) throw new Error('源任务已变化，请刷新后重试')
     if (!timeSlots.value.some((slot) => slot.time === slotTime)) {
@@ -753,7 +779,7 @@ export const useTaskStore = defineStore('task', () => {
       windowStartAt: windowStartAtStr,
       windowLastStartAt: windowLastStartAtStr,
       ...(targetTaskId ? { targetTaskId } : {}),
-    })
+    }, expectedScheduleState)
   }
 
   async function updateTaskStatus(taskId: string, newStatus: TaskPresentationStatus): Promise<void> {
@@ -763,7 +789,7 @@ export const useTaskStore = defineStore('task', () => {
       if (newStatus !== 'completed' && isScheduledCompletionLocked(current)) {
         throw new Error('已结束的排期任务不能取消完成状态')
       }
-      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt })
+      const model = toTaskModel({ ...current, status: newStatus, scheduledAt: current.scheduledAt, startTime: undefined })
       model.version = current.version
       await updateTaskModel(model)
     })
@@ -852,6 +878,7 @@ export const useTaskStore = defineStore('task', () => {
       const from = findTask(sourceTaskId)
       const to = findTask(targetTaskId)
       if (!from || !to) throw new Error('交换任务已变化，请刷新后重试')
+      const expectedScheduleState = currentScheduleState()
       if (isCompletedScheduledTask(from) || isCompletedScheduledTask(to)) throw new Error('已完成的排期任务已固定')
       if (!from.scheduledAt || !to.scheduledAt) throw new Error('只有两个已排期任务可以交换')
       const day = dayCodeForScheduledAt(to.scheduledAt)
@@ -906,7 +933,7 @@ export const useTaskStore = defineStore('task', () => {
         sourceBaseVersion: from.version,
         targetTaskId: to.id,
         targetBaseVersion: to.version,
-      })
+      }, expectedScheduleState)
     })
   }
 
@@ -915,9 +942,15 @@ export const useTaskStore = defineStore('task', () => {
       const task = findTask(idOrSlotTime) ?? timeSlots.value.find((slot) => slot.time === idOrSlotTime)?.task
       if (!task) return
       if (isCompletedScheduledTask(task)) throw new Error('已完成的排期任务已固定')
+      const expectedScheduleState = currentScheduleState()
       const model = toTaskModel({ ...task, status: task.status, scheduledAt: undefined, startTime: undefined })
       model.version = task.version
-      await updateTaskModel(model)
+      const payload = {
+        ...updatePayload(model),
+        baseVersion: task.version,
+        scheduledAt: null,
+      }
+      await commitOfflineSchedule([model], 'SCHEDULE_UNSCHEDULE', task.id, payload, expectedScheduleState)
     })
   }
 

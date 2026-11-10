@@ -69,6 +69,7 @@ public class ConversationService {
         ConversationEntity entity = new ConversationEntity(UUID.randomUUID(), userId, title, clientRequestId,
                 purpose, command.sourceId());
         entity.enableChatProtocolOne();
+        entity.markChatScopeUnbound();
         return toView(conversationRepository.saveAndFlush(entity), List.of());
     }
 
@@ -281,7 +282,16 @@ public class ConversationService {
         return new ConversationView(entity.getId(), entity.getTitle(), messages,
                 entity.getCreatedAt(), entity.getUpdatedAt(), entity.getDeletedAt(), entity.getVersion(),
                 entity.getPurpose(), entity.getSourceId(), entity.getChatProtocolVersion(),
-                Short.valueOf((short) 1).equals(entity.getChatProtocolVersion()), activeRun(entity));
+                Short.valueOf((short) 1).equals(entity.getChatProtocolVersion()), activeRun(entity),
+                entity.getChatScopeState(), chatScope(entity));
+    }
+
+    private ChatConversationScope chatScope(ConversationEntity entity) {
+        if (entity.getChatScopeState() != ChatConversationScopeState.BOUND || entity.getChatScopeJson() == null) return null;
+        try { return objectMapper.readValue(entity.getChatScopeJson(), ChatConversationScope.class); }
+        catch (RuntimeException exception) {
+            throw new DomainException("CHAT_CONTEXT_UNAVAILABLE", "Chat conversation scope is unavailable");
+        }
     }
 
     private ActiveChatRunView activeRun(ConversationEntity conversation) {

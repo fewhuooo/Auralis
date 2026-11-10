@@ -1,6 +1,0 @@
-# 排除与 OpenClaw 相关的文件和文件夹
-openclaw/
-OpenClaw-Exe/
-*openclaw*
-**/openclaw/**
-**/*openclaw*

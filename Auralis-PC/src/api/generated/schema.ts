@@ -484,6 +484,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/overview-results/subjects/statuses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["getSubjectStatuses"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/knowledge-blocks": {
         parameters: {
             query?: never;
@@ -654,6 +670,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["createUploadIntent_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/text-generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["generateText"];
         delete?: never;
         options?: never;
         head?: never;
@@ -854,6 +886,54 @@ export interface paths {
         get: operations["conversations"];
         put?: never;
         post: operations["createConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/conversations/{conversationId}/runs/{runId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancel_1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/conversations/{conversationId}/runs/{runId}/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/conversations/{conversationId}/runs/{runId}/attempts/{attemptId}/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["recoverUnknown"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1175,6 +1255,22 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["deleteConversation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/conversations/{conversationId}/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["status"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1553,6 +1649,7 @@ export interface components {
             displayName?: string;
             /** Format: int64 */
             version?: number;
+            hasAvatar: boolean;
         };
         AiSettingsCommand: {
             /** @enum {string} */
@@ -1630,26 +1727,26 @@ export interface components {
             null?: boolean;
             float?: boolean;
             container?: boolean;
+            missingNode?: boolean;
             object?: boolean;
+            integralNumber?: boolean;
+            bigInteger?: boolean;
+            /** @enum {string} */
+            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
+            bigDecimal?: boolean;
+            valueNode?: boolean;
             floatingPointNumber?: boolean;
-            string?: boolean;
             number?: boolean;
+            boolean?: boolean;
+            binary?: boolean;
+            int?: boolean;
             pojo?: boolean;
-            long?: boolean;
+            string?: boolean;
             double?: boolean;
             /** @deprecated */
             textual?: boolean;
             short?: boolean;
-            int?: boolean;
-            binary?: boolean;
-            boolean?: boolean;
-            bigDecimal?: boolean;
-            valueNode?: boolean;
-            integralNumber?: boolean;
-            /** @enum {string} */
-            nodeType?: "ARRAY" | "BINARY" | "BOOLEAN" | "MISSING" | "NULL" | "NUMBER" | "OBJECT" | "POJO" | "STRING";
-            bigInteger?: boolean;
-            missingNode?: boolean;
+            long?: boolean;
             embeddedValue?: boolean;
         };
         MutationRequest: {
@@ -1920,6 +2017,28 @@ export interface components {
             expiresAt?: string;
             websocketUrl?: string;
         };
+        /** @description Subject IDs whose current Overview result status should be checked */
+        OverviewSubjectStatusesRequest: {
+            subjectIds: string[];
+        };
+        Item: {
+            /** Format: uuid */
+            subjectId: string;
+            /** @enum {string} */
+            status: "AVAILABLE" | "MISSING" | "UNAVAILABLE";
+            /** Format: int64 */
+            version?: number | null;
+            /** Format: int64 */
+            outlineVersion?: number | null;
+            /** Format: int64 */
+            summaryVersion?: number | null;
+            /** Format: date-time */
+            updatedAt?: string | null;
+        };
+        /** @description Current Overview metadata for requested active owned subjects */
+        OverviewSubjectStatusesResponse: {
+            items: components["schemas"]["Item"][];
+        };
         FocusSessionCommand: {
             /** Format: uuid */
             clientSessionId: string;
@@ -2030,6 +2149,15 @@ export interface components {
             expiresAt?: string;
             /** @enum {string} */
             uploadStatus?: "UPLOADING" | "READY" | "FAILED" | "ORPHANED";
+        };
+        TextGenerationCommand: {
+            /** @enum {string} */
+            operation: "summary" | "extract" | "format" | "transcript";
+            input: string;
+            requestId?: string;
+        };
+        TextGenerationView: {
+            text?: string;
         };
         SuggestionCommand: {
             /** @enum {string} */
@@ -2180,16 +2308,36 @@ export interface components {
             updatedAt?: string;
         };
         AiMessageCommand: {
+            /**
+             * Format: int32
+             * @description Chat protocol version; only 1 is supported
+             * @example 1
+             */
+            protocolVersion: number;
+            /**
+             * @description turn or activity_submission
+             * @enum {string}
+             */
+            action: "turn" | "activity_submission";
             /** Format: uuid */
-            conversationId?: string;
-            content: string;
-            /** @enum {string} */
-            provider?: "DEEPSEEK" | "OPENAI_COMPATIBLE" | "SILICONFLOW";
-            /** Format: int32 */
-            topK?: number;
-            clientRequestId?: string;
+            conversationId: string;
+            requestId: string;
+            content?: string;
             readingContext?: components["schemas"]["ReadingContext"];
             selectionText?: string;
+            /** Format: uuid */
+            activityId?: string;
+            /** Format: int32 */
+            questionVersion?: number;
+            /** Format: uuid */
+            submissionId?: string;
+            /**
+             * @description For open questions, a raw nonblank string. For single or multi choice, a raw array of option keys.
+             * @example [
+             *       "A"
+             *     ]
+             */
+            answer?: components["schemas"]["JsonNode"];
         };
         ReadingContext: {
             /** Format: uuid */
@@ -2201,7 +2349,6 @@ export interface components {
             sourceIds?: string[];
             selectionText?: string;
         };
-        StreamingResponseBody: unknown;
         ConversationCommand: {
             title?: string;
             /** Format: int64 */
@@ -2211,6 +2358,35 @@ export interface components {
             purpose?: "GENERAL" | "READING_SESSION";
             /** Format: uuid */
             sourceId?: string;
+        };
+        ActiveChatRunView: {
+            /** Format: uuid */
+            runId?: string;
+            /** Format: uuid */
+            userMessageId?: string;
+            /** Format: uuid */
+            currentAttemptId?: string;
+            /** Format: uuid */
+            currentReplyMessageId?: string;
+            status?: string;
+            executionActive?: boolean;
+            publicSnapshot?: {
+                [key: string]: unknown;
+            }[];
+            toolTrace?: {
+                [key: string]: unknown;
+            }[];
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        ChatConversationScope: {
+            /** Format: uuid */
+            currentSourceId: string | null;
+            /** Format: uuid */
+            subjectId: string | null;
+            /** @enum {string} */
+            retrievalMode: "AUTO" | "SELECTED_SOURCES" | "SUBJECT";
+            sourceIds: string[];
         };
         ConversationView: {
             /** Format: uuid */
@@ -2229,6 +2405,13 @@ export interface components {
             purpose?: "GENERAL" | "READING_SESSION";
             /** Format: uuid */
             sourceId?: string;
+            /** Format: int32 */
+            chatProtocolVersion?: number;
+            chatSupported?: boolean;
+            activeRun?: components["schemas"]["ActiveChatRunView"];
+            /** @enum {string} */
+            chatScopeState: "LEGACY" | "UNBOUND" | "BOUND";
+            chatScope: components["schemas"]["ChatConversationScope"] | null;
         };
         MessageView: {
             /** Format: uuid */
@@ -2236,7 +2419,7 @@ export interface components {
             /** Format: int64 */
             messageSequence?: number;
             /** @enum {string} */
-            role?: "USER" | "ASSISTANT" | "SYSTEM";
+            role?: "USER" | "ASSISTANT" | "SYSTEM" | "TOOL";
             /** @enum {string} */
             status?: "COMPLETED" | "INTERRUPTED" | "FAILED";
             content?: string;
@@ -2244,6 +2427,64 @@ export interface components {
             errorCode?: string;
             /** Format: date-time */
             createdAt?: string;
+            parts?: {
+                [key: string]: unknown;
+            }[];
+            /** Format: int32 */
+            chatProtocolVersion?: number;
+        };
+        Attempt: {
+            /** Format: uuid */
+            attemptId?: string;
+            /** Format: int32 */
+            attemptNo?: number;
+            requestId?: string;
+            status?: string;
+            /** Format: uuid */
+            replyMessageId?: string;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            startedAt?: string;
+            /** Format: date-time */
+            endedAt?: string;
+            safeErrorCode?: string;
+        };
+        ChatRunStatusView: {
+            /** Format: int32 */
+            protocolVersion?: number;
+            /** Format: uuid */
+            conversationId?: string;
+            /** Format: uuid */
+            runId?: string;
+            requestId?: string;
+            /** Format: uuid */
+            userMessageId?: string;
+            /** Format: uuid */
+            currentAttemptId?: string;
+            /** Format: uuid */
+            currentReplyMessageId?: string;
+            status?: string;
+            /** Format: int64 */
+            fenceVersion?: number;
+            executionActive?: boolean;
+            accountingSummary?: {
+                [key: string]: number;
+            };
+            publicSnapshot?: {
+                [key: string]: unknown;
+            }[];
+            toolTrace?: {
+                [key: string]: unknown;
+            }[];
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+            attempts?: components["schemas"]["Attempt"][];
+        };
+        ChatRetryCommand: {
+            requestId: string;
         };
         ListResponse: {
             items?: components["schemas"]["Response"][];
@@ -3804,6 +4045,30 @@ export interface operations {
             };
         };
     };
+    getSubjectStatuses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverviewSubjectStatusesRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["OverviewSubjectStatusesResponse"];
+                };
+            };
+        };
+    };
     list_4: {
         parameters: {
             query?: {
@@ -4122,6 +4387,30 @@ export interface operations {
             };
         };
     };
+    generateText: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TextGenerationCommand"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["TextGenerationView"];
+                };
+            };
+        };
+    };
     suggestion: {
         parameters: {
             query?: never;
@@ -4416,13 +4705,13 @@ export interface operations {
             };
         };
         responses: {
-            /** @description OK */
-            200: {
+            /** @description Chat conversation reading scope conflicts with the fixed scope */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/event-stream": components["schemas"]["StreamingResponseBody"];
+                    "application/problem+json": components["schemas"]["ApiProblemDetails"];
                 };
             };
         };
@@ -4467,6 +4756,80 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["ConversationView"];
+                };
+            };
+        };
+    };
+    cancel_1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ChatRunStatusView"];
+                };
+            };
+        };
+    };
+    retry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRetryCommand"];
+            };
+        };
+        responses: {
+            /** @description Chat conversation reading scope conflicts with the fixed scope */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ApiProblemDetails"];
+                };
+            };
+        };
+    };
+    recoverUnknown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                runId: string;
+                attemptId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ChatRunStatusView"];
                 };
             };
         };
@@ -4943,6 +5306,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+                runId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["ChatRunStatusView"];
+                };
             };
         };
     };
