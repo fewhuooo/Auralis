@@ -180,11 +180,11 @@ function deferred() {
   return { promise, resolve, reject }
 }
 
-test('editing waits for the real local commit, preserves Subject fields, and persists the selected icon key', async () => {
+test('editing waits for the real local commit, trims the name, and preserves Subject fields', async () => {
   const fixture = await createFixture()
   assert.ok(fixture.subject)
   const harness = createSaveHarness(fixture)
-  harness.form.value.name = '改后的学科名称'
+  harness.form.value.name = ' 改后的学科名称 '
   harness.form.value.description = '改后的描述'
   const iconField = Object.hasOwn(harness.form.value, 'iconKey') ? 'iconKey' : 'icon'
   harness.form.value[iconField] = 'chemistry'
@@ -216,11 +216,49 @@ test('editing waits for the real local commit, preserves Subject fields, and per
     assert.equal(stored.value.createdAt, fixture.createdAt)
     assert.equal(stored.value.version, fixture.baseVersion)
     assert.equal(mutation.baseVersion, fixture.baseVersion)
+    assert.equal(mutation.payload.name, '改后的学科名称')
     assert.equal(mutation.payload.iconKey, 'chemistry')
   } finally {
     releaseCommit.resolve()
     fixture.repo.commitMutation = originalCommit
   }
+})
+
+test('renaming a Subject to an existing trimmed name ignores case and rejects before writing locally', async () => {
+  const fixture = await createFixture({ subjectName: 'Geometry' })
+  await fixture.repo.upsert('SUBJECT', 'algebra-subject', { id: 'algebra-subject', name: ' Algebra ' })
+  const initialSubjects = await fixture.repo.list('SUBJECT')
+  const harness = createSaveHarness(fixture)
+  harness.form.value.name = ' algebra '
+  harness.form.value.description = '保留的描述'
+
+  harness.handleSave()
+  await harness.pendingSave
+
+  assert.equal(harness.showSubjectModal.value, true)
+  assert.equal(harness.isSavingSubject.value, false)
+  assert.equal(harness.form.value.name, ' algebra ')
+  assert.equal(harness.form.value.description, '保留的描述')
+  assert.equal(harness.notifications[0]?.type, 'error')
+  assert.match(harness.notifications[0]?.message, /已有同名学科/)
+  assert.equal(fixture.subjectStore.subjects.find((subject) => subject.id === fixture.subjectId)?.name, 'Geometry')
+  assert.deepEqual(await fixture.repo.list('SUBJECT'), initialSubjects)
+  assert.deepEqual(await fixture.repo.listUnresolved('SUBJECT'), [])
+})
+
+test('editing a Subject can keep its own name even when a previous rename left a duplicate projection', async () => {
+  const fixture = await createFixture({ subjectName: 'Geometry' })
+  await fixture.repo.upsert('SUBJECT', 'duplicate-subject', { id: 'duplicate-subject', name: ' geometry ' }, { syncStatus: 'error' })
+  const harness = createSaveHarness(fixture)
+  harness.form.value.description = '改后的描述'
+
+  harness.handleSave()
+  await harness.pendingSave
+
+  assert.equal(harness.showSubjectModal.value, false)
+  assert.equal((await fixture.repo.read('SUBJECT', fixture.subjectId)).value.description, '改后的描述')
+  const [mutation] = await fixture.repo.listUnresolved('SUBJECT')
+  assert.equal(mutation.payload.name, 'Geometry')
 })
 
 test('SubjectHall preserves the complete existing model in the real local mutation', async () => {

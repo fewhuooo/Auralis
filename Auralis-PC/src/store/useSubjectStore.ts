@@ -174,16 +174,10 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   async function addSubject(name: string, description: string, icon: string): Promise<string> {
-    const trimmedName = name.trim()
-    const normalizedName = trimmedName.toLowerCase()
     const repo = await repository()
-    const existingSubjects = await repo.list<SubjectView>('SUBJECT', { includeDeleted: false })
-    if (existingSubjects.some((row) => row.value.name?.trim().toLowerCase() === normalizedName)) {
-      throw new Error('SUBJECT_NAME_ALREADY_EXISTS')
-    }
     const payload: SubjectCreateRequest = {
       baseVersion: 0,
-      name: trimmedName,
+      name: await requireAvailableSubjectName(repo, name),
       description: description.trim(),
       iconKey: icon,
     }
@@ -205,14 +199,14 @@ export const useSubjectStore = defineStore('subject', () => {
   }
 
   async function updateSubject(subject: Subject): Promise<void> {
+    const repo = await repository()
     const payload: SubjectCreateRequest = {
       baseVersion: subject.version,
-      name: subject.name,
+      name: await requireAvailableSubjectName(repo, subject.name, subject.id),
       description: subject.description,
       iconKey: subject.iconKey || subject.icon,
       sortKey: subject.sortKey,
     }
-    const repo = await repository()
     const localView: SubjectView = {
       ...payload,
       id: subject.id,
@@ -316,3 +310,18 @@ export const useSubjectStore = defineStore('subject', () => {
     analyzeCatalogViaAi,
   }
 })
+
+async function requireAvailableSubjectName(repo: LocalRepository, name: string, currentSubjectId?: string): Promise<string> {
+  const trimmedName = name.trim()
+  const normalizedName = trimmedName.toLowerCase()
+  const existingSubjects = await repo.list<SubjectView>('SUBJECT', { includeDeleted: false })
+  const currentName = existingSubjects.find((row) => row.id === currentSubjectId)?.value.name
+  if (currentName?.trim().toLowerCase() === normalizedName) return trimmedName
+
+  if (existingSubjects.some((row) =>
+    row.id !== currentSubjectId && row.value.name?.trim().toLowerCase() === normalizedName,
+  )) {
+    throw new Error('SUBJECT_NAME_ALREADY_EXISTS')
+  }
+  return trimmedName
+}
