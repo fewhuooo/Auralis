@@ -854,7 +854,13 @@ function rebuildAssetTree(): void {
   }
 
   rootNodes.value = newRoots
-  if (selection) {
+  if (selection?.type === 'file') {
+    const group = newRoots.find(root => root.id === selection.groupId)
+    selected.value = findTreeNode(group?.children ?? [], selection.id)
+      ?? findTreeNode(newRoots.filter(root => root.id !== 'all'), selection.id)
+      ?? allFilesFolder.children?.find(file => file.id === selection.id)
+      ?? null
+  } else if (selection) {
     const refreshed = findTreeNode(newRoots, selection.id)
     if (selection.type === 'block') {
       const editedName = previousBlockNode && selection.name !== previousBlockNode.name
